@@ -18,6 +18,7 @@ RUN apt-get update \
         git \
         jq \
         tmux \
+        vim \
         build-essential \
         pkg-config \
         libssl-dev \
