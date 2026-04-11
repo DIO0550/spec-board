@@ -1,14 +1,8 @@
 {
-  "name": "Node Dev Container",
+  "name": "Spec Board Dev Container",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspace",
-  "containerEnv": {
-    "GIT_AUTHOR_NAME": "${localEnv:GIT_AUTHOR_NAME}",
-    "GIT_AUTHOR_EMAIL": "${localEnv:GIT_AUTHOR_EMAIL}",
-    "GIT_COMMITTER_NAME": "${localEnv:GIT_COMMITTER_NAME}",
-    "GIT_COMMITTER_EMAIL": "${localEnv:GIT_COMMITTER_EMAIL}"
-  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -23,10 +17,11 @@
     }
   },
   "mounts": [
+    "source=${localEnv:HOME}/.gitconfig-shared,target=/home/node/.gitconfig,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,readonly"
   ],
   "initializeCommand": "curl -fsSL https://gist.githubusercontent.com/DIO0550/9030208a4e92984e9a1369f61ca8605e/raw/initialize-command.sh | bash",
   "postCreateCommand": "curl -fsSL https://gist.githubusercontent.com/DIO0550/b08fa721f2b2e63f3cf708015390d5af/raw/post-create.sh | bash && curl -fsSL https://gist.githubusercontent.com/DIO0550/ff46c91b2f4a9211d998cdb3e8fe6e78/raw/install-playwright-skills.sh | bash",
-  "forwardPorts": [3000],
+  "forwardPorts": [4000, 4001],
   "remoteUser": "vscode"
 }
