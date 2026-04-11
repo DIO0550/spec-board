@@ -1,0 +1,10 @@
+services:
+  app:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    ports:
+      - "3000:3000"
+    command: sleep infinity
