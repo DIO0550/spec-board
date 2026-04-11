@@ -14,10 +14,7 @@
       "extensions": [
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
-        "rust-lang.rust-analyzer",
-        "tauri-apps.tauri-vscode",
-        "vadimcn.vscode-lldb",
-        "serayuzgur.crates"
+        "rust-lang.rust-analyzer"
       ],
       "settings": {
         "editor.formatOnSave": true,
