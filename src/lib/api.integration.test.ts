@@ -1,17 +1,32 @@
-import { beforeEach, expect, test } from "vitest";
-import {
-	_resetForTesting,
-	createTask,
-	deleteTask,
-	getColumns,
-	getTasks,
-	updateCardOrder,
-	updateColumns,
-	updateTask,
+import { beforeEach, expect, test, vi } from "vitest";
+import type {
+	createTask as CreateTask,
+	deleteTask as DeleteTask,
+	getColumns as GetColumns,
+	getTasks as GetTasks,
+	updateCardOrder as UpdateCardOrder,
+	updateColumns as UpdateColumns,
+	updateTask as UpdateTask,
 } from "./api";
 
-beforeEach(() => {
-	_resetForTesting();
+let getTasks: typeof GetTasks;
+let getColumns: typeof GetColumns;
+let createTask: typeof CreateTask;
+let updateTask: typeof UpdateTask;
+let deleteTask: typeof DeleteTask;
+let updateColumns: typeof UpdateColumns;
+let updateCardOrder: typeof UpdateCardOrder;
+
+beforeEach(async () => {
+	vi.resetModules();
+	const api = await import("./api");
+	getTasks = api.getTasks;
+	getColumns = api.getColumns;
+	createTask = api.createTask;
+	updateTask = api.updateTask;
+	deleteTask = api.deleteTask;
+	updateColumns = api.updateColumns;
+	updateCardOrder = api.updateCardOrder;
 });
 
 test("getTasks がモックタスクの配列を返す", async () => {
@@ -42,6 +57,12 @@ test("createTask が新しいタスクを返す", async () => {
 	expect(tasks).toHaveLength(6);
 });
 
+test("createTask で存在しないステータスを指定するとエラーになる", async () => {
+	await expect(
+		createTask({ title: "Bad Task", status: "NonExistent" }),
+	).rejects.toThrow("Invalid status: NonExistent");
+});
+
 test("updateTask で一部フィールドのみ更新できる", async () => {
 	const updated = await updateTask("task-1", {
 		title: "Updated Title",
@@ -52,11 +73,36 @@ test("updateTask で一部フィールドのみ更新できる", async () => {
 	expect(updated.status).toBe("Todo");
 });
 
+test("updateTask で存在しないタスクIDを指定するとエラーになる", async () => {
+	await expect(updateTask("non-existent", { title: "Fail" })).rejects.toThrow(
+		"Task not found: non-existent",
+	);
+});
+
+test("updateTask で存在しないステータスを指定するとエラーになる", async () => {
+	await expect(
+		updateTask("task-1", { status: "InvalidStatus" }),
+	).rejects.toThrow("Invalid status: InvalidStatus");
+});
+
+test("updateTask でステータス変更時にcardOrderが正しく更新される", async () => {
+	await updateTask("task-1", { status: "In Progress" });
+	const tasks = await getTasks();
+	const updated = tasks.find((t) => t.id === "task-1");
+	expect(updated?.status).toBe("In Progress");
+});
+
 test("deleteTask で指定タスクが削除される", async () => {
 	await deleteTask("task-1");
 	const tasks = await getTasks();
 	expect(tasks).toHaveLength(4);
 	expect(tasks.find((t) => t.id === "task-1")).toBeUndefined();
+});
+
+test("deleteTask で存在しないタスクIDを指定するとエラーになる", async () => {
+	await expect(deleteTask("non-existent")).rejects.toThrow(
+		"Task not found: non-existent",
+	);
 });
 
 test("createTask でタイトルが日本語でも動作する", async () => {

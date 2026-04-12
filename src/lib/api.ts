@@ -1,9 +1,22 @@
 import type { Column, Task } from "../types/task";
 import { initialColumns, initialTasks } from "./mock-data";
 
-let tasks = structuredClone(initialTasks);
+const tasks = structuredClone(initialTasks);
 let columns = structuredClone(initialColumns);
 let cardOrder: Record<string, string[]> = buildCardOrder(tasks, columns);
+
+/**
+ * ステータスが既存カラムに存在するか検証する
+ * @param status - 検証対象のステータス文字列
+ * @throws ステータスが既存カラムに存在しない場合
+ */
+function validateStatus(status: string): void {
+	if (!columns.some((col) => col.name === status)) {
+		throw new Error(
+			`Invalid status: ${status}. Must be one of: ${columns.map((c) => c.name).join(", ")}`,
+		);
+	}
+}
 
 /**
  * カラムごとのカード表示順を構築する
@@ -51,6 +64,7 @@ export async function createTask(
 	params: Pick<Task, "title" | "status"> &
 		Partial<Omit<Task, "id" | "title" | "status">>,
 ): Promise<Task> {
+	validateStatus(params.status);
 	const newTask: Task = {
 		id: `task-${nextId++}`,
 		title: params.title,
@@ -87,21 +101,18 @@ export async function updateTask(
 	if (index === -1) {
 		throw new Error(`Task not found: ${id}`);
 	}
+	if (updates.status) {
+		validateStatus(updates.status);
+	}
 	const oldStatus = tasks[index].status;
 	const oldFilePath = tasks[index].filePath;
 	tasks[index] = { ...tasks[index], ...updates };
 	const updated = tasks[index];
 
-	if (updates.status && updates.status !== oldStatus) {
-		const oldCol = cardOrder[oldStatus];
-		if (oldCol) {
-			const pos = oldCol.indexOf(oldFilePath);
-			if (pos !== -1) oldCol.splice(pos, 1);
-		}
-		const newCol = cardOrder[updated.status];
-		if (newCol) {
-			newCol.push(updated.filePath);
-		}
+	const statusChanged = updated.status !== oldStatus;
+	const filePathChanged = updated.filePath !== oldFilePath;
+	if (statusChanged || filePathChanged) {
+		cardOrder = buildCardOrder(tasks, columns);
 	}
 
 	return structuredClone(updated);
@@ -147,14 +158,4 @@ export async function updateCardOrder(
 ): Promise<Record<string, string[]>> {
 	cardOrder = structuredClone(newCardOrder);
 	return structuredClone(cardOrder);
-}
-
-/**
- * テスト用にモジュールの状態を初期値にリセットする
- */
-export function _resetForTesting(): void {
-	tasks = structuredClone(initialTasks);
-	columns = structuredClone(initialColumns);
-	cardOrder = buildCardOrder(tasks, columns);
-	nextId = initialTasks.length + 1;
 }
