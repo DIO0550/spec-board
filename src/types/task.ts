@@ -9,12 +9,12 @@ export type Task = {
 	title: string;
 	/** ステータス（カラム名に対応） */
 	status: string;
-	/** 優先度（未設定の場合は undefined） */
-	priority: Priority | undefined;
+	/** 優先度（未設定可） */
+	priority?: Priority;
 	/** ラベルの配列 */
 	labels: string[];
-	/** 親タスクのファイルパス */
-	parent: string | undefined;
+	/** 親タスクのファイルパス（親がない場合は未設定） */
+	parent?: string;
 	/** 関連タスクのファイルパスの配列 */
 	links: string[];
 	/** 子タスクのファイルパスの配列（parent から逆引き） */
