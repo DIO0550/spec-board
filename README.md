@@ -1,7 +1,7 @@
-# node-devcontainer-template
+# spec-board
 
-Node.js 開発用の [Dev Container](https://containers.dev/) テンプレートリポジトリです。  
-VS Code の Dev Containers 拡張機能を使って、すぐに開発を始められる環境を提供します。
+mdファイルベースのプロジェクト管理デスクトップアプリケーションです。  
+Tauri + React で構築し、開発者とAIエージェントが同じデータソース（mdファイル）でタスクを管理できます。
 
 ## 含まれるツール
 
