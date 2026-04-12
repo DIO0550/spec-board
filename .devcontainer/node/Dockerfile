@@ -54,6 +54,8 @@ RUN set -eux; \
 USER $USERNAME
 
 SHELL ["/bin/bash", "-l", "-c"]
+# NOTE: gist scripts are fetched from the repo owner's gists.
+# TODO: Pin to specific gist revisions or vendor scripts locally for supply chain safety.
 RUN curl -fsSL https://gist.githubusercontent.com/DIO0550/f5999a0512a369a232b7d4f824f0cc08/raw/install-gh-local.sh | bash
 RUN curl -fsSL https://gist.githubusercontent.com/DIO0550/dcc09dc9d2dcefceb9b0cda183e7ef8e/raw/pnpm-safe-chain-setup.sh | sh
 RUN curl -fsSL https://gist.githubusercontent.com/DIO0550/148b1392cf435ba3562da0d398bee442/raw/install-ai-tools.sh | bash
