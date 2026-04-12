@@ -1,0 +1,52 @@
+{
+  "extraKnownMarketplaces": {
+    "d-market-rust": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-rust"
+      }
+    },
+    "d-market-typescript": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-typescript"
+      }
+    },
+    "d-market-react": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-react"
+      }
+    },
+    "d-market-spec": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-spec"
+      }
+    },
+    "d-market-git": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-git"
+      }
+    },
+    "d-market-code-review": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-code-review"
+      }
+    },
+    "d-market-doc-gen": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-doc-gen"
+      }
+    },
+    "d-market-statusline": {
+      "source": {
+        "source": "github",
+        "repo": "DIO0550/d-market-statusline"
+      }
+    }
+  }
+}
