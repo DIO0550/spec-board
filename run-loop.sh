@@ -303,6 +303,9 @@ PR #${PR_NUMBER} のレビュー修正が上限（${MAX_FIX_ITERATIONS}回）に
           clean_pr_number
           break
         fi
+        # 修正push後、再レビューを依頼
+        echo "再レビューを依頼: ${REVIEWER}"
+        gh pr edit "$PR_NUMBER" --add-reviewer "$REVIEWER"
         ;;
 
       TIMEOUT)
