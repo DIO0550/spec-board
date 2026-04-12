@@ -36,6 +36,9 @@ function App() {
 					greet();
 				}}
 			>
+				<label htmlFor="greet-input" className="sr-only">
+					Name
+				</label>
 				<input
 					id="greet-input"
 					onChange={(e) => setName(e.currentTarget.value)}
