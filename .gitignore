@@ -169,3 +169,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# PR templates (local only)
+.pr-templates/
+.pr-review-fix/
