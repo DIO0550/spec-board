@@ -173,3 +173,9 @@ dist-ssr
 # PR templates (local only)
 .pr-templates/
 .pr-review-fix/
+
+# task-loop
+tasks/
+Task.md
+.pr_number
+session-logs/
