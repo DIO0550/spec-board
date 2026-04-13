@@ -38,8 +38,6 @@ function App() {
 			<main className="flex flex-1 overflow-hidden">
 				{projectPath === null ? (
 					<EmptyState type="no-project" onOpenProject={handleOpenProject} />
-				) : tasks.length === 0 ? (
-					<EmptyState type="empty-project" />
 				) : (
 					<Board columns={columns} tasks={tasks} onAddTask={() => {}} />
 				)}

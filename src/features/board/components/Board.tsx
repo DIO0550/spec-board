@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Column as ColumnType, Task } from "../../../types/task";
 import { Column } from "./Column";
 
@@ -19,7 +20,21 @@ type BoardProps = {
  * @returns ボード要素
  */
 export function Board({ columns, tasks, onAddTask }: BoardProps) {
-	const sorted = [...columns].sort((a, b) => a.order - b.order);
+	const sorted = useMemo(
+		() => [...columns].sort((a, b) => a.order - b.order),
+		[columns],
+	);
+
+	const tasksByStatus = useMemo(() => {
+		const grouped: Record<string, Task[]> = {};
+		for (const task of tasks) {
+			if (!grouped[task.status]) {
+				grouped[task.status] = [];
+			}
+			grouped[task.status].push(task);
+		}
+		return grouped;
+	}, [tasks]);
 
 	return (
 		<div className="flex h-full gap-4 overflow-x-auto p-4">
@@ -27,7 +42,7 @@ export function Board({ columns, tasks, onAddTask }: BoardProps) {
 				<Column
 					key={col.name}
 					name={col.name}
-					tasks={tasks.filter((t) => t.status === col.name)}
+					tasks={tasksByStatus[col.name] ?? []}
 					onAddClick={() => onAddTask(col.name)}
 				/>
 			))}
