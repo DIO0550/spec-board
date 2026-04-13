@@ -78,3 +78,58 @@ test("titleが未設定の場合、filePathが表示される", async () => {
 		expect(container?.textContent).toContain("tasks/my-task.md");
 	});
 });
+
+test("priority が High の場合、赤いバッジが表示される", async () => {
+	render({ task: createTask({ priority: "High" }), onClick: vi.fn() });
+	await vi.waitFor(() => {
+		const badge = container?.querySelector("span.bg-red-100");
+		expect(badge).toBeTruthy();
+		expect(badge?.textContent).toBe("High");
+	});
+});
+
+test("labels が ['bug', 'frontend'] の場合、2つのタグが表示される", async () => {
+	render({
+		task: createTask({ labels: ["bug", "frontend"] }),
+		onClick: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		const tags = container?.querySelectorAll(".bg-gray-100");
+		expect(tags?.length).toBe(2);
+		expect(tags?.[0]?.textContent).toBe("bug");
+		expect(tags?.[1]?.textContent).toBe("frontend");
+	});
+});
+
+test("priority 未設定でバッジ非表示", async () => {
+	render({ task: createTask({ priority: undefined }), onClick: vi.fn() });
+	await vi.waitFor(() => {
+		const badge = container?.querySelector(
+			".bg-red-100, .bg-yellow-100, .bg-blue-100",
+		);
+		expect(badge).toBeNull();
+	});
+});
+
+test("labels が空配列でタグ領域非表示", async () => {
+	render({ task: createTask({ labels: [] }), onClick: vi.fn() });
+	await vi.waitFor(() => {
+		const tagContainer = container?.querySelector(".flex-wrap");
+		expect(tagContainer).toBeNull();
+	});
+});
+
+test("ラベルが5個以上で折り返し表示", async () => {
+	render({
+		task: createTask({
+			labels: ["bug", "frontend", "urgent", "design", "refactor"],
+		}),
+		onClick: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		const tags = container?.querySelectorAll(".bg-gray-100");
+		expect(tags?.length).toBe(5);
+		const wrapper = container?.querySelector(".flex-wrap");
+		expect(wrapper).toBeTruthy();
+	});
+});
