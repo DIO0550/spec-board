@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { HeaderBar } from "./HeaderBar";
@@ -7,7 +7,9 @@ let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
 
 afterEach(() => {
-	root?.unmount();
+	act(() => {
+		root?.unmount();
+	});
 	root = null;
 	container?.remove();
 	container = null;
@@ -17,13 +19,15 @@ function renderHeaderBar(props: Partial<Parameters<typeof HeaderBar>[0]> = {}) {
 	container = document.createElement("div");
 	document.body.appendChild(container);
 	root = createRoot(container);
-	root.render(
-		createElement(HeaderBar, {
-			onSettingsClick: vi.fn(),
-			onOpenClick: vi.fn(),
-			...props,
-		}),
-	);
+	act(() => {
+		root?.render(
+			createElement(HeaderBar, {
+				onSettingsClick: vi.fn(),
+				onOpenClick: vi.fn(),
+				...props,
+			}),
+		);
+	});
 	return root;
 }
 
