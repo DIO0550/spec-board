@@ -10,6 +10,7 @@ function App() {
 	const [projectPath, setProjectPath] = useState<string | null>(null);
 	const [tasks, setTasks] = useState<Task[]>([]);
 	const [columns, setColumns] = useState<Column[]>([]);
+	const [isLoading, setIsLoading] = useState(false);
 
 	const handleOpenProject = () => {
 		setProjectPath("mock-project");
@@ -18,6 +19,7 @@ function App() {
 	useEffect(() => {
 		if (projectPath === null) return;
 		let cancelled = false;
+		setIsLoading(true);
 		(async () => {
 			const [loadedTasks, loadedColumns] = await Promise.all([
 				getTasks(),
@@ -26,6 +28,7 @@ function App() {
 			if (cancelled) return;
 			setTasks(loadedTasks);
 			setColumns(loadedColumns);
+			setIsLoading(false);
 		})();
 		return () => {
 			cancelled = true;
@@ -38,6 +41,10 @@ function App() {
 			<main className="flex flex-1 overflow-hidden">
 				{projectPath === null ? (
 					<EmptyState type="no-project" onOpenProject={handleOpenProject} />
+				) : isLoading ? (
+					<div className="flex flex-1 items-center justify-center">
+						<p className="text-gray-500">読み込み中…</p>
+					</div>
 				) : (
 					<Board columns={columns} tasks={tasks} onAddTask={() => {}} />
 				)}
