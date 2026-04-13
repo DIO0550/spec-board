@@ -10,10 +10,8 @@ function App() {
 	const [tasks] = useState<Task[]>([]);
 
 	const handleOpenProject = () => {
-		// TODO: 実際のファイル/フォルダ選択処理を実装し、
-		// 選択結果が取得できた場合のみ projectPath を更新する。
-		// 仮実装: プロジェクト選択ダイアログ完成後に置き換える
-		setProjectPath("/tmp/placeholder");
+		// 未実装の間は projectPath を更新しない。
+		void setProjectPath;
 	};
 
 	return (
