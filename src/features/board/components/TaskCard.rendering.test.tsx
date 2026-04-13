@@ -51,10 +51,10 @@ test("カードクリックでonClickが呼ばれる", async () => {
 	const onClick = vi.fn();
 	render({ task: createTask({ id: "task-42" }), onClick });
 	await vi.waitFor(() => {
-		expect(container?.querySelector("button")).toBeTruthy();
+		expect(container?.querySelector('[role="button"]')).toBeTruthy();
 	});
-	const button = container?.querySelector("button") as HTMLButtonElement;
-	button.click();
+	const card = container?.querySelector('[role="button"]') as HTMLElement;
+	card.click();
 	expect(onClick).toHaveBeenCalledWith("task-42");
 });
 
