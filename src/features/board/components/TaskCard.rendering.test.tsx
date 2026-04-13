@@ -50,12 +50,24 @@ test("タイトルが表示される", async () => {
 test("カードクリックでonClickが呼ばれる", async () => {
 	const onClick = vi.fn();
 	render({ task: createTask({ id: "task-42" }), onClick });
+	let button: HTMLButtonElement | null = null;
 	await vi.waitFor(() => {
-		const button = container?.querySelector("button");
-		expect(button).toBeDefined();
-		button?.click();
-		expect(onClick).toHaveBeenCalledWith("task-42");
+		button = container?.querySelector("button") as HTMLButtonElement | null;
+		expect(button).toBeTruthy();
 	});
+	button?.click();
+	expect(onClick).toHaveBeenCalledWith("task-42");
+});
+
+test("onClick未指定の場合、divで描画されボタンにならない", async () => {
+	render({ task: createTask({ title: "非インタラクティブ" }) });
+	await vi.waitFor(() => {
+		expect(container?.textContent).toContain("非インタラクティブ");
+	});
+	const button = container?.querySelector("button");
+	expect(button).toBeNull();
+	const div = container?.querySelector("div");
+	expect(div).toBeTruthy();
 });
 
 test("titleが未設定の場合、filePathが表示される", async () => {

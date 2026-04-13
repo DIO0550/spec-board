@@ -8,7 +8,7 @@ type TaskCardProps = {
 	 * カードクリック時のコールバック
 	 * @param taskId - クリックされたタスクのID
 	 */
-	onClick: (taskId: string) => void;
+	onClick?: (taskId: string) => void;
 };
 
 /**
@@ -18,6 +18,14 @@ type TaskCardProps = {
  */
 export function TaskCard({ task, onClick }: TaskCardProps) {
 	const displayTitle = task.title || task.filePath;
+
+	if (!onClick) {
+		return (
+			<div className="w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm">
+				<p className="text-sm text-gray-800">{displayTitle}</p>
+			</div>
+		);
+	}
 
 	return (
 		<button

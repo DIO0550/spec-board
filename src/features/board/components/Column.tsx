@@ -36,7 +36,7 @@ export function Column({ name, tasks, onAddClick, onTaskClick }: ColumnProps) {
 			<ul className="flex-1 overflow-y-auto px-2 pb-2">
 				{tasks.map((task) => (
 					<li key={task.id} className="mb-2">
-						<TaskCard task={task} onClick={onTaskClick ?? (() => {})} />
+						<TaskCard task={task} onClick={onTaskClick} />
 					</li>
 				))}
 			</ul>
