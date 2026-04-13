@@ -60,12 +60,12 @@ test("×ボタンクリックでonCloseが呼ばれる", async () => {
 	const onClose = vi.fn();
 	render({ task: createTask(), onClose });
 	await vi.waitFor(() => {
-		const closeButton = document.querySelector(
-			'[aria-label="閉じる"]',
-		) as HTMLElement;
-		expect(closeButton).toBeTruthy();
-		closeButton.click();
+		expect(document.querySelector('[aria-label="閉じる"]')).toBeTruthy();
 	});
+	const closeButton = document.querySelector(
+		'[aria-label="閉じる"]',
+	) as HTMLElement;
+	closeButton.click();
 	expect(onClose).toHaveBeenCalledOnce();
 });
 
@@ -85,11 +85,13 @@ test("オーバーレイクリックでパネルが閉じる", async () => {
 	const onClose = vi.fn();
 	render({ task: createTask(), onClose });
 	await vi.waitFor(() => {
-		const overlay = document.querySelector(
-			'[data-testid="detail-overlay"]',
-		) as HTMLElement;
-		expect(overlay).toBeTruthy();
-		overlay.click();
+		expect(
+			document.querySelector('[data-testid="detail-overlay"]'),
+		).toBeTruthy();
 	});
+	const overlay = document.querySelector(
+		'[data-testid="detail-overlay"]',
+	) as HTMLElement;
+	overlay.click();
 	expect(onClose).toHaveBeenCalledOnce();
 });

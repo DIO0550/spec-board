@@ -15,7 +15,7 @@ type DetailPanelProps = {
  * @returns パネル要素
  */
 export function DetailPanel({ task, onClose }: DetailPanelProps) {
-	const panelRef = useRef<HTMLDivElement>(null);
+	const panelRef = useRef<HTMLElement>(null);
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -33,13 +33,12 @@ export function DetailPanel({ task, onClose }: DetailPanelProps) {
 
 	return (
 		<>
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: overlay backdrop dismisses panel on click, no semantic role needed */}
-			<div
-				className="fixed inset-0 z-40 bg-black/30"
+			<button
+				type="button"
+				aria-label="詳細パネルを閉じる"
+				className="fixed inset-0 z-40 border-0 bg-black/30 p-0"
 				data-testid="detail-overlay"
 				onClick={onClose}
-				onKeyDown={() => {}}
-				role="presentation"
 			/>
 			<aside
 				ref={panelRef}
