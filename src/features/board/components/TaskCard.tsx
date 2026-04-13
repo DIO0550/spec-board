@@ -1,11 +1,16 @@
 import type { Task } from "../../../types/task";
 import { LabelTag } from "./LabelTag";
 import { PriorityBadge } from "./PriorityBadge";
+import { SubIssueProgress } from "./SubIssueProgress";
 
 /** タスクカードの Props */
 type TaskCardProps = {
 	/** 表示するタスク */
 	task: Task;
+	/** 子タスクの配列（children を解決済み） */
+	childTasks?: Task[];
+	/** 完了カラム名 */
+	doneColumn?: string;
 	/**
 	 * カードクリック時のコールバック
 	 * @param taskId - クリックされたタスクのID
@@ -17,7 +22,15 @@ type TaskCardProps = {
  * @param props - {@link TaskCardProps}
  * @returns カード要素
  */
-function CardContent({ task }: { task: Task }) {
+function CardContent({
+	task,
+	childTasks = [],
+	doneColumn = "Done",
+}: {
+	task: Task;
+	childTasks?: Task[];
+	doneColumn?: string;
+}) {
 	const displayTitle = task.title || task.filePath;
 
 	return (
@@ -33,6 +46,7 @@ function CardContent({ task }: { task: Task }) {
 					))}
 				</div>
 			)}
+			<SubIssueProgress childTasks={childTasks} doneColumn={doneColumn} />
 		</>
 	);
 }
@@ -42,11 +56,20 @@ function CardContent({ task }: { task: Task }) {
  * @param props - {@link TaskCardProps}
  * @returns カード要素
  */
-export function TaskCard({ task, onClick }: TaskCardProps) {
+export function TaskCard({
+	task,
+	childTasks,
+	doneColumn,
+	onClick,
+}: TaskCardProps) {
 	if (!onClick) {
 		return (
 			<div className="w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm">
-				<CardContent task={task} />
+				<CardContent
+					task={task}
+					childTasks={childTasks}
+					doneColumn={doneColumn}
+				/>
 			</div>
 		);
 	}
@@ -57,7 +80,11 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
 			className="w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md"
 			onClick={() => onClick(task.id)}
 		>
-			<CardContent task={task} />
+			<CardContent
+				task={task}
+				childTasks={childTasks}
+				doneColumn={doneColumn}
+			/>
 		</button>
 	);
 }

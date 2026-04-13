@@ -8,6 +8,8 @@ type BoardProps = {
 	columns: ColumnType[];
 	/** タスクの配列 */
 	tasks: Task[];
+	/** 完了カラム名 */
+	doneColumn?: string;
 	/** カラムの「+ 追加」ボタンクリック時のコールバック
 	 * @param columnName - 追加対象のカラム名
 	 */
@@ -19,7 +21,7 @@ type BoardProps = {
  * @param props - {@link BoardProps}
  * @returns ボード要素
  */
-export function Board({ columns, tasks, onAddTask }: BoardProps) {
+export function Board({ columns, tasks, doneColumn, onAddTask }: BoardProps) {
 	const sorted = useMemo(
 		() => [...columns].sort((a, b) => a.order - b.order),
 		[columns],
@@ -43,6 +45,8 @@ export function Board({ columns, tasks, onAddTask }: BoardProps) {
 					key={col.name}
 					name={col.name}
 					tasks={tasksByStatus[col.name] ?? []}
+					allTasks={tasks}
+					doneColumn={doneColumn}
 					onAddClick={() => onAddTask(col.name)}
 				/>
 			))}
