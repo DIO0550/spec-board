@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Board, EmptyState, HeaderBar } from "./features/board";
+import { DetailPanel } from "./features/detail";
 import { getColumns, getTasks } from "./lib/api";
 import type { Column, Task } from "./types/task";
 
@@ -11,15 +12,29 @@ function App() {
 	const [tasks, setTasks] = useState<Task[]>([]);
 	const [columns, setColumns] = useState<Column[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
+	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+	const selectedTask = selectedTaskId
+		? (tasks.find((t) => t.id === selectedTaskId) ?? null)
+		: null;
 
 	const handleOpenProject = () => {
 		setProjectPath("mock-project");
 	};
 
+	const handleTaskClick = useCallback((taskId: string) => {
+		setSelectedTaskId(taskId);
+	}, []);
+
+	const handleCloseDetail = useCallback(() => {
+		setSelectedTaskId(null);
+	}, []);
+
 	useEffect(() => {
 		if (projectPath === null) return;
 		let cancelled = false;
 		setIsLoading(true);
+		setSelectedTaskId(null);
 		(async () => {
 			const [loadedTasks, loadedColumns] = await Promise.all([
 				getTasks(),
@@ -46,9 +61,17 @@ function App() {
 						<p className="text-gray-500">読み込み中…</p>
 					</div>
 				) : (
-					<Board columns={columns} tasks={tasks} onAddTask={() => {}} />
+					<Board
+						columns={columns}
+						tasks={tasks}
+						onAddTask={() => {}}
+						onTaskClick={handleTaskClick}
+					/>
 				)}
 			</main>
+			{selectedTask && (
+				<DetailPanel task={selectedTask} onClose={handleCloseDetail} />
+			)}
 		</div>
 	);
 }

@@ -14,6 +14,11 @@ type BoardProps = {
 	 * @param columnName - 追加対象のカラム名
 	 */
 	onAddTask: (columnName: string) => void;
+	/**
+	 * タスクカードクリック時のコールバック
+	 * @param taskId - クリックされたタスクのID
+	 */
+	onTaskClick?: (taskId: string) => void;
 };
 
 /**
@@ -21,7 +26,13 @@ type BoardProps = {
  * @param props - {@link BoardProps}
  * @returns ボード要素
  */
-export function Board({ columns, tasks, doneColumn, onAddTask }: BoardProps) {
+export function Board({
+	columns,
+	tasks,
+	doneColumn,
+	onAddTask,
+	onTaskClick,
+}: BoardProps) {
 	const sorted = useMemo(
 		() => [...columns].sort((a, b) => a.order - b.order),
 		[columns],
@@ -48,6 +59,7 @@ export function Board({ columns, tasks, doneColumn, onAddTask }: BoardProps) {
 					allTasks={tasks}
 					doneColumn={doneColumn}
 					onAddClick={() => onAddTask(col.name)}
+					onTaskClick={onTaskClick}
 				/>
 			))}
 		</div>
