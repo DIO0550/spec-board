@@ -75,16 +75,24 @@ export function TaskCard({
 	}
 
 	return (
-		<button
-			type="button"
+		// biome-ignore lint/a11y/useSemanticElements: avoid nesting interactive elements (details/summary) inside button
+		<div
+			role="button"
+			tabIndex={0}
 			className="w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md"
 			onClick={() => onClick(task.id)}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					onClick(task.id);
+				}
+			}}
 		>
 			<CardContent
 				task={task}
 				childTasks={childTasks}
 				doneColumn={doneColumn}
 			/>
-		</button>
+		</div>
 	);
 }
