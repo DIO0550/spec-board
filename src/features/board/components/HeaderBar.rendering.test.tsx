@@ -54,25 +54,27 @@ test("設定ボタンと「開く」ボタンが表示される", async () => {
 test("設定ボタンクリックでコールバックが呼ばれる", async () => {
 	const onSettingsClick = vi.fn();
 	renderHeaderBar({ onSettingsClick });
+	let btn: HTMLButtonElement | undefined;
 	await vi.waitFor(() => {
-		const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
-			(b) => b.textContent === "設定",
+		btn = Array.from(container?.querySelectorAll("button") ?? []).find(
+			(b): b is HTMLButtonElement => b.textContent === "設定",
 		);
 		expect(btn).toBeDefined();
-		btn?.click();
-		expect(onSettingsClick).toHaveBeenCalledTimes(1);
 	});
+	btn?.click();
+	expect(onSettingsClick).toHaveBeenCalledTimes(1);
 });
 
 test("「開く」ボタンクリックでコールバックが呼ばれる", async () => {
 	const onOpenClick = vi.fn();
 	renderHeaderBar({ onOpenClick });
+	let btn: HTMLButtonElement | undefined;
 	await vi.waitFor(() => {
-		const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
-			(b) => b.textContent === "開く",
+		btn = Array.from(container?.querySelectorAll("button") ?? []).find(
+			(b): b is HTMLButtonElement => b.textContent === "開く",
 		);
 		expect(btn).toBeDefined();
-		btn?.click();
-		expect(onOpenClick).toHaveBeenCalledTimes(1);
 	});
+	btn?.click();
+	expect(onOpenClick).toHaveBeenCalledTimes(1);
 });
