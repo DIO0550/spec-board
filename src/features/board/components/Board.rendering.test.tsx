@@ -1,0 +1,123 @@
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, expect, test, vi } from "vitest";
+import type { Column as ColumnType, Task } from "../../../types/task";
+import { Board } from "./Board";
+
+let container: HTMLDivElement | null = null;
+let root: ReturnType<typeof createRoot> | null = null;
+
+afterEach(() => {
+	act(() => {
+		root?.unmount();
+	});
+	root = null;
+	container?.remove();
+	container = null;
+});
+
+function createTask(overrides: Partial<Task> = {}): Task {
+	return {
+		id: "task-1",
+		title: "テストタスク",
+		status: "Todo",
+		labels: [],
+		links: [],
+		children: [],
+		reverseLinks: [],
+		body: "",
+		filePath: "tasks/test.md",
+		...overrides,
+	};
+}
+
+function render(props: Parameters<typeof Board>[0]) {
+	container = document.createElement("div");
+	document.body.appendChild(container);
+	root = createRoot(container);
+	act(() => {
+		root?.render(createElement(Board, props));
+	});
+}
+
+const defaultColumns: ColumnType[] = [
+	{ name: "Todo", order: 0 },
+	{ name: "In Progress", order: 1 },
+	{ name: "Done", order: 2 },
+];
+
+test("columns に応じたカラムが表示される", async () => {
+	render({ columns: defaultColumns, tasks: [], onAddTask: vi.fn() });
+	await vi.waitFor(() => {
+		const sections = container?.querySelectorAll("section") ?? [];
+		expect(sections.length).toBe(3);
+		const labels = Array.from(sections).map((s) =>
+			s.getAttribute("aria-label"),
+		);
+		expect(labels).toContain("Todo");
+		expect(labels).toContain("In Progress");
+		expect(labels).toContain("Done");
+	});
+});
+
+test("各カラムヘッダーにステータス名とタスク件数が表示される", async () => {
+	const tasks = [
+		createTask({ id: "task-1", title: "タスク1", status: "Todo" }),
+		createTask({ id: "task-2", title: "タスク2", status: "Todo" }),
+		createTask({ id: "task-3", title: "タスク3", status: "In Progress" }),
+	];
+	render({ columns: defaultColumns, tasks, onAddTask: vi.fn() });
+	await vi.waitFor(() => {
+		const todoSection = container?.querySelector('section[aria-label="Todo"]');
+		expect(todoSection?.textContent).toContain("Todo");
+		expect(todoSection?.textContent).toContain("2");
+
+		const inProgressSection = container?.querySelector(
+			'section[aria-label="In Progress"]',
+		);
+		expect(inProgressSection?.textContent).toContain("In Progress");
+		expect(inProgressSection?.textContent).toContain("1");
+
+		const doneSection = container?.querySelector('section[aria-label="Done"]');
+		expect(doneSection?.textContent).toContain("Done");
+		expect(doneSection?.textContent).toContain("0");
+	});
+});
+
+test("「+ 追加」ボタンが各カラムに表示される", async () => {
+	render({ columns: defaultColumns, tasks: [], onAddTask: vi.fn() });
+	await vi.waitFor(() => {
+		const buttons = Array.from(
+			container?.querySelectorAll("button") ?? [],
+		).filter((b) => b.textContent === "+ 追加");
+		expect(buttons.length).toBe(3);
+	});
+});
+
+test("カラムが 10 個以上ある場合でも表示される", async () => {
+	const manyColumns: ColumnType[] = Array.from({ length: 12 }, (_, i) => ({
+		name: `Status-${i}`,
+		order: i,
+	}));
+	render({ columns: manyColumns, tasks: [], onAddTask: vi.fn() });
+	await vi.waitFor(() => {
+		const sections = container?.querySelectorAll("section") ?? [];
+		expect(sections.length).toBe(12);
+	});
+});
+
+test("カラムが order 順に表示される", async () => {
+	const unorderedColumns: ColumnType[] = [
+		{ name: "Done", order: 2 },
+		{ name: "Todo", order: 0 },
+		{ name: "In Progress", order: 1 },
+	];
+	render({ columns: unorderedColumns, tasks: [], onAddTask: vi.fn() });
+	await vi.waitFor(() => {
+		const sections = container?.querySelectorAll("section") ?? [];
+		const labels = Array.from(sections).map((s) =>
+			s.getAttribute("aria-label"),
+		);
+		expect(labels).toEqual(["Todo", "In Progress", "Done"]);
+	});
+});
