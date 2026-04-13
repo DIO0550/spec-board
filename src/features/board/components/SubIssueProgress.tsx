@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Task } from "../../../types/task";
 
 type SubIssueProgressProps = {
@@ -11,10 +10,20 @@ type SubIssueProgressProps = {
  * @returns ステータスアイコン要素
  */
 function StatusIcon({ isDone }: { isDone: boolean }) {
+	const label = isDone ? "完了" : "未完了";
+
 	if (isDone) {
-		return <span className="text-green-600">✓</span>;
+		return (
+			<span className="text-green-600" role="img" aria-label={label}>
+				✓
+			</span>
+		);
 	}
-	return <span className="text-gray-400">○</span>;
+	return (
+		<span className="text-gray-400" role="img" aria-label={label}>
+			○
+		</span>
+	);
 }
 
 /**
@@ -25,8 +34,6 @@ export function SubIssueProgress({
 	childTasks,
 	doneColumn,
 }: SubIssueProgressProps) {
-	const [expanded, setExpanded] = useState(false);
-
 	if (childTasks.length === 0) {
 		return null;
 	}
@@ -37,26 +44,16 @@ export function SubIssueProgress({
 
 	return (
 		<div className="mt-2">
-			<button
-				type="button"
-				className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
-				onClick={(e) => {
-					e.stopPropagation();
-					setExpanded((prev) => !prev);
-				}}
-				aria-expanded={expanded}
-				aria-label={`サブIssue ${doneCount}/${total}`}
+			<details
+				onClick={(e) => e.stopPropagation()}
+				onKeyDown={(e) => e.stopPropagation()}
 			>
-				<span
-					className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
-				>
-					▶
-				</span>
-				<span>
-					サブIssue ({doneCount}/{total})
-				</span>
-			</button>
-			{expanded && (
+				<summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-gray-600 hover:text-gray-800 [&::-webkit-details-marker]:hidden">
+					<span aria-hidden="true">▶</span>
+					<span>
+						サブIssue ({doneCount}/{total})
+					</span>
+				</summary>
 				<ul className="mt-1 ml-4 space-y-0.5 text-xs text-gray-700">
 					{childTasks.map((child) => (
 						<li key={child.id} className="flex items-center gap-1.5">
@@ -65,7 +62,7 @@ export function SubIssueProgress({
 						</li>
 					))}
 				</ul>
-			)}
+			</details>
 			<div className="mt-1 flex items-center gap-2">
 				<div
 					className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"

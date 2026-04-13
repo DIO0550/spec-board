@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Task } from "../../../types/task";
 import { ColumnHeader } from "./ColumnHeader";
 import { TaskCard } from "./TaskCard";
@@ -34,7 +35,10 @@ export function Column({
 	onAddClick,
 	onTaskClick,
 }: ColumnProps) {
-	const tasksByFilePath = new Map(allTasks.map((t) => [t.filePath, t]));
+	const tasksByFilePath = useMemo(
+		() => new Map(allTasks.map((t) => [t.filePath, t])),
+		[allTasks],
+	);
 
 	return (
 		<section

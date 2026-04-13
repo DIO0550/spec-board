@@ -71,13 +71,15 @@ test("▶ クリックで子タスクリストが展開される", () => {
 		],
 		doneColumn: "Done",
 	});
-	expect(container?.textContent).not.toContain("タスクA");
+	const details = container?.querySelector("details") as HTMLDetailsElement;
+	expect(details.open).toBe(false);
 
-	const toggleButton = container?.querySelector("button") as HTMLButtonElement;
+	const summary = details.querySelector("summary") as HTMLElement;
 	act(() => {
-		toggleButton.click();
+		summary.click();
 	});
 
+	expect(details.open).toBe(true);
 	expect(container?.textContent).toContain("タスクA");
 	expect(container?.textContent).toContain("タスクB");
 });
