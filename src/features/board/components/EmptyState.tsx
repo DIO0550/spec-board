@@ -27,8 +27,7 @@ export function EmptyState(props: EmptyStateProps) {
 	return (
 		<div className="flex flex-1 items-center justify-center text-center">
 			<p className="text-gray-500">
-				タスクがありません。「+
-				追加」ボタンまたはmdファイルを作成してタスクを追加してください
+				タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
 			</p>
 		</div>
 	);

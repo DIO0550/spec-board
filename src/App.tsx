@@ -6,11 +6,11 @@ import type { Task } from "./types/task";
  * @returns {JSX.Element} アプリケーションのルートレイアウトシェル
  */
 function App() {
-	const [projectPath, setProjectPath] = useState<string | null>(null);
+	const [projectPath] = useState<string | null>(null);
 	const [tasks] = useState<Task[]>([]);
 
 	const handleOpenProject = () => {
-		setProjectPath("/mock-project");
+		// TODO: 実際のファイル/フォルダ選択処理を実装
 	};
 
 	return (
