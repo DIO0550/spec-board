@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Board, EmptyState, HeaderBar } from "./features/board";
 import { DetailPanel } from "./features/detail";
-import { getColumns, getTasks } from "./lib/api";
+import { getColumns, getTasks, updateTask } from "./lib/api";
 import type { Column, Task } from "./types/task";
 
 /**
@@ -29,6 +29,14 @@ function App() {
 	const handleCloseDetail = useCallback(() => {
 		setSelectedTaskId(null);
 	}, []);
+
+	const handleTaskUpdate = useCallback(
+		async (id: string, updates: Partial<Omit<Task, "id">>) => {
+			const updated = await updateTask(id, updates);
+			setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+		},
+		[],
+	);
 
 	useEffect(() => {
 		if (projectPath === null) return;
@@ -70,7 +78,12 @@ function App() {
 				)}
 			</main>
 			{selectedTask && (
-				<DetailPanel task={selectedTask} onClose={handleCloseDetail} />
+				<DetailPanel
+					task={selectedTask}
+					columns={columns}
+					onClose={handleCloseDetail}
+					onTaskUpdate={handleTaskUpdate}
+				/>
 			)}
 		</div>
 	);
