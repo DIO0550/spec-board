@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Column, Priority, Task } from "../../../types/task";
 import { InlineEdit } from "./InlineEdit";
+import { LabelEditor } from "./LabelEditor";
 import { PrioritySelect } from "./PrioritySelect";
 import { StatusSelect } from "./StatusSelect";
 
@@ -52,6 +53,24 @@ export function DetailPanel({
 			onTaskUpdate(task.id, { priority });
 		},
 		[task.id, onTaskUpdate],
+	);
+
+	/** ラベルを追加してタスクを更新する */
+	const handleLabelAdd = useCallback(
+		(label: string) => {
+			onTaskUpdate(task.id, { labels: [...task.labels, label] });
+		},
+		[task.id, task.labels, onTaskUpdate],
+	);
+
+	/** ラベルを削除してタスクを更新する */
+	const handleLabelRemove = useCallback(
+		(label: string) => {
+			onTaskUpdate(task.id, {
+				labels: task.labels.filter((l) => l !== label),
+			});
+		},
+		[task.id, task.labels, onTaskUpdate],
 	);
 
 	useEffect(() => {
@@ -126,6 +145,11 @@ export function DetailPanel({
 								onChange={handlePriorityChange}
 							/>
 						</div>
+						<LabelEditor
+							labels={task.labels}
+							onAdd={handleLabelAdd}
+							onRemove={handleLabelRemove}
+						/>
 						<p className="text-sm text-gray-600">{task.body}</p>
 					</div>
 				</div>
