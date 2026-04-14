@@ -20,20 +20,18 @@ const priorities: Priority[] = ["High", "Medium", "Low"];
  * @returns セレクト要素
  */
 export function PrioritySelect({ value, onChange }: PrioritySelectProps) {
-	/** セレクト変更ハンドラ */
-	const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-		const selected = e.target.value;
-		onChange(selected === "" ? undefined : (selected as Priority));
-	};
-
 	return (
 		<div className="flex items-center gap-2">
 			<span className="text-sm font-medium text-gray-500">優先度</span>
 			<select
 				value={value ?? ""}
-				onChange={handleChange}
+				onChange={(e) => {
+					const selected = e.target.value;
+					onChange(selected === "" ? undefined : (selected as Priority));
+				}}
 				className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 hover:border-blue-300 focus:border-blue-400 focus:outline-none"
 				data-testid="priority-select"
+				aria-label="優先度"
 			>
 				<option value="">なし</option>
 				{priorities.map((p) => (

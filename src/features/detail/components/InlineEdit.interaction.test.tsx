@@ -75,6 +75,7 @@ test("Enterで確定しonConfirmが呼ばれる", () => {
 		);
 	});
 	expect(onConfirm).toHaveBeenCalledWith("新しい値");
+	expect(onConfirm).toHaveBeenCalledTimes(1);
 });
 
 test("Escでキャンセルし元の値に戻る", () => {

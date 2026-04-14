@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
 /** InlineEdit の Props */
@@ -52,12 +53,15 @@ export function InlineEdit({ value, onConfirm }: InlineEditProps) {
 	};
 
 	/** キーボードイベントを処理する（Enter: 確定、Escape: キャンセル） */
-	const handleKeyDown = (e: React.KeyboardEvent) => {
+	const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
 		if (e.key === "Enter") {
 			e.preventDefault();
+			e.stopPropagation();
+			isCancelledRef.current = true;
 			confirm();
 		} else if (e.key === "Escape") {
 			e.preventDefault();
+			e.stopPropagation();
 			cancel();
 		}
 	};

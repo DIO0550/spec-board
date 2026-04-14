@@ -27,6 +27,7 @@ export function StatusSelect({ value, columns, onChange }: StatusSelectProps) {
 				onChange={(e) => onChange(e.target.value)}
 				className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 hover:border-blue-300 focus:border-blue-400 focus:outline-none"
 				data-testid="status-select"
+				aria-label="ステータス"
 			>
 				{columns.map((col) => (
 					<option key={col.name} value={col.name}>
