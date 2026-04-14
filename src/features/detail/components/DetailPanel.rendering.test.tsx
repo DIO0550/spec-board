@@ -117,6 +117,73 @@ test("Escキーでパネルが閉じる", async () => {
 	expect(onClose).toHaveBeenCalledOnce();
 });
 
+test("ラベル追加でonTaskUpdateが呼ばれる", async () => {
+	const onTaskUpdate = vi.fn();
+	render({
+		task: createTask({ id: "t1", labels: ["existing"] }),
+		columns: testColumns,
+		onClose: vi.fn(),
+		onTaskUpdate,
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="label-add-button"]'),
+		).toBeTruthy();
+	});
+	const addButton = document.querySelector(
+		'[data-testid="label-add-button"]',
+	) as HTMLElement;
+	act(() => {
+		addButton.click();
+	});
+	await vi.waitFor(() => {
+		expect(document.querySelector('[data-testid="label-input"]')).toBeTruthy();
+	});
+	const input = document.querySelector(
+		'[data-testid="label-input"]',
+	) as HTMLInputElement;
+	act(() => {
+		const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+			HTMLInputElement.prototype,
+			"value",
+		)?.set;
+		nativeInputValueSetter?.call(input, "new-label");
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	act(() => {
+		input.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		);
+	});
+	expect(onTaskUpdate).toHaveBeenCalledWith("t1", {
+		labels: ["existing", "new-label"],
+	});
+});
+
+test("ラベル削除でonTaskUpdateが呼ばれる", async () => {
+	const onTaskUpdate = vi.fn();
+	render({
+		task: createTask({ id: "t1", labels: ["bug", "frontend"] }),
+		columns: testColumns,
+		onClose: vi.fn(),
+		onTaskUpdate,
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[aria-label="ラベル「bug」を削除"]'),
+		).toBeTruthy();
+	});
+	const removeButton = document.querySelector(
+		'[aria-label="ラベル「bug」を削除"]',
+	) as HTMLElement;
+	act(() => {
+		removeButton.click();
+	});
+	expect(onTaskUpdate).toHaveBeenCalledWith("t1", {
+		labels: ["frontend"],
+	});
+});
+
 test("オーバーレイクリックでパネルが閉じる", async () => {
 	const onClose = vi.fn();
 	render({

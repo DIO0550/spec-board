@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** LabelEditor の Props */
 type LabelEditorProps = {
@@ -59,19 +59,21 @@ export function LabelEditor({ labels, onAdd, onRemove }: LabelEditorProps) {
 		}
 	};
 
-	/** 追加ボタンクリックで入力フィールドを表示する */
 	const handleAddClick = () => {
 		setIsAdding(true);
-		requestAnimationFrame(() => {
-			inputRef.current?.focus();
-		});
 	};
+
+	useEffect(() => {
+		if (isAdding) {
+			inputRef.current?.focus();
+		}
+	}, [isAdding]);
 
 	return (
 		<div data-testid="label-editor">
 			<div className="mb-1 text-xs font-medium text-gray-500">ラベル</div>
 			<div className="flex flex-wrap gap-1.5">
-				{labels.map((label) => (
+				{[...new Set(labels)].map((label) => (
 					<span
 						key={label}
 						className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700"

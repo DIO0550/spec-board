@@ -33,6 +33,8 @@ export function DetailPanel({
 	onTaskUpdate,
 }: DetailPanelProps) {
 	const panelRef = useRef<HTMLElement>(null);
+	const latestLabelsRef = useRef(task.labels);
+	latestLabelsRef.current = task.labels;
 
 	const handleTitleConfirm = useCallback(
 		(title: string) => {
@@ -55,22 +57,22 @@ export function DetailPanel({
 		[task.id, onTaskUpdate],
 	);
 
-	/** ラベルを追加してタスクを更新する */
 	const handleLabelAdd = useCallback(
 		(label: string) => {
-			onTaskUpdate(task.id, { labels: [...task.labels, label] });
+			const updated = [...latestLabelsRef.current, label];
+			latestLabelsRef.current = updated;
+			onTaskUpdate(task.id, { labels: updated });
 		},
-		[task.id, task.labels, onTaskUpdate],
+		[task.id, onTaskUpdate],
 	);
 
-	/** ラベルを削除してタスクを更新する */
 	const handleLabelRemove = useCallback(
 		(label: string) => {
-			onTaskUpdate(task.id, {
-				labels: task.labels.filter((l) => l !== label),
-			});
+			const updated = latestLabelsRef.current.filter((l) => l !== label);
+			latestLabelsRef.current = updated;
+			onTaskUpdate(task.id, { labels: updated });
 		},
-		[task.id, task.labels, onTaskUpdate],
+		[task.id, onTaskUpdate],
 	);
 
 	useEffect(() => {
