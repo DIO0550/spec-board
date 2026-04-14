@@ -80,9 +80,12 @@ function App() {
 			{selectedTask && (
 				<DetailPanel
 					task={selectedTask}
+					allTasks={tasks}
 					columns={columns}
+					doneColumn="Done"
 					onClose={handleCloseDetail}
 					onTaskUpdate={handleTaskUpdate}
+					onTaskSelect={handleTaskClick}
 				/>
 			)}
 		</div>

@@ -1,16 +1,23 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Column, Priority, Task } from "../../../types/task";
 import { InlineEdit } from "./InlineEdit";
 import { LabelEditor } from "./LabelEditor";
+import type { ResolvedLink } from "./LinkSection";
+import { LinkSection } from "./LinkSection";
 import { PrioritySelect } from "./PrioritySelect";
 import { StatusSelect } from "./StatusSelect";
+import { SubIssueSection } from "./SubIssueSection";
 
 /** 詳細パネルの Props */
 type DetailPanelProps = {
 	/** 表示するタスク */
 	task: Task;
+	/** 全タスク一覧（ファイルパスからタスクを解決するため） */
+	allTasks: Task[];
 	/** 選択肢となるカラム一覧 */
 	columns: Column[];
+	/** 完了カラム名 */
+	doneColumn: string;
 	/** パネルを閉じるコールバック */
 	onClose: () => void;
 	/**
@@ -19,6 +26,11 @@ type DetailPanelProps = {
 	 * @param updates - 更新するフィールド
 	 */
 	onTaskUpdate: (id: string, updates: Partial<Omit<Task, "id">>) => void;
+	/**
+	 * 別タスクの詳細に切り替えるコールバック
+	 * @param taskId - 切り替え先のタスクID
+	 */
+	onTaskSelect: (taskId: string) => void;
 };
 
 /**
@@ -28,13 +40,58 @@ type DetailPanelProps = {
  */
 export function DetailPanel({
 	task,
+	allTasks,
 	columns,
+	doneColumn,
 	onClose,
 	onTaskUpdate,
+	onTaskSelect,
 }: DetailPanelProps) {
 	const panelRef = useRef<HTMLElement>(null);
 	const latestLabelsRef = useRef(task.labels);
 	latestLabelsRef.current = task.labels;
+
+	const parentTask = useMemo(
+		() =>
+			task.parent
+				? allTasks.find((t) => t.filePath === task.parent)
+				: undefined,
+		[task.parent, allTasks],
+	);
+
+	const childTasks = useMemo(
+		() =>
+			task.children
+				.map((fp) => allTasks.find((t) => t.filePath === fp))
+				.filter((t): t is Task => t !== undefined),
+		[task.children, allTasks],
+	);
+
+	const resolvedLinks: ResolvedLink[] = useMemo(
+		() =>
+			task.links.map((fp) => ({
+				filePath: fp,
+				task: allTasks.find((t) => t.filePath === fp),
+			})),
+		[task.links, allTasks],
+	);
+
+	const resolvedReverseLinks: ResolvedLink[] = useMemo(
+		() =>
+			task.reverseLinks.map((fp) => ({
+				filePath: fp,
+				task: allTasks.find((t) => t.filePath === fp),
+			})),
+		[task.reverseLinks, allTasks],
+	);
+
+	const handleRemoveLink = useCallback(
+		(filePath: string) => {
+			const updated = task.links.filter((l) => l !== filePath);
+			onTaskUpdate(task.id, { links: updated });
+		},
+		[task.id, task.links, onTaskUpdate],
+	);
 
 	const handleTitleConfirm = useCallback(
 		(title: string) => {
@@ -151,6 +208,33 @@ export function DetailPanel({
 							labels={task.labels}
 							onAdd={handleLabelAdd}
 							onRemove={handleLabelRemove}
+						/>
+						{parentTask && (
+							<div data-testid="parent-task">
+								<span className="text-xs font-medium text-gray-500">
+									親タスク:
+								</span>
+								<button
+									type="button"
+									className="ml-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+									onClick={() => onTaskSelect(parentTask.id)}
+								>
+									{parentTask.title || parentTask.filePath}
+								</button>
+							</div>
+						)}
+						<SubIssueSection
+							childTasks={childTasks}
+							doneColumn={doneColumn}
+							onTaskSelect={onTaskSelect}
+							onAddSubIssue={() => {}}
+						/>
+						<LinkSection
+							links={resolvedLinks}
+							reverseLinks={resolvedReverseLinks}
+							onTaskSelect={onTaskSelect}
+							onRemoveLink={handleRemoveLink}
+							onAddLink={() => {}}
 						/>
 						<p className="text-sm text-gray-600">{task.body}</p>
 					</div>

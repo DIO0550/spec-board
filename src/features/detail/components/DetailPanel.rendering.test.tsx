@@ -14,6 +14,21 @@ const testColumns = [
 	{ name: "Done", order: 2 },
 ];
 
+/** テスト用の全タスク一覧 */
+const allTestTasks: Task[] = [
+	{
+		id: "task-1",
+		title: "テストタスク",
+		status: "Todo",
+		labels: [],
+		links: [],
+		children: [],
+		reverseLinks: [],
+		body: "タスクの本文",
+		filePath: "tasks/test.md",
+	},
+];
+
 afterEach(() => {
 	act(() => {
 		root?.unmount();
@@ -59,9 +74,12 @@ function render(props: Parameters<typeof DetailPanel>[0]) {
 test("タスク選択時にパネルが表示される", async () => {
 	render({
 		task: createTask(),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose: vi.fn(),
 		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		const dialog = document.querySelector('[role="dialog"]');
@@ -72,9 +90,12 @@ test("タスク選択時にパネルが表示される", async () => {
 test("タスクタイトルが表示される", async () => {
 	render({
 		task: createTask({ title: "ログイン修正" }),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose: vi.fn(),
 		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		const dialog = document.querySelector('[role="dialog"]');
@@ -86,9 +107,12 @@ test("×ボタンクリックでonCloseが呼ばれる", async () => {
 	const onClose = vi.fn();
 	render({
 		task: createTask(),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose,
 		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(document.querySelector('[aria-label="閉じる"]')).toBeTruthy();
@@ -104,9 +128,12 @@ test("Escキーでパネルが閉じる", async () => {
 	const onClose = vi.fn();
 	render({
 		task: createTask(),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose,
 		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(document.querySelector('[role="dialog"]')).toBeTruthy();
@@ -121,9 +148,12 @@ test("ラベル追加でonTaskUpdateが呼ばれる", async () => {
 	const onTaskUpdate = vi.fn();
 	render({
 		task: createTask({ id: "t1", labels: ["existing"] }),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose: vi.fn(),
 		onTaskUpdate,
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(
@@ -164,9 +194,12 @@ test("ラベル削除でonTaskUpdateが呼ばれる", async () => {
 	const onTaskUpdate = vi.fn();
 	render({
 		task: createTask({ id: "t1", labels: ["bug", "frontend"] }),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose: vi.fn(),
 		onTaskUpdate,
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(
@@ -188,9 +221,12 @@ test("オーバーレイクリックでパネルが閉じる", async () => {
 	const onClose = vi.fn();
 	render({
 		task: createTask(),
+		allTasks: allTestTasks,
 		columns: testColumns,
+		doneColumn: "Done",
 		onClose,
 		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(
@@ -202,4 +238,127 @@ test("オーバーレイクリックでパネルが閉じる", async () => {
 	) as HTMLElement;
 	overlay.click();
 	expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("親タスクがある場合、親タスク名が表示されクリックで遷移する", async () => {
+	const parentTask = createTask({
+		id: "parent-1",
+		title: "親タスク",
+		filePath: "tasks/parent.md",
+	});
+	const onTaskSelect = vi.fn();
+	render({
+		task: createTask({ parent: "tasks/parent.md" }),
+		allTasks: [parentTask],
+		columns: testColumns,
+		doneColumn: "Done",
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onTaskSelect,
+	});
+	await vi.waitFor(() => {
+		const parentSection = document.querySelector('[data-testid="parent-task"]');
+		expect(parentSection).toBeTruthy();
+		expect(parentSection?.textContent).toContain("親タスク");
+	});
+	const parentButton = document
+		.querySelector('[data-testid="parent-task"]')
+		?.querySelector("button") as HTMLElement;
+	act(() => {
+		parentButton.click();
+	});
+	expect(onTaskSelect).toHaveBeenCalledWith("parent-1");
+});
+
+test("parentが未設定で親タスク表示なし", async () => {
+	render({
+		task: createTask({ parent: undefined }),
+		allTasks: allTestTasks,
+		columns: testColumns,
+		doneColumn: "Done",
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+	});
+	expect(document.querySelector('[data-testid="parent-task"]')).toBeNull();
+});
+
+test("childrenがある場合、サブIssueセクションが表示される", async () => {
+	const childTask = createTask({
+		id: "child-1",
+		title: "子タスク",
+		filePath: "tasks/child.md",
+		status: "Done",
+	});
+	render({
+		task: createTask({ children: ["tasks/child.md"] }),
+		allTasks: [childTask],
+		columns: testColumns,
+		doneColumn: "Done",
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="sub-issue-section"]'),
+		).toBeTruthy();
+	});
+});
+
+test("childrenが空でサブIssueセクション非表示", async () => {
+	render({
+		task: createTask({ children: [] }),
+		allTasks: allTestTasks,
+		columns: testColumns,
+		doneColumn: "Done",
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+	});
+	expect(
+		document.querySelector('[data-testid="sub-issue-section"]'),
+	).toBeNull();
+});
+
+test("linksがある場合、関連リンクセクションが表示される", async () => {
+	const linkedTask = createTask({
+		id: "linked-1",
+		title: "リンクタスク",
+		filePath: "tasks/linked.md",
+	});
+	render({
+		task: createTask({ links: ["tasks/linked.md"] }),
+		allTasks: [linkedTask],
+		columns: testColumns,
+		doneColumn: "Done",
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(document.querySelector('[data-testid="link-section"]')).toBeTruthy();
+	});
+});
+
+test("linksとreverseLinksが共に空で関連リンクセクション非表示", async () => {
+	render({
+		task: createTask({ links: [], reverseLinks: [] }),
+		allTasks: allTestTasks,
+		columns: testColumns,
+		doneColumn: "Done",
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onTaskSelect: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+	});
+	expect(document.querySelector('[data-testid="link-section"]')).toBeNull();
 });
