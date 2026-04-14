@@ -1,3 +1,18 @@
 {
-  "maxTasks": 100
+	"tasksDir": "tasks",
+	"planFile": "Task.md",
+	"baseBranch": "develop",
+	"branchPrefix": "task/",
+	"maxTasks": 100,
+	"stopOnError": true,
+	"timeLimitMinutes": 0,
+	"reviewer": "copilot-pull-request-reviewer",
+	"mergeStrategy": "squash",
+	"deleteBranchAfterMerge": true,
+	"reviewPollIntervalSeconds": 30,
+	"reviewMaxWaitMinutes": 30,
+	"maxFixIterations": 3,
+	"autoMergeWithoutReview": false,
+	"prBodyFooter": "Automated by task-loop-run",
+	"sessionLogsDir": "session-logs"
 }
