@@ -1,12 +1,23 @@
-import { useEffect, useRef } from "react";
-import type { Task } from "../../../types/task";
+import { useCallback, useEffect, useRef } from "react";
+import type { Column, Priority, Task } from "../../../types/task";
+import { InlineEdit } from "./InlineEdit";
+import { PrioritySelect } from "./PrioritySelect";
+import { StatusSelect } from "./StatusSelect";
 
 /** 詳細パネルの Props */
 type DetailPanelProps = {
 	/** 表示するタスク */
 	task: Task;
+	/** 選択肢となるカラム一覧 */
+	columns: Column[];
 	/** パネルを閉じるコールバック */
 	onClose: () => void;
+	/**
+	 * タスク更新時のコールバック
+	 * @param id - 更新対象のタスクID
+	 * @param updates - 更新するフィールド
+	 */
+	onTaskUpdate: (id: string, updates: Partial<Omit<Task, "id">>) => void;
 };
 
 /**
@@ -14,8 +25,34 @@ type DetailPanelProps = {
  * @param props - {@link DetailPanelProps}
  * @returns パネル要素
  */
-export function DetailPanel({ task, onClose }: DetailPanelProps) {
+export function DetailPanel({
+	task,
+	columns,
+	onClose,
+	onTaskUpdate,
+}: DetailPanelProps) {
 	const panelRef = useRef<HTMLElement>(null);
+
+	const handleTitleConfirm = useCallback(
+		(title: string) => {
+			onTaskUpdate(task.id, { title });
+		},
+		[task.id, onTaskUpdate],
+	);
+
+	const handleStatusChange = useCallback(
+		(status: string) => {
+			onTaskUpdate(task.id, { status });
+		},
+		[task.id, onTaskUpdate],
+	);
+
+	const handlePriorityChange = useCallback(
+		(priority: Priority | undefined) => {
+			onTaskUpdate(task.id, { priority });
+		},
+		[task.id, onTaskUpdate],
+	);
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -49,13 +86,16 @@ export function DetailPanel({ task, onClose }: DetailPanelProps) {
 				className="fixed top-0 right-0 z-50 flex h-full w-[480px] max-w-full animate-slide-in flex-col bg-white shadow-xl"
 			>
 				<div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-					<h2 className="truncate text-lg font-semibold text-gray-900">
-						{task.title || task.filePath}
-					</h2>
+					<div className="min-w-0 flex-1">
+						<InlineEdit
+							value={task.title || task.filePath}
+							onConfirm={handleTitleConfirm}
+						/>
+					</div>
 					<button
 						type="button"
 						aria-label="閉じる"
-						className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+						className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
 						onClick={onClose}
 					>
 						<svg
@@ -74,7 +114,20 @@ export function DetailPanel({ task, onClose }: DetailPanelProps) {
 					</button>
 				</div>
 				<div className="flex-1 overflow-y-auto p-4">
-					<p className="text-sm text-gray-600">{task.body}</p>
+					<div className="flex flex-col gap-4">
+						<div className="flex gap-4">
+							<StatusSelect
+								value={task.status}
+								columns={columns}
+								onChange={handleStatusChange}
+							/>
+							<PrioritySelect
+								value={task.priority}
+								onChange={handlePriorityChange}
+							/>
+						</div>
+						<p className="text-sm text-gray-600">{task.body}</p>
+					</div>
 				</div>
 			</aside>
 		</>
