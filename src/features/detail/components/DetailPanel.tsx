@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Column, Priority, Task } from "../../../types/task";
 import { InlineEdit } from "./InlineEdit";
+import { LabelEditor } from "./LabelEditor";
 import { PrioritySelect } from "./PrioritySelect";
 import { StatusSelect } from "./StatusSelect";
 
@@ -32,6 +33,8 @@ export function DetailPanel({
   onTaskUpdate,
 }: DetailPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
+  const latestLabelsRef = useRef(task.labels);
+  latestLabelsRef.current = task.labels;
 
   const handleTitleConfirm = useCallback(
     (title: string) => {
@@ -50,6 +53,24 @@ export function DetailPanel({
   const handlePriorityChange = useCallback(
     (priority: Priority | undefined) => {
       onTaskUpdate(task.id, { priority });
+    },
+    [task.id, onTaskUpdate],
+  );
+
+  const handleLabelAdd = useCallback(
+    (label: string) => {
+      const updated = [...latestLabelsRef.current, label];
+      latestLabelsRef.current = updated;
+      onTaskUpdate(task.id, { labels: updated });
+    },
+    [task.id, onTaskUpdate],
+  );
+
+  const handleLabelRemove = useCallback(
+    (label: string) => {
+      const updated = latestLabelsRef.current.filter((l) => l !== label);
+      latestLabelsRef.current = updated;
+      onTaskUpdate(task.id, { labels: updated });
     },
     [task.id, onTaskUpdate],
   );
@@ -126,6 +147,11 @@ export function DetailPanel({
                 onChange={handlePriorityChange}
               />
             </div>
+            <LabelEditor
+              labels={task.labels}
+              onAdd={handleLabelAdd}
+              onRemove={handleLabelRemove}
+            />
             <p className="text-sm text-gray-600">{task.body}</p>
           </div>
         </div>
