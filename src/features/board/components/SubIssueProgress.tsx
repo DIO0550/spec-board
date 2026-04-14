@@ -1,30 +1,11 @@
+import { ProgressBar } from "../../../components/ProgressBar";
+import { StatusIcon } from "../../../components/StatusIcon";
 import type { Task } from "../../../types/task";
 
 type SubIssueProgressProps = {
 	childTasks: Task[];
 	doneColumn: string;
 };
-
-/**
- * @param props - isDone: 完了かどうか
- * @returns ステータスアイコン要素
- */
-function StatusIcon({ isDone }: { isDone: boolean }) {
-	const label = isDone ? "完了" : "未完了";
-
-	if (isDone) {
-		return (
-			<span className="text-green-600" role="img" aria-label={label}>
-				✓
-			</span>
-		);
-	}
-	return (
-		<span className="text-gray-400" role="img" aria-label={label}>
-			○
-		</span>
-	);
-}
 
 /**
  * @param props - {@link SubIssueProgressProps}
@@ -40,7 +21,6 @@ export function SubIssueProgress({
 
 	const total = childTasks.length;
 	const doneCount = childTasks.filter((t) => t.status === doneColumn).length;
-	const percentage = Math.round((doneCount / total) * 100);
 
 	return (
 		<div className="mt-2">
@@ -63,23 +43,8 @@ export function SubIssueProgress({
 					))}
 				</ul>
 			</details>
-			<div className="mt-1 flex items-center gap-2">
-				<div
-					className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
-					role="progressbar"
-					aria-valuenow={percentage}
-					aria-valuemin={0}
-					aria-valuemax={100}
-					aria-label={`進捗 ${doneCount}/${total}`}
-				>
-					<div
-						className="h-full rounded-full bg-green-500 transition-all"
-						style={{ width: `${percentage}%` }}
-					/>
-				</div>
-				<span className="text-xs text-gray-500">
-					{doneCount}/{total}
-				</span>
+			<div className="mt-1">
+				<ProgressBar doneCount={doneCount} total={total} />
 			</div>
 		</div>
 	);

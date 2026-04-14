@@ -51,38 +51,40 @@ export function DetailPanel({
 	const latestLabelsRef = useRef(task.labels);
 	latestLabelsRef.current = task.labels;
 
+	const tasksByFilePath = useMemo(
+		() => new Map(allTasks.map((t) => [t.filePath, t])),
+		[allTasks],
+	);
+
 	const parentTask = useMemo(
-		() =>
-			task.parent
-				? allTasks.find((t) => t.filePath === task.parent)
-				: undefined,
-		[task.parent, allTasks],
+		() => (task.parent ? tasksByFilePath.get(task.parent) : undefined),
+		[task.parent, tasksByFilePath],
 	);
 
 	const childTasks = useMemo(
 		() =>
 			task.children
-				.map((fp) => allTasks.find((t) => t.filePath === fp))
+				.map((fp) => tasksByFilePath.get(fp))
 				.filter((t): t is Task => t !== undefined),
-		[task.children, allTasks],
+		[task.children, tasksByFilePath],
 	);
 
 	const resolvedLinks: ResolvedLink[] = useMemo(
 		() =>
 			task.links.map((fp) => ({
 				filePath: fp,
-				task: allTasks.find((t) => t.filePath === fp),
+				task: tasksByFilePath.get(fp),
 			})),
-		[task.links, allTasks],
+		[task.links, tasksByFilePath],
 	);
 
 	const resolvedReverseLinks: ResolvedLink[] = useMemo(
 		() =>
 			task.reverseLinks.map((fp) => ({
 				filePath: fp,
-				task: allTasks.find((t) => t.filePath === fp),
+				task: tasksByFilePath.get(fp),
 			})),
-		[task.reverseLinks, allTasks],
+		[task.reverseLinks, tasksByFilePath],
 	);
 
 	const handleRemoveLink = useCallback(
@@ -227,14 +229,12 @@ export function DetailPanel({
 							childTasks={childTasks}
 							doneColumn={doneColumn}
 							onTaskSelect={onTaskSelect}
-							onAddSubIssue={() => {}}
 						/>
 						<LinkSection
 							links={resolvedLinks}
 							reverseLinks={resolvedReverseLinks}
 							onTaskSelect={onTaskSelect}
 							onRemoveLink={handleRemoveLink}
-							onAddLink={() => {}}
 						/>
 						<p className="text-sm text-gray-600">{task.body}</p>
 					</div>

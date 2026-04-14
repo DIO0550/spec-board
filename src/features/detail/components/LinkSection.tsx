@@ -24,8 +24,8 @@ type LinkSectionProps = {
 	 * @param filePath - 削除するリンクのファイルパス
 	 */
 	onRemoveLink: (filePath: string) => void;
-	/** リンク追加ボタン押下時のコールバック */
-	onAddLink: () => void;
+	/** リンク追加ボタン押下時のコールバック（未指定時はボタン非表示） */
+	onAddLink?: () => void;
 };
 
 /**
@@ -105,14 +105,16 @@ export function LinkSection({
 		<section data-testid="link-section" aria-label="関連リンク">
 			<div className="mb-2 flex items-center justify-between">
 				<h3 className="text-sm font-medium text-gray-700">関連リンク</h3>
-				<button
-					type="button"
-					className="text-xs text-blue-600 hover:text-blue-800"
-					data-testid="add-link-button"
-					onClick={onAddLink}
-				>
-					+ リンク追加
-				</button>
+				{onAddLink && (
+					<button
+						type="button"
+						className="text-xs text-blue-600 hover:text-blue-800"
+						data-testid="add-link-button"
+						onClick={onAddLink}
+					>
+						+ リンク追加
+					</button>
+				)}
 			</div>
 			<ul className="space-y-1">
 				{links.map((link) => (
