@@ -95,3 +95,17 @@ test("オーバーレイクリックでパネルが閉じる", async () => {
 	overlay.click();
 	expect(onClose).toHaveBeenCalledOnce();
 });
+
+test("本文がMarkdownとしてレンダリングされる", async () => {
+	render({
+		task: createTask({ body: "# 見出し\n- リスト項目" }),
+		onClose: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		const panel = document.querySelector('[role="dialog"]');
+		expect(panel?.querySelector("h1")).toBeTruthy();
+		expect(panel?.querySelector("h1")?.textContent).toBe("見出し");
+		expect(panel?.querySelector("li")).toBeTruthy();
+		expect(panel?.querySelector("li")?.textContent).toBe("リスト項目");
+	});
+});

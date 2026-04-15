@@ -87,8 +87,8 @@ test("コードブロックがpre > codeでレンダリングされる", () => {
 
 test("<script>がエスケープされる", () => {
 	render('<script>alert("xss")</script>');
-	expect(document.querySelector("script")).toBeNull();
-	expect(document.body.textContent).toContain("alert");
+	expect(container?.querySelector("script")).toBeNull();
+	expect(container?.textContent).toContain("alert");
 });
 
 test("bodyが空文字の場合、何も表示されない", () => {
