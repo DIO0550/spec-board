@@ -75,7 +75,9 @@ export function DetailPanel({ task, onClose }: DetailPanelProps) {
 					</button>
 				</div>
 				<div className="flex-1 overflow-y-auto p-4">
-					<MarkdownBody body={task.body} />
+					<div className="text-sm text-gray-600">
+						<MarkdownBody body={task.body} />
+					</div>
 				</div>
 			</aside>
 		</>
