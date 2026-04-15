@@ -15,7 +15,7 @@ function renderInline(text: string): ReactNode[] {
 	let key = 0;
 
 	for (const match of text.matchAll(regex)) {
-		const idx = match.index;
+		const idx = match.index ?? 0;
 		if (idx > lastIndex) {
 			result.push(text.slice(lastIndex, idx));
 		}
@@ -37,9 +37,9 @@ function renderInline(text: string): ReactNode[] {
  * @returns Markdown をレンダリングした要素、body が空なら null
  */
 export function MarkdownBody({ body }: MarkdownBodyProps) {
-	if (!body) return null;
+	if (!body.trim()) return null;
 
-	const lines = body.split("\n");
+	const lines = body.replace(/\r\n?/g, "\n").split("\n");
 	const elements: ReactNode[] = [];
 	let key = 0;
 	let i = 0;
