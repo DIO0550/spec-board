@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Task } from "../../../types/task";
+import { MarkdownBody } from "./MarkdownBody";
 
 /** 詳細パネルの Props */
 type DetailPanelProps = {
@@ -74,7 +75,7 @@ export function DetailPanel({ task, onClose }: DetailPanelProps) {
 					</button>
 				</div>
 				<div className="flex-1 overflow-y-auto p-4">
-					<p className="text-sm text-gray-600">{task.body}</p>
+					<MarkdownBody body={task.body} />
 				</div>
 			</aside>
 		</>
