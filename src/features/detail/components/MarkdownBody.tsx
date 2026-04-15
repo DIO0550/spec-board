@@ -56,7 +56,7 @@ export function MarkdownBody({ body }: MarkdownBodyProps) {
 			}
 			if (i < lines.length) i++;
 			elements.push(
-				<pre key={key++}>
+				<pre key={key++} className="overflow-x-auto">
 					<code>{codeLines.join("\n")}</code>
 				</pre>,
 			);
@@ -72,9 +72,34 @@ export function MarkdownBody({ body }: MarkdownBodyProps) {
 		if (headingMatch) {
 			const level = headingMatch[1].length;
 			const content = renderInline(headingMatch[2]);
-			if (level === 1) elements.push(<h1 key={key++}>{content}</h1>);
-			else if (level === 2) elements.push(<h2 key={key++}>{content}</h2>);
-			else elements.push(<h3 key={key++}>{content}</h3>);
+			if (level === 1) {
+				elements.push(
+					<h1
+						key={key++}
+						className="mt-8 mb-4 text-3xl font-bold leading-tight"
+					>
+						{content}
+					</h1>,
+				);
+			} else if (level === 2) {
+				elements.push(
+					<h2
+						key={key++}
+						className="mt-7 mb-3 text-2xl font-semibold leading-tight"
+					>
+						{content}
+					</h2>,
+				);
+			} else {
+				elements.push(
+					<h3
+						key={key++}
+						className="mt-6 mb-3 text-xl font-semibold leading-snug"
+					>
+						{content}
+					</h3>,
+				);
+			}
 			i++;
 			continue;
 		}
@@ -86,7 +111,11 @@ export function MarkdownBody({ body }: MarkdownBodyProps) {
 				items.push(<li key={items.length}>{renderInline(itemText)}</li>);
 				i++;
 			}
-			elements.push(<ul key={key++}>{items}</ul>);
+			elements.push(
+				<ul key={key++} className="list-disc pl-6">
+					{items}
+				</ul>,
+			);
 			continue;
 		}
 
@@ -106,5 +135,9 @@ export function MarkdownBody({ body }: MarkdownBodyProps) {
 		}
 	}
 
-	return <div data-testid="markdown-body">{elements}</div>;
+	return (
+		<div className="space-y-4" data-testid="markdown-body">
+			{elements}
+		</div>
+	);
 }
