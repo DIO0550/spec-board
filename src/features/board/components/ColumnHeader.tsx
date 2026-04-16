@@ -100,7 +100,7 @@ export function ColumnHeader({
 		<div className="flex items-center justify-between px-2 py-2">
 			<div className="flex items-center gap-2">
 				{isEditing ? (
-					<div className="flex flex-col gap-1">
+					<div className="flex min-w-0 flex-1 flex-col gap-1">
 						<input
 							ref={inputRef}
 							type="text"
@@ -114,7 +114,7 @@ export function ColumnHeader({
 							aria-label="カラム名"
 							aria-invalid={isDuplicate}
 							aria-describedby={isDuplicate ? errorId : undefined}
-							className="w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none"
+							className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none"
 							data-testid="column-rename-input"
 						/>
 						{isDuplicate && (
