@@ -136,6 +136,10 @@ export function TaskForm({
 				pending.length > 0 && !labels.includes(pending)
 					? [...labels, pending]
 					: labels;
+			if (pending.length > 0) {
+				setLabels(finalLabels);
+				setLabelInput("");
+			}
 			const values = normalizeSubmission(
 				title,
 				status,
