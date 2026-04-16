@@ -20,6 +20,14 @@ type ColumnProps = {
 	 * @param taskId - クリックされたタスクのID
 	 */
 	onTaskClick?: (taskId: string) => void;
+	/**
+	 * カラム名リネーム確定時のコールバック。
+	 * 未指定の場合はヘッダー名編集 UI を無効化する。
+	 * @param newName - 新しいカラム名（trim 済み、既存と非重複）
+	 */
+	onRename?: (newName: string) => void;
+	/** 他カラム名の一覧（重複チェック用。自身は含まない） */
+	existingColumnNames?: string[];
 };
 
 /**
@@ -34,6 +42,8 @@ export function Column({
 	doneColumn,
 	onAddClick,
 	onTaskClick,
+	onRename,
+	existingColumnNames,
 }: ColumnProps) {
 	const tasksByFilePath = useMemo(
 		() => new Map(allTasks.map((t) => [t.filePath, t])),
@@ -49,6 +59,8 @@ export function Column({
 				name={name}
 				taskCount={tasks.length}
 				onAddClick={onAddClick}
+				onRename={onRename}
+				existingColumnNames={existingColumnNames}
 			/>
 			<ul className="flex-1 overflow-y-auto px-2 pb-2">
 				{tasks.map((task) => {

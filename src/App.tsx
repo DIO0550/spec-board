@@ -30,7 +30,7 @@ function App() {
 	>(undefined);
 	const { toasts, showToast, dismissToast } = useToasts();
 	const columnsRef = useRef<Column[]>(columns);
-	const addColumnQueueRef = useRef<Promise<void>>(Promise.resolve());
+	const columnsQueueRef = useRef<Promise<void>>(Promise.resolve());
 
 	useEffect(() => {
 		columnsRef.current = columns;
@@ -76,7 +76,7 @@ function App() {
 	 */
 	const handleAddColumn = useCallback(
 		(columnName: string): Promise<void> => {
-			const next = addColumnQueueRef.current.then(async () => {
+			const next = columnsQueueRef.current.then(async () => {
 				try {
 					const current = columnsRef.current;
 					if (current.some((c) => c.name === columnName)) {
@@ -99,7 +99,47 @@ function App() {
 					showToast("カラムの追加に失敗しました", "error");
 				}
 			});
-			addColumnQueueRef.current = next;
+			columnsQueueRef.current = next;
+			return next;
+		},
+		[showToast],
+	);
+
+	/**
+	 * 既存カラムの名前変更。カラム追加と同じキューで直列化し、競合を防ぐ。
+	 * 成功時はカラムとタスクの status を更新、失敗時はトースト表示のみ行う。
+	 * @param oldName - 元のカラム名
+	 * @param newName - 新しいカラム名（trim 済み、既存と非重複）
+	 */
+	const handleRenameColumn = useCallback(
+		(oldName: string, newName: string): Promise<void> => {
+			const next = columnsQueueRef.current.then(async () => {
+				try {
+					const current = columnsRef.current;
+					if (!current.some((c) => c.name === oldName)) return;
+					if (current.some((c) => c.name === newName)) {
+						showToast("同じ名前のカラムが既に存在します", "error");
+						return;
+					}
+					const nextColumns: Column[] = current.map((c) =>
+						c.name === oldName ? { ...c, name: newName } : c,
+					);
+					const updated = await updateColumns(nextColumns, [
+						{ from: oldName, to: newName },
+					]);
+					columnsRef.current = updated;
+					setColumns(updated);
+					setTasks((prev) =>
+						prev.map((t) =>
+							t.status === oldName ? { ...t, status: newName } : t,
+						),
+					);
+					showToast("カラム名を変更しました", "success");
+				} catch {
+					showToast("カラム名の変更に失敗しました", "error");
+				}
+			});
+			columnsQueueRef.current = next;
 			return next;
 		},
 		[showToast],
@@ -209,6 +249,7 @@ function App() {
 						tasks={tasks}
 						onAddTask={handleAddTask}
 						onAddColumn={handleAddColumn}
+						onRenameColumn={handleRenameColumn}
 						onTaskClick={handleTaskClick}
 					/>
 				)}
