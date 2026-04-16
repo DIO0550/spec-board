@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { ToastContainer, useToasts } from "./components/Toast";
 import { Board, EmptyState, HeaderBar } from "./features/board";
 import { DetailPanel } from "./features/detail";
-import { deleteTask, getColumns, getTasks, updateTask } from "./lib/api";
+import { TaskCreateModal, type TaskFormValues } from "./features/task-form";
+import {
+	createTask,
+	deleteTask,
+	getColumns,
+	getTasks,
+	updateTask,
+} from "./lib/api";
 import type { Column, Task } from "./types/task";
 
 /**
@@ -14,6 +21,9 @@ function App() {
 	const [columns, setColumns] = useState<Column[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+	const [createModalStatus, setCreateModalStatus] = useState<string | null>(
+		null,
+	);
 	const { toasts, showToast, dismissToast } = useToasts();
 
 	const selectedTask = selectedTaskId
@@ -40,6 +50,33 @@ function App() {
 				showToast("タスクを更新しました", "success");
 			} catch {
 				showToast("タスクの更新に失敗しました", "error");
+			}
+		},
+		[showToast],
+	);
+
+	const handleAddTask = useCallback((columnName: string) => {
+		setCreateModalStatus(columnName);
+	}, []);
+
+	const handleCloseCreateModal = useCallback(() => {
+		setCreateModalStatus(null);
+	}, []);
+
+	/**
+	 * 新規タスクの作成。成功時は一覧を更新しトーストを表示、失敗時はトースト表示のうえ呼び出し元へ再 throw する。
+	 * @param values - タスク作成フォームの入力値
+	 * @throws createTask API 呼び出しが失敗した場合
+	 */
+	const handleCreateTask = useCallback(
+		async (values: TaskFormValues) => {
+			try {
+				const created = await createTask(values);
+				setTasks((prev) => [...prev, created]);
+				showToast("タスクを作成しました", "success");
+			} catch (error) {
+				showToast("タスクの作成に失敗しました", "error");
+				throw error;
 			}
 		},
 		[showToast],
@@ -95,7 +132,7 @@ function App() {
 					<Board
 						columns={columns}
 						tasks={tasks}
-						onAddTask={() => {}}
+						onAddTask={handleAddTask}
 						onTaskClick={handleTaskClick}
 					/>
 				)}
@@ -107,6 +144,14 @@ function App() {
 					onClose={handleCloseDetail}
 					onTaskUpdate={handleTaskUpdate}
 					onDelete={handleTaskDelete}
+				/>
+			)}
+			{createModalStatus !== null && (
+				<TaskCreateModal
+					columns={columns}
+					initialStatus={createModalStatus}
+					onSubmit={handleCreateTask}
+					onClose={handleCloseCreateModal}
 				/>
 			)}
 			<ToastContainer toasts={toasts} onDismiss={dismissToast} />
