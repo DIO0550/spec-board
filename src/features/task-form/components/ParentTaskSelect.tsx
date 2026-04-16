@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Task } from "../../../types/task";
 
 type ParentTaskSelectProps = {
@@ -33,6 +33,15 @@ export function ParentTaskSelect({
 	const id = useId();
 	const inputId = `${id}-parent-input`;
 	const listId = `${id}-parent-list`;
+	const blurTimeoutRef = useRef<number | null>(null);
+
+	useEffect(() => {
+		return () => {
+			if (blurTimeoutRef.current !== null) {
+				window.clearTimeout(blurTimeoutRef.current);
+			}
+		};
+	}, []);
 
 	const selected = useMemo(
 		() => tasks.find((t) => t.filePath === value),
@@ -95,8 +104,14 @@ export function ParentTaskSelect({
 						}}
 						onFocus={() => setIsOpen(true)}
 						onBlur={() => {
-							// クリック選択を許容するため少し遅延
-							window.setTimeout(() => setIsOpen(false), 100);
+							// クリック選択を許容するため少し遅延。アンマウント時に解除する。
+							if (blurTimeoutRef.current !== null) {
+								window.clearTimeout(blurTimeoutRef.current);
+							}
+							blurTimeoutRef.current = window.setTimeout(() => {
+								blurTimeoutRef.current = null;
+								setIsOpen(false);
+							}, 100);
 						}}
 						disabled={disabled}
 						placeholder="タスクを検索して選択"
