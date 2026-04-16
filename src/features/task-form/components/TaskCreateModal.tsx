@@ -32,6 +32,7 @@ export function TaskCreateModal({
 }: TaskCreateModalProps) {
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const submittingRef = useRef(false);
 	const id = useId();
 	const titleId = `${id}-title`;
 
@@ -41,17 +42,18 @@ export function TaskCreateModal({
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape" && !isSubmitting) {
+			if (e.key === "Escape" && !submittingRef.current) {
 				onClose();
 			}
 		};
 		document.addEventListener("keydown", handleKeyDown);
 		return () => document.removeEventListener("keydown", handleKeyDown);
-	}, [onClose, isSubmitting]);
+	}, [onClose]);
 
 	const handleSubmit = useCallback(
 		async (values: TaskFormValues) => {
-			if (isSubmitting) return;
+			if (submittingRef.current) return;
+			submittingRef.current = true;
 			setIsSubmitting(true);
 			try {
 				await onSubmit(values);
@@ -59,16 +61,17 @@ export function TaskCreateModal({
 			} catch {
 				// 親側で通知済み。モーダルは開いたままにする。
 			} finally {
+				submittingRef.current = false;
 				setIsSubmitting(false);
 			}
 		},
-		[isSubmitting, onSubmit, onClose],
+		[onSubmit, onClose],
 	);
 
 	const handleOverlayClick = useCallback(() => {
-		if (isSubmitting) return;
+		if (submittingRef.current) return;
 		onClose();
-	}, [isSubmitting, onClose]);
+	}, [onClose]);
 
 	return (
 		<>
