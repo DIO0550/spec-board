@@ -36,7 +36,8 @@ function render(props: Parameters<typeof TaskCreateModal>[0]) {
 }
 
 /**
- * 指定した input の value を変更して change イベントを発火する
+ * 指定した input の value を変更して input イベントを発火する
+ * （React の onChange は text input の input イベントで発火するため）
  * @param el - 対象要素
  * @param value - 設定する値
  */
