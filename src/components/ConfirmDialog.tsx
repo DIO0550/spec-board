@@ -9,6 +9,10 @@ type ConfirmDialogProps = {
 	confirmLabel?: string;
 	/** キャンセルボタンのラベル（デフォルト: "キャンセル"） */
 	cancelLabel?: string;
+	/** 確定ボタンを無効化するか */
+	confirmDisabled?: boolean;
+	/** キャンセルボタンを無効化するか */
+	cancelDisabled?: boolean;
 	/** 確定時のコールバック */
 	onConfirm: () => void;
 	/** キャンセル時のコールバック */
@@ -25,6 +29,8 @@ export function ConfirmDialog({
 	message,
 	confirmLabel = "確定",
 	cancelLabel = "キャンセル",
+	confirmDisabled = false,
+	cancelDisabled = false,
 	onConfirm,
 	onCancel,
 }: ConfirmDialogProps) {
@@ -75,16 +81,18 @@ export function ConfirmDialog({
 				<div className="mt-6 flex justify-end gap-3">
 					<button
 						type="button"
-						className="rounded px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+						className="rounded px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
 						data-testid="confirm-cancel-button"
+						disabled={cancelDisabled}
 						onClick={onCancel}
 					>
 						{cancelLabel}
 					</button>
 					<button
 						type="button"
-						className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+						className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
 						data-testid="confirm-confirm-button"
+						disabled={confirmDisabled}
 						onClick={onConfirm}
 					>
 						{confirmLabel}

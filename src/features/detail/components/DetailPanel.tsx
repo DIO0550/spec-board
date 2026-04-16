@@ -187,14 +187,18 @@ export function DetailPanel({
 					title="タスクの削除"
 					message={`「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`}
 					confirmLabel={isDeleting ? "削除中…" : "削除"}
+					confirmDisabled={isDeleting}
+					cancelDisabled={isDeleting}
 					onConfirm={async () => {
 						if (isDeleting) return;
 						setIsDeleting(true);
 						try {
 							await onDelete(task.id);
-							setShowConfirm(false);
 						} catch {
+							// エラー時のみ削除中状態を解除（再試行可能にする）
+						} finally {
 							setIsDeleting(false);
+							setShowConfirm(false);
 						}
 					}}
 					onCancel={() => {
