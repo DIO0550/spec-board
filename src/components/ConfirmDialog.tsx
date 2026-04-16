@@ -49,10 +49,10 @@ export function ConfirmDialog({
 
 	return (
 		<>
-			<button
-				type="button"
-				aria-label="ダイアログを閉じる"
-				className="fixed inset-0 z-[60] border-0 bg-black/40 p-0"
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: overlay dismisses dialog on click, Escape key handled separately */}
+			<div
+				role="presentation"
+				className="fixed inset-0 z-[60] bg-black/40"
 				data-testid="confirm-overlay"
 				onClick={onCancel}
 			/>
