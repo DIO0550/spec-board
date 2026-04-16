@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ToastContainer, useToasts } from "./components/Toast";
 import { Board, EmptyState, HeaderBar } from "./features/board";
 import { DetailPanel } from "./features/detail";
@@ -8,6 +8,7 @@ import {
 	deleteTask,
 	getColumns,
 	getTasks,
+	updateColumns,
 	updateTask,
 } from "./lib/api";
 import type { Column, Task } from "./types/task";
@@ -28,6 +29,12 @@ function App() {
 		string | undefined
 	>(undefined);
 	const { toasts, showToast, dismissToast } = useToasts();
+	const columnsRef = useRef<Column[]>(columns);
+	const addColumnQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+	useEffect(() => {
+		columnsRef.current = columns;
+	}, [columns]);
 
 	const selectedTask = selectedTaskId
 		? (tasks.find((t) => t.id === selectedTaskId) ?? null)
@@ -62,6 +69,41 @@ function App() {
 		setCreateModalStatus(columnName);
 		setCreateModalParent(undefined);
 	}, []);
+
+	/**
+	 * 新規カラムの追加。成功時はカラム一覧を更新しトーストを表示、失敗時はトースト表示のみ行う。
+	 * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
+	 */
+	const handleAddColumn = useCallback(
+		(columnName: string): Promise<void> => {
+			const next = addColumnQueueRef.current.then(async () => {
+				try {
+					const current = columnsRef.current;
+					if (current.some((c) => c.name === columnName)) {
+						showToast("同じ名前のカラムが既に存在します", "error");
+						return;
+					}
+					const maxOrder = current.reduce(
+						(acc, c) => (c.order > acc ? c.order : acc),
+						-1,
+					);
+					const nextColumns: Column[] = [
+						...current,
+						{ name: columnName, order: maxOrder + 1 },
+					];
+					const updated = await updateColumns(nextColumns);
+					columnsRef.current = updated;
+					setColumns(updated);
+					showToast("カラムを追加しました", "success");
+				} catch {
+					showToast("カラムの追加に失敗しました", "error");
+				}
+			});
+			addColumnQueueRef.current = next;
+			return next;
+		},
+		[showToast],
+	);
 
 	const handleCloseCreateModal = useCallback(() => {
 		setCreateModalStatus(null);
@@ -166,6 +208,7 @@ function App() {
 						columns={columns}
 						tasks={tasks}
 						onAddTask={handleAddTask}
+						onAddColumn={handleAddColumn}
 						onTaskClick={handleTaskClick}
 					/>
 				)}
