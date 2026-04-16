@@ -68,14 +68,23 @@ function App() {
 		setCreateModalParent(undefined);
 	}, []);
 
-	const defaultCreateStatus = columns[0]?.name ?? "";
+	const defaultCreateStatus =
+		columns.length > 0
+			? columns.reduce((lowest, column) =>
+					column.order < lowest.order ? column : lowest,
+				).name
+			: null;
 
 	const handleAddSubIssue = useCallback(
 		(parentFilePath: string) => {
+			if (defaultCreateStatus === null) {
+				showToast("利用可能なステータスがありません", "error");
+				return;
+			}
 			setCreateModalStatus(defaultCreateStatus);
 			setCreateModalParent(parentFilePath);
 		},
-		[defaultCreateStatus],
+		[defaultCreateStatus, showToast],
 	);
 
 	/**
