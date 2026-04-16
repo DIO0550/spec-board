@@ -92,6 +92,10 @@ export function Column({
 
 	const hasTasks = tasks.length > 0;
 	const confirmDisabled = hasTasks && destColumn === "";
+	// タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
+	// メニュー側で削除操作そのものを封じる。
+	const canDeleteEffective =
+		canDelete && !(hasTasks && otherColumnNames.length === 0);
 
 	return (
 		<section
@@ -127,7 +131,7 @@ export function Column({
 				<ColumnContextMenu
 					x={menuPos.x}
 					y={menuPos.y}
-					canDelete={canDelete}
+					canDelete={canDeleteEffective}
 					onDelete={handleDeleteClick}
 					onClose={() => setMenuPos(null)}
 				/>

@@ -212,6 +212,22 @@ test("タスクなしで確定すると onDelete が undefined で呼ばれる",
 	expect(onDelete).toHaveBeenCalledWith(undefined);
 });
 
+test("タスクがあるのに移動先カラムが無い場合、メニューの削除項目が無効化される", () => {
+	render({
+		name: "Todo",
+		tasks: [createTask({ status: "Todo" })],
+		onAddClick: vi.fn(),
+		onDelete: vi.fn(),
+		existingColumnNames: [],
+	});
+	const header = container?.querySelector("section > div") as HTMLElement;
+	dispatchContextMenu(header);
+	const deleteItem = document.querySelector(
+		'[data-testid="column-context-menu-delete"]',
+	) as HTMLButtonElement | null;
+	expect(deleteItem?.disabled).toBe(true);
+});
+
 test("canDelete=false の場合、メニューの削除項目が無効化される", () => {
 	render({
 		name: "Todo",
