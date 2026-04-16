@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import type { Column, Priority, Task } from "../../../types/task";
 import { InlineEdit } from "./InlineEdit";
@@ -6,6 +6,7 @@ import { LabelEditor } from "./LabelEditor";
 import { MarkdownBody } from "./MarkdownBody";
 import { PrioritySelect } from "./PrioritySelect";
 import { StatusSelect } from "./StatusSelect";
+import { SubIssueSection } from "./SubIssueSection";
 
 /** 詳細パネルの Props */
 type DetailPanelProps = {
@@ -13,6 +14,10 @@ type DetailPanelProps = {
 	task: Task;
 	/** 選択肢となるカラム一覧 */
 	columns: Column[];
+	/** 全タスク一覧。サブIssue セクションの子タスク解決に利用する */
+	allTasks?: Task[];
+	/** 完了として扱うカラム名。サブIssue の完了判定に使用 */
+	doneColumn?: string;
 	/** パネルを閉じるコールバック */
 	onClose: () => void;
 	/**
@@ -26,6 +31,12 @@ type DetailPanelProps = {
 	 * @param id - 削除対象のタスクID
 	 */
 	onDelete: (id: string) => void | Promise<void>;
+	/**
+	 * サブIssue 追加ボタン押下時のコールバック。
+	 * 指定された親タスクのファイルパスでタスク作成フォームを開く想定。
+	 * @param parentFilePath - 親タスクのファイルパス
+	 */
+	onAddSubIssue?: (parentFilePath: string) => void;
 };
 
 /**
@@ -36,15 +47,25 @@ type DetailPanelProps = {
 export function DetailPanel({
 	task,
 	columns,
+	allTasks,
+	doneColumn,
 	onClose,
 	onTaskUpdate,
 	onDelete,
+	onAddSubIssue,
 }: DetailPanelProps) {
 	const panelRef = useRef<HTMLElement>(null);
 	const latestLabelsRef = useRef(task.labels);
 	latestLabelsRef.current = task.labels;
 	const [showConfirm, setShowConfirm] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
+
+	const childTasks = useMemo(() => {
+		if (allTasks === undefined) return [];
+		return allTasks.filter((t) => t.parent === task.filePath);
+	}, [allTasks, task.filePath]);
+	const effectiveDoneColumn =
+		doneColumn ?? columns[columns.length - 1]?.name ?? "";
 
 	const handleTitleConfirm = useCallback(
 		(title: string) => {
@@ -162,6 +183,14 @@ export function DetailPanel({
 							onAdd={handleLabelAdd}
 							onRemove={handleLabelRemove}
 						/>
+						{onAddSubIssue && (
+							<SubIssueSection
+								parentTask={task}
+								childTasks={childTasks}
+								doneColumn={effectiveDoneColumn}
+								onAddSubIssue={onAddSubIssue}
+							/>
+						)}
 						<MarkdownBody body={task.body} />
 					</div>
 				</div>
