@@ -227,3 +227,104 @@ test("本文がMarkdownとしてレンダリングされる", async () => {
 		expect(panel?.querySelector("li")?.textContent).toBe("リスト項目");
 	});
 });
+
+test("allTasks から子タスクを解決してサブIssue 進捗を表示する", async () => {
+	const parent = createTask({
+		id: "parent",
+		title: "親",
+		filePath: "tasks/parent.md",
+	});
+	const child1 = createTask({
+		id: "child-1",
+		title: "子1",
+		status: "Done",
+		filePath: "tasks/child-1.md",
+		parent: "tasks/parent.md",
+	});
+	const child2 = createTask({
+		id: "child-2",
+		title: "子2",
+		status: "Todo",
+		filePath: "tasks/child-2.md",
+		parent: "tasks/parent.md",
+	});
+	const unrelated = createTask({
+		id: "other",
+		title: "別タスク",
+		filePath: "tasks/other.md",
+	});
+	render({
+		task: parent,
+		columns: testColumns,
+		allTasks: [parent, child1, child2, unrelated],
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
+		onAddSubIssue: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="sub-issue-section"]'),
+		).toBeTruthy();
+	});
+	const section = document.querySelector(
+		'[data-testid="sub-issue-section"]',
+	) as HTMLElement;
+	expect(section.textContent).toContain("サブIssue (1/2)");
+	expect(
+		document.querySelector('[data-testid="sub-issue-item-child-1"]'),
+	).toBeTruthy();
+	expect(
+		document.querySelector('[data-testid="sub-issue-item-child-2"]'),
+	).toBeTruthy();
+	expect(
+		document.querySelector('[data-testid="sub-issue-item-other"]'),
+	).toBeNull();
+});
+
+test("サブIssue 追加ボタンクリックで onAddSubIssue が親のファイルパス付きで呼ばれる", async () => {
+	const onAddSubIssue = vi.fn();
+	const parent = createTask({
+		id: "parent",
+		title: "親",
+		filePath: "tasks/parent.md",
+	});
+	render({
+		task: parent,
+		columns: testColumns,
+		allTasks: [parent],
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
+		onAddSubIssue,
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="sub-issue-add-button"]'),
+		).toBeTruthy();
+	});
+	const addButton = document.querySelector(
+		'[data-testid="sub-issue-add-button"]',
+	) as HTMLElement;
+	act(() => {
+		addButton.click();
+	});
+	expect(onAddSubIssue).toHaveBeenCalledWith("tasks/parent.md");
+});
+
+test("allTasks 未指定のときサブIssue セクションは表示されない", async () => {
+	render({
+		task: createTask({ filePath: "tasks/parent.md" }),
+		columns: testColumns,
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
+		onAddSubIssue: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+	});
+	expect(
+		document.querySelector('[data-testid="sub-issue-section"]'),
+	).toBeNull();
+});
