@@ -20,7 +20,7 @@ type ToastProps = {
 	/** 表示するトースト */
 	toast: ToastItem;
 	/**
-	 * 自動・手動クローズ時に呼ばれるコールバック
+	 * 自動クローズ時に呼ばれるコールバック
 	 * @param id - 閉じるトーストの ID
 	 */
 	onDismiss: (id: string) => void;
