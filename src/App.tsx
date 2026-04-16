@@ -46,16 +46,18 @@ function App() {
 	);
 
 	const handleTaskDelete = useCallback(
-		async (id: string) => {
-			try {
-				await deleteTask(id);
-				setTasks((prev) => prev.filter((t) => t.id !== id));
-				setSelectedTaskId(null);
-				showToast("タスクを削除しました", "success");
-			} catch {
-				showToast("タスクの削除に失敗しました", "error");
-			}
-		},
+		(id: string): Promise<void> =>
+			deleteTask(id).then(
+				() => {
+					setTasks((prev) => prev.filter((t) => t.id !== id));
+					setSelectedTaskId(null);
+					showToast("タスクを削除しました", "success");
+				},
+				(error: unknown) => {
+					showToast("タスクの削除に失敗しました", "error");
+					return Promise.reject(error);
+				},
+			),
 		[showToast],
 	);
 
