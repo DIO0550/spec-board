@@ -31,10 +31,15 @@ function App() {
 	const { toasts, showToast, dismissToast } = useToasts();
 	const columnsRef = useRef<Column[]>(columns);
 	const columnsQueueRef = useRef<Promise<void>>(Promise.resolve());
+	const tasksRef = useRef<Task[]>(tasks);
 
 	useEffect(() => {
 		columnsRef.current = columns;
 	}, [columns]);
+
+	useEffect(() => {
+		tasksRef.current = tasks;
+	}, [tasks]);
 
 	const selectedTask = selectedTaskId
 		? (tasks.find((t) => t.id === selectedTaskId) ?? null)
@@ -170,6 +175,9 @@ function App() {
 							showToast("移動先カラムが不正です", "error");
 							return;
 						}
+					} else if (tasksRef.current.some((t) => t.status === columnName)) {
+						showToast("タスクが残っているため移動先カラムが必要です", "error");
+						return;
 					}
 					const nextColumns: Column[] = current.filter(
 						(c) => c.name !== columnName,
