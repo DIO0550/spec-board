@@ -79,6 +79,10 @@ function App() {
 			const next = addColumnQueueRef.current.then(async () => {
 				try {
 					const current = columnsRef.current;
+					if (current.some((c) => c.name === columnName)) {
+						showToast("同じ名前のカラムが既に存在します", "error");
+						return;
+					}
 					const maxOrder = current.reduce(
 						(acc, c) => (c.order > acc ? c.order : acc),
 						-1,
