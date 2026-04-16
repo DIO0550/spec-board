@@ -64,8 +64,17 @@ export function DetailPanel({
 		if (allTasks === undefined) return [];
 		return allTasks.filter((t) => t.parent === task.filePath);
 	}, [allTasks, task.filePath]);
-	const effectiveDoneColumn =
-		doneColumn ?? columns[columns.length - 1]?.name ?? "";
+	const effectiveDoneColumn = useMemo(() => {
+		if (doneColumn !== undefined) return doneColumn;
+		const maxOrderColumn = columns.reduce<Column | undefined>(
+			(currentMax, column) =>
+				currentMax === undefined || column.order > currentMax.order
+					? column
+					: currentMax,
+			undefined,
+		);
+		return maxOrderColumn?.name ?? "Done";
+	}, [columns, doneColumn]);
 
 	const handleTitleConfirm = useCallback(
 		(title: string) => {
