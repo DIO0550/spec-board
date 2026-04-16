@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { Column } from "../../../types/task";
+import type { Column, Task } from "../../../types/task";
 import { TaskForm, type TaskFormValues } from "./TaskForm";
 
 type TaskCreateModalProps = {
@@ -7,6 +7,10 @@ type TaskCreateModalProps = {
 	columns: Column[];
 	/** 初期ステータス（作成元カラム） */
 	initialStatus: string;
+	/** 親タスクの選択候補。未指定の場合は親タスクフィールドを表示しない */
+	parentCandidates?: Task[];
+	/** 親タスクの初期値（サブIssue 追加時の自動設定用） */
+	initialParent?: string;
 	/**
 	 * 送信時のコールバック。reject した場合モーダルは閉じない。
 	 * 親側でトースト通知などのエラーハンドリングを行う想定。
@@ -27,6 +31,8 @@ type TaskCreateModalProps = {
 export function TaskCreateModal({
 	columns,
 	initialStatus,
+	parentCandidates,
+	initialParent,
 	onSubmit,
 	onClose,
 }: TaskCreateModalProps) {
@@ -97,6 +103,8 @@ export function TaskCreateModal({
 				<TaskForm
 					columns={columns}
 					initialStatus={initialStatus}
+					parentCandidates={parentCandidates}
+					initialParent={initialParent}
 					isSubmitting={isSubmitting}
 					onSubmit={handleSubmit}
 					onCancel={onClose}
