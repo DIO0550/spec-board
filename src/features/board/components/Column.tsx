@@ -69,7 +69,7 @@ export function Column({
 	const [destColumn, setDestColumn] = useState<string>("");
 
 	const handleContextMenu = onDelete
-		? (e: MouseEvent<HTMLDivElement>) => {
+		? (e: MouseEvent<HTMLElement>) => {
 				e.preventDefault();
 				setMenuPos({ x: e.clientX, y: e.clientY });
 			}
