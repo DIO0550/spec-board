@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ToastContainer, useToasts } from "./components/Toast";
 import { Board, EmptyState, HeaderBar } from "./features/board";
 import { DetailPanel } from "./features/detail";
 import { deleteTask, getColumns, getTasks, updateTask } from "./lib/api";
@@ -13,6 +14,7 @@ function App() {
 	const [columns, setColumns] = useState<Column[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+	const { toasts, showToast, dismissToast } = useToasts();
 
 	const selectedTask = selectedTaskId
 		? (tasks.find((t) => t.id === selectedTaskId) ?? null)
@@ -32,17 +34,32 @@ function App() {
 
 	const handleTaskUpdate = useCallback(
 		async (id: string, updates: Partial<Omit<Task, "id">>) => {
-			const updated = await updateTask(id, updates);
-			setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+			try {
+				const updated = await updateTask(id, updates);
+				setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+				showToast("タスクを更新しました", "success");
+			} catch {
+				showToast("タスクの更新に失敗しました", "error");
+			}
 		},
-		[],
+		[showToast],
 	);
 
-	const handleTaskDelete = useCallback(async (id: string) => {
-		await deleteTask(id);
-		setTasks((prev) => prev.filter((t) => t.id !== id));
-		setSelectedTaskId(null);
-	}, []);
+	const handleTaskDelete = useCallback(
+		(id: string): Promise<void> =>
+			deleteTask(id).then(
+				() => {
+					setTasks((prev) => prev.filter((t) => t.id !== id));
+					setSelectedTaskId(null);
+					showToast("タスクを削除しました", "success");
+				},
+				(error: unknown) => {
+					showToast("タスクの削除に失敗しました", "error");
+					return Promise.reject(error);
+				},
+			),
+		[showToast],
+	);
 
 	useEffect(() => {
 		if (projectPath === null) return;
@@ -92,6 +109,7 @@ function App() {
 					onDelete={handleTaskDelete}
 				/>
 			)}
+			<ToastContainer toasts={toasts} onDismiss={dismissToast} />
 		</div>
 	);
 }
