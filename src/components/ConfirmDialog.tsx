@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 type ConfirmDialogProps = {
 	/** ダイアログのタイトル */
@@ -29,6 +29,9 @@ export function ConfirmDialog({
 	onCancel,
 }: ConfirmDialogProps) {
 	const dialogRef = useRef<HTMLDivElement>(null);
+	const id = useId();
+	const titleId = `${id}-title`;
+	const messageId = `${id}-message`;
 
 	useEffect(() => {
 		dialogRef.current?.focus();
@@ -49,7 +52,7 @@ export function ConfirmDialog({
 			<button
 				type="button"
 				aria-label="ダイアログを閉じる"
-				className="fixed inset-0 z-60 border-0 bg-black/40 p-0"
+				className="fixed inset-0 z-[60] border-0 bg-black/40 p-0"
 				data-testid="confirm-overlay"
 				onClick={onCancel}
 			/>
@@ -57,19 +60,16 @@ export function ConfirmDialog({
 				ref={dialogRef}
 				role="alertdialog"
 				aria-modal="true"
-				aria-labelledby="confirm-dialog-title"
-				aria-describedby="confirm-dialog-message"
+				aria-labelledby={titleId}
+				aria-describedby={messageId}
 				tabIndex={-1}
-				className="fixed top-1/2 left-1/2 z-70 w-[400px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-2xl"
+				className="fixed top-1/2 left-1/2 z-[70] w-[400px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-2xl"
 				data-testid="confirm-dialog"
 			>
-				<h2
-					id="confirm-dialog-title"
-					className="text-lg font-semibold text-gray-900"
-				>
+				<h2 id={titleId} className="text-lg font-semibold text-gray-900">
 					{title}
 				</h2>
-				<p id="confirm-dialog-message" className="mt-2 text-sm text-gray-600">
+				<p id={messageId} className="mt-2 text-sm text-gray-600">
 					{message}
 				</p>
 				<div className="mt-6 flex justify-end gap-3">
