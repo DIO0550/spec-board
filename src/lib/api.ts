@@ -65,6 +65,12 @@ export async function createTask(
 		Partial<Omit<Task, "id" | "title" | "status">>,
 ): Promise<Task> {
 	validateStatus(params.status);
+	if (params.parent !== undefined) {
+		const parentExists = tasks.some((t) => t.filePath === params.parent);
+		if (!parentExists) {
+			throw new Error(`Parent task not found: ${params.parent}`);
+		}
+	}
 	const newTask: Task = {
 		id: `task-${nextId++}`,
 		title: params.title,
@@ -82,6 +88,12 @@ export async function createTask(
 	const col = cardOrder[newTask.status];
 	if (col) {
 		col.push(newTask.filePath);
+	}
+	if (newTask.parent !== undefined) {
+		const parentTask = tasks.find((t) => t.filePath === newTask.parent);
+		if (parentTask && !parentTask.children.includes(newTask.filePath)) {
+			parentTask.children = [...parentTask.children, newTask.filePath];
+		}
 	}
 	return structuredClone(newTask);
 }

@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Column } from "../../../types/task";
+import type { Column, Task } from "../../../types/task";
 import { TaskForm } from "./TaskForm";
 
 let container: HTMLDivElement | null = null;
@@ -346,4 +346,99 @@ test("isSubmitting 中は送信ボタンと入力欄が無効化される", () =
 	) as HTMLInputElement;
 	expect(submit.disabled).toBe(true);
 	expect(title.disabled).toBe(true);
+});
+
+/**
+ * 親タスク候補のテストデータ
+ */
+const PARENT_CANDIDATES: Task[] = [
+	{
+		id: "p-1",
+		title: "親タスクA",
+		status: "Todo",
+		labels: [],
+		links: [],
+		children: [],
+		reverseLinks: [],
+		body: "",
+		filePath: "tasks/parent-a.md",
+	},
+];
+
+test("parentCandidates 未指定なら親タスクフィールドは表示されない", () => {
+	render({
+		columns: COLUMNS,
+		initialStatus: "Todo",
+		onSubmit: vi.fn(),
+		onCancel: vi.fn(),
+	});
+	expect(
+		document.querySelector('[data-testid="parent-task-select"]'),
+	).toBeNull();
+});
+
+test("parentCandidates 指定で親タスク選択UIが表示される", () => {
+	render({
+		columns: COLUMNS,
+		initialStatus: "Todo",
+		parentCandidates: PARENT_CANDIDATES,
+		onSubmit: vi.fn(),
+		onCancel: vi.fn(),
+	});
+	expect(
+		document.querySelector('[data-testid="parent-task-select"]'),
+	).toBeTruthy();
+});
+
+test("initialParent 指定で送信時に parent がフォーム値に含まれる", () => {
+	const onSubmit = vi.fn();
+	render({
+		columns: COLUMNS,
+		initialStatus: "Todo",
+		parentCandidates: PARENT_CANDIDATES,
+		initialParent: "tasks/parent-a.md",
+		onSubmit,
+		onCancel: vi.fn(),
+	});
+	const title = document.querySelector(
+		'[data-testid="task-form-title"]',
+	) as HTMLInputElement;
+	act(() => {
+		changeValue(title, "子タスク");
+	});
+	const form = document.querySelector(
+		'[data-testid="task-form"]',
+	) as HTMLFormElement;
+	act(() => {
+		form.dispatchEvent(
+			new Event("submit", { bubbles: true, cancelable: true }),
+		);
+	});
+	expect(onSubmit.mock.calls[0][0].parent).toBe("tasks/parent-a.md");
+});
+
+test("親タスク未選択で送信すると parent は undefined", () => {
+	const onSubmit = vi.fn();
+	render({
+		columns: COLUMNS,
+		initialStatus: "Todo",
+		parentCandidates: PARENT_CANDIDATES,
+		onSubmit,
+		onCancel: vi.fn(),
+	});
+	const title = document.querySelector(
+		'[data-testid="task-form-title"]',
+	) as HTMLInputElement;
+	act(() => {
+		changeValue(title, "T");
+	});
+	const form = document.querySelector(
+		'[data-testid="task-form"]',
+	) as HTMLFormElement;
+	act(() => {
+		form.dispatchEvent(
+			new Event("submit", { bubbles: true, cancelable: true }),
+		);
+	});
+	expect(onSubmit.mock.calls[0][0].parent).toBeUndefined();
 });

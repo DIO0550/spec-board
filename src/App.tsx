@@ -24,6 +24,9 @@ function App() {
 	const [createModalStatus, setCreateModalStatus] = useState<string | null>(
 		null,
 	);
+	const [createModalParent, setCreateModalParent] = useState<
+		string | undefined
+	>(undefined);
 	const { toasts, showToast, dismissToast } = useToasts();
 
 	const selectedTask = selectedTaskId
@@ -57,11 +60,32 @@ function App() {
 
 	const handleAddTask = useCallback((columnName: string) => {
 		setCreateModalStatus(columnName);
+		setCreateModalParent(undefined);
 	}, []);
 
 	const handleCloseCreateModal = useCallback(() => {
 		setCreateModalStatus(null);
+		setCreateModalParent(undefined);
 	}, []);
+
+	const defaultCreateStatus =
+		columns.length > 0
+			? columns.reduce((lowest, column) =>
+					column.order < lowest.order ? column : lowest,
+				).name
+			: null;
+
+	const handleAddSubIssue = useCallback(
+		(parentFilePath: string) => {
+			if (defaultCreateStatus === null) {
+				showToast("利用可能なステータスがありません", "error");
+				return;
+			}
+			setCreateModalStatus(defaultCreateStatus);
+			setCreateModalParent(parentFilePath);
+		},
+		[defaultCreateStatus, showToast],
+	);
 
 	/**
 	 * 新規タスクの作成。成功時は一覧を更新しトーストを表示、失敗時はトースト表示のうえ呼び出し元へ再 throw する。
@@ -72,7 +96,16 @@ function App() {
 		async (values: TaskFormValues) => {
 			try {
 				const created = await createTask(values);
-				setTasks((prev) => [...prev, created]);
+				setTasks((prev) => {
+					const withCreated = [...prev, created];
+					if (created.parent === undefined) return withCreated;
+					return withCreated.map((t) =>
+						t.filePath === created.parent &&
+						!t.children.includes(created.filePath)
+							? { ...t, children: [...t.children, created.filePath] }
+							: t,
+					);
+				});
 				showToast("タスクを作成しました", "success");
 			} catch (error) {
 				showToast("タスクの作成に失敗しました", "error");
@@ -141,15 +174,19 @@ function App() {
 				<DetailPanel
 					task={selectedTask}
 					columns={columns}
+					allTasks={tasks}
 					onClose={handleCloseDetail}
 					onTaskUpdate={handleTaskUpdate}
 					onDelete={handleTaskDelete}
+					onAddSubIssue={handleAddSubIssue}
 				/>
 			)}
 			{createModalStatus !== null && (
 				<TaskCreateModal
 					columns={columns}
 					initialStatus={createModalStatus}
+					parentCandidates={tasks}
+					initialParent={createModalParent}
 					onSubmit={handleCreateTask}
 					onClose={handleCloseCreateModal}
 				/>

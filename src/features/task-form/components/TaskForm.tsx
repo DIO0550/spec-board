@@ -2,10 +2,12 @@ import {
 	type FormEvent,
 	type KeyboardEvent,
 	useCallback,
+	useEffect,
 	useId,
 	useState,
 } from "react";
-import type { Column, Priority } from "../../../types/task";
+import type { Column, Priority, Task } from "../../../types/task";
+import { ParentTaskSelect } from "./ParentTaskSelect";
 
 /** TaskForm から送信される値 */
 export type TaskFormValues = {
@@ -17,6 +19,8 @@ export type TaskFormValues = {
 	priority?: Priority;
 	/** ラベル一覧 */
 	labels: string[];
+	/** 親タスクのファイルパス（任意） */
+	parent?: string;
 	/** 本文（Markdown） */
 	body: string;
 };
@@ -26,6 +30,10 @@ type TaskFormProps = {
 	columns: Column[];
 	/** ステータスの初期値 */
 	initialStatus: string;
+	/** 親タスクの選択候補。未指定の場合は親タスクフィールド自体を非表示にする */
+	parentCandidates?: Task[];
+	/** 親タスクの初期値（サブIssue 追加時の自動設定用） */
+	initialParent?: string;
 	/** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
 	isSubmitting?: boolean;
 	/** 送信ボタンのラベル（デフォルト: "作成"） */
@@ -50,6 +58,7 @@ const PRIORITY_OPTIONS: readonly Priority[] = ["High", "Medium", "Low"];
  * @param status - ステータス
  * @param priority - 優先度（空文字はなし扱い）
  * @param labels - ラベル一覧
+ * @param parent - 親タスクのファイルパス
  * @param body - 本文
  * @returns 正規化済みのフォーム送信値
  */
@@ -58,6 +67,7 @@ function normalizeSubmission(
 	status: string,
 	priority: Priority | "",
 	labels: string[],
+	parent: string | undefined,
 	body: string,
 ): TaskFormValues {
 	return {
@@ -65,6 +75,7 @@ function normalizeSubmission(
 		status,
 		priority: priority === "" ? undefined : priority,
 		labels,
+		parent,
 		body,
 	};
 }
@@ -79,6 +90,8 @@ function normalizeSubmission(
 export function TaskForm({
 	columns,
 	initialStatus,
+	parentCandidates,
+	initialParent,
 	isSubmitting = false,
 	submitLabel = "作成",
 	cancelLabel = "キャンセル",
@@ -90,6 +103,13 @@ export function TaskForm({
 	const [priority, setPriority] = useState<Priority | "">("");
 	const [labels, setLabels] = useState<string[]>([]);
 	const [labelInput, setLabelInput] = useState("");
+	const [parent, setParent] = useState<string | undefined>(
+		parentCandidates !== undefined ? initialParent : undefined,
+	);
+	const parentFieldVisible = parentCandidates !== undefined;
+	useEffect(() => {
+		setParent(parentFieldVisible ? initialParent : undefined);
+	}, [parentFieldVisible, initialParent]);
 	const [body, setBody] = useState("");
 	const [titleError, setTitleError] = useState<string | null>(null);
 
@@ -145,11 +165,22 @@ export function TaskForm({
 				status,
 				priority,
 				finalLabels,
+				parent,
 				body,
 			);
 			onSubmit(values);
 		},
-		[isSubmitting, title, status, priority, labels, labelInput, body, onSubmit],
+		[
+			isSubmitting,
+			title,
+			status,
+			priority,
+			labels,
+			labelInput,
+			parent,
+			body,
+			onSubmit,
+		],
 	);
 
 	return (
@@ -277,6 +308,15 @@ export function TaskForm({
 					/>
 				</div>
 			</div>
+
+			{parentCandidates !== undefined && (
+				<ParentTaskSelect
+					tasks={parentCandidates}
+					value={parent}
+					onChange={setParent}
+					disabled={isSubmitting}
+				/>
+			)}
 
 			<div>
 				<label
