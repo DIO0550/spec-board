@@ -121,3 +121,107 @@ test("カラムが order 順に表示される", async () => {
 		expect(labels).toEqual(["Todo", "In Progress", "Done"]);
 	});
 });
+
+test("onAddColumn 未指定の場合はカラム追加ボタンが表示されない", async () => {
+	render({ columns: defaultColumns, tasks: [], onAddTask: vi.fn() });
+	await vi.waitFor(() => {
+		const button = container?.querySelector(
+			'[data-testid="add-column-button"]',
+		);
+		expect(button).toBeFalsy();
+	});
+});
+
+test("onAddColumn 指定時はボード右端にカラム追加ボタンが表示される", async () => {
+	render({
+		columns: defaultColumns,
+		tasks: [],
+		onAddTask: vi.fn(),
+		onAddColumn: vi.fn(),
+	});
+	await vi.waitFor(() => {
+		const button = container?.querySelector(
+			'[data-testid="add-column-button"]',
+		);
+		expect(button).toBeTruthy();
+	});
+	const boardChildren = Array.from(
+		container?.firstElementChild?.children ?? [],
+	);
+	const lastChild = boardChildren[boardChildren.length - 1];
+	expect(lastChild?.getAttribute("data-testid")).toBe("add-column-button");
+});
+
+test("カラム追加ボタンから Enter で onAddColumn が呼ばれる", async () => {
+	const onAddColumn = vi.fn();
+	render({
+		columns: defaultColumns,
+		tasks: [],
+		onAddTask: vi.fn(),
+		onAddColumn,
+	});
+	let button: HTMLButtonElement | null = null;
+	await vi.waitFor(() => {
+		button = container?.querySelector(
+			'[data-testid="add-column-button"]',
+		) as HTMLButtonElement | null;
+		expect(button).toBeTruthy();
+	});
+	act(() => {
+		button?.click();
+	});
+	const input = container?.querySelector(
+		'[data-testid="add-column-input"]',
+	) as HTMLInputElement;
+	act(() => {
+		const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+			HTMLInputElement.prototype,
+			"value",
+		)?.set;
+		nativeInputValueSetter?.call(input, "Review");
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	act(() => {
+		input.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		);
+	});
+	expect(onAddColumn).toHaveBeenCalledWith("Review");
+});
+
+test("既存カラム名と同じ名前は onAddColumn に渡されない", async () => {
+	const onAddColumn = vi.fn();
+	render({
+		columns: defaultColumns,
+		tasks: [],
+		onAddTask: vi.fn(),
+		onAddColumn,
+	});
+	let button: HTMLButtonElement | null = null;
+	await vi.waitFor(() => {
+		button = container?.querySelector(
+			'[data-testid="add-column-button"]',
+		) as HTMLButtonElement | null;
+		expect(button).toBeTruthy();
+	});
+	act(() => {
+		button?.click();
+	});
+	const input = container?.querySelector(
+		'[data-testid="add-column-input"]',
+	) as HTMLInputElement;
+	act(() => {
+		const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+			HTMLInputElement.prototype,
+			"value",
+		)?.set;
+		nativeInputValueSetter?.call(input, "Todo");
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+	});
+	act(() => {
+		input.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		);
+	});
+	expect(onAddColumn).not.toHaveBeenCalled();
+});

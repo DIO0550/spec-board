@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Column as ColumnType, Task } from "../../../types/task";
+import { AddColumnButton } from "./AddColumnButton";
 import { Column } from "./Column";
 
 /** ボードの Props */
@@ -19,6 +20,13 @@ type BoardProps = {
 	 * @param taskId - クリックされたタスクのID
 	 */
 	onTaskClick?: (taskId: string) => void;
+	/**
+	 * 新規カラム追加時のコールバック。
+	 * ボード右端の AddColumnButton から呼び出される。
+	 * 未指定の場合はカラム追加 UI を非表示にする。
+	 * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
+	 */
+	onAddColumn?: (columnName: string) => void;
 };
 
 /**
@@ -32,6 +40,7 @@ export function Board({
 	doneColumn,
 	onAddTask,
 	onTaskClick,
+	onAddColumn,
 }: BoardProps) {
 	const sorted = useMemo(
 		() => [...columns].sort((a, b) => a.order - b.order),
@@ -49,6 +58,8 @@ export function Board({
 		return grouped;
 	}, [tasks]);
 
+	const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
+
 	return (
 		<div className="flex h-full gap-4 overflow-x-auto p-4">
 			{sorted.map((col) => (
@@ -62,6 +73,12 @@ export function Board({
 					onTaskClick={onTaskClick}
 				/>
 			))}
+			{onAddColumn && (
+				<AddColumnButton
+					existingColumnNames={columnNames}
+					onAdd={onAddColumn}
+				/>
+			)}
 		</div>
 	);
 }
