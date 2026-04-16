@@ -62,6 +62,7 @@ test("タスク選択時にパネルが表示される", async () => {
 		columns: testColumns,
 		onClose: vi.fn(),
 		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		const dialog = document.querySelector('[role="dialog"]');
@@ -75,6 +76,7 @@ test("タスクタイトルが表示される", async () => {
 		columns: testColumns,
 		onClose: vi.fn(),
 		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		const dialog = document.querySelector('[role="dialog"]');
@@ -89,6 +91,7 @@ test("×ボタンクリックでonCloseが呼ばれる", async () => {
 		columns: testColumns,
 		onClose,
 		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(document.querySelector('[aria-label="閉じる"]')).toBeTruthy();
@@ -107,6 +110,7 @@ test("Escキーでパネルが閉じる", async () => {
 		columns: testColumns,
 		onClose,
 		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(document.querySelector('[role="dialog"]')).toBeTruthy();
@@ -124,6 +128,7 @@ test("ラベル追加でonTaskUpdateが呼ばれる", async () => {
 		columns: testColumns,
 		onClose: vi.fn(),
 		onTaskUpdate,
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(
@@ -167,6 +172,7 @@ test("ラベル削除でonTaskUpdateが呼ばれる", async () => {
 		columns: testColumns,
 		onClose: vi.fn(),
 		onTaskUpdate,
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(
@@ -191,6 +197,7 @@ test("オーバーレイクリックでパネルが閉じる", async () => {
 		columns: testColumns,
 		onClose,
 		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		expect(
@@ -207,7 +214,10 @@ test("オーバーレイクリックでパネルが閉じる", async () => {
 test("本文がMarkdownとしてレンダリングされる", async () => {
 	render({
 		task: createTask({ body: "# 見出し\n- リスト項目" }),
+		columns: testColumns,
 		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onDelete: vi.fn(),
 	});
 	await vi.waitFor(() => {
 		const panel = document.querySelector('[role="dialog"]');

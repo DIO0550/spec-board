@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Board, EmptyState, HeaderBar } from "./features/board";
 import { DetailPanel } from "./features/detail";
-import { getColumns, getTasks, updateTask } from "./lib/api";
+import { deleteTask, getColumns, getTasks, updateTask } from "./lib/api";
 import type { Column, Task } from "./types/task";
 
 /**
@@ -37,6 +37,12 @@ function App() {
 		},
 		[],
 	);
+
+	const handleTaskDelete = useCallback(async (id: string) => {
+		await deleteTask(id);
+		setTasks((prev) => prev.filter((t) => t.id !== id));
+		setSelectedTaskId(null);
+	}, []);
 
 	useEffect(() => {
 		if (projectPath === null) return;
@@ -83,6 +89,7 @@ function App() {
 					columns={columns}
 					onClose={handleCloseDetail}
 					onTaskUpdate={handleTaskUpdate}
+					onDelete={handleTaskDelete}
 				/>
 			)}
 		</div>
