@@ -24,6 +24,9 @@ function App() {
 	const [createModalStatus, setCreateModalStatus] = useState<string | null>(
 		null,
 	);
+	const [createModalParent, setCreateModalParent] = useState<
+		string | undefined
+	>(undefined);
 	const { toasts, showToast, dismissToast } = useToasts();
 
 	const selectedTask = selectedTaskId
@@ -57,11 +60,23 @@ function App() {
 
 	const handleAddTask = useCallback((columnName: string) => {
 		setCreateModalStatus(columnName);
+		setCreateModalParent(undefined);
 	}, []);
 
 	const handleCloseCreateModal = useCallback(() => {
 		setCreateModalStatus(null);
+		setCreateModalParent(undefined);
 	}, []);
+
+	const defaultCreateStatus = columns[0]?.name ?? "";
+
+	const handleAddSubIssue = useCallback(
+		(parentFilePath: string) => {
+			setCreateModalStatus(defaultCreateStatus);
+			setCreateModalParent(parentFilePath);
+		},
+		[defaultCreateStatus],
+	);
 
 	/**
 	 * 新規タスクの作成。成功時は一覧を更新しトーストを表示、失敗時はトースト表示のうえ呼び出し元へ再 throw する。
@@ -141,15 +156,19 @@ function App() {
 				<DetailPanel
 					task={selectedTask}
 					columns={columns}
+					allTasks={tasks}
 					onClose={handleCloseDetail}
 					onTaskUpdate={handleTaskUpdate}
 					onDelete={handleTaskDelete}
+					onAddSubIssue={handleAddSubIssue}
 				/>
 			)}
 			{createModalStatus !== null && (
 				<TaskCreateModal
 					columns={columns}
 					initialStatus={createModalStatus}
+					parentCandidates={tasks}
+					initialParent={createModalParent}
 					onSubmit={handleCreateTask}
 					onClose={handleCloseCreateModal}
 				/>
