@@ -39,9 +39,13 @@ function App() {
 	);
 
 	const handleTaskDelete = useCallback(async (id: string) => {
-		await deleteTask(id);
-		setTasks((prev) => prev.filter((t) => t.id !== id));
-		setSelectedTaskId(null);
+		try {
+			await deleteTask(id);
+			setTasks((prev) => prev.filter((t) => t.id !== id));
+			setSelectedTaskId(null);
+		} catch {
+			// deleteTask の失敗時は UI を維持する
+		}
 	}, []);
 
 	useEffect(() => {
