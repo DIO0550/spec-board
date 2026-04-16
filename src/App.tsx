@@ -8,6 +8,7 @@ import {
 	deleteTask,
 	getColumns,
 	getTasks,
+	updateColumns,
 	updateTask,
 } from "./lib/api";
 import type { Column, Task } from "./types/task";
@@ -62,6 +63,32 @@ function App() {
 		setCreateModalStatus(columnName);
 		setCreateModalParent(undefined);
 	}, []);
+
+	/**
+	 * 新規カラムの追加。成功時はカラム一覧を更新しトーストを表示、失敗時はトースト表示のみ行う。
+	 * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
+	 * @throws updateColumns API 呼び出しが失敗した場合のみ内部で捕捉する
+	 */
+	const handleAddColumn = useCallback(
+		async (columnName: string) => {
+			try {
+				const maxOrder = columns.reduce(
+					(acc, c) => (c.order > acc ? c.order : acc),
+					-1,
+				);
+				const nextColumns: Column[] = [
+					...columns,
+					{ name: columnName, order: maxOrder + 1 },
+				];
+				const updated = await updateColumns(nextColumns);
+				setColumns(updated);
+				showToast("カラムを追加しました", "success");
+			} catch {
+				showToast("カラムの追加に失敗しました", "error");
+			}
+		},
+		[columns, showToast],
+	);
 
 	const handleCloseCreateModal = useCallback(() => {
 		setCreateModalStatus(null);
@@ -166,6 +193,7 @@ function App() {
 						columns={columns}
 						tasks={tasks}
 						onAddTask={handleAddTask}
+						onAddColumn={handleAddColumn}
 						onTaskClick={handleTaskClick}
 					/>
 				)}
