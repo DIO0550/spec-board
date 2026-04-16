@@ -115,6 +115,13 @@ clean_pr_number() {
 }
 
 # --- レビュー完了をポーリング ---
+# reviewRequests にレビュアーがいる間 = まだレビュー中（待機）
+# reviewRequests からいなくなり reviews に COMMENTED 等が入った = レビュー完了
+#
+# 戻り値（最終行）:
+#   "REVIEWED"  - レビュアーがレビューを提出済み
+#   "TIMEOUT"   - 制限時間超過
+#   "NO_PR"     - PR番号が不明
 poll_review() {
   local pr_number="$1"
 
@@ -129,11 +136,13 @@ poll_review() {
   echo "PR #${pr_number} のレビュー待ち開始（レビュアー: ${REVIEWER}、間隔: ${REVIEW_POLL_INTERVAL}秒、上限: ${REVIEW_MAX_WAIT}分）"
 
   while [ "$elapsed" -lt "$max_wait_seconds" ]; do
+    # reviewRequests: レビュー依頼中（まだレビューしていない）
     local still_requested
     still_requested=$(gh pr view "$pr_number" --json reviewRequests \
       --jq "[.reviewRequests[].login] | map(select(. == \"${REVIEWER}\")) | length" 2>/dev/null || echo "1")
 
     if [ "$still_requested" -eq 0 ]; then
+      # reviewRequests から消えた → reviews に入ったかチェック
       local review_state
       review_state=$(gh pr view "$pr_number" --json reviews \
         --jq "[.reviews[] | select(.author.login == \"${REVIEWER}\")] | last | .state // empty" 2>/dev/null || echo "")
@@ -156,7 +165,7 @@ poll_review() {
 
 PROMPT_BASE="$(cat "$INSTRUCTIONS_FILE")"
 
-# --- デフォルト許可コマンド ---
+# --- デフォルト許可コマンド（pre-tool-use-hook.sh.template と同じ） ---
 DEFAULT_ALLOWED_COMMANDS=(
   "git status" "git add" "git commit" "git push" "git pull" "git fetch"
   "git checkout" "git switch" "git branch" "git diff" "git log"
@@ -171,10 +180,12 @@ DEFAULT_ALLOWED_COMMANDS=(
 # --- allowedTools の構築 ---
 build_allowed_tools() {
   local tools=""
+  # デフォルト許可コマンド
   for cmd in "${DEFAULT_ALLOWED_COMMANDS[@]}"; do
     [ -n "$tools" ] && tools="${tools},"
     tools="${tools}Bash(${cmd})"
   done
+  # プロジェクト固有の許可コマンド
   if [ -f "$CONFIG_FILE" ]; then
     local cmds
     cmds=$(jq -r '.allowedCommands // [] | .[]' "$CONFIG_FILE" 2>/dev/null)
@@ -220,14 +231,17 @@ while true; do
     break
   fi
 
+  # --- Phase 1: processing中のタスクがある場合、中断復帰チェック ---
   PR_NUMBER=""
   if has_processing_task; then
     PR_NUMBER=$(read_pr_number)
   fi
 
   if [ -n "$PR_NUMBER" ] && has_processing_task; then
+    # PR作成済みのprocessingタスクがある → レビューフローへ
     echo "PR #${PR_NUMBER} が存在する処理中タスクを検出。レビューフローに入ります。"
   else
+    # --- Phase 1: 実装 + PR作成 ---
     echo "=== Phase: implement ==="
     IMPLEMENT_PROMPT="${PROMPT_BASE}
 
@@ -239,6 +253,7 @@ PR作成後、レビュー待ちには入らず終了してください。
 
     run_claude_session "implement" "$IMPLEMENT_PROMPT" "$(get_current_task_name)"
 
+    # PR番号を取得
     PR_NUMBER=$(read_pr_number)
 
     if [ -z "$PR_NUMBER" ]; then
@@ -247,15 +262,18 @@ PR作成後、レビュー待ちには入らず終了してください。
     fi
   fi
 
+  # --- Phase 2: レビューポーリング (shell側) ---
   FIX_COUNT=0
 
   while true; do
     echo "=== Phase: poll ==="
     RESULT=$(poll_review "$PR_NUMBER")
+    # poll_review は複数行出力する（ログ + 最終行が結果）
     REVIEW_STATUS=$(echo "$RESULT" | tail -1)
 
     case "$REVIEW_STATUS" in
       REVIEWED)
+        # レビューが提出された → AIにコメント内容を分析させる
         echo "=== Phase: review-check ==="
         REVIEW_CHECK_PROMPT="${PROMPT_BASE}
 
@@ -276,20 +294,20 @@ PR #${PR_NUMBER} のレビューが完了しました。
      → Steps 7〜8（マージ、状態更新）を実行して終了
    - **指摘あり**（コード修正が必要な指摘、バグの指摘等）:
      → Step 6（レビュー指摘修正）を実行
-     → 修正をコミット・プッシュする
-     → レビュアーに再レビューを依頼する: \`gh pr edit ${PR_NUMBER} --add-reviewer ${REVIEWER}\`
-     → 再レビュー依頼後、終了する
+     → 修正をコミット・プッシュしたら、レビュー待ちには入らず終了
 
 修正回数: ${FIX_COUNT}/${MAX_FIX_ITERATIONS}"
 
         run_claude_session "review-check" "$REVIEW_CHECK_PROMPT" "$(get_current_task_name)"
 
+        # AIの処理結果を確認: タスクが done/ に移動していればマージ完了
         if ! has_processing_task; then
           echo "タスクがマージされました。"
           clean_pr_number
           break
         fi
 
+        # まだ processing にある = 修正して再レビュー待ち
         FIX_COUNT=$((FIX_COUNT + 1))
 
         if [ "$FIX_COUNT" -gt "$MAX_FIX_ITERATIONS" ]; then
@@ -305,9 +323,7 @@ PR #${PR_NUMBER} のレビュー修正が上限（${MAX_FIX_ITERATIONS}回）に
           clean_pr_number
           break
         fi
-        # 修正push後、再レビューを依頼
-        echo "再レビューを依頼: ${REVIEWER}"
-        gh pr edit "$PR_NUMBER" --add-reviewer "$REVIEWER"
+        # ループの先頭に戻って再ポーリング
         ;;
 
       TIMEOUT)
