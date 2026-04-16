@@ -32,7 +32,6 @@ export function ParentTaskSelect({
 	const [isOpen, setIsOpen] = useState(false);
 	const id = useId();
 	const inputId = `${id}-parent-input`;
-	const listId = `${id}-parent-list`;
 	const blurTimeoutRef = useRef<number | null>(null);
 
 	useEffect(() => {
@@ -115,17 +114,11 @@ export function ParentTaskSelect({
 						}}
 						disabled={disabled}
 						placeholder="タスクを検索して選択"
-						role="combobox"
-						aria-expanded={isOpen}
-						aria-controls={listId}
-						aria-autocomplete="list"
 						className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
 						data-testid="parent-task-input"
 					/>
 					{isOpen && candidates.length > 0 && (
 						<div
-							id={listId}
-							role="listbox"
 							className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
 							data-testid="parent-task-list"
 						>
@@ -135,8 +128,7 @@ export function ParentTaskSelect({
 									<button
 										key={task.id}
 										type="button"
-										role="option"
-										aria-selected={isSelected}
+										aria-pressed={isSelected}
 										className="block w-full truncate px-2 py-1 text-left text-sm text-gray-700 hover:bg-gray-100"
 										onMouseDown={(e) => {
 											e.preventDefault();
