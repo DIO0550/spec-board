@@ -97,6 +97,26 @@ export function ToastContainer({
 	);
 }
 
+/**
+ * トースト ID を生成する。
+ * crypto.randomUUID が使える環境ではそれを使い、未対応環境では
+ * crypto.getRandomValues を使った簡易フォールバックを使う。
+ * @returns 衝突の可能性が極めて低い文字列 ID
+ */
+function generateToastId(): string {
+	const c: Crypto | undefined =
+		typeof crypto !== "undefined" ? crypto : undefined;
+	if (c?.randomUUID) {
+		return c.randomUUID();
+	}
+	if (c?.getRandomValues) {
+		const bytes = new Uint8Array(16);
+		c.getRandomValues(bytes);
+		return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+	}
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export type UseToastsResult = {
 	/** 現在表示中のトースト一覧 */
 	toasts: ToastItem[];
@@ -121,7 +141,7 @@ export function useToasts(): UseToastsResult {
 	const [toasts, setToasts] = useState<ToastItem[]>([]);
 
 	const showToast = useCallback((message: string, type: ToastType) => {
-		const id = crypto.randomUUID();
+		const id = generateToastId();
 		setToasts((prev) => [...prev, { id, message, type }]);
 	}, []);
 
