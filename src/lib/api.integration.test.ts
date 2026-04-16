@@ -159,6 +159,27 @@ test("updateColumns でカラム定義を更新できる", async () => {
 	expect(columns).toHaveLength(4);
 });
 
+test("updateColumns で renames を渡すと該当タスクの status が一括更新される", async () => {
+	const before = await getTasks();
+	const todoTaskIds = before
+		.filter((t) => t.status === "Todo")
+		.map((t) => t.id);
+	expect(todoTaskIds.length).toBeGreaterThan(0);
+
+	const newColumns = [
+		{ name: "Backlog", order: 0 },
+		{ name: "In Progress", order: 1 },
+		{ name: "Done", order: 2 },
+	];
+	await updateColumns(newColumns, [{ from: "Todo", to: "Backlog" }]);
+
+	const after = await getTasks();
+	for (const id of todoTaskIds) {
+		expect(after.find((t) => t.id === id)?.status).toBe("Backlog");
+	}
+	expect(after.some((t) => t.status === "Todo")).toBe(false);
+});
+
 test("updateCardOrder でカード表示順を更新できる", async () => {
 	const newOrder = {
 		Todo: ["tasks/fix-login-bug.md"],
