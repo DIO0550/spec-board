@@ -183,7 +183,7 @@ export function DetailPanel({
 							onAdd={handleLabelAdd}
 							onRemove={handleLabelRemove}
 						/>
-						{onAddSubIssue && (
+						{onAddSubIssue && allTasks !== undefined && (
 							<SubIssueSection
 								parentTask={task}
 								childTasks={childTasks}
