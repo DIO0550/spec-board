@@ -37,6 +37,7 @@ export function AddColumnButton({
 	}, [isEditing]);
 
 	const startEditing = () => {
+		isCancelledRef.current = false;
 		setInputValue("");
 		setIsEditing(true);
 	};
@@ -47,26 +48,28 @@ export function AddColumnButton({
 		setIsEditing(false);
 	};
 
-	const confirm = () => {
+	const confirm = (): boolean => {
 		const trimmed = inputValue.trim();
 		if (trimmed.length === 0) {
+			isCancelledRef.current = true;
 			setInputValue("");
 			setIsEditing(false);
-			return;
+			return true;
 		}
 		if (existingColumnNames.includes(trimmed)) {
-			return;
+			return false;
 		}
 		onAdd(trimmed);
+		isCancelledRef.current = true;
 		setInputValue("");
 		setIsEditing(false);
+		return true;
 	};
 
 	const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
 		if (e.key === "Enter") {
 			e.preventDefault();
 			e.stopPropagation();
-			isCancelledRef.current = true;
 			confirm();
 		} else if (e.key === "Escape") {
 			e.preventDefault();
