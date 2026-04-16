@@ -1,5 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /** ColumnContextMenu の Props */
 type ColumnContextMenuProps = {
@@ -41,6 +41,7 @@ export function ColumnContextMenu({
 	onClose,
 }: ColumnContextMenuProps) {
 	const menuRef = useRef<HTMLDivElement>(null);
+	const [pos, setPos] = useState({ x, y });
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -54,6 +55,17 @@ export function ColumnContextMenu({
 		const [firstItem] = getFocusableMenuItems(menuRef.current);
 		firstItem?.focus();
 	}, []);
+
+	// メニューの実寸を測ってビューポート外にはみ出す場合は折り返す。
+	// useLayoutEffect で paint 前に補正するため表示直後のちらつきは出ない。
+	useLayoutEffect(() => {
+		const menu = menuRef.current;
+		if (!menu) return;
+		const rect = menu.getBoundingClientRect();
+		const maxX = Math.max(0, window.innerWidth - rect.width);
+		const maxY = Math.max(0, window.innerHeight - rect.height);
+		setPos({ x: Math.min(x, maxX), y: Math.min(y, maxY) });
+	}, [x, y]);
 
 	const handleMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
 		if (
@@ -97,7 +109,7 @@ export function ColumnContextMenu({
 				ref={menuRef}
 				role="menu"
 				aria-label="カラム操作"
-				style={{ top: y, left: x }}
+				style={{ top: pos.y, left: pos.x }}
 				className="fixed z-50 min-w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg"
 				data-testid="column-context-menu"
 				onKeyDown={handleMenuKeyDown}
