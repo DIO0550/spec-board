@@ -1,3 +1,4 @@
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef } from "react";
 
 /** ColumnContextMenu の Props */
@@ -13,6 +14,18 @@ type ColumnContextMenuProps = {
 	/** メニューを閉じるコールバック（外側クリック・Esc・項目選択後） */
 	onClose: () => void;
 };
+
+/**
+ * メニュー内のフォーカス可能な menuitem 要素を取得する。
+ * @param menu - メニューのルート要素。`null` の場合は空配列を返す
+ * @returns disabled でない menuitem の配列（DOM 順）
+ */
+function getFocusableMenuItems(menu: HTMLDivElement | null): HTMLElement[] {
+	if (!menu) return [];
+	return Array.from(
+		menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'),
+	);
+}
 
 /**
  * カラムヘッダーの右クリック時に表示されるコンテキストメニュー。
@@ -37,6 +50,36 @@ export function ColumnContextMenu({
 		return () => document.removeEventListener("keydown", handleKeyDown);
 	}, [onClose]);
 
+	useEffect(() => {
+		const [firstItem] = getFocusableMenuItems(menuRef.current);
+		firstItem?.focus();
+	}, []);
+
+	const handleMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+		if (
+			e.key !== "ArrowDown" &&
+			e.key !== "ArrowUp" &&
+			e.key !== "Home" &&
+			e.key !== "End"
+		) {
+			return;
+		}
+		const items = getFocusableMenuItems(menuRef.current);
+		if (items.length === 0) return;
+		e.preventDefault();
+		const active = document.activeElement;
+		const currentIndex =
+			active instanceof HTMLElement ? items.indexOf(active) : -1;
+		const nextIndex =
+			e.key === "Home"
+				? 0
+				: e.key === "End"
+					? items.length - 1
+					: (currentIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) %
+						items.length;
+		items[nextIndex]?.focus();
+	};
+
 	return (
 		<>
 			{/* biome-ignore lint/a11y/noStaticElementInteractions: overlay dismisses menu on click; Escape handled separately */}
@@ -57,6 +100,7 @@ export function ColumnContextMenu({
 				style={{ top: y, left: x }}
 				className="fixed z-50 min-w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg"
 				data-testid="column-context-menu"
+				onKeyDown={handleMenuKeyDown}
 			>
 				<button
 					type="button"
