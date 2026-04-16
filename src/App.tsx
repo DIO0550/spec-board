@@ -31,10 +31,15 @@ function App() {
 	const { toasts, showToast, dismissToast } = useToasts();
 	const columnsRef = useRef<Column[]>(columns);
 	const columnsQueueRef = useRef<Promise<void>>(Promise.resolve());
+	const tasksRef = useRef<Task[]>(tasks);
 
 	useEffect(() => {
 		columnsRef.current = columns;
 	}, [columns]);
+
+	useEffect(() => {
+		tasksRef.current = tasks;
+	}, [tasks]);
 
 	const selectedTask = selectedTaskId
 		? (tasks.find((t) => t.id === selectedTaskId) ?? null)
@@ -137,6 +142,63 @@ function App() {
 					showToast("カラム名を変更しました", "success");
 				} catch {
 					showToast("カラム名の変更に失敗しました", "error");
+				}
+			});
+			columnsQueueRef.current = next;
+			return next;
+		},
+		[showToast],
+	);
+
+	/**
+	 * 既存カラムの削除。カラム追加・リネームと同じキューで直列化し、競合を防ぐ。
+	 * destColumn 指定時は削除対象カラムのタスクを移動先へ status 変更する。
+	 * カラムが 1 つしかない場合は何もしない。
+	 * @param columnName - 削除するカラム名
+	 * @param destColumn - 移動先のカラム名。タスクが 0 件の場合は undefined
+	 */
+	const handleDeleteColumn = useCallback(
+		(columnName: string, destColumn: string | undefined): Promise<void> => {
+			const next = columnsQueueRef.current.then(async () => {
+				try {
+					const current = columnsRef.current;
+					if (!current.some((c) => c.name === columnName)) return;
+					if (current.length <= 1) {
+						showToast("最後のカラムは削除できません", "error");
+						return;
+					}
+					if (destColumn !== undefined) {
+						if (
+							destColumn === columnName ||
+							!current.some((c) => c.name === destColumn)
+						) {
+							showToast("移動先カラムが不正です", "error");
+							return;
+						}
+					} else if (tasksRef.current.some((t) => t.status === columnName)) {
+						showToast("タスクが残っているため移動先カラムが必要です", "error");
+						return;
+					}
+					const nextColumns: Column[] = current.filter(
+						(c) => c.name !== columnName,
+					);
+					const renames =
+						destColumn !== undefined
+							? [{ from: columnName, to: destColumn }]
+							: undefined;
+					const updated = await updateColumns(nextColumns, renames);
+					columnsRef.current = updated;
+					setColumns(updated);
+					if (destColumn !== undefined) {
+						setTasks((prev) =>
+							prev.map((t) =>
+								t.status === columnName ? { ...t, status: destColumn } : t,
+							),
+						);
+					}
+					showToast("カラムを削除しました", "success");
+				} catch {
+					showToast("カラムの削除に失敗しました", "error");
 				}
 			});
 			columnsQueueRef.current = next;
@@ -250,6 +312,7 @@ function App() {
 						onAddTask={handleAddTask}
 						onAddColumn={handleAddColumn}
 						onRenameColumn={handleRenameColumn}
+						onDeleteColumn={handleDeleteColumn}
 						onTaskClick={handleTaskClick}
 					/>
 				)}

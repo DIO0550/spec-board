@@ -1,5 +1,8 @@
-import { useMemo } from "react";
+import type { MouseEvent } from "react";
+import { useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import type { Task } from "../../../types/task";
+import { ColumnContextMenu } from "./ColumnContextMenu";
 import { ColumnHeader } from "./ColumnHeader";
 import { TaskCard } from "./TaskCard";
 
@@ -28,6 +31,14 @@ type ColumnProps = {
 	onRename?: (newName: string) => void;
 	/** 他カラム名の一覧（重複チェック用。自身は含まない） */
 	existingColumnNames?: string[];
+	/**
+	 * カラム削除確定時のコールバック。
+	 * 未指定の場合は削除 UI を無効化する。
+	 * @param destColumn - タスクの移動先カラム名。タスクが 0 件の場合は undefined
+	 */
+	onDelete?: (destColumn: string | undefined) => void;
+	/** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
+	canDelete?: boolean;
 };
 
 /**
@@ -44,11 +55,64 @@ export function Column({
 	onTaskClick,
 	onRename,
 	existingColumnNames,
+	onDelete,
+	canDelete = true,
 }: ColumnProps) {
 	const tasksByFilePath = useMemo(
 		() => new Map(allTasks.map((t) => [t.filePath, t])),
 		[allTasks],
 	);
+
+	const otherColumnNames = existingColumnNames ?? [];
+	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+	const [isConfirming, setIsConfirming] = useState(false);
+	const [destColumn, setDestColumn] = useState<string>("");
+	const triggerRef = useRef<HTMLElement | null>(null);
+
+	const handleContextMenu = onDelete
+		? (e: MouseEvent<HTMLElement>) => {
+				e.preventDefault();
+				triggerRef.current = e.currentTarget;
+				// キーボード操作（Enter/Space）で発火したときは clientX/Y が 0 になる
+				// ため、トリガー要素の矩形を基準に配置して左上表示を避ける。
+				if (e.clientX !== 0 || e.clientY !== 0) {
+					setMenuPos({ x: e.clientX, y: e.clientY });
+					return;
+				}
+				const rect = e.currentTarget.getBoundingClientRect();
+				setMenuPos({ x: rect.left, y: rect.bottom });
+			}
+		: undefined;
+
+	const handleMenuClose = () => {
+		setMenuPos(null);
+		// キーボードでメニューを開いた場合にフォーカスが失われないよう、
+		// 開いた要素へフォーカスを戻す。
+		triggerRef.current?.focus();
+		triggerRef.current = null;
+	};
+
+	const handleDeleteClick = () => {
+		setDestColumn(otherColumnNames[0] ?? "");
+		setIsConfirming(true);
+	};
+
+	const handleConfirm = () => {
+		const hasTasks = tasks.length > 0;
+		onDelete?.(hasTasks ? destColumn : undefined);
+		setIsConfirming(false);
+	};
+
+	const handleCancel = () => {
+		setIsConfirming(false);
+	};
+
+	const hasTasks = tasks.length > 0;
+	const confirmDisabled = hasTasks && destColumn === "";
+	// タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
+	// メニュー側で削除操作そのものを封じる。
+	const canDeleteEffective =
+		canDelete && !(hasTasks && otherColumnNames.length === 0);
 
 	return (
 		<section
@@ -61,6 +125,7 @@ export function Column({
 				onAddClick={onAddClick}
 				onRename={onRename}
 				existingColumnNames={existingColumnNames}
+				onContextMenu={handleContextMenu}
 			/>
 			<ul className="flex-1 overflow-y-auto px-2 pb-2">
 				{tasks.map((task) => {
@@ -79,6 +144,47 @@ export function Column({
 					);
 				})}
 			</ul>
+			{menuPos && (
+				<ColumnContextMenu
+					x={menuPos.x}
+					y={menuPos.y}
+					canDelete={canDeleteEffective}
+					onDelete={handleDeleteClick}
+					onClose={handleMenuClose}
+				/>
+			)}
+			{isConfirming && (
+				<ConfirmDialog
+					title="カラムを削除"
+					message={
+						hasTasks
+							? `「${name}」には ${tasks.length} 件のタスクがあります。移動先を選択してください。`
+							: `「${name}」を削除します。よろしいですか？`
+					}
+					confirmLabel="削除"
+					confirmDisabled={confirmDisabled}
+					onConfirm={handleConfirm}
+					onCancel={handleCancel}
+				>
+					{hasTasks && otherColumnNames.length > 0 && (
+						<label className="mt-4 block text-sm text-gray-700">
+							移動先カラム
+							<select
+								value={destColumn}
+								onChange={(e) => setDestColumn(e.target.value)}
+								className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+								data-testid="column-delete-destination"
+							>
+								{otherColumnNames.map((n) => (
+									<option key={n} value={n}>
+										{n}
+									</option>
+								))}
+							</select>
+						</label>
+					)}
+				</ConfirmDialog>
+			)}
 		</section>
 	);
 }

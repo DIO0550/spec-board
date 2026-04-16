@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 
 /** カラムヘッダーの Props */
@@ -18,6 +18,12 @@ type ColumnHeaderProps = {
 	onRename?: (newName: string) => void;
 	/** 他カラム名の一覧（重複チェック用。自身は含まない） */
 	existingColumnNames?: string[];
+	/**
+	 * ヘッダーのメニュー要求（右クリック、またはメニューボタン押下）時のコールバック。
+	 * 未指定の場合はメニューボタンも非表示になり、ブラウザ既定動作のまま。
+	 * @param event - 発生した MouseEvent
+	 */
+	onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 };
 
 /**
@@ -32,6 +38,7 @@ export function ColumnHeader({
 	onAddClick,
 	onRename,
 	existingColumnNames = [],
+	onContextMenu,
 }: ColumnHeaderProps) {
 	const [isEditing, setIsEditing] = useState(false);
 	const [inputValue, setInputValue] = useState(name);
@@ -97,8 +104,12 @@ export function ColumnHeader({
 		existingColumnNames.includes(trimmedInput);
 
 	return (
-		<div className="flex items-center justify-between px-2 py-2">
-			<div className="flex items-center gap-2">
+		// biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a secondary trigger for mouse users; the inner menu button provides the keyboard-accessible path
+		<div
+			className="flex items-center justify-between px-2 py-2"
+			onContextMenu={onContextMenu}
+		>
+			<div className="flex min-w-0 flex-1 items-center gap-2">
 				{isEditing ? (
 					<div className="flex min-w-0 flex-1 flex-col gap-1">
 						<input
@@ -142,14 +153,28 @@ export function ColumnHeader({
 					{taskCount}
 				</span>
 			</div>
-			<button
-				type="button"
-				onClick={onAddClick}
-				aria-label={`${name}に追加`}
-				className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-			>
-				+ 追加
-			</button>
+			<div className="flex items-center gap-1">
+				{onContextMenu && (
+					<button
+						type="button"
+						onClick={onContextMenu}
+						aria-label={`${name}のメニューを開く`}
+						aria-haspopup="menu"
+						className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+						data-testid="column-menu-button"
+					>
+						⋯
+					</button>
+				)}
+				<button
+					type="button"
+					onClick={onAddClick}
+					aria-label={`${name}に追加`}
+					className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+				>
+					+ 追加
+				</button>
+			</div>
 		</div>
 	);
 }

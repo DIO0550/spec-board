@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useId, useRef } from "react";
 
 type ConfirmDialogProps = {
@@ -17,6 +18,8 @@ type ConfirmDialogProps = {
 	onConfirm: () => void;
 	/** キャンセル時のコールバック */
 	onCancel: () => void;
+	/** メッセージとボタンの間に表示する追加コンテンツ（任意入力要素など） */
+	children?: ReactNode;
 };
 
 /**
@@ -33,6 +36,7 @@ export function ConfirmDialog({
 	cancelDisabled = false,
 	onConfirm,
 	onCancel,
+	children,
 }: ConfirmDialogProps) {
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const id = useId();
@@ -78,6 +82,7 @@ export function ConfirmDialog({
 				<p id={messageId} className="mt-2 text-sm text-gray-600">
 					{message}
 				</p>
+				{children}
 				<div className="mt-6 flex justify-end gap-3">
 					<button
 						type="button"
