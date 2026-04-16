@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import type { Task } from "../../../types/task";
 import { ColumnContextMenu } from "./ColumnContextMenu";
@@ -67,13 +67,30 @@ export function Column({
 	const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 	const [isConfirming, setIsConfirming] = useState(false);
 	const [destColumn, setDestColumn] = useState<string>("");
+	const triggerRef = useRef<HTMLElement | null>(null);
 
 	const handleContextMenu = onDelete
 		? (e: MouseEvent<HTMLElement>) => {
 				e.preventDefault();
-				setMenuPos({ x: e.clientX, y: e.clientY });
+				triggerRef.current = e.currentTarget;
+				// キーボード操作（Enter/Space）で発火したときは clientX/Y が 0 になる
+				// ため、トリガー要素の矩形を基準に配置して左上表示を避ける。
+				if (e.clientX !== 0 || e.clientY !== 0) {
+					setMenuPos({ x: e.clientX, y: e.clientY });
+					return;
+				}
+				const rect = e.currentTarget.getBoundingClientRect();
+				setMenuPos({ x: rect.left, y: rect.bottom });
 			}
 		: undefined;
+
+	const handleMenuClose = () => {
+		setMenuPos(null);
+		// キーボードでメニューを開いた場合にフォーカスが失われないよう、
+		// 開いた要素へフォーカスを戻す。
+		triggerRef.current?.focus();
+		triggerRef.current = null;
+	};
 
 	const handleDeleteClick = () => {
 		setDestColumn(otherColumnNames[0] ?? "");
@@ -133,7 +150,7 @@ export function Column({
 					y={menuPos.y}
 					canDelete={canDeleteEffective}
 					onDelete={handleDeleteClick}
-					onClose={() => setMenuPos(null)}
+					onClose={handleMenuClose}
 				/>
 			)}
 			{isConfirming && (
