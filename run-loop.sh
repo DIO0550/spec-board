@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TASKS_DIR="${TASKS_DIR:-tasks}"
 CONFIG_FILE="${CONFIG_FILE:-task-loop-config.json}"
 PR_NUMBER_FILE="${TASKS_DIR}/processing/.pr_number"
+FIX_COUNT_FILE="${TASKS_DIR}/processing/.fix_count"
 INSTRUCTIONS_FILE="${SCRIPT_DIR}/task-loop-instructions.md"
 SESSION_LOGS_DIR="${SESSION_LOGS_DIR:-session-logs}"
 
@@ -27,9 +28,6 @@ read_config() {
 }
 
 REVIEW_POLL_INTERVAL=$(read_config "reviewPollIntervalSeconds" "30")
-REVIEW_MAX_WAIT=$(read_config "reviewMaxWaitMinutes" "30")
-AUTO_MERGE_WITHOUT_REVIEW=$(read_config "autoMergeWithoutReview" "false")
-MAX_FIX_ITERATIONS=$(read_config "maxFixIterations" "3")
 REVIEWER=$(read_config "reviewer" "copilot-pull-request-reviewer")
 SESSION_LOGS_DIR=$(read_config "sessionLogsDir" "$SESSION_LOGS_DIR")
 
@@ -44,7 +42,10 @@ run_claude_session() {
   timestamp=$(date +"%Y-%m-%d_%H%M%S")
   local log_file="${SESSION_LOGS_DIR}/${timestamp}_${mode}_${task_name}.md"
 
-  echo "--- Session log: ${log_file} ---"
+  echo ""
+  echo ">>> Claude Session Start: ${mode} / ${task_name}"
+  echo "    Log: ${log_file}"
+  echo ""
 
   {
     echo "---"
@@ -58,7 +59,25 @@ run_claude_session() {
     echo '```'
   } > "$log_file"
 
-  claude -p "$prompt" --allowedTools "$ALLOWED_TOOLS" 2>&1 | tee -a "$log_file"
+  # stream-json でストリーミング出力を取得し、ログには生JSON、ターミナルには jq で整形した要約を流す
+  claude -p "$prompt" --allowedTools "$ALLOWED_TOOLS" \
+      --output-format stream-json --verbose 2>&1 \
+    | tee -a "$log_file" \
+    | while IFS= read -r line; do
+        echo "$line" | jq -r '
+          if .type == "assistant" then
+            (.message.content[]? |
+              if .type == "text" then "  " + .text
+              elif .type == "tool_use" then "  [tool] " + .name + " " + (.input | tostring | .[0:120])
+              else empty end)
+          elif .type == "user" then
+            (.message.content[]? |
+              if .type == "tool_result" then "  [result]"
+              else empty end)
+          elif .type == "result" then
+            "  [done] " + (.subtype // "ok")
+          else empty end' 2>/dev/null || true
+      done
   local exit_code=${PIPESTATUS[0]}
 
   {
@@ -67,6 +86,10 @@ run_claude_session() {
     echo "endedAt: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     echo "exitCode: ${exit_code}"
   } >> "$log_file"
+
+  echo ""
+  echo "<<< Claude Session End (exit: ${exit_code})"
+  echo ""
 
   return $exit_code
 }
@@ -110,57 +133,49 @@ read_pr_number() {
   fi
 }
 
-clean_pr_number() {
-  rm -f "$PR_NUMBER_FILE"
+clean_processing_state() {
+  rm -f "$PR_NUMBER_FILE" "$FIX_COUNT_FILE"
 }
 
-# --- レビュー完了をポーリング ---
-# reviewRequests にレビュアーがいる間 = まだレビュー中（待機）
-# reviewRequests からいなくなり reviews に COMMENTED 等が入った = レビュー完了
+# --- レビュー完了を無限ポーリング ---
+# PR の HEAD コミット SHA に対して REVIEWER のレビューが届くまで無限に待つ。
+# タイムアウトは設けない: 本当に返ってこない場合は人間が Ctrl+C で介入する想定。
 #
-# 戻り値（最終行）:
-#   "REVIEWED"  - レビュアーがレビューを提出済み
-#   "TIMEOUT"   - 制限時間超過
-#   "NO_PR"     - PR番号が不明
+# 引数:
+#   $1 - PR番号
 poll_review() {
   local pr_number="$1"
 
   if [ -z "$pr_number" ]; then
-    echo "NO_PR"
-    return
+    echo "Error: PR番号が指定されていません" >&2
+    return 1
   fi
 
-  local max_wait_seconds=$((REVIEW_MAX_WAIT * 60))
-  local elapsed=0
+  local head_sha
+  head_sha=$(gh pr view "$pr_number" --json headRefOid --jq '.headRefOid' 2>/dev/null)
 
-  echo "PR #${pr_number} のレビュー待ち開始（レビュアー: ${REVIEWER}、間隔: ${REVIEW_POLL_INTERVAL}秒、上限: ${REVIEW_MAX_WAIT}分）"
+  if [ -z "$head_sha" ]; then
+    echo "Error: HEAD SHA を取得できませんでした" >&2
+    return 1
+  fi
 
-  while [ "$elapsed" -lt "$max_wait_seconds" ]; do
-    # reviewRequests: レビュー依頼中（まだレビューしていない）
-    local still_requested
-    still_requested=$(gh pr view "$pr_number" --json reviewRequests \
-      --jq "[.reviewRequests[].login] | map(select(. == \"${REVIEWER}\")) | length" 2>/dev/null || echo "1")
+  echo "PR #${pr_number} のレビュー待ち開始（レビュアー: ${REVIEWER}、HEAD: ${head_sha:0:8}、間隔: ${REVIEW_POLL_INTERVAL}秒）" >&2
 
-    if [ "$still_requested" -eq 0 ]; then
-      # reviewRequests から消えた → reviews に入ったかチェック
-      local review_state
-      review_state=$(gh pr view "$pr_number" --json reviews \
-        --jq "[.reviews[] | select(.author.login == \"${REVIEWER}\")] | last | .state // empty" 2>/dev/null || echo "")
+  while true; do
+    # gh pr view (GraphQL) の author.login は "[bot]" サフィックスなしで REVIEWER 設定値と一致する
+    # （REST API の user.login は "copilot-pull-request-reviewer[bot]" でサフィックスが付くので使えない）
+    local review_state
+    review_state=$(gh pr view "$pr_number" --json reviews \
+      --jq "[.reviews[] | select(.author.login == \"${REVIEWER}\" and .commit.oid == \"${head_sha}\")] | last | .state // empty" 2>/dev/null || echo "")
 
-      if [ -n "$review_state" ]; then
-        echo "レビュー完了を検出（${REVIEWER}: ${review_state}）"
-        echo "REVIEWED"
-        return
-      fi
+    if [ -n "$review_state" ]; then
+      echo "HEAD ${head_sha:0:8} 上のレビューを検出（${REVIEWER}: ${review_state}）" >&2
+      return 0
     fi
 
-    echo "  レビュー待機中... ${REVIEWER} がレビュー中 (${elapsed}/${max_wait_seconds}秒)"
+    echo "  レビュー待機中... ${REVIEWER} が HEAD ${head_sha:0:8} をレビュー中" >&2
     sleep "$REVIEW_POLL_INTERVAL"
-    elapsed=$((elapsed + REVIEW_POLL_INTERVAL))
   done
-
-  echo "レビュータイムアウト（${REVIEW_MAX_WAIT}分経過）"
-  echo "TIMEOUT"
 }
 
 PROMPT_BASE="$(cat "$INSTRUCTIONS_FILE")"
@@ -225,13 +240,21 @@ build_allowed_commands_prompt() {
 PROMPT_BASE="${PROMPT_BASE}
 $(build_allowed_commands_prompt)"
 
+# --- AI を起動するヘルパー ---
+# shell は状態・モードを一切渡さない。AI は task-loop-run スキルの指示に従い、
+# `{tasksDir}/processing/` の現在の状態（タスクファイル・.pr_number・.fix_count）から
+# 次にすべきことを自己判定する。
+run_ai() {
+  run_claude_session "task-loop" "$PROMPT_BASE" "$(get_current_task_name)"
+}
+
 while true; do
   if ! has_remaining_tasks; then
     echo "全タスクが処理済みです"
     break
   fi
 
-  # --- Phase 1: processing中のタスクがある場合、中断復帰チェック ---
+  # --- Phase 1: 実装 + PR作成（必要な場合のみ） ---
   PR_NUMBER=""
   if has_processing_task; then
     PR_NUMBER=$(read_pr_number)
@@ -243,15 +266,7 @@ while true; do
   else
     # --- Phase 1: 実装 + PR作成 ---
     echo "=== Phase: implement ==="
-    IMPLEMENT_PROMPT="${PROMPT_BASE}
-
-## 実行モード: implement
-
-Steps 1〜4（タスク初期化、実装、コミット、PR作成）までを実行してください。
-PR作成後、レビュー待ちには入らず終了してください。
-**重要**: PR作成後、PR番号を \`${PR_NUMBER_FILE}\` に書き出してください。"
-
-    run_claude_session "implement" "$IMPLEMENT_PROMPT" "$(get_current_task_name)"
+    run_ai
 
     # PR番号を取得
     PR_NUMBER=$(read_pr_number)
@@ -262,102 +277,29 @@ PR作成後、レビュー待ちには入らず終了してください。
     fi
   fi
 
-  # --- Phase 2: レビューポーリング (shell側) ---
-  FIX_COUNT=0
-
+  # --- Phase 2: レビュー待ち → review-check のループ ---
   while true; do
     echo "=== Phase: poll ==="
-    RESULT=$(poll_review "$PR_NUMBER")
-    # poll_review は複数行出力する（ログ + 最終行が結果）
-    REVIEW_STATUS=$(echo "$RESULT" | tail -1)
+    if ! poll_review "$PR_NUMBER"; then
+      echo "Error: レビューポーリングに失敗しました。次のタスクに進みます。"
+      clean_processing_state
+      break
+    fi
 
-    case "$REVIEW_STATUS" in
-      REVIEWED)
-        # レビューが提出された → AIにコメント内容を分析させる
-        echo "=== Phase: review-check ==="
-        REVIEW_CHECK_PROMPT="${PROMPT_BASE}
+    echo "=== Phase: review-check ==="
+    run_ai
 
-## 実行モード: review-check
+    # タスクが processing/ から外れていればマージ完了 or failed に退避済み
+    if ! has_processing_task; then
+      echo "タスクが処理済みになりました。"
+      clean_processing_state
+      break
+    fi
 
-PR #${PR_NUMBER} のレビューが完了しました。
-
-以下の手順で処理してください:
-
-1. PRのレビューコメントを取得する:
-   \`\`\`bash
-   gh api repos/{owner}/{repo}/pulls/${PR_NUMBER}/comments
-   gh api repos/{owner}/{repo}/pulls/${PR_NUMBER}/reviews
-   \`\`\`
-2. コメント内容を分析し、**修正が必要な指摘があるか**を判断する
-3. 判断結果に応じて:
-   - **指摘なし**（情報提供のみ、褒めるコメント、軽微な提案のみ等）:
-     → Steps 7〜8（マージ、状態更新）を実行して終了
-   - **指摘あり**（コード修正が必要な指摘、バグの指摘等）:
-     → Step 6（レビュー指摘修正）を実行
-     → 修正をコミット・プッシュしたら、レビュー待ちには入らず終了
-
-修正回数: ${FIX_COUNT}/${MAX_FIX_ITERATIONS}"
-
-        run_claude_session "review-check" "$REVIEW_CHECK_PROMPT" "$(get_current_task_name)"
-
-        # AIの処理結果を確認: タスクが done/ に移動していればマージ完了
-        if ! has_processing_task; then
-          echo "タスクがマージされました。"
-          clean_pr_number
-          break
-        fi
-
-        # まだ processing にある = 修正して再レビュー待ち
-        FIX_COUNT=$((FIX_COUNT + 1))
-
-        if [ "$FIX_COUNT" -gt "$MAX_FIX_ITERATIONS" ]; then
-          echo "修正上限（${MAX_FIX_ITERATIONS}回）に達しました。手動対応が必要です。"
-          ERROR_PROMPT="${PROMPT_BASE}
-
-## 実行モード: error
-
-PR #${PR_NUMBER} のレビュー修正が上限（${MAX_FIX_ITERATIONS}回）に達しました。
-タスクの状態を \`needs_manual_review\` に更新し、エラーリカバリーの手順に従って処理してください。"
-
-          run_claude_session "error" "$ERROR_PROMPT" "$(get_current_task_name)"
-          clean_pr_number
-          break
-        fi
-        # ループの先頭に戻って再ポーリング
-        ;;
-
-      TIMEOUT)
-        if [ "$AUTO_MERGE_WITHOUT_REVIEW" = "true" ]; then
-          echo "タイムアウト: autoMergeWithoutReview=true のため自動マージします。"
-          MERGE_PROMPT="${PROMPT_BASE}
-
-## 実行モード: review-check
-
-PR #${PR_NUMBER} のレビューがタイムアウトしました。autoMergeWithoutReview が有効なため、マージを実行します。
-Steps 7〜8（マージ、状態更新）を実行してください。"
-
-          run_claude_session "merge" "$MERGE_PROMPT" "$(get_current_task_name)"
-        else
-          echo "タイムアウト: レビューが得られませんでした。次のタスクに進みます。"
-          TIMEOUT_PROMPT="${PROMPT_BASE}
-
-## 実行モード: error
-
-PR #${PR_NUMBER} のレビューがタイムアウトしました（${REVIEW_MAX_WAIT}分）。
-autoMergeWithoutReview=false のため、ユーザーに通知して次のタスクへ進む処理を行ってください。
-エラーリカバリーの手順に従ってタスクの状態を更新してください。"
-
-          run_claude_session "timeout-error" "$TIMEOUT_PROMPT" "$(get_current_task_name)"
-        fi
-        clean_pr_number
-        break
-        ;;
-
-      NO_PR)
-        echo "Error: PR番号が取得できませんでした。"
-        clean_pr_number
-        break
-        ;;
-    esac
+    # まだ processing に残っている = 修正後の再レビュー待ち、または AI が
+    # 「レビュー進行中」と判定して終了した状態。tight loop を避けるため
+    # backoff してから次の poll に進む
+    echo "  processing に残存。${REVIEW_POLL_INTERVAL}秒待機してから再チェック..."
+    sleep "$REVIEW_POLL_INTERVAL"
   done
 done
