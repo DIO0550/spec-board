@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 /** AddColumnButton の Props */
 type AddColumnButtonProps = {
@@ -29,6 +29,8 @@ export function AddColumnButton({
 	const [inputValue, setInputValue] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
 	const isCancelledRef = useRef(false);
+	const id = useId();
+	const errorId = `${id}-error`;
 
 	useEffect(() => {
 		if (isEditing) {
@@ -98,11 +100,13 @@ export function AddColumnButton({
 					}}
 					placeholder="カラム名"
 					aria-label="カラム名"
+					aria-invalid={isDuplicate}
+					aria-describedby={isDuplicate ? errorId : undefined}
 					className="w-full rounded border border-blue-400 px-2 py-1 text-sm text-gray-900 outline-none"
 					data-testid="add-column-input"
 				/>
 				{isDuplicate && (
-					<p className="text-xs text-red-500" role="alert">
+					<p id={errorId} className="text-xs text-red-500" role="alert">
 						同じ名前のカラムが既に存在します
 					</p>
 				)}
