@@ -125,23 +125,29 @@ export function ParentTaskSelect({
 					{isOpen && candidates.length > 0 && (
 						<div
 							id={listId}
+							role="listbox"
 							className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
 							data-testid="parent-task-list"
 						>
-							{candidates.map((task) => (
-								<button
-									key={task.id}
-									type="button"
-									className="block w-full truncate px-2 py-1 text-left text-sm text-gray-700 hover:bg-gray-100"
-									onMouseDown={(e) => {
-										e.preventDefault();
-										handleSelect(task);
-									}}
-									data-testid={`parent-task-option-${task.id}`}
-								>
-									{task.title || task.filePath}
-								</button>
-							))}
+							{candidates.map((task) => {
+								const isSelected = task.filePath === value;
+								return (
+									<button
+										key={task.id}
+										type="button"
+										role="option"
+										aria-selected={isSelected}
+										className="block w-full truncate px-2 py-1 text-left text-sm text-gray-700 hover:bg-gray-100"
+										onMouseDown={(e) => {
+											e.preventDefault();
+											handleSelect(task);
+										}}
+										data-testid={`parent-task-option-${task.id}`}
+									>
+										{task.title || task.filePath}
+									</button>
+								);
+							})}
 						</div>
 					)}
 					{isOpen && candidates.length === 0 && (
