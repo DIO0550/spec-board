@@ -67,7 +67,6 @@ function App() {
 	/**
 	 * 新規カラムの追加。成功時はカラム一覧を更新しトーストを表示、失敗時はトースト表示のみ行う。
 	 * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
-	 * @throws updateColumns API 呼び出しが失敗した場合のみ内部で捕捉する
 	 */
 	const handleAddColumn = useCallback(
 		async (columnName: string) => {
