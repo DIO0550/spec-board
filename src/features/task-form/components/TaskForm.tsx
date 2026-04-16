@@ -102,7 +102,9 @@ export function TaskForm({
 	const [priority, setPriority] = useState<Priority | "">("");
 	const [labels, setLabels] = useState<string[]>([]);
 	const [labelInput, setLabelInput] = useState("");
-	const [parent, setParent] = useState<string | undefined>(initialParent);
+	const [parent, setParent] = useState<string | undefined>(
+		parentCandidates !== undefined ? initialParent : undefined,
+	);
 	const [body, setBody] = useState("");
 	const [titleError, setTitleError] = useState<string | null>(null);
 
