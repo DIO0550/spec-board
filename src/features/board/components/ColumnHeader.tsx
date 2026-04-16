@@ -124,15 +124,17 @@ export function ColumnHeader({
 						)}
 					</div>
 				) : onRename ? (
-					<button
-						type="button"
-						onClick={startEditing}
-						aria-label={`${name}の名前を変更`}
-						className="rounded px-1 py-0.5 text-sm font-semibold text-gray-700 hover:bg-gray-100"
-						data-testid="column-name-button"
-					>
-						{name}
-					</button>
+					<h2 className="text-sm font-semibold text-gray-700">
+						<button
+							type="button"
+							onClick={startEditing}
+							aria-label={`${name}の名前を変更`}
+							className="rounded px-1 py-0.5 hover:bg-gray-100"
+							data-testid="column-name-button"
+						>
+							{name}
+						</button>
+					</h2>
 				) : (
 					<h2 className="text-sm font-semibold text-gray-700">{name}</h2>
 				)}
