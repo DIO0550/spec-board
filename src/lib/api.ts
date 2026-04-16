@@ -83,6 +83,12 @@ export async function createTask(
 	if (col) {
 		col.push(newTask.filePath);
 	}
+	if (newTask.parent !== undefined) {
+		const parentTask = tasks.find((t) => t.filePath === newTask.parent);
+		if (parentTask && !parentTask.children.includes(newTask.filePath)) {
+			parentTask.children = [...parentTask.children, newTask.filePath];
+		}
+	}
 	return structuredClone(newTask);
 }
 

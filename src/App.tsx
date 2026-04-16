@@ -96,7 +96,16 @@ function App() {
 		async (values: TaskFormValues) => {
 			try {
 				const created = await createTask(values);
-				setTasks((prev) => [...prev, created]);
+				setTasks((prev) => {
+					const withCreated = [...prev, created];
+					if (created.parent === undefined) return withCreated;
+					return withCreated.map((t) =>
+						t.filePath === created.parent &&
+						!t.children.includes(created.filePath)
+							? { ...t, children: [...t.children, created.filePath] }
+							: t,
+					);
+				});
 				showToast("タスクを作成しました", "success");
 			} catch (error) {
 				showToast("タスクの作成に失敗しました", "error");
