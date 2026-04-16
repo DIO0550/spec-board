@@ -162,6 +162,15 @@ function App() {
 						showToast("最後のカラムは削除できません", "error");
 						return;
 					}
+					if (destColumn !== undefined) {
+						if (
+							destColumn === columnName ||
+							!current.some((c) => c.name === destColumn)
+						) {
+							showToast("移動先カラムが不正です", "error");
+							return;
+						}
+					}
 					const nextColumns: Column[] = current.filter(
 						(c) => c.name !== columnName,
 					);
