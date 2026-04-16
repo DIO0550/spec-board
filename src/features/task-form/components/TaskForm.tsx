@@ -2,6 +2,7 @@ import {
 	type FormEvent,
 	type KeyboardEvent,
 	useCallback,
+	useEffect,
 	useId,
 	useState,
 } from "react";
@@ -105,6 +106,10 @@ export function TaskForm({
 	const [parent, setParent] = useState<string | undefined>(
 		parentCandidates !== undefined ? initialParent : undefined,
 	);
+	const parentFieldVisible = parentCandidates !== undefined;
+	useEffect(() => {
+		setParent(parentFieldVisible ? initialParent : undefined);
+	}, [parentFieldVisible, initialParent]);
 	const [body, setBody] = useState("");
 	const [titleError, setTitleError] = useState<string | null>(null);
 
