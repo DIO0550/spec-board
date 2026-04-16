@@ -3,6 +3,7 @@ import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import type { Column, Priority, Task } from "../../../types/task";
 import { InlineEdit } from "./InlineEdit";
 import { LabelEditor } from "./LabelEditor";
+import { MarkdownBody } from "./MarkdownBody";
 import { PrioritySelect } from "./PrioritySelect";
 import { StatusSelect } from "./StatusSelect";
 
@@ -24,7 +25,7 @@ type DetailPanelProps = {
 	 * タスク削除時のコールバック
 	 * @param id - 削除対象のタスクID
 	 */
-	onDelete: (id: string) => void;
+	onDelete: (id: string) => void | Promise<void>;
 };
 
 /**
@@ -43,6 +44,7 @@ export function DetailPanel({
 	const latestLabelsRef = useRef(task.labels);
 	latestLabelsRef.current = task.labels;
 	const [showConfirm, setShowConfirm] = useState(false);
+	const [isDeleting, setIsDeleting] = useState(false);
 
 	const handleTitleConfirm = useCallback(
 		(title: string) => {
@@ -160,7 +162,7 @@ export function DetailPanel({
 							onAdd={handleLabelAdd}
 							onRemove={handleLabelRemove}
 						/>
-						<p className="text-sm text-gray-600">{task.body}</p>
+						<MarkdownBody body={task.body} />
 					</div>
 				</div>
 				<div className="border-t border-gray-200 px-4 py-3">
@@ -184,11 +186,20 @@ export function DetailPanel({
 				<ConfirmDialog
 					title="タスクの削除"
 					message={`「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`}
-					confirmLabel="削除"
-					onConfirm={() => {
-						onDelete(task.id);
+					confirmLabel={isDeleting ? "削除中…" : "削除"}
+					onConfirm={async () => {
+						if (isDeleting) return;
+						setIsDeleting(true);
+						try {
+							await onDelete(task.id);
+							setShowConfirm(false);
+						} catch {
+							setIsDeleting(false);
+						}
 					}}
-					onCancel={() => setShowConfirm(false)}
+					onCancel={() => {
+						if (!isDeleting) setShowConfirm(false);
+					}}
 				/>
 			)}
 		</>
