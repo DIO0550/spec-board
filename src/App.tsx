@@ -7,7 +7,6 @@ import type { Column, Task } from "./types/task";
 
 /**
  * @returns {JSX.Element} アプリケーションのルートレイアウトシェル
- * @throws タスクの更新・削除 API が失敗したときに呼び出し側へエラーを再送出する
  */
 function App() {
 	const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -38,9 +37,9 @@ function App() {
 			try {
 				const updated = await updateTask(id, updates);
 				setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+				showToast("タスクを更新しました", "success");
 			} catch {
 				showToast("タスクの更新に失敗しました", "error");
-				throw new Error("タスクの更新に失敗しました");
 			}
 		},
 		[showToast],
@@ -55,7 +54,6 @@ function App() {
 				showToast("タスクを削除しました", "success");
 			} catch {
 				showToast("タスクの削除に失敗しました", "error");
-				throw new Error("タスクの削除に失敗しました");
 			}
 		},
 		[showToast],
