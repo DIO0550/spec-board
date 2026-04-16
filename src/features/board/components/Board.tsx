@@ -34,6 +34,14 @@ type BoardProps = {
 	 * @param newName - 新しいカラム名（trim 済み、既存と非重複）
 	 */
 	onRenameColumn?: (oldName: string, newName: string) => void;
+	/**
+	 * カラム削除確定時のコールバック。
+	 * 未指定の場合はカラム削除 UI を無効化する。
+	 * カラムが 1 つの場合は内部で削除操作を禁止する。
+	 * @param columnName - 削除するカラム名
+	 * @param destColumn - タスクの移動先カラム名。削除対象カラムにタスクが 0 件の場合は undefined
+	 */
+	onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
 };
 
 /**
@@ -49,6 +57,7 @@ export function Board({
 	onTaskClick,
 	onAddColumn,
 	onRenameColumn,
+	onDeleteColumn,
 }: BoardProps) {
 	const sorted = useMemo(
 		() => [...columns].sort((a, b) => a.order - b.order),
@@ -85,6 +94,12 @@ export function Board({
 							: undefined
 					}
 					existingColumnNames={columnNames.filter((n) => n !== col.name)}
+					onDelete={
+						onDeleteColumn
+							? (destColumn) => onDeleteColumn(col.name, destColumn)
+							: undefined
+					}
+					canDelete={columns.length > 1}
 				/>
 			))}
 			{onAddColumn && (

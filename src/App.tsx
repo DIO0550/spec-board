@@ -145,6 +145,51 @@ function App() {
 		[showToast],
 	);
 
+	/**
+	 * 既存カラムの削除。カラム追加・リネームと同じキューで直列化し、競合を防ぐ。
+	 * destColumn 指定時は削除対象カラムのタスクを移動先へ status 変更する。
+	 * カラムが 1 つしかない場合は何もしない。
+	 * @param columnName - 削除するカラム名
+	 * @param destColumn - 移動先のカラム名。タスクが 0 件の場合は undefined
+	 */
+	const handleDeleteColumn = useCallback(
+		(columnName: string, destColumn: string | undefined): Promise<void> => {
+			const next = columnsQueueRef.current.then(async () => {
+				try {
+					const current = columnsRef.current;
+					if (!current.some((c) => c.name === columnName)) return;
+					if (current.length <= 1) {
+						showToast("最後のカラムは削除できません", "error");
+						return;
+					}
+					const nextColumns: Column[] = current.filter(
+						(c) => c.name !== columnName,
+					);
+					const renames =
+						destColumn !== undefined
+							? [{ from: columnName, to: destColumn }]
+							: undefined;
+					const updated = await updateColumns(nextColumns, renames);
+					columnsRef.current = updated;
+					setColumns(updated);
+					if (destColumn !== undefined) {
+						setTasks((prev) =>
+							prev.map((t) =>
+								t.status === columnName ? { ...t, status: destColumn } : t,
+							),
+						);
+					}
+					showToast("カラムを削除しました", "success");
+				} catch {
+					showToast("カラムの削除に失敗しました", "error");
+				}
+			});
+			columnsQueueRef.current = next;
+			return next;
+		},
+		[showToast],
+	);
+
 	const handleCloseCreateModal = useCallback(() => {
 		setCreateModalStatus(null);
 		setCreateModalParent(undefined);
@@ -250,6 +295,7 @@ function App() {
 						onAddTask={handleAddTask}
 						onAddColumn={handleAddColumn}
 						onRenameColumn={handleRenameColumn}
+						onDeleteColumn={handleDeleteColumn}
 						onTaskClick={handleTaskClick}
 					/>
 				)}
