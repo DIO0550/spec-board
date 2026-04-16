@@ -45,13 +45,13 @@ export function ConfirmDialog({
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
+			if (e.key === "Escape" && !cancelDisabled) {
 				onCancel();
 			}
 		};
 		document.addEventListener("keydown", handleKeyDown);
 		return () => document.removeEventListener("keydown", handleKeyDown);
-	}, [onCancel]);
+	}, [onCancel, cancelDisabled]);
 
 	return (
 		<>
@@ -60,7 +60,7 @@ export function ConfirmDialog({
 				role="presentation"
 				className="fixed inset-0 z-[60] bg-black/40"
 				data-testid="confirm-overlay"
-				onClick={onCancel}
+				onClick={cancelDisabled ? undefined : onCancel}
 			/>
 			<div
 				ref={dialogRef}

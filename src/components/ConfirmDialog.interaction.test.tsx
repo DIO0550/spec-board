@@ -99,6 +99,37 @@ test("EscキーでonCancelが呼ばれる", () => {
 	expect(onCancel).toHaveBeenCalledOnce();
 });
 
+test("cancelDisabled時にEscキーでonCancelが呼ばれない", () => {
+	const onCancel = vi.fn();
+	render({
+		title: "確認",
+		message: "実行しますか？",
+		onConfirm: vi.fn(),
+		onCancel,
+		cancelDisabled: true,
+	});
+	act(() => {
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+	});
+	expect(onCancel).not.toHaveBeenCalled();
+});
+
+test("cancelDisabled時にオーバーレイクリックでonCancelが呼ばれない", () => {
+	const onCancel = vi.fn();
+	render({
+		title: "確認",
+		message: "実行しますか？",
+		onConfirm: vi.fn(),
+		onCancel,
+		cancelDisabled: true,
+	});
+	const overlay = document.querySelector(
+		'[data-testid="confirm-overlay"]',
+	) as HTMLElement;
+	overlay.click();
+	expect(onCancel).not.toHaveBeenCalled();
+});
+
 test("カスタムラベルが表示される", () => {
 	render({
 		title: "確認",
