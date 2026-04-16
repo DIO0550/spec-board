@@ -149,12 +149,33 @@ export async function deleteTask(id: string): Promise<void> {
 	}
 }
 
+/** カラム名変更の指定 */
+export type ColumnRename = {
+	/** 元のカラム名 */
+	from: string;
+	/** 新しいカラム名 */
+	to: string;
+};
+
 /**
  * カラム定義を更新する
  * @param newColumns - 新しいカラム定義の配列
+ * @param renames - カラム名変更の配列。指定時は該当タスクの status を一括更新する
  * @returns 更新後のカラム配列
  */
-export async function updateColumns(newColumns: Column[]): Promise<Column[]> {
+export async function updateColumns(
+	newColumns: Column[],
+	renames?: ColumnRename[],
+): Promise<Column[]> {
+	if (renames && renames.length > 0) {
+		const renameMap = new Map(renames.map((r) => [r.from, r.to]));
+		for (const task of tasks) {
+			const next = renameMap.get(task.status);
+			if (next !== undefined) {
+				task.status = next;
+			}
+		}
+	}
 	columns = structuredClone(newColumns);
 	cardOrder = buildCardOrder(tasks, columns);
 	return structuredClone(columns);

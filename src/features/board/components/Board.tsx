@@ -27,6 +27,13 @@ type BoardProps = {
 	 * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
 	 */
 	onAddColumn?: (columnName: string) => void;
+	/**
+	 * カラム名リネーム確定時のコールバック。
+	 * 未指定の場合はカラム名編集 UI を無効化する。
+	 * @param oldName - 元のカラム名
+	 * @param newName - 新しいカラム名（trim 済み、既存と非重複）
+	 */
+	onRenameColumn?: (oldName: string, newName: string) => void;
 };
 
 /**
@@ -41,6 +48,7 @@ export function Board({
 	onAddTask,
 	onTaskClick,
 	onAddColumn,
+	onRenameColumn,
 }: BoardProps) {
 	const sorted = useMemo(
 		() => [...columns].sort((a, b) => a.order - b.order),
@@ -71,6 +79,12 @@ export function Board({
 					doneColumn={doneColumn}
 					onAddClick={() => onAddTask(col.name)}
 					onTaskClick={onTaskClick}
+					onRename={
+						onRenameColumn
+							? (newName) => onRenameColumn(col.name, newName)
+							: undefined
+					}
+					existingColumnNames={columnNames.filter((n) => n !== col.name)}
 				/>
 			))}
 			{onAddColumn && (
