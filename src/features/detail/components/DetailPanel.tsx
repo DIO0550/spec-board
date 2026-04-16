@@ -194,11 +194,11 @@ export function DetailPanel({
 						setIsDeleting(true);
 						try {
 							await onDelete(task.id);
+							setShowConfirm(false);
 						} catch {
-							// エラー時のみ削除中状態を解除（再試行可能にする）
+							// エラー時はダイアログを開いたまま再試行可能にする
 						} finally {
 							setIsDeleting(false);
-							setShowConfirm(false);
 						}
 					}}
 					onCancel={() => {

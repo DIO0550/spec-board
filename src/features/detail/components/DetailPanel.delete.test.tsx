@@ -156,6 +156,52 @@ test("キャンセルでダイアログが閉じ削除されない", async () =>
 	expect(onDelete).not.toHaveBeenCalled();
 });
 
+test("onDeleteが失敗した場合、ダイアログが開いたままでisDeleteが解除される", async () => {
+	const onDelete = vi.fn().mockRejectedValue(new Error("削除失敗"));
+	render({
+		task: createTask({ id: "task-fail" }),
+		columns: testColumns,
+		onClose: vi.fn(),
+		onTaskUpdate: vi.fn(),
+		onDelete,
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="detail-delete-button"]'),
+		).toBeTruthy();
+	});
+	act(() => {
+		(
+			document.querySelector(
+				'[data-testid="detail-delete-button"]',
+			) as HTMLElement
+		).click();
+	});
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="confirm-confirm-button"]'),
+		).toBeTruthy();
+	});
+	await act(async () => {
+		(
+			document.querySelector(
+				'[data-testid="confirm-confirm-button"]',
+			) as HTMLElement
+		).click();
+	});
+	expect(onDelete).toHaveBeenCalledWith("task-fail");
+	await vi.waitFor(() => {
+		expect(
+			document.querySelector('[data-testid="confirm-dialog"]'),
+		).toBeTruthy();
+		const confirmBtn = document.querySelector(
+			'[data-testid="confirm-confirm-button"]',
+		) as HTMLButtonElement;
+		expect(confirmBtn.disabled).toBe(false);
+		expect(confirmBtn.textContent).toBe("削除");
+	});
+});
+
 test("ファイルパスがパネル下部に表示される", async () => {
 	render({
 		task: createTask({ filePath: "projects/my-task.md" }),
