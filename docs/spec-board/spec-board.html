@@ -1,0 +1,1334 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>spec-board</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --panel-2: #fbfbfd;
+    --border: #e3e5eb;
+    --border-strong: #d4d7df;
+    --text: #1f2328;
+    --text-muted: #59626e;
+    --text-dim: #8a94a2;
+    --accent: oklch(0.54 0.14 265);
+    --accent-soft: oklch(0.96 0.03 265);
+    --accent-border: oklch(0.86 0.06 265);
+    --danger: oklch(0.58 0.18 25);
+    --warn:   oklch(0.72 0.15 75);
+    --info:   oklch(0.62 0.12 235);
+    --success: oklch(0.60 0.13 155);
+    --shadow-sm: 0 1px 0 rgba(20,24,32,0.04), 0 1px 2px rgba(20,24,32,0.04);
+    --shadow-md: 0 4px 12px rgba(20,24,32,0.08), 0 1px 2px rgba(20,24,32,0.04);
+    --shadow-lg: 0 20px 48px rgba(20,24,32,0.18), 0 4px 12px rgba(20,24,32,0.08);
+    --radius: 8px;
+    --radius-sm: 6px;
+    --gap: 12px;
+    --col-w: 300px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  html[data-theme="dark"] {
+    --bg: #0d1117;
+    --panel: #151b23;
+    --panel-2: #101620;
+    --border: #252c36;
+    --border-strong: #363d48;
+    --text: #e6edf3;
+    --text-muted: #9aa4b1;
+    --text-dim: #6b7785;
+    --accent: oklch(0.72 0.14 265);
+    --accent-soft: oklch(0.28 0.05 265);
+    --accent-border: oklch(0.40 0.08 265);
+    --shadow-sm: 0 1px 0 rgba(0,0,0,0.3);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+    --shadow-lg: 0 20px 48px rgba(0,0,0,0.6);
+  }
+  html[data-density="compact"] {
+    --gap: 8px;
+    --col-w: 272px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* ======== App shell ======== */
+  .app {
+    display: grid;
+    grid-template-rows: 48px 44px 1fr;
+    height: 100vh;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--accent), oklch(0.46 0.16 290));
+    position: relative;
+    flex-shrink: 0;
+  }
+  .brand-mark::after {
+    content: "";
+    position: absolute; inset: 5px 11px 5px 5px;
+    background: rgba(255,255,255,0.85);
+    border-radius: 1.5px;
+  }
+  .crumbs {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 12px;
+    color: var(--text-muted);
+  }
+  .crumbs .sep { color: var(--text-dim); }
+  .crumbs .proj { color: var(--text); font-weight: 500; }
+  .crumbs .path { color: var(--text-dim); }
+
+  .topbar-right {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .status-dot {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--text-muted);
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel-2);
+  }
+  .status-dot .pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--success), transparent 60%);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--success), transparent 60%); }
+    50% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--success), transparent 90%); }
+  }
+  .icon-btn, .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font: inherit; font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .icon-btn:hover, .btn:hover { background: var(--bg); border-color: var(--border-strong); }
+  .btn-primary {
+    background: var(--accent); border-color: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: color-mix(in oklch, var(--accent), black 12%); border-color: color-mix(in oklch, var(--accent), black 12%); }
+  .icon-btn.square { width: 28px; padding: 0; justify-content: center; }
+  .kbd {
+    font-family: var(--font-mono); font-size: 10.5px;
+    padding: 1px 5px; border-radius: 3px;
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  /* Secondary bar: tabs + view controls */
+  .subbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs { display: flex; gap: 2px; height: 100%; }
+  .tab {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 100%; padding: 0 12px;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-muted); cursor: pointer;
+    border-bottom: 2px solid transparent;
+    user-select: none;
+  }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .tab .count {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .subbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .search {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-width: 240px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .search:focus-within { border-color: var(--accent); background: var(--panel); }
+  .search input {
+    border: none; outline: none; background: transparent;
+    font: inherit; color: var(--text); flex: 1;
+  }
+
+  /* ======== Board ======== */
+  .board {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 16px;
+    display: flex;
+    gap: var(--gap);
+    align-items: flex-start;
+    height: 100%;
+    scroll-padding-left: 16px;
+  }
+  .board::-webkit-scrollbar { height: 12px; }
+  .board::-webkit-scrollbar-track { background: transparent; }
+  .board::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 3px solid var(--bg); }
+
+  .column {
+    width: var(--col-w);
+    min-width: var(--col-w);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+  }
+  .col-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 10px 14px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .col-header::before {
+    content: "";
+    position: absolute; left: 0; top: 10px; bottom: 10px;
+    width: 3px; border-radius: 2px;
+    background: var(--col-color, var(--accent));
+  }
+  .col-title {
+    font-size: 12.5px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .col-count {
+    font-family: var(--font-mono);
+    font-size: 10.5px; font-weight: 500;
+    color: var(--text-muted);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 1px 7px;
+    border-radius: 999px;
+  }
+  .col-actions { margin-left: auto; display: flex; gap: 2px; }
+  .col-actions button {
+    width: 22px; height: 22px;
+    border: none; background: transparent;
+    color: var(--text-dim); cursor: pointer;
+    border-radius: 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .col-actions button:hover { background: var(--bg); color: var(--text); }
+
+  .col-body {
+    padding: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .col-body::-webkit-scrollbar { width: 8px; }
+  .col-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .col-add {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin: 6px 10px 10px;
+    padding: 7px;
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    color: var(--text-muted);
+    border-radius: 6px;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer;
+  }
+  .col-add:hover { background: var(--panel); color: var(--text); border-color: var(--accent); }
+
+  /* Add column tile */
+  .col-add-new {
+    width: 260px; min-width: 260px;
+    margin-top: 4px;
+    height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 12.5px; font-weight: 500;
+    cursor: pointer;
+  }
+  .col-add-new:hover { background: var(--panel-2); color: var(--text); }
+
+  /* ======== Task card ======== */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 10px 11px 10px;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.1s, transform 0.08s, box-shadow 0.1s;
+  }
+  .card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+  }
+  .card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 85%);
+  }
+  .card.dragging { opacity: 0.35; }
+  .card[draggable="true"] { }
+  .card-body.drop-active { background: color-mix(in oklch, var(--accent), transparent 94%); }
+  .drop-indicator {
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin: -4px 0;
+    position: relative;
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 80%);
+  }
+  .drop-indicator::before {
+    content: "";
+    position: absolute;
+    left: -3px; top: -3px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .col-body.is-drop-target {
+    background: color-mix(in oklch, var(--accent), transparent 94%);
+    outline: 2px dashed color-mix(in oklch, var(--accent), transparent 60%);
+    outline-offset: -6px;
+    border-radius: 8px;
+  }
+  .column.is-drop-col .col-header {
+    background: color-mix(in oklch, var(--accent), transparent 92%);
+  }
+  .col-body.is-empty-drop {
+    min-height: 60px;
+  }
+
+  .card-top {
+    display: flex; align-items: flex-start; gap: 8px;
+    margin-bottom: 2px;
+  }
+  .card-id {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--text);
+    flex: 1;
+    word-break: break-word;
+    text-wrap: pretty;
+  }
+  .p-dot {
+    display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 6px;
+    position: relative;
+  }
+  .p-dot[data-p="High"] { background: var(--danger); }
+  .p-dot[data-p="Medium"] { background: var(--warn); }
+  .p-dot[data-p="Low"] { background: var(--info); }
+
+  .card-meta {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-top: 8px;
+  }
+  .label {
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .label[data-color="blue"]   { background: oklch(0.94 0.04 235); color: oklch(0.40 0.12 235); border-color: oklch(0.85 0.06 235); }
+  .label[data-color="green"]  { background: oklch(0.94 0.05 155); color: oklch(0.35 0.12 155); border-color: oklch(0.83 0.07 155); }
+  .label[data-color="purple"] { background: oklch(0.94 0.04 295); color: oklch(0.42 0.14 295); border-color: oklch(0.85 0.06 295); }
+  .label[data-color="orange"] { background: oklch(0.94 0.05 55);  color: oklch(0.42 0.14 55);  border-color: oklch(0.85 0.07 55); }
+  .label[data-color="red"]    { background: oklch(0.94 0.04 25);  color: oklch(0.42 0.14 25);  border-color: oklch(0.85 0.06 25); }
+  .label[data-color="gray"]   { background: var(--bg); color: var(--text-muted); border-color: var(--border); }
+  html[data-theme="dark"] .label[data-color="blue"]   { background: oklch(0.28 0.06 235); color: oklch(0.82 0.10 235); border-color: oklch(0.35 0.08 235); }
+  html[data-theme="dark"] .label[data-color="green"]  { background: oklch(0.27 0.07 155); color: oklch(0.82 0.11 155); border-color: oklch(0.35 0.09 155); }
+  html[data-theme="dark"] .label[data-color="purple"] { background: oklch(0.28 0.08 295); color: oklch(0.82 0.12 295); border-color: oklch(0.36 0.10 295); }
+  html[data-theme="dark"] .label[data-color="orange"] { background: oklch(0.28 0.08 55);  color: oklch(0.85 0.13 55);  border-color: oklch(0.35 0.10 55); }
+  html[data-theme="dark"] .label[data-color="red"]    { background: oklch(0.28 0.07 25);  color: oklch(0.82 0.12 25);  border-color: oklch(0.36 0.09 25); }
+  html[data-theme="dark"] .label[data-color="gray"]   { background: var(--panel-2); color: var(--text-muted); border-color: var(--border); }
+
+  /* Sub-issue progress */
+  .sub-section { margin-top: 10px; }
+  .sub-toggle {
+    all: unset;
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--text-muted);
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .sub-toggle:hover { color: var(--text); }
+  .sub-toggle .chev {
+    display: inline-block; transition: transform 0.15s;
+    color: var(--text-dim);
+  }
+  .sub-section[open] .sub-toggle .chev { transform: rotate(90deg); }
+  .sub-count {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+  .sub-list {
+    list-style: none; padding: 0; margin: 6px 0 0;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .sub-list li {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--text-muted);
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .sub-list li:hover { background: var(--bg); color: var(--text); }
+  .sub-check {
+    width: 12px; height: 12px; border-radius: 3px;
+    border: 1.5px solid var(--border-strong);
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .sub-check.done {
+    background: var(--success); border-color: var(--success);
+    color: white;
+  }
+  .sub-check.progress { border-color: var(--warn); border-style: dashed; }
+  .sub-item-title { flex: 1; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+  .sub-item-title.done { text-decoration: line-through; color: var(--text-dim); }
+
+  .progress-bar {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+  .progress-track {
+    flex: 1; height: 4px; border-radius: 2px;
+    background: var(--bg);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--success);
+    border-radius: 2px 0 0 2px;
+  }
+  .progress-num {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-muted);
+  }
+
+  .card-foot {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+  }
+  .card-foot .mono { font-family: var(--font-mono); }
+  .card-foot .dot { width: 2px; height: 2px; background: currentColor; border-radius: 50%; }
+  .card-foot .link-indicator {
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+
+  /* ======== Detail Panel ======== */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,12,18,0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.18s;
+    z-index: 20;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+
+  .panel {
+    position: fixed; top: 0; right: 0; height: 100vh;
+    width: 520px; max-width: 92vw;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    z-index: 21;
+    transform: translateX(100%);
+    transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+    display: flex; flex-direction: column;
+  }
+  .panel.show { transform: translateX(0); }
+
+  .panel-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-id {
+    font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--text-dim);
+    padding: 2px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .panel-head-actions { margin-left: auto; display: flex; gap: 4px; }
+
+  .panel-body { overflow-y: auto; flex: 1; padding: 16px 18px 40px; }
+
+  .panel-title {
+    font-size: 20px; font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 4px 0 18px;
+    text-wrap: pretty;
+    line-height: 1.3;
+  }
+  .panel-title:hover { background: var(--accent-soft); border-radius: 4px; padding: 2px 6px; margin-left: -6px; }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 10px 16px;
+    align-items: start;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .meta-label {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+    padding-top: 4px;
+  }
+  .meta-value { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
+  .select {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px; color: var(--text);
+    cursor: pointer;
+    font: inherit;
+  }
+  .select:hover { border-color: var(--border-strong); }
+  .status-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
+  .status-chip::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--col-color, var(--accent));
+  }
+  .add-inline {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11.5px; color: var(--text-muted);
+    padding: 2px 7px;
+    border: 1px dashed var(--border-strong);
+    background: transparent;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .add-inline:hover { color: var(--accent); border-color: var(--accent); }
+
+  .section-head {
+    display: flex; align-items: center;
+    margin-top: 20px; margin-bottom: 8px;
+    gap: 8px;
+  }
+  .section-head h3 {
+    margin: 0; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+  .section-head .line { flex: 1; height: 1px; background: var(--border); }
+  .section-head .num {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  }
+
+  .task-list {
+    list-style: none; padding: 0; margin: 0;
+    border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden;
+  }
+  .task-list li {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .task-list li:last-child { border-bottom: none; }
+  .task-list li:hover { background: var(--panel-2); }
+  .task-list .t-status {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-left: auto;
+  }
+  .task-list .t-title { flex: 1; }
+  .task-list .t-title.done { text-decoration: line-through; color: var(--text-dim); }
+
+  .section-body-note {
+    font-size: 13px; line-height: 1.65;
+    color: var(--text);
+  }
+  .section-body-note h2 {
+    font-size: 14px; font-weight: 600;
+    margin: 18px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-body-note ul { padding-left: 20px; }
+  .section-body-note code {
+    font-family: var(--font-mono); font-size: 12px;
+    padding: 1px 5px; background: var(--bg); border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  .filepath {
+    margin-top: 20px;
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--text-muted);
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .filepath .icon { color: var(--text-dim); }
+
+  .danger-btn {
+    margin-top: 16px;
+    height: 30px; padding: 0 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--danger);
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 500;
+  }
+  .danger-btn:hover { background: oklch(0.96 0.04 25); border-color: var(--danger); }
+  html[data-theme="dark"] .danger-btn:hover { background: oklch(0.22 0.06 25); }
+
+  /* ======== Tweaks panel ======== */
+  .tweaks-fab {
+    position: fixed; right: 16px; bottom: 16px;
+    z-index: 30;
+    display: none;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    box-shadow: var(--shadow-md);
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    align-items: center; gap: 6px;
+  }
+  body.tweakable .tweaks-fab { display: inline-flex; }
+
+  .tweaks {
+    position: fixed; right: 16px; bottom: 64px;
+    z-index: 31;
+    width: 300px;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    display: none;
+    overflow: hidden;
+  }
+  body.tweakable .tweaks.show { display: block; }
+  .tweaks-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 600;
+  }
+  .tweaks-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .tweak-row { display: flex; flex-direction: column; gap: 6px; }
+  .tweak-row label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
+  .seg {
+    display: flex; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px; gap: 2px;
+  }
+  .seg button {
+    flex: 1; border: none; background: transparent;
+    padding: 5px 8px; font: inherit; font-size: 12px;
+    color: var(--text-muted); cursor: pointer; border-radius: 4px;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--panel); color: var(--text);
+    box-shadow: var(--shadow-sm);
+  }
+  .swatches { display: flex; gap: 6px; }
+  .swatch {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+  }
+  .swatch[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--text); }
+
+  /* iconography — simple inline svg */
+  .i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .i-sm { width: 12px; height: 12px; }
+
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ============ Top bar ============ -->
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>spec-board</span>
+    </div>
+    <div class="crumbs">
+      <span class="sep">/</span>
+      <span class="proj">payments-service</span>
+      <span class="sep">·</span>
+      <span class="path">~/work/payments-service</span>
+    </div>
+    <div class="topbar-right">
+      <span class="status-dot"><span class="pulse"></span> 同期中 · 監視 127 files</span>
+      <button class="icon-btn square" title="検索"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
+      <button class="icon-btn" id="openBtn"><svg class="i" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h3.8l2 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg> 開く</button>
+      <button class="icon-btn square" title="設定"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="btn btn-primary" id="newTaskBtn"><svg class="i" viewBox="0 0 24 24" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg> 新規タスク</button>
+    </div>
+  </div>
+
+  <!-- ============ Subbar ============ -->
+  <div class="subbar">
+    <div class="tabs">
+      <div class="tab" aria-selected="true"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg> ボード <span class="count">42</span></div>
+      <div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg> 一覧</div>
+      <div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h4v4H4zM10 6h10M4 14h4v4H4zM10 16h10"/></svg> ツリー</div>
+      <div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h6"/></svg> GUIDE.md</div>
+    </div>
+    <div class="subbar-right">
+      <div class="search">
+        <svg class="i i-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input placeholder="タスクをフィルタ…" />
+        <span class="kbd">⌘K</span>
+      </div>
+      <button class="icon-btn"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M6 12h12M10 18h4"/></svg> フィルタ</button>
+      <button class="icon-btn square" title="密度"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+    </div>
+  </div>
+
+  <!-- ============ Board ============ -->
+  <div class="board" id="board"></div>
+</div>
+
+<!-- ============ Detail panel ============ -->
+<div class="overlay" id="overlay"></div>
+<aside class="panel" id="panel" aria-hidden="true">
+  <div class="panel-header">
+    <span class="panel-id" id="panelId">tasks/search-feature.md</span>
+    <div class="panel-head-actions">
+      <button class="icon-btn square" title="前のタスク"><svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button class="icon-btn square" title="次のタスク"><svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button class="icon-btn square" title="閉じる" id="closePanel"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</aside>
+
+<!-- ============ Tweaks ============ -->
+<button class="tweaks-fab" id="tweaksFab">
+  <svg class="i" viewBox="0 0 24 24"><path d="M4 7h12M20 7h0M8 12h12M4 12h0M4 17h12M20 17h0"/><circle cx="18" cy="7" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="18" cy="17" r="2"/></svg>
+  Tweaks
+</button>
+<div class="tweaks" id="tweaksPanel">
+  <div class="tweaks-head">
+    <svg class="i" viewBox="0 0 24 24"><path d="M4 7h12M20 7h0M8 12h12M4 12h0M4 17h12M20 17h0"/><circle cx="18" cy="7" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="18" cy="17" r="2"/></svg>
+    Tweaks
+  </div>
+  <div class="tweaks-body">
+    <div class="tweak-row">
+      <label>テーマ</label>
+      <div class="seg" data-tweak="theme">
+        <button data-val="light" aria-pressed="true">Light</button>
+        <button data-val="dark">Dark</button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <label>密度</label>
+      <div class="seg" data-tweak="density">
+        <button data-val="comfortable" aria-pressed="true">標準</button>
+        <button data-val="compact">コンパクト</button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <label>アクセント</label>
+      <div class="swatches" data-tweak="accent">
+        <button class="swatch" data-val="indigo" aria-pressed="true" style="background: oklch(0.54 0.14 265);"></button>
+        <button class="swatch" data-val="teal"   style="background: oklch(0.58 0.11 195);"></button>
+        <button class="swatch" data-val="rose"   style="background: oklch(0.58 0.15 15);"></button>
+        <button class="swatch" data-val="amber"  style="background: oklch(0.66 0.14 65);"></button>
+        <button class="swatch" data-val="forest" style="background: oklch(0.52 0.12 155);"></button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <label>カードID表示</label>
+      <div class="seg" data-tweak="ids">
+        <button data-val="show" aria-pressed="true">表示</button>
+        <button data-val="hide">非表示</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "theme": "dark",
+  "density": "comfortable",
+  "accent": "indigo",
+  "ids": "show"
+}/*EDITMODE-END*/;
+
+// ============ Data ============
+const COLUMNS = [
+  { name: "Backlog",     color: "oklch(0.60 0.02 260)" },
+  { name: "Todo",        color: "oklch(0.55 0.13 265)" },
+  { name: "In Progress", color: "oklch(0.66 0.14 65)"  },
+  { name: "In Review",   color: "oklch(0.58 0.11 295)" },
+  { name: "Done",        color: "oklch(0.55 0.13 155)" }
+];
+
+// Task shape: id,title,status,priority,labels,parent,links,children,body
+const TASKS = [
+  // Backlog
+  { id: "tasks/search-feature.md", title: "検索機能の追加", status: "Backlog", priority: "High",
+    labels: [{t:"feature", c:"green"},{t:"epic", c:"purple"}], children: ["tasks/search-ui.md","tasks/search-backend.md","tasks/search-autocomplete.md","tasks/search-telemetry.md","tasks/search-index.md"], links: ["tasks/product-list-redesign.md"],
+    body: `## 概要\n商品一覧ページにキーワード検索機能を追加する。\n\n## 受け入れ基準\n- キーワード入力で商品名を部分一致検索できる\n- 検索結果が0件の場合、適切なメッセージを表示する\n- 入力中はデバウンス（\`300ms\`）を適用する` },
+  { id: "tasks/export-csv.md", title: "タスク一覧のCSVエクスポート", status: "Backlog",
+    labels: [{t:"export", c:"gray"}], body:"" },
+  { id: "tasks/keyboard-shortcuts.md", title: "キーボードショートカット ( ⌘K / J / K )", status: "Backlog", priority: "Low",
+    labels: [{t:"a11y", c:"blue"},{t:"ux", c:"purple"}], body:"" },
+
+  // Todo
+  { id: "tasks/fix-login-bug.md", title: "ログイン画面で改行入力時にバリデーションが走らない", status: "Todo", priority: "High",
+    labels: [{t:"bug", c:"red"},{t:"frontend", c:"blue"}], body:"" },
+  { id: "tasks/md-parser-edge.md", title: "フロントマターが YAML 1.2 のみで動作しない問題", status: "Todo", priority: "Medium",
+    labels: [{t:"bug", c:"red"},{t:"backend", c:"orange"}], body:"" },
+  { id: "tasks/onboarding-empty.md", title: "空プロジェクト時のオンボーディング文言", status: "Todo", priority: "Low",
+    labels: [{t:"copy", c:"gray"}], body:"" },
+  { id: "tasks/column-dnd.md", title: "カラムのドラッグ並び替えを実装", status: "Todo", priority: "Medium",
+    labels: [{t:"feature", c:"green"},{t:"frontend", c:"blue"}], body:"" },
+
+  // In Progress
+  { id: "tasks/watcher-debounce.md", title: "file-watcher のデバウンス閾値を 100ms に調整", status: "In Progress", priority: "Medium",
+    labels: [{t:"backend", c:"orange"},{t:"perf", c:"purple"}], body:"" },
+  { id: "tasks/card-drag-drop.md", title: "カードのカラム間ドラッグ&ドロップ", status: "In Progress", priority: "High",
+    labels: [{t:"feature", c:"green"},{t:"frontend", c:"blue"}],
+    children: ["tasks/dnd-keyboard.md", "tasks/dnd-animation.md"], body:"" },
+  { id: "tasks/config-migration.md", title: "config.json v1 → v2 マイグレーション", status: "In Progress",
+    labels: [{t:"migration", c:"orange"}], body:"" },
+
+  // In Review
+  { id: "tasks/sub-issue-progress.md", title: "サブIssue 進捗バーの表示", status: "In Review", priority: "Medium",
+    labels: [{t:"feature", c:"green"}], body:"" },
+  { id: "tasks/guide-md.md", title: "GUIDE.md の自動生成 (AIエージェント向け)", status: "In Review", priority: "High",
+    labels: [{t:"backend", c:"orange"},{t:"docs", c:"gray"}], body:"" },
+
+  // Done
+  { id: "tasks/project-open.md", title: "プロジェクトディレクトリ選択フロー", status: "Done",
+    labels: [{t:"feature", c:"green"}], body:"" },
+  { id: "tasks/frontmatter-parse.md", title: "YAML フロントマターのパース実装", status: "Done",
+    labels: [{t:"backend", c:"orange"}], body:"" },
+  { id: "tasks/default-columns.md", title: "デフォルトカラム (Todo / In Progress / Done)", status: "Done", priority: "Low",
+    labels: [{t:"feature", c:"green"}], body:"" },
+
+  // Children for progress demo (parents reference them by id)
+  { id: "tasks/search-ui.md", title: "検索UIの実装", status: "In Progress", priority: "Medium", parent: "tasks/search-feature.md" },
+  { id: "tasks/search-backend.md", title: "検索API（backend）", status: "Todo", parent: "tasks/search-feature.md" },
+  { id: "tasks/search-autocomplete.md", title: "オートコンプリート実装", status: "Todo", parent: "tasks/search-feature.md" },
+  { id: "tasks/search-telemetry.md", title: "計測・テレメトリ", status: "Backlog", parent: "tasks/search-feature.md" },
+  { id: "tasks/search-index.md", title: "インデックス再構築ジョブ", status: "Done", parent: "tasks/search-feature.md" },
+  { id: "tasks/dnd-keyboard.md", title: "キーボードによるD&D代替", status: "Todo", parent: "tasks/card-drag-drop.md" },
+  { id: "tasks/dnd-animation.md", title: "ドロップ時のアニメーション", status: "Done", parent: "tasks/card-drag-drop.md" }
+];
+
+const BY_ID = Object.fromEntries(TASKS.map(t => [t.id, t]));
+const DONE_COL = "Done";
+
+function shortId(path) {
+  const base = path.split("/").pop().replace(/\.md$/, "");
+  return "#" + base.slice(0, 10);
+}
+
+function columnTasks(name) {
+  // Only show root-level tasks on the board (parent-less)
+  return TASKS.filter(t => t.status === name && !t.parent);
+}
+
+function progressOf(task) {
+  if (!task.children || !task.children.length) return null;
+  const kids = task.children.map(id => BY_ID[id]).filter(Boolean);
+  const done = kids.filter(k => k.status === DONE_COL).length;
+  return { done, total: kids.length, kids };
+}
+
+// ============ Render board ============
+const board = document.getElementById("board");
+
+function renderBoard() {
+  board.innerHTML = "";
+  COLUMNS.forEach(col => {
+    const tasks = columnTasks(col.name);
+    const colEl = document.createElement("div");
+    colEl.className = "column";
+    colEl.style.setProperty("--col-color", col.color);
+    colEl.innerHTML = `
+      <div class="col-header">
+        <div class="col-title">${col.name} <span class="col-count">${tasks.length}</span></div>
+        <div class="col-actions">
+          <button title="追加"><svg class="i i-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button title="メニュー"><svg class="i i-sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button>
+        </div>
+      </div>
+      <div class="col-body" data-col="${col.name}">
+        ${tasks.map(renderCard).join("")}
+      </div>
+      <button class="col-add"><svg class="i i-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> タスクを追加</button>
+    `;
+    board.appendChild(colEl);
+  });
+  const addCol = document.createElement("button");
+  addCol.className = "col-add-new";
+  addCol.innerHTML = `<svg class="i i-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> カラムを追加`;
+  board.appendChild(addCol);
+}
+
+function renderCard(task) {
+  const prog = progressOf(task);
+  const hasLinks = task.links && task.links.length;
+  const showIds = document.documentElement.getAttribute("data-ids") !== "hide";
+  return `
+    <div class="card" data-task="${task.id}" draggable="true">
+      <div class="card-top">
+        ${task.priority ? `<span class="p-dot" data-p="${task.priority}" title="${task.priority}"></span>` : ""}
+        <div class="card-title">${task.title}</div>
+      </div>
+      ${task.labels && task.labels.length ? `
+        <div class="card-meta">
+          ${task.labels.map(l => `<span class="label" data-color="${l.c}">${l.t}</span>`).join("")}
+        </div>` : ""}
+      ${prog ? `
+        <details class="sub-section">
+          <summary class="sub-toggle">
+            <svg class="i i-sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+            <span>サブIssue</span>
+            <span class="sub-count">${prog.done}/${prog.total}</span>
+          </summary>
+          <ul class="sub-list">
+            ${prog.kids.slice(0, 4).map(k => {
+              const done = k.status === DONE_COL;
+              const inprog = k.status === "In Progress";
+              return `<li>
+                <span class="sub-check ${done ? 'done' : inprog ? 'progress' : ''}">
+                  ${done ? `<svg class="i" style="width:10px;height:10px;stroke:#fff;stroke-width:2.5" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>` : ''}
+                </span>
+                <span class="sub-item-title ${done ? 'done' : ''}">${k.title}</span>
+              </li>`;
+            }).join("")}
+            ${prog.kids.length > 4 ? `<li style="color: var(--text-dim); font-size: 10.5px;">…ほか ${prog.kids.length - 4} 件</li>` : ''}
+          </ul>
+          <div class="progress-bar">
+            <div class="progress-track"><div class="progress-fill" style="width: ${(prog.done/prog.total*100).toFixed(0)}%"></div></div>
+            <span class="progress-num">${prog.done}/${prog.total}</span>
+          </div>
+        </details>
+      ` : ""}
+      <div class="card-foot">
+        ${showIds ? `<span class="mono">${shortId(task.id)}</span>` : ""}
+        ${hasLinks ? `<span class="dot"></span><span class="link-indicator"><svg class="i i-sm" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg> ${task.links.length}</span>` : ""}
+        ${prog ? `<span class="dot"></span><span class="mono">${prog.done}/${prog.total}</span>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+// ============ Detail panel ============
+const panel = document.getElementById("panel");
+const overlay = document.getElementById("overlay");
+const panelBody = document.getElementById("panelBody");
+const panelId = document.getElementById("panelId");
+
+function openPanel(taskId) {
+  const task = BY_ID[taskId];
+  if (!task) return;
+
+  document.querySelectorAll(".card.active").forEach(c => c.classList.remove("active"));
+  const cardEl = document.querySelector(`.card[data-task="${CSS.escape(taskId)}"]`);
+  if (cardEl) cardEl.classList.add("active");
+
+  panelId.textContent = task.id;
+  const prog = progressOf(task);
+  const col = COLUMNS.find(c => c.name === task.status) || COLUMNS[0];
+
+  panelBody.innerHTML = `
+    <h1 class="panel-title" contenteditable="true" spellcheck="false">${task.title}</h1>
+
+    <div class="meta-grid">
+      <div class="meta-label">ステータス</div>
+      <div class="meta-value">
+        <span class="status-chip" style="--col-color: ${col.color}">${task.status}</span>
+        <svg class="i i-sm" style="color: var(--text-dim)" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+
+      <div class="meta-label">優先度</div>
+      <div class="meta-value">
+        ${task.priority ? `<span class="status-chip"><span class="p-dot" data-p="${task.priority}" style="margin:0"></span>${task.priority}</span>` : `<span style="color: var(--text-dim); font-size: 12px;">未設定</span>`}
+      </div>
+
+      <div class="meta-label">ラベル</div>
+      <div class="meta-value">
+        ${(task.labels||[]).map(l => `<span class="label" data-color="${l.c}">${l.t}</span>`).join("")}
+        <button class="add-inline"><svg class="i i-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 追加</button>
+      </div>
+
+      <div class="meta-label">親タスク</div>
+      <div class="meta-value">
+        ${task.parent ? `<span class="status-chip" style="font-family: var(--font-mono); font-size: 11px;">${task.parent}</span>` : `<span style="color: var(--text-dim); font-size: 12px;">なし（ルートレベル）</span>`}
+      </div>
+
+      <div class="meta-label">ファイル</div>
+      <div class="meta-value">
+        <span style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);">${task.id}</span>
+      </div>
+    </div>
+
+    ${prog ? `
+      <div class="section-head">
+        <h3>サブIssue</h3>
+        <span class="num">${prog.done}/${prog.total}</span>
+        <div class="line"></div>
+        <button class="add-inline"><svg class="i i-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 追加</button>
+      </div>
+      <div class="progress-bar" style="margin-bottom: 10px;">
+        <div class="progress-track"><div class="progress-fill" style="width: ${(prog.done/prog.total*100).toFixed(0)}%"></div></div>
+        <span class="progress-num">${Math.round(prog.done/prog.total*100)}%</span>
+      </div>
+      <ul class="task-list">
+        ${prog.kids.map(k => {
+          const done = k.status === DONE_COL;
+          const inprog = k.status === "In Progress";
+          return `<li data-nav="${k.id}">
+            <span class="sub-check ${done ? 'done' : inprog ? 'progress' : ''}" style="width: 14px; height: 14px;">
+              ${done ? `<svg style="width:11px;height:11px;stroke:#fff;stroke-width:2.5;fill:none" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>` : ''}
+            </span>
+            <span class="t-title ${done ? 'done' : ''}">${k.title}</span>
+            <span class="t-status">${k.status}</span>
+          </li>`;
+        }).join("")}
+      </ul>
+    ` : ""}
+
+    ${task.links && task.links.length ? `
+      <div class="section-head">
+        <h3>関連タスク</h3>
+        <span class="num">${task.links.length}</span>
+        <div class="line"></div>
+        <button class="add-inline"><svg class="i i-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 追加</button>
+      </div>
+      <ul class="task-list">
+        ${task.links.map(lk => {
+          const t = BY_ID[lk] || { title: lk, status: "—" };
+          return `<li><span class="t-title">${t.title}</span><span class="t-status">${t.status}</span></li>`;
+        }).join("")}
+      </ul>
+    ` : ""}
+
+    ${task.body ? `
+      <div class="section-head">
+        <h3>説明</h3>
+        <div class="line"></div>
+      </div>
+      <div class="section-body-note">${markdownToHtml(task.body)}</div>
+    ` : ""}
+
+    <div class="filepath">
+      <svg class="i icon" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+      <span>${task.id}</span>
+      <span style="margin-left: auto; color: var(--text-dim);">UTF-8 · LF</span>
+    </div>
+
+    <button class="danger-btn">
+      <svg class="i i-sm" style="display:inline-block; vertical-align:-2px; margin-right:4px;" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg>
+      タスクを削除
+    </button>
+  `;
+
+  panel.classList.add("show");
+  overlay.classList.add("show");
+  panel.setAttribute("aria-hidden", "false");
+
+  panelBody.querySelectorAll("li[data-nav]").forEach(li => {
+    li.addEventListener("click", () => openPanel(li.getAttribute("data-nav")));
+  });
+}
+
+function closePanel() {
+  panel.classList.remove("show");
+  overlay.classList.remove("show");
+  panel.setAttribute("aria-hidden", "true");
+  document.querySelectorAll(".card.active").forEach(c => c.classList.remove("active"));
+}
+
+function markdownToHtml(md) {
+  return md
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>")
+    .split(/\n\n/).map(p => p.startsWith("<") ? p : `<p>${p}</p>`).join("\n");
+}
+
+// ============ Wiring ============
+document.getElementById("closePanel").addEventListener("click", closePanel);
+overlay.addEventListener("click", closePanel);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closePanel(); });
+
+board.addEventListener("click", e => {
+  if (e.target.closest(".sub-toggle") || e.target.closest(".col-actions") || e.target.closest(".col-add") || e.target.closest(".col-add-new")) return;
+  const card = e.target.closest(".card");
+  if (card && !card.classList.contains("dragging")) openPanel(card.getAttribute("data-task"));
+});
+
+// ============ Drag & Drop ============
+let dragState = null; // { id, sourceCol, el }
+let indicator = null;
+
+function clearDropUI() {
+  if (indicator && indicator.parentNode) indicator.parentNode.removeChild(indicator);
+  indicator = null;
+  document.querySelectorAll(".col-body.is-drop-target").forEach(el => el.classList.remove("is-drop-target"));
+  document.querySelectorAll(".column.is-drop-col").forEach(el => el.classList.remove("is-drop-col"));
+}
+
+board.addEventListener("dragstart", e => {
+  const card = e.target.closest(".card");
+  if (!card) return;
+  const id = card.getAttribute("data-task");
+  const sourceCol = card.closest(".col-body")?.getAttribute("data-col");
+  dragState = { id, sourceCol, el: card };
+  card.classList.add("dragging");
+  try {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  } catch (_) {}
+});
+
+board.addEventListener("dragend", () => {
+  if (dragState?.el) dragState.el.classList.remove("dragging");
+  dragState = null;
+  clearDropUI();
+});
+
+board.addEventListener("dragover", e => {
+  if (!dragState) return;
+  const colBody = e.target.closest(".col-body");
+  if (!colBody) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+
+  // highlight target column
+  document.querySelectorAll(".col-body.is-drop-target").forEach(el => { if (el !== colBody) el.classList.remove("is-drop-target"); });
+  document.querySelectorAll(".column.is-drop-col").forEach(el => el.classList.remove("is-drop-col"));
+  colBody.classList.add("is-drop-target");
+  colBody.closest(".column")?.classList.add("is-drop-col");
+
+  // compute insertion point
+  const cards = [...colBody.querySelectorAll(".card:not(.dragging)")];
+  let beforeEl = null;
+  for (const c of cards) {
+    const r = c.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { beforeEl = c; break; }
+  }
+
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.className = "drop-indicator";
+  }
+  if (beforeEl) {
+    colBody.insertBefore(indicator, beforeEl);
+  } else {
+    colBody.appendChild(indicator);
+  }
+});
+
+board.addEventListener("drop", e => {
+  if (!dragState) return;
+  const colBody = e.target.closest(".col-body");
+  if (!colBody) { clearDropUI(); return; }
+  e.preventDefault();
+
+  const targetCol = colBody.getAttribute("data-col");
+  const task = BY_ID[dragState.id];
+  if (!task) { clearDropUI(); return; }
+
+  // determine new index within target column's task list
+  const orderedIds = [...colBody.children]
+    .filter(el => el.classList.contains("card") || el.classList.contains("drop-indicator"))
+    .map(el => el.classList.contains("drop-indicator") ? "__HERE__" : el.getAttribute("data-task"));
+
+  // update task status + TASKS ordering
+  task.status = targetCol;
+
+  // rebuild TASKS: remove dragged, then re-insert per orderedIds for this column
+  const draggedIdx = TASKS.indexOf(task);
+  if (draggedIdx >= 0) TASKS.splice(draggedIdx, 1);
+
+  // Find where to re-insert in the global TASKS array:
+  // Strategy: reorder in-place among tasks of the same column, then let renderBoard re-group.
+  // We tag a "columnOrder" via a small side map so columnTasks can respect it.
+  // Simpler: reorder TASKS so that the relative order among column members matches orderedIds.
+  const newIdsForCol = orderedIds.map(id => id === "__HERE__" ? task.id : id);
+
+  // Get indices of current column members in TASKS (excluding dragged which we just removed)
+  const colMembers = TASKS.filter(t => t.status === targetCol && !t.parent);
+  // Remove them temporarily
+  colMembers.forEach(m => {
+    const i = TASKS.indexOf(m);
+    if (i >= 0) TASKS.splice(i, 1);
+  });
+  // Build reordered column members based on newIdsForCol
+  const reordered = newIdsForCol
+    .map(id => id === task.id ? task : colMembers.find(m => m.id === id))
+    .filter(Boolean);
+  // Append any leftover members not in orderedIds (safety)
+  colMembers.forEach(m => { if (!reordered.includes(m)) reordered.push(m); });
+
+  // Insert reordered members at the end (renderBoard only groups by status, so position doesn't matter across cols)
+  TASKS.push(...reordered);
+
+  dragState.el.classList.remove("dragging");
+  dragState = null;
+  clearDropUI();
+  renderBoard();
+});
+
+// ============ Tweaks ============
+const ACCENT_MAP = {
+  indigo: { accent: "oklch(0.54 0.14 265)", soft: "oklch(0.96 0.03 265)", border: "oklch(0.86 0.06 265)" },
+  teal:   { accent: "oklch(0.58 0.11 195)", soft: "oklch(0.96 0.03 195)", border: "oklch(0.86 0.06 195)" },
+  rose:   { accent: "oklch(0.58 0.15 15)",  soft: "oklch(0.96 0.03 15)",  border: "oklch(0.86 0.06 15)" },
+  amber:  { accent: "oklch(0.66 0.14 65)",  soft: "oklch(0.96 0.04 65)",  border: "oklch(0.86 0.07 65)" },
+  forest: { accent: "oklch(0.52 0.12 155)", soft: "oklch(0.96 0.03 155)", border: "oklch(0.86 0.06 155)" }
+};
+
+let tweakState = { ...TWEAK_DEFAULTS };
+
+function applyTweaks() {
+  document.documentElement.setAttribute("data-theme", tweakState.theme);
+  document.documentElement.setAttribute("data-density", tweakState.density);
+  document.documentElement.setAttribute("data-ids", tweakState.ids);
+  const a = ACCENT_MAP[tweakState.accent];
+  if (a) {
+    document.documentElement.style.setProperty("--accent", a.accent);
+    document.documentElement.style.setProperty("--accent-soft", a.soft);
+    document.documentElement.style.setProperty("--accent-border", a.border);
+  }
+  renderBoard();
+  // refresh toggle states
+  document.querySelectorAll(".tweaks [data-tweak]").forEach(group => {
+    const key = group.getAttribute("data-tweak");
+    group.querySelectorAll("[data-val]").forEach(btn => {
+      btn.setAttribute("aria-pressed", btn.getAttribute("data-val") === tweakState[key] ? "true" : "false");
+    });
+  });
+}
+
+document.querySelectorAll(".tweaks [data-tweak]").forEach(group => {
+  const key = group.getAttribute("data-tweak");
+  group.addEventListener("click", e => {
+    const btn = e.target.closest("[data-val]");
+    if (!btn) return;
+    tweakState[key] = btn.getAttribute("data-val");
+    applyTweaks();
+    window.parent.postMessage({ type: "__edit_mode_set_keys", edits: { [key]: tweakState[key] } }, "*");
+  });
+});
+
+// Tweaks host protocol
+window.addEventListener("message", e => {
+  const d = e.data || {};
+  if (d.type === "__activate_edit_mode") {
+    document.body.classList.add("tweakable");
+    document.getElementById("tweaksPanel").classList.add("show");
+  }
+  if (d.type === "__deactivate_edit_mode") {
+    document.body.classList.remove("tweakable");
+    document.getElementById("tweaksPanel").classList.remove("show");
+  }
+});
+window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+
+document.getElementById("tweaksFab").addEventListener("click", () => {
+  document.getElementById("tweaksPanel").classList.toggle("show");
+});
+
+// ============ Init ============
+renderBoard();
+applyTweaks();
+
+// Open a sample panel to showcase
+// openPanel("tasks/search-feature.md");
+</script>
+</body>
+</html>
