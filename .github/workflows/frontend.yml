@@ -1,0 +1,123 @@
+name: frontend
+
+on:
+  pull_request:
+
+concurrency:
+  group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint / typecheck / test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Biome check
+        run: pnpm exec biome check
+
+      - name: oxlint
+        run: pnpm exec oxlint
+
+      - name: Test with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 1
+
+  coverage-comment:
+    name: post coverage comment
+    needs: check
+    if: always() && needs.check.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download coverage artifact
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frontend-coverage
+          path: coverage
+
+      - name: Build coverage markdown
+        run: |
+          SUMMARY=coverage/coverage-summary.json
+          if [ ! -f "$SUMMARY" ]; then
+            {
+              echo '## Frontend Coverage (vitest)'
+              echo
+              echo '🔴 カバレッジサマリが取得できませんでした。'
+              echo
+              echo "Commit: \`${GITHUB_SHA:0:7}\`"
+            } > coverage.md
+            exit 0
+          fi
+          status_for() {
+            local pct=$1
+            if awk "BEGIN{exit !(${pct} >= 80)}"; then echo '🟢'
+            elif awk "BEGIN{exit !(${pct} >= 50)}"; then echo '🟡'
+            else echo '🔴'
+            fi
+          }
+          LINES=$(printf '%.2f' "$(jq -r '.total.lines.pct // 0' "$SUMMARY")")
+          STATEMENTS=$(printf '%.2f' "$(jq -r '.total.statements.pct // 0' "$SUMMARY")")
+          FUNCTIONS=$(printf '%.2f' "$(jq -r '.total.functions.pct // 0' "$SUMMARY")")
+          BRANCHES=$(printf '%.2f' "$(jq -r '.total.branches.pct // 0' "$SUMMARY")")
+          S_LINES=$(status_for "$LINES")
+          S_STMTS=$(status_for "$STATEMENTS")
+          S_FUNCS=$(status_for "$FUNCTIONS")
+          S_BRNCH=$(status_for "$BRANCHES")
+          {
+            echo '## Frontend Coverage (vitest)'
+            echo
+            echo "Commit: \`${GITHUB_SHA:0:7}\` — 凡例: 🟢 ≥80 / 🟡 50-79 / 🔴 <50"
+            echo
+            echo '| Status | Metric | Percentage |'
+            echo '| :---: | --- | ---: |'
+            echo "| ${S_LINES} | Lines | ${LINES}% |"
+            echo "| ${S_STMTS} | Statements | ${STATEMENTS}% |"
+            echo "| ${S_FUNCS} | Functions | ${FUNCTIONS}% |"
+            echo "| ${S_BRNCH} | Branches | ${BRANCHES}% |"
+          } > coverage.md
+
+      - name: Post coverage comment
+        continue-on-error: true
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        with:
+          header: frontend-coverage
+          path: coverage.md

@@ -29,5 +29,12 @@ export default defineConfig(() => ({
 	},
 	test: {
 		environment: "happy-dom",
+		coverage: {
+			provider: "v8" as const,
+			reporter: ["text", "json-summary", "json"],
+			reportOnFailure: true,
+			include: ["src/**/*.{ts,tsx}"],
+			exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts", "src/main.tsx"],
+		},
 	},
 }));

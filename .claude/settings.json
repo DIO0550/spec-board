@@ -61,5 +61,16 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test:run)",
+      "Bash(pnpm test:run *)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm run build)",
+      "Bash(pnpm run typecheck)",
+      "Bash(pnpm exec vitest)"
+    ]
   }
 }

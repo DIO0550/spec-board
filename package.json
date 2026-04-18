@@ -3,11 +3,14 @@
 	"private": true,
 	"version": "0.1.0",
 	"type": "module",
+	"packageManager": "pnpm@10.33.0",
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc -b && vite build",
+		"typecheck": "tsc -b",
 		"test": "vitest",
 		"test:run": "vitest run --passWithNoTests",
+		"test:coverage": "vitest run --coverage",
 		"preview": "vite preview",
 		"tauri": "tauri"
 	},
@@ -26,11 +29,12 @@
 		"@types/react": "^19.1.8",
 		"@types/react-dom": "^19.1.6",
 		"@vitejs/plugin-react": "^6.0.1",
+		"@vitest/coverage-v8": "^4.1.4",
 		"happy-dom": "^20.8.9",
 		"oxlint": "^1.58.0",
 		"oxlint-tsgolint": "^0.20.0",
 		"typescript": "~5.8.3",
 		"vite": "^8.0.5",
-		"vitest": "^4.1.2"
+		"vitest": "^4.1.4"
 	}
 }
