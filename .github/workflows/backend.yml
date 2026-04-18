@@ -62,8 +62,19 @@ jobs:
         if: always()
         run: |
           cargo llvm-cov --text --output-path coverage.txt
+          LINE_COV=$(cargo llvm-cov --json --summary-only | jq -r '.data[0].totals.lines.percent')
+          LINE_COV_ROUND=$(printf '%.2f' "${LINE_COV:-0}")
+          if awk "BEGIN{exit !(${LINE_COV_ROUND} >= 80)}"; then
+            STATUS='🟢'
+          elif awk "BEGIN{exit !(${LINE_COV_ROUND} >= 50)}"; then
+            STATUS='🟡'
+          else
+            STATUS='🔴'
+          fi
           {
             echo '## Backend Coverage (cargo-llvm-cov)'
+            echo
+            echo "Status: ${STATUS} Lines ${LINE_COV_ROUND}% (🟢 ≥80 / 🟡 50-79 / 🔴 <50)"
             echo
             echo "Commit: \`${GITHUB_SHA:0:7}\`"
             echo
