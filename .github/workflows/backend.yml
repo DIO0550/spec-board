@@ -62,11 +62,16 @@ jobs:
         if: always()
         run: |
           cargo llvm-cov --text --output-path coverage.txt
-          LINE_COV=$(cargo llvm-cov --json --summary-only | jq -r '.data[0].totals.lines.percent')
-          LINE_COV_ROUND=$(printf '%.2f' "${LINE_COV:-0}")
-          if awk "BEGIN{exit !(${LINE_COV_ROUND} >= 80)}"; then
+          SUMMARY_JSON=$(cargo llvm-cov --json --summary-only)
+          LINES=$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.lines.percent')
+          FUNCTIONS=$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.functions.percent')
+          REGIONS=$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.regions.percent')
+          LINES_R=$(printf '%.2f' "${LINES:-0}")
+          FUNCS_R=$(printf '%.2f' "${FUNCTIONS:-0}")
+          REGNS_R=$(printf '%.2f' "${REGIONS:-0}")
+          if awk "BEGIN{exit !(${LINES_R} >= 80)}"; then
             STATUS='🟢'
-          elif awk "BEGIN{exit !(${LINE_COV_ROUND} >= 50)}"; then
+          elif awk "BEGIN{exit !(${LINES_R} >= 50)}"; then
             STATUS='🟡'
           else
             STATUS='🔴'
@@ -74,13 +79,23 @@ jobs:
           {
             echo '## Backend Coverage (cargo-llvm-cov)'
             echo
-            echo "Status: ${STATUS} Lines ${LINE_COV_ROUND}% (🟢 ≥80 / 🟡 50-79 / 🔴 <50)"
+            echo "Status: ${STATUS} Lines ${LINES_R}% (🟢 ≥80 / 🟡 50-79 / 🔴 <50)"
             echo
             echo "Commit: \`${GITHUB_SHA:0:7}\`"
+            echo
+            echo '| Metric | Percentage |'
+            echo '| --- | --- |'
+            echo "| Lines | ${LINES_R}% |"
+            echo "| Functions | ${FUNCS_R}% |"
+            echo "| Regions | ${REGNS_R}% |"
+            echo
+            echo '<details><summary>Per-line coverage</summary>'
             echo
             echo '```'
             cat coverage.txt
             echo '```'
+            echo
+            echo '</details>'
           } > "$GITHUB_WORKSPACE/coverage.md"
 
       - name: Upload coverage artifact
