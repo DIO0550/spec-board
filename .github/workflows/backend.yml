@@ -10,18 +10,16 @@ concurrency:
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: src-tauri
-
 jobs:
-  backend-check:
-    name: fmt / clippy / check / coverage
+  check:
+    name: fmt / clippy / coverage
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: read
-      pull-requests: write
+    defaults:
+      run:
+        working-directory: src-tauri
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -61,6 +59,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Generate coverage
+        if: always()
         run: |
           cargo llvm-cov --text --output-path coverage.txt
           {
@@ -71,10 +70,34 @@ jobs:
             echo '```'
           } > coverage.md
 
-      - name: Post coverage comment
+      - name: Upload coverage artifact
         if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-coverage
+          path: src-tauri/coverage.md
+          if-no-files-found: ignore
+          retention-days: 1
+
+  coverage-comment:
+    name: post coverage comment
+    needs: check
+    if: always() && needs.check.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-coverage
+          path: .
+
+      - name: Post coverage comment
         continue-on-error: true
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: backend-coverage
-          path: src-tauri/coverage.md
+          path: coverage.md
