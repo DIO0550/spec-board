@@ -34,12 +34,7 @@ export default defineConfig(() => ({
 			reporter: ["text", "json-summary", "json"],
 			reportOnFailure: true,
 			include: ["src/**/*.{ts,tsx}"],
-			exclude: [
-				"src/**/*.test.{ts,tsx}",
-				"src/**/*.d.ts",
-				"src/main.tsx",
-				"src/vite-env.d.ts",
-			],
+			exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts", "src/main.tsx"],
 		},
 	},
 }));
