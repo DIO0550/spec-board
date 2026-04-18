@@ -6,14 +6,6 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": [
-			"src/**/*.{ts,tsx}",
-			"vite.config.ts",
-			"package.json",
-			"!src/index.css",
-			"!src-tauri/capabilities",
-			"!task-loop-config.json",
-			"!.claude"
-		]
+		"includes": ["src/**/*.{ts,tsx}", "vite.config.ts", "package.json"]
 	}
 }
