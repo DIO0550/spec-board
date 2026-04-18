@@ -81,40 +81,38 @@ jobs:
             {
               echo '## Frontend Coverage (vitest)'
               echo
-              echo 'Status: 🔴 カバレッジサマリが取得できませんでした。'
+              echo '🔴 カバレッジサマリが取得できませんでした。'
               echo
               echo "Commit: \`${GITHUB_SHA:0:7}\`"
             } > coverage.md
             exit 0
           fi
-          LINES=$(jq -r '.total.lines.pct' "$SUMMARY")
-          STATEMENTS=$(jq -r '.total.statements.pct' "$SUMMARY")
-          FUNCTIONS=$(jq -r '.total.functions.pct' "$SUMMARY")
-          BRANCHES=$(jq -r '.total.branches.pct' "$SUMMARY")
-          LINES_R=$(printf '%.2f' "${LINES:-0}")
-          STMTS_R=$(printf '%.2f' "${STATEMENTS:-0}")
-          FUNCS_R=$(printf '%.2f' "${FUNCTIONS:-0}")
-          BRNCH_R=$(printf '%.2f' "${BRANCHES:-0}")
-          if awk "BEGIN{exit !(${LINES_R} >= 80)}"; then
-            STATUS='🟢'
-          elif awk "BEGIN{exit !(${LINES_R} >= 50)}"; then
-            STATUS='🟡'
-          else
-            STATUS='🔴'
-          fi
+          status_for() {
+            local pct=$1
+            if awk "BEGIN{exit !(${pct} >= 80)}"; then echo '🟢'
+            elif awk "BEGIN{exit !(${pct} >= 50)}"; then echo '🟡'
+            else echo '🔴'
+            fi
+          }
+          LINES=$(printf '%.2f' "$(jq -r '.total.lines.pct // 0' "$SUMMARY")")
+          STATEMENTS=$(printf '%.2f' "$(jq -r '.total.statements.pct // 0' "$SUMMARY")")
+          FUNCTIONS=$(printf '%.2f' "$(jq -r '.total.functions.pct // 0' "$SUMMARY")")
+          BRANCHES=$(printf '%.2f' "$(jq -r '.total.branches.pct // 0' "$SUMMARY")")
+          S_LINES=$(status_for "$LINES")
+          S_STMTS=$(status_for "$STATEMENTS")
+          S_FUNCS=$(status_for "$FUNCTIONS")
+          S_BRNCH=$(status_for "$BRANCHES")
           {
             echo '## Frontend Coverage (vitest)'
             echo
-            echo "Status: ${STATUS} Lines ${LINES_R}% (🟢 ≥80 / 🟡 50-79 / 🔴 <50)"
+            echo "Commit: \`${GITHUB_SHA:0:7}\` — 凡例: 🟢 ≥80 / 🟡 50-79 / 🔴 <50"
             echo
-            echo "Commit: \`${GITHUB_SHA:0:7}\`"
-            echo
-            echo '| Metric | Percentage |'
-            echo '| --- | --- |'
-            echo "| Lines | ${LINES_R}% |"
-            echo "| Statements | ${STMTS_R}% |"
-            echo "| Functions | ${FUNCS_R}% |"
-            echo "| Branches | ${BRNCH_R}% |"
+            echo '| Status | Metric | Percentage |'
+            echo '| :---: | --- | ---: |'
+            echo "| ${S_LINES} | Lines | ${LINES}% |"
+            echo "| ${S_STMTS} | Statements | ${STATEMENTS}% |"
+            echo "| ${S_FUNCS} | Functions | ${FUNCTIONS}% |"
+            echo "| ${S_BRNCH} | Branches | ${BRANCHES}% |"
           } > coverage.md
 
       - name: Post coverage comment

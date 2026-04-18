@@ -63,31 +63,29 @@ jobs:
         run: |
           cargo llvm-cov --text --output-path coverage.txt
           SUMMARY_JSON=$(cargo llvm-cov --json --summary-only)
-          LINES=$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.lines.percent')
-          FUNCTIONS=$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.functions.percent')
-          REGIONS=$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.regions.percent')
-          LINES_R=$(printf '%.2f' "${LINES:-0}")
-          FUNCS_R=$(printf '%.2f' "${FUNCTIONS:-0}")
-          REGNS_R=$(printf '%.2f' "${REGIONS:-0}")
-          if awk "BEGIN{exit !(${LINES_R} >= 80)}"; then
-            STATUS='🟢'
-          elif awk "BEGIN{exit !(${LINES_R} >= 50)}"; then
-            STATUS='🟡'
-          else
-            STATUS='🔴'
-          fi
+          status_for() {
+            local pct=$1
+            if awk "BEGIN{exit !(${pct} >= 80)}"; then echo '🟢'
+            elif awk "BEGIN{exit !(${pct} >= 50)}"; then echo '🟡'
+            else echo '🔴'
+            fi
+          }
+          LINES=$(printf '%.2f' "$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.lines.percent // 0')")
+          FUNCTIONS=$(printf '%.2f' "$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.functions.percent // 0')")
+          REGIONS=$(printf '%.2f' "$(echo "$SUMMARY_JSON" | jq -r '.data[0].totals.regions.percent // 0')")
+          S_LINES=$(status_for "$LINES")
+          S_FUNCS=$(status_for "$FUNCTIONS")
+          S_REGNS=$(status_for "$REGIONS")
           {
             echo '## Backend Coverage (cargo-llvm-cov)'
             echo
-            echo "Status: ${STATUS} Lines ${LINES_R}% (🟢 ≥80 / 🟡 50-79 / 🔴 <50)"
+            echo "Commit: \`${GITHUB_SHA:0:7}\` — 凡例: 🟢 ≥80 / 🟡 50-79 / 🔴 <50"
             echo
-            echo "Commit: \`${GITHUB_SHA:0:7}\`"
-            echo
-            echo '| Metric | Percentage |'
-            echo '| --- | --- |'
-            echo "| Lines | ${LINES_R}% |"
-            echo "| Functions | ${FUNCS_R}% |"
-            echo "| Regions | ${REGNS_R}% |"
+            echo '| Status | Metric | Percentage |'
+            echo '| :---: | --- | ---: |'
+            echo "| ${S_LINES} | Lines | ${LINES}% |"
+            echo "| ${S_FUNCS} | Functions | ${FUNCTIONS}% |"
+            echo "| ${S_REGNS} | Regions | ${REGIONS}% |"
             echo
             echo '<details><summary>Per-line coverage</summary>'
             echo
