@@ -55,9 +55,6 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: cargo check
-        run: cargo check --all-targets
-
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
         with:
