@@ -65,6 +65,8 @@ jobs:
           {
             echo '## Backend Coverage (cargo-llvm-cov)'
             echo
+            echo "Commit: \`${GITHUB_SHA:0:7}\`"
+            echo
             echo '```'
             cat coverage.txt
             echo '```'
