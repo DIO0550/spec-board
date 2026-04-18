@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ToastContainer, useToasts } from "./components/Toast";
-import { Board, EmptyState, HeaderBar } from "./features/board";
-import { DetailPanel } from "./features/detail";
-import { TaskCreateModal, type TaskFormValues } from "./features/task-form";
+import { ToastContainer } from "@/components/ToastContainer";
+import { useToasts } from "@/hooks/useToasts";
 import {
 	createTask,
 	deleteTask,
@@ -10,13 +8,16 @@ import {
 	getTasks,
 	updateColumns,
 	updateTask,
-} from "./lib/api";
+} from "@/lib/api";
+import { Board, EmptyState, HeaderBar } from "./features/board";
+import { DetailPanel } from "./features/detail";
+import { TaskCreateModal, type TaskFormValues } from "./features/task-form";
 import type { Column, Task } from "./types/task";
 
 /**
  * @returns {JSX.Element} アプリケーションのルートレイアウトシェル
  */
-function App() {
+export const App = () => {
 	const [projectPath, setProjectPath] = useState<string | null>(null);
 	const [tasks, setTasks] = useState<Task[]>([]);
 	const [columns, setColumns] = useState<Column[]>([]);
@@ -341,6 +342,4 @@ function App() {
 			<ToastContainer toasts={toasts} onDismiss={dismissToast} />
 		</div>
 	);
-}
-
-export default App;
+};
