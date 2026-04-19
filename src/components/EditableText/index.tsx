@@ -67,27 +67,37 @@ export const EditableText = ({
     setMode(Mode.Display);
   };
 
+  const enterEditMode = () => {
+    // Edit 開始時点の最新 value に同期。useEffect 無しで外部 value 追随を実現する。
+    setEditValue(value);
+    setMode(Mode.Edit);
+    inputRef.current?.select();
+  };
+
   const handleClick = () => {
     if (mode === Mode.Display) {
-      // Edit 開始時点の最新 value に同期。useEffect 無しで外部 value 追随を実現する。
-      setEditValue(value);
-      setMode(Mode.Edit);
-      inputRef.current?.select();
+      enterEditMode();
     }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Display 中の Enter / Space はキーボードのみでの編集起動経路。
+    // 旧 <button> ベース DOM 構造での Enter/Space アクティベーションと等価。
+    if (mode === Mode.Display) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        enterEditMode();
+      }
+      return;
+    }
+
     if (e.key === "Enter") {
-      // Display 中の Enter はキー入力を親へバブルさせる。
       // IME 変換確定の Enter は編集確定と区別する。
-      if (mode !== Mode.Edit || e.nativeEvent.isComposing) return;
+      if (e.nativeEvent.isComposing) return;
       e.preventDefault();
       e.stopPropagation();
       commit();
     } else if (e.key === "Escape") {
-      // Display 中の Escape は親 (例: DetailPanel の document-level リスナ) へ
-      // バブルさせる必要があるため、stopPropagation せずに抜ける。
-      if (mode !== Mode.Edit) return;
       e.preventDefault();
       e.stopPropagation();
       cancel();

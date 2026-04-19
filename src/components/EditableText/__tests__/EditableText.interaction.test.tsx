@@ -217,19 +217,42 @@ test("trim後の値が既存valueと同一のときonConfirmは呼ばれない",
   expect(onConfirm).not.toHaveBeenCalled();
 });
 
-test("Displayモード中のEnterでは何も起きない", () => {
+test("Displayモード中のEnterでEditモードに切り替わる", () => {
   const onConfirm = vi.fn();
   render({ value: "元の値", onConfirm });
   const display = document.querySelector(
     '[data-testid="editable-text-display"]',
   ) as HTMLInputElement;
-  // Display 中 (初期状態) に Enter をディスパッチ
   act(() => {
     display.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
   });
+  // Enter では編集確定は発火せず、Edit モードに遷移する
   expect(onConfirm).not.toHaveBeenCalled();
+  const input = document.querySelector(
+    '[data-testid="editable-text-input"]',
+  ) as HTMLInputElement;
+  expect(input).toBeTruthy();
+  expect(input.value).toBe("元の値");
+});
+
+test("Displayモード中のSpaceでEditモードに切り替わる", () => {
+  const onConfirm = vi.fn();
+  render({ value: "元の値", onConfirm });
+  const display = document.querySelector(
+    '[data-testid="editable-text-display"]',
+  ) as HTMLInputElement;
+  act(() => {
+    display.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+  });
+  expect(onConfirm).not.toHaveBeenCalled();
+  const input = document.querySelector(
+    '[data-testid="editable-text-input"]',
+  ) as HTMLInputElement;
+  expect(input).toBeTruthy();
 });
 
 test("IME変換中のEnterでは確定されない", () => {
