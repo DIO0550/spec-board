@@ -10,9 +10,9 @@ const Mode = {
 type Mode = ValueOf<typeof Mode>;
 
 const DISPLAY_CLASS_NAME =
-  "w-full cursor-pointer truncate rounded border-0 bg-transparent px-1 py-0.5 text-left text-lg font-semibold text-gray-900 hover:bg-gray-100 focus:outline-none";
+  "w-full cursor-pointer truncate rounded border-0 bg-transparent px-1 py-0.5 text-left text-lg font-semibold text-gray-900 hover:bg-gray-100 focus:outline-none focus-visible:bg-gray-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1";
 const EDIT_CLASS_NAME =
-  "w-full rounded border border-blue-400 px-1 py-0.5 text-lg font-semibold text-gray-900 outline-none";
+  "w-full rounded border border-blue-400 px-1 py-0.5 text-lg font-semibold text-gray-900 outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1";
 
 /** EditableText の Props */
 type EditableTextProps = {
