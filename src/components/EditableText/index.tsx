@@ -23,6 +23,8 @@ type EditableTextProps = {
    * @param value - 確定された値（trim 済み）
    */
   onConfirm: (value: string) => void;
+  /** スクリーンリーダー向けの accessible name。指定を推奨 */
+  ariaLabel?: string;
 };
 
 /**
@@ -33,7 +35,11 @@ type EditableTextProps = {
  * @param props - {@link EditableTextProps}
  * @returns インライン編集要素
  */
-export const EditableText = ({ value, onConfirm }: EditableTextProps) => {
+export const EditableText = ({
+  value,
+  onConfirm,
+  ariaLabel,
+}: EditableTextProps) => {
   const [mode, setMode] = useState<Mode>(Mode.Display);
   // editValue は Edit モード中のみ意味を持つ一時状態。
   // Display 中は <input value={value}> で外部 value を直接描画するため
@@ -109,6 +115,7 @@ export const EditableText = ({ value, onConfirm }: EditableTextProps) => {
       onKeyDown={handleKeyDown}
       onBlur={handleBlur}
       className={isEditMode ? EDIT_CLASS_NAME : DISPLAY_CLASS_NAME}
+      aria-label={ariaLabel}
       data-testid={isEditMode ? "editable-text-input" : "editable-text-display"}
     />
   );

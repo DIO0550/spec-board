@@ -151,6 +151,7 @@ export const DetailPanel = ({
             <EditableText
               value={task.title || task.filePath}
               onConfirm={handleTitleConfirm}
+              ariaLabel="タスクタイトル"
             />
           </div>
           <button
