@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EditableText } from "@/components/EditableText";
 import type { Column, Priority, Task } from "@/types/task";
-import { InlineEdit } from "../InlineEdit";
 import { LabelEditor } from "../LabelEditor";
 import { MarkdownBody } from "../MarkdownBody";
 import { PrioritySelect } from "../PrioritySelect";
@@ -148,7 +148,7 @@ export const DetailPanel = ({
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div className="min-w-0 flex-1">
-            <InlineEdit
+            <EditableText
               value={task.title || task.filePath}
               onConfirm={handleTitleConfirm}
             />
