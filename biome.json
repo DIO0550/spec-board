@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**/*.{ts,tsx}", "vite.config.ts", "package.json"]
+    "includes": [
+      "src/**/*.{ts,tsx}",
+      "vite.config.ts",
+      "package.json",
+      "tsconfig*.json",
+      "biome.json",
+      ".devcontainer/**/*.json"
+    ]
   },
   "formatter": {
     "enabled": true,
