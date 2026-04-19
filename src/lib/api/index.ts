@@ -10,11 +10,11 @@ let columns = structuredClone(initialColumns);
  * @throws ステータスが既存カラムに存在しない場合
  */
 const validateStatus = (status: string): void => {
-	if (!columns.some((col) => col.name === status)) {
-		throw new Error(
-			`Invalid status: ${status}. Must be one of: ${columns.map((c) => c.name).join(", ")}`,
-		);
-	}
+  if (!columns.some((col) => col.name === status)) {
+    throw new Error(
+      `Invalid status: ${status}. Must be one of: ${columns.map((c) => c.name).join(", ")}`,
+    );
+  }
 };
 
 /**
@@ -24,16 +24,16 @@ const validateStatus = (status: string): void => {
  * @returns カラム名をキー、ファイルパス配列を値とするオブジェクト
  */
 const buildCardOrder = (
-	taskList: Task[],
-	columnList: Column[],
+  taskList: Task[],
+  columnList: Column[],
 ): Record<string, string[]> => {
-	const order: Record<string, string[]> = {};
-	for (const col of columnList) {
-		order[col.name] = taskList
-			.filter((t) => t.status === col.name)
-			.map((t) => t.filePath);
-	}
-	return order;
+  const order: Record<string, string[]> = {};
+  for (const col of columnList) {
+    order[col.name] = taskList
+      .filter((t) => t.status === col.name)
+      .map((t) => t.filePath);
+  }
+  return order;
 };
 
 let cardOrder: Record<string, string[]> = buildCardOrder(tasks, columns);
@@ -44,7 +44,7 @@ let nextId = tasks.length + 1;
  * @returns タスクの配列
  */
 export async function getTasks(): Promise<Task[]> {
-	return structuredClone(tasks);
+  return structuredClone(tasks);
 }
 
 /**
@@ -52,7 +52,7 @@ export async function getTasks(): Promise<Task[]> {
  * @returns カラムの配列
  */
 export async function getColumns(): Promise<Column[]> {
-	return structuredClone(columns);
+  return structuredClone(columns);
 }
 
 /**
@@ -61,41 +61,41 @@ export async function getColumns(): Promise<Column[]> {
  * @returns 作成されたタスク
  */
 export async function createTask(
-	params: Pick<Task, "title" | "status"> &
-		Partial<Omit<Task, "id" | "title" | "status">>,
+  params: Pick<Task, "title" | "status"> &
+    Partial<Omit<Task, "id" | "title" | "status">>,
 ): Promise<Task> {
-	validateStatus(params.status);
-	if (params.parent !== undefined) {
-		const parentExists = tasks.some((t) => t.filePath === params.parent);
-		if (!parentExists) {
-			throw new Error(`Parent task not found: ${params.parent}`);
-		}
-	}
-	const newTask: Task = {
-		id: `task-${nextId++}`,
-		title: params.title,
-		status: params.status,
-		priority: params.priority,
-		labels: params.labels ?? [],
-		parent: params.parent,
-		links: params.links ?? [],
-		children: params.children ?? [],
-		reverseLinks: params.reverseLinks ?? [],
-		body: params.body ?? "",
-		filePath: params.filePath ?? `tasks/${params.title}.md`,
-	};
-	tasks.push(newTask);
-	const col = cardOrder[newTask.status];
-	if (col) {
-		col.push(newTask.filePath);
-	}
-	if (newTask.parent !== undefined) {
-		const parentTask = tasks.find((t) => t.filePath === newTask.parent);
-		if (parentTask && !parentTask.children.includes(newTask.filePath)) {
-			parentTask.children = [...parentTask.children, newTask.filePath];
-		}
-	}
-	return structuredClone(newTask);
+  validateStatus(params.status);
+  if (params.parent !== undefined) {
+    const parentExists = tasks.some((t) => t.filePath === params.parent);
+    if (!parentExists) {
+      throw new Error(`Parent task not found: ${params.parent}`);
+    }
+  }
+  const newTask: Task = {
+    id: `task-${nextId++}`,
+    title: params.title,
+    status: params.status,
+    priority: params.priority,
+    labels: params.labels ?? [],
+    parent: params.parent,
+    links: params.links ?? [],
+    children: params.children ?? [],
+    reverseLinks: params.reverseLinks ?? [],
+    body: params.body ?? "",
+    filePath: params.filePath ?? `tasks/${params.title}.md`,
+  };
+  tasks.push(newTask);
+  const col = cardOrder[newTask.status];
+  if (col) {
+    col.push(newTask.filePath);
+  }
+  if (newTask.parent !== undefined) {
+    const parentTask = tasks.find((t) => t.filePath === newTask.parent);
+    if (parentTask && !parentTask.children.includes(newTask.filePath)) {
+      parentTask.children = [...parentTask.children, newTask.filePath];
+    }
+  }
+  return structuredClone(newTask);
 }
 
 /**
@@ -106,28 +106,28 @@ export async function createTask(
  * @returns 更新後のタスク
  */
 export async function updateTask(
-	id: string,
-	updates: Partial<Omit<Task, "id">>,
+  id: string,
+  updates: Partial<Omit<Task, "id">>,
 ): Promise<Task> {
-	const index = tasks.findIndex((t) => t.id === id);
-	if (index === -1) {
-		throw new Error(`Task not found: ${id}`);
-	}
-	if (updates.status) {
-		validateStatus(updates.status);
-	}
-	const oldStatus = tasks[index].status;
-	const oldFilePath = tasks[index].filePath;
-	tasks[index] = { ...tasks[index], ...updates };
-	const updated = tasks[index];
+  const index = tasks.findIndex((t) => t.id === id);
+  if (index === -1) {
+    throw new Error(`Task not found: ${id}`);
+  }
+  if (updates.status) {
+    validateStatus(updates.status);
+  }
+  const oldStatus = tasks[index].status;
+  const oldFilePath = tasks[index].filePath;
+  tasks[index] = { ...tasks[index], ...updates };
+  const updated = tasks[index];
 
-	const statusChanged = updated.status !== oldStatus;
-	const filePathChanged = updated.filePath !== oldFilePath;
-	if (statusChanged || filePathChanged) {
-		cardOrder = buildCardOrder(tasks, columns);
-	}
+  const statusChanged = updated.status !== oldStatus;
+  const filePathChanged = updated.filePath !== oldFilePath;
+  if (statusChanged || filePathChanged) {
+    cardOrder = buildCardOrder(tasks, columns);
+  }
 
-	return structuredClone(updated);
+  return structuredClone(updated);
 }
 
 /**
@@ -136,25 +136,25 @@ export async function updateTask(
  * @throws タスクが見つからない場合
  */
 export async function deleteTask(id: string): Promise<void> {
-	const index = tasks.findIndex((t) => t.id === id);
-	if (index === -1) {
-		throw new Error(`Task not found: ${id}`);
-	}
-	const removed = tasks[index];
-	tasks.splice(index, 1);
-	const col = cardOrder[removed.status];
-	if (col) {
-		const pos = col.indexOf(removed.filePath);
-		if (pos !== -1) col.splice(pos, 1);
-	}
+  const index = tasks.findIndex((t) => t.id === id);
+  if (index === -1) {
+    throw new Error(`Task not found: ${id}`);
+  }
+  const removed = tasks[index];
+  tasks.splice(index, 1);
+  const col = cardOrder[removed.status];
+  if (col) {
+    const pos = col.indexOf(removed.filePath);
+    if (pos !== -1) col.splice(pos, 1);
+  }
 }
 
 /** カラム名変更の指定 */
 export type ColumnRename = {
-	/** 元のカラム名 */
-	from: string;
-	/** 新しいカラム名 */
-	to: string;
+  /** 元のカラム名 */
+  from: string;
+  /** 新しいカラム名 */
+  to: string;
 };
 
 /**
@@ -164,21 +164,21 @@ export type ColumnRename = {
  * @returns 更新後のカラム配列
  */
 export async function updateColumns(
-	newColumns: Column[],
-	renames?: ColumnRename[],
+  newColumns: Column[],
+  renames?: ColumnRename[],
 ): Promise<Column[]> {
-	if (renames && renames.length > 0) {
-		const renameMap = new Map(renames.map((r) => [r.from, r.to]));
-		for (const task of tasks) {
-			const next = renameMap.get(task.status);
-			if (next !== undefined) {
-				task.status = next;
-			}
-		}
-	}
-	columns = structuredClone(newColumns);
-	cardOrder = buildCardOrder(tasks, columns);
-	return structuredClone(columns);
+  if (renames && renames.length > 0) {
+    const renameMap = new Map(renames.map((r) => [r.from, r.to]));
+    for (const task of tasks) {
+      const next = renameMap.get(task.status);
+      if (next !== undefined) {
+        task.status = next;
+      }
+    }
+  }
+  columns = structuredClone(newColumns);
+  cardOrder = buildCardOrder(tasks, columns);
+  return structuredClone(columns);
 }
 
 /**
@@ -187,8 +187,8 @@ export async function updateColumns(
  * @returns 更新後のカード表示順
  */
 export async function updateCardOrder(
-	newCardOrder: Record<string, string[]>,
+  newCardOrder: Record<string, string[]>,
 ): Promise<Record<string, string[]>> {
-	cardOrder = structuredClone(newCardOrder);
-	return structuredClone(cardOrder);
+  cardOrder = structuredClone(newCardOrder);
+  return structuredClone(cardOrder);
 }

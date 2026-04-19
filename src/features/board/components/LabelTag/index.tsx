@@ -1,6 +1,6 @@
 type LabelTagProps = {
-	/** ラベル名 */
-	label: string;
+  /** ラベル名 */
+  label: string;
 };
 
 /**
@@ -8,9 +8,9 @@ type LabelTagProps = {
  * @returns ラベルタグ要素
  */
 export const LabelTag = ({ label }: LabelTagProps) => {
-	return (
-		<span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
-			{label}
-		</span>
-	);
+  return (
+    <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
+      {label}
+    </span>
+  );
 };

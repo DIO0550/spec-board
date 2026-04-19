@@ -7,51 +7,51 @@ let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
 
 afterEach(() => {
-	act(() => {
-		root?.unmount();
-	});
-	root = null;
-	container?.remove();
-	container = null;
+  act(() => {
+    root?.unmount();
+  });
+  root = null;
+  container?.remove();
+  container = null;
 });
 
 function render(props: Parameters<typeof EmptyState>[0]) {
-	container = document.createElement("div");
-	document.body.appendChild(container);
-	root = createRoot(container);
-	act(() => {
-		root?.render(createElement(EmptyState, props));
-	});
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(EmptyState, props));
+  });
 }
 
 test('type が "no-project" の場合、「プロジェクトを開く」ボタンが表示される', async () => {
-	render({ type: "no-project", onOpenProject: vi.fn() });
-	await vi.waitFor(() => {
-		const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
-			(b): b is HTMLButtonElement => b.textContent === "プロジェクトを開く",
-		);
-		expect(btn).toBeDefined();
-	});
+  render({ type: "no-project", onOpenProject: vi.fn() });
+  await vi.waitFor(() => {
+    const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (b): b is HTMLButtonElement => b.textContent === "プロジェクトを開く",
+    );
+    expect(btn).toBeDefined();
+  });
 });
 
 test('type="empty-project" の場合、ガイドメッセージが表示される', async () => {
-	render({ type: "empty-project" });
-	await vi.waitFor(() => {
-		expect(container?.textContent).toContain("タスクがありません");
-		expect(container?.textContent).toContain("追加");
-	});
+  render({ type: "empty-project" });
+  await vi.waitFor(() => {
+    expect(container?.textContent).toContain("タスクがありません");
+    expect(container?.textContent).toContain("追加");
+  });
 });
 
 test("「プロジェクトを開く」ボタンクリックでコールバックが呼ばれる", async () => {
-	const onOpenProject = vi.fn();
-	render({ type: "no-project", onOpenProject });
-	let btn: HTMLButtonElement | undefined;
-	await vi.waitFor(() => {
-		btn = Array.from(container?.querySelectorAll("button") ?? []).find(
-			(b): b is HTMLButtonElement => b.textContent === "プロジェクトを開く",
-		);
-		expect(btn).toBeDefined();
-	});
-	btn?.click();
-	expect(onOpenProject).toHaveBeenCalledTimes(1);
+  const onOpenProject = vi.fn();
+  render({ type: "no-project", onOpenProject });
+  let btn: HTMLButtonElement | undefined;
+  await vi.waitFor(() => {
+    btn = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (b): b is HTMLButtonElement => b.textContent === "プロジェクトを開く",
+    );
+    expect(btn).toBeDefined();
+  });
+  btn?.click();
+  expect(onOpenProject).toHaveBeenCalledTimes(1);
 });
