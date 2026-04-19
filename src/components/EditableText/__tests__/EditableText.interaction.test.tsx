@@ -265,6 +265,28 @@ test("IME変換中のEnterでは確定されない", () => {
   expect(stillEditing).toBeTruthy();
 });
 
+test("DisplayモードのEscapeはstopPropagationされない", () => {
+  const onConfirm = vi.fn();
+  render({ value: "元の値", onConfirm });
+  const display = document.querySelector(
+    '[data-testid="editable-text-display"]',
+  ) as HTMLInputElement;
+  const parentSpy = vi.fn();
+  // 親 (document) で Escape を観察
+  document.addEventListener("keydown", parentSpy);
+  try {
+    act(() => {
+      display.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    // Display 中は stopPropagation されず、document まで伝播する
+    expect(parentSpy).toHaveBeenCalledTimes(1);
+  } finally {
+    document.removeEventListener("keydown", parentSpy);
+  }
+});
+
 test("編集中に外部valueが変化してもeditValueは保持される", () => {
   const onConfirm = vi.fn();
   render({ value: "元の値", onConfirm });

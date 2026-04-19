@@ -79,6 +79,9 @@ export const EditableText = ({ value, onConfirm }: EditableTextProps) => {
       e.stopPropagation();
       commit();
     } else if (e.key === "Escape") {
+      // Display 中の Escape は親 (例: DetailPanel の document-level リスナ) へ
+      // バブルさせる必要があるため、stopPropagation せずに抜ける。
+      if (mode !== Mode.Edit) return;
       e.preventDefault();
       e.stopPropagation();
       cancel();
