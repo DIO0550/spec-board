@@ -217,6 +217,54 @@ test("trim後の値が既存valueと同一のときonConfirmは呼ばれない",
   expect(onConfirm).not.toHaveBeenCalled();
 });
 
+test("Displayモード中のEnterでは何も起きない", () => {
+  const onConfirm = vi.fn();
+  render({ value: "元の値", onConfirm });
+  const display = document.querySelector(
+    '[data-testid="editable-text-display"]',
+  ) as HTMLInputElement;
+  // Display 中 (初期状態) に Enter をディスパッチ
+  act(() => {
+    display.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(onConfirm).not.toHaveBeenCalled();
+});
+
+test("IME変換中のEnterでは確定されない", () => {
+  const onConfirm = vi.fn();
+  render({ value: "元の値", onConfirm });
+  const display = document.querySelector(
+    '[data-testid="editable-text-display"]',
+  ) as HTMLElement;
+  act(() => {
+    display.click();
+  });
+  const input = document.querySelector(
+    '[data-testid="editable-text-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    setInputValue(input, "変換中の候補");
+  });
+  // isComposing=true な Enter をディスパッチ → 確定されない
+  act(() => {
+    const ev = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      composed: true,
+    });
+    Object.defineProperty(ev, "isComposing", { value: true });
+    input.dispatchEvent(ev);
+  });
+  expect(onConfirm).not.toHaveBeenCalled();
+  // Edit モードのままであることを確認
+  const stillEditing = document.querySelector(
+    '[data-testid="editable-text-input"]',
+  );
+  expect(stillEditing).toBeTruthy();
+});
+
 test("編集中に外部valueが変化してもeditValueは保持される", () => {
   const onConfirm = vi.fn();
   render({ value: "元の値", onConfirm });

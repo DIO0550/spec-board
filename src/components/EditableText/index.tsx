@@ -72,6 +72,9 @@ export const EditableText = ({ value, onConfirm }: EditableTextProps) => {
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
+      // Display 中の Enter はキー入力を親へバブルさせる。
+      // IME 変換確定の Enter は編集確定と区別する。
+      if (mode !== Mode.Edit || e.nativeEvent.isComposing) return;
       e.preventDefault();
       e.stopPropagation();
       commit();
