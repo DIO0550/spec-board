@@ -79,8 +79,10 @@ test("タスクタイトルが表示される", async () => {
     onDelete: vi.fn(),
   });
   await vi.waitFor(() => {
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("ログイン修正");
+    const titleInput = document.querySelector(
+      '[data-testid="editable-text-display"]',
+    ) as HTMLInputElement | null;
+    expect(titleInput?.value).toBe("ログイン修正");
   });
 });
 
