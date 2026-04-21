@@ -46,7 +46,7 @@ export type FieldValues = {
   body: string;
 };
 
-/** 各 field のエラー（key 不在 = エラーなし） */
+/** 各 field のエラー（値が undefined ならエラーなし） */
 export type FieldErrors = {
   title?: string;
 };
