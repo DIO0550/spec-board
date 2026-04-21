@@ -14,7 +14,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** 外観バリアント */
   variant: ButtonVariant;
 } & {
-  [key: `data-${string}`]: string | undefined;
+  [key: `data-${string}`]: string | number | boolean | undefined;
 };
 
 /**
