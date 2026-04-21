@@ -43,6 +43,8 @@ export const useLabelsInput = (
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
+      // IME 変換確定の Enter はラベル確定と区別する。
+      if (e.nativeEvent.isComposing) return;
       e.preventDefault();
       dispatch({ type: "commit" });
     }

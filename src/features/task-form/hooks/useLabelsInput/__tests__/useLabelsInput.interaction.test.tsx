@@ -119,11 +119,30 @@ test("handleKeyDown: Enter で commit + preventDefault", () => {
   act(() => {
     get().handleKeyDown({
       key: "Enter",
+      nativeEvent: { isComposing: false },
       preventDefault: prevent,
     } as unknown as React.KeyboardEvent<HTMLInputElement>);
   });
   expect(prevent).toHaveBeenCalledTimes(1);
   expect(get().state).toEqual({ labels: ["x"], labelInput: "" });
+});
+
+test("handleKeyDown: IME 変換中（isComposing=true）の Enter は commit しない", () => {
+  const get = render();
+  act(() => {
+    get().dispatch({ type: "setInput", value: "日本語" });
+  });
+  const prevent = vi.fn();
+  const before = get().state;
+  act(() => {
+    get().handleKeyDown({
+      key: "Enter",
+      nativeEvent: { isComposing: true },
+      preventDefault: prevent,
+    } as unknown as React.KeyboardEvent<HTMLInputElement>);
+  });
+  expect(prevent).not.toHaveBeenCalled();
+  expect(get().state).toBe(before);
 });
 
 test("handleKeyDown: Enter 以外では何もしない", () => {
