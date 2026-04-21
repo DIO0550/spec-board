@@ -159,7 +159,9 @@ export const useTaskFormFields = (
   const handleSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      if (isSubmitting) return;
+      if (isSubmitting) {
+        return;
+      }
       const titleError = TitleField.validate(state.values.title);
       if (titleError !== undefined) {
         dispatch({ type: "validateAll" });
