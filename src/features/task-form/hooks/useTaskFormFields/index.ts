@@ -1,5 +1,5 @@
 import type { Dispatch, FormEvent } from "react";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 import {
   ParentField,
   type ParentValue,
@@ -140,15 +140,9 @@ export const useTaskFormFields = (
   }));
 
   const { parentFieldVisible, initialParent } = args;
-  // 初期マウント時は useReducer の init 関数で parent を正しい値に初期化済みなので
-  // dispatch は不要。props 変化時のみ syncParent する（ユーザーが parent action で
-  // 選択した値を上書きしないよう、deps には state を含めない）。
-  const hasMountedRef = useRef(false);
+  // syncParent reducer は Object.is で同値判定して no-op 化しているため、
+  // 初期マウント時の dispatch も reducer 側で state がそのまま返り React が re-render を bail out する。
   useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
     dispatch({
       type: "syncParent",
       value: ParentField.reset(parentFieldVisible, initialParent),
