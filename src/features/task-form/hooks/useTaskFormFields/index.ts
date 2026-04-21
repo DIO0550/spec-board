@@ -101,11 +101,15 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
     case "priority":
       return { ...state, values: { ...state.values, priority: action.value } };
     case "parent":
-      return { ...state, values: { ...state.values, parent: action.value } };
+      return Object.is(state.values.parent, action.value)
+        ? state
+        : { ...state, values: { ...state.values, parent: action.value } };
     case "body":
       return { ...state, values: { ...state.values, body: action.value } };
     case "syncParent":
-      return { ...state, values: { ...state.values, parent: action.value } };
+      return Object.is(state.values.parent, action.value)
+        ? state
+        : { ...state, values: { ...state.values, parent: action.value } };
     case "validateAll":
       return {
         ...state,
