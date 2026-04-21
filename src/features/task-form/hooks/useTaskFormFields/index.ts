@@ -1,5 +1,5 @@
 import type { Dispatch, FormEvent } from "react";
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useReducer } from "react";
 import {
   ParentField,
   type ParentValue,
@@ -64,7 +64,6 @@ export type FieldsAction =
   | { type: "priority"; value: PriorityValue }
   | { type: "parent"; value: ParentValue }
   | { type: "body"; value: string }
-  | { type: "syncParent"; value: ParentValue }
   | { type: "validateAll" };
 
 /** useTaskFormFields の返却値 */
@@ -101,15 +100,9 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
     case "priority":
       return { ...state, values: { ...state.values, priority: action.value } };
     case "parent":
-      return Object.is(state.values.parent, action.value)
-        ? state
-        : { ...state, values: { ...state.values, parent: action.value } };
+      return { ...state, values: { ...state.values, parent: action.value } };
     case "body":
       return { ...state, values: { ...state.values, body: action.value } };
-    case "syncParent":
-      return Object.is(state.values.parent, action.value)
-        ? state
-        : { ...state, values: { ...state.values, parent: action.value } };
     case "validateAll":
       return {
         ...state,
@@ -121,7 +114,7 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
 /**
  * TaskForm の全 field 値・エラー・送信処理をまとめて管理するカスタムフック。
  * バリデーション / 初期値 / 正規化は各 Field モジュール（TitleField / PriorityField / ParentField）に委譲し、
- * ここでは reducer の配線と useEffect（parent リセット）/ handleSubmit のみを担う。
+ * ここでは reducer の配線と handleSubmit のみを担う。
  * @param args - フックの引数
  * @returns state / dispatch / handleSubmit
  */
@@ -138,16 +131,6 @@ export const useTaskFormFields = (
     },
     errors: {},
   }));
-
-  const { parentFieldVisible, initialParent } = args;
-  // syncParent reducer は Object.is で同値判定して no-op 化しているため、
-  // 初期マウント時の dispatch も reducer 側で state がそのまま返り React が re-render を bail out する。
-  useEffect(() => {
-    dispatch({
-      type: "syncParent",
-      value: ParentField.reset(parentFieldVisible, initialParent),
-    });
-  }, [parentFieldVisible, initialParent]);
 
   const { isSubmitting, onSubmit, commitPendingAndGetLabels } = args;
   const handleSubmit = useCallback(

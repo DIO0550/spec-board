@@ -13,15 +13,3 @@ test.each([
 }) => {
   expect(ParentField.initial(visible, initialParent)).toBe(expected);
 });
-
-test.each([
-  { visible: false, initialParent: "y", expected: undefined },
-  { visible: true, initialParent: "y", expected: "y" },
-  { visible: true, initialParent: undefined, expected: undefined },
-])("reset(visible=$visible, initialParent=$initialParent) -> $expected", ({
-  visible,
-  initialParent,
-  expected,
-}) => {
-  expect(ParentField.reset(visible, initialParent)).toBe(expected);
-});

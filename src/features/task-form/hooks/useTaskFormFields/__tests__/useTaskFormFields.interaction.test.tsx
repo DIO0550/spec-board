@@ -61,19 +61,7 @@ const render = (args: UseTaskFormFieldsArgs) => {
       }),
     );
   });
-  const rerender = (next: UseTaskFormFieldsArgs) => {
-    act(() => {
-      root?.render(
-        createElement(Probe, {
-          ...next,
-          onResult: (r) => {
-            latest = r;
-          },
-        }),
-      );
-    });
-  };
-  return { get: () => latest as unknown as UseTaskFormFieldsResult, rerender };
+  return { get: () => latest as unknown as UseTaskFormFieldsResult };
 };
 
 const makeFormEvent = () =>
@@ -232,26 +220,4 @@ test("handleSubmit: labels は commitPendingAndGetLabels の戻り値が使わ�
   expect(commit).toHaveBeenCalledTimes(1);
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.labels).toEqual(["a", "b"]);
-});
-
-test("parentFieldVisible: false→true で parent が initialParent にリセットされる", () => {
-  const { get, rerender } = render(defaultArgs());
-  expect(get().state.values.parent).toBeUndefined();
-  rerender({
-    ...defaultArgs(),
-    parentFieldVisible: true,
-    initialParent: "tasks/x.md",
-  });
-  expect(get().state.values.parent).toBe("tasks/x.md");
-});
-
-test("parentFieldVisible: true→false で parent が undefined にリセットされる", () => {
-  const { get, rerender } = render({
-    ...defaultArgs(),
-    parentFieldVisible: true,
-    initialParent: "tasks/x.md",
-  });
-  expect(get().state.values.parent).toBe("tasks/x.md");
-  rerender({ ...defaultArgs(), parentFieldVisible: false });
-  expect(get().state.values.parent).toBeUndefined();
 });

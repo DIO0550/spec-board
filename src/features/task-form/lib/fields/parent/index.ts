@@ -14,13 +14,4 @@ export const ParentField = {
    */
   initial: (visible: boolean, initialParent?: string): ParentValue =>
     visible ? initialParent : undefined,
-
-  /**
-   * visible / initialParent が変化した際の再計算値。
-   * @param visible - 親タスクフィールドが表示されるかどうか
-   * @param initialParent - 新しい初期値（visible のときのみ使用）
-   * @returns 親タスクのパスまたは undefined
-   */
-  reset: (visible: boolean, initialParent?: string): ParentValue =>
-    visible ? initialParent : undefined,
 };
