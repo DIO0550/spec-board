@@ -2,6 +2,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { TaskFormLabels } from "..";
+import { LabelChip } from "../LabelChip";
+import { LabelInput } from "../LabelInput";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -15,43 +17,67 @@ afterEach(() => {
   container = null;
 });
 
-const defaultProps = (
-  overrides: Partial<Parameters<typeof TaskFormLabels>[0]> = {},
-): Parameters<typeof TaskFormLabels>[0] => ({
-  labels: [],
-  labelInput: "",
-  setInput: vi.fn(),
-  commit: vi.fn(),
-  remove: vi.fn(),
-  handleKeyDown: vi.fn(),
-  disabled: false,
-  ...overrides,
-});
+type RenderOptions = {
+  labels?: string[];
+  labelInput?: string;
+  disabled?: boolean;
+  onChange?: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onBlur?: () => void;
+  onRemove?: (label: string) => void;
+};
 
-const render = (props: Parameters<typeof TaskFormLabels>[0]) => {
+const render = (opts: RenderOptions = {}) => {
+  const {
+    labels = [],
+    labelInput = "",
+    disabled = false,
+    onChange = vi.fn(),
+    onKeyDown = vi.fn(),
+    onBlur = vi.fn(),
+    onRemove = vi.fn(),
+  } = opts;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskFormLabels, props));
+    root?.render(
+      createElement(
+        TaskFormLabels,
+        { disabled },
+        ...labels.map((label) =>
+          createElement(LabelChip, {
+            key: label,
+            label,
+            onRemove: () => onRemove(label),
+          }),
+        ),
+        createElement(LabelInput, {
+          value: labelInput,
+          onChange,
+          onKeyDown,
+          onBlur,
+        }),
+      ),
+    );
   });
 };
 
 test("labels=['a'] で chip と × ボタン、input が描画される", () => {
-  render(defaultProps({ labels: ["a"] }));
-  const chip = container?.querySelector(
+  render({ labels: ["a"] });
+  const chipBtn = container?.querySelector(
     "button[aria-label='ラベル「a」を削除']",
   );
-  expect(chip).toBeTruthy();
+  expect(chipBtn).toBeTruthy();
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
   );
   expect(input).toBeTruthy();
 });
 
-test("input 入力で setInput が呼ばれる", () => {
-  const setInput = vi.fn();
-  render(defaultProps({ setInput }));
+test("input 入力で onChange が呼ばれる", () => {
+  const onChange = vi.fn();
+  render({ onChange });
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
   ) as HTMLInputElement;
@@ -63,12 +89,12 @@ test("input 入力で setInput が呼ばれる", () => {
     setter?.call(input, "b");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(setInput).toHaveBeenCalledWith("b");
+  expect(onChange).toHaveBeenCalledWith("b");
 });
 
-test("Enter キーで handleKeyDown が呼ばれる", () => {
-  const handleKeyDown = vi.fn();
-  render(defaultProps({ handleKeyDown }));
+test("Enter キーで onKeyDown が呼ばれる", () => {
+  const onKeyDown = vi.fn();
+  render({ onKeyDown });
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
   ) as HTMLInputElement;
@@ -77,12 +103,12 @@ test("Enter キーで handleKeyDown が呼ばれる", () => {
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
   });
-  expect(handleKeyDown).toHaveBeenCalledTimes(1);
+  expect(onKeyDown).toHaveBeenCalledTimes(1);
 });
 
-test("input blur で commit が呼ばれる", () => {
-  const commit = vi.fn();
-  render(defaultProps({ commit }));
+test("input blur で onBlur が呼ばれる", () => {
+  const onBlur = vi.fn();
+  render({ onBlur });
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
   ) as HTMLInputElement;
@@ -92,23 +118,23 @@ test("input blur で commit が呼ばれる", () => {
   act(() => {
     input.blur();
   });
-  expect(commit).toHaveBeenCalledTimes(1);
+  expect(onBlur).toHaveBeenCalledTimes(1);
 });
 
-test("× ボタン click で remove(label) が呼ばれる", () => {
-  const remove = vi.fn();
-  render(defaultProps({ labels: ["a"], remove }));
+test("× ボタン click で onRemove(label) が呼ばれる", () => {
+  const onRemove = vi.fn();
+  render({ labels: ["a"], onRemove });
   const btn = container?.querySelector(
     "button[aria-label='ラベル「a」を削除']",
   ) as HTMLButtonElement;
   act(() => {
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
-  expect(remove).toHaveBeenCalledWith("a");
+  expect(onRemove).toHaveBeenCalledWith("a");
 });
 
-test("disabled=true で input と × ボタンが両方 disabled", () => {
-  render(defaultProps({ labels: ["a"], disabled: true }));
+test("disabled=true で input と × ボタンが両方 disabled（context 経由で伝播）", () => {
+  render({ labels: ["a"], disabled: true });
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
   ) as HTMLInputElement;
@@ -117,4 +143,14 @@ test("disabled=true で input と × ボタンが両方 disabled", () => {
   ) as HTMLButtonElement;
   expect(input.disabled).toBe(true);
   expect(btn.disabled).toBe(true);
+});
+
+test("label の htmlFor と input の id が一致する（useId + context 経由）", () => {
+  render({ labels: [] });
+  const labelEl = container?.querySelector("label") as HTMLLabelElement;
+  const input = container?.querySelector(
+    "[data-testid='task-form-label-input']",
+  ) as HTMLInputElement;
+  expect(labelEl.htmlFor).toBe(input.id);
+  expect(input.id.length).toBeGreaterThan(0);
 });

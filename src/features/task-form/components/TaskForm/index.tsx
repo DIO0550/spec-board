@@ -5,6 +5,8 @@ import type { Column, Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormLabels } from "./TaskFormLabels";
+import { LabelChip } from "./TaskFormLabels/LabelChip";
+import { LabelInput } from "./TaskFormLabels/LabelInput";
 import { TaskFormParent } from "./TaskFormParent";
 import { TaskFormPriority } from "./TaskFormPriority";
 import { TaskFormStatus } from "./TaskFormStatus";
@@ -85,15 +87,21 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "priority", value })}
         disabled={isSubmitting}
       />
-      <TaskFormLabels
-        labels={labels.state.labels}
-        labelInput={labels.state.labelInput}
-        setInput={(value) => labels.dispatch({ type: "setInput", value })}
-        commit={() => labels.dispatch({ type: "commit" })}
-        remove={(label) => labels.dispatch({ type: "remove", label })}
-        handleKeyDown={labels.handleKeyDown}
-        disabled={isSubmitting}
-      />
+      <TaskFormLabels disabled={isSubmitting}>
+        {labels.state.labels.map((label) => (
+          <LabelChip
+            key={label}
+            label={label}
+            onRemove={() => labels.dispatch({ type: "remove", label })}
+          />
+        ))}
+        <LabelInput
+          value={labels.state.labelInput}
+          onChange={(value) => labels.dispatch({ type: "setInput", value })}
+          onKeyDown={labels.handleKeyDown}
+          onBlur={() => labels.dispatch({ type: "commit" })}
+        />
+      </TaskFormLabels>
       {parentCandidates !== undefined && (
         <TaskFormParent
           tasks={parentCandidates}
