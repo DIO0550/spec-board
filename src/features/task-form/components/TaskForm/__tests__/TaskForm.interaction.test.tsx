@@ -61,6 +61,23 @@ const submitForm = () => {
   form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 };
 
+test("タイトル未入力で submit すると onSubmit は呼ばれず、エラーが表示される（結合）", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  const error = document.querySelector('[data-testid="task-form-title-error"]');
+  expect(error).toBeTruthy();
+  expect(error?.textContent).toContain("タイトル");
+});
+
 test("タイトル入力して送信すると onSubmit が正規化値で呼ばれる（priority=undefined 含む）", () => {
   const onSubmit = vi.fn();
   render({
