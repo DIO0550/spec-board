@@ -81,6 +81,12 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
   switch (action.type) {
     case "title": {
       const error = TitleField.validate(action.value);
+      if (
+        Object.is(state.values.title, action.value) &&
+        Object.is(state.errors.title, error)
+      ) {
+        return state;
+      }
       return {
         values: { ...state.values, title: action.value },
         errors: { ...state.errors, title: error },
