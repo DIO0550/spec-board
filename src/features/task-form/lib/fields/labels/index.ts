@@ -48,6 +48,10 @@ export const LabelsField = {
           ...state,
           labels: state.labels.filter((l) => l !== action.label),
         };
+      default: {
+        action satisfies never;
+        return state;
+      }
     }
   },
 
