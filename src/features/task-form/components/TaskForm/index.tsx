@@ -3,6 +3,8 @@ import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields"
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column, Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
+import { CancelButton } from "./TaskFormActions/CancelButton";
+import { SubmitButton } from "./TaskFormActions/SubmitButton";
 import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormLabels } from "./TaskFormLabels";
 import { LabelChip } from "./TaskFormLabels/LabelChip";
@@ -115,12 +117,10 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "body", value })}
         disabled={isSubmitting}
       />
-      <TaskFormActions
-        submitLabel={submitLabel}
-        cancelLabel={cancelLabel}
-        onCancel={onCancel}
-        isSubmitting={isSubmitting}
-      />
+      <TaskFormActions isSubmitting={isSubmitting}>
+        <CancelButton onClick={onCancel}>{cancelLabel}</CancelButton>
+        <SubmitButton>{submitLabel}</SubmitButton>
+      </TaskFormActions>
     </form>
   );
 };

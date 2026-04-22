@@ -2,6 +2,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { TaskFormActions } from "..";
+import { CancelButton } from "../CancelButton";
+import { SubmitButton } from "../SubmitButton";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -15,22 +17,37 @@ afterEach(() => {
   container = null;
 });
 
-const render = (props: Parameters<typeof TaskFormActions>[0]) => {
+type RenderOptions = {
+  submitLabel?: string;
+  cancelLabel?: string;
+  onCancel?: () => void;
+  isSubmitting?: boolean;
+};
+
+const render = (opts: RenderOptions = {}) => {
+  const {
+    submitLabel = "作成",
+    cancelLabel = "キャンセル",
+    onCancel = vi.fn(),
+    isSubmitting = false,
+  } = opts;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskFormActions, props));
+    root?.render(
+      createElement(
+        TaskFormActions,
+        { isSubmitting },
+        createElement(CancelButton, { onClick: onCancel }, cancelLabel),
+        createElement(SubmitButton, null, submitLabel),
+      ),
+    );
   });
 };
 
 test("キャンセル / 送信ボタンの両方が描画される", () => {
-  render({
-    submitLabel: "作成",
-    cancelLabel: "キャンセル",
-    onCancel: vi.fn(),
-    isSubmitting: false,
-  });
+  render();
   const cancel = container?.querySelector(
     "[data-testid='task-form-cancel']",
   ) as HTMLButtonElement;
@@ -44,12 +61,7 @@ test("キャンセル / 送信ボタンの両方が描画される", () => {
 });
 
 test("送信ボタンが type='submit' を持つ（Button のデフォルト 'button' の上書きを検出）", () => {
-  render({
-    submitLabel: "作成",
-    cancelLabel: "キャンセル",
-    onCancel: vi.fn(),
-    isSubmitting: false,
-  });
+  render();
   const submit = container?.querySelector(
     "[data-testid='task-form-submit']",
   ) as HTMLButtonElement;
@@ -57,12 +69,7 @@ test("送信ボタンが type='submit' を持つ（Button のデフォルト 'bu
 });
 
 test("キャンセルボタンは type='button'（デフォルト）", () => {
-  render({
-    submitLabel: "作成",
-    cancelLabel: "キャンセル",
-    onCancel: vi.fn(),
-    isSubmitting: false,
-  });
+  render();
   const cancel = container?.querySelector(
     "[data-testid='task-form-cancel']",
   ) as HTMLButtonElement;
@@ -71,12 +78,7 @@ test("キャンセルボタンは type='button'（デフォルト）", () => {
 
 test("キャンセルボタン click で onCancel が呼ばれる", () => {
   const onCancel = vi.fn();
-  render({
-    submitLabel: "作成",
-    cancelLabel: "キャンセル",
-    onCancel,
-    isSubmitting: false,
-  });
+  render({ onCancel });
   const cancel = container?.querySelector(
     "[data-testid='task-form-cancel']",
   ) as HTMLButtonElement;
@@ -86,13 +88,8 @@ test("キャンセルボタン click で onCancel が呼ばれる", () => {
   expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
-test("isSubmitting=true で両ボタンが disabled", () => {
-  render({
-    submitLabel: "作成",
-    cancelLabel: "キャンセル",
-    onCancel: vi.fn(),
-    isSubmitting: true,
-  });
+test("isSubmitting=true で両ボタンが disabled（context 経由で伝播）", () => {
+  render({ isSubmitting: true });
   const cancel = container?.querySelector(
     "[data-testid='task-form-cancel']",
   ) as HTMLButtonElement;
@@ -103,13 +100,8 @@ test("isSubmitting=true で両ボタンが disabled", () => {
   expect(submit.disabled).toBe(true);
 });
 
-test("submitLabel='カスタム' が render される", () => {
-  render({
-    submitLabel: "カスタム",
-    cancelLabel: "キャンセル",
-    onCancel: vi.fn(),
-    isSubmitting: false,
-  });
+test("submitLabel='カスタム' が children として render される", () => {
+  render({ submitLabel: "カスタム" });
   const submit = container?.querySelector(
     "[data-testid='task-form-submit']",
   ) as HTMLButtonElement;
