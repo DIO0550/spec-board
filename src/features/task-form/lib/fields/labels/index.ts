@@ -23,7 +23,7 @@ export const LabelsField = {
    * @returns 初期状態
    */
   initial: (initialLabels: string[] = []): LabelsValue => ({
-    labels: initialLabels,
+    labels: [...initialLabels],
     labelInput: "",
   }),
 
