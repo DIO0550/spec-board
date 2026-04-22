@@ -108,6 +108,10 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
         ...state,
         errors: { title: TitleField.validate(state.values.title) },
       };
+    default: {
+      action satisfies never;
+      return state;
+    }
   }
 };
 
