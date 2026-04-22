@@ -167,7 +167,7 @@ export const useTaskFormFields = (
         priority: PriorityField.normalize(state.values.priority),
         parent: state.values.parent,
         body: state.values.body,
-        labels,
+        labels: [...labels],
       });
     },
     [isSubmitting, onSubmit, commitPendingAndGetLabels, state.values],
