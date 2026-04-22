@@ -1,17 +1,8 @@
 import type { Dispatch, FormEvent } from "react";
 import { useCallback, useReducer } from "react";
-import {
-  ParentField,
-  type ParentValue,
-} from "@/features/task-form/lib/fields/parent";
-import {
-  PriorityField,
-  type PriorityValue,
-} from "@/features/task-form/lib/fields/priority";
-import {
-  TitleField,
-  type TitleValue,
-} from "@/features/task-form/lib/fields/title";
+import { ParentField } from "@/features/task-form/lib/fields/parent";
+import { PriorityField } from "@/features/task-form/lib/fields/priority";
+import { TitleField } from "@/features/task-form/lib/fields/title";
 import type { TaskFormValues } from "@/features/task-form/types";
 
 /** useTaskFormFields の引数 */
@@ -39,10 +30,10 @@ export type UseTaskFormFieldsArgs = {
 
 /** 各 field の現在値 */
 export type FieldValues = {
-  title: TitleValue;
+  title: TitleField;
   status: string;
-  priority: PriorityValue;
-  parent: ParentValue;
+  priority: PriorityField;
+  parent: ParentField;
   body: string;
 };
 
@@ -59,10 +50,10 @@ export type FieldsState = {
 
 /** state を変化させるアクション（discriminated union） */
 export type FieldsAction =
-  | { type: "title"; value: TitleValue }
+  | { type: "title"; value: TitleField }
   | { type: "status"; value: string }
-  | { type: "priority"; value: PriorityValue }
-  | { type: "parent"; value: ParentValue }
+  | { type: "priority"; value: PriorityField }
+  | { type: "parent"; value: ParentField }
   | { type: "body"; value: string }
   | { type: "validateAll" };
 

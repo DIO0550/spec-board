@@ -1,5 +1,5 @@
 /** TitleField が保持する値の型（生の入力文字列） */
-export type TitleValue = string;
+export type TitleField = string;
 
 /**
  * タイトル field の companion object。
@@ -10,7 +10,7 @@ export const TitleField = {
    * 初期値を返す。
    * @returns 空文字
    */
-  initial: (): TitleValue => "",
+  initial: (): TitleField => "",
 
   /**
    * タイトルをバリデーションする。
@@ -18,7 +18,7 @@ export const TitleField = {
    * @param v - 現在の値
    * @returns エラー文字列または undefined
    */
-  validate: (v: TitleValue): string | undefined =>
+  validate: (v: TitleField): string | undefined =>
     v.trim().length === 0 ? "タイトルを入力してください" : undefined,
 
   /**
@@ -26,5 +26,5 @@ export const TitleField = {
    * @param v - 現在の値
    * @returns 正規化された値
    */
-  normalize: (v: TitleValue): string => v.trim(),
+  normalize: (v: TitleField): string => v.trim(),
 };

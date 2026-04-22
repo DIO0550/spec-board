@@ -1,5 +1,5 @@
 /** LabelsField が保持する値の型 */
-export type LabelsValue = {
+export type LabelsField = {
   /** 確定済みラベル一覧 */
   labels: string[];
   /** 入力中の未コミット文字列 */
@@ -22,7 +22,7 @@ export const LabelsField = {
    * @param initialLabels - 初期ラベル配列（省略時は空配列）
    * @returns 初期状態
    */
-  initial: (initialLabels: string[] = []): LabelsValue => ({
+  initial: (initialLabels: string[] = []): LabelsField => ({
     labels: [...initialLabels],
     labelInput: "",
   }),
@@ -33,7 +33,7 @@ export const LabelsField = {
    * @param action - 操作
    * @returns 新しい状態
    */
-  reducer: (state: LabelsValue, action: LabelsAction): LabelsValue => {
+  reducer: (state: LabelsField, action: LabelsAction): LabelsField => {
     switch (action.type) {
       case "setInput":
         return { ...state, labelInput: action.value };
@@ -61,8 +61,8 @@ export const LabelsField = {
    * @returns 次状態と最終 labels
    */
   commitPendingAndExtract: (
-    state: LabelsValue,
-  ): { next: LabelsValue; labels: string[] } => {
+    state: LabelsField,
+  ): { next: LabelsField; labels: string[] } => {
     const next = LabelsField.reducer(state, { type: "commit" });
     return { next, labels: next.labels };
   },

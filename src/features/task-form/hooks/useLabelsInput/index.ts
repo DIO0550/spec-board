@@ -3,13 +3,12 @@ import { useCallback, useReducer } from "react";
 import {
   type LabelsAction,
   LabelsField,
-  type LabelsValue,
 } from "@/features/task-form/lib/fields/labels";
 
 /** useLabelsInput の返却値 */
 export type UseLabelsInputResult = {
   /** ラベル入力の現在状態 */
-  state: LabelsValue;
+  state: LabelsField;
   /** 状態を変更する dispatch（setInput / commit / remove） */
   dispatch: Dispatch<LabelsAction>;
   /**

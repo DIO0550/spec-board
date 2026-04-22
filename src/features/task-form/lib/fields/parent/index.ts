@@ -1,5 +1,5 @@
 /** ParentField が保持する値の型（親タスクのファイルパス、または未選択） */
-export type ParentValue = string | undefined;
+export type ParentField = string | undefined;
 
 /**
  * 親タスク field の companion object。
@@ -12,6 +12,6 @@ export const ParentField = {
    * @param initialParent - 初期値（visible のときのみ使用）
    * @returns 親タスクのパスまたは undefined
    */
-  initial: (visible: boolean, initialParent?: string): ParentValue =>
+  initial: (visible: boolean, initialParent?: string): ParentField =>
     visible ? initialParent : undefined,
 };
