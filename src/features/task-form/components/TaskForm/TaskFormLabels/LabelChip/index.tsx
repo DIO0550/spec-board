@@ -1,6 +1,3 @@
-import { useContext } from "react";
-import { TaskFormLabelsContext } from "..";
-
 type LabelChipProps = {
   /** 表示するラベル文字列 */
   label: string;
@@ -9,17 +6,20 @@ type LabelChipProps = {
    * 親で対象ラベルを束縛して渡す想定（呼び出し側で `() => remove(label)` とする）。
    */
   onRemove: () => void;
+  /** 無効化（× ボタンが disabled になる） */
+  disabled?: boolean;
 };
 
 /**
  * 1 ラベル分の chip 表示＋削除ボタン。
- * disabled は {@link TaskFormLabelsContext} から取得する。
  * @param props - {@link LabelChipProps}
  * @returns chip 要素
  */
-export const LabelChip = ({ label, onRemove }: LabelChipProps) => {
-  const ctx = useContext(TaskFormLabelsContext);
-  const disabled = ctx?.disabled ?? false;
+export const LabelChip = ({
+  label,
+  onRemove,
+  disabled = false,
+}: LabelChipProps) => {
   return (
     <span className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
       {label}

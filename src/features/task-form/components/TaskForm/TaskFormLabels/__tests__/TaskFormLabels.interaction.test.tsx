@@ -27,6 +27,8 @@ type RenderOptions = {
   onRemove?: (label: string) => void;
 };
 
+const INPUT_ID = "labels-input-test";
+
 const render = (opts: RenderOptions = {}) => {
   const {
     labels = [],
@@ -44,19 +46,22 @@ const render = (opts: RenderOptions = {}) => {
     root?.render(
       createElement(
         TaskFormLabels,
-        { disabled },
+        { htmlFor: INPUT_ID },
         ...labels.map((label) =>
           createElement(LabelChip, {
             key: label,
             label,
             onRemove: () => onRemove(label),
+            disabled,
           }),
         ),
         createElement(LabelInput, {
+          id: INPUT_ID,
           value: labelInput,
           onChange,
           onKeyDown,
           onBlur,
+          disabled,
         }),
       ),
     );
@@ -133,7 +138,7 @@ test("× ボタン click で onRemove(label) が呼ばれる", () => {
   expect(onRemove).toHaveBeenCalledWith("a");
 });
 
-test("disabled=true で input と × ボタンが両方 disabled（context 経由で伝播）", () => {
+test("disabled=true で input と × ボタンが両方 disabled（各 props 経由で伝播）", () => {
   render({ labels: ["a"], disabled: true });
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
@@ -145,12 +150,12 @@ test("disabled=true で input と × ボタンが両方 disabled（context 経�
   expect(btn.disabled).toBe(true);
 });
 
-test("label の htmlFor と input の id が一致する（useId + context 経由）", () => {
+test("label の htmlFor と input の id が一致する（caller 側で発行した id を共有）", () => {
   render({ labels: [] });
   const labelEl = container?.querySelector("label") as HTMLLabelElement;
   const input = container?.querySelector(
     "[data-testid='task-form-label-input']",
   ) as HTMLInputElement;
-  expect(labelEl.htmlFor).toBe(input.id);
-  expect(input.id.length).toBeGreaterThan(0);
+  expect(labelEl.htmlFor).toBe(INPUT_ID);
+  expect(input.id).toBe(INPUT_ID);
 });

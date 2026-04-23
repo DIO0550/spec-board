@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import type { TaskFormValues } from "@/features/task-form/types";
@@ -56,6 +57,7 @@ export const TaskForm = ({
   onSubmit,
   onCancel,
 }: TaskFormProps) => {
+  const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
   const fields = useTaskFormFields({
     initialStatus,
@@ -89,19 +91,22 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "priority", value })}
         disabled={isSubmitting}
       />
-      <TaskFormLabels disabled={isSubmitting}>
+      <TaskFormLabels htmlFor={labelsInputId}>
         {labels.state.labels.map((label) => (
           <LabelChip
             key={label}
             label={label}
             onRemove={() => labels.dispatch({ type: "remove", label })}
+            disabled={isSubmitting}
           />
         ))}
         <LabelInput
+          id={labelsInputId}
           value={labels.state.labelInput}
           onChange={(value) => labels.dispatch({ type: "setInput", value })}
           onKeyDown={labels.handleKeyDown}
           onBlur={() => labels.dispatch({ type: "commit" })}
+          disabled={isSubmitting}
         />
       </TaskFormLabels>
       {parentCandidates !== undefined && (
@@ -117,9 +122,11 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "body", value })}
         disabled={isSubmitting}
       />
-      <TaskFormActions isSubmitting={isSubmitting}>
-        <CancelButton onClick={onCancel}>{cancelLabel}</CancelButton>
-        <SubmitButton>{submitLabel}</SubmitButton>
+      <TaskFormActions>
+        <CancelButton onClick={onCancel} disabled={isSubmitting}>
+          {cancelLabel}
+        </CancelButton>
+        <SubmitButton disabled={isSubmitting}>{submitLabel}</SubmitButton>
       </TaskFormActions>
     </form>
   );

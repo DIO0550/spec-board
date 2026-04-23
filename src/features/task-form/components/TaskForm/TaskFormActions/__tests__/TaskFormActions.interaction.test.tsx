@@ -21,7 +21,7 @@ type RenderOptions = {
   submitLabel?: string;
   cancelLabel?: string;
   onCancel?: () => void;
-  isSubmitting?: boolean;
+  disabled?: boolean;
 };
 
 const render = (opts: RenderOptions = {}) => {
@@ -29,7 +29,7 @@ const render = (opts: RenderOptions = {}) => {
     submitLabel = "作成",
     cancelLabel = "キャンセル",
     onCancel = vi.fn(),
-    isSubmitting = false,
+    disabled = false,
   } = opts;
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -38,9 +38,13 @@ const render = (opts: RenderOptions = {}) => {
     root?.render(
       createElement(
         TaskFormActions,
-        { isSubmitting },
-        createElement(CancelButton, { onClick: onCancel }, cancelLabel),
-        createElement(SubmitButton, null, submitLabel),
+        null,
+        createElement(
+          CancelButton,
+          { onClick: onCancel, disabled },
+          cancelLabel,
+        ),
+        createElement(SubmitButton, { disabled }, submitLabel),
       ),
     );
   });
@@ -88,8 +92,8 @@ test("キャンセルボタン click で onCancel が呼ばれる", () => {
   expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
-test("isSubmitting=true で両ボタンが disabled（context 経由で伝播）", () => {
-  render({ isSubmitting: true });
+test("disabled=true で両ボタンが disabled（各 props 経由で伝播）", () => {
+  render({ disabled: true });
   const cancel = container?.querySelector(
     "[data-testid='task-form-cancel']",
   ) as HTMLButtonElement;

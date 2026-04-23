@@ -1,24 +1,25 @@
 import type { ReactNode } from "react";
-import { useContext } from "react";
 import { Button } from "@/components/Button";
-import { TaskFormActionsContext } from "..";
 
 type CancelButtonProps = {
   /** click コールバック */
   onClick: () => void;
+  /** 無効化 */
+  disabled?: boolean;
   /** ボタン表示内容（通常はラベル文字列） */
   children?: ReactNode;
 };
 
 /**
  * キャンセルボタン。
- * disabled は {@link TaskFormActionsContext} の isSubmitting を参照する。
  * @param props - {@link CancelButtonProps}
  * @returns secondary ボタン
  */
-export const CancelButton = ({ onClick, children }: CancelButtonProps) => {
-  const ctx = useContext(TaskFormActionsContext);
-  const disabled = ctx?.isSubmitting ?? false;
+export const CancelButton = ({
+  onClick,
+  disabled = false,
+  children,
+}: CancelButtonProps) => {
   return (
     <Button
       variant="secondary"
