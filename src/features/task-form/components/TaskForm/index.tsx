@@ -1,11 +1,10 @@
 import { useId } from "react";
+import { Button } from "@/components/Button";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column, Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
-import { CancelButton } from "./TaskFormActions/CancelButton";
-import { SubmitButton } from "./TaskFormActions/SubmitButton";
 import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormLabels } from "./TaskFormLabels";
 import { LabelChip } from "./TaskFormLabels/LabelChip";
@@ -123,10 +122,22 @@ export const TaskForm = ({
         disabled={isSubmitting}
       />
       <TaskFormActions>
-        <CancelButton onClick={onCancel} disabled={isSubmitting}>
+        <Button
+          variant="secondary"
+          onClick={onCancel}
+          disabled={isSubmitting}
+          data-testid="task-form-cancel"
+        >
           {cancelLabel}
-        </CancelButton>
-        <SubmitButton disabled={isSubmitting}>{submitLabel}</SubmitButton>
+        </Button>
+        <Button
+          variant="primary"
+          type="submit"
+          disabled={isSubmitting}
+          data-testid="task-form-submit"
+        >
+          {submitLabel}
+        </Button>
       </TaskFormActions>
     </form>
   );
