@@ -42,9 +42,11 @@ export const useLabelsInput = (
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      // IME 変換確定の Enter はラベル確定と区別する。
-      if (e.nativeEvent.isComposing) return;
+      // Enter では常に preventDefault する。`<form>` 内の input のため、
+      // IME 変換確定の Enter であっても抑止しないとフォーム submit が発火する。
       e.preventDefault();
+      // IME 変換確定の Enter はラベル確定と区別し、commit のみスキップする。
+      if (e.nativeEvent.isComposing) return;
       dispatch({ type: "commit" });
     }
   }, []);

@@ -127,7 +127,7 @@ test("handleKeyDown: Enter で commit + preventDefault", () => {
   expect(get().state).toEqual({ labels: ["x"], labelInput: "" });
 });
 
-test("handleKeyDown: IME 変換中（isComposing=true）の Enter は commit しない", () => {
+test("handleKeyDown: IME 変換中（isComposing=true）の Enter は preventDefault するが commit しない", () => {
   const get = render();
   act(() => {
     get().dispatch({ type: "setInput", value: "日本語" });
@@ -141,7 +141,8 @@ test("handleKeyDown: IME 変換中（isComposing=true）の Enter は commit し
       preventDefault: prevent,
     } as unknown as React.KeyboardEvent<HTMLInputElement>);
   });
-  expect(prevent).not.toHaveBeenCalled();
+  // `<form>` 内 input のため IME 変換確定 Enter でも form submit を抑止する必要がある。
+  expect(prevent).toHaveBeenCalledTimes(1);
   expect(get().state).toBe(before);
 });
 
