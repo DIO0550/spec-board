@@ -24,42 +24,42 @@ export const LabelsField = {
 
   /**
    * 入力中文字列を設定する。
-   * @param state - 現在の状態
+   * @param field - 現在の field
    * @param value - 新しい入力値
-   * @returns 新しい状態
+   * @returns 新しい field
    */
-  setInput: (state: LabelsField, value: string): LabelsField => ({
-    ...state,
+  setInput: (field: LabelsField, value: string): LabelsField => ({
+    ...field,
     labelInput: value,
   }),
 
   /**
    * 入力中文字列を labels に取り込む。trim 後空または重複なら labels は不変。
-   * @param state - 現在の状態
-   * @returns 新しい状態
+   * @param field - 現在の field
+   * @returns 新しい field
    */
-  commit: (state: LabelsField): LabelsField => {
-    const trimmed = state.labelInput.trim();
-    if (trimmed.length === 0) return state;
-    if (state.labels.includes(trimmed)) return { ...state, labelInput: "" };
-    return { labels: [...state.labels, trimmed], labelInput: "" };
+  commit: (field: LabelsField): LabelsField => {
+    const trimmed = field.labelInput.trim();
+    if (trimmed.length === 0) return field;
+    if (field.labels.includes(trimmed)) return { ...field, labelInput: "" };
+    return { labels: [...field.labels, trimmed], labelInput: "" };
   },
 
   /**
    * 指定ラベルを labels から除外する。
-   * @param state - 現在の状態
+   * @param field - 現在の field
    * @param label - 削除対象ラベル
-   * @returns 新しい状態
+   * @returns 新しい field
    */
-  remove: (state: LabelsField, label: string): LabelsField => ({
-    ...state,
-    labels: state.labels.filter((l) => l !== label),
+  remove: (field: LabelsField, label: string): LabelsField => ({
+    ...field,
+    labels: field.labels.filter((l) => l !== label),
   }),
 
   /**
    * submit 用に pending labelInput を取り込んだ最終 labels を同期で返す。
-   * @param state - 現在の状態
+   * @param field - 現在の field
    * @returns 最終 labels 配列
    */
-  finalize: (state: LabelsField): string[] => LabelsField.commit(state).labels,
+  finalize: (field: LabelsField): string[] => LabelsField.commit(field).labels,
 };
