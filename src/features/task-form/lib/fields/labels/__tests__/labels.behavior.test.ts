@@ -12,43 +12,31 @@ test("initial: 初期 labels が渡されたら反映", () => {
   });
 });
 
-test("reducer: setInput で labelInput を更新", () => {
-  const next = LabelsField.reducer(LabelsField.initial(), {
-    type: "setInput",
-    value: "foo",
-  });
+test("setInput: labelInput を更新する", () => {
+  const next = LabelsField.setInput(LabelsField.initial(), "foo");
   expect(next).toEqual({ labels: [], labelInput: "foo" });
 });
 
-test("reducer: commit（空 trim）は state を変更しない", () => {
-  const state: ReturnType<typeof LabelsField.initial> = {
-    labels: ["a"],
-    labelInput: "   ",
-  };
-  const next = LabelsField.reducer(state, { type: "commit" });
+test("commit: 空 trim は state を変更しない", () => {
+  const state: LabelsField = { labels: ["a"], labelInput: "   " };
+  const next = LabelsField.commit(state);
   expect(next).toBe(state);
 });
 
-test("reducer: commit（重複）は labelInput だけクリア", () => {
-  const next = LabelsField.reducer(
-    { labels: ["a"], labelInput: "a" },
-    { type: "commit" },
-  );
+test("commit: 重複は labelInput だけクリアし labels 不変", () => {
+  const next = LabelsField.commit({ labels: ["a"], labelInput: "a" });
   expect(next).toEqual({ labels: ["a"], labelInput: "" });
 });
 
-test("reducer: commit（新規）は labels に追加して labelInput クリア", () => {
-  const next = LabelsField.reducer(
-    { labels: ["a"], labelInput: "  b  " },
-    { type: "commit" },
-  );
+test("commit: 新規は labels に追加し labelInput クリア", () => {
+  const next = LabelsField.commit({ labels: ["a"], labelInput: "  b  " });
   expect(next).toEqual({ labels: ["a", "b"], labelInput: "" });
 });
 
-test("reducer: remove で指定ラベルを除外", () => {
-  const next = LabelsField.reducer(
+test("remove: 指定ラベルを除外する", () => {
+  const next = LabelsField.remove(
     { labels: ["a", "b", "c"], labelInput: "" },
-    { type: "remove", label: "b" },
+    "b",
   );
   expect(next).toEqual({ labels: ["a", "c"], labelInput: "" });
 });

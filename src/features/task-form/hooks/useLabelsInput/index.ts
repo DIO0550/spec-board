@@ -1,9 +1,36 @@
 import type { Dispatch, KeyboardEvent } from "react";
 import { useCallback, useReducer } from "react";
-import {
-  type LabelsAction,
-  LabelsField,
-} from "@/features/task-form/lib/fields/labels";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
+
+/**
+ * useLabelsInput の dispatch が受け付ける action。
+ * React 固有の discriminated union で、domain（LabelsField）とは切り離す。
+ */
+export type LabelsAction =
+  | { type: "setInput"; value: string }
+  | { type: "commit" }
+  | { type: "remove"; label: string };
+
+/**
+ * `useReducer` 用のローカル reducer。domain の pure ops にディスパッチするだけ。
+ * @param state - 現在の状態
+ * @param action - 操作
+ * @returns 新しい状態
+ */
+const reducer = (state: LabelsField, action: LabelsAction): LabelsField => {
+  switch (action.type) {
+    case "setInput":
+      return LabelsField.setInput(state, action.value);
+    case "commit":
+      return LabelsField.commit(state);
+    case "remove":
+      return LabelsField.remove(state, action.label);
+    default: {
+      action satisfies never;
+      return state;
+    }
+  }
+};
 
 /** useLabelsInput の返却値 */
 export type UseLabelsInputResult = {
@@ -27,8 +54,8 @@ export type UseLabelsInputResult = {
 
 /**
  * ラベル入力用の state を `useReducer` で管理するカスタムフック。
- * reducer / 初期値 / commit ロジックはすべて `LabelsField`（pure function）に委譲し、
- * ここでは React 配線のみを担う。
+ * 状態遷移のドメインロジックは `LabelsField` の pure ops に委譲し、ここでは
+ * React の reducer 配線と handleKeyDown / finalizeLabels のユーティリティだけを担う。
  * @param initialLabels - 初期ラベル配列
  * @returns ラベル入力フック結果
  */
@@ -36,7 +63,7 @@ export const useLabelsInput = (
   initialLabels: string[] = [],
 ): UseLabelsInputResult => {
   const [state, dispatch] = useReducer(
-    LabelsField.reducer,
+    reducer,
     initialLabels,
     LabelsField.initial,
   );

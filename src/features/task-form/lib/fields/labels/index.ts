@@ -6,15 +6,10 @@ export type LabelsField = {
   labelInput: string;
 };
 
-/** LabelsField に対する操作 */
-export type LabelsAction =
-  | { type: "setInput"; value: string }
-  | { type: "commit" }
-  | { type: "remove"; label: string };
-
 /**
  * ラベル入力 field の companion object。
- * 初期値・reducer・submit 時の未コミット取り込みを pure function として提供する。
+ * ドメインとしての純粋な状態遷移操作のみを提供する。
+ * React の reducer / Dispatch といった実装詳細は hook 層が担う。
  */
 export const LabelsField = {
   /**
@@ -28,42 +23,43 @@ export const LabelsField = {
   }),
 
   /**
-   * ラベル入力の状態遷移を計算する純粋 reducer。
+   * 入力中文字列を設定する。
    * @param state - 現在の状態
-   * @param action - 操作
+   * @param value - 新しい入力値
    * @returns 新しい状態
    */
-  reducer: (state: LabelsField, action: LabelsAction): LabelsField => {
-    switch (action.type) {
-      case "setInput":
-        return { ...state, labelInput: action.value };
-      case "commit": {
-        const trimmed = state.labelInput.trim();
-        if (trimmed.length === 0) return state;
-        if (state.labels.includes(trimmed)) return { ...state, labelInput: "" };
-        return { labels: [...state.labels, trimmed], labelInput: "" };
-      }
-      case "remove":
-        return {
-          ...state,
-          labels: state.labels.filter((l) => l !== action.label),
-        };
-      default: {
-        action satisfies never;
-        return state;
-      }
-    }
+  setInput: (state: LabelsField, value: string): LabelsField => ({
+    ...state,
+    labelInput: value,
+  }),
+
+  /**
+   * 入力中文字列を labels に取り込む。trim 後空または重複なら labels は不変。
+   * @param state - 現在の状態
+   * @returns 新しい状態
+   */
+  commit: (state: LabelsField): LabelsField => {
+    const trimmed = state.labelInput.trim();
+    if (trimmed.length === 0) return state;
+    if (state.labels.includes(trimmed)) return { ...state, labelInput: "" };
+    return { labels: [...state.labels, trimmed], labelInput: "" };
   },
 
   /**
+   * 指定ラベルを labels から除外する。
+   * @param state - 現在の状態
+   * @param label - 削除対象ラベル
+   * @returns 新しい状態
+   */
+  remove: (state: LabelsField, label: string): LabelsField => ({
+    ...state,
+    labels: state.labels.filter((l) => l !== label),
+  }),
+
+  /**
    * submit 用に pending labelInput を取り込んだ最終 labels を同期で返す。
-   * 呼び出し側の state は変更しない（submit 成功で unmount、失敗でも UI の
-   * pending 入力はユーザーの打った文字列のまま保持するため）。
    * @param state - 現在の状態
    * @returns 最終 labels 配列
    */
-  finalize: (state: LabelsField): string[] => {
-    const next = LabelsField.reducer(state, { type: "commit" });
-    return next.labels;
-  },
+  finalize: (state: LabelsField): string[] => LabelsField.commit(state).labels,
 };
