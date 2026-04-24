@@ -17,11 +17,12 @@ export type UseLabelsInputResult = {
    */
   handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
   /**
-   * submit 時に未コミットラベルを取り込み、最終 labels を同期取得する。
-   * state 更新は dispatch で非同期に走るが、戻り値は同期的に確定した配列。
+   * submit 用に pending labelInput を取り込んだ最終 labels を同期で返す。
+   * hook の state は更新しない（submit 成功で unmount、失敗時は UI を
+   * そのまま維持するため、commit の dispatch は行わない）。
    * @returns 最終ラベル配列
    */
-  commitPendingAndGetLabels: () => string[];
+  finalizeLabels: () => string[];
 };
 
 /**
@@ -51,11 +52,10 @@ export const useLabelsInput = (
     }
   }, []);
 
-  const commitPendingAndGetLabels = useCallback((): string[] => {
-    const { next, labels } = LabelsField.commitPendingAndExtract(state);
-    if (next !== state) dispatch({ type: "commit" });
-    return labels;
-  }, [state]);
+  const finalizeLabels = useCallback(
+    (): string[] => LabelsField.finalize(state),
+    [state],
+  );
 
-  return { state, dispatch, handleKeyDown, commitPendingAndGetLabels };
+  return { state, dispatch, handleKeyDown, finalizeLabels };
 };

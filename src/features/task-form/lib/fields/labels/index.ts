@@ -56,14 +56,14 @@ export const LabelsField = {
   },
 
   /**
-   * submit 時に未コミットラベルを取り込み、次状態と最終 labels を同期取得する。
+   * submit 用に pending labelInput を取り込んだ最終 labels を同期で返す。
+   * 呼び出し側の state は変更しない（submit 成功で unmount、失敗でも UI の
+   * pending 入力はユーザーの打った文字列のまま保持するため）。
    * @param state - 現在の状態
-   * @returns 次状態と最終 labels
+   * @returns 最終 labels 配列
    */
-  commitPendingAndExtract: (
-    state: LabelsField,
-  ): { next: LabelsField; labels: string[] } => {
+  finalize: (state: LabelsField): string[] => {
     const next = LabelsField.reducer(state, { type: "commit" });
-    return { next, labels: next.labels };
+    return next.labels;
   },
 };

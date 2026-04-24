@@ -43,7 +43,7 @@ const defaultArgs = (): UseTaskFormFieldsArgs => ({
   parentFieldVisible: false,
   isSubmitting: false,
   onSubmit: vi.fn(),
-  commitPendingAndGetLabels: () => [],
+  finalizeLabels: () => [],
 });
 
 const render = (args: UseTaskFormFieldsArgs) => {
@@ -161,7 +161,7 @@ test("handleSubmit 正常系: 正規化された値が onSubmit に渡る", () =
   const { get } = render({
     ...defaultArgs(),
     onSubmit,
-    commitPendingAndGetLabels: commit,
+    finalizeLabels: commit,
   });
   act(() => {
     get().dispatch({ type: "title", value: "  t  " });
@@ -203,13 +203,13 @@ test('handleSubmit: priority="" は undefined に正規化される', () => {
   expect(values.priority).toBeUndefined();
 });
 
-test("handleSubmit: labels は commitPendingAndGetLabels の戻り値が使われる", () => {
+test("handleSubmit: labels は finalizeLabels の戻り値が使われる", () => {
   const onSubmit = vi.fn();
   const commit = vi.fn(() => ["a", "b"]);
   const { get } = render({
     ...defaultArgs(),
     onSubmit,
-    commitPendingAndGetLabels: commit,
+    finalizeLabels: commit,
   });
   act(() => {
     get().dispatch({ type: "title", value: "t" });

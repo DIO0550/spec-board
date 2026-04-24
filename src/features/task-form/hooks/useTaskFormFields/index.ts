@@ -21,11 +21,11 @@ export type UseTaskFormFieldsArgs = {
    */
   onSubmit: (values: TaskFormValues) => void;
   /**
-   * 送信時に未コミットラベルを取り込み、最終 labels を同期取得する関数。
+   * 送信時に pending labelInput を取り込んだ最終 labels を同期取得する関数。
    * useLabelsInput から渡される想定。
    * @returns 最終ラベル配列
    */
-  commitPendingAndGetLabels: () => string[];
+  finalizeLabels: () => string[];
 };
 
 /** 各 field の現在値 */
@@ -148,7 +148,7 @@ export const useTaskFormFields = (
     errors: {},
   }));
 
-  const { isSubmitting, onSubmit, commitPendingAndGetLabels } = args;
+  const { isSubmitting, onSubmit, finalizeLabels } = args;
   const handleSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
@@ -160,7 +160,7 @@ export const useTaskFormFields = (
         dispatch({ type: "validateAll" });
         return;
       }
-      const labels = commitPendingAndGetLabels();
+      const labels = finalizeLabels();
       onSubmit({
         title: TitleField.normalize(state.values.title),
         status: state.values.status,
@@ -170,7 +170,7 @@ export const useTaskFormFields = (
         labels: [...labels],
       });
     },
-    [isSubmitting, onSubmit, commitPendingAndGetLabels, state.values],
+    [isSubmitting, onSubmit, finalizeLabels, state.values],
   );
 
   return { state, dispatch, handleSubmit };

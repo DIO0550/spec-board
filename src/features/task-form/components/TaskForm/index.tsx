@@ -64,7 +64,7 @@ export const TaskForm = ({
     parentFieldVisible: parentCandidates !== undefined,
     isSubmitting,
     onSubmit,
-    commitPendingAndGetLabels: labels.commitPendingAndGetLabels,
+    finalizeLabels: labels.finalizeLabels,
   });
   return (
     <form

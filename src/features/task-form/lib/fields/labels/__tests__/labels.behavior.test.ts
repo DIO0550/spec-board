@@ -53,27 +53,17 @@ test("reducer: remove で指定ラベルを除外", () => {
   expect(next).toEqual({ labels: ["a", "c"], labelInput: "" });
 });
 
-test("commitPendingAndExtract: 空 trim は labels 変化なし", () => {
-  const state = { labels: ["a"], labelInput: "" };
-  const { next, labels } = LabelsField.commitPendingAndExtract(state);
-  expect(next).toBe(state);
+test("finalize: 空 trim は現 labels をそのまま返す", () => {
+  const labels = LabelsField.finalize({ labels: ["a"], labelInput: "" });
   expect(labels).toEqual(["a"]);
 });
 
-test("commitPendingAndExtract: 重複は labelInput だけクリア、labels 不変", () => {
-  const { next, labels } = LabelsField.commitPendingAndExtract({
-    labels: ["a"],
-    labelInput: "a",
-  });
-  expect(next).toEqual({ labels: ["a"], labelInput: "" });
+test("finalize: pending が重複でも現 labels を返す", () => {
+  const labels = LabelsField.finalize({ labels: ["a"], labelInput: "a" });
   expect(labels).toEqual(["a"]);
 });
 
-test("commitPendingAndExtract: 新規は labels に追加", () => {
-  const { next, labels } = LabelsField.commitPendingAndExtract({
-    labels: ["a"],
-    labelInput: "b",
-  });
-  expect(next).toEqual({ labels: ["a", "b"], labelInput: "" });
+test("finalize: pending が新規なら取り込んだ配列を返す", () => {
+  const labels = LabelsField.finalize({ labels: ["a"], labelInput: "b" });
   expect(labels).toEqual(["a", "b"]);
 });
