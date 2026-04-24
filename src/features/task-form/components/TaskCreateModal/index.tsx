@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column, Task } from "@/types/task";
-import { TaskForm, type TaskFormValues } from "../TaskForm";
+import { TaskForm } from "../TaskForm";
 
 type TaskCreateModalProps = {
   /** 選択肢となるカラム一覧 */

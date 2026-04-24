@@ -1,29 +1,18 @@
-import {
-  type FormEvent,
-  type KeyboardEvent,
-  useCallback,
-  useEffect,
-  useId,
-  useState,
-} from "react";
-import type { Column, Priority, Task } from "@/types/task";
-import { ParentTaskSelect } from "../ParentTaskSelect";
-
-/** TaskForm から送信される値 */
-export type TaskFormValues = {
-  /** タイトル（必須、空文字不可） */
-  title: string;
-  /** ステータス（必須） */
-  status: string;
-  /** 優先度（任意） */
-  priority?: Priority;
-  /** ラベル一覧 */
-  labels: string[];
-  /** 親タスクのファイルパス（任意） */
-  parent?: string;
-  /** 本文（Markdown） */
-  body: string;
-};
+import { useId } from "react";
+import { Button } from "@/components/Button";
+import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
+import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
+import type { TaskFormValues } from "@/features/task-form/types";
+import type { Column, Task } from "@/types/task";
+import { TaskFormActions } from "./TaskFormActions";
+import { TaskFormBody } from "./TaskFormBody";
+import { TaskFormLabels } from "./TaskFormLabels";
+import { LabelChip } from "./TaskFormLabels/LabelChip";
+import { LabelInput } from "./TaskFormLabels/LabelInput";
+import { TaskFormParent } from "./TaskFormParent";
+import { TaskFormPriority } from "./TaskFormPriority";
+import { TaskFormStatus } from "./TaskFormStatus";
+import { TaskFormTitle } from "./TaskFormTitle";
 
 type TaskFormProps = {
   /** 選択肢となるカラム一覧 */
@@ -49,39 +38,10 @@ type TaskFormProps = {
   onCancel: () => void;
 };
 
-const PRIORITY_OPTIONS: readonly Priority[] = ["High", "Medium", "Low"];
-
-/**
- * 各フィールドの生値を TaskFormValues に正規化する。
- * タイトルは前後空白を trim し、空文字の優先度は undefined に変換する。
- * @param title - タイトル
- * @param status - ステータス
- * @param priority - 優先度（空文字はなし扱い）
- * @param labels - ラベル一覧
- * @param parent - 親タスクのファイルパス
- * @param body - 本文
- * @returns 正規化済みのフォーム送信値
- */
-const normalizeSubmission = (
-  title: string,
-  status: string,
-  priority: Priority | "",
-  labels: string[],
-  parent: string | undefined,
-  body: string,
-): TaskFormValues => ({
-  title: title.trim(),
-  status,
-  priority: priority === "" ? undefined : priority,
-  labels,
-  parent,
-  body,
-});
-
 /**
  * タスク作成フォーム。
- * タイトル・ステータス・優先度・ラベル・本文を入力し、バリデーションを通過した値を `onSubmit` に渡す。
- *
+ * 状態管理は 2 つの custom hook（useLabelsInput / useTaskFormFields）に委譲し、
+ * 本体は 7 つの子コンポーネントに props を渡して描画するだけの薄い配線層。
  * @param props - {@link TaskFormProps}
  * @returns フォーム要素
  */
@@ -96,263 +56,89 @@ export const TaskForm = ({
   onSubmit,
   onCancel,
 }: TaskFormProps) => {
-  const [title, setTitle] = useState("");
-  const [status, setStatus] = useState(initialStatus);
-  const [priority, setPriority] = useState<Priority | "">("");
-  const [labels, setLabels] = useState<string[]>([]);
-  const [labelInput, setLabelInput] = useState("");
-  const [parent, setParent] = useState<string | undefined>(
-    parentCandidates !== undefined ? initialParent : undefined,
-  );
-  const parentFieldVisible = parentCandidates !== undefined;
-  useEffect(() => {
-    setParent(parentFieldVisible ? initialParent : undefined);
-  }, [parentFieldVisible, initialParent]);
-  const [body, setBody] = useState("");
-  const [titleError, setTitleError] = useState<string | null>(null);
-
-  const id = useId();
-  const titleId = `${id}-title`;
-  const statusId = `${id}-status`;
-  const priorityId = `${id}-priority`;
-  const labelsId = `${id}-labels`;
-  const bodyId = `${id}-body`;
-  const titleErrorId = `${id}-title-error`;
-
-  const commitLabel = useCallback(() => {
-    const trimmed = labelInput.trim();
-    if (trimmed.length === 0) return;
-    setLabels((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
-    setLabelInput("");
-  }, [labelInput]);
-
-  const removeLabel = useCallback((target: string) => {
-    setLabels((prev) => prev.filter((l) => l !== target));
-  }, []);
-
-  const handleLabelKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        commitLabel();
-      }
-    },
-    [commitLabel],
-  );
-
-  const handleSubmit = useCallback(
-    (e: FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      if (isSubmitting) return;
-      if (title.trim().length === 0) {
-        setTitleError("タイトルを入力してください");
-        return;
-      }
-      setTitleError(null);
-      const pending = labelInput.trim();
-      const finalLabels =
-        pending.length > 0 && !labels.includes(pending)
-          ? [...labels, pending]
-          : labels;
-      if (pending.length > 0) {
-        setLabels(finalLabels);
-        setLabelInput("");
-      }
-      const values = normalizeSubmission(
-        title,
-        status,
-        priority,
-        finalLabels,
-        parent,
-        body,
-      );
-      onSubmit(values);
-    },
-    [
-      isSubmitting,
-      title,
-      status,
-      priority,
-      labels,
-      labelInput,
-      parent,
-      body,
-      onSubmit,
-    ],
-  );
-
+  const labelsInputId = `${useId()}-labels`;
+  const labels = useLabelsInput();
+  const fields = useTaskFormFields({
+    initialStatus,
+    initialParent,
+    parentFieldVisible: parentCandidates !== undefined,
+    isSubmitting,
+    onSubmit,
+    finalizeLabels: labels.finalizeLabels,
+  });
   return (
     <form
       className="flex flex-col gap-4"
       data-testid="task-form"
       noValidate
-      onSubmit={handleSubmit}
+      onSubmit={fields.handleSubmit}
     >
-      <div>
-        <label
-          htmlFor={titleId}
-          className="mb-1 block text-xs font-medium text-gray-700"
-        >
-          タイトル <span className="text-red-600">*</span>
-        </label>
-        <input
-          id={titleId}
-          type="text"
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            if (titleError) setTitleError(null);
-          }}
-          disabled={isSubmitting}
-          aria-invalid={titleError !== null}
-          aria-describedby={titleError ? titleErrorId : undefined}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
-          data-testid="task-form-title"
-        />
-        {titleError && (
-          <p
-            id={titleErrorId}
-            className="mt-1 text-xs text-red-600"
-            data-testid="task-form-title-error"
-          >
-            {titleError}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label
-          htmlFor={statusId}
-          className="mb-1 block text-xs font-medium text-gray-700"
-        >
-          ステータス <span className="text-red-600">*</span>
-        </label>
-        <select
-          id={statusId}
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          disabled={isSubmitting}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
-          data-testid="task-form-status"
-        >
-          {columns.map((col) => (
-            <option key={col.name} value={col.name}>
-              {col.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label
-          htmlFor={priorityId}
-          className="mb-1 block text-xs font-medium text-gray-700"
-        >
-          優先度
-        </label>
-        <select
-          id={priorityId}
-          value={priority}
-          onChange={(e) => setPriority(e.target.value as Priority | "")}
-          disabled={isSubmitting}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
-          data-testid="task-form-priority"
-        >
-          <option value="">なし</option>
-          {PRIORITY_OPTIONS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label
-          htmlFor={labelsId}
-          className="mb-1 block text-xs font-medium text-gray-700"
-        >
-          ラベル
-        </label>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {labels.map((label) => (
-            <span
-              key={label}
-              className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700"
-            >
-              {label}
-              <button
-                type="button"
-                aria-label={`ラベル「${label}」を削除`}
-                className="ml-0.5 rounded text-gray-400 hover:text-gray-700"
-                disabled={isSubmitting}
-                onClick={() => removeLabel(label)}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <input
-            id={labelsId}
-            type="text"
-            value={labelInput}
-            onChange={(e) => setLabelInput(e.target.value)}
-            onKeyDown={handleLabelKeyDown}
-            onBlur={commitLabel}
+      <TaskFormTitle
+        value={fields.state.values.title}
+        onChange={(value) => fields.dispatch({ type: "title", value })}
+        error={fields.state.errors.title}
+        disabled={isSubmitting}
+      />
+      <TaskFormStatus
+        columns={columns}
+        value={fields.state.values.status}
+        onChange={(value) => fields.dispatch({ type: "status", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormPriority
+        value={fields.state.values.priority}
+        onChange={(value) => fields.dispatch({ type: "priority", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormLabels htmlFor={labelsInputId}>
+        {labels.state.labels.map((label) => (
+          <LabelChip
+            key={label}
+            label={label}
+            onRemove={() => labels.dispatch({ type: "remove", label })}
             disabled={isSubmitting}
-            placeholder="Enter で追加"
-            className="flex-1 min-w-[100px] rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
-            data-testid="task-form-label-input"
           />
-        </div>
-      </div>
-
+        ))}
+        <LabelInput
+          id={labelsInputId}
+          value={labels.state.labelInput}
+          onChange={(value) => labels.dispatch({ type: "setInput", value })}
+          onKeyDown={labels.handleKeyDown}
+          onBlur={() => labels.dispatch({ type: "commit" })}
+          disabled={isSubmitting}
+        />
+      </TaskFormLabels>
       {parentCandidates !== undefined && (
-        <ParentTaskSelect
+        <TaskFormParent
           tasks={parentCandidates}
-          value={parent}
-          onChange={setParent}
+          value={fields.state.values.parent}
+          onChange={(value) => fields.dispatch({ type: "parent", value })}
           disabled={isSubmitting}
         />
       )}
-
-      <div>
-        <label
-          htmlFor={bodyId}
-          className="mb-1 block text-xs font-medium text-gray-700"
-        >
-          説明
-        </label>
-        <textarea
-          id={bodyId}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          disabled={isSubmitting}
-          rows={4}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
-          data-testid="task-form-body"
-        />
-      </div>
-
-      <div className="mt-2 flex justify-end gap-3">
-        <button
-          type="button"
-          className="rounded px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-          disabled={isSubmitting}
+      <TaskFormBody
+        value={fields.state.values.body}
+        onChange={(value) => fields.dispatch({ type: "body", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormActions>
+        <Button
+          variant="secondary"
           onClick={onCancel}
+          disabled={isSubmitting}
           data-testid="task-form-cancel"
         >
           {cancelLabel}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="primary"
           type="submit"
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
           disabled={isSubmitting}
           data-testid="task-form-submit"
         >
           {submitLabel}
-        </button>
-      </div>
+        </Button>
+      </TaskFormActions>
     </form>
   );
 };
