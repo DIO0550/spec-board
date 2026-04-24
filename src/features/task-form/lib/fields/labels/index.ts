@@ -23,12 +23,12 @@ export const LabelsField = {
   }),
 
   /**
-   * 入力中文字列を設定する。
+   * 入力中文字列だけを差し替えた新しい field を返す。
    * @param field - 現在の field
    * @param value - 新しい入力値
    * @returns 新しい field
    */
-  setInput: (field: LabelsField, value: string): LabelsField => ({
+  withInput: (field: LabelsField, value: string): LabelsField => ({
     ...field,
     labelInput: value,
   }),

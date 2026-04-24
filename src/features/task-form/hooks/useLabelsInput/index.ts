@@ -20,7 +20,7 @@ export type LabelsAction =
 const reducer = (state: LabelsField, action: LabelsAction): LabelsField => {
   switch (action.type) {
     case "setInput":
-      return LabelsField.setInput(state, action.value);
+      return LabelsField.withInput(state, action.value);
     case "commit":
       return LabelsField.commit(state);
     case "remove":

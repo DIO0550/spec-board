@@ -12,8 +12,8 @@ test("initial: 初期 labels が渡されたら反映", () => {
   });
 });
 
-test("setInput: labelInput を更新する", () => {
-  const next = LabelsField.setInput(LabelsField.initial(), "foo");
+test("withInput: labelInput を差し替えた新しい field を返す", () => {
+  const next = LabelsField.withInput(LabelsField.initial(), "foo");
   expect(next).toEqual({ labels: [], labelInput: "foo" });
 });
 
