@@ -130,8 +130,8 @@ test("ラベル入力中に submit すると未コミット文字が送信値に
     submitForm();
   });
   expect(onSubmit.mock.calls[0][0].labels).toEqual(["pending"]);
-  // submit 成功で unmount / 失敗でそのまま、という想定で UI state は更新しない
-  expect(labelInput.value).toBe("pending");
+  // finalizeLabels は UI 整合のため commit を dispatch する
+  expect(labelInput.value).toBe("");
 });
 
 test("initialParent 指定で送信値に parent が含まれる", () => {

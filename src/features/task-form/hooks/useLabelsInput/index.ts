@@ -18,8 +18,8 @@ export type UseLabelsInputResult = {
   handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
   /**
    * submit 用に pending labelInput を取り込んだ最終 labels を同期で返す。
-   * hook の state は更新しない（submit 成功で unmount、失敗時は UI を
-   * そのまま維持するため、commit の dispatch は行わない）。
+   * 併せて UI 整合のために `commit` を dispatch するが、返り値は dispatch の
+   * 反映を待たずに pure 関数で計算した値を即座に返す（同期待ち不要）。
    * @returns 最終ラベル配列
    */
   finalizeLabels: () => string[];
@@ -52,10 +52,13 @@ export const useLabelsInput = (
     }
   }, []);
 
-  const finalizeLabels = useCallback(
-    (): string[] => LabelsField.finalize(state),
-    [state],
-  );
+  const finalizeLabels = useCallback((): string[] => {
+    const labels = LabelsField.finalize(state);
+    // UI 整合のために commit を dispatch する（fire-and-forget）。
+    // 返り値は pure 関数で同期計算済みのため dispatch の反映は待たない。
+    dispatch({ type: "commit" });
+    return labels;
+  }, [state]);
 
   return { state, dispatch, handleKeyDown, finalizeLabels };
 };
