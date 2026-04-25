@@ -65,7 +65,8 @@ export const DeleteFlow = {
   },
 
   /**
-   * confirming/error → deleting（削除実行を開始）。deleting 中は no-op で吸収。
+   * confirming/error → deleting（削除実行を開始）。idle/deleting 中は state そのまま返し、
+   * dev 環境では `invalidTransition` 経由で `console.warn` を出力する（prod は完全 no-op）。
    * @param state - 現在の state
    * @returns 新しい state
    */
