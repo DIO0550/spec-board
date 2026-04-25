@@ -32,6 +32,13 @@ export type UseDetailLabelsResult = {
  * DetailPanel 側でラベル更新の橋渡しを行う hook。
  * latestLabelsRef を render 中代入で同期し、同フレーム連続発火を合算する。
  *
+ * @remarks
+ * `latestLabelsRef.current = task.labels` は render 中の意図的な代入で、
+ * 同一値の冪等な上書きであるため React 19 + StrictMode の二重 render でも
+ * tearing は発生しない（タスクが切り替わると次の render で必ず最新 labels に
+ * 同期される）。`useEffect` での同期だと「effect 実行前に add が呼ばれた瞬間に
+ * 古い labels を見るウィンドウ」が生じるため敢えて render 中代入を採用している。
+ *
  * @param args - 対象タスクと onTaskUpdate コールバック
  * @returns add / remove ハンドラ
  */
