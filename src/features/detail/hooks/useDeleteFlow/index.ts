@@ -27,8 +27,8 @@ export type UseDeleteFlowResult = {
  * - state machine（machine.ts）に遷移ロジックを委譲（dev では不正遷移時に machine 側で console.warn）
  * - useRef / useEffect は使用しない（ref フラグ完全撤去）
  * - 冪等性は (1) UI 側 confirmDisabled / cancelDisabled の disabled、
- *   (2) state machine の no-op 遷移、(3) `confirmDelete` 内で実遷移を検出して
- *   `onDelete` を valid 遷移時のみ実行、の三段で担保する
+ *   (2) state machine の no-op 遷移、(3) `confirmDelete` 冒頭の
+ *   `state.kind` による事前ガード、の三段で担保する
  *
  * @param args - 削除実行コールバック
  * @returns state + 操作ハンドラ
