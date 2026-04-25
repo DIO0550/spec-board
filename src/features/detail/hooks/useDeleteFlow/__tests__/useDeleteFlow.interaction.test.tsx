@@ -1,11 +1,28 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+
+const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
+  IS_REACT_ACT_ENVIRONMENT?: boolean;
+};
+let previousIsReactActEnvironment: boolean | undefined;
+let hadIsReactActEnvironment = false;
 
 beforeAll(() => {
-  (
-    globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
+  hadIsReactActEnvironment =
+    "IS_REACT_ACT_ENVIRONMENT" in reactActEnvironmentGlobal;
+  previousIsReactActEnvironment =
+    reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT;
+  reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterAll(() => {
+  reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT =
+    previousIsReactActEnvironment;
+  Reflect.deleteProperty(
+    reactActEnvironmentGlobal,
+    hadIsReactActEnvironment ? "__noop__" : "IS_REACT_ACT_ENVIRONMENT",
+  );
 });
 
 import {
