@@ -34,7 +34,8 @@ const invalidTransition = (
 
 /**
  * LabelsInput state machine の event companion。
- * 各イベントは純粋関数で、副作用ゼロ。
+ * 状態遷移自体は引数に基づいて決まるが、不正遷移時のみ dev 環境では
+ * `invalidTransition` 経由で `console.warn` を出力する（prod では完全に副作用なし）。
  */
 export const LabelsInput = {
   /**
