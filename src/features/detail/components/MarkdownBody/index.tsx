@@ -57,8 +57,11 @@ const renderBlock = (block: Block, key: number): ReactNode => {
   if (block.type === "ul") {
     return (
       <ul key={key} className="list-disc pl-6">
-        {block.items.map((item) => (
-          <li key={item}>{renderInline(Markdown.tokenizeInline(item))}</li>
+        {block.items.map((item, idx) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 同名アイテムや空文字 (`- `) で key 衝突しないよう idx を併用する
+          <li key={`${idx}-${item}`}>
+            {renderInline(Markdown.tokenizeInline(item))}
+          </li>
         ))}
       </ul>
     );
