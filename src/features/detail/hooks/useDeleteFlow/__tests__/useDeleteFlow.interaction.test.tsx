@@ -19,10 +19,14 @@ beforeAll(() => {
 afterAll(() => {
   reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT =
     previousIsReactActEnvironment;
-  Reflect.deleteProperty(
-    reactActEnvironmentGlobal,
-    hadIsReactActEnvironment ? "__noop__" : "IS_REACT_ACT_ENVIRONMENT",
-  );
+  // 元々プロパティが存在しなかった場合のみ delete してプロパティ自体を消す。
+  // 存在していた場合は値の復元のみで足りる（条件分岐は配列で表現してテスト規約を満たす）。
+  const keysToDelete = hadIsReactActEnvironment
+    ? []
+    : (["IS_REACT_ACT_ENVIRONMENT"] as const);
+  for (const key of keysToDelete) {
+    Reflect.deleteProperty(reactActEnvironmentGlobal, key);
+  }
 });
 
 import {
