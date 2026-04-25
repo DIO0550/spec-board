@@ -23,12 +23,6 @@ type Story = StoryObj<typeof TaskCreateModal>;
 
 export const Default: Story = {};
 
-export const Submitting: Story = {
-  args: {
-    onSubmit: () => new Promise(() => {}),
-  },
-};
-
 export const WithInitialParent: Story = {
   args: {
     initialParent: initialTasks[0].filePath,
