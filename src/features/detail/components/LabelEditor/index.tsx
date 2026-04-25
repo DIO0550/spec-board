@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import { useEffect, useRef } from "react";
 import { useLabelsInput } from "@/features/detail/hooks/useLabelsInput";
 
@@ -25,12 +26,37 @@ type LabelEditorProps = {
 export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
   const input = useLabelsInput({ existingLabels: labels, onCommit: onAdd });
   const inputRef = useRef<HTMLInputElement>(null);
+  // Enter / Escape 経由で閉じた直後に発火する blur が
+  // stale closure を介して onCommit を再実行するのを防ぐためのフラグ。
+  // useLabelsInput 内では使わない（hook 規約: ref フラグ不可）。
+  const justClosedByKeyRef = useRef(false);
 
   useEffect(() => {
     if (input.state.kind === "adding") {
       inputRef.current?.focus();
     }
   }, [input.state.kind]);
+
+  /**
+   * input の keydown ラッパー。Enter / Escape の場合は justClosedByKeyRef を
+   * 立ててから hook のハンドラを呼ぶ。後続の blur はこのフラグで抑止する。
+   * @param e - keydown イベント
+   */
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    justClosedByKeyRef.current = e.key === "Enter" || e.key === "Escape";
+    input.handleKeyDown(e);
+  };
+
+  /**
+   * input の blur ラッパー。Enter / Escape 由来の blur は無視し、
+   * それ以外（フォーカス外しなど）の場合のみ confirmAdding を呼ぶ。
+   */
+  const handleBlur = () => {
+    const justClosedByKey = justClosedByKeyRef.current;
+    justClosedByKeyRef.current = false;
+    if (justClosedByKey) return;
+    input.confirmAdding();
+  };
 
   return (
     <div data-testid="label-editor">
@@ -58,8 +84,8 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
             type="text"
             value={input.state.input}
             onChange={(e) => input.setInput(e.target.value)}
-            onKeyDown={input.handleKeyDown}
-            onBlur={input.confirmAdding}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             className="rounded border border-blue-400 px-1.5 py-0.5 text-xs outline-none"
             data-testid="label-input"
             placeholder="ラベル名"
