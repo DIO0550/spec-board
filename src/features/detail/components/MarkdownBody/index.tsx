@@ -1,35 +1,76 @@
 import type { ReactNode } from "react";
+import {
+  type Block,
+  type InlineToken,
+  Markdown,
+} from "@/features/detail/domains/markdown";
 
 type MarkdownBodyProps = {
   body: string;
 };
 
 /**
- * @param text - インライン装飾を含むテキスト
- * @returns ReactNode の配列
+ * インライントークンを React ノードに変換する。
+ * @param tokens - インライントークン列
+ * @returns React ノードの配列
  */
-const renderInline = (text: string): ReactNode[] => {
-  const result: ReactNode[] = [];
-  const regex = /(`[^`]+`|\*\*(.+?)\*\*)/g;
-  let lastIndex = 0;
-  let key = 0;
+const renderInline = (tokens: readonly InlineToken[]): ReactNode[] =>
+  tokens.map((token, idx) => {
+    const key = `${token.type}-${idx}-${token.value}`;
+    if (token.type === "code") {
+      return <code key={key}>{token.value}</code>;
+    }
+    if (token.type === "strong") {
+      return <strong key={key}>{token.value}</strong>;
+    }
+    return token.value;
+  });
 
-  for (const match of text.matchAll(regex)) {
-    const idx = match.index ?? 0;
-    if (idx > lastIndex) {
-      result.push(text.slice(lastIndex, idx));
-    }
-    if (match[0].startsWith("`")) {
-      result.push(<code key={key++}>{match[0].slice(1, -1)}</code>);
-    } else {
-      result.push(<strong key={key++}>{match[2]}</strong>);
-    }
-    lastIndex = idx + match[0].length;
+/**
+ * Block 型を JSX に変換する。
+ * @param block - 1 ブロック
+ * @param key - React の key
+ * @returns React 要素
+ */
+const renderBlock = (block: Block, key: number): ReactNode => {
+  if (block.type === "h1") {
+    return (
+      <h1 key={key} className="mt-8 mb-4 text-3xl font-bold leading-tight">
+        {renderInline(Markdown.tokenizeInline(block.text))}
+      </h1>
+    );
   }
-  if (lastIndex < text.length) {
-    result.push(text.slice(lastIndex));
+  if (block.type === "h2") {
+    return (
+      <h2 key={key} className="mt-7 mb-3 text-2xl font-semibold leading-tight">
+        {renderInline(Markdown.tokenizeInline(block.text))}
+      </h2>
+    );
   }
-  return result;
+  if (block.type === "h3") {
+    return (
+      <h3 key={key} className="mt-6 mb-3 text-xl font-semibold leading-snug">
+        {renderInline(Markdown.tokenizeInline(block.text))}
+      </h3>
+    );
+  }
+  if (block.type === "ul") {
+    return (
+      <ul key={key} className="list-disc pl-6">
+        {block.items.map((item) => (
+          <li key={item}>{renderInline(Markdown.tokenizeInline(item))}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (block.type === "codeblock") {
+    return (
+      <pre key={key} className="overflow-x-auto">
+        <code>{block.code}</code>
+      </pre>
+    );
+  }
+  return <p key={key}>{renderInline(Markdown.tokenizeInline(block.text))}</p>;
 };
 
 /**
@@ -37,107 +78,11 @@ const renderInline = (text: string): ReactNode[] => {
  * @returns Markdown をレンダリングした要素、body が空なら null
  */
 export const MarkdownBody = ({ body }: MarkdownBodyProps) => {
-  if (!body.trim()) return null;
-
-  const lines = body.replace(/\r\n?/g, "\n").split("\n");
-  const elements: ReactNode[] = [];
-  let key = 0;
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.startsWith("```")) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].startsWith("```")) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      if (i < lines.length) i++;
-      elements.push(
-        <pre key={key++} className="overflow-x-auto">
-          <code>{codeLines.join("\n")}</code>
-        </pre>,
-      );
-      continue;
-    }
-
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-
-    const headingMatch = line.match(/^(#{1,3})\s+(.*)/);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      const content = renderInline(headingMatch[2]);
-      if (level === 1) {
-        elements.push(
-          <h1
-            key={key++}
-            className="mt-8 mb-4 text-3xl font-bold leading-tight"
-          >
-            {content}
-          </h1>,
-        );
-      } else if (level === 2) {
-        elements.push(
-          <h2
-            key={key++}
-            className="mt-7 mb-3 text-2xl font-semibold leading-tight"
-          >
-            {content}
-          </h2>,
-        );
-      } else {
-        elements.push(
-          <h3
-            key={key++}
-            className="mt-6 mb-3 text-xl font-semibold leading-snug"
-          >
-            {content}
-          </h3>,
-        );
-      }
-      i++;
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(line)) {
-      const items: ReactNode[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
-        const itemText = lines[i].replace(/^[-*]\s+/, "");
-        items.push(<li key={items.length}>{renderInline(itemText)}</li>);
-        i++;
-      }
-      elements.push(
-        <ul key={key++} className="list-disc pl-6">
-          {items}
-        </ul>,
-      );
-      continue;
-    }
-
-    const paraLines: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== "" &&
-      !lines[i].startsWith("```") &&
-      !/^#{1,3}\s+/.test(lines[i]) &&
-      !/^[-*]\s+/.test(lines[i])
-    ) {
-      paraLines.push(lines[i]);
-      i++;
-    }
-    if (paraLines.length > 0) {
-      elements.push(<p key={key++}>{renderInline(paraLines.join(" "))}</p>);
-    }
-  }
-
+  const blocks = Markdown.parse(body);
+  if (blocks.length === 0) return null;
   return (
     <div className="space-y-4" data-testid="markdown-body">
-      {elements}
+      {blocks.map((block, i) => renderBlock(block, i))}
     </div>
   );
 };

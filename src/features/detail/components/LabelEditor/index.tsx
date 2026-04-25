@@ -1,5 +1,5 @@
-import type { KeyboardEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { useLabelsInput } from "@/features/detail/hooks/useLabelsInput";
 
 /** LabelEditor の Props */
 type LabelEditorProps = {
@@ -23,51 +23,14 @@ type LabelEditorProps = {
  * @returns ラベルエディタ要素
  */
 export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
-  const [isAdding, setIsAdding] = useState(false);
-  const [inputValue, setInputValue] = useState("");
+  const input = useLabelsInput({ existingLabels: labels, onCommit: onAdd });
   const inputRef = useRef<HTMLInputElement>(null);
-  const isCancelledRef = useRef(false);
-
-  /** 入力値を確定してラベルを追加する */
-  const confirmAdd = () => {
-    const trimmed = inputValue.trim();
-    if (trimmed.length > 0 && !labels.includes(trimmed)) {
-      onAdd(trimmed);
-    }
-    setInputValue("");
-    setIsAdding(false);
-  };
-
-  /** 追加をキャンセルして入力フィールドを閉じる */
-  const cancelAdd = () => {
-    isCancelledRef.current = true;
-    setInputValue("");
-    setIsAdding(false);
-  };
-
-  /** キーボードイベントを処理する（Enter: 確定、Escape: キャンセル） */
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      e.stopPropagation();
-      isCancelledRef.current = true;
-      confirmAdd();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      cancelAdd();
-    }
-  };
-
-  const handleAddClick = () => {
-    setIsAdding(true);
-  };
 
   useEffect(() => {
-    if (isAdding) {
+    if (input.state.kind === "adding") {
       inputRef.current?.focus();
     }
-  }, [isAdding]);
+  }, [input.state.kind]);
 
   return (
     <div data-testid="label-editor">
@@ -89,17 +52,14 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
             </button>
           </span>
         ))}
-        {isAdding ? (
+        {input.state.kind === "adding" ? (
           <input
             ref={inputRef}
             type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              if (!isCancelledRef.current) confirmAdd();
-              isCancelledRef.current = false;
-            }}
+            value={input.state.input}
+            onChange={(e) => input.setInput(e.target.value)}
+            onKeyDown={input.handleKeyDown}
+            onBlur={input.confirmAdding}
             className="rounded border border-blue-400 px-1.5 py-0.5 text-xs outline-none"
             data-testid="label-input"
             placeholder="ラベル名"
@@ -109,7 +69,7 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
             type="button"
             className="rounded border border-dashed border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700"
             data-testid="label-add-button"
-            onClick={handleAddClick}
+            onClick={input.startAdding}
           >
             + 追加
           </button>

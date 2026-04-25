@@ -1,5 +1,4 @@
-/** 優先度 */
-export type Priority = "High" | "Medium" | "Low";
+import type { Priority } from "@/domains/priority";
 
 /** タスク */
 export type Task = {

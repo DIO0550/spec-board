@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EditableText } from "@/components/EditableText";
-import type { Column, Priority, Task } from "@/types/task";
+import type { Priority } from "@/domains/priority";
+import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
+import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
+import { useDetailLabels } from "@/features/detail/hooks/useDetailLabels";
+import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
+import type { Column, Task } from "@/types/task";
 import { LabelEditor } from "../LabelEditor";
 import { MarkdownBody } from "../MarkdownBody";
 import { PrioritySelect } from "../PrioritySelect";
@@ -55,26 +60,26 @@ export const DetailPanel = ({
   onAddSubIssue,
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
-  const latestLabelsRef = useRef(task.labels);
-  latestLabelsRef.current = task.labels;
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  const childTasks = useMemo(() => {
-    if (allTasks === undefined) return [];
-    return allTasks.filter((t) => t.parent === task.filePath);
-  }, [allTasks, task.filePath]);
-  const effectiveDoneColumn = useMemo(() => {
-    if (doneColumn !== undefined) return doneColumn;
-    const maxOrderColumn = columns.reduce<Column | undefined>(
-      (currentMax, column) =>
-        currentMax === undefined || column.order > currentMax.order
-          ? column
-          : currentMax,
-      undefined,
-    );
-    return maxOrderColumn?.name ?? "Done";
-  }, [columns, doneColumn]);
+  const { childTasks, effectiveDoneColumn } = useChildTasks({
+    parentFilePath: task.filePath,
+    allTasks,
+    columns,
+    doneColumn,
+  });
+
+  const labels = useDetailLabels({ task, onTaskUpdate });
+
+  const handleDelete = useCallback(
+    () => onDelete(task.id),
+    [task.id, onDelete],
+  );
+  const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
+
+  useEscToClose({
+    disabled: deleteFlow.state.kind !== "idle",
+    onEscape: onClose,
+  });
 
   const handleTitleConfirm = useCallback(
     (title: string) => {
@@ -96,34 +101,6 @@ export const DetailPanel = ({
     },
     [task.id, onTaskUpdate],
   );
-
-  const handleLabelAdd = useCallback(
-    (label: string) => {
-      const updated = [...latestLabelsRef.current, label];
-      latestLabelsRef.current = updated;
-      onTaskUpdate(task.id, { labels: updated });
-    },
-    [task.id, onTaskUpdate],
-  );
-
-  const handleLabelRemove = useCallback(
-    (label: string) => {
-      const updated = latestLabelsRef.current.filter((l) => l !== label);
-      latestLabelsRef.current = updated;
-      onTaskUpdate(task.id, { labels: updated });
-    },
-    [task.id, onTaskUpdate],
-  );
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !showConfirm) {
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, showConfirm]);
 
   useEffect(() => {
     panelRef.current?.focus();
@@ -190,8 +167,8 @@ export const DetailPanel = ({
             </div>
             <LabelEditor
               labels={task.labels}
-              onAdd={handleLabelAdd}
-              onRemove={handleLabelRemove}
+              onAdd={labels.add}
+              onRemove={labels.remove}
             />
             {onAddSubIssue && allTasks !== undefined && (
               <SubIssueSection
@@ -215,34 +192,25 @@ export const DetailPanel = ({
             type="button"
             className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
             data-testid="detail-delete-button"
-            onClick={() => setShowConfirm(true)}
+            onClick={deleteFlow.requestDelete}
           >
             削除
           </button>
         </div>
       </aside>
-      {showConfirm && (
+      {(deleteFlow.state.kind === "confirming" ||
+        deleteFlow.state.kind === "deleting" ||
+        deleteFlow.state.kind === "error") && (
         <ConfirmDialog
           title="タスクの削除"
           message={`「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`}
-          confirmLabel={isDeleting ? "削除中…" : "削除"}
-          confirmDisabled={isDeleting}
-          cancelDisabled={isDeleting}
-          onConfirm={async () => {
-            if (isDeleting) return;
-            setIsDeleting(true);
-            try {
-              await onDelete(task.id);
-              setShowConfirm(false);
-            } catch {
-              // エラー時はダイアログを開いたまま再試行可能にする
-            } finally {
-              setIsDeleting(false);
-            }
-          }}
-          onCancel={() => {
-            if (!isDeleting) setShowConfirm(false);
-          }}
+          confirmLabel={
+            deleteFlow.state.kind === "deleting" ? "削除中…" : "削除"
+          }
+          confirmDisabled={deleteFlow.state.kind === "deleting"}
+          cancelDisabled={deleteFlow.state.kind === "deleting"}
+          onConfirm={deleteFlow.confirmDelete}
+          onCancel={deleteFlow.cancelDelete}
         />
       )}
     </>
