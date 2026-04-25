@@ -12,7 +12,9 @@
     "test:run": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",

@@ -40,7 +40,12 @@ export default defineConfig(() => ({
       reporter: ["text", "json-summary", "json"],
       reportOnFailure: true,
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts", "src/main.tsx"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.stories.{ts,tsx}",
+        "src/**/*.d.ts",
+        "src/main.tsx",
+      ],
     },
   },
 }));
