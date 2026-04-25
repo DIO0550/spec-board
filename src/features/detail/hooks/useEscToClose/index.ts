@@ -2,7 +2,11 @@ import { useEffect } from "react";
 
 /** useEscToClose の引数 */
 export type UseEscToCloseArgs = {
-  /** true のとき Escape ハンドラを実行しない（subscribe は維持） */
+  /**
+   * true のとき Escape ハンドラを実行しない。
+   * 値の変化で effect が再実行され、subscribe は再登録される
+   * （ハンドラ無効化のみが目的なら最終的な動作には影響しない）。
+   */
   disabled: boolean;
   /** Escape キーが押された時に呼ばれるコールバック */
   onEscape: () => void;
