@@ -38,7 +38,7 @@ export type UseLabelsInputResult = {
 
 /**
  * ラベル入力 UI のための hook。
- * - state machine（machine.ts）に副作用ゼロのロジックを委譲
+ * - state machine（machine.ts）に遷移ロジックを委譲（不正遷移時のみ dev で console.warn）
  * - Labels.tryAdd で trim/重複判定を委譲
  * - useRef / useEffect は使用しない（ref フラグ完全撤去）
  *
