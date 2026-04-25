@@ -12,7 +12,9 @@
     "test:run": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
@@ -24,6 +26,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
+    "@storybook/addon-a11y": "^10.3.5",
+    "@storybook/addon-themes": "^10.3.5",
+    "@storybook/react-vite": "^10.3.5",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.5.2",
     "@types/react": "^19.1.8",
@@ -33,6 +38,7 @@
     "happy-dom": "^20.8.9",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^0.20.0",
+    "storybook": "^10.3.5",
     "typescript": "~5.8.3",
     "vite": "^8.0.5",
     "vitest": "^4.1.4"

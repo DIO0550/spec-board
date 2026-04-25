@@ -183,3 +183,7 @@ Task.md
 .pr_number
 session-logs/
 tasks*
+.specs
+
+# Storybook
+storybook-static/
