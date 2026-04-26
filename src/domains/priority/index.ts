@@ -12,7 +12,9 @@ export const Priority = {
    * @returns 正規化された Priority、または undefined
    */
   parse: (raw: string | undefined): Priority | undefined => {
-    if (raw === undefined) return undefined;
+    if (raw === undefined) {
+      return undefined;
+    }
     return (Priority.OPTIONS as readonly string[]).includes(raw)
       ? (raw as Priority)
       : undefined;

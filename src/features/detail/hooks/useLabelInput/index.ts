@@ -69,7 +69,9 @@ export const useLabelInput = (args: UseLabelInputArgs): UseLabelInputResult => {
   }, []);
 
   const confirmAdding = useCallback(() => {
-    if (!LabelInput.isAdding(state)) return;
+    if (!LabelInput.isAdding(state)) {
+      return;
+    }
     const next = Labels.tryAdd(existingLabels, state.input);
     if (next !== null) {
       const added = next[next.length - 1];

@@ -82,7 +82,9 @@ export const TaskCard = ({
       className="w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md"
       onClick={() => onClick(task.id)}
       onKeyDown={(e) => {
-        if (e.currentTarget !== e.target) return;
+        if (e.currentTarget !== e.target) {
+          return;
+        }
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onClick(task.id);

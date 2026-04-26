@@ -53,7 +53,9 @@ export const useDeleteFlow = (args: UseDeleteFlowArgs): UseDeleteFlowResult => {
   }, []);
 
   const confirmDelete = useCallback(async () => {
-    if (!DeleteFlow.canConfirm(state)) return;
+    if (!DeleteFlow.canConfirm(state)) {
+      return;
+    }
     setState((s) => DeleteFlow.confirm(s));
     try {
       await onDelete();

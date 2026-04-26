@@ -40,8 +40,12 @@ export const LabelsField = {
    */
   commit: (field: LabelsField): LabelsField => {
     const trimmed = field.labelInput.trim();
-    if (trimmed.length === 0) return field;
-    if (field.labels.includes(trimmed)) return { ...field, labelInput: "" };
+    if (trimmed.length === 0) {
+      return field;
+    }
+    if (field.labels.includes(trimmed)) {
+      return { ...field, labelInput: "" };
+    }
     return { labels: [...field.labels, trimmed], labelInput: "" };
   },
 

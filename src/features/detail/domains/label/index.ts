@@ -14,8 +14,12 @@ export const Labels = {
    */
   tryAdd: (current: Labels, input: string): Labels | null => {
     const trimmed = input.trim();
-    if (trimmed.length === 0) return null;
-    if (current.includes(trimmed)) return null;
+    if (trimmed.length === 0) {
+      return null;
+    }
+    if (current.includes(trimmed)) {
+      return null;
+    }
     return [...current, trimmed];
   },
 

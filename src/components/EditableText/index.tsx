@@ -93,7 +93,9 @@ export const EditableText = ({
 
     if (e.key === "Enter") {
       // IME 変換確定の Enter は編集確定と区別する。
-      if (e.nativeEvent.isComposing) return;
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       commit();

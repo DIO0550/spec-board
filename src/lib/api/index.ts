@@ -145,7 +145,9 @@ export async function deleteTask(id: string): Promise<void> {
   const col = cardOrder[removed.status];
   if (col) {
     const pos = col.indexOf(removed.filePath);
-    if (pos !== -1) col.splice(pos, 1);
+    if (pos !== -1) {
+      col.splice(pos, 1);
+    }
   }
 }
 

@@ -67,7 +67,9 @@ export const LabelInput = {
    * @returns 新しい state
    */
   startAdding: (current: LabelInputState): LabelInputState => {
-    if (!isIdle(current)) return invalidTransition("startAdding", current);
+    if (!isIdle(current)) {
+      return invalidTransition("startAdding", current);
+    }
     return { kind: "adding", input: "" };
   },
 
@@ -81,8 +83,12 @@ export const LabelInput = {
     current: LabelInputState,
     payload: { value: string },
   ): LabelInputState => {
-    if (!isAddingGuard(current)) return invalidTransition("setInput", current);
-    if (current.input === payload.value) return current;
+    if (!isAddingGuard(current)) {
+      return invalidTransition("setInput", current);
+    }
+    if (current.input === payload.value) {
+      return current;
+    }
     return { kind: "adding", input: payload.value };
   },
 
@@ -92,7 +98,9 @@ export const LabelInput = {
    * @returns 新しい state
    */
   cancel: (current: LabelInputState): LabelInputState => {
-    if (!isAddingGuard(current)) return invalidTransition("cancel", current);
+    if (!isAddingGuard(current)) {
+      return invalidTransition("cancel", current);
+    }
     return { kind: "idle" };
   },
 
@@ -102,7 +110,9 @@ export const LabelInput = {
    * @returns 新しい state
    */
   confirm: (current: LabelInputState): LabelInputState => {
-    if (!isAddingGuard(current)) return invalidTransition("confirm", current);
+    if (!isAddingGuard(current)) {
+      return invalidTransition("confirm", current);
+    }
     return { kind: "idle" };
   },
 } as const;

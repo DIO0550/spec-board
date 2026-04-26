@@ -21,7 +21,9 @@ type ColumnContextMenuProps = {
  * @returns disabled でない menuitem の配列（DOM 順）
  */
 const getFocusableMenuItems = (menu: HTMLDivElement | null): HTMLElement[] => {
-  if (!menu) return [];
+  if (!menu) {
+    return [];
+  }
   return Array.from(
     menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'),
   );
@@ -45,7 +47,9 @@ export const ColumnContextMenu = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
@@ -60,7 +64,9 @@ export const ColumnContextMenu = ({
   // useLayoutEffect で paint 前に補正するため表示直後のちらつきは出ない。
   useLayoutEffect(() => {
     const menu = menuRef.current;
-    if (!menu) return;
+    if (!menu) {
+      return;
+    }
     const rect = menu.getBoundingClientRect();
     const maxX = Math.max(0, window.innerWidth - rect.width);
     const maxY = Math.max(0, window.innerHeight - rect.height);
@@ -77,7 +83,9 @@ export const ColumnContextMenu = ({
       return;
     }
     const items = getFocusableMenuItems(menuRef.current);
-    if (items.length === 0) return;
+    if (items.length === 0) {
+      return;
+    }
     e.preventDefault();
     const active = document.activeElement;
     const currentIndex =

@@ -52,7 +52,9 @@ export const useDetailLabels = (
   const add = useCallback(
     (label: string) => {
       const next = Labels.tryAdd(latestLabelsRef.current, label);
-      if (next === null) return;
+      if (next === null) {
+        return;
+      }
       latestLabelsRef.current = next;
       onTaskUpdate(task.id, { labels: [...next] });
     },

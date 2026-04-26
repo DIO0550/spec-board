@@ -25,7 +25,9 @@ export const SubIssue = {
     allTasks: readonly Task[] | undefined,
     parentFilePath: string,
   ): readonly Task[] => {
-    if (allTasks === undefined) return [];
+    if (allTasks === undefined) {
+      return [];
+    }
     return allTasks.filter((t) => t.parent === parentFilePath);
   },
 
@@ -40,7 +42,9 @@ export const SubIssue = {
     doneColumn: string,
   ): SubIssueProgress => {
     const total = childTasks.length;
-    if (total === 0) return { total: 0, doneCount: 0, percentage: 0 };
+    if (total === 0) {
+      return { total: 0, doneCount: 0, percentage: 0 };
+    }
     const doneCount = childTasks.filter((t) => t.status === doneColumn).length;
     const percentage = Math.round((doneCount / total) * 100);
     return { total, doneCount, percentage };
@@ -57,7 +61,9 @@ export const SubIssue = {
     columns: readonly Column[],
     override: string | undefined,
   ): string => {
-    if (override !== undefined) return override;
+    if (override !== undefined) {
+      return override;
+    }
     const maxOrderColumn = columns.reduce<Column | undefined>(
       (currentMax, column) =>
         currentMax === undefined || column.order > currentMax.order

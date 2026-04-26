@@ -70,7 +70,9 @@ export const AddColumnButton = ({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      if (e.nativeEvent.isComposing) return;
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       confirm();
@@ -95,7 +97,9 @@ export const AddColumnButton = ({
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={() => {
-            if (!isCancelledRef.current) cancel();
+            if (!isCancelledRef.current) {
+              cancel();
+            }
             isCancelledRef.current = false;
           }}
           placeholder="カラム名"
