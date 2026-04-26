@@ -54,7 +54,9 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
   const handleBlur = () => {
     const justClosedByKey = justClosedByKeyRef.current;
     justClosedByKeyRef.current = false;
-    if (justClosedByKey) return;
+    if (justClosedByKey) {
+      return;
+    }
     input.confirmAdding();
   };
 

@@ -76,7 +76,9 @@ export const DeleteFlow = {
    * @returns 新しい state
    */
   request: (current: DeleteFlowState): DeleteFlowState => {
-    if (!isIdle(current)) return invalidTransition("request", current);
+    if (!isIdle(current)) {
+      return invalidTransition("request", current);
+    }
     return { kind: "confirming" };
   },
 
@@ -87,8 +89,9 @@ export const DeleteFlow = {
    * @returns 新しい state
    */
   cancel: (current: DeleteFlowState): DeleteFlowState => {
-    if (!isConfirming(current) && !isError(current))
+    if (!isConfirming(current) && !isError(current)) {
       return invalidTransition("cancel", current);
+    }
     return { kind: "idle" };
   },
 
@@ -99,8 +102,9 @@ export const DeleteFlow = {
    * @returns 新しい state
    */
   confirm: (current: DeleteFlowState): DeleteFlowState => {
-    if (!isConfirming(current) && !isError(current))
+    if (!isConfirming(current) && !isError(current)) {
       return invalidTransition("confirm", current);
+    }
     return { kind: "deleting" };
   },
 
@@ -110,7 +114,9 @@ export const DeleteFlow = {
    * @returns 新しい state
    */
   succeed: (current: DeleteFlowState): DeleteFlowState => {
-    if (!isDeleting(current)) return invalidTransition("succeed", current);
+    if (!isDeleting(current)) {
+      return invalidTransition("succeed", current);
+    }
     return { kind: "idle" };
   },
 
@@ -124,7 +130,9 @@ export const DeleteFlow = {
     current: DeleteFlowState,
     payload: { reason: unknown },
   ): DeleteFlowState => {
-    if (!isDeleting(current)) return invalidTransition("fail", current);
+    if (!isDeleting(current)) {
+      return invalidTransition("fail", current);
+    }
     return { kind: "error", reason: payload.reason };
   },
 } as const;

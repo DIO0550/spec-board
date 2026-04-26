@@ -74,7 +74,9 @@ export const useLabelsInput = (
       // IME 変換確定の Enter であっても抑止しないとフォーム submit が発火する。
       e.preventDefault();
       // IME 変換確定の Enter はラベル確定と区別し、commit のみスキップする。
-      if (e.nativeEvent.isComposing) return;
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
       dispatch({ type: "commit" });
     }
   }, []);

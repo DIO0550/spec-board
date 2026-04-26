@@ -122,7 +122,9 @@ export const App = () => {
       const next = columnsQueueRef.current.then(async () => {
         try {
           const current = columnsRef.current;
-          if (!current.some((c) => c.name === oldName)) return;
+          if (!current.some((c) => c.name === oldName)) {
+            return;
+          }
           if (current.some((c) => c.name === newName)) {
             showToast("同じ名前のカラムが既に存在します", "error");
             return;
@@ -163,7 +165,9 @@ export const App = () => {
       const next = columnsQueueRef.current.then(async () => {
         try {
           const current = columnsRef.current;
-          if (!current.some((c) => c.name === columnName)) return;
+          if (!current.some((c) => c.name === columnName)) {
+            return;
+          }
           if (current.length <= 1) {
             showToast("最後のカラムは削除できません", "error");
             return;
@@ -243,7 +247,9 @@ export const App = () => {
         const created = await createTask(values);
         setTasks((prev) => {
           const withCreated = [...prev, created];
-          if (created.parent === undefined) return withCreated;
+          if (created.parent === undefined) {
+            return withCreated;
+          }
           return withCreated.map((t) =>
             t.filePath === created.parent &&
             !t.children.includes(created.filePath)
@@ -277,7 +283,9 @@ export const App = () => {
   );
 
   useEffect(() => {
-    if (projectPath === null) return;
+    if (projectPath === null) {
+      return;
+    }
     let cancelled = false;
     setIsLoading(true);
     setSelectedTaskId(null);
@@ -286,7 +294,9 @@ export const App = () => {
         getTasks(),
         getColumns(),
       ]);
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
       setTasks(loadedTasks);
       setColumns(loadedColumns);
       setIsLoading(false);

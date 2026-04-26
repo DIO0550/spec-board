@@ -36,7 +36,9 @@ const matchHeading = (
   line: string,
 ): { level: 1 | 2 | 3; text: string } | undefined => {
   const m = line.match(/^(#{1,3})\s+(.*)/);
-  if (m === null) return undefined;
+  if (m === null) {
+    return undefined;
+  }
   const level = m[1].length as 1 | 2 | 3;
   return { level, text: m[2] };
 };
@@ -96,7 +98,9 @@ export const Markdown = {
    * @returns Block の配列
    */
   parse: (source: string): readonly Block[] => {
-    if (source.trim() === "") return [];
+    if (source.trim() === "") {
+      return [];
+    }
     const normalized = source.replace(/\r\n?/g, "\n");
     const lines = normalized.split("\n");
     const blocks: Block[] = [];
@@ -111,7 +115,9 @@ export const Markdown = {
           codeLines.push(lines[i]);
           i++;
         }
-        if (i < lines.length) i++;
+        if (i < lines.length) {
+          i++;
+        }
         blocks.push({ type: "codeblock", code: codeLines.join("\n") });
         continue;
       }
@@ -133,7 +139,9 @@ export const Markdown = {
         const items: string[] = [];
         while (i < lines.length) {
           const item = matchListItem(lines[i]);
-          if (item === undefined) break;
+          if (item === undefined) {
+            break;
+          }
           items.push(item);
           i++;
         }
@@ -149,8 +157,9 @@ export const Markdown = {
           isFence(cur) ||
           matchHeading(cur) !== undefined ||
           matchListItem(cur) !== undefined
-        )
+        ) {
           break;
+        }
         paraLines.push(cur);
         i++;
       }

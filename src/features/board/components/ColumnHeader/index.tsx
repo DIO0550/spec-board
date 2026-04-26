@@ -55,7 +55,9 @@ export const ColumnHeader = ({
   }, [isEditing]);
 
   const startEditing = () => {
-    if (!onRename) return;
+    if (!onRename) {
+      return;
+    }
     isCancelledRef.current = false;
     setInputValue(name);
     setIsEditing(true);
@@ -86,7 +88,9 @@ export const ColumnHeader = ({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      if (e.nativeEvent.isComposing) return;
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       confirm();
@@ -119,7 +123,9 @@ export const ColumnHeader = ({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={() => {
-                if (!isCancelledRef.current) cancel();
+                if (!isCancelledRef.current) {
+                  cancel();
+                }
                 isCancelledRef.current = false;
               }}
               aria-label="カラム名"

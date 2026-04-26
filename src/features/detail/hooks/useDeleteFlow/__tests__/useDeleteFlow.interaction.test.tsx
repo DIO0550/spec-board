@@ -265,7 +265,9 @@ test("deleting 中の confirmDelete 再呼び出しは machine no-op で吸収",
   });
   expect(probe.latest.state).toEqual({ kind: "deleting" });
   await act(async () => {
-    for (const r of resolvers) r();
+    for (const r of resolvers) {
+      r();
+    }
     await pending;
     await pending2;
   });

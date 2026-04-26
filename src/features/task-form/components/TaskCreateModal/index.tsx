@@ -59,7 +59,9 @@ export const TaskCreateModal = ({
 
   const handleSubmit = useCallback(
     async (values: TaskFormValues) => {
-      if (submittingRef.current) return;
+      if (submittingRef.current) {
+        return;
+      }
       submittingRef.current = true;
       setIsSubmitting(true);
       try {
@@ -76,7 +78,9 @@ export const TaskCreateModal = ({
   );
 
   const handleOverlayClick = useCallback(() => {
-    if (submittingRef.current) return;
+    if (submittingRef.current) {
+      return;
+    }
     onClose();
   }, [onClose]);
 

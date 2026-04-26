@@ -82,7 +82,9 @@ const renderBlock = (block: Block, key: number): ReactNode => {
  */
 export const MarkdownBody = ({ body }: MarkdownBodyProps) => {
   const blocks = Markdown.parse(body);
-  if (blocks.length === 0) return null;
+  if (blocks.length === 0) {
+    return null;
+  }
   return (
     <div className="space-y-4" data-testid="markdown-body">
       {blocks.map((block, i) => renderBlock(block, i))}

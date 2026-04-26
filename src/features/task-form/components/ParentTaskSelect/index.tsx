@@ -49,7 +49,9 @@ export const ParentTaskSelect = ({
 
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (q.length === 0) return tasks;
+    if (q.length === 0) {
+      return tasks;
+    }
     return tasks.filter((t) => {
       const title = (t.title || t.filePath).toLowerCase();
       return title.includes(q) || t.filePath.toLowerCase().includes(q);

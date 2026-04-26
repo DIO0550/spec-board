@@ -24,7 +24,9 @@ export const ToastContainer = ({
   onDismiss,
   duration,
 }: ToastContainerProps) => {
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0) {
+    return null;
+  }
   return (
     <div
       className="pointer-events-none fixed top-4 right-4 z-[80] flex flex-col gap-2"
