@@ -184,6 +184,8 @@ Task.md
 session-logs/
 tasks*
 .specs
+plugin-workspace/
+*.local.*
 
 # Storybook
 storybook-static/
