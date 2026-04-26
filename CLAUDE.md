@@ -75,3 +75,50 @@ src-tauri/              — Tauri (Rust) バックエンド
 ### Storybook
 
 - 将来導入時は `__tests__/index.stories.tsx`（または `{対象名}.stories.tsx`）に配置する（現時点は未導入）。
+
+## TypeScript 開発ルール
+
+TypeScript コードを変更するすべての作業で、以下のスキルを **Skill ツールで実行**すること。
+`.claude/projects/**/memory/` のメモリに過去の内容があっても省略せず、必ず Skill ツールで最新版を読み込むこと。
+
+| タイミング | スキル | 呼び出し方 |
+|:--|:--|:--|
+| 実装開始時 | `implementation-workflow` | `/implementation-workflow` |
+| コーディング中 | `coding-standards` | `/coding-standards` |
+| テスト作成時 | `tdd` | `/tdd` |
+| テスト作成時 | `testing` | `/testing` |
+| コードレビュー時 | `typescript-code-review-skill` | `/typescript-code-review-skill` |
+| パフォーマンス確認時 | `typescript-performance-review-skill` | `/typescript-performance-review-skill` |
+
+## Rust 開発ルール
+
+### スキルの呼び出し方法（必須）
+
+スキルを「参照」する際は、必ず Skill ツール（`/スキル名` コマンド）を使用してスキルの内容をロードすること。
+スキルの名前を知っているだけでは不十分であり、実際に Skill ツールを呼び出してスキル定義を読み込むこと。
+
+> **禁止**: スキル名を記憶だけで参照し、Skill ツールを呼び出さずに作業を進めること
+>
+> **必須**: 該当スキルを Skill ツールで呼び出し、ロードされた内容に従って作業すること
+
+### メモリの読み込み（必須）
+
+作業開始時に `.claude/projects/` 配下の `memory/` ディレクトリを必ず確認し、メモリファイルが存在する場合はすべて読み込むこと。
+メモリが存在するかどうかに関わらず、必ず確認を行うこと。メモリが存在する場合は、関連性の有無を問わずすべて読み込む。
+
+> **禁止**: メモリが無いと仮定して確認をスキップすること
+>
+> **禁止**: 「関連がなさそう」と判断してメモリの読み込みをスキップすること
+>
+> **必須**: 毎回メモリディレクトリを確認し、存在するファイルはすべて読み込むこと
+
+### スキル参照ガイド
+
+Rust コードを変更するすべての作業で、以下のスキルを Skill ツールで呼び出すこと。
+
+| タイミング | スキル | 呼び出し方 |
+|:--|:--|:--|
+| 実装開始時 | `implementation-workflow` | `/implementation-workflow` |
+| コーディング中 | `coding-standards` | `/coding-standards` |
+| テスト作成時 | `tdd` | `/tdd` |
+| テスト作成時 | `testing` | `/testing` |
