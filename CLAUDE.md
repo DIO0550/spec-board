@@ -79,13 +79,16 @@ src-tauri/              — Tauri (Rust) バックエンド
 ## TypeScript 開発ルール
 
 TypeScript コードを変更するすべての作業で、以下のスキルを **Skill ツールで実行**すること。
-memory に過去の内容があっても省略せず、必ず Skill ツールで最新版を読み込むこと。
+`.claude/projects/**/memory/` のメモリに過去の内容があっても省略せず、必ず Skill ツールで最新版を読み込むこと。
 
-- 実装開始時は `implementation-workflow` スキルを Skill ツールで実行し、フローに従う
-- コーディング中は `coding-standards` スキルを Skill ツールで実行
-- テスト作成時は `tdd` および `testing` スキルを Skill ツールで実行
-- コードレビュー時は `typescript-code-review-skill` スキルを Skill ツールで実行
-- パフォーマンス確認時は `typescript-performance-review-skill` スキルを Skill ツールで実行
+| タイミング | スキル | 呼び出し方 |
+|:--|:--|:--|
+| 実装開始時 | `implementation-workflow` | `/implementation-workflow` |
+| コーディング中 | `coding-standards` | `/coding-standards` |
+| テスト作成時 | `tdd` | `/tdd` |
+| テスト作成時 | `testing` | `/testing` |
+| コードレビュー時 | `typescript-code-review-skill` | `/typescript-code-review-skill` |
+| パフォーマンス確認時 | `typescript-performance-review-skill` | `/typescript-performance-review-skill` |
 
 ## Rust 開発ルール
 
