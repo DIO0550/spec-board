@@ -10,8 +10,10 @@ export type LabelInputState =
  */
 const isKind =
   <K extends LabelInputState["kind"]>(kind: K) =>
-  (state: LabelInputState): state is Extract<LabelInputState, { kind: K }> =>
-    state.kind === kind;
+  (
+    current: LabelInputState,
+  ): current is Extract<LabelInputState, { kind: K }> =>
+    current.kind === kind;
 
 const isIdle = isKind("idle");
 const isAddingGuard = isKind("adding");
@@ -19,17 +21,19 @@ const isAddingGuard = isKind("adding");
 /**
  * 不正遷移時のヘルパー。dev 環境では console.warn を出力し、state はそのまま返す。
  * @param event - イベント名
- * @param state - 現在の state
+ * @param current - 現在の state
  * @returns state そのまま
  */
 const invalidTransition = (
   event: string,
-  state: LabelInputState,
+  current: LabelInputState,
 ): LabelInputState => {
   if (import.meta.env.DEV) {
-    console.warn(`Invalid LabelInput transition: ${event} from ${state.kind}`);
+    console.warn(
+      `Invalid LabelInput transition: ${event} from ${current.kind}`,
+    );
   }
-  return state;
+  return current;
 };
 
 /**
@@ -40,65 +44,65 @@ const invalidTransition = (
 export const LabelInput = {
   /**
    * adding 状態かどうか（type guard を兼ねる）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns adding なら true
    */
   isAdding: (
-    state: LabelInputState,
-  ): state is Extract<LabelInputState, { kind: "adding" }> =>
-    isAddingGuard(state),
+    current: LabelInputState,
+  ): current is Extract<LabelInputState, { kind: "adding" }> =>
+    isAddingGuard(current),
 
   /**
    * adding 中の入力値を取り出す。idle 中は undefined。
    * UI 側で `?? ""` 等のデフォルトを与える前提。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns adding 中なら入力値、それ以外は undefined
    */
-  inputOf: (state: LabelInputState): string | undefined =>
-    isAddingGuard(state) ? state.input : undefined,
+  inputOf: (current: LabelInputState): string | undefined =>
+    isAddingGuard(current) ? current.input : undefined,
 
   /**
    * idle → adding（input は空文字で初期化）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  startAdding: (state: LabelInputState): LabelInputState => {
-    if (!isIdle(state)) return invalidTransition("startAdding", state);
+  startAdding: (current: LabelInputState): LabelInputState => {
+    if (!isIdle(current)) return invalidTransition("startAdding", current);
     return { kind: "adding", input: "" };
   },
 
   /**
    * adding 中の input 更新。同値なら state そのままを返して再レンダーを抑止する。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @param payload - 新しい入力値
    * @returns 新しい state
    */
   setInput: (
-    state: LabelInputState,
+    current: LabelInputState,
     payload: { value: string },
   ): LabelInputState => {
-    if (!isAddingGuard(state)) return invalidTransition("setInput", state);
-    if (state.input === payload.value) return state;
+    if (!isAddingGuard(current)) return invalidTransition("setInput", current);
+    if (current.input === payload.value) return current;
     return { kind: "adding", input: payload.value };
   },
 
   /**
    * adding → idle（キャンセル）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  cancel: (state: LabelInputState): LabelInputState => {
-    if (!isAddingGuard(state)) return invalidTransition("cancel", state);
+  cancel: (current: LabelInputState): LabelInputState => {
+    if (!isAddingGuard(current)) return invalidTransition("cancel", current);
     return { kind: "idle" };
   },
 
   /**
    * adding → idle（確定）。Labels.tryAdd の呼び出しは hook 側の責務。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  confirm: (state: LabelInputState): LabelInputState => {
-    if (!isAddingGuard(state)) return invalidTransition("confirm", state);
+  confirm: (current: LabelInputState): LabelInputState => {
+    if (!isAddingGuard(current)) return invalidTransition("confirm", current);
     return { kind: "idle" };
   },
 } as const;

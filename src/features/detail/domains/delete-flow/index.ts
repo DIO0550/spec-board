@@ -12,8 +12,10 @@ export type DeleteFlowState =
  */
 const isKind =
   <K extends DeleteFlowState["kind"]>(kind: K) =>
-  (state: DeleteFlowState): state is Extract<DeleteFlowState, { kind: K }> =>
-    state.kind === kind;
+  (
+    current: DeleteFlowState,
+  ): current is Extract<DeleteFlowState, { kind: K }> =>
+    current.kind === kind;
 
 const isIdle = isKind("idle");
 const isConfirming = isKind("confirming");
@@ -23,17 +25,19 @@ const isError = isKind("error");
 /**
  * 不正遷移時のヘルパー。dev 環境では console.warn を出力し、state はそのまま返す。
  * @param event - イベント名
- * @param state - 現在の state
+ * @param current - 現在の state
  * @returns state そのまま
  */
 const invalidTransition = (
   event: string,
-  state: DeleteFlowState,
+  current: DeleteFlowState,
 ): DeleteFlowState => {
   if (import.meta.env.DEV) {
-    console.warn(`Invalid DeleteFlow transition: ${event} from ${state.kind}`);
+    console.warn(
+      `Invalid DeleteFlow transition: ${event} from ${current.kind}`,
+    );
   }
-  return state;
+  return current;
 };
 
 /**
@@ -44,83 +48,83 @@ const invalidTransition = (
 export const DeleteFlow = {
   /**
    * `request` 遷移が許される state かどうか（idle のみ）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns idle なら true
    */
-  canRequest: (state: DeleteFlowState): boolean => isIdle(state),
+  canRequest: (current: DeleteFlowState): boolean => isIdle(current),
 
   /**
    * `cancel` 遷移が許される state かどうか（confirming/error）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns confirming または error なら true
    */
-  canCancel: (state: DeleteFlowState): boolean =>
-    isConfirming(state) || isError(state),
+  canCancel: (current: DeleteFlowState): boolean =>
+    isConfirming(current) || isError(current),
 
   /**
    * `confirm` 遷移が許される state かどうか（confirming/error）。
    * hook 側の事前ガードに使う。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns confirming または error なら true
    */
-  canConfirm: (state: DeleteFlowState): boolean =>
-    isConfirming(state) || isError(state),
+  canConfirm: (current: DeleteFlowState): boolean =>
+    isConfirming(current) || isError(current),
 
   /**
    * idle → confirming（削除確認ダイアログを開く）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  request: (state: DeleteFlowState): DeleteFlowState => {
-    if (!isIdle(state)) return invalidTransition("request", state);
+  request: (current: DeleteFlowState): DeleteFlowState => {
+    if (!isIdle(current)) return invalidTransition("request", current);
     return { kind: "confirming" };
   },
 
   /**
    * confirming/error → idle（キャンセル）。idle/deleting 中は state そのまま返し、
    * dev 環境では `invalidTransition` 経由で `console.warn` を出力する（prod は完全 no-op）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  cancel: (state: DeleteFlowState): DeleteFlowState => {
-    if (!isConfirming(state) && !isError(state))
-      return invalidTransition("cancel", state);
+  cancel: (current: DeleteFlowState): DeleteFlowState => {
+    if (!isConfirming(current) && !isError(current))
+      return invalidTransition("cancel", current);
     return { kind: "idle" };
   },
 
   /**
    * confirming/error → deleting（削除実行を開始）。idle/deleting 中は state そのまま返し、
    * dev 環境では `invalidTransition` 経由で `console.warn` を出力する（prod は完全 no-op）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  confirm: (state: DeleteFlowState): DeleteFlowState => {
-    if (!isConfirming(state) && !isError(state))
-      return invalidTransition("confirm", state);
+  confirm: (current: DeleteFlowState): DeleteFlowState => {
+    if (!isConfirming(current) && !isError(current))
+      return invalidTransition("confirm", current);
     return { kind: "deleting" };
   },
 
   /**
    * deleting → idle（削除成功）。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @returns 新しい state
    */
-  succeed: (state: DeleteFlowState): DeleteFlowState => {
-    if (!isDeleting(state)) return invalidTransition("succeed", state);
+  succeed: (current: DeleteFlowState): DeleteFlowState => {
+    if (!isDeleting(current)) return invalidTransition("succeed", current);
     return { kind: "idle" };
   },
 
   /**
    * deleting → error（削除失敗）。reason を保持してダイアログ維持。
-   * @param state - 現在の state
+   * @param current - 現在の state
    * @param payload - 失敗理由
    * @returns 新しい state
    */
   fail: (
-    state: DeleteFlowState,
+    current: DeleteFlowState,
     payload: { reason: unknown },
   ): DeleteFlowState => {
-    if (!isDeleting(state)) return invalidTransition("fail", state);
+    if (!isDeleting(current)) return invalidTransition("fail", current);
     return { kind: "error", reason: payload.reason };
   },
 } as const;
