@@ -1,4 +1,4 @@
-import type { Priority } from "@/types/task";
+import type { Priority } from "@/domains/priority";
 
 /** TaskForm から送信される値 */
 export type TaskFormValues = {

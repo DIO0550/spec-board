@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { Priority } from "@/types/task";
+import type { Priority } from "@/domains/priority";
 
 const PRIORITY_OPTIONS: readonly Priority[] = ["High", "Medium", "Low"];
 

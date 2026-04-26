@@ -1,4 +1,4 @@
-import type { Priority } from "@/types/task";
+import { Priority } from "@/domains/priority";
 
 /** PrioritySelect の Props */
 type PrioritySelectProps = {
@@ -11,8 +11,13 @@ type PrioritySelectProps = {
   onChange: (priority: Priority | undefined) => void;
 };
 
-/** 選択可能な優先度一覧 */
-const priorities: Priority[] = ["High", "Medium", "Low"];
+/**
+ * ドメイン値（Priority | undefined）を HTML select の value 用文字列に変換する。
+ * UI 層に閉じたアダプタで、`""` は HTML select 仕様上の「未選択」を示す。
+ * @param p - ドメイン値
+ * @returns HTML select 用の文字列
+ */
+const toSelectValue = (p: Priority | undefined): string => p ?? "";
 
 /**
  * 優先度を変更するドロップダウン
@@ -24,17 +29,16 @@ export const PrioritySelect = ({ value, onChange }: PrioritySelectProps) => {
     <div className="flex items-center gap-2">
       <span className="text-sm font-medium text-gray-500">優先度</span>
       <select
-        value={value ?? ""}
+        value={toSelectValue(value)}
         onChange={(e) => {
-          const selected = e.target.value;
-          onChange(selected === "" ? undefined : (selected as Priority));
+          onChange(Priority.parse(e.target.value));
         }}
         className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 hover:border-blue-300 focus:border-blue-400 focus:outline-none"
         data-testid="priority-select"
         aria-label="優先度"
       >
         <option value="">なし</option>
-        {priorities.map((p) => (
+        {Priority.OPTIONS.map((p) => (
           <option key={p} value={p}>
             {p}
           </option>

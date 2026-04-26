@@ -1,10 +1,11 @@
+import { SubIssue } from "@/features/detail/domains/sub-issue";
 import type { Task } from "@/types/task";
 
 type SubIssueSectionProps = {
   /** 親タスク */
   parentTask: Task;
   /** 直接の子タスク一覧 */
-  childTasks: Task[];
+  childTasks: readonly Task[];
   /** 完了として扱うカラム名 */
   doneColumn: string;
   /**
@@ -34,9 +35,10 @@ export const SubIssueSection = ({
   onAddSubIssue,
   onChildClick,
 }: SubIssueSectionProps) => {
-  const total = childTasks.length;
-  const doneCount = childTasks.filter((t) => t.status === doneColumn).length;
-  const percentage = total === 0 ? 0 : Math.round((doneCount / total) * 100);
+  const { total, doneCount, percentage } = SubIssue.progress(
+    childTasks,
+    doneColumn,
+  );
 
   return (
     <div data-testid="sub-issue-section">

@@ -1,4 +1,4 @@
-import type { Priority } from "@/types/task";
+import type { Priority } from "@/domains/priority";
 
 /** PriorityField が保持する値の型。UI 都合で空文字「未選択」を表現する */
 export type PriorityField = Priority | "";

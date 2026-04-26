@@ -1,4 +1,4 @@
-import type { Priority } from "@/types/task";
+import type { Priority } from "@/domains/priority";
 
 type PriorityBadgeProps = {
   priority: Priority | undefined;
