@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -61,9 +62,15 @@ pub fn parse(input: &str) -> Result<Option<Parsed>, FrontmatterError> {
 
 /// 先頭の BOM (U+FEFF) を 1 個除去し、CRLF を LF に正規化する。
 /// 中間に現れる U+FEFF は触らない。
-fn normalize(input: &str) -> String {
+///
+/// BOM も CRLF も含まない場合は入力をそのままボローし、不要なアロケーションを避ける。
+fn normalize(input: &str) -> Cow<'_, str> {
     let stripped = input.strip_prefix('\u{FEFF}').unwrap_or(input);
-    stripped.replace("\r\n", "\n")
+    if stripped.contains("\r\n") {
+        Cow::Owned(stripped.replace("\r\n", "\n"))
+    } else {
+        Cow::Borrowed(stripped)
+    }
 }
 
 /// 区切り行判定。`---` のみを区切りとし、末尾空白を許容する。
