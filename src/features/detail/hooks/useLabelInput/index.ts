@@ -2,12 +2,12 @@ import type { KeyboardEvent } from "react";
 import { useCallback, useState } from "react";
 import { Labels } from "@/features/detail/domains/label";
 import {
-  LabelsInput,
-  type LabelsInputState,
-} from "@/features/detail/domains/labels-input";
+  LabelInput,
+  type LabelInputState,
+} from "@/features/detail/domains/label-input";
 
-/** useLabelsInput の引数 */
-export type UseLabelsInputArgs = {
+/** useLabelInput の引数 */
+export type UseLabelInputArgs = {
   /** 既存ラベル一覧（重複判定の対象） */
   existingLabels: readonly string[];
   /**
@@ -17,10 +17,10 @@ export type UseLabelsInputArgs = {
   onCommit: (label: string) => void;
 };
 
-/** useLabelsInput の戻り値 */
-export type UseLabelsInputResult = {
+/** useLabelInput の戻り値 */
+export type UseLabelInputResult = {
   /** 現在の state（テスト等で参照する。UI は isAdding / inputValue を使う） */
-  state: LabelsInputState;
+  state: LabelInputState;
   /** 入力 input 要素を表示すべきか（adding なら true） */
   isAdding: boolean;
   /** 入力中の値（adding 以外は ""） */
@@ -45,39 +45,37 @@ export type UseLabelsInputResult = {
 
 /**
  * ラベル入力 UI のための hook。
- * - 遷移ロジックは domain（@/features/detail/domains/labels-input）に委譲（不正遷移時のみ dev で console.warn）
+ * - 遷移ロジックは domain（@/features/detail/domains/label-input）に委譲（不正遷移時のみ dev で console.warn）
  * - Labels.tryAdd で trim/重複判定を委譲
  * - useRef / useEffect は使用しない（ref フラグ完全撤去）
  *
  * @param args - 既存ラベル + 確定コールバック
  * @returns state と各種ハンドラ
  */
-export const useLabelsInput = (
-  args: UseLabelsInputArgs,
-): UseLabelsInputResult => {
+export const useLabelInput = (args: UseLabelInputArgs): UseLabelInputResult => {
   const { existingLabels, onCommit } = args;
-  const [state, setState] = useState<LabelsInputState>({ kind: "idle" });
+  const [state, setState] = useState<LabelInputState>({ kind: "idle" });
 
   const startAdding = useCallback(() => {
-    setState((s) => LabelsInput.startAdding(s));
+    setState((s) => LabelInput.startAdding(s));
   }, []);
 
   const setInput = useCallback((value: string) => {
-    setState((s) => LabelsInput.setInput(s, { value }));
+    setState((s) => LabelInput.setInput(s, { value }));
   }, []);
 
   const cancelAdding = useCallback(() => {
-    setState((s) => LabelsInput.cancel(s));
+    setState((s) => LabelInput.cancel(s));
   }, []);
 
   const confirmAdding = useCallback(() => {
-    if (state.kind !== "adding") return;
+    if (!LabelInput.isAdding(state)) return;
     const next = Labels.tryAdd(existingLabels, state.input);
     if (next !== null) {
       const added = next[next.length - 1];
       onCommit(added);
     }
-    setState((s) => LabelsInput.confirm(s));
+    setState((s) => LabelInput.confirm(s));
   }, [state, existingLabels, onCommit]);
 
   const handleKeyDown = useCallback(
@@ -97,8 +95,8 @@ export const useLabelsInput = (
 
   return {
     state,
-    isAdding: state.kind === "adding",
-    inputValue: state.kind === "adding" ? state.input : "",
+    isAdding: LabelInput.isAdding(state),
+    inputValue: LabelInput.inputOf(state) ?? "",
     startAdding,
     setInput,
     cancelAdding,

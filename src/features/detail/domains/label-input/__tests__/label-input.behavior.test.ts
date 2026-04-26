@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { LabelsInput, type LabelsInputState } from "..";
+import { LabelInput, type LabelInputState } from "..";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -7,41 +7,41 @@ afterEach(() => {
 });
 
 test("startAdding: idle → { kind: 'adding', input: '' }", () => {
-  expect(LabelsInput.startAdding({ kind: "idle" })).toEqual({
+  expect(LabelInput.startAdding({ kind: "idle" })).toEqual({
     kind: "adding",
     input: "",
   });
 });
 
 test("setInput: adding → input 更新", () => {
-  const s: LabelsInputState = { kind: "adding", input: "x" };
-  expect(LabelsInput.setInput(s, { value: "foo" })).toEqual({
+  const s: LabelInputState = { kind: "adding", input: "x" };
+  expect(LabelInput.setInput(s, { value: "foo" })).toEqual({
     kind: "adding",
     input: "foo",
   });
 });
 
 test("setInput: 同値なら state そのまま（参照同一）", () => {
-  const s: LabelsInputState = { kind: "adding", input: "foo" };
-  const result = LabelsInput.setInput(s, { value: "foo" });
+  const s: LabelInputState = { kind: "adding", input: "foo" };
+  const result = LabelInput.setInput(s, { value: "foo" });
   expect(Object.is(result, s)).toBe(true);
 });
 
 test("setInput: 異なる値なら新オブジェクト", () => {
-  const s: LabelsInputState = { kind: "adding", input: "foo" };
-  const result = LabelsInput.setInput(s, { value: "bar" });
+  const s: LabelInputState = { kind: "adding", input: "foo" };
+  const result = LabelInput.setInput(s, { value: "bar" });
   expect(Object.is(result, s)).toBe(false);
   expect(result).toEqual({ kind: "adding", input: "bar" });
 });
 
 test("cancel: adding → idle", () => {
-  expect(LabelsInput.cancel({ kind: "adding", input: "x" })).toEqual({
+  expect(LabelInput.cancel({ kind: "adding", input: "x" })).toEqual({
     kind: "idle",
   });
 });
 
 test("confirm: adding → idle", () => {
-  expect(LabelsInput.confirm({ kind: "adding", input: "x" })).toEqual({
+  expect(LabelInput.confirm({ kind: "adding", input: "x" })).toEqual({
     kind: "idle",
   });
 });
@@ -56,46 +56,46 @@ const VALID_TRANSITIONS = [
 test.each(
   VALID_TRANSITIONS,
 )("matrix: %s + %s → %s", (from, event, expected) => {
-  const initial: LabelsInputState =
+  const initial: LabelInputState =
     from === "idle" ? { kind: "idle" } : { kind: "adding", input: "x" };
   const result =
     event === "startAdding"
-      ? LabelsInput.startAdding(initial)
+      ? LabelInput.startAdding(initial)
       : event === "setInput"
-        ? LabelsInput.setInput(initial, { value: "y" })
+        ? LabelInput.setInput(initial, { value: "y" })
         : event === "cancel"
-          ? LabelsInput.cancel(initial)
-          : LabelsInput.confirm(initial);
+          ? LabelInput.cancel(initial)
+          : LabelInput.confirm(initial);
   expect(result.kind).toBe(expected);
 });
 
 test("不正遷移: idle で setInput → state そのまま + dev で console.warn", () => {
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const result = LabelsInput.setInput({ kind: "idle" }, { value: "x" });
+  const result = LabelInput.setInput({ kind: "idle" }, { value: "x" });
   expect(result).toEqual({ kind: "idle" });
   expect(warnSpy).toHaveBeenCalledWith(
-    "Invalid LabelsInput transition: setInput from idle",
+    "Invalid LabelInput transition: setInput from idle",
   );
 });
 
 test("不正遷移: idle で cancel → state そのまま + warn", () => {
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const result = LabelsInput.cancel({ kind: "idle" });
+  const result = LabelInput.cancel({ kind: "idle" });
   expect(result).toEqual({ kind: "idle" });
   expect(warnSpy).toHaveBeenCalledTimes(1);
 });
 
 test("不正遷移: idle で confirm → state そのまま + warn", () => {
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const result = LabelsInput.confirm({ kind: "idle" });
+  const result = LabelInput.confirm({ kind: "idle" });
   expect(result).toEqual({ kind: "idle" });
   expect(warnSpy).toHaveBeenCalledTimes(1);
 });
 
 test("不正遷移: adding で startAdding → state そのまま + warn", () => {
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const before: LabelsInputState = { kind: "adding", input: "x" };
-  const result = LabelsInput.startAdding(before);
+  const before: LabelInputState = { kind: "adding", input: "x" };
+  const result = LabelInput.startAdding(before);
   expect(result).toBe(before);
   expect(warnSpy).toHaveBeenCalledTimes(1);
 });
@@ -103,6 +103,26 @@ test("不正遷移: adding で startAdding → state そのまま + warn", () =>
 test("prod 環境では不正遷移時に console.warn が呼ばれない", () => {
   vi.stubEnv("DEV", false);
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  LabelsInput.setInput({ kind: "idle" }, { value: "x" });
+  LabelInput.setInput({ kind: "idle" }, { value: "x" });
   expect(warnSpy).not.toHaveBeenCalled();
+});
+
+const IS_ADDING_CASES = [
+  [{ kind: "idle" } as LabelInputState, false],
+  [{ kind: "adding", input: "" } as LabelInputState, true],
+  [{ kind: "adding", input: "foo" } as LabelInputState, true],
+] as const;
+
+test.each(IS_ADDING_CASES)("isAdding: %j → %s", (state, expected) => {
+  expect(LabelInput.isAdding(state)).toBe(expected);
+});
+
+const INPUT_OF_CASES = [
+  [{ kind: "idle" } as LabelInputState, undefined],
+  [{ kind: "adding", input: "" } as LabelInputState, ""],
+  [{ kind: "adding", input: "foo" } as LabelInputState, "foo"],
+] as const;
+
+test.each(INPUT_OF_CASES)("inputOf: %j → %s", (state, expected) => {
+  expect(LabelInput.inputOf(state)).toBe(expected);
 });

@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from "react";
 import { useEffect, useRef } from "react";
-import { useLabelsInput } from "@/features/detail/hooks/useLabelsInput";
+import { useLabelInput } from "@/features/detail/hooks/useLabelInput";
 
 /** LabelEditor の Props */
 type LabelEditorProps = {
@@ -24,11 +24,11 @@ type LabelEditorProps = {
  * @returns ラベルエディタ要素
  */
 export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
-  const input = useLabelsInput({ existingLabels: labels, onCommit: onAdd });
+  const input = useLabelInput({ existingLabels: labels, onCommit: onAdd });
   const inputRef = useRef<HTMLInputElement>(null);
   // Enter / Escape 経由で閉じた直後に発火する blur が
   // stale closure を介して onCommit を再実行するのを防ぐためのフラグ。
-  // useLabelsInput 内では使わない（hook 規約: ref フラグ不可）。
+  // useLabelInput 内では使わない（hook 規約: ref フラグ不可）。
   const justClosedByKeyRef = useRef(false);
 
   useEffect(() => {

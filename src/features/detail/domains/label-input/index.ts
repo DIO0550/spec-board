@@ -1,5 +1,5 @@
-/** LabelsInput state machine の状態（discriminated union） */
-export type LabelsInputState =
+/** LabelInput state machine の状態（discriminated union） */
+export type LabelInputState =
   | { kind: "idle" }
   | { kind: "adding"; input: string };
 
@@ -9,12 +9,12 @@ export type LabelsInputState =
  * @returns state が指定 kind ならば true を返すガード関数
  */
 const isKind =
-  <K extends LabelsInputState["kind"]>(kind: K) =>
-  (state: LabelsInputState): state is Extract<LabelsInputState, { kind: K }> =>
+  <K extends LabelInputState["kind"]>(kind: K) =>
+  (state: LabelInputState): state is Extract<LabelInputState, { kind: K }> =>
     state.kind === kind;
 
 const isIdle = isKind("idle");
-const isAdding = isKind("adding");
+const isAddingGuard = isKind("adding");
 
 /**
  * 不正遷移時のヘルパー。dev 環境では console.warn を出力し、state はそのまま返す。
@@ -24,26 +24,45 @@ const isAdding = isKind("adding");
  */
 const invalidTransition = (
   event: string,
-  state: LabelsInputState,
-): LabelsInputState => {
+  state: LabelInputState,
+): LabelInputState => {
   if (import.meta.env.DEV) {
-    console.warn(`Invalid LabelsInput transition: ${event} from ${state.kind}`);
+    console.warn(`Invalid LabelInput transition: ${event} from ${state.kind}`);
   }
   return state;
 };
 
 /**
- * LabelsInput state machine の event companion。
+ * LabelInput state machine の event + selector companion。
  * 状態遷移自体は引数に基づいて決まるが、不正遷移時のみ dev 環境では
  * `invalidTransition` 経由で `console.warn` を出力する（prod では完全に副作用なし）。
  */
-export const LabelsInput = {
+export const LabelInput = {
+  /**
+   * adding 状態かどうか（type guard を兼ねる）。
+   * @param state - 現在の state
+   * @returns adding なら true
+   */
+  isAdding: (
+    state: LabelInputState,
+  ): state is Extract<LabelInputState, { kind: "adding" }> =>
+    isAddingGuard(state),
+
+  /**
+   * adding 中の入力値を取り出す。idle 中は undefined。
+   * UI 側で `?? ""` 等のデフォルトを与える前提。
+   * @param state - 現在の state
+   * @returns adding 中なら入力値、それ以外は undefined
+   */
+  inputOf: (state: LabelInputState): string | undefined =>
+    isAddingGuard(state) ? state.input : undefined,
+
   /**
    * idle → adding（input は空文字で初期化）。
    * @param state - 現在の state
    * @returns 新しい state
    */
-  startAdding: (state: LabelsInputState): LabelsInputState => {
+  startAdding: (state: LabelInputState): LabelInputState => {
     if (!isIdle(state)) return invalidTransition("startAdding", state);
     return { kind: "adding", input: "" };
   },
@@ -55,10 +74,10 @@ export const LabelsInput = {
    * @returns 新しい state
    */
   setInput: (
-    state: LabelsInputState,
+    state: LabelInputState,
     payload: { value: string },
-  ): LabelsInputState => {
-    if (!isAdding(state)) return invalidTransition("setInput", state);
+  ): LabelInputState => {
+    if (!isAddingGuard(state)) return invalidTransition("setInput", state);
     if (state.input === payload.value) return state;
     return { kind: "adding", input: payload.value };
   },
@@ -68,8 +87,8 @@ export const LabelsInput = {
    * @param state - 現在の state
    * @returns 新しい state
    */
-  cancel: (state: LabelsInputState): LabelsInputState => {
-    if (!isAdding(state)) return invalidTransition("cancel", state);
+  cancel: (state: LabelInputState): LabelInputState => {
+    if (!isAddingGuard(state)) return invalidTransition("cancel", state);
     return { kind: "idle" };
   },
 
@@ -78,8 +97,8 @@ export const LabelsInput = {
    * @param state - 現在の state
    * @returns 新しい state
    */
-  confirm: (state: LabelsInputState): LabelsInputState => {
-    if (!isAdding(state)) return invalidTransition("confirm", state);
+  confirm: (state: LabelInputState): LabelInputState => {
+    if (!isAddingGuard(state)) return invalidTransition("confirm", state);
     return { kind: "idle" };
   },
 } as const;

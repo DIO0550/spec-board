@@ -2,9 +2,9 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import {
-  type UseLabelsInputArgs,
-  type UseLabelsInputResult,
-  useLabelsInput,
+  type UseLabelInputArgs,
+  type UseLabelInputResult,
+  useLabelInput,
 } from "../index";
 
 let container: HTMLDivElement | null = null;
@@ -21,17 +21,17 @@ afterEach(() => {
 });
 
 /**
- * useLabelsInput の戻り値を外部に公開するテスト用コンポーネント。
+ * useLabelInput の戻り値を外部に公開するテスト用コンポーネント。
  * @param props - hook 引数 + 観測コールバック
  * @returns null
  */
 const Probe = (
-  props: UseLabelsInputArgs & {
-    onResult: (r: UseLabelsInputResult) => void;
+  props: UseLabelInputArgs & {
+    onResult: (r: UseLabelInputResult) => void;
   },
 ) => {
   const { onResult, ...args } = props;
-  const result = useLabelsInput(args);
+  const result = useLabelInput(args);
   useEffect(() => {
     onResult(result);
   });
@@ -40,15 +40,15 @@ const Probe = (
 
 /**
  * Probe をマウントし、最新の戻り値を取得する。
- * @param args - useLabelsInput の引数
+ * @param args - useLabelInput の引数
  * @returns latest accessor + rerender 関数
  */
-const renderHook = (args: UseLabelsInputArgs) => {
-  let latest: UseLabelsInputResult | null = null;
+const renderHook = (args: UseLabelInputArgs) => {
+  let latest: UseLabelInputResult | null = null;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  const handleResult = (r: UseLabelsInputResult) => {
+  const handleResult = (r: UseLabelInputResult) => {
     latest = r;
   };
   act(() => {
@@ -59,7 +59,7 @@ const renderHook = (args: UseLabelsInputArgs) => {
       }),
     );
   });
-  const rerender = (next: UseLabelsInputArgs) => {
+  const rerender = (next: UseLabelInputArgs) => {
     act(() => {
       root?.render(
         createElement(Probe, {
@@ -70,8 +70,8 @@ const renderHook = (args: UseLabelsInputArgs) => {
     });
   };
   return {
-    get latest(): UseLabelsInputResult {
-      return latest as UseLabelsInputResult;
+    get latest(): UseLabelInputResult {
+      return latest as UseLabelInputResult;
     },
     rerender,
   };
