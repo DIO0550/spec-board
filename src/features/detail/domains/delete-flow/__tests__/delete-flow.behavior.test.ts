@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { DeleteFlow, type DeleteFlowState } from "../machine";
+import { DeleteFlow, type DeleteFlowState } from "..";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -126,4 +126,37 @@ test("prod 環境では不正遷移時に console.warn が呼ばれない", () =
   const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   DeleteFlow.succeed({ kind: "idle" });
   expect(warnSpy).not.toHaveBeenCalled();
+});
+
+const CAN_REQUEST_CASES = [
+  [{ kind: "idle" } as DeleteFlowState, true],
+  [{ kind: "confirming" } as DeleteFlowState, false],
+  [{ kind: "deleting" } as DeleteFlowState, false],
+  [{ kind: "error", reason: "x" } as DeleteFlowState, false],
+] as const;
+
+test.each(CAN_REQUEST_CASES)("canRequest: %j → %s", (state, expected) => {
+  expect(DeleteFlow.canRequest(state)).toBe(expected);
+});
+
+const CAN_CANCEL_CASES = [
+  [{ kind: "idle" } as DeleteFlowState, false],
+  [{ kind: "confirming" } as DeleteFlowState, true],
+  [{ kind: "deleting" } as DeleteFlowState, false],
+  [{ kind: "error", reason: "x" } as DeleteFlowState, true],
+] as const;
+
+test.each(CAN_CANCEL_CASES)("canCancel: %j → %s", (state, expected) => {
+  expect(DeleteFlow.canCancel(state)).toBe(expected);
+});
+
+const CAN_CONFIRM_CASES = [
+  [{ kind: "idle" } as DeleteFlowState, false],
+  [{ kind: "confirming" } as DeleteFlowState, true],
+  [{ kind: "deleting" } as DeleteFlowState, false],
+  [{ kind: "error", reason: "x" } as DeleteFlowState, true],
+] as const;
+
+test.each(CAN_CONFIRM_CASES)("canConfirm: %j → %s", (state, expected) => {
+  expect(DeleteFlow.canConfirm(state)).toBe(expected);
 });

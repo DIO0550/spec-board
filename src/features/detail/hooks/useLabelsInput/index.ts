@@ -1,7 +1,10 @@
 import type { KeyboardEvent } from "react";
 import { useCallback, useState } from "react";
 import { Labels } from "@/features/detail/domains/label";
-import { LabelsInput, type LabelsInputState } from "./machine";
+import {
+  LabelsInput,
+  type LabelsInputState,
+} from "@/features/detail/domains/labels-input";
 
 /** useLabelsInput の引数 */
 export type UseLabelsInputArgs = {
@@ -16,8 +19,12 @@ export type UseLabelsInputArgs = {
 
 /** useLabelsInput の戻り値 */
 export type UseLabelsInputResult = {
-  /** 現在の state（kind で表示分岐する） */
+  /** 現在の state（テスト等で参照する。UI は isAdding / inputValue を使う） */
   state: LabelsInputState;
+  /** 入力 input 要素を表示すべきか（adding なら true） */
+  isAdding: boolean;
+  /** 入力中の値（adding 以外は ""） */
+  inputValue: string;
   /** idle → adding に遷移する */
   startAdding: () => void;
   /**
@@ -38,7 +45,7 @@ export type UseLabelsInputResult = {
 
 /**
  * ラベル入力 UI のための hook。
- * - state machine（machine.ts）に遷移ロジックを委譲（不正遷移時のみ dev で console.warn）
+ * - 遷移ロジックは domain（@/features/detail/domains/labels-input）に委譲（不正遷移時のみ dev で console.warn）
  * - Labels.tryAdd で trim/重複判定を委譲
  * - useRef / useEffect は使用しない（ref フラグ完全撤去）
  *
@@ -90,6 +97,8 @@ export const useLabelsInput = (
 
   return {
     state,
+    isAdding: state.kind === "adding",
+    inputValue: state.kind === "adding" ? state.input : "",
     startAdding,
     setInput,
     cancelAdding,

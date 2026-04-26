@@ -77,7 +77,7 @@ export const DetailPanel = ({
   const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
 
   useEscToClose({
-    disabled: deleteFlow.state.kind !== "idle",
+    disabled: deleteFlow.isOpen,
     onEscape: onClose,
   });
 
@@ -198,17 +198,13 @@ export const DetailPanel = ({
           </button>
         </div>
       </aside>
-      {(deleteFlow.state.kind === "confirming" ||
-        deleteFlow.state.kind === "deleting" ||
-        deleteFlow.state.kind === "error") && (
+      {deleteFlow.isOpen && (
         <ConfirmDialog
           title="タスクの削除"
           message={`「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`}
-          confirmLabel={
-            deleteFlow.state.kind === "deleting" ? "削除中…" : "削除"
-          }
-          confirmDisabled={deleteFlow.state.kind === "deleting"}
-          cancelDisabled={deleteFlow.state.kind === "deleting"}
+          confirmLabel={deleteFlow.isBusy ? "削除中…" : "削除"}
+          confirmDisabled={deleteFlow.isBusy}
+          cancelDisabled={deleteFlow.isBusy}
           onConfirm={deleteFlow.confirmDelete}
           onCancel={deleteFlow.cancelDelete}
         />

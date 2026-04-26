@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { LabelsInput, type LabelsInputState } from "../machine";
+import { LabelsInput, type LabelsInputState } from "..";
 
 afterEach(() => {
   vi.restoreAllMocks();

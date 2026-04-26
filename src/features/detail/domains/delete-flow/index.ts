@@ -37,11 +37,35 @@ const invalidTransition = (
 };
 
 /**
- * DeleteFlow state machine の event companion。
+ * DeleteFlow state machine の event + selector companion。
  * 状態遷移自体は引数のみに基づいて決まるが、不正遷移時のみ dev 環境では
  * `invalidTransition` 経由で `console.warn` を出力する（prod では完全に副作用なし）。
  */
 export const DeleteFlow = {
+  /**
+   * `request` 遷移が許される state かどうか（idle のみ）。
+   * @param state - 現在の state
+   * @returns idle なら true
+   */
+  canRequest: (state: DeleteFlowState): boolean => isIdle(state),
+
+  /**
+   * `cancel` 遷移が許される state かどうか（confirming/error）。
+   * @param state - 現在の state
+   * @returns confirming または error なら true
+   */
+  canCancel: (state: DeleteFlowState): boolean =>
+    isConfirming(state) || isError(state),
+
+  /**
+   * `confirm` 遷移が許される state かどうか（confirming/error）。
+   * hook 側の事前ガードに使う。
+   * @param state - 現在の state
+   * @returns confirming または error なら true
+   */
+  canConfirm: (state: DeleteFlowState): boolean =>
+    isConfirming(state) || isError(state),
+
   /**
    * idle → confirming（削除確認ダイアログを開く）。
    * @param state - 現在の state

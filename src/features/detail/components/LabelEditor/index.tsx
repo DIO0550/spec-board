@@ -32,10 +32,10 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
   const justClosedByKeyRef = useRef(false);
 
   useEffect(() => {
-    if (input.state.kind === "adding") {
+    if (input.isAdding) {
       inputRef.current?.focus();
     }
-  }, [input.state.kind]);
+  }, [input.isAdding]);
 
   /**
    * input の keydown ラッパー。Enter / Escape の場合は justClosedByKeyRef を
@@ -78,11 +78,11 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
             </button>
           </span>
         ))}
-        {input.state.kind === "adding" ? (
+        {input.isAdding ? (
           <input
             ref={inputRef}
             type="text"
-            value={input.state.input}
+            value={input.inputValue}
             onChange={(e) => input.setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}

@@ -1,5 +1,8 @@
 import { useCallback, useState } from "react";
-import { DeleteFlow, type DeleteFlowState } from "./machine";
+import {
+  DeleteFlow,
+  type DeleteFlowState,
+} from "@/features/detail/domains/delete-flow";
 
 /** useDeleteFlow の引数 */
 export type UseDeleteFlowArgs = {
@@ -14,6 +17,10 @@ export type UseDeleteFlowArgs = {
 export type UseDeleteFlowResult = {
   /** 現在の state（kind で UI 表示分岐する） */
   state: DeleteFlowState;
+  /** 確認ダイアログを表示すべきか（idle 以外なら true） */
+  isOpen: boolean;
+  /** 削除実行中か（deleting なら true、UI の disabled / ラベル切替に使う） */
+  isBusy: boolean;
   /** 削除確認ダイアログを開く（idle → confirming） */
   requestDelete: () => void;
   /** 確認をキャンセルする（confirming/error → idle、deleting 中は no-op） */
@@ -24,7 +31,7 @@ export type UseDeleteFlowResult = {
 
 /**
  * 削除フロー（idle → confirming → deleting → idle/error）の hook。
- * - state machine（machine.ts）に遷移ロジックを委譲（dev では不正遷移時に machine 側で console.warn）
+ * - 遷移ロジックは domain（@/features/detail/domains/delete-flow）に委譲（dev では不正遷移時に domain 側で console.warn）
  * - useRef / useEffect は使用しない（ref フラグ完全撤去）
  * - 冪等性は (1) UI 側 confirmDisabled / cancelDisabled の disabled、
  *   (2) state machine の no-op 遷移、(3) `confirmDelete` 冒頭の
@@ -46,7 +53,7 @@ export const useDeleteFlow = (args: UseDeleteFlowArgs): UseDeleteFlowResult => {
   }, []);
 
   const confirmDelete = useCallback(async () => {
-    if (state.kind !== "confirming" && state.kind !== "error") return;
+    if (!DeleteFlow.canConfirm(state)) return;
     setState((s) => DeleteFlow.confirm(s));
     try {
       await onDelete();
@@ -54,7 +61,14 @@ export const useDeleteFlow = (args: UseDeleteFlowArgs): UseDeleteFlowResult => {
     } catch (reason) {
       setState((s) => DeleteFlow.fail(s, { reason }));
     }
-  }, [state.kind, onDelete]);
+  }, [state, onDelete]);
 
-  return { state, requestDelete, cancelDelete, confirmDelete };
+  return {
+    state,
+    isOpen: !DeleteFlow.canRequest(state),
+    isBusy: state.kind === "deleting",
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
+  };
 };

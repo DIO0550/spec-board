@@ -98,6 +98,58 @@ test("初期 state は { kind: 'idle' }", () => {
   expect(probe.latest.state).toEqual({ kind: "idle" });
 });
 
+test("idle では isOpen=false / isBusy=false", () => {
+  const probe = renderHook({ onDelete: vi.fn() });
+  expect(probe.latest.isOpen).toBe(false);
+  expect(probe.latest.isBusy).toBe(false);
+});
+
+test("confirming では isOpen=true / isBusy=false", () => {
+  const probe = renderHook({ onDelete: vi.fn() });
+  act(() => {
+    probe.latest.requestDelete();
+  });
+  expect(probe.latest.isOpen).toBe(true);
+  expect(probe.latest.isBusy).toBe(false);
+});
+
+test("deleting では isOpen=true / isBusy=true", async () => {
+  let resolve!: () => void;
+  const onDelete = vi.fn(
+    () =>
+      new Promise<void>((r) => {
+        resolve = r;
+      }),
+  );
+  const probe = renderHook({ onDelete });
+  act(() => {
+    probe.latest.requestDelete();
+  });
+  let pending: Promise<void> | undefined;
+  act(() => {
+    pending = probe.latest.confirmDelete();
+  });
+  expect(probe.latest.isOpen).toBe(true);
+  expect(probe.latest.isBusy).toBe(true);
+  await act(async () => {
+    resolve();
+    await pending;
+  });
+});
+
+test("error では isOpen=true / isBusy=false", async () => {
+  const onDelete = vi.fn().mockRejectedValue(new Error("x"));
+  const probe = renderHook({ onDelete });
+  act(() => {
+    probe.latest.requestDelete();
+  });
+  await act(async () => {
+    await probe.latest.confirmDelete();
+  });
+  expect(probe.latest.isOpen).toBe(true);
+  expect(probe.latest.isBusy).toBe(false);
+});
+
 test("requestDelete() で confirming に遷移", () => {
   const probe = renderHook({ onDelete: vi.fn() });
   act(() => {
