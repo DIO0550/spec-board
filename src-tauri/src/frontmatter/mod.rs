@@ -52,11 +52,10 @@ pub fn parse(input: &str) -> Result<Option<Parsed>, FrontmatterError> {
     let Some((yaml_text, body)) = split_frontmatter(&normalized) else {
         return Ok(None);
     };
-    let frontmatter: Frontmatter = if yaml_text.trim().is_empty() {
-        Frontmatter::default()
-    } else {
-        serde_yaml_ng::from_str(&yaml_text)?
-    };
+    let frontmatter: Frontmatter = (!yaml_text.trim().is_empty())
+        .then(|| serde_yaml_ng::from_str::<Frontmatter>(&yaml_text))
+        .transpose()?
+        .unwrap_or_default();
     Ok(Some(Parsed { frontmatter, body }))
 }
 
@@ -66,11 +65,10 @@ pub fn parse(input: &str) -> Result<Option<Parsed>, FrontmatterError> {
 /// BOM も CRLF も含まない場合は入力をそのままボローし、不要なアロケーションを避ける。
 fn normalize(input: &str) -> Cow<'_, str> {
     let stripped = input.strip_prefix('\u{FEFF}').unwrap_or(input);
-    if stripped.contains("\r\n") {
-        Cow::Owned(stripped.replace("\r\n", "\n"))
-    } else {
-        Cow::Borrowed(stripped)
+    if !stripped.contains("\r\n") {
+        return Cow::Borrowed(stripped);
     }
+    Cow::Owned(stripped.replace("\r\n", "\n"))
 }
 
 /// 区切り行判定。`---` のみを区切りとし、末尾空白を許容する。
