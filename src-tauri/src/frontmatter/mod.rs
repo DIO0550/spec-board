@@ -85,31 +85,15 @@ fn is_fence(line: &str) -> bool {
 /// `yaml_text` は open/close の区切り行を含まない。
 /// `body` は close 行の次行以降を文字列として返す（末尾改行は入力のまま）。
 fn split_frontmatter(input: &str) -> Option<(String, String)> {
-    let mut lines = input.split('\n');
-    let first = lines.next()?;
+    let lines: Vec<&str> = input.split('\n').collect();
+    let (first, rest) = lines.split_first()?;
     if !is_fence(first) {
         return None;
     }
 
-    let mut yaml_lines: Vec<&str> = Vec::new();
-    let mut found_close = false;
-    let mut body_parts: Vec<&str> = Vec::new();
-
-    for line in lines.by_ref() {
-        if !found_close && is_fence(line) {
-            found_close = true;
-            continue;
-        }
-        if found_close {
-            body_parts.push(line);
-        } else {
-            yaml_lines.push(line);
-        }
-    }
-
-    if !found_close {
-        return None;
-    }
+    let close_idx = rest.iter().position(|l| is_fence(l))?;
+    let (yaml_lines, after) = rest.split_at(close_idx);
+    let body_parts = &after[1..];
 
     let yaml_text = yaml_lines.join("\n");
     let body = body_parts.join("\n");
