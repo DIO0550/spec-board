@@ -1,17 +1,70 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use thiserror::Error;
 
+/// タスクの優先度。`docs/spec-board/task-format-spec.md` PL-005 に従い、
+/// YAML フロントマターの `priority` 値を ASCII 大小文字非区別で正規化したもの。
+///
+/// 未定義文字列（例: `urgent`）や型不一致（数値・配列・mapping・null・bool）は
+/// `Frontmatter::priority` 上で `None` として表現される（バッジ非表示扱い）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Priority {
+    High,
+    Medium,
+    Low,
+}
+
+impl Priority {
+    /// ASCII 大小文字を区別せずに `"high"` / `"medium"` / `"low"` を
+    /// `Priority` バリアントへ正規化する。それ以外の文字列は `None`。
+    ///
+    /// `trim` は行わない（YAML パーサ側で通常 trim 済みのため、引用符付きで
+    /// 前後空白を含む値などはここで弾く）。
+    pub(crate) fn from_ascii_ci(s: &str) -> Option<Self> {
+        if s.eq_ignore_ascii_case("high") {
+            return Some(Self::High);
+        }
+        if s.eq_ignore_ascii_case("medium") {
+            return Some(Self::Medium);
+        }
+        if s.eq_ignore_ascii_case("low") {
+            return Some(Self::Low);
+        }
+        None
+    }
+}
+
 /// タスク md ファイルのフロントマター。
 ///
-/// 本 Issue では typed フィールドを定義せず、全 YAML キーを `extras` に保持する。
-/// 後続 Issue で `title` / `status` 等の typed フィールドを追加した際、
-/// それ以外のキーが `extras` に残る `#[serde(flatten)]` 構造を維持する (PL-012)。
+/// `priority` は PL-005 に従い `Priority` enum に正規化された typed フィールド。
+/// 値が未定義文字列・型不一致・null・キー不在の場合はすべて `None`（バッジ非表示）。
+/// `priority` 以外の YAML キーは `extras` に `serde_yaml_ng::Value` として保持される (PL-012)。
 #[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 pub struct Frontmatter {
+    /// 優先度（PL-005）。値が無い・未定義文字列・型不一致のいずれも `None`。
+    #[serde(default, deserialize_with = "deserialize_priority_lenient")]
+    pub priority: Option<Priority>,
     #[serde(flatten)]
     pub extras: HashMap<String, serde_yaml_ng::Value>,
+}
+
+/// `priority` フィールド用の lenient deserializer。
+///
+/// `serde_yaml_ng::Value::deserialize` で一度 `Value` を受け取り、
+/// `Value::String(s)` のみを `Priority::from_ascii_ci` で正規化する。
+/// 数値・配列・mapping・null・bool など型不一致はすべて `Ok(None)` に落とす。
+///
+/// `priority` 値の型不一致や未定義文字列で `FrontmatterError::InvalidYaml` 化することはない (PL-005)。
+fn deserialize_priority_lenient<'de, D>(deserializer: D) -> Result<Option<Priority>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_yaml_ng::Value::deserialize(deserializer)?;
+    let serde_yaml_ng::Value::String(s) = value else {
+        return Ok(None);
+    };
+    Ok(Priority::from_ascii_ci(&s))
 }
 
 /// `parse` の成功時返却値。フロントマターと本文を分離して保持する。
@@ -42,7 +95,9 @@ pub enum FrontmatterError {
 ///   - 先頭行が `---` でない / 2 つ目の単独行 `---` が見つからない 場合を含む
 /// - YAML パース失敗時: `Err(FrontmatterError::InvalidYaml)` (PL-002)
 ///   - YAML 構文エラー / ルートが mapping でない (sequence / scalar / null) を含む
-/// - 成功時: 未知フィールドを含む `Ok(Some(Parsed))` (PL-001 / PL-012)
+/// - 成功時: typed `priority` を含む `Ok(Some(Parsed))` (PL-001 / PL-005 / PL-012)
+///   - `priority` は ASCII 大小文字非区別で正規化される
+///   - 未定義文字列・型不一致・null・キー不在はすべて `Frontmatter::priority == None`
 ///
 /// # 入力前処理
 /// - 先頭の BOM (U+FEFF) を 1 個だけ除去（中間に現れる U+FEFF は触らない）
@@ -223,6 +278,113 @@ mod tests {
             Some(&serde_yaml_ng::Value::String("A".into()))
         );
         assert_eq!(parsed.body, "body\n");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Priority 系（PL-005）：Cycle 13〜20
+    // ─────────────────────────────────────────────────────────
+    #[test]
+    fn priority_normalizes_case_insensitively() {
+        let cases: Vec<(&str, Priority, &str)> = vec![
+            ("---\npriority: high\n---\n", Priority::High, "high"),
+            ("---\npriority: HIGH\n---\n", Priority::High, "HIGH"),
+            ("---\npriority: High\n---\n", Priority::High, "High"),
+            ("---\npriority: medium\n---\n", Priority::Medium, "medium"),
+            ("---\npriority: MEDIUM\n---\n", Priority::Medium, "MEDIUM"),
+            ("---\npriority: Medium\n---\n", Priority::Medium, "Medium"),
+            ("---\npriority: low\n---\n", Priority::Low, "low"),
+            ("---\npriority: LOW\n---\n", Priority::Low, "LOW"),
+            ("---\npriority: Low\n---\n", Priority::Low, "Low"),
+        ];
+
+        for (input, expected, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            assert_eq!(parsed.frontmatter.priority, Some(expected), "{label}");
+        }
+    }
+
+    #[test]
+    fn priority_is_none_when_key_absent() {
+        let input = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.priority, None);
+    }
+
+    #[test]
+    fn priority_falls_back_to_none_for_unknown_string() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\npriority: urgent\n---\n", "未定義文字列 urgent"),
+            ("---\npriority: high!!\n---\n", "未定義文字列 high!!"),
+            ("---\npriority: \"\"\n---\n", "空文字列"),
+            (
+                "---\npriority: None\n---\n",
+                "\"None\" 文字列（task-format-spec.md 行 68 と整合）",
+            ),
+        ];
+
+        for (input, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            assert_eq!(parsed.frontmatter.priority, None, "{label}");
+        }
+    }
+
+    #[test]
+    fn priority_falls_back_to_none_for_typed_mismatch() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\npriority: 1\n---\n", "型不一致 数値"),
+            ("---\npriority: [a, b]\n---\n", "型不一致 配列"),
+            ("---\npriority: {level: high}\n---\n", "型不一致 mapping"),
+            ("---\npriority: null\n---\n", "型不一致 null"),
+            ("---\npriority: true\n---\n", "型不一致 bool"),
+        ];
+
+        for (input, label) in cases {
+            let got = parse(input);
+            assert!(
+                matches!(got, Ok(Some(_))),
+                "{label}: expected Ok(Some(_)), got {got:?}"
+            );
+            assert_eq!(got.unwrap().unwrap().frontmatter.priority, None, "{label}");
+        }
+    }
+
+    #[test]
+    fn priority_is_excluded_from_extras_when_typed() {
+        let input = "---\ntitle: A\nstatus: TODO\npriority: High\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.priority, Some(Priority::High));
+        assert!(!parsed.frontmatter.extras.contains_key("priority"));
+        assert_eq!(parsed.frontmatter.extras.len(), 2);
+        assert!(parsed.frontmatter.extras.contains_key("title"));
+        assert!(parsed.frontmatter.extras.contains_key("status"));
+    }
+
+    #[test]
+    fn priority_works_with_bom_and_crlf() {
+        let input = "\u{FEFF}---\r\npriority: HIGH\r\n---\r\nbody\r\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.priority, Some(Priority::High));
+        assert_eq!(parsed.body, "body\n");
+    }
+
+    #[test]
+    fn priority_does_not_trim_quoted_string() {
+        let input = "---\npriority: \" high \"\n---\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.priority, None,
+            "前後空白を含む文字列は trim せず None"
+        );
+    }
+
+    #[test]
+    fn priority_duplicate_key_returns_invalid_yaml() {
+        let input = "---\npriority: high\npriority: low\n---\n";
+        let got = parse(input);
+        assert!(
+            matches!(got, Err(FrontmatterError::InvalidYaml(_))),
+            "重複 priority キーは serde_yaml_ng の DuplicateKey 標準動作により InvalidYaml: got {got:?}"
+        );
     }
 
     // ─────────────────────────────────────────────────────────
