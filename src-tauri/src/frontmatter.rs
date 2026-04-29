@@ -37,27 +37,26 @@ impl Priority {
 
 /// タスク md ファイルのフロントマター。
 ///
-/// `priority` は PL-005 に従い `Priority` enum に正規化された typed フィールド。
+/// `priority` は `Priority` enum に正規化された typed フィールド。
 /// 値が未定義文字列・型不一致・null・キー不在の場合はすべて `None`（バッジ非表示）。
 ///
-/// `labels` (PL-006) / `links` (PL-009 前段) は共通 lenient deserializer により
-/// `Vec<String>` に正規化される typed フィールド。単一文字列は 1 要素配列に変換され、
-/// 配列は要素単位 lenient + 重複除去（first-occurrence wins）される。型不一致や
-/// キー不在の場合は `vec![]`。空文字列要素は保持する（trim しない）。
+/// `labels` / `links` は共通 lenient deserializer により `Vec<String>` に正規化される typed
+/// フィールド。単一文字列は 1 要素配列に変換され、配列は要素単位 lenient + 重複除去
+/// （first-occurrence wins）される。型不一致やキー不在の場合は `vec![]`。空文字列要素は
+/// 保持する（trim しない）。
 ///
 /// `priority` / `labels` / `links` 以外の YAML キーは `extras` に
-/// `serde_yaml_ng::Value` として保持される (PL-012)。
+/// `serde_yaml_ng::Value` として保持される。
 #[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 pub struct Frontmatter {
-    /// 優先度（PL-005）。値が無い・未定義文字列・型不一致のいずれも `None`。
+    /// 優先度。値が無い・未定義文字列・型不一致のいずれも `None`。
     #[serde(default, deserialize_with = "deserialize_priority_lenient")]
     pub priority: Option<Priority>,
-    /// ラベルの配列（PL-006）。単一文字列は 1 要素配列に変換 + 重複除去（first-occurrence wins）。
+    /// ラベルの配列。単一文字列は 1 要素配列に変換 + 重複除去（first-occurrence wins）。
     /// 型不一致や要素単位の非文字列はすべて除外し、エラー化しない。
     #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
     pub labels: Vec<String>,
-    /// 関連タスクのファイルパス配列（PL-009 前段）。labels と同じ正規化ロジックを共有。
-    /// PL-009 末尾「存在しないパスは警告付きで保持」は別 Issue（PL-010 逆引きインデックスとセット想定）。
+    /// 関連タスクのファイルパス配列。labels と同じ正規化ロジックを共有する。
     #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
     pub links: Vec<String>,
     #[serde(flatten)]
@@ -82,7 +81,7 @@ where
     Ok(Priority::from_ascii_ci(&s))
 }
 
-/// `labels` / `links` フィールド用の共通 lenient deserializer (PL-006 / PL-009 前段)。
+/// `labels` / `links` フィールド用の共通 lenient deserializer。
 ///
 /// `serde_yaml_ng::Value::deserialize` で一度 `Value` を受け取り、以下の 3 分岐で正規化する:
 ///
@@ -96,9 +95,6 @@ where
 /// `labels` / `links` 値の異常で `FrontmatterError::InvalidYaml` 化することはない。
 ///
 /// `trim` / case 正規化は行わない。生データを尊重する。
-///
-/// NOTE: PL-009 末尾「存在しないパスは警告付きで保持」は本 Issue スコープ外。
-///       別 Issue（PL-010 逆引きインデックスとセット想定）で実装する。
 fn deserialize_string_vec_lenient<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -152,7 +148,6 @@ pub enum FrontmatterError {
 /// - YAML パース失敗時: `Err(FrontmatterError::InvalidYaml)` (PL-002)
 ///   - YAML 構文エラー / ルートが mapping でない (sequence / scalar / null) を含む
 /// - 成功時: typed `priority` / `labels` / `links` を含む `Ok(Some(Parsed))`
-///   (PL-001 / PL-005 / PL-006 / PL-009 / PL-012)
 ///   - `priority` は ASCII 大小文字非区別で正規化される
 ///   - `labels` / `links` は単一文字列 → 1 要素配列、配列要素単位 lenient、
 ///     重複除去（first-occurrence wins）。型不一致・キー不在はすべて `vec![]`
