@@ -136,7 +136,7 @@ pub enum FrontmatterError {
     /// 入力バイト列が UTF-8 として解釈できない場合に返す。
     /// UTF-8 BOM (EF BB BF) 除去後のバイト列が UTF-8 として valid でないとき発生する。
     /// UTF-16 LE/BE / UTF-32 / Shift-JIS / その他のバイナリ入力をすべてこの variant に集約する。
-    #[error("invalid encoding: input is not valid UTF-8")]
+    #[error("invalid encoding in frontmatter: {0}")]
     InvalidEncoding(#[from] std::str::Utf8Error),
 }
 
