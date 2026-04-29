@@ -35,14 +35,18 @@ src/                    — React フロントエンド
   types/                — アプリ共通の型定義
   lib/                  — アプリ共通のライブラリ
   assets/               — 静的アセット
-src-tauri/              — Tauri (Rust) バックエンド
-  src/
+src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ルート)
+  Cargo.toml            — `[workspace] members=[".", "crates/fs"]` + spec-board package
+  src/                  — spec-board crate（本体）
     main.rs             — エントリーポイント
-    lib.rs              — モジュール公開
+    lib.rs              — モジュール公開（frontmatter のみ）
     frontmatter.rs      — md フロントマターのパース / シリアライズ
-    libs.rs             — `libs/` モジュールの集約定義（配置基準を doc コメントで明文化）
-    libs/               — 重い外部 crate に依存する処理を集約（後述「Rust バックエンド構成ルール」）
-      file_scanner.rs   — `walkdir` ベースの再帰スキャン
+  crates/
+    fs/                 — spec-board-fs crate（重い外部 crate を集約するサブクレート）
+      Cargo.toml        — package=spec-board-fs / walkdir + thiserror + dev:tempfile
+      src/
+        lib.rs          — `pub mod file_scanner;` + 配置基準 doc コメント
+        file_scanner.rs — `walkdir` ベースの再帰スキャン
 ```
 
 ### フロントエンド構成ルール
@@ -54,15 +58,16 @@ src-tauri/              — Tauri (Rust) バックエンド
 
 ### Rust バックエンド構成ルール
 
-`src-tauri/src/libs/` は **重い外部 crate に依存する処理を集約**するためのモジュール。外部ライブラリ差し替えの影響を 1 箇所に閉じ込めることが目的。
+`src-tauri/crates/fs/`（サブクレート `spec-board-fs`）は **重い外部 crate に依存する処理を集約**するためのサブクレート。Cargo.toml レベルで依存を分離することで、外部ライブラリ差し替えの影響を 1 箇所に閉じ込めることが目的。本体クレート `spec-board` は `path = "crates/fs"` 経由でのみ参照する。
 
 - **集約する**: 重い I/O / 走査 / OS 依存 / ネットワーク等を伴う crate
   - 例: `walkdir`（再帰走査）、`notify`（ファイル監視。Issue で予定）、`reqwest`（HTTP）
-- **集約しない**（top-level に直接置いてよい）: Rust エコシステムで事実上標準の型変換・派生系
+- **集約しない**（本体 crate に直接置いてよい）: Rust エコシステムで事実上標準の型変換・派生系
   - 例: `serde` / `serde_json` / `serde_yaml_ng` / `thiserror` / `anyhow`
-- **境界の漏出禁止**: `crate::libs::*` の各サブモジュールは `pub` API の型シグネチャに外部 crate の型を出さない（`std` の型と独自エラー型のみ）
+- **境界の漏出禁止**: `spec-board-fs` の各モジュールは `pub` API の型シグネチャに外部 crate の型を出さない（`std` の型と独自エラー型のみ）
   - 例: `walkdir::DirEntry` を返さず `Vec<PathBuf>` で返す、`walkdir::Error` を `std::io::Error` に詰め直す
-- ファイル配置は flat 推奨（`{Name}/mod.rs` ではなく `{name}.rs` + `{name}/` 子フォルダ形式）
+- **tauri 非依存**: `spec-board-fs` は `tauri` に依存しない（IPC コマンド層は本体クレート側に置く）
+- 将来サブモジュールを追加する場合は flat 配置（`{name}.rs` + `{name}/` 子フォルダ形式）を推奨
 
 ## コンポーネント・フック・ライブラリ規約
 
