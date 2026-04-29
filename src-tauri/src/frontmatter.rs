@@ -132,6 +132,42 @@ pub enum FrontmatterError {
     /// YAML 構文エラー、または YAML ルートが mapping でない場合 (PL-002)。
     #[error("invalid YAML in frontmatter: {0}")]
     InvalidYaml(#[from] serde_yaml_ng::Error),
+
+    /// 入力バイト列が UTF-8 として解釈できない場合（= `std::str::from_utf8` が失敗する場合）に返す。
+    /// UTF-8 BOM (EF BB BF) 除去後のバイト列が UTF-8 として valid でないとき発生する。
+    /// UTF-16 LE/BE / UTF-32 / Shift-JIS / その他のバイナリ入力は、それらが UTF-8 として
+    /// invalid である限りこの variant に集約される（たまたま valid UTF-8 として解釈できる
+    /// バイト列の場合は別経路でパースされる）。
+    #[error("invalid encoding in frontmatter: {0}")]
+    InvalidEncoding(#[from] std::str::Utf8Error),
+}
+
+/// バイト列入力を受け取り、UTF-8 BOM (EF BB BF) を 1 個剥がしてから UTF-8 として検証し、
+/// 既存の文字列パース [`parse`] に委譲する。
+///
+/// # 検証規則
+/// - 先頭 3 バイトが `EF BB BF` であれば 1 個だけ除去する。BOM が無い場合は何もしない。
+/// - BOM 除去後のバイト列が UTF-8 として valid でない場合は
+///   [`FrontmatterError::InvalidEncoding`] を返す。
+///   UTF-8 として解釈できない入力（UTF-16 / UTF-32 / Shift-JIS / その他バイナリの多く）は
+///   この経路で弾かれる（たまたま valid UTF-8 として解釈できるバイト列はこの経路では弾かれない）。
+/// - UTF-8 検証に成功した場合は [`parse`] に委譲し、その結果をそのまま返す。
+///
+/// # BOM 繰り返し入力
+/// 先頭に BOM が 2 個以上連続する場合、バイト段階で 1 個、続く文字列段階の正規化で
+/// 更に 1 個（U+FEFF として）剥がれるため、結果として最大 2 個まで暗黙に剥がれる仕様とする。
+/// 3 個以上連続する場合は剥がしきれない U+FEFF が先頭に残り、先頭行が `---` で始まらない
+/// ため frontmatter として認識されず `Ok(None)` を返す。
+///
+/// # アロケーション
+/// BOM 剥離と UTF-8 検証自体は zero-copy で追加アロケーションを行わない
+/// （`<[u8]>::strip_prefix` と `std::str::from_utf8` はいずれもバイト・文字列
+/// スライス参照を返すため）。委譲先の [`parse`] 内ではフロントマター分割や
+/// CRLF 正規化が必要な入力に対して `String` のアロケーションが発生し得る。
+pub fn parse_bytes(input: &[u8]) -> Result<Option<Parsed>, FrontmatterError> {
+    let stripped = input.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(input);
+    let s = std::str::from_utf8(stripped)?;
+    parse(s)
 }
 
 /// 入力文字列から frontmatter を抽出してパースする。
@@ -716,5 +752,151 @@ mod tests {
                 "{label}: expected Err(InvalidYaml), got {got:?}"
             );
         }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // parse_bytes 系（BOM / UTF-8 検証）：Cycle 38〜45
+    // ─────────────────────────────────────────────────────────
+
+    /// Cycle 38: BOM あり / BOM なし いずれの UTF-8 入力も正常パースされること。
+    /// BOM 付き入力は 1 個剥がされ、内部の `parse(&str)` と同じ結果を返す。
+    #[test]
+    fn parse_bytes_strips_utf8_bom_and_parses() {
+        let with_bom: Vec<u8> = [b"\xEF\xBB\xBF" as &[u8], b"---\ntitle: A\n---\nbody\n"].concat();
+        let without_bom: &[u8] = b"---\ntitle: A\n---\nbody\n";
+
+        let cases: Vec<(&[u8], &str)> = vec![(&with_bom, "BOM あり"), (without_bom, "BOM なし")];
+
+        for (input, label) in cases {
+            let parsed = parse_bytes(input).unwrap().unwrap();
+            assert_eq!(
+                parsed.frontmatter.extras.get("title"),
+                Some(&serde_yaml_ng::Value::String("A".into())),
+                "{label}: title"
+            );
+            assert_eq!(parsed.body, "body\n", "{label}: body");
+        }
+    }
+
+    /// Cycle 39: Shift-JIS 日本語入力（UTF-8 として invalid）は
+    /// `Err(FrontmatterError::InvalidEncoding(_))` を返すこと。
+    /// 入力中の `\x83^\x83C\x83g\x83\x8B` は「タイトル」を Shift-JIS で表現したバイト列。
+    #[test]
+    fn parse_bytes_rejects_shift_jis() {
+        let input: &[u8] = b"---\ntitle: \x83^\x83C\x83g\x83\x8B\n---\n";
+        let got = parse_bytes(input);
+        assert!(
+            matches!(got, Err(FrontmatterError::InvalidEncoding(_))),
+            "expected Err(InvalidEncoding), got {got:?}"
+        );
+    }
+
+    /// Cycle 40 (characterization): UTF-16 LE BOM (FF FE) / UTF-16 BE BOM (FE FF) で
+    /// 始まる入力は `Err(InvalidEncoding)` を返すこと。
+    #[test]
+    fn parse_bytes_rejects_utf16_bom() {
+        let cases: Vec<(&[u8], &str)> = vec![
+            (b"\xFF\xFE\x2D\x00\x2D\x00\x2D\x00", "UTF-16 LE BOM + ---"),
+            (b"\xFE\xFF\x00\x2D\x00\x2D\x00\x2D", "UTF-16 BE BOM + ---"),
+        ];
+
+        for (input, label) in cases {
+            let got = parse_bytes(input);
+            assert!(
+                matches!(got, Err(FrontmatterError::InvalidEncoding(_))),
+                "{label}: expected Err(InvalidEncoding), got {got:?}"
+            );
+        }
+    }
+
+    /// Cycle 41 (characterization): 空バイト列 / BOM のみ / 部分 BOM の境界挙動。
+    #[test]
+    fn parse_bytes_handles_short_inputs() {
+        // 空入力: frontmatter なし扱い
+        let got_empty = parse_bytes(b"");
+        assert!(
+            matches!(got_empty, Ok(None)),
+            "空入力: expected Ok(None), got {got_empty:?}"
+        );
+
+        // BOM のみ: 剥離後は空文字列
+        let got_bom_only = parse_bytes(b"\xEF\xBB\xBF");
+        assert!(
+            matches!(got_bom_only, Ok(None)),
+            "BOM のみ: expected Ok(None), got {got_bom_only:?}"
+        );
+
+        // 部分 BOM: from_utf8 が不完全シーケンスで失敗
+        let got_partial = parse_bytes(b"\xEF\xBB");
+        assert!(
+            matches!(got_partial, Err(FrontmatterError::InvalidEncoding(_))),
+            "部分 BOM: expected Err(InvalidEncoding), got {got_partial:?}"
+        );
+    }
+
+    /// Cycle 42 (characterization): BOM が 2 個連続する入力でも正常パースできること。
+    /// バイト段階で 1 個 + 文字列段階の `normalize` で U+FEFF 1 個 = 合計 2 個剥がれる仕様を固定する。
+    #[test]
+    fn parse_bytes_with_repeated_bom_is_parsed() {
+        let input: Vec<u8> = [
+            b"\xEF\xBB\xBF" as &[u8],
+            b"\xEF\xBB\xBF---\ntitle: A\n---\nbody\n",
+        ]
+        .concat();
+
+        let got = parse_bytes(&input);
+        assert!(
+            matches!(got, Ok(Some(_))),
+            "expected Ok(Some(_)), got {got:?}"
+        );
+        let parsed = got.unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.extras.get("title"),
+            Some(&serde_yaml_ng::Value::String("A".into()))
+        );
+        assert_eq!(parsed.body, "body\n");
+    }
+
+    /// Cycle 43 (characterization): 純 ASCII / BOM なし UTF-8 マルチバイト入力が正常パースされること。
+    #[test]
+    fn parse_bytes_accepts_utf8_without_bom() {
+        let multibyte = "---\ntitle: \u{3042}\n---\nbody\n";
+        let cases: Vec<(&[u8], &str)> = vec![
+            (b"---\ntitle: hello\n---\nbody\n", "純 ASCII"),
+            (
+                multibyte.as_bytes(),
+                "BOM なし UTF-8 マルチバイト ひらがな あ",
+            ),
+        ];
+
+        for (input, label) in cases {
+            let got = parse_bytes(input);
+            assert!(
+                matches!(got, Ok(Some(_))),
+                "{label}: expected Ok(Some(_)), got {got:?}"
+            );
+        }
+    }
+
+    /// Cycle 44 (characterization): BOM なし or 単一 BOM までの valid UTF-8 入力で
+    /// `parse_bytes(s.as_bytes())` の結果が `parse(s)` の結果と一致すること。
+    /// `FrontmatterError` は `PartialEq` 未導出のため `unwrap()` 後の `Option<Parsed>` を比較する。
+    #[test]
+    fn parse_bytes_is_equivalent_to_parse_for_valid_utf8() {
+        let s = "---\nlabels: [bug, fix]\npriority: high\n---\nbody\n";
+        assert_eq!(parse_bytes(s.as_bytes()).unwrap(), parse(s).unwrap());
+    }
+
+    /// Cycle 45 (characterization): BOM 付きバイト列入力 `parse_bytes(b"\xEF\xBB\xBF...")` と
+    /// U+FEFF 付き文字列入力 `parse("\u{FEFF}...")` の結果が一致すること（境界の冪等性）。
+    #[test]
+    fn parse_bytes_with_bom_yields_same_result_as_parse_with_bom_str() {
+        let bytes_with_bom: &[u8] = b"\xEF\xBB\xBF---\ntitle: A\n---\nbody\n";
+        let str_with_bom = "\u{FEFF}---\ntitle: A\n---\nbody\n";
+
+        assert_eq!(
+            parse_bytes(bytes_with_bom).unwrap(),
+            parse(str_with_bom).unwrap()
+        );
     }
 }
