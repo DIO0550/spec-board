@@ -3450,9 +3450,17 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "spec-board-fs",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "spec-board-fs"
+version = "0.1.0"
+dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "walkdir",
