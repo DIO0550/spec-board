@@ -51,7 +51,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
@@ -61,8 +61,8 @@ jobs:
       - name: Generate coverage
         if: always()
         run: |
-          cargo llvm-cov --text --output-path coverage.txt
-          SUMMARY_JSON=$(cargo llvm-cov --json --summary-only)
+          cargo llvm-cov --workspace --text --output-path coverage.txt
+          SUMMARY_JSON=$(cargo llvm-cov --workspace --json --summary-only)
           status_for() {
             local pct=$1
             if awk "BEGIN{exit !(${pct} >= 80)}"; then echo '🟢'
