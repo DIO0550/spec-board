@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 /// タスクの優先度。`docs/spec-board/task-format-spec.md` PL-005 に従い、
@@ -37,14 +37,28 @@ impl Priority {
 
 /// タスク md ファイルのフロントマター。
 ///
-/// `priority` は PL-005 に従い `Priority` enum に正規化された typed フィールド。
+/// `priority` は `Priority` enum に正規化された typed フィールド。
 /// 値が未定義文字列・型不一致・null・キー不在の場合はすべて `None`（バッジ非表示）。
-/// `priority` 以外の YAML キーは `extras` に `serde_yaml_ng::Value` として保持される (PL-012)。
+///
+/// `labels` / `links` は共通 lenient deserializer により `Vec<String>` に正規化される typed
+/// フィールド。単一文字列は 1 要素配列に変換され、配列は要素単位 lenient + 重複除去
+/// （first-occurrence wins）される。型不一致やキー不在の場合は `vec![]`。空文字列要素は
+/// 保持する（trim しない）。
+///
+/// `priority` / `labels` / `links` 以外の YAML キーは `extras` に
+/// `serde_yaml_ng::Value` として保持される。
 #[derive(Debug, Clone, PartialEq, Deserialize, Default)]
 pub struct Frontmatter {
-    /// 優先度（PL-005）。値が無い・未定義文字列・型不一致のいずれも `None`。
+    /// 優先度。値が無い・未定義文字列・型不一致のいずれも `None`。
     #[serde(default, deserialize_with = "deserialize_priority_lenient")]
     pub priority: Option<Priority>,
+    /// ラベルの配列。単一文字列は 1 要素配列に変換 + 重複除去（first-occurrence wins）。
+    /// 型不一致や要素単位の非文字列はすべて除外し、エラー化しない。
+    #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
+    pub labels: Vec<String>,
+    /// 関連タスクのファイルパス配列。labels と同じ正規化ロジックを共有する。
+    #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
+    pub links: Vec<String>,
     #[serde(flatten)]
     pub extras: HashMap<String, serde_yaml_ng::Value>,
 }
@@ -65,6 +79,44 @@ where
         return Ok(None);
     };
     Ok(Priority::from_ascii_ci(&s))
+}
+
+/// `labels` / `links` フィールド用の共通 lenient deserializer。
+///
+/// `serde_yaml_ng::Value::deserialize` で一度 `Value` を受け取り、以下の 3 分岐で正規化する:
+///
+/// 1. `Value::String(s)` → `vec![s]`（単一文字列を 1 要素配列に変換、空文字列も保持）
+/// 2. `Value::Sequence(items)` → 要素単位 lenient + 重複除去
+///    - 各要素を `Value::String` で受けて採用、それ以外は `continue` でスキップ
+///    - `HashSet<String>` で検出済み管理、first-occurrence wins で順序保持
+/// 3. それ以外（`Number` / `Bool` / `Null` / `Mapping` / `Tagged`）→ `Vec::new()`
+///
+/// この関数は `Err` を返さない設計（`Value::deserialize` 自体の失敗は除く）。
+/// `labels` / `links` 値の異常で `FrontmatterError::InvalidYaml` 化することはない。
+///
+/// `trim` / case 正規化は行わない。生データを尊重する。
+fn deserialize_string_vec_lenient<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_yaml_ng::Value::deserialize(deserializer)?;
+    match value {
+        serde_yaml_ng::Value::String(s) => Ok(vec![s]),
+        serde_yaml_ng::Value::Sequence(items) => {
+            let mut seen: HashSet<String> = HashSet::with_capacity(items.len());
+            let mut out: Vec<String> = Vec::with_capacity(items.len());
+            for item in items {
+                let serde_yaml_ng::Value::String(s) = item else {
+                    continue;
+                };
+                if seen.insert(s.clone()) {
+                    out.push(s);
+                }
+            }
+            Ok(out)
+        }
+        _ => Ok(Vec::new()),
+    }
 }
 
 /// `parse` の成功時返却値。フロントマターと本文を分離して保持する。
@@ -95,9 +147,11 @@ pub enum FrontmatterError {
 ///   - 先頭行が `---` でない / 2 つ目の単独行 `---` が見つからない 場合を含む
 /// - YAML パース失敗時: `Err(FrontmatterError::InvalidYaml)` (PL-002)
 ///   - YAML 構文エラー / ルートが mapping でない (sequence / scalar / null) を含む
-/// - 成功時: typed `priority` を含む `Ok(Some(Parsed))` (PL-001 / PL-005 / PL-012)
+/// - 成功時: typed `priority` / `labels` / `links` を含む `Ok(Some(Parsed))`
 ///   - `priority` は ASCII 大小文字非区別で正規化される
-///   - 未定義文字列・型不一致・null・キー不在はすべて `Frontmatter::priority == None`
+///   - `labels` / `links` は単一文字列 → 1 要素配列、配列要素単位 lenient、
+///     重複除去（first-occurrence wins）。型不一致・キー不在はすべて `vec![]`
+///   - 未定義文字列・型不一致・null・キー不在の priority はすべて `None`
 ///
 /// # 入力前処理
 /// - 先頭の BOM (U+FEFF) を 1 個だけ除去（中間に現れる U+FEFF は触らない）
@@ -385,6 +439,259 @@ mod tests {
             matches!(got, Err(FrontmatterError::InvalidYaml(_))),
             "重複 priority キーは serde_yaml_ng の DuplicateKey 標準動作により InvalidYaml: got {got:?}"
         );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // labels 系（PL-006）：Cycle 21〜26 + 35
+    // ─────────────────────────────────────────────────────────
+    #[test]
+    fn labels_normalize_single_string_to_one_element_vec() {
+        let cases: Vec<(&str, Vec<&str>, &str)> = vec![
+            ("---\nlabels: bug\n---\n", vec!["bug"], "単一文字列 bug"),
+            ("---\nlabels: \"\"\n---\n", vec![""], "空文字列保持"),
+            (
+                "---\nlabels: \" bug \"\n---\n",
+                vec![" bug "],
+                "前後空白も保持（trim しない）",
+            ),
+        ];
+
+        for (input, expected, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let want: Vec<String> = expected.into_iter().map(String::from).collect();
+            assert_eq!(parsed.frontmatter.labels, want, "{label}");
+        }
+    }
+
+    #[test]
+    fn labels_dedup_preserves_first_occurrence_order() {
+        let cases: Vec<(&str, Vec<&str>, &str)> = vec![
+            ("---\nlabels: []\n---\n", vec![], "空配列"),
+            (
+                "---\nlabels: [bug, fix]\n---\n",
+                vec!["bug", "fix"],
+                "順序保持",
+            ),
+            (
+                "---\nlabels: [bug, bug, fix]\n---\n",
+                vec!["bug", "fix"],
+                "重複除去",
+            ),
+            (
+                "---\nlabels: [a, b, a, c, b]\n---\n",
+                vec!["a", "b", "c"],
+                "first-occurrence wins",
+            ),
+        ];
+
+        for (input, expected, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let want: Vec<String> = expected.into_iter().map(String::from).collect();
+            assert_eq!(parsed.frontmatter.labels, want, "{label}");
+        }
+    }
+
+    #[test]
+    fn labels_falls_back_to_empty_vec_for_typed_mismatch() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\nlabels: 1\n---\n", "型不一致 数値"),
+            ("---\nlabels: true\n---\n", "型不一致 bool"),
+            ("---\nlabels: null\n---\n", "型不一致 null"),
+            ("---\nlabels: {a: 1}\n---\n", "型不一致 mapping"),
+        ];
+
+        for (input, label) in cases {
+            let got = parse(input);
+            assert!(
+                matches!(got, Ok(Some(_))),
+                "{label}: expected Ok(Some(_)), got {got:?}"
+            );
+            assert_eq!(
+                got.unwrap().unwrap().frontmatter.labels,
+                Vec::<String>::new(),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn labels_filter_non_string_elements_in_sequence() {
+        let input = "---\nlabels: [\"a\", 1, \"b\", null, true]\n---\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.labels,
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn labels_is_empty_when_key_absent() {
+        let input = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.labels, Vec::<String>::new());
+    }
+
+    #[test]
+    fn labels_is_excluded_from_extras_when_typed() {
+        let input = "---\ntitle: A\nstatus: TODO\nlabels: [bug, fix]\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.labels,
+            vec!["bug".to_string(), "fix".to_string()]
+        );
+        assert!(!parsed.frontmatter.extras.contains_key("labels"));
+        assert_eq!(parsed.frontmatter.extras.len(), 2);
+        assert!(parsed.frontmatter.extras.contains_key("title"));
+        assert!(parsed.frontmatter.extras.contains_key("status"));
+    }
+
+    #[test]
+    fn labels_duplicate_key_returns_invalid_yaml() {
+        let input = "---\nlabels: a\nlabels: b\n---\n";
+        let got = parse(input);
+        assert!(
+            matches!(got, Err(FrontmatterError::InvalidYaml(_))),
+            "重複 labels キーは InvalidYaml: got {got:?}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // links 系（PL-009 前段）：Cycle 27〜32 + 36
+    // ─────────────────────────────────────────────────────────
+    #[test]
+    fn links_normalize_single_string_to_one_element_vec() {
+        let cases: Vec<(&str, Vec<&str>, &str)> = vec![
+            (
+                "---\nlinks: tasks/foo.md\n---\n",
+                vec!["tasks/foo.md"],
+                "単一文字列パス",
+            ),
+            ("---\nlinks: \"\"\n---\n", vec![""], "空文字列保持"),
+        ];
+
+        for (input, expected, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let want: Vec<String> = expected.into_iter().map(String::from).collect();
+            assert_eq!(parsed.frontmatter.links, want, "{label}");
+        }
+    }
+
+    #[test]
+    fn links_dedup_preserves_first_occurrence_order() {
+        let cases: Vec<(&str, Vec<&str>, &str)> = vec![
+            ("---\nlinks: []\n---\n", vec![], "空配列"),
+            (
+                "---\nlinks: [tasks/a.md, tasks/b.md]\n---\n",
+                vec!["tasks/a.md", "tasks/b.md"],
+                "順序保持",
+            ),
+            (
+                "---\nlinks: [tasks/a.md, tasks/a.md, tasks/b.md]\n---\n",
+                vec!["tasks/a.md", "tasks/b.md"],
+                "重複除去",
+            ),
+            (
+                "---\nlinks: [a, b, a, c]\n---\n",
+                vec!["a", "b", "c"],
+                "first-occurrence wins",
+            ),
+        ];
+
+        for (input, expected, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let want: Vec<String> = expected.into_iter().map(String::from).collect();
+            assert_eq!(parsed.frontmatter.links, want, "{label}");
+        }
+    }
+
+    #[test]
+    fn links_falls_back_to_empty_vec_for_typed_mismatch() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\nlinks: 1\n---\n", "型不一致 数値"),
+            ("---\nlinks: true\n---\n", "型不一致 bool"),
+            ("---\nlinks: null\n---\n", "型不一致 null"),
+            ("---\nlinks: {path: a}\n---\n", "型不一致 mapping"),
+        ];
+
+        for (input, label) in cases {
+            let got = parse(input);
+            assert!(
+                matches!(got, Ok(Some(_))),
+                "{label}: expected Ok(Some(_)), got {got:?}"
+            );
+            assert_eq!(
+                got.unwrap().unwrap().frontmatter.links,
+                Vec::<String>::new(),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn links_filter_non_string_elements_in_sequence() {
+        let input = "---\nlinks: [\"tasks/a.md\", 1, \"tasks/b.md\", null]\n---\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.links,
+            vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()]
+        );
+    }
+
+    #[test]
+    fn links_is_empty_when_key_absent() {
+        let input = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.links, Vec::<String>::new());
+    }
+
+    #[test]
+    fn links_is_excluded_from_extras_when_typed() {
+        let input = "---\ntitle: A\nstatus: TODO\nlinks: tasks/a.md\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.links, vec!["tasks/a.md".to_string()]);
+        assert!(!parsed.frontmatter.extras.contains_key("links"));
+        assert_eq!(parsed.frontmatter.extras.len(), 2);
+        assert!(parsed.frontmatter.extras.contains_key("title"));
+        assert!(parsed.frontmatter.extras.contains_key("status"));
+    }
+
+    #[test]
+    fn links_duplicate_key_returns_invalid_yaml() {
+        let input = "---\nlinks: a\nlinks: b\n---\n";
+        let got = parse(input);
+        assert!(
+            matches!(got, Err(FrontmatterError::InvalidYaml(_))),
+            "重複 links キーは InvalidYaml: got {got:?}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 共存 / 補助 系：Cycle 33〜34
+    // ─────────────────────────────────────────────────────────
+    #[test]
+    fn labels_and_links_coexist_independently() {
+        let input = "---\nlabels: [a, a, b]\nlinks: [x, y, x]\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.labels,
+            vec!["a".to_string(), "b".to_string()]
+        );
+        assert_eq!(
+            parsed.frontmatter.links,
+            vec!["x".to_string(), "y".to_string()]
+        );
+    }
+
+    #[test]
+    fn labels_and_links_work_with_bom_and_crlf() {
+        let input = "\u{FEFF}---\r\nlabels: [bug, fix]\r\nlinks: tasks/a.md\r\n---\r\nbody\r\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.labels,
+            vec!["bug".to_string(), "fix".to_string()]
+        );
+        assert_eq!(parsed.frontmatter.links, vec!["tasks/a.md".to_string()]);
+        assert_eq!(parsed.body, "body\n");
     }
 
     // ─────────────────────────────────────────────────────────
