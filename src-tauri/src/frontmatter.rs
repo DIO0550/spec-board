@@ -133,9 +133,11 @@ pub enum FrontmatterError {
     #[error("invalid YAML in frontmatter: {0}")]
     InvalidYaml(#[from] serde_yaml_ng::Error),
 
-    /// 入力バイト列が UTF-8 として解釈できない場合に返す。
+    /// 入力バイト列が UTF-8 として解釈できない場合（= `std::str::from_utf8` が失敗する場合）に返す。
     /// UTF-8 BOM (EF BB BF) 除去後のバイト列が UTF-8 として valid でないとき発生する。
-    /// UTF-16 LE/BE / UTF-32 / Shift-JIS / その他のバイナリ入力をすべてこの variant に集約する。
+    /// UTF-16 LE/BE / UTF-32 / Shift-JIS / その他のバイナリ入力は、それらが UTF-8 として
+    /// invalid である限りこの variant に集約される（たまたま valid UTF-8 として解釈できる
+    /// バイト列の場合は別経路でパースされる）。
     #[error("invalid encoding in frontmatter: {0}")]
     InvalidEncoding(#[from] std::str::Utf8Error),
 }
