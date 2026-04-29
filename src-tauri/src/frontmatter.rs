@@ -149,7 +149,8 @@ pub enum FrontmatterError {
 /// - 先頭 3 バイトが `EF BB BF` であれば 1 個だけ除去する。BOM が無い場合は何もしない。
 /// - BOM 除去後のバイト列が UTF-8 として valid でない場合は
 ///   [`FrontmatterError::InvalidEncoding`] を返す。
-///   UTF-16 / UTF-32 / Shift-JIS / その他バイナリ入力はすべてこの経路で弾かれる。
+///   UTF-8 として解釈できない入力（UTF-16 / UTF-32 / Shift-JIS / その他バイナリの多く）は
+///   この経路で弾かれる（たまたま valid UTF-8 として解釈できるバイト列はこの経路では弾かれない）。
 /// - UTF-8 検証に成功した場合は [`parse`] に委譲し、その結果をそのまま返す。
 ///
 /// # BOM 繰り返し入力
