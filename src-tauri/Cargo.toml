@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/fs"]
+resolver = "2"
 
 [package]
 name = "spec-board"
