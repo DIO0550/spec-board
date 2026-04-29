@@ -100,11 +100,15 @@ pub enum ScanError {
     },
 }
 
-/// 除外対象のディレクトリ名かどうかを判定する。
+/// 除外対象のエントリ名（ディレクトリ・ファイル両方）かどうかを判定する。
 ///
-/// - 先頭が `.` のもの（隠しディレクトリ。例: `.git`, `.vscode`, `.github`）
-/// - `node_modules`（完全一致）
-fn is_excluded_dir_name(name: &str) -> bool {
+/// `WalkDir::filter_entry` は `DirEntry` の種別を問わず呼ばれるため、本関数は
+/// ディレクトリ名 / ファイル名の両方に対して同じ条件で判定を行う。ファイル側でも
+/// ドット始まり名の `.md`（例: `.hidden.md`）を早期に枝刈りでき、効率的。
+///
+/// - 先頭が `.` のもの（隠しディレクトリ・隠しファイル。例: `.git`, `.vscode`, `.hidden.md`）
+/// - `node_modules`（完全一致 / 通常はディレクトリだが同名ファイルにも適用される）
+fn is_excluded_entry_name(name: &str) -> bool {
     name.starts_with('.') || name == "node_modules"
 }
 
@@ -123,15 +127,19 @@ fn is_md_extension(path: &Path) -> bool {
 /// `entry.depth() == 0` の場合は root 自身であり、除外パターンは適用しない
 /// （root のディレクトリ名が `.workspace` や `node_modules` でも root 配下の探索を継続する）。
 /// 除外パターンは root 配下の子孫エントリにのみ適用する。
+///
+/// 非 UTF-8 のエントリ名は本走査でも保守的に枝刈りする（`scan_md_files` の最終結果側でも
+/// 非 UTF-8 を除外するため重複チェックになるが、`filter_entry` 段階で pruning することで
+/// 非 UTF-8 ディレクトリ配下の不要な走査を避けられる）。
 fn should_descend(entry: &walkdir::DirEntry) -> bool {
     if entry.depth() == 0 {
         return true;
     }
     let name = match entry.file_name().to_str() {
         Some(s) => s,
-        None => return true,
+        None => return false,
     };
-    !is_excluded_dir_name(name)
+    !is_excluded_entry_name(name)
 }
 
 #[cfg(test)]
