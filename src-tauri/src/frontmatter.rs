@@ -297,7 +297,7 @@ pub fn serialize(parsed: &Parsed) -> String {
 /// 固定順 6 キー → 残り extras (出現順) の `Mapping` を組み立てる。
 ///
 /// title / status / parent は `extras` 内に保持された値を typed 位置で取り出す。
-/// priority は `Option<Priority>` から ASCII 小文字文字列で出力する。
+/// priority は `Option<Priority>` から先頭大文字（High / Medium / Low）で出力する。
 /// labels / links は空配列の場合は対応するキーを出力しない。
 fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
     use serde_yaml_ng::{Mapping, Value};
@@ -314,9 +314,9 @@ fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
 
     if let Some(p) = fm.priority {
         let s = match p {
-            Priority::High => "high",
-            Priority::Medium => "medium",
-            Priority::Low => "low",
+            Priority::High => "High",
+            Priority::Medium => "Medium",
+            Priority::Low => "Low",
         };
         map.insert(Value::String("priority".into()), Value::String(s.into()));
     }
@@ -1053,23 +1053,23 @@ mod tests {
         assert_eq!(parsed, reparsed);
     }
 
-    /// Cycle 48: priority Some の場合は ASCII 小文字で出力される。
+    /// Cycle 48: priority Some の場合は先頭大文字（High / Medium / Low）で出力される。
     #[test]
-    fn serialize_emits_priority_in_lowercase_when_some() {
+    fn serialize_emits_priority_with_leading_capital_when_some() {
         let cases: Vec<(&str, &str, &str)> = vec![
             (
                 "---\ntitle: A\npriority: HIGH\n---\nbody\n",
-                "priority: high",
+                "priority: High",
                 "HIGH",
             ),
             (
                 "---\ntitle: A\npriority: Medium\n---\nbody\n",
-                "priority: medium",
+                "priority: Medium",
                 "Medium",
             ),
             (
                 "---\ntitle: A\npriority: low\n---\nbody\n",
-                "priority: low",
+                "priority: Low",
                 "low",
             ),
         ];
