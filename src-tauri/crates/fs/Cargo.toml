@@ -1,0 +1,13 @@
+[package]
+name = "spec-board-fs"
+version = "0.1.0"
+edition = "2021"
+description = "spec-board のファイルシステム I/O（再帰スキャン等）を集約するサブクレート"
+publish = false
+
+[dependencies]
+walkdir = "2"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
