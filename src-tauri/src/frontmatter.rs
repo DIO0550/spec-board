@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer};
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use thiserror::Error;
 
 /// タスクの優先度。`docs/spec-board/task-format-spec.md` PL-005 に従い、
@@ -60,7 +60,7 @@ pub struct Frontmatter {
     #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
     pub links: Vec<String>,
     #[serde(flatten)]
-    pub extras: HashMap<String, serde_yaml_ng::Value>,
+    pub extras: serde_yaml_ng::Mapping,
 }
 
 /// `priority` フィールド用の lenient deserializer。
