@@ -1,3 +1,4 @@
+pub mod file_scanner;
 pub mod frontmatter;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
