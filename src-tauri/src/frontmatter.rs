@@ -243,6 +243,122 @@ fn split_frontmatter(input: &str) -> Option<(String, String)> {
     Some((yaml_text, body))
 }
 
+/// `Parsed` を md ファイル相当の文字列に書き戻す。
+///
+/// # フィールド順序
+/// `title → status → priority → labels → parent → links → その他 (extras 出現順)`。
+/// 既知 6 キー以外の extras は parse 時の出現順を保ったまま末尾に並ぶ
+/// （`Frontmatter::extras` が `serde_yaml_ng::Mapping` で挿入順を保持するため）。
+///
+/// # 空値の省略
+/// `priority` が `None` のときは `priority:` 行を出力しない。
+/// `labels` / `links` が空配列のときは対応する行を出力しない。
+/// title / status / parent は `extras` に存在しなければ対応する行を出力しない。
+///
+/// # 入力前提
+/// 本関数は [`parse`] / [`parse_bytes`] 由来の `Parsed` を入力前提とする
+/// （CRLF はすでに LF に正規化済み）。`Parsed` を手動構築するユースケースは
+/// 想定外で、その場合の出力は本仕様の保証外。
+///
+/// # 本文と改行
+/// `parse` / `parse_bytes` 由来の `Parsed` であれば body は LF のみで構成される。
+/// 本関数は body の追加正規化を行わずそのまま付加する（本文保持のため）。
+/// 入力前提が満たされる限り、出力全体は LF (`\n`) で構成され、
+/// ファイル末尾には必ず `\n` を付与する。
+///
+/// # 空フロントマター
+/// 入力が `parse("---\n---\nbody\n")` 由来で `Frontmatter` がデフォルトかつ
+/// extras も空の場合、出力は `"---\n---\nbody\n"` を保ち、フロントマターの区切りは必ず出力する。
+///
+/// # 失敗時の挙動
+/// 内部で `serde_yaml_ng::to_string` がエラーを返した場合は `expect` で panic する。
+/// 入力 `Parsed` は `parse` / `parse_bytes` 由来でシリアライズ可能性が保証されるため、
+/// 通常運用ではこの panic に到達しない。
+pub fn serialize(parsed: &Parsed) -> String {
+    let mapping = build_mapping(&parsed.frontmatter);
+    let yaml_body = if mapping.is_empty() {
+        String::new()
+    } else {
+        serde_yaml_ng::to_string(&mapping)
+            .expect("frontmatter value should be serializable as YAML")
+    };
+
+    let mut out = String::with_capacity(yaml_body.len() + parsed.body.len() + 8);
+    out.push_str("---\n");
+    out.push_str(&yaml_body);
+    out.push_str("---\n");
+    out.push_str(&parsed.body);
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// 固定順 6 キー → 残り extras (出現順) の `Mapping` を組み立てる。
+///
+/// title / status / parent は `extras` 内に保持された値を typed 位置で取り出す。
+/// priority は `Option<Priority>` から ASCII 小文字文字列で出力する。
+/// labels / links は空配列の場合は対応するキーを出力しない。
+fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
+    use serde_yaml_ng::{Mapping, Value};
+
+    const TYPED_KEYS: [&str; 6] = ["title", "status", "priority", "labels", "parent", "links"];
+    let mut map = Mapping::new();
+
+    if let Some(v) = fm.extras.get("title") {
+        map.insert(Value::String("title".into()), v.clone());
+    }
+    if let Some(v) = fm.extras.get("status") {
+        map.insert(Value::String("status".into()), v.clone());
+    }
+
+    if let Some(p) = fm.priority {
+        let s = match p {
+            Priority::High => "high",
+            Priority::Medium => "medium",
+            Priority::Low => "low",
+        };
+        map.insert(Value::String("priority".into()), Value::String(s.into()));
+    }
+
+    if !fm.labels.is_empty() {
+        map.insert(
+            Value::String("labels".into()),
+            string_vec_to_value_sequence(&fm.labels),
+        );
+    }
+
+    if let Some(v) = fm.extras.get("parent") {
+        map.insert(Value::String("parent".into()), v.clone());
+    }
+
+    if !fm.links.is_empty() {
+        map.insert(
+            Value::String("links".into()),
+            string_vec_to_value_sequence(&fm.links),
+        );
+    }
+
+    for (k, v) in &fm.extras {
+        let is_typed = k.as_str().map(|s| TYPED_KEYS.contains(&s)).unwrap_or(false);
+        if is_typed {
+            continue;
+        }
+        map.insert(k.clone(), v.clone());
+    }
+
+    map
+}
+
+/// `Vec<String>` を `Value::Sequence(Vec<Value::String>)` に変換する小ヘルパー。
+fn string_vec_to_value_sequence(items: &[String]) -> serde_yaml_ng::Value {
+    let seq: Vec<serde_yaml_ng::Value> = items
+        .iter()
+        .map(|s| serde_yaml_ng::Value::String(s.clone()))
+        .collect();
+    serde_yaml_ng::Value::Sequence(seq)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,5 +1014,366 @@ mod tests {
             parse_bytes(bytes_with_bom).unwrap(),
             parse(str_with_bom).unwrap()
         );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // serialize 系（フィールド順序 / 空値省略 / ラウンドトリップ）：Cycle 47〜55
+    //   ※ Cycle 46 は extras を `serde_yaml_ng::Mapping` へ置換するための独立リファクタリング
+    //     Cycle で、serialize 関数自体はまだ存在しないため新規テストは追加しない。
+    // ─────────────────────────────────────────────────────────
+
+    /// 出力中に複数キーが期待順序で現れることを assert するヘルパー。
+    /// 各キーは `\n{key}:` の形で行頭に出現することを前提とする。
+    fn assert_keys_in_order(output: &str, keys: &[&str]) {
+        let mut prev_pos: Option<usize> = None;
+        let mut prev_key: Option<&str> = None;
+        for k in keys {
+            let needle = format!("\n{k}:");
+            let pos = output.find(&needle).unwrap_or_else(|| {
+                panic!("key `{k}` not found in output:\n{output}");
+            });
+            if let (Some(p), Some(pk)) = (prev_pos, prev_key) {
+                assert!(
+                    p < pos,
+                    "key `{pk}` should appear before `{k}`: prev={p}, curr={pos}\n{output}"
+                );
+            }
+            prev_pos = Some(pos);
+            prev_key = Some(k);
+        }
+    }
+
+    /// Cycle 47: title + status のみの最小入力でラウンドトリップが成立する。
+    #[test]
+    fn serialize_minimum_title_status_round_trips() {
+        let original = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
+        let parsed = parse(original).unwrap().unwrap();
+        let output = serialize(&parsed);
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    /// Cycle 48: priority Some の場合は ASCII 小文字で出力される。
+    #[test]
+    fn serialize_emits_priority_in_lowercase_when_some() {
+        let cases: Vec<(&str, &str, &str)> = vec![
+            (
+                "---\ntitle: A\npriority: HIGH\n---\nbody\n",
+                "priority: high",
+                "HIGH",
+            ),
+            (
+                "---\ntitle: A\npriority: Medium\n---\nbody\n",
+                "priority: medium",
+                "Medium",
+            ),
+            (
+                "---\ntitle: A\npriority: low\n---\nbody\n",
+                "priority: low",
+                "low",
+            ),
+        ];
+
+        for (input, expected_substr, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let output = serialize(&parsed);
+            assert!(
+                output.contains(expected_substr),
+                "{label}: expected to contain `{expected_substr}`:\n{output}"
+            );
+        }
+    }
+
+    /// Cycle 48: priority キーが存在しない場合は priority 行を出力しない。
+    #[test]
+    fn serialize_omits_priority_line_when_none() {
+        let input = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert!(
+            !output.contains("priority:"),
+            "expected no `priority:` line:\n{output}"
+        );
+    }
+
+    /// Cycle 48: parse 時点で `None` 化された不正値（例: `urgent`）は再 serialize で消失する。
+    /// 元 YAML の不正値は復元されない仕様。
+    #[test]
+    fn serialize_drops_invalid_priority_value_due_to_parse_normalization() {
+        let input = "---\ntitle: A\nstatus: TODO\npriority: urgent\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.frontmatter.priority, None);
+        let output = serialize(&parsed);
+        assert!(
+            !output.contains("priority:"),
+            "expected no `priority:` line for invalid value:\n{output}"
+        );
+    }
+
+    /// Cycle 49: labels 非空配列は `Value::Sequence` として出力される。
+    #[test]
+    fn serialize_emits_labels_as_sequence_when_non_empty() {
+        let input = "---\ntitle: A\nlabels: [bug, fix]\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert!(
+            output.contains("labels:"),
+            "should contain labels key:\n{output}"
+        );
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(
+            reparsed.frontmatter.labels,
+            vec!["bug".to_string(), "fix".to_string()]
+        );
+    }
+
+    /// Cycle 49: labels 空配列の場合は `labels:` 行を出力しない。
+    #[test]
+    fn serialize_omits_labels_line_when_empty() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\ntitle: A\nlabels: []\n---\nbody\n", "明示空配列"),
+            ("---\ntitle: A\n---\nbody\n", "labels キー不在"),
+        ];
+
+        for (input, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let output = serialize(&parsed);
+            assert!(
+                !output.contains("labels:"),
+                "{label}: expected no `labels:` line:\n{output}"
+            );
+        }
+    }
+
+    /// Cycle 50: parent は labels と links の間（typed 位置）に出力される。
+    #[test]
+    fn serialize_places_parent_between_labels_and_links() {
+        let input = "---\ntitle: A\nstatus: TODO\nlabels: [bug]\nparent: tasks/p.md\nlinks: [a.md]\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert_keys_in_order(&output, &["title", "status", "labels", "parent", "links"]);
+    }
+
+    /// Cycle 51: links 非空配列は `Value::Sequence` として出力される。
+    #[test]
+    fn serialize_emits_links_as_sequence_when_non_empty() {
+        let input = "---\ntitle: A\nlinks: [a.md, b.md]\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert!(
+            output.contains("links:"),
+            "should contain links key:\n{output}"
+        );
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(
+            reparsed.frontmatter.links,
+            vec!["a.md".to_string(), "b.md".to_string()]
+        );
+    }
+
+    /// Cycle 51: links 空配列の場合は `links:` 行を出力しない。
+    #[test]
+    fn serialize_omits_links_line_when_empty() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\ntitle: A\nlinks: []\n---\nbody\n", "明示空配列"),
+            ("---\ntitle: A\n---\nbody\n", "links キー不在"),
+        ];
+
+        for (input, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let output = serialize(&parsed);
+            assert!(
+                !output.contains("links:"),
+                "{label}: expected no `links:` line:\n{output}"
+            );
+        }
+    }
+
+    /// Cycle 52: 既知 6 キー以外の extras は parse 時の出現順を保ったまま末尾に並ぶ。
+    #[test]
+    fn serialize_preserves_extras_insertion_order() {
+        let input = "---\nfoo: 1\nbar: 2\nbaz: 3\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert_keys_in_order(&output, &["foo", "bar", "baz"]);
+    }
+
+    /// Cycle 53: 本文部分は `Parsed::body` と一致して付加される（変換しない）。
+    #[test]
+    fn serialize_preserves_body_byte_for_byte() {
+        let input = "---\ntitle: A\n---\n## 概要\n\n本文\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        let body_in_output = output
+            .split_once("---\n")
+            .and_then(|(_, rest)| rest.split_once("---\n"))
+            .map(|(_, body)| body)
+            .unwrap();
+        assert_eq!(body_in_output, parsed.body);
+    }
+
+    /// Cycle 53: body の末尾改行有無に関わらず、出力末尾には必ず `\n` が付与される。
+    #[test]
+    fn serialize_ensures_trailing_newline() {
+        let cases: Vec<(&str, &str)> = vec![
+            ("---\ntitle: A\n---\n", "body 空"),
+            ("---\ntitle: A\n---\nbody", "末尾改行なし"),
+            ("---\ntitle: A\n---\nbody\n", "末尾改行あり"),
+        ];
+
+        for (input, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let output = serialize(&parsed);
+            assert!(
+                output.ends_with('\n'),
+                "{label}: expected output to end with newline:\n{output}"
+            );
+        }
+    }
+
+    /// Cycle 53: parse 経由の `Parsed` を serialize した結果には CR が含まれない。
+    #[test]
+    fn serialize_uses_lf_line_endings_only_for_parse_origin_input() {
+        let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert!(
+            !output.contains('\r'),
+            "expected output without CR:\n{output:?}"
+        );
+    }
+
+    /// Cycle 53: 空フロントマター入力でも区切り行を残し、再 parse で同値となる。
+    #[test]
+    fn serialize_keeps_empty_frontmatter_fences_with_body() {
+        let input = "---\n---\nbody\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert_eq!(output, "---\n---\nbody\n");
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    /// Cycle 54: 全 typed フィールド + 未知フィールドのフルケースで
+    /// `parse(serialize(p1)) == p1` かつ出力フィールド順が固定順序（title → status →
+    /// priority → labels → parent → links → その他）を満たす。
+    #[test]
+    fn serialize_full_case_round_trips_through_parse() {
+        let input = concat!(
+            "---\n",
+            "title: T\n",
+            "status: S\n",
+            "priority: high\n",
+            "labels: [bug, fix]\n",
+            "parent: tasks/p.md\n",
+            "links: [a.md, b.md]\n",
+            "foo: F\n",
+            "bar: B\n",
+            "---\n",
+            "body text\n",
+        );
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        assert_keys_in_order(
+            &output,
+            &[
+                "title", "status", "priority", "labels", "parent", "links", "foo", "bar",
+            ],
+        );
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    /// Cycle 54: body 末尾改行なし入力では再 parse 時に `\n` 1 byte 増えるが、
+    /// fixed-point 性 `serialize(parse(serialize(p1))) == serialize(p1)` は成立する。
+    #[test]
+    fn serialize_round_trips_for_body_without_trailing_newline_via_fixed_point() {
+        let input = "---\n---\nbody";
+        let p1 = parse(input).unwrap().unwrap();
+        assert_eq!(p1.body, "body");
+        let s1 = serialize(&p1);
+        let p2 = parse(&s1).unwrap().unwrap();
+        assert_eq!(p2.body, format!("{}\n", p1.body));
+        assert_eq!(serialize(&p2), s1);
+    }
+
+    /// Cycle 54: 空 body 入力でラウンドトリップが成立する（`Parsed` 直比較）。
+    #[test]
+    fn serialize_round_trips_for_empty_body() {
+        let input = "---\ntitle: A\n---\n";
+        let parsed = parse(input).unwrap().unwrap();
+        assert_eq!(parsed.body, "");
+        let output = serialize(&parsed);
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    /// Cycle 54: 空フロントマター + 空 body の最小区切り入力でラウンドトリップが成立する。
+    #[test]
+    fn serialize_round_trips_for_empty_frontmatter_and_empty_body() {
+        let cases: Vec<(&str, &str)> =
+            vec![("---\n---\n", "末尾改行あり"), ("---\n---", "末尾改行なし")];
+
+        for (input, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let output = serialize(&parsed);
+            let reparsed = parse(&output).unwrap().unwrap();
+            assert_eq!(parsed, reparsed, "{label}");
+        }
+    }
+
+    /// Cycle 54: CRLF 入力（parse 経由で LF 正規化済み）でラウンドトリップが成立する。
+    #[test]
+    fn serialize_round_trips_for_crlf_input_via_parse() {
+        let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
+        let parsed = parse(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    /// Cycle 54: BOM 付きバイト列入力（parse_bytes 経由）でラウンドトリップが成立する。
+    #[test]
+    fn serialize_round_trips_for_bom_prefixed_input_via_parse_bytes() {
+        let input: &[u8] = b"\xEF\xBB\xBF---\ntitle: A\nstatus: TODO\n---\nbody\n";
+        let parsed = parse_bytes(input).unwrap().unwrap();
+        let output = serialize(&parsed);
+        let reparsed = parse(&output).unwrap().unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    /// Cycle 55: extras 内の title / status / parent が型不一致でも typed 位置に dump される。
+    /// 各ケースで fixed-point 性を確認する。
+    #[test]
+    fn serialize_dumps_extras_title_status_parent_at_typed_position_for_non_string() {
+        let cases: Vec<(&str, &[&str], &str)> = vec![
+            (
+                "---\ntitle: 42\nstatus: TODO\n---\nbody\n",
+                &["title", "status"],
+                "title が数値",
+            ),
+            (
+                "---\ntitle: A\nstatus:\n  - a\n  - b\n---\nbody\n",
+                &["title", "status"],
+                "status が配列",
+            ),
+            (
+                "---\ntitle: A\nlabels: [bug]\nparent:\n  level: 1\nlinks: [a.md]\n---\nbody\n",
+                &["title", "labels", "parent", "links"],
+                "parent が mapping",
+            ),
+        ];
+
+        for (input, expected_order, label) in cases {
+            let parsed = parse(input).unwrap().unwrap();
+            let output = serialize(&parsed);
+            assert_keys_in_order(&output, expected_order);
+            let reparsed = parse(&output).unwrap().unwrap();
+            assert_eq!(
+                serialize(&reparsed),
+                output,
+                "{label}: fixed-point should hold"
+            );
+        }
     }
 }
