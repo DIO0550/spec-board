@@ -36,6 +36,13 @@ src/                    — React フロントエンド
   lib/                  — アプリ共通のライブラリ
   assets/               — 静的アセット
 src-tauri/              — Tauri (Rust) バックエンド
+  src/
+    main.rs             — エントリーポイント
+    lib.rs              — モジュール公開
+    frontmatter.rs      — md フロントマターのパース / シリアライズ
+    libs.rs             — `libs/` モジュールの集約定義（配置基準を doc コメントで明文化）
+    libs/               — 重い外部 crate に依存する処理を集約（後述「Rust バックエンド構成ルール」）
+      file_scanner.rs   — `walkdir` ベースの再帰スキャン
 ```
 
 ### フロントエンド構成ルール
@@ -44,6 +51,18 @@ src-tauri/              — Tauri (Rust) バックエンド
 - feature間の依存は `index.ts` の公開APIを通じてのみ行う（内部ファイルを直接importしない）
 - 複数featureで共有するものは `src/components/`, `src/hooks/`, `src/types/`, `src/lib/` に置く
 - featureディレクトリ内のサブフォルダは必要になった時点で作成する（先に空フォルダを作らない）
+
+### Rust バックエンド構成ルール
+
+`src-tauri/src/libs/` は **重い外部 crate に依存する処理を集約**するためのモジュール。外部ライブラリ差し替えの影響を 1 箇所に閉じ込めることが目的。
+
+- **集約する**: 重い I/O / 走査 / OS 依存 / ネットワーク等を伴う crate
+  - 例: `walkdir`（再帰走査）、`notify`（ファイル監視。Issue で予定）、`reqwest`（HTTP）
+- **集約しない**（top-level に直接置いてよい）: Rust エコシステムで事実上標準の型変換・派生系
+  - 例: `serde` / `serde_json` / `serde_yaml_ng` / `thiserror` / `anyhow`
+- **境界の漏出禁止**: `crate::libs::*` の各サブモジュールは `pub` API の型シグネチャに外部 crate の型を出さない（`std` の型と独自エラー型のみ）
+  - 例: `walkdir::DirEntry` を返さず `Vec<PathBuf>` で返す、`walkdir::Error` を `std::io::Error` に詰め直す
+- ファイル配置は flat 推奨（`{Name}/mod.rs` ではなく `{name}.rs` + `{name}/` 子フォルダ形式）
 
 ## コンポーネント・フック・ライブラリ規約
 
