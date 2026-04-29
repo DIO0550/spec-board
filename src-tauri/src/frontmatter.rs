@@ -157,8 +157,10 @@ pub enum FrontmatterError {
 /// ため frontmatter として認識されず `Ok(None)` を返す。
 ///
 /// # アロケーション
-/// 発生しない（`<[u8]>::strip_prefix` と `std::str::from_utf8` はいずれもバイト・文字列
-/// スライス参照を返す zero-copy 操作）。
+/// BOM 剥離と UTF-8 検証自体は zero-copy で追加アロケーションを行わない
+/// （`<[u8]>::strip_prefix` と `std::str::from_utf8` はいずれもバイト・文字列
+/// スライス参照を返すため）。委譲先の [`parse`] 内ではフロントマター分割や
+/// CRLF 正規化が必要な入力に対して `String` のアロケーションが発生し得る。
 pub fn parse_bytes(input: &[u8]) -> Result<Option<Parsed>, FrontmatterError> {
     let stripped = input.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(input);
     let s = std::str::from_utf8(stripped)?;
