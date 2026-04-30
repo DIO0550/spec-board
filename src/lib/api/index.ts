@@ -1,5 +1,6 @@
 import { initialColumns, initialTasks } from "@/lib/mock-data";
-import type { Column, Task } from "@/types/task";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
 
 const tasks = structuredClone(initialTasks);
 let columns = structuredClone(initialColumns);

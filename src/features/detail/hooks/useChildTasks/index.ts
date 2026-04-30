@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { SubIssue } from "@/features/detail/domains/sub-issue";
-import type { Column, Task } from "@/types/task";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
 
 /** useChildTasks の引数 */
 export type UseChildTasksArgs = {

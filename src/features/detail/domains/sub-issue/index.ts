@@ -1,4 +1,5 @@
-import type { Column, Task } from "@/types/task";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
 
 /** サブ Issue の進捗集計 */
 export type SubIssueProgress = {
