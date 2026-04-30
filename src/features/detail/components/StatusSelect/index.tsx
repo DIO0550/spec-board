@@ -1,4 +1,4 @@
-import type { Column } from "@/types/task";
+import type { Column } from "@/types/column";
 
 /** StatusSelect の Props */
 type StatusSelectProps = {

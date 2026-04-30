@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Column } from "@/types/task";
+import type { Column } from "@/types/column";
 import { StatusSelect } from "..";
 
 let container: HTMLDivElement | null = null;

@@ -12,7 +12,8 @@ import {
 import { Board, EmptyState, HeaderBar } from "./features/board";
 import { DetailPanel } from "./features/detail";
 import { TaskCreateModal, type TaskFormValues } from "./features/task-form";
-import type { Column, Task } from "./types/task";
+import type { Column } from "./types/column";
+import type { Task } from "./types/task";
 
 /**
  * @returns {JSX.Element} アプリケーションのルートレイアウトシェル

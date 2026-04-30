@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import type { Column as ColumnType, Task } from "@/types/task";
+import type { Column as ColumnType } from "@/types/column";
+import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
 import { Column } from "../Column";
 

@@ -1,7 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Column as ColumnType, Task } from "@/types/task";
+import type { Column as ColumnType } from "@/types/column";
+import type { Task } from "@/types/task";
 import { Board } from "..";
 
 let container: HTMLDivElement | null = null;

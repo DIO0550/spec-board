@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { Column } from "@/types/task";
+import type { Column } from "@/types/column";
 
 type TaskFormStatusProps = {
   /** 選択肢となるカラム一覧 */

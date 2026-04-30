@@ -1,4 +1,5 @@
-import type { Column, Task } from "@/types/task";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
 
 export const initialColumns: Column[] = [
   { name: "Todo", order: 0 },

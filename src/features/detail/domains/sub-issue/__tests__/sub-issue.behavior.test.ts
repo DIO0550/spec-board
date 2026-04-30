@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import type { Column, Task } from "@/types/task";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
 import { SubIssue } from "../index";
 
 /**
