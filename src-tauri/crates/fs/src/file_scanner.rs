@@ -66,7 +66,10 @@ pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
             Ok(e) => e,
             Err(_) => continue,
         };
-        if let Some(rel) = accept_entry(&entry, root) {
+        if !should_include(&entry) {
+            continue;
+        }
+        if let Some(rel) = relative_path(entry.path(), root) {
             results.push(rel);
         }
     }
@@ -74,28 +77,27 @@ pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
     Ok(results)
 }
 
-/// 単一の `WalkDir` エントリを採用するかを判定し、採用するなら root からの相対パスを返す。
+/// `WalkDir` のエントリをスキャン結果に含めるべきかを判定する。
 ///
-/// 採用条件は早期 return で並べ、軽い判定を先に行う:
+/// 採用条件（早期 return 順、軽い判定 → 重い判定）:
 /// 1. root 自身ではない（`depth() > 0`）
 /// 2. 通常ファイル
 /// 3. 拡張子 `.md`（大文字小文字非区別）
 /// 4. ファイル名がドットで始まらない
-/// 5. root からの相対パスが算出でき、UTF-8 として表現可能
-/// 6. サイズが [`MAX_FILE_SIZE`] byte 以下
-/// 7. 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
+/// 5. サイズが [`MAX_FILE_SIZE`] byte 以下
+/// 6. 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
 ///
-/// I/O 失敗（metadata 取得失敗 / open 失敗 / read 失敗）は `None` を返し、呼び出し側で skip される。
-fn accept_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<PathBuf> {
+/// I/O 失敗（metadata 取得失敗 / open 失敗 / read 失敗）は `false`（除外側）として扱う。
+fn should_include(entry: &walkdir::DirEntry) -> bool {
     if entry.depth() == 0 {
-        return None;
+        return false;
     }
     if !entry.file_type().is_file() {
-        return None;
+        return false;
     }
     let path = entry.path();
     if !is_md_extension(path) {
-        return None;
+        return false;
     }
     let starts_with_dot = path
         .file_name()
@@ -103,16 +105,23 @@ fn accept_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<PathBuf> {
         .map(|name| name.starts_with('.'))
         .unwrap_or(true);
     if starts_with_dot {
-        return None;
+        return false;
     }
-    let rel = path.strip_prefix(root).ok()?;
-    rel.to_str()?;
     if !is_size_within_limit(entry) {
-        return None;
+        return false;
     }
     if !is_text_by_probe(path) {
-        return None;
+        return false;
     }
+    true
+}
+
+/// `path` を `root` からの相対パスに変換し、UTF-8 として表現可能な場合のみ返す。
+///
+/// `path` が `root` 配下でない場合、または相対パスが UTF-8 として表現できない場合は `None`。
+fn relative_path(path: &Path, root: &Path) -> Option<PathBuf> {
+    let rel = path.strip_prefix(root).ok()?;
+    rel.to_str()?;
     Some(rel.to_path_buf())
 }
 
