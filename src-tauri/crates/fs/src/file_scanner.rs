@@ -77,9 +77,9 @@ pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
     Ok(results)
 }
 
-/// `WalkDir` のエントリをスキャン結果に含めるべきかを判定する。
+/// `WalkDir` のエントリ属性 / ファイル内容ベースのフィルタを満たすかを判定する。
 ///
-/// 採用条件（早期 return 順、軽い判定 → 重い判定）:
+/// 判定条件（早期 return 順、軽い判定 → 重い判定）:
 /// 1. root 自身ではない（`depth() > 0`）
 /// 2. 通常ファイル
 /// 3. 拡張子 `.md`（大文字小文字非区別）
@@ -88,6 +88,10 @@ pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
 /// 6. 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
 ///
 /// I/O 失敗（metadata 取得失敗 / open 失敗 / read 失敗）は `false`（除外側）として扱う。
+///
+/// **責務の境界**: 本関数はエントリ単体のフィルタのみを担当する。
+/// root 相対パスへの変換と UTF-8 表現可能性の確認は [`relative_path`] が担当し、
+/// 最終的にスキャン結果に含めるかは「`should_include` が `true` かつ `relative_path` が `Some`」の AND 条件で決まる。
 fn should_include(entry: &walkdir::DirEntry) -> bool {
     if entry.depth() == 0 {
         return false;
