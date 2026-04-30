@@ -1,5 +1,17 @@
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+/// このサイズを超える `.md` ファイルは scan 結果から除外する（バイト単位）。
+/// 巨大ファイルはタスクとして扱わないという仕様に基づく一次フィルタ。
+/// `> MAX_FILE_SIZE` で除外するため、1,048,576 byte ちょうどは含める。
+const MAX_FILE_SIZE: u64 = 1024 * 1024;
+
+/// バイナリ判定のために先頭からプローブするバイト数。
+/// この範囲内に NUL byte (0x00) が含まれていればバイナリと判定し除外する。
+/// プローブ範囲を超えた位置の NUL byte は判定対象外。
+const BINARY_PROBE_LEN: usize = 8 * 1024;
 
 /// 指定ディレクトリ配下の `.md` ファイルを再帰的に列挙する。
 ///
@@ -8,7 +20,9 @@ use thiserror::Error;
 /// - ディレクトリ名が `node_modules` のものは深さを問わず除外
 /// - シンボリックリンクは辿らない（リンク先は走査しない）
 /// - 非 UTF-8 のパスを含むエントリは保守的に除外（後続の Tauri / JSON 境界で扱えないため）
-/// - ファイル単位の I/O エラー（権限不足等）は黙って skip し、走査を継続する
+/// - サイズが 1MB（1,048,576 byte）を超えるファイルは除外（1MB ちょうどは含める）
+/// - 先頭 8KB に NUL byte (0x00) を含むバイナリ判定ファイルは除外
+/// - ファイル単位の I/O エラー（権限不足 / metadata 取得失敗 / read 失敗等）は黙って skip し、走査を継続する
 /// - 返却される `PathBuf` は `root` からの相対パス
 ///
 /// 除外パターン（先頭ドット / `node_modules`）は **root 配下の子孫エントリにのみ適用** する。
@@ -52,35 +66,88 @@ pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
             Ok(e) => e,
             Err(_) => continue,
         };
-        if entry.depth() == 0 {
-            continue;
+        if let Some(rel) = accept_entry(&entry, root) {
+            results.push(rel);
         }
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        if !is_md_extension(path) {
-            continue;
-        }
-        let file_name_starts_with_dot = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|name| name.starts_with('.'))
-            .unwrap_or(true);
-        if file_name_starts_with_dot {
-            continue;
-        }
-        let rel = match path.strip_prefix(root) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        if rel.to_str().is_none() {
-            continue;
-        }
-        results.push(rel.to_path_buf());
     }
 
     Ok(results)
+}
+
+/// 単一の `WalkDir` エントリを採用するかを判定し、採用するなら root からの相対パスを返す。
+///
+/// 採用条件は早期 return で並べ、軽い判定を先に行う:
+/// 1. root 自身ではない（`depth() > 0`）
+/// 2. 通常ファイル
+/// 3. 拡張子 `.md`（大文字小文字非区別）
+/// 4. ファイル名がドットで始まらない
+/// 5. root からの相対パスが算出でき、UTF-8 として表現可能
+/// 6. サイズが [`MAX_FILE_SIZE`] byte 以下
+/// 7. 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
+///
+/// I/O 失敗（metadata 取得失敗 / open 失敗 / read 失敗）は `None` を返し、呼び出し側で skip される。
+fn accept_entry(entry: &walkdir::DirEntry, root: &Path) -> Option<PathBuf> {
+    if entry.depth() == 0 {
+        return None;
+    }
+    if !entry.file_type().is_file() {
+        return None;
+    }
+    let path = entry.path();
+    if !is_md_extension(path) {
+        return None;
+    }
+    let starts_with_dot = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(true);
+    if starts_with_dot {
+        return None;
+    }
+    let rel = path.strip_prefix(root).ok()?;
+    rel.to_str()?;
+    if !is_size_within_limit(entry) {
+        return None;
+    }
+    if !is_text_by_probe(path) {
+        return None;
+    }
+    Some(rel.to_path_buf())
+}
+
+/// エントリのサイズが上限以内（[`MAX_FILE_SIZE`] byte 以下）かを判定する。
+///
+/// `> MAX_FILE_SIZE` で除外するため 1,048,576 byte ちょうどは含める。
+/// metadata 取得に失敗した場合は false（除外側）を返す。
+/// `entry.metadata()` を使うことで walkdir 内部キャッシュを活用できる。
+fn is_size_within_limit(entry: &walkdir::DirEntry) -> bool {
+    match entry.metadata() {
+        Ok(m) => m.len() <= MAX_FILE_SIZE,
+        Err(_) => false,
+    }
+}
+
+/// 先頭 [`BINARY_PROBE_LEN`] byte をプローブし、NUL byte を含まなければテキストと判定する。
+///
+/// open / read に失敗した場合は false（除外側）を返す。
+/// プローブ範囲を超えた位置の NUL byte は判定対象外（仕様として固定）。
+/// 空ファイルは NUL byte なし扱いで true。
+fn is_text_by_probe(path: &Path) -> bool {
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    let mut buf = [0u8; BINARY_PROBE_LEN];
+    let mut filled = 0usize;
+    while filled < BINARY_PROBE_LEN {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(_) => return false,
+        }
+    }
+    !buf[..filled].contains(&0u8)
 }
 
 /// [`scan_md_files`] 実行時に発生し得る致命的エラー。
@@ -155,6 +222,30 @@ mod tests {
             }
             std::fs::write(&path, "").unwrap();
         }
+    }
+
+    /// 指定したバイト列を実体としてファイルに書き込む。
+    ///
+    /// バイナリ判定（先頭 8KB の NUL byte 検査）が走るテストでは、内容が NUL byte を
+    /// 含むかどうかでテスト結果が変わるため、必ずこの関数で実体を制御する。
+    fn make_file_with_bytes(root: &Path, rel: &str, contents: &[u8]) {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&path, contents).unwrap();
+    }
+
+    /// 指定サイズの sparse ファイルを作る。`set_len` の確保領域は NUL byte 埋めになるため、
+    /// **サイズチェックで先に除外されるケース専用**。バイナリチェック通過を期待するテストには
+    /// `make_file_with_bytes` を使い、明示的に NUL byte を含まない内容を書き込むこと。
+    fn make_file_with_size(root: &Path, rel: &str, len: u64) {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(len).unwrap();
     }
 
     fn collect_sorted_relative(result: &[PathBuf]) -> Vec<String> {
@@ -406,5 +497,159 @@ mod tests {
 
         let result = scan_md_files(dir.path()).unwrap();
         assert_eq!(collect_sorted_relative(&result), vec!["real/x.md"]);
+    }
+
+    // ── サイズフィルタ（1MB 上限） ─────────────────────────────────
+
+    #[test]
+    fn scan_md_files_includes_small_text_md_file() {
+        let dir = TempDir::new().unwrap();
+        make_file_with_bytes(dir.path(), "small.md", &b"a".repeat(1024));
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert_eq!(collect_sorted_relative(&result), vec!["small.md"]);
+    }
+
+    #[test]
+    fn scan_md_files_includes_file_at_exactly_max_size() {
+        let dir = TempDir::new().unwrap();
+        // ちょうど 1,048,576 byte（NUL byte なし）。サイズ境界 + バイナリ判定通過の両方を検証。
+        make_file_with_bytes(dir.path(), "max.md", &b"a".repeat(1024 * 1024));
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert_eq!(collect_sorted_relative(&result), vec!["max.md"]);
+    }
+
+    #[test]
+    fn scan_md_files_excludes_file_over_max_size() {
+        let dir = TempDir::new().unwrap();
+        // 1,048,577 byte (1MB + 1 byte)。sparse file で OK（サイズチェックで先に弾かれる）。
+        make_file_with_size(dir.path(), "over.md", 1024 * 1024 + 1);
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert!(
+            result.is_empty(),
+            "1MB+1 byte file should be excluded, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn scan_md_files_excludes_multi_megabyte_file() {
+        let dir = TempDir::new().unwrap();
+        make_file_with_size(dir.path(), "huge.md", 5 * 1024 * 1024);
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert!(
+            result.is_empty(),
+            "5MB file should be excluded, got {result:?}"
+        );
+    }
+
+    // ── バイナリフィルタ（先頭 8KB に NUL byte） ──────────────────
+
+    #[test]
+    fn scan_md_files_includes_text_without_nul_byte() {
+        let dir = TempDir::new().unwrap();
+        make_file_with_bytes(dir.path(), "plain.md", b"hello world");
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert_eq!(collect_sorted_relative(&result), vec!["plain.md"]);
+    }
+
+    #[test]
+    fn scan_md_files_excludes_binary_with_nul_in_probe_range() {
+        let dir = TempDir::new().unwrap();
+        make_file_with_bytes(dir.path(), "binary.md", b"hello\x00world");
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert!(
+            result.is_empty(),
+            "binary file with NUL byte should be excluded, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn scan_md_files_excludes_binary_with_nul_at_probe_boundary() {
+        let dir = TempDir::new().unwrap();
+        // 先頭 8,191 byte 'a' + 8,192 byte 目に NUL → プローブ範囲の最終バイト。
+        let mut bytes = vec![b'a'; 8 * 1024 - 1];
+        bytes.push(0);
+        make_file_with_bytes(dir.path(), "boundary.md", &bytes);
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert!(
+            result.is_empty(),
+            "NUL byte at probe boundary should still be detected, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn scan_md_files_includes_file_with_nul_after_probe_range() {
+        let dir = TempDir::new().unwrap();
+        // 先頭 8,192 byte 'a' + 8,193 byte 目以降にのみ NUL → プローブ範囲外。仕様として含める。
+        let mut bytes = vec![b'a'; 8 * 1024];
+        bytes.push(0);
+        bytes.extend_from_slice(b"trailing\x00bytes");
+        make_file_with_bytes(dir.path(), "tail-nul.md", &bytes);
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert_eq!(collect_sorted_relative(&result), vec!["tail-nul.md"]);
+    }
+
+    #[test]
+    fn scan_md_files_excludes_small_binary_file() {
+        let dir = TempDir::new().unwrap();
+        let mut bytes = vec![b'a'; 100];
+        bytes[50] = 0;
+        make_file_with_bytes(dir.path(), "tiny-bin.md", &bytes);
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert!(
+            result.is_empty(),
+            "100-byte file with NUL byte should be excluded, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn scan_md_files_includes_empty_file() {
+        let dir = TempDir::new().unwrap();
+        make_file_with_bytes(dir.path(), "empty.md", b"");
+
+        let result = scan_md_files(dir.path()).unwrap();
+        assert_eq!(collect_sorted_relative(&result), vec!["empty.md"]);
+    }
+
+    // ── per-entry I/O エラー skip（cfg(unix) 限定） ────────────────
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_md_files_skips_unreadable_file_silently() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().unwrap();
+        make_file_with_bytes(dir.path(), "readable.md", b"hello");
+        make_file_with_bytes(dir.path(), "locked.md", b"secret");
+
+        let locked = dir.path().join("locked.md");
+        let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&locked, perms).unwrap();
+
+        // uid 0 環境では `chmod 000` でも読めてしまうため、実測してから挙動を分岐させる。
+        let locked_is_actually_unreadable = std::fs::File::open(&locked).is_err();
+        let result = scan_md_files(dir.path());
+
+        // TempDir クリーンアップ失敗を避けるため必ず権限を復元。
+        let mut restore = std::fs::metadata(&locked).unwrap().permissions();
+        restore.set_mode(0o644);
+        std::fs::set_permissions(&locked, restore).unwrap();
+
+        let result = result.expect("scan should succeed even when one entry is unreadable");
+        let collected = collect_sorted_relative(&result);
+        if locked_is_actually_unreadable {
+            assert_eq!(collected, vec!["readable.md"]);
+        } else {
+            assert_eq!(collected, vec!["locked.md", "readable.md"]);
+        }
     }
 }
