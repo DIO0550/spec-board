@@ -144,6 +144,7 @@ fn is_text_by_probe(path: &Path) -> bool {
         match file.read(&mut buf[filled..]) {
             Ok(0) => break,
             Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => return false,
         }
     }
