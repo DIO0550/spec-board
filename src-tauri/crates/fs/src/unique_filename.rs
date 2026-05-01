@@ -28,17 +28,23 @@
 //! kebab-case 化や実ファイル I/O は本関数の責務外であり、呼び出し側で
 //! 行う。
 
+use std::borrow::Borrow;
 use std::collections::HashSet;
+use std::hash::Hash;
 
 /// `existing` と衝突しないファイル名を生成して返す。
 ///
 /// - `base`: 拡張子を除いたファイル名（kebab-case 化済みを想定、非空）
 /// - `ext`: 拡張子（例: `"md"`）。先頭ドットを含めない。空文字列の場合は
 ///   候補にドットを付けない
-/// - `existing`: 既存ファイル名の集合（`{base}.{ext}` 形式で格納されている前提）
+/// - `existing`: 既存ファイル名の集合（`{base}.{ext}` 形式で格納されている前提）。
+///   `HashSet<String>` / `HashSet<&str>` のいずれもそのまま渡せる
 ///
 /// 詳細な生成ルールと不変条件はモジュールレベルの doc コメントを参照。
-pub fn build_unique_filename(base: &str, ext: &str, existing: &HashSet<&str>) -> String {
+pub fn build_unique_filename<S>(base: &str, ext: &str, existing: &HashSet<S>) -> String
+where
+    S: Borrow<str> + Eq + Hash,
+{
     let compose = |stem: &str| -> String {
         if ext.is_empty() {
             stem.to_string()
@@ -221,5 +227,13 @@ mod tests {
                 "{label}"
             );
         }
+    }
+
+    // ── ジェネリック互換性 ────────────────────────────────────────
+
+    #[test]
+    fn build_unique_filename_accepts_owned_string_set() {
+        let existing: HashSet<String> = ["foo.md".to_string()].into_iter().collect();
+        assert_eq!(build_unique_filename("foo", "md", &existing), "foo-1.md");
     }
 }
