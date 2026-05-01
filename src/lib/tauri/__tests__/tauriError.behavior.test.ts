@@ -55,9 +55,22 @@ test.for([
     "PARSE_ERROR",
   ],
   ["「parse error」", "yaml parse error", "PARSE_ERROR"],
+  ["「I/O error」", "I/O error occurred", "IO_ERROR"],
 ] as const)("%s は対応 code に分類される", ([, message, code]) => {
   const e = TauriError.from(new Error(message));
   expect(e.code).toBe(code);
+});
+
+test.for([
+  ["「action」", "action required"],
+  ["「optional」", "optional field missing"],
+  ["「sparse」", "sparse data"],
+] as const)("%s は IO/PARSE トークンを部分的に含むが UNKNOWN になる", ([
+  ,
+  message,
+]) => {
+  const e = TauriError.from(new Error(message));
+  expect(e.code).toBe("UNKNOWN");
 });
 
 test("既知パターンに該当しない文言は UNKNOWN", () => {

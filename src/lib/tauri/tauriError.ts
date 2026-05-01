@@ -16,8 +16,8 @@ const PATTERNS: ReadonlyArray<{
 }> = [
   { regex: /見つかりません|not found/i, code: "NOT_FOUND" },
   { regex: /アクセスできません|permission/i, code: "PERMISSION_DENIED" },
-  { regex: /io|読み取り|書き込み/i, code: "IO_ERROR" },
-  { regex: /parse|フロントマター/i, code: "PARSE_ERROR" },
+  { regex: /\bio\b|i\/o|読み取り|書き込み/i, code: "IO_ERROR" },
+  { regex: /\bparse\b|フロントマター/i, code: "PARSE_ERROR" },
 ];
 
 /**
