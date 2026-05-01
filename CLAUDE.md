@@ -33,7 +33,9 @@ src/                    — React フロントエンド
   components/           — アプリ共通のUIコンポーネント
   hooks/                — アプリ共通のカスタムフック
   types/                — アプリ共通の型定義
-  lib/                  — アプリ共通のライブラリ
+  lib/                  — アプリ共通のライブラリ（API クライアント、外部 SDK ラッパ等のアプリ固有ロジック）
+  utils/                — 汎用ユーティリティ（`Result<T, E>` / `Option<T>` などフレームワーク非依存のプリミティブ）
+  domains/              — ドメイン型（`Priority` 等）+ companion API
   assets/               — 静的アセット
 src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ルート)
   Cargo.toml            — `[workspace] members=[".", "crates/fs"]` + spec-board package
