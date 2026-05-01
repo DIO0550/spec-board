@@ -1,14 +1,17 @@
-export type { CreateTaskParams } from "./createTask";
-export { createTask } from "./createTask";
-export type { DeleteTaskParams, OrphanStrategy } from "./deleteTask";
-export { deleteTask } from "./deleteTask";
-export { getTasks } from "./getTasks";
 export type {
+  CreateTaskParams,
+  DeleteTaskParams,
   OpenProjectParams,
   OpenProjectPayload,
-} from "./openProject";
-export { openProject } from "./openProject";
+  OrphanStrategy,
+  UpdateTaskParams,
+} from "./taskCommands";
+export {
+  createTask,
+  deleteTask,
+  getTasks,
+  openProject,
+  updateTask,
+} from "./taskCommands";
 export type { TauriErrorCode } from "./tauriError";
 export { TauriError } from "./tauriError";
-export type { UpdateTaskParams } from "./updateTask";
-export { updateTask } from "./updateTask";

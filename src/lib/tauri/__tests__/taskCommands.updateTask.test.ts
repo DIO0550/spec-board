@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
+import { updateTask } from "@/lib/tauri/taskCommands";
 import { TauriError } from "@/lib/tauri/tauriError";
-import { updateTask } from "@/lib/tauri/updateTask";
 import type { Task } from "@/types/task";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
