@@ -64,7 +64,7 @@ where
             return candidate;
         }
     }
-    unreachable!()
+    unreachable!("u32 範囲を使い切るほどの衝突は発生しない想定（base={base:?}, ext={ext:?}）")
 }
 
 #[cfg(test)]
