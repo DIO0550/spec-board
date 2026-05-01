@@ -24,3 +24,4 @@
 //! - Rust 識別子: `spec_board_fs`（アンダースコア）
 
 pub mod file_scanner;
+pub mod kebab_case;
