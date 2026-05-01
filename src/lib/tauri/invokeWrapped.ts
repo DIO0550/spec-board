@@ -1,5 +1,5 @@
 import { type InvokeArgs, invoke } from "@tauri-apps/api/core";
-import { Result, type Result as ResultT } from "@/lib/result";
+import { Result, type Result as ResultT } from "@/utils/result";
 import { TauriError } from "./tauriError";
 
 /**

@@ -1,5 +1,5 @@
-import type { Result } from "@/lib/result";
 import type { Task } from "@/types/task";
+import type { Result } from "@/utils/result";
 import { invokeWrapped } from "./invokeWrapped";
 import type { TauriError } from "./tauriError";
 

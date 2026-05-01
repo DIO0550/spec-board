@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Option } from "@/lib/option";
+import { Option } from "@/utils/option";
 
 test("Option.some は { some: true, value } を生成する", () => {
   expect(Option.some(42)).toEqual({ some: true, value: 42 });
