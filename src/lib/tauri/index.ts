@@ -3,7 +3,10 @@ export { createTask } from "./createTask";
 export type { DeleteTaskParams, OrphanStrategy } from "./deleteTask";
 export { deleteTask } from "./deleteTask";
 export { getTasks } from "./getTasks";
-export type { OpenProjectPayload } from "./openProject";
+export type {
+  OpenProjectParams,
+  OpenProjectPayload,
+} from "./openProject";
 export { openProject } from "./openProject";
 export type { TauriErrorCode } from "./tauriError";
 export { TauriError } from "./tauriError";

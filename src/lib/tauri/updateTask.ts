@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { Priority } from "@/domains/priority";
-import { Result, type Result as ResultT } from "@/lib/result";
+import type { Result } from "@/lib/result";
 import type { Task } from "@/types/task";
-import { TauriError } from "./tauriError";
+import { invokeWrapped } from "./invokeWrapped";
+import type { TauriError } from "./tauriError";
 
 /** update_task 引数（filePath 必須、それ以外は任意の部分更新）。 */
 export type UpdateTaskParams = {
@@ -27,13 +27,7 @@ export type UpdateTaskParams = {
  * @param params 更新パラメータ（filePath で対象を特定し、指定キーのみ更新）
  * @returns 成功時は Result.ok(Task)、失敗時は Result.err(TauriError)
  */
-export const updateTask = async (
+export const updateTask = (
   params: UpdateTaskParams,
-): Promise<ResultT<Task, TauriError>> => {
-  try {
-    const task = await invoke<Task>("update_task", params);
-    return Result.ok(task);
-  } catch (e) {
-    return Result.err(TauriError.from(e));
-  }
-};
+): Promise<Result<Task, TauriError>> =>
+  invokeWrapped<Task>("update_task", params);

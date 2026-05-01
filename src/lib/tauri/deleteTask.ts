@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
-import { Result, type Result as ResultT } from "@/lib/result";
-import { TauriError } from "./tauriError";
+import type { Result } from "@/lib/result";
+import { invokeWrapped } from "./invokeWrapped";
+import type { TauriError } from "./tauriError";
 
 /** 子タスクが存在する場合の処理方針。 */
 export type OrphanStrategy = "clear" | "abort";
@@ -18,13 +18,7 @@ export type DeleteTaskParams = {
  * @param params 削除パラメータ（filePath / orphanStrategy 任意）
  * @returns 成功時は Result.ok(undefined)、失敗時は Result.err(TauriError)
  */
-export const deleteTask = async (
+export const deleteTask = (
   params: DeleteTaskParams,
-): Promise<ResultT<void, TauriError>> => {
-  try {
-    await invoke<void>("delete_task", params);
-    return Result.ok(undefined);
-  } catch (e) {
-    return Result.err(TauriError.from(e));
-  }
-};
+): Promise<Result<void, TauriError>> =>
+  invokeWrapped<void>("delete_task", params);
