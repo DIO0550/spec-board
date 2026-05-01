@@ -29,18 +29,21 @@ pub fn to_kebab_case(title: &str) -> String {
     let mut out = String::with_capacity(title.len());
     let mut last_was_separator = true;
     for ch in title.chars() {
-        if ch.is_ascii() {
-            if ch.is_ascii_alphanumeric() {
-                out.push(ch.to_ascii_lowercase());
-                last_was_separator = false;
-            } else if !last_was_separator {
-                out.push('-');
-                last_was_separator = true;
-            }
-        } else {
+        if !ch.is_ascii() {
             out.push(ch);
             last_was_separator = false;
+            continue;
         }
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+            continue;
+        }
+        if last_was_separator {
+            continue;
+        }
+        out.push('-');
+        last_was_separator = true;
     }
 
     if out.ends_with('-') {
