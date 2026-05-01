@@ -1,8 +1,8 @@
 import type { Priority } from "@/domains/priority";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
-import { invokeWrapped } from "./invokeWrapped";
-import type { TauriError } from "./tauriError";
+import { invokeWrapped } from "../invokeWrapped";
+import type { TauriError } from "../tauriError";
 
 /** open_project 引数。 */
 export type OpenProjectParams = {

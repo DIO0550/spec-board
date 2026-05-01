@@ -1,6 +1,6 @@
 import { type InvokeArgs, invoke } from "@tauri-apps/api/core";
 import { Result, type Result as ResultT } from "@/utils/result";
-import { TauriError } from "./tauriError";
+import { TauriError } from "../tauriError";
 
 /**
  * `invoke` を呼び、reject 値は `TauriError.from(e)` に正規化して `Result.err` に詰め直す。
