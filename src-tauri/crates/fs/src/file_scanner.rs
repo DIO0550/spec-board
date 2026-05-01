@@ -114,7 +114,7 @@ fn should_include(entry: &walkdir::DirEntry) -> bool {
     if !is_size_within_limit(entry) {
         return false;
     }
-    if !is_text_by_probe(path) {
+    if !is_text(path) {
         return false;
     }
     true
@@ -146,7 +146,7 @@ fn is_size_within_limit(entry: &walkdir::DirEntry) -> bool {
 /// open / read に失敗した場合は false（除外側）を返す。
 /// プローブ範囲を超えた位置の NUL byte は判定対象外（仕様として固定）。
 /// 空ファイルは NUL byte なし扱いで true。
-fn is_text_by_probe(path: &Path) -> bool {
+fn is_text(path: &Path) -> bool {
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => return false,
