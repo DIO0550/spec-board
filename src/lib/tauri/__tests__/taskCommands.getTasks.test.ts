@@ -28,10 +28,10 @@ test("invoke が 'get_tasks' という command 名で呼ばれる", async () => 
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("get_tasks");
 });
 
-test("invoke は引数なし（command 名のみ、第 2 引数なし）で呼ばれる", async () => {
+test("invoke の第 2 引数（payload）は undefined で呼ばれる", async () => {
   vi.mocked(invoke).mockResolvedValue([]);
   await getTasks();
-  expect(vi.mocked(invoke).mock.calls[0]).toEqual(["get_tasks"]);
+  expect(vi.mocked(invoke).mock.calls[0]?.[1]).toBeUndefined();
 });
 
 test("成功時は Result.ok(Task[]) を返す", async () => {

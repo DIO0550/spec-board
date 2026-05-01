@@ -6,20 +6,18 @@ import { TauriError } from "./tauriError";
  * `invoke` を呼び、reject 値は `TauriError.from(e)` に正規化して `Result.err` に詰め直す。
  * 全 invoke ラッパでエラー正規化を一箇所に集約するための内部ヘルパ。
  *
- * 第 2 引数を渡さなかった場合は `invoke(cmd)` を引数 1 つだけで呼ぶ。
- * 渡した場合（`undefined` の明示指定を含む）は `invoke(cmd, args)` で素通しする。
+ * `args` を省略した場合は `invoke(cmd, undefined)` 相当として呼ぶ（Tauri 側で無視される）。
  *
- * @param args 可変長: `[cmd]` または `[cmd, args]`
+ * @param cmd Tauri コマンド名 (snake_case)
+ * @param args 引数オブジェクト。省略可
  * @returns 成功時は Result.ok(value)、失敗時は Result.err(TauriError)
  */
 export const invokeWrapped = async <T>(
-  ...args: [cmd: string] | [cmd: string, args: InvokeArgs | undefined]
+  cmd: string,
+  args?: InvokeArgs,
 ): Promise<ResultT<T, TauriError>> => {
   try {
-    const value =
-      args.length === 1
-        ? await invoke<T>(args[0])
-        : await invoke<T>(args[0], args[1]);
+    const value = await invoke<T>(cmd, args);
     return Result.ok(value);
   } catch (e) {
     return Result.err(TauriError.from(e));
