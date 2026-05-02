@@ -23,6 +23,7 @@
 //! - パッケージ名: `spec-board-fs`（ハイフン）
 //! - Rust 識別子: `spec_board_fs`（アンダースコア）
 
+pub mod config_io;
 pub mod file_scanner;
 pub mod kebab_case;
 pub mod unique_filename;
