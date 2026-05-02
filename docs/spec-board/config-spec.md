@@ -108,7 +108,7 @@ flowchart TD
 #### カラム順序と `doneColumn` の採用規則
 
 - カラム名は `(path, status)` 列を **path 昇順**でソートしてから、各 status の **first-occurrence wins**（初出順、重複は除去）で並ぶ。
-- ソートは `PathBuf::Ord`（バイト列比較）に従い、project-root からの相対パスでの比較が前提。
+- ソートは `PathBuf::Ord`（OS の `OsStr` 表現順序）に従い、project-root からの相対パスでの比較が前提。
 - `status` フィールドが欠落しているタスク（`None`）は、先頭デフォルトカラム名（`"Todo"`）にフォールバックする。
 - `doneColumn` は生成された columns の**末尾カラム名**を採用する（`columns` が空なら `None`）。
 
