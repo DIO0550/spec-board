@@ -29,10 +29,10 @@ pub type CardOrder = BTreeMap<String, Vec<String>>;
 
 /// プロジェクト設定全体。
 ///
-/// `version` / `columns` / `card_order` は仕様上「必須: はい」だが、
-/// 部分的な手書き JSON でも壊れにくくするため、
-/// 欠落フィールドはフィールド単位の serde default で補完する
-/// （`Config::default()` 自体は呼ばれない）。
+/// `version` / `columns` / `card_order` は仕様上「必須: はい」のため、
+/// JSON 側で欠落していると `serde_json::from_str` はエラーを返す
+/// （部分的な手書き / 切り詰められた config を黙ってデフォルト値で受理し、
+/// 後続の保存でユーザー設定を上書きしてしまうのを防ぐ）。
 ///
 /// [`Config::default`] は spec の初回オープン時 / 読み込み失敗時のフォールバックに
 /// 使われる想定で、`Todo` / `In Progress` / `Done` の 3 カラムと `done_column = "Done"`
@@ -40,25 +40,19 @@ pub type CardOrder = BTreeMap<String, Vec<String>>;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
-    /// 設定ファイルのスキーマバージョン。デフォルト `1`。
-    #[serde(default = "default_version")]
+    /// 設定ファイルのスキーマバージョン。
     pub version: u32,
     /// カラム定義の配列。順序は `Column::order` 昇順で表示する想定（ソートは呼び出し側）。
-    #[serde(default)]
     pub columns: Vec<Column>,
     /// カラム名 → そのカラム内のタスクファイルパス配列。空 `{}` を許容。
-    #[serde(default)]
     pub card_order: CardOrder,
-    /// 「完了」として扱うカラム名。未設定時は `columns` の最後のカラムを呼び出し層で採用する。
+    /// 「完了」として扱うカラム名。仕様上「必須: いいえ」のため省略可。
+    /// 未設定時は `columns` の最後のカラムを呼び出し層で採用する。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done_column: Option<String>,
 }
 
 const DEFAULT_VERSION: u32 = 1;
-
-fn default_version() -> u32 {
-    DEFAULT_VERSION
-}
 
 /// カラム（ステータス）定義。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -296,24 +290,35 @@ mod tests {
         assert_eq!(parsed.done_column, None);
     }
 
-    // ───────── 必須フィールド欠落 → Default フォールバック ─────────
+    // ───────── 必須フィールド欠落 → parse エラー ─────────
 
     #[test]
-    fn parses_empty_object_as_default() {
-        let parsed: Config = serde_json::from_str("{}").unwrap();
-        assert_eq!(parsed.version, 1);
-        assert!(parsed.columns.is_empty());
-        assert!(parsed.card_order.is_empty());
-        assert_eq!(parsed.done_column, None);
+    fn empty_object_fails_to_parse() {
+        let err = serde_json::from_str::<Config>("{}").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("version"),
+            "expected error to mention required field: {msg}"
+        );
     }
 
     #[test]
-    fn parses_with_only_columns_supplied() {
-        let json_in = r#"{ "columns": [{ "name": "Todo", "order": 0 }] }"#;
-        let parsed: Config = serde_json::from_str(json_in).unwrap();
-        assert_eq!(parsed.version, 1);
-        assert_eq!(parsed.columns.len(), 1);
-        assert!(parsed.card_order.is_empty());
-        assert_eq!(parsed.done_column, None);
+    fn missing_columns_fails_to_parse() {
+        let json_in = r#"{ "version": 1, "cardOrder": {} }"#;
+        let err = serde_json::from_str::<Config>(json_in).unwrap_err();
+        assert!(
+            err.to_string().contains("columns"),
+            "expected error to mention `columns`: {err}"
+        );
+    }
+
+    #[test]
+    fn missing_card_order_fails_to_parse() {
+        let json_in = r#"{ "version": 1, "columns": [{ "name": "Todo", "order": 0 }] }"#;
+        let err = serde_json::from_str::<Config>(json_in).unwrap_err();
+        assert!(
+            err.to_string().contains("cardOrder"),
+            "expected error to mention `cardOrder`: {err}"
+        );
     }
 }
