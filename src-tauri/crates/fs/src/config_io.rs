@@ -128,10 +128,15 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
     match std::fs::metadata(&config_path) {
         Ok(meta) => {
             if !meta.is_file() {
-                return Err(io_err(
-                    &config_path,
-                    std::io::Error::from(std::io::ErrorKind::InvalidInput),
-                ));
+                // ディレクトリの場合は `IsADirectory` を、それ以外の非ファイル
+                // （特殊ファイル等）は `InvalidInput` を返す。呼び出し側が
+                // `ErrorKind` で分岐できるよう、ディレクトリを明示する。
+                let kind = if meta.is_dir() {
+                    std::io::ErrorKind::IsADirectory
+                } else {
+                    std::io::ErrorKind::InvalidInput
+                };
+                return Err(io_err(&config_path, std::io::Error::from(kind)));
             }
             let content =
                 std::fs::read_to_string(&config_path).map_err(|e| io_err(&config_path, e))?;
@@ -320,8 +325,9 @@ mod tests {
         std::fs::create_dir(&config_as_dir).unwrap();
 
         let err = read_config_json(tmp.path()).unwrap_err();
-        let ConfigIoError::Io { path, .. } = err;
+        let ConfigIoError::Io { path, source } = err;
         assert_eq!(path, config_as_dir);
+        assert_eq!(source.kind(), std::io::ErrorKind::IsADirectory);
     }
 
     #[cfg(unix)]
