@@ -377,16 +377,17 @@ mod tests {
         let config_path = dir.join("config.json");
         std::fs::write(&config_path, b"{}").unwrap();
 
-        let mut perms = std::fs::metadata(&config_path).unwrap().permissions();
+        // umask / OS 差を吸収するため、復元用に元の Permissions を捕捉してから
+        // chmod 000 する（hardcoded 0o644 だと環境によって設定モードと不一致）。
+        let original = std::fs::metadata(&config_path).unwrap().permissions();
+        let mut perms = original.clone();
         perms.set_mode(0o000);
         std::fs::set_permissions(&config_path, perms).unwrap();
 
         let actually_readable = std::fs::read_to_string(&config_path).is_ok();
         let result = read_config_json(tmp.path());
 
-        let mut restore = std::fs::metadata(&config_path).unwrap().permissions();
-        restore.set_mode(0o644);
-        std::fs::set_permissions(&config_path, restore).unwrap();
+        std::fs::set_permissions(&config_path, original).unwrap();
 
         match (actually_readable, result) {
             (false, Err(ConfigIoError::Io { path, source })) => {
