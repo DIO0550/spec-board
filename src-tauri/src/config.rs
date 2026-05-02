@@ -140,8 +140,8 @@ impl Config {
 /// # 入力規約
 /// - `inputs`: `(file_path, status)` のスライス。
 ///   - `file_path`: 関数内で path 昇順に defensive sort される（OS 依存順の流入防止）。
-///     ソートは [`PathBuf`] の `Ord` 実装（バイト列比較）に従い、project-root からの
-///     相対パスでの比較が前提。
+///     ソートは [`PathBuf`] の `Ord` 実装（OS の `OsStr` 表現順序）に従い、
+///     project-root からの相対パスでの比較が前提。
 ///   - `status`:
 ///     - `Some(s)`: `s` をそのままカラム名候補に採用する。空文字 / 空白のみ /
 ///       前後空白を含む値も**そのまま採用**し、`trim` / 大文字小文字統一などの
