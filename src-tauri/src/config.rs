@@ -25,12 +25,15 @@
 //! - `config.json` の書き出し（atomic write / `.bak` 退避 / 並行書き込み制御）
 //! - バリデーション（columns 重複・doneColumn 整合性 / 名前空間整合）
 //! - version マイグレーション
-//! - md スキャン結果からのカラム自動生成
 //! - GUIDE.md 自動生成
 //! - Tauri コマンド層
+//!
+//! 既存タスクの `(path, status)` 列から `Config` を組み立てる純粋関数
+//! [`build_config_from_statuses`] は本モジュールに同居する。
+//! md ファイルの走査・フロントマター抽出・`config.json` への書き出しは別レイヤの責務。
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use spec_board_fs::config_io::{self, ConfigIoError};
@@ -125,6 +128,89 @@ impl Config {
             .iter()
             .max_by_key(|c| c.order)
             .map(|c| c.name.as_str())
+    }
+}
+
+/// 既存タスクの `(path, status)` 列から [`Config`] を組み立てる純粋関数。
+///
+/// プロジェクトを開いたとき `.spec-board/config.json` が存在せず、md タスクが
+/// 既に存在するケースで「status 出現順にカラムを生成して保存する」フローの
+/// 中核ロジック（保存・走査・パースは別レイヤの責務）。
+///
+/// # 入力規約
+/// - `inputs`: `(file_path, status)` のスライス。
+///   - `file_path`: 関数内で path 昇順に defensive sort される（OS 依存順の流入防止）。
+///     ソートは [`PathBuf`] の `Ord` 実装（OS の `OsStr` 表現順序）に従い、
+///     project-root からの相対パスでの比較が前提。
+///   - `status`:
+///     - `Some(s)`: `s` をそのままカラム名候補に採用する。空文字 / 空白のみ /
+///       前後空白を含む値も**そのまま採用**し、`trim` / 大文字小文字統一などの
+///       正規化は呼び出し層の責務。
+///     - `None`: 先頭デフォルトカラム名（[`DEFAULT_COLUMN_NAMES`] の先頭要素 = `"Todo"`）に
+///       フォールバックする。
+///
+/// # 戻り値
+/// - `version` = 1
+/// - `columns`: status を first-occurrence wins で uniq し、`order = 0..N` を採番した
+///   [`Column`] 列。入力が空のときは `vec![]`。
+/// - `card_order`: 空 `{}`（"未記載タスクはカラム末尾扱い" 規則に依拠した安全側のデフォルト）。
+/// - `done_column`: `columns` の末尾カラム名（[`Column::name`] のクローン）。
+///   `columns` が空なら `None`。
+///
+/// # 決定論性
+/// 呼び出し側のソート漏れがあっても OS 依存の走査順は流入しない
+/// （内部で defensive sort するため）。
+///
+/// # 例
+/// ```ignore
+/// use std::path::PathBuf;
+///
+/// let inputs = vec![
+///     (PathBuf::from("a.md"), Some("Todo".to_string())),
+///     (PathBuf::from("b.md"), Some("Doing".to_string())),
+///     (PathBuf::from("c.md"), Some("Todo".to_string())),
+/// ];
+/// let cfg = build_config_from_statuses(&inputs);
+/// assert_eq!(cfg.columns.len(), 2);
+/// ```
+pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Config {
+    if inputs.is_empty() {
+        return Config {
+            version: DEFAULT_VERSION,
+            columns: Vec::new(),
+            card_order: BTreeMap::new(),
+            done_column: None,
+        };
+    }
+
+    let mut order: Vec<usize> = (0..inputs.len()).collect();
+    order.sort_by(|&a, &b| inputs[a].0.cmp(&inputs[b].0));
+
+    let fallback: &str = DEFAULT_COLUMN_NAMES[0];
+    let mut seen: HashSet<&str> = HashSet::with_capacity(inputs.len());
+    let mut names: Vec<String> = Vec::with_capacity(inputs.len());
+    for &i in &order {
+        let name: &str = inputs[i].1.as_deref().unwrap_or(fallback);
+        if seen.insert(name) {
+            names.push(name.to_string());
+        }
+    }
+
+    let columns: Vec<Column> = names
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| Column {
+            name,
+            order: i as u32,
+        })
+        .collect();
+    let done_column = columns.last().map(|c| c.name.clone());
+
+    Config {
+        version: DEFAULT_VERSION,
+        columns,
+        card_order: BTreeMap::new(),
+        done_column,
     }
 }
 
@@ -567,5 +653,155 @@ mod tests {
             LoadConfigError::Io(_) => {}
             other => panic!("expected Io error, got {other:?}"),
         }
+    }
+
+    // ───────── build_config_from_statuses ─────────
+
+    fn col(name: &str, order: u32) -> Column {
+        Column {
+            name: name.into(),
+            order,
+        }
+    }
+
+    fn pb(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
+
+    #[test]
+    fn build_config_from_statuses_parametrized() {
+        struct Case {
+            label: &'static str,
+            inputs: Vec<(PathBuf, Option<String>)>,
+            expected_columns: Vec<Column>,
+            expected_done: Option<&'static str>,
+        }
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "0 件 -> 空 Config",
+                inputs: vec![],
+                expected_columns: vec![],
+                expected_done: None,
+            },
+            Case {
+                label: "全 None -> Todo 1 件",
+                inputs: vec![(pb("a.md"), None), (pb("b.md"), None)],
+                expected_columns: vec![col("Todo", 0)],
+                expected_done: Some("Todo"),
+            },
+            Case {
+                label: "単一 Some(Doing)",
+                inputs: vec![(pb("a.md"), Some("Doing".into()))],
+                expected_columns: vec![col("Doing", 0)],
+                expected_done: Some("Doing"),
+            },
+            Case {
+                label: "Todo / Doing / Done 出現順",
+                inputs: vec![
+                    (pb("a.md"), Some("Todo".into())),
+                    (pb("b.md"), Some("Doing".into())),
+                    (pb("c.md"), Some("Done".into())),
+                ],
+                expected_columns: vec![col("Todo", 0), col("Doing", 1), col("Done", 2)],
+                expected_done: Some("Done"),
+            },
+            Case {
+                label: "重複 Todo 2 件 -> 1 列",
+                inputs: vec![
+                    (pb("a.md"), Some("Todo".into())),
+                    (pb("b.md"), Some("Todo".into())),
+                ],
+                expected_columns: vec![col("Todo", 0)],
+                expected_done: Some("Todo"),
+            },
+            Case {
+                label: "None + Some(Doing) 混在",
+                inputs: vec![(pb("a.md"), None), (pb("b.md"), Some("Doing".into()))],
+                expected_columns: vec![col("Todo", 0), col("Doing", 1)],
+                expected_done: Some("Doing"),
+            },
+            Case {
+                label: "実出現 Todo + None は同一名にまとまる",
+                inputs: vec![(pb("a.md"), Some("Todo".into())), (pb("b.md"), None)],
+                expected_columns: vec![col("Todo", 0)],
+                expected_done: Some("Todo"),
+            },
+            Case {
+                label: "空文字 Some(\"\") はそのまま採用",
+                inputs: vec![(pb("a.md"), Some("".into()))],
+                expected_columns: vec![col("", 0)],
+                expected_done: Some(""),
+            },
+            Case {
+                label: "空白のみ Some(\" \") はそのまま採用",
+                inputs: vec![(pb("a.md"), Some(" ".into()))],
+                expected_columns: vec![col(" ", 0)],
+                expected_done: Some(" "),
+            },
+            Case {
+                label: "前後空白 Some(\"  Todo  \") はそのまま採用（trim しない）",
+                inputs: vec![(pb("a.md"), Some("  Todo  ".into()))],
+                expected_columns: vec![col("  Todo  ", 0)],
+                expected_done: Some("  Todo  "),
+            },
+            Case {
+                label: "ネストパスの path 昇順（PathBuf::Ord）",
+                inputs: vec![
+                    (pb("tasks/a.md"), Some("X".into())),
+                    (pb("tasks/sub/b.md"), Some("Y".into())),
+                    (pb("b.md"), Some("Z".into())),
+                ],
+                expected_columns: vec![col("Z", 0), col("X", 1), col("Y", 2)],
+                expected_done: Some("Y"),
+            },
+            Case {
+                label: "Unicode ファイル名の path 昇順（PathBuf::Ord / OS 表現順序）",
+                inputs: vec![
+                    (pb("α.md"), Some("ALPHA".into())),
+                    (pb("タスク.md"), Some("TASK".into())),
+                    (pb("a.md"), Some("A".into())),
+                ],
+                expected_columns: vec![col("A", 0), col("ALPHA", 1), col("TASK", 2)],
+                expected_done: Some("TASK"),
+            },
+        ];
+
+        for case in cases {
+            let cfg = build_config_from_statuses(&case.inputs);
+            assert_eq!(cfg.version, 1, "case: {}", case.label);
+            assert_eq!(cfg.columns, case.expected_columns, "case: {}", case.label);
+            assert_eq!(
+                cfg.done_column.as_deref(),
+                case.expected_done,
+                "case: {}",
+                case.label
+            );
+            assert!(
+                cfg.card_order.is_empty(),
+                "card_order must be empty: case: {}",
+                case.label
+            );
+        }
+    }
+
+    #[test]
+    fn build_config_from_statuses_defensive_sort_normalizes_input_order() {
+        let asc = vec![
+            (pb("a.md"), Some("X".into())),
+            (pb("b.md"), Some("Y".into())),
+        ];
+        let desc = vec![
+            (pb("b.md"), Some("Y".into())),
+            (pb("a.md"), Some("X".into())),
+        ];
+        let cfg_asc = build_config_from_statuses(&asc);
+        let cfg_desc = build_config_from_statuses(&desc);
+        assert_eq!(cfg_asc, cfg_desc);
+        assert_eq!(
+            cfg_asc.columns,
+            vec![col("X", 0), col("Y", 1)],
+            "path 昇順で X が先になる"
+        );
     }
 }
