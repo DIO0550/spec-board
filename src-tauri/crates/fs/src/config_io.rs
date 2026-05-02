@@ -119,12 +119,25 @@ pub fn ensure_spec_board_dir(project_root: &Path) -> Result<PathBuf, ConfigIoErr
 /// - `<project_root>/.spec-board/` 不在 / アクセス不可 / ディレクトリでない
 /// - 権限不足等で `read_to_string` が失敗する場合
 /// - `<project_root>/.spec-board/config.json` がディレクトリとして存在する等の異常ケース
+/// - `<project_root>/.spec-board/config.json` が壊れた symlink（dangling symlink）として
+///   存在する場合（`Ok(None)` には**しない**。dir entry は存在するため「設定ファイル
+///   不在」ではなく環境異常として扱う）
 pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoError> {
     validate_dir(project_root)?;
     let spec_board_dir = project_root.join(SPEC_BOARD_DIR);
     validate_dir(&spec_board_dir)?;
 
     let config_path = spec_board_dir.join(CONFIG_FILE_NAME);
+    // dir entry の存在は `symlink_metadata` で先に確認する。`metadata` は
+    // symlink を辿るため、dangling symlink (リンク先が消えた状態) を
+    // `NotFound` として `Ok(None)` 扱いしてしまうが、これは「設定ファイル
+    // 不在」ではなく環境異常（壊れた symlink）として `Err(Io)` を返したい。
+    match std::fs::symlink_metadata(&config_path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_err(&config_path, e)),
+    }
+
     match std::fs::metadata(&config_path) {
         Ok(meta) => {
             if !meta.is_file() {
@@ -142,7 +155,9 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
                 std::fs::read_to_string(&config_path).map_err(|e| io_err(&config_path, e))?;
             Ok(Some(content))
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        // symlink_metadata が成功した時点で dir entry は存在するため、
+        // ここで `NotFound` が返るのは dangling symlink のときのみ。
+        // 「壊れた symlink」を `Ok(None)` にしないため、`Err` として伝播する。
         Err(e) => Err(io_err(&config_path, e)),
     }
 }
@@ -328,6 +343,25 @@ mod tests {
         let ConfigIoError::Io { path, source } = err;
         assert_eq!(path, config_as_dir);
         assert_eq!(source.kind(), std::io::ErrorKind::IsADirectory);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_config_json_returns_err_when_config_is_dangling_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let config_path = dir.join("config.json");
+        // 存在しないターゲットへの symlink（= dangling symlink）
+        symlink(tmp.path().join("does-not-exist.json"), &config_path).unwrap();
+
+        let err = read_config_json(tmp.path()).unwrap_err();
+        let ConfigIoError::Io { path, source } = err;
+        assert_eq!(path, config_path);
+        // dangling symlink を Ok(None) と誤認しないこと（NotFound は来るが Err として伝播）
+        assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
     }
 
     #[cfg(unix)]
