@@ -18,11 +18,14 @@
 //! - Tauri コマンド層
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// `cardOrder` の型エイリアス。キー = カラム名、値 = タスクファイルパスの並び順配列。
-/// 順序は config 上で意味を持たないため `HashMap` を用いる（`Vec<String>` 内の順序が表示順）。
-pub type CardOrder = HashMap<String, Vec<String>>;
+///
+/// `.spec-board/config.json` は git にコミットされる前提のため、シリアライズ時に
+/// キー順序が決定論的になる `BTreeMap`（キー昇順）を採用し、無意味な diff や
+/// マージコンフリクトを抑止する。値配列 `Vec<String>` 内の順序がカード表示順。
+pub type CardOrder = BTreeMap<String, Vec<String>>;
 
 /// プロジェクト設定全体。
 ///
@@ -67,7 +70,7 @@ impl Default for Config {
         Self {
             version: DEFAULT_VERSION,
             columns: Vec::new(),
-            card_order: HashMap::new(),
+            card_order: BTreeMap::new(),
             done_column: None,
         }
     }
@@ -205,7 +208,7 @@ mod tests {
                 name: "Todo".into(),
                 order: 0,
             }],
-            card_order: HashMap::from([("Todo".to_string(), vec!["tasks/a.md".to_string()])]),
+            card_order: BTreeMap::from([("Todo".to_string(), vec!["tasks/a.md".to_string()])]),
             done_column: Some("Todo".into()),
         };
         let v = serde_json::to_value(&c).unwrap();
@@ -216,6 +219,31 @@ mod tests {
         assert!(obj.contains_key("doneColumn"));
         assert!(!obj.contains_key("card_order"));
         assert!(!obj.contains_key("done_column"));
+    }
+
+    // ───────── 決定論的キー順 (BTreeMap) ─────────
+
+    #[test]
+    fn card_order_keys_are_serialized_in_sorted_order() {
+        let mut card_order = CardOrder::new();
+        card_order.insert("Done".into(), vec![]);
+        card_order.insert("Todo".into(), vec!["tasks/a.md".into()]);
+        card_order.insert("In Progress".into(), vec!["tasks/b.md".into()]);
+        let c = Config {
+            version: 1,
+            columns: vec![],
+            card_order,
+            done_column: None,
+        };
+
+        let json = serde_json::to_string(&c).unwrap();
+        let done_pos = json.find("\"Done\"").unwrap();
+        let in_progress_pos = json.find("\"In Progress\"").unwrap();
+        let todo_pos = json.find("\"Todo\"").unwrap();
+        assert!(
+            done_pos < in_progress_pos && in_progress_pos < todo_pos,
+            "BTreeMap keys must be serialized in ascending order: got {json}"
+        );
     }
 
     // ───────── 未知フィールドは ignore ─────────
