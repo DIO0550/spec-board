@@ -1,3 +1,4 @@
+pub mod config;
 pub mod frontmatter;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
