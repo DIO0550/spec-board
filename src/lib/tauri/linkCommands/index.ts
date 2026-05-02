@@ -5,14 +5,14 @@ import type { TauriError } from "../tauriError";
 /** add_link / remove_link 共通の引数。 */
 export type LinkParams = {
   /** リンク元タスクのファイルパス */
-  source: string;
+  sourceFilePath: string;
   /** リンク先タスクのファイルパス */
-  target: string;
+  targetFilePath: string;
 };
 
 /**
- * source タスクの links に target を追加する（重複時は noop / BE 側仕様）。
- * @param params source / target のファイルパス
+ * sourceFilePath タスクの links に targetFilePath を追加する（重複時は noop / BE 側仕様）。
+ * @param params sourceFilePath / targetFilePath
  * @returns 成功時は Result.ok(undefined)、失敗時は Result.err(TauriError)
  */
 export const addLink = (
@@ -20,8 +20,8 @@ export const addLink = (
 ): Promise<Result<void, TauriError>> => invokeWrapped<void>("add_link", params);
 
 /**
- * source タスクの links から target を削除する。
- * @param params source / target のファイルパス
+ * sourceFilePath タスクの links から targetFilePath を削除する。
+ * @param params sourceFilePath / targetFilePath
  * @returns 成功時は Result.ok(undefined)、失敗時は Result.err(TauriError)
  */
 export const removeLink = (
