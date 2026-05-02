@@ -87,6 +87,11 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
 - テスト命名:
   - 単一カテゴリのみ: `__tests__/index.test.{ts,tsx}`
   - カテゴリ別複数: `__tests__/{対象名}.{カテゴリ}.test.{ts,tsx}`（例: `Board.rendering.test.tsx`, `Column.interaction.test.tsx`）
+- invoke ラッパ (`src/lib/tauri/`) は **1 関数 = 1 フォルダ + `index.ts`** 構成に統一する。
+  - 配置: `src/lib/tauri/{feature}/{functionName}/index.ts`（フォルダ名は camelCase で関数名と一致）。
+  - 共通型: feature 内で公開する型は原則 `src/lib/tauri/{feature}/types.ts` に集約する。関数 1 本のみの feature では `types.ts` を作らず関数ファイルへの同居も可。
+  - feature 単位の barrel (`{feature}/index.ts`) は作成せず、`src/lib/tauri/index.ts` を唯一の公開 API とする。
+  - 関数ファイル / `types.ts` から root barrel `@/lib/tauri` を import してはならない（循環参照防止）。`invokeWrapped` / `tauriError` への参照は個別 alias (`@/lib/tauri/invokeWrapped`, `@/lib/tauri/tauriError`) を使い、同 feature 内 `types.ts` は隣接相対 (`../types`) で参照する。
 - 例外:
   - `src/App.tsx` はルートコンポーネントとしてフラット配置を維持する。
   - `src/types/*.ts` は型定義ファイルのためフォルダ化対象外。

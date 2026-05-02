@@ -1,13 +1,26 @@
-export type { UpdateCardOrderParams } from "./cardOrderCommands";
-export { updateCardOrder } from "./cardOrderCommands";
+// cardOrderCommands
+export type { UpdateCardOrderParams } from "./cardOrderCommands/updateCardOrder";
+export { updateCardOrder } from "./cardOrderCommands/updateCardOrder";
+
+// columnCommands
+export { getColumns } from "./columnCommands/getColumns";
 export type {
   ColumnRename,
   GetColumnsPayload,
   UpdateColumnsParams,
-} from "./columnCommands";
-export { getColumns, updateColumns } from "./columnCommands";
-export type { LinkParams } from "./linkCommands";
-export { addLink, removeLink } from "./linkCommands";
+} from "./columnCommands/types";
+export { updateColumns } from "./columnCommands/updateColumns";
+
+// linkCommands
+export { addLink } from "./linkCommands/addLink";
+export { removeLink } from "./linkCommands/removeLink";
+export type { LinkParams } from "./linkCommands/types";
+
+// taskCommands
+export { createTask } from "./taskCommands/createTask";
+export { deleteTask } from "./taskCommands/deleteTask";
+export { getTasks } from "./taskCommands/getTasks";
+export { openProject } from "./taskCommands/openProject";
 export type {
   CreateTaskParams,
   DeleteTaskParams,
@@ -15,13 +28,9 @@ export type {
   OpenProjectPayload,
   OrphanStrategy,
   UpdateTaskParams,
-} from "./taskCommands";
-export {
-  createTask,
-  deleteTask,
-  getTasks,
-  openProject,
-  updateTask,
-} from "./taskCommands";
+} from "./taskCommands/types";
+export { updateTask } from "./taskCommands/updateTask";
+
+// tauriError
 export type { TauriErrorCode } from "./tauriError";
 export { TauriError } from "./tauriError";

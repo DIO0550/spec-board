@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import { getColumns } from "@/lib/tauri/columnCommands";
+import { getColumns } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import type { Column } from "@/types/column";
 

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import { updateColumns } from "@/lib/tauri/columnCommands";
+import { updateColumns } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
