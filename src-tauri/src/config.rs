@@ -756,7 +756,7 @@ mod tests {
                 expected_done: Some("Y"),
             },
             Case {
-                label: "Unicode ファイル名の path 昇順（UTF-8 バイト列比較）",
+                label: "Unicode ファイル名の path 昇順（PathBuf::Ord / OS 表現順序）",
                 inputs: vec![
                     (pb("α.md"), Some("ALPHA".into())),
                     (pb("タスク.md"), Some("TASK".into())),
