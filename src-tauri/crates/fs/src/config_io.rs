@@ -137,38 +137,36 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
     validate_dir(&spec_board_dir)?;
 
     let config_path = config_path(project_root);
+
     // dir entry の存在は `symlink_metadata` で先に確認する。`metadata` は
     // symlink を辿るため、dangling symlink (リンク先が消えた状態) を
     // `NotFound` として `Ok(None)` 扱いしてしまうが、これは「設定ファイル
     // 不在」ではなく環境異常（壊れた symlink）として `Err(Io)` を返したい。
-    match std::fs::symlink_metadata(&config_path) {
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(io_err(&config_path, e)),
+    if let Err(e) = std::fs::symlink_metadata(&config_path) {
+        return if e.kind() == std::io::ErrorKind::NotFound {
+            Ok(None)
+        } else {
+            Err(io_err(&config_path, e))
+        };
     }
 
-    match std::fs::metadata(&config_path) {
-        Ok(meta) => {
-            if !meta.is_file() {
-                // ディレクトリの場合は `IsADirectory` を、それ以外の非ファイル
-                // （特殊ファイル等）は `InvalidInput` を返す。呼び出し側が
-                // `ErrorKind` で分岐できるよう、ディレクトリを明示する。
-                let kind = if meta.is_dir() {
-                    std::io::ErrorKind::IsADirectory
-                } else {
-                    std::io::ErrorKind::InvalidInput
-                };
-                return Err(io_err(&config_path, std::io::Error::from(kind)));
-            }
-            let content =
-                std::fs::read_to_string(&config_path).map_err(|e| io_err(&config_path, e))?;
-            Ok(Some(content))
-        }
-        // symlink_metadata が成功した時点で dir entry は存在するため、
-        // ここで `NotFound` が返るのは dangling symlink のときのみ。
-        // 「壊れた symlink」を `Ok(None)` にしないため、`Err` として伝播する。
-        Err(e) => Err(io_err(&config_path, e)),
+    // symlink_metadata が成功 = dir entry は存在する。ここで `metadata` が
+    // `NotFound` を返すのは dangling symlink のときのみ。
+    // 「壊れた symlink」を `Ok(None)` にしないため、`Err` として伝播する。
+    let meta = std::fs::metadata(&config_path).map_err(|e| io_err(&config_path, e))?;
+    if !meta.is_file() {
+        // ディレクトリの場合は `IsADirectory`、それ以外の非ファイル（特殊ファイル等）は
+        // `InvalidInput` を返す。呼び出し側が `ErrorKind` で分岐できるよう明示する。
+        let kind = if meta.is_dir() {
+            std::io::ErrorKind::IsADirectory
+        } else {
+            std::io::ErrorKind::InvalidInput
+        };
+        return Err(io_err(&config_path, std::io::Error::from(kind)));
     }
+
+    let content = std::fs::read_to_string(&config_path).map_err(|e| io_err(&config_path, e))?;
+    Ok(Some(content))
 }
 
 fn validate_dir(path: &Path) -> Result<(), ConfigIoError> {
