@@ -33,6 +33,10 @@ pub type CardOrder = BTreeMap<String, Vec<String>>;
 /// 部分的な手書き JSON でも壊れにくくするため、
 /// 欠落フィールドはフィールド単位の serde default で補完する
 /// （`Config::default()` 自体は呼ばれない）。
+///
+/// [`Config::default`] は spec の初回オープン時 / 読み込み失敗時のフォールバックに
+/// 使われる想定で、`Todo` / `In Progress` / `Done` の 3 カラムと `done_column = "Done"`
+/// を含むベースラインを返す（`config-spec.md` 「設定の初期化」「エラーハンドリング」節）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -65,13 +69,26 @@ pub struct Column {
     pub order: u32,
 }
 
+/// spec L85 の初回オープン時デフォルト / spec L223 の読み込み失敗時フォールバックで
+/// 用いるベースラインカラム名。
+const DEFAULT_COLUMN_NAMES: [&str; 3] = ["Todo", "In Progress", "Done"];
+
 impl Default for Config {
     fn default() -> Self {
+        let columns = DEFAULT_COLUMN_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, name)| Column {
+                name: (*name).into(),
+                order: i as u32,
+            })
+            .collect();
+        let done_column = DEFAULT_COLUMN_NAMES.last().map(|s| (*s).to_string());
         Self {
             version: DEFAULT_VERSION,
-            columns: Vec::new(),
+            columns,
             card_order: BTreeMap::new(),
-            done_column: None,
+            done_column,
         }
     }
 }
@@ -83,12 +100,28 @@ mod tests {
     // ───────── Default ─────────
 
     #[test]
-    fn default_returns_version_1_and_empty_collections() {
+    fn default_returns_spec_baseline_columns_and_done_column() {
         let c = Config::default();
         assert_eq!(c.version, 1);
-        assert!(c.columns.is_empty());
+        assert_eq!(
+            c.columns,
+            vec![
+                Column {
+                    name: "Todo".into(),
+                    order: 0,
+                },
+                Column {
+                    name: "In Progress".into(),
+                    order: 1,
+                },
+                Column {
+                    name: "Done".into(),
+                    order: 2,
+                },
+            ]
+        );
         assert!(c.card_order.is_empty());
-        assert_eq!(c.done_column, None);
+        assert_eq!(c.done_column.as_deref(), Some("Done"));
     }
 
     // ───────── Round-trip ─────────
@@ -257,7 +290,10 @@ mod tests {
             "futureFlag": "ignored"
         }"#;
         let parsed: Config = serde_json::from_str(json_in).unwrap();
-        assert_eq!(parsed, Config::default());
+        assert_eq!(parsed.version, 1);
+        assert!(parsed.columns.is_empty());
+        assert!(parsed.card_order.is_empty());
+        assert_eq!(parsed.done_column, None);
     }
 
     // ───────── 必須フィールド欠落 → Default フォールバック ─────────
@@ -265,7 +301,10 @@ mod tests {
     #[test]
     fn parses_empty_object_as_default() {
         let parsed: Config = serde_json::from_str("{}").unwrap();
-        assert_eq!(parsed, Config::default());
+        assert_eq!(parsed.version, 1);
+        assert!(parsed.columns.is_empty());
+        assert!(parsed.card_order.is_empty());
+        assert_eq!(parsed.done_column, None);
     }
 
     #[test]
