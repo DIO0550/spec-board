@@ -183,18 +183,16 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         };
     }
 
-    let mut sorted: Vec<(PathBuf, Option<String>)> = inputs.to_vec();
-    sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let mut order: Vec<usize> = (0..inputs.len()).collect();
+    order.sort_by(|&a, &b| inputs[a].0.cmp(&inputs[b].0));
 
-    let mut seen: HashSet<String> = HashSet::with_capacity(sorted.len());
-    let mut names: Vec<String> = Vec::with_capacity(sorted.len());
-    for (_, status) in &sorted {
-        let name = match status {
-            Some(s) => s.clone(),
-            None => DEFAULT_COLUMN_NAMES[0].to_string(),
-        };
-        if seen.insert(name.clone()) {
-            names.push(name);
+    let fallback: &str = DEFAULT_COLUMN_NAMES[0];
+    let mut seen: HashSet<&str> = HashSet::with_capacity(inputs.len());
+    let mut names: Vec<String> = Vec::with_capacity(inputs.len());
+    for &i in &order {
+        let name: &str = inputs[i].1.as_deref().unwrap_or(fallback);
+        if seen.insert(name) {
+            names.push(name.to_string());
         }
     }
 
