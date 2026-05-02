@@ -234,7 +234,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("locked");
         std::fs::create_dir(&root).unwrap();
-        let mut perms = std::fs::metadata(&root).unwrap().permissions();
+        // umask / TempDir 実装差を吸収するため、復元用に元の Permissions を捕捉してから
+        // chmod 000 する（hardcoded 0o755 だと TempDir が作成した 0o700 等とずれて
+        // クリーンアップが flaky になる）。
+        let original = std::fs::metadata(&root).unwrap().permissions();
+        let mut perms = original.clone();
         perms.set_mode(0o000);
         std::fs::set_permissions(&root, perms).unwrap();
 
@@ -242,9 +246,7 @@ mod tests {
         // probe のクリーンアップは最後にまとめる
         let result = ensure_spec_board_dir(&root);
 
-        let mut restore = std::fs::metadata(&root).unwrap().permissions();
-        restore.set_mode(0o755);
-        std::fs::set_permissions(&root, restore).unwrap();
+        std::fs::set_permissions(&root, original).unwrap();
         let _ = std::fs::remove_dir_all(root.join("__probe"));
 
         match (actually_writable, result) {
