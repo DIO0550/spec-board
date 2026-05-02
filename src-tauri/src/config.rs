@@ -8,17 +8,33 @@
 //! - `done_column` ↔ `doneColumn`
 //!
 //! # Default
-//! [`Config::default`] は `version = 1`、空コレクション、`done_column = None` を返す。
-//! 「完了」カラム名のフォールバック解決（最後のカラムを使う等）は呼び出し層の責務。
+//! [`Config::default`] は `version = 1`、`columns = [Todo, In Progress, Done]`
+//! （`order` は 0/1/2）、`card_order = {}`、`done_column = Some("Done")` を返す。
+//! 設定仕様書の「設定の初期化」「エラーハンドリング」節のベースラインとして使用される。
+//! `done_column` 未設定の既存 config を読み込んだ場合の「最後のカラム採用」フォールバックは、
+//! 本モジュールが提供する [`Config::resolved_done_column`] を呼び出し層が利用する設計
+//! （保存値には書き戻さない）。
+//!
+//! # ファイル I/O の境界
+//! 低レベル I/O（`.spec-board/` の作成、`config.json` の raw 読み込み）は
+//! サブクレート `spec-board-fs::config_io` に集約する。本モジュールは
+//! その raw 文字列を `serde_json::from_str::<Config>` でパースし、不在時の
+//! `Default` フォールバックと `done_column` の解決ヘルパを提供する薄い層に留める。
 //!
 //! # スコープ外（別 Issue で実装）
-//! - ファイル I/O（読み書き）
-//! - バリデーション（columns 重複・doneColumn 整合性）
-//! - 初期化フロー / マイグレーション
+//! - `config.json` の書き出し（atomic write / `.bak` 退避 / 並行書き込み制御）
+//! - バリデーション（columns 重複・doneColumn 整合性 / 名前空間整合）
+//! - version マイグレーション
+//! - md スキャン結果からのカラム自動生成
+//! - GUIDE.md 自動生成
 //! - Tauri コマンド層
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use spec_board_fs::config_io::{self, ConfigIoError};
+use thiserror::Error;
 
 /// `cardOrder` の型エイリアス。キー = カラム名、値 = タスクファイルパスの並び順配列。
 ///
@@ -83,6 +99,82 @@ impl Default for Config {
             columns,
             card_order: BTreeMap::new(),
             done_column,
+        }
+    }
+}
+
+impl Config {
+    /// `done_column` の解決結果を返す。
+    ///
+    /// - `done_column` が `Some(_)` ならその参照をそのまま返す
+    ///   （`columns` に存在しない値であっても解決層では検証しない）
+    /// - `done_column` が `None` の場合は `columns` のうち `order` 最大の
+    ///   カラム名を返す（= 表示上の末尾）
+    /// - `done_column` が `None` かつ `columns` が空なら `None` を返す
+    ///
+    /// 設定仕様書の「`doneColumn` 未設定時は末尾カラムを採用」ルールに対応する純粋関数。
+    /// `columns[].order` が表示順の真値であり、JSON 配列順とは独立しているため、
+    /// `Vec::last()` ではなく `Iterator::max_by_key(|c| c.order)` で
+    /// 「表示上の末尾」を計算する。同一 `order` の場合は `Iterator::max_by_key`
+    /// の安定性により最後に現れた要素が選ばれる（同一 `order` は仕様非推奨）。
+    pub fn resolved_done_column(&self) -> Option<&str> {
+        if let Some(name) = self.done_column.as_deref() {
+            return Some(name);
+        }
+        self.columns
+            .iter()
+            .max_by_key(|c| c.order)
+            .map(|c| c.name.as_str())
+    }
+}
+
+/// [`load_or_default`] で発生し得るエラー。
+///
+/// [`ConfigIoError`] は `#[from]` で透過的に伝播し、JSON パース失敗は
+/// 本層で [`LoadConfigError::Parse`] に包んで返す
+/// （境界規約: パースは本体クレートの責務）。
+#[derive(Debug, Error)]
+pub enum LoadConfigError {
+    #[error(transparent)]
+    Io(#[from] ConfigIoError),
+
+    #[error("failed to parse config.json at `{path}`: {source}", path = path.display())]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+/// `<project_root>/.spec-board/config.json` を読み込み、[`Config`] を返す。
+///
+/// 1. `.spec-board/` ディレクトリを冪等に作成する
+/// 2. `config.json` の存在を確認し、不在なら [`Config::default`] を返す
+/// 3. 存在する場合は `serde_json::from_str::<Config>` でパースする
+///
+/// # Default を返す条件
+///
+/// 関数名の `_or_default` は **「`config.json` が存在しないとき」のみ** Default を
+/// 返すことを意味する。読み込み I/O の失敗 / JSON パースの失敗は `Err` として
+/// 返却され、呼び出し層（Tauri コマンド層など）が必要に応じて
+/// [`Config::default`] へのフォールバック判断 + 通知を行う想定
+/// （仕様書「読み込み失敗 → デフォルト + トースト」は呼び出し層の責務として切り出す）。
+///
+/// # Errors
+///
+/// - `.spec-board/` の作成 / アクセスに失敗 → [`LoadConfigError::Io`]
+/// - `config.json` の読み取りに失敗 → [`LoadConfigError::Io`]
+/// - `config.json` のパースに失敗 → [`LoadConfigError::Parse`]
+pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
+    config_io::ensure_spec_board_dir(project_root)?;
+    let raw = config_io::read_config_json(project_root)?;
+    match raw {
+        None => Ok(Config::default()),
+        Some(content) => {
+            serde_json::from_str::<Config>(&content).map_err(|source| LoadConfigError::Parse {
+                path: config_io::config_path(project_root),
+                source,
+            })
         }
     }
 }
@@ -320,5 +412,160 @@ mod tests {
             err.to_string().contains("cardOrder"),
             "expected error to mention `cardOrder`: {err}"
         );
+    }
+
+    // ───────── Config::resolved_done_column ─────────
+
+    #[test]
+    fn resolved_done_column_parametrized() {
+        fn col(name: &str, order: u32) -> Column {
+            Column {
+                name: name.into(),
+                order,
+            }
+        }
+
+        struct Case {
+            label: &'static str,
+            done_column: Option<&'static str>,
+            columns: Vec<Column>,
+            expected: Option<&'static str>,
+        }
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "Some(Done) returns Some(Done)",
+                done_column: Some("Done"),
+                columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+                expected: Some("Done"),
+            },
+            Case {
+                label: "None + 空 columns → None",
+                done_column: None,
+                columns: vec![],
+                expected: None,
+            },
+            Case {
+                label: "None + 単一 columns → そのカラム名",
+                done_column: None,
+                columns: vec![col("Todo", 0)],
+                expected: Some("Todo"),
+            },
+            Case {
+                label: "None + 3 カラム → order 最大の Done",
+                done_column: None,
+                columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+                expected: Some("Done"),
+            },
+            Case {
+                label: "Some(Custom) は columns に無くても素通し",
+                done_column: Some("Custom"),
+                columns: vec![col("Todo", 0), col("Done", 1)],
+                expected: Some("Custom"),
+            },
+            Case {
+                label: "配列順が order 昇順でなくても order 最大が返る",
+                done_column: None,
+                columns: vec![col("Done", 2), col("Todo", 0), col("In Progress", 1)],
+                expected: Some("Done"),
+            },
+            Case {
+                label: "同一 order の場合は最後に現れた要素",
+                done_column: None,
+                columns: vec![col("A", 1), col("B", 1)],
+                expected: Some("B"),
+            },
+        ];
+
+        for case in cases {
+            let cfg = Config {
+                version: 1,
+                columns: case.columns,
+                card_order: BTreeMap::new(),
+                done_column: case.done_column.map(|s| s.to_string()),
+            };
+            assert_eq!(
+                cfg.resolved_done_column(),
+                case.expected,
+                "case: {}",
+                case.label
+            );
+        }
+    }
+
+    // ───────── load_or_default ─────────
+
+    use tempfile::TempDir;
+
+    #[test]
+    fn load_or_default_creates_dir_and_returns_default_when_nothing_exists() {
+        let tmp = TempDir::new().unwrap();
+        let cfg = load_or_default(tmp.path()).unwrap();
+        assert_eq!(cfg, Config::default());
+        assert!(tmp.path().join(".spec-board").is_dir());
+    }
+
+    #[test]
+    fn load_or_default_returns_default_when_only_dir_exists() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir(tmp.path().join(".spec-board")).unwrap();
+
+        let cfg = load_or_default(tmp.path()).unwrap();
+        assert_eq!(cfg, Config::default());
+    }
+
+    #[test]
+    fn load_or_default_parses_existing_config_json() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let content = r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Done", "order": 1 }
+            ],
+            "cardOrder": {
+                "Todo": ["tasks/a.md"],
+                "Done": []
+            },
+            "doneColumn": null
+        }"#;
+        std::fs::write(dir.join("config.json"), content).unwrap();
+
+        let cfg = load_or_default(tmp.path()).unwrap();
+        assert_eq!(cfg.version, 1);
+        assert_eq!(cfg.columns.len(), 2);
+        assert_eq!(cfg.done_column, None);
+        // done_column が無くても resolved_done_column は末尾カラムを返す
+        assert_eq!(cfg.resolved_done_column(), Some("Done"));
+    }
+
+    #[test]
+    fn load_or_default_returns_parse_err_for_invalid_json() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), "{not valid json").unwrap();
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::Parse { path, .. } => {
+                assert_eq!(path, dir.join("config.json"));
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_or_default_returns_io_err_when_project_root_missing() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("does-not-exist");
+
+        let err = load_or_default(&missing).unwrap_err();
+        match err {
+            LoadConfigError::Io(_) => {}
+            other => panic!("expected Io error, got {other:?}"),
+        }
     }
 }

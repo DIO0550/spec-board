@@ -31,3 +31,6 @@ serde_yaml_ng = "0.10"
 thiserror = "2"
 spec-board-fs = { path = "crates/fs" }
 
+[dev-dependencies]
+tempfile = "3"
+
