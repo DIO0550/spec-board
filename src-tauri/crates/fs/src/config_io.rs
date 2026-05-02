@@ -49,6 +49,15 @@ fn io_err(path: &Path, source: std::io::Error) -> ConfigIoError {
     }
 }
 
+/// `<project_root>/.spec-board/config.json` の絶対パス相当を返す（純粋計算、I/O なし）。
+///
+/// 呼び出し側がエラー文脈用にパス文字列を再構築する際の「真の正典」として使うことで、
+/// `.spec-board` / `config.json` の名前定数を本モジュールに一本化する。
+/// `project_root` が相対パスなら戻り値も相対パスになる（`canonicalize` は行わない）。
+pub fn config_path(project_root: &Path) -> PathBuf {
+    project_root.join(SPEC_BOARD_DIR).join(CONFIG_FILE_NAME)
+}
+
 /// `<project_root>/.spec-board/` を冪等に作成し、その `PathBuf` を返す。
 ///
 /// 既に存在する場合は何もせず成功扱い（`std::fs::create_dir_all` のセマンティクス）。
@@ -127,7 +136,7 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
     let spec_board_dir = project_root.join(SPEC_BOARD_DIR);
     validate_dir(&spec_board_dir)?;
 
-    let config_path = spec_board_dir.join(CONFIG_FILE_NAME);
+    let config_path = config_path(project_root);
     // dir entry の存在は `symlink_metadata` で先に確認する。`metadata` は
     // symlink を辿るため、dangling symlink (リンク先が消えた状態) を
     // `NotFound` として `Ok(None)` 扱いしてしまうが、これは「設定ファイル

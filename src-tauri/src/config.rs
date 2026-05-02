@@ -171,9 +171,8 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     match raw {
         None => Ok(Config::default()),
         Some(content) => {
-            let config_path = project_root.join(".spec-board").join("config.json");
             serde_json::from_str::<Config>(&content).map_err(|source| LoadConfigError::Parse {
-                path: config_path,
+                path: config_io::config_path(project_root),
                 source,
             })
         }
