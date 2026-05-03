@@ -199,61 +199,166 @@ test("invoke 失敗時に error toast 表示、EmptyState のまま", async () =
   expect(container?.textContent).toContain("見つかりません: /p");
 });
 
-test("Board 表示中に createTask が成功すると tasks に反映される", async () => {
+// === DOM 経由の CRUD 結線テスト ===
+//
+// これらは App コンポーネントの handler が useProject method を正しく
+// 呼び出し、その結果が UI に反映されるかを実 DOM イベント経由で検証する。
+
+const clickColumnAddButton = (columnName: string): void => {
+  const btn = container?.querySelector(
+    `button[aria-label="${columnName}に追加"]`,
+  ) as HTMLButtonElement | null;
+  btn?.click();
+};
+
+const setInputValue = (input: HTMLInputElement, value: string): void => {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+const querySelectorRequired = <T extends Element>(selector: string): T => {
+  const el = container?.querySelector(selector) as T | null;
+  expect(el).not.toBeNull();
+  return el as T;
+};
+
+const submitTaskCreateForm = (title: string): void => {
+  const titleInput = querySelectorRequired<HTMLInputElement>(
+    '[data-testid="task-form-title"]',
+  );
+  setInputValue(titleInput, title);
+  const submitBtn = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="task-form-submit"]',
+  );
+  submitBtn.click();
+};
+
+test("Board の '+追加' → Modal 送信 → createTask invoke が呼ばれ tasks に反映 + 成功 toast", async () => {
   mountApp();
   await openSuccessfully();
+
   const created: Task = {
     id: "new",
-    title: "新規",
+    title: "新規タスク",
     status: "Todo",
     labels: [],
     links: [],
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/new.md",
+    filePath: "tasks/新規タスク.md",
   };
   createTaskMock.mockResolvedValueOnce(Result.ok(created));
 
-  // Open the create modal by clicking the "+ 追加" button on Todo column
-  const buttons = Array.from(container?.querySelectorAll("button") ?? []);
-  const addBtn = buttons.find(
-    (b) => b.textContent?.includes("追加") && !b.textContent.includes("カラム"),
+  await act(async () => {
+    clickColumnAddButton("Todo");
+  });
+  expect(container?.querySelector('[data-testid="task-form"]')).not.toBeNull();
+
+  await act(async () => {
+    submitTaskCreateForm("新規タスク");
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(createTaskMock).toHaveBeenCalledTimes(1);
+  expect(createTaskMock).toHaveBeenCalledWith(
+    expect.objectContaining({ title: "新規タスク", status: "Todo" }),
   );
-  expect(addBtn).toBeDefined();
-  // Direct invocation via App handler is complex via DOM here. We verify
-  // result by simulating the path through useProject directly: this test
-  // primarily ensures wiring; the modal flow is covered by Modal tests.
-  // Skip the modal click and instead verify Board rendering after open.
-  expect(container?.textContent).toContain("A タスク");
+  expect(container?.textContent).toContain("新規タスク");
+  expect(container?.textContent).toContain("タスクを作成しました");
 });
 
-test("updateTask で id → filePath 解決失敗時 (該当 task が tasks にない) は invoke 未呼び出し + success toast 出ない", async () => {
-  // Verify by directly calling the path through App: not easily reachable
-  // via DOM. We assert the negative behavior at hook layer in
-  // useProject.interaction tests. Here we just confirm the App boots.
-  mountApp();
-  await openSuccessfully();
-  expect(updateTaskMock).not.toHaveBeenCalled();
-});
-
-test("createTask 失敗時に handleCreateTask が reject し直す（モーダル維持の前提）", async () => {
-  // 直接 hook の result を経由せず、handler の挙動を確認する代替として、
-  // createTaskMock.failure 時に App の toast に成功メッセージが出ないことを確認。
+test("createTask 失敗時に TaskCreateModal が閉じない（onSubmit reject）", async () => {
   mountApp();
   await openSuccessfully();
   createTaskMock.mockResolvedValueOnce(
-    Result.err(new TauriError("IO_ERROR", "io")),
+    Result.err(new TauriError("IO_ERROR", "io error")),
   );
-  // モーダル経由の onSubmit reject の検証は Modal の単体テスト責務。ここでは
-  // 失敗時に「タスクを作成しました」success toast が出ない事のみ確認。
+
+  await act(async () => {
+    clickColumnAddButton("Todo");
+  });
+  expect(container?.querySelector('[data-testid="task-form"]')).not.toBeNull();
+
+  await act(async () => {
+    submitTaskCreateForm("失敗するタスク");
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(createTaskMock).toHaveBeenCalledTimes(1);
+  // モーダルが閉じていない (form がまだ DOM に残る)
+  expect(container?.querySelector('[data-testid="task-form"]')).not.toBeNull();
   expect(container?.textContent).not.toContain("タスクを作成しました");
 });
 
-test("Board 表示中に deleteTask 成功で tasks から消える（hook 経由検証）", async () => {
+const pressEnter = (input: HTMLInputElement): void => {
+  input.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+};
+
+const openAddColumnEditor = async (): Promise<void> => {
+  const trigger = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="add-column-button"]',
+  );
+  await act(async () => {
+    trigger.click();
+  });
+};
+
+test("AddColumnButton で新カラム追加 → updateColumns invoke が呼ばれ Board に反映 + 成功 toast", async () => {
   mountApp();
   await openSuccessfully();
-  // 削除フローは DetailPanel 経由のため DOM テストは複雑になるので、
-  // App が Board を表示し続ける前提のみここで確認する。
-  expect(container?.textContent).toContain("A タスク");
+  updateColumnsMock.mockResolvedValueOnce(Result.ok(undefined));
+
+  await openAddColumnEditor();
+  const columnInput = querySelectorRequired<HTMLInputElement>(
+    '[data-testid="add-column-input"]',
+  );
+  setInputValue(columnInput, "Backlog");
+  await act(async () => {
+    pressEnter(columnInput);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+  expect(updateColumnsMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      columns: expect.arrayContaining([
+        expect.objectContaining({ name: "Backlog" }),
+      ]),
+    }),
+  );
+  expect(container?.textContent).toContain("Backlog");
+  expect(container?.textContent).toContain("カラムを追加しました");
+});
+
+test("AddColumnButton で重複名を入力 → updateColumns invoke は呼ばれず重複エラーを表示", async () => {
+  mountApp();
+  await openSuccessfully();
+
+  await openAddColumnEditor();
+  const columnInput = querySelectorRequired<HTMLInputElement>(
+    '[data-testid="add-column-input"]',
+  );
+  setInputValue(columnInput, "Todo"); // 既存カラム名
+  await act(async () => {
+    pressEnter(columnInput);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(updateColumnsMock).not.toHaveBeenCalled();
+  expect(container?.textContent).toContain("同じ名前のカラムが既に存在します");
 });
