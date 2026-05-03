@@ -400,10 +400,12 @@ pub enum LoadConfigError {
 ///
 /// # 書き出し戦略: sterilized tempfile + atomic rename
 ///
-/// 1. **tmp パス名の unique 化**: `<dst>.tmp.{pid}.{nanos}` 形式で呼び出しごとに
-///    異なる名前を採用する。これにより、同じ project_root に対する並行 `load_or_default`
-///    呼び出しが同一の tmp ファイルを奪い合って干渉する race を回避できる
-///    （ベストエフォート — lockfile 自体は本Issue 範囲外）。
+/// 1. **tmp パス名の unique 化**: `<dst>.tmp.{pid}.{nanos}.{counter}` 形式で
+///    呼び出しごとに異なる名前を採用する。`counter` は process-local AtomicU64 で
+///    fetch_add するため同一プロセス内 / 粗い時計分解能下でも一意性が保証され、
+///    同じ project_root に対する並行 `load_or_default` 呼び出しが同一の tmp ファイルを
+///    奪い合って干渉する race を回避できる（ベストエフォート — lockfile 自体は
+///    本Issue 範囲外）。
 /// 2. **tmp パスの sterilization**: 上記 tmp パスを一旦 `unlink` してから
 ///    `OpenOptions::create_new(true)`（`O_CREAT|O_EXCL` 相当）で開く。
 ///    これにより:
