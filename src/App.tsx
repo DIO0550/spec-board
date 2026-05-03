@@ -77,10 +77,16 @@ export const App = () => {
   >(undefined);
 
   // プロジェクト切替時に UI 状態（選択中タスク・作成モーダル）をリセットする。
-  // loaded 状態の path 変化を検出し、初回 idle→loaded への遷移時もここで初期化する。
+  // loaded 状態の path が「実際に別 path に変わった」ときだけ trigger する。
+  // 中間状態 (loading / error / idle) は無視する。これにより
+  // loaded(A) → loading(B) → fail → loaded(A) 復元 のシーケンスで UI state が
+  // 不要にクリアされる問題を回避する (Copilot 指摘)。
   const loadedPath = state.kind === "loaded" ? state.path : null;
-  const lastLoadedPathRef = useRef<string | null>(loadedPath);
+  const lastLoadedPathRef = useRef<string | null>(null);
   useEffect(() => {
+    if (loadedPath === null) {
+      return;
+    }
     if (loadedPath !== lastLoadedPathRef.current) {
       lastLoadedPathRef.current = loadedPath;
       setSelectedTaskId(null);
