@@ -335,6 +335,7 @@ export const useProject = (
             type: "columns-replaced",
             columns: params.columns,
             renames: params.renames,
+            doneColumn: params.doneColumn,
           });
           return Result.ok({ applied: true });
         },

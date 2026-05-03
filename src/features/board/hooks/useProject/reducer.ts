@@ -6,6 +6,11 @@ import type { Task } from "@/types/task";
 export type ProjectData = {
   tasks: Task[];
   columns: Column[];
+  /**
+   * 完了として扱うカラム名。BE が open_project 時にまだ返さない場合は undefined。
+   * doneColumn を rename した場合は連動して新名に更新する必要がある。
+   */
+  doneColumn?: string;
 };
 
 /**
@@ -35,7 +40,16 @@ export type ProjectAction =
   | { type: "task-created"; task: Task }
   | { type: "task-updated"; originalFilePath: string; task: Task }
   | { type: "task-deleted"; filePath: string }
-  | { type: "columns-replaced"; columns: Column[]; renames?: ColumnRename[] }
+  | {
+      type: "columns-replaced";
+      columns: Column[];
+      renames?: ColumnRename[];
+      /**
+       * 新しい doneColumn。undefined のときは既存値を維持する
+       * (BE update_columns の "omit すると preserve" セマンティクスに整合)。
+       */
+      doneColumn?: string;
+    }
   | { type: "reset" };
 
 export const initialState: ProjectState = { kind: "idle" };
@@ -173,9 +187,24 @@ export const reducer = (
         state.data.tasks,
         action.renames ?? [],
       );
+      // doneColumn 既定: action 指定があれば採用、無ければ既存値を維持。
+      // 既存値が rename 対象に含まれていれば自動追従する (FE 側保護)。
+      const renameMap = new Map(
+        (action.renames ?? []).map(({ from, to }) => [from, to]),
+      );
+      const followedDone =
+        state.data.doneColumn !== undefined
+          ? (renameMap.get(state.data.doneColumn) ?? state.data.doneColumn)
+          : undefined;
+      const nextDoneColumn = action.doneColumn ?? followedDone;
       return {
         ...state,
-        data: { ...state.data, tasks: renamed, columns: action.columns },
+        data: {
+          ...state.data,
+          tasks: renamed,
+          columns: action.columns,
+          doneColumn: nextDoneColumn,
+        },
       };
     }
     case "reset":

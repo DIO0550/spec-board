@@ -173,11 +173,15 @@ export const App = () => {
         if (current.columns.some((c) => c.name === newName)) {
           return null;
         }
+        // doneColumn が rename 対象なら新名に更新する。
+        // 該当しない場合は undefined のままで BE/reducer 側が既存値を保持する。
+        const doneColumn = current.doneColumn === oldName ? newName : undefined;
         return {
           columns: current.columns.map((c) =>
             c.name === oldName ? { ...c, name: newName } : c,
           ),
           renames: [{ from: oldName, to: newName }],
+          doneColumn,
         };
       });
       if (!result.ok) {
@@ -232,12 +236,22 @@ export const App = () => {
         ) {
           return null;
         }
+        // doneColumn が削除対象の場合、destColumn (タスク移動先) を新 doneColumn に
+        // する。タスク 0 件削除 + destColumn 未指定の場合は残カラムの先頭にフォールバック。
+        const remainingColumns = current.columns.filter(
+          (c) => c.name !== columnName,
+        );
+        let doneColumn: string | undefined;
+        if (current.doneColumn === columnName) {
+          doneColumn = destColumn ?? remainingColumns[0]?.name;
+        }
         return {
-          columns: current.columns.filter((c) => c.name !== columnName),
+          columns: remainingColumns,
           renames:
             destColumn !== undefined
               ? [{ from: columnName, to: destColumn }]
               : undefined,
+          doneColumn,
         };
       });
       if (!result.ok) {

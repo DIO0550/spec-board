@@ -260,6 +260,50 @@ test("columns-replaced (renames あり) → columns 置き換え + tasks status 
   expect(data.tasks[0].status).toBe("Backlog");
 });
 
+test("columns-replaced: doneColumn が rename 対象なら自動追従する", () => {
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [], columns: cols("Todo", "Done"), doneColumn: "Done" },
+  };
+  const next = reducer(loaded, {
+    type: "columns-replaced",
+    columns: cols("Todo", "完了"),
+    renames: [{ from: "Done", to: "完了" }],
+  });
+  const data = (next as { data: ProjectData }).data;
+  expect(data.doneColumn).toBe("完了");
+});
+
+test("columns-replaced: action.doneColumn 指定時はそれが採用される (rename 自動追従より優先)", () => {
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [], columns: cols("Todo", "Done"), doneColumn: "Done" },
+  };
+  const next = reducer(loaded, {
+    type: "columns-replaced",
+    columns: cols("Todo"),
+    doneColumn: "Todo",
+  });
+  const data = (next as { data: ProjectData }).data;
+  expect(data.doneColumn).toBe("Todo");
+});
+
+test("columns-replaced: doneColumn / renames 未指定時は既存値を維持", () => {
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [], columns: cols("Todo", "Done"), doneColumn: "Done" },
+  };
+  const next = reducer(loaded, {
+    type: "columns-replaced",
+    columns: cols("Todo", "Done", "Backlog"),
+  });
+  const data = (next as { data: ProjectData }).data;
+  expect(data.doneColumn).toBe("Done");
+});
+
 test("reset → idle", () => {
   const next = reducer(loadedAState, { type: "reset" });
   expect(next).toEqual({ kind: "idle" });
