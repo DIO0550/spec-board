@@ -69,7 +69,8 @@ export type UpdateColumnsInput = UpdateColumnsParams | UpdateColumnsUpdater;
 export type UseProjectOptions = {
   /**
    * openProject 系の失敗時にのみ呼ばれる通知コールバック。
-   * - dialog plugin 例外 / openProject invoke 失敗（previousLoaded なしの error 遷移時）
+   * - dialog plugin 例外
+   * - openProject invoke 失敗 (error 遷移時 / previousLoaded への restore 時 双方で発火)
    * - dialog cancel / 後勝ち破棄 / unmount 時には呼ばれない
    * - CRUD method 失敗は戻り値 Result.err で受け取る（onError では発火しない）
    */
