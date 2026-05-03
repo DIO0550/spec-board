@@ -400,10 +400,14 @@ pub enum LoadConfigError {
 ///
 /// # 書き出し戦略: sterilized tempfile + atomic rename
 ///
-/// 1. **tmp パスの sterilization**: `<dst>.tmp` を一旦 `unlink` してから
+/// 1. **tmp パス名の unique 化**: `<dst>.tmp.{pid}.{nanos}` 形式で呼び出しごとに
+///    異なる名前を採用する。これにより、同じ project_root に対する並行 `load_or_default`
+///    呼び出しが同一の tmp ファイルを奪い合って干渉する race を回避できる
+///    （ベストエフォート — lockfile 自体は本Issue 範囲外）。
+/// 2. **tmp パスの sterilization**: 上記 tmp パスを一旦 `unlink` してから
 ///    `OpenOptions::create_new(true)`（`O_CREAT|O_EXCL` 相当）で開く。
 ///    これにより:
-///    - 攻撃者が事前に `<dst>.tmp` を symlink / hard link として作成していても、
+///    - 攻撃者が事前に tmp パスを symlink / hard link として作成していても、
 ///      `unlink` でディレクトリエントリだけを削除し（symlink 自体やリンク数のみを
 ///      減らし、リンク先 / inode は破壊しない）、続く `create_new` で完全に新しい
 ///      inode を作る。`std::fs::write` を直接使うと事前に作られた symlink を辿って
@@ -462,7 +466,18 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
         }
     }
 
-    let tmp = spec_board_dir.join("config.json.bak.tmp");
+    // tmp ファイル名を呼び出しごとに unique にして並行 load 時の race を回避する。
+    // PID + nanos suffix だけでは弱いが、本Issue では lockfile / project-root 内
+    // 制限を範囲外としているため、ベストエフォートで干渉確率を下げる。
+    let suffix_nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = spec_board_dir.join(format!(
+        "config.json.bak.tmp.{pid}.{nanos}",
+        pid = std::process::id(),
+        nanos = suffix_nanos,
+    ));
 
     // ディレクトリエントリレベルで stale / 攻撃者が事前作成した tmp を除去する。
     // symlink / hard link の場合もディレクトリエントリだけを削除し、リンク先や
