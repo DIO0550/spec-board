@@ -2012,9 +2012,11 @@ mod tests {
         let attacker_link = attacker_root.path().join(".spec-board");
         std::os::unix::fs::symlink(&real_dir, &attacker_link).unwrap();
 
-        // load 自体はバックアップ作成段階で BackupFailed になるが、cleanup は前段で
-        // skip されるべきなので external 側のファイルは残ること。
-        let _err = load_or_default(attacker_root.path());
+        // この attacker_root には config.json を置いていないため、`load_or_default` は
+        // backup 経路に入らずに `Config::default()` を返す。本テストの目的は cleanup が
+        // symlinked `.spec-board/` を skip して外部ターゲット内のファイルを巻き込み
+        // 削除しないことだけを検証すること。
+        let _ = load_or_default(attacker_root.path()).expect("default fallback should succeed");
 
         assert!(
             stale_external.exists(),
