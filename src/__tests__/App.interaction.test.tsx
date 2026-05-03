@@ -575,3 +575,38 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   // Board は B の task を表示している
   expect(container?.textContent).toContain("B プロジェクトの A");
 });
+
+test("Board 維持: 再 open の loading 中も previousLoaded で Board を表示し続ける", async () => {
+  mountApp();
+  await openSuccessfully();
+  expect(container?.textContent).toContain("A タスク");
+
+  // 再 open の dialog/invoke を pending にして loading 中を観察
+  let resolveOpen!: (
+    r: { ok: true; value: typeof payload } | { ok: false; error: TauriError },
+  ) => void;
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p2"));
+  openProjectMock.mockReturnValueOnce(
+    new Promise((r) => {
+      resolveOpen = r;
+    }),
+  );
+
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  // この時点で state は loading + previousLoaded (A) のはず
+  // 「読み込み中…」spinner ではなく Board が継続表示されている
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(container?.textContent).not.toContain("読み込み中…");
+  expect(container?.textContent).toContain("A タスク");
+
+  // 失敗で復元 → Board そのまま (A タスクが表示され続ける)
+  await act(async () => {
+    resolveOpen({ ok: false, error: new TauriError("UNKNOWN", "fail") });
+    await Promise.resolve();
+  });
+  expect(container?.textContent).toContain("A タスク");
+});

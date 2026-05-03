@@ -23,32 +23,58 @@ import type { Task } from "./types/task";
 const projectErrorMessage = (err: ProjectError): string =>
   err.kind === "tauri" ? err.error.message : err.message;
 
+/** State の表示用 ProjectData を返すための内部型。 */
+type DisplayableData = {
+  readonly tasks: Task[];
+  readonly columns: Column[];
+  readonly doneColumn?: string;
+};
+
 /**
- * loaded 時のみ tasks を返す。それ以外は空配列。
+ * 表示可能な ProjectData を返す。
+ * - loaded: state.data
+ * - loading + previousLoaded: previousLoaded.data ("Board 維持" 要件)
+ * - それ以外: null
+ *
+ * @param state useProject の現在 state
+ * @returns 表示用 data または null
+ */
+const displayableDataOf = (state: ProjectState): DisplayableData | null => {
+  if (state.kind === "loaded") {
+    return state.data;
+  }
+  if (state.kind === "loading" && state.previousLoaded) {
+    return state.previousLoaded.data;
+  }
+  return null;
+};
+
+/**
+ * 表示用 tasks を返す。loading + previousLoaded の場合も維持される。
  *
  * @param state useProject の現在 state
  * @returns 派生タスク配列
  */
 const tasksOf = (state: ProjectState): Task[] =>
-  state.kind === "loaded" ? state.data.tasks : [];
+  displayableDataOf(state)?.tasks ?? [];
 
 /**
- * loaded 時のみ columns を返す。それ以外は空配列。
+ * 表示用 columns を返す。loading + previousLoaded の場合も維持される。
  *
  * @param state useProject の現在 state
  * @returns 派生カラム配列
  */
 const columnsOf = (state: ProjectState): Column[] =>
-  state.kind === "loaded" ? state.data.columns : [];
+  displayableDataOf(state)?.columns ?? [];
 
 /**
- * loaded 時のみ doneColumn を返す。それ以外は undefined。
+ * 表示用 doneColumn を返す。loading + previousLoaded の場合も維持される。
  *
  * @param state useProject の現在 state
  * @returns 派生 doneColumn
  */
 const doneColumnOf = (state: ProjectState): string | undefined =>
-  state.kind === "loaded" ? state.data.doneColumn : undefined;
+  displayableDataOf(state)?.doneColumn;
 
 /**
  * @returns アプリケーションのルートレイアウトシェル
@@ -386,14 +412,16 @@ export const App = () => {
    * @returns Loading / EmptyState / Board のいずれか
    */
   const renderMain = (): React.ReactNode => {
-    if (state.kind === "loading") {
+    // loading + previousLoaded がある場合 ("Board 維持" 要件) は spinner 出さず
+    // 直前の Board を表示し続ける。失敗時の reopen で Board が一瞬消えない。
+    if (state.kind === "loading" && !state.previousLoaded) {
       return (
         <div className="flex flex-1 items-center justify-center">
           <p className="text-gray-500">読み込み中…</p>
         </div>
       );
     }
-    if (state.kind !== "loaded") {
+    if (state.kind !== "loaded" && state.kind !== "loading") {
       return <EmptyState type="no-project" onOpenProject={openProject} />;
     }
     // tasks 0 件でも Board は描画する (column UI / +追加 ボタンを残すため、
