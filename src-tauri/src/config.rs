@@ -468,10 +468,7 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(source) => {
-            return Err(LoadConfigError::BackupFailed {
-                path: tmp,
-                source,
-            });
+            return Err(LoadConfigError::BackupFailed { path: tmp, source });
         }
     }
 
