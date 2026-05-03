@@ -566,6 +566,19 @@ fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), Loa
             source,
         });
     }
+    // ENOSPC / EIO 等は flush / close で初めて表面化することがある。`sync_all` で
+    // データ + メタデータの永続化を強制し、その失敗を明示的にエラーとして扱う
+    // （`drop(tmp_file)` は close エラーを無視するため、ここで観測しないと
+    // 「rename 後の `.bak` が truncate / 破損していたのに Ok(()) が返る」事象を
+    // 引き起こしうる）。失敗時は `write_all` 失敗時と同様に best-effort で tmp を削除。
+    if let Err(source) = tmp_file.sync_all() {
+        drop(tmp_file);
+        let _ = std::fs::remove_file(tmp);
+        return Err(LoadConfigError::BackupFailed {
+            path: tmp.to_path_buf(),
+            source,
+        });
+    }
     drop(tmp_file);
 
     std::fs::rename(tmp, dst).map_err(|source| {
