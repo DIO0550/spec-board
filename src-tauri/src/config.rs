@@ -395,12 +395,40 @@ pub enum LoadConfigError {
 /// 外部エディタが `config.json` を書き換えても、`.bak` の内容は parse に使った
 /// `content` と一致することが保証される（TOCTOU 回避）。
 ///
-/// 既存 `.bak` が **symlink** の場合は書き出しを拒否し [`LoadConfigError::BackupFailed`]
-/// を返す。`std::fs::write` は宛先が symlink ならそのリンク先（プロジェクト外を含む）に
-/// 書き込んでしまうため、悪意ある / 意図しない symlink を介した外部ファイル上書きを防ぐ。
+/// # symlink 防御の範囲
+///
+/// 書き出し前に **`<project_root>/.spec-board/` ディレクトリ** および **`config.json.bak`
+/// の leaf** の双方が symlink でないことを `symlink_metadata` で確認し、いずれかが
+/// symlink の場合は [`LoadConfigError::BackupFailed`] を返して書き出しを拒否する。
+/// これは `std::fs::write` が宛先 / 親ディレクトリの symlink をたどって
+/// プロジェクト外のファイルを上書きしてしまう経路を塞ぐためのベストエフォート防御。
+///
+/// 以下は **本関数の範囲外**であり、別Issue（atomic write / lockfile / project-root 内
+/// 制限）の責務とする:
+/// - `<project_root>` 自身およびそれより外側 ancestor の symlink
+/// - 本関数のチェックと `std::fs::write` の間に発生する TOCTOU race（leaf や `.spec-board/`
+///   が swap された場合）
+///
 /// 通常ファイルへの上書きはこれまで通り silently overwrite される。
 fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConfigError> {
-    let dst = config_io::config_path(project_root).with_file_name("config.json.bak");
+    let spec_board_dir = config_io::config_path(project_root)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| project_root.join(".spec-board"));
+
+    if let Ok(meta) = std::fs::symlink_metadata(&spec_board_dir) {
+        if meta.file_type().is_symlink() {
+            return Err(LoadConfigError::BackupFailed {
+                path: spec_board_dir,
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    ".spec-board directory is a symlink",
+                ),
+            });
+        }
+    }
+
+    let dst = spec_board_dir.join("config.json.bak");
 
     if let Ok(meta) = std::fs::symlink_metadata(&dst) {
         if meta.file_type().is_symlink() {
@@ -1558,6 +1586,44 @@ mod tests {
             }
             other => panic!("expected BackupFailed, got {other:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_default_returns_backup_failed_when_spec_board_dir_is_symlink() {
+        let real_root = TempDir::new().unwrap();
+        let real_dir = real_root.path().join(".spec-board");
+        std::fs::create_dir(&real_dir).unwrap();
+        std::fs::write(
+            real_dir.join("config.json"),
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        )
+        .unwrap();
+
+        let attacker_root = TempDir::new().unwrap();
+        let attacker_spec_board = attacker_root.path().join(".spec-board");
+        std::os::unix::fs::symlink(&real_dir, &attacker_spec_board).unwrap();
+
+        let err = load_or_default(attacker_root.path()).unwrap_err();
+        match err {
+            LoadConfigError::BackupFailed {
+                path: failed_path,
+                source,
+            } => {
+                assert_eq!(failed_path, attacker_spec_board);
+                assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+            }
+            other => panic!("expected BackupFailed, got {other:?}"),
+        }
+
+        assert!(
+            !real_dir.join("config.json.bak").exists(),
+            ".bak must NOT be created in the symlink target directory"
+        );
     }
 
     #[cfg(unix)]
