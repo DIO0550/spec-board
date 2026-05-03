@@ -209,11 +209,10 @@ export const App = () => {
         };
       });
       if (!result.ok) {
-        showToast(
-          `カラム名の変更に失敗しました: ${projectErrorMessage(result.error)}`,
-          "error",
-        );
-        return;
+        const message = projectErrorMessage(result.error);
+        showToast(`カラム名の変更に失敗しました: ${message}`, "error");
+        // ColumnHeader が edit mode を維持できるよう reject し直す
+        throw new Error(message);
       }
       if (!result.value.applied) {
         return;

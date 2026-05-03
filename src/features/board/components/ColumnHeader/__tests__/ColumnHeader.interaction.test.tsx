@@ -187,6 +187,40 @@ test("Esc で編集がキャンセルされ元の名前に戻る", async () => {
   });
 });
 
+test("onRename が reject した場合、edit mode は維持される", async () => {
+  const onRename = vi.fn().mockRejectedValue(new Error("backend reject"));
+  render({
+    name: "Todo",
+    taskCount: 0,
+    onAddClick: vi.fn(),
+    onRename,
+    existingColumnNames: ["In Progress", "Done"],
+  });
+  act(() => {
+    (
+      container?.querySelector(
+        '[data-testid="column-name-button"]',
+      ) as HTMLButtonElement | null
+    )?.click();
+  });
+  const input = container?.querySelector(
+    '[data-testid="column-rename-input"]',
+  ) as HTMLInputElement;
+  setInputValue(input, "Backlog");
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // edit mode が維持されていることを確認 (input が DOM に残る)
+  expect(
+    container?.querySelector('[data-testid="column-rename-input"]'),
+  ).toBeTruthy();
+});
+
 test("onRename 未指定時は編集用ボタンが表示されない", async () => {
   render({ name: "Todo", taskCount: 0, onAddClick: vi.fn() });
   await vi.waitFor(() => {

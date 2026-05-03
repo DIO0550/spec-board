@@ -13,9 +13,10 @@ type ColumnHeaderProps = {
    * カラム名リネーム確定時のコールバック。
    * 未指定の場合は名前クリックでの編集モードを無効化する。
    * 呼び出されるのは trim 後に空でなく、現在名と異なり、重複もしない場合のみ。
+   * Promise を返した場合は await し、reject した場合は edit mode を維持する。
    * @param newName - 新しいカラム名（trim 済み）
    */
-  onRename?: (newName: string) => void;
+  onRename?: (newName: string) => void | Promise<void>;
   /** 他カラム名の一覧（重複チェック用。自身は含まない） */
   existingColumnNames?: string[];
   /**
@@ -69,7 +70,7 @@ export const ColumnHeader = ({
     setIsEditing(false);
   };
 
-  const confirm = (): boolean => {
+  const confirm = async (): Promise<boolean> => {
     const trimmed = inputValue.trim();
     if (trimmed.length === 0 || trimmed === name) {
       isCancelledRef.current = true;
@@ -80,7 +81,13 @@ export const ColumnHeader = ({
     if (existingColumnNames.includes(trimmed)) {
       return false;
     }
-    onRename?.(trimmed);
+    try {
+      await onRename?.(trimmed);
+    } catch {
+      // 失敗時は edit mode を維持し、ユーザの入力を保持する
+      // (caller 側で error toast 等の通知が出ている前提)
+      return false;
+    }
     isCancelledRef.current = true;
     setIsEditing(false);
     return true;
@@ -93,7 +100,7 @@ export const ColumnHeader = ({
       }
       e.preventDefault();
       e.stopPropagation();
-      confirm();
+      void confirm();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
