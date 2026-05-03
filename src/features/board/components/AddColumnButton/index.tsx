@@ -8,9 +8,10 @@ type AddColumnButtonProps = {
   /**
    * 新規カラム追加時のコールバック。
    * 入力値の trim 後に空文字や既存と同名の場合は呼び出されない。
+   * Promise を返した場合は await し、reject した場合は editor を開いたままにする。
    * @param columnName - 追加するカラム名（trim 済み）
    */
-  onAdd: (columnName: string) => void;
+  onAdd: (columnName: string) => void | Promise<void>;
 };
 
 /**
@@ -50,7 +51,7 @@ export const AddColumnButton = ({
     setIsEditing(false);
   };
 
-  const confirm = (): boolean => {
+  const confirm = async (): Promise<boolean> => {
     const trimmed = inputValue.trim();
     if (trimmed.length === 0) {
       isCancelledRef.current = true;
@@ -61,7 +62,13 @@ export const AddColumnButton = ({
     if (existingColumnNames.includes(trimmed)) {
       return false;
     }
-    onAdd(trimmed);
+    try {
+      await onAdd(trimmed);
+    } catch {
+      // 失敗時は editor を開いたままにし、ユーザの入力を保持する
+      // (caller 側で error toast 等の通知が出ている前提)
+      return false;
+    }
     isCancelledRef.current = true;
     setInputValue("");
     setIsEditing(false);
@@ -75,7 +82,7 @@ export const AddColumnButton = ({
       }
       e.preventDefault();
       e.stopPropagation();
-      confirm();
+      void confirm();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();

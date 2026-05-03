@@ -113,7 +113,7 @@ test("入力前後の空白は trim されて onAdd に渡される", () => {
   expect(onAdd).toHaveBeenCalledWith("Review");
 });
 
-test("確定後はボタン表示に戻る", () => {
+test("確定後はボタン表示に戻る", async () => {
   const onAdd = vi.fn();
   render({ existingColumnNames: [], onAdd });
   act(() => {
@@ -134,8 +134,50 @@ test("確定後はボタン表示に戻る", () => {
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
   });
+  // confirm が async 化されたため、microtask flush 後にボタンが復活する
+  await act(async () => {
+    await Promise.resolve();
+  });
   const button = document.querySelector('[data-testid="add-column-button"]');
   expect(button).toBeTruthy();
+});
+
+test("onAdd が reject した場合、editor は開いたままで入力値も保持される", async () => {
+  const onAdd = vi.fn().mockRejectedValue(new Error("backend reject"));
+  render({ existingColumnNames: [], onAdd });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="add-column-button"]',
+      ) as HTMLButtonElement
+    ).click();
+  });
+  const input = document.querySelector(
+    '[data-testid="add-column-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    setInputValue(input, "Review");
+  });
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // editor (input) は維持される、トリガーボタンには戻らない
+  expect(
+    document.querySelector('[data-testid="add-column-input"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="add-column-button"]'),
+  ).toBeNull();
+  // 入力値も保持
+  const stillInput = document.querySelector(
+    '[data-testid="add-column-input"]',
+  ) as HTMLInputElement;
+  expect(stillInput.value).toBe("Review");
 });
 
 test("空文字で Enter しても onAdd は呼ばれない", () => {

@@ -168,11 +168,10 @@ export const App = () => {
         };
       });
       if (!result.ok) {
-        showToast(
-          `カラムの追加に失敗しました: ${projectErrorMessage(result.error)}`,
-          "error",
-        );
-        return;
+        const message = projectErrorMessage(result.error);
+        showToast(`カラムの追加に失敗しました: ${message}`, "error");
+        // AddColumnButton が editor を維持できるよう reject し直す
+        throw new Error(message);
       }
       if (!result.value.applied) {
         return;
