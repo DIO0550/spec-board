@@ -320,8 +320,9 @@ pub enum MigrationError {
 ///
 /// 入力 `value` は **`config.json` の最上位 JSON Object** を想定している。
 /// [`load_or_default`] からの呼び出しではこの前提が常に満たされる
-/// （非 Object なら [`VersionOnly`] 経由の `serde_json::from_str` が「missing field
-/// `version`」として `LoadConfigError::Parse` に倒し、本関数には到達しない）。
+/// （非 Object 入力は [`VersionOnly`] への `serde_json::from_str` が
+/// 「invalid type: \<actual\>, expected struct VersionOnly」相当の Error を返し、
+/// `LoadConfigError::Parse` に倒されるため本関数には到達しない）。
 ///
 /// # 挙動
 ///
