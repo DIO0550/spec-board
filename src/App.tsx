@@ -293,11 +293,10 @@ export const App = () => {
         };
       });
       if (!result.ok) {
-        showToast(
-          `カラムの削除に失敗しました: ${projectErrorMessage(result.error)}`,
-          "error",
-        );
-        return;
+        const message = projectErrorMessage(result.error);
+        showToast(`カラムの削除に失敗しました: ${message}`, "error");
+        // Column の ConfirmDialog が維持できるよう reject し直す
+        throw new Error(message);
       }
       if (!result.value.applied) {
         return;

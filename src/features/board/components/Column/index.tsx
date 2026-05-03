@@ -34,9 +34,10 @@ type ColumnProps = {
   /**
    * カラム削除確定時のコールバック。
    * 未指定の場合は削除 UI を無効化する。
+   * Promise を返した場合は await し、reject した場合は ConfirmDialog を維持する。
    * @param destColumn - タスクの移動先カラム名。タスクが 0 件の場合は undefined
    */
-  onDelete?: (destColumn: string | undefined) => void;
+  onDelete?: (destColumn: string | undefined) => void | Promise<void>;
   /** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
   canDelete?: boolean;
 };
@@ -97,9 +98,15 @@ export const Column = ({
     setIsConfirming(true);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const hasTasks = tasks.length > 0;
-    onDelete?.(hasTasks ? destColumn : undefined);
+    try {
+      await onDelete?.(hasTasks ? destColumn : undefined);
+    } catch {
+      // 失敗時は ConfirmDialog を開いたままにし、ユーザの destColumn 選択も保持する
+      // (caller 側で error toast 等の通知が出ている前提)
+      return;
+    }
     setIsConfirming(false);
   };
 
