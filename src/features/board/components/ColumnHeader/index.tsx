@@ -138,6 +138,12 @@ export const ColumnHeader = ({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={() => {
+                // isBusy 中は input が disabled 化により blur が発火するが、
+                // pending 中の cancel は edit mode を閉じてユーザの入力を失わせる
+                // ため無視する
+                if (isBusy) {
+                  return;
+                }
                 if (!isCancelledRef.current) {
                   cancel();
                 }
