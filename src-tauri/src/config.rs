@@ -1517,6 +1517,25 @@ mod tests {
     }
 
     #[test]
+    fn load_or_default_returns_parse_err_for_version_out_of_u32_range() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "version": 4294967296,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, LoadConfigError::Parse { .. }),
+            "expected Parse error for version > u32::MAX, got {err:?}"
+        );
+    }
+
+    #[test]
     fn load_or_default_returns_backup_failed_when_bak_path_is_directory() {
         let tmp = TempDir::new().unwrap();
         let path = write_config(
