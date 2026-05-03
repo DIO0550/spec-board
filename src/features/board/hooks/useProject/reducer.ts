@@ -142,12 +142,27 @@ export const reducer = (
       if (state.kind !== "loaded") {
         return state;
       }
+      // BE delete_task の orphanStrategy=clear 既定に整合:
+      // - 削除対象を除外
+      // - 削除対象を parent に持つ task は parent を未設定にする
+      // - 他 task の children から削除 filePath を除去（親側のリンクも掃除）
+      const remaining = state.data.tasks
+        .filter((t) => t.filePath !== action.filePath)
+        .map((t) => {
+          const parentCleared =
+            t.parent === action.filePath ? { ...t, parent: undefined } : t;
+          return parentCleared.children.includes(action.filePath)
+            ? {
+                ...parentCleared,
+                children: parentCleared.children.filter(
+                  (c) => c !== action.filePath,
+                ),
+              }
+            : parentCleared;
+        });
       return {
         ...state,
-        data: {
-          ...state.data,
-          tasks: state.data.tasks.filter((t) => t.filePath !== action.filePath),
-        },
+        data: { ...state.data, tasks: remaining },
       };
     }
     case "columns-replaced": {

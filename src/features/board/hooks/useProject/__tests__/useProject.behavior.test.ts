@@ -193,6 +193,50 @@ test("task-deleted → filePath 一致で除去", () => {
   expect((next as { data: ProjectData }).data.tasks).toEqual([]);
 });
 
+test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定にし、他 task の children からも除去", () => {
+  const parent = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+    children: ["tasks/c.md"],
+  });
+  const child = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    parent: "tasks/p.md",
+  });
+  const otherWithLink = makeTask({
+    id: "o",
+    filePath: "tasks/o.md",
+    children: ["tasks/c.md"], // 別経路で c を子に持つ task もクリア対象
+  });
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: {
+      tasks: [parent, child, otherWithLink],
+      columns: cols("Todo"),
+    },
+  };
+  // 親 (p) を削除した場合、子 (c) の parent と other (o) の children をクリア
+  const next = reducer(loaded, {
+    type: "task-deleted",
+    filePath: "tasks/p.md",
+  });
+  const tasks = (next as { data: ProjectData }).data.tasks;
+  expect(tasks.find((t) => t.filePath === "tasks/p.md")).toBeUndefined();
+  expect(
+    tasks.find((t) => t.filePath === "tasks/c.md")?.parent,
+  ).toBeUndefined();
+  // c を子として削除した場合の other.children クリア検証
+  const next2 = reducer(loaded, {
+    type: "task-deleted",
+    filePath: "tasks/c.md",
+  });
+  const tasks2 = (next2 as { data: ProjectData }).data.tasks;
+  expect(tasks2.find((t) => t.filePath === "tasks/p.md")?.children).toEqual([]);
+  expect(tasks2.find((t) => t.filePath === "tasks/o.md")?.children).toEqual([]);
+});
+
 test("columns-replaced (renames なし) → columns 置き換え、tasks 不変", () => {
   const next = reducer(loadedAState, {
     type: "columns-replaced",
