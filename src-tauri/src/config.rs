@@ -377,17 +377,37 @@ pub enum LoadConfigError {
         source: serde_json::Error,
     },
 
-    #[error("unknown future config.json version: found {found}, supported up to {supported}")]
-    UnknownFutureVersion { found: u32, supported: u32 },
+    #[error(
+        "unknown future config.json version at `{path}`: found {found}, supported up to {supported}",
+        path = path.display()
+    )]
+    UnknownFutureVersion {
+        path: PathBuf,
+        found: u32,
+        supported: u32,
+    },
 
-    #[error("duplicate column name in config.json: `{0}`")]
-    DuplicateColumnName(String),
+    #[error(
+        "duplicate column name in config.json at `{path}`: `{name}`",
+        path = path.display()
+    )]
+    DuplicateColumnName { path: PathBuf, name: String },
 
-    #[error("config.json must contain at least one column, but `columns` is empty")]
-    EmptyColumns,
+    #[error(
+        "config.json at `{path}` must contain at least one column, but `columns` is empty",
+        path = path.display()
+    )]
+    EmptyColumns { path: PathBuf },
 
-    #[error(transparent)]
-    MigrationFailed(#[from] MigrationError),
+    #[error(
+        "config.json migration at `{path}` failed: {source}",
+        path = path.display()
+    )]
+    MigrationFailed {
+        path: PathBuf,
+        #[source]
+        source: MigrationError,
+    },
 
     #[error("failed to write backup `{path}`: {source}", path = path.display())]
     BackupFailed {
@@ -712,6 +732,7 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
 
     if from_version > DEFAULT_VERSION {
         return Err(LoadConfigError::UnknownFutureVersion {
+            path: path.clone(),
             found: from_version,
             supported: DEFAULT_VERSION,
         });
@@ -735,7 +756,12 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
                 source,
             })?;
         backup_config_json(project_root, &content)?;
-        let migrated = migrate_config(value, from_version)?;
+        let migrated = migrate_config(value, from_version).map_err(|source| {
+            LoadConfigError::MigrationFailed {
+                path: path.clone(),
+                source,
+            }
+        })?;
         serde_json::from_value(migrated).map_err(|source| LoadConfigError::Parse {
             path: path.clone(),
             source,
@@ -743,9 +769,14 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     };
 
     if config.columns.is_empty() {
-        return Err(LoadConfigError::EmptyColumns);
+        return Err(LoadConfigError::EmptyColumns { path: path.clone() });
     }
-    validate_unique_column_names(&config.columns).map_err(LoadConfigError::DuplicateColumnName)?;
+    validate_unique_column_names(&config.columns).map_err(|name| {
+        LoadConfigError::DuplicateColumnName {
+            path: path.clone(),
+            name,
+        }
+    })?;
 
     Ok(config)
 }
@@ -1650,9 +1681,14 @@ mod tests {
 
         let err = load_or_default(tmp.path()).unwrap_err();
         match err {
-            LoadConfigError::UnknownFutureVersion { found, supported } => {
+            LoadConfigError::UnknownFutureVersion {
+                path,
+                found,
+                supported,
+            } => {
                 assert_eq!(found, 999);
                 assert_eq!(supported, DEFAULT_VERSION);
+                assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
             }
             other => panic!("expected UnknownFutureVersion, got {other:?}"),
         }
@@ -1753,10 +1789,12 @@ mod tests {
         );
 
         let err = load_or_default(tmp.path()).unwrap_err();
-        assert!(
-            matches!(err, LoadConfigError::EmptyColumns),
-            "expected EmptyColumns, got {err:?}"
-        );
+        match err {
+            LoadConfigError::EmptyColumns { path } => {
+                assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
+            }
+            other => panic!("expected EmptyColumns, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1776,7 +1814,10 @@ mod tests {
 
         let err = load_or_default(tmp.path()).unwrap_err();
         match err {
-            LoadConfigError::DuplicateColumnName(name) => assert_eq!(name, "Todo"),
+            LoadConfigError::DuplicateColumnName { path, name } => {
+                assert_eq!(name, "Todo");
+                assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
+            }
             other => panic!("expected DuplicateColumnName, got {other:?}"),
         }
     }
