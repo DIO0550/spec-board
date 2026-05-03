@@ -173,6 +173,24 @@ test.for<[string, ProjectAction]>([
   expect(reducer(idle, action)).toBe(idle);
 });
 
+test("open-start (loading 起点) → loading: 既存 previousLoaded を引き継ぐ", () => {
+  // loaded(A) → loading(B, prev=A) → loading(C, prev=A) と遷移し、
+  // C が失敗しても A に復元できることを確認
+  const stepB = reducer(loadedAState, { type: "open-start", path: "/b" });
+  const stepC = reducer(stepB, { type: "open-start", path: "/c" });
+  expect(stepC).toEqual({
+    kind: "loading",
+    path: "/c",
+    previousLoaded: { path: "/a", data: dataA },
+  });
+  const failC = reducer(stepC, {
+    type: "open-fail",
+    path: "/c",
+    error: new TauriError("UNKNOWN", "x"),
+  });
+  expect(failC).toEqual({ kind: "loaded", path: "/a", data: dataA });
+});
+
 test("dataB を別途 loaded に持ち、open-fail 復元先が正しい", () => {
   const loadedB: ProjectState = { kind: "loaded", path: "/b", data: dataB };
   const start = reducer(loadedB, { type: "open-start", path: "/c" });

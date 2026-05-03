@@ -73,10 +73,16 @@ export const reducer = (
 ): ProjectState => {
   switch (action.type) {
     case "open-start": {
+      // loaded → loading: 直前の loaded を退避
+      // loading → loading: 既存の previousLoaded を引き継ぐ
+      //   (B を loading 中に C を開いて C が失敗した場合も A に復元できるよう保持する)
+      // それ以外: 退避なし
       const previousLoaded =
         state.kind === "loaded"
           ? { path: state.path, data: state.data }
-          : undefined;
+          : state.kind === "loading"
+            ? state.previousLoaded
+            : undefined;
       return { kind: "loading", path: action.path, previousLoaded };
     }
     case "open-succeed":
