@@ -384,9 +384,25 @@ pub enum LoadConfigError {
 /// 外部エディタが `config.json` を書き換えても、`.bak` の内容は parse に使った
 /// `content` と一致することが保証される（TOCTOU 回避）。
 ///
-/// 既存 `.bak` は silently overwrite される（`std::fs::write` の標準セマンティクス）。
+/// 既存 `.bak` が **symlink** の場合は書き出しを拒否し [`LoadConfigError::BackupFailed`]
+/// を返す。`std::fs::write` は宛先が symlink ならそのリンク先（プロジェクト外を含む）に
+/// 書き込んでしまうため、悪意ある / 意図しない symlink を介した外部ファイル上書きを防ぐ。
+/// 通常ファイルへの上書きはこれまで通り silently overwrite される。
 fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConfigError> {
     let dst = config_io::config_path(project_root).with_file_name("config.json.bak");
+
+    if let Ok(meta) = std::fs::symlink_metadata(&dst) {
+        if meta.file_type().is_symlink() {
+            return Err(LoadConfigError::BackupFailed {
+                path: dst,
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "backup destination is a symlink",
+                ),
+            });
+        }
+    }
+
     std::fs::write(&dst, content)
         .map_err(|source| LoadConfigError::BackupFailed { path: dst, source })?;
     Ok(())
@@ -1512,5 +1528,43 @@ mod tests {
             }
             other => panic!("expected BackupFailed, got {other:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_default_returns_backup_failed_when_bak_path_is_symlink() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_config(
+            &tmp,
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+        let bak = path.with_file_name("config.json.bak");
+
+        let outside = TempDir::new().unwrap();
+        let target = outside.path().join("external.txt");
+        std::fs::write(&target, "untouched").unwrap();
+        std::os::unix::fs::symlink(&target, &bak).unwrap();
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::BackupFailed {
+                path: failed_path,
+                source,
+            } => {
+                assert_eq!(failed_path, bak);
+                assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+            }
+            other => panic!("expected BackupFailed, got {other:?}"),
+        }
+
+        let target_content = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(
+            target_content, "untouched",
+            "external symlink target must not be overwritten"
+        );
     }
 }
