@@ -42,6 +42,15 @@ const columnsOf = (state: ProjectState): Column[] =>
   state.kind === "loaded" ? state.data.columns : [];
 
 /**
+ * loaded 時のみ doneColumn を返す。それ以外は undefined。
+ *
+ * @param state useProject の現在 state
+ * @returns 派生 doneColumn
+ */
+const doneColumnOf = (state: ProjectState): string | undefined =>
+  state.kind === "loaded" ? state.data.doneColumn : undefined;
+
+/**
  * @returns アプリケーションのルートレイアウトシェル
  */
 export const App = () => {
@@ -82,6 +91,7 @@ export const App = () => {
 
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
+  const doneColumn = doneColumnOf(state);
   const selectedTask = selectedTaskId
     ? (tasks.find((t) => t.id === selectedTaskId) ?? null)
     : null;
@@ -357,6 +367,7 @@ export const App = () => {
       <Board
         columns={columns}
         tasks={tasks}
+        doneColumn={doneColumn}
         onAddTask={handleAddTask}
         onAddColumn={handleAddColumn}
         onRenameColumn={handleRenameColumn}
@@ -375,6 +386,7 @@ export const App = () => {
           task={selectedTask}
           columns={columns}
           allTasks={tasks}
+          doneColumn={doneColumn}
           onClose={handleCloseDetail}
           onTaskUpdate={handleTaskUpdate}
           onDelete={handleTaskDelete}
