@@ -28,6 +28,7 @@ export const AddColumnButton = ({
 }: AddColumnButtonProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
   const id = useId();
@@ -52,6 +53,10 @@ export const AddColumnButton = ({
   };
 
   const confirm = async (): Promise<boolean> => {
+    // re-entrant guard: pending 中の連打 (Enter 連打) を抑止する
+    if (isBusy) {
+      return false;
+    }
     const trimmed = inputValue.trim();
     if (trimmed.length === 0) {
       isCancelledRef.current = true;
@@ -62,13 +67,16 @@ export const AddColumnButton = ({
     if (existingColumnNames.includes(trimmed)) {
       return false;
     }
+    setIsBusy(true);
     try {
       await onAdd(trimmed);
     } catch {
       // 失敗時は editor を開いたままにし、ユーザの入力を保持する
       // (caller 側で error toast 等の通知が出ている前提)
+      setIsBusy(false);
       return false;
     }
+    setIsBusy(false);
     isCancelledRef.current = true;
     setInputValue("");
     setIsEditing(false);
@@ -109,11 +117,12 @@ export const AddColumnButton = ({
             }
             isCancelledRef.current = false;
           }}
+          disabled={isBusy}
           placeholder="カラム名"
           aria-label="カラム名"
           aria-invalid={isDuplicate}
           aria-describedby={isDuplicate ? errorId : undefined}
-          className="w-full rounded border border-blue-400 px-2 py-1 text-sm text-gray-900 outline-none"
+          className="w-full rounded border border-blue-400 px-2 py-1 text-sm text-gray-900 outline-none disabled:bg-gray-100"
           data-testid="add-column-input"
         />
         {isDuplicate && (
