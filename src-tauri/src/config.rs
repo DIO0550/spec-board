@@ -377,6 +377,9 @@ pub enum LoadConfigError {
     #[error("duplicate column name in config.json: `{0}`")]
     DuplicateColumnName(String),
 
+    #[error("config.json must contain at least one column, but `columns` is empty")]
+    EmptyColumns,
+
     #[error(transparent)]
     MigrationFailed(#[from] MigrationError),
 
@@ -541,6 +544,7 @@ fn extract_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> 
 /// - `config.json` のパースに失敗 → [`LoadConfigError::Parse`]
 /// - `version` がサポート範囲を超える → [`LoadConfigError::UnknownFutureVersion`]
 /// - `config.json.bak` の書き込みに失敗 → [`LoadConfigError::BackupFailed`]
+/// - `columns` が空 → [`LoadConfigError::EmptyColumns`]
 /// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
 ///
 /// [`LoadConfigError::MigrationFailed`] は **本Issue 時点では `load_or_default` から
@@ -597,6 +601,9 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
         })?
     };
 
+    if config.columns.is_empty() {
+        return Err(LoadConfigError::EmptyColumns);
+    }
     validate_unique_column_names(&config.columns).map_err(LoadConfigError::DuplicateColumnName)?;
 
     Ok(config)
@@ -1589,6 +1596,25 @@ mod tests {
         assert_eq!(
             bak_content, content,
             "existing .bak must be silently overwritten with current raw content"
+        );
+    }
+
+    #[test]
+    fn load_or_default_returns_empty_columns_error_for_empty_array() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "version": 1,
+                "columns": [],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, LoadConfigError::EmptyColumns),
+            "expected EmptyColumns, got {err:?}"
         );
     }
 
