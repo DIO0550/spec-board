@@ -314,6 +314,13 @@ export const useProject = (
         return invalidStateErr<Task>();
       }
       const startGen = generationRef.current;
+      // pending 中の open_project を待つ (BE current project が intermediate
+      // switch している間に CRUD を発行すると別 project に書き込まれる corruption
+      // を防ぐ defense in depth)。await 後に generation 再検証する。
+      await openQueueRef.current;
+      if (!isMountedRef.current || generationRef.current !== startGen) {
+        return invalidStateErr<Task>("プロジェクトが切り替わりました");
+      }
       const result = await createTaskInvoke(params);
       if (!result.ok) {
         return Result.err({ kind: "tauri", error: result.error });
@@ -339,6 +346,11 @@ export const useProject = (
         return invalidStateErr<Task>();
       }
       const startGen = generationRef.current;
+      // pending 中の open_project を待つ (defense in depth)
+      await openQueueRef.current;
+      if (!isMountedRef.current || generationRef.current !== startGen) {
+        return invalidStateErr<Task>("プロジェクトが切り替わりました");
+      }
       const result = await updateTaskInvoke(params);
       if (!result.ok) {
         return Result.err({ kind: "tauri", error: result.error });
@@ -363,6 +375,11 @@ export const useProject = (
         return invalidStateErr<void>();
       }
       const startGen = generationRef.current;
+      // pending 中の open_project を待つ (defense in depth)
+      await openQueueRef.current;
+      if (!isMountedRef.current || generationRef.current !== startGen) {
+        return invalidStateErr<void>("プロジェクトが切り替わりました");
+      }
       const result = await deleteTaskInvoke(params);
       if (!result.ok) {
         return Result.err({ kind: "tauri", error: result.error });
@@ -492,6 +509,13 @@ export const useProject = (
               kind: "invalid-state",
               message: `params.doneColumn "${params.doneColumn}" は params.columns に存在しません`,
             });
+          }
+          // pending 中の open_project を待つ (defense in depth)
+          await openQueueRef.current;
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<{ applied: boolean }>(
+              "プロジェクトが切り替わりました",
+            );
           }
           const result = await updateColumnsInvoke({
             columns: params.columns,
