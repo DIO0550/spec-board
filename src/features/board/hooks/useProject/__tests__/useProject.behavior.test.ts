@@ -99,6 +99,54 @@ test("task-created → state.data.tasks 末尾に追加", () => {
   ]);
 });
 
+test("task-created (parent あり) → 親タスクの children に新規 filePath を冪等に追加", () => {
+  const parent = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+    status: "Todo",
+    children: [],
+  });
+  const loadedWithParent: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [parent], columns: cols("Todo") },
+  };
+  const child = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    status: "Todo",
+    parent: "tasks/p.md",
+  });
+  const next = reducer(loadedWithParent, { type: "task-created", task: child });
+  const tasks = (next as { data: ProjectData }).data.tasks;
+  expect(tasks).toHaveLength(2);
+  const parentAfter = tasks.find((t) => t.filePath === "tasks/p.md");
+  expect(parentAfter?.children).toEqual(["tasks/c.md"]);
+});
+
+test("task-created (parent あり) で親が既に children を持っていれば二重追加しない (冪等)", () => {
+  const parent = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+    children: ["tasks/c.md"],
+  });
+  const loadedWithParent: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [parent], columns: cols("Todo") },
+  };
+  const child = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    parent: "tasks/p.md",
+  });
+  const next = reducer(loadedWithParent, { type: "task-created", task: child });
+  const parentAfter = (next as { data: ProjectData }).data.tasks.find(
+    (t) => t.filePath === "tasks/p.md",
+  );
+  expect(parentAfter?.children).toEqual(["tasks/c.md"]);
+});
+
 test("task-updated → originalFilePath 一致で差し替え", () => {
   const updated = makeTask({
     id: "a",

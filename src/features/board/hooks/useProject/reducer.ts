@@ -103,9 +103,22 @@ export const reducer = (
       if (state.kind !== "loaded") {
         return state;
       }
+      // 親子整合: action.task.parent が指す親タスクの children に新規 filePath を
+      // 冪等に追加する（BE が更新済 children を返すまでの FE 側保証）。
+      const tasksWithCreated = [...state.data.tasks, action.task];
+      const parentFilePath = action.task.parent;
+      const tasksWithParentSync =
+        parentFilePath === undefined
+          ? tasksWithCreated
+          : tasksWithCreated.map((t) =>
+              t.filePath === parentFilePath &&
+              !t.children.includes(action.task.filePath)
+                ? { ...t, children: [...t.children, action.task.filePath] }
+                : t,
+            );
       return {
         ...state,
-        data: { ...state.data, tasks: [...state.data.tasks, action.task] },
+        data: { ...state.data, tasks: tasksWithParentSync },
       };
     }
     case "task-updated": {
