@@ -170,8 +170,9 @@ export const reducer = (
     }
     case "task-updated": {
       // 照合は invoke 時の lookup key (originalFilePath) を使う。
-      // BE が title 由来でファイル名を再生成するなどで filePath が変わっても
-      // 既存エントリを正しく差し替えられる。
+      // file-system-spec によれば update_task 自体は title 変更で filePath を
+      // 変えない契約だが、defensive に originalFilePath ベースで照合することで、
+      // 将来 BE の振る舞いが変わっても既存エントリを正しく差し替えられる。
       return updateProjectData(state, (data) => ({
         ...data,
         tasks: data.tasks.map((t) =>
