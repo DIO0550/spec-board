@@ -290,8 +290,10 @@ export const useProject = (
       if (!result.ok) {
         return Result.err({ kind: "tauri", error: result.error });
       }
-      // 世代検証: invoke 中にプロジェクトが切り替わっていたら state は更新しない
+      // 世代検証 + unmount safeguard: invoke 中にプロジェクトが切り替わったり
+      // hook がアンマウントされた場合は state を更新しない
       if (
+        !isMountedRef.current ||
         stateRef.current.kind !== "loaded" ||
         generationRef.current !== startGen
       ) {
@@ -315,6 +317,7 @@ export const useProject = (
         return Result.err({ kind: "tauri", error: result.error });
       }
       if (
+        !isMountedRef.current ||
         stateRef.current.kind !== "loaded" ||
         generationRef.current !== startGen
       ) {
@@ -342,6 +345,7 @@ export const useProject = (
         return Result.err({ kind: "tauri", error: result.error });
       }
       if (
+        !isMountedRef.current ||
         stateRef.current.kind !== "loaded" ||
         generationRef.current !== startGen
       ) {
@@ -467,6 +471,7 @@ export const useProject = (
             return Result.err({ kind: "tauri", error: result.error });
           }
           if (
+            !isMountedRef.current ||
             stateRef.current.kind !== "loaded" ||
             generationRef.current !== startGen
           ) {
