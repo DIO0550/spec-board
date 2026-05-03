@@ -89,6 +89,32 @@ test("open-fail (loading で previousLoaded あり) → 直前の loaded に復�
   expect(next).toEqual({ kind: "loaded", path: "/a", data: dataA });
 });
 
+test("task-created (loading + previousLoaded) → previousLoaded.data.tasks に適用 (restore-window)", () => {
+  // loaded(A) → open-start(B): loading(B, prev=A)
+  const loading: ProjectState = reducer(loadedAState, {
+    type: "open-start",
+    path: "/b",
+  });
+  const created = makeTask({ id: "new", filePath: "tasks/new.md" });
+  const next = reducer(loading, { type: "task-created", task: created });
+  // state.kind は loading のまま、previousLoaded.data.tasks に追加されている
+  expect(next.kind).toBe("loading");
+  const prev = (next as { previousLoaded: { data: ProjectData } })
+    .previousLoaded;
+  expect(prev.data.tasks).toEqual([dataA.tasks[0], created]);
+  // open-fail で復元すると、追加された task が引き継がれる
+  const restored = reducer(next, {
+    type: "open-fail",
+    path: "/b",
+    error: new TauriError("UNKNOWN", "fail"),
+  });
+  expect(restored.kind).toBe("loaded");
+  expect((restored as { data: ProjectData }).data.tasks).toEqual([
+    dataA.tasks[0],
+    created,
+  ]);
+});
+
 test("task-created → state.data.tasks 末尾に追加", () => {
   const created = makeTask({ id: "new", filePath: "tasks/new.md" });
   const next = reducer(loadedAState, { type: "task-created", task: created });

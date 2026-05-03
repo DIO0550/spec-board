@@ -55,6 +55,40 @@ export type ProjectAction =
 
 export const initialState: ProjectState = { kind: "idle" };
 
+/** ProjectData を新しい ProjectData に変換する純粋関数。 */
+type ProjectDataUpdater = (data: ProjectData) => ProjectData;
+
+/**
+ * `state` の ProjectData に `update` を適用する。
+ * - `loaded`: state.data を直接更新
+ * - `loading` (previousLoaded あり): previousLoaded.data を更新する
+ *   (loaded(A) → loading(B, prev=A) 中に A 上の CRUD が resolve したケースで、
+ *    後で previousLoaded への restore が起きても変更が失われないようにする)
+ * - それ以外 (idle / error / loading without previousLoaded): state 不変
+ *
+ * @param state 現在の state
+ * @param update ProjectData を新しい ProjectData に変換する純粋関数
+ * @returns 更新後の state
+ */
+const updateProjectData = (
+  state: ProjectState,
+  update: ProjectDataUpdater,
+): ProjectState => {
+  if (state.kind === "loaded") {
+    return { ...state, data: update(state.data) };
+  }
+  if (state.kind === "loading" && state.previousLoaded) {
+    return {
+      ...state,
+      previousLoaded: {
+        path: state.previousLoaded.path,
+        data: update(state.previousLoaded.data),
+      },
+    };
+  }
+  return state;
+};
+
 /**
  * `renames` を順に適用して `tasks` の status を一括書き換えする。
  * `from` に一致する status を `to` に置換する。
@@ -115,110 +149,88 @@ export const reducer = (
       return { kind: "error", path: action.path, error: action.error };
     }
     case "task-created": {
-      if (state.kind !== "loaded") {
-        return state;
-      }
-      // 親子整合: action.task.parent が指す親タスクの children に新規 filePath を
-      // 冪等に追加する（BE が更新済 children を返すまでの FE 側保証）。
-      const tasksWithCreated = [...state.data.tasks, action.task];
-      const parentFilePath = action.task.parent;
-      const tasksWithParentSync =
-        parentFilePath === undefined
-          ? tasksWithCreated
-          : tasksWithCreated.map((t) =>
-              t.filePath === parentFilePath &&
-              !t.children.includes(action.task.filePath)
-                ? { ...t, children: [...t.children, action.task.filePath] }
-                : t,
-            );
-      return {
-        ...state,
-        data: { ...state.data, tasks: tasksWithParentSync },
-      };
+      // updateProjectData により loaded / loading(prev=A) 双方で適用される
+      // (loaded(A) → loading(B, prev=A) 中の CRUD resolve も restore で残るため)
+      return updateProjectData(state, (data) => {
+        // 親子整合: action.task.parent が指す親タスクの children に新規 filePath を
+        // 冪等に追加する（BE が更新済 children を返すまでの FE 側保証）。
+        const tasksWithCreated = [...data.tasks, action.task];
+        const parentFilePath = action.task.parent;
+        const tasksWithParentSync =
+          parentFilePath === undefined
+            ? tasksWithCreated
+            : tasksWithCreated.map((t) =>
+                t.filePath === parentFilePath &&
+                !t.children.includes(action.task.filePath)
+                  ? { ...t, children: [...t.children, action.task.filePath] }
+                  : t,
+              );
+        return { ...data, tasks: tasksWithParentSync };
+      });
     }
     case "task-updated": {
-      if (state.kind !== "loaded") {
-        return state;
-      }
       // 照合は invoke 時の lookup key (originalFilePath) を使う。
       // BE が title 由来でファイル名を再生成するなどで filePath が変わっても
       // 既存エントリを正しく差し替えられる。
-      return {
-        ...state,
-        data: {
-          ...state.data,
-          tasks: state.data.tasks.map((t) =>
-            t.filePath === action.originalFilePath ? action.task : t,
-          ),
-        },
-      };
+      return updateProjectData(state, (data) => ({
+        ...data,
+        tasks: data.tasks.map((t) =>
+          t.filePath === action.originalFilePath ? action.task : t,
+        ),
+      }));
     }
     case "task-deleted": {
-      if (state.kind !== "loaded") {
-        return state;
-      }
       // BE delete_task の orphanStrategy=clear 既定に整合:
       // - 削除対象を除外
       // - 削除対象を parent に持つ task は parent を未設定にする
       // - 他 task の children から削除 filePath を除去（親側のリンクも掃除）
-      const remaining = state.data.tasks
-        .filter((t) => t.filePath !== action.filePath)
-        .map((t) => {
-          const parentCleared =
-            t.parent === action.filePath ? { ...t, parent: undefined } : t;
-          return parentCleared.children.includes(action.filePath)
-            ? {
-                ...parentCleared,
-                children: parentCleared.children.filter(
-                  (c) => c !== action.filePath,
-                ),
-              }
-            : parentCleared;
-        });
-      return {
-        ...state,
-        data: { ...state.data, tasks: remaining },
-      };
+      return updateProjectData(state, (data) => {
+        const remaining = data.tasks
+          .filter((t) => t.filePath !== action.filePath)
+          .map((t) => {
+            const parentCleared =
+              t.parent === action.filePath ? { ...t, parent: undefined } : t;
+            return parentCleared.children.includes(action.filePath)
+              ? {
+                  ...parentCleared,
+                  children: parentCleared.children.filter(
+                    (c) => c !== action.filePath,
+                  ),
+                }
+              : parentCleared;
+          });
+        return { ...data, tasks: remaining };
+      });
     }
     case "columns-replaced": {
-      if (state.kind !== "loaded") {
-        return state;
-      }
-      const renamed = applyRenamesToTasks(
-        state.data.tasks,
-        action.renames ?? [],
-      );
-      // doneColumn 既定: action 指定があれば採用、無ければ既存値を維持。
-      // 既存値が rename 対象に含まれていれば自動追従する (FE 側保護)。
-      const renameMap = new Map(
-        (action.renames ?? []).map(({ from, to }) => [from, to]),
-      );
-      const followedDone =
-        state.data.doneColumn !== undefined
-          ? (renameMap.get(state.data.doneColumn) ?? state.data.doneColumn)
-          : undefined;
-      const nextDoneColumn = action.doneColumn ?? followedDone;
-      return {
-        ...state,
-        data: {
-          ...state.data,
+      return updateProjectData(state, (data) => {
+        const renamed = applyRenamesToTasks(data.tasks, action.renames ?? []);
+        // doneColumn 既定: action 指定があれば採用、無ければ既存値を維持。
+        // 既存値が rename 対象に含まれていれば自動追従する (FE 側保護)。
+        const renameMap = new Map(
+          (action.renames ?? []).map(({ from, to }) => [from, to]),
+        );
+        const followedDone =
+          data.doneColumn !== undefined
+            ? (renameMap.get(data.doneColumn) ?? data.doneColumn)
+            : undefined;
+        const nextDoneColumn = action.doneColumn ?? followedDone;
+        return {
+          ...data,
           tasks: renamed,
           columns: action.columns,
           doneColumn: nextDoneColumn,
-        },
-      };
+        };
+      });
     }
     case "done-column-refreshed": {
       // BE から取得した doneColumn を state に反映する。
       // 初回 open 時に get_columns が失敗した場合の補完用 (updateColumns queue
       // 内で defensive refetch する際に dispatch される)。
-      if (state.kind !== "loaded") {
-        return state;
-      }
-      return {
-        ...state,
-        data: { ...state.data, doneColumn: action.doneColumn },
-      };
+      return updateProjectData(state, (data) => ({
+        ...data,
+        doneColumn: action.doneColumn,
+      }));
     }
     case "reset":
       return { kind: "idle" };

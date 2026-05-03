@@ -292,12 +292,11 @@ export const useProject = (
         return Result.err({ kind: "tauri", error: result.error });
       }
       // 世代検証 + unmount safeguard: invoke 中にプロジェクトが切り替わったり
-      // hook がアンマウントされた場合は state を更新しない
-      if (
-        !isMountedRef.current ||
-        stateRef.current.kind !== "loaded" ||
-        generationRef.current !== startGen
-      ) {
+      // hook がアンマウントされた場合は state を更新しない。
+      // generation が一致していれば state.kind が "loading" でも dispatch する
+      // (loading 中の resolve は reducer 側で previousLoaded.data に適用され、
+      //  open-fail で restore される際に維持される)。
+      if (!isMountedRef.current || generationRef.current !== startGen) {
         return invalidStateErr<Task>("プロジェクトが切り替わりました");
       }
       dispatchSync({ type: "task-created", task: result.value });
@@ -317,11 +316,7 @@ export const useProject = (
       if (!result.ok) {
         return Result.err({ kind: "tauri", error: result.error });
       }
-      if (
-        !isMountedRef.current ||
-        stateRef.current.kind !== "loaded" ||
-        generationRef.current !== startGen
-      ) {
+      if (!isMountedRef.current || generationRef.current !== startGen) {
         return invalidStateErr<Task>("プロジェクトが切り替わりました");
       }
       dispatchSync({
@@ -345,11 +340,7 @@ export const useProject = (
       if (!result.ok) {
         return Result.err({ kind: "tauri", error: result.error });
       }
-      if (
-        !isMountedRef.current ||
-        stateRef.current.kind !== "loaded" ||
-        generationRef.current !== startGen
-      ) {
+      if (!isMountedRef.current || generationRef.current !== startGen) {
         return invalidStateErr<void>("プロジェクトが切り替わりました");
       }
       dispatchSync({ type: "task-deleted", filePath: params.filePath });
@@ -471,11 +462,7 @@ export const useProject = (
           if (!result.ok) {
             return Result.err({ kind: "tauri", error: result.error });
           }
-          if (
-            !isMountedRef.current ||
-            stateRef.current.kind !== "loaded" ||
-            generationRef.current !== startGen
-          ) {
+          if (!isMountedRef.current || generationRef.current !== startGen) {
             return invalidStateErr<{ applied: boolean }>(
               "プロジェクトが切り替わりました",
             );
