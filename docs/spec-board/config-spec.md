@@ -138,7 +138,7 @@ flowchart TD
 これらは **`load_or_default` の戻り値**としての契約を述べる。アプリ起動時のユーザー体験（デフォルト + トースト）はこれを受け取った**呼び出し層（Tauri コマンド / アプリシェル）の責務**であり、後述「[エラーハンドリング](#エラーハンドリング)」のテーブルにフォールバック挙動を集約する。
 
 - 読み込んだ `version` が現行サポート範囲（`DEFAULT_VERSION = 1`）を超える場合は `UnknownFutureVersion` エラーを `Err` として返す。
-- 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。書き出し前に `<root>/.spec-board/` ディレクトリと `config.json.bak` の leaf の双方が symlink でないことを確認し、いずれかが symlink の場合は外部ファイル上書き防止のため `BackupFailed` を返して書き出しを拒否する（ベストエフォート防御）。なお `<root>` 自身およびそれ以上の ancestor の symlink、本チェックと書き出しの間に発生する TOCTOU race は **本Issue 範囲外**（atomic write / lockfile / project-root 内制限の導入は別Issue で扱う）。
+- 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。**書き出し戦略**: `<root>/.spec-board/config.json.bak.tmp` に書き込んでから atomic `rename` で `config.json.bak` に置き換える。これによりディレクトリエントリだけを差し替えて inode は触らないため、既存 `.bak` が外部ファイルへ **hard link** されている場合でも共有 inode が truncate されず、プロジェクト外のファイル上書きを防げる。書き出し前に追加で `<root>/.spec-board/` ディレクトリと `config.json.bak` の leaf の双方が symlink でないことを確認し、いずれかが symlink の場合は `BackupFailed` を返して書き出しを拒否する（hard link 経路と symlink 経路の二重防御）。いずれもベストエフォート防御であり、`<root>` 自身およびそれ以上の ancestor の symlink / hard link、本チェックと `rename` の間に発生する TOCTOU race は **本Issue 範囲外**（lockfile / project-root 内制限の導入は別Issue で扱う）。
 - マイグレーション結果は呼び出し側に返る `Config.version` が常に `DEFAULT_VERSION` に正規化される。本Issue（骨格段階）では `config.json` への永続化は行わないため、古い `version` のファイルが残っている限り、毎回の load で backup + migrate 経路を通る。
 - `version` フィールドの欠落 / 型不一致（文字列など）/ `u32` 範囲外は通常の JSON パースエラー（`Parse`）として扱う。
 
