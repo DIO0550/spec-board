@@ -209,8 +209,15 @@ export const useProject = (
     }
 
     if (!invokeResult.ok) {
-      // open-fail で previousLoaded に復元される場合も新世代として扱う
-      bumpGeneration();
+      // 世代を bump するのは error 状態に遷移する場合のみ。
+      // previousLoaded に復元される場合はユーザは「同じ project に戻る」だけなので、
+      // 元プロジェクト上で in-flight だった CRUD は valid なまま反映する必要がある。
+      const willRestore =
+        stateRef.current.kind === "loading" &&
+        stateRef.current.previousLoaded !== undefined;
+      if (!willRestore) {
+        bumpGeneration();
+      }
       dispatchSync({ type: "open-fail", path, error: invokeResult.error });
       onError?.({ kind: "tauri", error: invokeResult.error });
       return;
