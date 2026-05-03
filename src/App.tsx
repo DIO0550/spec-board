@@ -236,6 +236,16 @@ export const App = () => {
         ) {
           return null;
         }
+        // task CRUD は updateColumns queue と直列化されないため、enqueue 後 queue
+        // 実行までに別経路でカラムへタスクが追加される可能性がある。destColumn 未指定で
+        // 残タスクがあれば silent skip（呼び出し時点では 0 件だが、queue 実行時に
+        // race で 1 件以上に増えていたケース）。
+        if (
+          destColumn === undefined &&
+          current.tasks.some((t) => t.status === columnName)
+        ) {
+          return null;
+        }
         // doneColumn が削除対象の場合、destColumn (タスク移動先) を新 doneColumn に
         // する。タスク 0 件削除 + destColumn 未指定の場合は残カラムの先頭にフォールバック。
         const remainingColumns = current.columns.filter(
