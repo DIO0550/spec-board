@@ -112,6 +112,11 @@ export const AddColumnButton = ({
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={() => {
+            // isBusy 中は input が disabled になり browser が blur を発火するが、
+            // pending 中の cancel は editor を閉じてユーザの入力を失わせるため無視する
+            if (isBusy) {
+              return;
+            }
             if (!isCancelledRef.current) {
               cancel();
             }
