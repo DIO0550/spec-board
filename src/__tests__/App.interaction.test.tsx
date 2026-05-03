@@ -362,3 +362,143 @@ test("AddColumnButton で重複名を入力 → updateColumns invoke は呼ば�
   expect(updateColumnsMock).not.toHaveBeenCalled();
   expect(container?.textContent).toContain("同じ名前のカラムが既に存在します");
 });
+
+// === DetailPanel 経由の updateTask / deleteTask DOM テスト ===
+
+const openDetailPanelForFirstTask = async (): Promise<void> => {
+  // TaskCard は div role="button"。最初に見つかった card をクリック
+  const card = querySelectorRequired<HTMLDivElement>('[role="button"]');
+  await act(async () => {
+    card.click();
+  });
+};
+
+const setSelectValue = (select: HTMLSelectElement, value: string): void => {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(select, value);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+};
+
+test("DetailPanel の status 変更 → updateTask invoke が呼ばれ + 成功 toast", async () => {
+  mountApp();
+  await openSuccessfully();
+
+  await openDetailPanelForFirstTask();
+  // 詳細パネルが開いている
+  expect(
+    container?.querySelector('[data-testid="status-select"]'),
+  ).not.toBeNull();
+
+  const updated: Task = { ...taskA, status: "Done" };
+  updateTaskMock.mockResolvedValueOnce(Result.ok(updated));
+
+  const statusSelect = querySelectorRequired<HTMLSelectElement>(
+    '[data-testid="status-select"]',
+  );
+  await act(async () => {
+    setSelectValue(statusSelect, "Done");
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateTaskMock).toHaveBeenCalledWith(
+    expect.objectContaining({ filePath: "tasks/a.md", status: "Done" }),
+  );
+  expect(container?.textContent).toContain("タスクを更新しました");
+});
+
+test("DetailPanel の status 変更失敗時 → updateTask invoke + エラー toast 表示", async () => {
+  mountApp();
+  await openSuccessfully();
+  await openDetailPanelForFirstTask();
+
+  updateTaskMock.mockResolvedValueOnce(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+  const statusSelect = querySelectorRequired<HTMLSelectElement>(
+    '[data-testid="status-select"]',
+  );
+  await act(async () => {
+    setSelectValue(statusSelect, "Done");
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(container?.textContent).toContain("タスクの更新に失敗しました");
+  expect(container?.textContent).not.toContain("タスクを更新しました");
+});
+
+test("DetailPanel 削除 → deleteTask invoke が呼ばれ Board から消えて DetailPanel が閉じる", async () => {
+  mountApp();
+  await openSuccessfully();
+  await openDetailPanelForFirstTask();
+
+  deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
+
+  const deleteBtn = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="detail-delete-button"]',
+  );
+  await act(async () => {
+    deleteBtn.click();
+  });
+
+  const confirmBtn = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="confirm-confirm-button"]',
+  );
+  await act(async () => {
+    confirmBtn.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(deleteTaskMock).toHaveBeenCalledTimes(1);
+  expect(deleteTaskMock).toHaveBeenCalledWith({ filePath: "tasks/a.md" });
+  expect(container?.textContent).toContain("タスクを削除しました");
+  // DetailPanel が閉じる: status-select が DOM から消える
+  expect(container?.querySelector('[data-testid="status-select"]')).toBeNull();
+});
+
+test("DetailPanel 削除失敗時 → deleteTask invoke + ConfirmDialog が閉じない (DeleteFlow が error 状態)", async () => {
+  mountApp();
+  await openSuccessfully();
+  await openDetailPanelForFirstTask();
+
+  deleteTaskMock.mockResolvedValueOnce(
+    Result.err(new TauriError("PERMISSION_DENIED", "perm fail")),
+  );
+
+  const deleteBtn = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="detail-delete-button"]',
+  );
+  await act(async () => {
+    deleteBtn.click();
+  });
+  const confirmBtn = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="confirm-confirm-button"]',
+  );
+  await act(async () => {
+    confirmBtn.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(deleteTaskMock).toHaveBeenCalledTimes(1);
+  expect(container?.textContent).toContain("タスクの削除に失敗しました");
+  // DetailPanel は閉じていない
+  expect(
+    container?.querySelector('[data-testid="status-select"]'),
+  ).not.toBeNull();
+  // ConfirmDialog も維持されている (DeleteFlow が error 状態 → isOpen=true)
+  expect(
+    container?.querySelector('[data-testid="confirm-dialog"]'),
+  ).not.toBeNull();
+});
