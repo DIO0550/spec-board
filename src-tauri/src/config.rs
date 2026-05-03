@@ -214,6 +214,62 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
     }
 }
 
+/// `cardOrder` から「実体が消えたファイルパス」「`columns` に存在しないキー」を取り除いた
+/// 新しい [`CardOrder`] を返す純粋関数。
+///
+/// # 入力規約
+/// - `card_order`: 元の `cardOrder`（`BTreeMap<String, Vec<String>>`）。借用のみで変更しない。
+/// - `columns`: 現在のカラム定義スライス。`columns[].name` をキー存続判定に用いる。
+/// - `existing_paths`: プロジェクト上で実在するタスクファイルの相対パス集合。
+///   走査は呼び出し側責務（本関数は fs にアクセスしない）。
+///
+/// # 戻り値
+/// - 新規 [`CardOrder`]。in-place mutation はしない。
+///
+/// # 削除ルール
+/// 1. 各カラム値の `Vec<String>` から `existing_paths` に含まれないエントリを除去する。
+/// 2. キーが `columns[].name` のいずれにも一致しない場合、そのキーごと除去する。
+/// 3. 除去結果として値が空 `Vec` になっても、キーは保持する（カラムの初期状態を表す）。
+///
+/// # 決定論性
+/// 戻り値は `BTreeMap` のためキー順序はキー昇順で決定論的。値の `Vec` は元の順序を保持する。
+///
+/// # スコープ外
+/// 値配列内の重複パス除去は本関数では行わない。重複の扱いは将来別関数で検討する。
+///
+/// # 例
+/// ```ignore
+/// use std::collections::{BTreeMap, HashSet};
+/// let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+/// map.insert("Todo".into(), vec!["a.md".into(), "x.md".into()]);
+/// let columns = vec![Column { name: "Todo".into(), order: 0 }];
+/// let mut existing: HashSet<&str> = HashSet::new();
+/// existing.insert("a.md");
+/// let cleaned = clean_card_order(&map, &columns, &existing);
+/// assert_eq!(cleaned.get("Todo").unwrap(), &vec!["a.md".to_string()]);
+/// ```
+pub fn clean_card_order(
+    card_order: &CardOrder,
+    columns: &[Column],
+    existing_paths: &HashSet<&str>,
+) -> CardOrder {
+    let valid_keys: HashSet<&str> = columns.iter().map(|c| c.name.as_str()).collect();
+
+    let mut cleaned: CardOrder = BTreeMap::new();
+    for (key, paths) in card_order.iter() {
+        if !valid_keys.contains(key.as_str()) {
+            continue;
+        }
+        let filtered: Vec<String> = paths
+            .iter()
+            .filter(|p| existing_paths.contains(p.as_str()))
+            .cloned()
+            .collect();
+        cleaned.insert(key.clone(), filtered);
+    }
+    cleaned
+}
+
 /// [`load_or_default`] で発生し得るエラー。
 ///
 /// [`ConfigIoError`] は `#[from]` で透過的に伝播し、JSON パース失敗は
@@ -803,5 +859,120 @@ mod tests {
             vec![col("X", 0), col("Y", 1)],
             "path 昇順で X が先になる"
         );
+    }
+
+    // ───────── clean_card_order ─────────
+
+    #[test]
+    fn clean_card_order_parametrized() {
+        struct Case {
+            label: &'static str,
+            card_order: Vec<(&'static str, Vec<&'static str>)>,
+            columns: Vec<Column>,
+            existing_paths: Vec<&'static str>,
+            expected: Vec<(&'static str, Vec<&'static str>)>,
+        }
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "0 件 cardOrder -> 空",
+                card_order: vec![],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec!["a.md"],
+                expected: vec![],
+            },
+            Case {
+                label: "全パス存在 -> 変更なし",
+                card_order: vec![("Todo", vec!["a.md", "b.md"])],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec!["a.md", "b.md"],
+                expected: vec![("Todo", vec!["a.md", "b.md"])],
+            },
+            Case {
+                label: "一部パス不在 -> 不在分のみ除去",
+                card_order: vec![("Todo", vec!["a.md", "b.md"])],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec!["a.md"],
+                expected: vec![("Todo", vec!["a.md"])],
+            },
+            Case {
+                label: "全パス不在 -> 値は空 Vec、キーは保持",
+                card_order: vec![("Todo", vec!["a.md"])],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec![],
+                expected: vec![("Todo", vec![])],
+            },
+            Case {
+                label: "columns に無いキー -> キーごと除去",
+                card_order: vec![("Ghost", vec!["a.md"])],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec!["a.md"],
+                expected: vec![],
+            },
+            Case {
+                label: "複合（不在パス + 不在キー）",
+                card_order: vec![("Todo", vec!["a.md", "x.md"]), ("Ghost", vec!["y.md"])],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec!["a.md"],
+                expected: vec![("Todo", vec!["a.md"])],
+            },
+            Case {
+                label: "空 existing_paths -> 全キーで空 Vec",
+                card_order: vec![("Todo", vec!["a.md"]), ("Done", vec!["b.md"])],
+                columns: vec![col("Todo", 0), col("Done", 1)],
+                existing_paths: vec![],
+                expected: vec![("Done", vec![]), ("Todo", vec![])],
+            },
+            Case {
+                label: "空 columns -> 全キー除去",
+                card_order: vec![("Todo", vec!["a.md"])],
+                columns: vec![],
+                existing_paths: vec!["a.md"],
+                expected: vec![],
+            },
+            Case {
+                label: "元から空 Vec のキーは保持",
+                card_order: vec![("Done", vec![])],
+                columns: vec![col("Done", 0)],
+                existing_paths: vec!["a.md"],
+                expected: vec![("Done", vec![])],
+            },
+            Case {
+                label: "キー順序の決定論性（BTreeMap 昇順）",
+                card_order: vec![("Z", vec!["a.md"]), ("A", vec!["b.md"])],
+                columns: vec![col("A", 0), col("Z", 1)],
+                existing_paths: vec!["a.md", "b.md"],
+                expected: vec![("A", vec!["b.md"]), ("Z", vec!["a.md"])],
+            },
+            Case {
+                label: "重複パスは除去しない（スコープ外）",
+                card_order: vec![("Todo", vec!["a.md", "a.md", "b.md"])],
+                columns: vec![col("Todo", 0)],
+                existing_paths: vec!["a.md", "b.md"],
+                expected: vec![("Todo", vec!["a.md", "a.md", "b.md"])],
+            },
+        ];
+
+        for case in cases {
+            let card_order: CardOrder = case
+                .card_order
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect()))
+                .collect();
+            let existing: HashSet<&str> = case.existing_paths.iter().copied().collect();
+            let expected: CardOrder = case
+                .expected
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect()))
+                .collect();
+
+            let actual = clean_card_order(&card_order, &case.columns, &existing);
+            assert_eq!(actual, expected, "case: {}", case.label);
+
+            let keys: Vec<&String> = actual.keys().collect();
+            let mut sorted = keys.clone();
+            sorted.sort();
+            assert_eq!(keys, sorted, "case (key order): {}", case.label);
+        }
     }
 }
