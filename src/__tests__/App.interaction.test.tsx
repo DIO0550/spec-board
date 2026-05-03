@@ -185,6 +185,21 @@ test("EmptyState 中央の「開く」ボタンクリックでも同フローで
   expect(container?.textContent).toContain("A タスク");
 });
 
+test("loaded で tasks が 0 件のとき EmptyState type=empty-project が表示される", async () => {
+  mountApp();
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ tasks: [], columns: ["Todo", "Done"] }),
+  );
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(container?.textContent).toContain("タスクがありません");
+});
+
 test("dialog cancel 時は state 不変、toast なし", async () => {
   mountApp();
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok(null));

@@ -383,6 +383,9 @@ export const App = () => {
     if (state.kind !== "loaded") {
       return <EmptyState type="no-project" onOpenProject={openProject} />;
     }
+    if (tasks.length === 0) {
+      return <EmptyState type="empty-project" />;
+    }
     return (
       <Board
         columns={columns}
