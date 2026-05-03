@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
 import {
@@ -81,19 +81,20 @@ export const App = () => {
   // 中間状態 (loading / error / idle) は無視する。これにより
   // loaded(A) → loading(B) → fail → loaded(A) 復元 のシーケンスで UI state が
   // 不要にクリアされる問題を回避する (Copilot 指摘)。
+  //
+  // task ID が file path ベースで project 間で衝突しうるため、useEffect では
+  // 最初の render が stale UI state で新プロジェクトのデータを参照する race が
+  // 発生する。React 公式の "Adjusting state when a prop changes" パターン
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  // に従い、render-phase で同期的に reset する。
   const loadedPath = state.kind === "loaded" ? state.path : null;
-  const lastLoadedPathRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (loadedPath === null) {
-      return;
-    }
-    if (loadedPath !== lastLoadedPathRef.current) {
-      lastLoadedPathRef.current = loadedPath;
-      setSelectedTaskId(null);
-      setCreateModalStatus(null);
-      setCreateModalParent(undefined);
-    }
-  }, [loadedPath]);
+  const [prevLoadedPath, setPrevLoadedPath] = useState<string | null>(null);
+  if (loadedPath !== null && loadedPath !== prevLoadedPath) {
+    setPrevLoadedPath(loadedPath);
+    setSelectedTaskId(null);
+    setCreateModalStatus(null);
+    setCreateModalParent(undefined);
+  }
 
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
