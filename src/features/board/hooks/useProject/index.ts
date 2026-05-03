@@ -116,6 +116,39 @@ const isUpdater = (input: UpdateColumnsInput): input is UpdateColumnsUpdater =>
   typeof input === "function";
 
 /**
+ * column 名が `params.columns` に含まれていない場合 true (= 削除されたカラム)。
+ *
+ * @param column 旧 column
+ * @param params 新 columns を含む UpdateColumnsParams
+ * @returns 削除なら true
+ */
+const isColumnRemoved = (
+  column: Column,
+  params: UpdateColumnsParams,
+): boolean => !params.columns.some((nc) => nc.name === column.name);
+
+/**
+ * 操作が doneColumn に影響を与え得るか判定する。
+ * - rename を伴う場合 (renames が空でない)
+ * - 既存 column が新 columns に含まれない (削除された) 場合
+ * これら以外の操作 (純粋な column 追加 / 並び替え) では BE が doneColumn を preserve
+ * するため refetch 不要。
+ *
+ * @param currentColumns 現在の columns
+ * @param params 適用する UpdateColumnsParams
+ * @returns sensitive なら true
+ */
+const isDoneColumnSensitive = (
+  currentColumns: Column[],
+  params: UpdateColumnsParams,
+): boolean => {
+  if ((params.renames ?? []).length > 0) {
+    return true;
+  }
+  return currentColumns.some((c) => isColumnRemoved(c, params));
+};
+
+/**
  * useProject — プロジェクトを開く + プロジェクト state の所有 + 全 CRUD を一手に担う hook。
  *
  * dialog 連打ガード (`isDialogOpeningRef`)、invoke 後勝ち (`requestIdRef`)、
@@ -342,11 +375,32 @@ export const useProject = (
               "プロジェクトが切り替わりました",
             );
           }
-          // doneColumn 未取得 (initial get_columns が失敗等) の場合、updater が
-          // current.doneColumn === oldName 判定で常に false になり、rename/delete
-          // 時の doneColumn 連動が無効化される。defensive に再 fetch を試みる。
-          let effectiveData = snapshot.data;
-          if (effectiveData.doneColumn === undefined) {
+          const startGen = generationRef.current;
+          // updater が throw した場合に Promise が reject すると Result contract
+          // が破れるため、try/catch で Result.err に詰め直す。
+          let params: UpdateColumnsParams | null;
+          try {
+            params = isUpdater(input) ? input(snapshot.data) : input;
+          } catch (e) {
+            return Result.err({ kind: "tauri", error: TauriError.from(e) });
+          }
+          if (params === null) {
+            // updater が null を返した: 適用すべき変更なし。invoke 未実行 = applied:false
+            return Result.ok({ applied: false });
+          }
+          // doneColumn-sensitive 操作 (rename or column 削除) で doneColumn 未取得 +
+          // params.doneColumn 未指定の場合のみ defensive refetch する。
+          // 単純な column 追加など safe な操作では BE が doneColumn を preserve するため
+          // refetch しない (refetch 失敗で safe な操作まで blocking しない)。
+          const doneColumnSensitive = isDoneColumnSensitive(
+            snapshot.data.columns,
+            params,
+          );
+          if (
+            doneColumnSensitive &&
+            snapshot.data.doneColumn === undefined &&
+            params.doneColumn === undefined
+          ) {
             const refresh = await getColumnsInvoke();
             // refetch await 中に project が切り替わった場合は、stale snapshot で
             // 続行すると新プロジェクトを上書きしてしまうため、ここで abort する。
@@ -355,35 +409,34 @@ export const useProject = (
                 "プロジェクトが切り替わりました",
               );
             }
-            if (refresh.ok) {
-              effectiveData = {
-                ...effectiveData,
-                doneColumn: refresh.value.doneColumn,
-              };
-              dispatchSync({
-                type: "done-column-refreshed",
-                doneColumn: refresh.value.doneColumn,
-              });
-            } else {
-              // refetch も失敗した: doneColumn 不明のまま update_columns を呼ぶと
-              // BE が stale doneColumn を保持し、rename/delete で削除した column を
-              // doneColumn として持ち続ける config 破壊リスクがある。安全のため
-              // ここで Result.err を返し caller に retry を促す。
+            if (!refresh.ok) {
+              // refetch 失敗: doneColumn 不明のまま rename/delete を進めると BE が
+              // stale doneColumn を保持し config 破壊リスク。Result.err で abort し
+              // caller に retry を促す。
               return Result.err({ kind: "tauri", error: refresh.error });
             }
-          }
-          const startGen = generationRef.current;
-          // updater が throw した場合に Promise が reject すると Result contract
-          // が破れるため、try/catch で Result.err に詰め直す。
-          let params: UpdateColumnsParams | null;
-          try {
-            params = isUpdater(input) ? input(effectiveData) : input;
-          } catch (e) {
-            return Result.err({ kind: "tauri", error: TauriError.from(e) });
-          }
-          if (params === null) {
-            // updater が null を返した: 適用すべき変更なし。invoke 未実行 = applied:false
-            return Result.ok({ applied: false });
+            // 取得できたので state にも反映し、updater を enriched data で再実行する
+            // (App handler は current.doneColumn を見て params.doneColumn を計算する
+            // ため、enrichment 後の再実行で正しい doneColumn が得られる)。
+            const enrichedData: ProjectData = {
+              ...snapshot.data,
+              doneColumn: refresh.value.doneColumn,
+            };
+            dispatchSync({
+              type: "done-column-refreshed",
+              doneColumn: refresh.value.doneColumn,
+            });
+            try {
+              params = isUpdater(input) ? input(enrichedData) : input;
+            } catch (e) {
+              return Result.err({
+                kind: "tauri",
+                error: TauriError.from(e),
+              });
+            }
+            if (params === null) {
+              return Result.ok({ applied: false });
+            }
           }
           const result = await updateColumnsInvoke({
             columns: params.columns,
