@@ -243,15 +243,15 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
 /// let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
 /// map.insert("Todo".into(), vec!["a.md".into(), "x.md".into()]);
 /// let columns = vec![Column { name: "Todo".into(), order: 0 }];
-/// let mut existing: HashSet<&str> = HashSet::new();
-/// existing.insert("a.md");
+/// let mut existing: HashSet<String> = HashSet::new();
+/// existing.insert("a.md".to_string());
 /// let cleaned = clean_card_order(&map, &columns, &existing);
 /// assert_eq!(cleaned.get("Todo").unwrap(), &vec!["a.md".to_string()]);
 /// ```
 pub fn clean_card_order(
     card_order: &CardOrder,
     columns: &[Column],
-    existing_paths: &HashSet<&str>,
+    existing_paths: &HashSet<String>,
 ) -> CardOrder {
     let valid_keys: HashSet<&str> = columns.iter().map(|c| c.name.as_str()).collect();
 
@@ -959,7 +959,8 @@ mod tests {
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect()))
                 .collect();
-            let existing: HashSet<&str> = case.existing_paths.iter().copied().collect();
+            let existing: HashSet<String> =
+                case.existing_paths.iter().map(|s| s.to_string()).collect();
             let expected: CardOrder = case
                 .expected
                 .into_iter()
