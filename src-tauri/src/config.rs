@@ -311,11 +311,22 @@ pub enum MigrationError {
 
 /// 古い `version` の `config.json` を新しい [`serde_json::Value`] に変換するフック。
 ///
-/// 挙動:
+/// # 入力前提
+///
+/// 入力 `value` は **`config.json` の最上位 JSON Object** を想定している。
+/// [`load_or_default`] からの呼び出しではこの前提が常に満たされる
+/// （非 Object なら `extract_version` 段階で「missing field `version`」として
+/// `LoadConfigError::Parse` に倒され、本関数には到達しない）。
+///
+/// # 挙動
+///
 /// - `from_version == DEFAULT_VERSION` のときは入力 `value` をそのまま返す（素通し）。
-/// - `from_version < DEFAULT_VERSION` のときは骨格実装として **他フィールドを変更せず
-///   `value["version"]` のみ [`DEFAULT_VERSION`] に書き換えて返す**。これにより load 後の
-///   [`Config::version`] が一貫して [`DEFAULT_VERSION`] に正規化される。
+/// - `from_version < DEFAULT_VERSION` かつ `value` が JSON Object のときは骨格実装として
+///   **他フィールドを変更せず `value["version"]` のみ [`DEFAULT_VERSION`] に書き換えて返す**。
+///   これにより load 後の [`Config::version`] が一貫して [`DEFAULT_VERSION`] に正規化される。
+/// - `from_version < DEFAULT_VERSION` かつ `value` が JSON Object **以外**（純粋関数として
+///   単独利用された場合のみ起こり得る）のときは正規化対象が無いため `value` をそのまま返す。
+///   この経路は実マイグレーション実装時に [`MigrationError`] バリアント追加で厳格化する想定。
 /// - `from_version > DEFAULT_VERSION` は通常 [`load_or_default`] 側で
 ///   [`LoadConfigError::UnknownFutureVersion`] により早期に弾かれるが、純粋関数単独利用時の
 ///   防御として [`MigrationError::UnsupportedFromVersion`] を返す。
