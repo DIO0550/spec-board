@@ -478,8 +478,8 @@ fn extract_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> 
 ///
 /// 関数名の `_or_default` は **「`config.json` が存在しないとき」のみ** Default を
 /// 返すことを意味する。読み込み I/O の失敗 / JSON パースの失敗 / 未来 version /
-/// マイグレーション失敗 / バックアップ失敗 / カラム名重複は `Err` として返却され、
-/// 呼び出し層（Tauri コマンド層など）が必要に応じて [`Config::default`] への
+/// バックアップ失敗 / カラム名重複は `Err` として返却され、呼び出し層
+/// （Tauri コマンド層など）が必要に応じて [`Config::default`] への
 /// フォールバック判断 + 通知を行う想定
 /// （仕様書「読み込み失敗 → デフォルト + トースト」は呼び出し層の責務として切り出す）。
 ///
@@ -490,8 +490,15 @@ fn extract_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> 
 /// - `config.json` のパースに失敗 → [`LoadConfigError::Parse`]
 /// - `version` がサポート範囲を超える → [`LoadConfigError::UnknownFutureVersion`]
 /// - `config.json.bak` の書き込みに失敗 → [`LoadConfigError::BackupFailed`]
-/// - マイグレーションに失敗 → [`LoadConfigError::MigrationFailed`]
 /// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
+///
+/// [`LoadConfigError::MigrationFailed`] は **本Issue 時点では `load_or_default` から
+/// 返されない**（`from_version > DEFAULT_VERSION` は事前に
+/// [`LoadConfigError::UnknownFutureVersion`] で弾かれ、`from_version < DEFAULT_VERSION`
+/// および `from_version == DEFAULT_VERSION` の経路では現行 [`migrate_config`] は常に
+/// `Ok` を返すため）。バリアントは `MigrationError` の variant 追加に向けた forward
+/// compatibility のために存在し、将来 [`DEFAULT_VERSION`] を引き上げて実マイグレーション
+/// を実装したタイミングで実際に発生し得るようになる。
 pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     config_io::ensure_spec_board_dir(project_root)?;
     let raw = config_io::read_config_json(project_root)?;
