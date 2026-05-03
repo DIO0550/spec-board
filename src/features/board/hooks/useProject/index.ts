@@ -28,15 +28,6 @@ export type { ProjectError } from "./errors";
 export type { ProjectData, ProjectState } from "./reducer";
 
 /**
- * `string[]` のカラム名一覧を 0 始まりの order 付き Column[] に変換する。
- *
- * @param names カラム名一覧（既に並び順が保たれている前提）
- * @returns Column[]
- */
-const toColumns = (names: string[]): Column[] =>
-  names.map((name, order) => ({ name, order }));
-
-/**
  * invalid-state の Result.err を即座に作成するヘルパ。
  *
  * @param message 任意のメッセージ（デフォルト: "プロジェクトが開かれていません"）
@@ -259,8 +250,11 @@ export const useProject = (
 
     // doneColumn を取得するため get_columns も呼ぶ。BE 側の open_project は
     // doneColumn を返さないが、config-spec 上 get_columns で取得できる。
-    // get_columns 失敗時は doneColumn=undefined のまま loaded に進む（rename/delete
-    // 連動が effective でなくなるが Board 表示は止めない）。
+    // get_columns 失敗時は openProject 全体を失敗として扱う:
+    // - doneColumn 未取得のまま loaded に進むと、Board / SubIssueProgress が
+    //   undefined を「Done」リテラル扱いするため、custom done column の
+    //   project で sub-issue progress が誤判定される
+    // - 失敗を userに通知して retry を促す方が安全
     const columnsResult = await getColumnsInvoke();
     if (!isMountedRef.current) {
       return;
@@ -269,12 +263,26 @@ export const useProject = (
       return;
     }
 
+    if (!columnsResult.ok) {
+      const willRestore =
+        stateRef.current.kind === "loading" &&
+        stateRef.current.previousLoaded !== undefined;
+      if (!willRestore) {
+        bumpGeneration();
+      }
+      dispatchSync({
+        type: "open-fail",
+        path,
+        error: columnsResult.error,
+      });
+      onError?.({ kind: "tauri", error: columnsResult.error });
+      return;
+    }
+
     const data: ProjectData = {
       tasks: invokeResult.value.tasks,
-      columns: columnsResult.ok
-        ? columnsResult.value.columns
-        : toColumns(invokeResult.value.columns),
-      doneColumn: columnsResult.ok ? columnsResult.value.doneColumn : undefined,
+      columns: columnsResult.value.columns,
+      doneColumn: columnsResult.value.doneColumn,
     };
     bumpGeneration();
     dispatchSync({ type: "open-succeed", path, data });
