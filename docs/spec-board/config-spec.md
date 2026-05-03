@@ -261,6 +261,8 @@ links:（任意）
 
 ## エラーハンドリング
 
+### load_or_default が返す `LoadConfigError` バリアント
+
 `load_or_default` が返す各 `Err` バリアントに対して、**呼び出し層（Tauri コマンド / アプリシェル）が決定する**フォールバック挙動を以下にまとめる。バックエンド層自体はデフォルトへのフォールバックを行わず、エラーを caller に返す。
 
 | エラーケース | 発生条件 | バックエンド戻り値 | 呼び出し層の振る舞い | ログレベル |
@@ -268,11 +270,16 @@ links:（任意）
 | JSON パース失敗 | JSON 構文エラー、必須フィールド欠落、`version` の型不一致 / `u32` 範囲外 | `LoadConfigError::Parse` | デフォルト設定で起動し、トースト通知 | ERROR |
 | 未来 version 検出 | `version > DEFAULT_VERSION` | `LoadConfigError::UnknownFutureVersion` | デフォルト設定で起動し、トースト通知（アプリの更新案内を含む） | ERROR |
 | カラム名重複 | `columns` 内に同一名のカラムが存在 | `LoadConfigError::DuplicateColumnName` | デフォルト設定で起動し、トースト通知 | ERROR |
-| マイグレーション失敗 | `migrate_config` が `MigrationError` を返す | `LoadConfigError::MigrationFailed` | デフォルト設定で起動し、トースト通知 | ERROR |
+| マイグレーション失敗 | `migrate_config` が `MigrationError` を返す（**現状到達不能**: 後述「未来用バリアント」を参照） | `LoadConfigError::MigrationFailed` | デフォルト設定で起動し、トースト通知 | ERROR |
 | バックアップ失敗 | `.bak` の書き出しに失敗（権限不足 / symlink 宛先 / ディレクトリ衝突など） | `LoadConfigError::BackupFailed` | デフォルト設定で起動し、トースト通知（バックアップ作成失敗の旨を明示） | ERROR |
 | I/O 失敗 | `.spec-board/` の作成 / `config.json` の読み取りに失敗 | `LoadConfigError::Io` | デフォルト設定で起動し、トースト通知 | ERROR |
-| config.json 書き込み失敗 | ディスク容量不足、権限不足 | （別Issue の save 経路で扱う） | エラーをフロントエンドに通知 | ERROR |
-| GUIDE.md 生成失敗 | 書き込み権限不足 | （別Issue で扱う） | 警告ログ出力。アプリの動作には影響しない | WARN |
+
+### load_or_default 以外のフロー
+
+| エラーケース | 発生条件 | 振る舞い | ログレベル | 仕様参照 |
+|:------------|:---------|:---------|:----------|:--------|
+| config.json 書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに通知 | ERROR | save 経路（別Issue） |
+| GUIDE.md 生成失敗 | 書き込み権限不足 | 警告ログ出力。アプリの動作には影響しない | WARN | GUIDE.md 自動生成（別Issue） |
 
 ## 制限事項
 
