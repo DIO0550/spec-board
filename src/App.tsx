@@ -100,7 +100,8 @@ export const App = () => {
       if (filePath === undefined) {
         return;
       }
-      const result = await updateTask({ filePath, ...updates });
+      // filePath は lookup key なので spread 順序を後置にして上書き防止
+      const result = await updateTask({ ...updates, filePath });
       if (!result.ok) {
         return;
       }
