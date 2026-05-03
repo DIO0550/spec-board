@@ -5,6 +5,7 @@ import {
   createTask as createTaskInvoke,
   type DeleteTaskParams,
   deleteTask as deleteTaskInvoke,
+  getColumns as getColumnsInvoke,
   openDirectoryDialog,
   openProject as openProjectInvoke,
   type UpdateTaskParams,
@@ -205,9 +206,24 @@ export const useProject = (
       return;
     }
 
+    // doneColumn を取得するため get_columns も呼ぶ。BE 側の open_project は
+    // doneColumn を返さないが、config-spec 上 get_columns で取得できる。
+    // get_columns 失敗時は doneColumn=undefined のまま loaded に進む（rename/delete
+    // 連動が effective でなくなるが Board 表示は止めない）。
+    const columnsResult = await getColumnsInvoke();
+    if (!isMountedRef.current) {
+      return;
+    }
+    if (myId !== requestIdRef.current) {
+      return;
+    }
+
     const data: ProjectData = {
       tasks: invokeResult.value.tasks,
-      columns: toColumns(invokeResult.value.columns),
+      columns: columnsResult.ok
+        ? columnsResult.value.columns
+        : toColumns(invokeResult.value.columns),
+      doneColumn: columnsResult.ok ? columnsResult.value.doneColumn : undefined,
     };
     generationRef.current += 1;
     dispatchSync({ type: "open-succeed", path, data });

@@ -14,6 +14,7 @@ import {
   createTask as createTaskInvoke,
   type DeleteTaskParams,
   deleteTask as deleteTaskInvoke,
+  getColumns as getColumnsInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
@@ -33,6 +34,7 @@ vi.mock("@/lib/tauri", async () => {
     ...actual,
     openDirectoryDialog: vi.fn(),
     openProject: vi.fn(),
+    getColumns: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock("@/lib/tauri", async () => {
 
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
+const getColumnsMock = vi.mocked(getColumnsInvoke);
 const createTaskMock = vi.mocked(createTaskInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const deleteTaskMock = vi.mocked(deleteTaskInvoke);
@@ -78,6 +81,14 @@ let root: Root | null = null;
 beforeEach(() => {
   openDirectoryDialogMock.mockReset();
   openProjectMock.mockReset();
+  getColumnsMock.mockReset();
+  // デフォルトでは get_columns を err にして、openProject hook は
+  // open_project の columns 文字列配列にフォールバックする (既存テスト互換)。
+  // doneColumn を検証するテストは個別に mockResolvedValueOnce で上書きする。
+  getColumnsMock.mockResolvedValue({
+    ok: false,
+    error: new TauriError("UNKNOWN", "default mock"),
+  });
   createTaskMock.mockReset();
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
@@ -183,8 +194,38 @@ test("openProject 成功 (idle → loaded)、payload.columns string[] が Column
         { name: "Todo", order: 0 },
         { name: "Done", order: 1 },
       ],
+      doneColumn: undefined,
     },
   });
+});
+
+test("openProject 成功時に get_columns が成功すれば doneColumn が ProjectData にセットされる", async () => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "完了", order: 1 },
+      ],
+      doneColumn: "完了",
+    }),
+  );
+  const probe = renderHook();
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+  const data = (
+    probe.latest.state as {
+      data: { doneColumn?: string; columns: { name: string }[] };
+    }
+  ).data;
+  expect(data.doneColumn).toBe("完了");
+  expect(data.columns.map((c) => c.name)).toEqual(["Todo", "完了"]);
 });
 
 test("openProject dialog cancel (null) → state 不変", async () => {
