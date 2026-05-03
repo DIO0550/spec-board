@@ -395,21 +395,34 @@ pub enum LoadConfigError {
 /// 外部エディタが `config.json` を書き換えても、`.bak` の内容は parse に使った
 /// `content` と一致することが保証される（TOCTOU 回避）。
 ///
+/// # 書き出し戦略: tempfile + rename
+///
+/// `<dst>.tmp` に `content` を書き出してから `rename(<dst>.tmp, <dst>)` で置き換える。
+/// これにより既存の `<dst>` が以下のいずれであっても **外部ファイル本体を truncate
+/// せず**、ディレクトリエントリだけを差し替える:
+///
+/// - **hard link**（同一ファイルシステム上の他ファイルと inode を共有している `.bak`）:
+///   `rename` はディレクトリエントリを置換するだけで inode を上書きしないため、
+///   共有先のファイル内容が破壊されない。`std::fs::write` を直接使うと inode を
+///   truncate するため、悪意ある hard link 経由でプロジェクト外のファイルが
+///   上書きされる経路を塞ぐ。
+/// - **symbolic link**: `rename` は symlink 自身を置換し、リンク先には触れない
+///   （以下の symlink leaf チェックと併せて二重防御）。
+/// - **通常ファイル**: 従来通り上書き相当（atomic に置換される）。
+///
 /// # symlink 防御の範囲
 ///
 /// 書き出し前に **`<project_root>/.spec-board/` ディレクトリ** および **`config.json.bak`
 /// の leaf** の双方が symlink でないことを `symlink_metadata` で確認し、いずれかが
 /// symlink の場合は [`LoadConfigError::BackupFailed`] を返して書き出しを拒否する。
-/// これは `std::fs::write` が宛先 / 親ディレクトリの symlink をたどって
-/// プロジェクト外のファイルを上書きしてしまう経路を塞ぐためのベストエフォート防御。
+/// 上記の rename 戦略と併せ、symlink 経由・hard link 経由いずれの方法でも外部
+/// ファイルが上書きされないようにするベストエフォート防御。
 ///
-/// 以下は **本関数の範囲外**であり、別Issue（atomic write / lockfile / project-root 内
+/// 以下は **本関数の範囲外**であり、別Issue（lockfile / project-root 内
 /// 制限）の責務とする:
-/// - `<project_root>` 自身およびそれより外側 ancestor の symlink
-/// - 本関数のチェックと `std::fs::write` の間に発生する TOCTOU race（leaf や `.spec-board/`
+/// - `<project_root>` 自身およびそれより外側 ancestor の symlink / hard link
+/// - 本関数のチェックと `rename` の間に発生する TOCTOU race（leaf や `.spec-board/`
 ///   が swap された場合）
-///
-/// 通常ファイルへの上書きはこれまで通り silently overwrite される。
 fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConfigError> {
     let spec_board_dir = config_io::config_path(project_root)
         .parent()
@@ -442,8 +455,16 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
         }
     }
 
-    std::fs::write(&dst, content)
-        .map_err(|source| LoadConfigError::BackupFailed { path: dst, source })?;
+    let tmp = spec_board_dir.join("config.json.bak.tmp");
+    std::fs::write(&tmp, content).map_err(|source| LoadConfigError::BackupFailed {
+        path: tmp.clone(),
+        source,
+    })?;
+    std::fs::rename(&tmp, &dst).map_err(|source| {
+        // Best-effort: tmp が残っていても次回 load 時に上書きされるためログのみ
+        let _ = std::fs::remove_file(&tmp);
+        LoadConfigError::BackupFailed { path: dst, source }
+    })?;
     Ok(())
 }
 
@@ -1633,6 +1654,34 @@ mod tests {
             }
             other => panic!("expected BackupFailed, got {other:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_default_does_not_truncate_external_file_via_hard_linked_bak() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_config(
+            &tmp,
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+        let bak = path.with_file_name("config.json.bak");
+
+        let outside = TempDir::new().unwrap();
+        let target = outside.path().join("external.txt");
+        std::fs::write(&target, "untouched").unwrap();
+        std::fs::hard_link(&target, &bak).unwrap();
+
+        let _ = load_or_default(tmp.path()).unwrap();
+
+        let target_content = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(
+            target_content, "untouched",
+            "external file hard-linked to .bak must NOT be truncated"
+        );
     }
 
     #[cfg(unix)]
