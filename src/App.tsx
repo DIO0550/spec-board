@@ -215,7 +215,12 @@ export const App = () => {
         throw new Error(message);
       }
       if (!result.value.applied) {
-        return;
+        // queue 内 silent skip (rename 対象が消えた / 重複が発生した等)
+        // ColumnHeader が edit mode を維持してユーザに retry させる
+        const message =
+          "カラム名の変更が適用されませんでした (他の操作と競合した可能性)";
+        showToast(message, "error");
+        throw new Error(message);
       }
       showToast("カラム名を変更しました", "success");
     },
@@ -299,7 +304,12 @@ export const App = () => {
         throw new Error(message);
       }
       if (!result.value.applied) {
-        return;
+        // queue 内 silent skip (削除対象が消えた / タスク追加で destColumn 必要等)
+        // ConfirmDialog を維持してユーザに retry させる
+        const message =
+          "カラムの削除が適用されませんでした (他の操作と競合した可能性)";
+        showToast(message, "error");
+        throw new Error(message);
       }
       showToast("カラムを削除しました", "success");
     },
