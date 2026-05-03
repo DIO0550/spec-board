@@ -377,13 +377,17 @@ pub enum LoadConfigError {
     },
 }
 
-/// `<project_root>/.spec-board/config.json` を `config.json.bak` へ上書きコピーする。
+/// `<project_root>/.spec-board/config.json.bak` に `content` を書き出す。
 ///
-/// 既存 `.bak` は silently overwrite される（`std::fs::copy` の標準セマンティクス）。
-fn backup_config_json(project_root: &Path) -> Result<(), LoadConfigError> {
-    let src = config_io::config_path(project_root);
-    let dst = src.with_file_name("config.json.bak");
-    std::fs::copy(&src, &dst)
+/// caller が既に読み込み済みの raw 文字列 `content` をそのまま書き出すため、
+/// 「config.json を読み込み → migrate → caller に Config を返す」流れの間に
+/// 外部エディタが `config.json` を書き換えても、`.bak` の内容は parse に使った
+/// `content` と一致することが保証される（TOCTOU 回避）。
+///
+/// 既存 `.bak` は silently overwrite される（`std::fs::write` の標準セマンティクス）。
+fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConfigError> {
+    let dst = config_io::config_path(project_root).with_file_name("config.json.bak");
+    std::fs::write(&dst, content)
         .map_err(|source| LoadConfigError::BackupFailed { path: dst, source })?;
     Ok(())
 }
@@ -459,7 +463,7 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
             supported: DEFAULT_VERSION,
         });
     } else if from_version < DEFAULT_VERSION {
-        backup_config_json(project_root)?;
+        backup_config_json(project_root, &content)?;
         migrate_config(value, from_version)?
     } else {
         value
