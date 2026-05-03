@@ -50,6 +50,7 @@ export type ProjectAction =
        */
       doneColumn?: string;
     }
+  | { type: "done-column-refreshed"; doneColumn: string }
   | { type: "reset" };
 
 export const initialState: ProjectState = { kind: "idle" };
@@ -205,6 +206,18 @@ export const reducer = (
           columns: action.columns,
           doneColumn: nextDoneColumn,
         },
+      };
+    }
+    case "done-column-refreshed": {
+      // BE から取得した doneColumn を state に反映する。
+      // 初回 open 時に get_columns が失敗した場合の補完用 (updateColumns queue
+      // 内で defensive refetch する際に dispatch される)。
+      if (state.kind !== "loaded") {
+        return state;
+      }
+      return {
+        ...state,
+        data: { ...state.data, doneColumn: action.doneColumn },
       };
     }
     case "reset":

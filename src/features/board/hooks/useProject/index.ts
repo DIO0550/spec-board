@@ -335,12 +335,34 @@ export const useProject = (
               "プロジェクトが切り替わりました",
             );
           }
+          // doneColumn 未取得 (initial get_columns が失敗等) の場合、updater が
+          // current.doneColumn === oldName 判定で常に false になり、rename/delete
+          // 時の doneColumn 連動が無効化される。defensive に再 fetch を試みて
+          // 取得できれば state も更新し、enriched snapshot を updater に渡す。
+          let effectiveData = snapshot.data;
+          if (effectiveData.doneColumn === undefined) {
+            const refresh = await getColumnsInvoke();
+            if (
+              isMountedRef.current &&
+              generationRef.current === enqueueGen &&
+              refresh.ok
+            ) {
+              effectiveData = {
+                ...effectiveData,
+                doneColumn: refresh.value.doneColumn,
+              };
+              dispatchSync({
+                type: "done-column-refreshed",
+                doneColumn: refresh.value.doneColumn,
+              });
+            }
+          }
           const startGen = generationRef.current;
           // updater が throw した場合に Promise が reject すると Result contract
           // が破れるため、try/catch で Result.err に詰め直す。
           let params: UpdateColumnsParams | null;
           try {
-            params = isUpdater(input) ? input(snapshot.data) : input;
+            params = isUpdater(input) ? input(effectiveData) : input;
           } catch (e) {
             return Result.err({ kind: "tauri", error: TauriError.from(e) });
           }
