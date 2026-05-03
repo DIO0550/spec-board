@@ -869,7 +869,7 @@ test("updateColumns updater が null を返した場合 invoke せず Result.ok(
   expect(updateColumnsMock).not.toHaveBeenCalled();
 });
 
-test("updateColumns: 1 回目 pending 中に enqueue した 2 回目は再 open 後に invoke されない", async () => {
+test("updateColumns: openQueueRef chain により open は CRUD 完了を待つ + 後続 CRUD は generation mismatch で skip", async () => {
   const probe = renderHook();
   await openLoaded(probe);
 
@@ -880,7 +880,7 @@ test("updateColumns: 1 回目 pending 中に enqueue した 2 回目は再 open 
         resolve1 = r;
       }),
   );
-  // 2 回目以降は記録だけする（enqueue 後の generation 不一致で呼ばれない想定）
+  // 2 回目以降は記録だけする (generation 不一致で skip 想定)
   updateColumnsMock.mockResolvedValue(Result.ok(undefined));
 
   let p1!: Promise<unknown>;
@@ -895,20 +895,26 @@ test("updateColumns: 1 回目 pending 中に enqueue した 2 回目は再 open 
       doneColumn: "B",
     });
   });
-
-  // 同じ path を再 open（generation を進める）
-  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
-  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  // p1 の invoke が呼ばれて resolve1 が捕捉されるまで microtask を flush
   await act(async () => {
-    await probe.latest.openProject();
+    await Promise.resolve();
+    await Promise.resolve();
   });
 
-  // 1 回目を resolve（旧 generation）
+  // 同じ path を再 open する pending を発行 (queue 末尾に積まれて p1 完了を待つ)
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  let openPending!: Promise<void>;
+  act(() => {
+    openPending = probe.latest.openProject();
+  });
+
+  // p1 を resolve すると queue が進む: p1 完了 → open 実行 → p2 (skip)
   await act(async () => {
     resolve1(Result.ok(undefined));
     await p1;
+    await openPending;
   });
-  // 2 回目は queue 実行時に generation 不一致で invoke されず invalid-state
   let result2!: Awaited<ReturnType<UseProjectResult["updateColumns"]>>;
   await act(async () => {
     result2 = (await p2) as Awaited<
@@ -919,11 +925,14 @@ test("updateColumns: 1 回目 pending 中に enqueue した 2 回目は再 open 
   expect((result2 as { error: { kind: string } }).error.kind).toBe(
     "invalid-state",
   );
-  // mock 呼び出し回数は 1 回目のみ（再 open の openProject は別 mock）
+  // p1 のみ invoke された (p2 は generation 不一致で skip)
   expect(updateColumnsMock).toHaveBeenCalledTimes(1);
 });
 
-test("createTask pending 中に同じ path を再 open → resolve 時は invalid-state（generation 不一致）", async () => {
+test("createTask: openQueueRef chain により再 open は createTask 完了を待ち、createTask は元 generation で成功する", async () => {
+  // openQueueRef chain により createTask の invoke と再 open が直列化される。
+  // createTask 完了 → 再 open → の順で実行されるため、createTask は元 generation で
+  // 成功し、state にも反映される (BE corruption 防止のため意図的にこの順)。
   const onError = vi.fn();
   const probe = renderHook({ onError });
   await openLoaded(probe);
@@ -939,21 +948,20 @@ test("createTask pending 中に同じ path を再 open → resolve 時は invali
     pending = probe.latest.createTask({ title: "x", status: "Todo" });
   });
 
-  // 同じ path で再 open（dialog→invoke 成功）して generation を進める
+  // 同じ path で再 open: queue 末尾に enqueue されて createTask 完了を待つ
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(Result.ok(payload));
-  await act(async () => {
-    await probe.latest.openProject();
+  let openPending!: Promise<void>;
+  act(() => {
+    openPending = probe.latest.openProject();
   });
 
-  // create resolve → 古い世代なので state には反映されず invalid-state を返す
+  // createTask を resolve すると queue が進み、createTask 成功 → 再 open 実行
   let result!: Awaited<ReturnType<UseProjectResult["createTask"]>>;
   await act(async () => {
     resolveCreate(Result.ok({ ...taskB }));
     result = await pending;
+    await openPending;
   });
-  expect(result.ok).toBe(false);
-  expect((result as { error: { kind: string } }).error.kind).toBe(
-    "invalid-state",
-  );
+  expect(result.ok).toBe(true);
 });

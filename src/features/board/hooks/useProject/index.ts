@@ -308,87 +308,98 @@ export const useProject = (
   }, [onError, dispatchSync, bumpGeneration]);
 
   const createTask = useCallback(
-    async (params: CreateTaskParams): Promise<ResultT<Task, ProjectError>> => {
+    (params: CreateTaskParams): Promise<ResultT<Task, ProjectError>> => {
       const snapshot = stateRef.current;
       if (snapshot.kind !== "loaded") {
-        return invalidStateErr<Task>();
+        return Promise.resolve(invalidStateErr<Task>());
       }
       const startGen = generationRef.current;
-      // pending 中の open_project を待つ (BE current project が intermediate
-      // switch している間に CRUD を発行すると別 project に書き込まれる corruption
-      // を防ぐ defense in depth)。await 後に generation 再検証する。
-      await openQueueRef.current;
-      if (!isMountedRef.current || generationRef.current !== startGen) {
-        return invalidStateErr<Task>("プロジェクトが切り替わりました");
-      }
-      const result = await createTaskInvoke(params);
-      if (!result.ok) {
-        return Result.err({ kind: "tauri", error: result.error });
-      }
-      // 世代検証 + unmount safeguard: invoke 中にプロジェクトが切り替わったり
-      // hook がアンマウントされた場合は state を更新しない。
-      // generation が一致していれば state.kind が "loading" でも dispatch する
-      // (loading 中の resolve は reducer 側で previousLoaded.data に適用され、
-      //  open-fail で restore される際に維持される)。
-      if (!isMountedRef.current || generationRef.current !== startGen) {
-        return invalidStateErr<Task>("プロジェクトが切り替わりました");
-      }
-      dispatchSync({ type: "task-created", task: result.value });
-      return Result.ok(result.value);
+      // openQueueRef にチェーン (BE level で open / CRUD を完全直列化)。
+      // 単に await openQueueRef.current だと「await 後 / invoke 前」に新しい open が
+      // enqueue される race が残るため、CRUD 自体を queue tail に積む。
+      // 以後の openProject はこの CRUD の完了を待つ → BE current project が
+      // CRUD invoke 中に switch されない保証になる。
+      const queued = openQueueRef.current.then(
+        async (): Promise<ResultT<Task, ProjectError>> => {
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<Task>("プロジェクトが切り替わりました");
+          }
+          const result = await createTaskInvoke(params);
+          if (!result.ok) {
+            return Result.err({ kind: "tauri", error: result.error });
+          }
+          // 世代検証 + unmount safeguard
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<Task>("プロジェクトが切り替わりました");
+          }
+          dispatchSync({ type: "task-created", task: result.value });
+          return Result.ok(result.value);
+        },
+      );
+      openQueueRef.current = queued.catch(() => undefined);
+      return queued;
     },
     [dispatchSync],
   );
 
   const updateTask = useCallback(
-    async (params: UpdateTaskParams): Promise<ResultT<Task, ProjectError>> => {
+    (params: UpdateTaskParams): Promise<ResultT<Task, ProjectError>> => {
       const snapshot = stateRef.current;
       if (snapshot.kind !== "loaded") {
-        return invalidStateErr<Task>();
+        return Promise.resolve(invalidStateErr<Task>());
       }
       const startGen = generationRef.current;
-      // pending 中の open_project を待つ (defense in depth)
-      await openQueueRef.current;
-      if (!isMountedRef.current || generationRef.current !== startGen) {
-        return invalidStateErr<Task>("プロジェクトが切り替わりました");
-      }
-      const result = await updateTaskInvoke(params);
-      if (!result.ok) {
-        return Result.err({ kind: "tauri", error: result.error });
-      }
-      if (!isMountedRef.current || generationRef.current !== startGen) {
-        return invalidStateErr<Task>("プロジェクトが切り替わりました");
-      }
-      dispatchSync({
-        type: "task-updated",
-        originalFilePath: params.filePath,
-        task: result.value,
-      });
-      return Result.ok(result.value);
+      const queued = openQueueRef.current.then(
+        async (): Promise<ResultT<Task, ProjectError>> => {
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<Task>("プロジェクトが切り替わりました");
+          }
+          const result = await updateTaskInvoke(params);
+          if (!result.ok) {
+            return Result.err({ kind: "tauri", error: result.error });
+          }
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<Task>("プロジェクトが切り替わりました");
+          }
+          dispatchSync({
+            type: "task-updated",
+            originalFilePath: params.filePath,
+            task: result.value,
+          });
+          return Result.ok(result.value);
+        },
+      );
+      openQueueRef.current = queued.catch(() => undefined);
+      return queued;
     },
     [dispatchSync],
   );
 
   const deleteTask = useCallback(
-    async (params: DeleteTaskParams): Promise<ResultT<void, ProjectError>> => {
+    (params: DeleteTaskParams): Promise<ResultT<void, ProjectError>> => {
       const snapshot = stateRef.current;
       if (snapshot.kind !== "loaded") {
-        return invalidStateErr<void>();
+        return Promise.resolve(invalidStateErr<void>());
       }
       const startGen = generationRef.current;
-      // pending 中の open_project を待つ (defense in depth)
-      await openQueueRef.current;
-      if (!isMountedRef.current || generationRef.current !== startGen) {
-        return invalidStateErr<void>("プロジェクトが切り替わりました");
-      }
-      const result = await deleteTaskInvoke(params);
-      if (!result.ok) {
-        return Result.err({ kind: "tauri", error: result.error });
-      }
-      if (!isMountedRef.current || generationRef.current !== startGen) {
-        return invalidStateErr<void>("プロジェクトが切り替わりました");
-      }
-      dispatchSync({ type: "task-deleted", filePath: params.filePath });
-      return Result.ok(undefined);
+      const queued = openQueueRef.current.then(
+        async (): Promise<ResultT<void, ProjectError>> => {
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<void>("プロジェクトが切り替わりました");
+          }
+          const result = await deleteTaskInvoke(params);
+          if (!result.ok) {
+            return Result.err({ kind: "tauri", error: result.error });
+          }
+          if (!isMountedRef.current || generationRef.current !== startGen) {
+            return invalidStateErr<void>("プロジェクトが切り替わりました");
+          }
+          dispatchSync({ type: "task-deleted", filePath: params.filePath });
+          return Result.ok(undefined);
+        },
+      );
+      openQueueRef.current = queued.catch(() => undefined);
+      return queued;
     },
     [dispatchSync],
   );
@@ -511,32 +522,40 @@ export const useProject = (
             });
           }
           // pending 中の open_project を待つ (defense in depth)
-          await openQueueRef.current;
-          if (!isMountedRef.current || generationRef.current !== startGen) {
-            return invalidStateErr<{ applied: boolean }>(
-              "プロジェクトが切り替わりました",
-            );
-          }
-          const result = await updateColumnsInvoke({
-            columns: params.columns,
-            renames: params.renames,
-            doneColumn: params.doneColumn,
-          });
-          if (!result.ok) {
-            return Result.err({ kind: "tauri", error: result.error });
-          }
-          if (!isMountedRef.current || generationRef.current !== startGen) {
-            return invalidStateErr<{ applied: boolean }>(
-              "プロジェクトが切り替わりました",
-            );
-          }
-          dispatchSync({
-            type: "columns-replaced",
-            columns: params.columns,
-            renames: params.renames,
-            doneColumn: params.doneColumn,
-          });
-          return Result.ok({ applied: true });
+          // BE invoke + dispatch を openQueueRef にチェーンして
+          // 「await openQueueRef → invoke 前の race」を完全に排除する。
+          // 以後の openProject はこの invoke 完了を待つ。
+          const innerQueued = openQueueRef.current.then(
+            async (): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
+              if (!isMountedRef.current || generationRef.current !== startGen) {
+                return invalidStateErr<{ applied: boolean }>(
+                  "プロジェクトが切り替わりました",
+                );
+              }
+              const result = await updateColumnsInvoke({
+                columns: params.columns,
+                renames: params.renames,
+                doneColumn: params.doneColumn,
+              });
+              if (!result.ok) {
+                return Result.err({ kind: "tauri", error: result.error });
+              }
+              if (!isMountedRef.current || generationRef.current !== startGen) {
+                return invalidStateErr<{ applied: boolean }>(
+                  "プロジェクトが切り替わりました",
+                );
+              }
+              dispatchSync({
+                type: "columns-replaced",
+                columns: params.columns,
+                renames: params.renames,
+                doneColumn: params.doneColumn,
+              });
+              return Result.ok({ applied: true });
+            },
+          );
+          openQueueRef.current = innerQueued.catch(() => undefined);
+          return innerQueued;
         },
       );
       columnsQueueRef.current = next.catch(() => undefined);
