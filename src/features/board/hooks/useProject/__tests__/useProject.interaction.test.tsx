@@ -389,8 +389,8 @@ test("openProject invoke 中 unmount → dispatch / onError 発火しない", as
   expect(onError).not.toHaveBeenCalled();
 });
 
-test("openProject 後勝ち: 2 回目の resolve が最終 state、1 回目 resolve は破棄", async () => {
-  // 1 回目: dialog ok → invoke pending
+test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来ると最終 state は B", async () => {
+  // 1 回目: dialog ok → invoke は手動 promise で pending 保持
   let resolveInvokeA!: (r: ResultT<OpenProjectPayload, TauriError>) => void;
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/a"));
   openProjectMock.mockReturnValueOnce(
@@ -398,12 +398,15 @@ test("openProject 後勝ち: 2 回目の resolve が最終 state、1 回目 reso
       resolveInvokeA = r;
     }),
   );
-  // 2 回目: dialog ok → invoke pending
-  let resolveInvokeB!: (r: ResultT<OpenProjectPayload, TauriError>) => void;
+  // 2 回目: dialog ok → invoke は即 resolve
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/b"));
-  openProjectMock.mockReturnValueOnce(
-    new Promise<ResultT<OpenProjectPayload, TauriError>>((r) => {
-      resolveInvokeB = r;
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+  );
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [{ name: "Done", order: 0 }],
+      doneColumn: "Done",
     }),
   );
 
@@ -412,32 +415,29 @@ test("openProject 後勝ち: 2 回目の resolve が最終 state、1 回目 reso
   act(() => {
     pending1 = probe.latest.openProject();
   });
-  // First open consumes dialog (pending), then waits invoke
+  // 1 回目の invoke が pending になるまで microtask 進める
   await act(async () => {
     await Promise.resolve();
+    await Promise.resolve();
   });
-  // Second open: isDialogOpeningRef should now be false
+  // 2 回目の openProject (requestId が 2 に進む)
   let pending2!: Promise<void>;
   act(() => {
     pending2 = probe.latest.openProject();
   });
+  // 1 回目の invoke を resolve させて queue を進める
   await act(async () => {
-    await Promise.resolve();
-  });
-
-  const payloadB: OpenProjectPayload = { tasks: [taskB], columns: ["Done"] };
-  await act(async () => {
-    resolveInvokeB(Result.ok(payloadB));
+    resolveInvokeA(Result.ok({ tasks: [], columns: [] }));
+    await pending1;
     await pending2;
   });
-  await act(async () => {
-    resolveInvokeA(Result.ok(payload));
-    await pending1;
-  });
 
-  // Final state should be the second open's payload
+  // 最終 state は 2 回目 (B) の payload
   expect(probe.latest.state.kind).toBe("loaded");
   expect((probe.latest.state as { path: string }).path).toBe("/b");
+  // 1 回目の invoke は呼ばれた (queue 内で post-invoke の requestId mismatch
+  // で dispatch 抑止される)、2 回目も invoke される
+  expect(openProjectMock).toHaveBeenCalledWith({ path: "/b" });
 });
 
 // === createTask ===

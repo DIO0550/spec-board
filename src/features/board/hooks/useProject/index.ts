@@ -161,6 +161,11 @@ export const useProject = (
   const isMountedRef = useRef<boolean>(true);
   const stateRef = useRef<ProjectState>(state);
   const columnsQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  // open_project + get_columns を BE レベルで直列化するキュー。
+  // overlap を許すと BE current project が intermediate switch して、ある呼び出しの
+  // tasks と別呼び出しの columns/doneColumn が混ざる問題を防ぐ。
+  // queue 内では requestId mismatch なら invoke 自体を skip し「後勝ち」を維持する。
+  const openQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   // open-succeed / reset / open-fail 復元の度に増加する世代カウンタ。
   // path 一致だけでは「同じ path を開き直し」のケースで pending CRUD が
   // 新世代に誤適用される。CRUD は開始時にこの値を snapshot し、resolve 時に再照合する。
@@ -223,69 +228,83 @@ export const useProject = (
     const myId = requestIdRef.current;
     dispatchSync({ type: "open-start", path });
 
-    const invokeResult = await openProjectInvoke({ path });
-
-    if (!isMountedRef.current) {
-      return;
-    }
-    if (myId !== requestIdRef.current) {
-      // 後勝ち破棄
-      return;
-    }
-
-    if (!invokeResult.ok) {
-      // 世代を bump するのは error 状態に遷移する場合のみ。
-      // previousLoaded に復元される場合はユーザは「同じ project に戻る」だけなので、
-      // 元プロジェクト上で in-flight だった CRUD は valid なまま反映する必要がある。
-      const willRestore =
-        stateRef.current.kind === "loading" &&
-        stateRef.current.previousLoaded !== undefined;
-      if (!willRestore) {
-        bumpGeneration();
+    // open_project + get_columns を BE レベルで直列化する。overlap を許すと
+    // BE current project が intermediate switch して、tasks と columns/doneColumn が
+    // 別々の project から混入する問題が発生する (Copilot 指摘)。
+    // queue 内で requestId mismatch なら invoke 自体を skip し「後勝ち」を維持する。
+    const queued = openQueueRef.current.then(async () => {
+      // queue 開始時の早期スキップ: 既により新しい open がリクエストされていれば
+      // BE invoke 自体を発行しない (BE への意味のない open + 即座の re-open を回避)
+      if (!isMountedRef.current || myId !== requestIdRef.current) {
+        return;
       }
-      dispatchSync({ type: "open-fail", path, error: invokeResult.error });
-      onError?.({ kind: "tauri", error: invokeResult.error });
-      return;
-    }
 
-    // doneColumn を取得するため get_columns も呼ぶ。BE 側の open_project は
-    // doneColumn を返さないが、config-spec 上 get_columns で取得できる。
-    // get_columns 失敗時は openProject 全体を失敗として扱う:
-    // - doneColumn 未取得のまま loaded に進むと、Board / SubIssueProgress が
-    //   undefined を「Done」リテラル扱いするため、custom done column の
-    //   project で sub-issue progress が誤判定される
-    // - 失敗を userに通知して retry を促す方が安全
-    const columnsResult = await getColumnsInvoke();
-    if (!isMountedRef.current) {
-      return;
-    }
-    if (myId !== requestIdRef.current) {
-      return;
-    }
+      const invokeResult = await openProjectInvoke({ path });
 
-    if (!columnsResult.ok) {
-      const willRestore =
-        stateRef.current.kind === "loading" &&
-        stateRef.current.previousLoaded !== undefined;
-      if (!willRestore) {
-        bumpGeneration();
+      if (!isMountedRef.current) {
+        return;
       }
-      dispatchSync({
-        type: "open-fail",
-        path,
-        error: columnsResult.error,
-      });
-      onError?.({ kind: "tauri", error: columnsResult.error });
-      return;
-    }
+      if (myId !== requestIdRef.current) {
+        // 後勝ち破棄: 後続の open_project が走るため、こちらの結果は捨てる
+        return;
+      }
 
-    const data: ProjectData = {
-      tasks: invokeResult.value.tasks,
-      columns: columnsResult.value.columns,
-      doneColumn: columnsResult.value.doneColumn,
-    };
-    bumpGeneration();
-    dispatchSync({ type: "open-succeed", path, data });
+      if (!invokeResult.ok) {
+        // 世代を bump するのは error 状態に遷移する場合のみ。
+        // previousLoaded に復元される場合はユーザは「同じ project に戻る」だけなので、
+        // 元プロジェクト上で in-flight だった CRUD は valid なまま反映する必要がある。
+        const willRestore =
+          stateRef.current.kind === "loading" &&
+          stateRef.current.previousLoaded !== undefined;
+        if (!willRestore) {
+          bumpGeneration();
+        }
+        dispatchSync({ type: "open-fail", path, error: invokeResult.error });
+        onError?.({ kind: "tauri", error: invokeResult.error });
+        return;
+      }
+
+      // doneColumn を取得するため get_columns も呼ぶ。BE 側の open_project は
+      // doneColumn を返さないが、config-spec 上 get_columns で取得できる。
+      // get_columns 失敗時は openProject 全体を失敗として扱う:
+      // - doneColumn 未取得のまま loaded に進むと、Board / SubIssueProgress が
+      //   undefined を「Done」リテラル扱いするため、custom done column の
+      //   project で sub-issue progress が誤判定される
+      // - 失敗を userに通知して retry を促す方が安全
+      const columnsResult = await getColumnsInvoke();
+      if (!isMountedRef.current) {
+        return;
+      }
+      if (myId !== requestIdRef.current) {
+        return;
+      }
+
+      if (!columnsResult.ok) {
+        const willRestore =
+          stateRef.current.kind === "loading" &&
+          stateRef.current.previousLoaded !== undefined;
+        if (!willRestore) {
+          bumpGeneration();
+        }
+        dispatchSync({
+          type: "open-fail",
+          path,
+          error: columnsResult.error,
+        });
+        onError?.({ kind: "tauri", error: columnsResult.error });
+        return;
+      }
+
+      const data: ProjectData = {
+        tasks: invokeResult.value.tasks,
+        columns: columnsResult.value.columns,
+        doneColumn: columnsResult.value.doneColumn,
+      };
+      bumpGeneration();
+      dispatchSync({ type: "open-succeed", path, data });
+    });
+    openQueueRef.current = queued.catch(() => undefined);
+    await queued;
   }, [onError, dispatchSync, bumpGeneration]);
 
   const createTask = useCallback(
