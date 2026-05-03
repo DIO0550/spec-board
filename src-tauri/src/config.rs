@@ -570,23 +570,32 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
         source,
     })?;
 
-    let migrated_value = if from_version > DEFAULT_VERSION {
+    if from_version > DEFAULT_VERSION {
         return Err(LoadConfigError::UnknownFutureVersion {
             found: from_version,
             supported: DEFAULT_VERSION,
         });
-    } else if from_version < DEFAULT_VERSION {
-        backup_config_json(project_root, &content)?;
-        migrate_config(value, from_version)?
-    } else {
-        value
-    };
+    }
 
-    let config: Config =
-        serde_json::from_value(migrated_value).map_err(|source| LoadConfigError::Parse {
+    // 現行 version の場合は `from_str::<Config>` で直接デシリアライズし、
+    // schema mismatch 時に元の line/col 情報を保持する（`from_value` 経由だと位置情報が失われ、
+    // hand-edited config.json の修正がしづらくなるため）。
+    // 古い version の場合は `migrate_config` で Value を書き換える必要があるため
+    // やむを得ず `from_value` を経由する（line/col 情報は失われるが、migrate 経路では
+    // ユーザーが直接編集する想定が薄いため許容）。
+    let config: Config = if from_version == DEFAULT_VERSION {
+        serde_json::from_str(&content).map_err(|source| LoadConfigError::Parse {
             path: path.clone(),
             source,
-        })?;
+        })?
+    } else {
+        backup_config_json(project_root, &content)?;
+        let migrated = migrate_config(value, from_version)?;
+        serde_json::from_value(migrated).map_err(|source| LoadConfigError::Parse {
+            path: path.clone(),
+            source,
+        })?
+    };
 
     validate_unique_column_names(&config.columns).map_err(LoadConfigError::DuplicateColumnName)?;
 
@@ -1640,6 +1649,29 @@ mod tests {
             matches!(err, LoadConfigError::Parse { .. }),
             "expected Parse error for string version, got {err:?}"
         );
+    }
+
+    #[test]
+    fn load_or_default_parse_error_for_current_version_preserves_line_and_column() {
+        let tmp = TempDir::new().unwrap();
+        // 4 行目に schema 違反（"order" が文字列）を配置
+        write_config(
+            &tmp,
+            "{\n  \"version\": 1,\n  \"columns\": [\n    { \"name\": \"Todo\", \"order\": \"zero\" }\n  ],\n  \"cardOrder\": {}\n}",
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::Parse { source, .. } => {
+                assert!(
+                    source.line() > 0 && source.column() > 0,
+                    "schema mismatch on current version must preserve line/column info; got line={}, column={}",
+                    source.line(),
+                    source.column()
+                );
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
     }
 
     #[test]
