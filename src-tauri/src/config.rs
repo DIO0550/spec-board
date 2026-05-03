@@ -1222,6 +1222,46 @@ mod tests {
     }
 
     #[test]
+    fn migrate_config_passes_through_non_object_for_older_input() {
+        struct Case {
+            label: &'static str,
+            value: serde_json::Value,
+        }
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "JSON null",
+                value: serde_json::Value::Null,
+            },
+            Case {
+                label: "JSON number",
+                value: serde_json::json!(42),
+            },
+            Case {
+                label: "JSON string",
+                value: serde_json::json!("not-an-object"),
+            },
+            Case {
+                label: "JSON array",
+                value: serde_json::json!([1, 2, 3]),
+            },
+            Case {
+                label: "JSON bool",
+                value: serde_json::json!(true),
+            },
+        ];
+
+        for case in cases {
+            let migrated = migrate_config(case.value.clone(), 0).expect(case.label);
+            assert_eq!(
+                migrated, case.value,
+                "case `{}`: non-object input must pass through unchanged for from_version < DEFAULT_VERSION",
+                case.label
+            );
+        }
+    }
+
+    #[test]
     fn migrate_config_rewrites_version_to_default_for_older_input() {
         let value = serde_json::json!({
             "version": 0,
