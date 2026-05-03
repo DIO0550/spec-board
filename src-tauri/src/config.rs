@@ -527,12 +527,17 @@ fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), Loa
             path: tmp.to_path_buf(),
             source,
         })?;
-    tmp_file
-        .write_all(content.as_bytes())
-        .map_err(|source| LoadConfigError::BackupFailed {
+    if let Err(source) = tmp_file.write_all(content.as_bytes()) {
+        // write_all 失敗時に partially written な tmp が残ると、tmp 名は呼び出しごとに
+        // unique なため後続 load では再利用 / cleanup されず orphan ガベージとして
+        // `.spec-board/` に蓄積する。best-effort で削除する。
+        drop(tmp_file);
+        let _ = std::fs::remove_file(tmp);
+        return Err(LoadConfigError::BackupFailed {
             path: tmp.to_path_buf(),
             source,
-        })?;
+        });
+    }
     drop(tmp_file);
 
     std::fs::rename(tmp, dst).map_err(|source| {
