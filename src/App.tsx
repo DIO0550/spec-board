@@ -380,20 +380,29 @@ export const App = () => {
     if (state.kind !== "loaded") {
       return <EmptyState type="no-project" onOpenProject={openProject} />;
     }
-    if (tasks.length === 0) {
-      return <EmptyState type="empty-project" />;
-    }
+    // tasks 0 件でも Board は描画する (column UI / +追加 ボタンを残すため、
+    // board-view spec に従う)。空プロジェクト時のガイダンスは Board 上に
+    // 重ねて表示する。
     return (
-      <Board
-        columns={columns}
-        tasks={tasks}
-        doneColumn={doneColumn}
-        onAddTask={handleAddTask}
-        onAddColumn={handleAddColumn}
-        onRenameColumn={handleRenameColumn}
-        onDeleteColumn={handleDeleteColumn}
-        onTaskClick={handleTaskClick}
-      />
+      <div className="relative flex flex-1 overflow-hidden">
+        <Board
+          columns={columns}
+          tasks={tasks}
+          doneColumn={doneColumn}
+          onAddTask={handleAddTask}
+          onAddColumn={handleAddColumn}
+          onRenameColumn={handleRenameColumn}
+          onDeleteColumn={handleDeleteColumn}
+          onTaskClick={handleTaskClick}
+        />
+        {tasks.length === 0 && (
+          <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
+            <p className="rounded bg-white/90 px-4 py-2 text-sm text-gray-500 shadow">
+              タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
+            </p>
+          </div>
+        )}
+      </div>
     );
   };
 
