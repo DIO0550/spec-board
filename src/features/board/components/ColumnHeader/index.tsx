@@ -43,6 +43,7 @@ export const ColumnHeader = ({
 }: ColumnHeaderProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(name);
+  const [isBusy, setIsBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
   const reactId = useId();
@@ -71,6 +72,10 @@ export const ColumnHeader = ({
   };
 
   const confirm = async (): Promise<boolean> => {
+    // re-entrant guard: pending 中の連打 (Enter 連打) を抑止
+    if (isBusy) {
+      return false;
+    }
     const trimmed = inputValue.trim();
     if (trimmed.length === 0 || trimmed === name) {
       isCancelledRef.current = true;
@@ -81,13 +86,16 @@ export const ColumnHeader = ({
     if (existingColumnNames.includes(trimmed)) {
       return false;
     }
+    setIsBusy(true);
     try {
       await onRename?.(trimmed);
     } catch {
       // 失敗時は edit mode を維持し、ユーザの入力を保持する
       // (caller 側で error toast 等の通知が出ている前提)
+      setIsBusy(false);
       return false;
     }
+    setIsBusy(false);
     isCancelledRef.current = true;
     setIsEditing(false);
     return true;
@@ -135,10 +143,11 @@ export const ColumnHeader = ({
                 }
                 isCancelledRef.current = false;
               }}
+              disabled={isBusy}
               aria-label="カラム名"
               aria-invalid={isDuplicate}
               aria-describedby={isDuplicate ? errorId : undefined}
-              className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none"
+              className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none disabled:bg-gray-100"
               data-testid="column-rename-input"
             />
             {isDuplicate && (

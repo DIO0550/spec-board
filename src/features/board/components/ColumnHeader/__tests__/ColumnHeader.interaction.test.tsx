@@ -221,6 +221,57 @@ test("onRename が reject した場合、edit mode は維持される", async ()
   ).toBeTruthy();
 });
 
+test("onRename 実行中の Enter 連打は二重実行されない (re-entrant guard)", async () => {
+  let resolveRename!: () => void;
+  const onRename = vi.fn().mockImplementation(
+    () =>
+      new Promise<void>((res) => {
+        resolveRename = res;
+      }),
+  );
+  render({
+    name: "Todo",
+    taskCount: 0,
+    onAddClick: vi.fn(),
+    onRename,
+    existingColumnNames: [],
+  });
+  act(() => {
+    (
+      container?.querySelector(
+        '[data-testid="column-name-button"]',
+      ) as HTMLButtonElement | null
+    )?.click();
+  });
+  const input = container?.querySelector(
+    '[data-testid="column-rename-input"]',
+  ) as HTMLInputElement;
+  setInputValue(input, "Backlog");
+  // 1 回目 Enter
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // 2 回目 Enter (re-entrant guard で抑止される想定)
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(onRename).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolveRename();
+    await Promise.resolve();
+  });
+});
+
 test("onRename 未指定時は編集用ボタンが表示されない", async () => {
   render({ name: "Todo", taskCount: 0, onAddClick: vi.fn() });
   await vi.waitFor(() => {
