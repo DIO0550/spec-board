@@ -257,13 +257,18 @@ export const App = () => {
           return null;
         }
         // doneColumn が削除対象の場合、destColumn (タスク移動先) を新 doneColumn に
-        // する。タスク 0 件削除 + destColumn 未指定の場合は残カラムの先頭にフォールバック。
+        // する。タスク 0 件削除 + destColumn 未指定の場合は残カラムの max-order を採用
+        // (FE 全体で missing doneColumn を max-order column と扱う規約に整合させる)。
         const remainingColumns = current.columns.filter(
           (c) => c.name !== columnName,
         );
+        const maxOrderColumn = remainingColumns.reduce<Column | undefined>(
+          (acc, c) => (acc === undefined || c.order > acc.order ? c : acc),
+          undefined,
+        );
         let doneColumn: string | undefined;
         if (current.doneColumn === columnName) {
-          doneColumn = destColumn ?? remainingColumns[0]?.name;
+          doneColumn = destColumn ?? maxOrderColumn?.name;
         }
         return {
           columns: remainingColumns,
