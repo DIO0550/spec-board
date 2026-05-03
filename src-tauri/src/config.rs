@@ -607,12 +607,18 @@ fn cleanup_stale_backup_tmps(project_root: &Path) {
         let Some(rest) = name_str.strip_prefix("config.json.bak.tmp.") else {
             continue;
         };
-        // 期待形式: "{pid}.{nanos}.{counter}"
+        // 期待形式: 厳密に "{pid}.{nanos}.{counter}" の 3 整数。それ以外（無関係な
+        // `config.json.bak.tmp.note.0.keep` 等）は backup tmp ではないとみなして
+        // 温存する。
         let mut parts = rest.split('.');
-        let _pid = parts.next();
-        let Some(nanos_str) = parts.next() else {
+        let (Some(pid_str), Some(nanos_str), Some(counter_str), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
             continue;
         };
+        if pid_str.parse::<u32>().is_err() || counter_str.parse::<u64>().is_err() {
+            continue;
+        }
         let Ok(nanos) = nanos_str.parse::<u128>() else {
             continue;
         };
@@ -1943,6 +1949,19 @@ mod tests {
         // 関係ないファイル（`config.json.bak` / 別名 prefix）は残ること。
         std::fs::write(dir.join("config.json.bak"), "old backup").unwrap();
         std::fs::write(dir.join("unrelated.txt"), "keep me").unwrap();
+        // 同じ prefix を共有するが期待 format に合致しないファイルも温存される。
+        let unrelated_with_prefix = [
+            "config.json.bak.tmp.note.0.keep",
+            "config.json.bak.tmp.notes",
+            "config.json.bak.tmp.1.0", // 部品が 2 つ（counter なし）
+            "config.json.bak.tmp.1.0.0.extra", // 部品が 4 つ
+            "config.json.bak.tmp.abc.0.0", // pid が非整数
+            "config.json.bak.tmp.1.notnano.0", // nanos が非整数
+            "config.json.bak.tmp.1.0.notcount", // counter が非整数
+        ];
+        for name in &unrelated_with_prefix {
+            std::fs::write(dir.join(name), "keep me too").unwrap();
+        }
 
         let _ = load_or_default(tmp.path()).unwrap();
 
@@ -1967,6 +1986,12 @@ mod tests {
         );
         assert!(remaining.iter().any(|n| n == "config.json.bak"));
         assert!(remaining.iter().any(|n| n == "unrelated.txt"));
+        for name in &unrelated_with_prefix {
+            assert!(
+                remaining.iter().any(|n| n == name),
+                "non-matching prefix file `{name}` must NOT be removed; remaining: {remaining:?}"
+            );
+        }
     }
 
     #[cfg(unix)]
