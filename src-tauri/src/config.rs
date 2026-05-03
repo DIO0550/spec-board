@@ -395,35 +395,39 @@ pub enum LoadConfigError {
 /// 外部エディタが `config.json` を書き換えても、`.bak` の内容は parse に使った
 /// `content` と一致することが保証される（TOCTOU 回避）。
 ///
-/// # 書き出し戦略: tempfile + rename
+/// # 書き出し戦略: sterilized tempfile + atomic rename
 ///
-/// `<dst>.tmp` に `content` を書き出してから `rename(<dst>.tmp, <dst>)` で置き換える。
-/// これにより既存の `<dst>` が以下のいずれであっても **外部ファイル本体を truncate
-/// せず**、ディレクトリエントリだけを差し替える:
-///
-/// - **hard link**（同一ファイルシステム上の他ファイルと inode を共有している `.bak`）:
-///   `rename` はディレクトリエントリを置換するだけで inode を上書きしないため、
-///   共有先のファイル内容が破壊されない。`std::fs::write` を直接使うと inode を
-///   truncate するため、悪意ある hard link 経由でプロジェクト外のファイルが
-///   上書きされる経路を塞ぐ。
-/// - **symbolic link**: `rename` は symlink 自身を置換し、リンク先には触れない
-///   （以下の symlink leaf チェックと併せて二重防御）。
-/// - **通常ファイル**: 従来通り上書き相当（atomic に置換される）。
+/// 1. **tmp パスの sterilization**: `<dst>.tmp` を一旦 `unlink` してから
+///    `OpenOptions::create_new(true)`（`O_CREAT|O_EXCL` 相当）で開く。
+///    これにより:
+///    - 攻撃者が事前に `<dst>.tmp` を symlink / hard link として作成していても、
+///      `unlink` でディレクトリエントリだけを削除し（symlink 自体やリンク数のみを
+///      減らし、リンク先 / inode は破壊しない）、続く `create_new` で完全に新しい
+///      inode を作る。`std::fs::write` を直接使うと事前に作られた symlink を辿って
+///      外部ファイルを破壊する経路があったが、本フローでは閉じる。
+///    - クラッシュ等で残った stale tmp も自動的に再作成される。
+/// 2. **書き出し**: 上記で開いた fresh inode に `content` を書き込む。
+/// 3. **atomic `rename(<dst>.tmp, <dst>)`**: 既存 `<dst>` が hard link でも
+///    symlink でも通常ファイルでも、ディレクトリエントリだけを差し替えて
+///    inode は触らない。これにより既存 `<dst>` 経由での外部ファイル truncate も
+///    防げる。
 ///
 /// # symlink 防御の範囲
 ///
 /// 書き出し前に **`<project_root>/.spec-board/` ディレクトリ** および **`config.json.bak`
 /// の leaf** の双方が symlink でないことを `symlink_metadata` で確認し、いずれかが
 /// symlink の場合は [`LoadConfigError::BackupFailed`] を返して書き出しを拒否する。
-/// 上記の rename 戦略と併せ、symlink 経由・hard link 経由いずれの方法でも外部
-/// ファイルが上書きされないようにするベストエフォート防御。
+/// 上記の sterilized tmp + rename 戦略と併せ、symlink 経由・hard link 経由いずれの
+/// 方法でも外部ファイルが上書きされないようにするベストエフォート防御。
 ///
 /// 以下は **本関数の範囲外**であり、別Issue（lockfile / project-root 内
 /// 制限）の責務とする:
 /// - `<project_root>` 自身およびそれより外側 ancestor の symlink / hard link
-/// - 本関数のチェックと `rename` の間に発生する TOCTOU race（leaf や `.spec-board/`
-///   が swap された場合）
+/// - 本関数のチェックと write / rename の間に発生する TOCTOU race
+///   （leaf / `.spec-board/` / `<dst>.tmp` の親方向が swap された場合）
 fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConfigError> {
+    use std::io::Write as _;
+
     let spec_board_dir = config_io::config_path(project_root)
         .parent()
         .map(Path::to_path_buf)
@@ -456,12 +460,41 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
     }
 
     let tmp = spec_board_dir.join("config.json.bak.tmp");
-    std::fs::write(&tmp, content).map_err(|source| LoadConfigError::BackupFailed {
-        path: tmp.clone(),
-        source,
-    })?;
+
+    // ディレクトリエントリレベルで stale / 攻撃者が事前作成した tmp を除去する。
+    // symlink / hard link の場合もディレクトリエントリだけを削除し、リンク先や
+    // inode は破壊しない。
+    match std::fs::remove_file(&tmp) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(LoadConfigError::BackupFailed {
+                path: tmp,
+                source,
+            });
+        }
+    }
+
+    // O_CREAT | O_EXCL semantics: 直前 unlink との race で誰かが再作成していたら
+    // 失敗する（攻撃者が race で再作成しても fresh inode への書き込みは確保される）。
+    let mut tmp_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(|source| LoadConfigError::BackupFailed {
+            path: tmp.clone(),
+            source,
+        })?;
+    tmp_file
+        .write_all(content.as_bytes())
+        .map_err(|source| LoadConfigError::BackupFailed {
+            path: tmp.clone(),
+            source,
+        })?;
+    drop(tmp_file);
+
     std::fs::rename(&tmp, &dst).map_err(|source| {
-        // Best-effort: tmp が残っていても次回 load 時に上書きされるためログのみ
+        // Best-effort: rename 失敗時に tmp を消す（次回 load 時の冪等性確保）。
         let _ = std::fs::remove_file(&tmp);
         LoadConfigError::BackupFailed { path: dst, source }
     })?;
@@ -1654,6 +1687,62 @@ mod tests {
             }
             other => panic!("expected BackupFailed, got {other:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_default_does_not_truncate_external_file_via_pre_created_tmp_symlink() {
+        let tmp_root = TempDir::new().unwrap();
+        let path = write_config(
+            &tmp_root,
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+        let bak_tmp = path.with_file_name("config.json.bak.tmp");
+
+        let outside = TempDir::new().unwrap();
+        let target = outside.path().join("external.txt");
+        std::fs::write(&target, "untouched").unwrap();
+        std::os::unix::fs::symlink(&target, &bak_tmp).unwrap();
+
+        let _ = load_or_default(tmp_root.path()).unwrap();
+
+        let target_content = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(
+            target_content, "untouched",
+            "external file pre-symlinked at .bak.tmp must NOT be overwritten"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_default_does_not_truncate_external_file_via_pre_created_tmp_hard_link() {
+        let tmp_root = TempDir::new().unwrap();
+        let path = write_config(
+            &tmp_root,
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+        let bak_tmp = path.with_file_name("config.json.bak.tmp");
+
+        let outside = TempDir::new().unwrap();
+        let target = outside.path().join("external.txt");
+        std::fs::write(&target, "untouched").unwrap();
+        std::fs::hard_link(&target, &bak_tmp).unwrap();
+
+        let _ = load_or_default(tmp_root.path()).unwrap();
+
+        let target_content = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(
+            target_content, "untouched",
+            "external file pre-hard-linked at .bak.tmp must NOT be truncated"
+        );
     }
 
     #[cfg(unix)]
