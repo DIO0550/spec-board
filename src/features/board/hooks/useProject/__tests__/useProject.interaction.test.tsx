@@ -767,6 +767,20 @@ test("updateColumns updater 形式: queue 実行時の最新 state から params
   expect(calls[1].columns).toEqual(["Todo", "Done", "A", "B"]);
 });
 
+test("updateColumns updater が throw した場合 Promise reject せず Result.err を返す", async () => {
+  const probe = renderHook();
+  await openLoaded(probe);
+  let result!: Awaited<ReturnType<UseProjectResult["updateColumns"]>>;
+  await act(async () => {
+    result = await probe.latest.updateColumns(() => {
+      throw new Error("updater boom");
+    });
+  });
+  expect(result.ok).toBe(false);
+  expect((result as { error: { kind: string } }).error.kind).toBe("tauri");
+  expect(updateColumnsMock).not.toHaveBeenCalled();
+});
+
 test("updateColumns updater が null を返した場合 invoke せず Result.ok({ applied: false }) を返す", async () => {
   const probe = renderHook();
   await openLoaded(probe);

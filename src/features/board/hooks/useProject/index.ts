@@ -8,6 +8,7 @@ import {
   getColumns as getColumnsInvoke,
   openDirectoryDialog,
   openProject as openProjectInvoke,
+  TauriError,
   type UpdateTaskParams,
   updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
@@ -335,7 +336,14 @@ export const useProject = (
             );
           }
           const startGen = generationRef.current;
-          const params = isUpdater(input) ? input(snapshot.data) : input;
+          // updater が throw した場合に Promise が reject すると Result contract
+          // が破れるため、try/catch で Result.err に詰め直す。
+          let params: UpdateColumnsParams | null;
+          try {
+            params = isUpdater(input) ? input(snapshot.data) : input;
+          } catch (e) {
+            return Result.err({ kind: "tauri", error: TauriError.from(e) });
+          }
           if (params === null) {
             // updater が null を返した: 適用すべき変更なし。invoke 未実行 = applied:false
             return Result.ok({ applied: false });
