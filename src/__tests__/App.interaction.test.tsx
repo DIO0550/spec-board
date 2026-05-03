@@ -13,6 +13,7 @@ import { App } from "@/App";
 import {
   createTask as createTaskInvoke,
   deleteTask as deleteTaskInvoke,
+  getColumns as getColumnsInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
@@ -30,6 +31,7 @@ vi.mock("@/lib/tauri", async () => {
     ...actual,
     openDirectoryDialog: vi.fn(),
     openProject: vi.fn(),
+    getColumns: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock("@/lib/tauri", async () => {
 
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
+const getColumnsMock = vi.mocked(getColumnsInvoke);
 const createTaskMock = vi.mocked(createTaskInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const deleteTaskMock = vi.mocked(deleteTaskInvoke);
@@ -75,6 +78,19 @@ let root: Root | null = null;
 beforeEach(() => {
   openDirectoryDialogMock.mockReset();
   openProjectMock.mockReset();
+  getColumnsMock.mockReset();
+  // openProject 内 / updateColumns 内の defensive refetch で常に呼ばれる。
+  // 既定では成功させて doneColumn を一貫して返し、テストごとに必要な範囲で上書きする。
+  getColumnsMock.mockResolvedValue({
+    ok: true,
+    value: {
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      doneColumn: "Done",
+    },
+  });
   createTaskMock.mockReset();
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();

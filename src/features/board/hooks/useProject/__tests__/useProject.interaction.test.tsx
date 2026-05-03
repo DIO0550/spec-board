@@ -82,12 +82,19 @@ beforeEach(() => {
   openDirectoryDialogMock.mockReset();
   openProjectMock.mockReset();
   getColumnsMock.mockReset();
-  // デフォルトでは get_columns を err にして、openProject hook は
-  // open_project の columns 文字列配列にフォールバックする (既存テスト互換)。
-  // doneColumn を検証するテストは個別に mockResolvedValueOnce で上書きする。
+  // デフォルトでは get_columns を ok で返し、openProject 後の ProjectData が
+  // 一貫した doneColumn を持つようにする。これで updateColumns 内の defensive
+  // refetch が走らない (refetch 失敗時の safety abort もテストを破壊しない)。
+  // 個別テストで失敗ケースを検証する場合は mockResolvedValueOnce で上書きする。
   getColumnsMock.mockResolvedValue({
-    ok: false,
-    error: new TauriError("UNKNOWN", "default mock"),
+    ok: true,
+    value: {
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      doneColumn: "Done",
+    },
   });
   createTaskMock.mockReset();
   updateTaskMock.mockReset();
@@ -182,7 +189,7 @@ const openLoaded = async (probe: { latest: UseProjectResult }) => {
 
 // === openProject フロー ===
 
-test("openProject 成功 (idle → loaded)、payload.columns string[] が Column[] に変換される", async () => {
+test("openProject 成功 (idle → loaded)、get_columns 成功時はその columns / doneColumn を採用", async () => {
   const probe = renderHook();
   await openLoaded(probe);
   expect(probe.latest.state).toEqual({
@@ -194,7 +201,7 @@ test("openProject 成功 (idle → loaded)、payload.columns string[] が Column
         { name: "Todo", order: 0 },
         { name: "Done", order: 1 },
       ],
-      doneColumn: undefined,
+      doneColumn: "Done",
     },
   });
 });
@@ -765,6 +772,42 @@ test("updateColumns updater 形式: queue 実行時の最新 state から params
   // 2 回目: queue 実行時の最新 (Todo, Done, A) に B 追加
   expect(calls[0].columns).toEqual(["Todo", "Done", "A"]);
   expect(calls[1].columns).toEqual(["Todo", "Done", "A", "B"]);
+});
+
+test("updateColumns: doneColumn 未取得 + defensive refetch 失敗時は Result.err で abort (config 破壊防止)", async () => {
+  // 初回 open の get_columns を一度成功させた後、updateColumns 内 refetch を失敗させる
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  // 初回 get_columns は err にして doneColumn 未取得状態を作る
+  getColumnsMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "initial fail")),
+  );
+  // updateColumns 内 refetch も err
+  getColumnsMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "refetch fail")),
+  );
+
+  const probe = renderHook();
+  let pendingOpen!: Promise<void>;
+  act(() => {
+    pendingOpen = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pendingOpen;
+  });
+  // 初回 doneColumn は undefined のはず
+  const data = (probe.latest.state as { data: { doneColumn?: string } }).data;
+  expect(data.doneColumn).toBeUndefined();
+
+  let result!: Awaited<ReturnType<UseProjectResult["updateColumns"]>>;
+  await act(async () => {
+    result = await probe.latest.updateColumns({
+      columns: [{ name: "X", order: 0 }],
+    });
+  });
+  expect(result.ok).toBe(false);
+  // BE update_columns invoke は呼ばれない (refetch 失敗で abort)
+  expect(updateColumnsMock).not.toHaveBeenCalled();
 });
 
 test("updateColumns updater が throw した場合 Promise reject せず Result.err を返す", async () => {

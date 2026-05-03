@@ -344,16 +344,18 @@ export const useProject = (
           }
           // doneColumn 未取得 (initial get_columns が失敗等) の場合、updater が
           // current.doneColumn === oldName 判定で常に false になり、rename/delete
-          // 時の doneColumn 連動が無効化される。defensive に再 fetch を試みて
-          // 取得できれば state も更新し、enriched snapshot を updater に渡す。
+          // 時の doneColumn 連動が無効化される。defensive に再 fetch を試みる。
           let effectiveData = snapshot.data;
           if (effectiveData.doneColumn === undefined) {
             const refresh = await getColumnsInvoke();
-            if (
-              isMountedRef.current &&
-              generationRef.current === enqueueGen &&
-              refresh.ok
-            ) {
+            // refetch await 中に project が切り替わった場合は、stale snapshot で
+            // 続行すると新プロジェクトを上書きしてしまうため、ここで abort する。
+            if (!isMountedRef.current || generationRef.current !== enqueueGen) {
+              return invalidStateErr<{ applied: boolean }>(
+                "プロジェクトが切り替わりました",
+              );
+            }
+            if (refresh.ok) {
               effectiveData = {
                 ...effectiveData,
                 doneColumn: refresh.value.doneColumn,
@@ -362,6 +364,12 @@ export const useProject = (
                 type: "done-column-refreshed",
                 doneColumn: refresh.value.doneColumn,
               });
+            } else {
+              // refetch も失敗した: doneColumn 不明のまま update_columns を呼ぶと
+              // BE が stale doneColumn を保持し、rename/delete で削除した column を
+              // doneColumn として持ち続ける config 破壊リスクがある。安全のため
+              // ここで Result.err を返し caller に retry を促す。
+              return Result.err({ kind: "tauri", error: refresh.error });
             }
           }
           const startGen = generationRef.current;
