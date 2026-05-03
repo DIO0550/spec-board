@@ -18,13 +18,22 @@
 //! # ファイル I/O の境界
 //! 低レベル I/O（`.spec-board/` の作成、`config.json` の raw 読み込み）は
 //! サブクレート `spec-board-fs::config_io` に集約する。本モジュールは
-//! その raw 文字列を `serde_json::from_str::<Config>` でパースし、不在時の
-//! `Default` フォールバックと `done_column` の解決ヘルパを提供する薄い層に留める。
+//! その raw 文字列を `serde_json::Value` 経由の 2 段階パースで解釈し、
+//! 以下の責務を担う薄い層に留める:
+//!
+//! - 不在時の `Default` フォールバック
+//! - `done_column` の解決ヘルパ
+//! - `version` 判定（未来 version は [`LoadConfigError::UnknownFutureVersion`] で停止、
+//!   古い version は `config.json.bak` をバックアップしてから [`migrate_config`] を適用）
+//! - load 時のカラム名重複検証（[`validate_unique_column_names`]）
+//!
+//! 古い `version` のマイグレーション結果はメモリ上の [`Config`] として返り、
+//! `config.json` への書き戻しは行わない（書き出し経路は別 Issue の責務）。
 //!
 //! # スコープ外（別 Issue で実装）
-//! - `config.json` の書き出し（atomic write / `.bak` 退避 / 並行書き込み制御）
-//! - バリデーション（columns 重複・doneColumn 整合性 / 名前空間整合）
-//! - version マイグレーション
+//! - `config.json` の書き出し（atomic write / `.bak` 退避の永続化 / 並行書き込み制御）
+//! - `doneColumn` の整合性検証 / カラム名空間の正規化
+//! - 実フィールド変換を伴う実マイグレーション（本モジュールはフックのみ提供）
 //! - GUIDE.md 自動生成
 //! - Tauri コマンド層
 //!
@@ -270,6 +279,70 @@ pub fn clean_card_order(
     cleaned
 }
 
+/// `Config::columns` のカラム名重複を検証する純粋関数。
+///
+/// 完全一致比較。最初に見つけた重複名を `Err(name)` で返す。大文字小文字違い
+/// （例: `"Todo"` vs `"todo"`）は別カラム扱いで `Ok(())`。
+///
+/// 入力値はそのまま完全一致比較する（未正規化のまま）。空文字 `""` / 空白のみ
+/// `" "` / 前後空白付き `"  Todo  "` は値そのものを比較対象とし、本関数では
+/// 空文字や空白を別エラーとして拒否しない（[`build_config_from_statuses`] が
+/// status 入力を未正規化のまま受ける規約と一貫させる）。
+pub fn validate_unique_column_names(columns: &[Column]) -> Result<(), String> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(columns.len());
+    for column in columns {
+        if !seen.insert(column.name.as_str()) {
+            return Err(column.name.clone());
+        }
+    }
+    Ok(())
+}
+
+/// [`migrate_config`] で発生し得るエラー。
+///
+/// 本Issue（骨格段階）では `from_version` が [`DEFAULT_VERSION`] を超える場合のみ報告する。
+/// 将来 `DEFAULT_VERSION` を引き上げるタイミングで variant を追加する。
+#[derive(Debug, PartialEq, Error)]
+pub enum MigrationError {
+    /// `from_version` が [`DEFAULT_VERSION`] より大きく、対応するマイグレーション経路が存在しない。
+    #[error("unsupported migration from version {0}")]
+    UnsupportedFromVersion(u32),
+}
+
+/// 古い `version` の `config.json` を新しい [`serde_json::Value`] に変換するフック。
+///
+/// 挙動:
+/// - `from_version == DEFAULT_VERSION` のときは入力 `value` をそのまま返す（素通し）。
+/// - `from_version < DEFAULT_VERSION` のときは骨格実装として **他フィールドを変更せず
+///   `value["version"]` のみ [`DEFAULT_VERSION`] に書き換えて返す**。これにより load 後の
+///   [`Config::version`] が一貫して [`DEFAULT_VERSION`] に正規化される。
+/// - `from_version > DEFAULT_VERSION` は通常 [`load_or_default`] 側で
+///   [`LoadConfigError::UnknownFutureVersion`] により早期に弾かれるが、純粋関数単独利用時の
+///   防御として [`MigrationError::UnsupportedFromVersion`] を返す。
+///
+/// 将来 [`DEFAULT_VERSION`] を引き上げる際に `match from_version` の各アームへ実フィールド
+/// 変換ロジックを追加する。
+pub fn migrate_config(
+    value: serde_json::Value,
+    from_version: u32,
+) -> Result<serde_json::Value, MigrationError> {
+    if from_version > DEFAULT_VERSION {
+        return Err(MigrationError::UnsupportedFromVersion(from_version));
+    }
+    if from_version == DEFAULT_VERSION {
+        return Ok(value);
+    }
+
+    let mut migrated = value;
+    if let serde_json::Value::Object(ref mut map) = migrated {
+        map.insert(
+            "version".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(DEFAULT_VERSION)),
+        );
+    }
+    Ok(migrated)
+}
+
 /// [`load_or_default`] で発生し得るエラー。
 ///
 /// [`ConfigIoError`] は `#[from]` で透過的に伝播し、JSON パース失敗は
@@ -286,20 +359,69 @@ pub enum LoadConfigError {
         #[source]
         source: serde_json::Error,
     },
+
+    #[error("unknown future config.json version: found {found}, supported up to {supported}")]
+    UnknownFutureVersion { found: u32, supported: u32 },
+
+    #[error("duplicate column name in config.json: `{0}`")]
+    DuplicateColumnName(String),
+
+    #[error(transparent)]
+    MigrationFailed(#[from] MigrationError),
+
+    #[error("failed to write backup `{path}`: {source}", path = path.display())]
+    BackupFailed {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// `<project_root>/.spec-board/config.json` を `config.json.bak` へ上書きコピーする。
+///
+/// 既存 `.bak` は silently overwrite される（`std::fs::copy` の標準セマンティクス）。
+fn backup_config_json(project_root: &Path) -> Result<(), LoadConfigError> {
+    let src = config_io::config_path(project_root);
+    let dst = src.with_file_name("config.json.bak");
+    std::fs::copy(&src, &dst)
+        .map_err(|source| LoadConfigError::BackupFailed { path: dst, source })?;
+    Ok(())
+}
+
+/// [`serde_json::Value`] から `version` を `u32` として取り出す。
+///
+/// 欠落 / 型不一致（文字列等）/ `u32` 範囲外は `serde_json::Error` を合成して返し、
+/// caller 側で [`LoadConfigError::Parse`] に包む（既存の必須フィールド欠落時の
+/// パースエラー挙動と一貫させる）。
+fn extract_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> {
+    use serde::de::Error as _;
+    let v = value
+        .get("version")
+        .ok_or_else(|| serde_json::Error::custom("missing field `version`"))?;
+    let n = v
+        .as_u64()
+        .ok_or_else(|| serde_json::Error::custom("invalid type for `version`: expected u32"))?;
+    u32::try_from(n).map_err(|_| serde_json::Error::custom("`version` out of u32 range"))
 }
 
 /// `<project_root>/.spec-board/config.json` を読み込み、[`Config`] を返す。
 ///
 /// 1. `.spec-board/` ディレクトリを冪等に作成する
 /// 2. `config.json` の存在を確認し、不在なら [`Config::default`] を返す
-/// 3. 存在する場合は `serde_json::from_str::<Config>` でパースする
+/// 3. `serde_json::Value` として 1 段階目のパースを行い、`version` を抽出
+/// 4. `version` が [`DEFAULT_VERSION`] を超える場合は [`LoadConfigError::UnknownFutureVersion`]
+/// 5. `version` が古い場合は `<root>/.spec-board/config.json.bak` を作成し
+///    [`migrate_config`] を適用する
+/// 6. [`serde_json::from_value::<Config>`] で 2 段階目のパース
+/// 7. [`validate_unique_column_names`] でカラム名重複を検証
 ///
 /// # Default を返す条件
 ///
 /// 関数名の `_or_default` は **「`config.json` が存在しないとき」のみ** Default を
-/// 返すことを意味する。読み込み I/O の失敗 / JSON パースの失敗は `Err` として
-/// 返却され、呼び出し層（Tauri コマンド層など）が必要に応じて
-/// [`Config::default`] へのフォールバック判断 + 通知を行う想定
+/// 返すことを意味する。読み込み I/O の失敗 / JSON パースの失敗 / 未来 version /
+/// マイグレーション失敗 / バックアップ失敗 / カラム名重複は `Err` として返却され、
+/// 呼び出し層（Tauri コマンド層など）が必要に応じて [`Config::default`] への
+/// フォールバック判断 + 通知を行う想定
 /// （仕様書「読み込み失敗 → デフォルト + トースト」は呼び出し層の責務として切り出す）。
 ///
 /// # Errors
@@ -307,18 +429,51 @@ pub enum LoadConfigError {
 /// - `.spec-board/` の作成 / アクセスに失敗 → [`LoadConfigError::Io`]
 /// - `config.json` の読み取りに失敗 → [`LoadConfigError::Io`]
 /// - `config.json` のパースに失敗 → [`LoadConfigError::Parse`]
+/// - `version` がサポート範囲を超える → [`LoadConfigError::UnknownFutureVersion`]
+/// - `config.json.bak` の書き込みに失敗 → [`LoadConfigError::BackupFailed`]
+/// - マイグレーションに失敗 → [`LoadConfigError::MigrationFailed`]
+/// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
 pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     config_io::ensure_spec_board_dir(project_root)?;
     let raw = config_io::read_config_json(project_root)?;
-    match raw {
-        None => Ok(Config::default()),
-        Some(content) => {
-            serde_json::from_str::<Config>(&content).map_err(|source| LoadConfigError::Parse {
-                path: config_io::config_path(project_root),
-                source,
-            })
-        }
-    }
+    let Some(content) = raw else {
+        return Ok(Config::default());
+    };
+
+    let path = config_io::config_path(project_root);
+
+    let value: serde_json::Value =
+        serde_json::from_str(&content).map_err(|source| LoadConfigError::Parse {
+            path: path.clone(),
+            source,
+        })?;
+
+    let from_version = extract_version(&value).map_err(|source| LoadConfigError::Parse {
+        path: path.clone(),
+        source,
+    })?;
+
+    let migrated_value = if from_version > DEFAULT_VERSION {
+        return Err(LoadConfigError::UnknownFutureVersion {
+            found: from_version,
+            supported: DEFAULT_VERSION,
+        });
+    } else if from_version < DEFAULT_VERSION {
+        backup_config_json(project_root)?;
+        migrate_config(value, from_version)?
+    } else {
+        value
+    };
+
+    let config: Config =
+        serde_json::from_value(migrated_value).map_err(|source| LoadConfigError::Parse {
+            path: path.clone(),
+            source,
+        })?;
+
+    validate_unique_column_names(&config.columns).map_err(LoadConfigError::DuplicateColumnName)?;
+
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -974,6 +1129,384 @@ mod tests {
             let mut sorted = keys.clone();
             sorted.sort();
             assert_eq!(keys, sorted, "case (key order): {}", case.label);
+        }
+    }
+
+    // ───────── migrate_config ─────────
+
+    #[test]
+    fn migrate_config_passthrough_when_from_version_equals_default() {
+        let value = serde_json::json!({
+            "version": DEFAULT_VERSION,
+            "columns": [],
+            "cardOrder": {},
+        });
+        let migrated = migrate_config(value.clone(), DEFAULT_VERSION).unwrap();
+        assert_eq!(migrated, value);
+    }
+
+    #[test]
+    fn migrate_config_returns_unsupported_for_future_version() {
+        let value = serde_json::json!({});
+        let err = migrate_config(value, DEFAULT_VERSION + 1).unwrap_err();
+        assert_eq!(
+            err,
+            MigrationError::UnsupportedFromVersion(DEFAULT_VERSION + 1)
+        );
+    }
+
+    #[test]
+    fn migrate_config_rewrites_version_to_default_for_older_input() {
+        let value = serde_json::json!({
+            "version": 0,
+            "columns": [{ "name": "Todo", "order": 0 }],
+            "cardOrder": {},
+        });
+        let migrated = migrate_config(value, 0).unwrap();
+        let version = migrated
+            .get("version")
+            .and_then(serde_json::Value::as_u64)
+            .expect("version must remain present after migration");
+        assert_eq!(version, u64::from(DEFAULT_VERSION));
+        // 他フィールドは温存される
+        assert_eq!(
+            migrated.get("columns"),
+            Some(&serde_json::json!([{ "name": "Todo", "order": 0 }]))
+        );
+        assert_eq!(migrated.get("cardOrder"), Some(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn migrate_config_parametrized() {
+        struct Case {
+            label: &'static str,
+            from_version: u32,
+            expect_ok: bool,
+        }
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "from_version 0 (older) -> Ok with version=DEFAULT",
+                from_version: 0,
+                expect_ok: true,
+            },
+            Case {
+                label: "from_version 1 (default) -> Ok passthrough",
+                from_version: 1,
+                expect_ok: true,
+            },
+            Case {
+                label: "from_version 2 (future) -> Err Unsupported",
+                from_version: 2,
+                expect_ok: false,
+            },
+            Case {
+                label: "from_version 999 (far future) -> Err Unsupported",
+                from_version: 999,
+                expect_ok: false,
+            },
+        ];
+
+        for case in cases {
+            let value = serde_json::json!({
+                "version": case.from_version,
+                "columns": [],
+                "cardOrder": {},
+            });
+            let result = migrate_config(value, case.from_version);
+            match (case.expect_ok, result) {
+                (true, Ok(migrated)) => {
+                    let v = migrated
+                        .get("version")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or_else(|| panic!("case `{}`: version missing", case.label));
+                    assert_eq!(
+                        v,
+                        u64::from(DEFAULT_VERSION),
+                        "case `{}`: version must be normalized to DEFAULT_VERSION",
+                        case.label
+                    );
+                }
+                (false, Err(MigrationError::UnsupportedFromVersion(v))) => {
+                    assert_eq!(
+                        v, case.from_version,
+                        "case `{}`: error must carry from_version",
+                        case.label
+                    );
+                }
+                (expected_ok, actual) => {
+                    panic!(
+                        "case `{}`: expected ok={expected_ok}, got {actual:?}",
+                        case.label
+                    );
+                }
+            }
+        }
+    }
+
+    // ───────── validate_unique_column_names ─────────
+
+    #[test]
+    fn validate_unique_column_names_returns_ok_for_distinct_columns() {
+        let columns = vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)];
+        assert_eq!(validate_unique_column_names(&columns), Ok(()));
+    }
+
+    #[test]
+    fn validate_unique_column_names_returns_err_for_first_duplicate() {
+        let columns = vec![col("Todo", 0), col("Todo", 1)];
+        assert_eq!(
+            validate_unique_column_names(&columns),
+            Err("Todo".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_unique_column_names_treats_case_as_distinct() {
+        let columns = vec![col("Todo", 0), col("todo", 1)];
+        assert_eq!(validate_unique_column_names(&columns), Ok(()));
+    }
+
+    #[test]
+    fn validate_unique_column_names_returns_ok_for_empty_slice() {
+        assert_eq!(validate_unique_column_names(&[]), Ok(()));
+    }
+
+    #[test]
+    fn validate_unique_column_names_treats_whitespace_variants_as_distinct() {
+        struct Case {
+            label: &'static str,
+            columns: Vec<Column>,
+        }
+
+        let cases: Vec<Case> = vec![
+            Case {
+                label: "single empty string",
+                columns: vec![col("", 0)],
+            },
+            Case {
+                label: "single whitespace-only",
+                columns: vec![col(" ", 0)],
+            },
+            Case {
+                label: "Todo vs leading-space Todo",
+                columns: vec![col("Todo", 0), col(" Todo", 1)],
+            },
+            Case {
+                label: "empty + double-space distinct",
+                columns: vec![col("", 0), col("  ", 1)],
+            },
+            Case {
+                label: "Todo vs surrounded-space Todo",
+                columns: vec![col("Todo", 0), col("  Todo  ", 1)],
+            },
+        ];
+
+        for case in cases {
+            assert_eq!(
+                validate_unique_column_names(&case.columns),
+                Ok(()),
+                "case: {}",
+                case.label
+            );
+        }
+    }
+
+    // ───────── load_or_default (version migration) ─────────
+
+    fn write_config(tmp: &TempDir, content: &str) -> PathBuf {
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    #[test]
+    fn load_or_default_rejects_future_version() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "version": 999,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::UnknownFutureVersion { found, supported } => {
+                assert_eq!(found, 999);
+                assert_eq!(supported, DEFAULT_VERSION);
+            }
+            other => panic!("expected UnknownFutureVersion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_or_default_creates_backup_and_normalizes_version_for_older_config() {
+        let tmp = TempDir::new().unwrap();
+        let content = r#"{
+            "version": 0,
+            "columns": [{ "name": "Todo", "order": 0 }],
+            "cardOrder": {}
+        }"#;
+        let path = write_config(&tmp, content);
+
+        let cfg = load_or_default(tmp.path()).unwrap();
+
+        let bak = path.with_file_name("config.json.bak");
+        assert!(bak.is_file(), "backup must exist at {}", bak.display());
+        let bak_content = std::fs::read_to_string(&bak).unwrap();
+        assert_eq!(
+            bak_content, content,
+            "backup must contain the original (pre-migration) raw content"
+        );
+        assert_eq!(cfg.version, DEFAULT_VERSION);
+    }
+
+    #[test]
+    fn load_or_default_consecutive_loads_normalize_version_consistently() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let cfg1 = load_or_default(tmp.path()).unwrap();
+        let cfg2 = load_or_default(tmp.path()).unwrap();
+        assert_eq!(cfg1.version, DEFAULT_VERSION);
+        assert_eq!(cfg2.version, DEFAULT_VERSION);
+    }
+
+    #[test]
+    fn load_or_default_does_not_create_backup_for_current_version() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_config(
+            &tmp,
+            r#"{
+                "version": 1,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let _ = load_or_default(tmp.path()).unwrap();
+
+        let bak = path.with_file_name("config.json.bak");
+        assert!(
+            !bak.exists(),
+            "backup must NOT exist when loading a current-version config"
+        );
+    }
+
+    #[test]
+    fn load_or_default_overwrites_existing_backup() {
+        let tmp = TempDir::new().unwrap();
+        let content = r#"{
+            "version": 0,
+            "columns": [{ "name": "Todo", "order": 0 }],
+            "cardOrder": {}
+        }"#;
+        let path = write_config(&tmp, content);
+        let bak = path.with_file_name("config.json.bak");
+        std::fs::write(&bak, "STALE BACKUP CONTENT").unwrap();
+
+        let _ = load_or_default(tmp.path()).unwrap();
+
+        let bak_content = std::fs::read_to_string(&bak).unwrap();
+        assert_eq!(
+            bak_content, content,
+            "existing .bak must be silently overwritten with current raw content"
+        );
+    }
+
+    #[test]
+    fn load_or_default_returns_duplicate_column_name_error() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "version": 1,
+                "columns": [
+                    { "name": "Todo", "order": 0 },
+                    { "name": "Todo", "order": 1 }
+                ],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::DuplicateColumnName(name) => assert_eq!(name, "Todo"),
+            other => panic!("expected DuplicateColumnName, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_or_default_returns_parse_err_for_missing_version_field() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, LoadConfigError::Parse { .. }),
+            "expected Parse error for missing version, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_or_default_returns_parse_err_for_string_version() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            r#"{
+                "version": "1",
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, LoadConfigError::Parse { .. }),
+            "expected Parse error for string version, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_or_default_returns_backup_failed_when_bak_path_is_directory() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_config(
+            &tmp,
+            r#"{
+                "version": 0,
+                "columns": [{ "name": "Todo", "order": 0 }],
+                "cardOrder": {}
+            }"#,
+        );
+        let bak = path.with_file_name("config.json.bak");
+        std::fs::create_dir(&bak).unwrap();
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::BackupFailed {
+                path: failed_path, ..
+            } => {
+                assert_eq!(failed_path, bak);
+            }
+            other => panic!("expected BackupFailed, got {other:?}"),
         }
     }
 }
