@@ -1817,7 +1817,6 @@ mod tests {
         assert_eq!(dst_content, "fresh content");
     }
 
-    #[cfg(unix)]
     #[test]
     fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_hard_link() {
         let dir = TempDir::new().unwrap();
@@ -1840,7 +1839,6 @@ mod tests {
         assert_eq!(dst_content, "fresh content");
     }
 
-    #[cfg(unix)]
     #[test]
     fn load_or_default_does_not_truncate_external_file_via_hard_linked_bak() {
         let tmp = TempDir::new().unwrap();
