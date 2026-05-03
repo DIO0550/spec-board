@@ -551,6 +551,40 @@ fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), Loa
     Ok(())
 }
 
+/// `<project_root>/.spec-board/` 配下に残っている orphan `config.json.bak.tmp.*`
+/// を best-effort で削除する。
+///
+/// クラッシュ / 強制終了等で `backup_config_json` の `open(tmp)` と `rename(tmp, dst)`
+/// の間で実行が中断された場合、unique tmp 名のため後続 load では再利用 / cleanup されず
+/// `.spec-board/` に蓄積する。本関数は `load_or_default` の冒頭で呼ばれ、`config.json.bak.tmp.`
+/// プレフィクスを持つ通常ファイルを列挙して削除する（symlink / hard link は
+/// `remove_file` がディレクトリエントリだけを除去するためリンク先 / 共有 inode は
+/// 破壊しない）。
+///
+/// I/O エラー（読み取り権限なし等）は無視する — orphan が残っても機能上の支障は
+/// 発生せず、次回成功した load で再試行されるため。
+fn cleanup_stale_backup_tmps(project_root: &Path) {
+    let spec_board_dir = config_io::config_path(project_root)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| project_root.join(".spec-board"));
+
+    let Ok(entries) = std::fs::read_dir(&spec_board_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if !name_str.starts_with("config.json.bak.tmp.") {
+            continue;
+        }
+        let _ = std::fs::remove_file(entry.path());
+    }
+}
+
 /// `version` フィールドのみを抜き出す軽量スキーマ。
 ///
 /// `serde_json::from_str` 経由で raw 文字列から直接デシリアライズすることで、
@@ -606,6 +640,7 @@ struct VersionOnly {
 /// を実装したタイミングで実際に発生し得るようになる。
 pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     config_io::ensure_spec_board_dir(project_root)?;
+    cleanup_stale_backup_tmps(project_root);
     let raw = config_io::read_config_json(project_root)?;
     let Some(content) = raw else {
         return Ok(Config::default());
@@ -1842,6 +1877,40 @@ mod tests {
         );
         let dst_content = std::fs::read_to_string(&dst).unwrap();
         assert_eq!(dst_content, "fresh content");
+    }
+
+    #[test]
+    fn load_or_default_cleans_up_stale_backup_tmps() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+
+        // クラッシュで残った想定の orphan tmp を 3 件配置する。
+        for suffix in ["1.111.0", "2.222.1", "9999.9999.9"] {
+            std::fs::write(
+                dir.join(format!("config.json.bak.tmp.{suffix}")),
+                "stale content",
+            )
+            .unwrap();
+        }
+        // 関係ないファイル（`config.json.bak` / 別名 prefix）は残ること。
+        std::fs::write(dir.join("config.json.bak"), "old backup").unwrap();
+        std::fs::write(dir.join("unrelated.txt"), "keep me").unwrap();
+
+        let _ = load_or_default(tmp.path()).unwrap();
+
+        let remaining: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        for name in &remaining {
+            assert!(
+                !name.starts_with("config.json.bak.tmp."),
+                "stale tmp file `{name}` must be cleaned up"
+            );
+        }
+        assert!(remaining.iter().any(|n| n == "config.json.bak"));
+        assert!(remaining.iter().any(|n| n == "unrelated.txt"));
     }
 
     #[test]
