@@ -148,6 +148,15 @@ export const useProject = (
     dispatch(action);
   }, []);
 
+  // 世代を bump し、関連 queue / ref も同時に reset するヘルパ。
+  // 旧プロジェクトの updateColumns invoke が pending のまま新プロジェクトに
+  // 切り替わったとき、新プロジェクトの column 操作が古い promise の後ろに
+  // 詰まる問題を回避する (queue を破棄してフレッシュにする)。
+  const bumpGeneration = useCallback(() => {
+    generationRef.current += 1;
+    columnsQueueRef.current = Promise.resolve();
+  }, []);
+
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -200,7 +209,7 @@ export const useProject = (
 
     if (!invokeResult.ok) {
       // open-fail で previousLoaded に復元される場合も新世代として扱う
-      generationRef.current += 1;
+      bumpGeneration();
       dispatchSync({ type: "open-fail", path, error: invokeResult.error });
       onError?.({ kind: "tauri", error: invokeResult.error });
       return;
@@ -225,9 +234,9 @@ export const useProject = (
         : toColumns(invokeResult.value.columns),
       doneColumn: columnsResult.ok ? columnsResult.value.doneColumn : undefined,
     };
-    generationRef.current += 1;
+    bumpGeneration();
     dispatchSync({ type: "open-succeed", path, data });
-  }, [onError, dispatchSync]);
+  }, [onError, dispatchSync, bumpGeneration]);
 
   const createTask = useCallback(
     async (params: CreateTaskParams): Promise<ResultT<Task, ProjectError>> => {
@@ -364,9 +373,9 @@ export const useProject = (
 
   const reset = useCallback((): void => {
     requestIdRef.current += 1;
-    generationRef.current += 1;
+    bumpGeneration();
     dispatchSync({ type: "reset" });
-  }, [dispatchSync]);
+  }, [dispatchSync, bumpGeneration]);
 
   return {
     state,
