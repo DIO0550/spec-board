@@ -175,7 +175,12 @@ export const App = () => {
         throw new Error(message);
       }
       if (!result.value.applied) {
-        return;
+        // queue 内 silent skip (先行 add で同名カラムが追加済等)
+        // AddColumnButton が editor を維持してユーザに retry させる
+        const message =
+          "カラムの追加が適用されませんでした (他の操作と競合した可能性)";
+        showToast(message, "error");
+        throw new Error(message);
       }
       showToast("カラムを追加しました", "success");
     },
