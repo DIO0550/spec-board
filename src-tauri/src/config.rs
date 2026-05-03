@@ -315,8 +315,8 @@ pub enum MigrationError {
 ///
 /// 入力 `value` は **`config.json` の最上位 JSON Object** を想定している。
 /// [`load_or_default`] からの呼び出しではこの前提が常に満たされる
-/// （非 Object なら `extract_version` 段階で「missing field `version`」として
-/// `LoadConfigError::Parse` に倒され、本関数には到達しない）。
+/// （非 Object なら [`VersionOnly`] 経由の `serde_json::from_str` が「missing field
+/// `version`」として `LoadConfigError::Parse` に倒し、本関数には到達しない）。
 ///
 /// # 挙動
 ///
