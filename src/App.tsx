@@ -2,27 +2,63 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
 import {
-  createTask,
-  deleteTask,
-  getColumns,
-  getTasks,
-  updateColumns,
-  updateTask,
-} from "@/lib/api";
-import { Board, EmptyState, HeaderBar } from "./features/board";
+  Board,
+  EmptyState,
+  HeaderBar,
+  type ProjectError,
+  type ProjectState,
+  useProject,
+} from "./features/board";
 import { DetailPanel } from "./features/detail";
 import { TaskCreateModal, type TaskFormValues } from "./features/task-form";
 import type { Column } from "./types/column";
 import type { Task } from "./types/task";
 
 /**
- * @returns {JSX.Element} アプリケーションのルートレイアウトシェル
+ * `ProjectError` から人間可読なメッセージを取り出す。
+ *
+ * @param err useProject から運ばれるエラー
+ * @returns toast 等に出せる文字列
+ */
+const projectErrorMessage = (err: ProjectError): string =>
+  err.kind === "tauri" ? err.error.message : err.message;
+
+/**
+ * loaded 時のみ tasks を返す。それ以外は空配列。
+ *
+ * @param state useProject の現在 state
+ * @returns 派生タスク配列
+ */
+const tasksOf = (state: ProjectState): Task[] =>
+  state.kind === "loaded" ? state.data.tasks : [];
+
+/**
+ * loaded 時のみ columns を返す。それ以外は空配列。
+ *
+ * @param state useProject の現在 state
+ * @returns 派生カラム配列
+ */
+const columnsOf = (state: ProjectState): Column[] =>
+  state.kind === "loaded" ? state.data.columns : [];
+
+/**
+ * @returns アプリケーションのルートレイアウトシェル
  */
 export const App = () => {
-  const [projectPath, setProjectPath] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [columns, setColumns] = useState<Column[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { toasts, showToast, dismissToast } = useToasts();
+  const {
+    state,
+    openProject,
+    createTask,
+    updateTask,
+    deleteTask,
+    updateColumns,
+  } = useProject({
+    onError: (err) => {
+      showToast(projectErrorMessage(err), "error");
+    },
+  });
+
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [createModalStatus, setCreateModalStatus] = useState<string | null>(
     null,
@@ -30,26 +66,25 @@ export const App = () => {
   const [createModalParent, setCreateModalParent] = useState<
     string | undefined
   >(undefined);
-  const { toasts, showToast, dismissToast } = useToasts();
-  const columnsRef = useRef<Column[]>(columns);
-  const columnsQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const tasksRef = useRef<Task[]>(tasks);
 
+  // プロジェクト切替時に UI 状態（選択中タスク・作成モーダル）をリセットする。
+  // loaded 状態の path 変化を検出し、初回 idle→loaded への遷移時もここで初期化する。
+  const loadedPath = state.kind === "loaded" ? state.path : null;
+  const lastLoadedPathRef = useRef<string | null>(loadedPath);
   useEffect(() => {
-    columnsRef.current = columns;
-  }, [columns]);
+    if (loadedPath !== lastLoadedPathRef.current) {
+      lastLoadedPathRef.current = loadedPath;
+      setSelectedTaskId(null);
+      setCreateModalStatus(null);
+      setCreateModalParent(undefined);
+    }
+  }, [loadedPath]);
 
-  useEffect(() => {
-    tasksRef.current = tasks;
-  }, [tasks]);
-
+  const tasks = tasksOf(state);
+  const columns = columnsOf(state);
   const selectedTask = selectedTaskId
     ? (tasks.find((t) => t.id === selectedTaskId) ?? null)
     : null;
-
-  const handleOpenProject = () => {
-    setProjectPath("mock-project");
-  };
 
   const handleTaskClick = useCallback((taskId: string) => {
     setSelectedTaskId(taskId);
@@ -61,15 +96,17 @@ export const App = () => {
 
   const handleTaskUpdate = useCallback(
     async (id: string, updates: Partial<Omit<Task, "id">>) => {
-      try {
-        const updated = await updateTask(id, updates);
-        setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
-        showToast("タスクを更新しました", "success");
-      } catch {
-        showToast("タスクの更新に失敗しました", "error");
+      const filePath = tasks.find((t) => t.id === id)?.filePath;
+      if (filePath === undefined) {
+        return;
       }
+      const result = await updateTask({ filePath, ...updates });
+      if (!result.ok) {
+        return;
+      }
+      showToast("タスクを更新しました", "success");
     },
-    [showToast],
+    [tasks, updateTask, showToast],
   );
 
   const handleAddTask = useCallback((columnName: string) => {
@@ -77,140 +114,128 @@ export const App = () => {
     setCreateModalParent(undefined);
   }, []);
 
-  /**
-   * 新規カラムの追加。成功時はカラム一覧を更新しトーストを表示、失敗時はトースト表示のみ行う。
-   * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
-   */
   const handleAddColumn = useCallback(
-    (columnName: string): Promise<void> => {
-      const next = columnsQueueRef.current.then(async () => {
-        try {
-          const current = columnsRef.current;
-          if (current.some((c) => c.name === columnName)) {
-            showToast("同じ名前のカラムが既に存在します", "error");
-            return;
-          }
-          const maxOrder = current.reduce(
-            (acc, c) => (c.order > acc ? c.order : acc),
-            -1,
-          );
-          const nextColumns: Column[] = [
-            ...current,
+    async (columnName: string): Promise<void> => {
+      // 呼び出し時点の best-effort 検証（即座の UX フィードバック）
+      if (columns.some((c) => c.name === columnName)) {
+        showToast("同じ名前のカラムが既に存在します", "error");
+        return;
+      }
+      const result = await updateColumns((current) => {
+        // queue 実行時の最新 state で再検証（先行する add で重複していたら silent skip）
+        if (current.columns.some((c) => c.name === columnName)) {
+          return null;
+        }
+        const maxOrder = current.columns.reduce(
+          (acc, c) => (c.order > acc ? c.order : acc),
+          -1,
+        );
+        return {
+          columns: [
+            ...current.columns,
             { name: columnName, order: maxOrder + 1 },
-          ];
-          const updated = await updateColumns(nextColumns);
-          columnsRef.current = updated;
-          setColumns(updated);
-          showToast("カラムを追加しました", "success");
-        } catch {
-          showToast("カラムの追加に失敗しました", "error");
-        }
+          ],
+        };
       });
-      columnsQueueRef.current = next;
-      return next;
+      if (!result.ok) {
+        return;
+      }
+      if (!result.value.applied) {
+        return;
+      }
+      showToast("カラムを追加しました", "success");
     },
-    [showToast],
+    [columns, updateColumns, showToast],
   );
 
-  /**
-   * 既存カラムの名前変更。カラム追加と同じキューで直列化し、競合を防ぐ。
-   * 成功時はカラムとタスクの status を更新、失敗時はトースト表示のみ行う。
-   * @param oldName - 元のカラム名
-   * @param newName - 新しいカラム名（trim 済み、既存と非重複）
-   */
   const handleRenameColumn = useCallback(
-    (oldName: string, newName: string): Promise<void> => {
-      const next = columnsQueueRef.current.then(async () => {
-        try {
-          const current = columnsRef.current;
-          if (!current.some((c) => c.name === oldName)) {
-            return;
-          }
-          if (current.some((c) => c.name === newName)) {
-            showToast("同じ名前のカラムが既に存在します", "error");
-            return;
-          }
-          const nextColumns: Column[] = current.map((c) =>
-            c.name === oldName ? { ...c, name: newName } : c,
-          );
-          const updated = await updateColumns(nextColumns, [
-            { from: oldName, to: newName },
-          ]);
-          columnsRef.current = updated;
-          setColumns(updated);
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.status === oldName ? { ...t, status: newName } : t,
-            ),
-          );
-          showToast("カラム名を変更しました", "success");
-        } catch {
-          showToast("カラム名の変更に失敗しました", "error");
+    async (oldName: string, newName: string): Promise<void> => {
+      if (!columns.some((c) => c.name === oldName)) {
+        return;
+      }
+      if (columns.some((c) => c.name === newName)) {
+        showToast("同じ名前のカラムが既に存在します", "error");
+        return;
+      }
+      const result = await updateColumns((current) => {
+        if (!current.columns.some((c) => c.name === oldName)) {
+          return null;
         }
+        if (current.columns.some((c) => c.name === newName)) {
+          return null;
+        }
+        return {
+          columns: current.columns.map((c) =>
+            c.name === oldName ? { ...c, name: newName } : c,
+          ),
+          renames: [{ from: oldName, to: newName }],
+        };
       });
-      columnsQueueRef.current = next;
-      return next;
+      if (!result.ok) {
+        return;
+      }
+      if (!result.value.applied) {
+        return;
+      }
+      showToast("カラム名を変更しました", "success");
     },
-    [showToast],
+    [columns, updateColumns, showToast],
   );
 
-  /**
-   * 既存カラムの削除。カラム追加・リネームと同じキューで直列化し、競合を防ぐ。
-   * destColumn 指定時は削除対象カラムのタスクを移動先へ status 変更する。
-   * カラムが 1 つしかない場合は何もしない。
-   * @param columnName - 削除するカラム名
-   * @param destColumn - 移動先のカラム名。タスクが 0 件の場合は undefined
-   */
   const handleDeleteColumn = useCallback(
-    (columnName: string, destColumn: string | undefined): Promise<void> => {
-      const next = columnsQueueRef.current.then(async () => {
-        try {
-          const current = columnsRef.current;
-          if (!current.some((c) => c.name === columnName)) {
-            return;
-          }
-          if (current.length <= 1) {
-            showToast("最後のカラムは削除できません", "error");
-            return;
-          }
-          if (destColumn !== undefined) {
-            if (
-              destColumn === columnName ||
-              !current.some((c) => c.name === destColumn)
-            ) {
-              showToast("移動先カラムが不正です", "error");
-              return;
-            }
-          } else if (tasksRef.current.some((t) => t.status === columnName)) {
-            showToast("タスクが残っているため移動先カラムが必要です", "error");
-            return;
-          }
-          const nextColumns: Column[] = current.filter(
-            (c) => c.name !== columnName,
-          );
-          const renames =
+    async (
+      columnName: string,
+      destColumn: string | undefined,
+    ): Promise<void> => {
+      if (!columns.some((c) => c.name === columnName)) {
+        return;
+      }
+      if (columns.length <= 1) {
+        showToast("最後のカラムは削除できません", "error");
+        return;
+      }
+      if (destColumn !== undefined) {
+        if (
+          destColumn === columnName ||
+          !columns.some((c) => c.name === destColumn)
+        ) {
+          showToast("移動先カラムが不正です", "error");
+          return;
+        }
+      } else if (tasks.some((t) => t.status === columnName)) {
+        showToast("タスクが残っているため移動先カラムが必要です", "error");
+        return;
+      }
+      const result = await updateColumns((current) => {
+        if (!current.columns.some((c) => c.name === columnName)) {
+          return null;
+        }
+        if (current.columns.length <= 1) {
+          return null;
+        }
+        if (
+          destColumn !== undefined &&
+          !current.columns.some((c) => c.name === destColumn)
+        ) {
+          return null;
+        }
+        return {
+          columns: current.columns.filter((c) => c.name !== columnName),
+          renames:
             destColumn !== undefined
               ? [{ from: columnName, to: destColumn }]
-              : undefined;
-          const updated = await updateColumns(nextColumns, renames);
-          columnsRef.current = updated;
-          setColumns(updated);
-          if (destColumn !== undefined) {
-            setTasks((prev) =>
-              prev.map((t) =>
-                t.status === columnName ? { ...t, status: destColumn } : t,
-              ),
-            );
-          }
-          showToast("カラムを削除しました", "success");
-        } catch {
-          showToast("カラムの削除に失敗しました", "error");
-        }
+              : undefined,
+        };
       });
-      columnsQueueRef.current = next;
-      return next;
+      if (!result.ok) {
+        return;
+      }
+      if (!result.value.applied) {
+        return;
+      }
+      showToast("カラムを削除しました", "success");
     },
-    [showToast],
+    [columns, tasks, updateColumns, showToast],
   );
 
   const handleCloseCreateModal = useCallback(() => {
@@ -237,98 +262,67 @@ export const App = () => {
     [defaultCreateStatus, showToast],
   );
 
-  /**
-   * 新規タスクの作成。成功時は一覧を更新しトーストを表示、失敗時はトースト表示のうえ呼び出し元へ再 throw する。
-   * @param values - タスク作成フォームの入力値
-   * @throws createTask API 呼び出しが失敗した場合
-   */
   const handleCreateTask = useCallback(
-    async (values: TaskFormValues) => {
-      try {
-        const created = await createTask(values);
-        setTasks((prev) => {
-          const withCreated = [...prev, created];
-          if (created.parent === undefined) {
-            return withCreated;
-          }
-          return withCreated.map((t) =>
-            t.filePath === created.parent &&
-            !t.children.includes(created.filePath)
-              ? { ...t, children: [...t.children, created.filePath] }
-              : t,
-          );
-        });
-        showToast("タスクを作成しました", "success");
-      } catch (error) {
-        showToast("タスクの作成に失敗しました", "error");
-        throw error;
+    async (values: TaskFormValues): Promise<void> => {
+      const result = await createTask(values);
+      if (!result.ok) {
+        // モーダルを閉じない: TaskCreateModal は onSubmit reject で開いたままになる
+        throw new Error(projectErrorMessage(result.error));
       }
+      showToast("タスクを作成しました", "success");
     },
-    [showToast],
+    [createTask, showToast],
   );
 
   const handleTaskDelete = useCallback(
-    (id: string): Promise<void> =>
-      deleteTask(id).then(
-        () => {
-          setTasks((prev) => prev.filter((t) => t.id !== id));
-          setSelectedTaskId(null);
-          showToast("タスクを削除しました", "success");
-        },
-        (error: unknown) => {
-          showToast("タスクの削除に失敗しました", "error");
-          return Promise.reject(error);
-        },
-      ),
-    [showToast],
-  );
-
-  useEffect(() => {
-    if (projectPath === null) {
-      return;
-    }
-    let cancelled = false;
-    setIsLoading(true);
-    setSelectedTaskId(null);
-    (async () => {
-      const [loadedTasks, loadedColumns] = await Promise.all([
-        getTasks(),
-        getColumns(),
-      ]);
-      if (cancelled) {
+    async (id: string): Promise<void> => {
+      const filePath = tasks.find((t) => t.id === id)?.filePath;
+      if (filePath === undefined) {
         return;
       }
-      setTasks(loadedTasks);
-      setColumns(loadedColumns);
-      setIsLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath]);
+      const result = await deleteTask({ filePath });
+      if (!result.ok) {
+        return;
+      }
+      setSelectedTaskId(null);
+      showToast("タスクを削除しました", "success");
+    },
+    [tasks, deleteTask, showToast],
+  );
+
+  /**
+   * state.kind に応じて main 領域を描画する。
+   *
+   * @returns Loading / EmptyState / Board のいずれか
+   */
+  const renderMain = (): React.ReactNode => {
+    if (state.kind === "loading") {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-gray-500">読み込み中…</p>
+        </div>
+      );
+    }
+    if (state.kind !== "loaded") {
+      return <EmptyState type="no-project" onOpenProject={openProject} />;
+    }
+    return (
+      <Board
+        columns={columns}
+        tasks={tasks}
+        onAddTask={handleAddTask}
+        onAddColumn={handleAddColumn}
+        onRenameColumn={handleRenameColumn}
+        onDeleteColumn={handleDeleteColumn}
+        onTaskClick={handleTaskClick}
+      />
+    );
+  };
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <HeaderBar onSettingsClick={() => {}} onOpenClick={handleOpenProject} />
-      <main className="flex flex-1 overflow-hidden">
-        {projectPath === null ? (
-          <EmptyState type="no-project" onOpenProject={handleOpenProject} />
-        ) : isLoading ? (
-          <div className="flex flex-1 items-center justify-center">
-            <p className="text-gray-500">読み込み中…</p>
-          </div>
-        ) : (
-          <Board
-            columns={columns}
-            tasks={tasks}
-            onAddTask={handleAddTask}
-            onAddColumn={handleAddColumn}
-            onRenameColumn={handleRenameColumn}
-            onDeleteColumn={handleDeleteColumn}
-            onTaskClick={handleTaskClick}
-          />
-        )}
-      </main>
+      <HeaderBar onSettingsClick={() => {}} onOpenClick={openProject} />
+      <main className="flex flex-1 overflow-hidden">{renderMain()}</main>
       {selectedTask && (
         <DetailPanel
           task={selectedTask}
