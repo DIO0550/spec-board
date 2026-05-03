@@ -433,8 +433,6 @@ pub enum LoadConfigError {
 /// - 本関数のチェックと write / rename の間に発生する TOCTOU race
 ///   （leaf / `.spec-board/` / `<dst>.tmp` の親方向が swap された場合）
 fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConfigError> {
-    use std::io::Write as _;
-
     let spec_board_dir = config_io::config_path(project_root)
         .parent()
         .map(Path::to_path_buf)
@@ -467,8 +465,8 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
     }
 
     // tmp ファイル名を呼び出しごとに unique にして並行 load 時の race を回避する。
-    // PID + nanos suffix だけでは弱いが、本Issue では lockfile / project-root 内
-    // 制限を範囲外としているため、ベストエフォートで干渉確率を下げる。
+    // PID + nanos suffix で干渉確率を下げるベストエフォート防御。lockfile による
+    // 完全な並行制御は本Issue 範囲外。
     let suffix_nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -479,14 +477,38 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
         nanos = suffix_nanos,
     ));
 
+    write_backup_to_path(&dst, content, &tmp)
+}
+
+/// `tmp` に `content` を書き出してから `rename(tmp, dst)` で atomic に置き換える。
+///
+/// [`backup_config_json`] の中核ロジック。本関数は **`tmp` パスをパラメータとして受け取る**
+/// ため、テストから固定パス（例: `config.json.bak.tmp`）を渡して unlink + create_new
+/// 防御を直接 exercise できる。プロダクションコードは [`backup_config_json`] が
+/// `pid + nanos + counter` から派生した unique パスを渡す。
+///
+/// # 手順
+///
+/// 1. **tmp の sterilization**: `tmp` を `unlink` する（symlink / hard link なら
+///    ディレクトリエントリだけ除去、リンク先 / inode は破壊しない）。
+/// 2. `OpenOptions::create_new(true)` (= `O_CREAT | O_EXCL`) で fresh inode を atomic に作成。
+/// 3. `write_all` で `content` を書き込み。失敗時は tmp ファイルを best-effort で削除して
+///    orphan ガベージを残さない。
+/// 4. `rename(tmp, dst)` で atomic 置換。失敗時も tmp を best-effort 削除。
+fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), LoadConfigError> {
+    use std::io::Write as _;
+
     // ディレクトリエントリレベルで stale / 攻撃者が事前作成した tmp を除去する。
     // symlink / hard link の場合もディレクトリエントリだけを削除し、リンク先や
     // inode は破壊しない。
-    match std::fs::remove_file(&tmp) {
+    match std::fs::remove_file(tmp) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(source) => {
-            return Err(LoadConfigError::BackupFailed { path: tmp, source });
+            return Err(LoadConfigError::BackupFailed {
+                path: tmp.to_path_buf(),
+                source,
+            });
         }
     }
 
@@ -495,23 +517,26 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
     let mut tmp_file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&tmp)
+        .open(tmp)
         .map_err(|source| LoadConfigError::BackupFailed {
-            path: tmp.clone(),
+            path: tmp.to_path_buf(),
             source,
         })?;
     tmp_file
         .write_all(content.as_bytes())
         .map_err(|source| LoadConfigError::BackupFailed {
-            path: tmp.clone(),
+            path: tmp.to_path_buf(),
             source,
         })?;
     drop(tmp_file);
 
-    std::fs::rename(&tmp, &dst).map_err(|source| {
-        // Best-effort: rename 失敗時に tmp を消す（次回 load 時の冪等性確保）。
-        let _ = std::fs::remove_file(&tmp);
-        LoadConfigError::BackupFailed { path: dst, source }
+    std::fs::rename(tmp, dst).map_err(|source| {
+        // Best-effort: rename 失敗時にも tmp を消す（次回 load 時の冪等性確保）。
+        let _ = std::fs::remove_file(tmp);
+        LoadConfigError::BackupFailed {
+            path: dst.to_path_buf(),
+            source,
+        }
     })?;
     Ok(())
 }
@@ -1761,58 +1786,48 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn load_or_default_does_not_truncate_external_file_via_pre_created_tmp_symlink() {
-        let tmp_root = TempDir::new().unwrap();
-        let path = write_config(
-            &tmp_root,
-            r#"{
-                "version": 0,
-                "columns": [{ "name": "Todo", "order": 0 }],
-                "cardOrder": {}
-            }"#,
-        );
-        let bak_tmp = path.with_file_name("config.json.bak.tmp");
+    fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_symlink() {
+        let dir = TempDir::new().unwrap();
+        let dst = dir.path().join("config.json.bak");
+        let tmp = dir.path().join("config.json.bak.tmp");
 
         let outside = TempDir::new().unwrap();
         let target = outside.path().join("external.txt");
         std::fs::write(&target, "untouched").unwrap();
-        std::os::unix::fs::symlink(&target, &bak_tmp).unwrap();
+        std::os::unix::fs::symlink(&target, &tmp).unwrap();
 
-        let _ = load_or_default(tmp_root.path()).unwrap();
+        write_backup_to_path(&dst, "fresh content", &tmp).unwrap();
 
         let target_content = std::fs::read_to_string(&target).unwrap();
         assert_eq!(
             target_content, "untouched",
-            "external file pre-symlinked at .bak.tmp must NOT be overwritten"
+            "external file pre-symlinked at tmp path must NOT be overwritten"
         );
+        let dst_content = std::fs::read_to_string(&dst).unwrap();
+        assert_eq!(dst_content, "fresh content");
     }
 
     #[cfg(unix)]
     #[test]
-    fn load_or_default_does_not_truncate_external_file_via_pre_created_tmp_hard_link() {
-        let tmp_root = TempDir::new().unwrap();
-        let path = write_config(
-            &tmp_root,
-            r#"{
-                "version": 0,
-                "columns": [{ "name": "Todo", "order": 0 }],
-                "cardOrder": {}
-            }"#,
-        );
-        let bak_tmp = path.with_file_name("config.json.bak.tmp");
+    fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_hard_link() {
+        let dir = TempDir::new().unwrap();
+        let dst = dir.path().join("config.json.bak");
+        let tmp = dir.path().join("config.json.bak.tmp");
 
         let outside = TempDir::new().unwrap();
         let target = outside.path().join("external.txt");
         std::fs::write(&target, "untouched").unwrap();
-        std::fs::hard_link(&target, &bak_tmp).unwrap();
+        std::fs::hard_link(&target, &tmp).unwrap();
 
-        let _ = load_or_default(tmp_root.path()).unwrap();
+        write_backup_to_path(&dst, "fresh content", &tmp).unwrap();
 
         let target_content = std::fs::read_to_string(&target).unwrap();
         assert_eq!(
             target_content, "untouched",
-            "external file pre-hard-linked at .bak.tmp must NOT be truncated"
+            "external file pre-hard-linked at tmp path must NOT be truncated"
         );
+        let dst_content = std::fs::read_to_string(&dst).unwrap();
+        assert_eq!(dst_content, "fresh content");
     }
 
     #[cfg(unix)]
