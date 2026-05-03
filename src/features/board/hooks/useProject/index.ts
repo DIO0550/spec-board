@@ -254,7 +254,11 @@ export const useProject = (
       ) {
         return invalidStateErr<Task>("プロジェクトが切り替わりました");
       }
-      dispatchSync({ type: "task-updated", task: result.value });
+      dispatchSync({
+        type: "task-updated",
+        originalFilePath: params.filePath,
+        task: result.value,
+      });
       return Result.ok(result.value);
     },
     [dispatchSync],

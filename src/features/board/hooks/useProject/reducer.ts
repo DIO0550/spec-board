@@ -33,7 +33,7 @@ export type ProjectAction =
   | { type: "open-succeed"; path: string; data: ProjectData }
   | { type: "open-fail"; path: string; error: TauriError }
   | { type: "task-created"; task: Task }
-  | { type: "task-updated"; task: Task }
+  | { type: "task-updated"; originalFilePath: string; task: Task }
   | { type: "task-deleted"; filePath: string }
   | { type: "columns-replaced"; columns: Column[]; renames?: ColumnRename[] }
   | { type: "reset" };
@@ -112,12 +112,15 @@ export const reducer = (
       if (state.kind !== "loaded") {
         return state;
       }
+      // 照合は invoke 時の lookup key (originalFilePath) を使う。
+      // BE が title 由来でファイル名を再生成するなどで filePath が変わっても
+      // 既存エントリを正しく差し替えられる。
       return {
         ...state,
         data: {
           ...state.data,
           tasks: state.data.tasks.map((t) =>
-            t.filePath === action.task.filePath ? action.task : t,
+            t.filePath === action.originalFilePath ? action.task : t,
           ),
         },
       };

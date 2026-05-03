@@ -99,19 +99,41 @@ test("task-created → state.data.tasks 末尾に追加", () => {
   ]);
 });
 
-test("task-updated → filePath 一致で差し替え", () => {
+test("task-updated → originalFilePath 一致で差し替え", () => {
   const updated = makeTask({
     id: "a",
     filePath: "tasks/a.md",
     title: "renamed",
     status: "Done",
   });
-  const next = reducer(loadedAState, { type: "task-updated", task: updated });
+  const next = reducer(loadedAState, {
+    type: "task-updated",
+    originalFilePath: "tasks/a.md",
+    task: updated,
+  });
   expect(next.kind).toBe("loaded");
   const tasks = (next as { data: ProjectData }).data.tasks;
   expect(tasks).toHaveLength(1);
   expect(tasks[0].title).toBe("renamed");
   expect(tasks[0].status).toBe("Done");
+});
+
+test("task-updated → BE が filePath を変更しても originalFilePath で既存エントリを正しく差し替える", () => {
+  const renamed = makeTask({
+    id: "a",
+    filePath: "tasks/a-renamed.md", // BE がタイトル由来で filePath を再生成したケース
+    title: "renamed",
+  });
+  const next = reducer(loadedAState, {
+    type: "task-updated",
+    originalFilePath: "tasks/a.md",
+    task: renamed,
+  });
+  expect(next.kind).toBe("loaded");
+  const tasks = (next as { data: ProjectData }).data.tasks;
+  expect(tasks).toHaveLength(1);
+  expect(tasks[0].filePath).toBe("tasks/a-renamed.md");
+  expect(tasks[0].title).toBe("renamed");
 });
 
 test("task-deleted → filePath 一致で除去", () => {
@@ -163,6 +185,7 @@ test.for<[string, ProjectAction]>([
     "task-updated (idle)",
     {
       type: "task-updated",
+      originalFilePath: "tasks/x.md",
       task: makeTask({ id: "x", filePath: "tasks/x.md" }),
     },
   ],
