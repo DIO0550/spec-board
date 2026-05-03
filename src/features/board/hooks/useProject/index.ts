@@ -454,6 +454,18 @@ export const useProject = (
                 "doneColumn を削除する操作は新 doneColumn を params.doneColumn で指定する必要があります",
             });
           }
+          // 明示的 params.doneColumn は params.columns に必ず含まれていなければ
+          // ならない (BE 側 Config::resolved_done_column は不在の値も preserve する
+          // ため、stale / typo を invoke 前に reject して config 破壊を防ぐ)。
+          if (
+            params.doneColumn !== undefined &&
+            !params.columns.some((c) => c.name === params.doneColumn)
+          ) {
+            return Result.err({
+              kind: "invalid-state",
+              message: `params.doneColumn "${params.doneColumn}" は params.columns に存在しません`,
+            });
+          }
           const result = await updateColumnsInvoke({
             columns: params.columns,
             renames: params.renames,
