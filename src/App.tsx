@@ -98,6 +98,15 @@ export const App = () => {
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
+  // path 末尾セグメントを project 名として表示する。OS の path separator は
+  // / / \ どちらにも対応する (Windows / POSIX 双方)。loaded 以外は undefined。
+  const projectName =
+    loadedPath !== null
+      ? (loadedPath
+          .split(/[\\/]/)
+          .filter((seg) => seg.length > 0)
+          .pop() ?? loadedPath)
+      : undefined;
   const selectedTask = selectedTaskId
     ? (tasks.find((t) => t.id === selectedTaskId) ?? null)
     : null;
@@ -390,7 +399,11 @@ export const App = () => {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <HeaderBar onSettingsClick={() => {}} onOpenClick={openProject} />
+      <HeaderBar
+        projectName={projectName}
+        onSettingsClick={() => {}}
+        onOpenClick={openProject}
+      />
       <main className="flex flex-1 overflow-hidden">{renderMain()}</main>
       {selectedTask && (
         <DetailPanel
