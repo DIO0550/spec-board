@@ -12,14 +12,17 @@ spec-board のプロジェクト単位の設定を `.spec-board/config.json` で
 ```
 project-root/
 ├── .spec-board/
-│   ├── config.json          # プロジェクト設定（カラム・カード順序など）
-│   └── GUIDE.md             # AIエージェント向けフォーマットガイド（自動生成）
+│   ├── config.json                          # プロジェクト設定（カラム・カード順序など）
+│   ├── config.json.bak                      # 古い version の config を読み込んだ際のマイグレーション前バックアップ（後述「マイグレーション」節）
+│   ├── config.json.bak.tmp.{pid}.{nanos}.{counter}  # backup 書き出し中の一時ファイル（rename で `.bak` に昇格／load 冒頭に閾値超過の orphan は cleanup）
+│   └── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
 └── tasks/
     └── ...
 ```
 
 - `.spec-board/` はプロジェクト初回オープン時に自動作成
 - `.spec-board/` は **gitに含めることを推奨**（カラム定義をチームで共有可能にするため）。ただし強制はしない
+- `config.json.bak` / `config.json.bak.tmp.*` はマイグレーション処理由来のため `.gitignore` に含めることを推奨
 
 ## config.json スキーマ
 
@@ -45,7 +48,7 @@ project-root/
 | フィールド | 型 | 必須 | デフォルト | 説明 |
 |:----------|:---|:-----|:----------|:-----|
 | version | `number` | はい | `1` | 設定ファイルのスキーマバージョン。将来のマイグレーションに使用 |
-| columns | `Column[]` | はい | `[]` | カラム（ステータス）定義の配列 |
+| columns | `Column[]` | はい | `[Todo, In Progress, Done]`（`Config::default` baseline） | カラム（ステータス）定義の配列。**最低 1 つのカラムが必須**であり、`columns: []` は load 時に `EmptyColumns` エラーで拒否される（[エラーハンドリング](#エラーハンドリング) 参照） |
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順） |
 | cardOrder | `Record<string, string[]>` | はい | `{}` | カラム名をキー、そのカラム内のタスクファイルパスの配列を値とする。配列順がカード表示順 |
@@ -91,9 +94,15 @@ flowchart TD
     J --> K[GUIDE.md を生成]
     F -->|最新| L[設定を読み込み]
     F -->|古い| M[マイグレーション実行]
+    F -->|未来| X[UnknownFutureVersion エラー]
+    X --> Y[呼び出し層がデフォルト + トースト通知]
     M --> L
     L --> K
     K --> N[完了]
+    Y --> N
+
+    style X fill:#fdd
+    style Y fill:#fdd
 ```
 
 ### 既存タスクからのカラム自動生成（純粋関数 `build_config_from_statuses`）
@@ -126,6 +135,22 @@ flowchart TD
 - `version` フィールドでスキーマバージョンを管理
 - バージョンが古い場合、自動的にマイグレーションを実行
 - マイグレーション前にバックアップ（`config.json.bak`）を作成
+
+#### バージョン判定の挙動
+
+これらは **`load_or_default` の戻り値**としての契約を述べる。アプリ起動時のユーザー体験（デフォルト + トースト）はこれを受け取った**呼び出し層（Tauri コマンド / アプリシェル）の責務**であり、後述「[エラーハンドリング](#エラーハンドリング)」のテーブルにフォールバック挙動を集約する。
+
+- 読み込んだ `version` が現行サポート範囲（`DEFAULT_VERSION = 1`）を超える場合は `UnknownFutureVersion` エラーを `Err` として返す。
+- `load_or_default` は冒頭で `<root>/.spec-board/config.json.bak.tmp.*` の orphan を best-effort で削除する（クラッシュ等で `open(tmp)` と `rename(tmp, dst)` の間で中断された残骸を後続 load で清掃する）。安全条件として: (1) `.spec-board/` 自体が symlink の場合は走査自体を skip して外部ディレクトリの巻き込み削除を防ぐ、(2) tmp 名末尾の `{nanos}` を読み、現在時刻との差が **1 時間以上** の orphan のみを削除対象とし、同一 / 別プロセスで進行中の concurrent load が作った直近の live tmp は温存する。
+- 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。**書き出し戦略**: ① 呼び出しごとに unique な tmp パス（`config.json.bak.tmp.{pid}.{nanos}.{counter}`、`counter` は process-local AtomicU64）を組み立て（同一プロセス内・粗い時計分解能環境でも collision を防ぎつつ並行 load 干渉を回避）、② その tmp パスを `unlink`（symlink / hard link のリンク先や inode は破壊せずディレクトリエントリだけ除去）してから `O_CREAT | O_EXCL` 相当（`OpenOptions::create_new(true)`）で完全に新しい inode を atomic に作成し、③ その fresh inode に raw コンテンツを書き込み、④ atomic `rename(<tmp>, config.json.bak)` でディレクトリエントリだけを差し替える。これにより tmp が事前に外部ファイルへ **symlink / hard link** されていても、`.bak` が外部ファイルへ hard link されていても、いずれの inode も truncate されずプロジェクト外のファイル上書きを防げる。書き出し前に追加で `<root>/.spec-board/` ディレクトリと `config.json.bak` の leaf の双方が symlink でないことを確認し、いずれかが symlink の場合は `BackupFailed` を返して書き出しを拒否する（多重防御）。いずれもベストエフォート防御であり、`<root>` 自身およびそれ以上の ancestor の symlink / hard link、本チェックと write / rename の間に発生する TOCTOU race、ロックレスでの並行 load 完全制御は **本Issue 範囲外**（lockfile / project-root 内制限の導入は別Issue で扱う）。
+- マイグレーション結果は呼び出し側に返る `Config.version` が常に `DEFAULT_VERSION` に正規化される。本Issue（骨格段階）では `config.json` への永続化は行わないため、古い `version` のファイルが残っている限り、毎回の load で backup + migrate 経路を通る。
+- `version` フィールドの欠落 / 型不一致（文字列など）/ `u32` 範囲外は通常の JSON パースエラー（`Parse`）として扱う。
+
+#### カラム名重複の検証
+
+- `columns` 内のカラム名は load 時に完全一致で重複検査される。重複が見つかれば `DuplicateColumnName` を `Err` として返す（呼び出し層のフォールバック挙動は[エラーハンドリング](#エラーハンドリング)を参照）。
+- 大文字小文字違い（例: `"Todo"` vs `"todo"`）は別カラム扱い（`build_config_from_statuses` と同規約）。
+- カラム名は値そのものを完全一致比較する。空文字 `""` / 空白のみ `" "` / 前後空白付き `"  Todo  "` も**未正規化のまま**受理し、distinct であれば許容する（`trim` 等の正規化責務は呼び出し層）。空文字 / 空白を別エラーとして拒否する仕様は本Issue 範囲外。
 
 ## AIエージェント向けガイド（GUIDE.md）
 
@@ -246,11 +271,31 @@ links:（任意）
 
 ## エラーハンドリング
 
-| エラーケース | 発生条件 | 振る舞い | ログレベル |
-|:------------|:---------|:---------|:----------|
-| config.json 読み込み失敗 | JSONパースエラー、権限不足 | デフォルト設定で起動し、トースト通知 | ERROR |
-| config.json 書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに通知 | ERROR |
-| GUIDE.md 生成失敗 | 書き込み権限不足 | 警告ログ出力。アプリの動作には影響しない | WARN |
+### load_or_default が返す `LoadConfigError` バリアント
+
+`load_or_default` が返す各 `Err` バリアントに対して、**呼び出し層（Tauri コマンド / アプリシェル）が決定する**フォールバック挙動を以下にまとめる。バックエンド層自体はデフォルトへのフォールバックを行わず、エラーを caller に返す。
+
+| エラーケース | 発生条件 | バックエンド戻り値 | 呼び出し層の振る舞い | ログレベル |
+|:------------|:---------|:------------------|:-------------------|:----------|
+| JSON パース失敗 | JSON 構文エラー、必須フィールド欠落、`version` の型不一致 / `u32` 範囲外 | `LoadConfigError::Parse` | デフォルト設定で起動し、トースト通知 | ERROR |
+| 未来 version 検出 | `version > DEFAULT_VERSION` | `LoadConfigError::UnknownFutureVersion` | デフォルト設定で起動し、トースト通知（アプリの更新案内を含む） | ERROR |
+| カラム名重複 | `columns` 内に同一名のカラムが存在 | `LoadConfigError::DuplicateColumnName` | デフォルト設定で起動し、トースト通知 | ERROR |
+| 空カラム | `columns: []` (spec の「最低1つのカラムが必要」違反) | `LoadConfigError::EmptyColumns` | デフォルト設定で起動し、トースト通知 | ERROR |
+| マイグレーション失敗（**本Issue 時点では到達不能**: 詳細は表下注を参照） | `migrate_config` が `MigrationError` を返す | `LoadConfigError::MigrationFailed` | デフォルト設定で起動し、トースト通知 | ERROR |
+| バックアップ失敗 | `.bak` の書き出しに失敗（権限不足 / symlink 宛先 / ディレクトリ衝突など） | `LoadConfigError::BackupFailed` | デフォルト設定で起動し、トースト通知（バックアップ作成失敗の旨を明示） | ERROR |
+| I/O 失敗 | `.spec-board/` の作成 / `config.json` の読み取りに失敗 | `LoadConfigError::Io` | デフォルト設定で起動し、トースト通知 | ERROR |
+
+> **`MigrationFailed` の到達可能性について**
+>
+> 本Issue（骨格段階）時点では `load_or_default` 経由で `LoadConfigError::MigrationFailed` は実際には返らない。`from_version > DEFAULT_VERSION` は `UnknownFutureVersion` で先に弾かれ、`from_version <= DEFAULT_VERSION` の経路では現行 `migrate_config` は常に `Ok` を返すため。
+> バリアントは `MigrationError` の variant 追加に向けた forward compatibility のために存在し、将来 `DEFAULT_VERSION` を引き上げて実マイグレーションを実装したタイミングで実際に発生し得るようになる。本Issue 時点の caller は `MigrationFailed` 経路を実装しなくてよい（match の網羅性のためにダミーアームを書く程度で十分）。
+
+### load_or_default 以外のフロー
+
+| エラーケース | 発生条件 | 振る舞い | ログレベル | 仕様参照 |
+|:------------|:---------|:---------|:----------|:--------|
+| config.json 書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに通知 | ERROR | save 経路（別Issue） |
+| GUIDE.md 生成失敗 | 書き込み権限不足 | 警告ログ出力。アプリの動作には影響しない | WARN | GUIDE.md 自動生成（別Issue） |
 
 ## 制限事項
 
