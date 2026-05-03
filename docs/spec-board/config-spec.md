@@ -12,14 +12,17 @@ spec-board のプロジェクト単位の設定を `.spec-board/config.json` で
 ```
 project-root/
 ├── .spec-board/
-│   ├── config.json          # プロジェクト設定（カラム・カード順序など）
-│   └── GUIDE.md             # AIエージェント向けフォーマットガイド（自動生成）
+│   ├── config.json                          # プロジェクト設定（カラム・カード順序など）
+│   ├── config.json.bak                      # 古い version の config を読み込んだ際のマイグレーション前バックアップ（後述「マイグレーション」節）
+│   ├── config.json.bak.tmp.{pid}.{nanos}.{counter}  # backup 書き出し中の一時ファイル（rename で `.bak` に昇格／load 冒頭に閾値超過の orphan は cleanup）
+│   └── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
 └── tasks/
     └── ...
 ```
 
 - `.spec-board/` はプロジェクト初回オープン時に自動作成
 - `.spec-board/` は **gitに含めることを推奨**（カラム定義をチームで共有可能にするため）。ただし強制はしない
+- `config.json.bak` / `config.json.bak.tmp.*` はマイグレーション処理由来のため `.gitignore` に含めることを推奨
 
 ## config.json スキーマ
 
