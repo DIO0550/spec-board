@@ -129,14 +129,16 @@ flowchart TD
 
 #### バージョン判定の挙動
 
-- 読み込んだ `version` が現行サポート範囲（`DEFAULT_VERSION = 1`）を超える場合は `UnknownFutureVersion` エラーで読み込みを中止する。フォールバックは行わず、呼び出し層が必要に応じてユーザー通知する。
-- 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。
+これらは **`load_or_default` の戻り値**としての契約を述べる。アプリ起動時のユーザー体験（デフォルト + トースト）はこれを受け取った**呼び出し層（Tauri コマンド / アプリシェル）の責務**であり、後述「[エラーハンドリング](#エラーハンドリング)」のテーブルにフォールバック挙動を集約する。
+
+- 読み込んだ `version` が現行サポート範囲（`DEFAULT_VERSION = 1`）を超える場合は `UnknownFutureVersion` エラーを `Err` として返す。
+- 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。`.bak` の宛先が symlink の場合は外部ファイル上書き防止のため `BackupFailed` を返して書き出しを拒否する。
 - マイグレーション結果は呼び出し側に返る `Config.version` が常に `DEFAULT_VERSION` に正規化される。本Issue（骨格段階）では `config.json` への永続化は行わないため、古い `version` のファイルが残っている限り、毎回の load で backup + migrate 経路を通る。
 - `version` フィールドの欠落 / 型不一致（文字列など）/ `u32` 範囲外は通常の JSON パースエラー（`Parse`）として扱う。
 
 #### カラム名重複の検証
 
-- `columns` 内のカラム名は load 時に完全一致で重複検査される。重複が見つかれば `DuplicateColumnName` エラーで読み込みを中止する。
+- `columns` 内のカラム名は load 時に完全一致で重複検査される。重複が見つかれば `DuplicateColumnName` を `Err` として返す（呼び出し層のフォールバック挙動は[エラーハンドリング](#エラーハンドリング)を参照）。
 - 大文字小文字違い（例: `"Todo"` vs `"todo"`）は別カラム扱い（`build_config_from_statuses` と同規約）。
 - カラム名は値そのものを完全一致比較する。空文字 `""` / 空白のみ `" "` / 前後空白付き `"  Todo  "` も**未正規化のまま**受理し、distinct であれば許容する（`trim` 等の正規化責務は呼び出し層）。空文字 / 空白を別エラーとして拒否する仕様は本Issue 範囲外。
 
@@ -259,11 +261,18 @@ links:（任意）
 
 ## エラーハンドリング
 
-| エラーケース | 発生条件 | 振る舞い | ログレベル |
-|:------------|:---------|:---------|:----------|
-| config.json 読み込み失敗 | JSONパースエラー、権限不足 | デフォルト設定で起動し、トースト通知 | ERROR |
-| config.json 書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに通知 | ERROR |
-| GUIDE.md 生成失敗 | 書き込み権限不足 | 警告ログ出力。アプリの動作には影響しない | WARN |
+`load_or_default` が返す各 `Err` バリアントに対して、**呼び出し層（Tauri コマンド / アプリシェル）が決定する**フォールバック挙動を以下にまとめる。バックエンド層自体はデフォルトへのフォールバックを行わず、エラーを caller に返す。
+
+| エラーケース | 発生条件 | バックエンド戻り値 | 呼び出し層の振る舞い | ログレベル |
+|:------------|:---------|:------------------|:-------------------|:----------|
+| JSON パース失敗 | JSON 構文エラー、必須フィールド欠落、`version` の型不一致 / `u32` 範囲外 | `LoadConfigError::Parse` | デフォルト設定で起動し、トースト通知 | ERROR |
+| 未来 version 検出 | `version > DEFAULT_VERSION` | `LoadConfigError::UnknownFutureVersion` | デフォルト設定で起動し、トースト通知（アプリの更新案内を含む） | ERROR |
+| カラム名重複 | `columns` 内に同一名のカラムが存在 | `LoadConfigError::DuplicateColumnName` | デフォルト設定で起動し、トースト通知 | ERROR |
+| マイグレーション失敗 | `migrate_config` が `MigrationError` を返す | `LoadConfigError::MigrationFailed` | デフォルト設定で起動し、トースト通知 | ERROR |
+| バックアップ失敗 | `.bak` の書き出しに失敗（権限不足 / symlink 宛先 / ディレクトリ衝突など） | `LoadConfigError::BackupFailed` | デフォルト設定で起動し、トースト通知（バックアップ作成失敗の旨を明示） | ERROR |
+| I/O 失敗 | `.spec-board/` の作成 / `config.json` の読み取りに失敗 | `LoadConfigError::Io` | デフォルト設定で起動し、トースト通知 | ERROR |
+| config.json 書き込み失敗 | ディスク容量不足、権限不足 | （別Issue の save 経路で扱う） | エラーをフロントエンドに通知 | ERROR |
+| GUIDE.md 生成失敗 | 書き込み権限不足 | （別Issue で扱う） | 警告ログ出力。アプリの動作には影響しない | WARN |
 
 ## 制限事項
 
