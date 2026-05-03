@@ -438,6 +438,26 @@ export const useProject = (
               return Result.ok({ applied: false });
             }
           }
+          // 削除する column が現在の doneColumn なのに params.doneColumn を未指定で
+          // invoke すると BE は doneColumn を preserve し、削除された column 名を
+          // doneColumn として保持し続ける config 破壊バグになる。caller が
+          // 忘れた場合でも hook が defensive に拒否する。
+          // (snapshot.data.doneColumn が known で、refetch を経ていないパスでも保護)
+          const knownDoneColumn =
+            stateRef.current.kind === "loaded"
+              ? stateRef.current.data.doneColumn
+              : undefined;
+          if (
+            knownDoneColumn !== undefined &&
+            !params.columns.some((c) => c.name === knownDoneColumn) &&
+            params.doneColumn === undefined
+          ) {
+            return Result.err({
+              kind: "invalid-state",
+              message:
+                "doneColumn を削除する操作は新 doneColumn を params.doneColumn で指定する必要があります",
+            });
+          }
           const result = await updateColumnsInvoke({
             columns: params.columns,
             renames: params.renames,
