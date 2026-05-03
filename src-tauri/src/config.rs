@@ -551,32 +551,32 @@ fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), Loa
     Ok(())
 }
 
-/// [`serde_json::Value`] から `version` を `u32` として取り出す。
+/// `version` フィールドのみを抜き出す軽量スキーマ。
 ///
-/// 欠落 / 型不一致（文字列等）/ `u32` 範囲外は `serde_json::Error` を合成して返し、
-/// caller 側で [`LoadConfigError::Parse`] に包む（既存の必須フィールド欠落時の
-/// パースエラー挙動と一貫させる）。
-fn extract_version(value: &serde_json::Value) -> Result<u32, serde_json::Error> {
-    use serde::de::Error as _;
-    let v = value
-        .get("version")
-        .ok_or_else(|| serde_json::Error::custom("missing field `version`"))?;
-    let n = v
-        .as_u64()
-        .ok_or_else(|| serde_json::Error::custom("invalid type for `version`: expected u32"))?;
-    u32::try_from(n).map_err(|_| serde_json::Error::custom("`version` out of u32 range"))
+/// `serde_json::from_str` 経由で raw 文字列から直接デシリアライズすることで、
+/// 欠落 / 型不一致 / `u32` 範囲外などの version 関連エラーが **元の line/column を
+/// 保持した `serde_json::Error`** として返るようにする（`Value` 経由でカスタム
+/// エラーを合成するアプローチでは line/col 情報が失われるため）。
+///
+/// `version` 以外のフィールドは無視する（`serde` のデフォルト挙動）ので、
+/// 同一 raw 文字列に対する `Config` 用の本パースとは独立に version だけを
+/// 取り出せる。
+#[derive(Deserialize)]
+struct VersionOnly {
+    version: u32,
 }
 
 /// `<project_root>/.spec-board/config.json` を読み込み、[`Config`] を返す。
 ///
 /// 1. `.spec-board/` ディレクトリを冪等に作成する
 /// 2. `config.json` の存在を確認し、不在なら [`Config::default`] を返す
-/// 3. `serde_json::Value` として 1 段階目のパースを行い、`version` を抽出
+/// 3. [`VersionOnly`] スキーマで `version` フィールドのみを `from_str` する
+///    （JSON 構文 / 必須欠落 / 型不一致 / `u32` 範囲外を line/col 付きで検出）
 /// 4. `version` が [`DEFAULT_VERSION`] を超える場合は [`LoadConfigError::UnknownFutureVersion`]
 /// 5. `version` が古い場合は `<root>/.spec-board/config.json.bak` を作成し
 ///    [`migrate_config`] を適用する
-/// 6. [`serde_json::from_value::<Config>`] で 2 段階目のパース
-/// 7. [`validate_unique_column_names`] でカラム名重複を検証
+/// 6. 現行 version は `from_str::<Config>`、古い version は `from_value::<Config>` で本パース
+/// 7. `columns` が空でないこと / [`validate_unique_column_names`] でカラム名重複検証
 ///
 /// # Default を返す条件
 ///
@@ -613,16 +613,16 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
 
     let path = config_io::config_path(project_root);
 
-    let value: serde_json::Value =
-        serde_json::from_str(&content).map_err(|source| LoadConfigError::Parse {
+    // `VersionOnly` で raw 文字列から直接 version をデシリアライズする。
+    // JSON 構文 / 必須欠落 / 型不一致 / `u32` 範囲外などのエラーは serde_json が
+    // 元の line/col を持った `serde_json::Error` を返すため、hand-edited config.json
+    // の version 由来エラーがそのまま位置情報付きで `LoadConfigError::Parse` に伝わる。
+    let from_version = serde_json::from_str::<VersionOnly>(&content)
+        .map(|v| v.version)
+        .map_err(|source| LoadConfigError::Parse {
             path: path.clone(),
             source,
         })?;
-
-    let from_version = extract_version(&value).map_err(|source| LoadConfigError::Parse {
-        path: path.clone(),
-        source,
-    })?;
 
     if from_version > DEFAULT_VERSION {
         return Err(LoadConfigError::UnknownFutureVersion {
@@ -634,7 +634,7 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     // 現行 version の場合は `from_str::<Config>` で直接デシリアライズし、
     // schema mismatch 時に元の line/col 情報を保持する（`from_value` 経由だと位置情報が失われ、
     // hand-edited config.json の修正がしづらくなるため）。
-    // 古い version の場合は `migrate_config` で Value を書き換える必要があるため
+    // 古い version の場合は `migrate_config` が `Value` を書き換える必要があるため
     // やむを得ず `from_value` を経由する（line/col 情報は失われるが、migrate 経路では
     // ユーザーが直接編集する想定が薄いため許容）。
     let config: Config = if from_version == DEFAULT_VERSION {
@@ -643,6 +643,11 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
             source,
         })?
     } else {
+        let value: serde_json::Value =
+            serde_json::from_str(&content).map_err(|source| LoadConfigError::Parse {
+                path: path.clone(),
+                source,
+            })?;
         backup_config_json(project_root, &content)?;
         let migrated = migrate_config(value, from_version)?;
         serde_json::from_value(migrated).map_err(|source| LoadConfigError::Parse {
@@ -1742,6 +1747,28 @@ mod tests {
                 assert!(
                     source.line() > 0 && source.column() > 0,
                     "schema mismatch on current version must preserve line/column info; got line={}, column={}",
+                    source.line(),
+                    source.column()
+                );
+            }
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_or_default_parse_error_for_version_out_of_u32_range_preserves_line_and_column() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp,
+            "{\n  \"version\": 4294967296,\n  \"columns\": [],\n  \"cardOrder\": {}\n}",
+        );
+
+        let err = load_or_default(tmp.path()).unwrap_err();
+        match err {
+            LoadConfigError::Parse { source, .. } => {
+                assert!(
+                    source.line() > 0 && source.column() > 0,
+                    "out-of-range version error must preserve line/col; got line={}, column={}",
                     source.line(),
                     source.column()
                 );
