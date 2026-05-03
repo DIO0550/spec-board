@@ -91,9 +91,15 @@ flowchart TD
     J --> K[GUIDE.md を生成]
     F -->|最新| L[設定を読み込み]
     F -->|古い| M[マイグレーション実行]
+    F -->|未来| X[UnknownFutureVersion エラー]
+    X --> Y[呼び出し層がデフォルト + トースト通知]
     M --> L
     L --> K
     K --> N[完了]
+    Y --> N
+
+    style X fill:#fdd
+    style Y fill:#fdd
 ```
 
 ### 既存タスクからのカラム自動生成（純粋関数 `build_config_from_statuses`）
