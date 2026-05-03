@@ -67,6 +67,7 @@ export const Column = ({
   const otherColumnNames = existingColumnNames ?? [];
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [destColumn, setDestColumn] = useState<string>("");
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -99,23 +100,35 @@ export const Column = ({
   };
 
   const handleConfirm = async () => {
-    const hasTasks = tasks.length > 0;
+    // re-entrant guard: pending 中の confirm ボタン連打を抑止
+    if (isDeleting) {
+      return;
+    }
+    const hasTasksInside = tasks.length > 0;
+    setIsDeleting(true);
     try {
-      await onDelete?.(hasTasks ? destColumn : undefined);
+      await onDelete?.(hasTasksInside ? destColumn : undefined);
     } catch {
       // 失敗時は ConfirmDialog を開いたままにし、ユーザの destColumn 選択も保持する
       // (caller 側で error toast 等の通知が出ている前提)
+      setIsDeleting(false);
+      return;
+    }
+    setIsDeleting(false);
+    setIsConfirming(false);
+  };
+
+  const handleCancel = () => {
+    // pending 中はキャンセルも抑止
+    if (isDeleting) {
       return;
     }
     setIsConfirming(false);
   };
 
-  const handleCancel = () => {
-    setIsConfirming(false);
-  };
-
   const hasTasks = tasks.length > 0;
-  const confirmDisabled = hasTasks && destColumn === "";
+  // pending 中も confirm ボタンを disabled にして二重実行を防ぐ
+  const confirmDisabled = (hasTasks && destColumn === "") || isDeleting;
   // タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
   // メニュー側で削除操作そのものを封じる。
   const canDeleteEffective =
