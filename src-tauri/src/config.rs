@@ -465,20 +465,25 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
     }
 
     // tmp ファイル名を呼び出しごとに unique にして並行 load 時の race を回避する。
-    // PID + nanos suffix で干渉確率を下げるベストエフォート防御。lockfile による
-    // 完全な並行制御は本Issue 範囲外。
-    let suffix_nanos = std::time::SystemTime::now()
+    // PID + nanos だけでは同一プロセス内 / 粗い時計分解能の環境で collision しうるため、
+    // process-local AtomicU64 counter も組み合わせて in-process での一意性を担保する
+    // （プロセス境界をまたぐケースは PID で分離）。lockfile による完全な並行制御は
+    // 本Issue 範囲外。
+    let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let tmp = spec_board_dir.join(format!(
-        "config.json.bak.tmp.{pid}.{nanos}",
-        pid = std::process::id(),
-        nanos = suffix_nanos,
-    ));
+    let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = spec_board_dir.join(format!("config.json.bak.tmp.{pid}.{nanos}.{counter}"));
 
     write_backup_to_path(&dst, content, &tmp)
 }
+
+/// `backup_config_json` 内の tmp パス生成で使う process-local 連番カウンタ。
+/// 同一プロセス内で並行に呼ばれても tmp パスの衝突を防ぐ。
+static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+use std::sync::atomic::Ordering;
 
 /// `tmp` に `content` を書き出してから `rename(tmp, dst)` で atomic に置き換える。
 ///
