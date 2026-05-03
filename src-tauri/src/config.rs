@@ -18,14 +18,19 @@
 //! # ファイル I/O の境界
 //! 低レベル I/O（`.spec-board/` の作成、`config.json` の raw 読み込み）は
 //! サブクレート `spec-board-fs::config_io` に集約する。本モジュールは
-//! その raw 文字列を `serde_json::Value` 経由の 2 段階パースで解釈し、
-//! 以下の責務を担う薄い層に留める:
+//! その raw 文字列を以下の経路で解釈し、薄い責務に留める:
 //!
-//! - 不在時の `Default` フォールバック
-//! - `done_column` の解決ヘルパ
-//! - `version` 判定（未来 version は [`LoadConfigError::UnknownFutureVersion`] で停止、
-//!   古い version は `config.json.bak` をバックアップしてから [`migrate_config`] を適用）
-//! - load 時のカラム名重複検証（[`validate_unique_column_names`]）
+//! - 軽量スキーマ [`VersionOnly`] を `serde_json::from_str` で適用して `version` を
+//!   line/col 付きで取り出す
+//! - 現行 version の場合は `serde_json::from_str::<Config>` で **直接** デシリアライズ
+//!   し schema mismatch のエラーも line/col を保持する
+//! - 古い version の場合のみ `serde_json::Value` を materialize し、`config.json.bak`
+//!   へのバックアップ → [`migrate_config`] → `serde_json::from_value::<Config>` の
+//!   経路で legacy フォーマットを取り込む
+//! - 未来 version は [`LoadConfigError::UnknownFutureVersion`] で停止
+//! - 不在時の `Default` フォールバックと `done_column` の解決ヘルパ
+//! - load 時のカラム名重複検証（[`validate_unique_column_names`]）と
+//!   空 columns 拒否（[`LoadConfigError::EmptyColumns`]）
 //!
 //! 古い `version` のマイグレーション結果はメモリ上の [`Config`] として返り、
 //! `config.json` への書き戻しは行わない（書き出し経路は別 Issue の責務）。
