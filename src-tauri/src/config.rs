@@ -556,18 +556,42 @@ fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), Loa
 ///
 /// クラッシュ / 強制終了等で `backup_config_json` の `open(tmp)` と `rename(tmp, dst)`
 /// の間で実行が中断された場合、unique tmp 名のため後続 load では再利用 / cleanup されず
-/// `.spec-board/` に蓄積する。本関数は `load_or_default` の冒頭で呼ばれ、`config.json.bak.tmp.`
-/// プレフィクスを持つ通常ファイルを列挙して削除する（symlink / hard link は
-/// `remove_file` がディレクトリエントリだけを除去するためリンク先 / 共有 inode は
-/// 破壊しない）。
+/// `.spec-board/` に蓄積する。本関数は `load_or_default` の冒頭で呼ばれる。
+///
+/// # 安全条件
+///
+/// - **`<root>/.spec-board/` が symlink の場合は何もしない**。symlink された外部
+///   ディレクトリ内の `config.json.bak.tmp.*` を巻き込み削除する経路を塞ぐ。
+///   （`backup_config_json` 側でも `.spec-board/` の symlink を弾いており、本関数も
+///   同等の防御をかけることで一貫性を確保）。
+/// - **「閾値以上古い」 orphan のみ削除**。tmp 名末尾の `{nanos}` を読み、現在時刻との
+///   差が [`STALE_TMP_THRESHOLD_NANOS`]（1 時間）を超える tmp のみが削除対象。
+///   これにより同一 / 別プロセスで進行中の concurrent load が作った直後の live tmp は
+///   温存され、`rename` 直前に他の load から unlink される race を回避する。
+/// - 通常ファイル相当の `remove_file` を使うため symlink / hard link でもディレクトリ
+///   エントリだけを除去し、リンク先 / 共有 inode は破壊しない。
 ///
 /// I/O エラー（読み取り権限なし等）は無視する — orphan が残っても機能上の支障は
 /// 発生せず、次回成功した load で再試行されるため。
+const STALE_TMP_THRESHOLD_NANOS: u128 = 60 * 60 * 1_000_000_000;
+
 fn cleanup_stale_backup_tmps(project_root: &Path) {
     let spec_board_dir = config_io::config_path(project_root)
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| project_root.join(".spec-board"));
+
+    // `.spec-board/` 自体が symlink なら巻き込み削除を避ける。
+    if let Ok(meta) = std::fs::symlink_metadata(&spec_board_dir) {
+        if meta.file_type().is_symlink() {
+            return;
+        }
+    }
+
+    let now_nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(u128::MAX);
 
     let Ok(entries) = std::fs::read_dir(&spec_board_dir) else {
         return;
@@ -578,7 +602,20 @@ fn cleanup_stale_backup_tmps(project_root: &Path) {
         let Some(name_str) = name.to_str() else {
             continue;
         };
-        if !name_str.starts_with("config.json.bak.tmp.") {
+        let Some(rest) = name_str.strip_prefix("config.json.bak.tmp.") else {
+            continue;
+        };
+        // 期待形式: "{pid}.{nanos}.{counter}"
+        let mut parts = rest.split('.');
+        let _pid = parts.next();
+        let Some(nanos_str) = parts.next() else {
+            continue;
+        };
+        let Ok(nanos) = nanos_str.parse::<u128>() else {
+            continue;
+        };
+        if now_nanos.saturating_sub(nanos) < STALE_TMP_THRESHOLD_NANOS {
+            // live load が進行中の可能性があるため温存。
             continue;
         }
         let _ = std::fs::remove_file(entry.path());
@@ -1880,19 +1917,27 @@ mod tests {
     }
 
     #[test]
-    fn load_or_default_cleans_up_stale_backup_tmps() {
+    fn load_or_default_cleans_up_stale_backup_tmps_older_than_threshold() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join(".spec-board");
         std::fs::create_dir(&dir).unwrap();
 
-        // クラッシュで残った想定の orphan tmp を 3 件配置する。
-        for suffix in ["1.111.0", "2.222.1", "9999.9999.9"] {
+        // 閾値（1 時間）以上古い orphan tmp。nanos = 0 (1970 epoch) は確実に古い。
+        for (pid, counter) in [(1, 0), (2, 1), (9999, 9)] {
             std::fs::write(
-                dir.join(format!("config.json.bak.tmp.{suffix}")),
+                dir.join(format!("config.json.bak.tmp.{pid}.0.{counter}")),
                 "stale content",
             )
             .unwrap();
         }
+        // 「直近」相当の tmp は温存されることを確認するため now に近い nanos を持たせる。
+        let now_nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let live_tmp_name = format!("config.json.bak.tmp.12345.{now_nanos}.0");
+        std::fs::write(dir.join(&live_tmp_name), "live content").unwrap();
+
         // 関係ないファイル（`config.json.bak` / 別名 prefix）は残ること。
         std::fs::write(dir.join("config.json.bak"), "old backup").unwrap();
         std::fs::write(dir.join("unrelated.txt"), "keep me").unwrap();
@@ -1903,14 +1948,46 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        for name in &remaining {
+
+        for stale in [
+            "config.json.bak.tmp.1.0.0",
+            "config.json.bak.tmp.2.0.1",
+            "config.json.bak.tmp.9999.0.9",
+        ] {
             assert!(
-                !name.starts_with("config.json.bak.tmp."),
-                "stale tmp file `{name}` must be cleaned up"
+                !remaining.iter().any(|n| n == stale),
+                "stale tmp file `{stale}` must be cleaned up; remaining: {remaining:?}"
             );
         }
+        assert!(
+            remaining.iter().any(|n| n == &live_tmp_name),
+            "live tmp file (within threshold) must NOT be removed: {remaining:?}"
+        );
         assert!(remaining.iter().any(|n| n == "config.json.bak"));
         assert!(remaining.iter().any(|n| n == "unrelated.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_default_does_not_cleanup_when_spec_board_is_symlink() {
+        let attacker_root = TempDir::new().unwrap();
+        let real = TempDir::new().unwrap();
+        let real_dir = real.path().join("real-spec-board");
+        std::fs::create_dir(&real_dir).unwrap();
+        let stale_external = real_dir.join("config.json.bak.tmp.1.0.0");
+        std::fs::write(&stale_external, "external orphan").unwrap();
+
+        let attacker_link = attacker_root.path().join(".spec-board");
+        std::os::unix::fs::symlink(&real_dir, &attacker_link).unwrap();
+
+        // load 自体はバックアップ作成段階で BackupFailed になるが、cleanup は前段で
+        // skip されるべきなので external 側のファイルは残ること。
+        let _err = load_or_default(attacker_root.path());
+
+        assert!(
+            stale_external.exists(),
+            "cleanup must skip a symlinked .spec-board to avoid touching external files"
+        );
     }
 
     #[test]
