@@ -45,7 +45,7 @@ project-root/
 | フィールド | 型 | 必須 | デフォルト | 説明 |
 |:----------|:---|:-----|:----------|:-----|
 | version | `number` | はい | `1` | 設定ファイルのスキーマバージョン。将来のマイグレーションに使用 |
-| columns | `Column[]` | はい | `[]` | カラム（ステータス）定義の配列 |
+| columns | `Column[]` | はい | `[Todo, In Progress, Done]`（`Config::default` baseline） | カラム（ステータス）定義の配列。**最低 1 つのカラムが必須**であり、`columns: []` は load 時に `EmptyColumns` エラーで拒否される（[エラーハンドリング](#エラーハンドリング) 参照） |
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順） |
 | cardOrder | `Record<string, string[]>` | はい | `{}` | カラム名をキー、そのカラム内のタスクファイルパスの配列を値とする。配列順がカード表示順 |
