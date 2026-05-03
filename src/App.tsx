@@ -103,6 +103,10 @@ export const App = () => {
       // filePath は lookup key なので spread 順序を後置にして上書き防止
       const result = await updateTask({ ...updates, filePath });
       if (!result.ok) {
+        showToast(
+          `タスクの更新に失敗しました: ${projectErrorMessage(result.error)}`,
+          "error",
+        );
         return;
       }
       showToast("タスクを更新しました", "success");
@@ -139,6 +143,10 @@ export const App = () => {
         };
       });
       if (!result.ok) {
+        showToast(
+          `カラムの追加に失敗しました: ${projectErrorMessage(result.error)}`,
+          "error",
+        );
         return;
       }
       if (!result.value.applied) {
@@ -173,6 +181,10 @@ export const App = () => {
         };
       });
       if (!result.ok) {
+        showToast(
+          `カラム名の変更に失敗しました: ${projectErrorMessage(result.error)}`,
+          "error",
+        );
         return;
       }
       if (!result.value.applied) {
@@ -229,6 +241,10 @@ export const App = () => {
         };
       });
       if (!result.ok) {
+        showToast(
+          `カラムの削除に失敗しました: ${projectErrorMessage(result.error)}`,
+          "error",
+        );
         return;
       }
       if (!result.value.applied) {
@@ -268,7 +284,9 @@ export const App = () => {
       const result = await createTask(values);
       if (!result.ok) {
         // モーダルを閉じない: TaskCreateModal は onSubmit reject で開いたままになる
-        throw new Error(projectErrorMessage(result.error));
+        const message = projectErrorMessage(result.error);
+        showToast(`タスクの作成に失敗しました: ${message}`, "error");
+        throw new Error(message);
       }
       showToast("タスクを作成しました", "success");
     },
@@ -283,7 +301,11 @@ export const App = () => {
       }
       const result = await deleteTask({ filePath });
       if (!result.ok) {
-        return;
+        // useDeleteFlow は onDelete の resolve を success とみなして dialog を閉じる。
+        // 失敗時は reject + error toast で dialog を維持し、ユーザに retry を促す。
+        const message = projectErrorMessage(result.error);
+        showToast(`タスクの削除に失敗しました: ${message}`, "error");
+        throw new Error(message);
       }
       setSelectedTaskId(null);
       showToast("タスクを削除しました", "success");
