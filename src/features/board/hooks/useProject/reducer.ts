@@ -183,21 +183,33 @@ export const reducer = (
       // BE delete_task の orphanStrategy=clear 既定に整合:
       // - 削除対象を除外
       // - 削除対象を parent に持つ task は parent を未設定にする
-      // - 他 task の children から削除 filePath を除去（親側のリンクも掃除）
+      // - 他 task の children / links / reverseLinks から削除 filePath を除去
+      //   (親子リンクと相互参照リンクの両方を掃除)
       return updateProjectData(state, (data) => {
+        const removedPath = action.filePath;
         const remaining = data.tasks
-          .filter((t) => t.filePath !== action.filePath)
+          .filter((t) => t.filePath !== removedPath)
           .map((t) => {
-            const parentCleared =
-              t.parent === action.filePath ? { ...t, parent: undefined } : t;
-            return parentCleared.children.includes(action.filePath)
-              ? {
-                  ...parentCleared,
-                  children: parentCleared.children.filter(
-                    (c) => c !== action.filePath,
-                  ),
-                }
-              : parentCleared;
+            const parent = t.parent === removedPath ? undefined : t.parent;
+            const children = t.children.includes(removedPath)
+              ? t.children.filter((c) => c !== removedPath)
+              : t.children;
+            const links = t.links.includes(removedPath)
+              ? t.links.filter((l) => l !== removedPath)
+              : t.links;
+            const reverseLinks = t.reverseLinks.includes(removedPath)
+              ? t.reverseLinks.filter((r) => r !== removedPath)
+              : t.reverseLinks;
+            // 参照同一性を維持できる場合は元オブジェクトを返す (不要な re-render 防止)
+            if (
+              parent === t.parent &&
+              children === t.children &&
+              links === t.links &&
+              reverseLinks === t.reverseLinks
+            ) {
+              return t;
+            }
+            return { ...t, parent, children, links, reverseLinks };
           });
         return { ...data, tasks: remaining };
       });

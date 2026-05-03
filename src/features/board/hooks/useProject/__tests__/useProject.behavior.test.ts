@@ -210,6 +210,36 @@ test("task-updated → BE が filePath を変更しても originalFilePath で�
   expect(tasks[0].title).toBe("renamed");
 });
 
+test("task-deleted → 削除 filePath を他 task の links / reverseLinks からも除去", () => {
+  const a = makeTask({
+    id: "a",
+    filePath: "tasks/a.md",
+    links: ["tasks/b.md", "tasks/c.md"],
+    reverseLinks: ["tasks/b.md"],
+  });
+  const b = makeTask({
+    id: "b",
+    filePath: "tasks/b.md",
+    links: ["tasks/a.md"],
+    reverseLinks: ["tasks/a.md"],
+  });
+  const c = makeTask({ id: "c", filePath: "tasks/c.md" });
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [a, b, c], columns: cols("Todo") },
+  };
+  // b を削除すると、a の links と reverseLinks から tasks/b.md が消える
+  const next = reducer(loaded, {
+    type: "task-deleted",
+    filePath: "tasks/b.md",
+  });
+  const tasks = (next as { data: ProjectData }).data.tasks;
+  const aAfter = tasks.find((t) => t.filePath === "tasks/a.md");
+  expect(aAfter?.links).toEqual(["tasks/c.md"]);
+  expect(aAfter?.reverseLinks).toEqual([]);
+});
+
 test("task-deleted → filePath 一致で除去", () => {
   const next = reducer(loadedAState, {
     type: "task-deleted",
