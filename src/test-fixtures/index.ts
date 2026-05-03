@@ -1,12 +1,14 @@
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 
+/** Storybook 用の固定カラム配列。 */
 export const initialColumns: Column[] = [
   { name: "Todo", order: 0 },
   { name: "In Progress", order: 1 },
   { name: "Done", order: 2 },
 ];
 
+/** Storybook 用の固定タスク配列。 */
 export const initialTasks: Task[] = [
   {
     id: "task-1",
