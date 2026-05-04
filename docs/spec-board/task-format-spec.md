@@ -126,7 +126,18 @@ flowchart TD
 | PL-009 | links 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去。存在しないパスは警告付きで保持 |
 | PL-010 | links 逆引きインデックス | 全タスク読み込み後、links の逆引きインデックスを構築。双方向リンクの表示に使用 |
 | PL-011 | 子タスク収集 | 全タスク読み込み後、各タスクの `parent` を元に子タスク一覧を構築 |
-| PL-012 | 未知フィールド | フロントマターに定義外のフィールドが存在する場合、そのまま保持（削除しない） |
+| PL-012 | 未知フィールド | フロントマターに定義外のフィールドが存在する場合、`Task.extras` に JSON 互換値として保持する |
+| PL-013 | 非致命警告 | `title` / `status` の fallback や `parent` / `extras` の型不一致は `Task.warnings` に保持し、Task 生成自体は継続する |
+
+### Task 変換時の補足
+
+- `title` が未定義の場合はファイル名（拡張子除去、ハイフンをスペースに変換）を fallback とし、`missingTitleUsedFileName` warning を付与する
+- `title` が空文字または文字列以外の場合はファイル名 fallback とし、`invalidTitleUsedFileName` warning を付与する
+- `status` が未定義の場合は既定ステータスを fallback とし、`missingStatusUsedDefault` warning を付与する
+- `status` が文字列以外の場合は既定ステータスを fallback とし、`invalidStatusUsedDefault` warning を付与する
+- `parent` が文字列以外の場合は値を無視し、`invalidParentIgnored` warning を付与する
+- `extras` の非文字列 key は除外し、`nonStringExtraKeyIgnored` warning を付与する
+- `extras` の JSON 非互換 value は除外し、`extraValueNotJsonCompatible` warning を付与する
 
 ## シリアライズ仕様
 
