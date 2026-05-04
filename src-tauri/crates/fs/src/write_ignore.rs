@@ -23,6 +23,7 @@ struct RegistryState {
     ignored_paths: HashMap<PathBuf, IgnoredPathEntry>,
     next_registration_id: u128,
     cleanup_worker_started: bool,
+    shutdown_requested: bool,
 }
 
 type SharedRegistryState = Arc<(Mutex<RegistryState>, Condvar)>;
@@ -47,6 +48,17 @@ impl Default for WriteIgnoreRegistry {
             state: Arc::new((Mutex::new(RegistryState::default()), Condvar::new())),
             timeout: DEFAULT_WRITE_IGNORE_TIMEOUT,
         }
+    }
+}
+
+impl Drop for WriteIgnoreRegistry {
+    fn drop(&mut self) {
+        let Ok(mut state) = self.state.0.lock() else {
+            return;
+        };
+
+        state.shutdown_requested = true;
+        self.state.1.notify_one();
     }
 }
 
@@ -162,6 +174,10 @@ impl WriteIgnoreRegistry {
         };
 
         loop {
+            if state.shutdown_requested {
+                return;
+            }
+
             let Some(next_expires_at) = Self::next_expires_at(&state.ignored_paths) else {
                 let Ok(next_state) = wake_signal.wait(state) else {
                     return;
@@ -526,6 +542,31 @@ mod tests {
         assert!(handle.join().is_err());
         registry.state.1.notify_one();
         thread::sleep(TEST_TIMEOUT);
+    }
+
+    #[test]
+    fn timeout_cleanup_worker_exits_when_shutdown_is_requested() {
+        let registry = WriteIgnoreRegistry::with_timeout(TEST_TIMEOUT);
+        let state = Arc::clone(&registry.state);
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        let handle = thread::spawn(move || {
+            WriteIgnoreRegistry::run_cleanup_worker(state);
+            sender
+                .send(())
+                .expect("test receiver should wait for worker exit");
+        });
+
+        {
+            let mut state = registry.lock().expect("registry should be readable");
+            state.shutdown_requested = true;
+        }
+        registry.state.1.notify_one();
+
+        receiver
+            .recv_timeout(WAIT_TIMEOUT)
+            .expect("cleanup worker should exit on shutdown");
+        handle.join().expect("worker should not panic");
     }
 
     #[test]

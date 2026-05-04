@@ -358,6 +358,7 @@ pub enum WriteIgnoreError {
 | `unregister` | パスを解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す |
 | 解除責務 | `consume` / `unregister` に加え、登録から5秒経過した entry の自動削除を `WriteIgnoreRegistry` が担当する |
 | タイムアウト | cleanup worker は最短期限まで `Condvar` で待機し、期限到達済み entry を削除する。待機中は lock を保持し続けない。既に `consume` / `unregister` 済みの場合は no-op とする |
+| shutdown | `WriteIgnoreRegistry` drop 時に shutdown flag を立てて cleanup worker を wake し、registry 単位の worker が残り続けないよう終了させる |
 | 重複登録 | 同一 path の重複 `register` は期限を延長せず、追加の timeout cleanup も起動しない |
 | 再登録競合 | `consume` / `unregister` 後に同一 path が再登録された場合、新しい entry は別の `registration_id` と `expires_at` を持つ。cleanup worker は現在保持されている entry の期限のみを見て削除するため、古い登録を前提に新しい entry を削除しない |
 | パス比較 | canonicalize / normalize は行わず、渡された `PathBuf` 表現の完全一致で扱う |
