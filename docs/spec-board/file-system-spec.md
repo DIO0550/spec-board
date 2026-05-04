@@ -343,6 +343,7 @@ impl WriteIgnoreRegistry {
 
 pub enum WriteIgnoreError {
     LockPoisoned,
+    CleanupWorkerSpawnFailed,
 }
 ```
 
@@ -350,16 +351,21 @@ pub enum WriteIgnoreError {
 |:-----|:-----|
 | 機能 | spec-board 自身の書き込みで発生したファイル監視イベントを呼び出し側が識別するため、無視対象パスを登録・参照・解除する |
 | 配置 | `src-tauri/crates/fs/src/write_ignore.rs`（サブクレート `spec-board-fs`）。呼び出しは `spec_board_fs::write_ignore::WriteIgnoreRegistry` |
-| 内部状態 | `Mutex<HashSet<PathBuf>>` で保護する |
-| `register` | パスを登録し、新規追加なら `Ok(true)`、重複なら `Ok(false)` を返す |
+| 内部状態 | `Mutex<HashMap<PathBuf, { registration_id, expires_at }>>` と `Condvar` を `Arc` で共有し、登録ごとに一意な ID と期限を保持する |
+| `register` | パスを登録し、新規追加なら `Ok(true)`、重複なら `Ok(false)` を返す。初回登録時に registry 単位の cleanup worker を起動し、worker 起動成功後に新規 entry を追加して worker に通知する |
 | `should_ignore` | パスが登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。状態は変更しない |
 | `consume` | 1回の lock 内でパスを確認して解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。ファイル監視イベントの one-shot 消費に使う |
 | `unregister` | パスを解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す |
+| 解除責務 | `consume` / `unregister` に加え、登録から5秒経過した entry の自動削除を `WriteIgnoreRegistry` が担当する |
+| タイムアウト | cleanup worker は最短期限まで `Condvar` で待機し、期限到達済み entry を削除する。待機中は lock を保持し続けない。既に `consume` / `unregister` 済みの場合は no-op とする |
+| shutdown | `WriteIgnoreRegistry` drop 時に shutdown flag を立てて cleanup worker を wake し、registry 単位の worker が残り続けないよう終了させる。lock poison 時も wake 自体は行い、待機中 worker が終了できるようにする |
+| 重複登録 | 同一 path の重複 `register` は期限を延長せず、追加の timeout cleanup も起動しない |
+| 再登録競合 | `consume` / `unregister` 後に同一 path が再登録された場合、新しい entry は別の `registration_id` と `expires_at` を持つ。cleanup worker は現在保持されている entry の期限のみを見て削除するため、古い登録を前提に新しい entry を削除しない |
 | パス比較 | canonicalize / normalize は行わず、渡された `PathBuf` 表現の完全一致で扱う |
-| エラー | Mutex が poison された場合は `Err(WriteIgnoreError::LockPoisoned)` を返す |
+| エラー | public API では Mutex が poison された場合に `Err(WriteIgnoreError::LockPoisoned)` を返す。cleanup worker 起動失敗時は `Err(WriteIgnoreError::CleanupWorkerSpawnFailed)` を返す。background cleanup は lock poison 時に panic せず終了する |
 | Tauri 依存 | なし。Tauri state やファイル監視コンポーネントへの保持・統合は呼び出し側で行う |
 
-現在の `WriteIgnoreRegistry` は registry のみを提供し、タイムアウト解除やファイル監視イベントとの接続は担当しない。ファイル監視イベントを無視する判定では race-free な `consume` を使い、必要な場合のタイムアウト解除は監視コンポーネント側で `unregister` を呼ぶ。
+`WriteIgnoreRegistry` は自己書き込み抑制用の registry と5秒 timeout によるリーク防止を担当する。ファイル監視イベントを無視する判定では race-free な `consume` を使う。5秒以内に対応する監視イベントが届かない場合でも、現在保持されている entry の期限到達後に timeout cleanup により自動削除される。
 
 ## カラム設定・カード並び順の永続化
 
