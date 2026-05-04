@@ -49,7 +49,15 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "children": ["tasks/child-1.md", "tasks/child-2.md"],
       "reverseLinks": ["tasks/other-task.md"],
       "body": "Markdown本文",
-      "filePath": "tasks/fix-bug.md"
+      "filePath": "tasks/fix-bug.md",
+      "extras": { "estimate": 3 },
+      "warnings": [
+        {
+          "code": "missingStatusUsedDefault",
+          "field": "status",
+          "message": "status is missing; default status was used"
+        }
+      ]
     }
   ],
   "columns": ["Todo", "In Progress", "Done"]
@@ -58,8 +66,10 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 - `parent`: フロントマターの `parent` フィールドの値
 - `links`: フロントマターの `links` フィールドの値
-- `children`: このタスクを `parent` に指定している子タスクのパス一覧（逆引き算出）
-- `reverseLinks`: このタスクを `links` に含んでいる他タスクのパス一覧（逆引き算出）
+- `children`: このタスクを `parent` に指定している子タスクのパス一覧（全タスク index 構築後の派生値）
+- `reverseLinks`: このタスクを `links` に含んでいる他タスクのパス一覧（全タスク index 構築後の派生値）
+- `extras`: 定義外フロントマターを JSON 互換値として保持したオブジェクト
+- `warnings`: `title` / `status` の fallback や `parent` / `extras` の型不一致など、Task 生成を継続できる非致命警告の一覧
 
 **エラー**:
 
