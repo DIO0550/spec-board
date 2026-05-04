@@ -108,6 +108,37 @@ const isUpdater = (input: UpdateColumnsInput): input is UpdateColumnsUpdater =>
   typeof input === "function";
 
 /**
+ * CRUD method を受け付けられる state か判定する。
+ * - loaded: そのまま受け付け
+ * - loading + previousLoaded: Board が継続表示されているため CRUD UI も
+ *   操作可能になっている。chain + generation guard で安全性が確保されるため
+ *   受け付ける (loading 完了後に generation mismatch で abort される)
+ *
+ * @param state 現在の state
+ * @returns true なら CRUD を queue に enqueue 可能
+ */
+const acceptsCrud = (state: ProjectState): boolean =>
+  state.kind === "loaded" ||
+  (state.kind === "loading" && state.previousLoaded !== undefined);
+
+/**
+ * 表示中の ProjectData を返す。loading + previousLoaded のときは
+ * previousLoaded.data を返す (Board がそれで表示されているため)。
+ *
+ * @param state 現在の state
+ * @returns ProjectData または null
+ */
+const visibleProjectData = (state: ProjectState): ProjectData | null => {
+  if (state.kind === "loaded") {
+    return state.data;
+  }
+  if (state.kind === "loading" && state.previousLoaded) {
+    return state.previousLoaded.data;
+  }
+  return null;
+};
+
+/**
  * column 名が `params.columns` に含まれていない場合 true (= 削除されたカラム)。
  *
  * @param column 旧 column
@@ -310,7 +341,7 @@ export const useProject = (
   const createTask = useCallback(
     (params: CreateTaskParams): Promise<ResultT<Task, ProjectError>> => {
       const snapshot = stateRef.current;
-      if (snapshot.kind !== "loaded") {
+      if (!acceptsCrud(snapshot)) {
         return Promise.resolve(invalidStateErr<Task>());
       }
       const startGen = generationRef.current;
@@ -345,7 +376,7 @@ export const useProject = (
   const updateTask = useCallback(
     (params: UpdateTaskParams): Promise<ResultT<Task, ProjectError>> => {
       const snapshot = stateRef.current;
-      if (snapshot.kind !== "loaded") {
+      if (!acceptsCrud(snapshot)) {
         return Promise.resolve(invalidStateErr<Task>());
       }
       const startGen = generationRef.current;
@@ -378,7 +409,7 @@ export const useProject = (
   const deleteTask = useCallback(
     (params: DeleteTaskParams): Promise<ResultT<void, ProjectError>> => {
       const snapshot = stateRef.current;
-      if (snapshot.kind !== "loaded") {
+      if (!acceptsCrud(snapshot)) {
         return Promise.resolve(invalidStateErr<void>());
       }
       const startGen = generationRef.current;
@@ -408,7 +439,7 @@ export const useProject = (
     (
       input: UpdateColumnsInput,
     ): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
-      if (stateRef.current.kind !== "loaded") {
+      if (!acceptsCrud(stateRef.current)) {
         return Promise.resolve(invalidStateErr<{ applied: boolean }>());
       }
       // enqueue 時点の世代を捕捉。queue 実行までに別プロジェクトへ切り替わったら
@@ -416,9 +447,11 @@ export const useProject = (
       const enqueueGen = generationRef.current;
       const next = columnsQueueRef.current.then(
         async (): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
-          // queue 実行時の最新 state から param を決定する
+          // queue 実行時の最新 state から param を決定する。
+          // loading + previousLoaded のときは previousLoaded.data を data source
+          // として使う (Board が previousLoaded.data で表示されているため)
           const snapshot = stateRef.current;
-          if (snapshot.kind !== "loaded") {
+          if (!acceptsCrud(snapshot)) {
             return invalidStateErr<{ applied: boolean }>();
           }
           if (generationRef.current !== enqueueGen) {
@@ -426,12 +459,18 @@ export const useProject = (
               "プロジェクトが切り替わりました",
             );
           }
+          // 表示中の data (loaded.data または previousLoaded.data) を取得。
+          // acceptsCrud で gate しているため必ず存在する。
+          const visibleData = visibleProjectData(snapshot);
+          if (visibleData === null) {
+            return invalidStateErr<{ applied: boolean }>();
+          }
           const startGen = generationRef.current;
           // updater が throw した場合に Promise が reject すると Result contract
           // が破れるため、try/catch で Result.err に詰め直す。
           let params: UpdateColumnsParams | null;
           try {
-            params = isUpdater(input) ? input(snapshot.data) : input;
+            params = isUpdater(input) ? input(visibleData) : input;
           } catch (e) {
             return Result.err({ kind: "tauri", error: TauriError.from(e) });
           }
@@ -444,12 +483,12 @@ export const useProject = (
           // 単純な column 追加など safe な操作では BE が doneColumn を preserve するため
           // refetch しない (refetch 失敗で safe な操作まで blocking しない)。
           const doneColumnSensitive = isDoneColumnSensitive(
-            snapshot.data.columns,
+            visibleData.columns,
             params,
           );
           if (
             doneColumnSensitive &&
-            snapshot.data.doneColumn === undefined &&
+            visibleData.doneColumn === undefined &&
             params.doneColumn === undefined
           ) {
             const refresh = await getColumnsInvoke();
@@ -470,7 +509,7 @@ export const useProject = (
             // (App handler は current.doneColumn を見て params.doneColumn を計算する
             // ため、enrichment 後の再実行で正しい doneColumn が得られる)。
             const enrichedData: ProjectData = {
-              ...snapshot.data,
+              ...visibleData,
               doneColumn: refresh.value.doneColumn,
             };
             dispatchSync({
@@ -493,11 +532,10 @@ export const useProject = (
           // invoke すると BE は doneColumn を preserve し、削除された column 名を
           // doneColumn として保持し続ける config 破壊バグになる。caller が
           // 忘れた場合でも hook が defensive に拒否する。
-          // (snapshot.data.doneColumn が known で、refetch を経ていないパスでも保護)
-          const knownDoneColumn =
-            stateRef.current.kind === "loaded"
-              ? stateRef.current.data.doneColumn
-              : undefined;
+          // (visibleData.doneColumn が known で、refetch を経ていないパスでも保護)
+          const knownDoneColumn = visibleProjectData(
+            stateRef.current,
+          )?.doneColumn;
           if (
             knownDoneColumn !== undefined &&
             !params.columns.some((c) => c.name === knownDoneColumn) &&
