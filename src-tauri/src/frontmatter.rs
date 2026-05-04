@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -8,7 +8,7 @@ use thiserror::Error;
 ///
 /// 未定義文字列（例: `urgent`）や型不一致（数値・配列・mapping・null・bool）は
 /// `Frontmatter::priority` 上で `None` として表現される（バッジ非表示扱い）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Priority {
     High,
     Medium,
