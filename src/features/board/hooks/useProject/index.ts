@@ -447,6 +447,14 @@ export const useProject = (
       const enqueueGen = generationRef.current;
       const next = columnsQueueRef.current.then(
         async (): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
+          // updater を読む前に openQueueRef を await する。
+          // これをしないと、先に enqueue された CRUD (例: 同じ column への
+          // task-created) がまだ dispatch されておらず、updater が古い
+          // ProjectData (新タスク欠落) で params を計算してしまう。例えば
+          // 「column X を削除して残タスクを Y に rename」する updater が、
+          // X に enqueue 済みの新タスクを見落として rename 漏れになり、
+          // BE 側で orphan task を生む可能性がある。
+          await openQueueRef.current;
           // queue 実行時の最新 state から param を決定する。
           // loading + previousLoaded のときは previousLoaded.data を data source
           // として使う (Board が previousLoaded.data で表示されているため)
