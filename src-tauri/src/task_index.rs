@@ -86,7 +86,7 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
     let status = extract_status(&parsed, context, &mut warnings);
     let parent = extract_parent(&parsed, &mut warnings);
     let extras = convert_extras(&parsed, &mut warnings);
-    let file_path = context.file_path.to_string_lossy().to_string();
+    let file_path = normalized_task_file_path(&context.file_path);
 
     Task {
         id: file_path.clone(),
@@ -231,6 +231,21 @@ fn title_fallback_from_file_path(path: &Path) -> String {
         return "Untitled".to_string();
     }
     title
+}
+
+fn normalized_task_file_path(path: &Path) -> String {
+    let path_text = path.to_string_lossy().replace('\\', "/");
+    let mut parts = Vec::new();
+    for part in path_text.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part.ends_with(':') {
+            continue;
+        }
+        parts.push(part);
+    }
+    parts.join("/")
 }
 
 fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> Option<serde_json::Value> {
@@ -498,6 +513,21 @@ mod tests {
             json_value["warnings"][0]["code"],
             json!("missingTitleUsedFileName")
         );
+    }
+
+    #[test]
+    fn task_file_path_payload_is_relative_and_uses_forward_slashes() {
+        let cases = [
+            ("/project\\tasks\\fix-bug.md", "project/tasks/fix-bug.md"),
+            ("C:\\project\\tasks\\fix-bug.md", "project/tasks/fix-bug.md"),
+        ];
+
+        for (input_path, expected_path) in cases {
+            let task = task_from("---\ntitle: Fix bug\nstatus: Todo\n---\n", input_path);
+
+            assert_eq!(task.id, expected_path);
+            assert_eq!(task.file_path, expected_path);
+        }
     }
 
     #[test]
