@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { initialTasks } from "@/lib/mock-data";
+import { initialTasks } from "@/test-fixtures";
 import type { Task } from "@/types/task";
 import { TaskCard } from ".";
 

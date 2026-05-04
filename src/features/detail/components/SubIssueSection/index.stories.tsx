@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { initialTasks } from "@/lib/mock-data";
+import { initialTasks } from "@/test-fixtures";
 import { SubIssueSection } from ".";
 
 const parentTask = initialTasks[0];

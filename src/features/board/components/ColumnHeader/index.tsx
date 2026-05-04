@@ -13,9 +13,10 @@ type ColumnHeaderProps = {
    * カラム名リネーム確定時のコールバック。
    * 未指定の場合は名前クリックでの編集モードを無効化する。
    * 呼び出されるのは trim 後に空でなく、現在名と異なり、重複もしない場合のみ。
+   * Promise を返した場合は await し、reject した場合は edit mode を維持する。
    * @param newName - 新しいカラム名（trim 済み）
    */
-  onRename?: (newName: string) => void;
+  onRename?: (newName: string) => void | Promise<void>;
   /** 他カラム名の一覧（重複チェック用。自身は含まない） */
   existingColumnNames?: string[];
   /**
@@ -42,6 +43,7 @@ export const ColumnHeader = ({
 }: ColumnHeaderProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(name);
+  const [isBusy, setIsBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
   const reactId = useId();
@@ -69,7 +71,11 @@ export const ColumnHeader = ({
     setIsEditing(false);
   };
 
-  const confirm = (): boolean => {
+  const confirm = async (): Promise<boolean> => {
+    // re-entrant guard: pending 中の連打 (Enter 連打) を抑止
+    if (isBusy) {
+      return false;
+    }
     const trimmed = inputValue.trim();
     if (trimmed.length === 0 || trimmed === name) {
       isCancelledRef.current = true;
@@ -80,7 +86,16 @@ export const ColumnHeader = ({
     if (existingColumnNames.includes(trimmed)) {
       return false;
     }
-    onRename?.(trimmed);
+    setIsBusy(true);
+    try {
+      await onRename?.(trimmed);
+    } catch {
+      // 失敗時は edit mode を維持し、ユーザの入力を保持する
+      // (caller 側で error toast 等の通知が出ている前提)
+      setIsBusy(false);
+      return false;
+    }
+    setIsBusy(false);
     isCancelledRef.current = true;
     setIsEditing(false);
     return true;
@@ -93,7 +108,7 @@ export const ColumnHeader = ({
       }
       e.preventDefault();
       e.stopPropagation();
-      confirm();
+      void confirm();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -123,15 +138,22 @@ export const ColumnHeader = ({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={() => {
+                // isBusy 中は input が disabled 化により blur が発火するが、
+                // pending 中の cancel は edit mode を閉じてユーザの入力を失わせる
+                // ため無視する
+                if (isBusy) {
+                  return;
+                }
                 if (!isCancelledRef.current) {
                   cancel();
                 }
                 isCancelledRef.current = false;
               }}
+              disabled={isBusy}
               aria-label="カラム名"
               aria-invalid={isDuplicate}
               aria-describedby={isDuplicate ? errorId : undefined}
-              className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none"
+              className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none disabled:bg-gray-100"
               data-testid="column-rename-input"
             />
             {isDuplicate && (

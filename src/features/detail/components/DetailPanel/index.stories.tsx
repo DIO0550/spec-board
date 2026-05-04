@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { initialColumns, initialTasks } from "@/lib/mock-data";
+import { initialColumns, initialTasks } from "@/test-fixtures";
 import { DetailPanel } from ".";
 
 const baseTask = initialTasks[1];

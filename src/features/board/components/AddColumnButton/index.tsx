@@ -8,9 +8,10 @@ type AddColumnButtonProps = {
   /**
    * 新規カラム追加時のコールバック。
    * 入力値の trim 後に空文字や既存と同名の場合は呼び出されない。
+   * Promise を返した場合は await し、reject した場合は editor を開いたままにする。
    * @param columnName - 追加するカラム名（trim 済み）
    */
-  onAdd: (columnName: string) => void;
+  onAdd: (columnName: string) => void | Promise<void>;
 };
 
 /**
@@ -27,6 +28,7 @@ export const AddColumnButton = ({
 }: AddColumnButtonProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
   const id = useId();
@@ -50,7 +52,11 @@ export const AddColumnButton = ({
     setIsEditing(false);
   };
 
-  const confirm = (): boolean => {
+  const confirm = async (): Promise<boolean> => {
+    // re-entrant guard: pending 中の連打 (Enter 連打) を抑止する
+    if (isBusy) {
+      return false;
+    }
     const trimmed = inputValue.trim();
     if (trimmed.length === 0) {
       isCancelledRef.current = true;
@@ -61,7 +67,16 @@ export const AddColumnButton = ({
     if (existingColumnNames.includes(trimmed)) {
       return false;
     }
-    onAdd(trimmed);
+    setIsBusy(true);
+    try {
+      await onAdd(trimmed);
+    } catch {
+      // 失敗時は editor を開いたままにし、ユーザの入力を保持する
+      // (caller 側で error toast 等の通知が出ている前提)
+      setIsBusy(false);
+      return false;
+    }
+    setIsBusy(false);
     isCancelledRef.current = true;
     setInputValue("");
     setIsEditing(false);
@@ -75,7 +90,7 @@ export const AddColumnButton = ({
       }
       e.preventDefault();
       e.stopPropagation();
-      confirm();
+      void confirm();
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -97,16 +112,22 @@ export const AddColumnButton = ({
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={() => {
+            // isBusy 中は input が disabled になり browser が blur を発火するが、
+            // pending 中の cancel は editor を閉じてユーザの入力を失わせるため無視する
+            if (isBusy) {
+              return;
+            }
             if (!isCancelledRef.current) {
               cancel();
             }
             isCancelledRef.current = false;
           }}
+          disabled={isBusy}
           placeholder="カラム名"
           aria-label="カラム名"
           aria-invalid={isDuplicate}
           aria-describedby={isDuplicate ? errorId : undefined}
-          className="w-full rounded border border-blue-400 px-2 py-1 text-sm text-gray-900 outline-none"
+          className="w-full rounded border border-blue-400 px-2 py-1 text-sm text-gray-900 outline-none disabled:bg-gray-100"
           data-testid="add-column-input"
         />
         {isDuplicate && (

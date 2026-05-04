@@ -1,7 +1,8 @@
+// dialog
+
 // cardOrderCommands
 export type { UpdateCardOrderParams } from "./cardOrderCommands/updateCardOrder";
 export { updateCardOrder } from "./cardOrderCommands/updateCardOrder";
-
 // columnCommands
 export { getColumns } from "./columnCommands/getColumns";
 export type {
@@ -10,6 +11,7 @@ export type {
   UpdateColumnsParams,
 } from "./columnCommands/types";
 export { updateColumns } from "./columnCommands/updateColumns";
+export { openDirectoryDialog } from "./dialog/openDirectoryDialog";
 
 // linkCommands
 export { addLink } from "./linkCommands/addLink";

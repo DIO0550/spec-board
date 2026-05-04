@@ -113,7 +113,7 @@ test("入力前後の空白は trim されて onAdd に渡される", () => {
   expect(onAdd).toHaveBeenCalledWith("Review");
 });
 
-test("確定後はボタン表示に戻る", () => {
+test("確定後はボタン表示に戻る", async () => {
   const onAdd = vi.fn();
   render({ existingColumnNames: [], onAdd });
   act(() => {
@@ -134,8 +134,98 @@ test("確定後はボタン表示に戻る", () => {
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
   });
+  // confirm が async 化されたため、microtask flush 後にボタンが復活する
+  await act(async () => {
+    await Promise.resolve();
+  });
   const button = document.querySelector('[data-testid="add-column-button"]');
   expect(button).toBeTruthy();
+});
+
+test("onAdd が reject した場合、editor は開いたままで入力値も保持される", async () => {
+  const onAdd = vi.fn().mockRejectedValue(new Error("backend reject"));
+  render({ existingColumnNames: [], onAdd });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="add-column-button"]',
+      ) as HTMLButtonElement
+    ).click();
+  });
+  const input = document.querySelector(
+    '[data-testid="add-column-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    setInputValue(input, "Review");
+  });
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // editor (input) は維持される、トリガーボタンには戻らない
+  expect(
+    document.querySelector('[data-testid="add-column-input"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="add-column-button"]'),
+  ).toBeNull();
+  // 入力値も保持
+  const stillInput = document.querySelector(
+    '[data-testid="add-column-input"]',
+  ) as HTMLInputElement;
+  expect(stillInput.value).toBe("Review");
+});
+
+test("onAdd 実行中の Enter 連打は二重実行されない (re-entrant guard)", async () => {
+  let resolveAdd!: () => void;
+  const onAdd = vi.fn().mockImplementation(
+    () =>
+      new Promise<void>((res) => {
+        resolveAdd = res;
+      }),
+  );
+  render({ existingColumnNames: [], onAdd });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="add-column-button"]',
+      ) as HTMLButtonElement
+    ).click();
+  });
+  const input = document.querySelector(
+    '[data-testid="add-column-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    setInputValue(input, "Review");
+  });
+  // 1 回目 Enter (onAdd は pending のまま)
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // 2 回目 Enter (re-entrant guard で抑止される想定)
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(onAdd).toHaveBeenCalledTimes(1);
+  // pending 解放
+  await act(async () => {
+    resolveAdd();
+    await Promise.resolve();
+  });
 });
 
 test("空文字で Enter しても onAdd は呼ばれない", () => {
