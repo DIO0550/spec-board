@@ -445,165 +445,161 @@ export const useProject = (
       // enqueue 時点の世代を捕捉。queue 実行までに別プロジェクトへ切り替わったら
       // この op は破棄する（旧プロジェクトの操作意図を新プロジェクトに反映しない）。
       const enqueueGen = generationRef.current;
-      const next = columnsQueueRef.current.then(
-        async (): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
-          // updater を読む前に openQueueRef を await する。
-          // これをしないと、先に enqueue された CRUD (例: 同じ column への
-          // task-created) がまだ dispatch されておらず、updater が古い
-          // ProjectData (新タスク欠落) で params を計算してしまう。例えば
-          // 「column X を削除して残タスクを Y に rename」する updater が、
-          // X に enqueue 済みの新タスクを見落として rename 漏れになり、
-          // BE 側で orphan task を生む可能性がある。
-          await openQueueRef.current;
-          // queue 実行時の最新 state から param を決定する。
-          // loading + previousLoaded のときは previousLoaded.data を data source
-          // として使う (Board が previousLoaded.data で表示されているため)
-          const snapshot = stateRef.current;
-          if (!acceptsCrud(snapshot)) {
-            return invalidStateErr<{ applied: boolean }>();
-          }
-          if (generationRef.current !== enqueueGen) {
-            return invalidStateErr<{ applied: boolean }>(
-              "プロジェクトが切り替わりました",
+      // 全 body を openQueueRef chain に積む (columnsQueueRef は column op 同士の
+      // 直列化のみ担当)。これにより以下のすべてが BE レベルで他の open/CRUD と
+      // race しないことを保証する:
+      //   1. updater 評価時点の stateRef.current は先行 CRUD の dispatch 完了後
+      //   2. defensive get_columns refetch も chain 内で実行されるため、別 project
+      //      への BE switch / 他 CRUD と並走して別 project の columns を読む race を排除
+      //   3. update_columns invoke も同じ chain 内で連続実行されるため一貫
+      const next = columnsQueueRef.current.then(() => {
+        const queued = openQueueRef.current.then(
+          async (): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
+            // queue 実行時の最新 state から param を決定する。
+            // loading + previousLoaded のときは previousLoaded.data を data source
+            // として使う (Board が previousLoaded.data で表示されているため)
+            const snapshot = stateRef.current;
+            if (!acceptsCrud(snapshot)) {
+              return invalidStateErr<{ applied: boolean }>();
+            }
+            if (generationRef.current !== enqueueGen) {
+              return invalidStateErr<{ applied: boolean }>(
+                "プロジェクトが切り替わりました",
+              );
+            }
+            // 表示中の data (loaded.data または previousLoaded.data) を取得。
+            // acceptsCrud で gate しているため必ず存在する。
+            const visibleData = visibleProjectData(snapshot);
+            if (visibleData === null) {
+              return invalidStateErr<{ applied: boolean }>();
+            }
+            // updater が throw した場合に Promise が reject すると Result contract
+            // が破れるため、try/catch で Result.err に詰め直す。
+            let params: UpdateColumnsParams | null;
+            try {
+              params = isUpdater(input) ? input(visibleData) : input;
+            } catch (e) {
+              return Result.err({ kind: "tauri", error: TauriError.from(e) });
+            }
+            if (params === null) {
+              // updater が null を返した: 適用すべき変更なし。invoke 未実行 = applied:false
+              return Result.ok({ applied: false });
+            }
+            // doneColumn-sensitive 操作 (rename or column 削除) で doneColumn 未取得 +
+            // params.doneColumn 未指定の場合のみ defensive refetch する。
+            // 単純な column 追加など safe な操作では BE が doneColumn を preserve するため
+            // refetch しない (refetch 失敗で safe な操作まで blocking しない)。
+            const doneColumnSensitive = isDoneColumnSensitive(
+              visibleData.columns,
+              params,
             );
-          }
-          // 表示中の data (loaded.data または previousLoaded.data) を取得。
-          // acceptsCrud で gate しているため必ず存在する。
-          const visibleData = visibleProjectData(snapshot);
-          if (visibleData === null) {
-            return invalidStateErr<{ applied: boolean }>();
-          }
-          const startGen = generationRef.current;
-          // updater が throw した場合に Promise が reject すると Result contract
-          // が破れるため、try/catch で Result.err に詰め直す。
-          let params: UpdateColumnsParams | null;
-          try {
-            params = isUpdater(input) ? input(visibleData) : input;
-          } catch (e) {
-            return Result.err({ kind: "tauri", error: TauriError.from(e) });
-          }
-          if (params === null) {
-            // updater が null を返した: 適用すべき変更なし。invoke 未実行 = applied:false
-            return Result.ok({ applied: false });
-          }
-          // doneColumn-sensitive 操作 (rename or column 削除) で doneColumn 未取得 +
-          // params.doneColumn 未指定の場合のみ defensive refetch する。
-          // 単純な column 追加など safe な操作では BE が doneColumn を preserve するため
-          // refetch しない (refetch 失敗で safe な操作まで blocking しない)。
-          const doneColumnSensitive = isDoneColumnSensitive(
-            visibleData.columns,
-            params,
-          );
-          if (
-            doneColumnSensitive &&
-            visibleData.doneColumn === undefined &&
-            params.doneColumn === undefined
-          ) {
-            const refresh = await getColumnsInvoke();
-            // refetch await 中に project が切り替わった場合は、stale snapshot で
-            // 続行すると新プロジェクトを上書きしてしまうため、ここで abort する。
+            if (
+              doneColumnSensitive &&
+              visibleData.doneColumn === undefined &&
+              params.doneColumn === undefined
+            ) {
+              const refresh = await getColumnsInvoke();
+              // refetch await 中に project が切り替わった場合は、stale snapshot で
+              // 続行すると新プロジェクトを上書きしてしまうため、ここで abort する。
+              if (
+                !isMountedRef.current ||
+                generationRef.current !== enqueueGen
+              ) {
+                return invalidStateErr<{ applied: boolean }>(
+                  "プロジェクトが切り替わりました",
+                );
+              }
+              if (!refresh.ok) {
+                // refetch 失敗: doneColumn 不明のまま rename/delete を進めると BE が
+                // stale doneColumn を保持し config 破壊リスク。Result.err で abort し
+                // caller に retry を促す。
+                return Result.err({ kind: "tauri", error: refresh.error });
+              }
+              // 取得できたので state にも反映し、updater を enriched data で再実行する
+              // (App handler は current.doneColumn を見て params.doneColumn を計算する
+              // ため、enrichment 後の再実行で正しい doneColumn が得られる)。
+              const enrichedData: ProjectData = {
+                ...visibleData,
+                doneColumn: refresh.value.doneColumn,
+              };
+              dispatchSync({
+                type: "done-column-refreshed",
+                doneColumn: refresh.value.doneColumn,
+              });
+              try {
+                params = isUpdater(input) ? input(enrichedData) : input;
+              } catch (e) {
+                return Result.err({
+                  kind: "tauri",
+                  error: TauriError.from(e),
+                });
+              }
+              if (params === null) {
+                return Result.ok({ applied: false });
+              }
+            }
+            // 削除する column が現在の doneColumn なのに params.doneColumn を未指定で
+            // invoke すると BE は doneColumn を preserve し、削除された column 名を
+            // doneColumn として保持し続ける config 破壊バグになる。caller が
+            // 忘れた場合でも hook が defensive に拒否する。
+            // (visibleData.doneColumn が known で、refetch を経ていないパスでも保護)
+            const knownDoneColumn = visibleProjectData(
+              stateRef.current,
+            )?.doneColumn;
+            if (
+              knownDoneColumn !== undefined &&
+              !params.columns.some((c) => c.name === knownDoneColumn) &&
+              params.doneColumn === undefined
+            ) {
+              return Result.err({
+                kind: "invalid-state",
+                message:
+                  "doneColumn を削除する操作は新 doneColumn を params.doneColumn で指定する必要があります",
+              });
+            }
+            // 明示的 params.doneColumn は params.columns に必ず含まれていなければ
+            // ならない (BE 側 Config::resolved_done_column は不在の値も preserve する
+            // ため、stale / typo を invoke 前に reject して config 破壊を防ぐ)。
+            if (
+              params.doneColumn !== undefined &&
+              !params.columns.some((c) => c.name === params.doneColumn)
+            ) {
+              return Result.err({
+                kind: "invalid-state",
+                message: `params.doneColumn "${params.doneColumn}" は params.columns に存在しません`,
+              });
+            }
+            // BE invoke (chain 末尾)
             if (!isMountedRef.current || generationRef.current !== enqueueGen) {
               return invalidStateErr<{ applied: boolean }>(
                 "プロジェクトが切り替わりました",
               );
             }
-            if (!refresh.ok) {
-              // refetch 失敗: doneColumn 不明のまま rename/delete を進めると BE が
-              // stale doneColumn を保持し config 破壊リスク。Result.err で abort し
-              // caller に retry を促す。
-              return Result.err({ kind: "tauri", error: refresh.error });
+            const result = await updateColumnsInvoke({
+              columns: params.columns,
+              renames: params.renames,
+              doneColumn: params.doneColumn,
+            });
+            if (!result.ok) {
+              return Result.err({ kind: "tauri", error: result.error });
             }
-            // 取得できたので state にも反映し、updater を enriched data で再実行する
-            // (App handler は current.doneColumn を見て params.doneColumn を計算する
-            // ため、enrichment 後の再実行で正しい doneColumn が得られる)。
-            const enrichedData: ProjectData = {
-              ...visibleData,
-              doneColumn: refresh.value.doneColumn,
-            };
+            if (!isMountedRef.current || generationRef.current !== enqueueGen) {
+              return invalidStateErr<{ applied: boolean }>(
+                "プロジェクトが切り替わりました",
+              );
+            }
             dispatchSync({
-              type: "done-column-refreshed",
-              doneColumn: refresh.value.doneColumn,
+              type: "columns-replaced",
+              columns: params.columns,
+              renames: params.renames,
+              doneColumn: params.doneColumn,
             });
-            try {
-              params = isUpdater(input) ? input(enrichedData) : input;
-            } catch (e) {
-              return Result.err({
-                kind: "tauri",
-                error: TauriError.from(e),
-              });
-            }
-            if (params === null) {
-              return Result.ok({ applied: false });
-            }
-          }
-          // 削除する column が現在の doneColumn なのに params.doneColumn を未指定で
-          // invoke すると BE は doneColumn を preserve し、削除された column 名を
-          // doneColumn として保持し続ける config 破壊バグになる。caller が
-          // 忘れた場合でも hook が defensive に拒否する。
-          // (visibleData.doneColumn が known で、refetch を経ていないパスでも保護)
-          const knownDoneColumn = visibleProjectData(
-            stateRef.current,
-          )?.doneColumn;
-          if (
-            knownDoneColumn !== undefined &&
-            !params.columns.some((c) => c.name === knownDoneColumn) &&
-            params.doneColumn === undefined
-          ) {
-            return Result.err({
-              kind: "invalid-state",
-              message:
-                "doneColumn を削除する操作は新 doneColumn を params.doneColumn で指定する必要があります",
-            });
-          }
-          // 明示的 params.doneColumn は params.columns に必ず含まれていなければ
-          // ならない (BE 側 Config::resolved_done_column は不在の値も preserve する
-          // ため、stale / typo を invoke 前に reject して config 破壊を防ぐ)。
-          if (
-            params.doneColumn !== undefined &&
-            !params.columns.some((c) => c.name === params.doneColumn)
-          ) {
-            return Result.err({
-              kind: "invalid-state",
-              message: `params.doneColumn "${params.doneColumn}" は params.columns に存在しません`,
-            });
-          }
-          // pending 中の open_project を待つ (defense in depth)
-          // BE invoke + dispatch を openQueueRef にチェーンして
-          // 「await openQueueRef → invoke 前の race」を完全に排除する。
-          // 以後の openProject はこの invoke 完了を待つ。
-          const innerQueued = openQueueRef.current.then(
-            async (): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
-              if (!isMountedRef.current || generationRef.current !== startGen) {
-                return invalidStateErr<{ applied: boolean }>(
-                  "プロジェクトが切り替わりました",
-                );
-              }
-              const result = await updateColumnsInvoke({
-                columns: params.columns,
-                renames: params.renames,
-                doneColumn: params.doneColumn,
-              });
-              if (!result.ok) {
-                return Result.err({ kind: "tauri", error: result.error });
-              }
-              if (!isMountedRef.current || generationRef.current !== startGen) {
-                return invalidStateErr<{ applied: boolean }>(
-                  "プロジェクトが切り替わりました",
-                );
-              }
-              dispatchSync({
-                type: "columns-replaced",
-                columns: params.columns,
-                renames: params.renames,
-                doneColumn: params.doneColumn,
-              });
-              return Result.ok({ applied: true });
-            },
-          );
-          openQueueRef.current = innerQueued.catch(() => undefined);
-          return innerQueued;
-        },
-      );
+            return Result.ok({ applied: true });
+          },
+        );
+        openQueueRef.current = queued.catch(() => undefined);
+        return queued;
+      });
       columnsQueueRef.current = next.catch(() => undefined);
       return next;
     },
