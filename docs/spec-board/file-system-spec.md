@@ -326,6 +326,39 @@ pub enum ScanError {
 
 `open_project` 等の Tauri command は本 API を呼び出し、`ScanError::Io` をフロントエンド表示用エラー（"ディレクトリが見つかりません" 等）に変換して返却する。
 
+### `WriteIgnoreRegistry`
+
+```rust
+pub struct WriteIgnoreRegistry;
+
+impl WriteIgnoreRegistry {
+    pub fn new() -> Self;
+    pub fn register(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
+    pub fn should_ignore(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
+    pub fn unregister(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
+    pub fn len(&self) -> Result<usize, WriteIgnoreError>;
+    pub fn is_empty(&self) -> Result<bool, WriteIgnoreError>;
+}
+
+pub enum WriteIgnoreError {
+    LockPoisoned,
+}
+```
+
+| 項目 | 仕様 |
+|:-----|:-----|
+| 機能 | spec-board 自身の書き込みで発生したファイル監視イベントを呼び出し側が識別するため、無視対象パスを登録・参照・解除する |
+| 配置 | `src-tauri/crates/fs/src/write_ignore.rs`（サブクレート `spec-board-fs`）。呼び出しは `spec_board_fs::write_ignore::WriteIgnoreRegistry` |
+| 内部状態 | `Mutex<HashSet<PathBuf>>` で保護する |
+| `register` | パスを登録し、新規追加なら `Ok(true)`、重複なら `Ok(false)` を返す |
+| `should_ignore` | パスが登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。状態は変更しない |
+| `unregister` | パスを解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す |
+| パス比較 | canonicalize / normalize は行わず、渡された `PathBuf` 表現の完全一致で扱う |
+| エラー | Mutex が poison された場合は `Err(WriteIgnoreError::LockPoisoned)` を返す |
+| Tauri 依存 | なし。Tauri state やファイル監視コンポーネントへの保持・統合は呼び出し側で行う |
+
+現在の `WriteIgnoreRegistry` は registry のみを提供し、タイムアウト解除やファイル監視イベントとの接続は担当しない。イベント無視後の `unregister` と、必要な場合のタイムアウト解除は、監視コンポーネント側で行う。
+
 ## カラム設定・カード並び順の永続化
 
 カラム設定、カード並び順、AIエージェント向けガイドの仕様は [config-spec.md](./config-spec.md) を参照。
