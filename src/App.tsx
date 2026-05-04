@@ -126,13 +126,21 @@ export const App = () => {
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
   // path 末尾セグメントを project 名として表示する。OS の path separator は
-  // / / \ どちらにも対応する (Windows / POSIX 双方)。loaded 以外は undefined。
+  // / / \ どちらにも対応する (Windows / POSIX 双方)。
+  // Board 維持要件と整合させるため、loading + previousLoaded のときは
+  // previousLoaded.path から派生 (HeaderBar が "spec-board" fallback に戻らない)。
+  const displayedPath =
+    state.kind === "loaded"
+      ? state.path
+      : state.kind === "loading" && state.previousLoaded
+        ? state.previousLoaded.path
+        : null;
   const projectName =
-    loadedPath !== null
-      ? (loadedPath
+    displayedPath !== null
+      ? (displayedPath
           .split(/[\\/]/)
           .filter((seg) => seg.length > 0)
-          .pop() ?? loadedPath)
+          .pop() ?? displayedPath)
       : undefined;
   const selectedTask = selectedTaskId
     ? (tasks.find((t) => t.id === selectedTaskId) ?? null)
