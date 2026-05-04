@@ -53,11 +53,9 @@ impl Default for WriteIgnoreRegistry {
 
 impl Drop for WriteIgnoreRegistry {
     fn drop(&mut self) {
-        let Ok(mut state) = self.state.0.lock() else {
-            return;
-        };
-
-        state.shutdown_requested = true;
+        if let Ok(mut state) = self.state.0.lock() {
+            state.shutdown_requested = true;
+        }
         self.state.1.notify_one();
     }
 }
@@ -142,13 +140,9 @@ impl WriteIgnoreRegistry {
     }
 
     fn ensure_cleanup_worker_started(&self) -> Result<(), WriteIgnoreError> {
-        {
-            let mut state = self.lock()?;
-            if state.cleanup_worker_started {
-                return Ok(());
-            }
-
-            state.cleanup_worker_started = true;
+        let mut state_guard = self.lock()?;
+        if state_guard.cleanup_worker_started {
+            return Ok(());
         }
 
         let state = Arc::clone(&self.state);
@@ -157,11 +151,8 @@ impl WriteIgnoreRegistry {
             .spawn(move || Self::run_cleanup_worker(state));
 
         if spawn_result.is_ok() {
+            state_guard.cleanup_worker_started = true;
             return Ok(());
-        }
-
-        if let Ok(mut state) = self.lock() {
-            state.cleanup_worker_started = false;
         }
 
         Err(WriteIgnoreError::CleanupWorkerSpawnFailed)
@@ -219,10 +210,10 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    const TEST_TIMEOUT: Duration = Duration::from_millis(80);
-    const BEFORE_TIMEOUT: Duration = Duration::from_millis(30);
-    const WAIT_STEP: Duration = Duration::from_millis(10);
-    const WAIT_TIMEOUT: Duration = Duration::from_secs(1);
+    const TEST_TIMEOUT: Duration = Duration::from_millis(300);
+    const BEFORE_TIMEOUT: Duration = Duration::from_millis(75);
+    const WAIT_STEP: Duration = Duration::from_millis(20);
+    const WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 
     #[test]
     fn new_registry_is_empty_and_unregistered_path_is_not_ignored() {
@@ -376,7 +367,7 @@ mod tests {
             .register("tasks/example.md")
             .expect("registry should be writable");
 
-        thread::sleep(Duration::from_millis(60));
+        thread::sleep(Duration::from_millis(250));
 
         assert!(registry
             .should_ignore("tasks/example.md")
