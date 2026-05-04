@@ -1,4 +1,15 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test:run)",
+      "Bash(pnpm test:run *)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm run build)",
+      "Bash(pnpm run typecheck)",
+      "Bash(pnpm exec vitest)"
+    ]
+  },
   "extraKnownMarketplaces": {
     "d-market-rust": {
       "source": {
@@ -28,7 +39,8 @@
       "source": {
         "source": "github",
         "repo": "DIO0550/d-market-git"
-      }
+      },
+      "autoUpdate": true
     },
     "d-market-code-review": {
       "source": {
@@ -48,16 +60,5 @@
         "repo": "DIO0550/d-market-statusline"
       }
     }
-  },
-  "permissions": {
-    "allow": [
-      "Bash(pnpm test:run)",
-      "Bash(pnpm test:run *)",
-      "Bash(pnpm test)",
-      "Bash(pnpm test *)",
-      "Bash(pnpm run build)",
-      "Bash(pnpm run typecheck)",
-      "Bash(pnpm exec vitest)"
-    ]
   }
 }
