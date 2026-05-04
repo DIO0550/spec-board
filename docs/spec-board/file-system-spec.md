@@ -335,6 +335,7 @@ impl WriteIgnoreRegistry {
     pub fn new() -> Self;
     pub fn register(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
     pub fn should_ignore(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
+    pub fn consume(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
     pub fn unregister(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
     pub fn len(&self) -> Result<usize, WriteIgnoreError>;
     pub fn is_empty(&self) -> Result<bool, WriteIgnoreError>;
@@ -352,12 +353,13 @@ pub enum WriteIgnoreError {
 | 内部状態 | `Mutex<HashSet<PathBuf>>` で保護する |
 | `register` | パスを登録し、新規追加なら `Ok(true)`、重複なら `Ok(false)` を返す |
 | `should_ignore` | パスが登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。状態は変更しない |
+| `consume` | 1回の lock 内でパスを確認して解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。ファイル監視イベントの one-shot 消費に使う |
 | `unregister` | パスを解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す |
 | パス比較 | canonicalize / normalize は行わず、渡された `PathBuf` 表現の完全一致で扱う |
 | エラー | Mutex が poison された場合は `Err(WriteIgnoreError::LockPoisoned)` を返す |
 | Tauri 依存 | なし。Tauri state やファイル監視コンポーネントへの保持・統合は呼び出し側で行う |
 
-現在の `WriteIgnoreRegistry` は registry のみを提供し、タイムアウト解除やファイル監視イベントとの接続は担当しない。イベント無視後の `unregister` と、必要な場合のタイムアウト解除は、監視コンポーネント側で行う。
+現在の `WriteIgnoreRegistry` は registry のみを提供し、タイムアウト解除やファイル監視イベントとの接続は担当しない。ファイル監視イベントを無視する判定では race-free な `consume` を使い、必要な場合のタイムアウト解除は監視コンポーネント側で `unregister` を呼ぶ。
 
 ## カラム設定・カード並び順の永続化
 
