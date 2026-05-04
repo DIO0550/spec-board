@@ -367,8 +367,6 @@ mod tests {
             .register("tasks/example.md")
             .expect("registry should be writable");
 
-        thread::sleep(Duration::from_millis(250));
-
         assert!(registry
             .should_ignore("tasks/example.md")
             .expect("registry should be readable"));
