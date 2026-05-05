@@ -3,11 +3,14 @@
 //! Paths are stored exactly as provided. The registry does not canonicalize,
 //! normalize, or otherwise resolve path representations.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use thiserror::Error;
+
+const DEFAULT_WRITE_IGNORE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum WriteIgnoreError {
@@ -17,9 +20,19 @@ pub enum WriteIgnoreError {
     CleanupWorkerSpawnFailed,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WriteIgnoreRegistry {
-    ignored_paths: Mutex<HashSet<PathBuf>>,
+    ignored_paths: Mutex<HashMap<PathBuf, Instant>>,
+    timeout: Duration,
+}
+
+impl Default for WriteIgnoreRegistry {
+    fn default() -> Self {
+        Self {
+            ignored_paths: Mutex::new(HashMap::new()),
+            timeout: DEFAULT_WRITE_IGNORE_TIMEOUT,
+        }
+    }
 }
 
 impl WriteIgnoreRegistry {
@@ -28,18 +41,35 @@ impl WriteIgnoreRegistry {
         Self::default()
     }
 
+    #[cfg(test)]
+    fn with_timeout(timeout: Duration) -> Self {
+        Self {
+            ignored_paths: Mutex::new(HashMap::new()),
+            timeout,
+        }
+    }
+
     /// Registers a path and returns whether it was newly inserted.
     pub fn register(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError> {
         let mut ignored_paths = self.lock()?;
+        Self::remove_expired_paths(&mut ignored_paths);
+        let path = path.as_ref().to_path_buf();
 
-        Ok(ignored_paths.insert(path.as_ref().to_path_buf()))
+        if ignored_paths.contains_key(&path) {
+            return Ok(false);
+        }
+
+        ignored_paths.insert(path, Instant::now() + self.timeout);
+
+        Ok(true)
     }
 
     /// Returns whether the path is currently registered.
     pub fn should_ignore(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError> {
-        let ignored_paths = self.lock()?;
+        let mut ignored_paths = self.lock()?;
+        Self::remove_expired_paths(&mut ignored_paths);
 
-        Ok(ignored_paths.contains(path.as_ref()))
+        Ok(ignored_paths.contains_key(path.as_ref()))
     }
 
     /// Atomically removes a path and returns whether it was present.
@@ -53,13 +83,17 @@ impl WriteIgnoreRegistry {
     /// Removes a path and returns whether it was present.
     pub fn unregister(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError> {
         let mut ignored_paths = self.lock()?;
+        Self::remove_expired_paths(&mut ignored_paths);
 
-        Ok(ignored_paths.remove(path.as_ref()))
+        Ok(ignored_paths.remove(path.as_ref()).is_some())
     }
 
     /// Returns the number of registered paths.
     pub fn len(&self) -> Result<usize, WriteIgnoreError> {
-        Ok(self.lock()?.len())
+        let mut ignored_paths = self.lock()?;
+        Self::remove_expired_paths(&mut ignored_paths);
+
+        Ok(ignored_paths.len())
     }
 
     /// Returns whether there are no registered paths.
@@ -67,10 +101,15 @@ impl WriteIgnoreRegistry {
         Ok(self.len()? == 0)
     }
 
-    fn lock(&self) -> Result<MutexGuard<'_, HashSet<PathBuf>>, WriteIgnoreError> {
+    fn lock(&self) -> Result<MutexGuard<'_, HashMap<PathBuf, Instant>>, WriteIgnoreError> {
         self.ignored_paths
             .lock()
             .map_err(|_| WriteIgnoreError::LockPoisoned)
+    }
+
+    fn remove_expired_paths(ignored_paths: &mut HashMap<PathBuf, Instant>) {
+        let now = Instant::now();
+        ignored_paths.retain(|_, expires_at| *expires_at > now);
     }
 }
 
@@ -81,6 +120,10 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::{Arc, Barrier};
     use std::thread;
+    use std::time::Duration;
+
+    const TEST_TIMEOUT: Duration = Duration::from_millis(50);
+    const WAIT_AFTER_TIMEOUT: Duration = Duration::from_millis(75);
 
     #[test]
     fn new_registry_is_empty_and_unregistered_path_is_not_ignored() {
@@ -118,6 +161,25 @@ mod tests {
             .register("tasks/example.md")
             .expect("registry should be writable"));
         assert_eq!(1, registry.len().expect("registry should be readable"));
+    }
+
+    #[test]
+    fn registered_path_expires_when_event_never_arrives() {
+        let registry = WriteIgnoreRegistry::with_timeout(TEST_TIMEOUT);
+
+        registry
+            .register("tasks/example.md")
+            .expect("registry should be writable");
+
+        thread::sleep(WAIT_AFTER_TIMEOUT);
+
+        assert!(!registry
+            .should_ignore("tasks/example.md")
+            .expect("registry should be readable"));
+        assert!(registry.is_empty().expect("registry should be readable"));
+        assert!(registry
+            .register("tasks/example.md")
+            .expect("expired path should be registerable again"));
     }
 
     #[test]
