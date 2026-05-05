@@ -5,21 +5,16 @@ import type {
 } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import type { Result as ResultT } from "@/utils/result";
-import type {
-  UpdateColumnsCommand,
-  UpdateColumnsCommandBuilder,
-} from "./domain/columns";
+import type { ColumnsCommand, ColumnsCommandBuilder } from "./domain/columns";
 import type { ProjectState } from "./domain/projectState";
 import type { ProjectError } from "./errors";
 
 export type {
-  UpdateColumnsCommand,
-  UpdateColumnsCommandBuilder,
+  ColumnsCommand,
+  ColumnsCommandBuilder,
 } from "./domain/columns";
 
-export type UpdateColumnsInput =
-  | UpdateColumnsCommand
-  | UpdateColumnsCommandBuilder;
+export type UpdateColumnsInput = ColumnsCommand | ColumnsCommandBuilder;
 
 export type UseProjectOptions = {
   onError?: (error: ProjectError) => void;

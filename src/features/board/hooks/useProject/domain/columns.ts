@@ -4,15 +4,15 @@ import { Result, type Result as ResultT } from "@/utils/result";
 import { ProjectError } from "../errors";
 import type { ProjectData } from "./projectData";
 
-export type UpdateColumnsCommand = {
+export type ColumnsCommand = {
   columns: Column[];
   renames?: ColumnRename[];
   doneColumn?: string;
 };
 
-export type UpdateColumnsCommandBuilder = (
+export type ColumnsCommandBuilder = (
   current: ProjectData,
-) => UpdateColumnsCommand | null;
+) => ColumnsCommand | null;
 
 /**
  * command 適用後に既存 column が削除されるか判定する。
@@ -21,10 +21,8 @@ export type UpdateColumnsCommandBuilder = (
  * @param command 適用予定の column 更新命令
  * @returns command.columns に column が含まれないなら true
  */
-const isColumnRemoved = (
-  column: Column,
-  command: UpdateColumnsCommand,
-): boolean => !command.columns.some((next) => next.name === column.name);
+const isColumnRemoved = (column: Column, command: ColumnsCommand): boolean =>
+  !command.columns.some((next) => next.name === column.name);
 
 export const Columns = {
   /**
@@ -34,8 +32,8 @@ export const Columns = {
    * @returns builder 関数なら true
    */
   isCommandBuilder: (
-    command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
-  ): command is UpdateColumnsCommandBuilder => typeof command === "function",
+    command: ColumnsCommand | ColumnsCommandBuilder,
+  ): command is ColumnsCommandBuilder => typeof command === "function",
 
   /**
    * 静的 command または builder から、適用する command を取得する。
@@ -45,9 +43,9 @@ export const Columns = {
    * @returns command、no-op の null、または builder 例外を包んだ ProjectError
    */
   resolveCommand: (
-    command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
+    command: ColumnsCommand | ColumnsCommandBuilder,
     current: ProjectData,
-  ): ResultT<UpdateColumnsCommand | null, ProjectError> => {
+  ): ResultT<ColumnsCommand | null, ProjectError> => {
     if (!Columns.isCommandBuilder(command)) {
       return Result.ok(command);
     }
@@ -67,7 +65,7 @@ export const Columns = {
    */
   isDoneColumnSensitive: (
     currentColumns: Column[],
-    command: UpdateColumnsCommand,
+    command: ColumnsCommand,
   ): boolean => {
     if ((command.renames ?? []).length > 0) {
       return true;
@@ -84,7 +82,7 @@ export const Columns = {
    */
   validateDoneColumn: (
     knownDoneColumn: string | undefined,
-    command: UpdateColumnsCommand,
+    command: ColumnsCommand,
   ): ResultT<void, ProjectError> => {
     if (
       knownDoneColumn !== undefined &&

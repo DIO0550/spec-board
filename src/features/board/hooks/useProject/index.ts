@@ -27,8 +27,8 @@ import {
   reducer,
 } from "./reducer";
 import type {
-  UpdateColumnsCommand,
-  UpdateColumnsCommandBuilder,
+  ColumnsCommand,
+  ColumnsCommandBuilder,
   UseProjectOptions,
   UseProjectResult,
 } from "./types";
@@ -36,8 +36,8 @@ import type {
 export type { ProjectError } from "./errors";
 export type { ProjectData, ProjectState } from "./reducer";
 export type {
-  UpdateColumnsCommand,
-  UpdateColumnsCommandBuilder,
+  ColumnsCommand,
+  ColumnsCommandBuilder,
   UpdateColumnsInput,
   UseProjectOptions,
   UseProjectResult,
@@ -121,7 +121,7 @@ export const useProject = (
 
   const updateColumns = useCallback(
     (
-      command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
+      command: ColumnsCommand | ColumnsCommandBuilder,
     ): Promise<ResultT<{ applied: boolean }, ProjectError>> =>
       updateColumnsAction(actionDeps(), command),
     [actionDeps],

@@ -11,8 +11,8 @@ import {
 } from "../concurrency";
 import {
   Columns,
-  type UpdateColumnsCommand,
-  type UpdateColumnsCommandBuilder,
+  type ColumnsCommand,
+  type ColumnsCommandBuilder,
 } from "../domain/columns";
 import type { ProjectData } from "../domain/projectData";
 import { ProjectState } from "../domain/projectState";
@@ -43,7 +43,7 @@ const switchedProject = (): ResultT<{ applied: boolean }, ProjectError> =>
  */
 export const updateColumnsAction = (
   deps: UpdateColumnsActionDeps,
-  command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
+  command: ColumnsCommand | ColumnsCommandBuilder,
 ): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
   if (!ProjectState.canAcceptDataCommand(deps.getState())) {
     return Promise.resolve(Result.err(ProjectError.invalidState()));

@@ -1,6 +1,6 @@
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
-import type { UpdateColumnsCommand } from "./columns";
+import type { ColumnsCommand } from "./columns";
 
 export type ProjectData = {
   tasks: Task[];
@@ -17,7 +17,7 @@ export type ProjectData = {
  */
 const applyRenamesToTasks = (
   tasks: Task[],
-  renames: NonNullable<UpdateColumnsCommand["renames"]>,
+  renames: NonNullable<ColumnsCommand["renames"]>,
 ): Task[] => {
   return renames.reduce<Task[]>(
     (acc, { from, to }) =>
@@ -112,10 +112,7 @@ export const ProjectData = {
    * @param command 適用する column 更新命令
    * @returns column 更新後の ProjectData
    */
-  replaceColumns: (
-    data: ProjectData,
-    command: UpdateColumnsCommand,
-  ): ProjectData => {
+  replaceColumns: (data: ProjectData, command: ColumnsCommand): ProjectData => {
     const renamed = applyRenamesToTasks(data.tasks, command.renames ?? []);
     const renameMap = new Map(
       (command.renames ?? []).map(({ from, to }) => [from, to]),
