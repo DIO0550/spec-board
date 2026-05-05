@@ -146,7 +146,7 @@ pub fn validate_parent_existence(mut tasks: Vec<Task>) -> Vec<Task> {
 ///
 /// @param tasks 検証対象の Task 一覧。正規化後の `file_path` が一意であることを前提にする。
 /// @returns 存在しない parent の warning を保持し、循環または深さ超過がなければ Task 一覧を返す。
-/// @throws TaskParseError::CycleOrTooDeep 起点 task の parent chain に循環がある、または20階層を超過した場合。
+/// @throws TaskParseError::CycleOrTooDeep 起点 task の parent chain に循環がある、または parent 参照（edge）を21回以上辿る場合。
 ///
 /// 将来 Task index を確定する境界では、この API を呼び出してから children / reverse links
 /// などの派生値を構築する。
