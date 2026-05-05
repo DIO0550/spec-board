@@ -148,14 +148,30 @@ pub fn validate_parent_existence(mut tasks: Vec<Task>) -> Vec<Task> {
 /// @returns 存在しない parent の warning を保持し、循環または深さ超過がなければ Task 一覧を返す。
 /// @throws TaskParseError::CycleOrTooDeep 起点 task の parent chain に循環がある、または parent 参照（edge）を21回以上辿る場合。
 ///
-/// 将来 Task index を確定する境界では、この API を呼び出してから children / reverse links
-/// などの派生値を構築する。
+/// この API は parent 検証のみを行う。children の派生値構築には `build_children` を使う。
 pub fn validate_parent_hierarchy(tasks: Vec<Task>) -> Result<Vec<Task>, TaskParseError> {
     let tasks = validate_parent_existence(tasks);
     let parent_lookup = parent_lookup_index(&tasks);
 
     for task in &tasks {
         validate_parent_chain(task, &parent_lookup)?;
+    }
+
+    Ok(tasks)
+}
+
+/// 全 Task の parent 参照を検証し、親 Task の children を parent 逆引きで構築する。
+///
+/// @param tasks 構築対象の Task 一覧。正規化後の `file_path` が一意であることを前提にする。
+/// @returns parent warning と children 派生値を反映した Task 一覧。
+/// @throws TaskParseError::CycleOrTooDeep parent chain に循環または深さ超過がある場合。
+pub fn build_children(tasks: Vec<Task>) -> Result<Vec<Task>, TaskParseError> {
+    let mut tasks = validate_parent_hierarchy(tasks)?;
+    clear_children(&mut tasks);
+    let parent_index = task_lookup_index(&tasks);
+
+    for child_index in 0..tasks.len() {
+        append_child_to_parent(child_index, &mut tasks, &parent_index);
     }
 
     Ok(tasks)
@@ -180,6 +196,42 @@ fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
             )
         })
         .collect()
+}
+
+fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
+    tasks
+        .iter()
+        .enumerate()
+        .map(|(index, task)| (normalize_task_path_for_lookup(&task.file_path), index))
+        .collect()
+}
+
+fn clear_children(tasks: &mut [Task]) {
+    for task in tasks {
+        task.children.clear();
+    }
+}
+
+fn append_child_to_parent(
+    child_index: usize,
+    tasks: &mut [Task],
+    parent_index: &HashMap<String, usize>,
+) {
+    let child_file_path = tasks[child_index].file_path.clone();
+    let Some(parent_path) = tasks[child_index]
+        .parent
+        .as_deref()
+        .and_then(normalize_parent_path_for_lookup)
+    else {
+        return;
+    };
+
+    let Some(parent_task_index) = parent_index.get(&parent_path).copied() else {
+        return;
+    };
+
+    let children = &mut tasks[parent_task_index].children;
+    children.push(child_file_path);
 }
 
 fn validate_parent_chain(
@@ -726,6 +778,178 @@ mod tests {
             .warnings
             .iter()
             .all(|warning| warning.code != TaskWarningCode::ParentNotFound));
+    }
+
+    #[test]
+    fn build_children_adds_child_file_path_to_parent() {
+        let tasks = vec![
+            task_without_parent("tasks/parent.md"),
+            task_with_parent("tasks/child.md", "tasks/parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    }
+
+    #[test]
+    fn build_children_adds_child_file_paths_to_parent_in_input_order() {
+        let tasks = vec![
+            task_without_parent("tasks/parent.md"),
+            task_with_parent("tasks/child-a.md", "tasks/parent.md"),
+            task_with_parent("tasks/child-b.md", "tasks/parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(
+            tasks[0].children,
+            vec![
+                "tasks/child-a.md".to_string(),
+                "tasks/child-b.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn build_children_adds_child_when_parent_appears_later() {
+        let tasks = vec![
+            task_with_parent("tasks/child.md", "tasks/parent.md"),
+            task_without_parent("tasks/parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(tasks[1].children, vec!["tasks/child.md".to_string()]);
+    }
+
+    #[test]
+    fn build_children_clears_existing_children_before_recalculation() {
+        let mut parent = task_without_parent("tasks/parent.md");
+        parent.children = vec![
+            "tasks/stale.md".to_string(),
+            "tasks/child.md".to_string(),
+            "tasks/child.md".to_string(),
+        ];
+        let tasks = vec![
+            parent,
+            task_with_parent("tasks/child.md", "tasks/parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    }
+
+    #[test]
+    fn build_children_matches_parent_with_dot_prefix() {
+        let tasks = vec![
+            task_without_parent("tasks/parent.md"),
+            task_with_parent("tasks/child.md", "./tasks/parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    }
+
+    #[test]
+    fn build_children_matches_parent_with_backslash_separator() {
+        let tasks = vec![
+            task_without_parent("tasks/parent.md"),
+            task_with_parent("tasks/child.md", "tasks\\parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    }
+
+    #[test]
+    fn build_children_keeps_missing_parent_warning_without_child_append() {
+        let tasks = vec![
+            task_without_parent("tasks/parent.md"),
+            task_with_parent("tasks/child.md", "tasks/missing.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert!(tasks[0].children.is_empty());
+        assert!(tasks[1].warnings.iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        }));
+    }
+
+    #[test]
+    fn build_children_ignores_empty_absolute_and_drive_prefix_parent_for_child_append() {
+        let cases = ["", "/tasks/parent.md", "C:\\tasks\\parent.md"];
+
+        for parent in cases {
+            let mut child = task_without_parent("tasks/child.md");
+            child.parent = Some(parent.to_string());
+            let tasks = vec![task_without_parent("tasks/parent.md"), child];
+
+            let tasks = build_children(tasks).unwrap();
+
+            assert!(tasks[0].children.is_empty(), "{parent}");
+            assert!(
+                tasks[1].warnings.iter().any(|warning| {
+                    warning.code == TaskWarningCode::ParentNotFound
+                        && warning.field.as_deref() == Some("parent")
+                }),
+                "{parent}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_children_returns_error_for_self_reference() {
+        let result = build_children(vec![task_with_parent("tasks/a.md", "tasks/a.md")]);
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::Cycle,
+            }) if file_path == "tasks/a.md"
+        ));
+    }
+
+    #[test]
+    fn build_children_returns_error_for_cycle() {
+        let result = build_children(vec![
+            task_with_parent("tasks/a.md", "tasks/b.md"),
+            task_with_parent("tasks/b.md", "tasks/a.md"),
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::Cycle,
+            }) if file_path == "tasks/a.md"
+        ));
+    }
+
+    #[test]
+    fn build_children_returns_error_for_parent_chain_over_max_depth() {
+        let result = build_children(parent_chain_with_edge_count(21));
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::TooDeep,
+            }) if file_path == "tasks/0.md"
+        ));
+    }
+
+    #[test]
+    fn build_children_accepts_empty_tasks() {
+        let tasks = build_children(Vec::new()).unwrap();
+
+        assert!(tasks.is_empty());
     }
 
     #[test]

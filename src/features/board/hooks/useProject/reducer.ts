@@ -1,3 +1,4 @@
+import { parentReferencesTaskPath } from "@/domains/task-path";
 import type { ColumnRename, TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -160,7 +161,7 @@ export const reducer = (
           parentFilePath === undefined
             ? tasksWithCreated
             : tasksWithCreated.map((t) =>
-                t.filePath === parentFilePath &&
+                parentReferencesTaskPath(parentFilePath, t.filePath) &&
                 !t.children.includes(action.task.filePath)
                   ? { ...t, children: [...t.children, action.task.filePath] }
                   : t,
@@ -191,7 +192,9 @@ export const reducer = (
         const remaining = data.tasks
           .filter((t) => t.filePath !== removedPath)
           .map((t) => {
-            const parent = t.parent === removedPath ? undefined : t.parent;
+            const parent = parentReferencesTaskPath(t.parent, removedPath)
+              ? undefined
+              : t.parent;
             const children = t.children.includes(removedPath)
               ? t.children.filter((c) => c !== removedPath)
               : t.children;
