@@ -38,6 +38,7 @@ export type { ProjectData, ProjectState } from "./reducer";
 export type {
   UpdateColumnsCommand,
   UpdateColumnsCommandBuilder,
+  UpdateColumnsInput,
   UseProjectOptions,
   UseProjectResult,
 } from "./types";

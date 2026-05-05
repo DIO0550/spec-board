@@ -48,7 +48,7 @@ export const reducer = (
     case "open-succeed":
       return ProjectStateDomain.openSucceed(action.path, action.data);
     case "open-fail":
-      return ProjectStateDomain.openFail(action.path, action.error);
+      return ProjectStateDomain.openFail(state, action.path, action.error);
     case "task-created":
       return ProjectStateDomain.updateData(state, (data) =>
         ProjectDataDomain.applyTaskCreated(data, action.task),

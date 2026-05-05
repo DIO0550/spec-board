@@ -7,6 +7,7 @@ export type {
   ProjectState,
   UpdateColumnsCommand,
   UpdateColumnsCommandBuilder,
+  UpdateColumnsInput,
   UseProjectOptions,
   UseProjectResult,
 } from "./hooks/useProject";

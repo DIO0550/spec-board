@@ -3,7 +3,11 @@ import type { ProjectData } from "./projectData";
 
 export type ProjectState =
   | { kind: "idle" }
-  | { kind: "loading"; path: string }
+  | {
+      kind: "loading";
+      path: string;
+      previousLoaded?: { path: string; data: ProjectData };
+    }
   | { kind: "loaded"; path: string; data: ProjectData }
   | { kind: "error"; path: string; error: TauriError };
 
@@ -34,12 +38,17 @@ export const ProjectState = {
    *
    * @param _state 現在の ProjectState
    * @param path open 対象 path
-   * @returns loading state
+   * @returns previousLoaded を退避した loading state
    */
-  openStart: (_state: ProjectState, path: string): ProjectState => ({
-    kind: "loading",
-    path,
-  }),
+  openStart: (state: ProjectState, path: string): ProjectState => {
+    const previousLoaded =
+      state.kind === "loaded"
+        ? { path: state.path, data: state.data }
+        : state.kind === "loading"
+          ? state.previousLoaded
+          : undefined;
+    return { kind: "loading", path, previousLoaded };
+  },
 
   /**
    * project open 成功時の loaded state を作る。
@@ -55,27 +64,53 @@ export const ProjectState = {
   }),
 
   /**
-   * project open 失敗時の error state を作る。
+   * project open 失敗時の state を作る。
    *
+   * @param state 現在の ProjectState
    * @param path open に失敗した project path
    * @param error Tauri command 由来の error
-   * @returns error state
+   * @returns previousLoaded があれば loaded に復元し、なければ error state
    */
-  openFail: (path: string, error: TauriError): ProjectState => ({
-    kind: "error",
-    path,
-    error,
-  }),
+  openFail: (
+    state: ProjectState,
+    path: string,
+    error: TauriError,
+  ): ProjectState => {
+    if (state.kind === "loading" && state.previousLoaded !== undefined) {
+      return {
+        kind: "loaded",
+        path: state.previousLoaded.path,
+        data: state.previousLoaded.data,
+      };
+    }
+    return { kind: "error", path, error };
+  },
 
   /**
    * loaded state の ProjectData だけを更新する。
    *
    * @param state 現在の ProjectState
    * @param update ProjectData の変換関数
-   * @returns loaded なら data 更新後 state、それ以外は元 state
+   * @returns loaded / loading.previousLoaded なら data 更新後 state、それ以外は元 state
    */
-  updateData: (state: ProjectState, update: ProjectDataMapper): ProjectState =>
-    state.kind === "loaded" ? { ...state, data: update(state.data) } : state,
+  updateData: (
+    state: ProjectState,
+    update: ProjectDataMapper,
+  ): ProjectState => {
+    if (state.kind === "loaded") {
+      return { ...state, data: update(state.data) };
+    }
+    if (state.kind === "loading" && state.previousLoaded !== undefined) {
+      return {
+        ...state,
+        previousLoaded: {
+          path: state.previousLoaded.path,
+          data: update(state.previousLoaded.data),
+        },
+      };
+    }
+    return state;
+  },
 
   /**
    * project state を初期 idle に戻す。

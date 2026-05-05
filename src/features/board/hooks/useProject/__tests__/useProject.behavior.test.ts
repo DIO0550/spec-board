@@ -52,14 +52,16 @@ test("open-start (idle 起点) → loading", () => {
   expect(next).toEqual({
     kind: "loading",
     path: "/a",
+    previousLoaded: undefined,
   });
 });
 
-test("open-start (loaded 起点) → loading に切り替わり、旧 data は保持しない", () => {
+test("open-start (loaded 起点) → loading に切り替わり、復元用 data を保持する", () => {
   const next = reducer(loadedAState, { type: "open-start", path: "/b" });
   expect(next).toEqual({
     kind: "loading",
     path: "/b",
+    previousLoaded: { path: "/a", data: dataA },
   });
 });
 
@@ -80,11 +82,11 @@ test("open-fail (loading) → error", () => {
   expect(next).toEqual({ kind: "error", path: "/a", error: err });
 });
 
-test("open-fail (loaded 起点の loading でも) → error", () => {
+test("open-fail (loaded 起点の loading) → 直前の loaded に復元", () => {
   const start = reducer(loadedAState, { type: "open-start", path: "/b" });
   const err = new TauriError("NOT_FOUND", "fail");
   const next = reducer(start, { type: "open-fail", path: "/b", error: err });
-  expect(next).toEqual({ kind: "error", path: "/b", error: err });
+  expect(next).toEqual({ kind: "loaded", path: "/a", data: dataA });
 });
 
 test("task-created → state.data.tasks 末尾に追加", () => {
@@ -360,29 +362,26 @@ test.for<[string, ProjectAction]>([
   expect(reducer(idle, action)).toBe(idle);
 });
 
-test("open-start (loading 起点) → loading: 新しい path だけを保持する", () => {
+test("open-start (loading 起点) → loading: 既存 previousLoaded を引き継ぐ", () => {
   const stepB = reducer(loadedAState, { type: "open-start", path: "/b" });
   const stepC = reducer(stepB, { type: "open-start", path: "/c" });
   expect(stepC).toEqual({
     kind: "loading",
     path: "/c",
+    previousLoaded: { path: "/a", data: dataA },
   });
   const failC = reducer(stepC, {
     type: "open-fail",
     path: "/c",
     error: new TauriError("UNKNOWN", "x"),
   });
-  expect(failC).toEqual({
-    kind: "error",
-    path: "/c",
-    error: new TauriError("UNKNOWN", "x"),
-  });
+  expect(failC).toEqual({ kind: "loaded", path: "/a", data: dataA });
 });
 
-test("dataB を別途 loaded に持っていても open-fail は復元しない", () => {
+test("dataB を別途 loaded に持つ場合も open-fail 復元先が正しい", () => {
   const loadedB: ProjectState = { kind: "loaded", path: "/b", data: dataB };
   const start = reducer(loadedB, { type: "open-start", path: "/c" });
   const err = new TauriError("UNKNOWN", "x");
   const next = reducer(start, { type: "open-fail", path: "/c", error: err });
-  expect(next).toEqual({ kind: "error", path: "/c", error: err });
+  expect(next).toEqual({ kind: "loaded", path: "/b", data: dataB });
 });

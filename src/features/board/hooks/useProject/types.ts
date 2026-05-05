@@ -17,6 +17,10 @@ export type {
   UpdateColumnsCommandBuilder,
 } from "./domain/columns";
 
+export type UpdateColumnsInput =
+  | UpdateColumnsCommand
+  | UpdateColumnsCommandBuilder;
+
 export type UseProjectOptions = {
   onError?: (error: ProjectError) => void;
 };
@@ -34,7 +38,7 @@ export type UseProjectResult = {
     params: DeleteTaskParams,
   ) => Promise<ResultT<void, ProjectError>>;
   updateColumns: (
-    command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
+    command: UpdateColumnsInput,
   ) => Promise<ResultT<{ applied: boolean }, ProjectError>>;
   reset: () => void;
 };

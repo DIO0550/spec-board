@@ -59,10 +59,11 @@ export const openProjectAction = async ({
     return;
   }
 
-  const version = invalidateProject(projectVersion);
   dispatchSync({ type: "open-start", path });
 
   await enqueueProjectCommand(projectCommandQueue, async () => {
+    const version = invalidateProject(projectVersion);
+
     if (!isProjectCurrent(projectVersion, version)) {
       return;
     }

@@ -114,6 +114,9 @@ export const App = () => {
     setSelectedTaskId(null);
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
+  } else if (state.kind !== "loaded" && createModalStatus !== null) {
+    setCreateModalStatus(null);
+    setCreateModalParent(undefined);
   }
 
   const tasks = tasksOf(state);
