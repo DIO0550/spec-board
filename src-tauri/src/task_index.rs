@@ -812,6 +812,18 @@ mod tests {
     }
 
     #[test]
+    fn build_children_adds_child_when_parent_appears_later() {
+        let tasks = vec![
+            task_with_parent("tasks/child.md", "tasks/parent.md"),
+            task_without_parent("tasks/parent.md"),
+        ];
+
+        let tasks = build_children(tasks).unwrap();
+
+        assert_eq!(tasks[1].children, vec!["tasks/child.md".to_string()]);
+    }
+
+    #[test]
     fn build_children_clears_existing_children_before_recalculation() {
         let mut parent = task_without_parent("tasks/parent.md");
         parent.children = vec![
