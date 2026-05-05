@@ -137,6 +137,10 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 4. フロントマター + 本文を再構成して書き出し
 5. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
 
+> 実装メモ: parent 循環検証は `task_index::validate_parent_hierarchy` で行う。
+> 現時点の PL-008 実装は task_index の純粋 validation API までで、
+> `create_task` / `update_task` command への接続は command 実装時に行う。
+
 ---
 
 ### `delete_task`
