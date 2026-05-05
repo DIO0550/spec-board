@@ -14,16 +14,36 @@ export type UpdateColumnsCommandBuilder = (
   current: ProjectData,
 ) => UpdateColumnsCommand | null;
 
+/**
+ * command 適用後に既存 column が削除されるか判定する。
+ *
+ * @param column 現在存在する column
+ * @param command 適用予定の column 更新命令
+ * @returns command.columns に column が含まれないなら true
+ */
 const isColumnRemoved = (
   column: Column,
   command: UpdateColumnsCommand,
 ): boolean => !command.columns.some((next) => next.name === column.name);
 
 export const Columns = {
+  /**
+   * updateColumns に渡された値が command builder か判定する。
+   *
+   * @param command 静的 command または command builder
+   * @returns builder 関数なら true
+   */
   isCommandBuilder: (
     command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
   ): command is UpdateColumnsCommandBuilder => typeof command === "function",
 
+  /**
+   * 静的 command または builder から、適用する command を取得する。
+   *
+   * @param command 静的 command または command builder
+   * @param current builder に渡す最新 ProjectData
+   * @returns command、no-op の null、または builder 例外を包んだ ProjectError
+   */
   resolveCommand: (
     command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
     current: ProjectData,
@@ -38,6 +58,13 @@ export const Columns = {
     }
   },
 
+  /**
+   * doneColumn の再取得や検証が必要な column 更新か判定する。
+   *
+   * @param currentColumns 現在の columns
+   * @param command 適用予定の column 更新命令
+   * @returns rename または column 削除を含むなら true
+   */
   isDoneColumnSensitive: (
     currentColumns: Column[],
     command: UpdateColumnsCommand,
@@ -48,6 +75,13 @@ export const Columns = {
     return currentColumns.some((column) => isColumnRemoved(column, command));
   },
 
+  /**
+   * doneColumn を壊す column 更新を invoke 前に拒否する。
+   *
+   * @param knownDoneColumn 現在判明している doneColumn
+   * @param command 適用予定の column 更新命令
+   * @returns 不変条件を満たすなら ok、壊す可能性があれば invalid-state
+   */
   validateDoneColumn: (
     knownDoneColumn: string | undefined,
     command: UpdateColumnsCommand,

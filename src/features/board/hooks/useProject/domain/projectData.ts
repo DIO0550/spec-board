@@ -8,6 +8,13 @@ export type ProjectData = {
   doneColumn?: string;
 };
 
+/**
+ * task の status に column rename を適用する。
+ *
+ * @param tasks 対象 task 配列
+ * @param renames 適用する column rename 一覧
+ * @returns status を rename 済みの task 配列
+ */
 const applyRenamesToTasks = (
   tasks: Task[],
   renames: NonNullable<UpdateColumnsCommand["renames"]>,
@@ -22,6 +29,13 @@ const applyRenamesToTasks = (
 };
 
 export const ProjectData = {
+  /**
+   * 作成された task を追加し、親 task の children も同期する。
+   *
+   * @param data 現在の ProjectData
+   * @param task 作成された task
+   * @returns task 追加後の ProjectData
+   */
   applyTaskCreated: (data: ProjectData, task: Task): ProjectData => {
     const tasksWithCreated = [...data.tasks, task];
     const parentFilePath = task.parent;
@@ -37,6 +51,14 @@ export const ProjectData = {
     return { ...data, tasks: tasksWithParentSync };
   },
 
+  /**
+   * originalFilePath を lookup key として task を差し替える。
+   *
+   * @param data 現在の ProjectData
+   * @param originalFilePath 更新前 task の filePath
+   * @param task 更新後 task
+   * @returns task 更新後の ProjectData
+   */
   applyTaskUpdated: (
     data: ProjectData,
     originalFilePath: string,
@@ -48,6 +70,13 @@ export const ProjectData = {
     ),
   }),
 
+  /**
+   * task を削除し、親子関係と link / reverseLink から参照を掃除する。
+   *
+   * @param data 現在の ProjectData
+   * @param filePath 削除する task の filePath
+   * @returns task 削除後の ProjectData
+   */
   applyTaskDeleted: (data: ProjectData, filePath: string): ProjectData => {
     const tasks = data.tasks
       .filter((task) => task.filePath !== filePath)
@@ -76,6 +105,13 @@ export const ProjectData = {
     return { ...data, tasks };
   },
 
+  /**
+   * columns を置き換え、rename に応じて task status と doneColumn を追従する。
+   *
+   * @param data 現在の ProjectData
+   * @param command 適用する column 更新命令
+   * @returns column 更新後の ProjectData
+   */
   replaceColumns: (
     data: ProjectData,
     command: UpdateColumnsCommand,
@@ -96,6 +132,13 @@ export const ProjectData = {
     };
   },
 
+  /**
+   * backend から再取得した doneColumn を ProjectData に反映する。
+   *
+   * @param data 現在の ProjectData
+   * @param doneColumn 再取得した doneColumn
+   * @returns doneColumn 更新後の ProjectData
+   */
   refreshDoneColumn: (data: ProjectData, doneColumn: string): ProjectData => ({
     ...data,
     doneColumn,

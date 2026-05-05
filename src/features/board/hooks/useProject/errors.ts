@@ -10,11 +10,23 @@ export type ProjectError =
   | { kind: "invalid-state"; message: string };
 
 export const ProjectError = {
+  /**
+   * useProject の状態不整合を表す error を作成する。
+   *
+   * @param message 呼び出し側に返す説明文
+   * @returns invalid-state の ProjectError
+   */
   invalidState: (message = "プロジェクトが開かれていません"): ProjectError => ({
     kind: "invalid-state",
     message,
   }),
 
+  /**
+   * Tauri command 由来の error を ProjectError として包む。
+   *
+   * @param error Tauri command / dialog から返された error
+   * @returns tauri の ProjectError
+   */
   tauri: (error: TauriError): ProjectError => ({
     kind: "tauri",
     error,

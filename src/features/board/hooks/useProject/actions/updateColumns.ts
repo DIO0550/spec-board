@@ -26,9 +26,21 @@ export type UpdateColumnsActionDeps = {
   dispatchSync: (action: ProjectAction) => void;
 };
 
+/**
+ * project 世代が変わったときに返す共通エラーを作成する。
+ *
+ * @returns applied=false ではなく stale command を表す invalid-state
+ */
 const switchedProject = (): ResultT<{ applied: boolean }, ProjectError> =>
   Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
 
+/**
+ * column 更新 command を解決・検証し、Tauri update_columns と state 反映を直列実行する。
+ *
+ * @param deps column 更新に必要な queue / version / state / dispatch 依存
+ * @param command 静的な column 更新命令、または最新 ProjectData から命令を作る builder
+ * @returns invoke したかどうかを含む Result
+ */
 export const updateColumnsAction = (
   deps: UpdateColumnsActionDeps,
   command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,

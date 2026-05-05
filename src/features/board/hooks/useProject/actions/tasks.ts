@@ -25,6 +25,12 @@ export type TaskActionDeps = {
   dispatchSync: (action: ProjectAction) => void;
 };
 
+/**
+ * task command を受け付けられる loaded state か事前検証する。
+ *
+ * @param deps 最新 state を読むための依存
+ * @returns loaded なら ok、未 open なら invalid-state
+ */
 const ensureLoaded = <T>({
   getState,
 }: Pick<TaskActionDeps, "getState">): ResultT<T, ProjectError> => {
@@ -34,6 +40,13 @@ const ensureLoaded = <T>({
   return Result.ok(undefined as T);
 };
 
+/**
+ * 現在の active project に task を作成し、成功時に reducer へ反映する。
+ *
+ * @param deps task action に必要な queue / version / state / dispatch 依存
+ * @param params create_task に渡す作成パラメータ
+ * @returns 作成結果または ProjectError
+ */
 export const createTaskAction = (
   deps: TaskActionDeps,
   params: CreateTaskParams,
@@ -62,6 +75,13 @@ export const createTaskAction = (
   });
 };
 
+/**
+ * 現在の active project の task を更新し、成功時に reducer へ反映する。
+ *
+ * @param deps task action に必要な queue / version / state / dispatch 依存
+ * @param params update_task に渡す更新パラメータ
+ * @returns 更新結果または ProjectError
+ */
 export const updateTaskAction = (
   deps: TaskActionDeps,
   params: UpdateTaskParams,
@@ -94,6 +114,13 @@ export const updateTaskAction = (
   });
 };
 
+/**
+ * 現在の active project の task を削除し、成功時に reducer へ反映する。
+ *
+ * @param deps task action に必要な queue / version / state / dispatch 依存
+ * @param params delete_task に渡す削除パラメータ
+ * @returns 削除結果または ProjectError
+ */
 export const deleteTaskAction = (
   deps: TaskActionDeps,
   params: DeleteTaskParams,

@@ -25,6 +25,11 @@ export type OpenProjectActionDeps = {
   onError?: (error: ProjectError) => void;
 };
 
+/**
+ * directory dialog から project を開き、tasks / columns を一貫した ProjectData として state に反映する。
+ *
+ * @param deps openProject に必要な queue / version / dispatch 依存
+ */
 export const openProjectAction = async ({
   projectVersion,
   projectCommandQueue,

@@ -12,30 +12,75 @@ type ProjectDataMapper = (data: ProjectData) => ProjectData;
 export const ProjectState = {
   initial: { kind: "idle" } satisfies ProjectState,
 
+  /**
+   * CRUD / column 更新を受け付けられる state か判定する。
+   *
+   * @param state 現在の ProjectState
+   * @returns loaded なら true
+   */
   canAcceptCrud: (state: ProjectState): boolean => state.kind === "loaded",
 
+  /**
+   * UI と command builder が参照できる ProjectData を取り出す。
+   *
+   * @param state 現在の ProjectState
+   * @returns loaded の data、それ以外なら null
+   */
   visibleData: (state: ProjectState): ProjectData | null =>
     state.kind === "loaded" ? state.data : null,
 
+  /**
+   * project open 開始時の loading state を作る。
+   *
+   * @param _state 現在の ProjectState
+   * @param path open 対象 path
+   * @returns loading state
+   */
   openStart: (_state: ProjectState, path: string): ProjectState => ({
     kind: "loading",
     path,
   }),
 
+  /**
+   * project open 成功時の loaded state を作る。
+   *
+   * @param path open した project path
+   * @param data 読み込んだ ProjectData
+   * @returns loaded state
+   */
   openSucceed: (path: string, data: ProjectData): ProjectState => ({
     kind: "loaded",
     path,
     data,
   }),
 
+  /**
+   * project open 失敗時の error state を作る。
+   *
+   * @param path open に失敗した project path
+   * @param error Tauri command 由来の error
+   * @returns error state
+   */
   openFail: (path: string, error: TauriError): ProjectState => ({
     kind: "error",
     path,
     error,
   }),
 
+  /**
+   * loaded state の ProjectData だけを更新する。
+   *
+   * @param state 現在の ProjectState
+   * @param update ProjectData の変換関数
+   * @returns loaded なら data 更新後 state、それ以外は元 state
+   */
   updateData: (state: ProjectState, update: ProjectDataMapper): ProjectState =>
     state.kind === "loaded" ? { ...state, data: update(state.data) } : state,
 
+  /**
+   * project state を初期 idle に戻す。
+   *
+   * @returns idle state
+   */
   reset: (): ProjectState => ProjectState.initial,
 } as const;

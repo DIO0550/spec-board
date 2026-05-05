@@ -31,6 +31,13 @@ export type ProjectAction =
 
 export const initialState: ProjectState = ProjectStateDomain.initial;
 
+/**
+ * useProject の state transition を domain companion object に委譲して適用する。
+ *
+ * @param state 現在の ProjectState
+ * @param action 適用する ProjectAction
+ * @returns 次の ProjectState
+ */
 export const reducer = (
   state: ProjectState,
   action: ProjectAction,

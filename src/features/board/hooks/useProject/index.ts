@@ -42,6 +42,12 @@ export type {
   UseProjectResult,
 } from "./types";
 
+/**
+ * project lifecycle と task / column command を提供する board 用 hook。
+ *
+ * @param options openProject 系 error の通知 callback などの hook option
+ * @returns board が利用する state と project command API
+ */
 export const useProject = (
   options: UseProjectOptions = {},
 ): UseProjectResult => {
