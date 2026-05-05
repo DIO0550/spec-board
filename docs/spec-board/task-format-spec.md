@@ -121,7 +121,7 @@ flowchart TD
 | PL-004 | status フォールバック | `status` フィールドが未定義の場合、最初のカラムのステータスをデフォルトとして設定 |
 | PL-005 | priority 正規化 | `high` → `High`、`MEDIUM` → `Medium` のように先頭大文字に正規化 |
 | PL-006 | labels 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去 |
-| PL-007 | parent 解決 | `parent` フィールドのパスを解決し、親タスクの存在を検証。存在しない場合は警告 |
+| PL-007 | parent 解決 | `parent` フィールドのパスを解決し、親タスクの存在を検証。存在しない場合は `parentNotFound` warning を記録し、Task 自体は読み込み成功として扱う |
 | PL-008 | parent 循環参照検出 | 親子関係のツリーを辿り、循環参照がないか検証。検出時はパースエラー。探索深さ上限は20階層 |
 | PL-009 | links 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去。存在しないパスは警告付きで保持 |
 | PL-010 | links 逆引きインデックス | 全タスク読み込み後、links の逆引きインデックスを構築。双方向リンクの表示に使用 |
@@ -136,8 +136,17 @@ flowchart TD
 - `status` が未定義の場合は既定ステータスを fallback とし、`missingStatusUsedDefault` warning を付与する
 - `status` が文字列以外の場合は既定ステータスを fallback とし、`invalidStatusUsedDefault` warning を付与する
 - `parent` が文字列以外の場合は値を無視し、`invalidParentIgnored` warning を付与する
+- `parent` が文字列だが読み込み済み Task の `file_path` に存在しない場合は、値を保持したまま `parentNotFound` warning を付与する
+- `parent` の存在検証では比較時のみ `\` と `./` を軽量正規化する。先頭 `/` または Windows drive prefix 付きの値は相対パス仕様外として `parentNotFound` warning を付与する
+- 自己参照 `parent` は存在する Task として扱い、循環検出は PL-008 で扱う
 - `extras` の非文字列 key は除外し、`nonStringExtraKeyIgnored` warning を付与する
 - `extras` の JSON 非互換 value は除外し、`extraValueNotJsonCompatible` warning を付与する
+
+### Task 変換時 warning code
+
+| code | field | 条件 | 挙動 |
+|:--|:--|:--|:--|
+| `parentNotFound` | `parent` | `parent` が文字列だが、読み込み済み Task の `file_path` に存在しない | `parent` 値は保持し、Task の `warnings` に追加する |
 
 ## シリアライズ仕様
 
