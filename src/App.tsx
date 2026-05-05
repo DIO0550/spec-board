@@ -294,10 +294,9 @@ export const App = () => {
         ) {
           return null;
         }
-        // task command は updateColumns command と直列化されないため、enqueue 後 queue
-        // 実行までに別経路でカラムへタスクが追加される可能性がある。destColumn 未指定で
-        // 残タスクがあれば silent skip（呼び出し時点では 0 件だが、queue 実行時に
-        // race で 1 件以上に増えていたケース）。
+        // command queue 実行までに先行 task command で対象カラムへタスクが
+        // 追加される可能性がある。destColumn 未指定で残タスクがあれば silent skip
+        // （呼び出し時点では 0 件だが、queue 実行時に 1 件以上へ増えていたケース）。
         if (
           destColumn === undefined &&
           current.tasks.some((t) => t.status === columnName)

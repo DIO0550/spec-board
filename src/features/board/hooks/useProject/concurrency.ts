@@ -31,6 +31,15 @@ export const beginOpenRequest = (version: ProjectVersion): number => {
 };
 
 /**
+ * pending 中の openProject request を stale 扱いにする。
+ *
+ * @param version 更新対象の project version
+ * @returns 更新後の open request 番号
+ */
+export const invalidateOpenRequests = (version: ProjectVersion): number =>
+  beginOpenRequest(version);
+
+/**
  * pending 中の project command を stale 扱いにするため世代を進める。
  *
  * @param version 更新対象の project version

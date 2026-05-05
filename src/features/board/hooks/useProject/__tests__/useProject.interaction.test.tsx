@@ -747,6 +747,36 @@ test("createTask invoke pending 中に reset → resolve 時に dispatch され�
   expect(result.ok).toBe(false);
 });
 
+test("openProject invoke pending 中に reset → resolve 時に loaded へ戻らない", async () => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  let resolveOpen!: (r: ResultT<OpenProjectPayload, TauriError>) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<ResultT<OpenProjectPayload, TauriError>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  const probe = renderHook();
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  act(() => {
+    probe.latest.reset();
+  });
+
+  await act(async () => {
+    resolveOpen(Result.ok(payload));
+    await pending;
+  });
+
+  expect(probe.latest.state).toEqual({ kind: "idle" });
+});
+
 test("updateColumns builder 形式: queue 実行時の最新 state から command を計算する", async () => {
   const probe = renderHook();
   await openLoaded(probe);

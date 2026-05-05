@@ -16,6 +16,7 @@ import { updateColumnsAction } from "./actions/updateColumns";
 import {
   createProjectVersion,
   deactivateProject,
+  invalidateOpenRequests,
   invalidateProject,
   type ProjectCommandQueue,
 } from "./concurrency";
@@ -128,6 +129,7 @@ export const useProject = (
   );
 
   const reset = useCallback((): void => {
+    invalidateOpenRequests(projectVersionRef.current);
     invalidateProject(projectVersionRef.current);
     dispatchSync({ type: "reset" });
   }, [dispatchSync]);

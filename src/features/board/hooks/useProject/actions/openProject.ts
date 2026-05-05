@@ -69,7 +69,7 @@ export const openProjectAction = async ({
       return;
     }
 
-    const version = invalidateProject(projectVersion);
+    const version = projectVersion.current;
 
     if (
       !isProjectCurrent(projectVersion, version) ||
@@ -111,6 +111,7 @@ export const openProjectAction = async ({
       columns: columnsResult.value.columns,
       doneColumn: columnsResult.value.doneColumn,
     };
+    invalidateProject(projectVersion);
     dispatchSync({ type: "open-succeed", path, data });
   });
 };
