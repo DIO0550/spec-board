@@ -1,5 +1,6 @@
 export type ProjectVersion = {
   current: number;
+  openRequest: number;
   active: boolean;
 };
 
@@ -14,8 +15,20 @@ export type ProjectCommandQueue = {
  */
 export const createProjectVersion = (): ProjectVersion => ({
   current: 0,
+  openRequest: 0,
   active: true,
 });
+
+/**
+ * openProject request の後勝ち判定に使う token を進める。
+ *
+ * @param version 更新対象の project version
+ * @returns 更新後の open request 番号
+ */
+export const beginOpenRequest = (version: ProjectVersion): number => {
+  version.openRequest += 1;
+  return version.openRequest;
+};
 
 /**
  * pending 中の project command を stale 扱いにするため世代を進める。
@@ -49,6 +62,18 @@ export const isProjectCurrent = (
   version: ProjectVersion,
   snapshot: number,
 ): boolean => version.active && version.current === snapshot;
+
+/**
+ * openProject request が現在も最新か判定する。
+ *
+ * @param version 現在の project version
+ * @param snapshot open request 開始時に捕捉した番号
+ * @returns 同じ open request かつ hook が active なら true
+ */
+export const isOpenRequestCurrent = (
+  version: ProjectVersion,
+  snapshot: number,
+): boolean => version.active && version.openRequest === snapshot;
 
 /**
  * project 単位で Tauri command を直列化する。

@@ -20,18 +20,27 @@ export const ProjectState = {
    * CRUD / column 更新を受け付けられる state か判定する。
    *
    * @param state 現在の ProjectState
-   * @returns loaded なら true
+   * @returns loaded または loading.previousLoaded なら true
    */
-  canAcceptCrud: (state: ProjectState): boolean => state.kind === "loaded",
+  canAcceptCrud: (state: ProjectState): boolean =>
+    state.kind === "loaded" ||
+    (state.kind === "loading" && state.previousLoaded !== undefined),
 
   /**
    * UI と command builder が参照できる ProjectData を取り出す。
    *
    * @param state 現在の ProjectState
-   * @returns loaded の data、それ以外なら null
+   * @returns loaded の data、loading.previousLoaded の data、それ以外なら null
    */
-  visibleData: (state: ProjectState): ProjectData | null =>
-    state.kind === "loaded" ? state.data : null,
+  visibleData: (state: ProjectState): ProjectData | null => {
+    if (state.kind === "loaded") {
+      return state.data;
+    }
+    if (state.kind === "loading" && state.previousLoaded !== undefined) {
+      return state.previousLoaded.data;
+    }
+    return null;
+  },
 
   /**
    * project open 開始時の loading state を作る。

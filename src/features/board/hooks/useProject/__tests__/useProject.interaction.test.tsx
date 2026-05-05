@@ -869,7 +869,7 @@ test("updateColumns builder が null を返した場合 invoke せず Result.ok(
   expect(updateColumnsMock).not.toHaveBeenCalled();
 });
 
-test("updateColumns: projectCommandQueue により open は先行更新完了を待つ + 後続更新は version mismatch で skip", async () => {
+test("updateColumns: projectCommandQueue により再 open は先行更新完了を待つ", async () => {
   const probe = renderHook();
   await openLoaded(probe);
 
@@ -880,7 +880,7 @@ test("updateColumns: projectCommandQueue により open は先行更新完了を
         resolve1 = r;
       }),
   );
-  // 2 回目以降は記録だけする (version 不一致で skip 想定)
+  // 2 回目以降は記録だけする
   updateColumnsMock.mockResolvedValue(Result.ok(undefined));
 
   let p1!: Promise<unknown>;
@@ -901,7 +901,7 @@ test("updateColumns: projectCommandQueue により open は先行更新完了を
     await Promise.resolve();
   });
 
-  // 同じ path を再 open する pending を発行 (queue 末尾に積まれて p1 完了を待つ)
+  // 同じ path を再 open する pending を発行 (queue 末尾に積まれて先行更新完了を待つ)
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(Result.ok(payload));
   let openPending!: Promise<void>;
@@ -909,7 +909,7 @@ test("updateColumns: projectCommandQueue により open は先行更新完了を
     openPending = probe.latest.openProject();
   });
 
-  // p1 を resolve すると queue が進む: p1 完了 → open 実行 → p2 (skip)
+  // p1 を resolve すると queue が進む: p1 完了 → p2 完了 → open 実行
   await act(async () => {
     resolve1(Result.ok(undefined));
     await p1;
@@ -921,12 +921,8 @@ test("updateColumns: projectCommandQueue により open は先行更新完了を
       ReturnType<UseProjectResult["updateColumns"]>
     >;
   });
-  expect(result2.ok).toBe(false);
-  expect((result2 as { error: { kind: string } }).error.kind).toBe(
-    "invalid-state",
-  );
-  // p1 のみ invoke された (p2 は version 不一致で skip)
-  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+  expect(result2.ok).toBe(true);
+  expect(updateColumnsMock).toHaveBeenCalledTimes(2);
 });
 
 test("createTask: projectCommandQueue により再 open は createTask 完了を待ち、createTask は元 version で成功する", async () => {

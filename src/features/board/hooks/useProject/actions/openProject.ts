@@ -4,8 +4,10 @@ import {
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
 import {
+  beginOpenRequest,
   enqueueProjectCommand,
   invalidateProject,
+  isOpenRequestCurrent,
   isProjectCurrent,
   type ProjectCommandQueue,
   type ProjectVersion,
@@ -59,17 +61,28 @@ export const openProjectAction = async ({
     return;
   }
 
+  const openRequest = beginOpenRequest(projectVersion);
   dispatchSync({ type: "open-start", path });
 
   await enqueueProjectCommand(projectCommandQueue, async () => {
+    if (!isOpenRequestCurrent(projectVersion, openRequest)) {
+      return;
+    }
+
     const version = invalidateProject(projectVersion);
 
-    if (!isProjectCurrent(projectVersion, version)) {
+    if (
+      !isProjectCurrent(projectVersion, version) ||
+      !isOpenRequestCurrent(projectVersion, openRequest)
+    ) {
       return;
     }
 
     const openResult = await openProjectInvoke({ path });
-    if (!isProjectCurrent(projectVersion, version)) {
+    if (
+      !isProjectCurrent(projectVersion, version) ||
+      !isOpenRequestCurrent(projectVersion, openRequest)
+    ) {
       return;
     }
 
@@ -80,7 +93,10 @@ export const openProjectAction = async ({
     }
 
     const columnsResult = await getColumnsInvoke();
-    if (!isProjectCurrent(projectVersion, version)) {
+    if (
+      !isProjectCurrent(projectVersion, version) ||
+      !isOpenRequestCurrent(projectVersion, openRequest)
+    ) {
       return;
     }
 
