@@ -8,3 +8,15 @@ import type { TauriError } from "@/lib/tauri";
 export type ProjectError =
   | { kind: "tauri"; error: TauriError }
   | { kind: "invalid-state"; message: string };
+
+export const ProjectError = {
+  invalidState: (message = "プロジェクトが開かれていません"): ProjectError => ({
+    kind: "invalid-state",
+    message,
+  }),
+
+  tauri: (error: TauriError): ProjectError => ({
+    kind: "tauri",
+    error,
+  }),
+} as const;

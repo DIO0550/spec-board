@@ -5,7 +5,8 @@ export type {
   ProjectData,
   ProjectError,
   ProjectState,
-  UpdateColumnsInput,
+  UpdateColumnsCommand,
+  UpdateColumnsCommandBuilder,
   UseProjectOptions,
   UseProjectResult,
 } from "./hooks/useProject";
