@@ -294,7 +294,7 @@ export const App = () => {
         ) {
           return null;
         }
-        // task CRUD は updateColumns queue と直列化されないため、enqueue 後 queue
+        // task command は updateColumns command と直列化されないため、enqueue 後 queue
         // 実行までに別経路でカラムへタスクが追加される可能性がある。destColumn 未指定で
         // 残タスクがあれば silent skip（呼び出し時点では 0 件だが、queue 実行時に
         // race で 1 件以上に増えていたケース）。

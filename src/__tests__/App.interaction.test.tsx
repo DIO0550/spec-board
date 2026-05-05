@@ -230,7 +230,7 @@ test("invoke 失敗時に error toast 表示、EmptyState のまま", async () =
   expect(container?.textContent).toContain("見つかりません: /p");
 });
 
-// === DOM 経由の CRUD 結線テスト ===
+// === DOM 経由の task command 結線テスト ===
 //
 // これらは App コンポーネントの handler が useProject method を正しく
 // 呼び出し、その結果が UI に反映されるかを実 DOM イベント経由で検証する。

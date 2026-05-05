@@ -17,12 +17,12 @@ export const ProjectState = {
   initial: { kind: "idle" } satisfies ProjectState,
 
   /**
-   * CRUD / column 更新を受け付けられる state か判定する。
+   * task / column command を受け付けられる state か判定する。
    *
    * @param state 現在の ProjectState
    * @returns loaded または loading.previousLoaded なら true
    */
-  canAcceptCrud: (state: ProjectState): boolean =>
+  canAcceptDataCommand: (state: ProjectState): boolean =>
     state.kind === "loaded" ||
     (state.kind === "loading" && state.previousLoaded !== undefined),
 

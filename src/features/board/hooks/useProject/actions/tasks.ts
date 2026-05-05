@@ -26,15 +26,15 @@ export type TaskActionDeps = {
 };
 
 /**
- * task command を受け付けられる loaded state か事前検証する。
+ * task command を受け付けられる data state か事前検証する。
  *
  * @param deps 最新 state を読むための依存
- * @returns loaded なら ok、未 open なら invalid-state
+ * @returns loaded / loading.previousLoaded なら ok、未 open なら invalid-state
  */
 const ensureLoaded = <T>({
   getState,
 }: Pick<TaskActionDeps, "getState">): ResultT<T, ProjectError> => {
-  if (!ProjectState.canAcceptCrud(getState())) {
+  if (!ProjectState.canAcceptDataCommand(getState())) {
     return Result.err(ProjectError.invalidState());
   }
   return Result.ok(undefined as T);
@@ -57,7 +57,7 @@ export const createTaskAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (
-      !ProjectState.canAcceptCrud(deps.getState()) ||
+      !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
@@ -92,7 +92,7 @@ export const updateTaskAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (
-      !ProjectState.canAcceptCrud(deps.getState()) ||
+      !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
@@ -131,7 +131,7 @@ export const deleteTaskAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (
-      !ProjectState.canAcceptCrud(deps.getState()) ||
+      !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));

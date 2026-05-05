@@ -45,7 +45,7 @@ export const updateColumnsAction = (
   deps: UpdateColumnsActionDeps,
   command: UpdateColumnsCommand | UpdateColumnsCommandBuilder,
 ): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
-  if (!ProjectState.canAcceptCrud(deps.getState())) {
+  if (!ProjectState.canAcceptDataCommand(deps.getState())) {
     return Promise.resolve(Result.err(ProjectError.invalidState()));
   }
 
