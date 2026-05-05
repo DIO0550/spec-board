@@ -1,3 +1,4 @@
+import { parentReferencesTaskPath } from "@/domains/task-path";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { ProjectColumnsChange } from "./projectColumns";
@@ -47,7 +48,7 @@ const syncParentChildren = (
 
   return tasks.map((current) => {
     if (
-      current.filePath !== parentFilePath ||
+      !parentReferencesTaskPath(parentFilePath, current.filePath) ||
       current.children.includes(childFilePath)
     ) {
       return current;
@@ -105,7 +106,9 @@ export const ProjectData = {
     const tasks = data.tasks
       .filter((task) => task.filePath !== filePath)
       .map((task) => {
-        const parent = task.parent === filePath ? undefined : task.parent;
+        const parent = parentReferencesTaskPath(task.parent, filePath)
+          ? undefined
+          : task.parent;
         const children = task.children.includes(filePath)
           ? task.children.filter((child) => child !== filePath)
           : task.children;

@@ -13,6 +13,8 @@ use thiserror::Error;
 pub enum WriteIgnoreError {
     #[error("write_ignore registry lock poisoned")]
     LockPoisoned,
+    #[error("failed to start write_ignore cleanup worker")]
+    CleanupWorkerSpawnFailed,
 }
 
 #[derive(Debug, Default)]
@@ -41,10 +43,11 @@ impl WriteIgnoreRegistry {
     }
 
     /// Atomically removes a path and returns whether it was present.
+    ///
+    /// This is kept as a compatibility alias for callers that consume ignored
+    /// write events exactly once.
     pub fn consume(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError> {
-        let mut ignored_paths = self.lock()?;
-
-        Ok(ignored_paths.remove(path.as_ref()))
+        self.unregister(path)
     }
 
     /// Removes a path and returns whether it was present.
@@ -100,6 +103,25 @@ mod tests {
         assert!(registry
             .should_ignore("tasks/example.md")
             .expect("registry should be readable"));
+        assert_eq!(1, registry.len().expect("registry should be readable"));
+        assert!(!registry.is_empty().expect("registry should be readable"));
+    }
+
+    #[test]
+    fn should_ignore_keeps_registered_path_until_explicit_removal() {
+        let registry = WriteIgnoreRegistry::new();
+
+        registry
+            .register("tasks/example.md")
+            .expect("registry should be writable");
+
+        assert!(registry
+            .should_ignore("tasks/example.md")
+            .expect("registry should be readable"));
+        assert!(registry
+            .should_ignore("tasks/example.md")
+            .expect("registry should be readable"));
+        assert_eq!(1, registry.len().expect("registry should be readable"));
     }
 
     #[test]
@@ -158,6 +180,42 @@ mod tests {
         assert!(!registry
             .should_ignore("tasks/example.md")
             .expect("registry should be readable"));
+        assert!(registry.is_empty().expect("registry should be readable"));
+    }
+
+    #[test]
+    fn concurrent_consume_allows_only_one_success() {
+        const THREAD_COUNT: usize = 8;
+
+        let registry = Arc::new(WriteIgnoreRegistry::new());
+        let barrier = Arc::new(Barrier::new(THREAD_COUNT));
+
+        registry
+            .register("tasks/example.md")
+            .expect("registry should be writable");
+
+        let handles = (0..THREAD_COUNT)
+            .map(|_| {
+                let registry = Arc::clone(&registry);
+                let barrier = Arc::clone(&barrier);
+
+                thread::spawn(move || {
+                    barrier.wait();
+
+                    registry
+                        .consume("tasks/example.md")
+                        .expect("consume should work")
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let success_count = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("thread should not panic"))
+            .filter(|consumed| *consumed)
+            .count();
+
+        assert_eq!(1, success_count);
         assert!(registry.is_empty().expect("registry should be readable"));
     }
 
@@ -226,42 +284,6 @@ mod tests {
 
             assert_eq!(index % 2 == 1, should_ignore);
         }
-    }
-
-    #[test]
-    fn concurrent_consume_allows_only_one_success() {
-        const THREAD_COUNT: usize = 8;
-
-        let registry = Arc::new(WriteIgnoreRegistry::new());
-        let barrier = Arc::new(Barrier::new(THREAD_COUNT));
-
-        registry
-            .register("tasks/example.md")
-            .expect("registry should be writable");
-
-        let handles = (0..THREAD_COUNT)
-            .map(|_| {
-                let registry = Arc::clone(&registry);
-                let barrier = Arc::clone(&barrier);
-
-                thread::spawn(move || {
-                    barrier.wait();
-
-                    registry
-                        .consume("tasks/example.md")
-                        .expect("consume should work")
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let success_count = handles
-            .into_iter()
-            .map(|handle| handle.join().expect("thread should not panic"))
-            .filter(|consumed| *consumed)
-            .count();
-
-        assert_eq!(1, success_count);
-        assert!(registry.is_empty().expect("registry should be readable"));
     }
 
     #[test]

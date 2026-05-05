@@ -32,6 +32,26 @@ test("SubIssue.filter は parent が一致する子タスクのみを返す", ()
   expect(SubIssue.filter([t1, t2, t3], "/parent")).toEqual([t1, t3]);
 });
 
+test("SubIssue.filter は parent の軽量正規化で子タスクを返す", () => {
+  const t1 = makeTask({
+    id: "1",
+    filePath: "tasks/1.md",
+    parent: "./tasks/parent.md",
+  });
+  const t2 = makeTask({
+    id: "2",
+    filePath: "tasks/2.md",
+    parent: "tasks\\parent.md",
+  });
+  const t3 = makeTask({
+    id: "3",
+    filePath: "tasks/3.md",
+    parent: "/tasks/parent.md",
+  });
+
+  expect(SubIssue.filter([t1, t2, t3], "tasks/parent.md")).toEqual([t1, t2]);
+});
+
 test("SubIssue.filter は該当なしの場合に空配列を返す", () => {
   const t1 = makeTask({ id: "1", parent: "/other" });
   expect(SubIssue.filter([t1], "/parent")).toEqual([]);
