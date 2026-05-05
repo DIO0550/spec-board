@@ -1,6 +1,6 @@
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
-import type { ColumnsCommand } from "./columns";
+import type { ColumnsCommand } from "./columnsAction";
 
 export type ProjectData = {
   tasks: Task[];

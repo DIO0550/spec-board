@@ -24,7 +24,7 @@ export type ColumnsCommandBuilder = (
 const isColumnRemoved = (column: Column, command: ColumnsCommand): boolean =>
   !command.columns.some((next) => next.name === column.name);
 
-export const Columns = {
+export const ColumnsAction = {
   /**
    * updateColumns に渡された値が command builder か判定する。
    *
@@ -46,7 +46,7 @@ export const Columns = {
     command: ColumnsCommand | ColumnsCommandBuilder,
     current: ProjectData,
   ): ResultT<ColumnsCommand | null, ProjectError> => {
-    if (!Columns.isCommandBuilder(command)) {
+    if (!ColumnsAction.isCommandBuilder(command)) {
       return Result.ok(command);
     }
     try {

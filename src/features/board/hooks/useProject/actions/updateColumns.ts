@@ -10,10 +10,10 @@ import {
   type ProjectVersion,
 } from "../concurrency";
 import {
-  Columns,
+  ColumnsAction,
   type ColumnsCommand,
   type ColumnsCommandBuilder,
-} from "../domain/columns";
+} from "../domain/columnsAction";
 import type { ProjectData } from "../domain/projectData";
 import { ProjectState } from "../domain/projectState";
 import { ProjectError } from "../errors";
@@ -60,7 +60,7 @@ export const updateColumnsAction = (
       return Result.err(ProjectError.invalidState());
     }
 
-    let resolved = Columns.resolveCommand(command, visibleData);
+    let resolved = ColumnsAction.resolveCommand(command, visibleData);
     if (!resolved.ok) {
       return Result.err(resolved.error);
     }
@@ -70,7 +70,10 @@ export const updateColumnsAction = (
 
     let commandToApply = resolved.value;
     if (
-      Columns.isDoneColumnSensitive(visibleData.columns, commandToApply) &&
+      ColumnsAction.isDoneColumnSensitive(
+        visibleData.columns,
+        commandToApply,
+      ) &&
       visibleData.doneColumn === undefined &&
       commandToApply.doneColumn === undefined
     ) {
@@ -91,7 +94,7 @@ export const updateColumnsAction = (
         doneColumn: refresh.value.doneColumn,
       });
 
-      resolved = Columns.resolveCommand(command, enrichedData);
+      resolved = ColumnsAction.resolveCommand(command, enrichedData);
       if (!resolved.ok) {
         return Result.err(resolved.error);
       }
@@ -104,7 +107,7 @@ export const updateColumnsAction = (
     const knownDoneColumn = ProjectState.visibleData(
       deps.getState(),
     )?.doneColumn;
-    const validation = Columns.validateDoneColumn(
+    const validation = ColumnsAction.validateDoneColumn(
       knownDoneColumn,
       commandToApply,
     );
