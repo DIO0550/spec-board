@@ -231,10 +231,6 @@ fn append_child_to_parent(
     };
 
     let children = &mut tasks[parent_task_index].children;
-    if children.contains(&child_file_path) {
-        return;
-    }
-
     children.push(child_file_path);
 }
 
