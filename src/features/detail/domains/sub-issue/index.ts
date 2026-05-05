@@ -1,6 +1,6 @@
+import { parentReferencesTaskPath } from "@/domains/task-path";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
-import { parentReferencesTaskPath } from "@/domains/task-path";
 
 /** サブ Issue の進捗集計 */
 export type SubIssueProgress = {

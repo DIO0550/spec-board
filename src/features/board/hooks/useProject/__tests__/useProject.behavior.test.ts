@@ -342,7 +342,9 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
   });
   const tasks = (next as { data: ProjectData }).data.tasks;
 
-  expect(tasks.find((t) => t.filePath === "tasks/c.md")?.parent).toBeUndefined();
+  expect(
+    tasks.find((t) => t.filePath === "tasks/c.md")?.parent,
+  ).toBeUndefined();
 });
 
 test("columns-replaced (renames なし) → columns 置き換え、tasks 不変", () => {

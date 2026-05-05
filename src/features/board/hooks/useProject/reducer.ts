@@ -1,5 +1,5 @@
-import type { ColumnRename, TauriError } from "@/lib/tauri";
 import { parentReferencesTaskPath } from "@/domains/task-path";
+import type { ColumnRename, TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 
