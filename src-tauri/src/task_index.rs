@@ -1,6 +1,6 @@
 use crate::frontmatter::{parse_bytes, FrontmatterError, Parsed, Priority};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -14,6 +14,7 @@ pub enum TaskWarningCode {
     MissingStatusUsedDefault,
     InvalidStatusUsedDefault,
     InvalidParentIgnored,
+    ParentNotFound,
     NonStringExtraKeyIgnored,
     ExtraValueNotJsonCompatible,
 }
@@ -103,6 +104,60 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         extras,
         warnings,
     }
+}
+
+/// 全 Task の file_path に対して parent 参照の存在を検証する。
+///
+/// @param tasks 検証対象の Task 一覧。
+/// @returns 存在しない parent を warning として追加した Task 一覧。
+pub fn validate_parent_existence(mut tasks: Vec<Task>) -> Vec<Task> {
+    let task_paths = task_path_index(&tasks);
+
+    for task in &mut tasks {
+        append_parent_not_found_warning(task, &task_paths);
+    }
+
+    tasks
+}
+
+fn task_path_index(tasks: &[Task]) -> HashSet<String> {
+    tasks
+        .iter()
+        .map(|task| normalize_task_path_for_lookup(&task.file_path))
+        .collect()
+}
+
+fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>) {
+    let Some(parent) = &task.parent else {
+        return;
+    };
+
+    let Some(parent_lookup_path) = normalize_parent_path_for_lookup(parent) else {
+        push_parent_not_found(task);
+        return;
+    };
+
+    if task_paths.contains(&parent_lookup_path) {
+        return;
+    }
+
+    push_parent_not_found(task);
+}
+
+fn push_parent_not_found(task: &mut Task) {
+    let already_exists = task.warnings.iter().any(|warning| {
+        warning.code == TaskWarningCode::ParentNotFound
+            && warning.field.as_deref() == Some("parent")
+    });
+    if already_exists {
+        return;
+    }
+
+    task.warnings.push(warning(
+        TaskWarningCode::ParentNotFound,
+        Some("parent"),
+        "parent task was not found",
+    ));
 }
 
 fn extract_title(
@@ -235,17 +290,52 @@ fn title_fallback_from_file_path(path: &Path) -> String {
 
 fn normalized_task_file_path(path: &Path) -> String {
     let path_text = path.to_string_lossy().replace('\\', "/");
+    normalize_path_parts(&path_text, true)
+}
+
+fn normalize_task_path_for_lookup(path: &str) -> String {
+    let path_text = path.replace('\\', "/");
+    normalize_path_parts(&path_text, true)
+}
+
+fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
+    if parent.is_empty() || parent.starts_with('/') || parent.starts_with('\\') {
+        return None;
+    }
+    if has_windows_drive_prefix(parent) {
+        return None;
+    }
+
+    let path_text = parent.replace('\\', "/");
+    let normalized = normalize_path_parts(&path_text, false);
+    if normalized.is_empty() {
+        return None;
+    }
+
+    Some(normalized)
+}
+
+fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
     let mut parts = Vec::new();
     for part in path_text.split('/') {
         if part.is_empty() || part == "." {
             continue;
         }
-        if part.ends_with(':') {
+        if remove_drive_prefix && part.ends_with(':') {
             continue;
         }
         parts.push(part);
     }
     parts.join("/")
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    if bytes.len() < 2 {
+        return false;
+    }
+
+    bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> Option<serde_json::Value> {
@@ -415,6 +505,163 @@ mod tests {
     }
 
     #[test]
+    fn parent_existence_validation_does_not_warn_when_parent_is_missing_or_existing() {
+        let tasks = validate_parent_existence(vec![
+            task_from("---\ntitle: Root\nstatus: Todo\n---\n", "tasks/root.md"),
+            task_from("---\ntitle: Parent\nstatus: Todo\n---\n", "tasks/parent.md"),
+            task_from(
+                "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\n---\n",
+                "tasks/child.md",
+            ),
+        ]);
+
+        assert!(tasks[0].warnings.is_empty());
+        assert!(tasks[2]
+            .warnings
+            .iter()
+            .all(|warning| warning.code != TaskWarningCode::ParentNotFound));
+    }
+
+    #[test]
+    fn missing_parent_adds_warning_without_dropping_task_or_parent_value() {
+        let tasks = validate_parent_existence(vec![task_from(
+            "---\ntitle: Child\nstatus: Todo\nparent: tasks/missing.md\n---\n",
+            "tasks/child.md",
+        )]);
+
+        assert_eq!(tasks[0].parent, Some("tasks/missing.md".to_string()));
+        assert!(tasks[0].warnings.iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        }));
+    }
+
+    #[test]
+    fn empty_parent_adds_warning_without_normalizing_parent_value() {
+        let tasks = validate_parent_existence(vec![task_from(
+            "---\ntitle: Child\nstatus: Todo\nparent: ''\n---\n",
+            "tasks/child.md",
+        )]);
+
+        assert_eq!(tasks[0].parent, Some(String::new()));
+        assert!(tasks[0].warnings.iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        }));
+    }
+
+    #[test]
+    fn parent_existence_validation_warns_each_task_and_keeps_existing_warnings() {
+        let tasks = validate_parent_existence(vec![
+            task_from(
+                "---\ntitle: Child\nstatus: Todo\nparent: tasks/missing-a.md\n---\n",
+                "tasks/child-a.md",
+            ),
+            task_from(
+                "---\ntitle: 123\nstatus: Todo\nparent: tasks/missing-b.md\n---\n",
+                "tasks/child-b.md",
+            ),
+        ]);
+
+        assert!(tasks[0].warnings.iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        }));
+        assert!(tasks[1]
+            .warnings
+            .iter()
+            .any(|warning| warning.code == TaskWarningCode::InvalidTitleUsedFileName));
+        assert!(tasks[1].warnings.iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        }));
+    }
+
+    #[test]
+    fn parent_existence_validation_does_not_duplicate_parent_not_found_warning() {
+        let mut task = task_from(
+            "---\ntitle: Child\nstatus: Todo\nparent: tasks/missing.md\n---\n",
+            "tasks/child.md",
+        );
+        task.warnings.push(TaskWarning {
+            code: TaskWarningCode::ParentNotFound,
+            field: Some("parent".to_string()),
+            message: "parent task was not found".to_string(),
+        });
+
+        let tasks = validate_parent_existence(vec![task]);
+        let warning_count = tasks[0]
+            .warnings
+            .iter()
+            .filter(|warning| {
+                warning.code == TaskWarningCode::ParentNotFound
+                    && warning.field.as_deref() == Some("parent")
+            })
+            .count();
+
+        assert_eq!(warning_count, 1);
+    }
+
+    #[test]
+    fn self_parent_is_treated_as_existing_parent() {
+        let tasks = validate_parent_existence(vec![task_from(
+            "---\ntitle: Child\nstatus: Todo\nparent: tasks/child.md\n---\n",
+            "tasks/child.md",
+        )]);
+
+        assert!(tasks[0]
+            .warnings
+            .iter()
+            .all(|warning| warning.code != TaskWarningCode::ParentNotFound));
+    }
+
+    #[test]
+    fn parent_lookup_accepts_separator_and_current_directory_variations() {
+        let cases = ["tasks\\parent.md", "./tasks/parent.md"];
+
+        for parent in cases {
+            let tasks = validate_parent_existence(vec![
+                task_from("---\ntitle: Parent\nstatus: Todo\n---\n", "tasks/parent.md"),
+                task_from(
+                    &format!("---\ntitle: Child\nstatus: Todo\nparent: {parent}\n---\n"),
+                    "tasks/child.md",
+                ),
+            ]);
+
+            assert!(
+                tasks[1]
+                    .warnings
+                    .iter()
+                    .all(|warning| warning.code != TaskWarningCode::ParentNotFound),
+                "{parent}"
+            );
+        }
+    }
+
+    #[test]
+    fn parent_lookup_rejects_absolute_or_drive_prefixed_parent_paths() {
+        let cases = ["/tasks/parent.md", "C:\\tasks\\parent.md"];
+
+        for parent in cases {
+            let tasks = validate_parent_existence(vec![
+                task_from("---\ntitle: Parent\nstatus: Todo\n---\n", "tasks/parent.md"),
+                task_from(
+                    &format!("---\ntitle: Child\nstatus: Todo\nparent: {parent}\n---\n"),
+                    "tasks/child.md",
+                ),
+            ]);
+
+            assert!(
+                tasks[1].warnings.iter().any(|warning| {
+                    warning.code == TaskWarningCode::ParentNotFound
+                        && warning.field.as_deref() == Some("parent")
+                }),
+                "{parent}"
+            );
+        }
+    }
+
+    #[test]
     fn unknown_fields_are_kept_in_extras_as_json_values() {
         let task = task_from(
             "---\ntitle: Fix bug\nstatus: Todo\nestimate: 3\nmeta:\n  owner: alice\n---\n",
@@ -513,6 +760,19 @@ mod tests {
             json_value["warnings"][0]["code"],
             json!("missingTitleUsedFileName")
         );
+    }
+
+    #[test]
+    fn parent_not_found_warning_code_serializes_as_camel_case() {
+        let warning = TaskWarning {
+            code: TaskWarningCode::ParentNotFound,
+            field: Some("parent".to_string()),
+            message: "parent task was not found".to_string(),
+        };
+
+        let json_value = serde_json::to_value(warning).unwrap();
+
+        assert_eq!(json_value["code"], json!("parentNotFound"));
     }
 
     #[test]
