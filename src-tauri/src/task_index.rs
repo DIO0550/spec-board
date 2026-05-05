@@ -1,10 +1,12 @@
 use crate::frontmatter::{parse_bytes, FrontmatterError, Parsed, Priority};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub type TaskExtras = BTreeMap<String, serde_json::Value>;
+const MAX_PARENT_DEPTH: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,10 +55,30 @@ pub struct TaskParseContext {
     pub default_status: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParentHierarchyErrorReason {
+    Cycle,
+    TooDeep,
+}
+
+impl fmt::Display for ParentHierarchyErrorReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Cycle => write!(f, "contains a cycle"),
+            Self::TooDeep => write!(f, "exceeds the maximum depth"),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum TaskParseError {
     #[error("frontmatter was not found")]
     NotTask,
+    #[error("parent chain for '{file_path}' {reason}")]
+    CycleOrTooDeep {
+        file_path: String,
+        reason: ParentHierarchyErrorReason,
+    },
     #[error(transparent)]
     Frontmatter(#[from] FrontmatterError),
 }
@@ -120,11 +142,77 @@ pub fn validate_parent_existence(mut tasks: Vec<Task>) -> Vec<Task> {
     tasks
 }
 
+/// 全 Task の parent 参照に対して存在検証と循環 / 深さ検証を行う。
+///
+/// @param tasks 検証対象の Task 一覧。正規化後の `file_path` が一意であることを前提にする。
+/// @returns 存在しない parent の warning を保持し、循環または深さ超過がなければ Task 一覧を返す。
+/// @throws TaskParseError::CycleOrTooDeep 起点 task の parent chain に循環がある、または parent 参照（edge）を21回以上辿る場合。
+///
+/// 将来 Task index を確定する境界では、この API を呼び出してから children / reverse links
+/// などの派生値を構築する。
+pub fn validate_parent_hierarchy(tasks: Vec<Task>) -> Result<Vec<Task>, TaskParseError> {
+    let tasks = validate_parent_existence(tasks);
+    let parent_lookup = parent_lookup_index(&tasks);
+
+    for task in &tasks {
+        validate_parent_chain(task, &parent_lookup)?;
+    }
+
+    Ok(tasks)
+}
+
 fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()
         .map(|task| normalize_task_path_for_lookup(&task.file_path))
         .collect()
+}
+
+fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
+    tasks
+        .iter()
+        .map(|task| {
+            (
+                normalize_task_path_for_lookup(&task.file_path),
+                task.parent
+                    .as_deref()
+                    .and_then(normalize_parent_path_for_lookup),
+            )
+        })
+        .collect()
+}
+
+fn validate_parent_chain(
+    task: &Task,
+    parent_lookup: &HashMap<String, Option<String>>,
+) -> Result<(), TaskParseError> {
+    let mut visited = HashSet::new();
+    let origin = task.file_path.clone();
+    let mut current = normalize_task_path_for_lookup(&task.file_path);
+    let mut depth = 0;
+
+    loop {
+        if !visited.insert(current.clone()) {
+            return Err(TaskParseError::CycleOrTooDeep {
+                file_path: origin,
+                reason: ParentHierarchyErrorReason::Cycle,
+            });
+        }
+
+        let Some(Some(parent)) = parent_lookup.get(&current) else {
+            return Ok(());
+        };
+
+        depth += 1;
+        if depth > MAX_PARENT_DEPTH {
+            return Err(TaskParseError::CycleOrTooDeep {
+                file_path: origin,
+                reason: ParentHierarchyErrorReason::TooDeep,
+            });
+        }
+
+        current = parent.clone();
+    }
 }
 
 fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>) {
@@ -361,6 +449,31 @@ mod tests {
 
     fn task_from(input: &str, path: &str) -> Task {
         task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    }
+
+    fn task_with_parent(path: &str, parent: &str) -> Task {
+        task_from(
+            &format!("---\ntitle: Task\nstatus: Todo\nparent: {parent}\n---\n"),
+            path,
+        )
+    }
+
+    fn task_without_parent(path: &str) -> Task {
+        task_from("---\ntitle: Task\nstatus: Todo\n---\n", path)
+    }
+
+    fn parent_chain_with_edge_count(edge_count: usize) -> Vec<Task> {
+        let mut tasks = Vec::new();
+
+        for index in 0..edge_count {
+            tasks.push(task_with_parent(
+                &format!("tasks/{index}.md"),
+                &format!("tasks/{}.md", index + 1),
+            ));
+        }
+
+        tasks.push(task_without_parent(&format!("tasks/{edge_count}.md")));
+        tasks
     }
 
     fn parsed_with_extras(extras: serde_yaml_ng::Mapping) -> Parsed {
@@ -613,6 +726,98 @@ mod tests {
             .warnings
             .iter()
             .all(|warning| warning.code != TaskWarningCode::ParentNotFound));
+    }
+
+    #[test]
+    fn direct_cycle_returns_cycle_or_too_deep() {
+        let result = validate_parent_hierarchy(vec![task_with_parent("tasks/a.md", "tasks/a.md")]);
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::Cycle,
+            }) if file_path == "tasks/a.md"
+        ));
+    }
+
+    #[test]
+    fn multi_node_cycle_returns_cycle_or_too_deep() {
+        let result = validate_parent_hierarchy(vec![
+            task_with_parent("tasks/a.md", "tasks/b.md"),
+            task_with_parent("tasks/b.md", "tasks/c.md"),
+            task_with_parent("tasks/c.md", "tasks/a.md"),
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::Cycle,
+            }) if file_path == "tasks/a.md"
+        ));
+    }
+
+    #[test]
+    fn depth_over_20_returns_cycle_or_too_deep() {
+        let result = validate_parent_hierarchy(parent_chain_with_edge_count(21));
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::TooDeep,
+            }) if file_path == "tasks/0.md"
+        ));
+    }
+
+    #[test]
+    fn depth_20_is_allowed() {
+        let result = validate_parent_hierarchy(parent_chain_with_edge_count(20));
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn missing_parent_keeps_warning_without_cycle_error() {
+        let tasks =
+            validate_parent_hierarchy(vec![task_with_parent("tasks/child.md", "tasks/missing.md")])
+                .unwrap();
+
+        assert_eq!(tasks[0].parent, Some("tasks/missing.md".to_string()));
+        assert!(tasks[0].warnings.iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        }));
+    }
+
+    #[test]
+    fn separator_variation_cycle_is_detected() {
+        let result = validate_parent_hierarchy(vec![
+            task_with_parent("tasks/a.md", ".\\tasks\\b.md"),
+            task_with_parent("tasks/b.md", "./tasks/a.md"),
+        ]);
+
+        assert!(matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                file_path,
+                reason: ParentHierarchyErrorReason::Cycle,
+            }) if file_path == "tasks/a.md"
+        ));
+    }
+
+    #[test]
+    fn cycle_or_too_deep_error_message_includes_file_path_and_reason() {
+        let result = validate_parent_hierarchy(vec![task_with_parent("tasks/a.md", "tasks/a.md")]);
+        let Err(error) = result else {
+            panic!("cycle should return error");
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "parent chain for 'tasks/a.md' contains a cycle"
+        );
     }
 
     #[test]
