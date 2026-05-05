@@ -8,14 +8,14 @@ import type { Result as ResultT } from "@/utils/result";
 import type {
   ColumnsCommand,
   ColumnsCommandBuilder,
-} from "./domain/columnsAction";
+} from "./actions/columnsCommand";
 import type { ProjectState } from "./domain/projectState";
 import type { ProjectError } from "./errors";
 
 export type {
   ColumnsCommand,
   ColumnsCommandBuilder,
-} from "./domain/columnsAction";
+} from "./actions/columnsCommand";
 
 export type UpdateColumnsInput = ColumnsCommand | ColumnsCommandBuilder;
 
