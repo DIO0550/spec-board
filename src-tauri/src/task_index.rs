@@ -133,7 +133,7 @@ fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>
     };
 
     let Some(parent_lookup_path) = normalize_parent_path_for_lookup(parent) else {
-        append_parent_not_found_once(task);
+        push_parent_not_found(task);
         return;
     };
 
@@ -141,10 +141,10 @@ fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>
         return;
     }
 
-    append_parent_not_found_once(task);
+    push_parent_not_found(task);
 }
 
-fn append_parent_not_found_once(task: &mut Task) {
+fn push_parent_not_found(task: &mut Task) {
     let already_exists = task.warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
