@@ -28,6 +28,35 @@ const applyRenamesToTasks = (
   );
 };
 
+/**
+ * 親 task の children に作成された child task を追加する。
+ *
+ * @param tasks 作成済み child を含む task 配列
+ * @param parentFilePath child task が参照する parent filePath
+ * @param childFilePath 作成された child task の filePath
+ * @returns parent が存在すれば children 同期後の task 配列
+ */
+const syncParentChildren = (
+  tasks: Task[],
+  parentFilePath: string | undefined,
+  childFilePath: string,
+): Task[] => {
+  if (parentFilePath === undefined) {
+    return tasks;
+  }
+
+  return tasks.map((current) => {
+    if (
+      current.filePath !== parentFilePath ||
+      current.children.includes(childFilePath)
+    ) {
+      return current;
+    }
+
+    return { ...current, children: [...current.children, childFilePath] };
+  });
+};
+
 export const ProjectData = {
   /**
    * 作成された task を追加し、親 task の children も同期する。
@@ -38,16 +67,11 @@ export const ProjectData = {
    */
   applyTaskCreated: (data: ProjectData, task: Task): ProjectData => {
     const tasksWithCreated = [...data.tasks, task];
-    const parentFilePath = task.parent;
-    const tasksWithParentSync =
-      parentFilePath === undefined
-        ? tasksWithCreated
-        : tasksWithCreated.map((current) =>
-            current.filePath === parentFilePath &&
-            !current.children.includes(task.filePath)
-              ? { ...current, children: [...current.children, task.filePath] }
-              : current,
-          );
+    const tasksWithParentSync = syncParentChildren(
+      tasksWithCreated,
+      task.parent,
+      task.filePath,
+    );
     return { ...data, tasks: tasksWithParentSync };
   },
 
