@@ -33,7 +33,6 @@ type DisplayableData = {
 /**
  * 表示可能な ProjectData を返す。
  * - loaded: state.data
- * - loading + previousLoaded: previousLoaded.data ("Board 維持" 要件)
  * - それ以外: null
  *
  * @param state useProject の現在 state
@@ -43,14 +42,11 @@ const displayableDataOf = (state: ProjectState): DisplayableData | null => {
   if (state.kind === "loaded") {
     return state.data;
   }
-  if (state.kind === "loading" && state.previousLoaded) {
-    return state.previousLoaded.data;
-  }
   return null;
 };
 
 /**
- * 表示用 tasks を返す。loading + previousLoaded の場合も維持される。
+ * 表示用 tasks を返す。
  *
  * @param state useProject の現在 state
  * @returns 派生タスク配列
@@ -59,7 +55,7 @@ const tasksOf = (state: ProjectState): Task[] =>
   displayableDataOf(state)?.tasks ?? [];
 
 /**
- * 表示用 columns を返す。loading + previousLoaded の場合も維持される。
+ * 表示用 columns を返す。
  *
  * @param state useProject の現在 state
  * @returns 派生カラム配列
@@ -68,7 +64,7 @@ const columnsOf = (state: ProjectState): Column[] =>
   displayableDataOf(state)?.columns ?? [];
 
 /**
- * 表示用 doneColumn を返す。loading + previousLoaded の場合も維持される。
+ * 表示用 doneColumn を返す。
  *
  * @param state useProject の現在 state
  * @returns 派生 doneColumn
@@ -104,9 +100,7 @@ export const App = () => {
 
   // プロジェクト切替時に UI 状態（選択中タスク・作成モーダル）をリセットする。
   // loaded 状態の path が「実際に別 path に変わった」ときだけ trigger する。
-  // 中間状態 (loading / error / idle) は無視する。これにより
-  // loaded(A) → loading(B) → fail → loaded(A) 復元 のシーケンスで UI state が
-  // 不要にクリアされる問題を回避する (Copilot 指摘)。
+  // 中間状態 (loading / error / idle) は無視する。
   //
   // task ID が file path ベースで project 間で衝突しうるため、useEffect では
   // 最初の render が stale UI state で新プロジェクトのデータを参照する race が
@@ -120,6 +114,9 @@ export const App = () => {
     setSelectedTaskId(null);
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
+  } else if (state.kind !== "loaded" && createModalStatus !== null) {
+    setCreateModalStatus(null);
+    setCreateModalParent(undefined);
   }
 
   const tasks = tasksOf(state);
@@ -127,14 +124,7 @@ export const App = () => {
   const doneColumn = doneColumnOf(state);
   // path 末尾セグメントを project 名として表示する。OS の path separator は
   // / / \ どちらにも対応する (Windows / POSIX 双方)。
-  // Board 維持要件と整合させるため、loading + previousLoaded のときは
-  // previousLoaded.path から派生 (HeaderBar が "spec-board" fallback に戻らない)。
-  const displayedPath =
-    state.kind === "loaded"
-      ? state.path
-      : state.kind === "loading" && state.previousLoaded
-        ? state.previousLoaded.path
-        : null;
+  const displayedPath = state.kind === "loaded" ? state.path : null;
   const projectName =
     displayedPath !== null
       ? (displayedPath
@@ -304,10 +294,9 @@ export const App = () => {
         ) {
           return null;
         }
-        // task CRUD は updateColumns queue と直列化されないため、enqueue 後 queue
-        // 実行までに別経路でカラムへタスクが追加される可能性がある。destColumn 未指定で
-        // 残タスクがあれば silent skip（呼び出し時点では 0 件だが、queue 実行時に
-        // race で 1 件以上に増えていたケース）。
+        // command queue 実行までに先行 task command で対象カラムへタスクが
+        // 追加される可能性がある。destColumn 未指定で残タスクがあれば silent skip
+        // （呼び出し時点では 0 件だが、queue 実行時に 1 件以上へ増えていたケース）。
         if (
           destColumn === undefined &&
           current.tasks.some((t) => t.status === columnName)
@@ -420,16 +409,14 @@ export const App = () => {
    * @returns Loading / EmptyState / Board のいずれか
    */
   const renderMain = (): React.ReactNode => {
-    // loading + previousLoaded がある場合 ("Board 維持" 要件) は spinner 出さず
-    // 直前の Board を表示し続ける。失敗時の reopen で Board が一瞬消えない。
-    if (state.kind === "loading" && !state.previousLoaded) {
+    if (state.kind === "loading") {
       return (
         <div className="flex flex-1 items-center justify-center">
           <p className="text-gray-500">読み込み中…</p>
         </div>
       );
     }
-    if (state.kind !== "loaded" && state.kind !== "loading") {
+    if (state.kind !== "loaded") {
       return <EmptyState type="no-project" onOpenProject={openProject} />;
     }
     // tasks 0 件でも Board は描画する (column UI / +追加 ボタンを残すため、
