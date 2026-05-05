@@ -229,6 +229,42 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_consume_allows_only_one_success() {
+        const THREAD_COUNT: usize = 8;
+
+        let registry = Arc::new(WriteIgnoreRegistry::new());
+        let barrier = Arc::new(Barrier::new(THREAD_COUNT));
+
+        registry
+            .register("tasks/example.md")
+            .expect("registry should be writable");
+
+        let handles = (0..THREAD_COUNT)
+            .map(|_| {
+                let registry = Arc::clone(&registry);
+                let barrier = Arc::clone(&barrier);
+
+                thread::spawn(move || {
+                    barrier.wait();
+
+                    registry
+                        .consume("tasks/example.md")
+                        .expect("consume should work")
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let success_count = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("thread should not panic"))
+            .filter(|consumed| *consumed)
+            .count();
+
+        assert_eq!(1, success_count);
+        assert!(registry.is_empty().expect("registry should be readable"));
+    }
+
+    #[test]
     fn different_path_representations_are_different_keys() {
         let registry = WriteIgnoreRegistry::new();
 
