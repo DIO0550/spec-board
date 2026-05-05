@@ -1,5 +1,6 @@
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import { parentReferencesTaskPath } from "@/domains/task-path";
 
 /** サブ Issue の進捗集計 */
 export type SubIssueProgress = {
@@ -29,7 +30,9 @@ export const SubIssue = {
     if (allTasks === undefined) {
       return [];
     }
-    return allTasks.filter((t) => t.parent === parentFilePath);
+    return allTasks.filter((t) =>
+      parentReferencesTaskPath(t.parent, parentFilePath),
+    );
   },
 
   /**

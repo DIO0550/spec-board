@@ -150,6 +150,30 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
   expect(parentAfter?.children).toEqual(["tasks/c.md"]);
 });
 
+test("task-created (parent 表記ゆれあり) → 親タスクの children に新規 filePath を追加", () => {
+  const parent = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+    children: [],
+  });
+  const loadedWithParent: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: { tasks: [parent], columns: cols("Todo") },
+  };
+  const child = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    parent: ".\\tasks\\p.md",
+  });
+  const next = reducer(loadedWithParent, { type: "task-created", task: child });
+  const parentAfter = (next as { data: ProjectData }).data.tasks.find(
+    (t) => t.filePath === "tasks/p.md",
+  );
+
+  expect(parentAfter?.children).toEqual(["tasks/c.md"]);
+});
+
 test("task-created (parent あり) で親が既に children を持っていれば二重追加しない (冪等)", () => {
   const parent = makeTask({
     id: "p",
@@ -291,6 +315,34 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
   const tasks2 = (next2 as { data: ProjectData }).data.tasks;
   expect(tasks2.find((t) => t.filePath === "tasks/p.md")?.children).toEqual([]);
   expect(tasks2.find((t) => t.filePath === "tasks/o.md")?.children).toEqual([]);
+});
+
+test("task-deleted → parent 表記ゆれがある子の parent も未設定にする", () => {
+  const parent = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+  });
+  const child = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    parent: "./tasks/p.md",
+  });
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/x",
+    data: {
+      tasks: [parent, child],
+      columns: cols("Todo"),
+    },
+  };
+
+  const next = reducer(loaded, {
+    type: "task-deleted",
+    filePath: "tasks/p.md",
+  });
+  const tasks = (next as { data: ProjectData }).data.tasks;
+
+  expect(tasks.find((t) => t.filePath === "tasks/c.md")?.parent).toBeUndefined();
 });
 
 test("columns-replaced (renames なし) → columns 置き換え、tasks 不変", () => {
