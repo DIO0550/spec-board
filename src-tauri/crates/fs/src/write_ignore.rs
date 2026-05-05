@@ -108,6 +108,23 @@ mod tests {
     }
 
     #[test]
+    fn should_ignore_keeps_registered_path_until_explicit_removal() {
+        let registry = WriteIgnoreRegistry::new();
+
+        registry
+            .register("tasks/example.md")
+            .expect("registry should be writable");
+
+        assert!(registry
+            .should_ignore("tasks/example.md")
+            .expect("registry should be readable"));
+        assert!(registry
+            .should_ignore("tasks/example.md")
+            .expect("registry should be readable"));
+        assert_eq!(1, registry.len().expect("registry should be readable"));
+    }
+
+    #[test]
     fn duplicate_register_returns_false_and_keeps_len() {
         let registry = WriteIgnoreRegistry::new();
 
