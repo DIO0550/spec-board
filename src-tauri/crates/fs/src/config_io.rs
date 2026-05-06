@@ -1,15 +1,19 @@
-//! `.spec-board/` ディレクトリと `config.json` のファイル I/O を担うモジュール。
+//! `.spec-board/` ディレクトリ、`config.json`、補助ファイル `GUIDE.md` の
+//! ファイル I/O を担うモジュール。
 //!
 //! 本モジュールはサブクレート `spec-board-fs` の境界規約に従い、
 //! 公開 API のシグネチャに外部 crate の型（`serde_json::Error` 等）を出さない。
 //! JSON のパースは本体クレート `spec-board` 側の責務とし、本モジュールは
-//! 「ディレクトリ作成」「ファイル存在チェック + 文字列読み込み」までを担当する。
+//! 「ディレクトリ作成」「ファイル存在チェック + 文字列読み込み」
+//! 「補助ファイル書き込み」までを担当する。
 //!
 //! # スコープ
 //!
 //! - [`ensure_spec_board_dir`]: `<project_root>/.spec-board/` を冪等に作成
 //! - [`read_config_json`]: `<project_root>/.spec-board/config.json` の中身を文字列で返す
 //!   （ファイル不在は `Ok(None)`）
+//! - [`guide_markdown_path`]: `<project_root>/.spec-board/GUIDE.md` のパスを返す
+//! - [`write_guide_markdown`]: `<project_root>/.spec-board/GUIDE.md` へ文字列を書き込む
 //!
 //! # スコープ外
 //!
@@ -22,6 +26,7 @@ use thiserror::Error;
 
 const SPEC_BOARD_DIR: &str = ".spec-board";
 const CONFIG_FILE_NAME: &str = "config.json";
+const GUIDE_MARKDOWN_FILE_NAME: &str = "GUIDE.md";
 
 /// `config_io` モジュールのファイル I/O で発生し得るエラー。
 ///
@@ -63,6 +68,19 @@ fn io_err(path: &Path, source: std::io::Error) -> ConfigIoError {
 /// `project_root` が相対パスなら戻り値も相対パスになる（`canonicalize` は行わない）。
 pub fn config_path(project_root: &Path) -> PathBuf {
     project_root.join(SPEC_BOARD_DIR).join(CONFIG_FILE_NAME)
+}
+
+/// `<project_root>/.spec-board/GUIDE.md` の絶対パス相当を返す（純粋計算、I/O なし）。
+///
+/// `project_root` が相対パスなら戻り値も相対パスになる（`canonicalize` は行わない）。
+///
+/// # Returns
+///
+/// GUIDE.md の配置先パス。
+pub fn guide_markdown_path(project_root: &Path) -> PathBuf {
+    project_root
+        .join(SPEC_BOARD_DIR)
+        .join(GUIDE_MARKDOWN_FILE_NAME)
 }
 
 /// `<project_root>/.spec-board/` を冪等に作成し、その `PathBuf` を返す。
@@ -174,6 +192,23 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
 
     let content = std::fs::read_to_string(&config_path).map_err(|e| io_err(&config_path, e))?;
     Ok(Some(content))
+}
+
+/// `<project_root>/.spec-board/GUIDE.md` へ Markdown 文字列を書き込む。
+///
+/// 書き込み前に [`ensure_spec_board_dir`] を呼び、`.spec-board/` が無い場合は作成する。
+/// 既存 `GUIDE.md` は `std::fs::write` の通常セマンティクスで上書きする。
+///
+/// # Errors
+///
+/// - `project_root` が存在しない / ディレクトリでない / アクセスできない
+/// - `<project_root>/.spec-board` がファイルとして存在する
+/// - 権限不足等で `.spec-board/` 作成または `GUIDE.md` 書き込みが失敗する
+pub fn write_guide_markdown(project_root: &Path, content: &str) -> Result<PathBuf, ConfigIoError> {
+    ensure_spec_board_dir(project_root)?;
+    let guide_path = guide_markdown_path(project_root);
+    std::fs::write(&guide_path, content).map_err(|e| io_err(&guide_path, e))?;
+    Ok(guide_path)
 }
 
 /// 指定パスが存在するディレクトリであることを検証する。
@@ -307,6 +342,43 @@ mod tests {
 
         let result = read_config_json(tmp.path()).unwrap();
         assert_eq!(result.as_deref(), Some(content));
+    }
+
+    #[test]
+    fn write_guide_markdown_creates_spec_board_dir_and_file_when_absent() {
+        let tmp = TempDir::new().unwrap();
+        let content = "# Guide\n";
+
+        let path = write_guide_markdown(tmp.path(), content).unwrap();
+
+        assert_eq!(path, tmp.path().join(".spec-board").join("GUIDE.md"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+    }
+
+    #[test]
+    fn write_guide_markdown_overwrites_existing_file() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("GUIDE.md");
+        std::fs::write(&path, "old").unwrap();
+
+        let written_path = write_guide_markdown(tmp.path(), "new").unwrap();
+
+        assert_eq!(written_path, path);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "new");
+    }
+
+    #[test]
+    fn guide_markdown_path_returns_spec_board_guide_path() {
+        let root = Path::new("/project");
+
+        let path = guide_markdown_path(root);
+
+        assert_eq!(
+            path,
+            Path::new("/project").join(".spec-board").join("GUIDE.md")
+        );
     }
 
     #[test]
