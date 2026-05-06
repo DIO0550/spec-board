@@ -10,8 +10,10 @@ test("removeLinkedTask は links から指定 filePath を取り除く", () => {
 
   const next = TaskLinks.removeLinkedTask(task, "tasks/deleted.md");
 
-  expect(next.links).toEqual(["tasks/kept.md"]);
-  expect(next.reverseLinks).toBe(task.reverseLinks);
+  expect(next.links.linkedFilePaths).toEqual(["tasks/kept.md"]);
+  expect(next.links.reverseLinkedFilePaths).toBe(
+    task.links.reverseLinkedFilePaths,
+  );
 });
 
 test("removeLinkedTask は reverseLinks から指定 filePath を取り除く", () => {
@@ -22,8 +24,8 @@ test("removeLinkedTask は reverseLinks から指定 filePath を取り除く", 
 
   const next = TaskLinks.removeLinkedTask(task, "tasks/deleted.md");
 
-  expect(next.links).toBe(task.links);
-  expect(next.reverseLinks).toEqual(["tasks/kept.md"]);
+  expect(next.links.linkedFilePaths).toBe(task.links.linkedFilePaths);
+  expect(next.links.reverseLinkedFilePaths).toEqual(["tasks/kept.md"]);
 });
 
 test("removeLinkedTask は links と reverseLinks の両方を一度に掃除する", () => {
@@ -35,8 +37,8 @@ test("removeLinkedTask は links と reverseLinks の両方を一度に掃除す
 
   const next = TaskLinks.removeLinkedTask(task, "tasks/deleted.md");
 
-  expect(next.links).toEqual([]);
-  expect(next.reverseLinks).toEqual([]);
+  expect(next.links.linkedFilePaths).toEqual([]);
+  expect(next.links.reverseLinkedFilePaths).toEqual([]);
 });
 
 test("removeLinkedTask は link 関係が変わらなければ元 task object を返す", () => {

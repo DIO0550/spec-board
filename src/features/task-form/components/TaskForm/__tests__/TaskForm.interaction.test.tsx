@@ -2,7 +2,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 import { TaskForm } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -24,7 +24,7 @@ const COLUMNS: Column[] = [
 ];
 
 const PARENT_CANDIDATES: Task[] = [
-  {
+  Task.fromPayload({
     id: "p-1",
     title: "親タスクA",
     status: "Todo",
@@ -34,7 +34,7 @@ const PARENT_CANDIDATES: Task[] = [
     reverseLinks: [],
     body: "",
     filePath: "tasks/parent-a.md",
-  },
+  }),
 ];
 
 const render = (props: Parameters<typeof TaskForm>[0]) => {

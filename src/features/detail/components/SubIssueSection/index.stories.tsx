@@ -4,7 +4,9 @@ import { initialTasks } from "@/test-fixtures";
 import { SubIssueSection } from ".";
 
 const parentTask = initialTasks[0];
-const childTasks = initialTasks.filter((t) => t.parent === parentTask.filePath);
+const childTasks = initialTasks.filter(
+  (t) => t.hierarchy.parentFilePath === parentTask.filePath,
+);
 
 const meta: Meta<typeof SubIssueSection> = {
   component: SubIssueSection,

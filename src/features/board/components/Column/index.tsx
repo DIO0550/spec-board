@@ -149,7 +149,7 @@ export const Column = ({
       />
       <ul className="flex-1 overflow-y-auto px-2 pb-2">
         {tasks.map((task) => {
-          const childTasks = task.children
+          const childTasks = task.hierarchy.childFilePaths
             .map((fp) => tasksByFilePath.get(fp))
             .filter((t): t is Task => t !== undefined);
           return (

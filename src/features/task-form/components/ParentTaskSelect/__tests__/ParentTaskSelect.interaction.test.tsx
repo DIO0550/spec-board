@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 import { ParentTaskSelect } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -21,8 +21,8 @@ afterEach(() => {
  * @param overrides - 上書きするフィールド
  * @returns テスト用タスク
  */
-function makeTask(overrides: Partial<Task> = {}): Task {
-  return {
+function makeTask(overrides: Partial<TaskPayload> = {}): Task {
+  return Task.fromPayload({
     id: "t-1",
     title: "親候補",
     status: "Todo",
@@ -33,7 +33,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     body: "",
     filePath: "tasks/candidate.md",
     ...overrides,
-  };
+  });
 }
 
 const TASKS: Task[] = [
