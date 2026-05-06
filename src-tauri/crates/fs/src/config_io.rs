@@ -276,10 +276,27 @@ fn write_file_via_tmp(dst: &Path, content: &str, tmp: &Path) -> Result<(), Confi
 
     drop(tmp_file);
 
-    std::fs::rename(tmp, dst).map_err(|e| {
+    replace_file_with_tmp(tmp, dst).map_err(|e| {
         let _ = std::fs::remove_file(tmp);
         io_err(dst, e)
     })
+}
+
+#[cfg(not(windows))]
+fn replace_file_with_tmp(tmp: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::rename(tmp, dst)
+}
+
+#[cfg(windows)]
+fn replace_file_with_tmp(tmp: &Path, dst: &Path) -> std::io::Result<()> {
+    match std::fs::rename(tmp, dst) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::remove_file(dst)?;
+            std::fs::rename(tmp, dst)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// 指定パスが存在するディレクトリであることを検証する。
