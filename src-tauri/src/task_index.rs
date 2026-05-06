@@ -265,41 +265,37 @@ fn append_reverse_links_from_source(
     task_index: &HashMap<String, usize>,
 ) {
     let source_file_path = tasks[source_index].file_path.clone();
-    let links = tasks[source_index].links.clone();
-    let mut seen_targets = HashSet::new();
+    let target_indices = reverse_link_target_indices(&tasks[source_index].links, task_index);
 
-    for link in links {
-        append_reverse_link_to_target(
-            &source_file_path,
-            &link,
-            tasks,
-            task_index,
-            &mut seen_targets,
-        );
+    for target_index in target_indices {
+        tasks[target_index]
+            .reverse_links
+            .push(source_file_path.clone());
     }
 }
 
-fn append_reverse_link_to_target(
-    source_file_path: &str,
-    link: &str,
-    tasks: &mut [Task],
+fn reverse_link_target_indices(
+    links: &[String],
     task_index: &HashMap<String, usize>,
-    seen_targets: &mut HashSet<String>,
-) {
-    let Some(target_path) = normalize_link_path_for_lookup(link) else {
-        return;
-    };
-    if !seen_targets.insert(target_path.clone()) {
-        return;
+) -> Vec<usize> {
+    let mut seen_targets = HashSet::new();
+    let mut target_indices = Vec::new();
+
+    for link in links {
+        let Some(target_path) = normalize_link_path_for_lookup(link) else {
+            continue;
+        };
+        if !seen_targets.insert(target_path.clone()) {
+            continue;
+        }
+
+        let Some(target_task_index) = task_index.get(&target_path).copied() else {
+            continue;
+        };
+        target_indices.push(target_task_index);
     }
 
-    let Some(target_task_index) = task_index.get(&target_path).copied() else {
-        return;
-    };
-
-    tasks[target_task_index]
-        .reverse_links
-        .push(source_file_path.to_string());
+    target_indices
 }
 
 fn validate_parent_chain(
