@@ -10,18 +10,30 @@ import {
   reducer,
 } from "../reducer";
 
-const makeTask = (overrides: Partial<Task> & Pick<Task, "id">): Task => ({
+type TaskFixtureOverrides = Partial<Omit<Task, "links" | "hierarchy">> &
+  Pick<Task, "id"> & {
+    parent?: string;
+    links?: string[];
+    children?: string[];
+    reverseLinks?: string[];
+  };
+
+const makeTask = (overrides: TaskFixtureOverrides): Task => ({
   id: overrides.id,
   title: overrides.title ?? "t",
   status: overrides.status ?? "Todo",
   labels: overrides.labels ?? [],
-  parent: overrides.parent,
-  links: overrides.links ?? [],
-  children: overrides.children ?? [],
-  reverseLinks: overrides.reverseLinks ?? [],
   body: overrides.body ?? "",
   filePath: overrides.filePath ?? `tasks/${overrides.id}.md`,
   priority: overrides.priority,
+  links: {
+    linkedFilePaths: overrides.links ?? [],
+    reverseLinkedFilePaths: overrides.reverseLinks ?? [],
+  },
+  hierarchy: {
+    parentFilePath: overrides.parent,
+    childFilePaths: overrides.children ?? [],
+  },
 });
 
 const cols = (...names: string[]): Column[] =>
@@ -121,7 +133,7 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
   const tasks = (next as { data: ProjectData }).data.tasks;
   expect(tasks).toHaveLength(2);
   const parentAfter = tasks.find((t) => t.filePath === "tasks/p.md");
-  expect(parentAfter?.children).toEqual(["tasks/c.md"]);
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
 });
 
 test("task-created (parent 表記ゆれあり) → 親タスクの children に新規 filePath を追加", () => {
@@ -145,7 +157,7 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
     (t) => t.filePath === "tasks/p.md",
   );
 
-  expect(parentAfter?.children).toEqual(["tasks/c.md"]);
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
 });
 
 test("task-created (parent あり) で親が既に children を持っていれば二重追加しない (冪等)", () => {
@@ -168,7 +180,7 @@ test("task-created (parent あり) で親が既に children を持っていれ�
   const parentAfter = (next as { data: ProjectData }).data.tasks.find(
     (t) => t.filePath === "tasks/p.md",
   );
-  expect(parentAfter?.children).toEqual(["tasks/c.md"]);
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
 });
 
 test("task-updated → originalFilePath 一致で差し替え", () => {
@@ -234,8 +246,8 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
   });
   const tasks = (next as { data: ProjectData }).data.tasks;
   const aAfter = tasks.find((t) => t.filePath === "tasks/a.md");
-  expect(aAfter?.links).toEqual(["tasks/c.md"]);
-  expect(aAfter?.reverseLinks).toEqual([]);
+  expect(aAfter?.links.linkedFilePaths).toEqual(["tasks/c.md"]);
+  expect(aAfter?.links.reverseLinkedFilePaths).toEqual([]);
 });
 
 test("task-deleted → filePath 一致で除去", () => {
@@ -279,7 +291,7 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
   const tasks = (next as { data: ProjectData }).data.tasks;
   expect(tasks.find((t) => t.filePath === "tasks/p.md")).toBeUndefined();
   expect(
-    tasks.find((t) => t.filePath === "tasks/c.md")?.parent,
+    tasks.find((t) => t.filePath === "tasks/c.md")?.hierarchy.parentFilePath,
   ).toBeUndefined();
   // c を子として削除した場合の other.children クリア検証
   const next2 = reducer(loaded, {
@@ -287,8 +299,12 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
     filePath: "tasks/c.md",
   });
   const tasks2 = (next2 as { data: ProjectData }).data.tasks;
-  expect(tasks2.find((t) => t.filePath === "tasks/p.md")?.children).toEqual([]);
-  expect(tasks2.find((t) => t.filePath === "tasks/o.md")?.children).toEqual([]);
+  expect(
+    tasks2.find((t) => t.filePath === "tasks/p.md")?.hierarchy.childFilePaths,
+  ).toEqual([]);
+  expect(
+    tasks2.find((t) => t.filePath === "tasks/o.md")?.hierarchy.childFilePaths,
+  ).toEqual([]);
 });
 
 test("task-deleted → parent 表記ゆれがある子の parent も未設定にする", () => {
@@ -317,7 +333,7 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
   const tasks = (next as { data: ProjectData }).data.tasks;
 
   expect(
-    tasks.find((t) => t.filePath === "tasks/c.md")?.parent,
+    tasks.find((t) => t.filePath === "tasks/c.md")?.hierarchy.parentFilePath,
   ).toBeUndefined();
 });
 

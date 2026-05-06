@@ -40,7 +40,9 @@ export const WithLabels: Story = {
   },
 };
 
-const childTasks = initialTasks.filter((t) => t.parent === baseTask.filePath);
+const childTasks = initialTasks.filter(
+  (t) => t.hierarchy.parentFilePath === baseTask.filePath,
+);
 
 export const WithChildren: Story = {
   args: {
@@ -55,7 +57,7 @@ export const Minimal: Story = {
       ...baseTask,
       priority: undefined,
       labels: [],
-      children: [],
+      hierarchy: { ...baseTask.hierarchy, childFilePaths: [] },
       title: "最小構成のタスク",
     },
     childTasks: [],

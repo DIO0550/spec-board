@@ -131,6 +131,8 @@ flowchart TD
 
 ### Task 変換時の補足
 
+- Rust / Tauri IPC の task payload は `parent` / `children` / `links` / `reverseLinks` を top-level に持つ flat な JSON とする
+- フロントエンド domain の `Task` は IPC payload を `TaskPayload` として受け取った後、`hierarchy.parentFilePath` / `hierarchy.childFilePaths` と `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に変換して保持する
 - `title` が未定義の場合はファイル名（拡張子除去、ハイフンをスペースに変換）を fallback とし、`missingTitleUsedFileName` warning を付与する
 - `title` が空文字または文字列以外の場合はファイル名 fallback とし、`invalidTitleUsedFileName` warning を付与する
 - `status` が未定義の場合は既定ステータスを fallback とし、`missingStatusUsedDefault` warning を付与する

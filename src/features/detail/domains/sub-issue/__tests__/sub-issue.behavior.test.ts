@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 import { SubIssue } from "../index";
 
 /**
@@ -8,7 +8,8 @@ import { SubIssue } from "../index";
  * @param overrides - 上書きするフィールド
  * @returns Task オブジェクト
  */
-const makeTask = (overrides: Partial<Task>): Task => ({
+const makeTask = (overrides: Partial<TaskPayload>): Task =>
+  Task.fromPayload({
   id: "id",
   title: "title",
   status: "Todo",

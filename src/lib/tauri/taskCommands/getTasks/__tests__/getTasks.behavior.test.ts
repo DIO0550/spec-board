@@ -2,11 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
 import { getTasks } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-const taskFixture: Task = {
+const taskPayloadFixture: TaskPayload = {
   id: "1",
   title: "T",
   status: "Todo",
@@ -17,6 +17,8 @@ const taskFixture: Task = {
   body: "",
   filePath: "tasks/x.md",
 };
+
+const taskFixture = Task.fromPayload(taskPayloadFixture);
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
@@ -35,7 +37,7 @@ test("invoke の第 2 引数（payload）は undefined で呼ばれる", async (
 });
 
 test("成功時は Result.ok(Task[]) を返す", async () => {
-  vi.mocked(invoke).mockResolvedValue([taskFixture]);
+  vi.mocked(invoke).mockResolvedValue([taskPayloadFixture]);
   const res = await getTasks();
   expect(res).toEqual({ ok: true, value: [taskFixture] });
 });

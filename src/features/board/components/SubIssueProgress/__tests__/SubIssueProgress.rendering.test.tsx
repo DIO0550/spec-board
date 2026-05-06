@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 import { SubIssueProgress } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -16,8 +16,8 @@ afterEach(() => {
   container = null;
 });
 
-function createTask(overrides: Partial<Task> = {}): Task {
-  return {
+function createTask(overrides: Partial<TaskPayload> = {}): Task {
+  return Task.fromPayload({
     id: "child-1",
     title: "子タスク",
     status: "Todo",
@@ -28,7 +28,7 @@ function createTask(overrides: Partial<Task> = {}): Task {
     body: "",
     filePath: "tasks/child.md",
     ...overrides,
-  };
+  });
 }
 
 function render(props: Parameters<typeof SubIssueProgress>[0]) {

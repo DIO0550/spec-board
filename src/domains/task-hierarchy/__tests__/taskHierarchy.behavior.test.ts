@@ -10,8 +10,8 @@ test("detachDeletedTask は削除済み task を指す parent を clear する",
 
   const next = TaskHierarchy.detachDeletedTask(task, "tasks/deleted.md");
 
-  expect(next.parent).toBeUndefined();
-  expect(next.children).toBe(task.children);
+  expect(next.hierarchy.parentFilePath).toBeUndefined();
+  expect(next.hierarchy.childFilePaths).toBe(task.hierarchy.childFilePaths);
 });
 
 test("detachDeletedTask は parent path の表記ゆれを扱える", () => {
@@ -22,7 +22,7 @@ test("detachDeletedTask は parent path の表記ゆれを扱える", () => {
 
   const next = TaskHierarchy.detachDeletedTask(task, "tasks/deleted.md");
 
-  expect(next.parent).toBeUndefined();
+  expect(next.hierarchy.parentFilePath).toBeUndefined();
 });
 
 test("detachDeletedTask は children から削除済み filePath を取り除く", () => {
@@ -33,8 +33,8 @@ test("detachDeletedTask は children から削除済み filePath を取り除く
 
   const next = TaskHierarchy.detachDeletedTask(task, "tasks/deleted.md");
 
-  expect(next.parent).toBe(task.parent);
-  expect(next.children).toEqual(["tasks/kept.md"]);
+  expect(next.hierarchy.parentFilePath).toBe(task.hierarchy.parentFilePath);
+  expect(next.hierarchy.childFilePaths).toEqual(["tasks/kept.md"]);
 });
 
 test("detachDeletedTask は hierarchy 関係が変わらなければ元 task object を返す", () => {

@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 
 const parentTaskSelectSpy = vi.fn();
 vi.mock("../../../ParentTaskSelect", () => ({
@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 const mockTasks: Task[] = [
-  {
+  Task.fromPayload({
     id: "p-1",
     filePath: "tasks/p-1.md",
     title: "親1",
@@ -38,7 +38,7 @@ const mockTasks: Task[] = [
     children: [],
     reverseLinks: [],
     body: "",
-  },
+  }),
 ];
 
 const render = (props: Parameters<typeof TaskFormParent>[0]) => {

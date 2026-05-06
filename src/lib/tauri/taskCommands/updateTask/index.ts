@@ -1,7 +1,8 @@
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 import type { Result } from "@/utils/result";
+import { Result as ResultDomain } from "@/utils/result";
 import type { UpdateTaskParams } from "../types";
 
 /**
@@ -12,4 +13,6 @@ import type { UpdateTaskParams } from "../types";
 export const updateTask = (
   params: UpdateTaskParams,
 ): Promise<Result<Task, TauriError>> =>
-  invokeWrapped<Task>("update_task", params);
+  invokeWrapped<TaskPayload>("update_task", params).then((result) =>
+    ResultDomain.map(result, Task.fromPayload),
+  );

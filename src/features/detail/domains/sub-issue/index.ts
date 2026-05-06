@@ -31,7 +31,7 @@ export const SubIssue = {
       return [];
     }
     return allTasks.filter((t) =>
-      parentReferencesTaskPath(t.parent, parentFilePath),
+      parentReferencesTaskPath(t.hierarchy.parentFilePath, parentFilePath),
     );
   },
 
