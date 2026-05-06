@@ -35,27 +35,27 @@
 //! 古い `version` のマイグレーション結果はメモリ上の [`Config`] として返り、
 //! `config.json` への書き戻しは行わない（書き出し経路は別 Issue の責務）。
 //!
-//! # GUIDE.md 生成境界
-//! 本モジュールは [`Config::columns`] から GUIDE.md の Markdown 本文を組み立てる
-//! 純粋関数のみを提供する。`.spec-board/GUIDE.md` への書き込み、更新タイミング制御、
-//! Tauri コマンド公開は別 Issue の責務。
+//! # GUIDE.md 生成 / 書き込み境界
+//! 本モジュールは [`Config::columns`] から GUIDE.md の Markdown 本文を組み立て、
+//! `.spec-board/GUIDE.md` への best-effort 書き込み helper を提供する。
+//! 更新タイミング制御と Tauri コマンド公開は command 層の責務。
 //!
 //! # スコープ外（別 Issue で実装）
 //! - `config.json` の書き出し（atomic write / `.bak` 退避の永続化 / 並行書き込み制御）
 //! - `doneColumn` の整合性検証 / カラム名空間の正規化
 //! - 実フィールド変換を伴う実マイグレーション（本モジュールはフックのみ提供）
-//! - GUIDE.md ファイルの自動生成 / 書き込み
 //! - Tauri コマンド層
 //!
 //! 既存タスクの `(path, status)` 列から `Config` を組み立てる純粋関数
 //! [`build_config_from_statuses`] は本モジュールに同居する。
 //! md ファイルの走査・フロントマター抽出・`config.json` への書き出しは別レイヤの責務。
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use spec_board_fs::config_io::{self, ConfigIoError};
+use spec_board_fs::config_io::{self, write_guide_markdown, ConfigIoError};
 use thiserror::Error;
 
 /// `cardOrder` の型エイリアス。キー = カラム名、値 = タスクファイルパスの並び順配列。
@@ -188,6 +188,36 @@ pub fn generate_guide_markdown(config: &Config) -> String {
 pub fn generate_guide_markdown_for_columns(columns: &[Column]) -> String {
     let parts = build_guide_markdown_parts(columns);
     render_guide_markdown(&parts)
+}
+
+/// [`Config::guide_markdown`] の戻り値を `.spec-board/GUIDE.md` へ best-effort で書き込む。
+///
+/// GUIDE.md は補助ファイルのため、I/O 失敗を呼び出し元へ返さず WARN ログのみを残す。
+/// logger 未初期化環境でも観測できるよう stderr fallback も併用する。
+///
+/// @param project_root `.spec-board/GUIDE.md` を配置するプロジェクトルート。
+/// @param config GUIDE.md 本文生成に使う設定。
+pub fn write_guide_markdown_best_effort(project_root: &Path, config: &Config) {
+    let content = config.guide_markdown();
+
+    if let Err(error) = write_guide_markdown(project_root, &content) {
+        warn_guide_write_failure(project_root, &error);
+    }
+}
+
+fn warn_guide_write_failure(project_root: &Path, error: &impl std::fmt::Display) {
+    let message = format_guide_write_warning(project_root, error);
+    warn!("{message}");
+    if !log::log_enabled!(log::Level::Warn) {
+        eprintln!("WARN {message}");
+    }
+}
+
+fn format_guide_write_warning(project_root: &Path, error: &impl std::fmt::Display) -> String {
+    format!(
+        "failed to write .spec-board/GUIDE.md for project '{}': {error}",
+        project_root.display()
+    )
 }
 
 fn build_guide_markdown_parts(columns: &[Column]) -> GuideMarkdownParts<'_> {
@@ -1311,6 +1341,107 @@ mod tests {
         assert!(
             guide.ends_with("- `parent` に指定するパスはプロジェクトルートからの相対パスです\n")
         );
+    }
+
+    // ───────── write_guide_markdown_best_effort ─────────
+
+    #[test]
+    fn write_guide_markdown_best_effort_writes_config_guide_markdown() {
+        let tmp = TempDir::new().unwrap();
+        let config = Config {
+            version: 1,
+            columns: vec![col("Review", 1), col("Backlog", 0)],
+            card_order: BTreeMap::new(),
+            done_column: Some("Review".into()),
+        };
+
+        write_guide_markdown_best_effort(tmp.path(), &config);
+
+        let guide_path = tmp.path().join(".spec-board").join("GUIDE.md");
+        let written = std::fs::read_to_string(guide_path).unwrap();
+        assert_eq!(written, config.guide_markdown());
+        assert!(written.contains("status: Backlog（推奨・省略時は既定カラムにフォールバック。指定する場合は下記の有効な値から選択）"));
+    }
+
+    #[test]
+    fn write_guide_markdown_best_effort_overwrites_existing_guide() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let guide_path = dir.join("GUIDE.md");
+        std::fs::write(&guide_path, "old").unwrap();
+        let config = Config {
+            version: 1,
+            columns: vec![],
+            card_order: BTreeMap::new(),
+            done_column: None,
+        };
+
+        write_guide_markdown_best_effort(tmp.path(), &config);
+
+        assert_eq!(
+            std::fs::read_to_string(guide_path).unwrap(),
+            config.guide_markdown()
+        );
+    }
+
+    #[test]
+    fn write_guide_markdown_best_effort_does_not_panic_when_project_root_missing() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("does-not-exist");
+
+        write_guide_markdown_best_effort(&missing, &Config::default());
+    }
+
+    #[test]
+    fn write_guide_markdown_best_effort_does_not_panic_when_project_root_is_file() {
+        let tmp = TempDir::new().unwrap();
+        let file_root = tmp.path().join("project.md");
+        std::fs::write(&file_root, "not a directory").unwrap();
+
+        write_guide_markdown_best_effort(&file_root, &Config::default());
+    }
+
+    #[test]
+    fn write_guide_markdown_best_effort_does_not_panic_when_spec_board_is_file() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join(".spec-board"), "not a directory").unwrap();
+
+        write_guide_markdown_best_effort(tmp.path(), &Config::default());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_guide_markdown_best_effort_does_not_panic_when_guide_is_unwritable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let guide_path = dir.join("GUIDE.md");
+        std::fs::write(&guide_path, "old").unwrap();
+        let original = std::fs::metadata(&guide_path).unwrap().permissions();
+        let mut perms = original.clone();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&guide_path, perms).unwrap();
+
+        write_guide_markdown_best_effort(tmp.path(), &Config::default());
+
+        std::fs::set_permissions(&guide_path, original).unwrap();
+    }
+
+    #[test]
+    fn format_guide_write_warning_includes_project_root_and_error_context() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("does-not-exist");
+        let error =
+            spec_board_fs::config_io::write_guide_markdown(&missing, "content").unwrap_err();
+
+        let message = format_guide_write_warning(&missing, &error);
+
+        assert!(message.contains("failed to write .spec-board/GUIDE.md"));
+        assert!(message.contains(&missing.display().to_string()));
+        assert!(message.contains("config_io: I/O error"));
     }
 
     // ───────── load_or_default ─────────
