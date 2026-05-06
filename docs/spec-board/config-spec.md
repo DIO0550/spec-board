@@ -155,6 +155,7 @@ flowchart TD
 ## AIエージェント向けガイド（GUIDE.md）
 
 プロジェクトオープン時およびカラム設定変更時に `.spec-board/GUIDE.md` を自動生成する。AIエージェントがこのファイルを参照することで、有効なステータス値やフォーマットを把握できる。
+バックエンドの `Config::guide_markdown` / `generate_guide_markdown` / `generate_guide_markdown_for_columns` は、GUIDE.md の Markdown 本文を組み立てる純粋関数である。`.spec-board/GUIDE.md` への書き込み、更新タイミング制御、Tauri コマンド公開は別レイヤの責務とする。
 
 ### 生成内容
 
@@ -193,6 +194,14 @@ links:（任意）
 - `.spec-board/` ディレクトリ内のファイルは編集しないでください
 - `parent` に指定するパスはプロジェクトルートからの相対パスです
 ```
+
+上記は default config の生成例である。実際の GUIDE.md 生成では、テンプレート内の `status:` 例は `columns[].order` 昇順で最初の `columns[].name` を raw 出力する。
+
+「有効なステータス値」セクションは、`columns[].name` を `columns[].order` 昇順で bullet 出力する。同一 `order` のカラムがある場合は入力配列順を保持する。カラム名は Markdown escape / trim / normalization を行わず、値そのものを出力する。
+
+保存対象の `config.json` では `columns: []` は load 時に拒否されるが、Markdown 文字列生成用の純粋関数は `columns: []` 入力でも panic せず文字列を返す。この場合、テンプレート内の `status:` 例は `Todo` にフォールバックし、「有効なステータス値」見出し直下には bullet を出力せず空行を 1 つ置く。
+
+生成される Markdown 文字列は、タイトル、テンプレート、有効なステータス値、ルールの順序で決定論的に構成され、末尾改行を含む。
 
 ### 更新タイミング
 
