@@ -196,6 +196,9 @@ pub fn build_reverse_links(mut tasks: Vec<Task>) -> Vec<Task> {
     tasks
 }
 
+/// Task 一覧から正規化済み `file_path` の集合を構築する。
+///
+/// parent 存在検証では入力の表記揺れを吸収するため、この集合に対して照合する。
 fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()
@@ -203,6 +206,9 @@ fn task_path_index(tasks: &[Task]) -> HashSet<String> {
         .collect()
 }
 
+/// Task の正規化済み `file_path` から正規化済み parent 参照への lookup を構築する。
+///
+/// 無効な parent 参照は `None` として保持し、循環検証では辿らない。
 fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
     tasks
         .iter()
@@ -217,6 +223,7 @@ fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
         .collect()
 }
 
+/// Task の正規化済み `file_path` から入力配列内 index への lookup を構築する。
 fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
     tasks
         .iter()
@@ -225,18 +232,21 @@ fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
         .collect()
 }
 
+/// children 派生値を再計算前に全 Task から削除する。
 fn clear_children(tasks: &mut [Task]) {
     for task in tasks {
         task.children.clear();
     }
 }
 
+/// reverse_links 派生値を再計算前に全 Task から削除する。
 fn clear_reverse_links(tasks: &mut [Task]) {
     for task in tasks {
         task.reverse_links.clear();
     }
 }
 
+/// child の parent 参照が既存 Task に解決できる場合、親 Task の children に child path を追加する。
 fn append_child_to_parent(
     child_index: usize,
     tasks: &mut [Task],
@@ -259,6 +269,7 @@ fn append_child_to_parent(
     children.push(child_file_path);
 }
 
+/// source Task の links を解決し、各 target Task の reverse_links に source path を追加する。
 fn append_reverse_links_from_source(
     source_index: usize,
     tasks: &mut [Task],
@@ -274,6 +285,9 @@ fn append_reverse_links_from_source(
     }
 }
 
+/// link 文字列群を正規化し、存在する target Task の index 一覧に変換する。
+///
+/// 同一 source 内で同じ正規化 target を複数回参照する場合は、最初の参照だけを採用する。
 fn reverse_link_target_indices(
     links: &[String],
     task_index: &HashMap<String, usize>,
@@ -298,6 +312,7 @@ fn reverse_link_target_indices(
     target_indices
 }
 
+/// 指定 Task を起点に parent chain を辿り、循環と最大深さ超過を検出する。
 fn validate_parent_chain(
     task: &Task,
     parent_lookup: &HashMap<String, Option<String>>,
@@ -331,6 +346,7 @@ fn validate_parent_chain(
     }
 }
 
+/// parent 参照が解決できない Task に `ParentNotFound` warning を追加する。
 fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>) {
     let Some(parent) = &task.parent else {
         return;
@@ -348,6 +364,7 @@ fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>
     push_parent_not_found(task);
 }
 
+/// Task に `ParentNotFound` warning が未登録の場合だけ追加する。
 fn push_parent_not_found(task: &mut Task) {
     let already_exists = task.warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
@@ -364,6 +381,7 @@ fn push_parent_not_found(task: &mut Task) {
     ));
 }
 
+/// Parsed frontmatter から title を取り出し、不在または不正な場合は file name fallback を返す。
 fn extract_title(
     parsed: &Parsed,
     context: &TaskParseContext,
@@ -390,6 +408,7 @@ fn extract_title(
     }
 }
 
+/// Parsed frontmatter から status を取り出し、不在または不正な場合は default status を返す。
 fn extract_status(
     parsed: &Parsed,
     context: &TaskParseContext,
@@ -416,6 +435,7 @@ fn extract_status(
     }
 }
 
+/// Parsed frontmatter から parent を文字列として取り出し、不正な型の場合は warning を追加する。
 fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<String> {
     match extract_string_extra(&parsed.frontmatter.extras, "parent") {
         Ok(parent) => parent,
@@ -430,6 +450,7 @@ fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<St
     }
 }
 
+/// typed field 以外の frontmatter entry を JSON 互換の extras に変換する。
 fn convert_extras(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> TaskExtras {
     const TYPED_KEYS: [&str; 6] = ["title", "status", "priority", "labels", "parent", "links"];
     let mut extras = BTreeMap::new();
@@ -463,6 +484,7 @@ fn convert_extras(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> TaskExtra
     extras
 }
 
+/// warning code、field、message から `TaskWarning` を構築する。
 fn warning(code: TaskWarningCode, field: Option<&str>, message: &str) -> TaskWarning {
     TaskWarning {
         code,
@@ -471,6 +493,7 @@ fn warning(code: TaskWarningCode, field: Option<&str>, message: &str) -> TaskWar
     }
 }
 
+/// extras mapping から指定 key の文字列値を取り出す。
 fn extract_string_extra(extras: &serde_yaml_ng::Mapping, key: &str) -> Result<Option<String>, ()> {
     let Some(value) = extras.get(key) else {
         return Ok(None);
@@ -481,6 +504,7 @@ fn extract_string_extra(extras: &serde_yaml_ng::Mapping, key: &str) -> Result<Op
     Ok(Some(s.clone()))
 }
 
+/// file path の stem から title fallback を生成する。
 fn title_fallback_from_file_path(path: &Path) -> String {
     let Some(stem) = path.file_stem() else {
         return "Untitled".to_string();
@@ -492,16 +516,21 @@ fn title_fallback_from_file_path(path: &Path) -> String {
     title
 }
 
+/// Task payload 用の file path を forward slash 区切りの正規化済み文字列に変換する。
 fn normalized_task_file_path(path: &Path) -> String {
     let path_text = path.to_string_lossy().replace('\\', "/");
     normalize_path_parts(&path_text, true)
 }
 
+/// Task の file path を lookup 用に正規化する。
 fn normalize_task_path_for_lookup(path: &str) -> String {
     let path_text = path.replace('\\', "/");
     normalize_path_parts(&path_text, true)
 }
 
+/// parent 参照文字列を lookup 用の相対パスへ正規化する。
+///
+/// 空文字、絶対パス、Windows drive prefix は task graph の対象外として `None` を返す。
 fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
     if parent.is_empty() || parent.starts_with('/') || parent.starts_with('\\') {
         return None;
@@ -519,10 +548,12 @@ fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
     Some(normalized)
 }
 
+/// link 参照文字列を lookup 用の相対パスへ正規化する。
 fn normalize_link_path_for_lookup(link: &str) -> Option<String> {
     normalize_parent_path_for_lookup(link)
 }
 
+/// slash 区切りの path 文字列から空要素、`.`、必要に応じて drive prefix を除去する。
 fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
     let mut parts = Vec::new();
     for part in path_text.split('/') {
@@ -537,6 +568,7 @@ fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
     parts.join("/")
 }
 
+/// path 文字列が `C:` 形式の Windows drive prefix で始まるかを判定する。
 fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     if bytes.len() < 2 {
@@ -546,6 +578,7 @@ fn has_windows_drive_prefix(path: &str) -> bool {
     bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+/// YAML value を JSON value に変換し、JSON 互換でない tagged value は除外する。
 fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> Option<serde_json::Value> {
     if matches!(value, serde_yaml_ng::Value::Tagged(_)) {
         return None;

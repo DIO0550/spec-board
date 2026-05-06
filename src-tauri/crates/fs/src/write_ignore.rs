@@ -67,6 +67,7 @@ impl WriteIgnoreRegistry {
         Ok(self.len()? == 0)
     }
 
+    /// Locks the registry and maps poisoned mutex errors into the module error type.
     fn lock(&self) -> Result<MutexGuard<'_, HashSet<PathBuf>>, WriteIgnoreError> {
         self.ignored_paths
             .lock()
