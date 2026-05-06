@@ -179,6 +179,10 @@ pub fn build_children(tasks: Vec<Task>) -> Result<Vec<Task>, TaskParseError> {
 
 /// 全 Task の links を逆引きし、リンク先 Task の reverse_links を構築する。
 ///
+/// source Task の入力順、その中の `links` 配列順で追加する。同一 source 内で複数 link が同じ
+/// 正規化後 target を指す場合は、最初の link だけを採用する。存在しない target、空文字、
+/// 絶対パス、Windows drive prefix は warning を追加せず skip する。
+///
 /// @param tasks 構築対象の Task 一覧。正規化後の `file_path` が一意であることを前提にする。
 /// @returns reverse_links 派生値を反映した Task 一覧。
 pub fn build_reverse_links(mut tasks: Vec<Task>) -> Vec<Task> {
