@@ -227,7 +227,10 @@ fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
     match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => Err(io_err(
             path,
-            std::io::Error::from(std::io::ErrorKind::InvalidInput),
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{} is a symlink", path.display()),
+            ),
         )),
         Ok(_) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -452,6 +455,7 @@ mod tests {
         let ConfigIoError::Io { path, source } = err;
         assert_eq!(path, tmp.path().join(".spec-board"));
         assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(source.to_string().contains("is a symlink"));
         assert!(!outside_guide.exists());
     }
 
@@ -474,6 +478,7 @@ mod tests {
         let ConfigIoError::Io { path, source } = err;
         assert_eq!(path, guide_path);
         assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(source.to_string().contains("is a symlink"));
         assert_eq!(std::fs::read_to_string(target).unwrap(), "keep");
     }
 
