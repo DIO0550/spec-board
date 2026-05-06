@@ -8,9 +8,7 @@ type TaskFixtureOverrides = Partial<Omit<Task, "links" | "hierarchy">> &
     reverseLinks?: string[];
   };
 
-export const makeTask = (
-  overrides: TaskFixtureOverrides,
-): Task => ({
+export const makeTask = (overrides: TaskFixtureOverrides): Task => ({
   id: overrides.id,
   title: overrides.title ?? "t",
   status: overrides.status ?? "Todo",

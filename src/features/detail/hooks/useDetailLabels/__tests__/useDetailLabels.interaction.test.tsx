@@ -27,17 +27,17 @@ afterEach(() => {
  */
 const makeTask = (overrides: Partial<TaskPayload>): Task =>
   Task.fromPayload({
-  id: "t1",
-  title: "title",
-  status: "Todo",
-  labels: [],
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: "/p",
-  ...overrides,
-});
+    id: "t1",
+    title: "title",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "/p",
+    ...overrides,
+  });
 
 /**
  * useDetailLabels の戻り値を観測する Probe。

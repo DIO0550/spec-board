@@ -10,17 +10,17 @@ import { SubIssue } from "../index";
  */
 const makeTask = (overrides: Partial<TaskPayload>): Task =>
   Task.fromPayload({
-  id: "id",
-  title: "title",
-  status: "Todo",
-  labels: [],
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: "/p",
-  ...overrides,
-});
+    id: "id",
+    title: "title",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "/p",
+    ...overrides,
+  });
 
 test("SubIssue.filter(undefined) は空配列を返す", () => {
   expect(SubIssue.filter(undefined, "/parent")).toEqual([]);
