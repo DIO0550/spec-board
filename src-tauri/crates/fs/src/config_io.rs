@@ -20,13 +20,17 @@
 //! - `config.json` の書き出し（atomic write / `.bak` 退避）は別モジュール / 別 Issue
 //! - JSON のパース / シリアライズは本体クレート側
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
 
 const SPEC_BOARD_DIR: &str = ".spec-board";
 const CONFIG_FILE_NAME: &str = "config.json";
 const GUIDE_MARKDOWN_FILE_NAME: &str = "GUIDE.md";
+static GUIDE_MARKDOWN_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// `config_io` モジュールのファイル I/O で発生し得るエラー。
 ///
@@ -197,18 +201,82 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
 /// `<project_root>/.spec-board/GUIDE.md` へ Markdown 文字列を書き込む。
 ///
 /// 書き込み前に [`ensure_spec_board_dir`] を呼び、`.spec-board/` が無い場合は作成する。
-/// 既存 `GUIDE.md` は `std::fs::write` の通常セマンティクスで上書きする。
+/// 既存 `GUIDE.md` は fresh tmp file へ書いてから `rename` で置き換える。
+/// `.spec-board/` または `GUIDE.md` が symlink の場合は、project root 外のファイルを
+/// 上書きしないよう拒否する。
 ///
 /// # Errors
 ///
 /// - `project_root` が存在しない / ディレクトリでない / アクセスできない
-/// - `<project_root>/.spec-board` がファイルとして存在する
+/// - `<project_root>/.spec-board` がファイルまたは symlink として存在する
+/// - `<project_root>/.spec-board/GUIDE.md` が symlink として存在する
 /// - 権限不足等で `.spec-board/` 作成または `GUIDE.md` 書き込みが失敗する
 pub fn write_guide_markdown(project_root: &Path, content: &str) -> Result<PathBuf, ConfigIoError> {
-    ensure_spec_board_dir(project_root)?;
+    let spec_board_dir = ensure_spec_board_dir(project_root)?;
+    reject_existing_symlink(&spec_board_dir)?;
     let guide_path = guide_markdown_path(project_root);
-    std::fs::write(&guide_path, content).map_err(|e| io_err(&guide_path, e))?;
+    reject_existing_symlink(&guide_path)?;
+
+    let tmp_path = unique_guide_markdown_tmp_path(&spec_board_dir);
+    write_file_via_tmp(&guide_path, content, &tmp_path)?;
+
     Ok(guide_path)
+}
+
+fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(io_err(
+            path,
+            std::io::Error::from(std::io::ErrorKind::InvalidInput),
+        )),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(io_err(path, e)),
+    }
+}
+
+fn unique_guide_markdown_tmp_path(spec_board_dir: &Path) -> PathBuf {
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let counter = GUIDE_MARKDOWN_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    spec_board_dir.join(format!(
+        "{GUIDE_MARKDOWN_FILE_NAME}.tmp.{pid}.{nanos}.{counter}"
+    ))
+}
+
+fn write_file_via_tmp(dst: &Path, content: &str, tmp: &Path) -> Result<(), ConfigIoError> {
+    match std::fs::remove_file(tmp) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io_err(tmp, e)),
+    }
+
+    let mut tmp_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(tmp)
+        .map_err(|e| io_err(tmp, e))?;
+
+    if let Err(e) = tmp_file.write_all(content.as_bytes()) {
+        drop(tmp_file);
+        let _ = std::fs::remove_file(tmp);
+        return Err(io_err(tmp, e));
+    }
+
+    if let Err(e) = tmp_file.sync_all() {
+        drop(tmp_file);
+        let _ = std::fs::remove_file(tmp);
+        return Err(io_err(tmp, e));
+    }
+
+    drop(tmp_file);
+
+    std::fs::rename(tmp, dst).map_err(|e| {
+        let _ = std::fs::remove_file(tmp);
+        io_err(dst, e)
+    })
 }
 
 /// 指定パスが存在するディレクトリであることを検証する。
@@ -367,6 +435,65 @@ mod tests {
 
         assert_eq!(written_path, path);
         assert_eq!(std::fs::read_to_string(path).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_guide_markdown_rejects_spec_board_symlink_without_writing_target() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_guide = outside.path().join("GUIDE.md");
+        symlink(outside.path(), tmp.path().join(".spec-board")).unwrap();
+
+        let err = write_guide_markdown(tmp.path(), "new").unwrap_err();
+
+        let ConfigIoError::Io { path, source } = err;
+        assert_eq!(path, tmp.path().join(".spec-board"));
+        assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!outside_guide.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_guide_markdown_rejects_guide_symlink_without_overwriting_target() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let target = outside.path().join("target.txt");
+        std::fs::write(&target, "keep").unwrap();
+        let guide_path = dir.join("GUIDE.md");
+        symlink(&target, &guide_path).unwrap();
+
+        let err = write_guide_markdown(tmp.path(), "new").unwrap_err();
+
+        let ConfigIoError::Io { path, source } = err;
+        assert_eq!(path, guide_path);
+        assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(std::fs::read_to_string(target).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_guide_markdown_replaces_hard_link_without_overwriting_target_inode() {
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let dir = tmp.path().join(".spec-board");
+        std::fs::create_dir(&dir).unwrap();
+        let target = outside.path().join("target.txt");
+        std::fs::write(&target, "keep").unwrap();
+        let guide_path = dir.join("GUIDE.md");
+        std::fs::hard_link(&target, &guide_path).unwrap();
+
+        let written_path = write_guide_markdown(tmp.path(), "new").unwrap();
+
+        assert_eq!(written_path, guide_path);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+        assert_eq!(std::fs::read_to_string(guide_path).unwrap(), "new");
     }
 
     #[test]
