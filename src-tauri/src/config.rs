@@ -208,7 +208,9 @@ pub fn write_guide_markdown_best_effort(project_root: &Path, config: &Config) {
 fn warn_guide_write_failure(project_root: &Path, error: &impl std::fmt::Display) {
     let message = format_guide_write_warning(project_root, error);
     warn!("{message}");
-    eprintln!("WARN {message}");
+    if !log::log_enabled!(log::Level::Warn) {
+        eprintln!("WARN {message}");
+    }
 }
 
 fn format_guide_write_warning(project_root: &Path, error: &impl std::fmt::Display) -> String {
