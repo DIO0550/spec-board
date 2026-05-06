@@ -1,3 +1,5 @@
+import { TaskHierarchy } from "@/domains/task-hierarchy";
+import { TaskLinks } from "@/domains/task-links";
 import { parentReferencesTaskPath } from "@/domains/task-path";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -58,6 +60,12 @@ const syncParentChildren = (
   });
 };
 
+const applyTaskDeletedToTask = (task: Task, filePath: string): Task =>
+  TaskLinks.removeLinkedTask(
+    TaskHierarchy.detachDeletedTask(task, filePath),
+    filePath,
+  );
+
 export const ProjectData = {
   /**
    * 作成された task を追加し、親 task の children も同期する。
@@ -105,30 +113,7 @@ export const ProjectData = {
   applyTaskDeleted: (data: ProjectData, filePath: string): ProjectData => {
     const tasks = data.tasks
       .filter((task) => task.filePath !== filePath)
-      .map((task) => {
-        const parent = parentReferencesTaskPath(task.parent, filePath)
-          ? undefined
-          : task.parent;
-        const children = task.children.includes(filePath)
-          ? task.children.filter((child) => child !== filePath)
-          : task.children;
-        const links = task.links.includes(filePath)
-          ? task.links.filter((link) => link !== filePath)
-          : task.links;
-        const reverseLinks = task.reverseLinks.includes(filePath)
-          ? task.reverseLinks.filter((link) => link !== filePath)
-          : task.reverseLinks;
-
-        if (
-          parent === task.parent &&
-          children === task.children &&
-          links === task.links &&
-          reverseLinks === task.reverseLinks
-        ) {
-          return task;
-        }
-        return { ...task, parent, children, links, reverseLinks };
-      });
+      .map((task) => applyTaskDeletedToTask(task, filePath));
     return { ...data, tasks };
   },
 
