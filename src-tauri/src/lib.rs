@@ -6,12 +6,17 @@ pub mod task_index;
 /// Returns a greeting string for the given name.
 ///
 /// This command is registered with Tauri so the frontend can invoke it through IPC.
+///
+/// @param name Greeting target name supplied by the frontend IPC caller.
+/// @returns Greeting message including the supplied name.
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
 /// Builds and runs the Tauri application with the configured plugins and commands.
+///
+/// @returns 戻り値なし。Tauri runtime が終了するまでアプリケーションを実行する。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
