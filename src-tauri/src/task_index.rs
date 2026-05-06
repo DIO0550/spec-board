@@ -1064,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn build_reverse_links_processes_links_in_array_order() {
+    fn build_reverse_links_adds_source_to_each_existing_link_target() {
         let tasks = vec![
             task_with_links(
                 "tasks/source.md",
