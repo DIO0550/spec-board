@@ -196,6 +196,12 @@ pub fn build_reverse_links(mut tasks: Vec<Task>) -> Vec<Task> {
     tasks
 }
 
+/// Task 一覧から正規化済み `file_path` の集合を構築する。
+///
+/// parent 存在検証では入力の表記揺れを吸収するため、この集合に対して照合する。
+///
+/// @param tasks index 化する Task 一覧。
+/// @returns 正規化済み `file_path` の集合。
 fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()
@@ -203,6 +209,12 @@ fn task_path_index(tasks: &[Task]) -> HashSet<String> {
         .collect()
 }
 
+/// Task の正規化済み `file_path` から正規化済み parent 参照への lookup を構築する。
+///
+/// 無効な parent 参照は `None` として保持し、循環検証では辿らない。
+///
+/// @param tasks lookup 化する Task 一覧。
+/// @returns 正規化済み task path を key、正規化済み parent path を value にした map。
 fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
     tasks
         .iter()
@@ -217,6 +229,10 @@ fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
         .collect()
 }
 
+/// Task の正規化済み `file_path` から入力配列内 index への lookup を構築する。
+///
+/// @param tasks lookup 化する Task 一覧。
+/// @returns 正規化済み task path を key、入力配列内 index を value にした map。
 fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
     tasks
         .iter()
@@ -225,18 +241,32 @@ fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
         .collect()
 }
 
+/// children 派生値を再計算前に全 Task から削除する。
+///
+/// @param tasks children を空にする Task 一覧。
+/// @returns 戻り値なし。`tasks` を in-place で更新する。
 fn clear_children(tasks: &mut [Task]) {
     for task in tasks {
         task.children.clear();
     }
 }
 
+/// reverse_links 派生値を再計算前に全 Task から削除する。
+///
+/// @param tasks reverse_links を空にする Task 一覧。
+/// @returns 戻り値なし。`tasks` を in-place で更新する。
 fn clear_reverse_links(tasks: &mut [Task]) {
     for task in tasks {
         task.reverse_links.clear();
     }
 }
 
+/// child の parent 参照が既存 Task に解決できる場合、親 Task の children に child path を追加する。
+///
+/// @param child_index child として処理する Task の入力配列内 index。
+/// @param tasks children を更新する Task 一覧。
+/// @param parent_index 正規化済み task path から入力配列内 index への lookup。
+/// @returns 戻り値なし。parent が解決できた場合のみ `tasks` を in-place で更新する。
 fn append_child_to_parent(
     child_index: usize,
     tasks: &mut [Task],
@@ -259,6 +289,12 @@ fn append_child_to_parent(
     children.push(child_file_path);
 }
 
+/// source Task の links を解決し、各 target Task の reverse_links に source path を追加する。
+///
+/// @param source_index source として処理する Task の入力配列内 index。
+/// @param tasks reverse_links を更新する Task 一覧。
+/// @param task_index 正規化済み task path から入力配列内 index への lookup。
+/// @returns 戻り値なし。link target が解決できた Task だけを in-place で更新する。
 fn append_reverse_links_from_source(
     source_index: usize,
     tasks: &mut [Task],
@@ -274,6 +310,13 @@ fn append_reverse_links_from_source(
     }
 }
 
+/// link 文字列群を正規化し、存在する target Task の index 一覧に変換する。
+///
+/// 同一 source 内で同じ正規化 target を複数回参照する場合は、最初の参照だけを採用する。
+///
+/// @param links source Task が保持する link 参照文字列の一覧。
+/// @param task_index 正規化済み task path から入力配列内 index への lookup。
+/// @returns 存在する link target の入力配列内 index 一覧。
 fn reverse_link_target_indices(
     links: &[String],
     task_index: &HashMap<String, usize>,
@@ -298,6 +341,11 @@ fn reverse_link_target_indices(
     target_indices
 }
 
+/// 指定 Task を起点に parent chain を辿り、循環と最大深さ超過を検出する。
+///
+/// @param task parent chain の検証起点 Task。
+/// @param parent_lookup 正規化済み task path から正規化済み parent path への lookup。
+/// @returns 循環と最大深さ超過がなければ `Ok(())`、検出した場合は `TaskParseError`。
 fn validate_parent_chain(
     task: &Task,
     parent_lookup: &HashMap<String, Option<String>>,
@@ -331,6 +379,11 @@ fn validate_parent_chain(
     }
 }
 
+/// parent 参照が解決できない Task に `ParentNotFound` warning を追加する。
+///
+/// @param task parent 存在検証の対象 Task。
+/// @param task_paths 存在する正規化済み task path の集合。
+/// @returns 戻り値なし。parent が解決できない場合のみ `task.warnings` を更新する。
 fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>) {
     let Some(parent) = &task.parent else {
         return;
@@ -348,6 +401,10 @@ fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>
     push_parent_not_found(task);
 }
 
+/// Task に `ParentNotFound` warning が未登録の場合だけ追加する。
+///
+/// @param task warning を追加する Task。
+/// @returns 戻り値なし。既存 warning がない場合のみ `task.warnings` を更新する。
 fn push_parent_not_found(task: &mut Task) {
     let already_exists = task.warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
@@ -364,6 +421,12 @@ fn push_parent_not_found(task: &mut Task) {
     ));
 }
 
+/// Parsed frontmatter から title を取り出し、不在または不正な場合は file name fallback を返す。
+///
+/// @param parsed title を取り出す Parsed frontmatter。
+/// @param context file name fallback の生成に使う parse context。
+/// @param warnings title 不在または不正時の warning 追加先。
+/// @returns frontmatter の title、または file name 由来の fallback title。
 fn extract_title(
     parsed: &Parsed,
     context: &TaskParseContext,
@@ -390,6 +453,12 @@ fn extract_title(
     }
 }
 
+/// Parsed frontmatter から status を取り出し、不在または不正な場合は default status を返す。
+///
+/// @param parsed status を取り出す Parsed frontmatter。
+/// @param context default status を保持する parse context。
+/// @param warnings status 不在または不正時の warning 追加先。
+/// @returns frontmatter の status、または context の default status。
 fn extract_status(
     parsed: &Parsed,
     context: &TaskParseContext,
@@ -416,6 +485,11 @@ fn extract_status(
     }
 }
 
+/// Parsed frontmatter から parent を文字列として取り出し、不正な型の場合は warning を追加する。
+///
+/// @param parsed parent を取り出す Parsed frontmatter。
+/// @param warnings parent 不正時の warning 追加先。
+/// @returns parent 文字列。不在または不正な型の場合は `None`。
 fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<String> {
     match extract_string_extra(&parsed.frontmatter.extras, "parent") {
         Ok(parent) => parent,
@@ -430,6 +504,11 @@ fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<St
     }
 }
 
+/// typed field 以外の frontmatter entry を JSON 互換の extras に変換する。
+///
+/// @param parsed extras 変換元の Parsed frontmatter。
+/// @param warnings non-string key または JSON 非互換 value の warning 追加先。
+/// @returns JSON 互換 value だけを保持する Task extras。
 fn convert_extras(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> TaskExtras {
     const TYPED_KEYS: [&str; 6] = ["title", "status", "priority", "labels", "parent", "links"];
     let mut extras = BTreeMap::new();
@@ -463,6 +542,12 @@ fn convert_extras(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> TaskExtra
     extras
 }
 
+/// warning code、field、message から `TaskWarning` を構築する。
+///
+/// @param code warning の分類コード。
+/// @param field warning 対象の frontmatter field 名。
+/// @param message warning の説明文。
+/// @returns 指定値を保持する `TaskWarning`。
 fn warning(code: TaskWarningCode, field: Option<&str>, message: &str) -> TaskWarning {
     TaskWarning {
         code,
@@ -471,6 +556,11 @@ fn warning(code: TaskWarningCode, field: Option<&str>, message: &str) -> TaskWar
     }
 }
 
+/// extras mapping から指定 key の文字列値を取り出す。
+///
+/// @param extras 検索対象の YAML mapping。
+/// @param key 取り出す field 名。
+/// @returns key が無ければ `Ok(None)`、文字列値なら `Ok(Some(value))`、非文字列なら `Err(())`。
 fn extract_string_extra(extras: &serde_yaml_ng::Mapping, key: &str) -> Result<Option<String>, ()> {
     let Some(value) = extras.get(key) else {
         return Ok(None);
@@ -481,6 +571,10 @@ fn extract_string_extra(extras: &serde_yaml_ng::Mapping, key: &str) -> Result<Op
     Ok(Some(s.clone()))
 }
 
+/// file path の stem から title fallback を生成する。
+///
+/// @param path title fallback の元にする file path。
+/// @returns file stem の `-` を空白に置換した title。stem が空または取得不能なら `"Untitled"`。
 fn title_fallback_from_file_path(path: &Path) -> String {
     let Some(stem) = path.file_stem() else {
         return "Untitled".to_string();
@@ -492,16 +586,30 @@ fn title_fallback_from_file_path(path: &Path) -> String {
     title
 }
 
+/// Task payload 用の file path を forward slash 区切りの正規化済み文字列に変換する。
+///
+/// @param path 正規化する Task file path。
+/// @returns payload に格納する forward slash 区切りの正規化済み path。
 fn normalized_task_file_path(path: &Path) -> String {
     let path_text = path.to_string_lossy().replace('\\', "/");
     normalize_path_parts(&path_text, true)
 }
 
+/// Task の file path を lookup 用に正規化する。
+///
+/// @param path lookup key に変換する Task file path。
+/// @returns lookup 用の正規化済み path。
 fn normalize_task_path_for_lookup(path: &str) -> String {
     let path_text = path.replace('\\', "/");
     normalize_path_parts(&path_text, true)
 }
 
+/// parent 参照文字列を lookup 用の相対パスへ正規化する。
+///
+/// 空文字、絶対パス、Windows drive prefix は task graph の対象外として `None` を返す。
+///
+/// @param parent 正規化する parent 参照文字列。
+/// @returns lookup 用の正規化済み相対 path。task graph 対象外の場合は `None`。
 fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
     if parent.is_empty() || parent.starts_with('/') || parent.starts_with('\\') {
         return None;
@@ -519,10 +627,19 @@ fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
     Some(normalized)
 }
 
+/// link 参照文字列を lookup 用の相対パスへ正規化する。
+///
+/// @param link 正規化する link 参照文字列。
+/// @returns lookup 用の正規化済み相対 path。task graph 対象外の場合は `None`。
 fn normalize_link_path_for_lookup(link: &str) -> Option<String> {
     normalize_parent_path_for_lookup(link)
 }
 
+/// slash 区切りの path 文字列から空要素、`.`、必要に応じて drive prefix を除去する。
+///
+/// @param path_text slash 区切りへ変換済みの path 文字列。
+/// @param remove_drive_prefix `true` の場合は `C:` 形式の path part を除去する。
+/// @returns 空要素、`.`、必要に応じた drive prefix を除いた path 文字列。
 fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
     let mut parts = Vec::new();
     for part in path_text.split('/') {
@@ -537,6 +654,10 @@ fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
     parts.join("/")
 }
 
+/// path 文字列が `C:` 形式の Windows drive prefix で始まるかを判定する。
+///
+/// @param path 判定対象の path 文字列。
+/// @returns 先頭 2 byte が ASCII alphabetic + `:` の場合は `true`。
 fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     if bytes.len() < 2 {
@@ -546,6 +667,10 @@ fn has_windows_drive_prefix(path: &str) -> bool {
     bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+/// YAML value を JSON value に変換し、JSON 互換でない tagged value は除外する。
+///
+/// @param value 変換対象の YAML value。
+/// @returns JSON value に変換できた場合は `Some`、tagged value または変換失敗時は `None`。
 fn yaml_value_to_json(value: &serde_yaml_ng::Value) -> Option<serde_json::Value> {
     if matches!(value, serde_yaml_ng::Value::Tagged(_)) {
         return None;

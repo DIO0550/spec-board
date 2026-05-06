@@ -42,6 +42,13 @@ pub enum ConfigIoError {
     },
 }
 
+/// 指定パスと `std::io::Error` を `ConfigIoError::Io` に包む。
+///
+/// 呼び出し元の操作種別に関わらず、失敗対象パスを保持するための共通ヘルパー。
+///
+/// @param path 失敗対象としてエラーに保持する path。
+/// @param source 元になった `std::io::Error`。
+/// @returns path と source を保持する `ConfigIoError::Io`。
 fn io_err(path: &Path, source: std::io::Error) -> ConfigIoError {
     ConfigIoError::Io {
         path: path.to_path_buf(),
@@ -169,6 +176,10 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
     Ok(Some(content))
 }
 
+/// 指定パスが存在するディレクトリであることを検証する。
+///
+/// @param path 検証対象の path。
+/// @returns path が存在するディレクトリなら `Ok(())`、不在・アクセス不可・非ディレクトリなら `ConfigIoError`。
 fn validate_dir(path: &Path) -> Result<(), ConfigIoError> {
     let meta = std::fs::metadata(path).map_err(|e| io_err(path, e))?;
     if !meta.is_dir() {
