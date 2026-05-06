@@ -35,11 +35,16 @@
 //! 古い `version` のマイグレーション結果はメモリ上の [`Config`] として返り、
 //! `config.json` への書き戻しは行わない（書き出し経路は別 Issue の責務）。
 //!
+//! # GUIDE.md 生成境界
+//! 本モジュールは [`Config::columns`] から GUIDE.md の Markdown 本文を組み立てる
+//! 純粋関数のみを提供する。`.spec-board/GUIDE.md` への書き込み、更新タイミング制御、
+//! Tauri コマンド公開は別 Issue の責務。
+//!
 //! # スコープ外（別 Issue で実装）
 //! - `config.json` の書き出し（atomic write / `.bak` 退避の永続化 / 並行書き込み制御）
 //! - `doneColumn` の整合性検証 / カラム名空間の正規化
 //! - 実フィールド変換を伴う実マイグレーション（本モジュールはフックのみ提供）
-//! - GUIDE.md 自動生成
+//! - GUIDE.md ファイルの自動生成 / 書き込み
 //! - Tauri コマンド層
 //!
 //! 既存タスクの `(path, status)` 列から `Config` を組み立てる純粋関数
@@ -100,6 +105,14 @@ pub struct Column {
 /// 用いるベースラインカラム名。
 const DEFAULT_COLUMN_NAMES: [&str; 3] = ["Todo", "In Progress", "Done"];
 
+/// GUIDE.md 文字列生成において、入力 columns が空の場合に `status:` 例へ使う値。
+const GUIDE_STATUS_FALLBACK: &str = DEFAULT_COLUMN_NAMES[0];
+
+struct GuideMarkdownParts<'a> {
+    status_example: &'a str,
+    status_names: Vec<&'a str>,
+}
+
 impl Default for Config {
     fn default() -> Self {
         let columns = DEFAULT_COLUMN_NAMES
@@ -143,6 +156,100 @@ impl Config {
             .max_by_key(|c| c.order)
             .map(|c| c.name.as_str())
     }
+
+    /// この設定から GUIDE.md の Markdown 本文を生成する。
+    ///
+    /// # Returns
+    ///
+    /// `.spec-board/GUIDE.md` に書き込む候補となる Markdown 文字列。末尾改行を含む。
+    pub fn guide_markdown(&self) -> String {
+        generate_guide_markdown(self)
+    }
+}
+
+/// [`Config`] から GUIDE.md の Markdown 本文を生成する。
+///
+/// # Returns
+///
+/// `.spec-board/GUIDE.md` に書き込む候補となる Markdown 文字列。末尾改行を含む。
+pub fn generate_guide_markdown(config: &Config) -> String {
+    generate_guide_markdown_for_columns(&config.columns)
+}
+
+/// [`Column`] の列から GUIDE.md の Markdown 本文を生成する。
+///
+/// `columns[].order` 昇順で有効なステータス値を出力する。同一 `order` の場合は
+/// 入力順を保持する。カラム名は Markdown escape / trim / normalization を行わず
+/// raw のまま出力する。
+///
+/// # Returns
+///
+/// `.spec-board/GUIDE.md` に書き込む候補となる Markdown 文字列。末尾改行を含む。
+pub fn generate_guide_markdown_for_columns(columns: &[Column]) -> String {
+    let parts = build_guide_markdown_parts(columns);
+    render_guide_markdown(&parts)
+}
+
+fn build_guide_markdown_parts(columns: &[Column]) -> GuideMarkdownParts<'_> {
+    let mut sorted_columns: Vec<&Column> = columns.iter().collect();
+    sorted_columns.sort_by_key(|column| column.order);
+
+    let status_example = sorted_columns
+        .first()
+        .map(|column| column.name.as_str())
+        .unwrap_or(GUIDE_STATUS_FALLBACK);
+    let status_names = sorted_columns
+        .into_iter()
+        .map(|column| column.name.as_str())
+        .collect();
+
+    GuideMarkdownParts {
+        status_example,
+        status_names,
+    }
+}
+
+fn render_guide_markdown(parts: &GuideMarkdownParts<'_>) -> String {
+    let mut markdown = format!(
+        "# spec-board タスクフォーマットガイド\n\n\
+このプロジェクトは spec-board で管理されています。\n\
+タスクは以下のフォーマットの Markdown ファイルで管理します。\n\n\
+## テンプレート\n\n\
+```\n\
+---\n\
+title: タスクのタイトル（推奨・省略時はファイル名からフォールバック）\n\
+status: {}（推奨・省略時は既定カラムにフォールバック。指定する場合は下記の有効な値から選択）\n\
+priority: Medium（任意・High / Medium / Low）\n\
+labels:（任意）\n\
+  - ラベル名\n\
+parent: tasks/parent-task.md（任意・親タスクのパス）\n\
+links:（任意）\n\
+  - tasks/related-task.md\n\
+---\n\n\
+タスクの詳細説明\n\
+```\n\n\
+## 有効なステータス値\n\n",
+        parts.status_example
+    );
+
+    for status_name in &parts.status_names {
+        markdown.push_str("- ");
+        markdown.push_str(status_name);
+        markdown.push('\n');
+    }
+
+    if !parts.status_names.is_empty() {
+        markdown.push('\n');
+    }
+
+    markdown.push_str(
+        "## ルール\n\n\
+- ファイルは `.md` 拡張子で作成してください\n\
+- `.spec-board/` ディレクトリ内のファイルは編集しないでください\n\
+- `parent` に指定するパスはプロジェクトルートからの相対パスです\n",
+    );
+
+    markdown
 }
 
 /// 既存タスクの `(path, status)` 列から [`Config`] を組み立てる純粋関数。
@@ -1106,6 +1213,104 @@ mod tests {
                 case.label
             );
         }
+    }
+
+    // ───────── generate_guide_markdown ─────────
+
+    #[test]
+    fn generate_guide_markdown_from_default_config_returns_spec_baseline() {
+        let guide = Config::default().guide_markdown();
+
+        assert!(guide.starts_with("# spec-board タスクフォーマットガイド\n\n"));
+        assert!(guide.contains("## テンプレート\n\n"));
+        assert!(guide.contains("status: Todo（推奨・省略時は既定カラムにフォールバック。指定する場合は下記の有効な値から選択）"));
+        assert!(guide.contains("## 有効なステータス値\n\n- Todo\n- In Progress\n- Done\n\n"));
+        assert!(guide.contains("## ルール\n\n"));
+        assert!(guide.ends_with('\n'));
+    }
+
+    #[test]
+    fn generate_guide_markdown_uses_columns_order_for_valid_status_values() {
+        let columns = vec![col("Done", 2), col("Todo", 0), col("In Progress", 1)];
+
+        let guide = generate_guide_markdown_for_columns(&columns);
+
+        let todo_pos = guide.find("- Todo").unwrap();
+        let in_progress_pos = guide.find("- In Progress").unwrap();
+        let done_pos = guide.find("- Done").unwrap();
+        assert!(todo_pos < in_progress_pos);
+        assert!(in_progress_pos < done_pos);
+    }
+
+    #[test]
+    fn generate_guide_markdown_uses_first_column_by_order_as_status_example() {
+        let columns = vec![col("Review", 20), col("Backlog", 10)];
+
+        let guide = generate_guide_markdown_for_columns(&columns);
+
+        assert!(guide.contains("status: Backlog（推奨・省略時は既定カラムにフォールバック。指定する場合は下記の有効な値から選択）"));
+    }
+
+    #[test]
+    fn generate_guide_markdown_reflects_column_add_rename_and_delete_inputs() {
+        let guide = generate_guide_markdown_for_columns(&[
+            col("Backlog", 0),
+            col("Review", 1),
+            col("Released", 2),
+        ]);
+
+        assert!(guide.contains("## 有効なステータス値\n\n- Backlog\n- Review\n- Released\n\n"));
+        assert!(!guide.contains("- Todo\n"));
+        assert!(!guide.contains("- Done\n"));
+    }
+
+    #[test]
+    fn generate_guide_markdown_handles_empty_columns_without_status_bullets() {
+        let guide = generate_guide_markdown_for_columns(&[]);
+
+        assert!(guide.contains("status: Todo（推奨・省略時は既定カラムにフォールバック。指定する場合は下記の有効な値から選択）"));
+        assert!(guide.contains("## 有効なステータス値\n\n## ルール\n\n"));
+    }
+
+    #[test]
+    fn generate_guide_markdown_outputs_column_names_raw() {
+        let columns = vec![col("* Raw:Name", 0), col("  Spaced  ", 1), col("", 2)];
+
+        let guide = generate_guide_markdown_for_columns(&columns);
+
+        assert!(guide.contains("status: * Raw:Name（推奨・省略時は既定カラムにフォールバック。指定する場合は下記の有効な値から選択）"));
+        assert!(guide.contains("- * Raw:Name\n"));
+        assert!(guide.contains("-   Spaced  \n"));
+        assert!(guide.contains("- \n"));
+    }
+
+    #[test]
+    fn generate_guide_markdown_preserves_input_order_for_equal_column_order() {
+        let columns = vec![col("First", 1), col("Second", 1), col("Third", 2)];
+
+        let guide = generate_guide_markdown_for_columns(&columns);
+
+        let first_pos = guide.find("- First").unwrap();
+        let second_pos = guide.find("- Second").unwrap();
+        let third_pos = guide.find("- Third").unwrap();
+        assert!(first_pos < second_pos);
+        assert!(second_pos < third_pos);
+    }
+
+    #[test]
+    fn generate_guide_markdown_has_stable_section_order_and_trailing_newline() {
+        let guide = generate_guide_markdown_for_columns(&[col("Todo", 0)]);
+
+        let title_pos = guide.find("# spec-board タスクフォーマットガイド").unwrap();
+        let template_pos = guide.find("## テンプレート").unwrap();
+        let statuses_pos = guide.find("## 有効なステータス値").unwrap();
+        let rules_pos = guide.find("## ルール").unwrap();
+        assert!(title_pos < template_pos);
+        assert!(template_pos < statuses_pos);
+        assert!(statuses_pos < rules_pos);
+        assert!(
+            guide.ends_with("- `parent` に指定するパスはプロジェクトルートからの相対パスです\n")
+        );
     }
 
     // ───────── load_or_default ─────────
