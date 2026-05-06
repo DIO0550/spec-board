@@ -177,6 +177,25 @@ pub fn build_children(tasks: Vec<Task>) -> Result<Vec<Task>, TaskParseError> {
     Ok(tasks)
 }
 
+/// 全 Task の links を逆引きし、リンク先 Task の reverse_links を構築する。
+///
+/// source Task の入力順、その中の `links` 配列順で追加する。同一 source 内で複数 link が同じ
+/// 正規化後 target を指す場合は、最初の link だけを採用する。存在しない target、空文字、
+/// 絶対パス、Windows drive prefix は warning を追加せず skip する。
+///
+/// @param tasks 構築対象の Task 一覧。正規化後の `file_path` が一意であることを前提にする。
+/// @returns reverse_links 派生値を反映した Task 一覧。
+pub fn build_reverse_links(mut tasks: Vec<Task>) -> Vec<Task> {
+    clear_reverse_links(&mut tasks);
+    let task_index = task_lookup_index(&tasks);
+
+    for source_index in 0..tasks.len() {
+        append_reverse_links_from_source(source_index, &mut tasks, &task_index);
+    }
+
+    tasks
+}
+
 fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()
@@ -212,6 +231,12 @@ fn clear_children(tasks: &mut [Task]) {
     }
 }
 
+fn clear_reverse_links(tasks: &mut [Task]) {
+    for task in tasks {
+        task.reverse_links.clear();
+    }
+}
+
 fn append_child_to_parent(
     child_index: usize,
     tasks: &mut [Task],
@@ -232,6 +257,45 @@ fn append_child_to_parent(
 
     let children = &mut tasks[parent_task_index].children;
     children.push(child_file_path);
+}
+
+fn append_reverse_links_from_source(
+    source_index: usize,
+    tasks: &mut [Task],
+    task_index: &HashMap<String, usize>,
+) {
+    let source_file_path = tasks[source_index].file_path.clone();
+    let target_indices = reverse_link_target_indices(&tasks[source_index].links, task_index);
+
+    for target_index in target_indices {
+        tasks[target_index]
+            .reverse_links
+            .push(source_file_path.clone());
+    }
+}
+
+fn reverse_link_target_indices(
+    links: &[String],
+    task_index: &HashMap<String, usize>,
+) -> Vec<usize> {
+    let mut seen_targets = HashSet::new();
+    let mut target_indices = Vec::new();
+
+    for link in links {
+        let Some(target_path) = normalize_link_path_for_lookup(link) else {
+            continue;
+        };
+        if !seen_targets.insert(target_path.clone()) {
+            continue;
+        }
+
+        let Some(target_task_index) = task_index.get(&target_path).copied() else {
+            continue;
+        };
+        target_indices.push(target_task_index);
+    }
+
+    target_indices
 }
 
 fn validate_parent_chain(
@@ -455,6 +519,10 @@ fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
     Some(normalized)
 }
 
+fn normalize_link_path_for_lookup(link: &str) -> Option<String> {
+    normalize_parent_path_for_lookup(link)
+}
+
 fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
     let mut parts = Vec::new();
     for part in path_text.split('/') {
@@ -512,6 +580,18 @@ mod tests {
 
     fn task_without_parent(path: &str) -> Task {
         task_from("---\ntitle: Task\nstatus: Todo\n---\n", path)
+    }
+
+    fn task_with_links(path: &str, links: &[&str]) -> Task {
+        let links_yaml = links
+            .iter()
+            .map(|link| format!("  - {link}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        task_from(
+            &format!("---\ntitle: Task\nstatus: Todo\nlinks:\n{links_yaml}\n---\n"),
+            path,
+        )
     }
 
     fn parent_chain_with_edge_count(edge_count: usize) -> Vec<Task> {
@@ -950,6 +1030,157 @@ mod tests {
         let tasks = build_children(Vec::new()).unwrap();
 
         assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn build_reverse_links_adds_source_file_path_to_target() {
+        let tasks = vec![
+            task_with_links("tasks/source.md", &["tasks/target.md"]),
+            task_without_parent("tasks/target.md"),
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    }
+
+    #[test]
+    fn build_reverse_links_adds_sources_in_input_order() {
+        let tasks = vec![
+            task_with_links("tasks/source-a.md", &["tasks/target.md"]),
+            task_with_links("tasks/source-b.md", &["tasks/target.md"]),
+            task_without_parent("tasks/target.md"),
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(
+            tasks[2].reverse_links,
+            vec![
+                "tasks/source-a.md".to_string(),
+                "tasks/source-b.md".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn build_reverse_links_adds_source_to_each_existing_link_target() {
+        let tasks = vec![
+            task_with_links(
+                "tasks/source.md",
+                &["tasks/target-b.md", "tasks/target-a.md"],
+            ),
+            task_without_parent("tasks/target-a.md"),
+            task_without_parent("tasks/target-b.md"),
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+        assert_eq!(tasks[2].reverse_links, vec!["tasks/source.md".to_string()]);
+    }
+
+    #[test]
+    fn build_reverse_links_deduplicates_normalized_targets_per_source() {
+        let tasks = vec![
+            task_with_links(
+                "tasks/source.md",
+                &["tasks/target.md", "./tasks/target.md", "tasks\\target.md"],
+            ),
+            task_without_parent("tasks/target.md"),
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    }
+
+    #[test]
+    fn build_reverse_links_clears_existing_reverse_links_before_recalculation() {
+        let mut target = task_without_parent("tasks/target.md");
+        target.reverse_links = vec![
+            "tasks/stale.md".to_string(),
+            "tasks/source.md".to_string(),
+            "tasks/source.md".to_string(),
+        ];
+        let tasks = vec![
+            task_with_links("tasks/source.md", &["tasks/target.md"]),
+            target,
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    }
+
+    #[test]
+    fn build_reverse_links_ignores_missing_target() {
+        let tasks = vec![task_with_links("tasks/source.md", &["tasks/missing.md"])];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert!(tasks[0].reverse_links.is_empty());
+        assert!(tasks[0].warnings.is_empty());
+    }
+
+    #[test]
+    fn build_reverse_links_matches_link_with_dot_prefix() {
+        let tasks = vec![
+            task_with_links("tasks/source.md", &["./tasks/target.md"]),
+            task_without_parent("tasks/target.md"),
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    }
+
+    #[test]
+    fn build_reverse_links_matches_link_with_backslash_separator() {
+        let tasks = vec![
+            task_with_links("tasks/source.md", &["tasks\\target.md"]),
+            task_without_parent("tasks/target.md"),
+        ];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    }
+
+    #[test]
+    fn build_reverse_links_ignores_empty_absolute_and_drive_prefix_link() {
+        let cases = [
+            "",
+            "/tasks/target.md",
+            "\\tasks\\target.md",
+            "C:\\tasks\\target.md",
+        ];
+
+        for link in cases {
+            let mut source = task_without_parent("tasks/source.md");
+            source.links = vec![link.to_string()];
+            let tasks = vec![source, task_without_parent("tasks/target.md")];
+
+            let tasks = build_reverse_links(tasks);
+
+            assert!(tasks[1].reverse_links.is_empty(), "{link}");
+        }
+    }
+
+    #[test]
+    fn build_reverse_links_accepts_empty_tasks() {
+        let tasks = build_reverse_links(Vec::new());
+
+        assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn build_reverse_links_allows_self_link() {
+        let tasks = vec![task_with_links("tasks/source.md", &["tasks/source.md"])];
+
+        let tasks = build_reverse_links(tasks);
+
+        assert_eq!(tasks[0].reverse_links, vec!["tasks/source.md".to_string()]);
     }
 
     #[test]
