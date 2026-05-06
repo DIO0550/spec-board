@@ -14,6 +14,14 @@ test("fromPayload は flat payload の関連情報を nested domain property に
     reverseLinks: ["tasks/reverse.md"],
     body: "body",
     filePath: "tasks/task-1.md",
+    extras: { estimate: 3 },
+    warnings: [
+      {
+        code: "parentNotFound",
+        field: "parent",
+        message: "parent task was not found",
+      },
+    ],
   };
 
   const task = Task.fromPayload(payload);
@@ -26,6 +34,14 @@ test("fromPayload は flat payload の関連情報を nested domain property に
     labels: ["bug"],
     body: "body",
     filePath: "tasks/task-1.md",
+    extras: { estimate: 3 },
+    warnings: [
+      {
+        code: "parentNotFound",
+        field: "parent",
+        message: "parent task was not found",
+      },
+    ],
     links: {
       linkedFilePaths: ["tasks/linked.md"],
       reverseLinkedFilePaths: ["tasks/reverse.md"],

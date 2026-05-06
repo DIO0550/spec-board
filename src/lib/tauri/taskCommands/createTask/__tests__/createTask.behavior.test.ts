@@ -16,6 +16,8 @@ const taskPayloadFixture: TaskPayload = {
   reverseLinks: [],
   body: "",
   filePath: "tasks/x.md",
+  extras: {},
+  warnings: [],
 };
 
 const taskFixture = Task.fromPayload(taskPayloadFixture);

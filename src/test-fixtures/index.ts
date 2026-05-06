@@ -21,6 +21,8 @@ const initialTaskPayloads: TaskPayload[] = [
     reverseLinks: [],
     body: "ログイン画面でエラーメッセージが表示されない問題を修正する。",
     filePath: "tasks/fix-login-bug.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-2",
@@ -34,6 +36,8 @@ const initialTaskPayloads: TaskPayload[] = [
     reverseLinks: ["tasks/fix-login-bug.md"],
     body: "商品一覧ページにキーワード検索機能を追加する。\n\n## 受け入れ基準\n\n- キーワード入力で部分一致検索できる\n- 検索結果が0件の場合メッセージを表示する",
     filePath: "tasks/search-feature.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-3",
@@ -47,6 +51,8 @@ const initialTaskPayloads: TaskPayload[] = [
     reverseLinks: [],
     body: "ログインフォームのレイアウトを調整する。",
     filePath: "tasks/login-ui-fix.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-4",
@@ -59,6 +65,8 @@ const initialTaskPayloads: TaskPayload[] = [
     reverseLinks: [],
     body: "プロジェクトのREADMEを最新の仕様に合わせて更新する。",
     filePath: "tasks/update-readme.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-5",
@@ -72,6 +80,8 @@ const initialTaskPayloads: TaskPayload[] = [
     reverseLinks: [],
     body: "RESTful API のエンドポイント設計を行う。",
     filePath: "tasks/api-design.md",
+    extras: {},
+    warnings: [],
   },
 ];
 

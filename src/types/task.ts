@@ -2,6 +2,39 @@ import type { Priority } from "@/domains/priority";
 import type { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { TaskLinks } from "@/domains/task-links";
 
+/** JSON 互換値。 */
+export type TaskExtraValue =
+  | null
+  | boolean
+  | number
+  | string
+  | TaskExtraValue[]
+  | { readonly [key: string]: TaskExtraValue };
+
+/** 定義外 frontmatter の JSON 互換値。 */
+export type TaskExtras = Record<string, TaskExtraValue>;
+
+/** Task 生成時に継続可能な問題として返る warning code。 */
+export type TaskWarningCode =
+  | "missingTitleUsedFileName"
+  | "invalidTitleUsedFileName"
+  | "missingStatusUsedDefault"
+  | "invalidStatusUsedDefault"
+  | "invalidParentIgnored"
+  | "parentNotFound"
+  | "nonStringExtraKeyIgnored"
+  | "extraValueNotJsonCompatible";
+
+/** Task 生成時に継続可能な問題として返る warning。 */
+export type TaskWarning = {
+  /** warning の分類コード */
+  code: TaskWarningCode;
+  /** warning 対象の frontmatter field 名 */
+  field?: string;
+  /** warning の説明文 */
+  message: string;
+};
+
 /** Tauri IPC から返る flat なタスク payload。 */
 export type TaskPayload = {
   /** 一意な識別子 */
@@ -26,7 +59,14 @@ export type TaskPayload = {
   body: string;
   /** タスクファイルのパス */
   filePath: string;
+  /** 定義外 frontmatter の JSON 互換値 */
+  extras: TaskExtras;
+  /** Task 生成を継続できる非致命 warning 一覧 */
+  warnings: TaskWarning[];
 };
+
+type TaskPayloadInput = Omit<TaskPayload, "extras" | "warnings"> &
+  Partial<Pick<TaskPayload, "extras" | "warnings">>;
 
 /** タスク */
 export type Task = {
@@ -44,6 +84,10 @@ export type Task = {
   body: string;
   /** タスクファイルのパス */
   filePath: string;
+  /** 定義外 frontmatter の JSON 互換値 */
+  extras: TaskExtras;
+  /** Task 生成を継続できる非致命 warning 一覧 */
+  warnings: TaskWarning[];
   /** 関連リンク情報 */
   links: TaskLinks;
   /** 親子階層情報 */
@@ -57,7 +101,7 @@ export const Task = {
    * @param payload Tauri IPC から返る task payload
    * @returns frontend domain の task
    */
-  fromPayload: (payload: TaskPayload): Task => ({
+  fromPayload: (payload: TaskPayloadInput): Task => ({
     id: payload.id,
     title: payload.title,
     status: payload.status,
@@ -65,6 +109,8 @@ export const Task = {
     labels: payload.labels,
     body: payload.body,
     filePath: payload.filePath,
+    extras: payload.extras ?? {},
+    warnings: payload.warnings ?? [],
     links: {
       linkedFilePaths: payload.links,
       reverseLinkedFilePaths: payload.reverseLinks,
