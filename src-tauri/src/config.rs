@@ -193,7 +193,8 @@ pub fn generate_guide_markdown_for_columns(columns: &[Column]) -> String {
 /// [`Config::guide_markdown`] の戻り値を `.spec-board/GUIDE.md` へ best-effort で書き込む。
 ///
 /// GUIDE.md は補助ファイルのため、I/O 失敗を呼び出し元へ返さず WARN ログのみを残す。
-/// logger 未初期化環境でも観測できるよう stderr fallback も併用する。
+/// WARN が有効でない環境（logger 未初期化、または WARN レベルが無効）でも
+/// 観測できるよう stderr fallback も併用する。
 ///
 /// @param project_root `.spec-board/GUIDE.md` を配置するプロジェクトルート。
 /// @param config GUIDE.md 本文生成に使う設定。
