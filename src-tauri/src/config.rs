@@ -431,6 +431,10 @@ pub fn clean_card_order(
 /// `" "` / 前後空白付き `"  Todo  "` は値そのものを比較対象とし、本関数では
 /// 空文字や空白を別エラーとして拒否しない（[`build_config_from_statuses`] が
 /// status 入力を未正規化のまま受ける規約と一貫させる）。
+///
+/// # Errors
+///
+/// - `columns` 内に同名カラムが複数存在する場合 → `Err(name)` を返す。`name` は最初に検出した重複カラム名そのもの（未正規化）。
 pub fn validate_unique_column_names(columns: &[Column]) -> Result<(), String> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(columns.len());
     for column in columns {
@@ -477,6 +481,10 @@ pub enum MigrationError {
 ///
 /// 将来 [`DEFAULT_VERSION`] を引き上げる際に `match from_version` の各アームへ実フィールド
 /// 変換ロジックを追加する。
+///
+/// # Errors
+///
+/// - `from_version` が `DEFAULT_VERSION` より大きい場合 → [`MigrationError::UnsupportedFromVersion`]（純粋関数として単独呼び出しされたときの防御。通常は [`load_or_default`] 側で [`LoadConfigError::UnknownFutureVersion`] により先に弾かれる）
 pub fn migrate_config(
     value: serde_json::Value,
     from_version: u32,
