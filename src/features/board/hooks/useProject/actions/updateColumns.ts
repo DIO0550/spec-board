@@ -1,4 +1,9 @@
 import {
+  ProjectColumns,
+  type ProjectColumnsValidationError,
+} from "@/domains/project-columns";
+import type { ProjectData } from "@/domains/project-data";
+import {
   getColumns as getColumnsInvoke,
   updateColumns as updateColumnsInvoke,
 } from "@/lib/tauri";
@@ -9,11 +14,9 @@ import {
   type ProjectCommandQueue,
   type ProjectVersion,
 } from "../concurrency";
-import { ProjectColumns } from "../domain/projectColumns";
-import type { ProjectData } from "../domain/projectData";
-import { ProjectState } from "../domain/projectState";
 import { ProjectError } from "../errors";
 import type { ProjectAction, ProjectState as ProjectStateT } from "../reducer";
+import { ProjectSessionState } from "../state/projectSessionState";
 import { ColumnsCommand, type ColumnsCommandBuilder } from "./columnsCommand";
 
 export type UpdateColumnsActionDeps = {
@@ -37,6 +40,15 @@ const switchedProject = (): ResultT<{ applied: boolean }, ProjectError> =>
   Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
 
 /**
+ * ProjectColumns の domain validation error を useProject の error 型に変換する。
+ *
+ * @param error column domain validation error
+ * @returns useProject が呼び出し側に返す invalid-state error
+ */
+const toProjectError = (error: ProjectColumnsValidationError): ProjectError =>
+  ProjectError.invalidState(error.message);
+
+/**
  * column 更新 command を解決・検証し、Tauri update_columns と state 反映を直列実行する。
  *
  * @param deps column 更新に必要な queue / version / state / dispatch 依存
@@ -47,7 +59,7 @@ export const updateColumnsAction = (
   deps: UpdateColumnsActionDeps,
   command: ColumnsCommand | ColumnsCommandBuilder,
 ): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
-  if (!ProjectState.canAcceptDataCommand(deps.getState())) {
+  if (!ProjectSessionState.canAcceptDataCommand(deps.getState())) {
     return Promise.resolve(Result.err(ProjectError.invalidState()));
   }
 
@@ -57,7 +69,7 @@ export const updateColumnsAction = (
       return switchedProject();
     }
 
-    const visibleData = ProjectState.visibleData(deps.getState());
+    const visibleData = ProjectSessionState.visibleData(deps.getState());
     if (visibleData === null) {
       return Result.err(ProjectError.invalidState());
     }
@@ -106,7 +118,7 @@ export const updateColumnsAction = (
       commandToApply = resolved.value;
     }
 
-    const knownDoneColumn = ProjectState.visibleData(
+    const knownDoneColumn = ProjectSessionState.visibleData(
       deps.getState(),
     )?.doneColumn;
     const validation = ProjectColumns.validateDoneColumn(
@@ -114,7 +126,7 @@ export const updateColumnsAction = (
       commandToApply,
     );
     if (!validation.ok) {
-      return Result.err(validation.error);
+      return Result.err(toProjectError(validation.error));
     }
 
     if (!isProjectCurrent(deps.projectVersion, version)) {

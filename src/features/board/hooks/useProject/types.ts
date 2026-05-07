@@ -9,8 +9,8 @@ import type {
   ColumnsCommand,
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
-import type { ProjectState } from "./domain/projectState";
 import type { ProjectError } from "./errors";
+import type { ProjectSessionState } from "./state/projectSessionState";
 
 export type {
   ColumnsCommand,
@@ -24,7 +24,7 @@ export type UseProjectOptions = {
 };
 
 export type UseProjectResult = {
-  state: ProjectState;
+  state: ProjectSessionState;
   /** ディレクトリダイアログを開いて project を読み込む。 */
   openProject: () => Promise<void>;
   /**

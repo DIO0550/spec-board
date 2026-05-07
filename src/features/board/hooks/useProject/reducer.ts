@@ -1,17 +1,18 @@
-import type { ColumnRename, TauriError } from "@/lib/tauri";
-import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { ProjectColumnRename } from "@/domains/project-columns";
 import {
   ProjectData as ProjectDataDomain,
   type ProjectData as ProjectDataT,
-} from "./domain/projectData";
+} from "@/domains/project-data";
+import type { TauriError } from "@/lib/tauri";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
 import {
-  ProjectState as ProjectStateDomain,
-  type ProjectState as ProjectStateT,
-} from "./domain/projectState";
+  ProjectSessionState,
+  type ProjectSessionState as ProjectSessionStateT,
+} from "./state/projectSessionState";
 
 export type ProjectData = ProjectDataT;
-export type ProjectState = ProjectStateT;
+export type ProjectState = ProjectSessionStateT;
 
 export type ProjectAction =
   | { type: "open-start"; path: string }
@@ -23,16 +24,16 @@ export type ProjectAction =
   | {
       type: "columns-replaced";
       columns: Column[];
-      renames?: ColumnRename[];
+      renames?: ProjectColumnRename[];
       doneColumn?: string;
     }
   | { type: "done-column-refreshed"; doneColumn: string }
   | { type: "reset" };
 
-export const initialState: ProjectState = ProjectStateDomain.initial;
+export const initialState: ProjectState = ProjectSessionState.initial;
 
 /**
- * useProject の state transition を domain companion object に委譲して適用する。
+ * useProject の state transition を session state と domain API に委譲して適用する。
  *
  * @param state 現在の ProjectState
  * @param action 適用する ProjectAction
@@ -44,17 +45,17 @@ export const reducer = (
 ): ProjectState => {
   switch (action.type) {
     case "open-start":
-      return ProjectStateDomain.openStart(state, action.path);
+      return ProjectSessionState.openStart(state, action.path);
     case "open-succeed":
-      return ProjectStateDomain.openSucceed(action.path, action.data);
+      return ProjectSessionState.openSucceed(action.path, action.data);
     case "open-fail":
-      return ProjectStateDomain.openFail(state, action.path, action.error);
+      return ProjectSessionState.openFail(state, action.path, action.error);
     case "task-created":
-      return ProjectStateDomain.updateData(state, (data) =>
+      return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.applyTaskCreated(data, action.task),
       );
     case "task-updated":
-      return ProjectStateDomain.updateData(state, (data) =>
+      return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.applyTaskUpdated(
           data,
           action.originalFilePath,
@@ -62,11 +63,11 @@ export const reducer = (
         ),
       );
     case "task-deleted":
-      return ProjectStateDomain.updateData(state, (data) =>
+      return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.applyTaskDeleted(data, action.filePath),
       );
     case "columns-replaced":
-      return ProjectStateDomain.updateData(state, (data) =>
+      return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.replaceColumns(data, {
           columns: action.columns,
           renames: action.renames,
@@ -74,11 +75,11 @@ export const reducer = (
         }),
       );
     case "done-column-refreshed":
-      return ProjectStateDomain.updateData(state, (data) =>
+      return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.refreshDoneColumn(data, action.doneColumn),
       );
     case "reset":
-      return ProjectStateDomain.reset();
+      return ProjectSessionState.reset();
     default: {
       action satisfies never;
       return state;
