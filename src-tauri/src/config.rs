@@ -1420,14 +1420,19 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         let guide_path = dir.join("GUIDE.md");
         std::fs::write(&guide_path, "old").unwrap();
-        let original = std::fs::metadata(&guide_path).unwrap().permissions();
-        let mut perms = original.clone();
-        perms.set_mode(0o000);
-        std::fs::set_permissions(&guide_path, perms).unwrap();
+        // tmp ファイル + rename で置き換える実装のため、書き込み失敗を再現するには
+        // GUIDE.md ではなく親ディレクトリ .spec-board/ の書き込み権限を落とす必要がある。
+        let original_dir_perms = std::fs::metadata(&dir).unwrap().permissions();
+        let mut perms = original_dir_perms.clone();
+        perms.set_mode(0o500);
+        std::fs::set_permissions(&dir, perms).unwrap();
 
         write_guide_markdown_best_effort(tmp.path(), &Config::default());
 
-        std::fs::set_permissions(&guide_path, original).unwrap();
+        std::fs::set_permissions(&dir, original_dir_perms).unwrap();
+
+        let after = std::fs::read_to_string(&guide_path).unwrap();
+        assert_eq!(after, "old");
     }
 
     #[test]
