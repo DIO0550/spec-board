@@ -1428,12 +1428,20 @@ mod tests {
         perms.set_mode(0o500);
         std::fs::set_permissions(&dir, perms).unwrap();
 
+        // root / 権限昇格環境では chmod を無視して書き込めてしまうため、
+        // 実際に書き込めない環境かを probe で判定し、その場合のみ内容変化を検証する。
+        let probe = dir.join("__probe");
+        let actually_unwritable = std::fs::write(&probe, b"x").is_err();
+        let _ = std::fs::remove_file(&probe);
+
         write_guide_markdown_best_effort(tmp.path(), &Config::default());
 
         std::fs::set_permissions(&dir, original_dir_perms).unwrap();
 
-        let after = std::fs::read_to_string(&guide_path).unwrap();
-        assert_eq!(after, "old");
+        if actually_unwritable {
+            let after = std::fs::read_to_string(&guide_path).unwrap();
+            assert_eq!(after, "old");
+        }
     }
 
     #[test]
