@@ -35,6 +35,11 @@ export const parentReferencesTaskPath = (
   return parentLookupPath === normalizeTaskPathForLookup(filePath);
 };
 
+/**
+ * parent 参照を lookup 用に正規化する。絶対 path / Windows drive prefix は対象外として undefined を返す。
+ * @param parent Task.hierarchy.parentFilePath
+ * @returns 正規化済み path、対象外なら undefined
+ */
 const normalizeParentPathForLookup = (parent: string): string | undefined => {
   if (parent === "" || parent.startsWith("/") || parent.startsWith("\\")) {
     return undefined;
@@ -52,6 +57,12 @@ const normalizeParentPathForLookup = (parent: string): string | undefined => {
   return normalized;
 };
 
+/**
+ * `/` 区切り path を正規化する。空セグメント / `.` を除去し、必要に応じて drive prefix セグメントも落とす。
+ * @param pathText `/` 区切りに揃えた path 文字列
+ * @param removeDrivePrefix `:` で終わるセグメント（drive prefix）も除去するか
+ * @returns 正規化済み path
+ */
 const normalizePathParts = (
   pathText: string,
   removeDrivePrefix: boolean,

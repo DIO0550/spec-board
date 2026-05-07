@@ -66,6 +66,12 @@ const syncParentChildren = (
   });
 };
 
+/**
+ * 削除済み path への参照を hierarchy / links から取り除いた `Task` を返す。
+ * @param task 整合させる task
+ * @param filePath 削除済み task の filePath
+ * @returns 参照を取り除いた task（変化がなければ元 task と同一参照）
+ */
 const applyTaskDeletedToTask = (task: Task, filePath: string): Task =>
   TaskLinks.removeLinkedTask(
     TaskHierarchy.detachDeletedTask(task, filePath),

@@ -21,7 +21,12 @@ import type { ProjectAction, ProjectState as ProjectStateT } from "../reducer";
 export type TaskActionDeps = {
   projectVersion: ProjectVersion;
   projectCommandQueue: ProjectCommandQueue;
+  /** 最新の project state を返す getter。 */
   getState: () => ProjectStateT;
+  /**
+   * reducer に同期的に action を投げる dispatcher。
+   * @param action 反映する ProjectAction
+   */
   dispatchSync: (action: ProjectAction) => void;
 };
 
@@ -52,7 +57,7 @@ export const createTaskAction = (
   params: CreateTaskParams,
 ): Promise<ResultT<Task, ProjectError>> => {
   const preflight = ensureLoaded<Task>(deps);
-  if (!preflight.ok) return Promise.resolve(preflight);
+  if (!preflight.ok) {return Promise.resolve(preflight);}
 
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
@@ -87,7 +92,7 @@ export const updateTaskAction = (
   params: UpdateTaskParams,
 ): Promise<ResultT<Task, ProjectError>> => {
   const preflight = ensureLoaded<Task>(deps);
-  if (!preflight.ok) return Promise.resolve(preflight);
+  if (!preflight.ok) {return Promise.resolve(preflight);}
 
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
@@ -126,7 +131,7 @@ export const deleteTaskAction = (
   params: DeleteTaskParams,
 ): Promise<ResultT<void, ProjectError>> => {
   const preflight = ensureLoaded<void>(deps);
-  if (!preflight.ok) return Promise.resolve(preflight);
+  if (!preflight.ok) {return Promise.resolve(preflight);}
 
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {

@@ -9,6 +9,12 @@ export type TaskHierarchy = {
   childFilePaths: string[];
 };
 
+/**
+ * `children` から指定 path を除いた配列を返す。含まれていなければ元配列をそのまま返す。
+ * @param children 元の child filePath 配列
+ * @param filePath 除去対象の path
+ * @returns 除去後の配列
+ */
 const removeChild = (children: string[], filePath: string): string[] => {
   if (!children.includes(filePath)) {
     return children;
@@ -17,6 +23,12 @@ const removeChild = (children: string[], filePath: string): string[] => {
   return children.filter((child) => child !== filePath);
 };
 
+/**
+ * `parent` 参照が `filePath` を指していれば剥がして undefined を返す。
+ * @param parent 現在の parentFilePath
+ * @param filePath 比較対象の path
+ * @returns 参照が外れた後の parentFilePath
+ */
 const detachParent = (
   parent: string | undefined,
   filePath: string,
@@ -28,6 +40,12 @@ const detachParent = (
   return undefined;
 };
 
+/**
+ * 階層情報から削除済み path への parent / child 参照を剥がした `TaskHierarchy` を返す。
+ * @param hierarchy 元の階層情報
+ * @param deletedFilePath 削除済み task の filePath
+ * @returns 参照を剥がした後の階層情報
+ */
 const detachDeletedPath = (
   hierarchy: TaskHierarchy,
   deletedFilePath: string,
@@ -36,6 +54,12 @@ const detachDeletedPath = (
   childFilePaths: removeChild(hierarchy.childFilePaths, deletedFilePath),
 });
 
+/**
+ * 2 つの `TaskHierarchy` で参照が変わっているか判定する。
+ * @param current 変更前の階層情報
+ * @param next 変更後の階層情報
+ * @returns parent/children のいずれかが変わっていれば true
+ */
 const hasHierarchyChanges = (
   current: TaskHierarchy,
   next: TaskHierarchy,

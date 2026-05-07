@@ -8,6 +8,11 @@ type TaskFixtureOverrides = Partial<Omit<Task, "links" | "hierarchy">> &
     reverseLinks?: string[];
   };
 
+/**
+ * テスト用に最小限のフィールドだけ指定して `Task` を生成するファクトリ。指定しないフィールドはダミー値で埋める。
+ * @param overrides id 必須、その他任意の上書きフィールド
+ * @returns 上書きを反映した `Task`
+ */
 export const makeTask = (overrides: TaskFixtureOverrides): Task => ({
   id: overrides.id,
   title: overrides.title ?? "t",

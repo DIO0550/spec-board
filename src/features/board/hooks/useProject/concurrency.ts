@@ -8,6 +8,8 @@ export type ProjectCommandQueue = {
   current: Promise<unknown>;
 };
 
+type AsyncProjectCommand<T> = () => Promise<T>;
+
 /**
  * 現在の project 世代を追跡する mutable token を作成する。
  *
@@ -93,7 +95,7 @@ export const isOpenRequestCurrent = (
  */
 export const enqueueProjectCommand = <T>(
   queue: ProjectCommandQueue,
-  run: () => Promise<T>,
+  run: AsyncProjectCommand<T>,
 ): Promise<T> => {
   const next = queue.current.then(run);
   queue.current = next.catch(() => undefined);

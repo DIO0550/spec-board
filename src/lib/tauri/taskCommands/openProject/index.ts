@@ -9,6 +9,11 @@ import type {
   OpenProjectRawPayload,
 } from "../types";
 
+/**
+ * Tauri 生 payload を UI 層が扱う `OpenProjectPayload` に変換する。
+ * @param payload Tauri から受け取った生 payload
+ * @returns Task ドメインに正規化済みの payload
+ */
 const toOpenProjectPayload = (
   payload: OpenProjectRawPayload,
 ): OpenProjectPayload => ({
