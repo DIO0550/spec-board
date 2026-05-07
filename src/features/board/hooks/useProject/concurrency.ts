@@ -8,7 +8,8 @@ export type ProjectCommandQueue = {
   current: Promise<unknown>;
 };
 
-type AsyncProjectCommand<T> = () => Promise<T>;
+/** project queue 上で実行される非同期 command。 */
+export type AsyncProjectCommand<T> = () => Promise<T>;
 
 /**
  * 現在の project 世代を追跡する mutable token を作成する。
