@@ -19,7 +19,12 @@ import { ColumnsCommand, type ColumnsCommandBuilder } from "./columnsCommand";
 export type UpdateColumnsActionDeps = {
   projectVersion: ProjectVersion;
   projectCommandQueue: ProjectCommandQueue;
+  /** 最新の project state を返す getter。 */
   getState: () => ProjectStateT;
+  /**
+   * reducer に同期的に action を投げる dispatcher。
+   * @param action 反映する ProjectAction
+   */
   dispatchSync: (action: ProjectAction) => void;
 };
 

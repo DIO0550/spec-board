@@ -23,7 +23,15 @@ export type OpenProjectActionDeps = {
   projectVersion: ProjectVersion;
   projectCommandQueue: ProjectCommandQueue;
   dialogOpening: DialogOpening;
+  /**
+   * reducer に同期的に action を投げる dispatcher。
+   * @param action 反映する ProjectAction
+   */
   dispatchSync: (action: ProjectAction) => void;
+  /**
+   * 失敗時に呼び出される任意のコールバック。
+   * @param error 通知する ProjectError
+   */
   onError?: (error: ProjectError) => void;
 };
 
