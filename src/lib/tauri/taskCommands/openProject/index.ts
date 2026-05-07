@@ -1,7 +1,20 @@
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
+import { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
-import type { OpenProjectParams, OpenProjectPayload } from "../types";
+import { Result as ResultDomain } from "@/utils/result";
+import type {
+  OpenProjectParams,
+  OpenProjectPayload,
+  OpenProjectRawPayload,
+} from "../types";
+
+const toOpenProjectPayload = (
+  payload: OpenProjectRawPayload,
+): OpenProjectPayload => ({
+  tasks: payload.tasks.map(Task.fromPayload),
+  columns: payload.columns,
+});
 
 /**
  * プロジェクトディレクトリを開き、タスク・カラム名一覧を取得する。
@@ -11,4 +24,6 @@ import type { OpenProjectParams, OpenProjectPayload } from "../types";
 export const openProject = (
   params: OpenProjectParams,
 ): Promise<Result<OpenProjectPayload, TauriError>> =>
-  invokeWrapped<OpenProjectPayload>("open_project", params);
+  invokeWrapped<OpenProjectRawPayload>("open_project", params).then((result) =>
+    ResultDomain.map(result, toOpenProjectPayload),
+  );

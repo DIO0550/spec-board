@@ -1,5 +1,5 @@
 import type { Priority } from "@/domains/priority";
-import type { Task } from "@/types/task";
+import type { Task, TaskPayload } from "@/types/task";
 
 /** open_project 引数。 */
 export type OpenProjectParams = {
@@ -11,6 +11,14 @@ export type OpenProjectParams = {
 export type OpenProjectPayload = {
   /** プロジェクト内のタスク一覧 */
   tasks: Task[];
+  /** カラム名一覧 */
+  columns: string[];
+};
+
+/** open_project が Tauri IPC から返す raw payload。 */
+export type OpenProjectRawPayload = {
+  /** プロジェクト内の flat task payload 一覧 */
+  tasks: TaskPayload[];
   /** カラム名一覧 */
   columns: string[];
 };

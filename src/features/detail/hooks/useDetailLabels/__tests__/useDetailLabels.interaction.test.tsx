@@ -1,7 +1,7 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 import {
   type UseDetailLabelsArgs,
   type UseDetailLabelsResult,
@@ -25,18 +25,19 @@ afterEach(() => {
  * @param overrides - 上書きフィールド
  * @returns Task
  */
-const makeTask = (overrides: Partial<Task>): Task => ({
-  id: "t1",
-  title: "title",
-  status: "Todo",
-  labels: [],
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: "/p",
-  ...overrides,
-});
+const makeTask = (overrides: Partial<TaskPayload>): Task =>
+  Task.fromPayload({
+    id: "t1",
+    title: "title",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "/p",
+    ...overrides,
+  });
 
 /**
  * useDetailLabels の戻り値を観測する Probe。

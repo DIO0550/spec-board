@@ -51,12 +51,18 @@ const syncParentChildren = (
   return tasks.map((current) => {
     if (
       !parentReferencesTaskPath(parentFilePath, current.filePath) ||
-      current.children.includes(childFilePath)
+      current.hierarchy.childFilePaths.includes(childFilePath)
     ) {
       return current;
     }
 
-    return { ...current, children: [...current.children, childFilePath] };
+    return {
+      ...current,
+      hierarchy: {
+        ...current.hierarchy,
+        childFilePaths: [...current.hierarchy.childFilePaths, childFilePath],
+      },
+    };
   });
 };
 
@@ -78,7 +84,7 @@ export const ProjectData = {
     const tasksWithCreated = [...data.tasks, task];
     const tasksWithParentSync = syncParentChildren(
       tasksWithCreated,
-      task.parent,
+      task.hierarchy.parentFilePath,
       task.filePath,
     );
     return { ...data, tasks: tasksWithParentSync };

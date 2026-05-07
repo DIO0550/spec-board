@@ -1,20 +1,21 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 import { SubIssueProgress } from ".";
 
-const makeChild = (id: string, status: string, title: string): Task => ({
-  id,
-  title,
-  status,
-  labels: [],
-  parent: "tasks/parent.md",
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: `tasks/${id}.md`,
-});
+const makeChild = (id: string, status: string, title: string) =>
+  Task.fromPayload({
+    id,
+    title,
+    status,
+    labels: [],
+    parent: "tasks/parent.md",
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: `tasks/${id}.md`,
+  });
 
 const meta: Meta<typeof SubIssueProgress> = {
   component: SubIssueProgress,

@@ -3,9 +3,9 @@ import type { Task } from "@/types/task";
 /** Task の関連リンク情報 */
 export type TaskLinks = {
   /** 関連タスクのファイルパスの配列 */
-  links: string[];
+  linkedFilePaths: string[];
   /** 逆方向リンクのファイルパスの配列（links から逆引き） */
-  reverseLinks: string[];
+  reverseLinkedFilePaths: string[];
 };
 
 const removePath = (paths: string[], filePath: string): string[] => {
@@ -20,12 +20,16 @@ const removeLinkedPath = (
   taskLinks: TaskLinks,
   linkedFilePath: string,
 ): TaskLinks => ({
-  links: removePath(taskLinks.links, linkedFilePath),
-  reverseLinks: removePath(taskLinks.reverseLinks, linkedFilePath),
+  linkedFilePaths: removePath(taskLinks.linkedFilePaths, linkedFilePath),
+  reverseLinkedFilePaths: removePath(
+    taskLinks.reverseLinkedFilePaths,
+    linkedFilePath,
+  ),
 });
 
 const hasLinkChanges = (current: TaskLinks, next: TaskLinks): boolean =>
-  next.links !== current.links || next.reverseLinks !== current.reverseLinks;
+  next.linkedFilePaths !== current.linkedFilePaths ||
+  next.reverseLinkedFilePaths !== current.reverseLinkedFilePaths;
 
 export const TaskLinks = {
   /**
@@ -36,12 +40,12 @@ export const TaskLinks = {
    * @returns link 関係が変われば更新後 task、変わらなければ元 task
    */
   removeLinkedTask: (task: Task, linkedFilePath: string): Task => {
-    const taskLinks = removeLinkedPath(task, linkedFilePath);
+    const taskLinks = removeLinkedPath(task.links, linkedFilePath);
 
-    if (!hasLinkChanges(task, taskLinks)) {
+    if (!hasLinkChanges(task.links, taskLinks)) {
       return task;
     }
 
-    return { ...task, ...taskLinks };
+    return { ...task, links: taskLinks };
   },
 } as const;

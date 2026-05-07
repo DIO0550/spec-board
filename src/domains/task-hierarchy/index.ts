@@ -4,9 +4,9 @@ import type { Task } from "@/types/task";
 /** Task の親子階層情報 */
 export type TaskHierarchy = {
   /** 親タスクのファイルパス（親がない場合は未設定） */
-  parent?: string;
+  parentFilePath?: string;
   /** 子タスクのファイルパスの配列（parent から逆引き） */
-  children: string[];
+  childFilePaths: string[];
 };
 
 const removeChild = (children: string[], filePath: string): string[] => {
@@ -32,15 +32,16 @@ const detachDeletedPath = (
   hierarchy: TaskHierarchy,
   deletedFilePath: string,
 ): TaskHierarchy => ({
-  parent: detachParent(hierarchy.parent, deletedFilePath),
-  children: removeChild(hierarchy.children, deletedFilePath),
+  parentFilePath: detachParent(hierarchy.parentFilePath, deletedFilePath),
+  childFilePaths: removeChild(hierarchy.childFilePaths, deletedFilePath),
 });
 
 const hasHierarchyChanges = (
   current: TaskHierarchy,
   next: TaskHierarchy,
 ): boolean =>
-  next.parent !== current.parent || next.children !== current.children;
+  next.parentFilePath !== current.parentFilePath ||
+  next.childFilePaths !== current.childFilePaths;
 
 export const TaskHierarchy = {
   /**
@@ -51,12 +52,12 @@ export const TaskHierarchy = {
    * @returns 階層関係が変われば更新後 task、変わらなければ元 task
    */
   detachDeletedTask: (task: Task, deletedFilePath: string): Task => {
-    const hierarchy = detachDeletedPath(task, deletedFilePath);
+    const hierarchy = detachDeletedPath(task.hierarchy, deletedFilePath);
 
-    if (!hasHierarchyChanges(task, hierarchy)) {
+    if (!hasHierarchyChanges(task.hierarchy, hierarchy)) {
       return task;
     }
 
-    return { ...task, ...hierarchy };
+    return { ...task, hierarchy };
   },
 } as const;

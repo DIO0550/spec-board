@@ -1,7 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { initialTasks } from "@/test-fixtures";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 import { Column } from ".";
 
 const todoTasks = initialTasks.filter((t) => t.status === "Todo");
@@ -35,19 +35,21 @@ export const Empty: Story = {
   args: { tasks: [] },
 };
 
-const manyTasks: Task[] = Array.from({ length: 12 }, (_, i) => ({
-  id: `many-${i}`,
-  title: `タスク ${i + 1}`,
-  status: "Todo",
-  priority: i % 3 === 0 ? "High" : i % 3 === 1 ? "Medium" : "Low",
-  labels: i % 2 === 0 ? ["sample"] : [],
-  parent: undefined,
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: `tasks/many-${i}.md`,
-}));
+const manyTasks = Array.from({ length: 12 }, (_, i) =>
+  Task.fromPayload({
+    id: `many-${i}`,
+    title: `タスク ${i + 1}`,
+    status: "Todo",
+    priority: i % 3 === 0 ? "High" : i % 3 === 1 ? "Medium" : "Low",
+    labels: i % 2 === 0 ? ["sample"] : [],
+    parent: undefined,
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: `tasks/many-${i}.md`,
+  }),
+);
 
 export const ManyTasks: Story = {
   args: { tasks: manyTasks },

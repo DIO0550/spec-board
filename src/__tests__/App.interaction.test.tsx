@@ -21,7 +21,7 @@ import {
   updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
 vi.mock("@/lib/tauri", async () => {
@@ -106,7 +106,7 @@ afterEach(() => {
   root = null;
 });
 
-const taskA: Task = {
+const taskA: Task = Task.fromPayload({
   id: "a",
   title: "A タスク",
   status: "Todo",
@@ -116,7 +116,7 @@ const taskA: Task = {
   reverseLinks: [],
   body: "",
   filePath: "tasks/a.md",
-};
+});
 
 const payload: OpenProjectPayload = {
   tasks: [taskA],
@@ -272,7 +272,7 @@ test("Board の '+追加' → Modal 送信 → createTask invoke が呼ばれ ta
   mountApp();
   await openSuccessfully();
 
-  const created: Task = {
+  const created: Task = Task.fromPayload({
     id: "new",
     title: "新規タスク",
     status: "Todo",
@@ -282,7 +282,7 @@ test("Board の '+追加' → Modal 送信 → createTask invoke が呼ばれ ta
     reverseLinks: [],
     body: "",
     filePath: "tasks/新規タスク.md",
-  };
+  });
   createTaskMock.mockResolvedValueOnce(Result.ok(created));
 
   await act(async () => {
@@ -546,7 +546,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
 
   // 同じ filePath (tasks/a.md) を持つ別 project B を開く
   // B の task title は "B プロジェクトの A" として、A と区別する
-  const taskAInProjectB: Task = {
+  const taskAInProjectB: Task = Task.fromPayload({
     id: "a",
     title: "B プロジェクトの A",
     status: "Done",
@@ -556,7 +556,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
     reverseLinks: [],
     body: "",
     filePath: "tasks/a.md",
-  };
+  });
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/project-b"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({ tasks: [taskAInProjectB], columns: ["Todo", "Done"] }),

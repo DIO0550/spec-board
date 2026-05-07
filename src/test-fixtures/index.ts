@@ -1,5 +1,5 @@
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 
 /** Storybook 用の固定カラム配列。 */
 export const initialColumns: Column[] = [
@@ -8,8 +8,7 @@ export const initialColumns: Column[] = [
   { name: "Done", order: 2 },
 ];
 
-/** Storybook 用の固定タスク配列。 */
-export const initialTasks: Task[] = [
+const initialTaskPayloads: TaskPayload[] = [
   {
     id: "task-1",
     title: "ログイン画面のバグ修正",
@@ -22,6 +21,8 @@ export const initialTasks: Task[] = [
     reverseLinks: [],
     body: "ログイン画面でエラーメッセージが表示されない問題を修正する。",
     filePath: "tasks/fix-login-bug.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-2",
@@ -35,6 +36,8 @@ export const initialTasks: Task[] = [
     reverseLinks: ["tasks/fix-login-bug.md"],
     body: "商品一覧ページにキーワード検索機能を追加する。\n\n## 受け入れ基準\n\n- キーワード入力で部分一致検索できる\n- 検索結果が0件の場合メッセージを表示する",
     filePath: "tasks/search-feature.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-3",
@@ -48,6 +51,8 @@ export const initialTasks: Task[] = [
     reverseLinks: [],
     body: "ログインフォームのレイアウトを調整する。",
     filePath: "tasks/login-ui-fix.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-4",
@@ -60,6 +65,8 @@ export const initialTasks: Task[] = [
     reverseLinks: [],
     body: "プロジェクトのREADMEを最新の仕様に合わせて更新する。",
     filePath: "tasks/update-readme.md",
+    extras: {},
+    warnings: [],
   },
   {
     id: "task-5",
@@ -73,5 +80,10 @@ export const initialTasks: Task[] = [
     reverseLinks: [],
     body: "RESTful API のエンドポイント設計を行う。",
     filePath: "tasks/api-design.md",
+    extras: {},
+    warnings: [],
   },
 ];
+
+/** Storybook 用の固定タスク配列。 */
+export const initialTasks = initialTaskPayloads.map(Task.fromPayload);

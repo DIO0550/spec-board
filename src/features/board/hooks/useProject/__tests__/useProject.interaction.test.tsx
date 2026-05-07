@@ -23,7 +23,7 @@ import {
   updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { type UseProjectOptions, type UseProjectResult, useProject } from "..";
 
@@ -146,7 +146,7 @@ const renderHook = (args: UseProjectOptions = {}) => {
   };
 };
 
-const taskA: Task = {
+const taskA: Task = Task.fromPayload({
   id: "a",
   title: "A",
   status: "Todo",
@@ -156,9 +156,9 @@ const taskA: Task = {
   reverseLinks: [],
   body: "",
   filePath: "tasks/a.md",
-};
+});
 
-const taskB: Task = {
+const taskB: Task = Task.fromPayload({
   id: "b",
   title: "B",
   status: "Done",
@@ -168,7 +168,7 @@ const taskB: Task = {
   reverseLinks: [],
   body: "",
   filePath: "tasks/b.md",
-};
+});
 
 const payload: OpenProjectPayload = {
   tasks: [taskA],

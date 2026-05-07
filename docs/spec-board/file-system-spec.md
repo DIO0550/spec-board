@@ -71,6 +71,8 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 - `extras`: 定義外フロントマターを JSON 互換値として保持したオブジェクト
 - `warnings`: `title` / `status` の fallback や `parent` / `extras` の型不一致など、Task 生成を継続できる非致命警告の一覧
 
+フロントエンドでは、この Tauri IPC payload を `TaskPayload` として受け取り、domain model の `Task` に変換して扱う。`Task` では `parent` / `children` は `hierarchy.parentFilePath` / `hierarchy.childFilePaths` に、`links` / `reverseLinks` は `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に格納する。IPC payload と markdown frontmatter のフィールド名は互換性維持のため flat なまま変更しない。
+
 **エラー**:
 
 | ケース | 条件 | エラーメッセージ |

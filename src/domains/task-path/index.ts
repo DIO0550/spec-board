@@ -12,7 +12,7 @@ export const normalizeTaskPathForLookup = (path: string): string => {
 
 /**
  * parent 参照が Task.filePath を指しているかを判定する。
- * @param parent - Task.parent
+ * @param parent - Task.hierarchy.parentFilePath
  * @param filePath - 比較対象の Task.filePath
  * @returns parent が filePath を指す場合 true
  */

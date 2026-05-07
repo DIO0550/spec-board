@@ -49,6 +49,7 @@ web_modules/
 
 # tsc -b emit artifact from typecheck (composite tsconfig.node.json)
 vite.config.js
+vite.config.d.ts
 
 # Optional npm cache directory
 .npm
