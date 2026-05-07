@@ -292,11 +292,52 @@ fn replace_file_with_tmp(tmp: &Path, dst: &Path) -> std::io::Result<()> {
     match std::fs::rename(tmp, dst) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            std::fs::remove_file(dst)?;
-            std::fs::rename(tmp, dst)
+            replace_existing_file_with_tmp_via_backup(tmp, dst)
         }
         Err(e) => Err(e),
     }
+}
+
+#[cfg(windows)]
+fn replace_existing_file_with_tmp_via_backup(tmp: &Path, dst: &Path) -> std::io::Result<()> {
+    let backup = unique_sibling_path(dst, "bak");
+    std::fs::rename(dst, &backup)?;
+    match std::fs::rename(tmp, dst) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&backup);
+            Ok(())
+        }
+        Err(rename_err) => {
+            if let Err(restore_err) = std::fs::rename(&backup, dst) {
+                return Err(std::io::Error::new(
+                    rename_err.kind(),
+                    format!(
+                        "failed to replace `{dst}` with `{tmp}` ({rename_err}); \
+                         restoring backup `{backup}` also failed: {restore_err}",
+                        dst = dst.display(),
+                        tmp = tmp.display(),
+                        backup = backup.display(),
+                    ),
+                ));
+            }
+            Err(rename_err)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn unique_sibling_path(base: &Path, suffix: &str) -> PathBuf {
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let counter = GUIDE_MARKDOWN_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file_name = base
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let parent = base.parent().unwrap_or_else(|| Path::new(""));
+    parent.join(format!("{file_name}.{suffix}.{pid}.{nanos}.{counter}"))
 }
 
 /// 指定パスが存在するディレクトリであることを検証する。
