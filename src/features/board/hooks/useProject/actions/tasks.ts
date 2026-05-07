@@ -94,7 +94,9 @@ export const updateTaskAction = (
   params: UpdateTaskParams,
 ): Promise<ResultT<Task, ProjectError>> => {
   const preflight = ensureLoaded<Task>(deps);
-  if (!preflight.ok) {return Promise.resolve(preflight);}
+  if (!preflight.ok) {
+    return Promise.resolve(preflight);
+  }
 
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
