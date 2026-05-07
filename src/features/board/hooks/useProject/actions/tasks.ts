@@ -135,7 +135,9 @@ export const deleteTaskAction = (
   params: DeleteTaskParams,
 ): Promise<ResultT<void, ProjectError>> => {
   const preflight = ensureLoaded<void>(deps);
-  if (!preflight.ok) {return Promise.resolve(preflight);}
+  if (!preflight.ok) {
+    return Promise.resolve(preflight);
+  }
 
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
