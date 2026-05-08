@@ -23,7 +23,12 @@
 //! `AppState` の `Mutex` フィールドはすべて private にしてある。
 //! 公開アクセサを通すことで以下を保証する。
 //!
-//! - `PoisonError` を `AppStateError::LockPoisoned` へ統一変換する。
+//! - `AppState` 自身が保持する `Mutex`（`project_path` / `config` /
+//!   `tasks_cache` / `watcher_handle`）の `PoisonError` を
+//!   `AppStateError::LockPoisoned` へ統一変換する。
+//!   ただし `write_ignore` は `WriteIgnoreRegistry` 内部で独自の `Mutex` を
+//!   持つため例外で、forwarder 経由の操作は `WriteIgnoreError::LockPoisoned`
+//!   をそのまま返す（`AppStateError` には変換しない）。
 //! - lock 取得順序の運用規約を caller に強制する。
 //! - `watcher_handle` の差し替え時に必ず旧ハンドルへ `stop()` を呼ぶ
 //!   不変条件を維持する。
