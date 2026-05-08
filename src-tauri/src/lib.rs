@@ -1,6 +1,9 @@
 pub mod config;
 pub mod frontmatter;
+pub mod state;
 pub mod task_index;
+
+use crate::state::AppState;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 /// Returns a greeting string for the given name.
@@ -22,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![greet])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
