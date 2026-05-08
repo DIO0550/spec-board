@@ -15,8 +15,8 @@ import {
   type ProjectVersion,
 } from "../concurrency";
 import { ProjectError } from "../errors";
-import { ProjectState } from "../domain/projectState";
 import type { ProjectAction, ProjectState as ProjectStateT } from "../reducer";
+import { ProjectSessionState } from "../state/projectSessionState";
 
 export type TaskActionDeps = {
   projectVersion: ProjectVersion;
@@ -39,7 +39,7 @@ export type TaskActionDeps = {
 const ensureLoaded = <T>({
   getState,
 }: Pick<TaskActionDeps, "getState">): ResultT<T, ProjectError> => {
-  if (!ProjectState.canAcceptDataCommand(getState())) {
+  if (!ProjectSessionState.canAcceptDataCommand(getState())) {
     return Result.err(ProjectError.invalidState());
   }
   return Result.ok(undefined as T);
@@ -64,7 +64,7 @@ export const createTaskAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (
-      !ProjectState.canAcceptDataCommand(deps.getState()) ||
+      !ProjectSessionState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
@@ -101,7 +101,7 @@ export const updateTaskAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (
-      !ProjectState.canAcceptDataCommand(deps.getState()) ||
+      !ProjectSessionState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
@@ -142,7 +142,7 @@ export const deleteTaskAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (
-      !ProjectState.canAcceptDataCommand(deps.getState()) ||
+      !ProjectSessionState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));

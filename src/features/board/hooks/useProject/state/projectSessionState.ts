@@ -1,7 +1,7 @@
+import type { ProjectData } from "@/domains/project-data";
 import type { TauriError } from "@/lib/tauri";
-import type { ProjectData } from "./projectData";
 
-export type ProjectState =
+export type ProjectSessionState =
   | { kind: "idle" }
   | {
       kind: "loading";
@@ -13,26 +13,26 @@ export type ProjectState =
 
 type ProjectDataMapper = (data: ProjectData) => ProjectData;
 
-export const ProjectState = {
-  initial: { kind: "idle" } satisfies ProjectState,
+export const ProjectSessionState = {
+  initial: { kind: "idle" } satisfies ProjectSessionState,
 
   /**
    * task / column command を受け付けられる state か判定する。
    *
-   * @param state 現在の ProjectState
+   * @param state 現在の ProjectSessionState
    * @returns loaded または loading.previousLoaded なら true
    */
-  canAcceptDataCommand: (state: ProjectState): boolean =>
+  canAcceptDataCommand: (state: ProjectSessionState): boolean =>
     state.kind === "loaded" ||
     (state.kind === "loading" && state.previousLoaded !== undefined),
 
   /**
    * UI と command builder が参照できる ProjectData を取り出す。
    *
-   * @param state 現在の ProjectState
+   * @param state 現在の ProjectSessionState
    * @returns loaded の data、loading.previousLoaded の data、それ以外なら null
    */
-  visibleData: (state: ProjectState): ProjectData | null => {
+  visibleData: (state: ProjectSessionState): ProjectData | null => {
     if (state.kind === "loaded") {
       return state.data;
     }
@@ -45,11 +45,14 @@ export const ProjectState = {
   /**
    * project open 開始時の loading state を作る。
    *
-   * @param _state 現在の ProjectState
+   * @param state 現在の ProjectSessionState
    * @param path open 対象 path
    * @returns previousLoaded を退避した loading state
    */
-  openStart: (state: ProjectState, path: string): ProjectState => {
+  openStart: (
+    state: ProjectSessionState,
+    path: string,
+  ): ProjectSessionState => {
     const previousLoaded =
       state.kind === "loaded"
         ? { path: state.path, data: state.data }
@@ -66,7 +69,7 @@ export const ProjectState = {
    * @param data 読み込んだ ProjectData
    * @returns loaded state
    */
-  openSucceed: (path: string, data: ProjectData): ProjectState => ({
+  openSucceed: (path: string, data: ProjectData): ProjectSessionState => ({
     kind: "loaded",
     path,
     data,
@@ -75,16 +78,16 @@ export const ProjectState = {
   /**
    * project open 失敗時の state を作る。
    *
-   * @param state 現在の ProjectState
+   * @param state 現在の ProjectSessionState
    * @param path open に失敗した project path
    * @param error Tauri command 由来の error
    * @returns previousLoaded があれば loaded に復元し、なければ error state
    */
   openFail: (
-    state: ProjectState,
+    state: ProjectSessionState,
     path: string,
     error: TauriError,
-  ): ProjectState => {
+  ): ProjectSessionState => {
     if (state.kind === "loading" && state.previousLoaded !== undefined) {
       return {
         kind: "loaded",
@@ -98,14 +101,14 @@ export const ProjectState = {
   /**
    * loaded state の ProjectData だけを更新する。
    *
-   * @param state 現在の ProjectState
+   * @param state 現在の ProjectSessionState
    * @param update ProjectData の変換関数
    * @returns loaded / loading.previousLoaded なら data 更新後 state、それ以外は元 state
    */
   updateData: (
-    state: ProjectState,
+    state: ProjectSessionState,
     update: ProjectDataMapper,
-  ): ProjectState => {
+  ): ProjectSessionState => {
     if (state.kind === "loaded") {
       return { ...state, data: update(state.data) };
     }
@@ -126,5 +129,5 @@ export const ProjectState = {
    *
    * @returns idle state
    */
-  reset: (): ProjectState => ProjectState.initial,
+  reset: (): ProjectSessionState => ProjectSessionState.initial,
 } as const;

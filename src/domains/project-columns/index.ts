@@ -1,12 +1,20 @@
-import type { ColumnRename } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import { Result, type Result as ResultT } from "@/utils/result";
-import { ProjectError } from "../errors";
+
+export type ProjectColumnRename = {
+  from: string;
+  to: string;
+};
 
 export type ProjectColumnsChange = {
   columns: Column[];
-  renames?: ColumnRename[];
+  renames?: ProjectColumnRename[];
   doneColumn?: string;
+};
+
+export type ProjectColumnsValidationError = {
+  code: "doneColumnRemoved" | "doneColumnNotInColumns";
+  message: string;
 };
 
 /**
@@ -44,33 +52,32 @@ export const ProjectColumns = {
    *
    * @param knownDoneColumn 現在判明している doneColumn
    * @param change 適用予定の column 変更
-   * @returns 不変条件を満たすなら ok、壊す可能性があれば invalid-state
+   * @returns 不変条件を満たすなら ok、壊す可能性があれば domain error
    */
   validateDoneColumn: (
     knownDoneColumn: string | undefined,
     change: ProjectColumnsChange,
-  ): ResultT<void, ProjectError> => {
+  ): ResultT<void, ProjectColumnsValidationError> => {
     if (
       knownDoneColumn !== undefined &&
       !change.columns.some((column) => column.name === knownDoneColumn) &&
       change.doneColumn === undefined
     ) {
-      return Result.err(
-        ProjectError.invalidState(
+      return Result.err({
+        code: "doneColumnRemoved",
+        message:
           "doneColumn を削除する操作は新しい doneColumn の指定が必要です",
-        ),
-      );
+      });
     }
 
     if (
       change.doneColumn !== undefined &&
       !change.columns.some((column) => column.name === change.doneColumn)
     ) {
-      return Result.err(
-        ProjectError.invalidState(
-          `doneColumn "${change.doneColumn}" は columns に存在しません`,
-        ),
-      );
+      return Result.err({
+        code: "doneColumnNotInColumns",
+        message: `doneColumn "${change.doneColumn}" は columns に存在しません`,
+      });
     }
 
     return Result.ok(undefined);

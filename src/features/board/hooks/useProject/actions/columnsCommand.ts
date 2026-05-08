@@ -1,12 +1,13 @@
-import { type ColumnRename, TauriError } from "@/lib/tauri";
+import type { ProjectColumnRename } from "@/domains/project-columns";
+import type { ProjectData } from "@/domains/project-data";
+import { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import { Result, type Result as ResultT } from "@/utils/result";
-import type { ProjectData } from "../domain/projectData";
 import { ProjectError } from "../errors";
 
 export type ColumnsCommand = {
   columns: Column[];
-  renames?: ColumnRename[];
+  renames?: ProjectColumnRename[];
   doneColumn?: string;
 };
 
