@@ -66,8 +66,8 @@ pub struct AppState {
     project_path: Mutex<Option<PathBuf>>,
     config: Mutex<Option<Config>>,
     tasks_cache: Mutex<HashMap<PathBuf, Task>>,
-    write_ignore: WriteIgnoreRegistry,
     watcher_handle: Mutex<Option<BoxedWatcherHandle>>,
+    write_ignore: WriteIgnoreRegistry,
 }
 
 impl AppState {
@@ -84,8 +84,8 @@ impl AppState {
             project_path: Mutex::new(None),
             config: Mutex::new(None),
             tasks_cache: Mutex::new(HashMap::new()),
-            write_ignore: WriteIgnoreRegistry::new(),
             watcher_handle: Mutex::new(None),
+            write_ignore: WriteIgnoreRegistry::new(),
         }
     }
 
