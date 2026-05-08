@@ -12,9 +12,12 @@
 ///
 /// # Panic
 ///
-/// `stop()` 実装が panic した場合、tauri 側の状態管理 (AppState) が保持する
-/// Mutex の guard 経由で呼び出されているため、Mutex は poison 状態に遷移する。
+/// 一般に `stop()` の panic safety は呼び出し側の責務だが、tauri 側の状態管理
+/// (AppState) が内部 Mutex の guard を保持したまま `stop()` を呼び出すケース
+/// では、panic は guard 経由で伝播し Mutex が poison 状態に遷移する。
 /// 次回アクセサ呼び出しで lock poison エラーが返る運用を前提とする。
+/// 一方、ハンドルを取り出して guard 外から呼び出す場合（例: take 経由）は
+/// この限りではなく、呼び出し側で適宜 `catch_unwind` 等を行うこと。
 pub trait WatcherHandle: Send {
     /// watcher を停止し、内部リソース（スレッド・OS ハンドル等）を解放する。
     fn stop(&mut self);
