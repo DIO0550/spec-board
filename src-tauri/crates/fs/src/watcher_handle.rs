@@ -12,9 +12,9 @@
 ///
 /// # Panic
 ///
-/// `stop()` 実装が panic した場合、`AppState` は呼び出し中に保持していた
-/// `Mutex` の guard 経由で poison 状態に遷移する。次回アクセサ呼び出しで
-/// `LockPoisoned` エラーが返る運用を前提とする。
+/// `stop()` 実装が panic した場合、tauri 側の状態管理 (AppState) が保持する
+/// Mutex の guard 経由で呼び出されているため、Mutex は poison 状態に遷移する。
+/// 次回アクセサ呼び出しで lock poison エラーが返る運用を前提とする。
 pub trait WatcherHandle: Send {
     /// watcher を停止し、内部リソース（スレッド・OS ハンドル等）を解放する。
     fn stop(&mut self);
