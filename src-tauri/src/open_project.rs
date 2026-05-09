@@ -235,13 +235,17 @@ fn default_status_for(config: &Config) -> String {
 
 /// `ScanError` を `OpenProjectError` に詰め直す。
 ///
-/// `ErrorKind::NotFound` は scan 段階で root が消失したケースとして
-/// `DirectoryNotFound`、`PermissionDenied` は `PermissionDenied`、
+/// `validate_directory` 後 / scan 開始までに root が変化する TOCTOU を
+/// 想定し、`ErrorKind::NotFound` は `DirectoryNotFound`、`NotADirectory` は
+/// `NotADirectory`、`PermissionDenied` は `PermissionDenied` にマップする。
 /// それ以外は "io scan failed: ..." 形式の `ScanFailed` にする。
 fn map_scan_error(err: ScanError, raw_path: &str) -> OpenProjectError {
     let ScanError::Io { source, .. } = err;
     match source.kind() {
         ErrorKind::NotFound => OpenProjectError::DirectoryNotFound {
+            path: raw_path.to_string(),
+        },
+        ErrorKind::NotADirectory => OpenProjectError::NotADirectory {
             path: raw_path.to_string(),
         },
         ErrorKind::PermissionDenied => OpenProjectError::PermissionDenied {
