@@ -1608,9 +1608,13 @@ mod tests {
         // 初期 Created 等を読み捨てる。
         drain_events(&rx, Duration::from_millis(300));
 
-        for i in 0..5 {
+        // sleep を入れずにバーストで書き込む。CI 負荷で sleep が伸びる
+        // と「100ms 内」の前提が崩れるため、回数を増やしつつ間隔は OS
+        // スレッドのスケジュール粒度に任せる。連続 write はミリ秒未満
+        // で終わるため、間に 100ms ウィンドウが入り込む余地は実用上
+        // ほぼない。
+        for i in 0..20 {
             std::fs::write(&target, format!("v{i}").as_bytes()).unwrap();
-            std::thread::sleep(Duration::from_millis(15));
         }
 
         let events = collect_events_for(
@@ -1622,7 +1626,7 @@ mod tests {
         assert_eq!(
             events.len(),
             1,
-            "100ms 内 5 回の連続書き込みは 1 イベントに集約されるべき: got {events:?}"
+            "100ms 内の連続書き込みは 1 イベントに集約されるべき: got {events:?}"
         );
 
         drop(watcher);
