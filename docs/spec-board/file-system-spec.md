@@ -439,9 +439,9 @@ pub enum WatcherError {
 
 | variant | 発生条件 |
 |:--------|:---------|
-| `PathNotFound(PathBuf)` | `try_exists() == false` または `is_dir() == false` |
+| `PathNotFound(PathBuf)` | 単一の `std::fs::metadata(path)` 呼び出しで判定。`std::io::ErrorKind::NotFound`（パス不在）または `metadata.is_dir() == false`（ディレクトリでない）の場合に返す。`try_exists()` + `metadata()` の二段呼び出しは TOCTOU レースで `Io` に降格する恐れがあったため、単一呼び出しで両条件をマップする実装に統一している |
 | `Init(String)` | recommended と poll の両方が初期化または再帰 `watch()` に失敗。両者の原因メッセージを結合した文字列を保持する |
-| `Io(std::io::Error)` | metadata 取得時の I/O 失敗 |
+| `Io(std::io::Error)` | `metadata()` 取得時の I/O 失敗（`NotFound` 以外。例: 権限不足） |
 
 #### スコープ外（後続 Issue で扱う）
 
