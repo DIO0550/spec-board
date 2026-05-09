@@ -674,17 +674,35 @@ mod tests {
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
         let path = PathBuf::from("/tmp");
         let (dummy, _dir_guard) = make_dummy_backend();
+        let recommended_called = Arc::new(AtomicBool::new(false));
+        let poll_called = Arc::new(AtomicBool::new(false));
+        let r_flag = Arc::clone(&recommended_called);
+        let p_flag = Arc::clone(&poll_called);
         let backend = build_backend_with(
             tx,
             &path,
-            |_t, _p| Err("watch failed: too many watches".into()),
-            move |_t, _p| Ok(dummy),
+            move |_t, _p| {
+                r_flag.store(true, Ordering::SeqCst);
+                Err("watch failed: too many watches".into())
+            },
+            move |_t, _p| {
+                p_flag.store(true, Ordering::SeqCst);
+                Ok(dummy)
+            },
         )
         .expect("should fall back to poll backend on watch failure");
-        assert!(matches!(
-            backend,
-            Backend::Poll(_) | Backend::Recommended(_)
-        ));
+        assert!(
+            recommended_called.load(Ordering::SeqCst),
+            "recommended constructor must be tried first"
+        );
+        assert!(
+            poll_called.load(Ordering::SeqCst),
+            "poll constructor must be invoked when watch() fails"
+        );
+        assert!(
+            matches!(backend, Backend::Poll(_)),
+            "watch-failure fallback must return a Poll backend"
+        );
     }
 
     #[test]
