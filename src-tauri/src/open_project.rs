@@ -290,10 +290,14 @@ fn default_status_for(config: &Config) -> String {
 /// `validate_directory` 後 / scan 開始までに root が変化する TOCTOU を
 /// 想定し、`ErrorKind::NotFound` は `DirectoryNotFound`、`NotADirectory` は
 /// `NotADirectory`、`PermissionDenied` は `PermissionDenied` にマップする。
-/// それ以外は "io scan failed: ..." 形式の `ScanFailed` にする。
+/// それ以外は "io scan failed: ..." 形式の `ScanFailed` にする。`ScanFailed.message`
+/// には `ScanError::Io` の Display（"failed to scan directory `{path}`: {source}"）
+/// をそのまま埋め込み、どのディレクトリで scan が失敗したかをデバッグ情報として残す。
 fn map_scan_error(err: ScanError, raw_path: &str) -> OpenProjectError {
-    let ScanError::Io { source, .. } = err;
-    match source.kind() {
+    let kind = match &err {
+        ScanError::Io { source, .. } => source.kind(),
+    };
+    match kind {
         ErrorKind::NotFound => OpenProjectError::DirectoryNotFound {
             path: raw_path.to_string(),
         },
@@ -304,7 +308,7 @@ fn map_scan_error(err: ScanError, raw_path: &str) -> OpenProjectError {
             path: raw_path.to_string(),
         },
         _ => OpenProjectError::ScanFailed {
-            message: source.to_string(),
+            message: err.to_string(),
         },
     }
 }
