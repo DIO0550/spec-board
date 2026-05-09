@@ -13,21 +13,34 @@
 //!
 //! # エラー文字列の契約
 //!
-//! FE 側 (`TauriError.from`) は以下の正規表現でエラー種別を判定する。
-//! Display 文字列を変更する際は FE 側のテストとの整合性を必ず確認すること。
+//! FE 側 (`TauriError.from`、`src/lib/tauri/tauriError/index.ts`) は以下の
+//! 正規表現で先頭ヒットを採用してエラー種別を判定する。Display 文字列を変更
+//! する際は FE 側のテストとの整合性を必ず確認すること。
+//!
+//! FE 側 `PATTERNS` 定義:
+//!
+//! | 順 | 正規表現 | `TauriErrorCode` |
+//! |:-|:-|:-|
+//! | 1 | `/見つかりません\|not found/i` | `NOT_FOUND` |
+//! | 2 | `/アクセスできません\|permission/i` | `PERMISSION_DENIED` |
+//! | 3 | `/\bio\b\|i\/o\|読み取り\|書き込み/i` | `IO_ERROR` |
+//! | 4 | `/\bparse\b\|フロントマター/i` | `PARSE_ERROR` |
+//!
+//! BE `OpenProjectError` variant と FE 分類の対応:
 //!
 //! | OpenProjectError variant | Display 文字列の例 | FE 分類 |
 //! |:-|:-|:-|
-//! | `DirectoryNotFound` | `ディレクトリが見つかりません: ...` | `\b見つかりません\|not found\b` → `directoryNotFound` |
-//! | `PermissionDenied` | `ディレクトリにアクセスできません: ...` | `\bアクセスできません\|permission\b` → `permissionDenied` |
-//! | `ScanFailed` | `io scan failed: ...` | `\bio\b` → `io` |
-//! | `ConfigLoadFailed` | `config load failed (io\|parse): ...` | `\bio\b` / `\bparse\b` → `io` / `parse` |
-//! | `NotADirectory` | `ディレクトリではありません: ...` | 既存正規表現に該当パターン無し → `unknown`（FE 側でパターン追加するまで） |
-//! | `StateLockPoisoned` | `内部状態のロックが破損しました` | 既存正規表現に該当パターン無し → `unknown`（FE 側でパターン追加するまで） |
+//! | `DirectoryNotFound` | `ディレクトリが見つかりません: ...` | `NOT_FOUND` |
+//! | `PermissionDenied` | `ディレクトリにアクセスできません: ...` | `PERMISSION_DENIED` |
+//! | `ScanFailed` | `io scan failed: ...` | `IO_ERROR` |
+//! | `ConfigLoadFailed` (`category="io"`) | `config load failed (io): ...` | `IO_ERROR` |
+//! | `ConfigLoadFailed` (`category="parse"`) | `config load failed (parse): ...` | `PARSE_ERROR` |
+//! | `NotADirectory` | `ディレクトリではありません: ...` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
+//! | `StateLockPoisoned` | `内部状態のロックが破損しました` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //!
 //! `NotADirectory` / `StateLockPoisoned` を FE で個別分類したい場合は、
-//! FE 側 `TauriError.from` の正規表現に「ディレクトリではありません」「内部状態のロック」等を
-//! 追加すること。本 Issue 範囲ではこれら 2 variant は `unknown` 扱いとなる前提で
+//! FE 側 `PATTERNS` に「ディレクトリではありません」「内部状態のロック」等を
+//! 追加すること。本 Issue 範囲ではこれら 2 variant は `UNKNOWN` 扱いとなる前提で
 //! BE 側エラー Display を生成している。
 
 use std::collections::HashMap;
