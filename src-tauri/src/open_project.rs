@@ -121,8 +121,20 @@ impl From<AppStateError> for OpenProjectError {
 }
 
 impl From<WriteIgnoreError> for OpenProjectError {
-    fn from(_: WriteIgnoreError) -> Self {
-        OpenProjectError::StateLockPoisoned
+    /// `WriteIgnoreError` を意味別に詰め直す。
+    ///
+    /// - `LockPoisoned` のみ `StateLockPoisoned` として「内部状態のロック破損」
+    ///   と扱う
+    /// - `CleanupWorkerSpawnFailed` 等の非 poison 系（現実装では返らないが将来
+    ///   返り得る variant）は `ScanFailed` として io 系の致命扱いにし、
+    ///   利用者へ「ロック破損」と誤通知しない
+    fn from(err: WriteIgnoreError) -> Self {
+        match err {
+            WriteIgnoreError::LockPoisoned => OpenProjectError::StateLockPoisoned,
+            other => OpenProjectError::ScanFailed {
+                message: other.to_string(),
+            },
+        }
     }
 }
 
@@ -1003,6 +1015,25 @@ mod tests {
         let file_paths_after: Vec<String> =
             snapshot_after.iter().map(|t| t.file_path.clone()).collect();
         assert_eq!(file_paths_before, file_paths_after);
+    }
+
+    #[test]
+    fn write_ignore_error_lock_poisoned_maps_to_state_lock_poisoned() {
+        use spec_board_fs::write_ignore::WriteIgnoreError;
+        let err: OpenProjectError = WriteIgnoreError::LockPoisoned.into();
+        assert!(matches!(err, OpenProjectError::StateLockPoisoned));
+    }
+
+    #[test]
+    fn write_ignore_error_non_poison_maps_to_scan_failed() {
+        use spec_board_fs::write_ignore::WriteIgnoreError;
+        let err: OpenProjectError = WriteIgnoreError::CleanupWorkerSpawnFailed.into();
+        match err {
+            OpenProjectError::ScanFailed { ref message } => {
+                assert!(!message.is_empty());
+            }
+            other => panic!("expected ScanFailed, got {other:?}"),
+        }
     }
 
     #[test]
