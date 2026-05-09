@@ -399,13 +399,29 @@ mod tests {
 
     /// Drain events until the channel is `Disconnected`, returning everything
     /// that was queued. Used to verify that no new events arrive after Drop.
+    ///
+    /// Bounded by `overall_deadline` so that a regression in `Drop`
+    /// teardown (or a platform-specific notify quirk) cannot hang the test
+    /// suite indefinitely. If `Disconnected` is not observed within the
+    /// deadline, the test panics with a clear message.
     fn drain_until_disconnected(
         rx: &Receiver<FsEvent>,
         per_recv_timeout: Duration,
+        overall_deadline: Duration,
     ) -> Vec<FsEvent> {
         let mut out = Vec::new();
+        let stop_at = Instant::now() + overall_deadline;
         loop {
-            match rx.recv_timeout(per_recv_timeout) {
+            let remaining = match stop_at.checked_duration_since(Instant::now()) {
+                Some(r) if !r.is_zero() => r,
+                _ => panic!(
+                    "drain_until_disconnected: channel did not Disconnect within {overall_deadline:?} \
+                     (collected {n} events so far)",
+                    n = out.len()
+                ),
+            };
+            let next_timeout = std::cmp::min(per_recv_timeout, remaining);
+            match rx.recv_timeout(next_timeout) {
                 Ok(ev) => out.push(ev),
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return out,
@@ -801,7 +817,8 @@ mod tests {
         let marker = dir.path().join(&marker_name);
         std::fs::write(&marker, b"after-drop").unwrap();
 
-        let queued = drain_until_disconnected(&rx, Duration::from_millis(300));
+        let queued =
+            drain_until_disconnected(&rx, Duration::from_millis(300), Duration::from_secs(10));
 
         let any_marker = queued
             .iter()
