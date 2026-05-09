@@ -384,6 +384,74 @@ pub enum WriteIgnoreError {
 
 `WriteIgnoreRegistry` は自己書き込み抑制用の registry を担当する。ファイル監視イベントを無視する判定では race-free な `consume` を使う。対応する監視イベントが届かない場合の解除は呼び出し側の責務とする。
 
+### `Watcher` / `FsEvent` / `WatcherError`
+
+```rust
+pub struct Watcher;
+
+impl Watcher {
+    pub fn start(
+        path: impl AsRef<Path>,
+    ) -> Result<(Watcher, std::sync::mpsc::Receiver<FsEvent>), WatcherError>;
+}
+
+pub enum FsEvent {
+    Created(PathBuf),
+    Modified(PathBuf),
+    Removed(PathBuf),
+    Renamed { from: PathBuf, to: PathBuf },
+    Other(PathBuf),
+    Error(String),
+    Rescan,
+}
+
+pub enum WatcherError {
+    Init(String),
+    PathNotFound(PathBuf),
+    Io(std::io::Error),
+}
+```
+
+| 項目 | 仕様 |
+|:-----|:-----|
+| 機能 | `path` を再帰的に監視し、変更を [`FsEvent`] として `mpsc::Receiver` 経由で逐次通知する |
+| 配置 | `src-tauri/crates/fs/src/watcher.rs`（サブクレート `spec-board-fs`、`notify` の集約先）。呼び出しは `spec_board_fs::watcher::Watcher` |
+| バックエンド | まず `RecommendedWatcher` を試み、`new` または再帰 `watch()` のいずれかが失敗した場合は `PollWatcher`（2 秒間隔）へ自動フォールバック |
+| Symlink | 両バックエンドに `notify::Config::with_follow_symlinks(false)` を適用。再帰中に出現する子孫 symlink は辿らない（無限ループ／プロジェクト境界外監視を防止）。root が symlink ディレクトリ自体である場合は `Watcher::start` は受け入れる（呼び出し側責務） |
+| 停止 | 戻り値の `Watcher` を drop すると **同期的** に監視停止する。内部 backend → adapter thread の順で解放され、`Drop` 完了後に発生したファイル変更は `Receiver` に届かない（Drop 前に enqueue 済みのイベントは `Disconnected` を観測するまで `recv` 可能） |
+| 公開境界 | `notify::*` の型は公開シグネチャに一切露出させない（`std` の型と `FsEvent` / `WatcherError` のみ） |
+
+#### `FsEvent` 変換テーブル
+
+| `notify::EventKind` | 条件 | 変換結果 |
+|:--------------------|:-----|:---------|
+| `Create(_)` | `paths[0]` 必須 | `FsEvent::Created(paths[0])` |
+| `Modify(Data(_))` / `Modify(Metadata(_))` | 〃 | `FsEvent::Modified(paths[0])` |
+| `Modify(Name(_))` | `paths.len() >= 2` | `FsEvent::Renamed { from: paths[0], to: paths[1] }` |
+| `Modify(Name(_))` | `paths.len() < 2` | `FsEvent::Other(paths[0])`（rename を確定できないため downgrade） |
+| `Remove(_)` | `paths[0]` 必須 | `FsEvent::Removed(paths[0])` |
+| `Access(_)` / `Any` / `Other` | 〃 | `FsEvent::Other(paths[0])` |
+| 任意 | `paths.is_empty()` | 送信スキップ |
+| 任意 | `notify::Event::need_rescan() == true` | `FsEvent::Rescan`（キューオーバーフロー／コアレスでイベントが取りこぼされた可能性。`paths` の有無に関わらず先に判定し、caller に状態再構築を促す） |
+| `notify` バックエンドからの `Result::Err` | — | `FsEvent::Error(message)`（黙殺せず caller に通知） |
+
+#### `WatcherError`（`start` 時のみ）
+
+| variant | 発生条件 |
+|:--------|:---------|
+| `PathNotFound(PathBuf)` | 単一の `std::fs::metadata(path)` 呼び出しで判定。`std::io::ErrorKind::NotFound`（パス不在）または `metadata.is_dir() == false`（ディレクトリでない）の場合に返す。`try_exists()` + `metadata()` の二段呼び出しは TOCTOU レースで `Io` に降格する恐れがあったため、単一呼び出しで両条件をマップする実装に統一している |
+| `Init(String)` | recommended と poll の両方が初期化または再帰 `watch()` に失敗。両者の原因メッセージを結合した文字列を保持する |
+| `Io(std::io::Error)` | `metadata()` 取得時の I/O 失敗（`NotFound` 以外。例: 権限不足） |
+
+#### スコープ外（後続 Issue で扱う）
+
+- 拡張子フィルタ（`.md` 等）— 呼び出し側責務
+- デバウンス／イベント集約
+- 監視対象パスの動的追加・削除
+- Tauri IPC 経由のフロントエンド emit（`task-created` / `task-updated` / `task-deleted` への変換）
+- `WriteIgnoreRegistry` との統合（自己書き込み抑制）
+- root が symlink ディレクトリの場合の追加検査（現状は notify に委ねる）
+
 ## カラム設定・カード並び順の永続化
 
 カラム設定、カード並び順、AIエージェント向けガイドの仕様は [config-spec.md](./config-spec.md) を参照。

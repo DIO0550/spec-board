@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 walkdir = "2"
 thiserror = "2"
+notify = "8"
 
 [dev-dependencies]
 tempfile = "3"

@@ -159,3 +159,10 @@ Rust コードを変更するすべての作業で、以下のスキルを Skill
 - 仕様（公開API、データ形式、画面挙動、設定項目など）が変わった場合は、`docs/spec-board/` 配下の該当 spec ドキュメント（`task-format-spec.md` / `board-view-spec.md` / `file-system-spec.md` / `task-card-spec.md` / `config-spec.md` / `index.md` 等）を必ず同じ PR で更新する。
 - spec ドキュメントとコードの実装が乖離した場合は、ドキュメント側を信頼の source of truth として扱い、コード変更時に追従させる。
 - ドキュメント更新が不要な実装変更（純粋なリファクタリング、内部実装の最適化など）は、その旨を PR 説明や commit メッセージで明記する。
+
+## 実装ガイドの作成（`docs/impl/`）
+
+仕様（何を実現するか）は `docs/spec-board/`、実装方針（なぜそう書いたか）は `docs/impl/{対象名}.md` に書く。
+
+- **読者は Rust 初心者である前提で書く**。所有権・`Option`・`FnOnce`・`Drop` 順序など、初学者が引っかかる概念は都度補足する
+- 形式や項目立てに決まったテンプレートは設けない。設計判断の根拠が伝わればよい
