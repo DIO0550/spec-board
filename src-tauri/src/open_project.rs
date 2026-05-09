@@ -112,12 +112,17 @@ pub fn open_project(
 /// 全工程が成功した時点でのみ `commit_app_state` で旧 state を置き換える。
 /// 途中でエラーが返った場合は旧プロジェクトの state がそのまま保持される
 /// （FE 側の「open 失敗時に元プロジェクトを復元する」UX 契約と一致させる）。
+///
+/// AppState の lock 健全性は scan / parse / GUIDE 副作用が走る前に
+/// `check_app_state_locks` で一括 probe する。lock poison が確定している場合は
+/// `.spec-board/GUIDE.md` の不要な書き出しや scan / parse の無駄を最初から避ける。
 pub(crate) fn open_project_impl(
     state: &AppState,
     path: &str,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let root = Path::new(path);
     validate_directory(root, path)?;
+    check_app_state_locks(state)?;
 
     let config = load_or_default(root).map_err(map_load_config_error)?;
 
@@ -137,6 +142,21 @@ pub(crate) fn open_project_impl(
     commit_app_state(state, root, &config, &tasks)?;
 
     Ok(build_payload(tasks, &config))
+}
+
+/// AppState 4 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
+///
+/// scan / parse / GUIDE 副作用を実行する前に呼び出すことで、lock poison が
+/// 確定している場合に `.spec-board/GUIDE.md` の不要な書き出しや scan の無駄を
+/// 避けつつ早期に `Err(StateLockPoisoned)` を返せる。
+///
+/// `commit_app_state` でも最終的に同じ probe を実行するが、これは TOCTOU 的に
+/// pre-flight 後 / commit 前に他スレッドで poison が発生する稀なケースを
+/// 検出するためのもの。
+fn check_app_state_locks(state: &AppState) -> Result<(), OpenProjectError> {
+    state.check_all_locks()?;
+    state.write_ignore().is_empty()?;
+    Ok(())
 }
 
 /// ディレクトリ実在性とアクセス権限を検証する。
@@ -293,8 +313,12 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// # 部分更新の防止
 ///
 /// 5 つの lock を独立して順次取得するため真の atomic ではないが、
-/// **pre-flight でロックの健全性を一括検証してから副作用を開始する**
+/// **commit 直前にロックの健全性を再 probe してから副作用を開始する**
 /// ことで、lock poison による Err 復帰時に部分更新が残らないようにする。
+/// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
+/// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
+/// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
+/// 他スレッドで poison が発生する稀なケースを取り逃さないための念押し。
 ///
 /// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
@@ -820,6 +844,41 @@ mod tests {
         assert_eq!(
             vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
             paths
+        );
+    }
+
+    #[test]
+    fn early_pre_flight_skips_guide_md_write_when_watcher_lock_is_poisoned() {
+        // 1 回目の open でプロジェクトを確定させる。
+        let state = Arc::new(AppState::new());
+        let first_dir = tempdir();
+        let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
+        open_project_impl(state.as_ref(), &first_raw).expect("first open");
+
+        // 旧 watcher を panic 経由で poison させる。
+        state
+            .install_watcher_handle(Box::new(PanickingHandle))
+            .expect("install panicking watcher");
+        let panic_state = Arc::clone(&state);
+        let panic_dir = tempdir();
+        let panic_raw = panic_dir.path().to_str().expect("utf-8").to_string();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _ = open_project_impl(panic_state.as_ref(), &panic_raw);
+        }));
+        assert!(result.is_err(), "stop panic should propagate");
+
+        // 2 回目: poison 状態の AppState で別 dir を open する。GUIDE.md が
+        // 新 dir に書かれてはならない（早期 pre-flight が副作用前に Err 復帰させる）。
+        let other_dir = tempdir();
+        let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
+        let err = open_project_impl(state.as_ref(), &other_raw)
+            .expect_err("subsequent call should report lock poisoned");
+        assert!(matches!(err, OpenProjectError::StateLockPoisoned));
+
+        let guide = other_dir.path().join(".spec-board").join("GUIDE.md");
+        assert!(
+            !guide.exists(),
+            "GUIDE.md should not be written when AppState lock is poisoned"
         );
     }
 

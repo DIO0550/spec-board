@@ -559,9 +559,7 @@ mod tests {
 
         assert_eq!(
             AppStateError::LockPoisoned,
-            state
-                .check_project_path_lock()
-                .expect_err("poisoned probe"),
+            state.check_project_path_lock().expect_err("poisoned probe"),
         );
     }
 
@@ -621,9 +619,7 @@ mod tests {
 
         assert_eq!(
             AppStateError::LockPoisoned,
-            state
-                .check_tasks_cache_lock()
-                .expect_err("poisoned probe"),
+            state.check_tasks_cache_lock().expect_err("poisoned probe"),
         );
     }
 
