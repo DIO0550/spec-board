@@ -158,17 +158,21 @@ impl Drop for Watcher {
 
 /// Verify that `path` exists and is a directory.
 ///
-/// Symlink directories are accepted; the recursion policy for descendant
-/// symlinks is enforced by [`notify_config`] (no follow).
+/// Performs the existence and directory-type check in a single `metadata()`
+/// call so that a TOCTOU race between checks (e.g. the directory being
+/// removed mid-call) is mapped to [`WatcherError::PathNotFound`] instead of
+/// leaking through as a generic [`WatcherError::Io`]. Symlink directories
+/// are accepted; the recursion policy for descendant symlinks is enforced
+/// by [`notify_config`] (no follow).
 fn validate_path(path: &Path) -> Result<(), WatcherError> {
-    if !path.try_exists()? {
-        return Err(WatcherError::PathNotFound(path.to_path_buf()));
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err(WatcherError::PathNotFound(path.to_path_buf())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(WatcherError::PathNotFound(path.to_path_buf()))
+        }
+        Err(e) => Err(WatcherError::Io(e)),
     }
-    let metadata = std::fs::metadata(path)?;
-    if !metadata.is_dir() {
-        return Err(WatcherError::PathNotFound(path.to_path_buf()));
-    }
-    Ok(())
 }
 
 /// Two-stage fallback wrapper that delegates to [`build_backend_with`] with
