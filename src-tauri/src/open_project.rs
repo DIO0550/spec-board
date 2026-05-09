@@ -343,6 +343,7 @@ mod tests {
 
     use crate::config::{CardOrder, Column, Config};
     use crate::state::AppState;
+    use crate::task_index::Task;
     use spec_board_fs::watcher_handle::WatcherHandle;
 
     use std::fs;
@@ -849,18 +850,68 @@ mod tests {
 
     #[test]
     fn build_payload_returns_empty_columns_for_config_with_no_columns() {
-        // 直接 build_payload を叩くわけではないが、Column が空の手作り Config を
-        // 扱うパスは存在しない（load_or_default が EmptyColumns で弾く）ため、
-        // ここではコンパイルが通ること自体をスモークとして確認する。
         let cfg = Config {
             version: 1,
-            columns: vec![Column {
-                name: "Single".into(),
-                order: 0,
-            }],
+            columns: Vec::new(),
             card_order: CardOrder::default(),
             done_column: None,
         };
-        assert_eq!(1, cfg.columns.len());
+
+        let payload = super::build_payload(Vec::new(), &cfg);
+
+        assert!(payload.tasks.is_empty());
+        assert!(payload.columns.is_empty());
+    }
+
+    #[test]
+    fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
+        let cfg = Config {
+            version: 1,
+            columns: vec![
+                Column {
+                    name: "Z".into(),
+                    order: 2,
+                },
+                Column {
+                    name: "A".into(),
+                    order: 0,
+                },
+                Column {
+                    name: "M".into(),
+                    order: 1,
+                },
+            ],
+            card_order: CardOrder::default(),
+            done_column: None,
+        };
+        let task_b = Task {
+            id: "b.md".into(),
+            file_path: "b.md".into(),
+            title: "B".into(),
+            status: "A".into(),
+            priority: None,
+            labels: Vec::new(),
+            parent: None,
+            links: Vec::new(),
+            children: Vec::new(),
+            reverse_links: Vec::new(),
+            body: String::new(),
+            extras: Default::default(),
+            warnings: Vec::new(),
+        };
+        let task_a = Task {
+            id: "a.md".into(),
+            file_path: "a.md".into(),
+            ..task_b.clone()
+        };
+
+        let payload = super::build_payload(vec![task_b, task_a], &cfg);
+
+        let task_ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(vec!["a.md", "b.md"], task_ids);
+        assert_eq!(
+            vec!["A".to_string(), "M".to_string(), "Z".to_string()],
+            payload.columns
+        );
     }
 }
