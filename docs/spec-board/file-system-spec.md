@@ -244,7 +244,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
 | 監視イベント | Create / Modify / Remove / Rename |
-| デバウンス | 同一ファイルへの変更を100ms以内に集約 |
+| デバウンス | 後述の「デバウンス（スライディングウィンドウ集約）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
 | フロントエンドへの通知 | Tauri のイベントシステム（`emit`）を使用 |
 
@@ -283,6 +283,21 @@ flowchart TD
 1. 旧パスのタスクに対して `task-deleted` イベントを発火
 2. 新パスのファイルを読み込み・パースし、`task-created` イベントを発火
 3. 他タスクの `parent` や `links` に旧パスが含まれている場合、**自動的には更新しない**（リンク切れとして表示し、ユーザーに修正を促す）
+
+### デバウンス（スライディングウィンドウ集約）
+
+`spec_board_fs::watcher` は同一パスの連続イベントを `100ms` のスライディングウィンドウで集約する。エディタ保存時に多くのバックエンドが連続発火する `Modify` を抑制し、上位層のノイズを減らすための層であり、本体クレート `spec-board` に到達する `FsEvent` 件数が削減される。
+
+| 項目 | 仕様 |
+|:-----|:-----|
+| ウィンドウ幅 | `100ms`（`DEBOUNCE_DURATION` 定数。`watcher.rs` 内のみで参照） |
+| 集約方式 | スライディングウィンドウ。同一 path に新着イベントが届くたびに deadline を `now + 100ms` まで延長する。`100ms` 静止して初めて発火する |
+| 上書き仕様 | 集約中の保留イベントは後続イベントで `event` ごと上書きされる（`kind` も含めて最後のイベントのみが送出される） |
+| 集約キー | 通常イベント (`Created` / `Modified` / `Removed` / `Other`) はそのままの path を key とする。`Renamed { from, to }` は **宛先 `to`** を key とする（`from` 側は独立扱い）。rename 後に同じ `to` への `Modified` 等が連続すれば、後続イベントが pending 内の `Renamed` を上書きする |
+| バイパス対象 | `FsEvent::Rescan` / `FsEvent::Error` はデバウンスせず即時 forward する。状態乖離や障害検出を遅延させないため、保留イベントを **追い越して** 先に通知される |
+| 順序保証 | バイパスイベントは保留を flush せずに追い越すため、受信側は `Rescan` 後に古い `Modified` 等が遅延発火する可能性を許容する前提で実装すること |
+| Drop 時の保留 | `Watcher` の Drop で上流が解放された際、保留イベントは破棄せず deadline 昇順（同点は path 昇順）で flush されてから adapter スレッドが終了する |
+| 公開 API への影響 | 公開 API（`Watcher::start` / `FsEvent` / `WatcherError` / `Receiver<FsEvent>`）は完全互換 |
 
 ### 自己書き込み抑制
 
@@ -456,7 +471,6 @@ pub enum WatcherError {
 #### スコープ外（後続 Issue で扱う）
 
 - 拡張子フィルタ（`.md` 等）— 呼び出し側責務
-- デバウンス／イベント集約
 - 監視対象パスの動的追加・削除
 - Tauri IPC 経由のフロントエンド emit（`task-created` / `task-updated` / `task-deleted` への変換）
 - `WriteIgnoreRegistry` との統合（自己書き込み抑制）

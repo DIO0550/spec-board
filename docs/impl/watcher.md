@@ -564,7 +564,6 @@ variant ごとに `#[test]` を並べるより一覧性が高い。`assert_eq!` 
 ### スコープ外（後続 Issue）
 
 - 拡張子フィルタ（`.md` のみ）
-- デバウンス／イベント集約（同一ファイルの 100ms 連続変更を 1 回にまとめる等）
 - 監視対象パスの動的追加・削除
 - Tauri IPC との接続（`emit("task-created", ...)` 等）
 - `WriteIgnoreRegistry` との統合（自己書き込み抑制）
@@ -602,7 +601,103 @@ variant ごとに `#[test]` を並べるより一覧性が高い。`assert_eq!` 
 
 ---
 
-## 13. 関連リンク
+## 13. デバウンス層（スライディングウィンドウ集約）
+
+エディタ保存時の連続 `Modify` のように、同じファイルに対して短時間で複数のシグナルが届くケースを 1 件に集約する層を adapter スレッド内に追加した。本節では「なぜこの設計を選んだか」を Rust 初学者向けに書き下す。
+
+### 13.1 何を解決しているか
+
+VS Code / vim 等のエディタは「保存」時に rename + write + chmod のように内部で複数操作を行うことが多く、`notify` バックエンドはそれぞれの操作を別の `Modify` イベントとして発火する。集約しないまま上位層（Tauri IPC → フロントエンド）に流すと、1 回の保存で `task-updated` が 3〜5 回連続で発火する。
+
+これを「**同じパスに 100ms 静止イベントが届かない間は集約する**」スライディングウィンドウで束ねる。
+
+### 13.2 なぜ自前実装か（`notify-debouncer-mini` を採用しなかった理由）
+
+`notify` エコシステムには公式の `notify-debouncer-mini` という補助 crate がある。だが採用しなかった: 集約後のイベント型 `DebouncedEventKind` が `Any` / `AnyContinuous` の **2 値** しか持たず、`Created` / `Modified` / `Removed` / `Renamed` の **kind 解像度が完全に潰れる**。本プロジェクトでは「リネームかどうか」「削除かどうか」を上位層で識別する必要があるため、kind を保つ自前実装の方が必須要件に合致する。
+
+### 13.3 なぜスライディングウィンドウか
+
+タイマ駆動方式には大きく分けて 2 系統ある:
+
+| 方式 | 挙動 | トレードオフ |
+|:--|:--|:--|
+| **Trailing edge（固定窓）** | 最初のイベント受信時に `now + 100ms` で deadline を固定。以降の同パス再投入では deadline を更新しない | 100ms 後に必ず発火するため遅延の上限が予測しやすい。一方で「100ms ぴったりに連続するイベント」では集約効果が薄れ、書き込み中でも発火してしまう |
+| **スライディング（採用）** | 新着イベント受信のたびに deadline を `now + 100ms` まで延長 | 連続書き込みが続く間は発火しない（極端な busy 書き込みでは待ち時間が累積し得る）。エディタ保存のような「短時間バースト → 静止」パターンに最も素直 |
+
+実用上、エディタ保存は **数 ms 〜 数十 ms 単位のバースト + 数百 ms の静止** という典型的なパターンで、スライディング方式の挙動が直感に合う。極端な busy write 下での待ち時間累積はトレードオフとして許容する（保存 = ユーザー操作の終了 = いずれ静止する）。
+
+### 13.4 コア構造: `HashMap<PathBuf, PendingEvent>`
+
+```rust
+struct PendingEvent {
+    event: FsEvent,
+    deadline: Instant,
+}
+type PendingMap = HashMap<PathBuf, PendingEvent>;
+```
+
+集約状態を path 単位で独立管理する。同じ path への新着イベントが届いたら `event` を **上書き**（`kind` ごと）し、`deadline` を `now + 100ms` に **延長** する。「最後のイベントが正」というポリシーをマップの上書き挙動だけで素直に表現できる。
+
+`Renamed { from, to }` は宛先 `to` を集約キーとして扱う。`from` 側は独立扱いとし、rename 後に `to` へ連続書き込みが来た場合は `Renamed` を `Modified` で上書きする一貫挙動になる（最後のイベントが採用される）。
+
+### 13.5 なぜ `recv_timeout` か（`thread::sleep` ではない理由）
+
+タイマ満了を待つ素朴な実装は `thread::sleep(remaining)` を呼ぶことだが、その間チャネルからイベントを受信できなくなる。理想は「**残り時間以内にイベントが来たら即座に処理を再開、来なければタイマで起きる**」こと。これは `mpsc::Receiver::recv_timeout(Duration)` がそのまま提供する:
+
+- `Ok(item)` — 残り時間内に新着が届いた → バッファ更新
+- `Err(Timeout)` — 時間切れ → 期限到来分を `drain_due` で発火
+- `Err(Disconnected)` — 上流（バックエンド）が drop された → 残保留を flush して終了
+
+この 3 値を `match` で分岐するだけで、チャネル待ちと時間待ちが 1 本のループに収まる。OS スレッドを `sleep` させずに済むため、可読性・応答性ともに `recv_timeout` が望ましい。
+
+### 13.6 純粋関数として切り出した理由
+
+時間依存ロジックの単体テストは race condition に苦しめられがちだ。本実装では `enqueue_pending` / `drain_due` / `next_wait` / `event_path` の 4 つを「**`Instant` を引数で受け取る純粋関数**」として切り出している。テスト側で `Instant::now()` を呼んでから任意のオフセットを足した `Instant` を投げ込めば、時間に依存しない決定論的な検証が可能になる。
+
+```rust
+let t0 = Instant::now();
+let t1 = t0 + Duration::from_millis(50);
+enqueue_pending(&mut pending, p.clone(), FsEvent::Modified(p.clone()), t0);
+enqueue_pending(&mut pending, p.clone(), FsEvent::Modified(p.clone()), t1);
+assert_eq!(pending[&p].deadline, t1 + DEBOUNCE_DURATION);
+```
+
+この切り出しのおかげで、CI でフレーキー化しやすい「実 FS + 実時間」の統合テストは少数の E2E sanity check に留め、**ロジックの正しさは純粋テストで担保** する 2 段構成が取れる。
+
+### 13.7 `Rescan` / `Error` をバイパスする理由
+
+`FsEvent::Rescan` は notify バックエンドが「キューオーバーフロー等で取りこぼした可能性がある」と通知してくる重要なシグナルで、上位層に状態の再構築を促す。これを 100ms 遅延させると、状態乖離の検出も遅延する。`FsEvent::Error` も同様で、障害は速やかに知らせるべき。
+
+そこで両者は集約バッファを経由せず、即時 `fs_tx.send` する。**保留イベントを flush せずに追い越す** ため、受信側は「Rescan の後に古い Modified が遅れて届く」という順序逆転を前提に設計する必要がある。これは「状態乖離検出の即時性 > 時系列順序」を選んだ明示的な設計判断。
+
+### 13.8 Drop 時の flush が必要な理由
+
+`Watcher::drop` は内部で notify バックエンドを drop し、それが上流チャネルの sender を閉じる。ここで adapter スレッドの `recv_timeout` が `Err(Disconnected)` を返すが、この時点で `pending` には「直前 100ms 以内に届いた変更」が残っている可能性がある。
+
+これを破棄してしまうと、ユーザーが最後に行った保存がフロントエンドに届かなくなる。そこで `Disconnected` 分岐では `pending.drain()` で全保留イベントを取り出し、deadline 昇順（同点は path 昇順）に並べて `fs_tx.send` してから adapter スレッドを終了させる。flush 後の `Receiver` は通常通り `Disconnected` を観測する。
+
+```rust
+Err(RecvTimeoutError::Disconnected) => {
+    let mut remaining: Vec<(PathBuf, PendingEvent)> = pending.drain().collect();
+    remaining.sort_by(|a, b| a.1.deadline.cmp(&b.1.deadline).then_with(|| a.0.cmp(&b.0)));
+    for (_, pe) in remaining {
+        if fs_tx.send(pe.event).is_err() {
+            return;
+        }
+    }
+    return;
+}
+```
+
+並び順を deadline 昇順 + path 昇順で固定するのは、テストの決定論性を確保するため。
+
+### 13.9 公開 API は完全互換
+
+本デバウンス層は adapter スレッド内部の実装詳細であり、公開 API（`Watcher::start` / `FsEvent` / `WatcherError` / `Receiver<FsEvent>`）には変更が無い。本体クレート `spec-board` は `path = "crates/fs"` 経由で参照しているが、呼び出し側コードに変更を加える必要は無い。`Cargo.toml` への依存追加もない（標準ライブラリの `HashMap` / `Instant` / `RecvTimeoutError` のみで実装可能）。
+
+---
+
+## 14. 関連リンク
 
 - 仕様: [`docs/spec-board/file-system-spec.md`](../spec-board/file-system-spec.md) の「`spec-board-fs::watcher` 公開 API」節
 - 実装: [`src-tauri/crates/fs/src/watcher.rs`](../../src-tauri/crates/fs/src/watcher.rs)
