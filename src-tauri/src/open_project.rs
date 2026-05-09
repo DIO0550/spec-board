@@ -335,21 +335,31 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 
 /// `AppState` に新値を確定させる。
 ///
-/// # 部分更新の防止
+/// # ロック健全性の早期検出（pre-flight の限界）
 ///
-/// 5 つの lock を独立して順次取得するため真の atomic ではないが、
-/// **commit 直前にロックの健全性を再 probe してから副作用を開始する**
-/// ことで、lock poison による Err 復帰時に部分更新が残らないようにする。
+/// 5 つの lock を独立して順次取得するため、**真の atomic な commit ではない**。
+/// commit 冒頭で実行する pre-flight は「commit 開始時点で既に poison している
+/// mutex を早期検出して副作用前に Err 復帰させる」ためのものであり、
+/// pre-flight 後 / 個別 setter 呼び出し中に他スレッドの panic 等で後続 lock が
+/// poison するケースまでは防げない（その場合は途中までの setter が成功した
+/// 状態で Err が返る = 部分更新が残り得る）。
+///
+/// 真に atomic な commit が必要になった時点で、AppState 側に lock 取得順序に従って
+/// 全フィールドを単一クリティカルセクションで更新する API を追加し、
+/// ここから呼び替える設計に切り替える前提とする。本 Issue 範囲では Tauri command
+/// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
+/// に留める。
+///
 /// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
 /// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
-/// 他スレッドで poison が発生する稀なケースを取り逃さないための念押し。
+/// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
 ///
 /// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
-///    poison していれば早期に `Err(StateLockPoisoned)` を返す。この時点では
-///    まだ何も書き換えていないため、`open_project_impl` の「失敗時は旧プロジェクト
-///    state を保持する」契約が守られる。
+///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
+///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
+///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ
 ///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
