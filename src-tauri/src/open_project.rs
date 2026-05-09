@@ -323,10 +323,13 @@ fn map_load_config_error(err: LoadConfigError) -> OpenProjectError {
 ///
 /// `build_children` は `validate_parent_hierarchy` 経由で `CycleOrTooDeep` のみ
 /// Err として返すため、本層では他 variant を考慮しなくてよい。
-/// Display に "io" を含めて FE 正規表現にマッチさせる。
+/// `ScanFailed` の Display は `"io scan failed: {message}"` なので、ここで
+/// 改めて "io" を埋め込むと最終文字列が "io scan failed: io ..." と二重に
+/// なるため、`err.to_string()` をそのまま埋め込む。FE 正規表現 `\bio\b` は
+/// wrapper 側で満たされる。
 fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
     OpenProjectError::ScanFailed {
-        message: format!("io {err}"),
+        message: err.to_string(),
     }
 }
 
@@ -763,8 +766,13 @@ mod tests {
 
         match err {
             OpenProjectError::ScanFailed { ref message } => {
-                assert!(message.starts_with("io"), "message: {message}");
-                assert!(err.to_string().contains("io"));
+                // wrapper Display "io scan failed: ..." 側で \bio\b を満たすため、
+                // message 内に "io" を二重に埋め込まない契約。最終 Display には
+                // 必ず "io" が含まれることを担保する。
+                assert!(!message.starts_with("io"), "message: {message}");
+                let display = err.to_string();
+                assert!(display.starts_with("io scan failed:"));
+                assert!(display.contains("io"));
             }
             other => panic!("expected ScanFailed, got {other:?}"),
         }
