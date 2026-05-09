@@ -361,7 +361,7 @@ fn commit_app_state(
 
     let mut cache = HashMap::with_capacity(tasks.len());
     for task in tasks {
-        cache.insert(PathBuf::from(task.file_path.clone()), task.clone());
+        cache.insert(PathBuf::from(task.file_path.as_str()), task.clone());
     }
 
     state.set_project_path(Some(root.to_path_buf()))?;
