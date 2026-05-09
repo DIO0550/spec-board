@@ -371,15 +371,25 @@ fn spawn_adapter(
     let handle = thread::spawn(move || {
         let mut pending: PendingMap = HashMap::new();
         loop {
+            // ループの基準時刻を 1 度だけキャプチャし、drain_due と
+            // next_wait の双方に渡す。2 度 `Instant::now()` を呼ぶと、
+            // その隙間で deadline が「未到来 → 到来」へ遷移したエン
+            // トリが drain_due では残り、続く next_wait では `ZERO`
+            // を返してしまい、`recv_timeout(0)` で受信した新着で
+            // 同一 key が上書きされる race が生じる。同一時刻基準
+            // で判定すれば、drain_due 後の pending には deadline > now
+            // のエントリしか残らず、next_wait は必ず正の duration を
+            // 返すため、recv_timeout が即時 Ok になっても overwrite
+            // されるのは sliding window 仕様（deadline 延長）として
+            // 正しい振る舞いに収まる。
+            let now = Instant::now();
+
             // 1. 期限到来分を先に発火する。
             //
             // recv 前に drain することで、同一 path の新着イベントが
             // notify_rx に既に queued されていても、期限切れの保留
-            // エントリが先に発火する。`next_wait` が `Duration::ZERO`
-            // の場合に `recv_timeout(0)` が直ちに `Ok` を返すと、
-            // enqueue_pending で同一 key が上書きされ、100ms 静止して
-            // いた旧イベントが消失する race を防ぐ。
-            let due = drain_due(&mut pending, Instant::now());
+            // エントリが先に発火する。
+            let due = drain_due(&mut pending, now);
             for ev in due {
                 if fs_tx.send(ev).is_err() {
                     return;
@@ -387,7 +397,7 @@ fn spawn_adapter(
             }
 
             // 2. 受信待ち時間を決定。保留が無ければ無限ブロック。
-            let recv_result = match next_wait(&pending, Instant::now()) {
+            let recv_result = match next_wait(&pending, now) {
                 Some(remaining) => notify_rx.recv_timeout(remaining),
                 None => notify_rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
             };
