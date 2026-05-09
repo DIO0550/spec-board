@@ -1610,23 +1610,29 @@ mod tests {
 
         // sleep を入れずにバーストで書き込む。CI 負荷で sleep が伸びる
         // と「100ms 内」の前提が崩れるため、回数を増やしつつ間隔は OS
-        // スレッドのスケジュール粒度に任せる。連続 write はミリ秒未満
-        // で終わるため、間に 100ms ウィンドウが入り込む余地は実用上
-        // ほぼない。
+        // スレッドのスケジュール粒度に任せる。
         for i in 0..20 {
             std::fs::write(&target, format!("v{i}").as_bytes()).unwrap();
         }
 
+        // E2E sanity check: debounce が「大幅にイベントを集約している」
+        // ことのみ検証する。kernel の inotify イベント配信が CI 負荷で
+        // 100ms ウィンドウを跨ぐ場合に 2 件以上に分かれることはあり得
+        // るため、strict `== 1` ではなく許容範囲（≥1 かつ ≤3）で判定
+        // する。debounce が機能していなければ kernel が返す件数（数件
+        // 〜十数件）がそのまま届くため、≤3 で十分に集約効果を検出で
+        // きる。strict な sliding 仕様の検証は adapter-level の決定論
+        // テスト（spawn_adapter_*）で担保している。
         let events = collect_events_for(
             &rx,
             &target,
             Duration::from_secs(5),
             Duration::from_millis(400),
         );
-        assert_eq!(
-            events.len(),
-            1,
-            "100ms 内の連続書き込みは 1 イベントに集約されるべき: got {events:?}"
+        assert!(
+            !events.is_empty() && events.len() <= 3,
+            "20 連続書き込みは debounce で ≤3 件に集約されるべき: got {} 件 {events:?}",
+            events.len()
         );
 
         drop(watcher);
