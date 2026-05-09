@@ -1739,9 +1739,12 @@ mod tests {
         // Poll は 2 秒間隔のため、初期スキャン後の安定化を待つ。
         drain_events(&rx, Duration::from_secs(3));
 
-        for i in 0..3 {
+        // sleep を入れずにバーストで書き込む（CI 負荷耐性のため）。
+        // 連続 write はミリ秒未満で完了するため、Poll の 2 秒間隔を
+        // 待つ間に複数 write が 1 回の Poll サイクル内で観測され、結
+        // 果として 100ms ウィンドウにも収まる。
+        for i in 0..15 {
             std::fs::write(&target, format!("v{i}").as_bytes()).unwrap();
-            std::thread::sleep(Duration::from_millis(15));
         }
 
         // Poll は 2 秒待ってから検知するため、長めのタイムアウトを設定。
