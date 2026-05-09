@@ -26,9 +26,9 @@
 //! | 3 | `/\bio\b\|i\/o\|読み取り\|書き込み/i` | `IO_ERROR` |
 //! | 4 | `/\bparse\b\|フロントマター/i` | `PARSE_ERROR` |
 //!
-//! BE `OpenProjectError` variant と FE 分類の対応:
+//! BE `OpenProjectError` variant と FE 分類の代表例（**先頭ヒット**で決まる）:
 //!
-//! | OpenProjectError variant | Display 文字列の例 | FE 分類 |
+//! | OpenProjectError variant | Display 文字列の例 | FE 分類（代表例） |
 //! |:-|:-|:-|
 //! | `DirectoryNotFound` | `ディレクトリが見つかりません: ...` | `NOT_FOUND` |
 //! | `PermissionDenied` | `ディレクトリにアクセスできません: ...` | `PERMISSION_DENIED` |
@@ -37,6 +37,16 @@
 //! | `ConfigLoadFailed` (`category="parse"`) | `config load failed (parse): ...` | `PARSE_ERROR` |
 //! | `NotADirectory` | `ディレクトリではありません: ...` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //! | `StateLockPoisoned` | `内部状態のロックが破損しました` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
+//!
+//! 注意: FE `TauriError.from` は `PATTERNS` 配列の **先頭ヒット**でコードを決める。
+//! 例えば `ConfigLoadFailed (category="io")` の Display は `config load failed (io):
+//! ...` だが、内側に OS から伝播した `Permission denied` 等の文字列が含まれる
+//! 場合、表より優先度の高い `PERMISSION_DENIED` パターンに先にヒットして
+//! `PERMISSION_DENIED` に分類される。`NotFound` 系も同様（`/見つかりません|not
+//! found/i` が `\bio\b` より先にマッチする）。本表の分類は **代表例** であり、
+//! 実際の分類は内側 source のメッセージにより揺れ得る点に注意。揺れを避ける場合は
+//! BE 側で IO 系を `DirectoryNotFound` / `PermissionDenied` などの専用 variant
+//! にあらかじめ詰め直すこと（`validate_directory` / `map_scan_error` で実施済み）。
 //!
 //! `NotADirectory` / `StateLockPoisoned` を FE で個別分類したい場合は、
 //! FE 側 `PATTERNS` に「ディレクトリではありません」「内部状態のロック」等を
