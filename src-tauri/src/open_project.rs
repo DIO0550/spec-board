@@ -319,11 +319,11 @@ fn commit_app_state(
     config: &Config,
     tasks: &[Task],
 ) -> Result<(), OpenProjectError> {
-    // Pre-flight: 全 mutex の健全性を確認し、poison していれば副作用前に Err 復帰。
-    state.project_path()?;
-    state.config()?;
-    state.tasks_snapshot()?;
-    state.check_watcher_handle_lock()?;
+    // Pre-flight: AppState 4 mutex + WriteIgnoreRegistry の健全性を副作用なしで
+    // 確認し、poison していれば副作用前に Err 復帰する。`tasks_snapshot()` などの
+    // クローン系を probe に使うと既存タスク数に比例した clone が走ってしまうため、
+    // no-op probe (`check_*_lock` / `is_empty`) を用いる。
+    state.check_all_locks()?;
     state.write_ignore().is_empty()?;
 
     let mut cache = HashMap::with_capacity(tasks.len());
