@@ -1,15 +1,15 @@
-//! Recursive file system watcher built on top of the `notify` crate.
+//! `notify` クレートの上に構築する再帰ファイルシステムウォッチャ。
 //!
-//! The public API hides every `notify::*` type so that callers depend only
-//! on `std` types and the [`FsEvent`] / [`WatcherError`] declared in this
-//! module. Backends are selected automatically: `RecommendedWatcher` first,
-//! falling back to `PollWatcher` (2-second interval) when either
-//! initialization or recursive `watch()` fails.
+//! 公開 API では `notify::*` の型を一切露出させず、呼び出し側は `std` の型
+//! と本モジュールが定義する [`FsEvent`] / [`WatcherError`] にのみ依存する。
+//! バックエンドは自動選択: まず `RecommendedWatcher` を試み、初期化または
+//! 再帰 `watch()` のいずれかが失敗した場合は `PollWatcher`（2 秒間隔）に
+//! フォールバックする。
 //!
-//! Stopping is synchronous via `Drop`: the backend is released, then the
-//! adapter thread is joined. After `Drop` returns, no NEW file change will
-//! produce an event, but events already queued by the adapter remain
-//! drainable from the receiver until `Disconnected` is observed.
+//! 停止は `Drop` を介して同期的に行う: 先にバックエンドを解放し、続いて
+//! アダプタスレッドを join する。`Drop` から復帰した後に発生したファイル
+//! 変更はイベント化されないが、Drop 前にアダプタが enqueue 済みのイベン
+//! トは `Disconnected` が観測されるまで receiver から取り出せる。
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -25,17 +25,17 @@ use thiserror::Error;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
-/// File system event surfaced to callers.
+/// 呼び出し側に渡すファイルシステムイベント。
 ///
-/// `notify::Event` payloads are translated into one of the variants below.
-/// Renames are emitted as a single [`FsEvent::Renamed`] when the underlying
-/// `notify::Event` carries both source and destination paths; otherwise the
-/// event is downgraded to [`FsEvent::Other`] with the first path.
-/// Runtime errors from the underlying `notify` backend are surfaced as
-/// [`FsEvent::Error`] rather than being silently dropped. When the backend
-/// reports queue overflow / event coalescing via `notify::Event::need_rescan()`
-/// the watcher emits [`FsEvent::Rescan`] so that callers can rebuild their
-/// state instead of remaining permanently out of sync with the filesystem.
+/// `notify::Event` のペイロードを以下のいずれかの variant に変換する。
+/// rename は `notify::Event` が source と destination の両方のパスを持つ
+/// 場合のみ単一の [`FsEvent::Renamed`] として発火し、それ以外は先頭パスで
+/// [`FsEvent::Other`] に降格する。
+/// `notify` バックエンドからのランタイムエラーは黙殺せず [`FsEvent::Error`]
+/// として通知する。バックエンドが `notify::Event::need_rescan()` でキュー
+/// オーバーフロー / イベントコアレスを報告した場合は [`FsEvent::Rescan`]
+/// を発火し、呼び出し側がファイルシステムと永続的に乖離しないよう状態を
+/// 再構築できるようにする。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FsEvent {
     Created(PathBuf),
@@ -47,12 +47,13 @@ pub enum FsEvent {
     },
     Other(PathBuf),
     Error(String),
-    /// Backend signaled that prior events may have been missed (queue
-    /// overflow / coalescing). Callers must rescan / rebuild state.
+    /// バックエンドが過去のイベントを取りこぼした可能性がある旨を通知した
+    /// ことを示す（キューオーバーフロー / コアレス）。呼び出し側は状態の
+    /// 再スキャン / 再構築を行う必要がある。
     Rescan,
 }
 
-/// Errors returned from [`Watcher::start`].
+/// [`Watcher::start`] が返すエラー。
 #[derive(Debug, Error)]
 pub enum WatcherError {
     #[error("failed to initialize file system watcher: {0}")]
@@ -63,41 +64,41 @@ pub enum WatcherError {
     Io(#[from] std::io::Error),
 }
 
-/// Backend variant that owns the underlying `notify` watcher and keeps the
-/// OS-level watch threads alive while the [`Watcher`] is held. The inner
-/// values are never read directly — they are kept alive so that dropping
-/// this enum tears down the OS-level watch.
+/// 背後の `notify` ウォッチャを保持し、[`Watcher`] が生きている間 OS レベ
+/// ルの監視スレッドを存続させるバックエンド variant。内側の値が直接読まれ
+/// ることはない — drop されたタイミングで OS レベルの監視を解放するため
+/// に保持しているだけである。
 pub(crate) enum Backend {
     Recommended(#[allow(dead_code)] RecommendedWatcher),
     Poll(#[allow(dead_code)] PollWatcher),
 }
 
-/// Recursive file system watcher. Drop the value to stop watching
-/// synchronously: the OS-level backend is released first, then the adapter
-/// thread is joined. Any file change that occurs **after** `Drop` returns
-/// will not be delivered to the receiver. Events that the adapter had
-/// already enqueued before Drop may still be drained from the receiver
-/// until it observes `Disconnected`.
+/// 再帰ファイルシステムウォッチャ。値を drop すると同期的に監視を停止す
+/// る: 先に OS レベルのバックエンドを解放し、続いてアダプタスレッドを
+/// join する。`Drop` が復帰した **後** に発生したファイル変更は receiver
+/// に届かない。Drop 前にアダプタが enqueue 済みのイベントは receiver が
+/// `Disconnected` を観測するまで取り出せる。
 pub struct Watcher {
     backend: Option<Backend>,
     adapter_handle: Option<JoinHandle<()>>,
 }
 
 impl Watcher {
-    /// Start watching `path` recursively, returning the watcher and a
-    /// receiver that yields translated [`FsEvent`] values.
+    /// `path` を再帰的に監視し、変換済み [`FsEvent`] を流す receiver と
+    /// ウォッチャ本体を返す。
     ///
-    /// The implementation tries `RecommendedWatcher` first. If either
-    /// `new` or `watch` fails (e.g. inotify limit on Linux), it falls back
-    /// to `PollWatcher` with a 2-second poll interval.
+    /// まず `RecommendedWatcher` を試し、`new` または `watch` のいずれか
+    /// が失敗した場合（例: Linux の inotify 上限超過）に `PollWatcher`
+    /// （2 秒間隔）へフォールバックする。
     ///
     /// # Errors
     ///
-    /// - [`WatcherError::PathNotFound`] when `path` does not exist or is not a directory
-    /// - [`WatcherError::Io`] when metadata retrieval fails for I/O reasons
-    /// - [`WatcherError::Init`] when both the recommended and poll backends
-    ///   fail to initialize or to begin recursive watching; the error
-    ///   message contains both backends' contexts
+    /// - [`WatcherError::PathNotFound`]: `path` が存在しない、または
+    ///   ディレクトリでない場合
+    /// - [`WatcherError::Io`]: metadata 取得時の I/O 失敗
+    /// - [`WatcherError::Init`]: recommended / poll の両バックエンドが
+    ///   初期化または再帰監視開始に失敗した場合。エラーメッセージには
+    ///   両バックエンドの原因が含まれる
     pub fn start(path: impl AsRef<Path>) -> Result<(Self, Receiver<FsEvent>), WatcherError> {
         let path = path.as_ref();
         validate_path(path)?;
@@ -115,16 +116,17 @@ impl Watcher {
         ))
     }
 
-    /// Test-only entry point that forces the [`PollWatcher`] backend so
-    /// CI on Linux (where inotify initialization always succeeds) can still
-    /// exercise the fallback path.
+    /// 強制的に [`PollWatcher`] バックエンドを使うテスト専用のエントリポ
+    /// イント。Linux の CI では inotify の初期化が常に成功するため、本関
+    /// 数を経由してフォールバック経路をカバレッジ計測の対象にできる。
     ///
     /// # Errors
     ///
-    /// - [`WatcherError::PathNotFound`] when `path` does not exist or is not a directory
-    /// - [`WatcherError::Io`] when metadata retrieval fails for I/O reasons
-    /// - [`WatcherError::Init`] when the poll backend fails to initialize
-    ///   or begin recursive watching
+    /// - [`WatcherError::PathNotFound`]: `path` が存在しない、または
+    ///   ディレクトリでない場合
+    /// - [`WatcherError::Io`]: metadata 取得時の I/O 失敗
+    /// - [`WatcherError::Init`]: poll バックエンドの初期化または再帰監視
+    ///   開始に失敗した場合
     #[cfg(test)]
     pub(crate) fn start_with_poll(
         path: impl AsRef<Path>,
@@ -149,30 +151,29 @@ impl Watcher {
 
 impl Drop for Watcher {
     fn drop(&mut self) {
-        // Drop the backend first. This shuts down notify's internal OS
-        // thread and releases the Sender clones held by the event handler
-        // closure. Once every Sender to `notify_tx` is gone, the adapter
-        // thread's `recv()` returns Err and the loop exits.
+        // 先にバックエンドを drop する。これにより notify 内部の OS
+        // スレッドが停止し、イベントハンドラクロージャが保持していた
+        // Sender clone が解放される。`notify_tx` への全 Sender が消えた
+        // 時点でアダプタスレッドの `recv()` が Err を返し loop を抜ける。
         self.backend.take();
 
-        // Join the adapter thread so callers observe a clean stop. After
-        // `drop` returns, no NEW file change will produce an FsEvent.
-        // Already-queued events may still be drained from `fs_rx` until
-        // `Disconnected` is observed.
+        // アダプタスレッドを join して呼び出し側に「同期停止が完了し
+        // た」状態を保証する。`drop` 復帰後は新規ファイル変更が
+        // FsEvent 化されることはない。enqueue 済みイベントは `fs_rx`
+        // が `Disconnected` を観測するまで取り出せる。
         if let Some(handle) = self.adapter_handle.take() {
             let _ = handle.join();
         }
     }
 }
 
-/// Verify that `path` exists and is a directory.
+/// `path` が存在し、かつディレクトリであることを確認する。
 ///
-/// Performs the existence and directory-type check in a single `metadata()`
-/// call so that a TOCTOU race between checks (e.g. the directory being
-/// removed mid-call) is mapped to [`WatcherError::PathNotFound`] instead of
-/// leaking through as a generic [`WatcherError::Io`]. Symlink directories
-/// are accepted; the recursion policy for descendant symlinks is enforced
-/// by [`notify_config`] (no follow).
+/// 存在確認とディレクトリ判定を単一の `metadata()` 呼び出しで行うことで、
+/// 二段呼び出し中にディレクトリが削除されるような TOCTOU レースが
+/// [`WatcherError::Io`] に降格せず [`WatcherError::PathNotFound`] にマップ
+/// されるようにしている。symlink ディレクトリは許容する（再帰中に出現す
+/// る子孫 symlink を辿らないポリシーは [`notify_config`] が担保する）。
 fn validate_path(path: &Path) -> Result<(), WatcherError> {
     match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_dir() => Ok(()),
@@ -184,9 +185,9 @@ fn validate_path(path: &Path) -> Result<(), WatcherError> {
     }
 }
 
-/// Two-stage fallback wrapper that delegates to [`build_backend_with`] with
-/// the real backend constructors. Kept as a thin shim so the underlying
-/// fallback policy is directly testable without OS resources.
+/// 本物のバックエンドコンストラクタを [`build_backend_with`] に流し込む
+/// だけの薄いラッパ。フォールバックポリシー本体を OS リソース非依存で
+/// 直接単体テストできるよう、shim としてこの関数だけ分離している。
 fn build_backend(
     tx: Sender<notify::Result<NotifyEvent>>,
     path: &Path,
@@ -194,9 +195,10 @@ fn build_backend(
     build_backend_with(tx, path, try_build_recommended, build_poll_backend)
 }
 
-/// Decide which backend to use, with constructor functions injected so the
-/// fallback policy (recommended → poll on failure of either `new` or
-/// `watch`) can be unit-tested deterministically without real watchers.
+/// 使用するバックエンドを決定する。コンストラクタを引数として注入できる
+/// ため、フォールバックポリシー（recommended が `new` または `watch` に
+/// 失敗 → poll に切り替え）を本物のウォッチャ無しで決定的に単体テストで
+/// きる。
 pub(crate) fn build_backend_with<R, P>(
     tx: Sender<notify::Result<NotifyEvent>>,
     path: &Path,
@@ -220,9 +222,9 @@ where
     }
 }
 
-/// Pure formatter for the combined error message returned when both the
-/// recommended and the poll backend initialization failed. Extracted so the
-/// format is locked in by a unit test (no OS dependency).
+/// recommended と poll の両バックエンド初期化が失敗した場合に返す結合
+/// エラーメッセージを組み立てる純粋関数。フォーマットを単体テストで固定
+/// できるよう（OS 依存無し）に分離してある。
 pub(crate) fn combine_init_errors(recommended: &str, poll: &str) -> String {
     format!("recommended watcher failed: {recommended}; poll watcher failed: {poll}")
 }
@@ -249,25 +251,25 @@ fn build_poll_backend(
     Ok(Backend::Poll(w))
 }
 
-/// Common `notify::Config`: do not follow symlinks while traversing
-/// recursively, to avoid runaway loops and crossing project boundaries.
+/// 共通の `notify::Config`: 再帰走査中の symlink は辿らない設定。無限
+/// ループとプロジェクト境界外の監視を防止する。
 fn notify_config() -> NotifyConfig {
     NotifyConfig::default().with_follow_symlinks(false)
 }
 
-/// Build the closure that forwards `notify` results to the adapter thread.
-/// If the adapter has exited, the receiver is gone and we silently drop the
-/// message because there is no caller to deliver it to.
+/// `notify` の結果をアダプタスレッドに転送するクロージャを生成する。
+/// アダプタが既に終了している場合は receiver が無いため、配送先が無い
+/// ものとしてメッセージを黙って破棄する。
 fn forward_handler(tx: Sender<notify::Result<NotifyEvent>>) -> impl EventHandler {
     move |res: notify::Result<NotifyEvent>| {
         let _ = tx.send(res);
     }
 }
 
-/// Spawn the adapter thread that translates `notify::Result<Event>` values
-/// into [`FsEvent`] and forwards them to the caller-facing channel. Loop
-/// exits when either the upstream sender is dropped (backend released) or
-/// the downstream receiver is dropped (caller stopped listening).
+/// `notify::Result<Event>` を [`FsEvent`] に変換して、呼び出し側向けの
+/// チャネルへ転送するアダプタスレッドを spawn する。loop は上流の
+/// sender が drop された（バックエンドが解放された）か、下流の receiver
+/// が drop された（呼び出し側が受信をやめた）時点で終了する。
 fn spawn_adapter(
     notify_rx: Receiver<notify::Result<NotifyEvent>>,
 ) -> (Receiver<FsEvent>, JoinHandle<()>) {
@@ -289,16 +291,16 @@ fn spawn_adapter(
     (fs_rx, handle)
 }
 
-/// Translate a single `notify::Event` into zero or more [`FsEvent`] values.
+/// 単一の `notify::Event` を 0 件以上の [`FsEvent`] に変換する。
 ///
-/// Pattern match order matters: `Modify(Name(_))` with both source and
-/// destination paths must be matched before the generic `Modify(_)` arm so
-/// that renames are emitted as [`FsEvent::Renamed`] rather than being
-/// downgraded to [`FsEvent::Modified`].
+/// パターンマッチの順序が重要: `Modify(Name(_))` の source / destination
+/// 両方のパスを伴うケースは、汎用 `Modify(_)` アームより先にマッチさせ
+/// る必要がある。そうしないと rename が [`FsEvent::Modified`] に降格して
+/// しまい、本来の [`FsEvent::Renamed`] として発火されない。
 fn convert_event(ev: NotifyEvent) -> Option<Vec<FsEvent>> {
-    // Rescan flag must be checked before the empty-paths guard: notify
-    // surfaces queue overflow / coalescing without concrete paths, and
-    // dropping these would leave callers permanently desynchronized.
+    // Rescan フラグは empty-paths のガードより先に判定する必要がある。
+    // notify はキューオーバーフロー / コアレスを具体的なパス無しで通知
+    // することがあり、これを破棄すると呼び出し側が永続的に状態乖離する。
     if ev.need_rescan() {
         return Some(vec![FsEvent::Rescan]);
     }
@@ -315,9 +317,9 @@ fn convert_event(ev: NotifyEvent) -> Option<Vec<FsEvent>> {
                 to: ev.paths[1].clone(),
             }]
         }
-        // Rename without both endpoints is not actionable as a rename;
-        // surface it as `Other` so callers can decide how to react rather
-        // than silently treating it as a content modification.
+        // 両端点が揃わない rename は rename として扱えない。内容変更と
+        // して扱うと誤解を招くため、呼び出し側が判断できるよう `Other`
+        // に降格する。
         EventKind::Modify(ModifyKind::Name(_)) => vec![FsEvent::Other(first)],
         EventKind::Modify(_) => vec![FsEvent::Modified(first)],
         _ => vec![FsEvent::Other(first)],
@@ -339,7 +341,7 @@ mod tests {
     use tempfile::TempDir;
 
     // ─────────────────────────────────────────────────────────────────
-    // helpers
+    // テストヘルパー
     // ─────────────────────────────────────────────────────────────────
 
     fn make_files(root: &Path, files: &[&str]) {
@@ -364,8 +366,8 @@ mod tests {
         NotifyEvent::new(EventKind::Any).set_flag(notify::event::Flag::Rescan)
     }
 
-    /// Wait until any [`FsEvent`] referencing `target_path` is received, or
-    /// the timeout elapses.
+    /// `target_path` を参照する [`FsEvent`] が届くまで待つ。タイムアウト
+    /// に達した場合は `None` を返す。
     fn wait_for_event_at(
         rx: &Receiver<FsEvent>,
         target_path: &Path,
@@ -388,8 +390,8 @@ mod tests {
         }
     }
 
-    /// Drop everything that is currently buffered, returning when no new
-    /// event arrives for `quiet_window`.
+    /// 現在バッファされているイベントを全て読み捨て、`quiet_window` の
+    /// 間に新規イベントが届かなくなった時点で復帰する。
     fn drain_events(rx: &Receiver<FsEvent>, quiet_window: Duration) {
         loop {
             match rx.recv_timeout(quiet_window) {
@@ -399,13 +401,15 @@ mod tests {
         }
     }
 
-    /// Drain events until the channel is `Disconnected`, returning everything
-    /// that was queued. Used to verify that no new events arrive after Drop.
+    /// チャネルが `Disconnected` を返すまでイベントを読み続け、それまで
+    /// に取得した全イベントを返す。Drop 後に新規イベントが届かないこと
+    /// を検証するテスト用ヘルパー。
     ///
-    /// Bounded by `overall_deadline` so that a regression in `Drop`
-    /// teardown (or a platform-specific notify quirk) cannot hang the test
-    /// suite indefinitely. If `Disconnected` is not observed within the
-    /// deadline, the test panics with a clear message.
+    /// `overall_deadline` を上限として、`Drop` の teardown にリグレッ
+    /// ションが起きた場合や notify の platform-specific な挙動でチャネ
+    /// ルが永続的に Disconnect しない場合にテストスイート全体がハングし
+    /// ないようにしている。期限内に `Disconnected` を観測できなければ
+    /// 明示メッセージで panic する。
     fn drain_until_disconnected(
         rx: &Receiver<FsEvent>,
         per_recv_timeout: Duration,
@@ -443,7 +447,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // convert_event: parameterized table
+    // convert_event: パラメタライズドテーブル
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -541,7 +545,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // validate_path
+    // validate_path のテスト
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -585,14 +589,14 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // build_backend_with: deterministic fallback unit tests
+    // build_backend_with: 決定的なフォールバック単体テスト
     // ─────────────────────────────────────────────────────────────────
 
-    /// Build a poll backend for use in tests, returning the [`Backend`] and
-    /// the [`TempDir`] guard that owns its watch root. The caller binds both
-    /// to a local so the temporary directory is cleaned up when the test
-    /// scope ends. Returning the guard avoids the previous `Box::leak`
-    /// pattern that permanently leaked memory and on-disk directories.
+    /// テスト用に poll バックエンドを 1 つ構築し、[`Backend`] と監視
+    /// ルートを所有する [`TempDir`] ガードを返す。呼び出し側で両方をロー
+    /// カルにバインドすれば、テストスコープ終了時に一時ディレクトリが
+    /// 削除される。これにより、以前の `Box::leak` 方式（メモリと一時
+    /// ディレクトリを永続的にリーク）を撤廃できる。
     fn make_dummy_backend() -> (Backend, TempDir) {
         let dir = TempDir::new().unwrap();
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
@@ -736,7 +740,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // adapter thread: runtime error propagation
+    // アダプタスレッド: ランタイムエラー伝播
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -763,7 +767,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // notify_config sanity
+    // notify_config の sanity チェック
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -772,7 +776,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // integration: Watcher::start (recommended backend)
+    // 統合テスト: Watcher::start (recommended バックエンド)
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -796,10 +800,10 @@ mod tests {
     #[test]
     fn watcher_start_observes_nested_file_creation() {
         let dir = TempDir::new().unwrap();
-        // Pre-create the subdirectory so the recursive backend has it
-        // registered before we start watching, avoiding the inotify race
-        // where a newly-created descendant directory may not yet be watched
-        // when its first child is written.
+        // 監視開始前にサブディレクトリを作成しておき、再帰バックエンド
+        // が起動時点でそれを登録できるようにする。新規作成された子孫
+        // ディレクトリが、最初の子ファイル書き込みまでに inotify で監視
+        // されない可能性があるレース条件を回避するため。
         let sub = dir.path().join("sub");
         std::fs::create_dir_all(&sub).unwrap();
 
@@ -819,7 +823,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // integration: poll fallback
+    // 統合テスト: poll フォールバック
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -831,7 +835,7 @@ mod tests {
         let target = dir.path().join("polled.md");
         std::fs::write(&target, b"polled").unwrap();
 
-        // PollWatcher with 2s interval; allow generous timeout.
+        // PollWatcher は 2 秒間隔のため、余裕を持たせたタイムアウトを設定する。
         let ev = wait_for_event_at(&rx, &target, Duration::from_secs(8))
             .expect("poll backend should eventually observe the file");
         assert!(
@@ -843,7 +847,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // integration: Drop synchronously stops new events
+    // 統合テスト: Drop が新規イベントを同期的に停止することを検証
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -851,19 +855,20 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
 
-        // Generate some traffic so the adapter is alive and processing.
+        // アダプタが起動して処理を開始していることを保証するため、
+        // 軽くトラフィックを発生させる。
         let warmup = dir.path().join("warmup.md");
         std::fs::write(&warmup, b"warm").unwrap();
         let _ = wait_for_event_at(&rx, &warmup, Duration::from_secs(5));
 
-        // Flush remaining events from the warmup phase.
+        // ウォームアップで発生した残イベントを読み捨てる。
         drain_events(&rx, Duration::from_millis(200));
 
-        // Synchronously stop the watcher.
+        // 同期的にウォッチャを停止する。
         drop(watcher);
 
-        // After Drop, write a uniquely named file. It must not appear in any
-        // event we drain from the receiver.
+        // Drop 後にユニーク名のファイルを作成する。receiver から取り出
+        // すどのイベントにも、このファイルへの参照が含まれてはならない。
         let marker_name = format!("drop_marker_{}.md", std::process::id());
         let marker = dir.path().join(&marker_name);
         std::fs::write(&marker, b"after-drop").unwrap();
@@ -881,7 +886,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // integration: error cases
+    // 統合テスト: エラーケース
     // ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -908,7 +913,7 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // optional: symlink directory as root is accepted
+    // 任意: root が symlink ディレクトリの場合も受け入れることを検証
     // ─────────────────────────────────────────────────────────────────
 
     #[cfg(unix)]
