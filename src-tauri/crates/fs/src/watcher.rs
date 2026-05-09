@@ -1469,21 +1469,29 @@ mod tests {
         let (fs_rx, handle) = spawn_adapter(notify_rx);
         let path = PathBuf::from("/tmp/test_rescan_bypass");
 
+        // Modified を投入して pending 入りさせ、20ms 後に Rescan を投入する。
+        // 保留 Modified は DEBOUNCE_DURATION (100ms) 経過後に発火する仕様。
         notify_tx.send(Ok(modify_event(&path))).unwrap();
         std::thread::sleep(Duration::from_millis(20));
         notify_tx.send(Ok(ev_rescan())).unwrap();
 
-        // Rescan は保留を追い越して即時届く。
-        let ev = fs_rx
-            .recv_timeout(Duration::from_millis(60))
-            .expect("Rescan は保留を追い越して即時通知されるべき");
-        assert_eq!(ev, FsEvent::Rescan);
+        // 絶対時間ではなく **順序** で bypass 仕様を検証する。CI 負荷時の
+        // スレッドスケジューリング遅延に耐性を持たせるため、両 recv に
+        // 寛大なタイムアウトを設定する。Modified は debounce 窓に gate
+        // されるため、Rescan が先に届くことが bypass の十分条件となる。
+        let first = fs_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("Rescan が先に届くべき（保留を追い越す）");
+        let second = fs_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("保留 Modified は Rescan の後に発火すべき（破棄されない）");
 
-        // その後、保留 Modified が遅れて届く（破棄されない）。
-        let ev2 = fs_rx
-            .recv_timeout(Duration::from_millis(500))
-            .expect("保留イベントは Rescan の後に発火すべき");
-        assert_eq!(ev2, FsEvent::Modified(path));
+        assert_eq!(
+            first,
+            FsEvent::Rescan,
+            "Rescan は保留 Modified を追い越して先に届くべき（Modified は DEBOUNCE_DURATION で gate される）"
+        );
+        assert_eq!(second, FsEvent::Modified(path));
 
         drop(notify_tx);
         let _ = handle.join();
