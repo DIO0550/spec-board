@@ -91,6 +91,21 @@ impl WriteIgnoreRegistry {
         Ok(self.len()? == 0)
     }
 
+    /// 登録済みパスをすべて消去する。
+    ///
+    /// プロジェクトの再オープン等、ライフサイクル境界で呼ぶ。
+    /// 内部 [`HashSet::clear`] のラッパであり、lock の poison のみ伝播する。
+    /// 再度 `register` を行えば通常通り動作するため、registry の再利用が可能。
+    ///
+    /// # Errors
+    ///
+    /// - 内部の Mutex が poison 状態になっている場合 → [`WriteIgnoreError::LockPoisoned`]
+    pub fn clear(&self) -> Result<(), WriteIgnoreError> {
+        let mut ignored_paths = self.lock()?;
+        ignored_paths.clear();
+        Ok(())
+    }
+
     /// Locks the registry and maps poisoned mutex errors into the module error type.
     ///
     /// @returns Registry mutex guard on success, or `WriteIgnoreError::LockPoisoned` when poisoned.
@@ -311,6 +326,80 @@ mod tests {
 
             assert_eq!(index % 2 == 1, should_ignore);
         }
+    }
+
+    #[test]
+    fn clear_on_empty_registry_returns_ok() {
+        let registry = WriteIgnoreRegistry::new();
+
+        registry
+            .clear()
+            .expect("clear on empty registry should be Ok");
+        assert!(registry.is_empty().expect("registry should be readable"));
+    }
+
+    #[test]
+    fn clear_removes_all_registered_paths() {
+        let registry = WriteIgnoreRegistry::new();
+
+        registry
+            .register("tasks/a.md")
+            .expect("registry should be writable");
+        registry
+            .register("tasks/b.md")
+            .expect("registry should be writable");
+        registry
+            .register("tasks/c.md")
+            .expect("registry should be writable");
+        assert_eq!(3, registry.len().expect("registry should be readable"));
+
+        registry.clear().expect("clear should succeed");
+
+        assert_eq!(0, registry.len().expect("registry should be readable"));
+        assert!(registry.is_empty().expect("registry should be readable"));
+        assert!(!registry
+            .should_ignore("tasks/a.md")
+            .expect("registry should be readable"));
+    }
+
+    #[test]
+    fn clear_allows_subsequent_register_and_should_ignore() {
+        let registry = WriteIgnoreRegistry::new();
+
+        registry
+            .register("tasks/a.md")
+            .expect("registry should be writable");
+        registry.clear().expect("clear should succeed");
+
+        assert!(registry
+            .register("tasks/a.md")
+            .expect("registry should be writable"));
+        assert!(registry
+            .should_ignore("tasks/a.md")
+            .expect("registry should be readable"));
+    }
+
+    #[test]
+    fn clear_returns_error_when_lock_is_poisoned() {
+        let registry = Arc::new(WriteIgnoreRegistry::new());
+        let poisoned_registry = Arc::clone(&registry);
+
+        let handle = thread::spawn(move || {
+            let _guard = poisoned_registry
+                .ignored_paths
+                .lock()
+                .expect("registry should be lockable before poison");
+
+            panic!("poison write_ignore registry lock");
+        });
+
+        assert!(handle.join().is_err());
+        assert_eq!(
+            WriteIgnoreError::LockPoisoned,
+            registry
+                .clear()
+                .expect_err("poisoned lock should be reported")
+        );
     }
 
     #[test]
