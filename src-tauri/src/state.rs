@@ -156,6 +156,16 @@ impl AppState {
         Ok(guard.take())
     }
 
+    /// `watcher_handle` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `install_watcher_handle` などの破壊的操作を行う前に lock の poison を
+    /// 早期検出するための pre-flight 用 API。lock を取得して即解放するだけで、
+    /// 内部状態は変更しない。
+    pub fn check_watcher_handle_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.watcher_handle)?;
+        Ok(())
+    }
+
     /// `WriteIgnoreRegistry` への参照を返す forwarder。
     ///
     /// registry は内部に独自の `Mutex` を持つため、`AppState` 側では別途 lock を
@@ -488,6 +498,46 @@ mod tests {
             state
                 .replace_tasks_cache(HashMap::new())
                 .expect_err("poisoned write")
+        );
+    }
+
+    #[test]
+    fn check_watcher_handle_lock_returns_ok_for_healthy_state() {
+        let state = AppState::new();
+
+        state.check_watcher_handle_lock().expect("healthy lock");
+    }
+
+    #[test]
+    fn check_watcher_handle_lock_does_not_modify_state() {
+        let state = AppState::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        state
+            .install_watcher_handle(boxed_counter(&counter))
+            .expect("writable");
+
+        state.check_watcher_handle_lock().expect("healthy lock");
+        state.check_watcher_handle_lock().expect("healthy lock");
+
+        // 探査後も install されたハンドルは消えていない。
+        assert!(state.take_watcher_handle().expect("readable").is_some());
+        // probe では stop() を呼ばないため counter は 0 のまま。
+        assert_eq!(0, counter.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn check_watcher_handle_lock_reports_poison() {
+        let state = Arc::new(AppState::new());
+        poison_mutex(Arc::clone(&state), |s| {
+            let _guard = s.watcher_handle.lock().expect("lockable before panic");
+            panic!("poison watcher_handle");
+        });
+
+        assert_eq!(
+            AppStateError::LockPoisoned,
+            state
+                .check_watcher_handle_lock()
+                .expect_err("poisoned probe"),
         );
     }
 

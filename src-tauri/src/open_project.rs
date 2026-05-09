@@ -290,13 +290,22 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 
 /// `AppState` に新値を確定させる。
 ///
-/// 副作用順序は以下とする:
+/// # 部分更新の防止
 ///
-/// 1. `install_watcher_handle`: 旧 watcher の `stop()` をここで呼ぶ。`stop()` が
-///    panic する場合、project_path / config / tasks_cache はまだ書き換わっていない
-///    ため、呼び出し元から見た AppState は旧プロジェクト整合のまま保たれる。
-/// 2. `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄。
-/// 3. `set_project_path` / `replace_config` / `replace_tasks_cache`: 新値を確定。
+/// 5 つの lock を独立して順次取得するため真の atomic ではないが、
+/// **pre-flight でロックの健全性を一括検証してから副作用を開始する**
+/// ことで、lock poison による Err 復帰時に部分更新が残らないようにする。
+///
+/// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
+///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
+///    poison していれば早期に `Err(StateLockPoisoned)` を返す。この時点では
+///    まだ何も書き換えていないため、`open_project_impl` の「失敗時は旧プロジェクト
+///    state を保持する」契約が守られる。
+/// 2. **書き込み**: 副作用を以下の順で実行する。
+///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ
+///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
+///    - `install_watcher_handle`: 旧 watcher の `stop()` 呼び出しを最後に行う
+///      （panic はここで発生し得るが、ほかの全てのフィールドは既に新値で確定済み）
 ///
 /// AppState の各 setter は単一フィールドのみを操作し、guard を保持したまま他の
 /// setter を呼ばないため、AppState の lock 取得順序ルール
@@ -310,15 +319,23 @@ fn commit_app_state(
     config: &Config,
     tasks: &[Task],
 ) -> Result<(), OpenProjectError> {
-    state.install_watcher_handle(Box::new(NoopWatcherHandle::new()))?;
-    state.write_ignore().clear()?;
-    state.set_project_path(Some(root.to_path_buf()))?;
-    state.replace_config(Some(config.clone()))?;
+    // Pre-flight: 全 mutex の健全性を確認し、poison していれば副作用前に Err 復帰。
+    state.project_path()?;
+    state.config()?;
+    state.tasks_snapshot()?;
+    state.check_watcher_handle_lock()?;
+    state.write_ignore().is_empty()?;
+
     let mut cache = HashMap::with_capacity(tasks.len());
     for task in tasks {
         cache.insert(PathBuf::from(task.file_path.clone()), task.clone());
     }
+
+    state.set_project_path(Some(root.to_path_buf()))?;
+    state.replace_config(Some(config.clone()))?;
     state.replace_tasks_cache(cache)?;
+    state.write_ignore().clear()?;
+    state.install_watcher_handle(Box::new(NoopWatcherHandle::new()))?;
     Ok(())
 }
 
@@ -804,6 +821,41 @@ mod tests {
             vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
             paths
         );
+    }
+
+    #[test]
+    fn commit_app_state_pre_flight_blocks_partial_updates_when_watcher_lock_poisoned() {
+        // 旧 watcher を panic 経由で poison させる。
+        let state = Arc::new(AppState::new());
+        state
+            .install_watcher_handle(Box::new(PanickingHandle))
+            .expect("install panicking watcher");
+
+        // 1 回目: watcher.stop() panic を伝播させて watcher_handle mutex を poison させる。
+        let dir = tempdir();
+        let raw = dir.path().to_str().expect("utf-8").to_string();
+        let panic_state = Arc::clone(&state);
+        let panic_path = raw.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _ = open_project_impl(panic_state.as_ref(), &panic_path);
+        }));
+        assert!(result.is_err(), "stop panic should propagate");
+
+        // 1 回目で書き込まれたフィールドのスナップショットを取る。
+        let project_after_panic = state.project_path().expect("readable");
+        let config_after_panic = state.config().expect("readable");
+
+        // 2 回目: watcher_handle が poison しているので pre-flight が早期 Err を返し、
+        // project_path / config / tasks_cache / write_ignore は一切書き換わらない。
+        let other_dir = tempdir();
+        let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
+        let err = open_project_impl(state.as_ref(), &other_raw)
+            .expect_err("subsequent call should report lock poisoned");
+        assert!(matches!(err, OpenProjectError::StateLockPoisoned));
+
+        // pre-flight 失敗で副作用が走っていないことを確認する。
+        assert_eq!(project_after_panic, state.project_path().expect("readable"));
+        assert_eq!(config_after_panic, state.config().expect("readable"));
     }
 
     #[test]
