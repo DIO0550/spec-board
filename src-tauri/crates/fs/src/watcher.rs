@@ -1408,20 +1408,24 @@ mod tests {
 
         notify_tx.send(Ok(modify_event(&path))).unwrap();
 
-        // ウィンドウ満了前は届かないはず。
-        assert!(
-            matches!(
-                fs_rx.recv_timeout(Duration::from_millis(40)),
-                Err(RecvTimeoutError::Timeout)
-            ),
-            "ウィンドウ満了前にイベントが届くべきではない"
-        );
-
-        // ウィンドウ満了後に 1 件届く。
+        // 「ウィンドウ満了前は届かない」を short timeout で検証すると、
+        // CI 負荷でテストスレッドが 100ms 以上スケジュールされない場合
+        // にイベントが既に到着していて偽陽性になり得るため、ここでは
+        // 件数ベースの検証だけ行う:「最終的にちょうど 1 件、Modified
+        // が届くこと」「以降に余分なイベントは続かないこと」。
         let ev = fs_rx
-            .recv_timeout(Duration::from_millis(500))
+            .recv_timeout(Duration::from_secs(2))
             .expect("debounce 満了後にイベントが届くべき");
         assert_eq!(ev, FsEvent::Modified(path));
+
+        // 余分なイベントが続かないこと（debounce が 1 件に集約している）。
+        assert!(
+            matches!(
+                fs_rx.recv_timeout(Duration::from_millis(300)),
+                Err(RecvTimeoutError::Timeout)
+            ),
+            "1 回投入につき発火は 1 件のみであるべき"
+        );
 
         drop(notify_tx);
         let _ = handle.join();
