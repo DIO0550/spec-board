@@ -32,15 +32,24 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// `notify::Event` carries both source and destination paths; otherwise the
 /// event is downgraded to [`FsEvent::Other`] with the first path.
 /// Runtime errors from the underlying `notify` backend are surfaced as
-/// [`FsEvent::Error`] rather than being silently dropped.
+/// [`FsEvent::Error`] rather than being silently dropped. When the backend
+/// reports queue overflow / event coalescing via `notify::Event::need_rescan()`
+/// the watcher emits [`FsEvent::Rescan`] so that callers can rebuild their
+/// state instead of remaining permanently out of sync with the filesystem.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FsEvent {
     Created(PathBuf),
     Modified(PathBuf),
     Removed(PathBuf),
-    Renamed { from: PathBuf, to: PathBuf },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
+    },
     Other(PathBuf),
     Error(String),
+    /// Backend signaled that prior events may have been missed (queue
+    /// overflow / coalescing). Callers must rescan / rebuild state.
+    Rescan,
 }
 
 /// Errors returned from [`Watcher::start`].
@@ -287,6 +296,12 @@ fn spawn_adapter(
 /// that renames are emitted as [`FsEvent::Renamed`] rather than being
 /// downgraded to [`FsEvent::Modified`].
 fn convert_event(ev: NotifyEvent) -> Option<Vec<FsEvent>> {
+    // Rescan flag must be checked before the empty-paths guard: notify
+    // surfaces queue overflow / coalescing without concrete paths, and
+    // dropping these would leave callers permanently desynchronized.
+    if ev.need_rescan() {
+        return Some(vec![FsEvent::Rescan]);
+    }
     if ev.paths.is_empty() {
         return None;
     }
@@ -341,6 +356,10 @@ mod tests {
             paths,
             attrs: Default::default(),
         }
+    }
+
+    fn ev_rescan() -> NotifyEvent {
+        NotifyEvent::new(EventKind::Any).set_flag(notify::event::Flag::Rescan)
     }
 
     /// Wait until any [`FsEvent`] referencing `target_path` is received, or
@@ -401,7 +420,7 @@ mod tests {
             | FsEvent::Removed(p)
             | FsEvent::Other(p) => vec![p.clone()],
             FsEvent::Renamed { from, to } => vec![from.clone(), to.clone()],
-            FsEvent::Error(_) => Vec::new(),
+            FsEvent::Error(_) | FsEvent::Rescan => Vec::new(),
         }
     }
 
@@ -491,6 +510,16 @@ mod tests {
             let actual = convert_event(ev_with(c.kind, c.paths.clone()));
             assert_eq!(actual, c.expected, "case `{}` failed", c.name);
         }
+    }
+
+    #[test]
+    fn convert_event_emits_rescan_when_backend_signals_overflow() {
+        let actual = convert_event(ev_rescan());
+        assert_eq!(
+            actual,
+            Some(vec![FsEvent::Rescan]),
+            "rescan-flagged events must surface as FsEvent::Rescan even when paths are empty"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────

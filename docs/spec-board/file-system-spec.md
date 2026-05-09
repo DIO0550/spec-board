@@ -402,6 +402,7 @@ pub enum FsEvent {
     Renamed { from: PathBuf, to: PathBuf },
     Other(PathBuf),
     Error(String),
+    Rescan,
 }
 
 pub enum WatcherError {
@@ -431,6 +432,7 @@ pub enum WatcherError {
 | `Remove(_)` | `paths[0]` 必須 | `FsEvent::Removed(paths[0])` |
 | `Access(_)` / `Any` / `Other` | 〃 | `FsEvent::Other(paths[0])` |
 | 任意 | `paths.is_empty()` | 送信スキップ |
+| 任意 | `notify::Event::need_rescan() == true` | `FsEvent::Rescan`（キューオーバーフロー／コアレスでイベントが取りこぼされた可能性。`paths` の有無に関わらず先に判定し、caller に状態再構築を促す） |
 | `notify` バックエンドからの `Result::Err` | — | `FsEvent::Error(message)`（黙殺せず caller に通知） |
 
 #### `WatcherError`（`start` 時のみ）
