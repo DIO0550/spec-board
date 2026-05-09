@@ -144,10 +144,12 @@ pub(crate) fn open_project_impl(
 /// 1. `fs::metadata` で存在を確認し、`NotFound` → `DirectoryNotFound`、
 ///    `PermissionDenied` / その他 IO エラー → `PermissionDenied` として扱う。
 /// 2. `metadata.is_dir()` が false なら `NotADirectory`。
-/// 3. `fs::read_dir` で読み取り権限を確認し、エラーは `PermissionDenied`
-///    として扱う（Unix で 0o000 のディレクトリは `metadata` は通るが
-///    `read_dir` が失敗するため、ここで弾かないと後続層が ConfigLoadFailed
-///    として混在エラーを返してしまう）。
+/// 3. `fs::read_dir` で読み取り権限を確認する。`metadata` 取得時点と
+///    `read_dir` の間で root がファイルへ置き換わる TOCTOU が起きうるため、
+///    `NotADirectory` も `OpenProjectError::NotADirectory` として返す。
+///    それ以外のエラーは `PermissionDenied` として扱う（Unix で 0o000 の
+///    ディレクトリは `metadata` は通るが `read_dir` が失敗するため、ここで
+///    弾かないと後続層が ConfigLoadFailed として混在エラーを返してしまう）。
 ///
 /// エラー文字列に埋め込む `path` は引数の生文字列 (`raw_path`) をそのまま使い、
 /// `Path::display` 由来の正規化を避ける。
@@ -163,6 +165,9 @@ fn validate_directory(root: &Path, raw_path: &str) -> Result<(), OpenProjectErro
             ErrorKind::NotFound => OpenProjectError::DirectoryNotFound {
                 path: raw_path.to_string(),
             },
+            ErrorKind::NotADirectory => OpenProjectError::NotADirectory {
+                path: raw_path.to_string(),
+            },
             _ => OpenProjectError::PermissionDenied {
                 path: raw_path.to_string(),
             },
@@ -174,6 +179,9 @@ fn validate_directory(root: &Path, raw_path: &str) -> Result<(), OpenProjectErro
 fn map_metadata_error(err: std::io::Error, raw_path: &str) -> OpenProjectError {
     match err.kind() {
         ErrorKind::NotFound => OpenProjectError::DirectoryNotFound {
+            path: raw_path.to_string(),
+        },
+        ErrorKind::NotADirectory => OpenProjectError::NotADirectory {
             path: raw_path.to_string(),
         },
         ErrorKind::PermissionDenied => OpenProjectError::PermissionDenied {
