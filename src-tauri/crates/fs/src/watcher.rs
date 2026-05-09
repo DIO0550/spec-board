@@ -1698,10 +1698,12 @@ mod tests {
         let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
         drain_events(&rx, Duration::from_millis(300));
 
-        for i in 0..3 {
+        // sleep を入れずにバーストで書き込む（CI 負荷耐性のため）。
+        // a と b に交互に複数回書き込み、ウィンドウ内に確実に収まる
+        // よう回数で押し切る。
+        for i in 0..15 {
             std::fs::write(&a, format!("a{i}").as_bytes()).unwrap();
             std::fs::write(&b, format!("b{i}").as_bytes()).unwrap();
-            std::thread::sleep(Duration::from_millis(15));
         }
 
         let all = collect_all_events(&rx, Duration::from_secs(5), Duration::from_millis(400));
