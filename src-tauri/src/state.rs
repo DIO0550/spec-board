@@ -156,6 +156,57 @@ impl AppState {
         Ok(guard.take())
     }
 
+    /// `project_path` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `project_path()` と異なりクローンを行わないため、pre-flight 用途で
+    /// 大きな PathBuf をコピーするコストを避けられる。
+    pub fn check_project_path_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.project_path)?;
+        Ok(())
+    }
+
+    /// `config` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `config()` と異なりクローンを行わないため、pre-flight 用途で
+    /// `Config` のコピーコストを避けられる。
+    pub fn check_config_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.config)?;
+        Ok(())
+    }
+
+    /// `tasks_cache` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `tasks_snapshot()` と異なり全 `Task` の clone+collect を行わないため、
+    /// 既存プロジェクトが大きい場合でも O(1) で lock 健全性のみ確認できる。
+    pub fn check_tasks_cache_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.tasks_cache)?;
+        Ok(())
+    }
+
+    /// `watcher_handle` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `install_watcher_handle` などの破壊的操作を行う前に lock の poison を
+    /// 早期検出するための pre-flight 用 API。lock を取得して即解放するだけで、
+    /// 内部状態は変更しない。
+    pub fn check_watcher_handle_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.watcher_handle)?;
+        Ok(())
+    }
+
+    /// AppState が保持する 4 つの `Mutex` フィールドすべての lock 健全性を
+    /// 一括 probe する副作用なしの API。
+    ///
+    /// `WriteIgnoreRegistry` は AppState の `Mutex` ではなく内部に独自の
+    /// `Mutex` を持つため対象外。caller が必要なら
+    /// `state.write_ignore().is_empty()?` 等を組み合わせて確認する。
+    pub fn check_all_locks(&self) -> Result<(), AppStateError> {
+        self.check_project_path_lock()?;
+        self.check_config_lock()?;
+        self.check_tasks_cache_lock()?;
+        self.check_watcher_handle_lock()?;
+        Ok(())
+    }
+
     /// `WriteIgnoreRegistry` への参照を返す forwarder。
     ///
     /// registry は内部に独自の `Mutex` を持つため、`AppState` 側では別途 lock を
@@ -488,6 +539,148 @@ mod tests {
             state
                 .replace_tasks_cache(HashMap::new())
                 .expect_err("poisoned write")
+        );
+    }
+
+    #[test]
+    fn check_project_path_lock_returns_ok_for_healthy_state() {
+        let state = AppState::new();
+
+        state.check_project_path_lock().expect("healthy lock");
+    }
+
+    #[test]
+    fn check_project_path_lock_reports_poison() {
+        let state = Arc::new(AppState::new());
+        poison_mutex(Arc::clone(&state), |s| {
+            let _guard = s.project_path.lock().expect("lockable before panic");
+            panic!("poison project_path");
+        });
+
+        assert_eq!(
+            AppStateError::LockPoisoned,
+            state.check_project_path_lock().expect_err("poisoned probe"),
+        );
+    }
+
+    #[test]
+    fn check_config_lock_returns_ok_for_healthy_state() {
+        let state = AppState::new();
+
+        state.check_config_lock().expect("healthy lock");
+    }
+
+    #[test]
+    fn check_config_lock_reports_poison() {
+        let state = Arc::new(AppState::new());
+        poison_mutex(Arc::clone(&state), |s| {
+            let _guard = s.config.lock().expect("lockable before panic");
+            panic!("poison config");
+        });
+
+        assert_eq!(
+            AppStateError::LockPoisoned,
+            state.check_config_lock().expect_err("poisoned probe"),
+        );
+    }
+
+    #[test]
+    fn check_tasks_cache_lock_returns_ok_for_healthy_state() {
+        let state = AppState::new();
+
+        state.check_tasks_cache_lock().expect("healthy lock");
+    }
+
+    #[test]
+    fn check_tasks_cache_lock_does_not_clone_entries() {
+        // 仕様上 probe は副作用なし & タスクの clone を行わない契約。entry
+        // をいくつ詰めても probe 自体は O(1) で同じ呼び出しが完了することを担保する。
+        let state = AppState::new();
+        let mut cache = HashMap::new();
+        cache.insert(PathBuf::from("a.md"), sample_task("a", "a.md"));
+        cache.insert(PathBuf::from("b.md"), sample_task("b", "b.md"));
+        state.replace_tasks_cache(cache).expect("writable");
+
+        // clone を行わないことの直接観測は難しいため、複数回呼んでも Ok かつ
+        // tasks_snapshot で内容が保持されたままであることを確認する。
+        for _ in 0..5 {
+            state.check_tasks_cache_lock().expect("healthy lock");
+        }
+        assert_eq!(2, state.tasks_snapshot().expect("readable").len());
+    }
+
+    #[test]
+    fn check_tasks_cache_lock_reports_poison() {
+        let state = Arc::new(AppState::new());
+        poison_mutex(Arc::clone(&state), |s| {
+            let _guard = s.tasks_cache.lock().expect("lockable before panic");
+            panic!("poison tasks_cache");
+        });
+
+        assert_eq!(
+            AppStateError::LockPoisoned,
+            state.check_tasks_cache_lock().expect_err("poisoned probe"),
+        );
+    }
+
+    #[test]
+    fn check_all_locks_returns_ok_for_healthy_state() {
+        let state = AppState::new();
+
+        state.check_all_locks().expect("all healthy");
+    }
+
+    #[test]
+    fn check_all_locks_reports_poison_when_any_field_is_poisoned() {
+        let state = Arc::new(AppState::new());
+        poison_mutex(Arc::clone(&state), |s| {
+            let _guard = s.watcher_handle.lock().expect("lockable before panic");
+            panic!("poison watcher_handle");
+        });
+
+        assert_eq!(
+            AppStateError::LockPoisoned,
+            state.check_all_locks().expect_err("poisoned"),
+        );
+    }
+
+    #[test]
+    fn check_watcher_handle_lock_returns_ok_for_healthy_state() {
+        let state = AppState::new();
+
+        state.check_watcher_handle_lock().expect("healthy lock");
+    }
+
+    #[test]
+    fn check_watcher_handle_lock_does_not_modify_state() {
+        let state = AppState::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        state
+            .install_watcher_handle(boxed_counter(&counter))
+            .expect("writable");
+
+        state.check_watcher_handle_lock().expect("healthy lock");
+        state.check_watcher_handle_lock().expect("healthy lock");
+
+        // 探査後も install されたハンドルは消えていない。
+        assert!(state.take_watcher_handle().expect("readable").is_some());
+        // probe では stop() を呼ばないため counter は 0 のまま。
+        assert_eq!(0, counter.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn check_watcher_handle_lock_reports_poison() {
+        let state = Arc::new(AppState::new());
+        poison_mutex(Arc::clone(&state), |s| {
+            let _guard = s.watcher_handle.lock().expect("lockable before panic");
+            panic!("poison watcher_handle");
+        });
+
+        assert_eq!(
+            AppStateError::LockPoisoned,
+            state
+                .check_watcher_handle_lock()
+                .expect_err("poisoned probe"),
         );
     }
 

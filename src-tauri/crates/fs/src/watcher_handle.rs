@@ -23,9 +23,30 @@ pub trait WatcherHandle: Send {
     fn stop(&mut self);
 }
 
+/// 何もしない [`WatcherHandle`] 実装。
+///
+/// notify 等の具象 watcher が未導入の段階で `AppState::install_watcher_handle`
+/// に渡せる最小実装として用いる。`stop()` は冪等で副作用を持たないため、
+/// 同一インスタンスに対して複数回呼び出しても安全。
+#[derive(Debug, Default)]
+pub struct NoopWatcherHandle;
+
+impl NoopWatcherHandle {
+    /// 新しい no-op ハンドルを返す。
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl WatcherHandle for NoopWatcherHandle {
+    fn stop(&mut self) {
+        // 何もしない（冪等性のため複数回呼ばれてよい）。
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::WatcherHandle;
+    use super::{NoopWatcherHandle, WatcherHandle};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -56,5 +77,30 @@ mod tests {
     fn watcher_handle_box_is_send() {
         fn assert_send<T: Send>() {}
         assert_send::<Box<dyn WatcherHandle + Send + 'static>>();
+    }
+
+    #[test]
+    fn noop_watcher_handle_stop_does_not_panic() {
+        let mut handle = NoopWatcherHandle::new();
+
+        handle.stop();
+    }
+
+    #[test]
+    fn noop_watcher_handle_stop_is_idempotent() {
+        let mut handle = NoopWatcherHandle::new();
+
+        handle.stop();
+        handle.stop();
+        handle.stop();
+    }
+
+    #[test]
+    fn noop_watcher_handle_works_through_trait_object() {
+        let mut handle: Box<dyn WatcherHandle + Send + 'static> =
+            Box::new(NoopWatcherHandle::new());
+
+        (*handle).stop();
+        (*handle).stop();
     }
 }
