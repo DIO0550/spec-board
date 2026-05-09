@@ -16,10 +16,19 @@
 //! FE 側 (`TauriError.from`) は以下の正規表現でエラー種別を判定する。
 //! Display 文字列を変更する際は FE 側のテストとの整合性を必ず確認すること。
 //!
-//! - "見つかりません" → DirectoryNotFound
-//! - "アクセスできません" → PermissionDenied
-//! - `\bio\b` → ScanFailed / ConfigLoadFailed(io)
-//! - `\bparse\b` → ConfigLoadFailed(parse)
+//! | OpenProjectError variant | Display 文字列の例 | FE 分類 |
+//! |:-|:-|:-|
+//! | `DirectoryNotFound` | `ディレクトリが見つかりません: ...` | `\b見つかりません\|not found\b` → `directoryNotFound` |
+//! | `PermissionDenied` | `ディレクトリにアクセスできません: ...` | `\bアクセスできません\|permission\b` → `permissionDenied` |
+//! | `ScanFailed` | `io scan failed: ...` | `\bio\b` → `io` |
+//! | `ConfigLoadFailed` | `config load failed (io\|parse): ...` | `\bio\b` / `\bparse\b` → `io` / `parse` |
+//! | `NotADirectory` | `ディレクトリではありません: ...` | 既存正規表現に該当パターン無し → `unknown`（FE 側でパターン追加するまで） |
+//! | `StateLockPoisoned` | `内部状態のロックが破損しました` | 既存正規表現に該当パターン無し → `unknown`（FE 側でパターン追加するまで） |
+//!
+//! `NotADirectory` / `StateLockPoisoned` を FE で個別分類したい場合は、
+//! FE 側 `TauriError.from` の正規表現に「ディレクトリではありません」「内部状態のロック」等を
+//! 追加すること。本 Issue 範囲ではこれら 2 variant は `unknown` 扱いとなる前提で
+//! BE 側エラー Display を生成している。
 
 use std::collections::HashMap;
 use std::fs;
