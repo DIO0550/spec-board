@@ -11,10 +11,11 @@
 //! 変更はイベント化されないが、Drop 前にアダプタが enqueue 済みのイベン
 //! トは `Disconnected` が観測されるまで receiver から取り出せる。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use notify::event::{EventKind, ModifyKind};
 use notify::{
@@ -24,6 +25,12 @@ use notify::{
 use thiserror::Error;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// 同一パスの連続イベントを集約するスライディングウィンドウ幅。
+///
+/// 新しいイベントが到来するたびに deadline は `now + DEBOUNCE_DURATION`
+/// まで延長され、`DEBOUNCE_DURATION` 静止して初めて発火する。
+const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
 
 /// 呼び出し側に渡すファイルシステムイベント。
 ///
@@ -266,23 +273,165 @@ fn forward_handler(tx: Sender<notify::Result<NotifyEvent>>) -> impl EventHandler
     }
 }
 
+/// デバウンスバッファ内の 1 エントリ。
+///
+/// 同一 path に対する新着イベントは `event` を上書きし、`deadline` を
+/// `now + DEBOUNCE_DURATION` まで延長する（スライディングウィンドウ）。
+/// 静止後に `event` がそのまま `fs_tx` に送出される。
+struct PendingEvent {
+    event: FsEvent,
+    deadline: Instant,
+}
+
+/// path → PendingEvent のマップ。アダプタスレッド固有の可変状態。
+type PendingMap = HashMap<PathBuf, PendingEvent>;
+
+/// 通常イベントを保留マップに登録する（スライディング）。
+///
+/// 同一 path のエントリが既にあれば event を上書きし、deadline を
+/// `now + DEBOUNCE_DURATION` まで延長する。
+///
+/// `FsEvent::Rescan` / `FsEvent::Error` は呼び出し側でバイパスされる
+/// 前提で、本関数には届かないことを `debug_assert!` で守る。
+fn enqueue_pending(pending: &mut PendingMap, path: PathBuf, event: FsEvent, now: Instant) {
+    debug_assert!(!matches!(event, FsEvent::Rescan | FsEvent::Error(_)));
+    pending.insert(
+        path,
+        PendingEvent {
+            event,
+            deadline: now + DEBOUNCE_DURATION,
+        },
+    );
+}
+
+/// 保留マップから「deadline ≤ now」のエントリを取り出して返す。
+///
+/// 呼び出し側の決定論性のため、deadline 昇順（同点は path 昇順）に
+/// 並べてから返す。
+fn drain_due(pending: &mut PendingMap, now: Instant) -> Vec<FsEvent> {
+    let mut due_keys: Vec<PathBuf> = pending
+        .iter()
+        .filter(|(_, p)| p.deadline <= now)
+        .map(|(k, _)| k.clone())
+        .collect();
+    due_keys.sort_by(|a, b| {
+        let da = pending[a].deadline;
+        let db = pending[b].deadline;
+        da.cmp(&db).then_with(|| a.cmp(b))
+    });
+    due_keys
+        .into_iter()
+        .map(|k| pending.remove(&k).expect("key was just collected").event)
+        .collect()
+}
+
+/// 次の発火までの残時間を返す。保留が無ければ `None`（= 無限ブロック）。
+///
+/// deadline がすでに過ぎていれば `Duration::ZERO` を返す（saturating）。
+fn next_wait(pending: &PendingMap, now: Instant) -> Option<Duration> {
+    pending
+        .values()
+        .map(|p| p.deadline)
+        .min()
+        .map(|d| d.saturating_duration_since(now))
+}
+
+/// イベントから集約キーとなる path を抽出する。
+///
+/// 集約キー仕様:
+/// - `Created` / `Modified` / `Removed` / `Other` はそのままの path を key とする。
+/// - `Renamed { from, to }` は **宛先 `to` を key** とする。`from` 側は独立扱い。
+/// - `Rescan` / `Error` は path を持たないため `None` を返す（バイパス対象）。
+fn event_path(ev: &FsEvent) -> Option<PathBuf> {
+    match ev {
+        FsEvent::Created(p) | FsEvent::Modified(p) | FsEvent::Removed(p) | FsEvent::Other(p) => {
+            Some(p.clone())
+        }
+        FsEvent::Renamed { to, .. } => Some(to.clone()),
+        FsEvent::Rescan | FsEvent::Error(_) => None,
+    }
+}
+
 /// `notify::Result<Event>` を [`FsEvent`] に変換して、呼び出し側向けの
-/// チャネルへ転送するアダプタスレッドを spawn する。loop は上流の
-/// sender が drop された（バックエンドが解放された）か、下流の receiver
-/// が drop された（呼び出し側が受信をやめた）時点で終了する。
+/// チャネルへ転送するアダプタスレッドを spawn する。
+///
+/// 同一 path の連続イベントは [`DEBOUNCE_DURATION`] のスライディング
+/// ウィンドウで集約され、ウィンドウ満了後に最後のイベントのみが送出
+/// される。`FsEvent::Rescan` / `FsEvent::Error` は集約対象外で、保留
+/// イベントを追い越して即時 forward する。
+///
+/// loop は上流の sender が drop された（バックエンドが解放された）か、
+/// 下流の receiver が drop された（呼び出し側が受信をやめた）時点で
+/// 終了する。前者の場合、終了前に保留イベントを deadline 昇順（同点
+/// は path 昇順）で flush する。
 fn spawn_adapter(
     notify_rx: Receiver<notify::Result<NotifyEvent>>,
 ) -> (Receiver<FsEvent>, JoinHandle<()>) {
     let (fs_tx, fs_rx) = mpsc::channel::<FsEvent>();
     let handle = thread::spawn(move || {
-        while let Ok(item) = notify_rx.recv() {
-            let translated = match item {
-                Ok(ev) => convert_event(ev),
-                Err(e) => Some(vec![FsEvent::Error(e.to_string())]),
+        let mut pending: PendingMap = HashMap::new();
+        loop {
+            // 1. 期限到来分を先に発火する。
+            //
+            // recv 前に drain することで、同一 path の新着イベントが
+            // notify_rx に既に queued されていても、期限切れの保留
+            // エントリが先に発火する。`next_wait` が `Duration::ZERO`
+            // の場合に `recv_timeout(0)` が直ちに `Ok` を返すと、
+            // enqueue_pending で同一 key が上書きされ、100ms 静止して
+            // いた旧イベントが消失する race を防ぐ。
+            let due = drain_due(&mut pending, Instant::now());
+            for ev in due {
+                if fs_tx.send(ev).is_err() {
+                    return;
+                }
+            }
+
+            // 2. 受信待ち時間を決定。保留が無ければ無限ブロック。
+            let recv_result = match next_wait(&pending, Instant::now()) {
+                Some(remaining) => notify_rx.recv_timeout(remaining),
+                None => notify_rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
             };
-            let Some(events) = translated else { continue };
-            for fs_ev in events {
-                if fs_tx.send(fs_ev).is_err() {
+
+            // 3. 受信結果を分類してバッファ更新 / 即時 forward を行う。
+            match recv_result {
+                Ok(item) => {
+                    let translated = match item {
+                        Ok(ev) => convert_event(ev),
+                        Err(e) => Some(vec![FsEvent::Error(e.to_string())]),
+                    };
+                    let Some(events) = translated else { continue };
+                    let now = Instant::now();
+                    for fs_ev in events {
+                        match fs_ev {
+                            bypass @ (FsEvent::Rescan | FsEvent::Error(_)) => {
+                                if fs_tx.send(bypass).is_err() {
+                                    return;
+                                }
+                            }
+                            other => {
+                                let Some(path) = event_path(&other) else {
+                                    continue;
+                                };
+                                enqueue_pending(&mut pending, path, other, now);
+                            }
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    // 次ループ先頭の drain_due で発火する。
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    // 上流（バックエンド）が drop された。残保留を
+                    // deadline 昇順 + path 昇順で flush して終了する。
+                    let mut remaining: Vec<(PathBuf, PendingEvent)> = pending.drain().collect();
+                    remaining.sort_by(|a, b| {
+                        a.1.deadline.cmp(&b.1.deadline).then_with(|| a.0.cmp(&b.0))
+                    });
+                    for (_, pe) in remaining {
+                        if fs_tx.send(pe.event).is_err() {
+                            return;
+                        }
+                    }
                     return;
                 }
             }
@@ -927,6 +1076,645 @@ mod tests {
 
         let (watcher, _rx) =
             Watcher::start(&link).expect("symlink directory root should be accepted");
+        drop(watcher);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 純粋ロジック: DEBOUNCE_DURATION / event_path / enqueue_pending /
+    // drain_due / next_wait
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn debounce_duration_constant_is_100ms() {
+        assert_eq!(DEBOUNCE_DURATION, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn event_path_returns_some_for_created_modified_removed_other() {
+        let p = PathBuf::from("/tmp/x");
+        assert_eq!(event_path(&FsEvent::Created(p.clone())), Some(p.clone()));
+        assert_eq!(event_path(&FsEvent::Modified(p.clone())), Some(p.clone()));
+        assert_eq!(event_path(&FsEvent::Removed(p.clone())), Some(p.clone()));
+        assert_eq!(event_path(&FsEvent::Other(p.clone())), Some(p));
+    }
+
+    #[test]
+    fn event_path_returns_destination_for_renamed() {
+        let from = PathBuf::from("/tmp/a");
+        let to = PathBuf::from("/tmp/b");
+        let ev = FsEvent::Renamed {
+            from: from.clone(),
+            to: to.clone(),
+        };
+        assert_eq!(
+            event_path(&ev),
+            Some(to),
+            "Renamed の集約キーは宛先 `to` であるべき"
+        );
+    }
+
+    #[test]
+    fn event_path_returns_none_for_rescan_and_error() {
+        assert_eq!(event_path(&FsEvent::Rescan), None);
+        assert_eq!(event_path(&FsEvent::Error("boom".into())), None);
+    }
+
+    #[test]
+    fn enqueue_pending_inserts_new_entry_with_deadline_now_plus_window() {
+        let mut pending: PendingMap = HashMap::new();
+        let now = Instant::now();
+        let path = PathBuf::from("/tmp/a");
+        enqueue_pending(
+            &mut pending,
+            path.clone(),
+            FsEvent::Modified(path.clone()),
+            now,
+        );
+
+        let entry = pending.get(&path).expect("entry should be inserted");
+        assert_eq!(entry.deadline, now + DEBOUNCE_DURATION);
+        assert_eq!(entry.event, FsEvent::Modified(path));
+    }
+
+    #[test]
+    fn enqueue_pending_overwrites_event_when_same_path_arrives() {
+        let mut pending: PendingMap = HashMap::new();
+        let now = Instant::now();
+        let path = PathBuf::from("/tmp/a");
+        enqueue_pending(
+            &mut pending,
+            path.clone(),
+            FsEvent::Created(path.clone()),
+            now,
+        );
+        enqueue_pending(
+            &mut pending,
+            path.clone(),
+            FsEvent::Modified(path.clone()),
+            now,
+        );
+
+        let entry = pending.get(&path).unwrap();
+        assert_eq!(
+            entry.event,
+            FsEvent::Modified(path),
+            "後続イベントが先のイベントを上書きすべき"
+        );
+    }
+
+    #[test]
+    fn enqueue_pending_slides_deadline_on_subsequent_event() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_millis(50);
+        let path = PathBuf::from("/tmp/a");
+
+        enqueue_pending(
+            &mut pending,
+            path.clone(),
+            FsEvent::Modified(path.clone()),
+            t0,
+        );
+        let first_deadline = pending[&path].deadline;
+        assert_eq!(first_deadline, t0 + DEBOUNCE_DURATION);
+
+        enqueue_pending(
+            &mut pending,
+            path.clone(),
+            FsEvent::Modified(path.clone()),
+            t1,
+        );
+        let second_deadline = pending[&path].deadline;
+        assert_eq!(
+            second_deadline,
+            t1 + DEBOUNCE_DURATION,
+            "deadline は最新イベント到着時刻を起点にスライドすべき"
+        );
+        assert!(second_deadline > first_deadline);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic]
+    fn enqueue_pending_panics_in_debug_when_called_with_rescan() {
+        let mut pending: PendingMap = HashMap::new();
+        enqueue_pending(
+            &mut pending,
+            PathBuf::from("/tmp/a"),
+            FsEvent::Rescan,
+            Instant::now(),
+        );
+    }
+
+    #[test]
+    fn next_wait_returns_none_when_pending_is_empty() {
+        let pending: PendingMap = HashMap::new();
+        assert_eq!(next_wait(&pending, Instant::now()), None);
+    }
+
+    #[test]
+    fn next_wait_returns_remaining_for_nearest_deadline() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let near = PathBuf::from("/tmp/near");
+        let far = PathBuf::from("/tmp/far");
+        pending.insert(
+            near.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(near),
+                deadline: t0 + Duration::from_millis(30),
+            },
+        );
+        pending.insert(
+            far.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(far),
+                deadline: t0 + Duration::from_millis(80),
+            },
+        );
+
+        let remaining = next_wait(&pending, t0).expect("nonempty pending should have a wait");
+        assert_eq!(
+            remaining,
+            Duration::from_millis(30),
+            "最も近い deadline までの残時間を返すべき"
+        );
+    }
+
+    #[test]
+    fn next_wait_saturates_to_zero_when_deadline_already_passed() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let p = PathBuf::from("/tmp/a");
+        pending.insert(
+            p.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(p),
+                deadline: t0,
+            },
+        );
+        let later = t0 + Duration::from_millis(20);
+        assert_eq!(next_wait(&pending, later), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn drain_due_returns_empty_when_nothing_expired() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let p = PathBuf::from("/tmp/a");
+        pending.insert(
+            p.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(p),
+                deadline: t0 + Duration::from_millis(50),
+            },
+        );
+        let due = drain_due(&mut pending, t0);
+        assert!(due.is_empty());
+        assert_eq!(pending.len(), 1, "未期限のエントリは残るべき");
+    }
+
+    #[test]
+    fn drain_due_returns_only_expired_entries() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let expired = PathBuf::from("/tmp/expired");
+        let alive = PathBuf::from("/tmp/alive");
+        pending.insert(
+            expired.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(expired.clone()),
+                deadline: t0,
+            },
+        );
+        pending.insert(
+            alive.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(alive.clone()),
+                deadline: t0 + Duration::from_millis(100),
+            },
+        );
+
+        let due = drain_due(&mut pending, t0 + Duration::from_millis(10));
+        assert_eq!(due, vec![FsEvent::Modified(expired.clone())]);
+        assert!(
+            !pending.contains_key(&expired),
+            "期限切れエントリは pending から除去されるべき"
+        );
+        assert!(
+            pending.contains_key(&alive),
+            "未期限エントリは pending に残るべき"
+        );
+    }
+
+    #[test]
+    fn drain_due_at_exact_deadline_includes_entry() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let p = PathBuf::from("/tmp/a");
+        pending.insert(
+            p.clone(),
+            PendingEvent {
+                event: FsEvent::Modified(p.clone()),
+                deadline: t0,
+            },
+        );
+        let due = drain_due(&mut pending, t0);
+        assert_eq!(due, vec![FsEvent::Modified(p)], "deadline == now は対象");
+    }
+
+    #[test]
+    fn drain_due_returns_results_in_deterministic_order() {
+        let mut pending: PendingMap = HashMap::new();
+        let t0 = Instant::now();
+        let same_deadline = t0;
+        let pa = PathBuf::from("/tmp/a");
+        let pb = PathBuf::from("/tmp/b");
+        let pc = PathBuf::from("/tmp/c");
+        for p in [&pc, &pa, &pb] {
+            pending.insert(
+                p.clone(),
+                PendingEvent {
+                    event: FsEvent::Modified(p.clone()),
+                    deadline: same_deadline,
+                },
+            );
+        }
+        let due = drain_due(&mut pending, t0);
+        assert_eq!(
+            due,
+            vec![
+                FsEvent::Modified(pa),
+                FsEvent::Modified(pb),
+                FsEvent::Modified(pc),
+            ],
+            "同点 deadline は path 昇順で並ぶべき（決定論性）"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // adapter スレッドの決定論テスト（spawn_adapter に notify::Event を
+    // 直接投入する。実 FS / OS タイマに依存しないため CI でフレーキー
+    // 化しない）
+    // ─────────────────────────────────────────────────────────────────
+
+    fn modify_event(path: &Path) -> NotifyEvent {
+        ev_with(
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            vec![path.to_path_buf()],
+        )
+    }
+
+    fn rename_both_event(from: &Path, to: &Path) -> NotifyEvent {
+        ev_with(
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            vec![from.to_path_buf(), to.to_path_buf()],
+        )
+    }
+
+    #[test]
+    fn spawn_adapter_emits_single_event_after_debounce_window() {
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+        let path = PathBuf::from("/tmp/test_single");
+
+        notify_tx.send(Ok(modify_event(&path))).unwrap();
+
+        // ウィンドウ満了前は届かないはず。
+        assert!(
+            matches!(
+                fs_rx.recv_timeout(Duration::from_millis(40)),
+                Err(RecvTimeoutError::Timeout)
+            ),
+            "ウィンドウ満了前にイベントが届くべきではない"
+        );
+
+        // ウィンドウ満了後に 1 件届く。
+        let ev = fs_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("debounce 満了後にイベントが届くべき");
+        assert_eq!(ev, FsEvent::Modified(path));
+
+        drop(notify_tx);
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn spawn_adapter_slides_deadline_when_same_path_arrives_within_window() {
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+        let path = PathBuf::from("/tmp/test_slide");
+
+        notify_tx.send(Ok(modify_event(&path))).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        notify_tx.send(Ok(modify_event(&path))).unwrap();
+
+        // 2 回目の投入から 100ms 経たないうちは届かない。
+        // 1 回目から 70ms 後（2 回目から 20ms 後）にチェック。
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(
+            matches!(fs_rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)),
+            "deadline がスライドして 70ms ではまだ届かないはず"
+        );
+
+        // 2 回目から 100ms 以上経つと 1 件のみ届く。
+        let ev = fs_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("スライド後の deadline で 1 件届くべき");
+        assert_eq!(ev, FsEvent::Modified(path));
+
+        // 余分なイベントが続かないことを確認。
+        assert!(
+            matches!(
+                fs_rx.recv_timeout(Duration::from_millis(150)),
+                Err(RecvTimeoutError::Timeout)
+            ),
+            "デバウンス後は 1 件のみで、余分な送信は無いはず"
+        );
+
+        drop(notify_tx);
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn spawn_adapter_flushes_pending_on_notify_tx_drop() {
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+        let path = PathBuf::from("/tmp/test_flush");
+
+        notify_tx.send(Ok(modify_event(&path))).unwrap();
+        // ウィンドウ満了前に上流を drop する。
+        std::thread::sleep(Duration::from_millis(30));
+        drop(notify_tx);
+
+        // flush で保留イベントが届く。
+        let ev = fs_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("Drop 時に保留イベントが flush されるべき");
+        assert_eq!(ev, FsEvent::Modified(path));
+
+        // その後は Disconnected。
+        let next = fs_rx.recv_timeout(Duration::from_millis(500));
+        assert!(
+            matches!(next, Err(RecvTimeoutError::Disconnected)),
+            "flush 後はチャネルが切断されるべき: got {next:?}"
+        );
+
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn spawn_adapter_forwards_rescan_immediately_bypassing_pending_events() {
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+        let path = PathBuf::from("/tmp/test_rescan_bypass");
+
+        notify_tx.send(Ok(modify_event(&path))).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        notify_tx.send(Ok(ev_rescan())).unwrap();
+
+        // Rescan は保留を追い越して即時届く。
+        let ev = fs_rx
+            .recv_timeout(Duration::from_millis(60))
+            .expect("Rescan は保留を追い越して即時通知されるべき");
+        assert_eq!(ev, FsEvent::Rescan);
+
+        // その後、保留 Modified が遅れて届く（破棄されない）。
+        let ev2 = fs_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("保留イベントは Rescan の後に発火すべき");
+        assert_eq!(ev2, FsEvent::Modified(path));
+
+        drop(notify_tx);
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn spawn_adapter_overwrites_renamed_entry_when_modified_arrives_for_same_to_path() {
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+        let from = PathBuf::from("/tmp/test_rename_from");
+        let to = PathBuf::from("/tmp/test_rename_to");
+
+        notify_tx.send(Ok(rename_both_event(&from, &to))).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        notify_tx.send(Ok(modify_event(&to))).unwrap();
+
+        // 2 回目から 100ms 以上待って 1 件のみ届く。
+        let ev = fs_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("最後のイベントが届くべき");
+        assert_eq!(
+            ev,
+            FsEvent::Modified(to),
+            "Renamed は同じ to path への後続 Modified に上書きされるべき"
+        );
+
+        // 余分なイベントが続かないことを確認。
+        assert!(
+            matches!(
+                fs_rx.recv_timeout(Duration::from_millis(150)),
+                Err(RecvTimeoutError::Timeout)
+            ),
+            "上書き後は 1 件のみ届くべき"
+        );
+
+        drop(notify_tx);
+        let _ = handle.join();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 統合テスト: 実 FS でデバウンス挙動を確認
+    // ─────────────────────────────────────────────────────────────────
+
+    /// 指定 path に対する `FsEvent`（Modified / Created / Other など）を
+    /// 1 件以上収集する。バックエンドが Created を発火するか Modified を
+    /// 発火するか、または両方を返すかは OS / バックエンド依存のため、
+    /// デバウンス効果（イベント件数の縮減）に焦点を当てて集計する。
+    fn collect_events_for(
+        rx: &Receiver<FsEvent>,
+        target: &Path,
+        overall: Duration,
+        quiet: Duration,
+    ) -> Vec<FsEvent> {
+        let mut out = Vec::new();
+        let stop = Instant::now() + overall;
+        loop {
+            let remaining = match stop.checked_duration_since(Instant::now()) {
+                Some(r) if !r.is_zero() => std::cmp::min(r, quiet),
+                _ => break,
+            };
+            match rx.recv_timeout(remaining) {
+                Ok(ev) => {
+                    if event_paths(&ev).iter().any(|p| p == target) {
+                        out.push(ev);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    if !out.is_empty() {
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn watcher_debounces_consecutive_writes_to_same_file() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("burst.md");
+        // 監視開始時にファイルを存在させておく（Created を抑制し、
+        // Modified の集約に焦点を絞るため）。
+        std::fs::write(&target, b"init").unwrap();
+        let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
+        // 初期 Created 等を読み捨てる。
+        drain_events(&rx, Duration::from_millis(300));
+
+        for i in 0..5 {
+            std::fs::write(&target, format!("v{i}").as_bytes()).unwrap();
+            std::thread::sleep(Duration::from_millis(15));
+        }
+
+        let events = collect_events_for(
+            &rx,
+            &target,
+            Duration::from_secs(5),
+            Duration::from_millis(400),
+        );
+        assert_eq!(
+            events.len(),
+            1,
+            "100ms 内 5 回の連続書き込みは 1 イベントに集約されるべき: got {events:?}"
+        );
+
+        drop(watcher);
+    }
+
+    #[test]
+    fn watcher_emits_separate_events_when_writes_are_spaced_beyond_window() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("spaced.md");
+        std::fs::write(&target, b"init").unwrap();
+        let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
+        drain_events(&rx, Duration::from_millis(300));
+
+        std::fs::write(&target, b"v1").unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        std::fs::write(&target, b"v2").unwrap();
+
+        let events = collect_events_for(
+            &rx,
+            &target,
+            Duration::from_secs(5),
+            Duration::from_millis(400),
+        );
+        assert_eq!(
+            events.len(),
+            2,
+            "250ms 間隔の 2 回書き込みは別イベントとして発火するべき: got {events:?}"
+        );
+
+        drop(watcher);
+    }
+
+    /// `quiet` の間に新規イベントが届かなくなるか `overall` が経過する
+    /// まで全イベントを収集する。`collect_events_for` と異なり target に
+    /// よるフィルタリングを行わず、複数 target に対する独立性を検証する
+    /// テストで使う。
+    fn collect_all_events(
+        rx: &Receiver<FsEvent>,
+        overall: Duration,
+        quiet: Duration,
+    ) -> Vec<FsEvent> {
+        let mut out = Vec::new();
+        let stop = Instant::now() + overall;
+        loop {
+            let remaining = match stop.checked_duration_since(Instant::now()) {
+                Some(r) if !r.is_zero() => std::cmp::min(r, quiet),
+                _ => break,
+            };
+            match rx.recv_timeout(remaining) {
+                Ok(ev) => out.push(ev),
+                Err(RecvTimeoutError::Timeout) => {
+                    if !out.is_empty() {
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn watcher_debounces_per_file_independently() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, b"init").unwrap();
+        std::fs::write(&b, b"init").unwrap();
+        let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
+        drain_events(&rx, Duration::from_millis(300));
+
+        for i in 0..3 {
+            std::fs::write(&a, format!("a{i}").as_bytes()).unwrap();
+            std::fs::write(&b, format!("b{i}").as_bytes()).unwrap();
+            std::thread::sleep(Duration::from_millis(15));
+        }
+
+        let all = collect_all_events(&rx, Duration::from_secs(5), Duration::from_millis(400));
+        let events_a: Vec<_> = all
+            .iter()
+            .filter(|ev| event_paths(ev).iter().any(|p| p == &a))
+            .collect();
+        let events_b: Vec<_> = all
+            .iter()
+            .filter(|ev| event_paths(ev).iter().any(|p| p == &b))
+            .collect();
+        assert_eq!(
+            events_a.len(),
+            1,
+            "ファイル a の連続書き込みは 1 件に集約: got {events_a:?} (all={all:?})"
+        );
+        assert_eq!(
+            events_b.len(),
+            1,
+            "ファイル b の連続書き込みは 1 件に集約: got {events_b:?} (all={all:?})"
+        );
+
+        drop(watcher);
+    }
+
+    #[test]
+    fn watcher_with_poll_debounces_consecutive_writes() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("polled-burst.md");
+        std::fs::write(&target, b"init").unwrap();
+        let (watcher, rx) =
+            Watcher::start_with_poll(dir.path()).expect("poll start should succeed");
+        // Poll は 2 秒間隔のため、初期スキャン後の安定化を待つ。
+        drain_events(&rx, Duration::from_secs(3));
+
+        for i in 0..3 {
+            std::fs::write(&target, format!("v{i}").as_bytes()).unwrap();
+            std::thread::sleep(Duration::from_millis(15));
+        }
+
+        // Poll は 2 秒待ってから検知するため、長めのタイムアウトを設定。
+        let events = collect_events_for(
+            &rx,
+            &target,
+            Duration::from_secs(10),
+            Duration::from_millis(500),
+        );
+        assert_eq!(
+            events.len(),
+            1,
+            "Poll バックエンドでも連続書き込みは 1 件に集約されるべき: got {events:?}"
+        );
+
         drop(watcher);
     }
 }
