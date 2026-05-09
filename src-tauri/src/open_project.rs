@@ -108,17 +108,16 @@ pub fn open_project(
 
 /// 単体テスト境界の本体関数。
 ///
-/// `state` の各フィールドは lock 順序
-/// `project_path → config → tasks_cache → watcher_handle → write_ignore`
-/// で取得 / 解放する。
+/// 設計方針: ロード / パース / インデックス構築は AppState を一切触らずに行い、
+/// 全工程が成功した時点でのみ `commit_app_state` で旧 state を置き換える。
+/// 途中でエラーが返った場合は旧プロジェクトの state がそのまま保持される
+/// （FE 側の「open 失敗時に元プロジェクトを復元する」UX 契約と一致させる）。
 pub(crate) fn open_project_impl(
     state: &AppState,
     path: &str,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let root = Path::new(path);
     validate_directory(root, path)?;
-
-    reset_app_state(state)?;
 
     let config = load_or_default(root).map_err(map_load_config_error)?;
 
@@ -184,20 +183,6 @@ fn map_metadata_error(err: std::io::Error, raw_path: &str) -> OpenProjectError {
             path: raw_path.to_string(),
         },
     }
-}
-
-/// 旧プロジェクトの状態を一掃する。
-///
-/// lock 取得順序を厳守し、各フィールドを初期値に戻したうえで
-/// `NoopWatcherHandle` を install する。`install_watcher_handle` は内部で
-/// 旧 watcher の `stop()` を呼び出し、panic は呼び出し元へ伝播する。
-fn reset_app_state(state: &AppState) -> Result<(), OpenProjectError> {
-    state.set_project_path(None)?;
-    state.replace_config(None)?;
-    state.replace_tasks_cache(HashMap::new())?;
-    state.install_watcher_handle(Box::new(NoopWatcherHandle::new()))?;
-    state.write_ignore().clear()?;
-    Ok(())
 }
 
 /// 走査結果の `.md` ファイル群から `Task` を集める。
@@ -291,7 +276,19 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
     }
 }
 
-/// `AppState` に新値を確定させる。lock 取得順序は `reset_app_state` と一致させる。
+/// `AppState` に新値を確定させる。
+///
+/// 副作用順序は以下とする:
+///
+/// 1. `install_watcher_handle`: 旧 watcher の `stop()` をここで呼ぶ。`stop()` が
+///    panic する場合、project_path / config / tasks_cache はまだ書き換わっていない
+///    ため、呼び出し元から見た AppState は旧プロジェクト整合のまま保たれる。
+/// 2. `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄。
+/// 3. `set_project_path` / `replace_config` / `replace_tasks_cache`: 新値を確定。
+///
+/// AppState の各 setter は単一フィールドのみを操作し、guard を保持したまま他の
+/// setter を呼ばないため、AppState の lock 取得順序ルール
+/// （複数 guard 同時保持時の AB-BA 防止）には抵触しない。
 ///
 /// `tasks_cache` の key は `PathBuf::from(task.file_path)`（`task.file_path` は
 /// 既に root 相対の正規化済み文字列）。
@@ -301,6 +298,8 @@ fn commit_app_state(
     config: &Config,
     tasks: &[Task],
 ) -> Result<(), OpenProjectError> {
+    state.install_watcher_handle(Box::new(NoopWatcherHandle::new()))?;
+    state.write_ignore().clear()?;
     state.set_project_path(Some(root.to_path_buf()))?;
     state.replace_config(Some(config.clone()))?;
     let mut cache = HashMap::with_capacity(tasks.len());
@@ -308,7 +307,6 @@ fn commit_app_state(
         cache.insert(PathBuf::from(task.file_path.clone()), task.clone());
     }
     state.replace_tasks_cache(cache)?;
-    state.install_watcher_handle(Box::new(NoopWatcherHandle::new()))?;
     Ok(())
 }
 
@@ -790,6 +788,40 @@ mod tests {
             vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
             paths
         );
+    }
+
+    #[test]
+    fn previous_app_state_is_preserved_when_load_fails() {
+        // 1 回目の open で AppState を確定させる。
+        let state = AppState::new();
+        let first_dir = tempdir();
+        write_md(first_dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+        let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
+        open_project_impl(&state, &first_raw).expect("first open should succeed");
+
+        let snapshot_before = state.tasks_snapshot().expect("readable");
+        let project_before = state.project_path().expect("readable");
+
+        // 2 回目の open は config 不正で失敗させる。
+        let bad_dir = tempdir();
+        write_config_json(bad_dir.path(), "{ this is not json");
+        let bad_raw = bad_dir.path().to_str().expect("utf-8").to_string();
+        let err = open_project_impl(&state, &bad_raw)
+            .expect_err("second open with broken config should fail");
+        assert!(matches!(err, OpenProjectError::ConfigLoadFailed { .. }));
+
+        // 失敗時に前のプロジェクト state がそのまま残ることを担保する。
+        let snapshot_after = state.tasks_snapshot().expect("readable");
+        let project_after = state.project_path().expect("readable");
+        assert_eq!(project_before, project_after);
+        assert_eq!(snapshot_before.len(), snapshot_after.len());
+        let file_paths_before: Vec<String> = snapshot_before
+            .iter()
+            .map(|t| t.file_path.clone())
+            .collect();
+        let file_paths_after: Vec<String> =
+            snapshot_after.iter().map(|t| t.file_path.clone()).collect();
+        assert_eq!(file_paths_before, file_paths_after);
     }
 
     #[test]
