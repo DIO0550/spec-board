@@ -1,5 +1,6 @@
 pub mod config;
 pub mod frontmatter;
+pub mod get_tasks;
 pub mod open_project;
 pub mod state;
 pub mod task_index;
@@ -27,7 +28,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
-        .invoke_handler(tauri::generate_handler![greet, open_project::open_project])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            open_project::open_project,
+            get_tasks::get_tasks
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
