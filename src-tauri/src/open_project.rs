@@ -403,7 +403,10 @@ mod tests {
     #[test]
     fn returns_directory_not_found_for_missing_path() {
         let state = AppState::new();
-        let missing = "/this/path/should/not/exist/spec-board-test";
+        // TempDir 配下に未作成のサブディレクトリを作って、確実に NotFound 入力を生成する。
+        let dir = tempdir();
+        let missing_path = dir.path().join("does-not-exist").join("project");
+        let missing = missing_path.to_str().expect("utf-8 path");
 
         let err = open_project_impl(&state, missing).expect_err("missing path should fail");
 
