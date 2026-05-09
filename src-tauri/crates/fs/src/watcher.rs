@@ -332,7 +332,9 @@ mod tests {
         AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
     };
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::RecvTimeoutError;
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
@@ -604,17 +606,31 @@ mod tests {
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
         let path = PathBuf::from("/tmp");
         let (dummy, _dir_guard) = make_dummy_backend();
-        let backend = build_backend_with(
+        let recommended_called = Arc::new(AtomicBool::new(false));
+        let poll_called = Arc::new(AtomicBool::new(false));
+        let r_flag = Arc::clone(&recommended_called);
+        let p_flag = Arc::clone(&poll_called);
+        let _backend = build_backend_with(
             tx,
             &path,
-            move |_t, _p| Ok(dummy),
-            |_t, _p| Err("poll should not be called".into()),
+            move |_t, _p| {
+                r_flag.store(true, Ordering::SeqCst);
+                Ok(dummy)
+            },
+            move |_t, _p| {
+                p_flag.store(true, Ordering::SeqCst);
+                Err("poll should not be called".into())
+            },
         )
         .expect("should return recommended backend when its constructor succeeds");
-        assert!(matches!(
-            backend,
-            Backend::Poll(_) | Backend::Recommended(_)
-        ));
+        assert!(
+            recommended_called.load(Ordering::SeqCst),
+            "recommended constructor must be called"
+        );
+        assert!(
+            !poll_called.load(Ordering::SeqCst),
+            "poll constructor must not be called when recommended succeeds"
+        );
     }
 
     #[test]
