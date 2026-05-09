@@ -586,31 +586,28 @@ mod tests {
     // build_backend_with: deterministic fallback unit tests
     // ─────────────────────────────────────────────────────────────────
 
-    fn make_dummy_backend() -> Backend {
+    /// Build a poll backend for use in tests, returning the [`Backend`] and
+    /// the [`TempDir`] guard that owns its watch root. The caller binds both
+    /// to a local so the temporary directory is cleaned up when the test
+    /// scope ends. Returning the guard avoids the previous `Box::leak`
+    /// pattern that permanently leaked memory and on-disk directories.
+    fn make_dummy_backend() -> (Backend, TempDir) {
         let dir = TempDir::new().unwrap();
-        let (w, _rx) = Watcher::start_with_poll(dir.path()).unwrap();
-        // Take ownership of the inner Backend by destructuring through Drop:
-        // we can't access the field across the type system, so we rebuild a
-        // backend directly via build_poll_backend instead.
-        drop(w);
-        // Build a fresh poll backend for use in tests without holding a Watcher.
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
-        let dir2 = TempDir::new().unwrap();
-        // Leak the TempDir guard for the lifetime of the backend by keeping
-        // it inside the returned struct via Box::leak — backend tests below
-        // ignore the directory so this is acceptable for unit tests.
-        let dir2: &'static TempDir = Box::leak(Box::new(dir2));
-        build_poll_backend(tx, dir2.path()).expect("poll backend should build for tests")
+        let backend =
+            build_poll_backend(tx, dir.path()).expect("poll backend should build for tests");
+        (backend, dir)
     }
 
     #[test]
     fn build_backend_with_returns_recommended_when_ok() {
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
         let path = PathBuf::from("/tmp");
+        let (dummy, _dir_guard) = make_dummy_backend();
         let backend = build_backend_with(
             tx,
             &path,
-            |_t, _p| Ok(make_dummy_backend()),
+            move |_t, _p| Ok(dummy),
             |_t, _p| Err("poll should not be called".into()),
         )
         .expect("should return recommended backend when its constructor succeeds");
@@ -624,11 +621,12 @@ mod tests {
     fn build_backend_with_falls_back_when_recommended_new_fails() {
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
         let path = PathBuf::from("/tmp");
+        let (dummy, _dir_guard) = make_dummy_backend();
         let backend = build_backend_with(
             tx,
             &path,
             |_t, _p| Err("new failed: inotify limit".into()),
-            |_t, _p| Ok(make_dummy_backend()),
+            move |_t, _p| Ok(dummy),
         )
         .expect("should fall back to poll backend");
         assert!(matches!(
@@ -641,11 +639,12 @@ mod tests {
     fn build_backend_with_falls_back_when_recommended_watch_fails() {
         let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
         let path = PathBuf::from("/tmp");
+        let (dummy, _dir_guard) = make_dummy_backend();
         let backend = build_backend_with(
             tx,
             &path,
             |_t, _p| Err("watch failed: too many watches".into()),
-            |_t, _p| Ok(make_dummy_backend()),
+            move |_t, _p| Ok(dummy),
         )
         .expect("should fall back to poll backend on watch failure");
         assert!(matches!(
