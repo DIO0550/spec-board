@@ -360,10 +360,21 @@ fn event_path(ev: &FsEvent) -> Option<PathBuf> {
 /// される。`FsEvent::Rescan` / `FsEvent::Error` は集約対象外で、保留
 /// イベントを追い越して即時 forward する。
 ///
-/// loop は上流の sender が drop された（バックエンドが解放された）か、
-/// 下流の receiver が drop された（呼び出し側が受信をやめた）時点で
-/// 終了する。前者の場合、終了前に保留イベントを deadline 昇順（同点
-/// は path 昇順）で flush する。
+/// loop の終了条件は 2 つ:
+///
+/// 1. **上流の sender が drop された場合**（バックエンドが解放された）—
+///    `recv_timeout` / `recv` が `Disconnected` を返した時点で検知し、
+///    終了前に保留イベントを deadline 昇順（同点は path 昇順）で flush
+///    してから終了する。
+/// 2. **下流の receiver が drop された場合**（呼び出し側が受信をやめた）—
+///    次に `fs_tx.send` を試みた際に `Err` が返ったタイミングで検知して
+///    終了する。なお、保留が空のときの `notify_rx.recv()` は無限ブロック
+///    するため、上流が生きている限り fs_tx 側の drop だけでは即時に検知
+///    できず、上流から次のイベントが届くまでスレッドは sleep を続ける。
+///    現在の用途（`Watcher::drop` がまず上流を解放してから adapter を
+///    join する）では先に 1 が成立するため、本ケースに到達するのは
+///    「`Watcher` を保持したまま receiver だけ drop し、その後にイベント
+///    が届く」極めて限定的な場合のみ。
 fn spawn_adapter(
     notify_rx: Receiver<notify::Result<NotifyEvent>>,
 ) -> (Receiver<FsEvent>, JoinHandle<()>) {
