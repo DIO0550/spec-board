@@ -11,7 +11,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 | コマンド | 説明 |
 |:---------|:-----|
-| `open_project` | プロジェクトディレクトリを開き、mdファイルを一括読み込みしてファイル監視を開始 |
+| `open_project` | プロジェクトディレクトリを開き、mdファイルを一括読み込みして watcher ハンドルを初期化（現時点では Noop） |
 | `get_tasks` | 現在のプロジェクト内の全タスクを取得 |
 | `create_task` | 新規タスクのmdファイルを作成 |
 | `update_task` | 既存タスクのmdファイルを更新 |
@@ -26,7 +26,9 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 ### `open_project`
 
-**説明**: 指定ディレクトリをプロジェクトとして開き、配下のmdファイルをスキャンしてタスク一覧を返す。同時にファイル監視を開始する。
+**説明**: 指定ディレクトリをプロジェクトとして開き、配下のmdファイルをスキャンしてタスク一覧を返す。同時に watcher ハンドルを `AppState` に設置する。
+
+> 現時点では watcher 具象は `NoopWatcherHandle`（no-op）であり、実ファイル変更検知は別 Issue で `notify` crate 導入時に追加する。本コマンド呼び出しでは GUIDE.md の best-effort 書き出し（`<project_root>/.spec-board/GUIDE.md`）と `AppState` の 5 フィールド（`project_path` / `config` / `tasks_cache` / `watcher_handle` / `write_ignore`）の一括更新を行う。
 
 **引数**:
 
@@ -77,8 +79,14 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 | ケース | 条件 | エラーメッセージ |
 |:-------|:-----|:---------------|
-| ディレクトリ不存在 | 指定パスが存在しない | ディレクトリが見つかりません: {path} |
-| アクセス権限なし | 読み取り権限がない | ディレクトリにアクセスできません: {path} |
+| ディレクトリ不存在 | 指定パスが存在しない | `ディレクトリが見つかりません: {path}` |
+| ディレクトリではない | 指定パスがディレクトリでない（通常ファイル等） | `ディレクトリではありません: {path}` |
+| アクセス権限なし | 読み取り権限がない | `ディレクトリにアクセスできません: {path}` |
+| 内部状態の lock 破損 | `AppState` の Mutex / `WriteIgnoreRegistry` が poison 状態 | `内部状態のロックが破損しました` |
+| スキャン致命エラー | parent 循環 / scan I/O など | `io scan failed: {message}` |
+| config 読み込み失敗 | `config.json` が壊れている等 | `config load failed (io|parse): {message}` |
+
+> 個別 md ファイルの `fs::read` 失敗、および `task_from_markdown` のパース失敗は致命扱いせず、`log::warn!` で記録して該当ファイルだけ skip する（コマンド全体は成功する）。warning を payload へ同梱する仕様は別 Issue 扱い。
 
 ---
 
@@ -298,8 +306,8 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 |:------------|:---------|:---------|:----------|
 | ファイルスキャンの致命的エラー | スキャン root が不在 / アクセス不可 / ディレクトリでない | `open_project` 経由でフロントエンドに「ディレクトリが見つかりません / アクセスできません / ディレクトリではありません」相当のエラーを返却 | ERROR |
 | 走査中の個別 I/O エラー | 走査中の特定ファイル / サブディレクトリの権限不足等 | 黙って skip し、走査を継続する（ログ出力は別 Issue で本格導入予定） | （現状は出力しない） |
-| ファイル読み込み失敗 | 権限不足、ファイルロック中 | エラーをフロントエンドに通知、処理をスキップ | WARN |
-| フロントマターパース失敗 | YAML構文エラー、必須フィールド欠損 | エラーをフロントエンドに通知、該当ファイルをスキップ | WARN |
+| ファイル読み込み失敗 | 権限不足、ファイルロック中 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
+| フロントマターパース失敗 | YAML構文エラー、必須フィールド欠損 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
 | ファイル書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに返却 | ERROR |
 | 監視の初期化失敗 | OS制限（inotify上限等） | エラーをフロントエンドに通知、ポーリングにフォールバック | ERROR |
 
@@ -357,6 +365,7 @@ impl WriteIgnoreRegistry {
     pub fn unregister(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
     pub fn len(&self) -> Result<usize, WriteIgnoreError>;
     pub fn is_empty(&self) -> Result<bool, WriteIgnoreError>;
+    pub fn clear(&self) -> Result<(), WriteIgnoreError>;
 }
 
 pub enum WriteIgnoreError {
@@ -374,6 +383,7 @@ pub enum WriteIgnoreError {
 | `should_ignore` | パスが登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。状態は変更しない |
 | `consume` | 1回の lock 内でパスを確認して解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。ファイル監視イベントの one-shot 消費に使う |
 | `unregister` | パスを解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す |
+| `clear` | 登録済みパスを全て消去する。Mutex poison 時のみ `Err(WriteIgnoreError::LockPoisoned)` を返す。プロジェクト再オープン等のライフサイクル境界で呼ぶ |
 | 解除責務 | `consume` / `unregister` による明示的な解除を呼び出し側が行う |
 | タイムアウト | registry 自体は timeout cleanup を行わない。イベント未到達時の stale entry 防止が必要な場合は呼び出し側で解除タイミングを管理する |
 | 重複登録 | 同一 path の重複 `register` は `Ok(false)` を返し、状態を変更しない |
