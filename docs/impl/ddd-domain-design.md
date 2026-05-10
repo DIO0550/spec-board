@@ -124,8 +124,8 @@ Aggregate 境界の引き方の指針:
 │  │  │              TaskFilePath> │  │    │   └──────────────────────┘    │    │
 │  │  │ reverse_links: Vec<        │  │    │   ┌──────────────────────┐    │    │
 │  │  │              TaskFilePath> │  │    │   │ CardOrder = BTreeMap │    │    │
-│  │  │ priority    : Option<      │  │    │   │  <ColumnName,         │    │    │
-│  │  │              Priority>     │  │    │   │   Vec<TaskFilePath>>  │    │    │
+│  │  │ priority    : Option<      │  │    │   │  <String,* ※          │    │    │
+│  │  │              Priority>     │  │    │   │   Vec<String>>* ※     │    │    │
 │  │  │ body, extras, warnings ... │  │    │   └──────────────────────┘    │    │
 │  │  └────────────────────────────┘  │    └──────────────────────────────┘    │
 │  └────────┬─────────────────────────┘                                         │
@@ -144,8 +144,9 @@ Aggregate 境界の引き方の指針:
 │  │   - validate_chain_from_parent   │    │  │ watcher_handle: Mutex...│   │    │
 │  └──────────────────────────────────┘    │  │ write_ignore: WriteIgn..│   │    │
 │                                          │  └────────────────────────┘   │    │
-│   ※ tasks_cache キー / project_path 値は本リファクタでは PathBuf 据置        │
-│   （TaskFilePath / ProjectRoot への置換は将来 PR の対象。詳細は §8 参照）     │
+│   ※ tasks_cache キー / project_path 値 / CardOrder のキー・値は本リファクタ  │
+│   では String / PathBuf 据置（TaskFilePath / ColumnName / ProjectRoot への    │
+│   置換は将来 PR の対象。詳細は §8 参照）                                      │
 │                                                                              │
 │  ┌──────────────────────────────────┐    │   - lock 順序: project_path   │    │
 │  │  Value Objects                    │    │     → config → tasks_cache    │    │
