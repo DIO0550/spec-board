@@ -203,6 +203,53 @@ fn is_md_extension(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// 単一の絶対パスがタスク `.md` ファイルとして取り込み対象になるかを判定し、
+/// 対象であれば `root` 相対の `PathBuf` を返す。
+///
+/// `scan_md_files` の判定ロジックと同じ条件を **1 件**の絶対パスに対して
+/// 適用する。watcher 経由のイベントなど、`scan_md_files` を経ずに任意の
+/// 絶対パスを判定したい場面で使う。
+///
+/// 対象条件（すべて満たした場合のみ `Some`）:
+/// - `abs_path` が `root` の配下である
+/// - 通常ファイルである（dir / symlink などは除外）。判定は
+///   `symlink_metadata` で行い、symlink を辿らない（`scan_md_files` の
+///   `WalkDir::follow_links(false)` と挙動を揃える）
+/// - 拡張子が `.md`（大文字小文字非区別）
+/// - root 配下の各 path component が `.` で始まらず `node_modules` でもない
+/// - サイズが [`MAX_FILE_SIZE`] byte 以下
+/// - 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
+/// - root 相対パスが UTF-8 として表現可能
+///
+/// I/O 失敗（metadata 取得失敗 / open 失敗 / read 失敗）は `None`（除外側）として扱う。
+pub fn task_md_relative_path(abs_path: &Path, root: &Path) -> Option<PathBuf> {
+    let rel = abs_path.strip_prefix(root).ok()?;
+    if rel.as_os_str().is_empty() {
+        return None;
+    }
+    if !is_md_extension(abs_path) {
+        return None;
+    }
+    for component in rel.iter() {
+        let name = component.to_str()?;
+        if is_excluded_entry_name(name) {
+            return None;
+        }
+    }
+    let metadata = std::fs::symlink_metadata(abs_path).ok()?;
+    if !metadata.file_type().is_file() {
+        return None;
+    }
+    if metadata.len() > MAX_FILE_SIZE {
+        return None;
+    }
+    if !is_text(abs_path) {
+        return None;
+    }
+    rel.to_str()?;
+    Some(rel.to_path_buf())
+}
+
 /// `WalkDir` のエントリが pruning 対象（除外ディレクトリ自身、または除外ディレクトリ配下）かを判定する。
 ///
 /// `entry.depth() == 0` の場合は root 自身であり、除外パターンは適用しない
