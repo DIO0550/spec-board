@@ -12,7 +12,7 @@ use tempfile::TempDir;
 use super::handler::{handle_event, run_event_loop};
 use super::{AdapterContext, EmitFn};
 use crate::state::AppState;
-use spec_board_fs::watcher::FsEvent;
+use spec_board_fs::watcher::core::FsEvent;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
 

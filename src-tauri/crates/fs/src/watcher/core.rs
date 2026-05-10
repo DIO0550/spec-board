@@ -1,0 +1,502 @@
+//! `notify` クレートの上に構築する再帰ファイルシステムウォッチャ。
+//!
+//! 公開 API では `notify::*` の型を一切露出させず、呼び出し側は `std` の型
+//! と本モジュールが定義する [`FsEvent`] / [`WatcherError`] にのみ依存する。
+//! バックエンドは自動選択: まず `RecommendedWatcher` を試み、初期化または
+//! 再帰 `watch()` のいずれかが失敗した場合は `PollWatcher`（2 秒間隔）に
+//! フォールバックする。
+//!
+//! 停止は `Drop` を介して同期的に行う: 先にバックエンドを解放し、続いて
+//! アダプタスレッドを join する。`Drop` から復帰した後に発生したファイル
+//! 変更はイベント化されないが、Drop 前にアダプタが enqueue 済みのイベン
+//! トは `Disconnected` が観測されるまで receiver から取り出せる。
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+use notify::event::{EventKind, ModifyKind};
+use notify::{
+    Config as NotifyConfig, Event as NotifyEvent, EventHandler, PollWatcher, RecommendedWatcher,
+    RecursiveMode, Watcher as NotifyWatcher,
+};
+use thiserror::Error;
+
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// 同一パスの連続イベントを集約するスライディングウィンドウ幅。
+///
+/// 新しいイベントが到来するたびに deadline は `now + DEBOUNCE_DURATION`
+/// まで延長され、`DEBOUNCE_DURATION` 静止して初めて発火する。
+const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
+
+/// 呼び出し側に渡すファイルシステムイベント。
+///
+/// `notify::Event` のペイロードを以下のいずれかの variant に変換する。
+/// rename は `notify::Event` が source と destination の両方のパスを持つ
+/// 場合のみ単一の [`FsEvent::Renamed`] として発火し、それ以外は先頭パスで
+/// [`FsEvent::Other`] に降格する。
+/// `notify` バックエンドからのランタイムエラーは黙殺せず [`FsEvent::Error`]
+/// として通知する。バックエンドが `notify::Event::need_rescan()` でキュー
+/// オーバーフロー / イベントコアレスを報告した場合は [`FsEvent::Rescan`]
+/// を発火し、呼び出し側がファイルシステムと永続的に乖離しないよう状態を
+/// 再構築できるようにする。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FsEvent {
+    Created(PathBuf),
+    Modified(PathBuf),
+    Removed(PathBuf),
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Other(PathBuf),
+    Error(String),
+    /// バックエンドが過去のイベントを取りこぼした可能性がある旨を通知した
+    /// ことを示す（キューオーバーフロー / コアレス）。呼び出し側は状態の
+    /// 再スキャン / 再構築を行う必要がある。
+    Rescan,
+}
+
+/// [`Watcher::start`] が返すエラー。
+#[derive(Debug, Error)]
+pub enum WatcherError {
+    #[error("failed to initialize file system watcher: {0}")]
+    Init(String),
+    #[error("watch path does not exist or is not a directory: `{}`", .0.display())]
+    PathNotFound(PathBuf),
+    #[error("io error while preparing watcher: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// 背後の `notify` ウォッチャを保持し、[`Watcher`] が生きている間 OS レベ
+/// ルの監視スレッドを存続させるバックエンド variant。内側の値が直接読まれ
+/// ることはない — drop されたタイミングで OS レベルの監視を解放するため
+/// に保持しているだけである。
+pub(crate) enum Backend {
+    Recommended(#[allow(dead_code)] RecommendedWatcher),
+    Poll(#[allow(dead_code)] PollWatcher),
+}
+
+/// 再帰ファイルシステムウォッチャ。値を drop すると同期的に監視を停止す
+/// る: 先に OS レベルのバックエンドを解放し、続いてアダプタスレッドを
+/// join する。`Drop` が復帰した **後** に発生したファイル変更は receiver
+/// に届かない。Drop 前にアダプタが enqueue 済みのイベントは receiver が
+/// `Disconnected` を観測するまで取り出せる。
+pub struct Watcher {
+    backend: Option<Backend>,
+    adapter_handle: Option<JoinHandle<()>>,
+}
+
+impl Watcher {
+    /// `path` を再帰的に監視し、変換済み [`FsEvent`] を流す receiver と
+    /// ウォッチャ本体を返す。
+    ///
+    /// まず `RecommendedWatcher` を試し、`new` または `watch` のいずれか
+    /// が失敗した場合（例: Linux の inotify 上限超過）に `PollWatcher`
+    /// （2 秒間隔）へフォールバックする。
+    ///
+    /// # Errors
+    ///
+    /// - [`WatcherError::PathNotFound`]: `path` が存在しない、または
+    ///   ディレクトリでない場合
+    /// - [`WatcherError::Io`]: metadata 取得時の I/O 失敗
+    /// - [`WatcherError::Init`]: recommended / poll の両バックエンドが
+    ///   初期化または再帰監視開始に失敗した場合。エラーメッセージには
+    ///   両バックエンドの原因が含まれる
+    pub fn start(path: impl AsRef<Path>) -> Result<(Self, Receiver<FsEvent>), WatcherError> {
+        let path = path.as_ref();
+        validate_path(path)?;
+
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let backend = build_backend(notify_tx, path)?;
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+
+        Ok((
+            Self {
+                backend: Some(backend),
+                adapter_handle: Some(handle),
+            },
+            fs_rx,
+        ))
+    }
+
+    /// 強制的に [`PollWatcher`] バックエンドを使うテスト専用のエントリポ
+    /// イント。Linux の CI では inotify の初期化が常に成功するため、本関
+    /// 数を経由してフォールバック経路をカバレッジ計測の対象にできる。
+    ///
+    /// # Errors
+    ///
+    /// - [`WatcherError::PathNotFound`]: `path` が存在しない、または
+    ///   ディレクトリでない場合
+    /// - [`WatcherError::Io`]: metadata 取得時の I/O 失敗
+    /// - [`WatcherError::Init`]: poll バックエンドの初期化または再帰監視
+    ///   開始に失敗した場合
+    #[cfg(test)]
+    pub(crate) fn start_with_poll(
+        path: impl AsRef<Path>,
+    ) -> Result<(Self, Receiver<FsEvent>), WatcherError> {
+        let path = path.as_ref();
+        validate_path(path)?;
+
+        let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let backend = build_poll_backend(notify_tx, path)
+            .map_err(|e| WatcherError::Init(format!("poll backend failed: {e}")))?;
+        let (fs_rx, handle) = spawn_adapter(notify_rx);
+
+        Ok((
+            Self {
+                backend: Some(backend),
+                adapter_handle: Some(handle),
+            },
+            fs_rx,
+        ))
+    }
+}
+
+impl Drop for Watcher {
+    fn drop(&mut self) {
+        // 先にバックエンドを drop する。これにより notify 内部の OS
+        // スレッドが停止し、イベントハンドラクロージャが保持していた
+        // Sender clone が解放される。`notify_tx` への全 Sender が消えた
+        // 時点でアダプタスレッドの `recv()` が Err を返し loop を抜ける。
+        self.backend.take();
+
+        // アダプタスレッドを join して呼び出し側に「同期停止が完了し
+        // た」状態を保証する。`drop` 復帰後は新規ファイル変更が
+        // FsEvent 化されることはない。enqueue 済みイベントは `fs_rx`
+        // が `Disconnected` を観測するまで取り出せる。
+        if let Some(handle) = self.adapter_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// `path` が存在し、かつディレクトリであることを確認する。
+///
+/// 存在確認とディレクトリ判定を単一の `metadata()` 呼び出しで行うことで、
+/// 二段呼び出し中にディレクトリが削除されるような TOCTOU レースが
+/// [`WatcherError::Io`] に降格せず [`WatcherError::PathNotFound`] にマップ
+/// されるようにしている。symlink ディレクトリは許容する（再帰中に出現す
+/// る子孫 symlink を辿らないポリシーは [`notify_config`] が担保する）。
+fn validate_path(path: &Path) -> Result<(), WatcherError> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err(WatcherError::PathNotFound(path.to_path_buf())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(WatcherError::PathNotFound(path.to_path_buf()))
+        }
+        Err(e) => Err(WatcherError::Io(e)),
+    }
+}
+
+/// 本物のバックエンドコンストラクタを [`build_backend_with`] に流し込む
+/// だけの薄いラッパ。フォールバックポリシー本体を OS リソース非依存で
+/// 直接単体テストできるよう、shim としてこの関数だけ分離している。
+fn build_backend(
+    tx: Sender<notify::Result<NotifyEvent>>,
+    path: &Path,
+) -> Result<Backend, WatcherError> {
+    build_backend_with(tx, path, try_build_recommended, build_poll_backend)
+}
+
+/// 使用するバックエンドを決定する。コンストラクタを引数として注入できる
+/// ため、フォールバックポリシー（recommended が `new` または `watch` に
+/// 失敗 → poll に切り替え）を本物のウォッチャ無しで決定的に単体テストで
+/// きる。
+pub(crate) fn build_backend_with<R, P>(
+    tx: Sender<notify::Result<NotifyEvent>>,
+    path: &Path,
+    try_recommended: R,
+    try_poll: P,
+) -> Result<Backend, WatcherError>
+where
+    R: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> Result<Backend, String>,
+    P: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> Result<Backend, String>,
+{
+    let recommended_err = match try_recommended(tx.clone(), path) {
+        Ok(backend) => return Ok(backend),
+        Err(e) => e,
+    };
+    match try_poll(tx, path) {
+        Ok(backend) => Ok(backend),
+        Err(poll_err) => Err(WatcherError::Init(combine_init_errors(
+            &recommended_err,
+            &poll_err,
+        ))),
+    }
+}
+
+/// recommended と poll の両バックエンド初期化が失敗した場合に返す結合
+/// エラーメッセージを組み立てる純粋関数。フォーマットを単体テストで固定
+/// できるよう（OS 依存無し）に分離してある。
+pub(crate) fn combine_init_errors(recommended: &str, poll: &str) -> String {
+    format!("recommended watcher failed: {recommended}; poll watcher failed: {poll}")
+}
+
+fn try_build_recommended(
+    tx: Sender<notify::Result<NotifyEvent>>,
+    path: &Path,
+) -> Result<Backend, String> {
+    let mut w =
+        RecommendedWatcher::new(forward_handler(tx), notify_config()).map_err(|e| e.to_string())?;
+    w.watch(path, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+    Ok(Backend::Recommended(w))
+}
+
+fn build_poll_backend(
+    tx: Sender<notify::Result<NotifyEvent>>,
+    path: &Path,
+) -> Result<Backend, String> {
+    let config = notify_config().with_poll_interval(POLL_INTERVAL);
+    let mut w = PollWatcher::new(forward_handler(tx), config).map_err(|e| e.to_string())?;
+    w.watch(path, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+    Ok(Backend::Poll(w))
+}
+
+/// 共通の `notify::Config`: 再帰走査中の symlink は辿らない設定。無限
+/// ループとプロジェクト境界外の監視を防止する。
+fn notify_config() -> NotifyConfig {
+    NotifyConfig::default().with_follow_symlinks(false)
+}
+
+/// `notify` の結果をアダプタスレッドに転送するクロージャを生成する。
+/// アダプタが既に終了している場合は receiver が無いため、配送先が無い
+/// ものとしてメッセージを黙って破棄する。
+fn forward_handler(tx: Sender<notify::Result<NotifyEvent>>) -> impl EventHandler {
+    move |res: notify::Result<NotifyEvent>| {
+        let _ = tx.send(res);
+    }
+}
+
+/// デバウンスバッファ内の 1 エントリ。
+///
+/// 同一 path に対する新着イベントは `event` を上書きし、`deadline` を
+/// `now + DEBOUNCE_DURATION` まで延長する（スライディングウィンドウ）。
+/// 静止後に `event` がそのまま `fs_tx` に送出される。
+struct PendingEvent {
+    event: FsEvent,
+    deadline: Instant,
+}
+
+/// path → PendingEvent のマップ。アダプタスレッド固有の可変状態。
+type PendingMap = HashMap<PathBuf, PendingEvent>;
+
+/// 通常イベントを保留マップに登録する（スライディング）。
+///
+/// 同一 path のエントリが既にあれば event を上書きし、deadline を
+/// `now + DEBOUNCE_DURATION` まで延長する。
+///
+/// `FsEvent::Rescan` / `FsEvent::Error` は呼び出し側でバイパスされる
+/// 前提で、本関数には届かないことを `debug_assert!` で守る。
+fn enqueue_pending(pending: &mut PendingMap, path: PathBuf, event: FsEvent, now: Instant) {
+    debug_assert!(!matches!(event, FsEvent::Rescan | FsEvent::Error(_)));
+    pending.insert(
+        path,
+        PendingEvent {
+            event,
+            deadline: now + DEBOUNCE_DURATION,
+        },
+    );
+}
+
+/// 保留マップから「deadline ≤ now」のエントリを取り出して返す。
+///
+/// 呼び出し側の決定論性のため、deadline 昇順（同点は path 昇順）に
+/// 並べてから返す。
+fn drain_due(pending: &mut PendingMap, now: Instant) -> Vec<FsEvent> {
+    let mut due_keys: Vec<PathBuf> = pending
+        .iter()
+        .filter(|(_, p)| p.deadline <= now)
+        .map(|(k, _)| k.clone())
+        .collect();
+    due_keys.sort_by(|a, b| {
+        let da = pending[a].deadline;
+        let db = pending[b].deadline;
+        da.cmp(&db).then_with(|| a.cmp(b))
+    });
+    due_keys
+        .into_iter()
+        .map(|k| pending.remove(&k).expect("key was just collected").event)
+        .collect()
+}
+
+/// 次の発火までの残時間を返す。保留が無ければ `None`（= 無限ブロック）。
+///
+/// deadline がすでに過ぎていれば `Duration::ZERO` を返す（saturating）。
+fn next_wait(pending: &PendingMap, now: Instant) -> Option<Duration> {
+    pending
+        .values()
+        .map(|p| p.deadline)
+        .min()
+        .map(|d| d.saturating_duration_since(now))
+}
+
+/// イベントから集約キーとなる path を抽出する。
+///
+/// 集約キー仕様:
+/// - `Created` / `Modified` / `Removed` / `Other` はそのままの path を key とする。
+/// - `Renamed { from, to }` は **宛先 `to` を key** とする。`from` 側は独立扱い。
+/// - `Rescan` / `Error` は path を持たないため `None` を返す（バイパス対象）。
+fn event_path(ev: &FsEvent) -> Option<PathBuf> {
+    match ev {
+        FsEvent::Created(p) | FsEvent::Modified(p) | FsEvent::Removed(p) | FsEvent::Other(p) => {
+            Some(p.clone())
+        }
+        FsEvent::Renamed { to, .. } => Some(to.clone()),
+        FsEvent::Rescan | FsEvent::Error(_) => None,
+    }
+}
+
+/// `notify::Result<Event>` を [`FsEvent`] に変換して、呼び出し側向けの
+/// チャネルへ転送するアダプタスレッドを spawn する。
+///
+/// 同一 path の連続イベントは [`DEBOUNCE_DURATION`] のスライディング
+/// ウィンドウで集約され、ウィンドウ満了後に最後のイベントのみが送出
+/// される。`FsEvent::Rescan` / `FsEvent::Error` は集約対象外で、保留
+/// イベントを追い越して即時 forward する。
+///
+/// loop の終了条件は 2 つ:
+///
+/// 1. **上流の sender が drop された場合**（バックエンドが解放された）—
+///    `recv_timeout` / `recv` が `Disconnected` を返した時点で検知し、
+///    終了前に保留イベントを deadline 昇順（同点は path 昇順）で flush
+///    してから終了する。
+/// 2. **下流の receiver が drop された場合**（呼び出し側が受信をやめた）—
+///    次に `fs_tx.send` を試みた際に `Err` が返ったタイミングで検知して
+///    終了する。なお、保留が空のときの `notify_rx.recv()` は無限ブロック
+///    するため、上流が生きている限り fs_tx 側の drop だけでは即時に検知
+///    できず、上流から次のイベントが届くまでスレッドは sleep を続ける。
+///    現在の用途（`Watcher::drop` がまず上流を解放してから adapter を
+///    join する）では先に 1 が成立するため、本ケースに到達するのは
+///    「`Watcher` を保持したまま receiver だけ drop し、その後にイベント
+///    が届く」極めて限定的な場合のみ。
+fn spawn_adapter(
+    notify_rx: Receiver<notify::Result<NotifyEvent>>,
+) -> (Receiver<FsEvent>, JoinHandle<()>) {
+    let (fs_tx, fs_rx) = mpsc::channel::<FsEvent>();
+    let handle = thread::spawn(move || {
+        let mut pending: PendingMap = HashMap::new();
+        loop {
+            // ループの基準時刻を 1 度だけキャプチャし、drain_due と
+            // next_wait の双方に渡す。2 度 `Instant::now()` を呼ぶと、
+            // その隙間で deadline が「未到来 → 到来」へ遷移したエン
+            // トリが drain_due では残り、続く next_wait では `ZERO`
+            // を返してしまい、`recv_timeout(0)` で受信した新着で
+            // 同一 key が上書きされる race が生じる。同一時刻基準
+            // で判定すれば、drain_due 後の pending には deadline > now
+            // のエントリしか残らず、next_wait は必ず正の duration を
+            // 返すため、recv_timeout が即時 Ok になっても overwrite
+            // されるのは sliding window 仕様（deadline 延長）として
+            // 正しい振る舞いに収まる。
+            let now = Instant::now();
+
+            // 1. 期限到来分を先に発火する。
+            //
+            // recv 前に drain することで、同一 path の新着イベントが
+            // notify_rx に既に queued されていても、期限切れの保留
+            // エントリが先に発火する。
+            let due = drain_due(&mut pending, now);
+            for ev in due {
+                if fs_tx.send(ev).is_err() {
+                    return;
+                }
+            }
+
+            // 2. 受信待ち時間を決定。保留が無ければ無限ブロック。
+            let recv_result = match next_wait(&pending, now) {
+                Some(remaining) => notify_rx.recv_timeout(remaining),
+                None => notify_rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+
+            // 3. 受信結果を分類してバッファ更新 / 即時 forward を行う。
+            match recv_result {
+                Ok(item) => {
+                    let translated = match item {
+                        Ok(ev) => convert_event(ev),
+                        Err(e) => Some(vec![FsEvent::Error(e.to_string())]),
+                    };
+                    let Some(events) = translated else { continue };
+                    let now = Instant::now();
+                    for fs_ev in events {
+                        match fs_ev {
+                            bypass @ (FsEvent::Rescan | FsEvent::Error(_)) => {
+                                if fs_tx.send(bypass).is_err() {
+                                    return;
+                                }
+                            }
+                            other => {
+                                let Some(path) = event_path(&other) else {
+                                    continue;
+                                };
+                                enqueue_pending(&mut pending, path, other, now);
+                            }
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    // 次ループ先頭の drain_due で発火する。
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    // 上流（バックエンド）が drop された。残保留を
+                    // deadline 昇順 + path 昇順で flush して終了する。
+                    let mut remaining: Vec<(PathBuf, PendingEvent)> = pending.drain().collect();
+                    remaining.sort_by(|a, b| {
+                        a.1.deadline.cmp(&b.1.deadline).then_with(|| a.0.cmp(&b.0))
+                    });
+                    for (_, pe) in remaining {
+                        if fs_tx.send(pe.event).is_err() {
+                            return;
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+    });
+    (fs_rx, handle)
+}
+
+/// 単一の `notify::Event` を 0 件以上の [`FsEvent`] に変換する。
+///
+/// パターンマッチの順序が重要: `Modify(Name(_))` の source / destination
+/// 両方のパスを伴うケースは、汎用 `Modify(_)` アームより先にマッチさせ
+/// る必要がある。そうしないと rename が [`FsEvent::Modified`] に降格して
+/// しまい、本来の [`FsEvent::Renamed`] として発火されない。
+fn convert_event(ev: NotifyEvent) -> Option<Vec<FsEvent>> {
+    // Rescan フラグは empty-paths のガードより先に判定する必要がある。
+    // notify はキューオーバーフロー / コアレスを具体的なパス無しで通知
+    // することがあり、これを破棄すると呼び出し側が永続的に状態乖離する。
+    if ev.need_rescan() {
+        return Some(vec![FsEvent::Rescan]);
+    }
+    if ev.paths.is_empty() {
+        return None;
+    }
+    let first = ev.paths[0].clone();
+    let translated = match ev.kind {
+        EventKind::Create(_) => vec![FsEvent::Created(first)],
+        EventKind::Remove(_) => vec![FsEvent::Removed(first)],
+        EventKind::Modify(ModifyKind::Name(_)) if ev.paths.len() >= 2 => {
+            vec![FsEvent::Renamed {
+                from: ev.paths[0].clone(),
+                to: ev.paths[1].clone(),
+            }]
+        }
+        // 両端点が揃わない rename は rename として扱えない。内容変更と
+        // して扱うと誤解を招くため、呼び出し側が判断できるよう `Other`
+        // に降格する。
+        EventKind::Modify(ModifyKind::Name(_)) => vec![FsEvent::Other(first)],
+        EventKind::Modify(_) => vec![FsEvent::Modified(first)],
+        _ => vec![FsEvent::Other(first)],
+    };
+    Some(translated)
+}
+
+#[cfg(test)]
+#[path = "core_tests.rs"]
+mod core_tests;
