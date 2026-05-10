@@ -62,12 +62,13 @@ impl TaskFilePath {
     }
 
     /// lenient コンストラクタ。frontmatter 由来の `parent` / `links` などで、
-    /// 既存挙動（空文字保持・backslash 置換・拡張子問わない・dot prefix 保持）
-    /// を維持する。検証は呼び出し側 graph builder 等で行う。
+    /// 既存挙動（値を verbatim 保持・空文字保持・拡張子問わない・dot prefix 保持）を
+    /// 維持する。原実装では `Task.parent: Option<String>` が backslash 込みで
+    /// 保存されており、`normalize_parent_path_for_lookup` 側でのみ lookup 用に
+    /// `\\` → `/` の正規化を行っていた。本 VO もその挙動を踏襲し、値レベルの
+    /// round-trip 互換性を保つ。
     pub fn from_lenient<S: Into<String>>(value: S) -> Self {
-        let raw = value.into();
-        let normalized = raw.replace('\\', "/");
-        Self(normalized)
+        Self(value.into())
     }
 
     pub fn as_str(&self) -> &str {

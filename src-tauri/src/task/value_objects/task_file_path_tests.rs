@@ -76,9 +76,12 @@ fn from_lenient_keeps_empty() {
 }
 
 #[test]
-fn from_lenient_replaces_backslash() {
+fn from_lenient_keeps_backslash_verbatim() {
+    // 原実装は `Task.parent: Option<String>` を backslash 込みで保存し、
+    // lookup 時にだけ `normalize_parent_path_for_lookup` で正規化していた。
+    // 本 VO も値レベルの round-trip 互換性を保つため verbatim で保持する。
     let vo = TaskFilePath::from_lenient("tasks\\foo.md");
-    assert_eq!(vo.as_str(), "tasks/foo.md");
+    assert_eq!(vo.as_str(), "tasks\\foo.md");
 }
 
 #[test]
