@@ -144,8 +144,13 @@ fn handle_upsert(
     mode: UpsertMode,
 ) -> Result<(), HandleError> {
     let Some(rel_str) = rel_md_path(abs_path, &ctx.root) else {
+        // task_md_relative_path はプロジェクト規約に合わない path を一括で
+        // フィルタする。具体的なフィルタ条件は file_scanner 側のドキュメント
+        // を参照（root 外 / 非 .md / dotfile / node_modules / size 超 / バイナリ
+        // / symlink / 非 UTF-8 のいずれか）。本層では理由の内訳を分離せず
+        // 「scanner と同じ条件で除外した」とまとめて記録する。
         log::trace!(
-            "watcher_event: skipping non-md or out-of-root path: {}",
+            "watcher_event: skipping path not eligible as task .md (scanner filter excluded): {}",
             abs_path.display()
         );
         return Ok(());
