@@ -379,6 +379,63 @@ fn validate_parent_chain(
     }
 }
 
+/// 新規タスクが受け取る parent 文字列を正規化し、既存タスク群の中から index を解決する。
+///
+/// 空文字 / 絶対パス / Windows drive prefix / 不一致パス のいずれかは `None` を返す。
+/// 自己参照（新規タスク自身の想定 file_path を parent に渡すケース）も既存タスク集合に
+/// 未登録のため、自然に `None` となる。
+///
+/// @param parent 新規タスクの parent 引数文字列（プロジェクトルート相対 / `.md` 込み）。
+/// @param tasks 既存タスクスナップショット。
+/// @returns 一致する Task の入力配列内 index。一致しない場合は `None`。
+pub(crate) fn resolve_parent_for_new_task(parent: &str, tasks: &[Task]) -> Option<usize> {
+    let normalized = normalize_parent_path_for_lookup(parent)?;
+    tasks
+        .iter()
+        .position(|task| normalize_task_path_for_lookup(&task.file_path) == normalized)
+}
+
+/// parent 起点に新規タスクを末端へ 1 edge 追加した chain の循環/深さ超過を検出する。
+///
+/// `depth` は「新規タスクから上に向かって辿った edge 累計」を表す。初期 `depth = 1` は
+/// 新規タスク → 起点 parent の 1 edge ぶんで、parent の上方向に 1 つ進めるたびに `depth += 1` する。
+/// 判定は親辺取得の **前** に `depth > MAX_PARENT_DEPTH` を確認するため、
+/// parent 側 chain の edge 数 19 → `Ok(())`（合計 20 = `MAX_PARENT_DEPTH`）、
+/// 20 → `TooDeep`（合計 21 で上限超過）となる。
+///
+/// 事前条件: `parent_index < tasks.len()`。`resolve_parent_for_new_task` が `Some(idx)` を返した
+/// 直後にのみ呼ぶこと。範囲外の場合は caller の不変条件違反として panic する。
+///
+/// @param parent_index 起点 parent の `tasks` 内 index。
+/// @param tasks 既存タスクスナップショット。
+/// @returns Ok(()) / `ParentHierarchyErrorReason::Cycle` / `ParentHierarchyErrorReason::TooDeep`。
+pub(crate) fn validate_chain_from_parent(
+    parent_index: usize,
+    tasks: &[Task],
+) -> Result<(), ParentHierarchyErrorReason> {
+    let parent_task = tasks
+        .get(parent_index)
+        .expect("validate_chain_from_parent: parent_index must be in range (caller invariant)");
+    let lookup = parent_lookup_index(tasks);
+    let mut visited = HashSet::new();
+    let mut current = normalize_task_path_for_lookup(&parent_task.file_path);
+    let mut depth: usize = 1;
+
+    loop {
+        if !visited.insert(current.clone()) {
+            return Err(ParentHierarchyErrorReason::Cycle);
+        }
+        if depth > MAX_PARENT_DEPTH {
+            return Err(ParentHierarchyErrorReason::TooDeep);
+        }
+        let Some(Some(next)) = lookup.get(&current) else {
+            return Ok(());
+        };
+        depth += 1;
+        current = next.clone();
+    }
+}
+
 /// parent 参照が解決できない Task に `ParentNotFound` warning を追加する。
 ///
 /// @param task parent 存在検証の対象 Task。
@@ -1592,5 +1649,80 @@ mod tests {
             invalid_encoding,
             Err(TaskParseError::Frontmatter(_))
         ));
+    }
+
+    #[test]
+    fn resolve_parent_for_new_task_hit_cases() {
+        let tasks = vec![task_without_parent("tasks/a.md")];
+        let cases: Vec<(&str, &str)> = vec![
+            ("tasks/a.md", "exact match"),
+            ("./tasks/a.md", "leading ./ normalized"),
+            ("tasks\\a.md", "backslash separator"),
+        ];
+        for (parent, label) in cases {
+            assert_eq!(
+                resolve_parent_for_new_task(parent, &tasks),
+                Some(0),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_parent_for_new_task_miss_cases_with_existing_task() {
+        let tasks = vec![task_without_parent("tasks/a.md")];
+        let cases: Vec<(&str, &str)> = vec![
+            ("tasks/missing.md", "no matching path"),
+            ("", "empty parent string"),
+            ("/abs/path.md", "absolute path"),
+            ("C:\\foo.md", "windows drive prefix"),
+        ];
+        for (parent, label) in cases {
+            assert_eq!(resolve_parent_for_new_task(parent, &tasks), None, "{label}");
+        }
+    }
+
+    #[test]
+    fn resolve_parent_for_new_task_returns_none_for_empty_tasks() {
+        let tasks: Vec<Task> = Vec::new();
+
+        assert_eq!(resolve_parent_for_new_task("tasks/a.md", &tasks), None);
+    }
+
+    #[test]
+    fn validate_chain_from_parent_single_root_returns_ok() {
+        let tasks = vec![task_without_parent("tasks/a.md")];
+
+        assert_eq!(validate_chain_from_parent(0, &tasks), Ok(()));
+    }
+
+    #[test]
+    fn validate_chain_from_parent_edge_19_is_allowed() {
+        let tasks = parent_chain_with_edge_count(19);
+
+        assert_eq!(validate_chain_from_parent(0, &tasks), Ok(()));
+    }
+
+    #[test]
+    fn validate_chain_from_parent_edge_20_returns_too_deep() {
+        let tasks = parent_chain_with_edge_count(20);
+
+        assert_eq!(
+            validate_chain_from_parent(0, &tasks),
+            Err(ParentHierarchyErrorReason::TooDeep),
+        );
+    }
+
+    #[test]
+    fn validate_chain_from_parent_detects_cycle() {
+        let tasks = vec![
+            task_with_parent("tasks/a.md", "tasks/b.md"),
+            task_with_parent("tasks/b.md", "tasks/a.md"),
+        ];
+
+        assert_eq!(
+            validate_chain_from_parent(0, &tasks),
+            Err(ParentHierarchyErrorReason::Cycle),
+        );
     }
 }

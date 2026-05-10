@@ -1,13 +1,15 @@
-//! `create_task` Tauri command の引数受け取り型とファイル名生成純粋関数。
+//! `create_task` Tauri command の引数受け取り型・入力検証純粋関数群。
 //!
-//! 本モジュールは現時点では以下のみを提供する:
+//! 本モジュールは現時点では以下を提供する:
 //! - [`CreateTaskArgs`][] : FE から受け取る引数 DTO
 //! - [`CreateTaskError`][]: 入力検証エラー
 //! - [`build_new_filename`][]: title と既存ファイル名集合からユニークな
 //!   md ファイル名を生成する純粋関数
+//! - [`validate_parent_for_new_task`][]: 新規タスクの parent 引数を既存タスク
+//!   スナップショットに対して検証する純粋関数（存在 + 循環/深さ）
 //!
-//! `#[tauri::command]` シン本体・AppState 反映・FS 書込み・parent 検証は
-//! 本モジュールには含まれず、後続 Issue で追加される。
+//! `#[tauri::command]` シン本体・AppState 反映・FS 書込みは本モジュールには含まれず、
+//! 後続 Issue で追加される（本モジュールの純粋関数を組み合わせて使う想定）。
 
 use std::collections::HashSet;
 
@@ -15,6 +17,10 @@ use serde::Deserialize;
 use spec_board_fs::kebab_case::to_kebab_case;
 use spec_board_fs::unique_filename::build_unique_filename;
 use thiserror::Error;
+
+use crate::task_index::{
+    resolve_parent_for_new_task, validate_chain_from_parent, ParentHierarchyErrorReason, Task,
+};
 
 /// `create_task` Tauri command の引数 DTO。
 ///
@@ -36,7 +42,7 @@ pub struct CreateTaskArgs {
     /// 親タスクへのプロジェクトルート相対パス（例: `tasks/parent-task.md`）。
     /// `.md` 拡張子込みのパス文字列で受け取る前提
     /// （task-format-spec.md の `parent` フィールド仕様に準拠）。
-    /// 存在検証・循環検証は後続Issue で実装。
+    /// 存在 + 循環/深さの検証は [`validate_parent_for_new_task`] で行う。
     pub parent: Option<String>,
     /// 本文（Markdown）。未指定時は空文字列扱い。
     pub body: Option<String>,
@@ -51,6 +57,18 @@ pub enum CreateTaskError {
     /// `title` が空、または `to_kebab_case(title)` の結果が空文字列となるケース。
     #[error("タイトルからファイル名を生成できません")]
     InvalidTitle,
+    /// `parent` で指定されたパスが既存タスクと一致しない。
+    /// 空文字 / 絶対パス / Windows drive prefix / 自己参照（新規タスクは未登録のため
+    /// 自然にここに該当） / 単純な不一致 をすべて含む。
+    #[error("親タスクが見つかりません: {parent}")]
+    ParentNotFound { parent: String },
+    /// `parent` 起点 chain に循環があるか、新規タスク 1 edge を加えた合計が
+    /// 最大深さ（20）を超える。
+    #[error("親タスクのチェーン検証に失敗しました ({parent}): {reason}")]
+    ParentCycleOrTooDeep {
+        parent: String,
+        reason: ParentHierarchyErrorReason,
+    },
 }
 
 /// title と既存ファイル名集合から、衝突しない md ファイル名を生成する。
@@ -90,12 +108,93 @@ pub fn build_new_filename(
     Ok(build_unique_filename(&base, "md", existing_filenames))
 }
 
+/// 新規タスクの `parent` 引数を検証する純粋関数。
+///
+/// 検証内容:
+/// 1. `parent = None` の場合は親なしとして `Ok(())`。
+/// 2. `parent = Some(path)` の場合、`existing_tasks` の `file_path` と一致するか
+///    （`./` 接頭辞や `\\` セパレータの正規化込み）。一致しなければ
+///    [`CreateTaskError::ParentNotFound`] を返す（空文字 / 絶対パス / Windows drive prefix /
+///    自己参照もここに含まれる）。
+/// 3. parent 起点 chain に新規タスク 1 edge を追加した合計深さが
+///    最大深さ（20）を超えないか・循環していないかを検証する。違反した場合は
+///    [`CreateTaskError::ParentCycleOrTooDeep`] を返す。
+///
+/// @param parent FE から受け取った parent 文字列（`None` または `tasks/foo.md` 形式）。
+/// @param existing_tasks `AppState.tasks_cache` のスナップショット。
+/// @returns Ok(()) / `ParentNotFound` / `ParentCycleOrTooDeep`。
+pub fn validate_parent_for_new_task(
+    parent: Option<&str>,
+    existing_tasks: &[Task],
+) -> Result<(), CreateTaskError> {
+    let Some(parent_str) = parent else {
+        return Ok(());
+    };
+
+    let parent_index =
+        resolve_parent_for_new_task(parent_str, existing_tasks).ok_or_else(|| {
+            CreateTaskError::ParentNotFound {
+                parent: parent_str.to_string(),
+            }
+        })?;
+
+    validate_chain_from_parent(parent_index, existing_tasks).map_err(|reason| {
+        CreateTaskError::ParentCycleOrTooDeep {
+            parent: parent_str.to_string(),
+            reason,
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontmatter::Priority;
+    use crate::task_index::{TaskExtras, TaskWarning};
 
     fn set_of(items: &[&str]) -> HashSet<String> {
         items.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    fn make_task(file_path: &str, parent: Option<&str>) -> Task {
+        Task {
+            id: file_path.to_string(),
+            file_path: file_path.to_string(),
+            title: "Task".to_string(),
+            status: "Todo".to_string(),
+            priority: None::<Priority>,
+            labels: Vec::new(),
+            parent: parent.map(str::to_string),
+            links: Vec::new(),
+            children: Vec::new(),
+            reverse_links: Vec::new(),
+            body: String::new(),
+            extras: TaskExtras::new(),
+            warnings: Vec::<TaskWarning>::new(),
+        }
+    }
+
+    fn task_with_parent(file_path: &str, parent: &str) -> Task {
+        make_task(file_path, Some(parent))
+    }
+
+    fn task_without_parent(file_path: &str) -> Task {
+        make_task(file_path, None)
+    }
+
+    /// 新規タスク → 起点 parent (`tasks/0.md`) → ... → root (`tasks/{edge_count}.md`) の
+    /// chain を表す Task 一覧を作る。`tasks[0]` が新規タスクの parent 候補。
+    /// 戻り値の長さは `edge_count + 1`、parent 側 edge 数は `edge_count`。
+    fn parent_chain_with_edge_count(edge_count: usize) -> Vec<Task> {
+        let mut tasks = Vec::with_capacity(edge_count + 1);
+        for index in 0..edge_count {
+            tasks.push(task_with_parent(
+                &format!("tasks/{index}.md"),
+                &format!("tasks/{}.md", index + 1),
+            ));
+        }
+        tasks.push(task_without_parent(&format!("tasks/{edge_count}.md")));
+        tasks
     }
 
     #[test]
@@ -185,6 +284,105 @@ mod tests {
             let existing: HashSet<String> = HashSet::new();
             let actual = build_new_filename(title, &existing);
             assert_eq!(actual, Err(CreateTaskError::InvalidTitle), "{label}");
+        }
+    }
+
+    #[test]
+    fn validate_parent_for_new_task_ok_cases() {
+        let single = vec![task_without_parent("tasks/a.md")];
+        let chain_19 = parent_chain_with_edge_count(19);
+
+        let cases: Vec<(Option<&str>, &[Task], &str)> = vec![
+            (None, &[], "parent=None / empty existing"),
+            (None, single.as_slice(), "parent=None / non-empty existing"),
+            (
+                Some("tasks/a.md"),
+                single.as_slice(),
+                "existing root parent",
+            ),
+            (
+                Some("./tasks/a.md"),
+                single.as_slice(),
+                "leading ./ normalized",
+            ),
+            (
+                Some("tasks\\a.md"),
+                single.as_slice(),
+                "backslash separator",
+            ),
+            (
+                Some("tasks/0.md"),
+                chain_19.as_slice(),
+                "edge 19 chain (total 20 = MAX)",
+            ),
+        ];
+        for (parent, tasks, label) in cases {
+            assert_eq!(
+                validate_parent_for_new_task(parent, tasks),
+                Ok(()),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_parent_for_new_task_not_found_cases() {
+        let single = vec![task_without_parent("tasks/a.md")];
+
+        let cases: Vec<(&str, &[Task], &str)> = vec![
+            ("tasks/missing.md", single.as_slice(), "no matching path"),
+            ("", single.as_slice(), "empty parent string"),
+            ("/abs/path.md", single.as_slice(), "absolute path"),
+            ("C:\\foo.md", single.as_slice(), "windows drive prefix"),
+            (
+                "tasks/self.md",
+                single.as_slice(),
+                "self reference (new task not yet registered)",
+            ),
+            ("tasks/a.md", &[] as &[Task], "empty existing tasks"),
+        ];
+        for (parent, tasks, label) in cases {
+            assert_eq!(
+                validate_parent_for_new_task(Some(parent), tasks),
+                Err(CreateTaskError::ParentNotFound {
+                    parent: parent.to_string(),
+                }),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_parent_for_new_task_cycle_or_too_deep_cases() {
+        let chain_20 = parent_chain_with_edge_count(20);
+        let cycle_pair = vec![
+            task_with_parent("tasks/a.md", "tasks/b.md"),
+            task_with_parent("tasks/b.md", "tasks/a.md"),
+        ];
+
+        let cases: Vec<(&str, &[Task], ParentHierarchyErrorReason, &str)> = vec![
+            (
+                "tasks/0.md",
+                chain_20.as_slice(),
+                ParentHierarchyErrorReason::TooDeep,
+                "edge 20 chain (total 21 exceeds MAX)",
+            ),
+            (
+                "tasks/a.md",
+                cycle_pair.as_slice(),
+                ParentHierarchyErrorReason::Cycle,
+                "two-node cycle a <-> b",
+            ),
+        ];
+        for (parent, tasks, expected_reason, label) in cases {
+            assert_eq!(
+                validate_parent_for_new_task(Some(parent), tasks),
+                Err(CreateTaskError::ParentCycleOrTooDeep {
+                    parent: parent.to_string(),
+                    reason: expected_reason,
+                }),
+                "{label}"
+            );
         }
     }
 }
