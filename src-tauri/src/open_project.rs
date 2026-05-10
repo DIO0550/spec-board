@@ -228,9 +228,14 @@ where
     let tasks = build_children(tasks).map_err(map_hierarchy_error)?;
     let tasks = build_reverse_links(tasks);
 
+    // GUIDE.md 書き込みより **前に** prepare を実行する。watcher 初期化失敗で
+    // 復帰する場合に新 dir 配下の `.spec-board/GUIDE.md` が副作用として残らない
+    // ようにするため。prepare 自体は AppState を一切更新しない。
+    let prepared = prepare(root)?;
+
     write_guide_markdown_best_effort(root, &config);
 
-    commit_app_state_with_factories(&state, root, &config, &tasks, prepare, spawn)?;
+    commit_app_state_with_prepared(&state, root, &config, &tasks, prepared, spawn)?;
 
     Ok(build_payload(tasks, &config))
 }
@@ -436,38 +441,33 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 既に root 相対の正規化済み文字列）。
 /// `open_project` の commit 段階の一般化版。
 ///
-/// `prepare` / `spawn` を closure で注入することで、`AppHandle` や
-/// `Watcher::start` 実体を持たないテストでも 4 段階の手順を保ったまま動作を
-/// 検証できる。本番コードでは `commit_app_state` 経由で呼ばれる。
+/// `prepare` の実行と GUIDE.md 書き込みは呼び出し側
+/// （`open_project_with_factories`）で順序を制御するため、本関数には
+/// **既に確保済みの `prepared`** を直接渡す。これにより watcher 起動失敗時に
+/// `.spec-board/GUIDE.md` を新 dir に書き込んでしまう副作用を避けられる。
 ///
-/// 4 段階手順:
+/// 残りの手順は仕様どおり:
 ///
-/// 1. `prepare(root)` で watcher 起動準備（実体: `Watcher::start`）。失敗時は
-///    `AppState` を一切更新せずに `Err` を返す。
-/// 2. 旧 watcher を `take_watcher_handle` で取り出して `stop()` する。新 cache
-///    が書き込まれる前に旧 watcher を必ず停止することで、旧 adapter が新値で
-///    キャッシュを破壊する race を防ぐ。
-/// 3. project_path / config / tasks_cache / write_ignore.clear の commit を
-///    1 ステップずつ実行する。
-/// 4. `spawn(prepared, state, root, config)` で adapter スレッドを起動し、
-///    返り値を `install_watcher_handle` で AppState に格納する。spawn は
-///    panic 以外で失敗しない契約。
-pub(crate) fn commit_app_state_with_factories<P, S, T>(
+/// 1. 旧 watcher を `take_watcher_handle` で取り出して `stop()`（新 cache が
+///    書かれる前に旧 watcher を必ず停止して race を防ぐ）
+/// 2. project_path / config / tasks_cache / write_ignore.clear の commit を
+///    1 ステップずつ実行
+/// 3. `spawn(prepared, state, root, config)` で adapter スレッドを起動し、
+///    返り値を `install_watcher_handle` で AppState に格納する。spawn は panic
+///    以外で失敗しない契約。
+pub(crate) fn commit_app_state_with_prepared<S, T>(
     state: &Arc<AppState>,
     root: &Path,
     config: &Config,
     tasks: &[Task],
-    prepare: P,
+    prepared: T,
     spawn: S,
 ) -> Result<(), OpenProjectError>
 where
-    P: FnOnce(&Path) -> Result<T, OpenProjectError>,
     S: FnOnce(T, &Arc<AppState>, &Path, &Config) -> BoxedWatcherHandle,
 {
     state.check_all_locks()?;
     state.write_ignore().is_empty()?;
-
-    let prepared = prepare(root)?;
 
     if let Some(mut prev) = state.take_watcher_handle()? {
         prev.stop();
@@ -1031,6 +1031,37 @@ mod tests {
             .expect("readable")
             .expect("watcher should still be present");
         drop(still_installed);
+    }
+
+    #[test]
+    fn watcher_init_failure_does_not_write_guide_md_in_new_dir() {
+        // prepare が GUIDE.md 書き込みより前に呼ばれる契約を担保する。
+        // watcher 初期化失敗時に新 dir 配下の `.spec-board/GUIDE.md` が副作用
+        // として残らないことを確認する。
+        let state = Arc::new(AppState::new());
+        let dir = tempdir();
+        let raw = dir.path().to_str().expect("utf-8").to_string();
+
+        let err = open_project_with_factories(
+            Arc::clone(&state),
+            &raw,
+            |_root| -> Result<(), OpenProjectError> {
+                Err(OpenProjectError::WatcherInitFailed {
+                    source: spec_board_fs::watcher::WatcherError::Init(
+                        "synthetic init failure".to_string(),
+                    ),
+                })
+            },
+            |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        )
+        .expect_err("watcher init failure");
+        assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
+
+        let guide = dir.path().join(".spec-board").join("GUIDE.md");
+        assert!(
+            !guide.exists(),
+            "GUIDE.md should not be written when watcher init fails"
+        );
     }
 
     #[test]
