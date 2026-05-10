@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::task::path_normalization::normalize_path_parts;
+use crate::task::path_normalization::{has_windows_drive_prefix, normalize_path_parts};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
@@ -30,16 +30,24 @@ pub enum TaskFilePathError {
     BackslashNotAllowed(String),
     #[error("task file path must not have leading/trailing slash (got `{0}`)")]
     LeadingOrTrailingSlash(String),
+    #[error("task file path must be project-root-relative, not drive-prefixed (got `{0}`)")]
+    DrivePrefixNotAllowed(String),
 }
 
 impl TaskFilePath {
     /// strict コンストラクタ。canonical な相対パス（scanner 由来）の検証用。
+    /// `C:` 形式の Windows drive prefix を含む絶対パスは project-root-relative
+    /// 不変条件に反するため拒否する（drive prefix の除去は
+    /// [`Self::from_relative_path`] が事前に行う責務）。
     pub fn try_from_str(value: &str) -> Result<Self, TaskFilePathError> {
         if value.is_empty() {
             return Err(TaskFilePathError::Empty);
         }
         if value.contains('\\') {
             return Err(TaskFilePathError::BackslashNotAllowed(value.into()));
+        }
+        if has_windows_drive_prefix(value) {
+            return Err(TaskFilePathError::DrivePrefixNotAllowed(value.into()));
         }
         if value.starts_with('/') || value.ends_with('/') {
             return Err(TaskFilePathError::LeadingOrTrailingSlash(value.into()));

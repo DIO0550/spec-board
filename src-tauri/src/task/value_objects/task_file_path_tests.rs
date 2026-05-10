@@ -132,3 +132,15 @@ fn display_outputs_inner_string() {
     let vo = TaskFilePath::try_from_str("tasks/foo.md").unwrap();
     assert_eq!(format!("{vo}"), "tasks/foo.md");
 }
+
+#[test]
+fn try_from_str_rejects_drive_prefixed_path() {
+    // strict ctor は project-root-relative 不変条件を守るため
+    // Windows drive prefix を含む絶対パスを拒否する。
+    assert_eq!(
+        TaskFilePath::try_from_str("C:/tasks/foo.md"),
+        Err(TaskFilePathError::DrivePrefixNotAllowed(
+            "C:/tasks/foo.md".into()
+        ))
+    );
+}
