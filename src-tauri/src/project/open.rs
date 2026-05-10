@@ -68,6 +68,7 @@ use crate::config::value_objects::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
 };
+use crate::project::value_objects::project_root::ProjectRoot;
 use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task::index::{
     build_children, build_reverse_links, default_status_for, task_from_markdown, Task,
@@ -162,7 +163,11 @@ pub fn open_project(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<OpenProjectPayload, String> {
-    open_project_impl(&app, state.inner().clone(), &path).map_err(|e| e.to_string())
+    // FE から渡された path を最初に ProjectRoot VO へ詰め直し、空文字を境界で
+    // 弾く。実在性チェックは `validate_directory` の責務。
+    let root = ProjectRoot::try_from_str(&path)
+        .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
+    open_project_impl(&app, state.inner().clone(), &root).map_err(|e| e.to_string())
 }
 
 /// 単体テスト境界の本体関数。
@@ -178,11 +183,15 @@ pub fn open_project(
 pub(crate) fn open_project_impl(
     app: &tauri::AppHandle,
     state: Arc<AppState>,
-    path: &str,
+    root: &ProjectRoot,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     open_project_with_factories(
         state,
-        path,
+        root.as_path()
+            .to_str()
+            .ok_or_else(|| OpenProjectError::DirectoryNotFound {
+                path: root.to_string(),
+            })?,
         |root| {
             crate::watcher_event::prepare_watcher(root)
                 .map_err(|source| OpenProjectError::WatcherInitFailed { source })
