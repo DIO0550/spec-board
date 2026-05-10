@@ -1,10 +1,7 @@
 pub mod config;
-pub mod create_task;
-pub mod frontmatter;
-pub mod get_tasks;
-pub mod open_project;
+pub mod project;
 pub mod state;
-pub mod task_index;
+pub mod task;
 pub mod watcher_event;
 
 use std::sync::Arc;
@@ -34,8 +31,8 @@ pub fn run() {
         .manage(Arc::new(AppState::new()))
         .invoke_handler(tauri::generate_handler![
             greet,
-            open_project::open_project,
-            get_tasks::get_tasks
+            project::open::open_project,
+            task::get::get_tasks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

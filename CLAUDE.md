@@ -41,14 +41,49 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
   Cargo.toml            — `[workspace] members=[".", "crates/fs"]` + spec-board package
   src/                  — spec-board crate（本体）
     main.rs             — エントリーポイント
-    lib.rs              — モジュール公開（frontmatter のみ）
-    frontmatter.rs      — md フロントマターのパース / シリアライズ
+    lib.rs              — `pub mod` 列挙: `config` / `project` / `state` / `task` / `watcher_event`
+    config.rs           — Config / カラム / cardOrder ロジック（テスト: `config/config_tests.rs`）
+    config/
+      config_tests.rs   — `config.rs` のユニットテスト
+    state.rs            — `AppState` / lock 取得順序契約（テスト: `state/state_tests.rs`）
+    state/
+      state_tests.rs    — `state.rs` のユニットテスト
+    task.rs             — task ドメイン親（`pub mod create; pub mod frontmatter; pub mod get; pub mod index;`）
+    task/
+      create.rs         — `create_task` 引数検証 + ファイル名生成 + テスト兄弟ファイル
+      create_tests.rs   — `task::create` のテスト
+      frontmatter.rs    — md フロントマターのパース / シリアライズ
+      frontmatter_tests.rs — `task::frontmatter` のテスト
+      get.rs            — `get_tasks` Tauri command 実装
+      get_tests.rs      — `task::get` のテスト
+      index.rs          — Task index / 親子・リンク解決
+      index_tests.rs    — `task::index` のテスト
+    project.rs          — project ドメイン親（`pub mod open;`）
+    project/
+      open.rs           — `open_project` Tauri command 実装
+      open_tests.rs     — `project::open` のテスト
+    watcher_event.rs    — watcher イベント adapter（FsEvent → IPC emit）
+    watcher_event/
+      handler.rs        — 1 件分の `FsEvent` 処理ロジック
+      tests.rs          — adapter のテスト
   crates/
     fs/                 — spec-board-fs crate（重い外部 crate を集約するサブクレート）
-      Cargo.toml        — package=spec-board-fs / walkdir + thiserror + dev:tempfile
+      Cargo.toml        — package=spec-board-fs / walkdir + notify + thiserror + dev:tempfile
       src/
-        lib.rs          — `pub mod file_scanner;` + 配置基準 doc コメント
-        file_scanner.rs — `walkdir` ベースの再帰スキャン
+        lib.rs          — `pub mod` 列挙: `config` / `task` / `watcher` の 3 ドメイン
+        task.rs         — task ドメイン親（`pub mod file_scanner; pub mod kebab_case; pub mod unique_filename;`）
+        task/
+          file_scanner.rs       — `walkdir` ベースの再帰スキャン（+ `_tests.rs`）
+          kebab_case.rs         — タイトル → kebab-case 変換（+ `_tests.rs`）
+          unique_filename.rs    — 衝突回避ファイル名生成（+ `_tests.rs`）
+        watcher.rs      — watcher ドメイン親（`pub mod core; pub mod handle; pub mod write_ignore;`）
+        watcher/
+          core.rs               — `notify` ベースの Watcher 本体（+ `_tests.rs`）
+          handle.rs             — `WatcherHandle` トレイト + Noop 実装（+ `_tests.rs`）
+          write_ignore.rs       — 自前 write 由来 event を抑止するレジストリ（+ `_tests.rs`）
+        config.rs       — config ドメイン親（`pub mod config_io;`）
+        config/
+          config_io.rs          — `.spec-board/config.json` 読み書き + GUIDE.md 出力（+ `_tests.rs`）
 ```
 
 ### フロントエンド構成ルール
@@ -63,13 +98,31 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
 `src-tauri/crates/fs/`（サブクレート `spec-board-fs`）は **重い外部 crate に依存する処理を集約**するためのサブクレート。Cargo.toml レベルで依存を分離することで、外部ライブラリ差し替えの影響を 1 箇所に閉じ込めることが目的。本体クレート `spec-board` は `path = "crates/fs"` 経由でのみ参照する。
 
 - **集約する**: 重い I/O / 走査 / OS 依存 / ネットワーク等を伴う crate
-  - 例: `walkdir`（再帰走査）、`notify`（ファイル監視。Issue で予定）、`reqwest`（HTTP）
+  - 例: `walkdir`（再帰走査）、`notify`（ファイル監視）、`reqwest`（HTTP）
 - **集約しない**（本体 crate に直接置いてよい）: Rust エコシステムで事実上標準の型変換・派生系
   - 例: `serde` / `serde_json` / `serde_yaml_ng` / `thiserror` / `anyhow`
 - **境界の漏出禁止**: `spec-board-fs` の各モジュールは `pub` API の型シグネチャに外部 crate の型を出さない（`std` の型と独自エラー型のみ）
   - 例: `walkdir::DirEntry` を返さず `Vec<PathBuf>` で返す、`walkdir::Error` を `std::io::Error` に詰め直す
 - **tauri 非依存**: `spec-board-fs` は `tauri` に依存しない（IPC コマンド層は本体クレート側に置く）
-- 将来サブモジュールを追加する場合は flat 配置（`{name}.rs` + `{name}/` 子フォルダ形式）を推奨
+
+#### モジュール記法（Rust 2018+ 新スタイル）
+
+両クレートとも `mod.rs` を**一切使用しない**。ドメイン親ファイルは `xxx.rs`（`pub mod` 列挙のみ）、子モジュールは同名フォルダ内 `xxx/yyy.rs`（兄弟配置）。
+
+- 例: `src/task.rs`（親、`pub mod create; pub mod frontmatter; ...`）+ `src/task/create.rs`（子）
+- 単一ファイルドメイン（`src/state.rs` / `src/config.rs`）は親フォルダを作らずフラット配置のまま。テスト切り出しが必要な場合のみ `src/state/state_tests.rs` のように兄弟フォルダを併設する
+
+#### 中粒度ドメイン構成
+
+- **本体クレート `src-tauri/src/`**: `task` / `project` / `watcher_event` / `config` / `state` の 5 ドメイン
+- **サブクレート `src-tauri/crates/fs/src/`**: `task` / `watcher` / `config` の 3 ドメイン
+  - `watcher` 配下は `core` / `handle` / `write_ignore` の 3 子モジュール（旧 `watcher.rs` → `watcher/core.rs`、旧 `watcher_handle.rs` → `watcher/handle.rs` にリネーム済み。`watcher::watcher` のような冗長表現を避けるため）
+
+#### テスト配置
+
+- `#[cfg(test)] mod tests { ... }` インラインは**禁止**。同階層に `{basename}_tests.rs` を切り出して `mod` 宣言で読み込む
+- 親ファイルが `xxx.rs` で子テストが同階層 `xxx_tests.rs` の場合（兄弟配置）は `#[cfg(test)] #[path = "xxx_tests.rs"] mod xxx_tests;` のように **`#[path]` 属性が必須**
+- 親ファイルが上位 `xxx.rs` で子テストが `xxx/xxx_tests.rs` の場合（親+子フォルダ）は `#[cfg(test)] mod xxx_tests;` のみで OK（標準解決）
 
 ## コンポーネント・フック・ライブラリ規約
 

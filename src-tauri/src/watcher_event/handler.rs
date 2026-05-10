@@ -18,9 +18,9 @@ use std::sync::mpsc::{Receiver, RecvError};
 
 use serde_json::json;
 
-use crate::task_index::{normalized_task_file_path, task_from_markdown, TaskParseContext};
-use spec_board_fs::file_scanner::task_md_relative_path;
-use spec_board_fs::watcher::FsEvent;
+use crate::task::index::{normalized_task_file_path, task_from_markdown, TaskParseContext};
+use spec_board_fs::task::file_scanner::task_md_relative_path;
+use spec_board_fs::watcher::core::FsEvent;
 
 use super::AdapterContext;
 
@@ -90,7 +90,7 @@ pub(crate) fn handle_event(event: &FsEvent, ctx: &AdapterContext) -> Result<(), 
 /// `.md` 以外 / ドット始まり / `node_modules` 配下 / サイズ超過 / バイナリ等）
 /// は `None` を返す。
 ///
-/// 判定ロジックは `spec_board_fs::file_scanner::task_md_relative_path` を経由
+/// 判定ロジックは `spec_board_fs::task::file_scanner::task_md_relative_path` を経由
 /// することで `scan_md_files` と完全に揃える。これにより初回 scan で読まれない
 /// ファイルが watcher 経由で `task-created` されたり、初回 scan で読まれた
 /// `.MD` の変更が watcher で無視されたりすることを防ぐ。
@@ -231,5 +231,5 @@ pub(crate) enum HandleError {
     #[error("AppState lock poisoned: {0}")]
     StateLock(#[from] crate::state::AppStateError),
     #[error("WriteIgnore lock poisoned: {0}")]
-    WriteIgnore(#[from] spec_board_fs::write_ignore::WriteIgnoreError),
+    WriteIgnore(#[from] spec_board_fs::watcher::write_ignore::WriteIgnoreError),
 }

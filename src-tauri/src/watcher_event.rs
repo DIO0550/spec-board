@@ -1,4 +1,4 @@
-//! `spec_board_fs::watcher::Watcher` の `FsEvent` を読み込み、`AppState`
+//! `spec_board_fs::watcher::core::Watcher` の `FsEvent` を読み込み、`AppState`
 //! の `tasks_cache` を差分更新したうえで `task-created` / `task-updated`
 //! / `task-deleted` を `tauri::AppHandle::emit` で配信する adapter 層。
 //!
@@ -37,9 +37,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::config::Config;
 use crate::state::AppState;
-use crate::task_index::default_status_for;
-use spec_board_fs::watcher::{FsEvent, Watcher, WatcherError};
-use spec_board_fs::watcher_handle::WatcherHandle;
+use crate::task::index::default_status_for;
+use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
+use spec_board_fs::watcher::handle::WatcherHandle;
 
 /// emit の抽象化（本番 = `AppHandle::emit`、テスト = Vec push）。
 pub(crate) type EmitFn = Box<dyn Fn(&str, serde_json::Value) + Send + Sync + 'static>;
