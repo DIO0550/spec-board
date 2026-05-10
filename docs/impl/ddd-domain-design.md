@@ -210,9 +210,11 @@ open_project_impl(state, root: &ProjectRoot)
            file_path: rel,
            default_status: ColumnName,
        })
-   - TaskIndex::from(tasks).build_children()?.build_reverse_links()
+   - TaskIndex::new(tasks).build_children()?.build_reverse_links().into_tasks()
    ↓
-HashMap<TaskFilePath, Task> を AppState.tasks_cache に commit
+HashMap<PathBuf, Task> を AppState.tasks_cache に commit
+   （tasks_cache のキーは本リファクタでは PathBuf 据置 — §8 参照。
+    payload に詰め直す Task 内では `id` / `file_path` は TaskFilePath VO）
    ↓
 OpenProjectPayload { tasks: Vec<Task>, columns: Vec<ColumnName> }
    ↓ (#[serde(transparent)] により JSON 形状不変)
