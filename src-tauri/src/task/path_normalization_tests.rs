@@ -48,3 +48,19 @@ fn detects_windows_drive_prefix() {
     assert!(!has_windows_drive_prefix("c"));
     assert!(!has_windows_drive_prefix(""));
 }
+
+#[test]
+fn keeps_non_drive_segment_ending_with_colon_on_unix() {
+    // `notes:` のような ASCII 文字数 != 2 の末尾コロン文字列は drive prefix
+    // ではないため削除しない（Unix で正規ディレクトリ名として有効）。
+    assert_eq!(normalize_path_parts("notes:/foo.md", true), "notes:/foo.md");
+}
+
+#[test]
+fn drive_prefix_only_removed_at_start() {
+    // 先頭セグメント以外は drive prefix 形式でも削除しない。
+    assert_eq!(
+        normalize_path_parts("tasks/C:/foo.md", true),
+        "tasks/C:/foo.md"
+    );
+}
