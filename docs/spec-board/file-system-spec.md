@@ -362,7 +362,7 @@ pub enum ScanError {
 | 項目 | 仕様 |
 |:-----|:-----|
 | 機能 | `root` 配下の `.md` ファイルを再帰的に列挙する |
-| 配置 | `src-tauri/crates/fs/src/file_scanner.rs`（サブクレート `spec-board-fs`、`walkdir` の集約先）。呼び出しは `spec_board_fs::file_scanner::scan_md_files` |
+| 配置 | `src-tauri/crates/fs/src/task/file_scanner.rs`（サブクレート `spec-board-fs`、`walkdir` の集約先）。呼び出しは `spec_board_fs::task::file_scanner::scan_md_files` |
 | 戻り値 | `root` からの **相対 `PathBuf`** の `Vec`。順序は OS 依存のため呼び出し側でソートする |
 | 走査ライブラリ | `walkdir` crate（`follow_links(false)` 設定でシンボリックリンクは辿らない） |
 | 除外パターン | BL-002 / BL-002a / BL-002b / BL-002c / BL-002d / BL-002e の各ルールを内部で適用 |
@@ -397,7 +397,7 @@ pub enum WriteIgnoreError {
 | 項目 | 仕様 |
 |:-----|:-----|
 | 機能 | spec-board 自身の書き込みで発生したファイル監視イベントを呼び出し側が識別するため、無視対象パスを登録・参照・解除する |
-| 配置 | `src-tauri/crates/fs/src/write_ignore.rs`（サブクレート `spec-board-fs`）。呼び出しは `spec_board_fs::write_ignore::WriteIgnoreRegistry` |
+| 配置 | `src-tauri/crates/fs/src/watcher/write_ignore.rs`（サブクレート `spec-board-fs`）。呼び出しは `spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry` |
 | 内部状態 | `Mutex<HashSet<PathBuf>>` で登録済みパスを保持する |
 | `register` | パスを登録し、新規追加なら `Ok(true)`、重複なら `Ok(false)` を返す |
 | `should_ignore` | パスが登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。状態は変更しない |
@@ -445,7 +445,7 @@ pub enum WatcherError {
 | 項目 | 仕様 |
 |:-----|:-----|
 | 機能 | `path` を再帰的に監視し、変更を [`FsEvent`] として `mpsc::Receiver` 経由で逐次通知する |
-| 配置 | `src-tauri/crates/fs/src/watcher.rs`（サブクレート `spec-board-fs`、`notify` の集約先）。呼び出しは `spec_board_fs::watcher::Watcher` |
+| 配置 | `src-tauri/crates/fs/src/watcher/core.rs`（サブクレート `spec-board-fs`、`notify` の集約先）。呼び出しは `spec_board_fs::watcher::core::Watcher` |
 | バックエンド | まず `RecommendedWatcher` を試み、`new` または再帰 `watch()` のいずれかが失敗した場合は `PollWatcher`（2 秒間隔）へ自動フォールバック |
 | Symlink | 両バックエンドに `notify::Config::with_follow_symlinks(false)` を適用。再帰中に出現する子孫 symlink は辿らない（無限ループ／プロジェクト境界外監視を防止）。root が symlink ディレクトリ自体である場合は `Watcher::start` は受け入れる（呼び出し側責務） |
 | 停止 | 戻り値の `Watcher` を drop すると **同期的** に監視停止する。内部 backend → adapter thread の順で解放され、`Drop` 完了後に発生したファイル変更は `Receiver` に届かない（Drop 前に enqueue 済みのイベントは `Disconnected` を観測するまで `recv` 可能） |
