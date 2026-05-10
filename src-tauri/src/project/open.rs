@@ -71,8 +71,7 @@ use crate::config::{
 use crate::project::value_objects::project_root::ProjectRoot;
 use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task::index::{
-    build_children, build_reverse_links, default_status_for, task_from_markdown, Task,
-    TaskParseContext, TaskParseError,
+    default_status_for, task_from_markdown, Task, TaskIndex, TaskParseContext, TaskParseError,
 };
 use spec_board_fs::task::file_scanner::{scan_md_files, ScanError};
 use spec_board_fs::watcher::core::WatcherError;
@@ -235,8 +234,11 @@ where
     let default_status = default_status_for(&config);
     let tasks = collect_tasks(root, &md_paths, &default_status);
 
-    let tasks = build_children(tasks).map_err(map_hierarchy_error)?;
-    let tasks = build_reverse_links(tasks);
+    let tasks = TaskIndex::new(tasks)
+        .build_children()
+        .map_err(map_hierarchy_error)?
+        .build_reverse_links()
+        .into_tasks();
 
     // GUIDE.md 書き込みより **前に** prepare を実行する。watcher 初期化失敗で
     // 復帰する場合に新 dir 配下の `.spec-board/GUIDE.md` が副作用として残らない
