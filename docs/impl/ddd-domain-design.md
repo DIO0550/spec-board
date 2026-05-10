@@ -83,10 +83,13 @@ Aggregate 境界の引き方の指針:
      見た不変条件（「children は parent からの逆引きで派生したものである」）
      が破られにくくなる。
 3. **Aggregate を跨ぐ参照は VO の値で行う**
-   - `AppState.tasks_cache: HashMap<TaskFilePath, Task>` のように、
-     Aggregate `AppState` から `Task` を引くキーは VO `TaskFilePath` を使う。
-     `Task` 自身を `AppState` の中に持つわけではなく、別 Aggregate である
-     `Task` 集合へのキーとして VO を保有する形になる。
+   - 例として、Aggregate `AppState` から `Task` を引くキーには将来的に VO
+     `TaskFilePath` を使う形が望ましい。`Task` 自身を `AppState` の中に持つ
+     わけではなく、別 Aggregate である `Task` 集合へのキーとして VO を保有
+     する形になる。
+   - 注: 現状の `src-tauri/src/state.rs` 実装では `AppState.tasks_cache` /
+     `AppState.project_path` のキー型は `PathBuf` のまま据え置いている
+     （本リファクタのスコープ外。詳細は §8 を参照）。
 
 ---
 
@@ -123,15 +126,18 @@ Aggregate 境界の引き方の指針:
 │  │  Aggregate: TaskIndex            │    │  Aggregate: AppState          │    │
 │  │  ┌────────────────────────────┐  │    │  ┌────────────────────────┐   │    │
 │  │  │ tasks: Vec<Task>           │  │    │  │ project_path : Mutex<   │   │    │
-│  │  └────────────────────────────┘  │    │  │   Option<ProjectRoot>>  │   │    │
+│  │  └────────────────────────────┘  │    │  │   Option<PathBuf>>* ※   │   │    │
 │  │   - validate_parent_existence    │    │  │ config       : Mutex<   │   │    │
 │  │   - validate_parent_hierarchy    │    │  │   Option<Config>>       │   │    │
 │  │   - build_children               │    │  │ tasks_cache  : Mutex<   │   │    │
-│  │   - build_reverse_links          │    │  │   HashMap<TaskFilePath, │   │    │
+│  │   - build_reverse_links          │    │  │   HashMap<PathBuf,* ※   │   │    │
 │  │   - resolve_parent_for_new_task  │    │  │             Task>>      │   │    │
 │  │   - validate_chain_from_parent   │    │  │ watcher_handle: Mutex...│   │    │
 │  └──────────────────────────────────┘    │  │ write_ignore: WriteIgn..│   │    │
 │                                          │  └────────────────────────┘   │    │
+│   ※ tasks_cache キー / project_path 値は本リファクタでは PathBuf 据置        │
+│   （TaskFilePath / ProjectRoot への置換は将来 PR の対象。詳細は §8 参照）     │
+│                                                                              │
 │  ┌──────────────────────────────────┐    │   - lock 順序: project_path   │    │
 │  │  Value Objects                    │    │     → config → tasks_cache    │    │
 │  │   - TaskFilePath  (newtype String)│    │     → watcher_handle          │    │
@@ -254,8 +260,14 @@ sub-crate からの戻り値（`PathBuf`）を本体側で
 
 本リファクタでは以下を **スコープ外**としている:
 
+- `AppState.project_path: Mutex<Option<PathBuf>>` の `ProjectRoot` 化
+- `AppState.tasks_cache: Mutex<HashMap<PathBuf, Task>>` のキーの `TaskFilePath` 化
+- `Config.card_order: BTreeMap<String, Vec<String>>` の VO 化
+  （`BTreeMap<ColumnName, Vec<TaskFilePath>>` への置換）
 - `priority` の VO 化（CreateTaskArgs の lenient 受け付けに影響するため）
 - `TaskExtras` (`BTreeMap<String, serde_json::Value>`) のキー VO 化
 - `WriteIgnoreRegistry` の絶対パス VO 化（`PathBuf` のまま）
 - フロントエンド (`src/domains/`) との型同期（公開 API 不変のため自動互換）
 - spec ドキュメント (`docs/spec-board/*`) の更新（仕様変更が無いため不要）
+
+これらは公開 JSON 形状に影響しないため別 PR でインクリメンタルに置換可能。
