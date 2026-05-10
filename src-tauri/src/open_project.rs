@@ -62,15 +62,18 @@ use serde::Serialize;
 use tauri::State;
 use thiserror::Error;
 
+use std::sync::Arc;
+
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
 };
-use crate::state::{AppState, AppStateError};
+use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task_index::{
-    build_children, build_reverse_links, task_from_markdown, Task, TaskParseContext, TaskParseError,
+    build_children, build_reverse_links, default_status_for, task_from_markdown, Task,
+    TaskParseContext, TaskParseError,
 };
 use spec_board_fs::file_scanner::{scan_md_files, ScanError};
-use spec_board_fs::watcher_handle::NoopWatcherHandle;
+use spec_board_fs::watcher::WatcherError;
 use spec_board_fs::write_ignore::WriteIgnoreError;
 
 /// `open_project` コマンドのペイロード。
@@ -112,6 +115,16 @@ pub enum OpenProjectError {
         category: &'static str,
         message: String,
     },
+    /// Watcher 初期化失敗（inotify 上限 / poll fallback 失敗 / path missing 等）。
+    ///
+    /// FE 側 `PATTERNS` には未対応のため `UNKNOWN` 分類になる。失敗時は
+    /// `commit_app_state` の (1) 段階で復帰し、`AppState` の全フィールドが
+    /// 一切変更されない契約。
+    #[error("ファイル監視の初期化に失敗しました: {source}")]
+    WatcherInitFailed {
+        #[from]
+        source: WatcherError,
+    },
 }
 
 impl From<AppStateError> for OpenProjectError {
@@ -144,10 +157,11 @@ impl From<WriteIgnoreError> for OpenProjectError {
 /// FE 側でパターンマッチして `TauriError` に変換される。
 #[tauri::command]
 pub fn open_project(
-    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<OpenProjectPayload, String> {
-    open_project_impl(state.inner(), &path).map_err(|e| e.to_string())
+    open_project_impl(&app, state.inner().clone(), &path).map_err(|e| e.to_string())
 }
 
 /// 単体テスト境界の本体関数。
@@ -161,12 +175,48 @@ pub fn open_project(
 /// `check_app_state_locks` で一括 probe する。lock poison が確定している場合は
 /// `.spec-board/GUIDE.md` の不要な書き出しや scan / parse の無駄を最初から避ける。
 pub(crate) fn open_project_impl(
-    state: &AppState,
+    app: &tauri::AppHandle,
+    state: Arc<AppState>,
     path: &str,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
+    open_project_with_factories(
+        state,
+        path,
+        |root| {
+            crate::watcher_event::prepare_watcher(root)
+                .map_err(|source| OpenProjectError::WatcherInitFailed { source })
+        },
+        |(watcher, rx), state, root, config| {
+            let handle = crate::watcher_event::spawn_adapter(
+                app,
+                root,
+                config,
+                Arc::clone(state),
+                watcher,
+                rx,
+            );
+            Box::new(handle) as BoxedWatcherHandle
+        },
+    )
+}
+
+/// `open_project_impl` のテスト容易性のための一般化版。
+///
+/// `prepare` / `spawn` を closure で注入することで、`AppHandle` を持たない
+/// テストでも実装本体を直接駆動できる。
+pub(crate) fn open_project_with_factories<P, S, T>(
+    state: Arc<AppState>,
+    path: &str,
+    prepare: P,
+    spawn: S,
+) -> Result<OpenProjectPayload, OpenProjectError>
+where
+    P: FnOnce(&Path) -> Result<T, OpenProjectError>,
+    S: FnOnce(T, &Arc<AppState>, &Path, &Config) -> BoxedWatcherHandle,
+{
     let root = Path::new(path);
     validate_directory(root, path)?;
-    check_app_state_locks(state)?;
+    check_app_state_locks(&state)?;
 
     let config = load_or_default(root).map_err(map_load_config_error)?;
 
@@ -175,15 +225,12 @@ pub(crate) fn open_project_impl(
     let default_status = default_status_for(&config);
     let tasks = collect_tasks(root, &md_paths, &default_status);
 
-    // build_children は内部で validate_parent_existence + validate_parent_hierarchy を
-    // 順に呼ぶ。本層では明示呼び出しを行わず、致命的エラー (CycleOrTooDeep) のみを
-    // ScanFailed に詰め直す。
     let tasks = build_children(tasks).map_err(map_hierarchy_error)?;
     let tasks = build_reverse_links(tasks);
 
     write_guide_markdown_best_effort(root, &config);
 
-    commit_app_state(state, root, &config, &tasks)?;
+    commit_app_state_with_factories(&state, root, &config, &tasks, prepare, spawn)?;
 
     Ok(build_payload(tasks, &config))
 }
@@ -284,17 +331,6 @@ fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &str) -> Vec
         }
     }
     tasks
-}
-
-/// `default_status` を `config.columns` の `order` 昇順先頭の `name` から決定する。
-/// `columns` が空の場合は空文字列を返す（`task_from_markdown` 側でも空文字 fallback を許容）。
-fn default_status_for(config: &Config) -> String {
-    config
-        .columns
-        .iter()
-        .min_by_key(|column| column.order)
-        .map(|column| column.name.clone())
-        .unwrap_or_default()
 }
 
 /// `ScanError` を `OpenProjectError` に詰め直す。
@@ -398,18 +434,44 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///
 /// `tasks_cache` の key は `PathBuf::from(task.file_path)`（`task.file_path` は
 /// 既に root 相対の正規化済み文字列）。
-fn commit_app_state(
-    state: &AppState,
+/// `open_project` の commit 段階の一般化版。
+///
+/// `prepare` / `spawn` を closure で注入することで、`AppHandle` や
+/// `Watcher::start` 実体を持たないテストでも 4 段階の手順を保ったまま動作を
+/// 検証できる。本番コードでは `commit_app_state` 経由で呼ばれる。
+///
+/// 4 段階手順:
+///
+/// 1. `prepare(root)` で watcher 起動準備（実体: `Watcher::start`）。失敗時は
+///    `AppState` を一切更新せずに `Err` を返す。
+/// 2. 旧 watcher を `take_watcher_handle` で取り出して `stop()` する。新 cache
+///    が書き込まれる前に旧 watcher を必ず停止することで、旧 adapter が新値で
+///    キャッシュを破壊する race を防ぐ。
+/// 3. project_path / config / tasks_cache / write_ignore.clear の commit を
+///    1 ステップずつ実行する。
+/// 4. `spawn(prepared, state, root, config)` で adapter スレッドを起動し、
+///    返り値を `install_watcher_handle` で AppState に格納する。spawn は
+///    panic 以外で失敗しない契約。
+pub(crate) fn commit_app_state_with_factories<P, S, T>(
+    state: &Arc<AppState>,
     root: &Path,
     config: &Config,
     tasks: &[Task],
-) -> Result<(), OpenProjectError> {
-    // Pre-flight: AppState 4 mutex + WriteIgnoreRegistry の健全性を副作用なしで
-    // 確認し、poison していれば副作用前に Err 復帰する。`tasks_snapshot()` などの
-    // クローン系を probe に使うと既存タスク数に比例した clone が走ってしまうため、
-    // no-op probe (`check_*_lock` / `is_empty`) を用いる。
+    prepare: P,
+    spawn: S,
+) -> Result<(), OpenProjectError>
+where
+    P: FnOnce(&Path) -> Result<T, OpenProjectError>,
+    S: FnOnce(T, &Arc<AppState>, &Path, &Config) -> BoxedWatcherHandle,
+{
     state.check_all_locks()?;
     state.write_ignore().is_empty()?;
+
+    let prepared = prepare(root)?;
+
+    if let Some(mut prev) = state.take_watcher_handle()? {
+        prev.stop();
+    }
 
     let mut cache = HashMap::with_capacity(tasks.len());
     for task in tasks {
@@ -420,7 +482,9 @@ fn commit_app_state(
     state.replace_config(Some(config.clone()))?;
     state.replace_tasks_cache(cache)?;
     state.write_ignore().clear()?;
-    state.install_watcher_handle(Box::new(NoopWatcherHandle::new()))?;
+
+    let handle = spawn(prepared, state, root, config);
+    state.install_watcher_handle(handle)?;
     Ok(())
 }
 
@@ -441,12 +505,12 @@ fn build_payload(mut tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::{open_project_impl, OpenProjectError, OpenProjectPayload};
+    use super::{open_project_with_factories, OpenProjectError, OpenProjectPayload};
 
     use crate::config::{CardOrder, Column, Config};
-    use crate::state::AppState;
+    use crate::state::{AppState, BoxedWatcherHandle};
     use crate::task_index::Task;
-    use spec_board_fs::watcher_handle::WatcherHandle;
+    use spec_board_fs::watcher_handle::{NoopWatcherHandle, WatcherHandle};
 
     use std::fs;
     use std::path::Path;
@@ -457,6 +521,20 @@ mod tests {
 
     fn tempdir() -> TempDir {
         tempfile::tempdir().expect("create temp dir")
+    }
+
+    /// 4 段階手順を保ったまま、`AppHandle` / `Watcher::start` を使わずに
+    /// `open_project_with_factories` を駆動するための shorthand。
+    fn open_with_noop(
+        state: Arc<AppState>,
+        path: &str,
+    ) -> Result<OpenProjectPayload, OpenProjectError> {
+        open_project_with_factories(
+            state,
+            path,
+            |_root| Ok::<(), OpenProjectError>(()),
+            |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        )
     }
 
     fn write_md(root: &Path, rel: &str, body: &str) {
@@ -504,13 +582,14 @@ mod tests {
 
     #[test]
     fn returns_directory_not_found_for_missing_path() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         // TempDir 配下に未作成のサブディレクトリを作って、確実に NotFound 入力を生成する。
         let dir = tempdir();
         let missing_path = dir.path().join("does-not-exist").join("project");
         let missing = missing_path.to_str().expect("utf-8 path");
 
-        let err = open_project_impl(&state, missing).expect_err("missing path should fail");
+        let err =
+            open_with_noop(Arc::clone(&state), missing).expect_err("missing path should fail");
 
         match err {
             OpenProjectError::DirectoryNotFound { ref path } => {
@@ -525,13 +604,13 @@ mod tests {
 
     #[test]
     fn returns_not_a_directory_for_file_path() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let file_path = dir.path().join("regular.txt");
         fs::write(&file_path, "hello").expect("write file");
         let raw = file_path.to_str().expect("utf-8 path");
 
-        let err = open_project_impl(&state, raw).expect_err("file path should fail");
+        let err = open_with_noop(Arc::clone(&state), raw).expect_err("file path should fail");
 
         match err {
             OpenProjectError::NotADirectory { ref path } => assert_eq!(raw, path),
@@ -550,7 +629,7 @@ mod tests {
             return;
         }
 
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let target = dir.path().join("locked");
         fs::create_dir(&target).expect("create dir");
@@ -559,7 +638,8 @@ mod tests {
         fs::set_permissions(&target, perms).expect("chmod");
 
         let raw = target.to_str().expect("utf-8 path").to_string();
-        let err = open_project_impl(&state, &raw).expect_err("inaccessible dir should fail");
+        let err =
+            open_with_noop(Arc::clone(&state), &raw).expect_err("inaccessible dir should fail");
 
         // 権限を戻して TempDir のドロップを成功させる。
         let mut restore = fs::metadata(&target).expect("metadata").permissions();
@@ -587,11 +667,11 @@ mod tests {
 
     #[test]
     fn empty_directory_returns_default_columns_and_no_tasks() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let raw = dir.path().to_str().expect("utf-8 path").to_string();
 
-        let payload = open_project_impl(&state, &raw).expect("empty dir should succeed");
+        let payload = open_with_noop(Arc::clone(&state), &raw).expect("empty dir should succeed");
 
         assert!(payload.tasks.is_empty());
         let default_columns: Vec<String> = Config::default()
@@ -604,7 +684,7 @@ mod tests {
 
     #[test]
     fn tasks_are_sorted_by_id_and_children_are_built() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
         write_md(
@@ -614,7 +694,7 @@ mod tests {
         );
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let payload = open_project_impl(&state, &raw).expect("should succeed");
+        let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         let ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(vec!["tasks/a.md", "tasks/b.md"], ids);
@@ -629,7 +709,7 @@ mod tests {
 
     #[test]
     fn loads_user_config_when_available() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let config_json = r#"{
             "version": 1,
@@ -643,7 +723,7 @@ mod tests {
         write_config_json(dir.path(), config_json);
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let payload = open_project_impl(&state, &raw).expect("should succeed");
+        let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         assert_eq!(
             vec![
@@ -657,7 +737,7 @@ mod tests {
 
     #[test]
     fn columns_sorted_by_order_irrespective_of_input_array_order() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let config_json = r#"{
             "version": 1,
@@ -671,7 +751,7 @@ mod tests {
         write_config_json(dir.path(), config_json);
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let payload = open_project_impl(&state, &raw).expect("should succeed");
+        let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         assert_eq!(
             vec!["A".to_string(), "B".to_string(), "C".to_string()],
@@ -681,11 +761,11 @@ mod tests {
 
     #[test]
     fn writes_guide_markdown_to_disk() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        open_project_impl(&state, &raw).expect("should succeed");
+        open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         let guide = dir.path().join(".spec-board").join("GUIDE.md");
         assert!(guide.exists(), "GUIDE.md should be created");
@@ -695,12 +775,12 @@ mod tests {
 
     #[test]
     fn updates_app_state_fields_on_success() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        open_project_impl(&state, &raw).expect("should succeed");
+        open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         assert_eq!(
             Some(dir.path().to_path_buf()),
@@ -720,13 +800,13 @@ mod tests {
 
     #[test]
     fn config_load_failure_for_invalid_json_returns_parse_category() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         // 壊れた JSON
         write_config_json(dir.path(), "{ this is not json");
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let err = open_project_impl(&state, &raw).expect_err("invalid config should fail");
+        let err = open_with_noop(Arc::clone(&state), &raw).expect_err("invalid config should fail");
 
         match err {
             OpenProjectError::ConfigLoadFailed {
@@ -744,13 +824,13 @@ mod tests {
 
     #[test]
     fn config_load_failure_for_empty_columns_returns_parse_category() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         let config_json = r#"{ "version": 1, "columns": [], "cardOrder": {} }"#;
         write_config_json(dir.path(), config_json);
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let err = open_project_impl(&state, &raw).expect_err("empty columns should fail");
+        let err = open_with_noop(Arc::clone(&state), &raw).expect_err("empty columns should fail");
 
         match err {
             OpenProjectError::ConfigLoadFailed { category, .. } => {
@@ -763,14 +843,15 @@ mod tests {
 
     #[test]
     fn config_load_failure_when_spec_board_path_is_a_file_returns_io_category() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         // .spec-board をファイルにしておく → config.json への読み込みが Io エラーになる。
         let spec_path = dir.path().join(".spec-board");
         fs::write(&spec_path, "not a directory").expect("write file at .spec-board");
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let err = open_project_impl(&state, &raw).expect_err(".spec-board as file should fail");
+        let err =
+            open_with_noop(Arc::clone(&state), &raw).expect_err(".spec-board as file should fail");
 
         match err {
             OpenProjectError::ConfigLoadFailed { category, .. } => {
@@ -783,7 +864,7 @@ mod tests {
 
     #[test]
     fn parent_cycle_returns_scan_failed_with_io_marker() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         // a -> b -> a の循環
         write_md(
@@ -798,7 +879,7 @@ mod tests {
         );
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let err = open_project_impl(&state, &raw).expect_err("cycle should fail");
+        let err = open_with_noop(Arc::clone(&state), &raw).expect_err("cycle should fail");
 
         match err {
             OpenProjectError::ScanFailed { ref message } => {
@@ -816,7 +897,7 @@ mod tests {
 
     #[test]
     fn corrupted_md_files_are_skipped_and_command_succeeds() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         // 通常の md
         write_md(dir.path(), "tasks/ok.md", &task_md("OK", "Todo", None));
@@ -824,7 +905,7 @@ mod tests {
         write_md(dir.path(), "tasks/nofm.md", "no frontmatter here\n");
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        let payload = open_project_impl(&state, &raw).expect("should succeed");
+        let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         let ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(vec!["tasks/ok.md"], ids);
@@ -832,7 +913,7 @@ mod tests {
 
     #[test]
     fn reopen_stops_previous_watcher_exactly_once() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let counter = Arc::new(AtomicUsize::new(0));
         state
             .install_watcher_handle(Box::new(CountingHandle {
@@ -843,14 +924,14 @@ mod tests {
         let dir = tempdir();
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        open_project_impl(&state, &raw).expect("should succeed");
+        open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         assert_eq!(1, counter.load(Ordering::SeqCst));
     }
 
     #[test]
     fn reopen_clears_previous_write_ignore_paths() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         state
             .write_ignore()
             .register("tasks/dirty.md")
@@ -860,13 +941,17 @@ mod tests {
         let dir = tempdir();
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        open_project_impl(&state, &raw).expect("should succeed");
+        open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         assert!(state.write_ignore().is_empty().expect("readable"));
     }
 
     #[test]
-    fn watcher_panic_propagates_and_subsequent_call_returns_state_lock_poisoned() {
+    fn watcher_stop_panic_propagates_without_poisoning_watcher_handle_mutex() {
+        // 新しい 4 段階フローでは旧 watcher の `stop()` は
+        // `take_watcher_handle()` で取り出した後（lock 解放後）に呼ばれる。
+        // panic は伝播するが watcher_handle mutex は poison しないため、
+        // 後続 open は成功する。
         let state = Arc::new(AppState::new());
         state
             .install_watcher_handle(Box::new(PanickingHandle))
@@ -875,34 +960,25 @@ mod tests {
         let dir = tempdir();
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        // 1 回目: 旧 watcher.stop() が panic するため open_project_impl 自体が panic を伝播。
         let panic_state = Arc::clone(&state);
         let panic_path = raw.clone();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-            let _ = open_project_impl(panic_state.as_ref(), &panic_path);
+            let _ = open_with_noop(Arc::clone(&panic_state), &panic_path);
         }));
         assert!(result.is_err(), "stop panic should propagate");
 
-        // 2 回目以降: watcher_handle mutex が poison しているため StateLockPoisoned。
-        let err = open_project_impl(state.as_ref(), &raw)
-            .expect_err("subsequent call should report lock poisoned");
-
-        match err {
-            OpenProjectError::StateLockPoisoned => {}
-            other => panic!("expected StateLockPoisoned, got {other:?}"),
-        }
-        assert_eq!("内部状態のロックが破損しました", err.to_string());
+        open_with_noop(Arc::clone(&state), &raw).expect("subsequent open should succeed");
     }
 
     #[test]
     fn tasks_cache_uses_path_buf_keys_from_file_path() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
         write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
         let raw = dir.path().to_str().expect("utf-8").to_string();
 
-        open_project_impl(&state, &raw).expect("should succeed");
+        open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
         let snapshot = state.tasks_snapshot().expect("readable");
         let mut paths: Vec<String> = snapshot.iter().map(|t| t.file_path.clone()).collect();
@@ -914,83 +990,121 @@ mod tests {
     }
 
     #[test]
-    fn early_pre_flight_skips_guide_md_write_when_watcher_lock_is_poisoned() {
-        // 1 回目の open でプロジェクトを確定させる。
+    fn watcher_init_failure_keeps_app_state_completely_unchanged() {
+        // 1 回目の open で AppState を確定させる。
         let state = Arc::new(AppState::new());
         let first_dir = tempdir();
+        write_md(first_dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
         let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
-        open_project_impl(state.as_ref(), &first_raw).expect("first open");
+        open_with_noop(Arc::clone(&state), &first_raw).expect("first open");
 
-        // 旧 watcher を panic 経由で poison させる。
-        state
-            .install_watcher_handle(Box::new(PanickingHandle))
-            .expect("install panicking watcher");
-        let panic_state = Arc::clone(&state);
-        let panic_dir = tempdir();
-        let panic_raw = panic_dir.path().to_str().expect("utf-8").to_string();
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-            let _ = open_project_impl(panic_state.as_ref(), &panic_raw);
-        }));
-        assert!(result.is_err(), "stop panic should propagate");
+        let project_before = state.project_path().expect("readable");
+        let config_before = state.config().expect("readable");
+        let snapshot_before = state.tasks_snapshot().expect("readable");
 
-        // 2 回目: poison 状態の AppState で別 dir を open する。GUIDE.md が
-        // 新 dir に書かれてはならない（早期 pre-flight が副作用前に Err 復帰させる）。
+        // 2 回目: prepare で WatcherInitFailed を返すスタブを使う。
         let other_dir = tempdir();
         let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
-        let err = open_project_impl(state.as_ref(), &other_raw)
-            .expect_err("subsequent call should report lock poisoned");
-        assert!(matches!(err, OpenProjectError::StateLockPoisoned));
+        let err = open_project_with_factories(
+            Arc::clone(&state),
+            &other_raw,
+            |_root| -> Result<(), OpenProjectError> {
+                Err(OpenProjectError::WatcherInitFailed {
+                    source: spec_board_fs::watcher::WatcherError::Init(
+                        "synthetic init failure".to_string(),
+                    ),
+                })
+            },
+            |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        )
+        .expect_err("watcher init failure should be returned");
+        assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 
-        let guide = other_dir.path().join(".spec-board").join("GUIDE.md");
-        assert!(
-            !guide.exists(),
-            "GUIDE.md should not be written when AppState lock is poisoned"
-        );
+        // AppState の全フィールドが 1 回目の状態のまま残ることを確認する。
+        assert_eq!(project_before, state.project_path().expect("readable"));
+        assert_eq!(config_before, state.config().expect("readable"));
+        let snapshot_after = state.tasks_snapshot().expect("readable");
+        assert_eq!(snapshot_before.len(), snapshot_after.len());
+        // watcher_handle はまだ前回の NoopWatcherHandle が install されたまま。
+        let still_installed = state
+            .take_watcher_handle()
+            .expect("readable")
+            .expect("watcher should still be present");
+        drop(still_installed);
     }
 
     #[test]
-    fn commit_app_state_pre_flight_blocks_partial_updates_when_watcher_lock_poisoned() {
-        // 旧 watcher を panic 経由で poison させる。
+    fn watcher_init_failure_does_not_invoke_old_watcher_stop() {
+        // 失敗 prepare のあとに `take_watcher_handle()` が呼ばれないことを担保する
+        // ための回帰テスト。PanickingHandle が install されていても panic しない。
         let state = Arc::new(AppState::new());
         state
             .install_watcher_handle(Box::new(PanickingHandle))
             .expect("install panicking watcher");
 
-        // 1 回目: watcher.stop() panic を伝播させて watcher_handle mutex を poison させる。
         let dir = tempdir();
         let raw = dir.path().to_str().expect("utf-8").to_string();
-        let panic_state = Arc::clone(&state);
-        let panic_path = raw.clone();
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-            let _ = open_project_impl(panic_state.as_ref(), &panic_path);
-        }));
-        assert!(result.is_err(), "stop panic should propagate");
 
-        // 1 回目で書き込まれたフィールドのスナップショットを取る。
-        let project_after_panic = state.project_path().expect("readable");
-        let config_after_panic = state.config().expect("readable");
+        let err = open_project_with_factories(
+            Arc::clone(&state),
+            &raw,
+            |_root| -> Result<(), OpenProjectError> {
+                Err(OpenProjectError::WatcherInitFailed {
+                    source: spec_board_fs::watcher::WatcherError::Init("synth".to_string()),
+                })
+            },
+            |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        )
+        .expect_err("watcher init failure");
+        assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
+    }
 
-        // 2 回目: watcher_handle が poison しているので pre-flight が早期 Err を返し、
-        // project_path / config / tasks_cache / write_ignore は一切書き換わらない。
-        let other_dir = tempdir();
-        let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
-        let err = open_project_impl(state.as_ref(), &other_raw)
-            .expect_err("subsequent call should report lock poisoned");
-        assert!(matches!(err, OpenProjectError::StateLockPoisoned));
+    #[test]
+    fn old_watcher_is_stopped_before_state_commit() {
+        // CountingHandle を pre-install し、spawn factory 内で `tasks_snapshot`
+        // が新値を返すこと、stop call カウンタが spawn 前に 1 になっていることを
+        // 観察し、(1) prepare → (2) stop_old → (3) commit → (4) spawn の順序を
+        // 検証する。
+        let state = Arc::new(AppState::new());
+        let stop_counter = Arc::new(AtomicUsize::new(0));
+        state
+            .install_watcher_handle(Box::new(CountingHandle {
+                stop_calls: Arc::clone(&stop_counter),
+            }))
+            .expect("install old watcher");
 
-        // pre-flight 失敗で副作用が走っていないことを確認する。
-        assert_eq!(project_after_panic, state.project_path().expect("readable"));
-        assert_eq!(config_after_panic, state.config().expect("readable"));
+        let dir = tempdir();
+        write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+        let raw = dir.path().to_str().expect("utf-8").to_string();
+
+        let observed_counter = Arc::clone(&stop_counter);
+        let observed_state = Arc::clone(&state);
+        open_project_with_factories(
+            Arc::clone(&state),
+            &raw,
+            |_root| Ok::<(), OpenProjectError>(()),
+            move |(), _state, _root, _config| {
+                // spawn 段階では旧 stop が既に呼ばれており、cache も新値で commit 済み。
+                assert_eq!(1, observed_counter.load(Ordering::SeqCst));
+                let snapshot = observed_state.tasks_snapshot().expect("readable");
+                assert_eq!(1, snapshot.len());
+                assert_eq!("tasks/a.md", snapshot[0].file_path);
+                Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+            },
+        )
+        .expect("open should succeed");
+
+        assert_eq!(1, stop_counter.load(Ordering::SeqCst));
     }
 
     #[test]
     fn previous_app_state_is_preserved_when_load_fails() {
         // 1 回目の open で AppState を確定させる。
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let first_dir = tempdir();
         write_md(first_dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
         let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
-        open_project_impl(&state, &first_raw).expect("first open should succeed");
+        open_with_noop(Arc::clone(&state), &first_raw).expect("first open should succeed");
 
         let snapshot_before = state.tasks_snapshot().expect("readable");
         let project_before = state.project_path().expect("readable");
@@ -999,7 +1113,7 @@ mod tests {
         let bad_dir = tempdir();
         write_config_json(bad_dir.path(), "{ this is not json");
         let bad_raw = bad_dir.path().to_str().expect("utf-8").to_string();
-        let err = open_project_impl(&state, &bad_raw)
+        let err = open_with_noop(Arc::clone(&state), &bad_raw)
             .expect_err("second open with broken config should fail");
         assert!(matches!(err, OpenProjectError::ConfigLoadFailed { .. }));
 

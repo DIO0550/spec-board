@@ -4,6 +4,9 @@ pub mod get_tasks;
 pub mod open_project;
 pub mod state;
 pub mod task_index;
+pub mod watcher_event;
+
+use std::sync::Arc;
 
 use crate::state::AppState;
 
@@ -27,7 +30,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::new())
+        .manage(Arc::new(AppState::new()))
         .invoke_handler(tauri::generate_handler![
             greet,
             open_project::open_project,
