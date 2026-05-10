@@ -24,7 +24,7 @@ fn build_ctx(root: PathBuf, state: Arc<AppState>) -> (AdapterContext, EmitLog) {
     });
     let ctx = AdapterContext {
         root,
-        default_status: "Todo".to_string(),
+        default_status: "Todo".into(),
         state,
         emit,
     };
@@ -49,7 +49,7 @@ fn snapshot_paths(state: &AppState) -> Vec<String> {
         .tasks_snapshot()
         .expect("readable")
         .into_iter()
-        .map(|t| t.file_path)
+        .map(|t| t.file_path.into_string())
         .collect();
     paths.sort();
     paths
@@ -528,7 +528,7 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
     });
     let ctx = AdapterContext {
         root: dir.path().to_path_buf(),
-        default_status: "Todo".to_string(),
+        default_status: "Todo".into(),
         state,
         emit: panicking_emit,
     };

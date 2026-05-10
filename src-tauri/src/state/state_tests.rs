@@ -14,10 +14,10 @@ use crate::task::index::Task;
 
 fn sample_task(id: &str, file_path: &str) -> Task {
     Task {
-        id: id.to_string(),
-        file_path: file_path.to_string(),
-        title: format!("title-{id}"),
-        status: "Todo".to_string(),
+        id: id.into(),
+        file_path: file_path.into(),
+        title: format!("title-{id}").into(),
+        status: "Todo".into(),
         priority: None,
         labels: Vec::new(),
         parent: None,
@@ -34,7 +34,7 @@ fn sample_config() -> Config {
     Config {
         version: 1,
         columns: vec![Column {
-            name: "Todo".to_string(),
+            name: "Todo".into(),
             order: 0,
         }],
         card_order: CardOrder::default(),

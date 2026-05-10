@@ -299,10 +299,10 @@ fn resolved_done_column_parametrized() {
             version: 1,
             columns: case.columns,
             card_order: BTreeMap::new(),
-            done_column: case.done_column.map(|s| s.to_string()),
+            done_column: case.done_column.map(Into::into),
         };
         assert_eq!(
-            cfg.resolved_done_column(),
+            cfg.resolved_done_column().map(|c| c.as_str()),
             case.expected,
             "case: {}",
             case.label
@@ -565,7 +565,7 @@ fn load_or_default_parses_existing_config_json() {
     assert_eq!(cfg.columns.len(), 2);
     assert_eq!(cfg.done_column, None);
     // done_column が無くても resolved_done_column は末尾カラムを返す
-    assert_eq!(cfg.resolved_done_column(), Some("Done"));
+    assert_eq!(cfg.resolved_done_column().map(|c| c.as_str()), Some("Done"));
 }
 
 #[test]
@@ -1613,4 +1613,22 @@ fn load_or_default_returns_backup_failed_when_bak_path_is_symlink() {
         target_content, "untouched",
         "external symlink target must not be overwritten"
     );
+}
+
+#[test]
+fn config_json_byte_level_round_trip() {
+    // Config の JSON 形状が VO 化前後で変わらないことを保証する。
+    // cardOrder の BTreeMap<ColumnName, Vec<TaskFilePath>> 互換も確認。
+    let json = r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1}],"cardOrder":{"Done":[],"Todo":["tasks/foo.md"]},"doneColumn":"Done"}"#;
+    let parsed: Config = serde_json::from_str(json).unwrap();
+    let serialized = serde_json::to_string(&parsed).unwrap();
+    assert_eq!(serialized, json);
+}
+
+#[test]
+fn config_json_round_trip_omits_done_column_when_none() {
+    let json = r#"{"version":1,"columns":[{"name":"Todo","order":0}],"cardOrder":{}}"#;
+    let parsed: Config = serde_json::from_str(json).unwrap();
+    let serialized = serde_json::to_string(&parsed).unwrap();
+    assert_eq!(serialized, json);
 }

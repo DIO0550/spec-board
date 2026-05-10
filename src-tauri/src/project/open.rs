@@ -64,6 +64,7 @@ use thiserror::Error;
 
 use std::sync::Arc;
 
+use crate::config::value_objects::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
 };
@@ -83,7 +84,7 @@ use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 #[serde(rename_all = "camelCase")]
 pub struct OpenProjectPayload {
     pub tasks: Vec<Task>,
-    pub columns: Vec<String>,
+    pub columns: Vec<ColumnName>,
 }
 
 /// `open_project` コマンドのエラー。
@@ -313,7 +314,7 @@ fn map_metadata_error(err: std::io::Error, raw_path: &str) -> OpenProjectError {
 ///
 /// 各 md ファイルの `fs::read` 失敗、`task_from_markdown` 失敗はいずれも
 /// `log::warn!` を出して skip する（コマンド全体は成功させる）。
-fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &str) -> Vec<Task> {
+fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &ColumnName) -> Vec<Task> {
     let mut tasks = Vec::with_capacity(md_paths.len());
     for rel_path in md_paths {
         let absolute = root.join(rel_path);
@@ -326,7 +327,7 @@ fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &str) -> Vec
         };
         let context = TaskParseContext {
             file_path: rel_path.clone(),
-            default_status: default_status.to_string(),
+            default_status: default_status.clone(),
         };
         match task_from_markdown(&bytes, &context) {
             Ok(task) => tasks.push(task),

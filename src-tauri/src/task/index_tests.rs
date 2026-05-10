@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 fn context(path: &str) -> TaskParseContext {
     TaskParseContext {
         file_path: PathBuf::from(path),
-        default_status: "Todo".to_string(),
+        default_status: "Todo".into(),
     }
 }
 
@@ -105,7 +105,7 @@ fn missing_title_uses_file_name_fallback_with_warning() {
         task.warnings,
         vec![TaskWarning {
             code: TaskWarningCode::MissingTitleUsedFileName,
-            field: Some("title".to_string()),
+            field: Some("title".into()),
             message: "title is missing; file name was used".to_string(),
         }]
     );
@@ -125,7 +125,7 @@ fn invalid_title_uses_file_name_fallback_with_warning() {
             task.warnings,
             vec![TaskWarning {
                 code: TaskWarningCode::InvalidTitleUsedFileName,
-                field: Some("title".to_string()),
+                field: Some("title".into()),
                 message: "title is invalid; file name was used".to_string(),
             }],
             "{label}"
@@ -142,7 +142,7 @@ fn missing_status_uses_default_with_warning() {
         task.warnings,
         vec![TaskWarning {
             code: TaskWarningCode::MissingStatusUsedDefault,
-            field: Some("status".to_string()),
+            field: Some("status".into()),
             message: "status is missing; default status was used".to_string(),
         }]
     );
@@ -160,7 +160,7 @@ fn invalid_status_uses_default_with_warning() {
         task.warnings,
         vec![TaskWarning {
             code: TaskWarningCode::InvalidStatusUsedDefault,
-            field: Some("status".to_string()),
+            field: Some("status".into()),
             message: "status is invalid; default status was used".to_string(),
         }]
     );
@@ -178,14 +178,14 @@ fn parent_is_reflected_when_string_and_ignored_when_missing_or_invalid() {
         "tasks/root.md",
     );
 
-    assert_eq!(parent_task.parent, Some("tasks/parent.md".to_string()));
+    assert_eq!(parent_task.parent, Some("tasks/parent.md".into()));
     assert_eq!(missing_parent_task.parent, None);
     assert_eq!(invalid_parent_task.parent, None);
     assert_eq!(
         invalid_parent_task.warnings,
         vec![TaskWarning {
             code: TaskWarningCode::InvalidParentIgnored,
-            field: Some("parent".to_string()),
+            field: Some("parent".into()),
             message: "parent is invalid; value was ignored".to_string(),
         }]
     );
@@ -216,7 +216,7 @@ fn missing_parent_adds_warning_without_dropping_task_or_parent_value() {
         "tasks/child.md",
     )]);
 
-    assert_eq!(tasks[0].parent, Some("tasks/missing.md".to_string()));
+    assert_eq!(tasks[0].parent, Some("tasks/missing.md".into()));
     assert!(tasks[0].warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
@@ -230,7 +230,7 @@ fn empty_parent_adds_warning_without_normalizing_parent_value() {
         "tasks/child.md",
     )]);
 
-    assert_eq!(tasks[0].parent, Some(String::new()));
+    assert_eq!(tasks[0].parent, Some(String::new().into()));
     assert!(tasks[0].warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
@@ -272,7 +272,7 @@ fn parent_existence_validation_does_not_duplicate_parent_not_found_warning() {
     );
     task.warnings.push(TaskWarning {
         code: TaskWarningCode::ParentNotFound,
-        field: Some("parent".to_string()),
+        field: Some("parent".into()),
         message: "parent task was not found".to_string(),
     });
 
@@ -349,9 +349,9 @@ fn build_children_adds_child_when_parent_appears_later() {
 fn build_children_clears_existing_children_before_recalculation() {
     let mut parent = task_without_parent("tasks/parent.md");
     parent.children = vec![
-        "tasks/stale.md".to_string(),
-        "tasks/child.md".to_string(),
-        "tasks/child.md".to_string(),
+        "tasks/stale.md".into(),
+        "tasks/child.md".into(),
+        "tasks/child.md".into(),
     ];
     let tasks = vec![
         parent,
@@ -409,7 +409,7 @@ fn build_children_ignores_empty_absolute_and_drive_prefix_parent_for_child_appen
 
     for parent in cases {
         let mut child = task_without_parent("tasks/child.md");
-        child.parent = Some(parent.to_string());
+        child.parent = Some(parent.into());
         let tasks = vec![task_without_parent("tasks/parent.md"), child];
 
         let tasks = build_children(tasks).unwrap();
@@ -541,9 +541,9 @@ fn build_reverse_links_deduplicates_normalized_targets_per_source() {
 fn build_reverse_links_clears_existing_reverse_links_before_recalculation() {
     let mut target = task_without_parent("tasks/target.md");
     target.reverse_links = vec![
-        "tasks/stale.md".to_string(),
-        "tasks/source.md".to_string(),
-        "tasks/source.md".to_string(),
+        "tasks/stale.md".into(),
+        "tasks/source.md".into(),
+        "tasks/source.md".into(),
     ];
     let tasks = vec![
         task_with_links("tasks/source.md", &["tasks/target.md"]),
@@ -600,7 +600,7 @@ fn build_reverse_links_ignores_empty_absolute_and_drive_prefix_link() {
 
     for link in cases {
         let mut source = task_without_parent("tasks/source.md");
-        source.links = vec![link.to_string()];
+        source.links = vec![link.into()];
         let tasks = vec![source, task_without_parent("tasks/target.md")];
 
         let tasks = build_reverse_links(tasks);
@@ -681,7 +681,7 @@ fn missing_parent_keeps_warning_without_cycle_error() {
         validate_parent_hierarchy(vec![task_with_parent("tasks/child.md", "tasks/missing.md")])
             .unwrap();
 
-    assert_eq!(tasks[0].parent, Some("tasks/missing.md".to_string()));
+    assert_eq!(tasks[0].parent, Some("tasks/missing.md".into()));
     assert!(tasks[0].warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
@@ -827,7 +827,7 @@ fn json_incompatible_extra_value_is_excluded_with_warning() {
         task.warnings,
         vec![TaskWarning {
             code: TaskWarningCode::ExtraValueNotJsonCompatible,
-            field: Some("tagged".to_string()),
+            field: Some("tagged".into()),
             message: "extra value is not JSON compatible; value was ignored".to_string(),
         }]
     );
@@ -868,7 +868,7 @@ fn task_serializes_path_fields_and_warning_codes_as_camel_case() {
 fn parent_not_found_warning_code_serializes_as_camel_case() {
     let warning = TaskWarning {
         code: TaskWarningCode::ParentNotFound,
-        field: Some("parent".to_string()),
+        field: Some("parent".into()),
         message: "parent task was not found".to_string(),
     };
 
@@ -984,4 +984,62 @@ fn validate_chain_from_parent_detects_cycle() {
         validate_chain_from_parent(0, &tasks),
         Err(ParentHierarchyErrorReason::Cycle),
     );
+}
+
+#[test]
+fn task_index_build_children_via_aggregate() {
+    let tasks = vec![
+        task_with_parent("tasks/child.md", "tasks/parent.md"),
+        task_without_parent("tasks/parent.md"),
+    ];
+
+    let index = TaskIndex::new(tasks).build_children().unwrap();
+    let result = index.into_tasks();
+    let parent = result
+        .iter()
+        .find(|t| t.file_path == "tasks/parent.md")
+        .unwrap();
+    assert_eq!(parent.children, vec!["tasks/child.md".to_string()]);
+}
+
+#[test]
+fn task_index_validate_parent_hierarchy_via_aggregate() {
+    let tasks = vec![
+        task_with_parent("tasks/a.md", "tasks/b.md"),
+        task_with_parent("tasks/b.md", "tasks/a.md"),
+    ];
+
+    let result = TaskIndex::new(tasks).validate_parent_hierarchy();
+    assert!(matches!(result, Err(TaskParseError::CycleOrTooDeep { .. })));
+}
+
+#[test]
+fn task_index_resolve_parent_for_new_task_via_aggregate() {
+    let tasks = vec![task_without_parent("tasks/parent.md")];
+    let index = TaskIndex::new(tasks);
+
+    assert_eq!(
+        index.resolve_parent_for_new_task("tasks/parent.md"),
+        Some(0)
+    );
+    assert_eq!(index.resolve_parent_for_new_task("tasks/missing.md"), None);
+}
+
+#[test]
+fn task_json_byte_level_round_trip() {
+    // VO 化前後で Task JSON 形状が変わらないことを保証する round-trip テスト。
+    // すべての必須フィールド + 1 件の optional (priority) を含む代表的なペイロード。
+    let json = r#"{"id":"tasks/foo.md","filePath":"tasks/foo.md","title":"Fix bug","status":"Doing","priority":"High","labels":["bug","api"],"parent":"tasks/parent.md","links":["tasks/related.md"],"children":["tasks/child.md"],"reverseLinks":["tasks/source.md"],"body":"description","extras":{},"warnings":[]}"#;
+    let parsed: Task = serde_json::from_str(json).unwrap();
+    let serialized = serde_json::to_string(&parsed).unwrap();
+    assert_eq!(serialized, json);
+}
+
+#[test]
+fn task_json_round_trip_omits_none_optional_fields() {
+    // priority / parent が None のケース (skip_serializing_if = Option::is_none)。
+    let json = r#"{"id":"tasks/foo.md","filePath":"tasks/foo.md","title":"Fix bug","status":"Doing","labels":[],"links":[],"children":[],"reverseLinks":[],"body":"","extras":{},"warnings":[]}"#;
+    let parsed: Task = serde_json::from_str(json).unwrap();
+    let serialized = serde_json::to_string(&parsed).unwrap();
+    assert_eq!(serialized, json);
 }

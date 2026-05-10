@@ -1,5 +1,10 @@
 use super::frontmatter::{parse_bytes, FrontmatterError, Parsed, Priority};
+use crate::config::value_objects::column_name::ColumnName;
 use crate::config::Config;
+use crate::task::path_normalization::{has_windows_drive_prefix, normalize_path_parts};
+use crate::task::value_objects::label::Label;
+use crate::task::value_objects::task_file_path::TaskFilePath;
+use crate::task::value_objects::task_title::TaskTitle;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -33,18 +38,18 @@ pub struct TaskWarning {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
-    pub id: String,
-    pub file_path: String,
-    pub title: String,
-    pub status: String,
+    pub id: TaskFilePath,
+    pub file_path: TaskFilePath,
+    pub title: TaskTitle,
+    pub status: ColumnName,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
-    pub labels: Vec<String>,
+    pub labels: Vec<Label>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
-    pub links: Vec<String>,
-    pub children: Vec<String>,
-    pub reverse_links: Vec<String>,
+    pub parent: Option<TaskFilePath>,
+    pub links: Vec<TaskFilePath>,
+    pub children: Vec<TaskFilePath>,
+    pub reverse_links: Vec<TaskFilePath>,
     pub body: String,
     pub extras: TaskExtras,
     pub warnings: Vec<TaskWarning>,
@@ -53,7 +58,7 @@ pub struct Task {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskParseContext {
     pub file_path: PathBuf,
-    pub default_status: String,
+    pub default_status: ColumnName,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +116,18 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
     let parent = extract_parent(&parsed, &mut warnings);
     let extras = convert_extras(&parsed, &mut warnings);
     let file_path = normalized_task_file_path(&context.file_path);
+    let labels = parsed
+        .frontmatter
+        .labels
+        .into_iter()
+        .map(Label::from_lenient)
+        .collect();
+    let links = parsed
+        .frontmatter
+        .links
+        .into_iter()
+        .map(TaskFilePath::from_lenient)
+        .collect();
 
     Task {
         id: file_path.clone(),
@@ -118,9 +135,9 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         title,
         status,
         priority: parsed.frontmatter.priority,
-        labels: parsed.frontmatter.labels,
+        labels,
         parent,
-        links: parsed.frontmatter.links,
+        links,
         children: Vec::new(),
         reverse_links: Vec::new(),
         body: parsed.body,
@@ -206,7 +223,7 @@ pub fn build_reverse_links(mut tasks: Vec<Task>) -> Vec<Task> {
 fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()
-        .map(|task| normalize_task_path_for_lookup(&task.file_path))
+        .map(|task| normalize_task_path_for_lookup(task.file_path.as_str()))
         .collect()
 }
 
@@ -221,10 +238,10 @@ fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<String>> {
         .iter()
         .map(|task| {
             (
-                normalize_task_path_for_lookup(&task.file_path),
+                normalize_task_path_for_lookup(task.file_path.as_str()),
                 task.parent
-                    .as_deref()
-                    .and_then(normalize_parent_path_for_lookup),
+                    .as_ref()
+                    .and_then(|p| normalize_parent_path_for_lookup(p.as_str())),
             )
         })
         .collect()
@@ -238,7 +255,12 @@ fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
     tasks
         .iter()
         .enumerate()
-        .map(|(index, task)| (normalize_task_path_for_lookup(&task.file_path), index))
+        .map(|(index, task)| {
+            (
+                normalize_task_path_for_lookup(task.file_path.as_str()),
+                index,
+            )
+        })
         .collect()
 }
 
@@ -276,8 +298,8 @@ fn append_child_to_parent(
     let child_file_path = tasks[child_index].file_path.clone();
     let Some(parent_path) = tasks[child_index]
         .parent
-        .as_deref()
-        .and_then(normalize_parent_path_for_lookup)
+        .as_ref()
+        .and_then(|p| normalize_parent_path_for_lookup(p.as_str()))
     else {
         return;
     };
@@ -319,14 +341,14 @@ fn append_reverse_links_from_source(
 /// @param task_index 正規化済み task path から入力配列内 index への lookup。
 /// @returns 存在する link target の入力配列内 index 一覧。
 fn reverse_link_target_indices(
-    links: &[String],
+    links: &[TaskFilePath],
     task_index: &HashMap<String, usize>,
 ) -> Vec<usize> {
     let mut seen_targets = HashSet::new();
     let mut target_indices = Vec::new();
 
     for link in links {
-        let Some(target_path) = normalize_link_path_for_lookup(link) else {
+        let Some(target_path) = normalize_link_path_for_lookup(link.as_str()) else {
             continue;
         };
         if !seen_targets.insert(target_path.clone()) {
@@ -352,8 +374,8 @@ fn validate_parent_chain(
     parent_lookup: &HashMap<String, Option<String>>,
 ) -> Result<(), TaskParseError> {
     let mut visited = HashSet::new();
-    let origin = task.file_path.clone();
-    let mut current = normalize_task_path_for_lookup(&task.file_path);
+    let origin = task.file_path.as_str().to_string();
+    let mut current = normalize_task_path_for_lookup(task.file_path.as_str());
     let mut depth = 0;
 
     loop {
@@ -393,7 +415,7 @@ pub(crate) fn resolve_parent_for_new_task(parent: &str, tasks: &[Task]) -> Optio
     let normalized = normalize_parent_path_for_lookup(parent)?;
     tasks
         .iter()
-        .position(|task| normalize_task_path_for_lookup(&task.file_path) == normalized)
+        .position(|task| normalize_task_path_for_lookup(task.file_path.as_str()) == normalized)
 }
 
 /// parent 起点に新規タスクを末端へ 1 edge 追加した chain の循環/深さ超過を検出する。
@@ -419,7 +441,7 @@ pub(crate) fn validate_chain_from_parent(
         .expect("validate_chain_from_parent: parent_index must be in range (caller invariant)");
     let lookup = parent_lookup_index(tasks);
     let mut visited = HashSet::new();
-    let mut current = normalize_task_path_for_lookup(&parent_task.file_path);
+    let mut current = normalize_task_path_for_lookup(parent_task.file_path.as_str());
     let mut depth: usize = 1;
 
     loop {
@@ -447,7 +469,7 @@ fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>
         return;
     };
 
-    let Some(parent_lookup_path) = normalize_parent_path_for_lookup(parent) else {
+    let Some(parent_lookup_path) = normalize_parent_path_for_lookup(parent.as_str()) else {
         push_parent_not_found(task);
         return;
     };
@@ -489,9 +511,9 @@ fn extract_title(
     parsed: &Parsed,
     context: &TaskParseContext,
     warnings: &mut Vec<TaskWarning>,
-) -> String {
+) -> TaskTitle {
     match extract_string_extra(&parsed.frontmatter.extras, "title") {
-        Ok(Some(title)) if !title.is_empty() => title,
+        Ok(Some(title)) if !title.is_empty() => TaskTitle::from_lenient(title),
         Ok(Some(_)) | Err(()) => {
             warnings.push(warning(
                 TaskWarningCode::InvalidTitleUsedFileName,
@@ -521,9 +543,9 @@ fn extract_status(
     parsed: &Parsed,
     context: &TaskParseContext,
     warnings: &mut Vec<TaskWarning>,
-) -> String {
+) -> ColumnName {
     match extract_string_extra(&parsed.frontmatter.extras, "status") {
-        Ok(Some(status)) => status,
+        Ok(Some(status)) => ColumnName::from_lenient(status),
         Err(()) => {
             warnings.push(warning(
                 TaskWarningCode::InvalidStatusUsedDefault,
@@ -548,9 +570,9 @@ fn extract_status(
 /// @param parsed parent を取り出す Parsed frontmatter。
 /// @param warnings parent 不正時の warning 追加先。
 /// @returns parent 文字列。不在または不正な型の場合は `None`。
-fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<String> {
+fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<TaskFilePath> {
     match extract_string_extra(&parsed.frontmatter.extras, "parent") {
-        Ok(parent) => parent,
+        Ok(parent) => parent.map(TaskFilePath::from_lenient),
         Err(()) => {
             warnings.push(warning(
                 TaskWarningCode::InvalidParentIgnored,
@@ -633,37 +655,45 @@ fn extract_string_extra(extras: &serde_yaml_ng::Mapping, key: &str) -> Result<Op
 ///
 /// @param path title fallback の元にする file path。
 /// @returns file stem の `-` を空白に置換した title。stem が空または取得不能なら `"Untitled"`。
-fn title_fallback_from_file_path(path: &Path) -> String {
+fn title_fallback_from_file_path(path: &Path) -> TaskTitle {
     let Some(stem) = path.file_stem() else {
-        return "Untitled".to_string();
+        return TaskTitle::from_lenient("Untitled");
     };
     let title = stem.to_string_lossy().replace('-', " ");
     if title.is_empty() {
-        return "Untitled".to_string();
+        return TaskTitle::from_lenient("Untitled");
     }
-    title
+    TaskTitle::from_lenient(title)
 }
 
-/// Task payload 用の file path を forward slash 区切りの正規化済み文字列に変換する。
+/// Task payload 用の file path を forward slash 区切りの正規化済み VO に変換する。
 ///
-/// @param path 正規化する Task file path。
-/// @returns payload に格納する forward slash 区切りの正規化済み path。
-pub(crate) fn normalized_task_file_path(path: &Path) -> String {
-    let path_text = path.to_string_lossy().replace('\\', "/");
-    normalize_path_parts(&path_text, true)
+/// scanner / `task_from_parsed` の自身 path 生成用。strict 構築を first 試行し、
+/// 病的入力の場合は lenient 構築にフォールバックする（`Task` 自体は構築する
+/// 既存の非失敗シグネチャを維持）。
+pub(crate) fn normalized_task_file_path(path: &Path) -> TaskFilePath {
+    match TaskFilePath::from_relative_path(path) {
+        Ok(vo) => vo,
+        Err(_) => {
+            let raw = path.to_string_lossy().replace('\\', "/");
+            let normalized = normalize_path_parts(&raw, true);
+            TaskFilePath::from_lenient(normalized)
+        }
+    }
 }
 
 /// `Config::columns` の `order` 昇順先頭の `name` を default status として返す。
 ///
-/// `columns` が空の場合は空文字列を返す。`task_from_markdown` 側でも空文字
-/// fallback を許容するため、空 columns でも parse は成立する。
-pub(crate) fn default_status_for(config: &Config) -> String {
+/// `columns` が空の場合は空文字列の `ColumnName`（lenient 構築）を返す。
+/// `task_from_markdown` 側でも空文字 fallback を許容するため、空 columns でも
+/// parse は成立する。
+pub(crate) fn default_status_for(config: &Config) -> ColumnName {
     config
         .columns
         .iter()
         .min_by_key(|column| column.order)
         .map(|column| column.name.clone())
-        .unwrap_or_default()
+        .unwrap_or_else(|| ColumnName::from_lenient(""))
 }
 
 /// Task の file path を lookup 用に正規化する。
@@ -706,36 +736,85 @@ fn normalize_link_path_for_lookup(link: &str) -> Option<String> {
     normalize_parent_path_for_lookup(link)
 }
 
-/// slash 区切りの path 文字列から空要素、`.`、必要に応じて drive prefix を除去する。
+/// Task 集合の整合性（parent 存在 / 循環検出 / children・reverse_links 派生）を
+/// 守る Aggregate。既存純粋関数（`build_children` / `validate_parent_hierarchy` /
+/// `resolve_parent_for_new_task` / `validate_chain_from_parent`）への薄い委譲層
+/// として機能する。
 ///
-/// @param path_text slash 区切りへ変換済みの path 文字列。
-/// @param remove_drive_prefix `true` の場合は `C:` 形式の path part を除去する。
-/// @returns 空要素、`.`、必要に応じた drive prefix を除いた path 文字列。
-fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -> String {
-    let mut parts = Vec::new();
-    for part in path_text.split('/') {
-        if part.is_empty() || part == "." {
-            continue;
-        }
-        if remove_drive_prefix && part.ends_with(':') {
-            continue;
-        }
-        parts.push(part);
-    }
-    parts.join("/")
+/// 本 Aggregate を経由して Task 集合を操作することで、不変条件（「children は
+/// parent 逆引きで派生する」「parent chain は循環せず深さ MAX_PARENT_DEPTH 以下」）
+/// が型レベルで明示される。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskIndex {
+    tasks: Vec<Task>,
 }
 
-/// path 文字列が `C:` 形式の Windows drive prefix で始まるかを判定する。
-///
-/// @param path 判定対象の path 文字列。
-/// @returns 先頭 2 byte が ASCII alphabetic + `:` の場合は `true`。
-fn has_windows_drive_prefix(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    if bytes.len() < 2 {
-        return false;
+impl TaskIndex {
+    /// 既存の `Vec<Task>` から Aggregate を構築する。
+    pub fn new(tasks: Vec<Task>) -> Self {
+        Self { tasks }
     }
 
-    bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+    /// 内部の `Vec<Task>` を取り出す。
+    pub fn into_tasks(self) -> Vec<Task> {
+        self.tasks
+    }
+
+    /// 内部の Task slice を借用する。
+    pub fn as_slice(&self) -> &[Task] {
+        &self.tasks
+    }
+
+    /// parent 存在のみを検証して warning を追加する（純粋関数 `validate_parent_existence`
+    /// への委譲）。
+    pub fn validate_parent_existence(self) -> Self {
+        Self {
+            tasks: validate_parent_existence(self.tasks),
+        }
+    }
+
+    /// parent 存在 + 循環 + 深さ検証を行う（`validate_parent_hierarchy` への委譲）。
+    pub fn validate_parent_hierarchy(self) -> Result<Self, TaskParseError> {
+        Ok(Self {
+            tasks: validate_parent_hierarchy(self.tasks)?,
+        })
+    }
+
+    /// parent 検証 + children 派生値構築（`build_children` への委譲）。
+    pub fn build_children(self) -> Result<Self, TaskParseError> {
+        Ok(Self {
+            tasks: build_children(self.tasks)?,
+        })
+    }
+
+    /// 全 Task の links 逆引きで reverse_links 派生値を構築する
+    /// （`build_reverse_links` への委譲）。
+    pub fn build_reverse_links(self) -> Self {
+        Self {
+            tasks: build_reverse_links(self.tasks),
+        }
+    }
+
+    /// 新規タスク用 parent 文字列から既存タスク集合内 index を解決する
+    /// （`resolve_parent_for_new_task` への委譲）。
+    pub fn resolve_parent_for_new_task(&self, parent: &str) -> Option<usize> {
+        resolve_parent_for_new_task(parent, &self.tasks)
+    }
+
+    /// 起点 parent から末端へ 1 edge 追加した chain の循環/深さ超過を検出する
+    /// （`validate_chain_from_parent` への委譲）。
+    pub fn validate_chain_from_parent(
+        &self,
+        parent_index: usize,
+    ) -> Result<(), ParentHierarchyErrorReason> {
+        validate_chain_from_parent(parent_index, &self.tasks)
+    }
+}
+
+impl From<Vec<Task>> for TaskIndex {
+    fn from(tasks: Vec<Task>) -> Self {
+        Self::new(tasks)
+    }
 }
 
 /// YAML value を JSON value に変換し、JSON 互換でない tagged value は除外する。
