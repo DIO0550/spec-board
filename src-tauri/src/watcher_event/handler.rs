@@ -12,15 +12,13 @@
 //! 拡張子フィルタ: `rel_md_path` で root 配下の `.md` ファイルだけを処理対象
 //! とする。`.spec-board/config.json` や一時ファイル等は早期 return。
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvError};
 
 use serde_json::json;
 
-use crate::state::AppState;
-use crate::task_index::{normalized_task_file_path, task_from_markdown, Task, TaskParseContext};
+use crate::task_index::{normalized_task_file_path, task_from_markdown, TaskParseContext};
 use spec_board_fs::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::FsEvent;
 
@@ -134,15 +132,6 @@ fn rel_md_path_lenient(abs_path: &Path, root: &Path) -> Option<String> {
     Some(normalized_task_file_path(rel))
 }
 
-/// AppState から HashMap<PathBuf, Task> 形式の cache スナップショットを取得する。
-fn load_cache_map(state: &AppState) -> Result<HashMap<PathBuf, Task>, HandleError> {
-    Ok(state
-        .tasks_snapshot()?
-        .into_iter()
-        .map(|t| (PathBuf::from(t.file_path.as_str()), t))
-        .collect())
-}
-
 /// write_ignore registry を consume し、自己書き込みなら `true` を返して
 /// 呼び出し側に skip させる。
 fn try_consume_write_ignore(ctx: &AdapterContext, abs_path: &Path) -> Result<bool, HandleError> {
@@ -189,14 +178,15 @@ fn handle_upsert(
         }
     };
     let cache_key = PathBuf::from(task.file_path.as_str());
-    let mut cache = load_cache_map(&ctx.state)?;
-    let event_name = match mode {
-        UpsertMode::Auto if cache.contains_key(&cache_key) => "task-updated",
-        UpsertMode::Auto => "task-created",
-        UpsertMode::ForceCreated => "task-created",
-    };
-    cache.insert(cache_key, task.clone());
-    ctx.state.replace_tasks_cache(cache)?;
+    let event_name = ctx.state.with_tasks_cache_mut(|cache| {
+        let event = match mode {
+            UpsertMode::Auto if cache.contains_key(&cache_key) => "task-updated",
+            UpsertMode::Auto => "task-created",
+            UpsertMode::ForceCreated => "task-created",
+        };
+        cache.insert(cache_key, task.clone());
+        event
+    })?;
     (ctx.emit)(event_name, json!({ "task": task }));
     Ok(())
 }
@@ -214,10 +204,11 @@ fn handle_delete(abs_path: &Path, ctx: &AdapterContext) -> Result<(), HandleErro
     if try_consume_write_ignore(ctx, abs_path)? {
         return Ok(());
     }
-    let mut cache = load_cache_map(&ctx.state)?;
     let cache_key = PathBuf::from(rel_str.as_str());
-    if cache.remove(&cache_key).is_some() {
-        ctx.state.replace_tasks_cache(cache)?;
+    let removed = ctx
+        .state
+        .with_tasks_cache_mut(|cache| cache.remove(&cache_key).is_some())?;
+    if removed {
         (ctx.emit)("task-deleted", json!({ "filePath": rel_str }));
     } else {
         log::trace!(

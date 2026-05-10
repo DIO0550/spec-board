@@ -133,6 +133,23 @@ impl AppState {
         Ok(guard.values().cloned().collect())
     }
 
+    /// `tasks_cache` を可変で借りて closure 内で in-place 操作する。
+    ///
+    /// `tasks_snapshot` → 編集 → `replace_tasks_cache` のフローでは全 task を
+    /// clone してから新 HashMap で書き戻すため O(n) のコピーが発生する。
+    /// 1 path 単位の差分更新（watcher 由来の created / updated / deleted など）
+    /// では本 API を使うことで O(1) のロック内 in-place 更新ができる。
+    ///
+    /// closure は guard を保持したまま呼ばれるため、内部で AppState の他
+    /// アクセサを呼んではならない（自己 deadlock の原因）。
+    pub fn with_tasks_cache_mut<F, R>(&self, f: F) -> Result<R, AppStateError>
+    where
+        F: FnOnce(&mut HashMap<PathBuf, Task>) -> R,
+    {
+        let mut guard = lock(&self.tasks_cache)?;
+        Ok(f(&mut guard))
+    }
+
     /// watcher ハンドルを差し替える。
     ///
     /// 旧ハンドルが存在する場合は、新ハンドルを置く前に `stop()` を呼び出す。
