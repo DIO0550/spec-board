@@ -28,10 +28,19 @@ Rust では同じ「中身」（例: `String`）を別の概念として扱う�
 
 ### `#[serde(transparent)]` の役割
 
-`#[derive(Serialize, Deserialize)]` を素朴に付けると、newtype は
-`{"0": "tasks/foo.md"}` のような JSON にシリアライズされてしまう。
-`#[serde(transparent)]` を付けると、内部の `String` をそのまま JSON に
-出すようになる。これにより、
+`struct TaskFilePath(String)` のような **1 フィールドの tuple newtype** は、
+serde の `derive(Serialize, Deserialize)` だけでも JSON 上は内部値そのまま
+（例: `"tasks/foo.md"`）にシリアライズされる。一方、
+
+- 1 フィールドの **named** struct（`struct Foo { value: String }`）は、
+  `#[serde(transparent)]` を付けないと `{"value": "tasks/foo.md"}` のような
+  オブジェクト形になる。
+- YAML タグやその他フォーマットでは、tuple newtype でもラッパが付くケースが
+  ある。
+
+本プロジェクトでは将来 `struct TaskFilePath { value: String }` に書き換えても
+JSON 形状を保てるよう、また `serde_yaml_ng` などフォーマット差を吸収するため、
+すべての VO に明示的に `#[serde(transparent)]` を付与している。これにより、
 
 - フロントエンドや `.spec-board/config.json` が見る JSON 形状は
   newtype 化前の `String` と完全に同一
