@@ -11,7 +11,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 | コマンド | 説明 |
 |:---------|:-----|
-| `open_project` | プロジェクトディレクトリを開き、mdファイルを一括読み込みして watcher ハンドルを初期化（現時点では Noop） |
+| `open_project` | プロジェクトディレクトリを開き、mdファイルを一括読み込みし、`notify` ベースの実 watcher を起動して FE への `task-created` / `task-updated` / `task-deleted` 配信を開始する |
 | `get_tasks` | 現在のプロジェクト内の全タスクを取得 |
 | `create_task` | 新規タスクのmdファイルを作成 |
 | `update_task` | 既存タスクのmdファイルを更新 |
@@ -26,9 +26,9 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 ### `open_project`
 
-**説明**: 指定ディレクトリをプロジェクトとして開き、配下のmdファイルをスキャンしてタスク一覧を返す。同時に watcher ハンドルを `AppState` に設置する。
+**説明**: 指定ディレクトリをプロジェクトとして開き、配下のmdファイルをスキャンしてタスク一覧を返す。同時に `notify` ベースの実 watcher を起動し、`task-created` / `task-updated` / `task-deleted` を `tauri::AppHandle::emit` でフロントエンドに配信する adapter を `AppState` に設置する。
 
-> 現時点では watcher 具象は `NoopWatcherHandle`（no-op）であり、実ファイル変更検知は別 Issue で `notify` crate 導入時に追加する。本コマンド呼び出しでは GUIDE.md の best-effort 書き出し（`<project_root>/.spec-board/GUIDE.md`）と `AppState` の 5 フィールド（`project_path` / `config` / `tasks_cache` / `watcher_handle` / `write_ignore`）の一括更新を行う。
+> 本コマンド呼び出しでは GUIDE.md の best-effort 書き出し（`<project_root>/.spec-board/GUIDE.md`）と `AppState` の 5 フィールド（`project_path` / `config` / `tasks_cache` / `watcher_handle` / `write_ignore`）の更新を、(1) watcher 起動準備 → (2) 旧 watcher 停止 → (3) state commit → (4) adapter spawn の 4 段階で行う。watcher 起動が失敗した場合は AppState を一切変更せず `WatcherInitFailed` を返す（旧プロジェクトを表示したまま動作継続）。
 
 **引数**:
 
@@ -85,8 +85,11 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | 内部状態の lock 破損 | `AppState` の Mutex / `WriteIgnoreRegistry` が poison 状態 | `内部状態のロックが破損しました` |
 | スキャン致命エラー | parent 循環 / scan I/O など | `io scan failed: {message}` |
 | config 読み込み失敗 | `config.json` が壊れている等 | `config load failed (io|parse): {message}` |
+| ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}` |
 
 > 個別 md ファイルの `fs::read` 失敗、および `task_from_markdown` のパース失敗は致命扱いせず、`log::warn!` で記録して該当ファイルだけ skip する（コマンド全体は成功する）。warning を payload へ同梱する仕様は別 Issue 扱い。
+>
+> ファイル監視の初期化失敗時は AppState の全フィールド（`project_path` / `config` / `tasks_cache` / `watcher_handle` / `write_ignore`）が **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。FE 側 `TauriError.PATTERNS` には未対応のため `UNKNOWN` 分類になる（必要なら FE 側で「ファイル監視の初期化」パターンを個別追加する）。
 
 ---
 
@@ -243,7 +246,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | 監視ライブラリ | `notify` crate（Rust） |
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
-| 監視イベント | Create / Modify / Remove / Rename |
+| 監視イベント | Create / Modify / Remove / Rename。**現時点で FE に配信されるのは Create / Modify / Rename のみ**で、`Remove` は本体クレート側 adapter で `log::trace!` のみとする。Remove → `task-deleted` 配線は別 Issue で対応する |
 | デバウンス | 後述の「デバウンス（スライディングウィンドウ集約）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
 | フロントエンドへの通知 | Tauri のイベントシステム（`emit`）を使用 |
@@ -268,7 +271,7 @@ flowchart TD
     B --> C{イベント種別}
     C -->|Create| D[ファイルを読み込み・パース]
     C -->|Modify| D
-    C -->|Remove| E[task-deleted イベントを発火]
+    C -->|Remove| E[本体 adapter で log::trace のみ。FE への通知は別 Issue]
     C -->|Rename| R[旧パスで task-deleted + 新パスで読み込み・パース]
     D --> F{パース成功?}
     R --> F
@@ -314,6 +317,8 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 
 - 書き込みパスセットは `HashSet<PathBuf>` で管理し、`Mutex` で排他制御
 - セット登録後に対応するイベントが来なかった場合の解除は呼び出し側が明示的に行う
+- **パス表現は絶対パス**で揃える。`FsEvent` から渡される `PathBuf` をそのまま key として比較するため、書き込み側も `register` 時に絶対パスを使うこと。相対表記や区切り違い（`./tasks/x.md` と `tasks/x.md` 等）は別キーとして扱われ、`consume` がヒットせずに自己書き込みが二重通知される
+- **stale entry の TTL cleanup は行わない**。書き込み後に対応するイベントが届かなかった場合の登録は、`open_project` で別プロジェクトを開いたタイミングの `WriteIgnoreRegistry::clear()` でのみ解消される。プロジェクトを開き直さずに長時間動作させても自己書き込み判定が壊れない仕様にしたい場合は、呼び出し側で `unregister` または `consume` を明示する
 
 ## エラーハンドリング
 
@@ -324,7 +329,7 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 | ファイル読み込み失敗 | 権限不足、ファイルロック中 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
 | フロントマターパース失敗 | YAML構文エラー、必須フィールド欠損 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
 | ファイル書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに返却 | ERROR |
-| 監視の初期化失敗 | OS制限（inotify上限等） | エラーをフロントエンドに通知、ポーリングにフォールバック | ERROR |
+| 監視の初期化失敗 | OS制限（inotify上限等） | `Watcher::start` 内部で recommended → poll の自動フォールバックを試み、両方失敗した場合のみ `open_project` から `ファイル監視の初期化に失敗しました: ...` を返す。AppState は **一切変更せず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する | ERROR |
 
 ## バックエンド API（内部）
 
@@ -468,13 +473,19 @@ pub enum WatcherError {
 | `Init(String)` | recommended と poll の両方が初期化または再帰 `watch()` に失敗。両者の原因メッセージを結合した文字列を保持する |
 | `Io(std::io::Error)` | `metadata()` 取得時の I/O 失敗（`NotFound` 以外。例: 権限不足） |
 
-#### スコープ外（後続 Issue で扱う）
+#### `spec-board-fs::watcher` のスコープ外
 
-- 拡張子フィルタ（`.md` 等）— 呼び出し側責務
+`spec-board-fs::watcher` は OS の watcher backend を抽象化し `FsEvent` までを返す層であり、本体クレート `spec-board` 側の `watcher_event` adapter で以下を担当する:
+
+- 拡張子フィルタ（`.md` 等）— `watcher_event::handler::rel_md_path` で root 配下の `.md` のみを処理
+- Tauri IPC 経由のフロントエンド emit（`task-created` / `task-updated` / `task-deleted` への変換）— `watcher_event::handler::handle_event` + `EmittingWatcherHandle`
+- `WriteIgnoreRegistry` との統合（自己書き込み抑制）— `watcher_event::handler` 内で `consume(abs_path)` を呼ぶ
+
+引き続き後続 Issue で扱うもの:
+
 - 監視対象パスの動的追加・削除
-- Tauri IPC 経由のフロントエンド emit（`task-created` / `task-updated` / `task-deleted` への変換）
-- `WriteIgnoreRegistry` との統合（自己書き込み抑制）
 - root が symlink ディレクトリの場合の追加検査（現状は notify に委ねる）
+- `FsEvent::Removed` を受けた `task-deleted` 配信（Issue #74）
 
 ## カラム設定・カード並び順の永続化
 

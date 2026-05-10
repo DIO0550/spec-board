@@ -16,6 +16,8 @@
 //! `OpenProjectError::StateLockPoisoned` と完全一致させる。FE 側
 //! `TauriError.PATTERNS` 未対応のため `UNKNOWN` 分類になる。
 
+use std::sync::Arc;
+
 use tauri::State;
 use thiserror::Error;
 
@@ -47,7 +49,7 @@ impl From<AppStateError> for GetTasksError {
 /// `tasks_cache` の `Mutex` が poison している場合に
 /// `"内部状態のロックが破損しました"` を返す。
 #[tauri::command]
-pub fn get_tasks(state: State<'_, AppState>) -> Result<Vec<Task>, String> {
+pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<Vec<Task>, String> {
     get_tasks_impl(state.inner()).map_err(|e| e.to_string())
 }
 
@@ -70,11 +72,24 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<Vec<Task>, GetTasksErro
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::sync::Arc;
 
     use tempfile::TempDir;
 
     use super::*;
-    use crate::open_project::open_project_impl;
+    use crate::open_project::open_project_with_factories;
+    use crate::state::BoxedWatcherHandle;
+    use spec_board_fs::watcher_handle::NoopWatcherHandle;
+
+    fn open_with_noop(state: Arc<AppState>, path: &str) {
+        open_project_with_factories(
+            state,
+            path,
+            |_root| Ok::<(), super::super::open_project::OpenProjectError>(()),
+            |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        )
+        .expect("open should succeed");
+    }
 
     fn tempdir() -> TempDir {
         tempfile::tempdir().expect("create temp dir")
@@ -141,7 +156,7 @@ mod tests {
 
     #[test]
     fn returns_tasks_sorted_by_id_after_open_project() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
         write_md(
@@ -150,7 +165,7 @@ mod tests {
             &task_md("A", "Todo", Some("tasks/b.md")),
         );
         let raw = dir.path().to_str().expect("utf-8").to_string();
-        open_project_impl(&state, &raw).expect("open should succeed");
+        open_with_noop(Arc::clone(&state), &raw);
 
         let tasks = get_tasks_impl(&state).expect("get_tasks should succeed");
 
@@ -160,7 +175,7 @@ mod tests {
 
     #[test]
     fn preserves_children_and_reverse_links_built_by_open_project() {
-        let state = AppState::new();
+        let state = Arc::new(AppState::new());
         let dir = tempdir();
         write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
         write_md(
@@ -169,7 +184,7 @@ mod tests {
             &task_md_with_links("A", "Todo", Some("tasks/b.md"), &["tasks/b.md"]),
         );
         let raw = dir.path().to_str().expect("utf-8").to_string();
-        open_project_impl(&state, &raw).expect("open should succeed");
+        open_with_noop(Arc::clone(&state), &raw);
 
         let tasks = get_tasks_impl(&state).expect("get_tasks should succeed");
 

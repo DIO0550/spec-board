@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::frontmatter::{parse_bytes, FrontmatterError, Parsed, Priority};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -647,9 +648,22 @@ fn title_fallback_from_file_path(path: &Path) -> String {
 ///
 /// @param path 正規化する Task file path。
 /// @returns payload に格納する forward slash 区切りの正規化済み path。
-fn normalized_task_file_path(path: &Path) -> String {
+pub(crate) fn normalized_task_file_path(path: &Path) -> String {
     let path_text = path.to_string_lossy().replace('\\', "/");
     normalize_path_parts(&path_text, true)
+}
+
+/// `Config::columns` の `order` 昇順先頭の `name` を default status として返す。
+///
+/// `columns` が空の場合は空文字列を返す。`task_from_markdown` 側でも空文字
+/// fallback を許容するため、空 columns でも parse は成立する。
+pub(crate) fn default_status_for(config: &Config) -> String {
+    config
+        .columns
+        .iter()
+        .min_by_key(|column| column.order)
+        .map(|column| column.name.clone())
+        .unwrap_or_default()
 }
 
 /// Task の file path を lookup 用に正規化する。

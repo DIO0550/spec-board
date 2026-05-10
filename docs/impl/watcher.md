@@ -697,7 +697,78 @@ Err(RecvTimeoutError::Disconnected) => {
 
 ---
 
-## 14. 関連リンク
+## 14. `watcher_event` adapter（IPC 配信層）
+
+`spec-board-fs::watcher` から流れる `FsEvent` をフロントエンドの `task-created` /
+`task-updated` / `task-deleted` IPC イベントに変換する役割は、本体クレート
+`spec-board` 側の `src/watcher_event/` モジュールが担う。`spec-board-fs` を tauri
+非依存に保つため、`AppHandle::emit` を呼ぶ層は本体クレート側に置いている。
+
+### 14.1 モジュール構成
+
+| ファイル | 役割 |
+|:--------|:----|
+| `src/watcher_event/mod.rs` | `prepare_watcher` / `spawn_adapter` / `EmittingWatcherHandle` |
+| `src/watcher_event/handler.rs` | `handle_event`（純粋関数）と `run_event_loop`（adapter 本体） |
+| `src/watcher_event/tests.rs` | `handle_event` への単体テスト + smoke テスト |
+
+### 14.2 起動の 4 段階
+
+`open_project_impl` では以下の 4 段階で watcher を起動する。step 1 が失敗した
+ときは `AppState` を一切変更せずに `OpenProjectError::WatcherInitFailed` を返す
+契約（旧プロジェクトを表示したまま動作を継続できる）。
+
+1. **prepare**: `prepare_watcher(root)` で `Watcher::start` を呼び `(Watcher, Receiver<FsEvent>)` を確保する。**失敗時はこの段階で復帰**し、AppState のどのフィールドも書き換わらない
+2. **stop_old**: `state.take_watcher_handle()` で旧 handle を取り出し `stop()` する。lock 解放後に `stop()` を呼ぶため、panic しても `watcher_handle` mutex は poison しない
+3. **commit**: project_path / config / tasks_cache / write_ignore.clear を順に書き込む
+4. **spawn**: `spawn_adapter(...)` で adapter スレッドを起動し、`EmittingWatcherHandle` を `install_watcher_handle` で AppState に格納する
+
+### 14.3 `EmittingWatcherHandle::stop()` の同期停止
+
+`stop()` は (a) `Watcher` を drop して notify バックエンドの送信側を切断 → (b)
+adapter スレッドを `JoinHandle::join()` する 2 段で同期停止する。Rust の
+`Receiver::recv()` は対応するすべての `Sender` が drop されると `Err(RecvError)`
+を返すため、Watcher を先に drop すれば adapter ループが自動的に抜ける。
+
+`stop()` は冪等で、AppState の lock を一切取らない（取ると `watcher_handle` 保持
+中の deadlock になり得る）。
+
+### 14.4 `handle_event` 純粋関数
+
+adapter スレッドのループ本体（`run_event_loop`）は `Receiver::recv()` で blocking
+し、`Disconnected` を受けたら return するだけ。`FsEvent` 1 件あたりの差分更新と
+emit は `handle_event(event, &ctx)` に集約する。emit は `EmitFn` closure で抽象化し、
+本番では `AppHandle::emit`、テストでは `Vec<(String, Value)>` の push に差し替え
+られる。
+
+| 入力 | 出力 |
+|:----|:----|
+| `Created(p)` / `Modified(p)` | tasks_cache に key 不在なら `task-created`、存在すれば `task-updated`（atomic save の Created でも判定が変わらない） |
+| `Renamed { from, to }` | from で `task-deleted`（cache に存在した場合のみ）、to で `task-created` を順に emit |
+| `Removed(_)` | 本 PR では何もしない（log::trace のみ）。`task-deleted` は別 Issue で対応 |
+| `Other(_)` / `Rescan` / `Error(_)` | log::trace / warn のみ。FE への通知はしない |
+
+副作用は `tasks_cache` の差分書き込み + emit のみ。**emit より先に cache を更新**
+することで、FE が emit を受けた時点で `get_tasks` の cache が一貫しているこ
+とを保証する。
+
+### 14.5 panic 隔離
+
+adapter スレッド本体は `std::panic::catch_unwind(AssertUnwindSafe(...))` で包む。
+emit closure や handler 内部で panic が起きても adapter スレッドだけが終了し、
+プロセス全体やテスト本体は巻き込まれない。panic payload は `log::error!` で記録
+する。`AssertUnwindSafe` を被せているのは、`Receiver` や `AdapterContext` 内の
+`Arc<AppState>` が `UnwindSafe` を自動実装しないため。catch_unwind 後に AppState
+を再利用しないので、安全性は手動で担保している。
+
+### 14.6 関連リンク
+
+- 実装: [`src-tauri/src/watcher_event/`](../../src-tauri/src/watcher_event/)
+- 関連 Issue: #73（adapter 本体）/ #70（親 Issue）/ #74（`Removed` 対応）
+
+---
+
+## 15. 関連リンク
 
 - 仕様: [`docs/spec-board/file-system-spec.md`](../spec-board/file-system-spec.md) の「`spec-board-fs::watcher` 公開 API」節
 - 実装: [`src-tauri/crates/fs/src/watcher.rs`](../../src-tauri/crates/fs/src/watcher.rs)
