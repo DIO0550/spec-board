@@ -73,11 +73,11 @@ fn minimum_frontmatter_generates_task() {
     assert_eq!(task.title, "Fix bug");
     assert_eq!(task.status, "Doing");
     assert_eq!(task.priority, None);
-    assert_eq!(task.labels, Vec::<String>::new());
+    assert_eq!(task.labels, Vec::<Label>::new());
     assert_eq!(task.parent, None);
-    assert_eq!(task.links, Vec::<String>::new());
-    assert_eq!(task.children, Vec::<String>::new());
-    assert_eq!(task.reverse_links, Vec::<String>::new());
+    assert_eq!(task.links, Vec::<TaskFilePath>::new());
+    assert_eq!(task.children, Vec::<TaskFilePath>::new());
+    assert_eq!(task.reverse_links, Vec::<TaskFilePath>::new());
     assert_eq!(task.body, "");
     assert_eq!(task.extras, BTreeMap::new());
     assert_eq!(task.warnings, Vec::<TaskWarning>::new());
@@ -91,8 +91,8 @@ fn typed_parser_fields_and_body_are_reflected() {
     );
 
     assert_eq!(task.priority, Some(Priority::High));
-    assert_eq!(task.labels, vec!["bug".to_string(), "api".to_string()]);
-    assert_eq!(task.links, vec!["related.md".to_string()]);
+    assert_eq!(task.labels, vec![Label::from("bug"), Label::from("api")]);
+    assert_eq!(task.links, vec![TaskFilePath::from("related.md")]);
     assert_eq!(task.body, "Body\n");
 }
 
@@ -311,7 +311,10 @@ fn build_children_adds_child_file_path_to_parent() {
 
     let tasks = build_children(tasks).unwrap();
 
-    assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    assert_eq!(
+        tasks[0].children,
+        vec![TaskFilePath::from("tasks/child.md")]
+    );
 }
 
 #[test]
@@ -342,7 +345,10 @@ fn build_children_adds_child_when_parent_appears_later() {
 
     let tasks = build_children(tasks).unwrap();
 
-    assert_eq!(tasks[1].children, vec!["tasks/child.md".to_string()]);
+    assert_eq!(
+        tasks[1].children,
+        vec![TaskFilePath::from("tasks/child.md")]
+    );
 }
 
 #[test]
@@ -360,7 +366,10 @@ fn build_children_clears_existing_children_before_recalculation() {
 
     let tasks = build_children(tasks).unwrap();
 
-    assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    assert_eq!(
+        tasks[0].children,
+        vec![TaskFilePath::from("tasks/child.md")]
+    );
 }
 
 #[test]
@@ -372,7 +381,10 @@ fn build_children_matches_parent_with_dot_prefix() {
 
     let tasks = build_children(tasks).unwrap();
 
-    assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    assert_eq!(
+        tasks[0].children,
+        vec![TaskFilePath::from("tasks/child.md")]
+    );
 }
 
 #[test]
@@ -384,7 +396,10 @@ fn build_children_matches_parent_with_backslash_separator() {
 
     let tasks = build_children(tasks).unwrap();
 
-    assert_eq!(tasks[0].children, vec!["tasks/child.md".to_string()]);
+    assert_eq!(
+        tasks[0].children,
+        vec![TaskFilePath::from("tasks/child.md")]
+    );
 }
 
 #[test]
@@ -483,7 +498,10 @@ fn build_reverse_links_adds_source_file_path_to_target() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[1].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -518,8 +536,14 @@ fn build_reverse_links_adds_source_to_each_existing_link_target() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
-    assert_eq!(tasks[2].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[1].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
+    assert_eq!(
+        tasks[2].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -534,7 +558,10 @@ fn build_reverse_links_deduplicates_normalized_targets_per_source() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[1].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -552,7 +579,10 @@ fn build_reverse_links_clears_existing_reverse_links_before_recalculation() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[1].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -574,7 +604,10 @@ fn build_reverse_links_matches_link_with_dot_prefix() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[1].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -586,7 +619,10 @@ fn build_reverse_links_matches_link_with_backslash_separator() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[1].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[1].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -622,7 +658,10 @@ fn build_reverse_links_allows_self_link() {
 
     let tasks = build_reverse_links(tasks);
 
-    assert_eq!(tasks[0].reverse_links, vec!["tasks/source.md".to_string()]);
+    assert_eq!(
+        tasks[0].reverse_links,
+        vec![TaskFilePath::from("tasks/source.md")]
+    );
 }
 
 #[test]
@@ -999,7 +1038,7 @@ fn task_index_build_children_via_aggregate() {
         .iter()
         .find(|t| t.file_path == "tasks/parent.md")
         .unwrap();
-    assert_eq!(parent.children, vec!["tasks/child.md".to_string()]);
+    assert_eq!(parent.children, vec![TaskFilePath::from("tasks/child.md")]);
 }
 
 #[test]
