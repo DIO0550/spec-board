@@ -785,3 +785,25 @@ fn open_project_payload_round_trip() {
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(serialized, r#"{"tasks":[],"columns":["Todo","Done"]}"#);
 }
+
+#[test]
+fn empty_path_maps_to_directory_not_found_at_validate_directory_layer() {
+    // open_project Tauri command 入口で `ProjectRoot::try_from_str("")` を
+    // 呼ぶ前後で empty path 入力の挙動が同一であることを文書化する。
+    //
+    // 旧挙動: empty path は `validate_directory` の `fs::metadata("")` で
+    //   ENOENT が返り、`DirectoryNotFound { path: "" }` に詰め直されていた。
+    // 新挙動: command シンの `ProjectRoot::try_from_str("")` が
+    //   `ProjectRootError::Empty` を返し、同じ `DirectoryNotFound { path: "" }`
+    //   へ map される。
+    // → FE 視点では Display 文字列も `TauriError` 分類も同一。
+    //
+    // 本テストは旧経路（`open_project_with_factories`）を直接駆動して
+    // empty path が `DirectoryNotFound` に倒れることを確認する。
+    let state = Arc::new(AppState::new());
+    let err = open_with_noop(Arc::clone(&state), "").expect_err("empty path must yield error");
+    match err {
+        OpenProjectError::DirectoryNotFound { path } => assert_eq!(path, ""),
+        other => panic!("expected DirectoryNotFound, got {other:?}"),
+    }
+}

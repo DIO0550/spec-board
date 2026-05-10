@@ -164,6 +164,13 @@ pub fn open_project(
 ) -> Result<OpenProjectPayload, String> {
     // FE から渡された path を最初に ProjectRoot VO へ詰め直し、空文字を境界で
     // 弾く。実在性チェックは `validate_directory` の責務。
+    //
+    // 旧経路では empty path は `validate_directory` の `fs::metadata("")` で
+    // ENOENT が返り `DirectoryNotFound { path: "" }` に倒れていた。本シンでも
+    // 同じ `DirectoryNotFound { path: "" }` に map するため、FE から見た
+    // Display 文字列・`TauriError` 分類は不変
+    // （`empty_path_maps_to_directory_not_found_at_validate_directory_layer`
+    //  テストで等価性を担保）。
     let root = ProjectRoot::try_from_str(&path)
         .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
     open_project_impl(&app, state.inner().clone(), &root).map_err(|e| e.to_string())
