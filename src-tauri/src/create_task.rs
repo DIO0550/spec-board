@@ -33,7 +33,10 @@ pub struct CreateTaskArgs {
     /// ラベル一覧。未指定時は空配列。
     #[serde(default)]
     pub labels: Vec<String>,
-    /// 親タスクファイル名（拡張子なし想定）。存在検証・循環検証は後続Issue で実装。
+    /// 親タスクへのプロジェクトルート相対パス（例: `tasks/parent-task.md`）。
+    /// `.md` 拡張子込みのパス文字列で受け取る前提
+    /// （task-format-spec.md の `parent` フィールド仕様に準拠）。
+    /// 存在検証・循環検証は後続Issue で実装。
     pub parent: Option<String>,
     /// 本文（Markdown）。未指定時は空文字列扱い。
     pub body: Option<String>,
