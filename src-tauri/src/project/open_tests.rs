@@ -168,9 +168,14 @@ fn empty_directory_returns_default_columns_and_no_tasks() {
     let default_columns: Vec<String> = Config::default()
         .columns
         .iter()
-        .map(|c| c.name.clone())
+        .map(|c| c.name.as_str().to_string())
         .collect();
-    assert_eq!(default_columns, payload.columns);
+    let payload_columns: Vec<String> = payload
+        .columns
+        .iter()
+        .map(|c| c.as_str().to_string())
+        .collect();
+    assert_eq!(default_columns, payload_columns);
 }
 
 #[test]
@@ -472,7 +477,10 @@ fn tasks_cache_uses_path_buf_keys_from_file_path() {
     open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
     let snapshot = state.tasks_snapshot().expect("readable");
-    let mut paths: Vec<String> = snapshot.iter().map(|t| t.file_path.clone()).collect();
+    let mut paths: Vec<String> = snapshot
+        .iter()
+        .map(|t| t.file_path.as_str().to_string())
+        .collect();
     paths.sort();
     assert_eq!(
         vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
@@ -646,10 +654,12 @@ fn previous_app_state_is_preserved_when_load_fails() {
     assert_eq!(snapshot_before.len(), snapshot_after.len());
     let file_paths_before: Vec<String> = snapshot_before
         .iter()
-        .map(|t| t.file_path.clone())
+        .map(|t| t.file_path.as_str().to_string())
         .collect();
-    let file_paths_after: Vec<String> =
-        snapshot_after.iter().map(|t| t.file_path.clone()).collect();
+    let file_paths_after: Vec<String> = snapshot_after
+        .iter()
+        .map(|t| t.file_path.as_str().to_string())
+        .collect();
     assert_eq!(file_paths_before, file_paths_after);
 }
 
@@ -748,4 +758,52 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         vec!["A".to_string(), "M".to_string(), "Z".to_string()],
         payload.columns
     );
+}
+
+#[test]
+fn open_project_payload_round_trip() {
+    use serde::Deserialize;
+    // OpenProjectPayload は #[derive(Serialize)] のみだが、JSON 形状互換を
+    // round-trip で機械検証する。Deserialize を派生せずに `serde_json::Value`
+    // 経由で再パースする。
+    let json = r#"{"tasks":[],"columns":["Todo","Done"]}"#;
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    struct PayloadShape {
+        tasks: Vec<serde_json::Value>,
+        columns: Vec<String>,
+    }
+    let parsed: PayloadShape = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed.tasks.len(), 0);
+    assert_eq!(parsed.columns, vec!["Todo".to_string(), "Done".to_string()]);
+
+    // 反対方向: ColumnName VO の serde_transparent で文字列に戻ることを確認。
+    let payload = OpenProjectPayload {
+        tasks: vec![],
+        columns: vec!["Todo".into(), "Done".into()],
+    };
+    let serialized = serde_json::to_string(&payload).unwrap();
+    assert_eq!(serialized, r#"{"tasks":[],"columns":["Todo","Done"]}"#);
+}
+
+#[test]
+fn empty_path_maps_to_directory_not_found_at_validate_directory_layer() {
+    // open_project Tauri command 入口で `ProjectRoot::try_from_str("")` を
+    // 呼ぶ前後で empty path 入力の挙動が同一であることを文書化する。
+    //
+    // 旧挙動: empty path は `validate_directory` の `fs::metadata("")` で
+    //   ENOENT が返り、`DirectoryNotFound { path: "" }` に詰め直されていた。
+    // 新挙動: command シンの `ProjectRoot::try_from_str("")` が
+    //   `ProjectRootError::Empty` を返し、同じ `DirectoryNotFound { path: "" }`
+    //   へ map される。
+    // → FE 視点では Display 文字列も `TauriError` 分類も同一。
+    //
+    // 本テストは旧経路（`open_project_with_factories`）を直接駆動して
+    // empty path が `DirectoryNotFound` に倒れることを確認する。
+    let state = Arc::new(AppState::new());
+    let err = open_with_noop(Arc::clone(&state), "").expect_err("empty path must yield error");
+    match err {
+        OpenProjectError::DirectoryNotFound { path } => assert_eq!(path, ""),
+        other => panic!("expected DirectoryNotFound, got {other:?}"),
+    }
 }

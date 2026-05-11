@@ -19,6 +19,7 @@ use std::sync::mpsc::{Receiver, RecvError};
 use serde_json::json;
 
 use crate::task::index::{normalized_task_file_path, task_from_markdown, TaskParseContext};
+use crate::task::task_file_path::TaskFilePath;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::FsEvent;
 
@@ -99,7 +100,7 @@ pub(crate) fn handle_event(event: &FsEvent, ctx: &AdapterContext) -> Result<(), 
 /// 取得が失敗するため `None` が返る。`handle_delete` は cache に存在するか
 /// だけで動作するため、本関数の戻り値が `None` でも cache 上の rename / delete
 /// 処理を阻害しないよう、呼び出し側は **rel_md_path_lenient** を併用する。
-fn rel_md_path(abs_path: &Path, root: &Path) -> Option<String> {
+fn rel_md_path(abs_path: &Path, root: &Path) -> Option<TaskFilePath> {
     task_md_relative_path(abs_path, root).map(|rel| normalized_task_file_path(&rel))
 }
 
@@ -109,7 +110,7 @@ fn rel_md_path(abs_path: &Path, root: &Path) -> Option<String> {
 ///
 /// チェック対象: root 相対であること / `.md`（大小文字非区別）/ root 配下の
 /// path component に `.` 始まり / `node_modules` を含まないこと / UTF-8 表現可能。
-fn rel_md_path_lenient(abs_path: &Path, root: &Path) -> Option<String> {
+fn rel_md_path_lenient(abs_path: &Path, root: &Path) -> Option<TaskFilePath> {
     let rel = abs_path.strip_prefix(root).ok()?;
     if rel.as_os_str().is_empty() {
         return None;
@@ -143,7 +144,7 @@ fn handle_upsert(
     ctx: &AdapterContext,
     mode: UpsertMode,
 ) -> Result<(), HandleError> {
-    let Some(rel_str) = rel_md_path(abs_path, &ctx.root) else {
+    let Some(rel_path) = rel_md_path(abs_path, &ctx.root) else {
         // task_md_relative_path はプロジェクト規約に合わない path を一括で
         // フィルタする。具体的なフィルタ条件は file_scanner 側のドキュメント
         // を参照（root 外 / 非 .md / dotfile / node_modules / size 超 / バイナリ
@@ -169,7 +170,7 @@ fn handle_upsert(
         }
     };
     let context = TaskParseContext {
-        file_path: PathBuf::from(rel_str.as_str()),
+        file_path: rel_path.as_path_buf(),
         default_status: ctx.default_status.clone(),
     };
     let task = match task_from_markdown(&bytes, &context) {
@@ -203,18 +204,18 @@ fn handle_upsert(
 /// from 側のファイルは既に削除済み（metadata 取得不可）なケースが多いため、
 /// metadata に依存しない `rel_md_path_lenient` を使う。
 fn handle_delete(abs_path: &Path, ctx: &AdapterContext) -> Result<(), HandleError> {
-    let Some(rel_str) = rel_md_path_lenient(abs_path, &ctx.root) else {
+    let Some(rel_path) = rel_md_path_lenient(abs_path, &ctx.root) else {
         return Ok(());
     };
     if try_consume_write_ignore(ctx, abs_path)? {
         return Ok(());
     }
-    let cache_key = PathBuf::from(rel_str.as_str());
+    let cache_key = rel_path.as_path_buf();
     let removed = ctx
         .state
         .with_tasks_cache_mut(|cache| cache.remove(&cache_key).is_some())?;
     if removed {
-        (ctx.emit)("task-deleted", json!({ "filePath": rel_str }));
+        (ctx.emit)("task-deleted", json!({ "filePath": rel_path.as_str() }));
     } else {
         log::trace!(
             "watcher_event: ignoring delete for path not in cache: {}",

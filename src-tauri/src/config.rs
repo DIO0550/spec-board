@@ -50,11 +50,14 @@
 //! [`build_config_from_statuses`] は本モジュールに同居する。
 //! md ファイルの走査・フロントマター抽出・`config.json` への書き出しは別レイヤの責務。
 
+pub mod column_name;
+
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::config::column_name::ColumnName;
 use spec_board_fs::config::config_io::{self, write_guide_markdown, ConfigIoError};
 use thiserror::Error;
 
@@ -87,7 +90,7 @@ pub struct Config {
     /// 「完了」として扱うカラム名。仕様上「必須: いいえ」のため省略可。
     /// 未設定時は `columns` の最後のカラムを呼び出し層で採用する。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub done_column: Option<String>,
+    pub done_column: Option<ColumnName>,
 }
 
 const DEFAULT_VERSION: u32 = 1;
@@ -96,7 +99,7 @@ const DEFAULT_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
     /// カラム名。タスクのフロントマター `status` と対応する。
-    pub name: String,
+    pub name: ColumnName,
     /// カラムの表示順序（0 始まり昇順を想定。連番である必要はない）。
     pub order: u32,
 }
@@ -119,11 +122,13 @@ impl Default for Config {
             .iter()
             .enumerate()
             .map(|(i, name)| Column {
-                name: (*name).into(),
+                name: ColumnName::from_lenient(*name),
                 order: i as u32,
             })
             .collect();
-        let done_column = DEFAULT_COLUMN_NAMES.last().map(|s| (*s).to_string());
+        let done_column = DEFAULT_COLUMN_NAMES
+            .last()
+            .map(|s| ColumnName::from_lenient(*s));
         Self {
             version: DEFAULT_VERSION,
             columns,
@@ -147,14 +152,11 @@ impl Config {
     /// `Vec::last()` ではなく `Iterator::max_by_key(|c| c.order)` で
     /// 「表示上の末尾」を計算する。同一 `order` の場合は `Iterator::max_by_key`
     /// の安定性により最後に現れた要素が選ばれる（同一 `order` は仕様非推奨）。
-    pub fn resolved_done_column(&self) -> Option<&str> {
-        if let Some(name) = self.done_column.as_deref() {
+    pub fn resolved_done_column(&self) -> Option<&ColumnName> {
+        if let Some(name) = self.done_column.as_ref() {
             return Some(name);
         }
-        self.columns
-            .iter()
-            .max_by_key(|c| c.order)
-            .map(|c| c.name.as_str())
+        self.columns.iter().max_by_key(|c| c.order).map(|c| &c.name)
     }
 
     /// この設定から GUIDE.md の Markdown 本文を生成する。
@@ -352,7 +354,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         .into_iter()
         .enumerate()
         .map(|(i, name)| Column {
-            name,
+            name: ColumnName::from_lenient(name),
             order: i as u32,
         })
         .collect();
@@ -439,7 +441,7 @@ pub fn validate_unique_column_names(columns: &[Column]) -> Result<(), String> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(columns.len());
     for column in columns {
         if !seen.insert(column.name.as_str()) {
-            return Err(column.name.clone());
+            return Err(column.name.as_str().to_string());
         }
     }
     Ok(())

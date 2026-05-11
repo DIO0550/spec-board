@@ -35,6 +35,7 @@ use std::thread::{self, JoinHandle};
 
 use tauri::{AppHandle, Emitter};
 
+use crate::config::column_name::ColumnName;
 use crate::config::Config;
 use crate::state::AppState;
 use crate::task::index::default_status_for;
@@ -47,7 +48,7 @@ pub(crate) type EmitFn = Box<dyn Fn(&str, serde_json::Value) + Send + Sync + 'st
 /// adapter スレッドが共有する不変コンテキスト。
 pub(crate) struct AdapterContext {
     pub(crate) root: PathBuf,
-    pub(crate) default_status: String,
+    pub(crate) default_status: ColumnName,
     pub(crate) state: Arc<AppState>,
     pub(crate) emit: EmitFn,
 }

@@ -64,13 +64,14 @@ use thiserror::Error;
 
 use std::sync::Arc;
 
+use crate::config::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
 };
+use crate::project::project_root::ProjectRoot;
 use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task::index::{
-    build_children, build_reverse_links, default_status_for, task_from_markdown, Task,
-    TaskParseContext, TaskParseError,
+    default_status_for, task_from_markdown, Task, TaskIndex, TaskParseContext, TaskParseError,
 };
 use spec_board_fs::task::file_scanner::{scan_md_files, ScanError};
 use spec_board_fs::watcher::core::WatcherError;
@@ -83,7 +84,7 @@ use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 #[serde(rename_all = "camelCase")]
 pub struct OpenProjectPayload {
     pub tasks: Vec<Task>,
-    pub columns: Vec<String>,
+    pub columns: Vec<ColumnName>,
 }
 
 /// `open_project` コマンドのエラー。
@@ -161,7 +162,18 @@ pub fn open_project(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<OpenProjectPayload, String> {
-    open_project_impl(&app, state.inner().clone(), &path).map_err(|e| e.to_string())
+    // FE から渡された path を最初に ProjectRoot VO へ詰め直し、空文字を境界で
+    // 弾く。実在性チェックは `validate_directory` の責務。
+    //
+    // 旧経路では empty path は `validate_directory` の `fs::metadata("")` で
+    // ENOENT が返り `DirectoryNotFound { path: "" }` に倒れていた。本シンでも
+    // 同じ `DirectoryNotFound { path: "" }` に map するため、FE から見た
+    // Display 文字列・`TauriError` 分類は不変
+    // （`empty_path_maps_to_directory_not_found_at_validate_directory_layer`
+    //  テストで等価性を担保）。
+    let root = ProjectRoot::try_from_str(&path)
+        .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
+    open_project_impl(&app, state.inner().clone(), &root).map_err(|e| e.to_string())
 }
 
 /// 単体テスト境界の本体関数。
@@ -177,11 +189,15 @@ pub fn open_project(
 pub(crate) fn open_project_impl(
     app: &tauri::AppHandle,
     state: Arc<AppState>,
-    path: &str,
+    root: &ProjectRoot,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     open_project_with_factories(
         state,
-        path,
+        root.as_path()
+            .to_str()
+            .ok_or_else(|| OpenProjectError::DirectoryNotFound {
+                path: root.to_string(),
+            })?,
         |root| {
             crate::watcher_event::prepare_watcher(root)
                 .map_err(|source| OpenProjectError::WatcherInitFailed { source })
@@ -225,8 +241,11 @@ where
     let default_status = default_status_for(&config);
     let tasks = collect_tasks(root, &md_paths, &default_status);
 
-    let tasks = build_children(tasks).map_err(map_hierarchy_error)?;
-    let tasks = build_reverse_links(tasks);
+    let tasks = TaskIndex::new(tasks)
+        .build_children()
+        .map_err(map_hierarchy_error)?
+        .build_reverse_links()
+        .into_tasks();
 
     // GUIDE.md 書き込みより **前に** prepare を実行する。watcher 初期化失敗で
     // 復帰する場合に新 dir 配下の `.spec-board/GUIDE.md` が副作用として残らない
@@ -313,7 +332,7 @@ fn map_metadata_error(err: std::io::Error, raw_path: &str) -> OpenProjectError {
 ///
 /// 各 md ファイルの `fs::read` 失敗、`task_from_markdown` 失敗はいずれも
 /// `log::warn!` を出して skip する（コマンド全体は成功させる）。
-fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &str) -> Vec<Task> {
+fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &ColumnName) -> Vec<Task> {
     let mut tasks = Vec::with_capacity(md_paths.len());
     for rel_path in md_paths {
         let absolute = root.join(rel_path);
@@ -326,7 +345,7 @@ fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &str) -> Vec
         };
         let context = TaskParseContext {
             file_path: rel_path.clone(),
-            default_status: default_status.to_string(),
+            default_status: default_status.clone(),
         };
         match task_from_markdown(&bytes, &context) {
             Ok(task) => tasks.push(task),

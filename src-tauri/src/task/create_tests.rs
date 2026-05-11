@@ -8,13 +8,13 @@ fn set_of(items: &[&str]) -> HashSet<String> {
 
 fn make_task(file_path: &str, parent: Option<&str>) -> Task {
     Task {
-        id: file_path.to_string(),
-        file_path: file_path.to_string(),
-        title: "Task".to_string(),
-        status: "Todo".to_string(),
+        id: file_path.into(),
+        file_path: file_path.into(),
+        title: "Task".into(),
+        status: "Todo".into(),
         priority: None::<Priority>,
         labels: Vec::new(),
-        parent: parent.map(str::to_string),
+        parent: parent.map(Into::into),
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),

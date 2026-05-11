@@ -2,3 +2,8 @@ pub mod create;
 pub mod frontmatter;
 pub mod get;
 pub mod index;
+pub mod label;
+pub(crate) mod path_normalization;
+pub mod task_file_name;
+pub mod task_file_path;
+pub mod task_title;
