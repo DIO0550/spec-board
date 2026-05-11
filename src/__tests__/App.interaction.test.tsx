@@ -39,6 +39,10 @@ vi.mock("@/lib/tauri", async () => {
   };
 });
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}));
+
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
