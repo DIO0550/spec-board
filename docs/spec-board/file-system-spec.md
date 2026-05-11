@@ -246,7 +246,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | 監視ライブラリ | `notify` crate（Rust） |
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
-| 監視イベント | Create / Modify / Remove / Rename。**現時点で FE に配信されるのは Create / Modify / Rename のみ**で、`Remove` は本体クレート側 adapter で `log::trace!` のみとする。Remove → `task-deleted` 配線は別 Issue で対応する |
+| 監視イベント | Create / Modify / Remove / Rename。いずれも本体クレート側 adapter で `tasks_cache` を差分更新後、Tauri IPC で FE に配信される。Remove は cache 登録済みパスのみ `task-deleted` を発火し、`WriteIgnoreRegistry` に登録された自前 delete はスキップする |
 | デバウンス | 後述の「デバウンス（スライディングウィンドウ集約）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
 | フロントエンドへの通知 | Tauri のイベントシステム（`emit`）を使用 |
@@ -271,7 +271,7 @@ flowchart TD
     B --> C{イベント種別}
     C -->|Create| D[ファイルを読み込み・パース]
     C -->|Modify| D
-    C -->|Remove| E[本体 adapter で log::trace のみ。FE への通知は別 Issue]
+    C -->|Remove| E[cache 登録済みなら task-deleted を発火。write_ignore 登録済みは skip]
     C -->|Rename| R[旧パスで task-deleted + 新パスで読み込み・パース]
     D --> F{パース成功?}
     R --> F
@@ -485,7 +485,6 @@ pub enum WatcherError {
 
 - 監視対象パスの動的追加・削除
 - root が symlink ディレクトリの場合の追加検査（現状は notify に委ねる）
-- `FsEvent::Removed` を受けた `task-deleted` 配信（Issue #74）
 
 ## カラム設定・カード並び順の永続化
 

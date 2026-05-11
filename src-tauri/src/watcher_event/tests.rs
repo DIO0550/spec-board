@@ -433,13 +433,138 @@ fn non_markdown_extension_is_ignored() {
 }
 
 #[test]
-fn removed_other_rescan_error_variants_are_no_op() {
+fn removed_event_for_cached_path_emits_task_deleted_and_removes_from_cache() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    drain_log(&log);
+
+    std::fs::remove_file(&abs).expect("remove file");
+
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    let entries = drain_log(&log);
+    assert_eq!(1, entries.len(), "one task-deleted expected");
+    assert_eq!("task-deleted", entries[0].0);
+    assert_eq!("tasks/a.md", entries[0].1["filePath"]);
+    assert!(snapshot_paths(&state).is_empty());
+}
+
+#[test]
+fn removed_event_payload_uses_forward_slash_relative_path() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = write_md(dir.path(), "tasks/sub/a.md", &task_md("A"));
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    drain_log(&log);
+
+    std::fs::remove_file(&abs).ok();
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    let entries = drain_log(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("task-deleted", entries[0].0);
+    assert_eq!(json!("tasks/sub/a.md"), entries[0].1["filePath"]);
+}
+
+#[test]
+fn removed_event_for_uncached_path_does_not_emit() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = dir.path().join("tasks/ghost.md");
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    assert!(drain_log(&log).is_empty());
+    assert!(snapshot_paths(&state).is_empty());
+}
+
+#[test]
+fn write_ignore_consume_skips_emit_for_self_originated_remove() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    drain_log(&log);
+
+    state
+        .write_ignore()
+        .register(&abs)
+        .expect("register write_ignore");
+
+    std::fs::remove_file(&abs).ok();
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    assert!(drain_log(&log).is_empty(), "self delete should not emit");
+    assert_eq!(vec!["tasks/a.md".to_string()], snapshot_paths(&state));
+    assert!(state.write_ignore().is_empty().expect("readable"));
+}
+
+#[test]
+fn removed_event_for_non_markdown_is_ignored() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = write_md(dir.path(), "tasks/a.txt", "plain text");
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    assert!(drain_log(&log).is_empty());
+    assert!(snapshot_paths(&state).is_empty());
+}
+
+#[test]
+fn removed_event_for_dotfile_is_ignored() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = dir.path().join(".spec-board/x.md");
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    assert!(drain_log(&log).is_empty());
+    assert!(snapshot_paths(&state).is_empty());
+}
+
+#[test]
+fn removed_event_for_node_modules_is_ignored() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let abs = dir.path().join("node_modules/x/y.md");
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+
+    assert!(drain_log(&log).is_empty());
+    assert!(snapshot_paths(&state).is_empty());
+}
+
+#[test]
+fn removed_event_for_path_outside_root_is_ignored() {
+    let root = TempDir::new().expect("root tempdir");
+    let other = TempDir::new().expect("other tempdir");
+    let state = Arc::new(AppState::new());
+    let outside = other.path().join("tasks/x.md");
+    let (ctx, log) = build_ctx(root.path().to_path_buf(), Arc::clone(&state));
+
+    handle_event(&FsEvent::Removed(outside), &ctx).expect("removed ok");
+
+    assert!(drain_log(&log).is_empty());
+    assert!(snapshot_paths(&state).is_empty());
+}
+
+#[test]
+fn other_rescan_error_variants_are_no_op() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Removed(abs.clone()), &ctx).expect("ok");
     handle_event(&FsEvent::Other(abs), &ctx).expect("ok");
     handle_event(&FsEvent::Rescan, &ctx).expect("ok");
     handle_event(&FsEvent::Error("backend boom".to_string()), &ctx).expect("ok");

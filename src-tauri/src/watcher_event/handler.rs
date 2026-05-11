@@ -66,11 +66,7 @@ pub(crate) fn handle_event(event: &FsEvent, ctx: &AdapterContext) -> Result<(), 
             handle_delete(from, ctx)?;
             handle_upsert(to, ctx, UpsertMode::ForceCreated)
         }
-        FsEvent::Removed(_) => {
-            // 別 Issue で対応する。本ハンドラでは何もしない。
-            log::trace!("watcher_event: ignoring Removed event");
-            Ok(())
-        }
+        FsEvent::Removed(p) => handle_delete(p, ctx),
         FsEvent::Other(p) => {
             log::trace!("watcher_event: ignoring Other event for {}", p.display());
             Ok(())
@@ -197,11 +193,12 @@ fn handle_upsert(
     Ok(())
 }
 
-/// 削除系（Rename の `from` 側）。`tasks_cache` から実際に entry を remove
-/// できた場合のみ `task-deleted` を emit する。エディタの atomic save 時に
-/// 出る一時ファイル rename で偽 delete が飛ばないようにするための運用。
+/// 削除系（Rename の `from` 側 / 単独 Remove イベント）。`tasks_cache` から
+/// 実際に entry を remove できた場合のみ `task-deleted` を emit する。
+/// エディタの atomic save 時に出る一時ファイル rename / 削除で偽 delete が
+/// 飛ばないようにするための運用。
 ///
-/// from 側のファイルは既に削除済み（metadata 取得不可）なケースが多いため、
+/// 対象ファイルは既に削除済み（metadata 取得不可）なケースが多いため、
 /// metadata に依存しない `rel_md_path_lenient` を使う。
 fn handle_delete(abs_path: &Path, ctx: &AdapterContext) -> Result<(), HandleError> {
     let Some(rel_path) = rel_md_path_lenient(abs_path, &ctx.root) else {

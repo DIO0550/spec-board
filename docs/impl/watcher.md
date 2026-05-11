@@ -745,7 +745,7 @@ emit は `handle_event(event, &ctx)` に集約する。emit は `EmitFn` closure
 |:----|:----|
 | `Created(p)` / `Modified(p)` | tasks_cache に key 不在なら `task-created`、存在すれば `task-updated`（atomic save の Created でも判定が変わらない） |
 | `Renamed { from, to }` | from で `task-deleted`（cache に存在した場合のみ）、to で `task-created` を順に emit |
-| `Removed(_)` | 本 PR では何もしない（log::trace のみ）。`task-deleted` は別 Issue で対応 |
+| `Removed(p)` | `handle_delete(p)` を呼び、cache 登録済みなら `task-deleted` emit + cache 消去。write_ignore 登録済みは skip。 |
 | `Other(_)` / `Rescan` / `Error(_)` | log::trace / warn のみ。FE への通知はしない |
 
 副作用は `tasks_cache` の差分書き込み + emit のみ。**emit より先に cache を更新**
