@@ -35,7 +35,7 @@ use std::thread::{self, JoinHandle};
 
 use tauri::{AppHandle, Emitter};
 
-use crate::config::value_objects::column_name::ColumnName;
+use crate::config::column_name::ColumnName;
 use crate::config::Config;
 use crate::state::AppState;
 use crate::task::index::default_status_for;

@@ -1,10 +1,10 @@
 use super::frontmatter::{parse_bytes, FrontmatterError, Parsed, Priority};
-use crate::config::value_objects::column_name::ColumnName;
+use crate::config::column_name::ColumnName;
 use crate::config::Config;
+use crate::task::label::Label;
 use crate::task::path_normalization::{has_windows_drive_prefix, normalize_path_parts};
-use crate::task::value_objects::label::Label;
-use crate::task::value_objects::task_file_path::TaskFilePath;
-use crate::task::value_objects::task_title::TaskTitle;
+use crate::task::task_file_path::TaskFilePath;
+use crate::task::task_title::TaskTitle;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;

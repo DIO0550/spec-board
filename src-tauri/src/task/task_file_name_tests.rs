@@ -1,5 +1,5 @@
 use super::{TaskFileName, TaskFileNameError};
-use crate::task::value_objects::task_title::TaskTitle;
+use crate::task::task_title::TaskTitle;
 use std::collections::HashSet;
 
 #[test]

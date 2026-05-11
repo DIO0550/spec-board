@@ -64,11 +64,11 @@ use thiserror::Error;
 
 use std::sync::Arc;
 
-use crate::config::value_objects::column_name::ColumnName;
+use crate::config::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
 };
-use crate::project::value_objects::project_root::ProjectRoot;
+use crate::project::project_root::ProjectRoot;
 use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task::index::{
     default_status_for, task_from_markdown, Task, TaskIndex, TaskParseContext, TaskParseError,

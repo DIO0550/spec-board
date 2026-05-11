@@ -50,14 +50,14 @@
 //! [`build_config_from_statuses`] は本モジュールに同居する。
 //! md ファイルの走査・フロントマター抽出・`config.json` への書き出しは別レイヤの責務。
 
-pub mod value_objects;
+pub mod column_name;
 
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::config::value_objects::column_name::ColumnName;
+use crate::config::column_name::ColumnName;
 use spec_board_fs::config::config_io::{self, write_guide_markdown, ConfigIoError};
 use thiserror::Error;
 

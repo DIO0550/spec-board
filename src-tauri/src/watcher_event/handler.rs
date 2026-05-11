@@ -19,7 +19,7 @@ use std::sync::mpsc::{Receiver, RecvError};
 use serde_json::json;
 
 use crate::task::index::{normalized_task_file_path, task_from_markdown, TaskParseContext};
-use crate::task::value_objects::task_file_path::TaskFilePath;
+use crate::task::task_file_path::TaskFilePath;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::FsEvent;
 
