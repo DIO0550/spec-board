@@ -119,11 +119,31 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | body | `String` | いいえ | Markdown本文 |
 
 **振る舞い**:
-1. タイトルをkebab-caseに変換してファイル名を生成（例: `fix-login-bug.md`）
-2. 同名ファイルが存在する場合はサフィックスを付与（`fix-login-bug-1.md`）
-3. `parent` が指定されている場合、対象ファイルの存在と循環参照がないことを検証
-4. フロントマター + 本文の形式でmdファイルを書き出し
-5. 作成したタスク情報を返却（`children` と `reverseLinks` を含む）
+1. タイトルを kebab-case に変換してファイル名を生成（例: `fix-login-bug.md`）
+2. **配置先ディレクトリの決定**:
+   - `parent` 未指定 → プロジェクトルート直下の `tasks/`（必要なら自動作成）
+   - `parent` 指定 → 解決済み親 Task の `file_path` の dirname に同居（raw 入力の `./tasks/x.md` や `tasks\\x.md` 表記揺れではなく、正規化済み親パス由来）
+3. **ファイル名衝突回避**:
+   - in-memory `tasks_cache` の同一配置先ディレクトリ内に同名 Task があればサフィックス付与（`fix-login-bug-1.md` / `-2.md` ...）
+   - cache に未反映の disk 上 stale ファイルや並行 create との衝突は `OpenOptions::create_new(true)` で検出され `Io(AlreadyExists)` エラー（上書きはしない）
+4. **入力検証**:
+   - `parent` 指定時は対象 Task の存在 + 親 chain 循環 + 深さ上限（MAX=20）を検証
+   - 既存 cache 内の dangling parent / links が新規 Task で解決されるケース（augmented hierarchy）も検証対象に含める
+   - `title` が空、または kebab-case 化結果が空文字列なら `InvalidTitle` エラー
+5. **frontmatter 構築**:
+   - `priority` は `High` / `Medium` / `Low` に ASCII 大小文字非区別で正規化、`Some` だけ書き出す（無効値 / 空文字 / 未指定は frontmatter から省略）
+   - `labels` は空配列なら省略
+   - `parent` は解決済み Task の `file_path` 文字列をそのまま書き出す
+6. **書き込み + cache 差分更新**:
+   - watcher 起動状態でのみ `write_ignore` レジストリに自前 write path を登録 → 監視 thread 側で `task-created` IPC emit を抑止
+   - 書き込み成功後、`tasks_cache` に新規 Task を挿入し、親の `children` および link 先の `reverse_links` を差分更新
+   - 既存 cache 内で dangling parent / links が新規 Task を参照していた場合、新規 Task 側の `children` / `reverse_links` にも反映
+7. **戻り値**: 挿入後の Task（`children` / `reverseLinks` 解決済み）
+
+**Atomic 性 (部分 atomic)**:
+- 入力検証 / 配置先決定は副作用前に完了する。失敗時は FS / state を一切変更しない
+- FS write 中の失敗（`write_all` 途中失敗）は best-effort で `remove_file` を試み、`write_ignore` を解除して `Io` エラーを返す
+- FS write 成功後の cache 更新失敗（lock poison 等）はファイルが残る（次回 open / watcher rescan で拾われる）
 
 ---
 
@@ -150,11 +170,12 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 4. フロントマター + 本文を再構成して書き出し
 5. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
 
-> Implementation notes (2026-05-05): parent 循環検証は
-> `task_index::validate_parent_hierarchy` で行う。PL-008 の初期実装は
-> task_index の純粋 validation API を提供する段階であり、`create_task` /
-> `update_task` command を実装または接続する変更では、この note を更新し、
-> command 側で index 確定前に同 API を呼び出す。
+> Implementation notes (2026-05-11): parent 循環検証は
+> `task_index::validate_parent_hierarchy` / `validate_chain_from_parent` で行う。
+> `create_task` command は本ドキュメントの振る舞いを実装済み。dangling parent
+> 解決による cycle / too-deep は `validate_parent_hierarchy` を augmented snapshot
+> に対して呼ぶことで検出する。`update_task` command は未実装で、接続時に
+> 同様の augmented 検証を行う前提。
 
 ---
 
