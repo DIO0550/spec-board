@@ -1,26 +1,38 @@
-//! `create_task` Tauri command の引数受け取り型・入力検証純粋関数群。
+//! `create_task` Tauri command の引数受け取り型・入力検証純粋関数群と effect 層。
 //!
-//! 本モジュールは現時点では以下を提供する:
+//! 本モジュールは以下を提供する:
 //! - [`CreateTaskArgs`][] : FE から受け取る引数 DTO
 //! - [`CreateTaskError`][]: 入力検証エラー
 //! - [`build_new_filename`][]: title と既存ファイル名集合からユニークな
 //!   md ファイル名を生成する純粋関数
 //! - [`validate_parent_for_new_task`][]: 新規タスクの parent 引数を既存タスク
 //!   スナップショットに対して検証する純粋関数（存在 + 循環/深さ）
-//!
-//! `#[tauri::command]` シン本体・AppState 反映・FS 書込みは本モジュールには含まれず、
-//! 後続 Issue で追加される（本モジュールの純粋関数を組み合わせて使う想定）。
+//! - [`create_task`][] / [`create_task_impl`][]: Tauri command 薄層 + effect 層実装
 
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use spec_board_fs::task::kebab_case::to_kebab_case;
 use spec_board_fs::task::unique_filename::build_unique_filename;
+use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
+use tauri::State;
 use thiserror::Error;
 
-use super::index::{
-    resolve_parent_for_new_task, validate_chain_from_parent, ParentHierarchyErrorReason, Task,
+use super::frontmatter::{
+    parse as parse_frontmatter, serialize as serialize_frontmatter, Frontmatter, FrontmatterError,
+    Parsed, Priority,
 };
+use super::index::{
+    resolve_parent_for_new_task, task_from_parsed, validate_chain_from_parent,
+    validate_parent_hierarchy, ParentHierarchyErrorReason, Task, TaskExtras, TaskIndex,
+    TaskParseContext, TaskParseError, TaskWarning,
+};
+use super::task_file_path::TaskFilePath;
+use super::task_title::TaskTitle;
+use crate::config::column_name::ColumnName;
+use crate::state::{AppState, AppStateError};
 
 /// `create_task` Tauri command の引数 DTO。
 ///
@@ -144,6 +156,326 @@ pub fn validate_parent_for_new_task(
             reason,
         }
     })
+}
+
+/// `create_task` Tauri command 全体のエラー。
+///
+/// FE には `to_string()` で文字列化されて伝わる。
+#[derive(Debug, Error)]
+pub enum CreateTaskCommandError {
+    /// 入力検証エラー（既存純粋関数経由）。
+    #[error(transparent)]
+    Validation(#[from] CreateTaskError),
+    /// プロジェクト未 open（`AppState.project_path` が `None`）。
+    #[error("project is not opened")]
+    NoProjectOpen,
+    /// `AppState` 内部 Mutex の lock 取得失敗。
+    #[error("内部状態のロックが破損しました")]
+    AppState(#[from] AppStateError),
+    /// `WriteIgnoreRegistry` の lock 取得失敗等。
+    #[error(transparent)]
+    WriteIgnore(#[from] WriteIgnoreError),
+    /// ファイル I/O 失敗（`create_dir_all` / `OpenOptions::open` / `write_all`）。
+    #[error("failed to write task file: {0}")]
+    Io(#[from] std::io::Error),
+    /// 生成した frontmatter の再 parse 失敗（通常運用では発生しない）。
+    #[error(transparent)]
+    Frontmatter(#[from] FrontmatterError),
+}
+
+/// `create_task` Tauri command 薄層。
+///
+/// `create_task_impl` を呼び、エラーは Display 文字列化して FE へ返す。
+#[tauri::command]
+pub fn create_task(state: State<'_, Arc<AppState>>, args: CreateTaskArgs) -> Result<Task, String> {
+    create_task_impl(state.inner(), args).map_err(|e| e.to_string())
+}
+
+/// `create_task` の effect 層本体（テスト境界）。
+///
+/// 全体フロー:
+/// 1. preflight lock probe（tasks_cache + write_ignore）
+/// 2. project_path / tasks_snapshot 取得
+/// 3. parent 解決 + chain 検証
+/// 4. 配置先 dir / filename / content の決定
+/// 5. augmented hierarchy 検証（dangling parent 解決による cycle/too deep 防止）
+/// 6. `create_dir_all` → `write_ignore.register`（watcher 起動時のみ）
+///    → `OpenOptions::create_new(true).write(true)`
+/// 7. cache 差分更新 (`TaskIndex::insert_new_task_into_cache`)
+pub(crate) fn create_task_impl(
+    state: &AppState,
+    args: CreateTaskArgs,
+) -> Result<Task, CreateTaskCommandError> {
+    // 1. preflight (side effect 前の lock 健全性確認)
+    state.check_tasks_cache_lock()?;
+    let _ = state.write_ignore().is_empty()?;
+
+    // 2. snapshot + project root
+    let project_root = state
+        .project_path()?
+        .ok_or(CreateTaskCommandError::NoProjectOpen)?;
+    let snapshot = state.tasks_snapshot()?;
+
+    // 3. parent 解決 + chain 検証
+    let parent_index = resolve_parent_and_validate(args.parent.as_deref(), &snapshot)?;
+
+    // 4. 配置先ディレクトリ（raw 入力ではなく解決済み Task.file_path から導出）
+    let target_dir = resolve_target_dir(parent_index, &snapshot);
+
+    // 5. 同ディレクトリ内の既存ファイル名集合 → 衝突回避ファイル名
+    let existing = build_existing_filenames_in_dir(&snapshot, &target_dir);
+    let filename = build_new_filename(&args.title, &existing)?;
+
+    // 6. relative / absolute path
+    let rel_path = join_rel_path(&target_dir, &filename);
+    let abs_path = project_root.join(&rel_path);
+    let target_dir_abs = project_root.join(&target_dir);
+
+    // 7. frontmatter + body 文字列を組み立て
+    let resolved_parent_path = parent_index.map(|i| snapshot[i].file_path.as_str().to_string());
+    let content = build_task_content(&args, resolved_parent_path.as_deref());
+
+    // 8. augmented hierarchy 検証（FS write 前に dangling 解決 cycle / too deep を弾く）
+    let provisional =
+        build_provisional_task_for_validation(&rel_path, &args, resolved_parent_path.as_deref());
+    validate_augmented_hierarchy(&snapshot, &provisional, args.parent.as_deref())?;
+
+    // 9. ディレクトリ確保（register 前なので失敗時 rollback 不要）
+    std::fs::create_dir_all(&target_dir_abs)?;
+
+    // 10. watcher 起動有無を probe
+    let watcher_active = state.is_watcher_installed()?;
+
+    // 11. write_ignore 登録 → 排他 create write
+    //     `open` で create_new=true により既存ファイル衝突を弾き、`write_all` で
+    //     本文を書き込む。`write_all` が途中で失敗した場合のみ、本関数が作った
+    //     ファイル（自前で確実に所有している）を `remove_file` で巻き戻す。
+    //     open 自体の失敗時には本関数はファイルを作成していないため `remove_file`
+    //     してはならない（race condition で他プロセスが作った同 path を消して
+    //     しまう恐れがある）。
+    if watcher_active {
+        state.write_ignore().register(&abs_path)?;
+    }
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&abs_path)
+    {
+        Ok(f) => f,
+        Err(err) => {
+            if watcher_active {
+                let _ = state.write_ignore().unregister(&abs_path);
+            }
+            return Err(CreateTaskCommandError::Io(err));
+        }
+    };
+    if let Err(err) = std::io::Write::write_all(&mut file, content.as_bytes()) {
+        drop(file);
+        if let Err(rm_err) = std::fs::remove_file(&abs_path) {
+            if rm_err.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "create_task: failed to clean up partial file `{}`: {rm_err}",
+                    abs_path.display()
+                );
+            }
+        }
+        if watcher_active {
+            let _ = state.write_ignore().unregister(&abs_path);
+        }
+        return Err(CreateTaskCommandError::Io(err));
+    }
+    drop(file);
+
+    // 12. 書き込んだ md を再 parse → Task に変換
+    let parsed = parse_frontmatter(&content)?.expect("just-written frontmatter must parse");
+    let ctx = TaskParseContext {
+        file_path: rel_path.clone(),
+        default_status: ColumnName::from_lenient(args.status.clone()),
+    };
+    let task = task_from_parsed(parsed, &ctx);
+
+    // 13. cache 差分更新 (lock 内)
+    let final_task =
+        state.with_tasks_cache_mut(|cache| TaskIndex::insert_new_task_into_cache(cache, task))?;
+
+    Ok(final_task)
+}
+
+/// parent 文字列を解決し、chain 検証まで実行する。
+///
+/// `None` の場合は `Ok(None)`（親なし）。`Some` の場合は既存 snapshot 内の index を返すか、
+/// 既存純粋関数のエラーを `CreateTaskError` に詰め直す。
+pub(crate) fn resolve_parent_and_validate(
+    parent: Option<&str>,
+    snapshot: &[Task],
+) -> Result<Option<usize>, CreateTaskError> {
+    let Some(parent_str) = parent else {
+        return Ok(None);
+    };
+    let parent_index = resolve_parent_for_new_task(parent_str, snapshot).ok_or_else(|| {
+        CreateTaskError::ParentNotFound {
+            parent: parent_str.to_string(),
+        }
+    })?;
+    validate_chain_from_parent(parent_index, snapshot).map_err(|reason| {
+        CreateTaskError::ParentCycleOrTooDeep {
+            parent: parent_str.to_string(),
+            reason,
+        }
+    })?;
+    Ok(Some(parent_index))
+}
+
+/// parent_index から配置先ディレクトリを決める。
+///
+/// 親未指定なら `tasks`、指定ありなら親 Task の `file_path` の dirname。
+/// 親 Task が root 配下にある場合は空 `PathBuf`（=ルート直下）になる。
+pub(crate) fn resolve_target_dir(parent_index: Option<usize>, snapshot: &[Task]) -> PathBuf {
+    match parent_index {
+        Some(i) => {
+            let p = Path::new(snapshot[i].file_path.as_str());
+            p.parent().map(Path::to_path_buf).unwrap_or_default()
+        }
+        None => PathBuf::from("tasks"),
+    }
+}
+
+/// target_dir 直下に存在する Task のファイル名（basename）の集合を作る。
+///
+/// `Task.file_path` は forward slash 正規化済み相対パス前提。snapshot 内で
+/// 同一 dirname の Task のみを拾い、basename のみを取り出して `HashSet` に詰める。
+/// 比較は `Path::parent()` の `Path` 単位で行うため slash 表記揺れに耐性がある。
+pub(crate) fn build_existing_filenames_in_dir(
+    tasks: &[Task],
+    target_dir: &Path,
+) -> HashSet<String> {
+    let mut out: HashSet<String> = HashSet::new();
+    for task in tasks {
+        let path = Path::new(task.file_path.as_str());
+        let parent = path.parent().unwrap_or_else(|| Path::new(""));
+        if parent != target_dir {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        out.insert(name.to_string());
+    }
+    out
+}
+
+/// frontmatter + body を md 文字列に組み立てる。
+///
+/// - title / status は `extras` に詰めて typed 位置（先頭）に出る
+/// - priority は `Priority::from_ascii_ci` で正規化、`Some` のみ出力
+/// - labels は空なら省略
+/// - parent は解決済みの `Task.file_path` 文字列をそのまま入れる（未指定なら省略）
+/// - body は `args.body` を本文として末尾に追加（前に空行 1 行を挟む）
+pub(crate) fn build_task_content(
+    args: &CreateTaskArgs,
+    resolved_parent_path: Option<&str>,
+) -> String {
+    use serde_yaml_ng::{Mapping, Value};
+
+    let mut extras = Mapping::new();
+    extras.insert(
+        Value::String("title".into()),
+        Value::String(args.title.clone()),
+    );
+    extras.insert(
+        Value::String("status".into()),
+        Value::String(args.status.clone()),
+    );
+    if let Some(parent_path) = resolved_parent_path {
+        extras.insert(
+            Value::String("parent".into()),
+            Value::String(parent_path.to_string()),
+        );
+    }
+
+    let priority = args.priority.as_deref().and_then(Priority::from_ascii_ci);
+
+    let frontmatter = Frontmatter {
+        priority,
+        labels: args.labels.clone(),
+        links: Vec::new(),
+        extras,
+    };
+
+    let body = match args.body.as_deref() {
+        Some(b) if !b.is_empty() => format!("\n{b}"),
+        _ => String::new(),
+    };
+
+    serialize_frontmatter(&Parsed { frontmatter, body })
+}
+
+/// hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
+fn build_provisional_task_for_validation(
+    rel_path: &Path,
+    args: &CreateTaskArgs,
+    resolved_parent_path: Option<&str>,
+) -> Task {
+    let file_path = TaskFilePath::from_lenient(rel_path.to_string_lossy().replace('\\', "/"));
+    let parent = resolved_parent_path.map(TaskFilePath::from_lenient);
+    Task {
+        id: file_path.clone(),
+        file_path,
+        title: TaskTitle::from_lenient(args.title.clone()),
+        status: ColumnName::from_lenient(args.status.clone()),
+        priority: None,
+        labels: Vec::new(),
+        parent,
+        links: Vec::new(),
+        children: Vec::new(),
+        reverse_links: Vec::new(),
+        body: String::new(),
+        extras: TaskExtras::new(),
+        warnings: Vec::<TaskWarning>::new(),
+    }
+}
+
+/// snapshot に provisional な new_task を足した状態で parent chain を一括検証し、
+/// dangling parent 解決による cycle / too deep を検出する。
+///
+/// 既存 snapshot は open_project 時点で検証済みなので、新規発生し得る違反は
+/// new_task の挿入で初めて成立するもののみ。`TaskParseError::CycleOrTooDeep` を
+/// `CreateTaskError::ParentCycleOrTooDeep` にマップして返す。
+fn validate_augmented_hierarchy(
+    snapshot: &[Task],
+    new_task: &Task,
+    raw_parent_input: Option<&str>,
+) -> Result<(), CreateTaskError> {
+    let mut augmented: Vec<Task> = snapshot.to_vec();
+    augmented.push(new_task.clone());
+    match validate_parent_hierarchy(augmented) {
+        Ok(_) => Ok(()),
+        Err(TaskParseError::CycleOrTooDeep { reason, .. }) => {
+            Err(CreateTaskError::ParentCycleOrTooDeep {
+                parent: raw_parent_input.unwrap_or("").to_string(),
+                reason,
+            })
+        }
+        Err(other) => {
+            // build_children 経由ではない経路で他 variant が来た場合は伝播理由
+            // を `Cycle` 相当に詰め直す（通常運用では到達しない）。
+            log::warn!("validate_augmented_hierarchy: unexpected error: {other}");
+            Err(CreateTaskError::ParentCycleOrTooDeep {
+                parent: raw_parent_input.unwrap_or("").to_string(),
+                reason: ParentHierarchyErrorReason::Cycle,
+            })
+        }
+    }
+}
+
+/// `target_dir.join(filename)` だが、`target_dir` が空 PathBuf の場合に
+/// `Path::new("").join("x.md")` が `"x.md"` を返す挙動を活かしてルート直下を扱う。
+fn join_rel_path(target_dir: &Path, filename: &str) -> PathBuf {
+    if target_dir.as_os_str().is_empty() {
+        PathBuf::from(filename)
+    } else {
+        target_dir.join(filename)
+    }
 }
 
 #[cfg(test)]
