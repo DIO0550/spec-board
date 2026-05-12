@@ -912,16 +912,15 @@ impl TaskIndex {
 
 /// `cache` から、正規化済み path で一致する Task の可変参照を見つける。
 ///
-/// `cache` の key は `PathBuf::from(task.file_path.as_str())` で構築されている
-/// 前提だが、表記揺れ吸収のため値側の `file_path` を `normalize_task_path_for_lookup`
-/// で比較する。
+/// `cache` の key は常に `PathBuf::from(task.file_path.as_str())`、かつ
+/// `task.file_path` は `normalized_task_file_path` 経由で常に正規化済み（forward
+/// slash / drive prefix 除去 / `.` セグメント除去）。したがって正規化済み path
+/// 文字列をそのまま `PathBuf` 化して `HashMap::get_mut` で O(1) 引き当てできる。
 fn find_task_mut<'a>(
     cache: &'a mut HashMap<PathBuf, Task>,
     normalized: &str,
 ) -> Option<&'a mut Task> {
-    cache
-        .values_mut()
-        .find(|task| normalize_task_path_for_lookup(task.file_path.as_str()) == normalized)
+    cache.get_mut(&PathBuf::from(normalized))
 }
 
 impl From<Vec<Task>> for TaskIndex {
