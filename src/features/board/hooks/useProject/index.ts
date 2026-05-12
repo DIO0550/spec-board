@@ -1,10 +1,11 @@
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   CreateTaskParams,
   DeleteTaskParams,
   UpdateTaskParams,
 } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import { Task, type TaskPayload } from "@/types/task";
 import type { Result as ResultT } from "@/utils/result";
 import { openProjectAction } from "./actions/openProject";
 import {
@@ -79,6 +80,46 @@ export const useProject = (
     latestStateRef.current = reducer(latestStateRef.current, action);
     dispatch(action);
   }, []);
+
+  const loadedPath = state.kind === "loaded" ? state.path : null;
+  useEffect(() => {
+    if (loadedPath == null) {
+      return;
+    }
+    let unlistened = false;
+    let unlistenFn: UnlistenFn | null = null;
+    const capturedPath = loadedPath;
+    listen<{ task: TaskPayload }>("task-created", (event) => {
+      const payload = event.payload;
+      if (!payload?.task) {
+        return;
+      }
+      const current = latestStateRef.current;
+      if (current.kind !== "loaded" || current.path !== capturedPath) {
+        return;
+      }
+      const task = Task.fromPayload(payload.task);
+      dispatchSync({ type: "task-created", task });
+    })
+      .then((fn) => {
+        if (unlistened) {
+          fn();
+          return;
+        }
+        unlistenFn = fn;
+      })
+      .catch(() => {
+        // listen 登録自体が失敗した場合は購読を諦める。
+        // 失敗は user action と紐づかないため onError で通知せず黙殺する。
+      });
+    return () => {
+      unlistened = true;
+      if (unlistenFn) {
+        unlistenFn();
+        unlistenFn = null;
+      }
+    };
+  }, [loadedPath, dispatchSync]);
 
   const openProject = useCallback(
     (): Promise<void> =>
