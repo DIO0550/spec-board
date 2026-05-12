@@ -833,10 +833,15 @@ impl TaskIndex {
     /// 重複除去: 同一 source 内の `links` で複数 entry が同じ正規化 target を
     /// 指す場合、`build_reverse_links` の既存挙動と揃え、最初の参照だけを採用する。
     ///
+    /// # 可視性
+    /// `tasks_cache` の内部表現 (`HashMap<PathBuf, Task>`) と
+    /// 「`AppState::with_tasks_cache_mut` の closure 内 = lock 保持中に呼ぶ」
+    /// 前提を crate 外へ漏らさないよう `pub(crate)` に制限する。
+    ///
     /// @param cache `tasks_cache` の可変参照（lock 内）。
     /// @param new_task 挿入する Task（children / reverse_links は空想定）。
     /// @returns 挿入後の Task（children / reverse_links 反映済み）。
-    pub fn insert_new_task_into_cache(
+    pub(crate) fn insert_new_task_into_cache(
         cache: &mut HashMap<PathBuf, Task>,
         mut new_task: Task,
     ) -> Task {
