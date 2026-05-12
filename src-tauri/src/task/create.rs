@@ -292,8 +292,7 @@ pub(crate) fn create_task_impl(
     //         拾えなくなる。したがって post-write phase の Err では
     //         `write_ignore.unregister` を呼んで watcher の自然回復経路に戻す
     //         （成功時はそのまま残し、watcher event を consume させる）。
-    let result =
-        parse_and_insert_into_cache(state, &content, &rel_path, args.status.clone());
+    let result = parse_and_insert_into_cache(state, &content, &rel_path, args.status.clone());
     if result.is_err() && watcher_active {
         let _ = state.write_ignore().unregister(&abs_path);
     }
