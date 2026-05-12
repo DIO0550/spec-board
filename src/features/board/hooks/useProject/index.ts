@@ -164,6 +164,44 @@ export const useProject = (
     };
   }, [loadedPath, dispatchSync]);
 
+  useEffect(() => {
+    if (loadedPath == null) {
+      return;
+    }
+    let unlistened = false;
+    let unlistenFn: UnlistenFn | null = null;
+    const capturedPath = loadedPath;
+    listen<{ filePath: string }>("task-deleted", (event) => {
+      const payload = event.payload;
+      if (typeof payload?.filePath !== "string") {
+        return;
+      }
+      const current = latestStateRef.current;
+      if (current.kind !== "loaded" || current.path !== capturedPath) {
+        return;
+      }
+      dispatchSync({ type: "task-deleted", filePath: payload.filePath });
+    })
+      .then((fn) => {
+        if (unlistened) {
+          fn();
+          return;
+        }
+        unlistenFn = fn;
+      })
+      .catch(() => {
+        // listen 登録自体が失敗した場合は購読を諦める。
+        // 失敗は user action と紐づかないため onError で通知せず黙殺する。
+      });
+    return () => {
+      unlistened = true;
+      if (unlistenFn) {
+        unlistenFn();
+        unlistenFn = null;
+      }
+    };
+  }, [loadedPath, dispatchSync]);
+
   const openProject = useCallback(
     (): Promise<void> =>
       openProjectAction({
