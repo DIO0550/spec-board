@@ -286,18 +286,39 @@ pub(crate) fn create_task_impl(
     }
     drop(file);
 
-    // 12. 書き込んだ md を再 parse → Task に変換
-    let parsed = parse_frontmatter(&content)?.expect("just-written frontmatter must parse");
+    // 12-13. 書き込んだ md を再 parse → Task に変換 → cache 差分更新。
+    //         ここで失敗（lock poison / parse 失敗）すると、cache には新規 Task が
+    //         反映されないため、`write_ignore` を残したままだと watcher 経由でも
+    //         拾えなくなる。したがって post-write phase の Err では
+    //         `write_ignore.unregister` を呼んで watcher の自然回復経路に戻す
+    //         （成功時はそのまま残し、watcher event を consume させる）。
+    let result =
+        parse_and_insert_into_cache(state, &content, &rel_path, args.status.clone());
+    if result.is_err() && watcher_active {
+        let _ = state.write_ignore().unregister(&abs_path);
+    }
+    result
+}
+
+/// FS write 成功後に呼ぶ post-write phase 本体。
+///
+/// 再 parse → Task 構築 → `tasks_cache` への差分挿入をまとめる。失敗時は
+/// caller が `write_ignore.unregister` を行うことで、watcher の自然回復に
+/// 委ねる前提（部分 atomic）。
+fn parse_and_insert_into_cache(
+    state: &AppState,
+    content: &str,
+    rel_path: &Path,
+    status: String,
+) -> Result<Task, CreateTaskCommandError> {
+    let parsed = parse_frontmatter(content)?.expect("just-written frontmatter must parse");
     let ctx = TaskParseContext {
-        file_path: rel_path.clone(),
-        default_status: ColumnName::from_lenient(args.status.clone()),
+        file_path: rel_path.to_path_buf(),
+        default_status: ColumnName::from_lenient(status),
     };
     let task = task_from_parsed(parsed, &ctx);
-
-    // 13. cache 差分更新 (lock 内)
     let final_task =
         state.with_tasks_cache_mut(|cache| TaskIndex::insert_new_task_into_cache(cache, task))?;
-
     Ok(final_task)
 }
 
