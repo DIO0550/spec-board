@@ -59,30 +59,46 @@ const deleteTaskMock = vi.mocked(deleteTaskInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 const listenMock = vi.mocked(listenInvoke);
 
-type ListenHandler = (event: { payload: { task: TaskPayload } }) => void;
+type ListenHandler<P = { task: TaskPayload }> = (event: { payload: P }) => void;
 
-type CaptureListenResult = {
-  handlers: ListenHandler[];
+type CaptureListenResult<P> = {
+  handlers: ListenHandler<P>[];
   unlistenFns: ReturnType<typeof vi.fn>[];
 };
 
-const captureListen = (eventName: string): CaptureListenResult => {
-  const handlersByEvent: Record<string, ListenHandler[]> = {
-    [eventName]: [],
-  };
-  const unlistenByEvent: Record<string, ReturnType<typeof vi.fn>[]> = {
-    [eventName]: [],
-  };
+type CaptureMultiResult<P> = {
+  handlersByEvent: Record<string, ListenHandler<P>[]>;
+  unlistenByEvent: Record<string, ReturnType<typeof vi.fn>[]>;
+};
+
+const installCaptureListen = <P,>(
+  eventNames: readonly string[],
+): CaptureMultiResult<P> => {
+  const handlersByEvent: Record<string, ListenHandler<P>[]> = {};
+  const unlistenByEvent: Record<string, ReturnType<typeof vi.fn>[]> = {};
+  for (const name of eventNames) {
+    handlersByEvent[name] = [];
+    unlistenByEvent[name] = [];
+  }
   listenMock.mockImplementation(((name, handler) => {
     const unlisten = vi.fn();
     const handlerBucket = handlersByEvent[name] ?? [];
     handlersByEvent[name] = handlerBucket;
-    handlerBucket.push(handler as ListenHandler);
+    handlerBucket.push(handler as unknown as ListenHandler<P>);
     const unlistenBucket = unlistenByEvent[name] ?? [];
     unlistenByEvent[name] = unlistenBucket;
     unlistenBucket.push(unlisten);
     return Promise.resolve(unlisten);
   }) as typeof listenInvoke);
+  return { handlersByEvent, unlistenByEvent };
+};
+
+const captureListen = <P = { task: TaskPayload }>(
+  eventName: string,
+): CaptureListenResult<P> => {
+  const { handlersByEvent, unlistenByEvent } = installCaptureListen<P>([
+    eventName,
+  ]);
   return {
     handlers: handlersByEvent[eventName],
     unlistenFns: unlistenByEvent[eventName],
@@ -1531,4 +1547,276 @@ test("payload.task が undefined の task-updated は dispatch しない", async
   });
   const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
   expect(after).toBe(before);
+});
+
+// === task-deleted IPC listener ===
+
+const captureListenAll = <P,>(
+  eventNames: readonly string[],
+): CaptureMultiResult<P> => installCaptureListen<P>(eventNames);
+
+test("loaded 状態で task-deleted の listen が登録される", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(listenMock).toHaveBeenCalledWith("task-deleted", expect.any(Function));
+  expect(handlers).toHaveLength(1);
+});
+
+test("task-deleted callback で一致 filePath の task が state.data.tasks から除去される", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  act(() => {
+    handlers[0]({ payload: { filePath: "tasks/a.md" } });
+  });
+  const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(tasks).toHaveLength(0);
+});
+
+test("filePath 不一致の task-deleted は内容上 state を変化させない (no-op)", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  act(() => {
+    handlers[0]({ payload: { filePath: "tasks/missing.md" } });
+  });
+  const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(after).toEqual(before);
+});
+
+test("unmount で task-deleted の unlisten が呼ばれる", async () => {
+  const { unlistenFns } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(unlistenFns).toHaveLength(1);
+  await act(async () => {
+    root?.unmount();
+    root = null;
+    await Promise.resolve();
+  });
+  expect(unlistenFns[0]).toHaveBeenCalled();
+});
+
+test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登録される", async () => {
+  const { handlers, unlistenFns } = captureListen<{ filePath: string }>(
+    "task-deleted",
+  );
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(handlers).toHaveLength(1);
+
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+
+  expect(unlistenFns[0]).toHaveBeenCalled();
+  expect(handlers).toHaveLength(2);
+});
+
+test.each(
+  listenAbsenceCases,
+)("$kind 状態では task-deleted の listen が呼ばれない", async ({ setup }) => {
+  captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook({ onError: () => {} });
+  const teardown = await setup(probe);
+  expect(listenMock).not.toHaveBeenCalledWith(
+    "task-deleted",
+    expect.any(Function),
+  );
+  await teardown();
+});
+
+test("open-start 直後の race: loading 中に旧 task-deleted callback が発火しても previousLoaded が変化しない", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(handlers).toHaveLength(1);
+  const oldHandler = handlers[0];
+
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
+  let resolveInvoke!: (r: ResultT<OpenProjectPayload, TauriError>) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<ResultT<OpenProjectPayload, TauriError>>((resolve) => {
+      resolveInvoke = resolve;
+    }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(probe.latest.state.kind).toBe("loading");
+
+  act(() => {
+    oldHandler({ payload: { filePath: "tasks/a.md" } });
+  });
+
+  const loadingState = probe.latest.state as {
+    kind: "loading";
+    previousLoaded?: { data: { tasks: Task[] } };
+  };
+  expect(
+    loadingState.previousLoaded?.data.tasks.map((t) => t.filePath),
+  ).toEqual(["tasks/a.md"]);
+
+  await act(async () => {
+    resolveInvoke(Result.ok({ tasks: [taskB], columns: ["Done"] }));
+    await pending;
+  });
+});
+
+test("task-deleted の listen Promise pending 中の unmount でも解決後 UnlistenFn が呼ばれる", async () => {
+  let resolveListen!: (fn: UnlistenFnT) => void;
+  const unlistenLate = vi.fn();
+  const pendingPromise = new Promise<UnlistenFnT>((resolve) => {
+    resolveListen = resolve;
+  });
+  const promiseByEvent: Record<string, Promise<UnlistenFnT>> = {
+    "task-deleted": pendingPromise,
+  };
+  listenMock.mockImplementation(((name) => {
+    return promiseByEvent[name] ?? Promise.resolve(vi.fn());
+  }) as typeof listenInvoke);
+
+  const probe = renderHook();
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+  expect(listenMock).toHaveBeenCalledWith("task-deleted", expect.any(Function));
+
+  act(() => {
+    root?.unmount();
+    root = null;
+  });
+  resolveListen(unlistenLate);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(unlistenLate).toHaveBeenCalled();
+});
+
+test("payload.filePath が undefined の task-deleted は dispatch しない", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  act(() => {
+    handlers[0]({
+      payload: {} as unknown as { filePath: string },
+    });
+  });
+  const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(after).toBe(before);
+});
+
+test("payload.filePath が string でない (number 等) の task-deleted は dispatch しない", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const probe = renderHook();
+  await openLoaded(probe);
+  const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  act(() => {
+    handlers[0]({
+      payload: { filePath: 42 } as unknown as { filePath: string },
+    });
+  });
+  const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(after).toBe(before);
+});
+
+test("parent あり task の filePath 削除で子の parent も未設定になる", async () => {
+  const { handlers } = captureListen<{ filePath: string }>("task-deleted");
+  const childPayload: TaskPayload = {
+    id: "c",
+    title: "C",
+    status: "Todo",
+    labels: [],
+    parent: "tasks/a.md",
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/c.md",
+    extras: {},
+    warnings: [],
+  };
+  const childTask = Task.fromPayload(childPayload);
+  // openLoaded uses default payload = [taskA], so override with parent/child setup
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ tasks: [taskA, childTask], columns: ["Todo", "Done"] }),
+  );
+  const probe = renderHook();
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+
+  act(() => {
+    handlers[0]({ payload: { filePath: "tasks/a.md" } });
+  });
+  const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(tasks.map((t) => t.filePath)).toEqual(["tasks/c.md"]);
+  const child = tasks.find((t) => t.filePath === "tasks/c.md");
+  expect(child?.hierarchy.parentFilePath).toBeUndefined();
+});
+
+test("rename シーケンス: task-deleted handler → task-created handler 連続発火で最終的にカードが入れ替わる", async () => {
+  const { handlersByEvent } = captureListenAll<
+    { task: TaskPayload } | { filePath: string }
+  >(["task-deleted", "task-created"]);
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(handlersByEvent["task-deleted"]).toHaveLength(1);
+  expect(handlersByEvent["task-created"]).toHaveLength(1);
+
+  const newTaskPayload: TaskPayload = {
+    id: "a",
+    title: "A",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/a-renamed.md",
+    extras: {},
+    warnings: [],
+  };
+
+  act(() => {
+    const deleteHandler = handlersByEvent["task-deleted"][0] as (event: {
+      payload: { filePath: string };
+    }) => void;
+    deleteHandler({ payload: { filePath: "tasks/a.md" } });
+  });
+  act(() => {
+    const createHandler = handlersByEvent["task-created"][0] as (event: {
+      payload: { task: TaskPayload };
+    }) => void;
+    createHandler({ payload: { task: newTaskPayload } });
+  });
+
+  const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(tasks.map((t) => t.filePath)).toEqual(["tasks/a-renamed.md"]);
 });
