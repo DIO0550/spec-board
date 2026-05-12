@@ -173,6 +173,15 @@ impl AppState {
         Ok(guard.take())
     }
 
+    /// `watcher_handle` が install 済みかを返す非破壊 accessor。
+    ///
+    /// `take_watcher_handle` と異なり handle を取り出さず、`Mutex` 内の
+    /// `Option<BoxedWatcherHandle>` の `is_some()` のみを返す。
+    pub fn is_watcher_installed(&self) -> Result<bool, AppStateError> {
+        let guard = lock(&self.watcher_handle)?;
+        Ok(guard.is_some())
+    }
+
     /// `project_path` 用 `Mutex` の健全性をチェックする副作用なしの probe。
     ///
     /// `project_path()` と異なりクローンを行わないため、pre-flight 用途で
