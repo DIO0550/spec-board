@@ -81,6 +81,31 @@ pub enum CreateTaskError {
         parent: String,
         reason: ParentHierarchyErrorReason,
     },
+    /// 生成 content が scanner の eligible 条件を満たさない（1 MiB 超 / 先頭 8 KB に
+    /// NUL byte を含む）。書き込み後 reopen / 再 scan 時に scanner で除外されて
+    /// state 不整合が起きるため、書込み前にこの段階で弾く。
+    #[error("作成しようとしたタスク本文が scanner の対象外です: {reason}")]
+    ContentNotScannerEligible { reason: ContentRejectReason },
+}
+
+/// `ContentNotScannerEligible` の理由バリアント。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentRejectReason {
+    /// scanner の `MAX_FILE_SIZE` (1 MiB) を超える。
+    TooLarge { size: u64 },
+    /// scanner の `BINARY_PROBE_LEN` (8 KiB) 範囲に NUL byte が含まれる。
+    BinaryDetected,
+}
+
+impl std::fmt::Display for ContentRejectReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooLarge { size } => {
+                write!(f, "本文サイズが 1 MiB を超えています ({size} byte)")
+            }
+            Self::BinaryDetected => write!(f, "本文の先頭 8 KiB に NUL byte が含まれています"),
+        }
+    }
 }
 
 /// title と既存ファイル名集合から、衝突しない md ファイル名を生成する。
@@ -234,6 +259,12 @@ pub(crate) fn create_task_impl(
     // 7. frontmatter + body 文字列を組み立て
     let resolved_parent_path = parent_index.map(|i| snapshot[i].file_path.as_str().to_string());
     let content = build_task_content(&args, resolved_parent_path.as_deref());
+
+    // 7.5 生成 content が scanner の eligible 条件を満たすか検証する。
+    //     `spec_board_fs::task::file_scanner` は 1 MiB 超や先頭 8 KiB に NUL byte を
+    //     含むファイルを除外するため、create 直後は cache にあっても reopen 後に
+    //     scanner で消える状態不整合が起きる。書込み前にこの段階で弾く。
+    validate_content_scanner_eligibility(&content)?;
 
     // 8. augmented hierarchy 検証（FS write 前に dangling 解決 cycle / too deep を弾く）
     let provisional =
@@ -486,6 +517,35 @@ fn validate_augmented_hierarchy(
             })
         }
     }
+}
+
+/// 生成 content を `spec_board_fs::task::file_scanner` 互換の eligible 条件で検証する。
+///
+/// - 1 MiB (1_048_576 byte) を超える content は `TooLarge` で弾く
+/// - 先頭 8 KiB 範囲に NUL byte (0x00) を含む場合は `BinaryDetected` で弾く
+///
+/// scanner 側の閾値（`MAX_FILE_SIZE` / `BINARY_PROBE_LEN`）と揃えることで、
+/// 作成直後に cache へ反映された Task が reopen / 再 scan 時に消えて state
+/// 不整合が起きることを防ぐ。
+fn validate_content_scanner_eligibility(content: &str) -> Result<(), CreateTaskError> {
+    const MAX_FILE_SIZE: usize = 1024 * 1024;
+    const BINARY_PROBE_LEN: usize = 8 * 1024;
+
+    let bytes = content.as_bytes();
+    if bytes.len() > MAX_FILE_SIZE {
+        return Err(CreateTaskError::ContentNotScannerEligible {
+            reason: ContentRejectReason::TooLarge {
+                size: bytes.len() as u64,
+            },
+        });
+    }
+    let probe_len = bytes.len().min(BINARY_PROBE_LEN);
+    if bytes[..probe_len].contains(&0u8) {
+        return Err(CreateTaskError::ContentNotScannerEligible {
+            reason: ContentRejectReason::BinaryDetected,
+        });
+    }
+    Ok(())
 }
 
 /// `target_dir.join(filename)` だが、`target_dir` が空 PathBuf の場合に

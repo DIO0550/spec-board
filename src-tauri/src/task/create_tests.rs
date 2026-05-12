@@ -718,6 +718,53 @@ fn create_task_create_dir_all_failure_leaves_state_clean() {
 }
 
 #[test]
+fn create_task_rejects_body_larger_than_scanner_max_size() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    // 1 MiB を確実に超える body を生成する。
+    let huge_body = "a".repeat(1024 * 1024 + 1);
+    let mut args = args_with_title("Huge");
+    args.body = Some(huge_body);
+    let err = create_task_impl(&state, args).expect_err("should fail");
+    match err {
+        CreateTaskCommandError::Validation(CreateTaskError::ContentNotScannerEligible {
+            reason: ContentRejectReason::TooLarge { .. },
+        }) => {}
+        other => panic!("expected ContentNotScannerEligible(TooLarge), got {other:?}"),
+    }
+    // FS / state 不変
+    assert!(!dir.path().join("tasks/huge.md").exists());
+    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert!(state.write_ignore().is_empty().unwrap());
+}
+
+#[test]
+fn create_task_rejects_body_with_nul_byte_in_first_8kb() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    // 先頭 8 KiB 範囲に NUL byte を含む body を生成する。
+    let mut bad_body = String::from("hello");
+    bad_body.push('\u{0000}');
+    bad_body.push_str("world");
+    let mut args = args_with_title("Nul");
+    args.body = Some(bad_body);
+    let err = create_task_impl(&state, args).expect_err("should fail");
+    match err {
+        CreateTaskCommandError::Validation(CreateTaskError::ContentNotScannerEligible {
+            reason: ContentRejectReason::BinaryDetected,
+        }) => {}
+        other => panic!("expected ContentNotScannerEligible(BinaryDetected), got {other:?}"),
+    }
+    assert!(!dir.path().join("tasks/nul.md").exists());
+    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert!(state.write_ignore().is_empty().unwrap());
+}
+
+#[test]
 fn create_task_detects_augmented_cycle_via_dangling_parent_resolution() {
     let dir = tempdir();
     let state = Arc::new(AppState::new());
