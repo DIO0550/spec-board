@@ -59,23 +59,34 @@ const deleteTaskMock = vi.mocked(deleteTaskInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 const listenMock = vi.mocked(listenInvoke);
 
-type TaskCreatedHandler = (event: { payload: { task: TaskPayload } }) => void;
+type ListenHandler = (event: { payload: { task: TaskPayload } }) => void;
 
 type CaptureListenResult = {
-  handlers: TaskCreatedHandler[];
+  handlers: ListenHandler[];
   unlistenFns: ReturnType<typeof vi.fn>[];
 };
 
-const captureListen = (): CaptureListenResult => {
-  const handlers: TaskCreatedHandler[] = [];
-  const unlistenFns: ReturnType<typeof vi.fn>[] = [];
-  listenMock.mockImplementation(((_event, handler) => {
-    handlers.push(handler as TaskCreatedHandler);
+const captureListen = (eventName: string): CaptureListenResult => {
+  const handlersByEvent: Record<string, ListenHandler[]> = {
+    [eventName]: [],
+  };
+  const unlistenByEvent: Record<string, ReturnType<typeof vi.fn>[]> = {
+    [eventName]: [],
+  };
+  listenMock.mockImplementation(((name, handler) => {
     const unlisten = vi.fn();
-    unlistenFns.push(unlisten);
+    const handlerBucket = handlersByEvent[name] ?? [];
+    handlersByEvent[name] = handlerBucket;
+    handlerBucket.push(handler as ListenHandler);
+    const unlistenBucket = unlistenByEvent[name] ?? [];
+    unlistenByEvent[name] = unlistenBucket;
+    unlistenBucket.push(unlisten);
     return Promise.resolve(unlisten);
   }) as typeof listenInvoke);
-  return { handlers, unlistenFns };
+  return {
+    handlers: handlersByEvent[eventName],
+    unlistenFns: unlistenByEvent[eventName],
+  };
 };
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
@@ -1023,7 +1034,7 @@ test("createTask: projectCommandQueue により再 open は createTask 完了を
 // === task-created IPC listener ===
 
 test("loaded 状態で task-created の listen が登録される", async () => {
-  const { handlers } = captureListen();
+  const { handlers } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
   expect(listenMock).toHaveBeenCalledWith("task-created", expect.any(Function));
@@ -1031,7 +1042,7 @@ test("loaded 状態で task-created の listen が登録される", async () => 
 });
 
 test("task-created callback を invoke すると state.data.tasks に追加される", async () => {
-  const { handlers } = captureListen();
+  const { handlers } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
   act(() => {
@@ -1058,7 +1069,7 @@ test("task-created callback を invoke すると state.data.tasks に追加さ�
 });
 
 test("parent あり task-created で親の hierarchy.childFilePaths に追加される", async () => {
-  const { handlers } = captureListen();
+  const { handlers } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
   act(() => {
@@ -1087,7 +1098,7 @@ test("parent あり task-created で親の hierarchy.childFilePaths に追加さ
 });
 
 test("unmount で task-created の unlisten が呼ばれる", async () => {
-  const { unlistenFns } = captureListen();
+  const { unlistenFns } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
   expect(unlistenFns).toHaveLength(1);
@@ -1100,7 +1111,7 @@ test("unmount で task-created の unlisten が呼ばれる", async () => {
 });
 
 test("mount 直後 (idle) では listen が呼ばれない", async () => {
-  captureListen();
+  captureListen("task-created");
   renderHook();
   await act(async () => {
     await Promise.resolve();
@@ -1109,7 +1120,7 @@ test("mount 直後 (idle) では listen が呼ばれない", async () => {
 });
 
 test("openProject 進行中 (loading) では listen が呼ばれない", async () => {
-  captureListen();
+  captureListen("task-created");
   let resolveDialog!: (r: ResultT<string | null, TauriError>) => void;
   openDirectoryDialogMock.mockReturnValueOnce(
     new Promise<ResultT<string | null, TauriError>>((res) => {
@@ -1133,7 +1144,7 @@ test("openProject 進行中 (loading) では listen が呼ばれない", async (
 });
 
 test("openProject 失敗 (error 状態) では listen が呼ばれない", async () => {
-  captureListen();
+  captureListen("task-created");
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
     Result.err(new TauriError("NOT_FOUND", "no")),
@@ -1151,10 +1162,10 @@ test("openProject 失敗 (error 状態) では listen が呼ばれない", async
 });
 
 test("プロジェクト切替で旧 listen が unlisten され、新 listen が再登録される", async () => {
-  const { unlistenFns } = captureListen();
+  const { handlers, unlistenFns } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
-  expect(listenMock).toHaveBeenCalledTimes(1);
+  expect(handlers).toHaveLength(1);
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
@@ -1169,11 +1180,11 @@ test("プロジェクト切替で旧 listen が unlisten され、新 listen が
   });
 
   expect(unlistenFns[0]).toHaveBeenCalled();
-  expect(listenMock).toHaveBeenCalledTimes(2);
+  expect(handlers).toHaveLength(2);
 });
 
 test("open-start 直後の race: loading 中に旧 callback が発火しても previousLoaded が変化しない", async () => {
-  const { handlers } = captureListen();
+  const { handlers } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
   expect(handlers).toHaveLength(1);
@@ -1235,13 +1246,17 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
   });
 });
 
-test("listen Promise pending 中の unmount でも解決後 UnlistenFn が呼ばれる", async () => {
+test("task-created の listen Promise pending 中の unmount でも解決後 UnlistenFn が呼ばれる", async () => {
   let resolveListen!: (fn: UnlistenFnT) => void;
   const unlistenLate = vi.fn();
-  listenMock.mockImplementation((() => {
-    return new Promise<UnlistenFnT>((resolve) => {
-      resolveListen = resolve;
-    });
+  const pendingPromise = new Promise<UnlistenFnT>((resolve) => {
+    resolveListen = resolve;
+  });
+  const promiseByEvent: Record<string, Promise<UnlistenFnT>> = {
+    "task-created": pendingPromise,
+  };
+  listenMock.mockImplementation(((name) => {
+    return promiseByEvent[name] ?? Promise.resolve(vi.fn());
   }) as typeof listenInvoke);
 
   const probe = renderHook();
@@ -1254,8 +1269,8 @@ test("listen Promise pending 中の unmount でも解決後 UnlistenFn が呼ば
   await act(async () => {
     await pending;
   });
-  // listen は呼ばれたが Promise はまだ pending
-  expect(listenMock).toHaveBeenCalledTimes(1);
+  // task-created の listen は呼ばれたが Promise はまだ pending
+  expect(listenMock).toHaveBeenCalledWith("task-created", expect.any(Function));
 
   act(() => {
     root?.unmount();
@@ -1266,4 +1281,254 @@ test("listen Promise pending 中の unmount でも解決後 UnlistenFn が呼ば
   await Promise.resolve();
   await Promise.resolve();
   expect(unlistenLate).toHaveBeenCalled();
+});
+
+// === task-updated IPC listener ===
+
+const taskAUpdatedPayload: TaskPayload = {
+  id: "a",
+  title: "A2",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/a.md",
+  extras: {},
+  warnings: [],
+};
+
+test("loaded 状態で task-updated の listen が登録される", async () => {
+  const { handlers } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(listenMock).toHaveBeenCalledWith("task-updated", expect.any(Function));
+  expect(handlers).toHaveLength(1);
+});
+
+test("task-updated callback で一致 filePath の task が差し替わる", async () => {
+  const { handlers } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  act(() => {
+    handlers[0]({ payload: { task: taskAUpdatedPayload } });
+  });
+  const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  const updated = tasks.find((t) => t.filePath === "tasks/a.md");
+  expect(updated?.title).toBe("A2");
+  expect(tasks).toHaveLength(1);
+});
+
+test("filePath 不一致の task-updated は内容上 state を変化させない (no-op)", async () => {
+  const { handlers } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  act(() => {
+    handlers[0]({
+      payload: {
+        task: { ...taskAUpdatedPayload, filePath: "tasks/missing.md" },
+      },
+    });
+  });
+  const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(after).toEqual(before);
+});
+
+test("unmount で task-updated の unlisten が呼ばれる", async () => {
+  const { unlistenFns } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(unlistenFns).toHaveLength(1);
+  await act(async () => {
+    root?.unmount();
+    root = null;
+    await Promise.resolve();
+  });
+  expect(unlistenFns[0]).toHaveBeenCalled();
+});
+
+test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登録される", async () => {
+  const { handlers, unlistenFns } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(handlers).toHaveLength(1);
+
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+
+  expect(unlistenFns[0]).toHaveBeenCalled();
+  expect(handlers).toHaveLength(2);
+});
+
+type ListenAbsenceCase = {
+  kind: "idle" | "loading" | "error";
+  setup: (probe: { latest: UseProjectResult }) => Promise<() => Promise<void>>;
+};
+
+const listenAbsenceCases: ListenAbsenceCase[] = [
+  {
+    kind: "idle",
+    setup: async () => {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      return async () => {};
+    },
+  },
+  {
+    kind: "loading",
+    setup: async (probe) => {
+      let resolveDialog!: (r: ResultT<string | null, TauriError>) => void;
+      openDirectoryDialogMock.mockReturnValueOnce(
+        new Promise<ResultT<string | null, TauriError>>((res) => {
+          resolveDialog = res;
+        }),
+      );
+      let pending!: Promise<void>;
+      act(() => {
+        pending = probe.latest.openProject();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      return async () => {
+        await act(async () => {
+          resolveDialog(Result.ok(null));
+          await pending;
+        });
+      };
+    },
+  },
+  {
+    kind: "error",
+    setup: async (probe) => {
+      openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+      openProjectMock.mockResolvedValueOnce(
+        Result.err(new TauriError("NOT_FOUND", "no")),
+      );
+      let pending!: Promise<void>;
+      act(() => {
+        pending = probe.latest.openProject();
+      });
+      await act(async () => {
+        await pending;
+      });
+      return async () => {};
+    },
+  },
+];
+
+test.each(
+  listenAbsenceCases,
+)("$kind 状態では task-updated の listen が呼ばれない", async ({ setup }) => {
+  captureListen("task-updated");
+  const probe = renderHook({ onError: () => {} });
+  const teardown = await setup(probe);
+  expect(listenMock).not.toHaveBeenCalledWith(
+    "task-updated",
+    expect.any(Function),
+  );
+  await teardown();
+});
+
+test("open-start 直後の race: loading 中に旧 task-updated callback が発火しても previousLoaded が変化しない", async () => {
+  const { handlers } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  expect(handlers).toHaveLength(1);
+  const oldHandler = handlers[0];
+
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
+  let resolveInvoke!: (r: ResultT<OpenProjectPayload, TauriError>) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<ResultT<OpenProjectPayload, TauriError>>((resolve) => {
+      resolveInvoke = resolve;
+    }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(probe.latest.state.kind).toBe("loading");
+
+  act(() => {
+    oldHandler({
+      payload: { task: { ...taskAUpdatedPayload, title: "Z" } },
+    });
+  });
+
+  const loadingState = probe.latest.state as {
+    kind: "loading";
+    previousLoaded?: { data: { tasks: Task[] } };
+  };
+  expect(loadingState.previousLoaded?.data.tasks[0].title).toBe("A");
+
+  await act(async () => {
+    resolveInvoke(Result.ok({ tasks: [taskB], columns: ["Done"] }));
+    await pending;
+  });
+});
+
+test("task-updated の listen Promise pending 中の unmount でも解決後 UnlistenFn が呼ばれる", async () => {
+  let resolveListen!: (fn: UnlistenFnT) => void;
+  const unlistenLate = vi.fn();
+  const pendingPromise = new Promise<UnlistenFnT>((resolve) => {
+    resolveListen = resolve;
+  });
+  const promiseByEvent: Record<string, Promise<UnlistenFnT>> = {
+    "task-updated": pendingPromise,
+  };
+  listenMock.mockImplementation(((name) => {
+    return promiseByEvent[name] ?? Promise.resolve(vi.fn());
+  }) as typeof listenInvoke);
+
+  const probe = renderHook();
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+  expect(listenMock).toHaveBeenCalledWith("task-updated", expect.any(Function));
+
+  act(() => {
+    root?.unmount();
+    root = null;
+  });
+  resolveListen(unlistenLate);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(unlistenLate).toHaveBeenCalled();
+});
+
+test("payload.task が undefined の task-updated は dispatch しない", async () => {
+  const { handlers } = captureListen("task-updated");
+  const probe = renderHook();
+  await openLoaded(probe);
+  const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  act(() => {
+    handlers[0]({
+      payload: {} as unknown as { task: TaskPayload },
+    });
+  });
+  const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
+  expect(after).toBe(before);
 });
