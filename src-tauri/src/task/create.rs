@@ -271,11 +271,12 @@ pub(crate) fn create_task_impl(
         build_provisional_task_for_validation(&rel_path, &args, resolved_parent_path.as_deref());
     validate_augmented_hierarchy(&snapshot, &provisional, args.parent.as_deref())?;
 
-    // 9. ディレクトリ確保（register 前なので失敗時 rollback 不要）
-    std::fs::create_dir_all(&target_dir_abs)?;
-
-    // 10. watcher 起動有無を probe
+    // 9. watcher 起動有無を probe（state lock エラー時に FS 副作用を残さないため
+    //    `create_dir_all` より前に行う）
     let watcher_active = state.is_watcher_installed()?;
+
+    // 10. ディレクトリ確保（register 前なので失敗時 rollback 不要）
+    std::fs::create_dir_all(&target_dir_abs)?;
 
     // 11. write_ignore 登録 → 排他 create write
     //     `open` で create_new=true により既存ファイル衝突を弾き、`write_all` で
