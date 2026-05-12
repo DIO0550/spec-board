@@ -1082,3 +1082,234 @@ fn task_json_round_trip_omits_none_optional_fields() {
     let serialized = serde_json::to_string(&parsed).unwrap();
     assert_eq!(serialized, json);
 }
+
+// ============================================================================
+// TaskIndex::insert_new_task_into_cache
+// ============================================================================
+
+fn cache_from(tasks: Vec<Task>) -> HashMap<PathBuf, Task> {
+    let mut cache = HashMap::new();
+    for task in tasks {
+        cache.insert(PathBuf::from(task.file_path.as_str()), task);
+    }
+    cache
+}
+
+fn task_with_links_and_parent(path: &str, parent: Option<&str>, links: &[&str]) -> Task {
+    let mut s = String::from("---\ntitle: Task\nstatus: Todo\n");
+    if let Some(p) = parent {
+        s.push_str(&format!("parent: {p}\n"));
+    }
+    if !links.is_empty() {
+        s.push_str("links:\n");
+        for l in links {
+            s.push_str(&format!("  - {l}\n"));
+        }
+    }
+    s.push_str("---\n");
+    task_from(&s, path)
+}
+
+#[test]
+fn insert_new_task_into_empty_cache_adds_one_entry() {
+    let mut cache = HashMap::new();
+    let new_task = task_without_parent("tasks/new.md");
+
+    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task.clone());
+
+    assert_eq!(1, cache.len());
+    assert!(returned.children.is_empty());
+    assert!(returned.reverse_links.is_empty());
+    assert_eq!(returned.file_path, "tasks/new.md");
+    assert!(cache.contains_key(&PathBuf::from("tasks/new.md")));
+}
+
+#[test]
+fn insert_new_task_appends_to_parent_children_when_parent_exists() {
+    let parent = task_without_parent("tasks/parent.md");
+    let mut cache = cache_from(vec![parent]);
+    let new_task = task_with_parent("tasks/child.md", "tasks/parent.md");
+
+    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    let updated_parent = cache.get(&PathBuf::from("tasks/parent.md")).unwrap();
+    assert_eq!(
+        vec![TaskFilePath::from("tasks/child.md")],
+        updated_parent.children
+    );
+}
+
+#[test]
+fn insert_new_task_appends_to_target_reverse_links_when_link_exists() {
+    let target = task_without_parent("tasks/target.md");
+    let mut cache = cache_from(vec![target]);
+    let new_task = task_with_links_and_parent("tasks/source.md", None, &["tasks/target.md"]);
+
+    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    let updated_target = cache.get(&PathBuf::from("tasks/target.md")).unwrap();
+    assert_eq!(
+        vec![TaskFilePath::from("tasks/source.md")],
+        updated_target.reverse_links
+    );
+}
+
+#[test]
+fn insert_new_task_resolves_incoming_parent_into_new_task_children() {
+    // 既存 task が new_task を parent として指している（dangling parent）→
+    // 解決して new_task.children に入る。
+    let existing = task_with_parent("tasks/a.md", "tasks/new.md");
+    let mut cache = cache_from(vec![existing]);
+    let new_task = task_without_parent("tasks/new.md");
+
+    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    assert_eq!(vec![TaskFilePath::from("tasks/a.md")], returned.children);
+    // cache 側も同じ children を持つ
+    let cached_new = cache.get(&PathBuf::from("tasks/new.md")).unwrap();
+    assert_eq!(vec![TaskFilePath::from("tasks/a.md")], cached_new.children);
+}
+
+#[test]
+fn insert_new_task_resolves_incoming_links_into_new_task_reverse_links() {
+    let existing = task_with_links_and_parent("tasks/source.md", None, &["tasks/new.md"]);
+    let mut cache = cache_from(vec![existing]);
+    let new_task = task_without_parent("tasks/new.md");
+
+    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    assert_eq!(
+        vec![TaskFilePath::from("tasks/source.md")],
+        returned.reverse_links
+    );
+}
+
+#[test]
+fn insert_new_task_leaves_cache_unchanged_when_parent_and_links_dangling() {
+    let mut cache = HashMap::new();
+    let new_task = task_with_links_and_parent(
+        "tasks/new.md",
+        Some("tasks/missing-parent.md"),
+        &["tasks/missing-link.md"],
+    );
+
+    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    assert_eq!(1, cache.len(), "only new_task inserted");
+    assert!(returned.children.is_empty());
+    assert!(returned.reverse_links.is_empty());
+}
+
+#[test]
+fn insert_new_task_dedups_repeated_link_target_into_single_reverse_link() {
+    let target = task_without_parent("tasks/target.md");
+    let mut cache = cache_from(vec![target]);
+    // links に同じ target が 2 回登場（既存 lenient deserializer により dedupe 済みになるが、
+    // ここでは仕様確認のため両方持つ Task を直接組み立てる）。
+    let mut new_task = task_without_parent("tasks/source.md");
+    new_task.links = vec![
+        TaskFilePath::from("tasks/target.md"),
+        TaskFilePath::from("tasks/target.md"),
+    ];
+
+    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    let updated_target = cache.get(&PathBuf::from("tasks/target.md")).unwrap();
+    assert_eq!(
+        vec![TaskFilePath::from("tasks/source.md")],
+        updated_target.reverse_links,
+        "duplicate link target should produce only one reverse_link"
+    );
+}
+
+#[test]
+fn insert_new_task_appends_to_existing_children_at_end_regardless_of_lex_order() {
+    // 順序の不変条件: 差分挿入は既存 parent.children の末尾に新規 task を push する
+    // （`file_path` の辞書順では新規が先頭に来てしまうケースでも変わらない）。
+    let parent = task_without_parent("tasks/zzz-parent.md");
+    // 既存 child a が parent の children に登録済み（pre-resolved 状態を再現）。
+    let mut a = task_with_parent("tasks/m-child.md", "tasks/zzz-parent.md");
+    a.children = Vec::new();
+    let mut parent_pre = parent;
+    parent_pre.children = vec![TaskFilePath::from("tasks/m-child.md")];
+    let mut cache = cache_from(vec![parent_pre, a]);
+
+    // 新規 a-child (辞書順で m-child より前) を追加。
+    let new_task = task_with_parent("tasks/a-child.md", "tasks/zzz-parent.md");
+    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    let parent_now = cache.get(&PathBuf::from("tasks/zzz-parent.md")).unwrap();
+    assert_eq!(
+        vec![
+            TaskFilePath::from("tasks/m-child.md"),
+            TaskFilePath::from("tasks/a-child.md"),
+        ],
+        parent_now.children,
+        "new child should be appended at end, not lex-sorted"
+    );
+}
+
+#[test]
+fn insert_new_task_matches_full_rebuild_with_build_children_and_build_reverse_links() {
+    // 差分挿入後の cache snapshot が、全件再構築の結果と等価であることを確認する。
+    // 前提: open_project の挙動と同じく、既存 cache は children/reverse_links を
+    //       既に解決済みの状態から始める。create_task はそこに新規 Task を 1 件追加する。
+    let existing = vec![
+        task_with_links_and_parent("tasks/a.md", Some("tasks/new.md"), &["tasks/new.md"]),
+        task_without_parent("tasks/b.md"),
+        task_with_links_and_parent("tasks/c.md", None, &["tasks/new.md", "tasks/b.md"]),
+    ];
+    let new_task = task_with_links_and_parent("tasks/new.md", Some("tasks/b.md"), &["tasks/c.md"]);
+
+    // 差分挿入経路: 既存 cache は build_children + build_reverse_links 済みから出発
+    let prebuilt = TaskIndex::new(existing.clone())
+        .build_children()
+        .expect("no cycle")
+        .build_reverse_links()
+        .into_tasks();
+    let mut cache = cache_from(prebuilt);
+    TaskIndex::insert_new_task_into_cache(&mut cache, new_task.clone());
+    let mut diff_tasks: Vec<Task> = cache.values().cloned().collect();
+    diff_tasks.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+
+    // 全件再構築経路
+    let mut all = existing.clone();
+    all.push(new_task);
+    let rebuilt = TaskIndex::new(all)
+        .build_children()
+        .expect("no cycle")
+        .build_reverse_links()
+        .into_tasks();
+    let mut full_tasks = rebuilt;
+    full_tasks.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+
+    // `children` / `reverse_links` は集合としての等価性のみを保証する仕様。
+    // - 差分挿入: 既存 parent/target の末尾に新規 task を `push` する（incoming は
+    //   `file_path` 昇順で安定）
+    // - 全件再構築: 入力 task 順に build_children / build_reverse_links が走る
+    //   （walkdir 由来の入力順次第で順序が決まる）
+    // どちらも内部表現で順序自体は spec として固定していない（FE 側で必要なら
+    // 表示順を別途決める）。等価性検証は sort 後比較で行う。
+    assert_eq!(full_tasks.len(), diff_tasks.len());
+    for (a, b) in full_tasks.iter().zip(diff_tasks.iter()) {
+        assert_eq!(a.file_path, b.file_path);
+        let mut a_children = a.children.clone();
+        let mut b_children = b.children.clone();
+        a_children.sort();
+        b_children.sort();
+        assert_eq!(
+            a_children, b_children,
+            "children for {} mismatched (as set)",
+            a.file_path
+        );
+        let mut a_rl = a.reverse_links.clone();
+        let mut b_rl = b.reverse_links.clone();
+        a_rl.sort();
+        b_rl.sort();
+        assert_eq!(
+            a_rl, b_rl,
+            "reverse_links for {} mismatched (as set)",
+            a.file_path
+        );
+    }
+}

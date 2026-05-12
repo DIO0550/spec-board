@@ -700,7 +700,7 @@ pub(crate) fn default_status_for(config: &Config) -> ColumnName {
 ///
 /// @param path lookup key に変換する Task file path。
 /// @returns lookup 用の正規化済み path。
-fn normalize_task_path_for_lookup(path: &str) -> String {
+pub(crate) fn normalize_task_path_for_lookup(path: &str) -> String {
     let path_text = path.replace('\\', "/");
     normalize_path_parts(&path_text, true)
 }
@@ -711,7 +711,7 @@ fn normalize_task_path_for_lookup(path: &str) -> String {
 ///
 /// @param parent 正規化する parent 参照文字列。
 /// @returns lookup 用の正規化済み相対 path。task graph 対象外の場合は `None`。
-fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
+pub(crate) fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {
     if parent.is_empty() || parent.starts_with('/') || parent.starts_with('\\') {
         return None;
     }
@@ -809,6 +809,119 @@ impl TaskIndex {
     ) -> Result<(), ParentHierarchyErrorReason> {
         validate_chain_from_parent(parent_index, &self.tasks)
     }
+
+    /// 差分追加: 新規 Task を cache に挿入し、親 `children` と link 先
+    /// `reverse_links` を局所更新する。さらに既存 cache 内の dangling parent /
+    /// links（新規タスクの file_path を参照しているもの）を解決して新規タスク側の
+    /// `children` / `reverse_links` を埋めることで、全件再スキャン
+    /// （`build_children` / `build_reverse_links`）と**集合として等価**な状態を
+    /// 再現する。
+    ///
+    /// # 順序仕様
+    /// `children` / `reverse_links` の **配列順序自体は spec として固定しない**。
+    /// 差分挿入は次の不変条件で決定的に動作する:
+    /// - outgoing 更新: 既存 parent / target の `children` / `reverse_links` の
+    ///   末尾に新規 task を `push` する。
+    /// - incoming 更新: 既存 cache を `file_path` 昇順で走査して新規 task の
+    ///   `children` / `reverse_links` を埋める。
+    ///
+    /// 一方、全件再構築 (`build_children` / `build_reverse_links`) は入力 task 順
+    /// （walkdir 由来）に依存するため、両者の結果は集合としては一致するが
+    /// 配列順までは一致しないことがある。FE 側で表示順が必要な場合は別途
+    /// 並び替える前提。
+    ///
+    /// 重複除去: 同一 source 内の `links` で複数 entry が同じ正規化 target を
+    /// 指す場合、`build_reverse_links` の既存挙動と揃え、最初の参照だけを採用する。
+    ///
+    /// @param cache `tasks_cache` の可変参照（lock 内）。
+    /// @param new_task 挿入する Task（children / reverse_links は空想定）。
+    /// @returns 挿入後の Task（children / reverse_links 反映済み）。
+    pub fn insert_new_task_into_cache(
+        cache: &mut HashMap<PathBuf, Task>,
+        mut new_task: Task,
+    ) -> Task {
+        let key = PathBuf::from(new_task.file_path.as_str());
+        let new_normalized = normalize_task_path_for_lookup(new_task.file_path.as_str());
+
+        // (A) outgoing: 親があれば親の children に append
+        if let Some(parent_ref) = new_task.parent.as_ref() {
+            if let Some(pn) = normalize_parent_path_for_lookup(parent_ref.as_str()) {
+                if let Some(parent_task) = find_task_mut(cache, &pn) {
+                    parent_task.children.push(new_task.file_path.clone());
+                }
+            }
+        }
+
+        // (B) outgoing: links 先 task の reverse_links に append（重複 target 除外）
+        let mut seen_link_targets: HashSet<String> = HashSet::new();
+        for link in new_task.links.clone() {
+            let Some(normalized) = normalize_link_path_for_lookup(link.as_str()) else {
+                continue;
+            };
+            if !seen_link_targets.insert(normalized.clone()) {
+                continue;
+            }
+            if let Some(target_task) = find_task_mut(cache, &normalized) {
+                target_task.reverse_links.push(new_task.file_path.clone());
+            }
+        }
+
+        // incoming 走査は cache (HashMap) の走査順が不定なため、`file_path` 昇順で
+        // 決定的に並べてから集計する。これで差分挿入結果の `children` /
+        // `reverse_links` 順序が再現可能になる（全件再構築との等価比較も sort 不要で
+        // 安定する）。
+        let mut existing_sorted: Vec<&Task> = cache.values().collect();
+        existing_sorted.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+
+        // (C) incoming parent: 既存 cache の task で parent が new_task を指すもの
+        //     → new_task.children へ追加
+        for existing in &existing_sorted {
+            let Some(parent_ref) = existing.parent.as_ref() else {
+                continue;
+            };
+            let Some(pn) = normalize_parent_path_for_lookup(parent_ref.as_str()) else {
+                continue;
+            };
+            if pn == new_normalized {
+                new_task.children.push(existing.file_path.clone());
+            }
+        }
+
+        // (D) incoming links: 既存 cache の task の links が new_task を指すもの
+        //     → new_task.reverse_links へ追加（同一 source 内の重複 target は除外）
+        for existing in &existing_sorted {
+            let mut seen_in_source: HashSet<String> = HashSet::new();
+            for link in &existing.links {
+                let Some(ln) = normalize_link_path_for_lookup(link.as_str()) else {
+                    continue;
+                };
+                if !seen_in_source.insert(ln.clone()) {
+                    continue;
+                }
+                if ln == new_normalized {
+                    new_task.reverse_links.push(existing.file_path.clone());
+                    break;
+                }
+            }
+        }
+
+        cache.insert(key, new_task.clone());
+        new_task
+    }
+}
+
+/// `cache` から、正規化済み path で一致する Task の可変参照を見つける。
+///
+/// `cache` の key は `PathBuf::from(task.file_path.as_str())` で構築されている
+/// 前提だが、表記揺れ吸収のため値側の `file_path` を `normalize_task_path_for_lookup`
+/// で比較する。
+fn find_task_mut<'a>(
+    cache: &'a mut HashMap<PathBuf, Task>,
+    normalized: &str,
+) -> Option<&'a mut Task> {
+    cache
+        .values_mut()
+        .find(|task| normalize_task_path_for_lookup(task.file_path.as_str()) == normalized)
 }
 
 impl From<Vec<Task>> for TaskIndex {
