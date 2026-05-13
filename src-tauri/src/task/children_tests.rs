@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
 use super::build_children;
-use crate::task::parent_validation::ParentHierarchyErrorReason;
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::Task;
+use crate::task::task_index::{ParentHierarchyErrorReason, Task};
 use crate::task::warning::TaskWarningCode;
 
 fn context(path: &str) -> TaskParseContext {

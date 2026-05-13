@@ -65,12 +65,11 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
       get.rs            — `get_tasks` Tauri command 実装
       get_tests.rs      — `task::get` のテスト
       warning.rs        — `TaskWarning` / `TaskWarningCode`
-      task_index.rs     — `Task` entity + `TaskIndex` aggregate + impl（parent/children/reverse_links は sibling 委譲）
-      task_index_tests.rs — `task::task_index` のテスト
+      task_index.rs     — `Task` entity + `TaskIndex` aggregate + parent チェーン不変条件の検証ロジック（`ParentHierarchyErrorReason` / `ParentValidationFailure` 含む。DDD 原則に従い validation は aggregate に同居させる）
+      task_index_tests.rs — `task::task_index` の aggregate / entity 関連テスト
+      task_index_parent_chain_tests.rs — `task::task_index` の親チェーン検証テスト
       parse.rs          — `task_from_markdown` / `TaskParseContext` / `TaskParseError`
       parse_tests.rs    — `task::parse` のテスト
-      parent_validation.rs — parent 存在/循環/深さ検証 + `ParentHierarchyErrorReason` / `ParentValidationFailure`
-      parent_validation_tests.rs — `task::parent_validation` のテスト
       children.rs       — `build_children`（parent_validation 委譲）
       children_tests.rs — `task::children` のテスト
       reverse_links.rs  — `build_reverse_links` + 関連 helper

@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::state::AppStateError;
 use crate::task::frontmatter::FrontmatterError;
-use crate::task::parent_validation::{ParentHierarchyErrorReason, ParentValidationFailure};
+use crate::task::task_index::{ParentHierarchyErrorReason, ParentValidationFailure};
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
 #[derive(Debug, Error, PartialEq, Eq)]

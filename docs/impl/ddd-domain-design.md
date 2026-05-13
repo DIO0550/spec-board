@@ -311,11 +311,11 @@ src-tauri/src/
 ├── task.rs                      親モジュール（pub mod 列挙のみ）
 └── task/
     ├── warning.rs               TaskWarning / TaskWarningCode
-    ├── task_index.rs            Task entity + TaskIndex aggregate + impl
+    ├── task_index.rs            Task entity + TaskIndex aggregate + parent チェーン不変条件の検証
+    │                            (ParentHierarchyErrorReason / ParentValidationFailure を同居)
     ├── parse.rs                 task_from_markdown / TaskParseContext / TaskParseError
     ├── path_lookup.rs           normalize_*_for_lookup / task_*_index helper
-    ├── parent_validation.rs     validate_parent_* / ParentHierarchyErrorReason / ParentValidationFailure
-    ├── children.rs              build_children (parent_validation を委譲呼び出し)
+    ├── children.rs              build_children (task_index の検証を委譲呼び出し)
     ├── reverse_links.rs         build_reverse_links + 関連 helper
     ├── task_content.rs          TaskContent VO (scanner eligible を constructor で強制)
     ├── task_file_name.rs        TaskFileName VO（変更なし）
@@ -334,21 +334,20 @@ src-tauri/src/
         既存 VO群 / config / frontmatter
               │
               ▼
-       warning  →  task_index
+       warning  →  task_index (Task entity + TaskIndex aggregate
+                                + 親チェーン不変条件の検証)
                        │
             ┌──────────┼──────────┐
             ▼          ▼          ▼
-          parse   path_lookup   ─┐
-            │          │         │
-            ▼          ▼         │
-        parent_validation  ←─────┘
-                 ▼
-        children / reverse_links
+          parse   path_lookup   children / reverse_links
 ```
 
-`parent_validation` / `children` / `reverse_links` / `path_lookup` の自由関数は
-`pub(super)` に統一し、task ドメイン外（state / project / watcher_event）からは
-`TaskIndex` aggregate のメソッド経由でのみアクセスする。
+`children` / `reverse_links` / `path_lookup` の自由関数は `pub(super)` に統一し、
+task ドメイン外（state / project / watcher_event）からは `TaskIndex` aggregate
+のメソッド経由でのみアクセスする。親チェーンの検証ロジックは独立ファイルにせず、
+`task_index.rs` 内に aggregate と同居させる（DDD 原則: validation は専用ファイル
+ではなくドメインオブジェクトに紐づける。`create/validate.rs` を廃止して `TaskIndex`
+に統合したのと同じ方針）。
 
 ### 9.3 `task/create/` サブモジュール
 

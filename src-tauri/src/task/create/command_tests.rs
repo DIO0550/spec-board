@@ -9,7 +9,7 @@ use super::super::error::{ContentRejectReason, CreateTaskCommandError, CreateTas
 use super::create_task_impl;
 use crate::project::open::open_project_with_factories;
 use crate::state::{AppState, BoxedWatcherHandle};
-use crate::task::parent_validation::ParentHierarchyErrorReason;
+use crate::task::task_index::ParentHierarchyErrorReason;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 
 fn tempdir() -> TempDir {

@@ -3,8 +3,7 @@ use std::path::PathBuf;
 
 use serde_json::json;
 
-use super::{Task, TaskIndex};
-use crate::task::parent_validation::{ParentHierarchyErrorReason, ParentValidationFailure};
+use super::{ParentHierarchyErrorReason, ParentValidationFailure, Task, TaskIndex};
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::warning::{TaskWarning, TaskWarningCode};

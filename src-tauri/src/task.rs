@@ -3,7 +3,6 @@ pub mod create;
 pub mod frontmatter;
 pub mod get;
 pub mod label;
-pub mod parent_validation;
 pub mod parse;
 pub mod path_lookup;
 pub(crate) mod path_normalization;
