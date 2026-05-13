@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tauri::State;
 use thiserror::Error;
 
-use super::index::Task;
+use super::task_index::Task;
 use crate::state::{AppState, AppStateError};
 
 /// `get_tasks` コマンドのエラー。

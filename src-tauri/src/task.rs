@@ -1,9 +1,16 @@
+pub mod children;
 pub mod create;
 pub mod frontmatter;
 pub mod get;
-pub mod index;
 pub mod label;
+pub mod parent_validation;
+pub mod parse;
+pub mod path_lookup;
 pub(crate) mod path_normalization;
+pub mod reverse_links;
+pub mod task_content;
 pub mod task_file_name;
 pub mod task_file_path;
+pub mod task_index;
 pub mod task_title;
+pub mod warning;

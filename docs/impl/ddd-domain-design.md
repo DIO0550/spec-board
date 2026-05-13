@@ -283,3 +283,104 @@ sub-crate からの戻り値（`PathBuf`）を本体側で
 - spec ドキュメント (`docs/spec-board/*`) の更新（仕様変更が無いため不要）
 
 これらは公開 JSON 形状に影響しないため別 PR でインクリメンタルに置換可能。
+
+---
+
+## 9. task ドメインの内部分割
+
+旧 `src-tauri/src/task/index.rs` (950L) と `src-tauri/src/task/create.rs` (564L) に
+同居していた処理を、責務単位のサブモジュールへ分割した。1 ファイル
+≤ 300L (実装) / ≤ 500L (テスト) を目安に、DDD 戦術的パターンを徹底する。
+
+### 9.1 命名方針
+
+技術カテゴリ的な抽象名 (`entity` / `aggregate` / `hierarchy` / `index`) を避け、
+**ドメイン知識を表す名前**を採用する。parent 検証は `parent_validation`、
+children 派生は `children`、Markdown → Task 変換は `parse`。`Task` struct は
+それ自身を集約する `TaskIndex` aggregate と同じ `task_index.rs` に配置する
+（aggregate root + entity の自然な単位）。`TaskIndex` 構造体名は domain 用語
+として残るが、モジュール／フォルダ名としては `index` は使わない。
+
+### 9.2 `task/` 直下フラット構成
+
+```
+task/
+├── task.rs                  親（pub mod 列挙のみ）
+├── warning.rs               TaskWarning / TaskWarningCode
+├── task_index.rs            Task entity + TaskIndex aggregate + impl
+├── parse.rs                 task_from_markdown / TaskParseContext / TaskParseError
+├── path_lookup.rs           normalize_*_for_lookup / task_*_index helper
+├── parent_validation.rs     validate_parent_* / ParentHierarchyErrorReason / ParentValidationFailure
+├── children.rs              build_children (parent_validation を委譲呼び出し)
+├── reverse_links.rs         build_reverse_links + 関連 helper
+├── task_content.rs          TaskContent VO (scanner eligible を constructor で強制)
+├── task_file_name.rs        TaskFileName VO（変更なし）
+├── task_file_path.rs        TaskFilePath VO（変更なし）
+├── task_title.rs            TaskTitle VO（変更なし）
+├── label.rs                 Label VO（変更なし）
+├── frontmatter.rs           frontmatter parse / serialize（変更なし）
+├── path_normalization.rs    pure string helper（変更なし）
+├── get.rs                   get_tasks command（import パスのみ追従）
+└── create/                  サブモジュール群（9.3 参照）
+```
+
+依存方向の DAG:
+
+```
+        既存 VO群 / config / frontmatter
+              │
+              ▼
+       warning  →  task_index
+                       │
+            ┌──────────┼──────────┐
+            ▼          ▼          ▼
+          parse   path_lookup   ─┐
+            │          │         │
+            ▼          ▼         │
+        parent_validation  ←─────┘
+                 ▼
+        children / reverse_links
+```
+
+`parent_validation` / `children` / `reverse_links` / `path_lookup` の自由関数は
+`pub(super)` に統一し、task ドメイン外（state / project / watcher_event）からは
+`TaskIndex` aggregate のメソッド経由でのみアクセスする。
+
+### 9.3 `task/create/` サブモジュール
+
+```
+create/
+├── create.rs        親（pub mod 列挙 + pub use ファサード）
+├── args.rs          CreateTaskArgs DTO
+├── error.rs         CreateTaskError / CreateTaskCommandError / ContentRejectReason
+│                    + From<ParentValidationFailure> for CreateTaskError
+├── filename.rs      build_new_filename（TaskFileName::from_title へ委譲）/
+│                    resolve_target_dir / build_existing_filenames_in_dir / join_rel_path
+├── content.rs       build_task_content（TaskContent VO を返す factory）
+│                    + private render_markdown
+└── command.rs       create_task (#[tauri::command]) / create_task_impl /
+                     provisional_task / parse_and_insert_into_cache
+```
+
+`validate.rs` は**作らない**。validation は「ドメインオブジェクトに紐づける」
+DDD 原則に従い、新規 task の parent 検証は `TaskIndex::validate_new_parent`
+／`TaskIndex::validate_with_new_task` の aggregate メソッドに集約した。
+
+旧 `validate_content_scanner_eligibility` は新 VO `TaskContent::try_new` の
+constructor で強制するように吸収した（不正値が型レベルで cache / FS へ流れ
+込まない）。
+
+### 9.4 Rust 初心者向けメモ
+
+- **`pub(super)`**: 親モジュール（と、その全 descendants）からのみ可視。`pub` より
+  狭く、private より広い。task ドメイン内 helper を sibling から呼びたいが crate 外
+  へは漏らしたくない、というケースに使う。
+- **`#[path] mod xxx_tests;`**: `xxx.rs` の兄弟ファイルとして配置した `xxx_tests.rs`
+  を test 子モジュールとして取り込む宣言。`mod.rs` を使わない 2018+ スタイル。
+- **`From<ParentValidationFailure> for CreateTaskError`**: domain エラーから
+  application エラーへの自動変換。`command.rs` 内で `index.validate_new_parent(...)?`
+  と書くだけで `?` operator が chain を自動処理する。
+- **`TaskContent::try_new`**: smart constructor パターン。invalid な値で構築する
+  経路を構造的に塞ぐ。`build_task_content(&args, parent)?` の結果をそのまま
+  `file.write_all(content.as_bytes())` に渡せる。
+

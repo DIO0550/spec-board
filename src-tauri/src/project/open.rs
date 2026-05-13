@@ -70,9 +70,10 @@ use crate::config::{
 };
 use crate::project::project_root::ProjectRoot;
 use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
-use crate::task::index::{
-    default_status_for, task_from_markdown, Task, TaskIndex, TaskParseContext, TaskParseError,
+use crate::task::parse::{
+    default_status_for, task_from_markdown, TaskParseContext, TaskParseError,
 };
+use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::task::file_scanner::{scan_md_files, ScanError};
 use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;

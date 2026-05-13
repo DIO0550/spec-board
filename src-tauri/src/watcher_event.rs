@@ -38,7 +38,7 @@ use tauri::{AppHandle, Emitter};
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
 use crate::state::AppState;
-use crate::task::index::default_status_for;
+use crate::task::parse::default_status_for;
 use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
 use spec_board_fs::watcher::handle::WatcherHandle;
 
