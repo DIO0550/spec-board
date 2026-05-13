@@ -303,25 +303,29 @@ children 派生は `children`、Markdown → Task 変換は `parse`。`Task` str
 
 ### 9.2 `task/` 直下フラット構成
 
+Rust 2018+ の `mod.rs` を使わないモジュール記法に従い、親モジュールファイル
+`task.rs` は `task/` フォルダの**兄弟**として `src-tauri/src/` 直下に置く。
+
 ```
-task/
-├── task.rs                  親（pub mod 列挙のみ）
-├── warning.rs               TaskWarning / TaskWarningCode
-├── task_index.rs            Task entity + TaskIndex aggregate + impl
-├── parse.rs                 task_from_markdown / TaskParseContext / TaskParseError
-├── path_lookup.rs           normalize_*_for_lookup / task_*_index helper
-├── parent_validation.rs     validate_parent_* / ParentHierarchyErrorReason / ParentValidationFailure
-├── children.rs              build_children (parent_validation を委譲呼び出し)
-├── reverse_links.rs         build_reverse_links + 関連 helper
-├── task_content.rs          TaskContent VO (scanner eligible を constructor で強制)
-├── task_file_name.rs        TaskFileName VO（変更なし）
-├── task_file_path.rs        TaskFilePath VO（変更なし）
-├── task_title.rs            TaskTitle VO（変更なし）
-├── label.rs                 Label VO（変更なし）
-├── frontmatter.rs           frontmatter parse / serialize（変更なし）
-├── path_normalization.rs    pure string helper（変更なし）
-├── get.rs                   get_tasks command（import パスのみ追従）
-└── create/                  サブモジュール群（9.3 参照）
+src-tauri/src/
+├── task.rs                      親モジュール（pub mod 列挙のみ）
+└── task/
+    ├── warning.rs               TaskWarning / TaskWarningCode
+    ├── task_index.rs            Task entity + TaskIndex aggregate + impl
+    ├── parse.rs                 task_from_markdown / TaskParseContext / TaskParseError
+    ├── path_lookup.rs           normalize_*_for_lookup / task_*_index helper
+    ├── parent_validation.rs     validate_parent_* / ParentHierarchyErrorReason / ParentValidationFailure
+    ├── children.rs              build_children (parent_validation を委譲呼び出し)
+    ├── reverse_links.rs         build_reverse_links + 関連 helper
+    ├── task_content.rs          TaskContent VO (scanner eligible を constructor で強制)
+    ├── task_file_name.rs        TaskFileName VO（変更なし）
+    ├── task_file_path.rs        TaskFilePath VO（変更なし）
+    ├── task_title.rs            TaskTitle VO（変更なし）
+    ├── label.rs                 Label VO（変更なし）
+    ├── frontmatter.rs           frontmatter parse / serialize（変更なし）
+    ├── path_normalization.rs    pure string helper（変更なし）
+    ├── get.rs                   get_tasks command（import パスのみ追従）
+    └── create/                  サブモジュール群（9.3 参照、親 create.rs は task/ 直下）
 ```
 
 依存方向の DAG:
@@ -348,18 +352,22 @@ task/
 
 ### 9.3 `task/create/` サブモジュール
 
+9.2 と同じく、親モジュールファイル `create.rs` は `create/` フォルダの**兄弟**
+として `src-tauri/src/task/` 直下に置く。
+
 ```
-create/
-├── create.rs        親（pub mod 列挙 + pub use ファサード）
-├── args.rs          CreateTaskArgs DTO
-├── error.rs         CreateTaskError / CreateTaskCommandError / ContentRejectReason
-│                    + From<ParentValidationFailure> for CreateTaskError
-├── filename.rs      build_new_filename（TaskFileName::from_title へ委譲）/
-│                    resolve_target_dir / build_existing_filenames_in_dir / join_rel_path
-├── content.rs       build_task_content（TaskContent VO を返す factory）
-│                    + private render_markdown
-└── command.rs       create_task (#[tauri::command]) / create_task_impl /
-                     provisional_task / parse_and_insert_into_cache
+src-tauri/src/task/
+├── create.rs            親（pub mod 列挙 + pub use ファサード）
+└── create/
+    ├── args.rs          CreateTaskArgs DTO
+    ├── error.rs         CreateTaskError / CreateTaskCommandError / ContentRejectReason
+    │                    + From<ParentValidationFailure> for CreateTaskError
+    ├── filename.rs      build_new_filename（TaskFileName::from_title へ委譲）/
+    │                    resolve_target_dir / build_existing_filenames_in_dir / join_rel_path
+    ├── content.rs       build_task_content（TaskContent VO を返す factory）
+    │                    + private render_markdown
+    └── command.rs       create_task (#[tauri::command]) / create_task_impl /
+                         provisional_task / parse_and_insert_into_cache
 ```
 
 `validate.rs` は**作らない**。validation は「ドメインオブジェクトに紐づける」
