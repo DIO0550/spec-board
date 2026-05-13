@@ -1,7 +1,7 @@
 //! Task の file path 文字列を正規化するための共通 helper。
 //!
-//! `task::index` と各 VO（`task::task_file_path` 等）の双方から
-//! 参照される pure helper を集める。VO が Aggregate (`task::index`) に依存する
+//! `task::path_lookup` と各 VO（`task::task_file_path` 等）の双方から
+//! 参照される pure helper を集める。VO が Aggregate (`task::task_index`) に依存する
 //! 責務逆転を避けるため、独立モジュールとして切り出している。
 
 /// slash 区切りの path 文字列から空要素、`.`、必要に応じて drive prefix を除去する。

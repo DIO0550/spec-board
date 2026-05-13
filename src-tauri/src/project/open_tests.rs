@@ -2,7 +2,7 @@ use super::{open_project_with_factories, OpenProjectError, OpenProjectPayload};
 
 use crate::config::{CardOrder, Column, Config};
 use crate::state::{AppState, BoxedWatcherHandle};
-use crate::task::index::Task;
+use crate::task::task_index::Task;
 use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
 
 use std::fs;

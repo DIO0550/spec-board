@@ -43,7 +43,7 @@ use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
 use crate::config::Config;
-use crate::task::index::Task;
+use crate::task::task_index::Task;
 
 /// `tauri::Builder::manage` に渡すために `'static` を含む trait object 型。
 pub type BoxedWatcherHandle = Box<dyn WatcherHandle + Send + 'static>;

@@ -10,7 +10,7 @@ use std::thread;
 use spec_board_fs::watcher::handle::WatcherHandle;
 
 use crate::config::{CardOrder, Column, Config};
-use crate::task::index::Task;
+use crate::task::task_index::Task;
 
 fn sample_task(id: &str, file_path: &str) -> Task {
     Task {

@@ -48,16 +48,35 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
     state.rs            — `AppState` / lock 取得順序契約（テスト: `state/state_tests.rs`）
     state/
       state_tests.rs    — `state.rs` のユニットテスト
-    task.rs             — task ドメイン親（`pub mod create; pub mod frontmatter; pub mod get; pub mod index;`）
+    task.rs             — task ドメイン親（`pub mod create; pub mod frontmatter; pub mod get; pub mod warning; pub mod task_index; pub mod parse; pub mod parent_validation; pub mod children; pub mod reverse_links; pub mod path_lookup; pub mod task_content; ...`）
     task/
-      create.rs         — `create_task` 引数検証 + ファイル名生成 + テスト兄弟ファイル
-      create_tests.rs   — `task::create` のテスト
+      create.rs         — `task::create` ファサード（`pub mod` 列挙 + `pub use` のみ）
+      create/
+        args.rs                — `CreateTaskArgs` DTO（+ 直下 helper のみ、テストなし）
+        command.rs             — `create_task` Tauri command + `create_task_impl` effect 層
+        command_tests.rs       — `task::create::command` のテスト（E2E 16 件）
+        content.rs             — `build_task_content`（`TaskContent` VO factory）
+        content_tests.rs       — `task::create::content` のテスト（4 件）
+        error.rs               — `CreateTaskError` / `CreateTaskCommandError` / `ContentRejectReason` + `From<ParentValidationFailure>`
+        filename.rs            — `build_new_filename`（`TaskFileName` VO 委譲）+ `resolve_target_dir` 等
+        filename_tests.rs      — `task::create::filename` のテスト（9 件）
       frontmatter.rs    — md フロントマターのパース / シリアライズ
       frontmatter_tests.rs — `task::frontmatter` のテスト
       get.rs            — `get_tasks` Tauri command 実装
       get_tests.rs      — `task::get` のテスト
-      index.rs          — Task index / 親子・リンク解決
-      index_tests.rs    — `task::index` のテスト
+      warning.rs        — `TaskWarning` / `TaskWarningCode`
+      task_index.rs     — `Task` entity + `TaskIndex` aggregate + parent チェーン不変条件の検証ロジック（`ParentHierarchyErrorReason` / `ParentValidationFailure` 含む。DDD 原則に従い validation は aggregate に同居させる）
+      task_index_tests.rs — `task::task_index` の aggregate / entity 関連テスト
+      task_index_parent_chain_tests.rs — `task::task_index` の親チェーン検証テスト
+      parse.rs          — `task_from_markdown` / `TaskParseContext` / `TaskParseError`
+      parse_tests.rs    — `task::parse` のテスト
+      children.rs       — `build_children`（parent_validation 委譲）
+      children_tests.rs — `task::children` のテスト
+      reverse_links.rs  — `build_reverse_links` + 関連 helper
+      reverse_links_tests.rs — `task::reverse_links` のテスト
+      path_lookup.rs    — task path 引き当て用 helper（`pub(super)` で task ドメイン内に閉じる）
+      task_content.rs   — `TaskContent` VO（scanner eligible を constructor で強制）
+      task_content_tests.rs — `task::task_content` の境界テスト
     project.rs          — project ドメイン親（`pub mod open;`）
     project/
       open.rs           — `open_project` Tauri command 実装
