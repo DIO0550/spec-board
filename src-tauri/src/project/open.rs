@@ -9,7 +9,9 @@
 //!
 //! - `OpenProjectPayload` / `OpenProjectError`: FE へ返す値・エラー
 //! - `open_project`: `#[tauri::command]` シン
-//! - `open_project_impl`: 単体テストの境界となる本体関数
+//! - `open_project_with_factories`: 単体テストの境界となる effect 層本体
+//!   （`tauri::AppHandle` を受け取らず、watcher の prepare / spawn を closure で
+//!   注入することでテスト容易性を確保する）
 //!
 //! # エラー文字列の契約
 //!
@@ -153,7 +155,11 @@ impl From<WriteIgnoreError> for OpenProjectError {
     }
 }
 
-/// Tauri command 薄層。`open_project_impl` を呼び、エラーを文字列化して返す。
+/// Tauri command 薄層。`open_project_with_factories` を直接呼び、エラーを
+/// 文字列化して返す。
+///
+/// `tauri::AppHandle` はこの薄層のみで保持し、effect 層
+/// (`open_project_with_factories`) へは closure capture 経由でのみ渡す。
 ///
 /// 戻り値の `Result<_, String>` の Err 文字列は `OpenProjectError` の Display 文字列であり、
 /// FE 側でパターンマッチして `TauriError` に変換される。
@@ -174,38 +180,23 @@ pub fn open_project(
     //  テストで等価性を担保）。
     let root = ProjectRoot::try_from_str(&path)
         .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
-    open_project_impl(&app, state.inner().clone(), &root).map_err(|e| e.to_string())
-}
-
-/// 単体テスト境界の本体関数。
-///
-/// 設計方針: ロード / パース / インデックス構築は AppState を一切触らずに行い、
-/// 全工程が成功した時点でのみ `commit_app_state` で旧 state を置き換える。
-/// 途中でエラーが返った場合は旧プロジェクトの state がそのまま保持される
-/// （FE 側の「open 失敗時に元プロジェクトを復元する」UX 契約と一致させる）。
-///
-/// AppState の lock 健全性は scan / parse / GUIDE 副作用が走る前に
-/// `check_app_state_locks` で一括 probe する。lock poison が確定している場合は
-/// `.spec-board/GUIDE.md` の不要な書き出しや scan / parse の無駄を最初から避ける。
-pub(crate) fn open_project_impl(
-    app: &tauri::AppHandle,
-    state: Arc<AppState>,
-    root: &ProjectRoot,
-) -> Result<OpenProjectPayload, OpenProjectError> {
+    let root_owned = root.clone();
+    let root_str = root.as_path().to_str().ok_or_else(|| {
+        OpenProjectError::DirectoryNotFound {
+            path: root_owned.to_string(),
+        }
+        .to_string()
+    })?;
     open_project_with_factories(
-        state,
-        root.as_path()
-            .to_str()
-            .ok_or_else(|| OpenProjectError::DirectoryNotFound {
-                path: root.to_string(),
-            })?,
+        state.inner().clone(),
+        root_str,
         |root| {
             crate::watcher_event::prepare_watcher(root)
                 .map_err(|source| OpenProjectError::WatcherInitFailed { source })
         },
-        |(watcher, rx), state, root, config| {
+        move |(watcher, rx), state, root, config| {
             let handle = crate::watcher_event::spawn_adapter(
-                app,
+                &app,
                 root,
                 config,
                 Arc::clone(state),
@@ -215,6 +206,7 @@ pub(crate) fn open_project_impl(
             Box::new(handle) as BoxedWatcherHandle
         },
     )
+    .map_err(|e| e.to_string())
 }
 
 /// `open_project_impl` のテスト容易性のための一般化版。
