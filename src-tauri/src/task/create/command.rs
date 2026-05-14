@@ -77,12 +77,8 @@ pub(crate) fn create_task_impl(
     }
 
     // 8. cache commit
-    let result = parse_and_insert_into_cache(
-        state,
-        &outcome.content,
-        &outcome.rel_path,
-        outcome.status,
-    );
+    let result =
+        parse_and_insert_into_cache(state, &outcome.content, &outcome.rel_path, outcome.status);
     if result.is_err() && watcher_active {
         let _ = state.write_ignore().unregister(&outcome.abs_path);
     }
