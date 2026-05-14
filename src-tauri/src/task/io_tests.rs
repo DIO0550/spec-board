@@ -180,6 +180,23 @@ fn ensure_dir_creates_intermediate_dirs() {
 }
 
 #[test]
+fn ensure_dir_rejects_when_intermediate_component_is_file() {
+    with_both(|io, base| {
+        // 中間 component `mid` をファイルとして配置 → その配下を ensure_dir で
+        // 作ろうとすると std::fs::create_dir_all は失敗する。InMemoryTaskIo も
+        // 同様に Err を返さなければ契約に反する。
+        let mid_as_file = base.join("mid");
+        io.write_new(&mid_as_file, b"stub")
+            .expect("seed mid as file");
+        let nested = mid_as_file.join("inner").join("leaf");
+        let err = io
+            .ensure_dir(&nested)
+            .expect_err("intermediate-file ancestor should fail");
+        let _ = err;
+    });
+}
+
+#[test]
 fn ensure_dir_rejects_when_path_is_file() {
     with_both(|io, base| {
         let as_file = base.join("file-not-dir");

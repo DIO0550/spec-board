@@ -150,11 +150,27 @@ impl Default for InMemoryTaskIo {
 impl TaskIo for InMemoryTaskIo {
     fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
         let mut g = self.inner.lock().expect("InMemoryTaskIo lock");
+        // `dir` 自身がファイルなら create_dir_all 同様 Err
         if g.files.contains_key(dir) {
             return Err(TaskIoError::Io(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "path exists as a file",
             )));
+        }
+        // 中間 component がファイルとして既存ならエラー（std::fs::create_dir_all
+        // と挙動を揃える: 中間にファイルがあると mkdir に失敗する）
+        let mut ancestor = dir.parent();
+        while let Some(p) = ancestor {
+            if p.as_os_str().is_empty() {
+                break;
+            }
+            if g.files.contains_key(p) {
+                return Err(TaskIoError::Io(io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    "ancestor is a file",
+                )));
+            }
+            ancestor = p.parent();
         }
         register_dir_chain(&mut g.dirs, dir);
         Ok(())
