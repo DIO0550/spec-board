@@ -8,8 +8,11 @@
 //! # 構成
 //!
 //! - `OpenProjectPayload` / `OpenProjectError`: FE へ返す値・エラー
-//! - `open_project`: `#[tauri::command]` シン
-//! - `open_project_impl`: 単体テストの境界となる本体関数
+//! - `open_project`: `#[tauri::command]` 薄層（thin layer）。`tauri::AppHandle`
+//!   を保持するのはここだけで、effect 層へは closure capture 経由でのみ渡す
+//! - `open_project_with_factories`: 単体テストの境界となる effect 層本体
+//!   （`tauri::AppHandle` を受け取らず、watcher の prepare / spawn を closure で
+//!   注入することでテスト容易性を確保する）
 //!
 //! # エラー文字列の契約
 //!
@@ -153,7 +156,11 @@ impl From<WriteIgnoreError> for OpenProjectError {
     }
 }
 
-/// Tauri command 薄層。`open_project_impl` を呼び、エラーを文字列化して返す。
+/// Tauri command 薄層。`open_project_with_factories` を直接呼び、エラーを
+/// 文字列化して返す。
+///
+/// `tauri::AppHandle` はこの薄層のみで保持し、effect 層
+/// (`open_project_with_factories`) へは closure capture 経由でのみ渡す。
 ///
 /// 戻り値の `Result<_, String>` の Err 文字列は `OpenProjectError` の Display 文字列であり、
 /// FE 側でパターンマッチして `TauriError` に変換される。
@@ -174,38 +181,22 @@ pub fn open_project(
     //  テストで等価性を担保）。
     let root = ProjectRoot::try_from_str(&path)
         .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
-    open_project_impl(&app, state.inner().clone(), &root).map_err(|e| e.to_string())
-}
-
-/// 単体テスト境界の本体関数。
-///
-/// 設計方針: ロード / パース / インデックス構築は AppState を一切触らずに行い、
-/// 全工程が成功した時点でのみ `commit_app_state` で旧 state を置き換える。
-/// 途中でエラーが返った場合は旧プロジェクトの state がそのまま保持される
-/// （FE 側の「open 失敗時に元プロジェクトを復元する」UX 契約と一致させる）。
-///
-/// AppState の lock 健全性は scan / parse / GUIDE 副作用が走る前に
-/// `check_app_state_locks` で一括 probe する。lock poison が確定している場合は
-/// `.spec-board/GUIDE.md` の不要な書き出しや scan / parse の無駄を最初から避ける。
-pub(crate) fn open_project_impl(
-    app: &tauri::AppHandle,
-    state: Arc<AppState>,
-    root: &ProjectRoot,
-) -> Result<OpenProjectPayload, OpenProjectError> {
+    let root_str = root.as_path().to_str().ok_or_else(|| {
+        OpenProjectError::DirectoryNotFound {
+            path: root.to_string(),
+        }
+        .to_string()
+    })?;
     open_project_with_factories(
-        state,
-        root.as_path()
-            .to_str()
-            .ok_or_else(|| OpenProjectError::DirectoryNotFound {
-                path: root.to_string(),
-            })?,
+        state.inner().clone(),
+        root_str,
         |root| {
             crate::watcher_event::prepare_watcher(root)
                 .map_err(|source| OpenProjectError::WatcherInitFailed { source })
         },
-        |(watcher, rx), state, root, config| {
+        move |(watcher, rx), state, root, config| {
             let handle = crate::watcher_event::spawn_adapter(
-                app,
+                &app,
                 root,
                 config,
                 Arc::clone(state),
@@ -215,9 +206,10 @@ pub(crate) fn open_project_impl(
             Box::new(handle) as BoxedWatcherHandle
         },
     )
+    .map_err(|e| e.to_string())
 }
 
-/// `open_project_impl` のテスト容易性のための一般化版。
+/// `open_project` Tauri command の effect 層本体（テスト容易性のための一般化版）。
 ///
 /// `prepare` / `spawn` を closure で注入することで、`AppHandle` を持たない
 /// テストでも実装本体を直接駆動できる。
@@ -437,7 +429,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
 /// に留める。
 ///
-/// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
+/// `open_project_with_factories` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
 /// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
@@ -445,7 +437,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
-///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
+///    この時点ではまだ何も書き換えていないため、`open_project_with_factories` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ

@@ -5,7 +5,8 @@
 //! # モジュール構成
 //!
 //! - `prepare_watcher(root)`: `Watcher::start` を呼んで `(Watcher, Receiver)`
-//!   を確保するだけ。`open_project_impl` の commit より前に実行される 1 段目。
+//!   を確保するだけ。`open_project_with_factories` の AppState commit より前に
+//!   実行される 1 段目。
 //! - `spawn_adapter(app, root, config, state, watcher, rx)`: 既に確保済みの
 //!   watcher / rx から adapter スレッドを spawn し、`EmittingWatcherHandle` を
 //!   返す 2 段目。spawn は panic 以外で失敗しない。
@@ -38,6 +39,7 @@ use tauri::{AppHandle, Emitter};
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
 use crate::state::AppState;
+use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::default_status_for;
 use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
 use spec_board_fs::watcher::handle::WatcherHandle;
@@ -51,6 +53,9 @@ pub(crate) struct AdapterContext {
     pub(crate) default_status: ColumnName,
     pub(crate) state: Arc<AppState>,
     pub(crate) emit: EmitFn,
+    /// MD ファイル I/O ポート。`handle_upsert` の `fs::read` を本 port 経由に
+    /// 置換することで、effect 層から `std::fs::*` の直接呼び出しを排除する。
+    pub(crate) io: Arc<dyn TaskIo>,
 }
 
 /// 実 `WatcherHandle` 実装。Watcher Drop + adapter join を内包する。
@@ -79,7 +84,7 @@ impl WatcherHandle for EmittingWatcherHandle {
     }
 }
 
-/// `open_project_impl` の **state commit より前に**呼び出される 1 段目。
+/// `open_project_with_factories` の **AppState commit より前に**呼び出される 1 段目。
 ///
 /// `Watcher::start` を試みて Watcher と Receiver を確保するだけで、adapter は
 /// まだ spawn しない。失敗時はこの段階で `WatcherError` を返し、呼び出し側は
@@ -88,7 +93,7 @@ pub(crate) fn prepare_watcher(root: &Path) -> Result<(Watcher, Receiver<FsEvent>
     Watcher::start(root)
 }
 
-/// `open_project_impl` の **state commit 完了後**に呼び出される 2 段目。
+/// `open_project_with_factories` の **AppState commit 完了後**に呼び出される 2 段目。
 ///
 /// 確保済みの `(watcher, rx)` から adapter スレッドを spawn し、実
 /// `EmittingWatcherHandle` を組み立てる。spawn は panic 以外で失敗しないため
@@ -112,6 +117,7 @@ pub(crate) fn spawn_adapter(
         default_status: default_status_for(config),
         state,
         emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
     };
     spawn_adapter_with_ctx(watcher, rx, ctx)
 }

@@ -63,9 +63,16 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<Vec<Task>, String> {
 /// `tasks_cache` の `Mutex` が poison している場合に
 /// `GetTasksError::StateLockPoisoned` を返す。
 pub(crate) fn get_tasks_impl(state: &AppState) -> Result<Vec<Task>, GetTasksError> {
-    let mut tasks = state.tasks_snapshot()?;
-    tasks.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(tasks)
+    let snapshot = state.tasks_snapshot()?;
+    Ok(get_tasks_usecase(snapshot))
+}
+
+/// 純粋部分: snapshot に `id` 昇順 sort を適用するだけのリネーム的関数。
+/// 旧 `get_tasks_impl` 内に直書きされていた sort ロジックを usecase 層として
+/// 切り出す。挙動変更なし。
+pub(crate) fn get_tasks_usecase(mut snapshot: Vec<Task>) -> Vec<Task> {
+    snapshot.sort_by(|a, b| a.id.cmp(&b.id));
+    snapshot
 }
 
 #[cfg(test)]

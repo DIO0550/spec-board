@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::state::AppStateError;
 use crate::task::frontmatter::FrontmatterError;
+use crate::task::io::TaskIoError;
 use crate::task::task_index::{ParentHierarchyErrorReason, ParentValidationFailure};
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
@@ -73,5 +74,13 @@ impl From<ParentValidationFailure> for CreateTaskError {
 impl From<ParentValidationFailure> for CreateTaskCommandError {
     fn from(f: ParentValidationFailure) -> Self {
         Self::Validation(CreateTaskError::from(f))
+    }
+}
+
+impl From<TaskIoError> for CreateTaskCommandError {
+    fn from(err: TaskIoError) -> Self {
+        match err {
+            TaskIoError::Io(source) => CreateTaskCommandError::Io(source),
+        }
     }
 }

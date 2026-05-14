@@ -12,7 +12,6 @@
 //! 拡張子フィルタ: `rel_md_path` で root 配下の `.md` ファイルだけを処理対象
 //! とする。`.spec-board/config.json` や一時ファイル等は早期 return。
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvError};
 
@@ -155,7 +154,7 @@ fn handle_upsert(
     if try_consume_write_ignore(ctx, abs_path)? {
         return Ok(());
     }
-    let bytes = match fs::read(abs_path) {
+    let bytes = match ctx.io.read(abs_path) {
         Ok(b) => b,
         Err(err) => {
             log::warn!(

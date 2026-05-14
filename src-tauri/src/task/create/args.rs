@@ -2,6 +2,13 @@
 
 use serde::Deserialize;
 
+use crate::config::column_name::ColumnName;
+use crate::task::frontmatter::Priority;
+use crate::task::label::Label;
+use crate::task::task_file_path::TaskFilePath;
+use crate::task::task_index::CreateTaskIntent;
+use crate::task::task_title::TaskTitle;
+
 /// FE 側 invoke の camelCase キーと整合させるため
 /// `#[serde(rename_all = "camelCase")]` を付与する。
 #[derive(Debug, Clone, Deserialize)]
@@ -20,4 +27,22 @@ pub struct CreateTaskArgs {
     pub parent: Option<String>,
     /// 本文（Markdown）。未指定時は空文字列扱い。
     pub body: Option<String>,
+}
+
+/// IPC 境界の `CreateTaskArgs` をドメインの `CreateTaskIntent` に詰め直す。
+///
+/// `Priority::from_ascii_ci` は不正値を `None` に倒す lenient 変換（既存挙動を維持）。
+/// その他の文字列フィールドは VO の `from_lenient` で正規化する。
+impl From<CreateTaskArgs> for CreateTaskIntent {
+    fn from(args: CreateTaskArgs) -> Self {
+        let priority = args.priority.as_deref().and_then(Priority::from_ascii_ci);
+        Self {
+            title: TaskTitle::from_lenient(args.title),
+            status: ColumnName::from_lenient(args.status),
+            priority,
+            labels: args.labels.into_iter().map(Label::from).collect(),
+            parent: args.parent.map(TaskFilePath::from_lenient),
+            body: args.body,
+        }
+    }
 }

@@ -12,6 +12,7 @@ use tempfile::TempDir;
 use super::handler::{handle_event, run_event_loop};
 use super::{AdapterContext, EmitFn};
 use crate::state::AppState;
+use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::core::FsEvent;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
@@ -27,6 +28,7 @@ fn build_ctx(root: PathBuf, state: Arc<AppState>) -> (AdapterContext, EmitLog) {
         default_status: "Todo".into(),
         state,
         emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
     };
     (ctx, log)
 }
@@ -656,6 +658,7 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
         default_status: "Todo".into(),
         state,
         emit: panicking_emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
     };
     let (tx, rx) = std::sync::mpsc::channel::<FsEvent>();
 
