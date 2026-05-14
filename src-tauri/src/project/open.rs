@@ -209,7 +209,7 @@ pub fn open_project(
     .map_err(|e| e.to_string())
 }
 
-/// `open_project_impl` のテスト容易性のための一般化版。
+/// `open_project` Tauri command の effect 層本体（テスト容易性のための一般化版）。
 ///
 /// `prepare` / `spawn` を closure で注入することで、`AppHandle` を持たない
 /// テストでも実装本体を直接駆動できる。
@@ -429,7 +429,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
 /// に留める。
 ///
-/// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
+/// `open_project_with_factories` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
 /// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
@@ -437,7 +437,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
-///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
+///    この時点ではまだ何も書き換えていないため、`open_project_with_factories` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ
