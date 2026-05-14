@@ -8,7 +8,8 @@
 //! # 構成
 //!
 //! - `OpenProjectPayload` / `OpenProjectError`: FE へ返す値・エラー
-//! - `open_project`: `#[tauri::command]` シン
+//! - `open_project`: `#[tauri::command]` 薄層（thin layer）。`tauri::AppHandle`
+//!   を保持するのはここだけで、effect 層へは closure capture 経由でのみ渡す
 //! - `open_project_with_factories`: 単体テストの境界となる effect 層本体
 //!   （`tauri::AppHandle` を受け取らず、watcher の prepare / spawn を closure で
 //!   注入することでテスト容易性を確保する）
