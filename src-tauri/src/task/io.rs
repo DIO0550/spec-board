@@ -134,25 +134,6 @@ impl InMemoryTaskIo {
         let mut g = self.inner.lock().expect("InMemoryTaskIo lock");
         register_dir_chain(&mut g.dirs, dir);
     }
-
-    /// テスト用ユーティリティ: `path` がファイルとして保持されているか。
-    pub(crate) fn contains_file(&self, path: &Path) -> bool {
-        self.inner
-            .lock()
-            .expect("InMemoryTaskIo lock")
-            .files
-            .contains_key(path)
-    }
-
-    /// テスト用ユーティリティ: `path` のバイト列を取り出す。
-    pub(crate) fn read_bytes(&self, path: &Path) -> Option<Vec<u8>> {
-        self.inner
-            .lock()
-            .expect("InMemoryTaskIo lock")
-            .files
-            .get(path)
-            .cloned()
-    }
 }
 
 #[cfg(test)]
