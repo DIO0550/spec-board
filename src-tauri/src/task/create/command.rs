@@ -81,7 +81,7 @@ pub(crate) fn create_task_impl(
         state,
         &outcome.content,
         &outcome.rel_path,
-        outcome.status.clone(),
+        outcome.status,
     );
     if result.is_err() && watcher_active {
         let _ = state.write_ignore().unregister(&outcome.abs_path);
