@@ -8,12 +8,19 @@
 //! 重い外部 crate には依存しないため、CLAUDE.md の「重い外部 crate に依存する
 //! 処理を集約」基準を満たさない。
 
-use std::collections::{HashMap, HashSet};
 use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::path::Path;
 
 use thiserror::Error;
+
+// テスト用 InMemoryTaskIo でのみ使う型は cfg(test) でゲートし、
+// リリースビルドに不要なシンボルを残さない。
+#[cfg(test)]
+use std::collections::{HashMap, HashSet};
+#[cfg(test)]
+use std::path::PathBuf;
+#[cfg(test)]
+use std::sync::Mutex;
 
 /// MD ファイル / ディレクトリ操作の最小ポート。
 ///
@@ -98,31 +105,38 @@ impl TaskIo for FsTaskIo {
 /// 観測挙動が `FsTaskIo` と一致するよう、`std::io::ErrorKind` をそのまま
 /// 使ったエラーを返す。partial-write の概念は HashMap 上に存在しないため
 /// cleanup は不要だが、衝突時に既存エントリへ触らない契約は守る。
-pub struct InMemoryTaskIo {
+///
+/// 公開 API 表面を最小化するため `#[cfg(test)]` で完全にゲートし、リリースビルド
+/// には一切含めない。crate 外には漏らさず、io_tests.rs と同 crate 内のテスト
+/// からのみ使う。
+#[cfg(test)]
+pub(crate) struct InMemoryTaskIo {
     inner: Mutex<InMemoryState>,
 }
 
+#[cfg(test)]
 #[derive(Default)]
 struct InMemoryState {
     files: HashMap<PathBuf, Vec<u8>>,
     dirs: HashSet<PathBuf>,
 }
 
+#[cfg(test)]
 impl InMemoryTaskIo {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Mutex::new(InMemoryState::default()),
         }
     }
 
     /// テスト用ユーティリティ: 既存ディレクトリとして `dir` を予め登録する。
-    pub fn pre_register_dir(&self, dir: &Path) {
+    pub(crate) fn pre_register_dir(&self, dir: &Path) {
         let mut g = self.inner.lock().expect("InMemoryTaskIo lock");
         register_dir_chain(&mut g.dirs, dir);
     }
 
     /// テスト用ユーティリティ: `path` がファイルとして保持されているか。
-    pub fn contains_file(&self, path: &Path) -> bool {
+    pub(crate) fn contains_file(&self, path: &Path) -> bool {
         self.inner
             .lock()
             .expect("InMemoryTaskIo lock")
@@ -131,7 +145,7 @@ impl InMemoryTaskIo {
     }
 
     /// テスト用ユーティリティ: `path` のバイト列を取り出す。
-    pub fn read_bytes(&self, path: &Path) -> Option<Vec<u8>> {
+    pub(crate) fn read_bytes(&self, path: &Path) -> Option<Vec<u8>> {
         self.inner
             .lock()
             .expect("InMemoryTaskIo lock")
@@ -141,12 +155,14 @@ impl InMemoryTaskIo {
     }
 }
 
+#[cfg(test)]
 impl Default for InMemoryTaskIo {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 impl TaskIo for InMemoryTaskIo {
     fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
         let mut g = self.inner.lock().expect("InMemoryTaskIo lock");
@@ -236,6 +252,7 @@ impl TaskIo for InMemoryTaskIo {
     }
 }
 
+#[cfg(test)]
 fn register_dir_chain(dirs: &mut HashSet<PathBuf>, dir: &Path) {
     let mut cur = Some(dir);
     while let Some(p) = cur {
