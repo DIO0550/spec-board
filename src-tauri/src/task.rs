@@ -2,6 +2,7 @@ pub mod children;
 pub mod create;
 pub mod frontmatter;
 pub mod get;
+pub mod io;
 pub mod label;
 pub mod parse;
 pub mod path_lookup;
