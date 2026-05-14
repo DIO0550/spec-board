@@ -9,6 +9,7 @@ use super::super::error::{ContentRejectReason, CreateTaskCommandError, CreateTas
 use super::create_task_impl;
 use crate::project::open::open_project_with_factories;
 use crate::state::{AppState, BoxedWatcherHandle};
+use crate::task::io::FsTaskIo;
 use crate::task::task_index::ParentHierarchyErrorReason;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 
@@ -44,7 +45,7 @@ fn create_task_writes_md_and_inserts_into_cache_for_empty_project() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let args = args_with_title("Fix Login Bug");
-    let task = create_task_impl(&state, args).expect("create succeeds");
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
     assert_eq!(task.file_path, "tasks/fix-login-bug.md");
     let abs = dir.path().join("tasks/fix-login-bug.md");
@@ -72,7 +73,7 @@ fn create_task_with_priority_and_labels_and_body_renders_full_frontmatter() {
         parent: None,
         body: Some("Detailed description.".into()),
     };
-    let task = create_task_impl(&state, args).expect("create succeeds");
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
     let abs = dir.path().join(task.file_path.as_str());
     let content = fs::read_to_string(&abs).expect("read");
@@ -102,7 +103,7 @@ fn create_task_under_parent_places_into_parent_dir_and_updates_children() {
         parent: Some("issues/82/parent.md".into()),
         body: None,
     };
-    let task = create_task_impl(&state, args).expect("create succeeds");
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
     assert_eq!(task.file_path, "issues/82/child-task.md");
     let abs = dir.path().join("issues/82/child-task.md");
@@ -142,7 +143,7 @@ fn create_task_normalizes_raw_parent_path_to_resolved_dir() {
             parent: Some(raw.to_string()),
             body: None,
         };
-        let task = create_task_impl(&state, args).expect("create succeeds");
+        let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
         assert!(
             task.file_path.as_str().starts_with("tasks/"),
             "raw parent {raw} should resolve to tasks/, got {}",
@@ -157,8 +158,8 @@ fn create_task_collision_appends_suffix() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    create_task_impl(&state, args_with_title("Foo")).expect("first");
-    let second = create_task_impl(&state, args_with_title("Foo")).expect("second");
+    create_task_impl(&state, &FsTaskIo, args_with_title("Foo")).expect("first");
+    let second = create_task_impl(&state, &FsTaskIo, args_with_title("Foo")).expect("second");
 
     assert_eq!(second.file_path, "tasks/foo-1.md");
 }
@@ -166,7 +167,7 @@ fn create_task_collision_appends_suffix() {
 #[test]
 fn create_task_returns_no_project_open_when_project_not_opened() {
     let state = AppState::new();
-    let err = create_task_impl(&state, args_with_title("X")).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args_with_title("X")).expect_err("should fail");
     assert!(matches!(err, CreateTaskCommandError::NoProjectOpen));
 }
 
@@ -178,7 +179,7 @@ fn create_task_returns_parent_not_found_for_missing_parent() {
 
     let mut args = args_with_title("X");
     args.parent = Some("tasks/missing.md".into());
-    let err = create_task_impl(&state, args).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
     match err {
         CreateTaskCommandError::Validation(CreateTaskError::ParentNotFound { parent }) => {
             assert_eq!("tasks/missing.md", parent);
@@ -196,7 +197,7 @@ fn create_task_returns_invalid_title_for_empty_title() {
 
     let mut args = args_with_title("");
     args.title.clear();
-    let err = create_task_impl(&state, args).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
     assert!(matches!(
         err,
         CreateTaskCommandError::Validation(CreateTaskError::InvalidTitle)
@@ -211,7 +212,8 @@ fn create_task_succeeds_when_watcher_not_installed_and_does_not_register_write_i
         .set_project_path(Some(dir.path().to_path_buf()))
         .unwrap();
 
-    let task = create_task_impl(&state, args_with_title("No Watcher")).expect("succeeds");
+    let task =
+        create_task_impl(&state, &FsTaskIo, args_with_title("No Watcher")).expect("succeeds");
     let abs = dir.path().join(task.file_path.as_str());
     assert!(abs.exists());
     assert!(
@@ -232,7 +234,7 @@ fn create_task_registers_write_ignore_when_watcher_installed_and_consumed_on_eve
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    let task = create_task_impl(&state, args_with_title("Watched")).expect("create");
+    let task = create_task_impl(&state, &FsTaskIo, args_with_title("Watched")).expect("create");
     let abs = dir.path().join(task.file_path.as_str());
 
     assert_eq!(1, state.write_ignore().len().expect("len"));
@@ -247,6 +249,7 @@ fn create_task_registers_write_ignore_when_watcher_installed_and_consumed_on_eve
         default_status: "Todo".into(),
         state: Arc::clone(&state),
         emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,
     };
     handle_event(&FsEvent::Created(abs), &ctx).expect("handle ok");
 
@@ -267,7 +270,8 @@ fn create_task_with_existing_file_returns_already_exists_and_leaves_state_clean(
     fs::create_dir_all(stale.parent().unwrap()).unwrap();
     fs::write(&stale, "---\ntitle: Stale\nstatus: Todo\n---\n").unwrap();
 
-    let err = create_task_impl(&state, args_with_title("Stale")).expect_err("should fail");
+    let err =
+        create_task_impl(&state, &FsTaskIo, args_with_title("Stale")).expect_err("should fail");
     match err {
         CreateTaskCommandError::Io(e) => {
             assert_eq!(std::io::ErrorKind::AlreadyExists, e.kind());
@@ -303,7 +307,7 @@ fn create_task_detects_augmented_too_deep_when_descendant_chain_exceeds_limit() 
 
     let mut args = args_with_title("New");
     args.parent = Some("tasks/B0.md".into());
-    let err = create_task_impl(&state, args).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
     match err {
         CreateTaskCommandError::Validation(CreateTaskError::ParentCycleOrTooDeep {
             reason,
@@ -325,7 +329,7 @@ fn create_task_create_dir_all_failure_leaves_state_clean() {
     let tasks_path = dir.path().join("tasks");
     fs::write(&tasks_path, "stub").unwrap();
 
-    let err = create_task_impl(&state, args_with_title("X")).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args_with_title("X")).expect_err("should fail");
     assert!(matches!(err, CreateTaskCommandError::Io(_)));
     assert!(state.write_ignore().is_empty().unwrap());
     assert!(state.tasks_snapshot().unwrap().is_empty());
@@ -340,7 +344,7 @@ fn create_task_rejects_body_larger_than_scanner_max_size() {
     let huge_body = "a".repeat(1024 * 1024 + 1);
     let mut args = args_with_title("Huge");
     args.body = Some(huge_body);
-    let err = create_task_impl(&state, args).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
     match err {
         CreateTaskCommandError::Validation(CreateTaskError::ContentNotScannerEligible {
             reason: ContentRejectReason::TooLarge { .. },
@@ -363,7 +367,7 @@ fn create_task_rejects_body_with_nul_byte_in_first_8kb() {
     bad_body.push_str("world");
     let mut args = args_with_title("Nul");
     args.body = Some(bad_body);
-    let err = create_task_impl(&state, args).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
     match err {
         CreateTaskCommandError::Validation(CreateTaskError::ContentNotScannerEligible {
             reason: ContentRejectReason::BinaryDetected,
@@ -387,7 +391,7 @@ fn create_task_detects_augmented_cycle_via_dangling_parent_resolution() {
 
     let mut args = args_with_title("New");
     args.parent = Some("tasks/a.md".into());
-    let err = create_task_impl(&state, args).expect_err("should fail");
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
     match err {
         CreateTaskCommandError::Validation(CreateTaskError::ParentCycleOrTooDeep { .. }) => {}
         other => panic!("expected ParentCycleOrTooDeep, got {other:?}"),
