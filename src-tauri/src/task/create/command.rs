@@ -49,8 +49,9 @@ pub(crate) fn create_task_impl(
         .ok_or(CreateTaskCommandError::NoProjectOpen)?;
     let snapshot = state.tasks_snapshot()?;
 
-    // 3. 純粋ユースケース呼び出し（副作用前に検証 / 計算をすべて完了させる）
-    let outcome = create_task_usecase(&snapshot, project_root.as_path(), &args)?;
+    // 3. 純粋ユースケース呼び出し（副作用前に検証 / 計算をすべて完了させる）。
+    //    `snapshot` は usecase へ所有権移譲し、内部 `TaskIndex::new` の再 clone を回避する。
+    let outcome = create_task_usecase(snapshot, project_root.as_path(), &args)?;
 
     // 4. watcher 起動有無 probe（副作用前に lock 健全性を確認）
     let watcher_active = state.is_watcher_installed()?;

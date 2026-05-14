@@ -37,14 +37,17 @@ pub(crate) struct CreateTaskOutcome {
 /// 後にのみ I/O 副作用を実行する。
 ///
 /// 引数は現行 `AppState` API に直結する型を採用:
-/// - `snapshot: &[Task]` ← `AppState::tasks_snapshot()` が返す `Vec<Task>` の slice
+/// - `snapshot: Vec<Task>` ← `AppState::tasks_snapshot()` が返す `Vec<Task>` を
+///   そのまま所有権で受け取る。内部で `TaskIndex::new(snapshot)` に move するため
+///   呼び出し側で `to_vec()` 等の追加 clone を発生させない（大規模プロジェクトで
+///   の不要なアロケーションを避ける）。
 /// - `project_root: &Path` ← `AppState::project_path()` が返す `PathBuf` の `.as_path()`
 pub(crate) fn create_task_usecase(
-    snapshot: &[Task],
+    snapshot: Vec<Task>,
     project_root: &Path,
     args: &CreateTaskArgs,
 ) -> Result<CreateTaskOutcome, CreateTaskError> {
-    let index = TaskIndex::new(snapshot.to_vec());
+    let index = TaskIndex::new(snapshot);
     let parent_index = index.validate_new_parent(args.parent.as_deref())?;
 
     let snapshot_slice = index.as_slice();
