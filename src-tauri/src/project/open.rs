@@ -180,10 +180,9 @@ pub fn open_project(
     //  テストで等価性を担保）。
     let root = ProjectRoot::try_from_str(&path)
         .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
-    let root_owned = root.clone();
     let root_str = root.as_path().to_str().ok_or_else(|| {
         OpenProjectError::DirectoryNotFound {
-            path: root_owned.to_string(),
+            path: root.to_string(),
         }
         .to_string()
     })?;
