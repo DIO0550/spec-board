@@ -38,6 +38,7 @@ use tauri::{AppHandle, Emitter};
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
 use crate::state::AppState;
+use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::default_status_for;
 use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
 use spec_board_fs::watcher::handle::WatcherHandle;
@@ -51,6 +52,9 @@ pub(crate) struct AdapterContext {
     pub(crate) default_status: ColumnName,
     pub(crate) state: Arc<AppState>,
     pub(crate) emit: EmitFn,
+    /// MD ファイル I/O ポート。`handle_upsert` の `fs::read` を本 port 経由に
+    /// 置換することで、effect 層から `std::fs::*` の直接呼び出しを排除する。
+    pub(crate) io: Arc<dyn TaskIo>,
 }
 
 /// 実 `WatcherHandle` 実装。Watcher Drop + adapter join を内包する。
@@ -112,6 +116,7 @@ pub(crate) fn spawn_adapter(
         default_status: default_status_for(config),
         state,
         emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
     };
     spawn_adapter_with_ctx(watcher, rx, ctx)
 }
