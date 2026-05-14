@@ -7,12 +7,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::config::column_name::ColumnName;
 use crate::task::children::build_children;
+use crate::task::create::error::CreateTaskError;
 use crate::task::frontmatter::Priority;
 use crate::task::label::Label;
 use crate::task::parse::TaskParseError;
@@ -21,6 +22,8 @@ use crate::task::path_lookup::{
     normalize_task_path_for_lookup, parent_lookup_index, task_path_index,
 };
 use crate::task::reverse_links::build_reverse_links;
+use crate::task::task_content::TaskContent;
+use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_title::TaskTitle;
 use crate::task::warning::{TaskWarning, TaskWarningCode};
@@ -257,11 +260,145 @@ impl TaskIndex {
         cache.insert(key, new_task.clone());
         new_task
     }
+
+    /// 新規 task 作成の **planning** を行う aggregate メソッド。
+    ///
+    /// AppState / TaskIo / `std::fs::*` には一切触れず、`CreateTaskIntent`
+    /// （ドメイン VO で構成された create リクエスト）と `project_root` から
+    /// 配置先パス / 衝突回避済みファイル名 / `TaskContent` / 仮想 task を計算し、
+    /// `CreateTaskOutcome` として返す。effect 層はこの outcome を消費して
+    /// I/O と cache commit を実行する。
+    pub(crate) fn plan_create(
+        &self,
+        project_root: &Path,
+        intent: &CreateTaskIntent,
+    ) -> Result<CreateTaskOutcome, CreateTaskError> {
+        let parent_str = intent.parent.as_ref().map(|p| p.as_str());
+        let parent_index = self.validate_new_parent(parent_str)?;
+
+        let snapshot_slice = self.as_slice();
+        let target_dir = resolve_target_dir(parent_index, snapshot_slice);
+        let existing = existing_filenames_in_dir(snapshot_slice, &target_dir);
+        let filename = TaskFileName::from_title(&intent.title, &existing).map_err(|err| {
+            match err {
+                TaskFileNameError::InvalidTitle => CreateTaskError::InvalidTitle,
+                // from_title 経路では Empty / ContainsSeparator / NotMarkdown は
+                // 構造的に発生しないが、防御的に InvalidTitle に正規化する。
+                _ => CreateTaskError::InvalidTitle,
+            }
+        })?;
+        let rel_path = join_rel_path(&target_dir, &filename);
+        let abs_path = project_root.join(&rel_path);
+        let target_dir_abs = project_root.join(&target_dir);
+
+        let resolved_parent_path =
+            parent_index.map(|i| snapshot_slice[i].file_path.as_str().to_string());
+        let content = TaskContent::from_intent(intent, resolved_parent_path.as_deref())?;
+
+        let provisional =
+            build_provisional_task(&rel_path, intent, resolved_parent_path.as_deref());
+        self.validate_with_new_task(&provisional, parent_str)?;
+
+        Ok(CreateTaskOutcome {
+            rel_path,
+            abs_path,
+            target_dir_abs,
+            content,
+            status: intent.status.clone(),
+        })
+    }
 }
 
 impl From<Vec<Task>> for TaskIndex {
     fn from(tasks: Vec<Task>) -> Self {
         Self::new(tasks)
+    }
+}
+
+/// `create_task` ユースケースで `TaskIndex::plan_create` に渡す入力 DTO。
+///
+/// IPC 境界の `CreateTaskArgs`（serde camelCase の `String` 群）を VO に変換した
+/// **ドメイン側の表現**。application 層で `From<CreateTaskArgs>` を実装することで
+/// IPC 表現とドメイン表現の責務を分離する。
+pub struct CreateTaskIntent {
+    pub title: TaskTitle,
+    pub status: ColumnName,
+    pub priority: Option<Priority>,
+    pub labels: Vec<Label>,
+    pub parent: Option<TaskFilePath>,
+    pub body: Option<String>,
+}
+
+/// `TaskIndex::plan_create` の計算結果。effect 層が消費する。
+#[derive(Debug)]
+pub struct CreateTaskOutcome {
+    pub rel_path: PathBuf,
+    pub abs_path: PathBuf,
+    pub target_dir_abs: PathBuf,
+    pub content: TaskContent,
+    /// effect 層が cache commit 時の `default_status` として使う。
+    pub status: ColumnName,
+}
+
+/// 親 task の dirname を返す。親未指定なら `tasks/`。
+fn resolve_target_dir(parent_index: Option<usize>, snapshot: &[Task]) -> PathBuf {
+    match parent_index {
+        Some(i) => {
+            let p = Path::new(snapshot[i].file_path.as_str());
+            p.parent().map(Path::to_path_buf).unwrap_or_default()
+        }
+        None => PathBuf::from("tasks"),
+    }
+}
+
+/// `target_dir` 直下に存在する Task のファイル名集合を作る。
+fn existing_filenames_in_dir(tasks: &[Task], target_dir: &Path) -> HashSet<String> {
+    let mut out: HashSet<String> = HashSet::new();
+    for task in tasks {
+        let path = Path::new(task.file_path.as_str());
+        let parent = path.parent().unwrap_or_else(|| Path::new(""));
+        if parent != target_dir {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        out.insert(name.to_string());
+    }
+    out
+}
+
+/// `target_dir.join(filename)` 相当だが、`target_dir` が空ならルート直下扱い。
+fn join_rel_path(target_dir: &Path, filename: &TaskFileName) -> PathBuf {
+    if target_dir.as_os_str().is_empty() {
+        PathBuf::from(filename.as_str())
+    } else {
+        target_dir.join(filename.as_str())
+    }
+}
+
+/// augmented hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
+fn build_provisional_task(
+    rel_path: &Path,
+    intent: &CreateTaskIntent,
+    resolved_parent_path: Option<&str>,
+) -> Task {
+    let file_path = TaskFilePath::from_lenient(rel_path.to_string_lossy().replace('\\', "/"));
+    let parent = resolved_parent_path.map(TaskFilePath::from_lenient);
+    Task {
+        id: file_path.clone(),
+        file_path,
+        title: intent.title.clone(),
+        status: intent.status.clone(),
+        priority: None,
+        labels: Vec::new(),
+        parent,
+        links: Vec::new(),
+        children: Vec::new(),
+        reverse_links: Vec::new(),
+        body: String::new(),
+        extras: BTreeMap::new(),
+        warnings: Vec::new(),
     }
 }
 
@@ -410,3 +547,7 @@ mod task_index_tests;
 #[cfg(test)]
 #[path = "task_index_parent_chain_tests.rs"]
 mod task_index_parent_chain_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_create_tests.rs"]
+mod task_index_plan_create_tests;

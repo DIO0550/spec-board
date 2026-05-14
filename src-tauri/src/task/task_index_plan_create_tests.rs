@@ -1,0 +1,206 @@
+//! `TaskIndex::plan_create` の純粋関数ユニットテスト。
+//!
+//! AppState / TaskIo / fs::* に依存せず、すべて in-memory で完結する。
+
+use std::path::Path;
+
+use super::{CreateTaskIntent, ParentHierarchyErrorReason, Task, TaskIndex};
+use crate::config::column_name::ColumnName;
+use crate::task::create::error::{ContentRejectReason, CreateTaskError};
+use crate::task::frontmatter::Priority;
+use crate::task::label::Label;
+use crate::task::task_file_path::TaskFilePath;
+use crate::task::task_title::TaskTitle;
+
+fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
+    CreateTaskIntent {
+        title: TaskTitle::from_lenient(title.to_string()),
+        status: ColumnName::from_lenient("Todo".to_string()),
+        priority: None,
+        labels: Vec::<Label>::new(),
+        parent: parent.map(TaskFilePath::from_lenient),
+        body: None,
+    }
+}
+
+fn task_with(file_path: &str, parent: Option<&str>) -> Task {
+    let fp = TaskFilePath::from_lenient(file_path);
+    Task {
+        id: fp.clone(),
+        file_path: fp,
+        title: "T".into(),
+        status: "Todo".into(),
+        priority: None,
+        labels: Vec::new(),
+        parent: parent.map(TaskFilePath::from_lenient),
+        links: Vec::new(),
+        children: Vec::new(),
+        reverse_links: Vec::new(),
+        body: String::new(),
+        extras: Default::default(),
+        warnings: Vec::new(),
+    }
+}
+
+#[test]
+fn places_under_tasks_when_no_parent() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with("Hello World", None);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert_eq!(
+        Path::new("tasks/hello-world.md"),
+        outcome.rel_path.as_path()
+    );
+    assert_eq!(root.join("tasks/hello-world.md"), outcome.abs_path);
+    assert_eq!(root.join("tasks"), outcome.target_dir_abs);
+    assert_eq!(ColumnName::from_lenient("Todo".to_string()), outcome.status);
+}
+
+#[test]
+fn places_under_parent_dir_when_parent_specified() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(vec![task_with("issues/82/parent.md", None)]);
+    let intent = intent_with("Child Task", Some("issues/82/parent.md"));
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert_eq!(
+        Path::new("issues/82/child-task.md"),
+        outcome.rel_path.as_path()
+    );
+}
+
+#[test]
+fn places_under_project_root_when_parent_is_root_level() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(vec![task_with("root-parent.md", None)]);
+    let intent = intent_with("Child", Some("root-parent.md"));
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    // parent が root 直下なので子も root 直下
+    assert_eq!(Path::new("child.md"), outcome.rel_path.as_path());
+    assert_eq!(root.join("child.md"), outcome.abs_path);
+}
+
+#[test]
+fn appends_suffix_on_filename_collision() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(vec![task_with("tasks/foo.md", None)]);
+    let intent = intent_with("Foo", None);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert_eq!(Path::new("tasks/foo-1.md"), outcome.rel_path.as_path());
+}
+
+#[test]
+fn returns_parent_not_found_when_parent_missing() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with("Orphan", Some("tasks/missing.md"));
+
+    let err = index.plan_create(root, &intent).expect_err("should fail");
+    match err {
+        CreateTaskError::ParentNotFound { parent } => {
+            assert_eq!("tasks/missing.md", parent);
+        }
+        other => panic!("expected ParentNotFound, got {other:?}"),
+    }
+}
+
+#[test]
+fn returns_too_deep_when_augmented_chain_exceeds_limit() {
+    let root = Path::new("/project");
+    // 既存: a (parent=new.md) + B0..B19 chain. new(parent=B0) で 21 段になり TooDeep
+    let mut snapshot = vec![task_with("tasks/a.md", Some("tasks/new.md"))];
+    for i in 0..19 {
+        snapshot.push(task_with(
+            &format!("tasks/B{i}.md"),
+            Some(&format!("tasks/B{}.md", i + 1)),
+        ));
+    }
+    snapshot.push(task_with("tasks/B19.md", None));
+
+    let index = TaskIndex::new(snapshot);
+    let intent = intent_with("New", Some("tasks/B0.md"));
+
+    let err = index.plan_create(root, &intent).expect_err("should fail");
+    match err {
+        CreateTaskError::ParentCycleOrTooDeep { reason, .. } => {
+            assert_eq!(ParentHierarchyErrorReason::TooDeep, reason);
+        }
+        other => panic!("expected ParentCycleOrTooDeep(TooDeep), got {other:?}"),
+    }
+}
+
+#[test]
+fn returns_cycle_when_dangling_parent_resolves_to_cycle() {
+    let root = Path::new("/project");
+    // 既存 a.parent = new.md → new.parent = a にすると循環
+    let index = TaskIndex::new(vec![task_with("tasks/a.md", Some("tasks/new.md"))]);
+    let intent = intent_with("New", Some("tasks/a.md"));
+
+    let err = index.plan_create(root, &intent).expect_err("should fail");
+    assert!(matches!(err, CreateTaskError::ParentCycleOrTooDeep { .. }));
+}
+
+#[test]
+fn returns_invalid_title_for_empty_title() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with("", None);
+
+    let err = index.plan_create(root, &intent).expect_err("should fail");
+    assert!(matches!(err, CreateTaskError::InvalidTitle));
+}
+
+#[test]
+fn returns_invalid_title_for_symbols_only_title() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with("!!! ???", None);
+
+    let err = index.plan_create(root, &intent).expect_err("should fail");
+    assert!(matches!(err, CreateTaskError::InvalidTitle));
+}
+
+#[test]
+fn returns_content_too_large_when_body_exceeds_scanner_limit() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let mut intent = intent_with("Big", None);
+    intent.body = Some("a".repeat(1024 * 1024 + 1));
+
+    let err = index.plan_create(root, &intent).expect_err("should fail");
+    match err {
+        CreateTaskError::ContentNotScannerEligible {
+            reason: ContentRejectReason::TooLarge { .. },
+        } => {}
+        other => panic!("expected ContentNotScannerEligible(TooLarge), got {other:?}"),
+    }
+}
+
+#[test]
+fn intent_with_priority_and_labels_renders_into_content() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = CreateTaskIntent {
+        title: TaskTitle::from_lenient("Implement Feature".to_string()),
+        status: ColumnName::from_lenient("Doing".to_string()),
+        priority: Priority::from_ascii_ci("high"),
+        labels: vec![Label::from("bug"), Label::from("api")],
+        parent: None,
+        body: Some("Detailed description.".to_string()),
+    };
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    let s = outcome.content.as_str();
+    assert!(s.contains("priority: High"));
+    assert!(s.contains("- bug"));
+    assert!(s.contains("- api"));
+    assert!(s.contains("Detailed description."));
+}

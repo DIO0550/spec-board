@@ -1,8 +1,8 @@
 //! `create_task` Tauri command 薄層 + effect 層。
 //!
 //! effect 層 (`create_task_impl`) は AppState lock / 副作用 / cache commit を
-//! 担当し、純粋計算は `create_task_usecase` に委譲する。標準 fs API への
-//! 直接呼び出しは持たず、すべての I/O は `TaskIo` ポート経由で行う。
+//! 担当し、純粋計算は aggregate `TaskIndex::plan_create` に委譲する。
+//! 標準 fs API への直接呼び出しは持たず、すべての I/O は `TaskIo` ポート経由で行う。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -11,14 +11,13 @@ use tauri::State;
 
 use super::args::CreateTaskArgs;
 use super::error::CreateTaskCommandError;
-use super::usecase::create_task_usecase;
 use crate::config::column_name::ColumnName;
 use crate::state::AppState;
 use crate::task::frontmatter::parse as parse_frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::{task_from_parsed, TaskParseContext};
 use crate::task::task_content::TaskContent;
-use crate::task::task_index::{Task, TaskIndex};
+use crate::task::task_index::{CreateTaskIntent, Task, TaskIndex};
 
 /// `create_task` Tauri command 薄層。
 ///
@@ -31,9 +30,9 @@ pub fn create_task(state: State<'_, Arc<AppState>>, args: CreateTaskArgs) -> Res
 /// `create_task` の effect 層本体（テスト境界）。
 ///
 /// I/O は `TaskIo` port 経由で実行し、標準 fs API の直接呼び出しは行わない。
-/// AppState lock 取得順序契約 (`state.rs:8-19`) を維持し、純粋ユースケース
-/// (`create_task_usecase`) を副作用前に呼び出すことで validation 失敗時の
-/// 副作用ゼロを保証する。
+/// AppState lock 取得順序契約 (`state.rs:8-19`) を維持し、aggregate の
+/// `plan_create`（副作用なしの planning）を副作用前に呼び出すことで
+/// validation 失敗時の副作用ゼロを保証する。
 pub(crate) fn create_task_impl(
     state: &AppState,
     io: &dyn TaskIo,
@@ -49,9 +48,9 @@ pub(crate) fn create_task_impl(
         .ok_or(CreateTaskCommandError::NoProjectOpen)?;
     let snapshot = state.tasks_snapshot()?;
 
-    // 3. 純粋ユースケース呼び出し（副作用前に検証 / 計算をすべて完了させる）。
-    //    `snapshot` は usecase へ所有権移譲し、内部 `TaskIndex::new` の再 clone を回避する。
-    let outcome = create_task_usecase(snapshot, project_root.as_path(), &args)?;
+    // 3. DTO → Intent 変換 + aggregate planning（純粋計算、副作用ゼロ）
+    let intent = CreateTaskIntent::from(args);
+    let outcome = TaskIndex::from(snapshot).plan_create(project_root.as_path(), &intent)?;
 
     // 4. watcher 起動有無 probe（副作用前に lock 健全性を確認）
     let watcher_active = state.is_watcher_installed()?;
@@ -90,12 +89,12 @@ fn parse_and_insert_into_cache(
     state: &AppState,
     content: &TaskContent,
     rel_path: &Path,
-    status: String,
+    status: ColumnName,
 ) -> Result<Task, CreateTaskCommandError> {
     let parsed = parse_frontmatter(content.as_str())?.expect("just-written frontmatter must parse");
     let ctx = TaskParseContext {
         file_path: rel_path.to_path_buf(),
-        default_status: ColumnName::from_lenient(status),
+        default_status: status,
     };
     let task = task_from_parsed(parsed, &ctx);
     let final_task =

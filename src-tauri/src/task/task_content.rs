@@ -8,6 +8,10 @@ use std::fmt;
 
 use thiserror::Error;
 
+use crate::task::create::error::{ContentRejectReason, CreateTaskError};
+use crate::task::frontmatter::{serialize as serialize_frontmatter, Frontmatter, Parsed};
+use crate::task::task_index::CreateTaskIntent;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskContent(String);
 
@@ -52,6 +56,61 @@ impl TaskContent {
     pub fn into_string(self) -> String {
         self.0
     }
+
+    /// `CreateTaskIntent` から frontmatter + body を組み立てて `TaskContent` を
+    /// 構築する factory。サイズ超過 / NUL byte は `CreateTaskError::ContentNotScannerEligible`
+    /// に詰め直す。
+    pub fn from_intent(
+        intent: &CreateTaskIntent,
+        resolved_parent_path: Option<&str>,
+    ) -> Result<Self, CreateTaskError> {
+        let raw = render_markdown_from_intent(intent, resolved_parent_path);
+        Self::try_new(raw).map_err(|err| match err {
+            TaskContentError::TooLarge { size, .. } => CreateTaskError::ContentNotScannerEligible {
+                reason: ContentRejectReason::TooLarge { size },
+            },
+            TaskContentError::BinaryDetected { .. } => CreateTaskError::ContentNotScannerEligible {
+                reason: ContentRejectReason::BinaryDetected,
+            },
+        })
+    }
+}
+
+fn render_markdown_from_intent(
+    intent: &CreateTaskIntent,
+    resolved_parent_path: Option<&str>,
+) -> String {
+    use serde_yaml_ng::{Mapping, Value};
+
+    let mut extras = Mapping::new();
+    extras.insert(
+        Value::String("title".into()),
+        Value::String(intent.title.as_str().to_string()),
+    );
+    extras.insert(
+        Value::String("status".into()),
+        Value::String(intent.status.as_str().to_string()),
+    );
+    if let Some(parent_path) = resolved_parent_path {
+        extras.insert(
+            Value::String("parent".into()),
+            Value::String(parent_path.to_string()),
+        );
+    }
+
+    let frontmatter = Frontmatter {
+        priority: intent.priority,
+        labels: intent.labels.iter().map(|l| l.to_string()).collect(),
+        links: Vec::new(),
+        extras,
+    };
+
+    let body = match intent.body.as_deref() {
+        Some(b) if !b.is_empty() => format!("\n{b}"),
+        _ => String::new(),
+    };
+
+    serialize_frontmatter(&Parsed { frontmatter, body })
 }
 
 impl fmt::Display for TaskContent {
