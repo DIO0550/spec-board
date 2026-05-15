@@ -394,7 +394,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
 /// に留める。
 ///
-/// `open_project_with_factories` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
+/// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
 /// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
@@ -402,7 +402,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
-///    この時点ではまだ何も書き換えていないため、`open_project_with_factories` の
+///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ
@@ -419,7 +419,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// `open_project` の commit 段階の一般化版。
 ///
 /// `prepare` の実行と GUIDE.md 書き込みは呼び出し側
-/// （`open_project_with_factories`）で順序を制御するため、本関数には
+/// （`open_project_impl`）で順序を制御するため、本関数には
 /// **既に確保済みの `prepared`** を直接渡す。これにより watcher 起動失敗時に
 /// `.spec-board/GUIDE.md` を新 dir に書き込んでしまう副作用を避けられる。
 ///
