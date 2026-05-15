@@ -9,10 +9,11 @@
 //!
 //! - `OpenProjectPayload` / `OpenProjectError`: FE へ返す値・エラー
 //! - `open_project`: `#[tauri::command]` 薄層（thin layer）。`tauri::AppHandle`
-//!   を保持するのはここだけで、effect 層へは closure capture 経由でのみ渡す
-//! - `open_project_with_factories`: 単体テストの境界となる effect 層本体
-//!   （`tauri::AppHandle` を受け取らず、watcher の prepare / spawn を closure で
-//!   注入することでテスト容易性を確保する）
+//!   は本層で構築する `TauriWatcherFactory` のフィールドへ閉じ込め、effect 層
+//!   へは漏出させない
+//! - `open_project_impl`: 単体テストの境界となる effect 層本体
+//!   （`tauri::AppHandle` を受け取らず、watcher の prepare / spawn を
+//!   `WatcherFactory` trait で注入することでテスト容易性を確保する）
 //!
 //! # エラー文字列の契約
 //!
@@ -71,8 +72,9 @@ use crate::config::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
 };
-use crate::project::project_root::ProjectRoot;
-use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
+use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
+use crate::project::OpenProjectIntent;
+use crate::state::{AppState, AppStateError};
 use crate::task::parse::{
     default_status_for, task_from_markdown, TaskParseContext, TaskParseError,
 };
@@ -156,11 +158,12 @@ impl From<WriteIgnoreError> for OpenProjectError {
     }
 }
 
-/// Tauri command 薄層。`open_project_with_factories` を直接呼び、エラーを
-/// 文字列化して返す。
+/// Tauri command 薄層。`open_project_impl` を直接呼び、エラーを文字列化して返す。
 ///
-/// `tauri::AppHandle` はこの薄層のみで保持し、effect 層
-/// (`open_project_with_factories`) へは closure capture 経由でのみ渡す。
+/// `tauri::AppHandle` はこの薄層で構築する `TauriWatcherFactory` のフィールドに
+/// 閉じ込めて effect 層へは漏出させない。empty path 拒否は `OpenProjectIntent`
+/// 構築時 (`TryFrom<String>`) に集約済みのため、本層では `intent` 構築失敗時の
+/// `DirectoryNotFound { path: "" }` を文字列化してそのまま返す。
 ///
 /// 戻り値の `Result<_, String>` の Err 文字列は `OpenProjectError` の Display 文字列であり、
 /// FE 側でパターンマッチして `TauriError` に変換される。
@@ -170,66 +173,28 @@ pub fn open_project(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<OpenProjectPayload, String> {
-    // FE から渡された path を最初に ProjectRoot VO へ詰め直し、空文字を境界で
-    // 弾く。実在性チェックは `validate_directory` の責務。
-    //
-    // 旧経路では empty path は `validate_directory` の `fs::metadata("")` で
-    // ENOENT が返り `DirectoryNotFound { path: "" }` に倒れていた。本シンでも
-    // 同じ `DirectoryNotFound { path: "" }` に map するため、FE から見た
-    // Display 文字列・`TauriError` 分類は不変
-    // （`empty_path_maps_to_directory_not_found_at_validate_directory_layer`
-    //  テストで等価性を担保）。
-    let root = ProjectRoot::try_from_str(&path)
-        .map_err(|_| OpenProjectError::DirectoryNotFound { path: path.clone() }.to_string())?;
-    let root_str = root.as_path().to_str().ok_or_else(|| {
-        OpenProjectError::DirectoryNotFound {
-            path: root.to_string(),
-        }
-        .to_string()
-    })?;
-    open_project_with_factories(
-        state.inner().clone(),
-        root_str,
-        |root| {
-            crate::watcher_event::prepare_watcher(root)
-                .map_err(|source| OpenProjectError::WatcherInitFailed { source })
-        },
-        move |(watcher, rx), state, root, config| {
-            let handle = crate::watcher_event::spawn_adapter(
-                &app,
-                root,
-                config,
-                Arc::clone(state),
-                watcher,
-                rx,
-            );
-            Box::new(handle) as BoxedWatcherHandle
-        },
-    )
-    .map_err(|e| e.to_string())
+    let intent = OpenProjectIntent::try_from(path).map_err(|e| e.to_string())?;
+    let watcher = TauriWatcherFactory::new(app);
+    open_project_impl(state.inner(), &intent, &watcher).map_err(|e| e.to_string())
 }
 
 /// `open_project` Tauri command の effect 層本体（テスト容易性のための一般化版）。
 ///
-/// `prepare` / `spawn` を closure で注入することで、`AppHandle` を持たない
-/// テストでも実装本体を直接駆動できる。
-pub(crate) fn open_project_with_factories<P, S, T>(
-    state: Arc<AppState>,
-    path: &str,
-    prepare: P,
-    spawn: S,
-) -> Result<OpenProjectPayload, OpenProjectError>
-where
-    P: FnOnce(&Path) -> Result<T, OpenProjectError>,
-    S: FnOnce(T, &Arc<AppState>, &Path, &Config) -> BoxedWatcherHandle,
-{
-    let root = Path::new(path);
-    validate_directory(root, path)?;
-    check_app_state_locks(&state)?;
+/// `tauri::AppHandle` を受け取らず、watcher の prepare / spawn を
+/// `WatcherFactory` trait で注入することでテスト容易性を確保する。
+pub(crate) fn open_project_impl<W: WatcherFactory>(
+    state: &Arc<AppState>,
+    intent: &OpenProjectIntent,
+    watcher: &W,
+) -> Result<OpenProjectPayload, OpenProjectError> {
+    let root = intent.as_path();
+    let raw_path = intent.as_path_str();
+    validate_directory(root, raw_path)?;
+    check_app_state_locks(state)?;
 
     let config = load_or_default(root).map_err(map_load_config_error)?;
 
-    let md_paths = scan_md_files(root).map_err(|e| map_scan_error(e, path))?;
+    let md_paths = scan_md_files(root).map_err(|e| map_scan_error(e, raw_path))?;
 
     let default_status = default_status_for(&config);
     let tasks = collect_tasks(root, &md_paths, &default_status);
@@ -243,11 +208,11 @@ where
     // GUIDE.md 書き込みより **前に** prepare を実行する。watcher 初期化失敗で
     // 復帰する場合に新 dir 配下の `.spec-board/GUIDE.md` が副作用として残らない
     // ようにするため。prepare 自体は AppState を一切更新しない。
-    let prepared = prepare(root)?;
+    let prepared = watcher.prepare(root)?;
 
     write_guide_markdown_best_effort(root, &config);
 
-    commit_app_state_with_prepared(&state, root, &config, &tasks, prepared, spawn)?;
+    commit_app_state_with_prepared(state, root, &config, &tasks, prepared, watcher)?;
 
     Ok(build_payload(tasks, &config))
 }
@@ -429,7 +394,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
 /// に留める。
 ///
-/// `open_project_with_factories` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
+/// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
 /// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
@@ -437,7 +402,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
-///    この時点ではまだ何も書き換えていないため、`open_project_with_factories` の
+///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ
@@ -454,7 +419,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// `open_project` の commit 段階の一般化版。
 ///
 /// `prepare` の実行と GUIDE.md 書き込みは呼び出し側
-/// （`open_project_with_factories`）で順序を制御するため、本関数には
+/// （`open_project_impl`）で順序を制御するため、本関数には
 /// **既に確保済みの `prepared`** を直接渡す。これにより watcher 起動失敗時に
 /// `.spec-board/GUIDE.md` を新 dir に書き込んでしまう副作用を避けられる。
 ///
@@ -464,20 +429,17 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///    書かれる前に旧 watcher を必ず停止して race を防ぐ）
 /// 2. project_path / config / tasks_cache / write_ignore.clear の commit を
 ///    1 ステップずつ実行
-/// 3. `spawn(prepared, state, root, config)` で adapter スレッドを起動し、
+/// 3. `watcher.spawn(prepared, state, root, config)` で adapter スレッドを起動し、
 ///    返り値を `install_watcher_handle` で AppState に格納する。spawn は panic
 ///    以外で失敗しない契約。
-pub(crate) fn commit_app_state_with_prepared<S, T>(
+pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     state: &Arc<AppState>,
     root: &Path,
     config: &Config,
     tasks: &[Task],
-    prepared: T,
-    spawn: S,
-) -> Result<(), OpenProjectError>
-where
-    S: FnOnce(T, &Arc<AppState>, &Path, &Config) -> BoxedWatcherHandle,
-{
+    prepared: W::Prepared,
+    watcher: &W,
+) -> Result<(), OpenProjectError> {
     state.check_all_locks()?;
     state.write_ignore().is_empty()?;
 
@@ -495,7 +457,7 @@ where
     state.replace_tasks_cache(cache)?;
     state.write_ignore().clear()?;
 
-    let handle = spawn(prepared, state, root, config);
+    let handle = watcher.spawn(prepared, state, root, config);
     state.install_watcher_handle(handle)?;
     Ok(())
 }

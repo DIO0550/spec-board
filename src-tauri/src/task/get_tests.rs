@@ -5,18 +5,13 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use super::*;
-use crate::project::open::open_project_with_factories;
-use crate::state::BoxedWatcherHandle;
-use spec_board_fs::watcher::handle::NoopWatcherHandle;
+use crate::project::open::open_project_impl;
+use crate::project::watcher_factory::NoopWatcherFactory;
+use crate::project::OpenProjectIntent;
 
 fn open_with_noop(state: Arc<AppState>, path: &str) {
-    open_project_with_factories(
-        state,
-        path,
-        |_root| Ok::<(), crate::project::open::OpenProjectError>(()),
-        |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
-    )
-    .expect("open should succeed");
+    let intent = OpenProjectIntent::try_from(path.to_string()).expect("non-empty path");
+    open_project_impl(&state, &intent, &NoopWatcherFactory).expect("open should succeed");
 }
 
 fn tempdir() -> TempDir {

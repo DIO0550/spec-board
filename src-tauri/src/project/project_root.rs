@@ -1,9 +1,13 @@
 //! プロジェクトルートディレクトリの絶対 / 相対パスを表す Value Object。
 //!
-//! Tauri command (`open_project`) の引数 `path: String` を Rust 側で受け取った
-//! 直後に `try_from_str` で本 VO に詰め直し、以降の本体ロジックは `&ProjectRoot`
-//! を引数に取る。serde 不要（FE → Rust の引数として直接 deserialize される
-//! ことはなく、command シン関数で明示的に変換するため）。
+//! IPC 境界の DTO として直接利用するのではなく、`OpenProjectIntent` の内部で
+//! `try_from_str` により詰め直される VO として扱う。`open_project` Tauri
+//! command は引数 `path: String` を `OpenProjectIntent::try_from(path)` に渡し、
+//! Intent 構築時に本 VO への変換と empty path 拒否がまとめて行われる。
+//! 以降の effect 層 (`open_project_impl`) は `&OpenProjectIntent` のみを取る。
+//!
+//! serde 不要（FE → Rust の引数として直接 deserialize されることはなく、
+//! Intent 経由で明示的に変換するため）。
 
 use std::fmt;
 use std::path::{Path, PathBuf};

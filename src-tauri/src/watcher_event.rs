@@ -5,7 +5,7 @@
 //! # モジュール構成
 //!
 //! - `prepare_watcher(root)`: `Watcher::start` を呼んで `(Watcher, Receiver)`
-//!   を確保するだけ。`open_project_with_factories` の AppState commit より前に
+//!   を確保するだけ。`open_project_impl` の AppState commit より前に
 //!   実行される 1 段目。
 //! - `spawn_adapter(app, root, config, state, watcher, rx)`: 既に確保済みの
 //!   watcher / rx から adapter スレッドを spawn し、`EmittingWatcherHandle` を
@@ -84,7 +84,7 @@ impl WatcherHandle for EmittingWatcherHandle {
     }
 }
 
-/// `open_project_with_factories` の **AppState commit より前に**呼び出される 1 段目。
+/// `open_project_impl` の **AppState commit より前に**呼び出される 1 段目。
 ///
 /// `Watcher::start` を試みて Watcher と Receiver を確保するだけで、adapter は
 /// まだ spawn しない。失敗時はこの段階で `WatcherError` を返し、呼び出し側は
@@ -93,7 +93,7 @@ pub(crate) fn prepare_watcher(root: &Path) -> Result<(Watcher, Receiver<FsEvent>
     Watcher::start(root)
 }
 
-/// `open_project_with_factories` の **AppState commit 完了後**に呼び出される 2 段目。
+/// `open_project_impl` の **AppState commit 完了後**に呼び出される 2 段目。
 ///
 /// 確保済みの `(watcher, rx)` から adapter スレッドを spawn し、実
 /// `EmittingWatcherHandle` を組み立てる。spawn は panic 以外で失敗しないため
