@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::OpenProjectIntent;
 use crate::project::open::OpenProjectError;
 
@@ -6,7 +8,9 @@ fn try_from_normal_path_succeeds() {
     let intent = OpenProjectIntent::try_from("/abs/proj".to_string())
         .expect("non-empty path should succeed");
     assert_eq!(intent.as_path_str(), "/abs/proj");
-    assert_eq!(intent.as_path().to_string_lossy(), "/abs/proj");
+    // Path 値として比較し、`to_string_lossy()` の OS 依存（Windows のパス区切り
+    // 正規化）を避ける。
+    assert_eq!(intent.as_path(), Path::new("/abs/proj"));
 }
 
 #[test]
