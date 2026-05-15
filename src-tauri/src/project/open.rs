@@ -174,7 +174,7 @@ pub fn open_project(
     path: String,
 ) -> Result<OpenProjectPayload, String> {
     let intent = OpenProjectIntent::try_from(path).map_err(|e| e.to_string())?;
-    let watcher = TauriWatcherFactory { app };
+    let watcher = TauriWatcherFactory::new(app);
     open_project_impl(state.inner(), &intent, &watcher).map_err(|e| e.to_string())
 }
 

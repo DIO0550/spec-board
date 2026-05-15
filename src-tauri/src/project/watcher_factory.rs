@@ -42,9 +42,16 @@ pub trait WatcherFactory {
 /// `spawn_adapter` に委譲する。
 ///
 /// `AppHandle` は本構造体のフィールドに閉じ込め、effect 層
-/// (`open_project_impl`) には漏出させない。
+/// (`open_project_impl`) には漏出させない。フィールド自体も非公開とし、
+/// 外部からの取り出しを `new` 経由のみに制限する。
 pub struct TauriWatcherFactory {
-    pub app: tauri::AppHandle,
+    app: tauri::AppHandle,
+}
+
+impl TauriWatcherFactory {
+    pub fn new(app: tauri::AppHandle) -> Self {
+        Self { app }
+    }
 }
 
 impl WatcherFactory for TauriWatcherFactory {
