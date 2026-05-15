@@ -1,8 +1,11 @@
-use super::{open_project_with_factories, OpenProjectError, OpenProjectPayload};
+use super::{open_project_impl, OpenProjectError, OpenProjectPayload};
 
 use crate::config::{CardOrder, Column, Config};
+use crate::project::watcher_factory::{NoopWatcherFactory, WatcherFactory};
+use crate::project::OpenProjectIntent;
 use crate::state::{AppState, BoxedWatcherHandle};
 use crate::task::task_index::Task;
+use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
 
 use std::fs;
@@ -17,17 +20,80 @@ fn tempdir() -> TempDir {
 }
 
 /// 4 段階手順を保ったまま、`AppHandle` / `Watcher::start` を使わずに
-/// `open_project_with_factories` を駆動するための shorthand。
+/// `open_project_impl` を駆動するための shorthand。
+///
+/// 外側シグネチャは `(state: Arc<AppState>, path: &str)` を温存し、内部で
+/// `OpenProjectIntent` 構築 + `NoopWatcherFactory` 注入を行う。
 fn open_with_noop(
     state: Arc<AppState>,
     path: &str,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
-    open_project_with_factories(
-        state,
-        path,
-        |_root| Ok::<(), OpenProjectError>(()),
-        |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
-    )
+    let intent = OpenProjectIntent::try_from(path.to_string())?;
+    open_project_impl(&state, &intent, &NoopWatcherFactory)
+}
+
+/// `prepare` で `WatcherInitFailed` を返すテスト用 factory。
+/// `spawn` は呼ばれない契約のため panic でガードする。
+struct FailingPrepareFactory {
+    init_message: String,
+}
+
+impl FailingPrepareFactory {
+    fn new(init_message: &str) -> Self {
+        Self {
+            init_message: init_message.to_string(),
+        }
+    }
+}
+
+impl WatcherFactory for FailingPrepareFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Err(OpenProjectError::WatcherInitFailed {
+            source: WatcherError::Init(self.init_message.clone()),
+        })
+    }
+
+    fn spawn(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        _root: &Path,
+        _config: &Config,
+    ) -> BoxedWatcherHandle {
+        panic!("spawn should not be invoked when prepare fails");
+    }
+}
+
+/// `spawn` 段階で旧 watcher の停止と AppState commit が完了していることを
+/// 検証するためのテスト用 factory。
+struct CountingFactory {
+    stop_calls: Arc<AtomicUsize>,
+    state: Arc<AppState>,
+}
+
+impl WatcherFactory for CountingFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn spawn(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        _root: &Path,
+        _config: &Config,
+    ) -> BoxedWatcherHandle {
+        // spawn 段階では旧 stop が既に呼ばれており、cache も新値で commit 済み。
+        assert_eq!(1, self.stop_calls.load(Ordering::SeqCst));
+        let snapshot = self.state.tasks_snapshot().expect("readable");
+        assert_eq!(1, snapshot.len());
+        assert_eq!("tasks/a.md", snapshot[0].file_path);
+        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+    }
 }
 
 fn write_md(root: &Path, rel: &str, body: &str) {
@@ -504,19 +570,10 @@ fn watcher_init_failure_keeps_app_state_completely_unchanged() {
     // 2 回目: prepare で WatcherInitFailed を返すスタブを使う。
     let other_dir = tempdir();
     let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
-    let err = open_project_with_factories(
-        Arc::clone(&state),
-        &other_raw,
-        |_root| -> Result<(), OpenProjectError> {
-            Err(OpenProjectError::WatcherInitFailed {
-                source: spec_board_fs::watcher::core::WatcherError::Init(
-                    "synthetic init failure".to_string(),
-                ),
-            })
-        },
-        |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
-    )
-    .expect_err("watcher init failure should be returned");
+    let intent = OpenProjectIntent::try_from(other_raw.clone()).expect("non-empty path");
+    let factory = FailingPrepareFactory::new("synthetic init failure");
+    let err = open_project_impl(&state, &intent, &factory)
+        .expect_err("watcher init failure should be returned");
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 
     // AppState の全フィールドが 1 回目の状態のまま残ることを確認する。
@@ -541,19 +598,9 @@ fn watcher_init_failure_does_not_write_guide_md_in_new_dir() {
     let dir = tempdir();
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
-    let err = open_project_with_factories(
-        Arc::clone(&state),
-        &raw,
-        |_root| -> Result<(), OpenProjectError> {
-            Err(OpenProjectError::WatcherInitFailed {
-                source: spec_board_fs::watcher::core::WatcherError::Init(
-                    "synthetic init failure".to_string(),
-                ),
-            })
-        },
-        |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
-    )
-    .expect_err("watcher init failure");
+    let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
+    let factory = FailingPrepareFactory::new("synthetic init failure");
+    let err = open_project_impl(&state, &intent, &factory).expect_err("watcher init failure");
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 
     let guide = dir.path().join(".spec-board").join("GUIDE.md");
@@ -575,17 +622,9 @@ fn watcher_init_failure_does_not_invoke_old_watcher_stop() {
     let dir = tempdir();
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
-    let err = open_project_with_factories(
-        Arc::clone(&state),
-        &raw,
-        |_root| -> Result<(), OpenProjectError> {
-            Err(OpenProjectError::WatcherInitFailed {
-                source: spec_board_fs::watcher::core::WatcherError::Init("synth".to_string()),
-            })
-        },
-        |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
-    )
-    .expect_err("watcher init failure");
+    let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
+    let factory = FailingPrepareFactory::new("synth");
+    let err = open_project_impl(&state, &intent, &factory).expect_err("watcher init failure");
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 }
 
@@ -607,22 +646,12 @@ fn old_watcher_is_stopped_before_state_commit() {
     write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
-    let observed_counter = Arc::clone(&stop_counter);
-    let observed_state = Arc::clone(&state);
-    open_project_with_factories(
-        Arc::clone(&state),
-        &raw,
-        |_root| Ok::<(), OpenProjectError>(()),
-        move |(), _state, _root, _config| {
-            // spawn 段階では旧 stop が既に呼ばれており、cache も新値で commit 済み。
-            assert_eq!(1, observed_counter.load(Ordering::SeqCst));
-            let snapshot = observed_state.tasks_snapshot().expect("readable");
-            assert_eq!(1, snapshot.len());
-            assert_eq!("tasks/a.md", snapshot[0].file_path);
-            Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
-        },
-    )
-    .expect("open should succeed");
+    let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
+    let factory = CountingFactory {
+        stop_calls: Arc::clone(&stop_counter),
+        state: Arc::clone(&state),
+    };
+    open_project_impl(&state, &intent, &factory).expect("open should succeed");
 
     assert_eq!(1, stop_counter.load(Ordering::SeqCst));
 }
@@ -784,26 +813,4 @@ fn open_project_payload_round_trip() {
     };
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(serialized, r#"{"tasks":[],"columns":["Todo","Done"]}"#);
-}
-
-#[test]
-fn empty_path_maps_to_directory_not_found_at_validate_directory_layer() {
-    // open_project Tauri command 入口で `ProjectRoot::try_from_str("")` を
-    // 呼ぶ前後で empty path 入力の挙動が同一であることを文書化する。
-    //
-    // 旧挙動: empty path は `validate_directory` の `fs::metadata("")` で
-    //   ENOENT が返り、`DirectoryNotFound { path: "" }` に詰め直されていた。
-    // 新挙動: command シンの `ProjectRoot::try_from_str("")` が
-    //   `ProjectRootError::Empty` を返し、同じ `DirectoryNotFound { path: "" }`
-    //   へ map される。
-    // → FE 視点では Display 文字列も `TauriError` 分類も同一。
-    //
-    // 本テストは旧経路（`open_project_with_factories`）を直接駆動して
-    // empty path が `DirectoryNotFound` に倒れることを確認する。
-    let state = Arc::new(AppState::new());
-    let err = open_with_noop(Arc::clone(&state), "").expect_err("empty path must yield error");
-    match err {
-        OpenProjectError::DirectoryNotFound { path } => assert_eq!(path, ""),
-        other => panic!("expected DirectoryNotFound, got {other:?}"),
-    }
 }

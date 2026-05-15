@@ -7,24 +7,21 @@ use tempfile::TempDir;
 use super::super::args::CreateTaskArgs;
 use super::super::error::{ContentRejectReason, CreateTaskCommandError, CreateTaskError};
 use super::create_task_impl;
-use crate::project::open::open_project_with_factories;
-use crate::state::{AppState, BoxedWatcherHandle};
+use crate::project::open::open_project_impl;
+use crate::project::watcher_factory::NoopWatcherFactory;
+use crate::project::OpenProjectIntent;
+use crate::state::AppState;
 use crate::task::io::FsTaskIo;
 use crate::task::task_index::ParentHierarchyErrorReason;
-use spec_board_fs::watcher::handle::NoopWatcherHandle;
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
 }
 
 fn open_with_noop(state: Arc<AppState>, path: &Path) {
-    open_project_with_factories(
-        state,
-        path.to_str().expect("utf-8"),
-        |_root| Ok::<(), crate::project::open::OpenProjectError>(()),
-        |(), _state, _root, _config| Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
-    )
-    .expect("open should succeed");
+    let intent = OpenProjectIntent::try_from(path.to_str().expect("utf-8").to_string())
+        .expect("non-empty path");
+    open_project_impl(&state, &intent, &NoopWatcherFactory).expect("open should succeed");
 }
 
 fn args_with_title(title: &str) -> CreateTaskArgs {
