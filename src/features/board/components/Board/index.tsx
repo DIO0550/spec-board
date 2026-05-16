@@ -46,9 +46,11 @@ type BoardProps = {
   onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
   /**
    * Board が drop を受けたら呼ぶ。App.tsx で useProject.moveTask に配線する。
+   * 同期 / 非同期どちらのハンドラも受け付ける。
    * @param params 移動パラメータ
    */
-  onTaskDrop?: (params: ColumnTaskDropParams) => Promise<unknown> | undefined;
+  // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
+  onTaskDrop?: (params: ColumnTaskDropParams) => Promise<unknown> | void;
 };
 
 /**
