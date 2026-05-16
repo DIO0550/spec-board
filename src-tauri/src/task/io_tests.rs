@@ -244,6 +244,38 @@ fn write_existing_creates_when_path_missing_following_std_fs_write_semantics() {
 }
 
 #[test]
+fn write_existing_preserves_original_content_when_rename_target_is_dir() {
+    // FsTaskIo の atomic rename 経路を検証: target が directory のとき rename は
+    // 失敗するが、tmp file は cleanup され、元の directory も unchanged のまま。
+    let tmp = TempDir::new().expect("create tempdir");
+    let dir_target = tmp.path().join("blocking-dir");
+    std::fs::create_dir(&dir_target).expect("seed dir");
+    let inside = dir_target.join("inside.md");
+    std::fs::write(&inside, b"keep-me").expect("seed sentinel");
+
+    let err = FsTaskIo
+        .write_existing(&dir_target, b"overwrite-attempt")
+        .expect_err("rename onto directory should fail");
+    let _ = err;
+
+    // ディレクトリ配下の sentinel が残っていることで元 directory が無傷である
+    // ことを担保（cleanup されていれば inside.md は読める）。
+    let read = std::fs::read(&inside).expect("sentinel still readable");
+    assert_eq!(b"keep-me".to_vec(), read);
+
+    // 同 dir 内に *.update.tmp が残っていないことを確認。
+    let leftover: Vec<_> = std::fs::read_dir(tmp.path())
+        .expect("read_dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".update.tmp"))
+        .collect();
+    assert!(
+        leftover.is_empty(),
+        "tmp file must be cleaned up after failure: {leftover:?}"
+    );
+}
+
+#[test]
 fn write_existing_rejects_when_target_is_dir() {
     with_both(|io, base| {
         let dir = base.join("dir-as-target");
