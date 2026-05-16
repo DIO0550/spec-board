@@ -37,7 +37,7 @@ drop 直後にローカルで先に並び替えてから IPC を投げる「楽�
 1. `update_task({ status: toColumn })`
 2. `update_card_order(toColumn, ...)`
 
-旧カラムの cardOrder は **BE 側 watcher が status 変更を検知して自動除去する**契約とした（BE 実装 issue 側で明文化）。3 連目をクライアント側で発行しないことで、レースコンディションが減り、reducer dispatch も 2 段で済む。
+旧カラムの cardOrder は **BE 側 watcher が status 変更を検知して自動除去する**契約とした（BE 実装 issue 側で明文化）。クライアント側で旧カラム向けの `update_card_order(fromColumn, ...)` を発行しないことで、レースコンディションが減り、reducer dispatch も 2 段で済む（残る IPC は `update_task` と `update_card_order(toColumn, ...)` の 2 つ）。
 
 ## `buildMovedFilePaths` を純粋関数として切り出す
 
