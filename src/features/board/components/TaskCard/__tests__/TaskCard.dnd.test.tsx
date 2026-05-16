@@ -123,17 +123,52 @@ test("isDragging=false で data-dragging 属性が存在しない", () => {
   expect(card.hasAttribute("data-dragging")).toBe(false);
 });
 
-test("dragstart → click（synthetic）の順では onClick が呼ばれない", () => {
-  const onClick = vi.fn();
-  render({ task: makeTask(), fromColumn: "Todo", onClick });
-  const card = queryCard();
-  act(() => {
-    card.dispatchEvent(createDragEvent("dragstart"));
-  });
-  act(() => {
-    card.click();
-  });
-  expect(onClick).not.toHaveBeenCalled();
+test("dragstart → dragend → click（synthetic, macrotask 前）の順では onClick が呼ばれない", () => {
+  vi.useFakeTimers();
+  try {
+    const onClick = vi.fn();
+    render({ task: makeTask(), fromColumn: "Todo", onClick });
+    const card = queryCard();
+    act(() => {
+      card.dispatchEvent(createDragEvent("dragstart"));
+    });
+    act(() => {
+      card.dispatchEvent(createDragEvent("dragend"));
+    });
+    // dragend 内の setTimeout(0) はまだ走っていない。この間に発火する
+    // synthetic click は dragGuardRef により抑止される。
+    act(() => {
+      card.click();
+    });
+    expect(onClick).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("dragstart → dragend → macrotask 経過後の click は onClick が呼ばれる", () => {
+  vi.useFakeTimers();
+  try {
+    const onClick = vi.fn();
+    render({ task: makeTask({ id: "x" }), fromColumn: "Todo", onClick });
+    const card = queryCard();
+    act(() => {
+      card.dispatchEvent(createDragEvent("dragstart"));
+    });
+    act(() => {
+      card.dispatchEvent(createDragEvent("dragend"));
+    });
+    // dragend の setTimeout(0) を消化して guard を解除する
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    act(() => {
+      card.click();
+    });
+    expect(onClick).toHaveBeenCalledWith("x");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("通常 click（drag を介さない）は onClick が呼ばれる", () => {
