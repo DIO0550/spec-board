@@ -116,7 +116,7 @@ export const moveTaskAction = (
         filePaths,
       });
       if (!orderResult.ok) {
-        return Result.err(ProjectError.tauri(orderResult.error));
+        return Result.err(ProjectError.partialMove(orderResult.error));
       }
       if (!isProjectCurrent(deps.projectVersion, version)) {
         return Result.err(

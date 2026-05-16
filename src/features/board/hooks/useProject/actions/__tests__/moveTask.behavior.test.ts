@@ -298,6 +298,7 @@ test("カラム間で updateTask 成功 / updateCardOrder 失敗 → task-update
   });
 
   expect(result.ok).toBe(false);
+  expect((result as { error: ProjectError }).error.kind).toBe("partial-move");
   expect(harness.actions.map((a) => a.type)).toEqual(["task-updated"]);
 });
 
