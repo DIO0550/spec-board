@@ -60,18 +60,28 @@ export const moveTaskAction = (
 
     const data = ProjectSessionState.visibleData(deps.getState());
     if (data === null) {
-      return Result.err(ProjectError.invalidState("not loaded"));
+      return Result.err(
+        ProjectError.invalidState("プロジェクトが開かれていません"),
+      );
     }
 
     const target = data.tasks.find((t) => t.filePath === params.taskFilePath);
     if (!target) {
-      return Result.err(ProjectError.invalidState("task missing"));
+      return Result.err(
+        ProjectError.invalidState("対象のタスクが見つかりません"),
+      );
     }
     if (target.status !== params.fromColumn) {
-      return Result.err(ProjectError.invalidState("fromColumn mismatch"));
+      return Result.err(
+        ProjectError.invalidState(
+          "タスクの状態が変わったためやり直してください",
+        ),
+      );
     }
     if (!data.columns.some((c) => c.name === params.toColumn)) {
-      return Result.err(ProjectError.invalidState("toColumn missing"));
+      return Result.err(
+        ProjectError.invalidState("移動先カラムが見つかりません"),
+      );
     }
 
     if (params.fromColumn !== params.toColumn) {
