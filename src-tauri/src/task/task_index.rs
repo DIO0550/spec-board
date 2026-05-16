@@ -103,6 +103,18 @@ impl TaskIndex {
         &self.tasks
     }
 
+    /// aggregate が保持する `Task` を `id` 昇順に並べた `Vec<Task>` を返す。
+    ///
+    /// `get_tasks` 等の読み取り API が依存する「id 昇順」契約をこの aggregate に
+    /// 集約することで、application 層から並び順の知識を排除する。`Vec::sort_by`
+    /// は安定ソートのため、同一 `id` の `Task` が混入した場合は入力順を保持する。
+    /// aggregate を再利用しない読み取り用途のため `self` を消費する。
+    pub fn sorted_by_id(self) -> Vec<Task> {
+        let mut tasks = self.into_tasks();
+        tasks.sort_by(|a, b| a.id.cmp(&b.id));
+        tasks
+    }
+
     /// parent 参照の存在のみを検証し、見つからない場合は warning を追加する。
     pub fn validate_parent_existence(self) -> Self {
         Self {
