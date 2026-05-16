@@ -140,9 +140,12 @@ test("drop 完了後に dragState がリセットされる（プレースホル�
   act(() => {
     doneSection?.dispatchEvent(hover);
   });
-  expect(
-    container?.querySelector("[data-testid='drop-placeholder']"),
-  ).not.toBeNull();
+  // hover index 更新は rAF 越しに反映されるため waitFor で同期する
+  await vi.waitFor(() => {
+    expect(
+      container?.querySelector("[data-testid='drop-placeholder']"),
+    ).not.toBeNull();
+  });
   const drop = createDragEvent("drop");
   drop.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
   act(() => {

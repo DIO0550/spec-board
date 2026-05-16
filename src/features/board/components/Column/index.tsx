@@ -2,6 +2,7 @@ import {
   type DragEvent,
   Fragment,
   type MouseEvent,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -99,6 +100,11 @@ export const Column = ({
     [allTasks],
   );
   const listRef = useRef<HTMLUListElement>(null);
+  // dragover は高頻度発火するため、rAF 同フレーム内では rect 再計算を 1 回に
+  // 抑制する。pendingFrameRef が null でない間は新規 rAF を予約せず、最後の
+  // clientY を上書きするだけ。
+  const pendingFrameRef = useRef<number | null>(null);
+  const pendingClientYRef = useRef(0);
 
   const handleDragOver = (e: DragEvent<HTMLElement>) => {
     if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
@@ -109,23 +115,49 @@ export const Column = ({
     if (!onDragHover) {
       return;
     }
-    const liElements = Array.from(
-      listRef.current?.querySelectorAll<HTMLLIElement>("li[data-task-card]") ??
-        [],
-    );
-    const rects = liElements.map((el) => {
-      const r = el.getBoundingClientRect();
-      return { top: r.top, bottom: r.bottom };
+    pendingClientYRef.current = e.clientY;
+    if (pendingFrameRef.current !== null) {
+      return;
+    }
+    pendingFrameRef.current = requestAnimationFrame(() => {
+      pendingFrameRef.current = null;
+      const liElements = Array.from(
+        listRef.current?.querySelectorAll<HTMLLIElement>(
+          "li[data-task-card]",
+        ) ?? [],
+      );
+      const rects = liElements.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      });
+      const index = computeHoverIndex(rects, pendingClientYRef.current);
+      onDragHover(name, index);
     });
-    const index = computeHoverIndex(rects, e.clientY);
-    onDragHover(name, index);
   };
+
+  const cancelPendingHover = () => {
+    if (pendingFrameRef.current !== null) {
+      cancelAnimationFrame(pendingFrameRef.current);
+      pendingFrameRef.current = null;
+    }
+  };
+
+  // unmount 時に pending rAF を解放（メモリリーク / mount 解除後の dispatch 防止）
+  useEffect(() => {
+    return () => {
+      if (pendingFrameRef.current !== null) {
+        cancelAnimationFrame(pendingFrameRef.current);
+        pendingFrameRef.current = null;
+      }
+    };
+  }, []);
 
   const handleDragLeave = (e: DragEvent<HTMLElement>) => {
     const related = e.relatedTarget as Node | null;
     if (related && e.currentTarget.contains(related)) {
       return;
     }
+    cancelPendingHover();
     onDragHover?.(null, null);
   };
 
@@ -141,6 +173,7 @@ export const Column = ({
       return;
     }
     e.preventDefault();
+    cancelPendingHover();
     const toIndex = dragState.hoverIndex ?? tasks.length;
     onTaskDrop?.({
       taskFilePath,

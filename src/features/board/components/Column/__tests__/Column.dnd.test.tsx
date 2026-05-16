@@ -76,7 +76,7 @@ test("他 MIME (text/plain) の dragover では preventDefault されない", ()
   expect(event.defaultPrevented).toBe(false);
 });
 
-test("dragover で onDragHover(name, index) が呼ばれる", () => {
+test("dragover で onDragHover(name, index) が呼ばれる", async () => {
   const onDragHover = vi.fn();
   render({
     name: "Todo",
@@ -91,7 +91,9 @@ test("dragover で onDragHover(name, index) が呼ばれる", () => {
   act(() => {
     section.dispatchEvent(event);
   });
-  expect(onDragHover).toHaveBeenCalledWith("Todo", 0);
+  await vi.waitFor(() => {
+    expect(onDragHover).toHaveBeenCalledWith("Todo", 0);
+  });
 });
 
 test("currentTarget 外への dragleave で onDragHover(null, null) が呼ばれる", () => {
