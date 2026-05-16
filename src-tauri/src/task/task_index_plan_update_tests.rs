@@ -126,6 +126,51 @@ fn plan_update_body_only_replaces_body() {
 }
 
 #[test]
+fn plan_update_body_with_leading_newline_is_not_double_prefixed() {
+    let task = make_task("tasks/a.md", None);
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nold\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.body = Some("\nhello".to_string());
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+    // ---\n の直後に 1 行だけ空行が入り、その後 hello。\n\n が二重化しないこと。
+    assert!(
+        outcome.file_content.contains("---\n\nhello\n"),
+        "leading newline must not be double-prefixed: {:?}",
+        outcome.file_content
+    );
+    assert!(
+        !outcome.file_content.contains("---\n\n\nhello"),
+        "no triple-newline allowed"
+    );
+}
+
+#[test]
+fn plan_update_body_empty_string_clears_body_without_extra_newline() {
+    let task = make_task("tasks/a.md", None);
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nold body\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.body = Some(String::new());
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+    // Empty body は frontmatter 直下 `---\n` で終わる（余分な空行を残さない）。
+    assert!(
+        outcome.file_content.ends_with("---\n"),
+        "empty body must not leave a trailing blank line: {:?}",
+        outcome.file_content
+    );
+    assert!(!outcome.file_content.contains("old body"));
+}
+
+#[test]
 fn plan_update_title_changes_frontmatter_title_only_file_path_unchanged() {
     let task = make_task("tasks/a.md", None);
     let parsed = parsed_from_md("---\ntitle: Old\nstatus: Todo\n---\n");

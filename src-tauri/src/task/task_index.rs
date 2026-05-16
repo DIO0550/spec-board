@@ -393,7 +393,15 @@ impl TaskIndex {
             }
         };
         if let Some(b) = &intent.body {
-            body = format!("\n{b}");
+            // create_task と同じ正規化: 空文字は空 body / 既に `\n` で始まる入力は
+            // そのまま採用 / それ以外は `---` 直後の慣例的な空行として `\n` を 1 個だけ前置。
+            body = if b.is_empty() {
+                String::new()
+            } else if b.starts_with('\n') {
+                b.clone()
+            } else {
+                format!("\n{b}")
+            };
         }
 
         if let Some(parent_str) = intent.parent.as_deref().filter(|s| !s.is_empty()) {
