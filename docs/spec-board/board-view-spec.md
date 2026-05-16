@@ -139,7 +139,8 @@ stateDiagram-v2
 
 - ESC キー押下: ブラウザが `dragend` を発火し、自動で IDLE 状態へ復帰
 - Drag 直後の synthetic click: `dragGuardRef` で次の macrotask まで `onClick` を抑止し、誤って詳細パネルが開かないようにする
-- IPC 失敗: 「タスクの移動に失敗しました」トーストを表示。dragState は finally で必ず null に戻す
+- IPC 失敗（generic）: `update_task` 失敗 / 同一カラム内の `update_card_order` 失敗時は「タスクの移動に失敗しました: &lt;原因&gt;」トーストを表示。dragState は finally で必ず null に戻す
+- IPC 部分失敗（partial-move）: カラム間移動で `update_task` 成功 + `update_card_order` 失敗のときは、カラム移動だけは完了しているため「カラムの移動は完了しましたが、並び順の保存に失敗しました。手動で並び替えてください。」と区別して表示する
 - stale state: queue 実行時に対象タスクが見つからない / `fromColumn` と `status` が乖離 / `toColumn` が消滅した場合は `invalid-state` で抜ける
 
 ## 制限事項
