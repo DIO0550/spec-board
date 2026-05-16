@@ -291,6 +291,17 @@ update_task は `filePath` で識別し、**ファイル移動は一切行わな
 `validate_parent_hierarchy` + `build_children` + `build_reverse_links` を実行する。
 title / status / priority / labels / body 単独の更新では再構築しない。
 
+`parent` フィールドの「変化」は `intent.parent` の値に応じて以下のように判定する:
+
+- `None`: parent は変更されない（`parent_changed=false`）。hierarchy 検証はスキップする（全タスク走査の O(N) コストを回避）。
+- `Some("")`: parent を解除する。既存 parent が存在する、または frontmatter から `parent` キーが除去された場合に `parent_changed=true` となり hierarchy 検証を実行する（親解除なので構造的に循環は発生しないが、不正データの早期検出のため検証は走る）。
+- `Some(path)`（非空）: 検証は以下の順序で実行する:
+  1. **parent 存在チェック** — `parent_changed` の真偽に関わらず、最初に cache から該当 task を引き当てる。存在しなければ `parent not found: <path>` を返す。
+  2. **正規化等価判定** — 正規化済みパス（`./tasks/p.md` / `tasks\p.md` などの表記揺れを吸収する lookup key）が既存 parent と等価なら `parent_changed=false` として hierarchy 検証はスキップする。
+  3. **hierarchy 検証** — 正規化等価でない場合のみ `parent_changed=true` となり、対象 task を patch した暫定状態で全タスクの parent チェーンを `validate_parent_hierarchy` により再検証する。
+
+検証に失敗した場合は `parent validation: <file_path> (<reason>)` を返し、ファイル書き込みおよび cache 更新は行わない。`reason` は循環検出 (`Cycle`) または 20 段超過 (`TooDeep`) のいずれか。
+
 ## 制限事項
 
 - ファイルエンコーディングは **UTF-8（BOMなし）** のみサポート。BOM付きUTF-8はBOMを除去して読み込む。その他のエンコーディング（Shift-JIS等）はパースエラー
