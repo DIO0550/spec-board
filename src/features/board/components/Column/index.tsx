@@ -174,7 +174,18 @@ export const Column = ({
     }
     e.preventDefault();
     cancelPendingHover();
-    const toIndex = dragState.hoverIndex ?? tasks.length;
+    // rAF throttle により dragState.hoverIndex は他カラムの drop で stale な
+    // 可能性がある。drop event の clientY から this カラムの DOM rect を使って
+    // toIndex を同期計算する。
+    const liElements = Array.from(
+      listRef.current?.querySelectorAll<HTMLLIElement>("li[data-task-card]") ??
+        [],
+    );
+    const rects = liElements.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    });
+    const toIndex = computeHoverIndex(rects, e.clientY);
     onTaskDrop?.({
       taskFilePath,
       fromColumn: dragState.draggingFromColumn,
