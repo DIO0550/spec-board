@@ -83,7 +83,71 @@ export const DragAction = {
 } as const;
 
 /**
- * DragState reducer。
+ * DragState の companion。state factory / transformation / 判定を集約する。
+ * 命名は State の視点で行い、reducer / action 用語に引きずられない。
+ */
+export const DragState = {
+  /** idle（ドラッグしていない）の DragState 値。 */
+  idle: null as DragState,
+
+  /**
+   * dragging 状態の DragState を生成する。hover 情報は未設定で開始。
+   * @param taskFilePath ドラッグ対象 task の filePath
+   * @param fromColumn 元カラム名
+   * @returns dragging 状態の DragState
+   */
+  create: (taskFilePath: string, fromColumn: string): DragState => ({
+    draggingTaskFilePath: taskFilePath,
+    draggingFromColumn: fromColumn,
+    hoverColumn: null,
+    hoverIndex: null,
+  }),
+
+  /**
+   * hover 情報を差し替えた新しい DragState を返す。idle や同値時は元参照を返す。
+   * @param state 現在の DragState
+   * @param column hover 中のカラム名（外れた場合は null）
+   * @param index hover 中の挿入位置（外れた場合は null）
+   * @returns 更新後の DragState
+   */
+  withHover: (
+    state: DragState,
+    column: string | null,
+    index: number | null,
+  ): DragState => {
+    if (state === null) {
+      return state;
+    }
+    if (state.hoverColumn === column && state.hoverIndex === index) {
+      return state;
+    }
+    return { ...state, hoverColumn: column, hoverIndex: index };
+  },
+
+  /**
+   * 指定 task が現在ドラッグ中か判定する。
+   * @param state 現在の DragState
+   * @param taskFilePath 判定対象の task filePath
+   * @returns 判定結果
+   */
+  isDraggingTask: (state: DragState, taskFilePath: string): boolean =>
+    state !== null && state.draggingTaskFilePath === taskFilePath,
+
+  /**
+   * 指定カラムが hover ターゲットなら hoverIndex を返す。それ以外は null。
+   * placeholder 表示判定に使う。
+   * @param state 現在の DragState
+   * @param columnName 判定対象のカラム名
+   * @returns hoverIndex または null
+   */
+  hoverIndexFor: (state: DragState, columnName: string): number | null =>
+    state !== null && state.hoverColumn === columnName
+      ? state.hoverIndex
+      : null,
+} as const;
+
+/**
+ * DragState reducer。companion メソッドに委譲する。
  *
  * @param state 現在の DragState
  * @param action 適用する DragAction
@@ -92,25 +156,11 @@ export const DragAction = {
 export const dragReducer: Reducer<DragState, DragAction> = (state, action) => {
   switch (action.type) {
     case "start":
-      return {
-        draggingTaskFilePath: action.taskFilePath,
-        draggingFromColumn: action.fromColumn,
-        hoverColumn: null,
-        hoverIndex: null,
-      };
+      return DragState.create(action.taskFilePath, action.fromColumn);
     case "hover":
-      if (state === null) {
-        return state;
-      }
-      if (
-        state.hoverColumn === action.column &&
-        state.hoverIndex === action.index
-      ) {
-        return state;
-      }
-      return { ...state, hoverColumn: action.column, hoverIndex: action.index };
+      return DragState.withHover(state, action.column, action.index);
     case "end":
-      return null;
+      return DragState.idle;
     default: {
       action satisfies never;
       return state;

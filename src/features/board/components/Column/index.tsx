@@ -9,7 +9,7 @@ import {
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { Task } from "@/types/task";
-import { DRAG_MIME_TYPE, type DragState } from "../Board/dragState";
+import { DRAG_MIME_TYPE, DragState } from "../Board/dragState";
 import { ColumnContextMenu } from "../ColumnContextMenu";
 import { ColumnHeader } from "../ColumnHeader";
 import { TaskCard } from "../TaskCard";
@@ -194,13 +194,7 @@ export const Column = ({
     });
   };
 
-  const showPlaceholder =
-    dragState !== undefined &&
-    dragState !== null &&
-    dragState.hoverColumn === name &&
-    dragState.hoverIndex !== null;
-  const placeholderIndex =
-    showPlaceholder && dragState ? dragState.hoverIndex : null;
+  const placeholderIndex = DragState.hoverIndexFor(dragState ?? null, name);
 
   const otherColumnNames = existingColumnNames ?? [];
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -309,7 +303,10 @@ export const Column = ({
                   childTasks={childTasks}
                   doneColumn={doneColumn}
                   fromColumn={name}
-                  isDragging={dragState?.draggingTaskFilePath === task.filePath}
+                  isDragging={DragState.isDraggingTask(
+                    dragState ?? null,
+                    task.filePath,
+                  )}
                   onClick={onTaskClick}
                   onDragStart={onTaskDragStart}
                   onDragEnd={onTaskDragEnd}
