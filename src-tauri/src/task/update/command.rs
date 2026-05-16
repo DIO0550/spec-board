@@ -83,42 +83,48 @@ pub(crate) fn update_task_impl(
 }
 
 /// cache を更新し、返却すべき最終的な Task を返す。
+///
+/// `plan_update` の snapshot 取得と本関数の lock 再取得の間に他コマンドが cache を
+/// 変更すると、再構築用 `Vec<Task>` の hierarchy が `plan_update` 時点と乖離する
+/// 可能性がある。validation を `?` で propagate して panic を避け、レース由来の
+/// 不整合は `UpdateTaskCommandError::Validation` として呼び出し側に返す。
 fn commit_cache(
     state: &AppState,
     rel_path: &Path,
     outcome: &UpdateTaskOutcome,
 ) -> Result<Task, UpdateTaskCommandError> {
     let cache_key: PathBuf = rel_path.to_path_buf();
-    let returned = state.with_tasks_cache_mut(|cache: &mut HashMap<PathBuf, Task>| {
-        if outcome.needs_full_rebuild {
-            let mut values: Vec<Task> = cache.values().cloned().collect();
-            let target_str = rel_path.to_string_lossy();
-            if let Some(slot) = values
-                .iter_mut()
-                .find(|t| t.file_path.as_str() == target_str.as_ref())
-            {
-                *slot = outcome.updated_task.clone();
+    let returned: Result<Option<Task>, UpdateTaskError> =
+        state.with_tasks_cache_mut(|cache: &mut HashMap<PathBuf, Task>| {
+            if outcome.needs_full_rebuild {
+                let mut values: Vec<Task> = cache.values().cloned().collect();
+                let target_str = rel_path.to_string_lossy();
+                if let Some(slot) = values
+                    .iter_mut()
+                    .find(|t| t.file_path.as_str() == target_str.as_ref())
+                {
+                    *slot = outcome.updated_task.clone();
+                } else {
+                    values.push(outcome.updated_task.clone());
+                }
+                let index = TaskIndex::new(values)
+                    .validate_parent_hierarchy()
+                    .map_err(UpdateTaskError::from)?
+                    .build_children()
+                    .map_err(UpdateTaskError::from)?
+                    .build_reverse_links();
+                cache.clear();
+                for task in index.into_tasks() {
+                    cache.insert(PathBuf::from(task.file_path.as_str()), task);
+                }
+                Ok(cache.get(&cache_key).cloned())
             } else {
-                values.push(outcome.updated_task.clone());
+                cache.insert(cache_key.clone(), outcome.updated_task.clone());
+                Ok(Some(outcome.updated_task.clone()))
             }
-            let index = TaskIndex::new(values)
-                .validate_parent_hierarchy()
-                .expect("validated in plan_update")
-                .build_children()
-                .expect("validated in plan_update")
-                .build_reverse_links();
-            cache.clear();
-            for task in index.into_tasks() {
-                cache.insert(PathBuf::from(task.file_path.as_str()), task);
-            }
-            cache.get(&cache_key).cloned()
-        } else {
-            cache.insert(cache_key.clone(), outcome.updated_task.clone());
-            Some(outcome.updated_task.clone())
-        }
-    })?;
+        })?;
 
-    returned.ok_or(UpdateTaskCommandError::Validation(
+    returned?.ok_or(UpdateTaskCommandError::Validation(
         UpdateTaskError::FileNotFound(cache_key),
     ))
 }
