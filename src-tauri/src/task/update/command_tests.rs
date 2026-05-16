@@ -492,3 +492,67 @@ fn update_self_cycle_is_rejected_without_filesystem_change() {
     let after = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(original, after);
 }
+
+#[test]
+fn update_task_registers_write_ignore_and_consumes_on_modified_and_renamed_events() {
+    use crate::watcher_event::handler::handle_event;
+    use crate::watcher_event::AdapterContext;
+    use crate::watcher_event::EmitFn;
+    use spec_board_fs::watcher::core::FsEvent;
+    use std::sync::Mutex;
+
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    let abs = dir.path().join("tasks/a.md");
+
+    let log: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::new(Mutex::new(Vec::new()));
+    let log_for_emit = Arc::clone(&log);
+    let emit: EmitFn = Box::new(move |ev, payload| {
+        log_for_emit.lock().unwrap().push((ev.to_string(), payload));
+    });
+    let ctx = AdapterContext {
+        root: dir.path().to_path_buf(),
+        default_status: "Todo".into(),
+        state: Arc::clone(&state),
+        emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,
+    };
+
+    let mut args1 = args_for("tasks/a.md");
+    args1.status = Some("Doing".into());
+    let _t1 = update_task_impl(&state, &FsTaskIo, args1).expect("update#1 ok");
+    assert_eq!(1, state.write_ignore().len().expect("len"));
+
+    handle_event(&FsEvent::Modified(abs.clone()), &ctx).expect("handle Modified ok");
+    assert!(
+        log.lock().unwrap().is_empty(),
+        "self-write should not emit IPC on Modified"
+    );
+    assert!(state.write_ignore().is_empty().unwrap());
+
+    let mut args2 = args_for("tasks/a.md");
+    args2.priority = Some("high".into());
+    let _t2 = update_task_impl(&state, &FsTaskIo, args2).expect("update#2 ok");
+    assert_eq!(1, state.write_ignore().len().expect("len"));
+
+    let tmp = abs.with_extension("md.tmp.0");
+    handle_event(
+        &FsEvent::Renamed {
+            from: tmp,
+            to: abs.clone(),
+        },
+        &ctx,
+    )
+    .expect("handle Renamed ok");
+    assert!(
+        log.lock().unwrap().is_empty(),
+        "self-write should not emit IPC on Renamed(tmp -> abs)"
+    );
+    assert!(state.write_ignore().is_empty().unwrap());
+}
