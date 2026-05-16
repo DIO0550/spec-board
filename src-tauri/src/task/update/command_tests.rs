@@ -383,6 +383,33 @@ fn update_invalid_path_directory_returns_invalid_path() {
 }
 
 #[test]
+fn update_parse_failed_when_existing_file_has_broken_yaml() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    // Replace on-disk content with broken YAML (unclosed bracket).
+    fs::write(
+        dir.path().join("tasks/a.md"),
+        "---\ntitle: [unclosed\n---\n",
+    )
+    .unwrap();
+
+    let mut args = args_for("tasks/a.md");
+    args.status = Some("Doing".into());
+    let err = update_task_impl(&state, &FsTaskIo, args).expect_err("fail");
+    match err {
+        UpdateTaskCommandError::Validation(UpdateTaskError::ParseFailed(_)) => {}
+        other => panic!("expected ParseFailed for broken YAML, got {other:?}"),
+    }
+}
+
+#[test]
 fn update_parse_failed_when_existing_file_has_no_frontmatter() {
     let dir = tempdir();
     seed_md(

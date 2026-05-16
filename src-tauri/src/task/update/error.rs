@@ -9,7 +9,6 @@ use thiserror::Error;
 
 use crate::state::AppStateError;
 use crate::task::create::error::ContentRejectReason;
-use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::TaskIoError;
 use crate::task::parse::TaskParseError;
 use crate::task::task_content::TaskContentError;
@@ -39,8 +38,6 @@ pub enum UpdateTaskError {
     },
     #[error("content not scanner eligible: {reason}")]
     ContentNotScannerEligible { reason: ContentRejectReason },
-    #[error(transparent)]
-    Frontmatter(#[from] FrontmatterError),
 }
 
 #[derive(Debug, Error)]

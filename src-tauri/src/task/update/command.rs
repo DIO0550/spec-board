@@ -55,7 +55,7 @@ pub(crate) fn update_task_impl(
     };
 
     let parsed = frontmatter::parse_bytes(&bytes)
-        .map_err(UpdateTaskError::Frontmatter)?
+        .map_err(|e| UpdateTaskError::ParseFailed(e.to_string()))?
         .ok_or_else(|| {
             UpdateTaskError::ParseFailed("no frontmatter delimiter found".to_string())
         })?;
