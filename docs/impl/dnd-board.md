@@ -46,7 +46,7 @@ toIndex 計算には次の罠がある:
 - 同一カラム内で「元 index < toIndex」のとき、元 task を除外せずに insert すると重複や位置ズレが起きる
 - toIndex が `tasks.length` を超える可能性がある（hover 計算の境界と挿入境界が別）
 
-これらを「target を一度除外 → clamp → 挿入」で一括処理する純粋関数として切り出した。Action 層 (`moveTaskAction`) と reducer / domain 層 (`applyCardOrderUpdated`) の双方から使え、テストもこの 1 関数に集約できる。
+これらを「同一カラムの hover index 補正 → target 除外 → clamp → 挿入」で一括処理する純粋関数として切り出した。Action 層 (`moveTaskAction`) からのみ呼ばれる feature レイヤの helper であり、`domains/project-data` の `applyCardOrderUpdated` はこの関数に依存しない（domain 側は IPC 確定後の filePaths を入力として受け取る）。テストもこの 1 関数に集約できる。
 
 ## `applyCardOrderUpdated` を ProjectData の companion に追加する
 
