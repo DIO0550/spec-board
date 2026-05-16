@@ -206,7 +206,7 @@ test("fromColumn === toColumn で並び順変化があれば updateCardOrder が
   expect(updateTaskMock).not.toHaveBeenCalled();
   expect(updateCardOrderMock).toHaveBeenCalledWith({
     columnName: "Todo",
-    filePaths: ["tasks/b.md", "tasks/c.md", "tasks/a.md"],
+    filePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
   });
 });
 

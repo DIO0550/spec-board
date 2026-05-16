@@ -97,6 +97,7 @@ export const moveTaskAction = (
       const filePaths = buildMovedFilePaths(
         latestData?.tasks ?? [],
         params.taskFilePath,
+        params.fromColumn,
         params.toColumn,
         params.toIndex,
       );
@@ -126,6 +127,7 @@ export const moveTaskAction = (
     const filePaths = buildMovedFilePaths(
       data.tasks,
       params.taskFilePath,
+      params.fromColumn,
       params.toColumn,
       params.toIndex,
     );
