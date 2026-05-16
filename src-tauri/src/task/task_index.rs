@@ -381,11 +381,15 @@ impl TaskIndex {
                     serde_yaml_ng::Value::String("parent".into()),
                     serde_yaml_ng::Value::String(s.clone()),
                 );
-                existing
+                // 正規化済み lookup key で比較する。raw string equality だと
+                // `./tasks/p.md` / `tasks\p.md` 等の表記揺れで同一 task を指していても
+                // changed と誤判定し、不要な full rebuild と非正規形での書き戻しを招く。
+                let new_normalized = normalize_parent_path_for_lookup(s);
+                let existing_normalized = existing
                     .parent
                     .as_ref()
-                    .map(|p| p.as_str() != s.as_str())
-                    .unwrap_or(true)
+                    .and_then(|p| normalize_parent_path_for_lookup(p.as_str()));
+                new_normalized != existing_normalized
             }
         };
         if let Some(b) = &intent.body {

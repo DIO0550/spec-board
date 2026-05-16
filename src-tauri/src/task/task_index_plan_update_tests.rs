@@ -256,6 +256,44 @@ fn plan_update_with_no_parent_change_returns_no_rebuild_flag() {
 }
 
 #[test]
+fn plan_update_same_parent_with_dot_prefix_is_not_treated_as_change() {
+    // 既存 parent="tasks/p.md" の task に、./tasks/p.md（同一 task を指す表記揺れ）
+    // を渡しても needs_full_rebuild=false を返すこと。
+    let task = make_task("tasks/a.md", Some("tasks/p.md"));
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: tasks/p.md\n---\n");
+    let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.parent = Some("./tasks/p.md".to_string());
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+    assert!(
+        !outcome.needs_full_rebuild,
+        "lexically equivalent parent should not trigger rebuild"
+    );
+}
+
+#[test]
+fn plan_update_same_parent_with_backslash_separator_is_not_treated_as_change() {
+    let task = make_task("tasks/a.md", Some("tasks/p.md"));
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: tasks/p.md\n---\n");
+    let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.parent = Some("tasks\\p.md".to_string());
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+    assert!(
+        !outcome.needs_full_rebuild,
+        "backslash separator pointing to same task should not trigger rebuild"
+    );
+}
+
+#[test]
 fn plan_update_parent_added_returns_needs_full_rebuild() {
     let task = make_task("tasks/a.md", None);
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\n");
