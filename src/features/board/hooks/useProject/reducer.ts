@@ -28,6 +28,7 @@ export type ProjectAction =
       doneColumn?: string;
     }
   | { type: "done-column-refreshed"; doneColumn: string }
+  | { type: "card-order-updated"; columnName: string; filePaths: string[] }
   | { type: "reset" };
 
 export const initialState: ProjectState = ProjectSessionState.initial;
@@ -77,6 +78,14 @@ export const reducer = (
     case "done-column-refreshed":
       return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.refreshDoneColumn(data, action.doneColumn),
+      );
+    case "card-order-updated":
+      return ProjectSessionState.updateData(state, (data) =>
+        ProjectDataDomain.applyCardOrderUpdated(
+          data,
+          action.columnName,
+          action.filePaths,
+        ),
       );
     case "reset":
       return ProjectSessionState.reset();

@@ -45,8 +45,8 @@
 | 操作 | トリガー | 振る舞い | 遷移先 |
 |:-----|:--------|:---------|:-------|
 | プロジェクトを開く | 「開く」ボタンクリック | OSのディレクトリ選択ダイアログを表示。選択後にmdファイルを読み込んでボードに表示 | ボードビュー |
-| タスクのステータス変更 | カードをドラッグして別カラムにドロップ | 対象タスクのmdファイルのフロントマター `status` を更新 | - |
-| カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | カードの表示順序を更新し、`config.json` の `cardOrder` に永続化（[config-spec.md](./config-spec.md) 参照） | - |
+| タスクのステータス変更 | カードをドラッグして別カラムにドロップ | `update_task` IPC で対象タスクの frontmatter `status` を更新したのち、移動先カラムに対して `update_card_order` を 1 回呼び出す。旧カラムの `cardOrder` は BE 側 watcher が `status` 変更を検知して自動除去する契約 | - |
+| カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | `update_card_order` IPC を 1 回呼び出してカード表示順を `.spec-board/config.json` の `cardOrder` に永続化（[config-spec.md](./config-spec.md) 参照）。並び順に変化が無い場合は IPC を呼ばない。**reopen 時の rehydration（`open_project` が `config.card_order` を読み込みカラム内の tasks を並び替える）は BE 側の対応が必要（別 issue 依存）** | - |
 | カラムの追加 | 「+ カラムを追加」ボタンクリック | カラム名入力フィールドを表示。入力確定で新カラムを追加 | - |
 | カラム名の編集 | カラムヘッダーのステータス名をクリック | インライン編集モードに切り替わり、ステータス名を変更可能。該当するタスクのmdファイルも一括更新 | - |
 | カラムの削除 | カラムヘッダーの右クリックメニュー | 確認ダイアログを表示。カラム内にタスクがある場合は移動先カラムをドロップダウンで選択させ、全タスクの `status` を一括更新してから削除。タスクがない場合はそのまま削除 | - |
@@ -108,6 +108,40 @@ stateDiagram-v2
 | キーボード操作 | Tab でカード間移動、Enter で詳細パネル展開、矢印キーでカラム間移動 |
 | スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。ドラッグ操作時にライブリージョンでステータス変更を通知 |
 | フォーカス管理 | ドラッグ&ドロップ完了後、移動したカードにフォーカスを維持 |
+
+## ドラッグ&ドロップ仕様
+
+### 基本方針
+
+- HTML5 ネイティブ Drag and Drop API のみで実装する（外部 DnD ライブラリは導入しない）
+- カード要素に `draggable="true"` を付与し、独自 MIME `application/x-spec-board-task` で payload を運ぶ
+- 外部からの D&D（テキスト・ファイル等、独自 MIME を持たないもの）は `dragover` で `preventDefault` せず drop を受け付けない
+- BE 側コマンド `update_task` / `update_card_order` の実装、および `open_project` が `config.card_order` を読み込んでカラム内 tasks を rehydrate する処理は本仕様の依存先とする（別 issue で起票）。現状の `open_project` は tasks を id 順で返すため、保存した cardOrder が reopen 後に反映されないことを許容する
+
+### IPC シーケンス
+
+| 種類 | IPC 呼び出し |
+|:-----|:------------|
+| カラム間移動 | (1) `update_task({ filePath, status: toColumn })`、(2) 成功後 `update_card_order({ columnName: toColumn, filePaths })`。旧カラムの cardOrder は BE 側 watcher が status 変更を検知して自動除去する契約 |
+| 同一カラム内並び替え | `update_card_order({ columnName, filePaths })` を 1 回。並び順に変化が無い場合は IPC を呼ばない |
+
+楽観的 UI 更新は採用しない（IPC 完了後に reducer dispatch）。
+
+### UI 表現
+
+| 状態 | 表現 |
+|:-----|:----|
+| ドラッグ中のカード | `data-dragging="true"` 属性 + opacity 0.4 のクラスを付与 |
+| Drop ターゲットの hover 位置 | 対応する位置に `<li data-testid="drop-placeholder" aria-hidden="true">` のセパレータを表示 |
+| 中央境界判定 | マウス Y 座標がカード中央より厳密に上 (`clientY < middle`) なら上半分、それ以外（中央ピッタリ含む）は下半分扱い |
+
+### エッジケース
+
+- ESC キー押下: ブラウザが `dragend` を発火し、自動で IDLE 状態へ復帰
+- Drag 直後の synthetic click: `dragGuardRef` で次の macrotask まで `onClick` を抑止し、誤って詳細パネルが開かないようにする
+- IPC 失敗（generic）: `update_task` 失敗 / 同一カラム内の `update_card_order` 失敗時は「タスクの移動に失敗しました: &lt;原因&gt;」トーストを表示。dragState は finally で必ず null に戻す
+- IPC 部分失敗（partial-move）: カラム間移動で `update_task` 成功 + `update_card_order` 失敗のときは、カラム移動だけは完了しているため「カラムの移動は完了しましたが、並び順の保存に失敗しました。手動で並び替えてください。」と区別して表示する
+- stale state: queue 実行時に対象タスクが見つからない / `fromColumn` と `status` が乖離 / `toColumn` が消滅した場合は `invalid-state` で抜ける
 
 ## 制限事項
 

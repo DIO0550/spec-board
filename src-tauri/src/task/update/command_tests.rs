@@ -13,6 +13,7 @@ use crate::project::OpenProjectIntent;
 use crate::state::AppState;
 use crate::task::create::error::ContentRejectReason;
 use crate::task::io::FsTaskIo;
+use crate::task::task_index::ParentHierarchyErrorReason;
 use crate::task::warning::TaskWarningCode;
 
 fn tempdir() -> TempDir {
@@ -491,6 +492,112 @@ fn update_self_cycle_is_rejected_without_filesystem_change() {
 
     let after = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(original, after);
+}
+
+// 2 段 descendant cycle (a → b → a) を E2E で拒否し、
+// ファイル内容 + cache snapshot の対象 task の parent/children が不変であることを確認する。
+#[test]
+fn update_descendant_cycle_is_rejected_without_filesystem_change() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_md(root, "tasks/a.md", "---\ntitle: A\nstatus: Todo\n---\n");
+    seed_md(
+        root,
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let before_a = fs::read_to_string(root.join("tasks/a.md")).unwrap();
+    let before_b = fs::read_to_string(root.join("tasks/b.md")).unwrap();
+    let before_snapshot = state.tasks_snapshot().unwrap();
+
+    let mut args = args_for("tasks/a.md");
+    args.parent = Some("tasks/b.md".into());
+
+    let err = update_task_impl(&state, &FsTaskIo, args).expect_err("fail");
+    assert!(matches!(
+        err,
+        UpdateTaskCommandError::Validation(UpdateTaskError::ParentCycleOrTooDeep { .. })
+    ));
+
+    assert_eq!(
+        fs::read_to_string(root.join("tasks/a.md")).unwrap(),
+        before_a
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("tasks/b.md")).unwrap(),
+        before_b
+    );
+
+    let after_snapshot = state.tasks_snapshot().unwrap();
+    let before_a_task = before_snapshot
+        .iter()
+        .find(|t| t.file_path == "tasks/a.md")
+        .expect("before a");
+    let after_a_task = after_snapshot
+        .iter()
+        .find(|t| t.file_path == "tasks/a.md")
+        .expect("after a");
+    assert_eq!(before_a_task.parent, after_a_task.parent);
+    assert_eq!(before_a_task.children, after_a_task.children);
+}
+
+// 21 edge chain (C → B0 → ... → B20) を E2E で `TooDeep` として拒否し、
+// 更新対象 C.md のファイル + cache の parent が不変であることを確認する。
+#[test]
+fn update_chain_too_deep_is_rejected_without_filesystem_change() {
+    let dir = tempdir();
+    let root = dir.path();
+    // 20 edge chain: B0.parent=B1, ..., B19.parent=B20, B20.parent=None
+    for i in 0..20 {
+        seed_md(
+            root,
+            &format!("tasks/B{i}.md"),
+            &format!(
+                "---\ntitle: B{i}\nstatus: Todo\nparent: tasks/B{}.md\n---\n",
+                i + 1
+            ),
+        );
+    }
+    seed_md(root, "tasks/B20.md", "---\ntitle: B20\nstatus: Todo\n---\n");
+    seed_md(root, "tasks/C.md", "---\ntitle: C\nstatus: Todo\n---\n");
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let before_c = fs::read_to_string(root.join("tasks/C.md")).unwrap();
+    let before_snapshot = state.tasks_snapshot().unwrap();
+
+    // C.parent = B0 → C → B0 → ... → B20 で 21 edge → TooDeep
+    let mut args = args_for("tasks/C.md");
+    args.parent = Some("tasks/B0.md".into());
+
+    let err = update_task_impl(&state, &FsTaskIo, args).expect_err("fail");
+    match err {
+        UpdateTaskCommandError::Validation(UpdateTaskError::ParentCycleOrTooDeep {
+            reason: ParentHierarchyErrorReason::TooDeep,
+            ..
+        }) => {}
+        other => panic!("expected ParentCycleOrTooDeep(TooDeep), got {other:?}"),
+    }
+
+    assert_eq!(
+        fs::read_to_string(root.join("tasks/C.md")).unwrap(),
+        before_c
+    );
+
+    let after_snapshot = state.tasks_snapshot().unwrap();
+    let before_c_task = before_snapshot
+        .iter()
+        .find(|t| t.file_path == "tasks/C.md")
+        .expect("before C");
+    let after_c_task = after_snapshot
+        .iter()
+        .find(|t| t.file_path == "tasks/C.md")
+        .expect("after C");
+    assert_eq!(before_c_task.parent, after_c_task.parent);
 }
 
 #[test]

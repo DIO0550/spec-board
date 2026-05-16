@@ -5,6 +5,7 @@ import {
   Board,
   EmptyState,
   HeaderBar,
+  type MoveTaskParams,
   type ProjectError,
   type ProjectState,
   useProject,
@@ -20,8 +21,12 @@ import type { Task } from "./types/task";
  * @param err useProject から運ばれるエラー
  * @returns toast 等に出せる文字列
  */
-const projectErrorMessage = (err: ProjectError): string =>
-  err.kind === "tauri" ? err.error.message : err.message;
+const projectErrorMessage = (err: ProjectError): string => {
+  if (err.kind === "tauri") {
+    return err.error.message;
+  }
+  return err.message;
+};
 
 /** State の表示用 ProjectData を返すための内部型。 */
 type DisplayableData = {
@@ -84,6 +89,7 @@ export const App = () => {
     updateTask,
     deleteTask,
     updateColumns,
+    moveTask,
   } = useProject({
     onError: (err) => {
       showToast(projectErrorMessage(err), "error");
@@ -383,6 +389,21 @@ export const App = () => {
     [createTask, showToast],
   );
 
+  const handleTaskDrop = useCallback(
+    async (params: MoveTaskParams): Promise<void> => {
+      const result = await moveTask(params);
+      if (!result.ok) {
+        if (result.error.kind === "partial-move") {
+          showToast(result.error.message, "error");
+          return;
+        }
+        const message = projectErrorMessage(result.error);
+        showToast(`タスクの移動に失敗しました: ${message}`, "error");
+      }
+    },
+    [moveTask, showToast],
+  );
+
   const handleTaskDelete = useCallback(
     async (id: string): Promise<void> => {
       const filePath = tasks.find((t) => t.id === id)?.filePath;
@@ -433,6 +454,7 @@ export const App = () => {
           onRenameColumn={handleRenameColumn}
           onDeleteColumn={handleDeleteColumn}
           onTaskClick={handleTaskClick}
+          onTaskDrop={handleTaskDrop}
         />
         {tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">

@@ -4,6 +4,7 @@ export { HeaderBar } from "./components/HeaderBar";
 export type {
   ColumnsCommand,
   ColumnsCommandBuilder,
+  MoveTaskParams,
   ProjectData,
   ProjectError,
   ProjectState,

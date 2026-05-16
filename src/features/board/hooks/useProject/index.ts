@@ -7,6 +7,7 @@ import type {
 } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import type { Result as ResultT } from "@/utils/result";
+import { type MoveTaskParams, moveTaskAction } from "./actions/moveTask";
 import { openProjectAction } from "./actions/openProject";
 import {
   createTaskAction,
@@ -40,6 +41,7 @@ export type { ProjectData, ProjectState } from "./reducer";
 export type {
   ColumnsCommand,
   ColumnsCommandBuilder,
+  MoveTaskParams,
   UpdateColumnsInput,
   UseProjectOptions,
   UseProjectResult,
@@ -250,6 +252,12 @@ export const useProject = (
     [actionDeps],
   );
 
+  const moveTask = useCallback(
+    (params: MoveTaskParams): Promise<ResultT<void, ProjectError>> =>
+      moveTaskAction(actionDeps(), params),
+    [actionDeps],
+  );
+
   const reset = useCallback((): void => {
     invalidateOpenRequests(projectVersionRef.current);
     invalidateProject(projectVersionRef.current);
@@ -263,6 +271,7 @@ export const useProject = (
     updateTask,
     deleteTask,
     updateColumns,
+    moveTask,
     reset,
   };
 };

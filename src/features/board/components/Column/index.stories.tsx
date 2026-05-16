@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { initialTasks } from "@/test-fixtures";
 import { Task } from "@/types/task";
 import { Column } from ".";
@@ -22,6 +23,11 @@ const meta: Meta<typeof Column> = {
     onTaskClick: () => {},
     onRename: () => {},
     onDelete: () => {},
+    dragState: null,
+    onDragHover: fn(),
+    onTaskDrop: fn(),
+    onTaskDragStart: fn(),
+    onTaskDragEnd: fn(),
   },
 };
 
@@ -57,4 +63,35 @@ export const ManyTasks: Story = {
 
 export const WithoutMenu: Story = {
   args: { onDelete: undefined, onRename: undefined },
+};
+
+const draggingFromOther = {
+  draggingTaskFilePath: "tasks/external.md",
+  draggingFromColumn: "Done",
+};
+
+export const HoverTop: Story = {
+  args: {
+    dragState: { ...draggingFromOther, hoverColumn: "Todo", hoverIndex: 0 },
+  },
+};
+
+export const HoverMiddle: Story = {
+  args: {
+    dragState: {
+      ...draggingFromOther,
+      hoverColumn: "Todo",
+      hoverIndex: Math.max(1, Math.floor(todoTasks.length / 2)),
+    },
+  },
+};
+
+export const HoverBottom: Story = {
+  args: {
+    dragState: {
+      ...draggingFromOther,
+      hoverColumn: "Todo",
+      hoverIndex: todoTasks.length,
+    },
+  },
 };
