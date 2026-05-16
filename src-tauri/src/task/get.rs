@@ -1,8 +1,9 @@
 //! `get_tasks` Tauri command 本体。
 //!
-//! `AppState.tasks_cache` に格納済みの `Task` 一覧を `id` 昇順でクローンして返す
-//! 純粋な読み取り専用 command。`open_project` で commit された state を消費する
-//! 後続 API としての位置付け。
+//! `AppState.tasks_cache` に格納済みの `Task` 一覧を取得し、`TaskIndex` aggregate
+//! に並び順の決定を委譲して返す純粋な読み取り専用 command。`open_project` で
+//! commit された state を消費する後続 API としての位置付け。並び順の契約
+//! （id 昇順）は `TaskIndex::sorted_by_id` 側に集約する。
 //!
 //! # 構成
 //!
@@ -21,7 +22,7 @@ use std::sync::Arc;
 use tauri::State;
 use thiserror::Error;
 
-use super::task_index::Task;
+use super::task_index::{Task, TaskIndex};
 use crate::state::{AppState, AppStateError};
 
 /// `get_tasks` コマンドのエラー。
@@ -55,8 +56,9 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<Vec<Task>, String> {
 
 /// 単体テスト境界の本体関数。
 ///
-/// `AppState::tasks_snapshot` で `Vec<Task>` を取得し、`id` 昇順 sort して返す。
-/// `tasks_cache` が空の場合は空 Vec をそのまま返す（未 open ケースを成功扱い）。
+/// `AppState::tasks_snapshot` で `Vec<Task>` を取得し、`TaskIndex` aggregate に
+/// 並び順の決定を委譲した結果を返す。`tasks_cache` が空の場合は空 Vec を返す
+/// （未 open ケースを成功扱い）。
 ///
 /// # Errors
 ///
@@ -64,15 +66,7 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<Vec<Task>, String> {
 /// `GetTasksError::StateLockPoisoned` を返す。
 pub(crate) fn get_tasks_impl(state: &AppState) -> Result<Vec<Task>, GetTasksError> {
     let snapshot = state.tasks_snapshot()?;
-    Ok(get_tasks_usecase(snapshot))
-}
-
-/// 純粋部分: snapshot に `id` 昇順 sort を適用するだけのリネーム的関数。
-/// 旧 `get_tasks_impl` 内に直書きされていた sort ロジックを usecase 層として
-/// 切り出す。挙動変更なし。
-pub(crate) fn get_tasks_usecase(mut snapshot: Vec<Task>) -> Vec<Task> {
-    snapshot.sort_by(|a, b| a.id.cmp(&b.id));
-    snapshot
+    Ok(TaskIndex::from(snapshot).sorted_by_id())
 }
 
 #[cfg(test)]

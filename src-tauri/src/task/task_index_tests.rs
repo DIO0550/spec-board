@@ -390,6 +390,61 @@ fn validate_parent_for_new_task_not_found_cases() {
 }
 
 #[test]
+fn sorted_by_id_returns_empty_for_empty_index() {
+    let result = TaskIndex::new(vec![]).sorted_by_id();
+    assert!(result.is_empty());
+}
+
+#[test]
+fn sorted_by_id_returns_single_task_unchanged() {
+    let tasks = vec![task_without_parent("tasks/a.md")];
+    let result = TaskIndex::new(tasks).sorted_by_id();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].file_path, "tasks/a.md");
+}
+
+#[test]
+fn sorted_by_id_sorts_reverse_order_ascending() {
+    let tasks = vec![
+        task_without_parent("tasks/c.md"),
+        task_without_parent("tasks/b.md"),
+        task_without_parent("tasks/a.md"),
+    ];
+    let result = TaskIndex::new(tasks).sorted_by_id();
+    let ids: Vec<_> = result.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(ids, vec!["tasks/a.md", "tasks/b.md", "tasks/c.md"]);
+}
+
+#[test]
+fn sorted_by_id_sorts_random_order_ascending() {
+    let tasks = vec![
+        task_without_parent("tasks/b.md"),
+        task_without_parent("tasks/d.md"),
+        task_without_parent("tasks/a.md"),
+        task_without_parent("tasks/c.md"),
+    ];
+    let result = TaskIndex::new(tasks).sorted_by_id();
+    let ids: Vec<_> = result.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["tasks/a.md", "tasks/b.md", "tasks/c.md", "tasks/d.md"]
+    );
+}
+
+#[test]
+fn sorted_by_id_preserves_input_order_for_duplicate_ids() {
+    let mut first = task_without_parent("tasks/dup.md");
+    first.title = "first".into();
+    let mut second = task_without_parent("tasks/dup.md");
+    second.title = "second".into();
+    let tasks = vec![first, second];
+    let result = TaskIndex::new(tasks).sorted_by_id();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].title, "first");
+    assert_eq!(result[1].title, "second");
+}
+
+#[test]
 fn validate_parent_for_new_task_cycle_or_too_deep_cases() {
     let chain_20 = parent_chain_with_edge_count(20);
     let cycle_pair = vec![
