@@ -222,6 +222,40 @@ fn write_new_partial_write_cleanup_not_observable_on_normal_path() {
 }
 
 #[test]
+fn write_existing_overwrites_existing_file_with_new_bytes() {
+    with_both(|io, base| {
+        let path = base.join("update-target.md");
+        io.write_new(&path, b"original").expect("seed");
+        io.write_existing(&path, b"updated").expect("overwrite ok");
+        let read = io.read(&path).expect("read ok");
+        assert_eq!(b"updated".to_vec(), read);
+    });
+}
+
+#[test]
+fn write_existing_creates_when_path_missing_following_std_fs_write_semantics() {
+    with_both(|io, base| {
+        let path = base.join("brand-new.md");
+        io.write_existing(&path, b"fresh")
+            .expect("write_existing ok");
+        let read = io.read(&path).expect("read ok");
+        assert_eq!(b"fresh".to_vec(), read);
+    });
+}
+
+#[test]
+fn write_existing_rejects_when_target_is_dir() {
+    with_both(|io, base| {
+        let dir = base.join("dir-as-target");
+        io.ensure_dir(&dir).expect("seed dir");
+        let err = io
+            .write_existing(&dir, b"x")
+            .expect_err("target-is-dir should fail");
+        let _ = err;
+    });
+}
+
+#[test]
 fn task_io_error_display_matches_inner_io_error_display() {
     // `From<TaskIoError> for CreateTaskCommandError` で Display を素通しさせる
     // ための前提条件として、`TaskIoError::Io(_)` の Display が inner と完全

@@ -44,6 +44,17 @@ pub trait TaskIo: Send + Sync {
     ///   行わない（二重削除防止）。
     fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError>;
 
+    /// 既存ファイル前提の上書き書き込み。
+    ///
+    /// 契約:
+    /// - `path` が存在しない場合の挙動は実装依存（`FsTaskIo` は `std::fs::write`
+    ///   のセマンティクスに従い新規作成し得る）。effect 層は呼び出し前に必ず
+    ///   `read()` で存在を確認する。
+    /// - 部分書き込み失敗時のロールバックは実装に委ねる。事前 `read` で復元
+    ///   できるため、呼び出し側で独自に rollback ロジックを持つ必要はない。
+    /// - `path` がディレクトリを指す場合は `Err` を返す。
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError>;
+
     /// `path` を削除する。`NotFound` も `Err` として返し、呼び出し側で
     /// `io::Error::kind()` 判定する。
     fn remove(&self, path: &Path) -> Result<(), TaskIoError>;
@@ -89,6 +100,10 @@ impl TaskIo for FsTaskIo {
             return Err(TaskIoError::Io(err));
         }
         Ok(())
+    }
+
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        std::fs::write(path, bytes).map_err(TaskIoError::from)
     }
 
     fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
@@ -199,6 +214,18 @@ impl TaskIo for InMemoryTaskIo {
                 }
             }
             _ => {}
+        }
+        g.files.insert(path.to_path_buf(), bytes.to_vec());
+        Ok(())
+    }
+
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        let mut g = self.inner.lock().expect("InMemoryTaskIo lock");
+        if g.dirs.contains(path) {
+            return Err(TaskIoError::Io(io::Error::new(
+                io::ErrorKind::IsADirectory,
+                "path is a directory",
+            )));
         }
         g.files.insert(path.to_path_buf(), bytes.to_vec());
         Ok(())
