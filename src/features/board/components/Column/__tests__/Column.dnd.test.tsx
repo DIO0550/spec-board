@@ -199,6 +199,65 @@ test("空カラムでの drop は toIndex=0 で呼ばれる", () => {
   });
 });
 
+test("非空カラムでの drop は dragState.hoverIndex ではなく drop event の clientY から toIndex を同期計算する", () => {
+  const tasks = [
+    makeTask({ id: "1", filePath: "tasks/1.md", status: "Done" }),
+    makeTask({ id: "2", filePath: "tasks/2.md", status: "Done" }),
+    makeTask({ id: "3", filePath: "tasks/3.md", status: "Done" }),
+  ];
+  const onTaskDrop = vi.fn();
+  render({
+    name: "Done",
+    tasks,
+    onAddClick: vi.fn(),
+    onTaskDrop,
+    // dragState.hoverIndex は故意に 0（古い stale 値）に設定
+    dragState: {
+      draggingTaskFilePath: "tasks/a.md",
+      draggingFromColumn: "Todo",
+      hoverColumn: "Done",
+      hoverIndex: 0,
+    },
+  });
+  const liElements =
+    container?.querySelectorAll<HTMLLIElement>("li[data-task-card]") ?? [];
+  expect(liElements.length).toBe(3);
+  // 各カードに 40px 刻みの bounding rect を割り当てる
+  const rects = [
+    { top: 0, bottom: 40 },
+    { top: 40, bottom: 80 },
+    { top: 80, bottom: 120 },
+  ];
+  liElements.forEach((el, i) => {
+    const r = rects[i] as { top: number; bottom: number };
+    vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
+      top: r.top,
+      bottom: r.bottom,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: r.bottom - r.top,
+      x: 0,
+      y: r.top,
+      toJSON: () => ({}),
+    } as DOMRect);
+  });
+  // clientY = 70（2 枚目の下半分 = 2 枚目と 3 枚目の間 → index 2）
+  const section = querySection();
+  const event = createDragEvent("drop", { clientY: 70 });
+  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  act(() => {
+    section.dispatchEvent(event);
+  });
+  expect(onTaskDrop).toHaveBeenCalledWith({
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 2,
+  });
+  // dragState.hoverIndex=0 ではなく 2 が使われていることが本テストの核心
+});
+
 test("dragState.hoverColumn === name の時のみ drop-placeholder が出る", () => {
   const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
   render({
