@@ -44,6 +44,18 @@ pub trait TaskIo: Send + Sync {
     ///   行わない（二重削除防止）。
     fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError>;
 
+    /// 既存ファイル前提の上書き書き込み。
+    ///
+    /// 契約:
+    /// - `path` が存在しない場合の挙動は実装依存（`FsTaskIo` は新規作成し得る）。
+    ///   effect 層は呼び出し前に必ず `read()` で存在を確認する。
+    /// - 書き込みは **アトミック** であること。`Err` を返した場合、`path` の内容は
+    ///   呼び出し前と同一であることを保証する（部分書き込みで破壊しない）。
+    ///   `FsTaskIo` は同一ディレクトリの一時ファイルに書いてから `rename` する
+    ///   POSIX atomic 契約で実現する。
+    /// - `path` がディレクトリを指す場合は `Err` を返す。
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError>;
+
     /// `path` を削除する。`NotFound` も `Err` として返し、呼び出し側で
     /// `io::Error::kind()` 判定する。
     fn remove(&self, path: &Path) -> Result<(), TaskIoError>;
@@ -91,6 +103,22 @@ impl TaskIo for FsTaskIo {
         Ok(())
     }
 
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        // アトミック上書き: 同一ディレクトリの一時ファイルに書き込んだ後 rename する。
+        // disk-full 等で書き込みが途中失敗しても元ファイルは無傷で残る
+        // （rename は同一ファイルシステム上で atomic、POSIX 契約）。
+        let tmp_path = atomic_tmp_path_for(path);
+        if let Err(err) = std::fs::write(&tmp_path, bytes) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(TaskIoError::from(err));
+        }
+        if let Err(err) = std::fs::rename(&tmp_path, path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(TaskIoError::from(err));
+        }
+        Ok(())
+    }
+
     fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
         std::fs::remove_file(path).map_err(TaskIoError::from)
     }
@@ -98,6 +126,26 @@ impl TaskIo for FsTaskIo {
     fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
         std::fs::read(path).map_err(TaskIoError::from)
     }
+}
+
+/// `write_existing` のアトミック書き込み用 tmp パスを組み立てる。
+///
+/// dotfile + `.tmp` 拡張子で命名し、scanner / watcher の `.md` フィルタを通過しない
+/// ようにする。process id + 高精度時刻で同時実行衝突を最小化する（厳密な一意性は
+/// 必要としない: rename は atomic で、衝突しても最後に rename した内容で確定する）。
+fn atomic_tmp_path_for(path: &Path) -> std::path::PathBuf {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("update");
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    parent.join(format!(".{filename}.{pid}.{nanos}.update.tmp"))
 }
 
 /// テスト用 in-memory 実装。`PathBuf` キーの `HashMap` で状態を保持する。
@@ -199,6 +247,18 @@ impl TaskIo for InMemoryTaskIo {
                 }
             }
             _ => {}
+        }
+        g.files.insert(path.to_path_buf(), bytes.to_vec());
+        Ok(())
+    }
+
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        let mut g = self.inner.lock().expect("InMemoryTaskIo lock");
+        if g.dirs.contains(path) {
+            return Err(TaskIoError::Io(io::Error::new(
+                io::ErrorKind::IsADirectory,
+                "path is a directory",
+            )));
         }
         g.files.insert(path.to_path_buf(), bytes.to_vec());
         Ok(())
