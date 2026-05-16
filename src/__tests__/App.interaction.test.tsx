@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { DRAG_MIME_TYPE } from "@/features/board/components/Board/dragState";
 import {
   createTask as createTaskInvoke,
   deleteTask as deleteTaskInvoke,
@@ -18,9 +19,11 @@ import {
   openDirectoryDialog,
   openProject as openProjectInvoke,
   TauriError,
+  updateCardOrder as updateCardOrderInvoke,
   updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
+import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
@@ -36,6 +39,7 @@ vi.mock("@/lib/tauri", async () => {
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
     updateColumns: vi.fn(),
+    updateCardOrder: vi.fn(),
   };
 });
 
@@ -50,6 +54,7 @@ const createTaskMock = vi.mocked(createTaskInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const deleteTaskMock = vi.mocked(deleteTaskInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
+const updateCardOrderMock = vi.mocked(updateCardOrderInvoke);
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -99,6 +104,7 @@ beforeEach(() => {
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
   updateColumnsMock.mockReset();
+  updateCardOrderMock.mockReset();
 });
 
 afterEach(() => {
@@ -612,4 +618,67 @@ test("再 open の loading 中は旧 Board を非表示にして loading を表�
     await Promise.resolve();
   });
   expect(container?.textContent).toContain("A タスク");
+});
+
+/**
+ * Board の TaskCard を dragstart → Done カラム section へ drop して
+ * App.handleTaskDrop の onTaskDrop callback を発火させる。
+ */
+const dropFirstCardToDone = async () => {
+  const card = container?.querySelector<HTMLElement>(
+    "[data-testid='task-card']",
+  );
+  const doneSection = container?.querySelector<HTMLElement>(
+    "section[aria-label='Done']",
+  );
+  expect(card).not.toBeNull();
+  expect(doneSection).not.toBeNull();
+  await act(async () => {
+    card?.dispatchEvent(createDragEvent("dragstart"));
+  });
+  const drop = createDragEvent("drop");
+  drop.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  await act(async () => {
+    doneSection?.dispatchEvent(drop);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+test("moveTask 失敗（generic）→ 「タスクの移動に失敗しました」 toast を表示", async () => {
+  mountApp();
+  await openSuccessfully();
+
+  updateTaskMock.mockResolvedValueOnce(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+
+  await dropFirstCardToDone();
+
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateCardOrderMock).not.toHaveBeenCalled();
+  expect(container?.textContent).toContain("タスクの移動に失敗しました");
+  expect(container?.textContent).not.toContain("並び順の保存に失敗");
+});
+
+test("moveTask 部分失敗（partial-move）→ 並び順保存失敗の専用 toast を表示", async () => {
+  mountApp();
+  await openSuccessfully();
+
+  const movedA: Task = { ...taskA, status: "Done" };
+  updateTaskMock.mockResolvedValueOnce(Result.ok(movedA));
+  updateCardOrderMock.mockResolvedValueOnce(
+    Result.err(new TauriError("IO_ERROR", "order fail")),
+  );
+
+  await dropFirstCardToDone();
+
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateCardOrderMock).toHaveBeenCalledTimes(1);
+  expect(container?.textContent).toContain("並び順の保存に失敗しました");
+  expect(container?.textContent).not.toContain("タスクの移動に失敗しました");
 });
