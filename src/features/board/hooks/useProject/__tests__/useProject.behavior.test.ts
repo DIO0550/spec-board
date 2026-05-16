@@ -457,3 +457,57 @@ test("dataB を別途 loaded に持つ場合も open-fail 復元先が正しい"
   const next = reducer(start, { type: "open-fail", path: "/c", error: err });
   expect(next).toEqual({ kind: "loaded", path: "/b", data: dataB });
 });
+
+test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ", () => {
+  const todoA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const todoB = makeTask({ id: "b", filePath: "tasks/b.md", status: "Todo" });
+  const doneX = makeTask({ id: "x", filePath: "tasks/x.md", status: "Done" });
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/p",
+    data: { tasks: [todoA, doneX, todoB], columns: cols("Todo", "Done") },
+  };
+  const next = reducer(loaded, {
+    type: "card-order-updated",
+    columnName: "Todo",
+    filePaths: ["tasks/b.md", "tasks/a.md"],
+  });
+  const data = (next as { data: ProjectData }).data;
+  expect(data.tasks.map((t) => t.filePath)).toEqual([
+    "tasks/b.md",
+    "tasks/x.md",
+    "tasks/a.md",
+  ]);
+});
+
+test("card-order-updated → 他カラムの tasks 順序は不変", () => {
+  const todoA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const doneX = makeTask({ id: "x", filePath: "tasks/x.md", status: "Done" });
+  const doneY = makeTask({ id: "y", filePath: "tasks/y.md", status: "Done" });
+  const loaded: ProjectState = {
+    kind: "loaded",
+    path: "/p",
+    data: { tasks: [todoA, doneX, doneY], columns: cols("Todo", "Done") },
+  };
+  const next = reducer(loaded, {
+    type: "card-order-updated",
+    columnName: "Todo",
+    filePaths: ["tasks/a.md"],
+  });
+  const data = (next as { data: ProjectData }).data;
+  expect(data.tasks.map((t) => t.filePath)).toEqual([
+    "tasks/a.md",
+    "tasks/x.md",
+    "tasks/y.md",
+  ]);
+});
+
+test("card-order-updated → idle state では no-op", () => {
+  const idle: ProjectState = { kind: "idle" };
+  const next = reducer(idle, {
+    type: "card-order-updated",
+    columnName: "Todo",
+    filePaths: ["tasks/a.md"],
+  });
+  expect(next).toBe(idle);
+});

@@ -31,12 +31,12 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
-function render(props: Parameters<typeof TaskCard>[0]) {
+function render(props: Omit<Parameters<typeof TaskCard>[0], "fromColumn">) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskCard, props));
+    root?.render(createElement(TaskCard, { fromColumn: "Todo", ...props }));
   });
 }
 

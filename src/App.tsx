@@ -5,6 +5,7 @@ import {
   Board,
   EmptyState,
   HeaderBar,
+  type MoveTaskParams,
   type ProjectError,
   type ProjectState,
   useProject,
@@ -84,6 +85,7 @@ export const App = () => {
     updateTask,
     deleteTask,
     updateColumns,
+    moveTask,
   } = useProject({
     onError: (err) => {
       showToast(projectErrorMessage(err), "error");
@@ -383,6 +385,17 @@ export const App = () => {
     [createTask, showToast],
   );
 
+  const handleTaskDrop = useCallback(
+    async (params: MoveTaskParams): Promise<void> => {
+      const result = await moveTask(params);
+      if (!result.ok) {
+        const message = projectErrorMessage(result.error);
+        showToast(`タスクの移動に失敗しました: ${message}`, "error");
+      }
+    },
+    [moveTask, showToast],
+  );
+
   const handleTaskDelete = useCallback(
     async (id: string): Promise<void> => {
       const filePath = tasks.find((t) => t.id === id)?.filePath;
@@ -433,6 +446,7 @@ export const App = () => {
           onRenameColumn={handleRenameColumn}
           onDeleteColumn={handleDeleteColumn}
           onTaskClick={handleTaskClick}
+          onTaskDrop={handleTaskDrop}
         />
         {tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">

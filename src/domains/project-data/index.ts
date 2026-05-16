@@ -167,4 +167,52 @@ export const ProjectData = {
     ...data,
     doneColumn,
   }),
+
+  /**
+   * 指定カラム内のタスクを filePaths の順序で並べ替える。
+   *
+   * - 対象カラム外のタスク順序は維持
+   * - filePaths に含まれない対象カラム内タスクは末尾に元出現順で配置
+   * - tasks.length は変化しない
+   *
+   * @param data 元 ProjectData
+   * @param columnName 並べ替え対象のカラム名
+   * @param filePaths 期待する並び順（先頭が最上位）
+   * @returns 並び替え後の ProjectData
+   */
+  applyCardOrderUpdated: (
+    data: ProjectData,
+    columnName: string,
+    filePaths: readonly string[],
+  ): ProjectData => {
+    const inColumn = data.tasks.filter((t) => t.status === columnName);
+    if (inColumn.length === 0) {
+      return data;
+    }
+    const inColumnByFilePath = new Map(inColumn.map((t) => [t.filePath, t]));
+    const ordered: Task[] = [];
+    const used = new Set<string>();
+    for (const filePath of filePaths) {
+      const task = inColumnByFilePath.get(filePath);
+      if (task !== undefined && !used.has(filePath)) {
+        ordered.push(task);
+        used.add(filePath);
+      }
+    }
+    for (const task of inColumn) {
+      if (!used.has(task.filePath)) {
+        ordered.push(task);
+      }
+    }
+    let cursor = 0;
+    const tasks = data.tasks.map((task) => {
+      if (task.status !== columnName) {
+        return task;
+      }
+      const next = ordered[cursor];
+      cursor += 1;
+      return next ?? task;
+    });
+    return { ...data, tasks };
+  },
 } as const;

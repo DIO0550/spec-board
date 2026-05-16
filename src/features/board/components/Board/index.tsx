@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
-import { Column } from "../Column";
+import { Column, type ColumnTaskDropParams } from "../Column";
+import { DragAction, dragReducer } from "./dragState";
 
 /** ボードの Props */
 type BoardProps = {
@@ -43,6 +44,11 @@ type BoardProps = {
    * @param destColumn - タスクの移動先カラム名。削除対象カラムにタスクが 0 件の場合は undefined
    */
   onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
+  /**
+   * Board が drop を受けたら呼ぶ。App.tsx で useProject.moveTask に配線する。
+   * @param params 移動パラメータ
+   */
+  onTaskDrop?: (params: ColumnTaskDropParams) => Promise<unknown> | undefined;
 };
 
 /**
@@ -59,6 +65,7 @@ export const Board = ({
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
+  onTaskDrop,
 }: BoardProps) => {
   const sorted = useMemo(
     () => [...columns].sort((a, b) => a.order - b.order),
@@ -77,6 +84,40 @@ export const Board = ({
   }, [tasks]);
 
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
+
+  const [dragState, dispatch] = useReducer(dragReducer, null);
+
+  const handleDragStart = useCallback(
+    (taskFilePath: string, fromColumn: string) => {
+      dispatch(DragAction.start(taskFilePath, fromColumn));
+    },
+    [],
+  );
+
+  const handleDragHover = useCallback(
+    (column: string | null, index: number | null) => {
+      dispatch(DragAction.hover(column, index));
+    },
+    [],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    dispatch(DragAction.end());
+  }, []);
+
+  const handleTaskDrop = useCallback(
+    async (params: ColumnTaskDropParams) => {
+      try {
+        await onTaskDrop?.(params);
+      } catch {
+        // unhandled rejection を防ぐため明示的に握る。
+        // エラー表示は App 側 onTaskDrop の責務。
+      } finally {
+        dispatch(DragAction.end());
+      }
+    },
+    [onTaskDrop],
+  );
 
   return (
     <div className="flex h-full gap-4 overflow-x-auto p-4">
@@ -101,6 +142,11 @@ export const Board = ({
               : undefined
           }
           canDelete={columns.length > 1}
+          dragState={dragState}
+          onDragHover={handleDragHover}
+          onTaskDrop={handleTaskDrop}
+          onTaskDragStart={handleDragStart}
+          onTaskDragEnd={handleDragEnd}
         />
       ))}
       {onAddColumn && (

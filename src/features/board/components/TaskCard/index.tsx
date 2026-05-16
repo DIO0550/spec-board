@@ -1,4 +1,7 @@
+import type { DragEvent } from "react";
+import { useRef } from "react";
 import type { Task } from "@/types/task";
+import { DRAG_MIME_TYPE } from "../Board/dragState";
 import { LabelTag } from "../LabelTag";
 import { PriorityBadge } from "../PriorityBadge";
 import { SubIssueProgress } from "../SubIssueProgress";
@@ -11,16 +14,29 @@ type TaskCardProps = {
   childTasks?: Task[];
   /** 完了カラム名 */
   doneColumn?: string;
+  /** 所属カラム名。onDragStart の引数に使う。 */
+  fromColumn: string;
+  /** ドラッグ中フラグ（Board の DragState から配布） */
+  isDragging?: boolean;
   /**
    * カードクリック時のコールバック
    * @param taskId - クリックされたタスクのID
    */
   onClick?: (taskId: string) => void;
+  /**
+   * ドラッグ開始時のコールバック。
+   * @param taskFilePath - 対象タスクの filePath
+   * @param fromColumn - 元カラム名
+   */
+  onDragStart?: (taskFilePath: string, fromColumn: string) => void;
+  /** ドラッグ終了時のコールバック。 */
+  onDragEnd?: () => void;
 };
 
 /**
- * @param props - {@link TaskCardProps}
- * @returns カード要素
+ * タスクカード本体の表示。
+ * @param props 表示用のタスク情報
+ * @returns カード内 markup
  */
 const CardContent = ({
   task,
@@ -52,7 +68,7 @@ const CardContent = ({
 };
 
 /**
- * タスクカードを表示する
+ * タスクカードを表示する。onClick の有無に関わらず draggable な div を返す。
  * @param props - {@link TaskCardProps}
  * @returns カード要素
  */
@@ -60,11 +76,43 @@ export const TaskCard = ({
   task,
   childTasks,
   doneColumn,
+  fromColumn,
+  isDragging = false,
   onClick,
+  onDragStart,
+  onDragEnd,
 }: TaskCardProps) => {
+  const dragGuardRef = useRef(false);
+
+  const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.setData(DRAG_MIME_TYPE, task.filePath);
+    e.dataTransfer.effectAllowed = "move";
+    dragGuardRef.current = true;
+    onDragStart?.(task.filePath, fromColumn);
+  };
+
+  const handleDragEnd = () => {
+    onDragEnd?.();
+    setTimeout(() => {
+      dragGuardRef.current = false;
+    }, 0);
+  };
+
+  const draggingClass = isDragging ? " opacity-40" : "";
+  const dataDragging = isDragging ? "true" : undefined;
+
   if (!onClick) {
     return (
-      <div className="w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm">
+      // biome-ignore lint/a11y/noStaticElementInteractions: HTML5 native DnD requires draggable handlers on the card container; CardContent may include interactive descendants so a semantic element is unsuitable
+      <div
+        draggable
+        data-dragging={dataDragging}
+        data-testid="task-card"
+        aria-grabbed={isDragging}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        className={`w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm${draggingClass}`}
+      >
         <CardContent
           task={task}
           childTasks={childTasks}
@@ -77,10 +125,21 @@ export const TaskCard = ({
   return (
     // biome-ignore lint/a11y/useSemanticElements: CardContent may include interactive descendants such as details/summary, so a semantic <button> cannot be used as the card container
     <div
+      draggable
+      data-dragging={dataDragging}
+      data-testid="task-card"
+      aria-grabbed={isDragging}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       role="button"
       tabIndex={0}
-      className="w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md"
-      onClick={() => onClick(task.id)}
+      className={`w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md${draggingClass}`}
+      onClick={() => {
+        if (dragGuardRef.current) {
+          return;
+        }
+        onClick(task.id);
+      }}
       onKeyDown={(e) => {
         if (e.currentTarget !== e.target) {
           return;

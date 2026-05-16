@@ -1,10 +1,26 @@
-import type { MouseEvent } from "react";
-import { useMemo, useRef, useState } from "react";
+import {
+  type DragEvent,
+  Fragment,
+  type MouseEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { Task } from "@/types/task";
+import { DRAG_MIME_TYPE, type DragState } from "../Board/dragState";
 import { ColumnContextMenu } from "../ColumnContextMenu";
 import { ColumnHeader } from "../ColumnHeader";
 import { TaskCard } from "../TaskCard";
+import { computeHoverIndex } from "./dragHover";
+
+/** Drop 確定時に呼ばれる引数。 */
+export type ColumnTaskDropParams = {
+  readonly taskFilePath: string;
+  readonly fromColumn: string;
+  readonly toColumn: string;
+  readonly toIndex: number;
+};
 
 /** 個別カラムの Props */
 type ColumnProps = {
@@ -40,6 +56,20 @@ type ColumnProps = {
   onDelete?: (destColumn: string | undefined) => void | Promise<void>;
   /** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
   canDelete?: boolean;
+  /** Board から渡される DragState（自カラムが drop ターゲットか判断）。 */
+  dragState?: DragState;
+  /** dragover 時の hoverIndex 通知。 */
+  onDragHover?: (column: string | null, index: number | null) => void;
+  /** drop 確定時の通知。 */
+  onTaskDrop?: (params: ColumnTaskDropParams) => void;
+  /**
+   * 子 TaskCard の dragstart を Board に伝える。
+   * @param taskFilePath 対象 task の filePath
+   * @param fromColumn 元カラム名
+   */
+  onTaskDragStart?: (taskFilePath: string, fromColumn: string) => void;
+  /** 子 TaskCard の dragend を Board に伝える。 */
+  onTaskDragEnd?: () => void;
 };
 
 /**
@@ -58,11 +88,75 @@ export const Column = ({
   existingColumnNames,
   onDelete,
   canDelete = true,
+  dragState,
+  onDragHover,
+  onTaskDrop,
+  onTaskDragStart,
+  onTaskDragEnd,
 }: ColumnProps) => {
   const tasksByFilePath = useMemo(
     () => new Map(allTasks.map((t) => [t.filePath, t])),
     [allTasks],
   );
+  const listRef = useRef<HTMLUListElement>(null);
+
+  const handleDragOver = (e: DragEvent<HTMLElement>) => {
+    if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
+      return;
+    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!onDragHover) {
+      return;
+    }
+    const liElements = Array.from(
+      listRef.current?.querySelectorAll<HTMLLIElement>("li[data-task-card]") ??
+        [],
+    );
+    const rects = liElements.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    });
+    const index = computeHoverIndex(rects, e.clientY);
+    onDragHover(name, index);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLElement>) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && e.currentTarget.contains(related)) {
+      return;
+    }
+    onDragHover?.(null, null);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLElement>) => {
+    if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
+      return;
+    }
+    const taskFilePath = e.dataTransfer.getData(DRAG_MIME_TYPE);
+    if (!taskFilePath || !dragState) {
+      return;
+    }
+    if (taskFilePath !== dragState.draggingTaskFilePath) {
+      return;
+    }
+    e.preventDefault();
+    const toIndex = dragState.hoverIndex ?? tasks.length;
+    onTaskDrop?.({
+      taskFilePath,
+      fromColumn: dragState.draggingFromColumn,
+      toColumn: name,
+      toIndex,
+    });
+  };
+
+  const showPlaceholder =
+    dragState !== undefined &&
+    dragState !== null &&
+    dragState.hoverColumn === name &&
+    dragState.hoverIndex !== null;
+  const placeholderIndex =
+    showPlaceholder && dragState ? dragState.hoverIndex : null;
 
   const otherColumnNames = existingColumnNames ?? [];
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -138,6 +232,10 @@ export const Column = ({
     <section
       className="flex h-full w-72 min-w-72 flex-col rounded-lg bg-gray-50"
       aria-label={name}
+      data-testid={`column-${name}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <ColumnHeader
         name={name}
@@ -147,22 +245,42 @@ export const Column = ({
         existingColumnNames={existingColumnNames}
         onContextMenu={handleContextMenu}
       />
-      <ul className="flex-1 overflow-y-auto px-2 pb-2">
-        {tasks.map((task) => {
+      <ul ref={listRef} className="flex-1 overflow-y-auto px-2 pb-2">
+        {tasks.map((task, i) => {
           const childTasks = task.hierarchy.childFilePaths
             .map((fp) => tasksByFilePath.get(fp))
             .filter((t): t is Task => t !== undefined);
           return (
-            <li key={task.id} className="mb-2">
-              <TaskCard
-                task={task}
-                childTasks={childTasks}
-                doneColumn={doneColumn}
-                onClick={onTaskClick}
-              />
-            </li>
+            <Fragment key={task.id}>
+              {placeholderIndex === i && (
+                <li
+                  data-testid="drop-placeholder"
+                  aria-hidden="true"
+                  className="mb-2 h-1 rounded bg-blue-300"
+                />
+              )}
+              <li data-task-card className="mb-2">
+                <TaskCard
+                  task={task}
+                  childTasks={childTasks}
+                  doneColumn={doneColumn}
+                  fromColumn={name}
+                  isDragging={dragState?.draggingTaskFilePath === task.filePath}
+                  onClick={onTaskClick}
+                  onDragStart={onTaskDragStart}
+                  onDragEnd={onTaskDragEnd}
+                />
+              </li>
+            </Fragment>
           );
         })}
+        {placeholderIndex === tasks.length && (
+          <li
+            data-testid="drop-placeholder"
+            aria-hidden="true"
+            className="mb-2 h-1 rounded bg-blue-300"
+          />
+        )}
       </ul>
       {menuPos && (
         <ColumnContextMenu

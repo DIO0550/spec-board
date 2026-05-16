@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { initialTasks } from "@/test-fixtures";
 import type { Task } from "@/types/task";
 import { TaskCard } from ".";
@@ -12,6 +13,9 @@ const meta: Meta<typeof TaskCard> = {
     task: baseTask,
     childTasks: [],
     doneColumn: "Done",
+    fromColumn: "Todo",
+    onDragStart: fn(),
+    onDragEnd: fn(),
   },
 };
 
@@ -23,6 +27,17 @@ export const Default: Story = {};
 
 export const Clickable: Story = {
   args: { onClick: () => {} },
+};
+
+export const Dragging: Story = {
+  args: { isDragging: true },
+};
+
+export const Draggable: Story = {
+  args: {
+    onDragStart: fn(),
+    onDragEnd: fn(),
+  },
 };
 
 export const HighPriority: Story = {

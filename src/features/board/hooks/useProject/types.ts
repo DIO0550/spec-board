@@ -9,6 +9,7 @@ import type {
   ColumnsCommand,
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
+import type { MoveTaskParams } from "./actions/moveTask";
 import type { ProjectError } from "./errors";
 import type { ProjectSessionState } from "./state/projectSessionState";
 
@@ -16,6 +17,7 @@ export type {
   ColumnsCommand,
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
+export type { MoveTaskParams } from "./actions/moveTask";
 
 export type UpdateColumnsInput = ColumnsCommand | ColumnsCommandBuilder;
 
@@ -59,6 +61,12 @@ export type UseProjectResult = {
   updateColumns: (
     command: UpdateColumnsInput,
   ) => Promise<ResultT<{ applied: boolean }, ProjectError>>;
+  /**
+   * task のカラム間移動 / カラム内並び替えを単一 entry point で受け付ける。
+   * @param params 移動パラメータ
+   * @returns 成否を表す Result または ProjectError
+   */
+  moveTask: (params: MoveTaskParams) => Promise<ResultT<void, ProjectError>>;
   /** project state を初期状態に戻す。 */
   reset: () => void;
 };
