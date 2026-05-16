@@ -47,17 +47,21 @@ const render = (props: Parameters<typeof Board>[0]) => {
   });
 };
 
-const queryCard = (filePath: string): HTMLElement => {
-  const cards = Array.from(
-    container?.querySelectorAll<HTMLElement>("[data-testid='task-card']") ?? [],
+/**
+ * カラム内の n 番目（0-origin）の TaskCard を取り出す。
+ * Mutating な dragstart 経由で識別するのを避け、DOM 構造のみで取得する。
+ */
+const queryCardInColumn = (columnName: string, index: number): HTMLElement => {
+  const section = container?.querySelector<HTMLElement>(
+    `section[aria-label='${columnName}']`,
   );
-  const matched = cards.find((c) => {
-    const drag = createDragEvent("dragstart");
-    c.dispatchEvent(drag);
-    return drag.dataTransfer.getData(DRAG_MIME_TYPE) === filePath;
-  });
-  expect(matched).toBeDefined();
-  return matched as HTMLElement;
+  expect(section).not.toBeNull();
+  const cards = section?.querySelectorAll<HTMLElement>(
+    "[data-testid='task-card']",
+  );
+  const card = cards?.[index];
+  expect(card).toBeDefined();
+  return card as HTMLElement;
 };
 
 const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
@@ -86,7 +90,7 @@ test("drop で onTaskDrop prop が期待引数で呼ばれる", async () => {
     onAddTask: vi.fn(),
     onTaskDrop,
   });
-  const cardA = queryCard("tasks/a.md");
+  const cardA = queryCardInColumn("Todo", 0);
   act(() => {
     cardA.dispatchEvent(createDragEvent("dragstart"));
   });
@@ -124,7 +128,7 @@ test("drop 完了後に dragState がリセットされる（プレースホル�
     onAddTask: vi.fn(),
     onTaskDrop,
   });
-  const cardA = queryCard("tasks/a.md");
+  const cardA = queryCardInColumn("Todo", 0);
   act(() => {
     cardA.dispatchEvent(createDragEvent("dragstart"));
   });
@@ -159,7 +163,7 @@ test("onTaskDrop が reject しても finally で dragState が null になる",
     onAddTask: vi.fn(),
     onTaskDrop,
   });
-  const cardA = queryCard("tasks/a.md");
+  const cardA = queryCardInColumn("Todo", 0);
   act(() => {
     cardA.dispatchEvent(createDragEvent("dragstart"));
   });
@@ -183,7 +187,7 @@ test("onTaskDrop が reject しても finally で dragState が null になる",
 
 test("dragend 単独（drop なし）で dragState が null になる", () => {
   render({ columns, tasks: [taskA, taskB], onAddTask: vi.fn() });
-  const cardA = queryCard("tasks/a.md");
+  const cardA = queryCardInColumn("Todo", 0);
   act(() => {
     cardA.dispatchEvent(createDragEvent("dragstart"));
   });
