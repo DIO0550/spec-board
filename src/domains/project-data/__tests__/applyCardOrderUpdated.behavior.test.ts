@@ -79,7 +79,7 @@ test("tasks.length は前後で変化しない", () => {
   expect(next.tasks.length).toBe(data.tasks.length);
 });
 
-test("filePaths にない既知でない path は無視される", () => {
+test("filePaths に含まれる未知の path は無視される", () => {
   const data = dataOf([
     ["tasks/a.md", "Todo"],
     ["tasks/b.md", "Todo"],
