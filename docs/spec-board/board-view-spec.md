@@ -46,7 +46,7 @@
 |:-----|:--------|:---------|:-------|
 | プロジェクトを開く | 「開く」ボタンクリック | OSのディレクトリ選択ダイアログを表示。選択後にmdファイルを読み込んでボードに表示 | ボードビュー |
 | タスクのステータス変更 | カードをドラッグして別カラムにドロップ | `update_task` IPC で対象タスクの frontmatter `status` を更新したのち、移動先カラムに対して `update_card_order` を 1 回呼び出す。旧カラムの `cardOrder` は BE 側 watcher が `status` 変更を検知して自動除去する契約 | - |
-| カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | `update_card_order` IPC を 1 回呼び出してカード表示順を `.spec-board/config.json` の `cardOrder` に永続化（[config-spec.md](./config-spec.md) 参照）。並び順に変化が無い場合は IPC を呼ばない | - |
+| カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | `update_card_order` IPC を 1 回呼び出してカード表示順を `.spec-board/config.json` の `cardOrder` に永続化（[config-spec.md](./config-spec.md) 参照）。並び順に変化が無い場合は IPC を呼ばない。**reopen 時の rehydration（`open_project` が `config.card_order` を読み込みカラム内の tasks を並び替える）は BE 側の対応が必要（別 issue 依存）** | - |
 | カラムの追加 | 「+ カラムを追加」ボタンクリック | カラム名入力フィールドを表示。入力確定で新カラムを追加 | - |
 | カラム名の編集 | カラムヘッダーのステータス名をクリック | インライン編集モードに切り替わり、ステータス名を変更可能。該当するタスクのmdファイルも一括更新 | - |
 | カラムの削除 | カラムヘッダーの右クリックメニュー | 確認ダイアログを表示。カラム内にタスクがある場合は移動先カラムをドロップダウンで選択させ、全タスクの `status` を一括更新してから削除。タスクがない場合はそのまま削除 | - |
@@ -116,7 +116,7 @@ stateDiagram-v2
 - HTML5 ネイティブ Drag and Drop API のみで実装する（外部 DnD ライブラリは導入しない）
 - カード要素に `draggable="true"` を付与し、独自 MIME `application/x-spec-board-task` で payload を運ぶ
 - 外部からの D&D（テキスト・ファイル等、独自 MIME を持たないもの）は `dragover` で `preventDefault` せず drop を受け付けない
-- BE 側コマンド `update_task` / `update_card_order` の実装は本仕様の依存先とする（別 issue で起票）
+- BE 側コマンド `update_task` / `update_card_order` の実装、および `open_project` が `config.card_order` を読み込んでカラム内 tasks を rehydrate する処理は本仕様の依存先とする（別 issue で起票）。現状の `open_project` は tasks を id 順で返すため、保存した cardOrder が reopen 後に反映されないことを許容する
 
 ### IPC シーケンス
 
