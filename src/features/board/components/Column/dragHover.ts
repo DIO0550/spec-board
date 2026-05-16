@@ -1,5 +1,4 @@
-/** ドラッグ中の各カードの上下端 Y 座標を表す。 */
-export type CardRect = { readonly top: number; readonly bottom: number };
+import type { DragCardRect } from "@/types/dragCardRect";
 
 /**
  * dragover 時、マウス Y 座標と各カードの bounding rect の中央を比較して、
@@ -16,7 +15,7 @@ export type CardRect = { readonly top: number; readonly bottom: number };
  * @returns 挿入位置（0..rects.length）
  */
 export const computeHoverIndex = (
-  rects: readonly CardRect[],
+  rects: readonly DragCardRect[],
   clientY: number,
 ): number => {
   for (let i = 0; i < rects.length; i++) {

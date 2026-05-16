@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
-import { type CardRect, computeHoverIndex } from "../dragHover";
+import type { DragCardRect } from "@/types/dragCardRect";
+import { computeHoverIndex } from "../dragHover";
 
-const rect = (top: number, bottom: number): CardRect => ({ top, bottom });
+const rect = (top: number, bottom: number): DragCardRect => ({ top, bottom });
 
 test("空配列なら 0 を返す", () => {
   expect(computeHoverIndex([], 100)).toBe(0);
