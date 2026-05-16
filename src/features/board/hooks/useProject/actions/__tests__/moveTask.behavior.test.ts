@@ -255,6 +255,32 @@ test("並び順変化なし → IPC を呼ばず Result.ok", async () => {
   expect(updateCardOrderMock).toHaveBeenCalledTimes(0);
 });
 
+test("同一カラムで updateCardOrder が Result.err → ProjectError.tauri、card-order-updated は dispatch されない", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Todo"],
+      ["tasks/c.md", "Todo"],
+    ]),
+  );
+  updateCardOrderMock.mockResolvedValue(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+
+  const result = await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Todo",
+    toIndex: 2,
+  });
+
+  expect(result.ok).toBe(false);
+  expect((result as { error: ProjectError }).error.kind).toBe("tauri");
+  expect(updateTaskMock).not.toHaveBeenCalled();
+  expect(updateCardOrderMock).toHaveBeenCalledTimes(1);
+  expect(harness.actions.map((a) => a.type)).toEqual([]);
+});
+
 test("updateTask が Result.err なら ProjectError.tauri を返し updateCardOrder は呼ばれない", async () => {
   const harness = setupLoaded(
     makeData([
