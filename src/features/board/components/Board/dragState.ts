@@ -33,38 +33,53 @@ export type DragState = {
   readonly hoverIndex: number | null;
 } | null;
 
-/**
- * DragAction の companion。各 variant のコンストラクタを集約する。
- * 呼び出し側は `dispatch(DragAction.start(...))` のように使う。
- */
-export const DragAction = {
+/** DragActionStart の companion。type alias と同名で declaration merging。 */
+export const DragActionStart = {
   /**
-   * 開始 action を構築する。
+   * DragActionStart を生成する。
    * @param taskFilePath ドラッグ対象 task の filePath
    * @param fromColumn 元カラム名
    * @returns DragActionStart
    */
-  start: (taskFilePath: string, fromColumn: string): DragActionStart => ({
+  create: (taskFilePath: string, fromColumn: string): DragActionStart => ({
     type: "start",
     taskFilePath,
     fromColumn,
   }),
+} as const;
+
+/** DragActionHover の companion。 */
+export const DragActionHover = {
   /**
-   * hover 位置更新 action を構築する。
+   * DragActionHover を生成する。
    * @param column hover 中のカラム名（外れた場合は null）
    * @param index hover 中の挿入位置（外れた場合は null）
    * @returns DragActionHover
    */
-  hover: (column: string | null, index: number | null): DragActionHover => ({
+  create: (column: string | null, index: number | null): DragActionHover => ({
     type: "hover",
     column,
     index,
   }),
+} as const;
+
+/** DragActionEnd の companion。 */
+export const DragActionEnd = {
   /**
-   * 終了 action を構築する。
+   * DragActionEnd を生成する。
    * @returns DragActionEnd
    */
-  end: (): DragActionEnd => ({ type: "end" }),
+  create: (): DragActionEnd => ({ type: "end" }),
+} as const;
+
+/**
+ * DragAction union 全体のファサード companion。
+ * 各 variant の `.create` を一段引いて呼べるショートカット。
+ */
+export const DragAction = {
+  start: DragActionStart.create,
+  hover: DragActionHover.create,
+  end: DragActionEnd.create,
 } as const;
 
 /**
