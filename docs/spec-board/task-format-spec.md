@@ -253,6 +253,44 @@ parent: tasks/search-ui.md
 検索バーのオートコンプリート機能。
 ```
 
+## update_task（部分マージ更新）
+
+既存タスクの frontmatter / body を部分的に上書きする IPC コマンド。
+
+入力: `{ filePath, title?, status?, priority?, labels?, parent?, body? }`
+
+### マージ規則
+
+- `Some` で渡されたフィールドだけが反映され、未指定フィールドは保持される
+- raw frontmatter の未知 key・`links`・YAML 値型・出現順は **そのまま保持** される
+  （内部実装は `Parsed { frontmatter, body }` の mut copy に patch を当て、`frontmatter::serialize` で書き戻す）
+- `parent: ""` で親解除（frontmatter から `parent` キーを除去）
+- `labels: []` で全ラベル削除
+- `priority: None` は不変。**priority 自体を「なし」にする操作は本コマンドではサポートしない**
+- **title 変更時もファイル名は不変**（rename はしない）
+- 空 title 指定は許可される。書き戻し後の Task 再 parse で `invalidTitleUsedFileName` warning が乗る
+- `children` は派生計算のため update_task では更新できない
+
+### ファイル位置
+
+update_task は `filePath` で識別し、**ファイル移動は一切行わない**。
+`parent` を変更しても物理配置は元のディレクトリのまま。
+
+### エラー（Display 文字列パターン）
+
+- `file not found: <abs path>` — 対象ファイルが存在しない / cache に無い
+- `invalid path: <input>` — `..` を含む、`.md` 以外、project_root 外、空、ディレクトリ指定
+- `parse failed: <reason>` — 既存ファイルの frontmatter が壊れている / delimiter 不在
+- `parent not found: <path>` — 指定 parent が cache に無い
+- `parent validation: <file_path> (<reason>)` — 親チェーン循環 / 深度超過
+- `content not scanner eligible: <reason>` — 更新後 body が 1 MiB 超 / NUL 含む
+
+### parent 変更時の cache 再構築
+
+`parent` フィールドが変化した場合のみ TaskIndex 全体を再構築し、
+`validate_parent_hierarchy` + `build_children` + `build_reverse_links` を実行する。
+title / status / priority / labels / body 単独の更新では再構築しない。
+
 ## 制限事項
 
 - ファイルエンコーディングは **UTF-8（BOMなし）** のみサポート。BOM付きUTF-8はBOMを除去して読み込む。その他のエンコーディング（Shift-JIS等）はパースエラー
