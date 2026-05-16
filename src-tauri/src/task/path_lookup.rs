@@ -35,6 +35,27 @@ pub(super) fn normalize_link_path_for_lookup(link: &str) -> Option<String> {
     normalize_parent_path_for_lookup(link)
 }
 
+/// command 層（IPC args）から渡されるユーザ入力 path を、parent lookup と同じ
+/// 基準で軽量正規化する。
+///
+/// 既存 `normalize_parent_path_for_lookup` と異なり drive prefix (`C:`) も除去し、
+/// 入力の空 / `/` / `\` 始まり / drive prefix は `None` にする。
+pub(crate) fn normalize_relative_path_for_input(raw: &str) -> Option<String> {
+    if raw.is_empty() || raw.starts_with('/') || raw.starts_with('\\') {
+        return None;
+    }
+    if has_windows_drive_prefix(raw) {
+        return None;
+    }
+    let path_text = raw.replace('\\', "/");
+    let normalized = normalize_path_parts(&path_text, true);
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 pub(super) fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()

@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use crate::config::column_name::ColumnName;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
-use crate::task::frontmatter::Priority;
+use crate::task::frontmatter::{self, Parsed, Priority};
 use crate::task::label::Label;
-use crate::task::parse::TaskParseError;
+use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
 use crate::task::path_lookup::{
     normalize_link_path_for_lookup, normalize_parent_path_for_lookup,
     normalize_task_path_for_lookup, parent_lookup_index, task_path_index,
@@ -26,6 +26,7 @@ use crate::task::task_content::TaskContent;
 use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_title::TaskTitle;
+use crate::task::update::error::UpdateTaskError;
 use crate::task::warning::{TaskWarning, TaskWarningCode};
 
 const MAX_PARENT_DEPTH: usize = 20;
@@ -319,6 +320,122 @@ impl TaskIndex {
             status: intent.status.clone(),
         })
     }
+
+    /// 既存 Task と raw `Parsed`（frontmatter + body）から、書き込むべき file_content
+    /// と更新後 Task を計算する純粋関数。I/O / 時計 / 乱数に依存しない。
+    ///
+    /// 呼び出し側（effect 層）は事前に以下を済ませてから本関数を呼ぶ:
+    ///
+    /// - `io.read` で existing bytes 取得
+    /// - `frontmatter::parse_bytes` で `Parsed` を取得（`None` ならエラーに変換）
+    /// - cache から既存 Task を取得
+    ///
+    /// 検証順序:
+    ///
+    /// 1. parent 存在チェック（cache key 探索）→ なければ `ParentNotFound`
+    /// 2. parent 置換後の `Vec<Task>` に対して `validate_parent_hierarchy`
+    /// 3. patch 適用 + `frontmatter::serialize` で `String` を構築
+    /// 4. `TaskContent::try_new(String)` で eligibility 検証
+    /// 5. `task_from_parsed` を呼び直して updated_task を再構築し warning を再生成
+    pub(crate) fn plan_update(
+        &self,
+        _project_root: &Path,
+        intent: UpdateTaskIntent,
+        existing: &Task,
+        existing_parsed: Parsed,
+    ) -> Result<UpdateTaskOutcome, UpdateTaskError> {
+        let Parsed {
+            mut frontmatter,
+            mut body,
+        } = existing_parsed;
+
+        if let Some(title) = &intent.title {
+            frontmatter.extras.insert(
+                serde_yaml_ng::Value::String("title".into()),
+                serde_yaml_ng::Value::String(title.clone()),
+            );
+        }
+        if let Some(status) = &intent.status {
+            frontmatter.extras.insert(
+                serde_yaml_ng::Value::String("status".into()),
+                serde_yaml_ng::Value::String(status.clone()),
+            );
+        }
+        if let Some(priority) = intent.priority {
+            frontmatter.priority = Some(priority);
+        }
+        if let Some(labels) = &intent.labels {
+            frontmatter.labels = labels.clone();
+        }
+        let parent_changed = match &intent.parent {
+            None => false,
+            Some(s) if s.is_empty() => {
+                let removed = frontmatter
+                    .extras
+                    .remove(serde_yaml_ng::Value::String("parent".into()))
+                    .is_some();
+                removed || existing.parent.is_some()
+            }
+            Some(s) => {
+                frontmatter.extras.insert(
+                    serde_yaml_ng::Value::String("parent".into()),
+                    serde_yaml_ng::Value::String(s.clone()),
+                );
+                existing
+                    .parent
+                    .as_ref()
+                    .map(|p| p.as_str() != s.as_str())
+                    .unwrap_or(true)
+            }
+        };
+        if let Some(b) = &intent.body {
+            body = format!("\n{b}");
+        }
+
+        if let Some(parent_str) = intent.parent.as_deref().filter(|s| !s.is_empty()) {
+            if resolve_parent_for_new_task(parent_str, self.as_slice()).is_none() {
+                return Err(UpdateTaskError::ParentNotFound {
+                    path: parent_str.to_string(),
+                });
+            }
+        }
+
+        if parent_changed {
+            let preliminary_task = build_patched_task(existing, &intent);
+            let mut values: Vec<Task> = self.as_slice().to_vec();
+            let target_key = intent.file_path.to_string_lossy();
+            if let Some(slot) = values
+                .iter_mut()
+                .find(|t| t.file_path.as_str() == target_key.as_ref())
+            {
+                *slot = preliminary_task;
+            } else {
+                values.push(preliminary_task);
+            }
+            TaskIndex::new(values)
+                .validate_parent_hierarchy()
+                .map_err(UpdateTaskError::from)?;
+        }
+
+        let serialized = frontmatter::serialize(&Parsed {
+            frontmatter: frontmatter.clone(),
+            body: body.clone(),
+        });
+
+        TaskContent::try_new(serialized.clone()).map_err(UpdateTaskError::from)?;
+
+        let context = TaskParseContext {
+            file_path: existing.file_path.as_path_buf(),
+            default_status: existing.status.clone(),
+        };
+        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+
+        Ok(UpdateTaskOutcome {
+            updated_task,
+            file_content: serialized,
+            needs_full_rebuild: parent_changed,
+        })
+    }
 }
 
 impl From<Vec<Task>> for TaskIndex {
@@ -339,6 +456,31 @@ pub struct CreateTaskIntent {
     pub labels: Vec<Label>,
     pub parent: Option<TaskFilePath>,
     pub body: Option<String>,
+}
+
+/// `update_task` IPC 境界から domain に渡される更新意図。
+///
+/// `Some` のフィールドだけが適用される。`parent: Some("")` は親解除。
+/// `priority` は `None` = 不変。
+#[derive(Debug, Clone)]
+pub struct UpdateTaskIntent {
+    /// 対象タスクのプロジェクトルート相対パス（正規化済み）。
+    pub file_path: PathBuf,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<Priority>,
+    pub labels: Option<Vec<String>>,
+    pub parent: Option<String>,
+    pub body: Option<String>,
+}
+
+/// `TaskIndex::plan_update` の計算結果。effect 層が消費する。
+#[derive(Debug)]
+pub struct UpdateTaskOutcome {
+    pub updated_task: Task,
+    pub file_content: String,
+    /// parent が変化した場合のみ true。effect 層は TaskIndex を再構築する。
+    pub needs_full_rebuild: bool,
 }
 
 /// `TaskIndex::plan_create` の計算結果。effect 層が消費する。
@@ -387,6 +529,40 @@ fn join_rel_path(target_dir: &Path, filename: &TaskFileName) -> PathBuf {
     } else {
         target_dir.join(filename.as_str())
     }
+}
+
+/// `plan_update` で parent 変更を検証する際の置換用 Task を作る。
+///
+/// 最終的に返却される Task は `task_from_parsed` 再走の結果に置き換わるため、
+/// ここでは循環/深さ検証に必要なフィールド（特に `parent`）だけ正しく埋まっていればよい。
+fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {
+    let mut task = existing.clone();
+    if let Some(title) = &intent.title {
+        task.title = TaskTitle::from_lenient(title.clone());
+    }
+    if let Some(priority) = intent.priority {
+        task.priority = Some(priority);
+    }
+    if let Some(labels) = &intent.labels {
+        task.labels = labels
+            .iter()
+            .map(|s| Label::from_lenient(s.clone()))
+            .collect();
+    }
+    if let Some(parent) = &intent.parent {
+        if parent.is_empty() {
+            task.parent = None;
+        } else {
+            task.parent = Some(TaskFilePath::from_lenient(parent.clone()));
+        }
+    }
+    if let Some(body) = &intent.body {
+        task.body = format!("\n{body}");
+    }
+    if let Some(status) = &intent.status {
+        task.status = ColumnName::from_lenient(status.clone());
+    }
+    task
 }
 
 /// augmented hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
@@ -563,3 +739,7 @@ mod task_index_parent_chain_tests;
 #[cfg(test)]
 #[path = "task_index_plan_create_tests.rs"]
 mod task_index_plan_create_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_update_tests.rs"]
+mod task_index_plan_update_tests;
