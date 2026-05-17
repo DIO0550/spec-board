@@ -226,6 +226,15 @@ const dropFirstCardWithinTodo = async (): Promise<void> => {
 const liveRegion = (): HTMLElement | null =>
   container?.querySelector<HTMLElement>('[data-testid="live-region"]') ?? null;
 
+/**
+ * LiveRegion の visible text を取得する。
+ * SR トリガ用に末尾へ付加される可能性のあるゼロ幅スペースを除去して比較する。
+ *
+ * @returns ゼロ幅スペースを除いた textContent
+ */
+const liveRegionText = (): string =>
+  (liveRegion()?.textContent ?? "").replace(/​/g, "");
+
 test("drop 成功 → LiveRegion に「移動しました」が現れる", async () => {
   mountApp();
   await openSuccessfully();
@@ -236,9 +245,7 @@ test("drop 成功 → LiveRegion に「移動しました」が現れる", async
 
   await dropFirstCardToDone();
 
-  expect(liveRegion()?.textContent).toBe(
-    "「A タスク」を「Done」に移動しました",
-  );
+  expect(liveRegionText()).toBe("「A タスク」を「Done」に移動しました");
 });
 
 test("drop 楽観 announce は updateTask resolve 前に LiveRegion へ届いている", async () => {
@@ -255,9 +262,7 @@ test("drop 楽観 announce は updateTask resolve 前に LiveRegion へ届いて
   updateCardOrderMock.mockResolvedValueOnce(Result.ok(undefined));
 
   await dropFirstCardToDone();
-  expect(liveRegion()?.textContent).toBe(
-    "「A タスク」を「Done」に移動しました",
-  );
+  expect(liveRegionText()).toBe("「A タスク」を「Done」に移動しました");
 
   await act(async () => {
     resolveUpdate(Result.ok({ ...taskA, status: "Done" }));
@@ -275,7 +280,7 @@ test("drop 失敗 (updateTask reject) → LiveRegion が「取り消しました
 
   await dropFirstCardToDone();
 
-  expect(liveRegion()?.textContent).toBe("「A タスク」の移動を取り消しました");
+  expect(liveRegionText()).toBe("「A タスク」の移動を取り消しました");
 });
 
 test("同一カラム並び替え → LiveRegion textContent は空のまま", async () => {
@@ -289,22 +294,17 @@ test("同一カラム並び替え → LiveRegion textContent は空のまま", a
   expect(liveRegion()?.textContent).toBe("");
 });
 
-test("同じ移動を連続実行 → 同じ text でも LiveRegion の div が key 変更で再 mount される", async () => {
+test("drop 後の LiveRegion は同一の安定 DOM ノードを維持しつつ visible text が更新される", async () => {
   mountApp();
   await openSuccessfully();
 
+  const before = liveRegion();
   const movedA: Task = { ...taskA, status: "Done" };
   updateTaskMock.mockResolvedValue(Result.ok(movedA));
   updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
 
   await dropFirstCardToDone();
-  const first = liveRegion();
-  expect(first?.textContent).toBe("「A タスク」を「Done」に移動しました");
-
-  // 状態をリセットして同じ操作を実行する代わりに、別 announce を直接観測する。
-  // 楽観 dispatch は state を変えるので、最初の drop 後の状態で再度 dragstart →
-  // drop を行うと invalid-state が返るため、ここでは「同一文字列を 2 回 announce
-  // した場合に key が変わる」性質のみ LiveRegion の単体テストで担保し、
-  // App 結合では 1 回 drop 後の announce 結果が反映されることを確認する。
-  expect(first?.getAttribute("data-testid")).toBe("live-region");
+  const after = liveRegion();
+  expect(after).toBe(before);
+  expect(liveRegionText()).toBe("「A タスク」を「Done」に移動しました");
 });

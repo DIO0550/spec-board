@@ -45,11 +45,11 @@ test("announcement に値があれば role=status / aria-live=polite / aria-atom
   expect(el?.getAttribute("aria-atomic")).toBe("true");
 });
 
-test("announcement.text が textContent に反映される", () => {
+test("announcement.text が textContent に反映される（id 偶数で suffix なし）", () => {
   act(() => {
     root?.render(
       createElement(LiveRegion, {
-        announcement: { id: 1, text: "「A」を「Done」に移動しました" },
+        announcement: { id: 2, text: "「A」を「Done」に移動しました" },
       }),
     );
   });
@@ -76,20 +76,21 @@ test("announcement=null でも要素自体は描画されるが空文字", () =>
   expect(el?.textContent).toBe("");
 });
 
-test("同じ text でも id が変わると div が再 mount される（連続同文言の announce が SR に届く）", () => {
+test("div は安定 mount のまま textContent が id 連動で変化する（連続同文言の announce が SR に届く）", () => {
   act(() => {
     root?.render(
       createElement(LiveRegion, { announcement: { id: 1, text: "same" } }),
     );
   });
   const before = queryRegion();
-  expect(before?.textContent).toBe("same");
+  const beforeText = before?.textContent;
   act(() => {
     root?.render(
       createElement(LiveRegion, { announcement: { id: 2, text: "same" } }),
     );
   });
   const after = queryRegion();
-  expect(after?.textContent).toBe("same");
-  expect(after).not.toBe(before);
+  const afterText = after?.textContent;
+  expect(after).toBe(before);
+  expect(afterText).not.toBe(beforeText);
 });
