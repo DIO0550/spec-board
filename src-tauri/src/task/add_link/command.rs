@@ -139,17 +139,22 @@ fn commit_cache(
                 });
             }
 
-            // 派生フィールド (children / reverse_links) を保持しつつ parse 由来
-            // フィールドのみ上書きする。`task_from_parsed` は children /
-            // reverse_links を空で返すため、cache 既存値で覆い直す必要がある。
+            // 派生フィールド (children / reverse_links / warnings) を保持しつつ
+            // parse 由来フィールドのみ上書きする。`task_from_parsed` は children /
+            // reverse_links を空で返し、`ParentNotFound` のような downstream の
+            // 派生 warning も再生成しない。add_link は parent / title / status /
+            // labels / extras を一切変更せず links のみ追加するため、warnings は
+            // 既存値をそのまま保持すれば正しい状態が維持される。
             let source_entry = cache
                 .get_mut(&source_key)
                 .expect("source presence verified above");
             let preserved_children = std::mem::take(&mut source_entry.children);
             let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
+            let preserved_warnings = std::mem::take(&mut source_entry.warnings);
             *source_entry = Task {
                 children: preserved_children,
                 reverse_links: preserved_reverse,
+                warnings: preserved_warnings,
                 ..updated.clone()
             };
             let returned_task = source_entry.clone();
