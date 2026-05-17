@@ -14,16 +14,16 @@ use crate::task::task_index::AddLinkIntent;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddLinkArgs {
-    pub source_path: String,
-    pub target_path: String,
+    pub source_file_path: String,
+    pub target_file_path: String,
 }
 
 impl AddLinkArgs {
-    /// project_root を起点に sourcePath / targetPath を lexical 正規化し、
+    /// project_root を起点に sourceFilePath / targetFilePath を lexical 正規化し、
     /// `AddLinkIntent` に詰め直す。
     pub fn into_intent(self, project_root: &Path) -> Result<AddLinkIntent, AddLinkError> {
-        let source = normalize_input_path(&self.source_path, project_root, true)?;
-        let target = normalize_input_path(&self.target_path, project_root, false)?;
+        let source = normalize_input_path(&self.source_file_path, project_root, true)?;
+        let target = normalize_input_path(&self.target_file_path, project_root, false)?;
         Ok(AddLinkIntent { source, target })
     }
 }

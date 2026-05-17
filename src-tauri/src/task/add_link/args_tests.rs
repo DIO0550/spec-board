@@ -7,8 +7,8 @@ use crate::task::add_link::error::AddLinkError;
 
 fn args(source: &str, target: &str) -> AddLinkArgs {
     AddLinkArgs {
-        source_path: source.to_string(),
-        target_path: target.to_string(),
+        source_file_path: source.to_string(),
+        target_file_path: target.to_string(),
     }
 }
 

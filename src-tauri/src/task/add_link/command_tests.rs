@@ -35,8 +35,8 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
 
 fn args_for(source: &str, target: &str) -> AddLinkArgs {
     AddLinkArgs {
-        source_path: source.to_string(),
-        target_path: target.to_string(),
+        source_file_path: source.to_string(),
+        target_file_path: target.to_string(),
     }
 }
 
