@@ -373,15 +373,47 @@ test("AddColumnButton で新カラム追加 → updateColumns invoke が呼ば�
   });
 
   expect(updateColumnsMock).toHaveBeenCalledTimes(1);
-  expect(updateColumnsMock).toHaveBeenCalledWith(
-    expect.objectContaining({
-      columns: expect.arrayContaining([
-        expect.objectContaining({ name: "Backlog" }),
-      ]),
-    }),
+  const columns = updateColumnsMock.mock.calls[0]?.[0].columns ?? [];
+  expect(columns).toHaveLength(3);
+  expect(columns[columns.length - 1]).toEqual(
+    expect.objectContaining({ name: "Backlog", order: 2 }),
   );
   expect(container?.textContent).toContain("Backlog");
   expect(container?.textContent).toContain("カラムを追加しました");
+});
+
+test("AddColumnButton で invoke 失敗時 → エラー toast + editor 維持", async () => {
+  mountApp();
+  await openSuccessfully();
+  updateColumnsMock.mockResolvedValueOnce(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+
+  await openAddColumnEditor();
+  const columnInput = querySelectorRequired<HTMLInputElement>(
+    '[data-testid="add-column-input"]',
+  );
+  setInputValue(columnInput, "Backlog");
+  await act(async () => {
+    pressEnter(columnInput);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+  expect(container?.textContent).toContain("カラムの追加に失敗しました");
+  expect(container?.textContent).toContain("io fail");
+
+  const stillInput = container?.querySelector<HTMLInputElement>(
+    '[data-testid="add-column-input"]',
+  );
+  expect(stillInput).not.toBeNull();
+  expect(
+    container?.querySelector('[data-testid="add-column-button"]'),
+  ).toBeNull();
+  expect(stillInput?.value).toBe("Backlog");
+  expect(stillInput?.disabled).toBe(false);
 });
 
 test("AddColumnButton で重複名を入力 → updateColumns invoke は呼ばれず重複エラーを表示", async () => {
