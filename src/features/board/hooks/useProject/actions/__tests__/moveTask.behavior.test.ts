@@ -104,6 +104,7 @@ test("fromColumn !== toColumn で updateTask が呼ばれる", async () => {
     toIndex: 0,
   });
 
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
   expect(updateTaskMock).toHaveBeenCalledWith({
     filePath: "tasks/a.md",
     status: "Done",
@@ -129,6 +130,8 @@ test("カラム間移動: updateTask 成功後 updateCardOrder が呼ばれる",
     toIndex: 1,
   });
 
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateCardOrderMock).toHaveBeenCalledTimes(1);
   expect(updateCardOrderMock).toHaveBeenCalledWith({
     columnName: "Done",
     filePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
@@ -204,6 +207,7 @@ test("fromColumn === toColumn で並び順変化があれば updateCardOrder が
 
   expect(result.ok).toBe(true);
   expect(updateTaskMock).not.toHaveBeenCalled();
+  expect(updateTaskMock).toHaveBeenCalledTimes(0);
   expect(updateCardOrderMock).toHaveBeenCalledWith({
     columnName: "Todo",
     filePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
@@ -298,6 +302,11 @@ test("updateTask が Result.err なら ProjectError.tauri を返し updateCardOr
     toIndex: 0,
   });
 
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateTaskMock).toHaveBeenCalledWith({
+    filePath: "tasks/a.md",
+    status: "Done",
+  });
   expect(result.ok).toBe(false);
   expect((result as { error: ProjectError }).error.kind).toBe("tauri");
   expect(updateCardOrderMock).not.toHaveBeenCalled();
@@ -323,6 +332,7 @@ test("カラム間で updateTask 成功 / updateCardOrder 失敗 → task-update
     toIndex: 0,
   });
 
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
   expect(result.ok).toBe(false);
   expect((result as { error: ProjectError }).error.kind).toBe("partial-move");
   expect(harness.actions.map((a) => a.type)).toEqual(["task-updated"]);
