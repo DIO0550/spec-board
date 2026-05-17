@@ -106,7 +106,7 @@ stateDiagram-v2
 | 観点 | 対応方針 |
 |:-----|:---------|
 | キーボード操作 | Tab でカード間移動、Enter で詳細パネル展開、矢印キーでカラム間移動 |
-| スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。ドラッグ操作時にライブリージョンでステータス変更を通知 |
+| スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。カラム間移動の楽観 dispatch 直後に `aria-live="polite"` のライブリージョン（視覚非表示 / `role="status"` / `aria-atomic="true"`）で「移動しました」を通知。`updateTask` 失敗によるフル rollback 時はさらに「移動を取り消しました」を追加通知する。partial-move（status 確定 + cardOrder のみ rollback）および「楽観 dispatch 後の projectVersion 不一致」では追加の取消アナウンスは流さない（既に「移動しました」が発火済みで status は永続化済み、または state が新 project に切替済みのため）。同一カラム並び替え、および「楽観 dispatch 前 invalid-state（preflight 失敗）」ではライブリージョンを更新しない（エラー toast のみ） |
 | フォーカス管理 | ドラッグ&ドロップ完了後、移動したカードにフォーカスを維持 |
 
 ## ドラッグ&ドロップ仕様
@@ -125,7 +125,7 @@ stateDiagram-v2
 | カラム間移動 | (1) `update_task({ filePath, status: toColumn })`、(2) 成功後 `update_card_order({ columnName: toColumn, filePaths })`。旧カラムの cardOrder は BE 側 watcher が status 変更を検知して自動除去する契約 |
 | 同一カラム内並び替え | `update_card_order({ columnName, filePaths })` を 1 回。並び順に変化が無い場合は IPC を呼ばない |
 
-楽観的 UI 更新は採用しない（IPC 完了後に reducer dispatch）。
+楽観的 UI 更新を採用する。drop 確定と同時に status / cardOrder を仮反映し、IPC 完了後に server 値で確定上書きする。`updateTask` 失敗時はスナップショットへフル rollback し、ライブリージョンで「移動を取り消しました」を通知する。partial-move（`updateTask` 成功 / `updateCardOrder` 失敗）の場合は status を `toColumn` に確定保持し、cardOrder のみ永続化済みの実態（`toColumn` は旧 order + 移動タスク末尾補完、`fromColumn` は移動タスク除外済み）に再収束させる。partial-move ではライブリージョンを更新せず、partial-move 専用エラー toast のみで通知する。projectVersion 不一致時は新 project state を破壊しないため rollback / 確定 dispatch をスキップし、`invalid-state` を返す。
 
 ### UI 表現
 
@@ -142,6 +142,19 @@ stateDiagram-v2
 - IPC 失敗（generic）: `update_task` 失敗 / 同一カラム内の `update_card_order` 失敗時は「タスクの移動に失敗しました: &lt;原因&gt;」トーストを表示。dragState は finally で必ず null に戻す
 - IPC 部分失敗（partial-move）: カラム間移動で `update_task` 成功 + `update_card_order` 失敗のときは、カラム移動だけは完了しているため「カラムの移動は完了しましたが、並び順の保存に失敗しました。手動で並び替えてください。」と区別して表示する
 - stale state: queue 実行時に対象タスクが見つからない / `fromColumn` と `status` が乖離 / `toColumn` が消滅した場合は `invalid-state` で抜ける
+
+### a11y アナウンス
+
+楽観成功アナウンスは IPC 完了を待たず、楽観 dispatch 直後に `onOptimisticApplied` callback を起点に発火する。partial-move / invalid-state のように IPC 後に判明する分岐では、既に「移動しました」アナウンスが出ている前提で扱う。下表は楽観 dispatch 時点と IPC 完了時点を合算したアナウンス結果である。
+
+| イベント | LiveRegion アナウンス | エラー toast |
+|:--|:--|:--|
+| カラム間移動成功 | 「『タイトル』を『toColumn』に移動しました」 | なし |
+| カラム間移動失敗（`updateTask` reject、フル rollback 後） | 「『タイトル』を『toColumn』に移動しました」→「『タイトル』の移動を取り消しました」 | 「タスクの移動に失敗しました: ...」 |
+| partial-move（status 確定 + cardOrder のみ補正） | 「『タイトル』を『toColumn』に移動しました」のみ（status は永続化済みのため取消アナウンスは流さない） | partial-move 用エラー toast |
+| 同一カラム並び替え（成功 / 失敗いずれも） | なし（`onOptimisticApplied` はカラム間 status 変更時のみ呼ぶ契約） | 失敗時のみ「タスクの移動に失敗しました: ...」 |
+| 楽観 dispatch 前 invalid-state（preflight 失敗: target 消失 / status 乖離 / toColumn 消失 / 開始前 version 切替） | なし（楽観 dispatch も `onOptimisticApplied` も発火しない） | `invalid-state` メッセージ |
+| 楽観 dispatch 後 invalid-state（IPC 中の projectVersion 切替） | 「『タイトル』を『toColumn』に移動しました」のみ（state は新 project に切替済みのため取消アナウンスは流さない） | 「プロジェクトが切り替わりました」 |
 
 ## 制限事項
 
