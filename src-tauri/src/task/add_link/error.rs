@@ -1,0 +1,76 @@
+//! `add_link` のエラー型。
+//!
+//! 公開 `add_link` command は `Result<Task, String>` を返すため、`AddLinkCommandError`
+//! 自体は Serialize を実装しない。`add_link_impl(...).map_err(|e| e.to_string())` で
+//! 文字列化する（既存 `update_task` と同型）。
+
+use std::path::PathBuf;
+
+use thiserror::Error;
+
+use crate::state::AppStateError;
+use crate::task::io::TaskIoError;
+use crate::task::task_content::TaskContentError;
+use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
+
+pub use crate::task::create::error::ContentRejectReason;
+
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum AddLinkError {
+    #[error("source task not found: {path}")]
+    SourceNotFound { path: String },
+    #[error("target task not found: {path}")]
+    TargetNotFound { path: String },
+    #[error("self link not allowed: {path}")]
+    SelfLink { path: String },
+    /// frontmatter parse 失敗（先頭 delimiter 不在 / YAML 構文エラー等）。
+    /// effect 層から effect 由来エラーとして渡される（aggregate 自身は parse を実行しない）。
+    #[error("parse failed: {0}")]
+    ParseFailed(String),
+    /// commit 時点で snapshot にあった source が cache から消えていた場合に返す。
+    #[error("source vanished from cache during commit: {path}")]
+    SourceVanished { path: String },
+    /// commit 時点で snapshot にあった target が cache から消えていた場合に返す。
+    #[error("target vanished from cache during commit: {path}")]
+    TargetVanished { path: String },
+    /// `frontmatter::serialize` 後の本文が scanner eligible でない場合。
+    #[error("content not scanner eligible: {reason}")]
+    ContentRejected { reason: ContentRejectReason },
+    /// IPC args が読み込んだ既存ファイルにアクセスする際の I/O 失敗系で、
+    /// effect 層側で具体的な NotFound 等を `SourceNotFound` に詰め直す途中で
+    /// 使う path 形式の error。aggregate 内では使わない。
+    #[error("file not found: {}", .0.display())]
+    FileNotFound(PathBuf),
+}
+
+#[derive(Debug, Error)]
+pub enum AddLinkCommandError {
+    #[error(transparent)]
+    Validation(#[from] AddLinkError),
+    #[error("project is not opened")]
+    NoProjectOpen,
+    #[error("internal state lock poisoned")]
+    AppState(#[from] AppStateError),
+    #[error(transparent)]
+    WriteIgnore(#[from] WriteIgnoreError),
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+impl From<TaskIoError> for AddLinkCommandError {
+    fn from(err: TaskIoError) -> Self {
+        match err {
+            TaskIoError::Io(source) => AddLinkCommandError::Io(source),
+        }
+    }
+}
+
+impl From<TaskContentError> for AddLinkError {
+    fn from(err: TaskContentError) -> Self {
+        let reason = match err {
+            TaskContentError::TooLarge { size, .. } => ContentRejectReason::TooLarge { size },
+            TaskContentError::BinaryDetected { .. } => ContentRejectReason::BinaryDetected,
+        };
+        AddLinkError::ContentRejected { reason }
+    }
+}
