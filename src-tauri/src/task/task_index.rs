@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::column_name::ColumnName;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
+use crate::task::delete::error::DeleteTaskError;
 use crate::task::frontmatter::{self, Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
@@ -456,13 +457,6 @@ impl TaskIndex {
     /// で吸収する。raw string 比較は意図的に避ける（plan_update の parent 比較と同じ理由）。
     ///
     /// 孫 task は含めない（直接の子のみ）。`deleted_path` が誰の親でもない場合は空 Vec。
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "delete_task IPC (Issue #90) で本 method を呼び出す予定。caller 追加時に expect を外す。"
-        )
-    )]
     pub(crate) fn children_paths_of(&self, deleted_path: &str) -> Vec<PathBuf> {
         let Some(deleted_norm) = normalize_parent_path_for_lookup(deleted_path) else {
             return Vec::new();
@@ -479,6 +473,32 @@ impl TaskIndex {
                 (parent_norm == deleted_norm).then(|| PathBuf::from(t.file_path.as_str()))
             })
             .collect()
+    }
+
+    /// 削除対象 task に直接の子 task が存在するかを検証する pure aggregate method。
+    ///
+    /// 子が 1 件でもあれば `DeleteTaskError::HasChildren` を返し、削除を中断させる。
+    /// 子の検出は `children_paths_of` に委譲するため、表記揺れ吸収・自己除外・
+    /// 直接の子のみ列挙といった契約はそちらに従う。
+    ///
+    /// `deleted_path` は呼び出し側（effect 層）で正規化済みのプロジェクトルート
+    /// 相対パスを渡す前提（不正パスのエラー化は effect 層の責務）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "delete_task IPC (Issue #90) で本 method を呼び出す予定。caller 追加時に expect を外す。"
+        )
+    )]
+    pub(crate) fn plan_delete_abort(&self, deleted_path: &str) -> Result<(), DeleteTaskError> {
+        let children = self.children_paths_of(deleted_path);
+        if children.is_empty() {
+            return Ok(());
+        }
+        Err(DeleteTaskError::HasChildren {
+            path: deleted_path.to_string(),
+            children,
+        })
     }
 
     /// 削除対象 task の全子 task について、parent キーを除去した new file_content と
@@ -911,3 +931,7 @@ mod task_index_plan_update_tests;
 #[cfg(test)]
 #[path = "task_index_clear_children_tests.rs"]
 mod task_index_clear_children_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_delete_abort_tests.rs"]
+mod task_index_plan_delete_abort_tests;
