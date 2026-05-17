@@ -599,3 +599,85 @@ fn update_chain_too_deep_is_rejected_without_filesystem_change() {
         .expect("after C");
     assert_eq!(before_c_task.parent, after_c_task.parent);
 }
+
+// watcher install 下で update_task_impl が write_ignore に自前 write のパスを登録し、
+// 続く handle_event(FsEvent::Modified / Renamed) でその token が consume されて
+// IPC emit が抑止される self-write 抑止経路を handler-level integration で検証する。
+// FsTaskIo::write_existing が tmp → rename のアトミック書き込みを行うため、
+// 実 watcher は Modified / Renamed どちらも発火し得る前提で両ケースを確認する。
+#[test]
+fn update_task_registers_write_ignore_and_consumes_on_modified_and_renamed_events() {
+    use crate::watcher_event::handler::handle_event;
+    use crate::watcher_event::AdapterContext;
+    use crate::watcher_event::EmitFn;
+    use spec_board_fs::watcher::core::FsEvent;
+    use std::sync::Mutex;
+
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    // NoopWatcherFactory を install することで is_watcher_installed() == true になり、
+    // update_task_impl が write_ignore へ register する経路に入る。
+    open_with_noop(Arc::clone(&state), dir.path());
+    let abs = dir.path().join("tasks/a.md");
+
+    // emit closure は呼ばれた event 名 + payload を log に蓄積する。
+    // self-write 抑止が効いていれば log は最後まで空のまま。
+    let log: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::new(Mutex::new(Vec::new()));
+    let log_for_emit = Arc::clone(&log);
+    let emit: EmitFn = Box::new(move |ev, payload| {
+        log_for_emit.lock().unwrap().push((ev.to_string(), payload));
+    });
+    let ctx = AdapterContext {
+        root: dir.path().to_path_buf(),
+        default_status: "Todo".into(),
+        state: Arc::clone(&state),
+        emit,
+        io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,
+    };
+
+    // 1 回目: status だけを更新 → write_ignore に abs が register される。
+    let mut args1 = args_for("tasks/a.md");
+    args1.status = Some("Doing".into());
+    let _t1 = update_task_impl(&state, &FsTaskIo, args1).expect("update#1 ok");
+    assert_eq!(1, state.write_ignore().len().expect("len"));
+
+    // FsEvent::Modified(abs) が handler に届くと token が consume され、
+    // IPC emit は抑止される（self-write は FE に通知しない）。
+    handle_event(&FsEvent::Modified(abs.clone()), &ctx).expect("handle Modified ok");
+    assert!(
+        log.lock().unwrap().is_empty(),
+        "self-write should not emit IPC on Modified"
+    );
+    assert!(state.write_ignore().is_empty().unwrap());
+
+    // 2 回目: priority を更新して再度 write_ignore に abs を register する。
+    let mut args2 = args_for("tasks/a.md");
+    args2.priority = Some("high".into());
+    let _t2 = update_task_impl(&state, &FsTaskIo, args2).expect("update#2 ok");
+    assert_eq!(1, state.write_ignore().len().expect("len"));
+
+    // FsEvent::Renamed { from: tmp, to: abs } 経路でも、handler は from を delete として
+    // 処理した後 to を upsert として処理する。abs 側が write_ignore に登録されているため
+    // upsert 段階で consume されて IPC emit は抑止される。
+    // tmp の実 path は試験対象でないため、実装と同じ命名規則に合わせる必要はない
+    // （from 側は rel 解決失敗で早期 return される）。
+    let tmp = abs.with_extension("md.tmp.0");
+    handle_event(
+        &FsEvent::Renamed {
+            from: tmp,
+            to: abs.clone(),
+        },
+        &ctx,
+    )
+    .expect("handle Renamed ok");
+    assert!(
+        log.lock().unwrap().is_empty(),
+        "self-write should not emit IPC on Renamed(tmp -> abs)"
+    );
+    assert!(state.write_ignore().is_empty().unwrap());
+}

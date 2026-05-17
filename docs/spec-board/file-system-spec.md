@@ -170,12 +170,13 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 4. フロントマター + 本文を再構成して書き出し
 5. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
 
-> Implementation notes (2026-05-11): parent 循環検証は
+> Implementation notes (2026-05-16): parent 循環検証は
 > `task_index::validate_parent_hierarchy` / `validate_chain_from_parent` で行う。
-> `create_task` command は本ドキュメントの振る舞いを実装済み。dangling parent
-> 解決による cycle / too-deep は `validate_parent_hierarchy` を augmented snapshot
-> に対して呼ぶことで検出する。`update_task` command は未実装で、接続時に
-> 同様の augmented 検証を行う前提。
+> `create_task` / `update_task` command は本ドキュメントの振る舞いを実装済み。
+> dangling parent 解決による cycle / too-deep は `validate_parent_hierarchy` を
+> augmented snapshot に対して呼ぶことで検出する。`update_task` は部分マージ更新
+> （未指定フィールドは変更しない）で、`parent` が変更される場合のみ augmented
+> 検証を実行する。
 
 ---
 
