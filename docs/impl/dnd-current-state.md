@@ -7,7 +7,8 @@
 
 ## 1. 1 行サマリ
 
-> HTML5 ネイティブ DnD + 楽観更新 + 3 段ロールバック + version 付きシリアル queue + a11y ライブリージョン + watcher write_ignore + 旧カラム cardOrder は BE 自動メンテ。
+> HTML5 ネイティブ DnD + 楽観更新 + 3 段ロールバック + version 付きシリアル queue + a11y ライブリージョン + watcher write_ignore。
+> 旧カラム cardOrder の同期は **未確定**（`update_card_order` の BE handler が未実装で、status 変更時に旧カラムから自動除去する仕組みは現状コード上に存在しない。詳細は §4 / §5 / §6）。
 
 drop 1 回で動く layer の数:
 
