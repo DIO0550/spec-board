@@ -1,6 +1,6 @@
 # add_link 実装メモ
 
-`add_link(sourcePath, targetPath)` は、source タスクの frontmatter `links` 配列に
+`add_link({ sourceFilePath, targetFilePath })` は、source タスクの frontmatter `links` 配列に
 target タスクのパスを 1 件追加する Tauri command。仕様は
 `docs/spec-board/task-format-spec.md` の links 章を参照する。ここではコードを書く
 うえで判断に迷いやすかった点だけを散文で残す。Rust の所有権や `Option` に
