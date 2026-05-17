@@ -57,7 +57,7 @@ TaskCard (dragstart)
 | `src-tauri/src/task/update/args.rs` | 88 | UpdateTaskArgs → UpdateTaskIntent 変換、filePath 正規化 |
 | `src-tauri/src/task/task_index.rs` | 937 | TaskIndex aggregate。うち `plan_update` (L341-451) と parent_changed / hierarchy 検証 |
 | `src-tauri/src/state.rs` | 〜300 | AppState、write_ignore registry 受け渡し |
-| `src-tauri/src/config.rs` | 〜400 | `CardOrder = BTreeMap<String, Vec<String>>` 定義、`clean_card_order` 等 |
+| `src-tauri/src/config.rs` | 946 | `CardOrder = BTreeMap<String, Vec<String>>` 定義、`clean_card_order` 等（cardOrder 以外も含む全体行数。DnD 経路に関係するのは cardOrder 周辺のみ） |
 | `src-tauri/crates/fs/src/watcher/write_ignore.rs` | - | 自前 write の watcher 抑止 registry |
 | `update_card_order` Tauri command | **未実装** | FE は呼んでいるが BE 側に handler がない |
 
