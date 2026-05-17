@@ -1,5 +1,6 @@
 pub mod children;
 pub mod create;
+pub mod delete;
 pub mod frontmatter;
 pub mod get;
 pub mod io;
