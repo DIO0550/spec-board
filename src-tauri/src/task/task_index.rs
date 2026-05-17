@@ -448,6 +448,106 @@ impl TaskIndex {
             needs_full_rebuild: parent_changed,
         })
     }
+
+    /// 削除対象 path を parent に持つ直接の子 task の **プロジェクトルート相対** path を
+    /// snapshot 順で列挙する pure aggregate query。
+    ///
+    /// 表記揺れ（`./tasks/x.md` / `tasks\x.md` 等）は `normalize_parent_path_for_lookup`
+    /// で吸収する。raw string 比較は意図的に避ける（plan_update の parent 比較と同じ理由）。
+    ///
+    /// 孫 task は含めない（直接の子のみ）。`deleted_path` が誰の親でもない場合は空 Vec。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "delete_task IPC (Issue #90) で本 method を呼び出す予定。caller 追加時に expect を外す。"
+        )
+    )]
+    pub(crate) fn children_paths_of(&self, deleted_path: &str) -> Vec<PathBuf> {
+        let Some(deleted_norm) = normalize_parent_path_for_lookup(deleted_path) else {
+            return Vec::new();
+        };
+        self.tasks
+            .iter()
+            // 自己除外は raw 文字列ではなく lookup-normalized 同士で比較する。
+            // 表記揺れ（`./tasks/p.md` vs `tasks/p.md` 等）で自分自身を
+            // 子としてすり抜けさせないため。
+            .filter(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != deleted_norm)
+            .filter_map(|t| {
+                let parent = t.parent.as_ref()?;
+                let parent_norm = normalize_parent_path_for_lookup(parent.as_str())?;
+                (parent_norm == deleted_norm).then(|| PathBuf::from(t.file_path.as_str()))
+            })
+            .collect()
+    }
+
+    /// 削除対象 task の全子 task について、parent キーを除去した new file_content と
+    /// 更新後 Task を計算する pure aggregate method。I/O / 時計 / 乱数に依存しない。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "delete_task IPC (Issue #90) で本 method を呼び出す予定。caller 追加時に expect を外す。"
+        )
+    )]
+    pub(crate) fn plan_clear_children_of(
+        &self,
+        _deleted_path: &str,
+        loaded: Vec<ClearChildrenInput>,
+    ) -> Result<ClearChildrenOutcome, ClearChildrenError> {
+        let mut entries = Vec::with_capacity(loaded.len());
+
+        for ClearChildrenInput { path, parsed } in loaded {
+            let Parsed {
+                mut frontmatter,
+                body,
+            } = parsed;
+
+            // parent キー除去（typed フィールドではなく extras 上に保持されているため
+            // plan_update と同じ `extras.remove` API を使う）。
+            frontmatter
+                .extras
+                .remove(serde_yaml_ng::Value::String("parent".into()));
+
+            let serialized = frontmatter::serialize(&Parsed {
+                frontmatter: frontmatter.clone(),
+                body: body.clone(),
+            });
+
+            TaskContent::try_new(serialized.clone()).map_err(|err| {
+                ClearChildrenError::ContentRejected {
+                    path: path.clone(),
+                    reason: err.to_string(),
+                }
+            })?;
+
+            let default_status = self
+                .find_task_by_path(&path)
+                .map(|t| t.status.clone())
+                .unwrap_or_else(|| ColumnName::from_lenient(""));
+            let context = TaskParseContext {
+                file_path: path.clone(),
+                default_status,
+            };
+            let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+
+            entries.push(ClearedChildEntry {
+                path,
+                updated_task,
+                file_content: serialized,
+            });
+        }
+
+        Ok(ClearChildrenOutcome { entries })
+    }
+
+    /// 内部 helper: snapshot 上で `path` と一致する task を返す（正規化済み比較）。
+    fn find_task_by_path(&self, path: &Path) -> Option<&Task> {
+        let target = normalize_task_path_for_lookup(&path.to_string_lossy());
+        self.tasks
+            .iter()
+            .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
+    }
 }
 
 impl From<Vec<Task>> for TaskIndex {
@@ -504,6 +604,58 @@ pub struct CreateTaskOutcome {
     pub content: TaskContent,
     /// effect 層が cache commit 時の `default_status` として使う。
     pub status: ColumnName,
+}
+
+/// `TaskIndex::plan_clear_children_of` への入力。
+///
+/// effect 層（`delete_task` IPC コマンド）が `io.read` + `frontmatter::parse_bytes`
+/// で事前に取得した子 task 1 件分の (path, Parsed) ペア。
+pub(crate) struct ClearChildrenInput {
+    /// プロジェクトルート相対 path（`children_paths_of` の出力をそのまま使う想定）。
+    pub path: PathBuf,
+    /// `frontmatter::parse_bytes` で得た Parsed。
+    /// frontmatter が無い md は effect 層側で別エラーに変換し、本関数には到達させない。
+    pub parsed: Parsed,
+}
+
+/// `TaskIndex::plan_clear_children_of` の計算結果。effect 層が消費する。
+#[derive(Debug)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "delete_task IPC (Issue #90) が本型を消費する予定。caller 追加時に expect を外す。"
+    )
+)]
+pub(crate) struct ClearChildrenOutcome {
+    pub entries: Vec<ClearedChildEntry>,
+}
+
+/// clear 対象 1 件分の計算結果。
+#[derive(Debug)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "delete_task IPC (Issue #90) が本型を消費する予定。caller 追加時に expect を外す。"
+    )
+)]
+pub(crate) struct ClearedChildEntry {
+    /// 入力 `ClearChildrenInput::path` をそのまま保持。
+    pub path: PathBuf,
+    /// `task_from_parsed` で再構築済みの新 Task（effect 層が cache に書き戻す）。
+    pub updated_task: Task,
+    /// `frontmatter::serialize` 出力（effect 層が `io.write_existing` で書き戻す）。
+    pub file_content: String,
+}
+
+/// `TaskIndex::plan_clear_children_of` のエラー。
+///
+/// pure 関数のため I/O 系 variant は持たない。それらは effect 層が独自エラー型に詰め直す。
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ClearChildrenError {
+    #[error("content rejected for {}: {reason}", .path.display())]
+    ContentRejected { path: PathBuf, reason: String },
 }
 
 /// 親 task の dirname を返す。親未指定なら `tasks/`。
@@ -755,3 +907,7 @@ mod task_index_plan_create_tests;
 #[cfg(test)]
 #[path = "task_index_plan_update_tests.rs"]
 mod task_index_plan_update_tests;
+
+#[cfg(test)]
+#[path = "task_index_clear_children_tests.rs"]
+mod task_index_clear_children_tests;
