@@ -54,7 +54,7 @@ TaskCard (dragstart)
 | ファイル | 行数 | 役割 |
 |:--|--:|:--|
 | `src-tauri/src/task/update/command.rs` | 134 | `update_task` IPC + effect 層 (write_ignore + plan_update + write + commit_cache) |
-| `src-tauri/src/task/update/args.rs` | 88 | UpdateTaskArgs → UpdateTaskIntent 変換、filePath 正規化 |
+| `src-tauri/src/task/update/args.rs` | 88 | UpdateTaskArgs → UpdateTaskIntent 変換、filePath を project_root 相対化 + lexical 正規化 |
 | `src-tauri/src/task/task_index.rs` | 937 | TaskIndex aggregate。うち `plan_update` (L341-451) と parent_changed / hierarchy 検証 |
 | `src-tauri/src/state.rs` | 〜300 | AppState、write_ignore registry 受け渡し |
 | `src-tauri/src/config.rs` | 946 | `CardOrder = BTreeMap<String, Vec<String>>` 定義、`clean_card_order` 等（cardOrder 以外も含む全体行数。DnD 経路に関係するのは cardOrder 周辺のみ） |
@@ -162,7 +162,7 @@ await updateCardOrder
 ```
 update_task IPC (command.rs:24-83)
   ├─ AppState から project_root / write_ignore / cache を取得 (lock の空き確認も含む)
-  ├─ UpdateTaskArgs → UpdateTaskIntent + abs filePath 正規化
+  ├─ UpdateTaskArgs → UpdateTaskIntent（filePath が絶対パスなら project_root を strip して相対化し、lexical 正規化）
   ├─ tasks_snapshot から existing_task を引く
   │
   ├─ FileIO::read で frontmatter + body をパース
