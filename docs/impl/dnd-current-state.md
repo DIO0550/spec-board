@@ -222,11 +222,11 @@ update_task IPC (command.rs:24-83)
 dnd / move 関連のテストファイル（実装 PR で増えたもの含む）:
 
 - `moveTask.behavior.test.ts` (楽観 / rollback / partial / sameOrder no-op / version 不一致 …)
-- `buildMovedFilePaths.test.ts`
+- `buildMovedFilePaths.behavior.test.ts`
 - `Column/__tests__/Column.dnd.test.tsx`
 - `Board/__tests__/Board.dnd.test.tsx`
 - `TaskCard/__tests__/TaskCard.dnd.test.tsx` (drag guard 含む)
-- `LiveRegion/__tests__/index.test.tsx`
+- `LiveRegion/__tests__/LiveRegion.rendering.test.tsx`
 - `App` レベルの DnD a11y テスト
 
 各テストファイル単体は小さいが、**「drop が起こした 1 ふるまい」を確認するために覚える必要がある文脈が広い**: snapshot / version / queue / projectSessionState / callback / live region / partial-move / sameColumn no-op / currentTask 乖離。
