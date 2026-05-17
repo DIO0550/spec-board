@@ -174,7 +174,7 @@ update_task IPC (command.rs:24-83)
   │    ├─ parent_changed なら validate_parent_hierarchy で全体再検証
   │    ├─ frontmatter を serialize → TaskContent VO で妥当性チェック
   │    └─ UpdateTaskOutcome { updated_task, file_content, needs_full_rebuild }
-  │       └─ needs_full_rebuild は status change / parent change のときだけ true
+  │       └─ needs_full_rebuild は **parent change** のときだけ true（status 変更だけでは false）
   │
   ├─ watcher_active なら write_ignore.register(&abs)  ← 自前 write を watcher に無視させる
   │
@@ -212,7 +212,7 @@ update_task IPC (command.rs:24-83)
 | 6 | `LiveRegion/index.tsx:35-40` | 同文言再 announce のために id 奇数で zero-width-space を付け外し | SR 実装差吸収の hack |
 | 7 | `App.tsx:401-441` | onOptimisticApplied / onRollback を組んで moveTask に注入 | UI 通知と reducer dispatch を疎結合にした副作用。callback 例外は moveTask 内 safeCallback で握り潰し |
 | 8 | `update/command.rs` + `write_ignore` | 自前 write を watcher に無視させる register。success path では unregister せず watcher 側で `consume`、write 失敗時のみ unregister | 自前 write → watcher → IPC → reducer の自己発火ループを切る必要があるが、register / consume / 失敗時 unregister の責務が両側に分散して読み解きにくい |
-| 9 | `task_index.rs:341-451` plan_update | parent_changed 判定 (3 分岐) + lookup-normalized + 全体 hierarchy 再検証 + needs_full_rebuild | move では status しか変えないが、共通 update 経路に乗っているため parent 関連の重いロジックも通る |
+| 9 | `task_index.rs:341-451` plan_update | parent_changed 判定 (3 分岐) + lookup-normalized + 全体 hierarchy 再検証 + needs_full_rebuild (parent_changed のみで true) | move では status しか変えないが、共通 update 経路に乗っているため parent 関連の重いロジックも通る（move 経由なら needs_full_rebuild は常に false） |
 | 10 | docs と実装の乖離 | `docs/impl/dnd-board.md` は「楽観 UI 採用しない / 2 IPC」と書いてあるが現状は「楽観 UI 採用 + 2 IPC + 3 段 rollback」 | 設計判断の history が更新されておらず、現状の根拠が読めない |
 
 ---
