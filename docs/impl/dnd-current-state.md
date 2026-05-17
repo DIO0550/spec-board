@@ -20,7 +20,7 @@ TaskCard (dragstart)
         → moveTaskAction (orchestrator: preflight + queue)
           → MoveSnapshot (snapshot VO)  +  MoveExecution (effect 層)
             → updateTask IPC
-              → update_task_impl (write_ignore register → plan_update → write → unregister)
+              → update_task_impl (read → plan_update → write_ignore register → write、unregister は write 失敗時のみ。success path では watcher 側で consume される設計)
                 → TaskIndex::plan_update (parent_changed なら全体 hierarchy 再検証)
             → updateCardOrder IPC
               → (BE 未実装、config.json の cardOrder を更新する想定)
@@ -161,10 +161,9 @@ await updateCardOrder
 
 ```
 update_task IPC (command.rs:24-83)
-  ├─ AppState から project_root / write_ignore / cache を取得
+  ├─ AppState から project_root / write_ignore / cache を取得 (lock の空き確認も含む)
   ├─ UpdateTaskArgs → UpdateTaskIntent + abs filePath 正規化
-  │
-  ├─ write_ignore.register(&abs)   ← 自分の write を watcher に無視させる
+  ├─ tasks_snapshot から existing_task を引く
   │
   ├─ FileIO::read で frontmatter + body をパース
   │
@@ -177,11 +176,13 @@ update_task IPC (command.rs:24-83)
   │    └─ UpdateTaskOutcome { updated_task, file_content, needs_full_rebuild }
   │       └─ needs_full_rebuild は status change / parent change のときだけ true
   │
+  ├─ watcher_active なら write_ignore.register(&abs)  ← 自前 write を watcher に無視させる
+  │
   ├─ FileIO::write_existing(&abs, file_content)
+  │    └─ 書き込み失敗時のみ write_ignore.unregister(&abs) して early return
+  │       （success path では unregister せず、watcher 側で write_ignore.consume される設計）
   │
-  ├─ write_ignore.unregister(&abs)
-  │
-  └─ commit_cache (full_rebuild が必要なら TaskIndex を rebuild)
+  └─ commit_cache (needs_full_rebuild=true のときだけ TaskIndex を rebuild)
 ```
 
 > 「BE が status 変更を watcher 経由で検知して、旧カラムの cardOrder から自動除去する」
@@ -210,7 +211,7 @@ update_task IPC (command.rs:24-83)
 | 5 | `moveTask.ts:313-460` MoveExecution | crossColumn (90 行) / sameColumn (45 行) で 2 IPC を逐次実行 + 3 種 rollback パス | 成功 / updateTask 失敗 / updateCardOrder 失敗 (partial) の 3 終端 |
 | 6 | `LiveRegion/index.tsx:35-40` | 同文言再 announce のために id 奇数で zero-width-space を付け外し | SR 実装差吸収の hack |
 | 7 | `App.tsx:401-441` | onOptimisticApplied / onRollback を組んで moveTask に注入 | UI 通知と reducer dispatch を疎結合にした副作用。callback 例外は moveTask 内 safeCallback で握り潰し |
-| 8 | `update/command.rs` + `write_ignore` | 自前 write を watcher に無視させる register/unregister | 自前 write → watcher → IPC → reducer の自己発火ループを切る必要がある |
+| 8 | `update/command.rs` + `write_ignore` | 自前 write を watcher に無視させる register。success path では unregister せず watcher 側で `consume`、write 失敗時のみ unregister | 自前 write → watcher → IPC → reducer の自己発火ループを切る必要があるが、register / consume / 失敗時 unregister の責務が両側に分散して読み解きにくい |
 | 9 | `task_index.rs:341-451` plan_update | parent_changed 判定 (3 分岐) + lookup-normalized + 全体 hierarchy 再検証 + needs_full_rebuild | move では status しか変えないが、共通 update 経路に乗っているため parent 関連の重いロジックも通る |
 | 10 | docs と実装の乖離 | `docs/impl/dnd-board.md` は「楽観 UI 採用しない / 2 IPC」と書いてあるが現状は「楽観 UI 採用 + 2 IPC + 3 段 rollback」 | 設計判断の history が更新されておらず、現状の根拠が読めない |
 
