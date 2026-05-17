@@ -93,8 +93,21 @@ pub(crate) fn add_link_impl(
                 return Err(err.into());
             }
 
-            let returned = commit_cache(state, &source_rel, &target_normalized, &updated_task)?;
-            Ok(returned)
+            // commit_cache が SourceVanished / TargetVanished で失敗した場合、
+            // disk への write はすでに完了しているため、watcher event を
+            // 通常経路で処理して cache を disk に追従させる必要がある。
+            // write_ignore に entry が残ったままだと event が consume されて
+            // cache が永続的に disk と乖離するので、commit 失敗時は unregister
+            // して watcher 側で再走させる（create_task_impl と同型）。
+            match commit_cache(state, &source_rel, &target_normalized, &updated_task) {
+                Ok(returned) => Ok(returned),
+                Err(err) => {
+                    if watcher_active {
+                        let _ = state.write_ignore().unregister(&source_abs);
+                    }
+                    Err(err)
+                }
+            }
         }
     }
 }
