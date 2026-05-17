@@ -405,6 +405,53 @@ test("カラム間移動: updateTask 失敗時の rollback dispatch 順序が固
   ]);
 });
 
+test("rollback 中に外部 listener が task-updated を dispatch していたら、snapshot で上書きせず外部更新を保護する", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  // IPC 待機中に外部 listener が task-updated を発火させた状況を再現する。
+  // tasks/a.md は楽観 dispatch によって status=Done に切り替わった後、
+  // 外部の file watcher 由来 listener が title を書き換えつつ status を
+  // "InProgress" に更新したと仮定する。
+  updateTaskMock.mockImplementation(async () => {
+    harness.deps.dispatchSync({
+      type: "task-updated",
+      originalFilePath: "tasks/a.md",
+      task: makeTask({
+        filePath: "tasks/a.md",
+        status: "InProgress",
+        title: "外部更新後タイトル",
+      }),
+    });
+    return Result.err(new TauriError("UNKNOWN", "x"));
+  });
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  // 楽観 dispatch x2 + 外部 listener の task-updated x1 = 3 件が先行する。
+  // rollback では snapshot による task 上書きが省略され、cardOrder の
+  // rollback 2 件のみ流れる（全体で 5 件）。
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "task-updated",
+    "card-order-updated",
+    "task-updated",
+    "card-order-updated",
+    "card-order-updated",
+  ]);
+  const next = harness.state.current as { data: ProjectData };
+  const target = next.data.tasks.find((t) => t.filePath === "tasks/a.md");
+  expect(target?.title).toBe("外部更新後タイトル");
+  expect(target?.status).toBe("InProgress");
+});
+
 test("カラム間移動: updateTask 失敗時に onRollback callback が呼ばれ、onOptimisticApplied は事前に 1 度呼ばれている", async () => {
   const harness = setupLoaded(
     makeData([

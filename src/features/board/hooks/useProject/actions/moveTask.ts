@@ -154,33 +154,51 @@ export const MoveSnapshot = {
   ],
 
   /**
-   * カラム間 updateTask 失敗時の rollback 3 段（逆順）（pure）。
-   * ②で task が fromColumn 末尾に補完される現象を③で打ち消し、drop 前位置を復元する。
+   * カラム間 updateTask 失敗時の rollback 段（逆順）（pure）。
+   *
+   * IPC 待機中に外部 listener（file watcher 由来の task-updated event 等）が
+   * 同一 task を concurrent に更新している可能性があるため、`currentTask`
+   * を見て分岐する:
+   *
+   * - `currentTask` が optimistic 状態（status === toColumn）と一致する場合
+   *   は通常の 3 段 rollback（cardOrder(to 旧) → task(原) → cardOrder(from 旧)）。
+   *   ②で task が fromColumn 末尾に補完される現象を③で打ち消す前提。
+   * - `currentTask` が optimistic と乖離している場合は外部 listener による
+   *   concurrent 更新が入ったとみなし、task-updated rollback を省略して
+   *   cardOrder のみ復元する。外部更新を snapshot で上書きしない保護策。
    *
    * @param snapshot drop 直前 snapshot
    * @param params 移動パラメータ
-   * @returns 逆順 rollback 用 ProjectAction 配列（3 段）
+   * @param currentTask rollback 直前の最新 state における target task
+   * @returns 逆順 rollback 用 ProjectAction 配列（2〜3 段）
    */
   rollbackCrossDispatches: (
     snapshot: MoveSnapshot,
     params: MoveTaskParams,
-  ): readonly ProjectAction[] => [
-    {
+    currentTask: Task | undefined,
+  ): readonly ProjectAction[] => {
+    const taskMatchesOptimistic =
+      currentTask !== undefined && currentTask.status === params.toColumn;
+    const head: ProjectAction = {
       type: "card-order-updated",
       columnName: params.toColumn,
       filePaths: [...snapshot.toColumnOrderBefore],
-    },
-    {
-      type: "task-updated",
-      originalFilePath: params.taskFilePath,
-      task: snapshot.originalTask,
-    },
-    {
+    };
+    const tail: ProjectAction = {
       type: "card-order-updated",
       columnName: params.fromColumn,
       filePaths: [...snapshot.fromColumnOrderBefore],
-    },
-  ],
+    };
+    if (!taskMatchesOptimistic) {
+      return [head, tail];
+    }
+    const middle: ProjectAction = {
+      type: "task-updated",
+      originalFilePath: params.taskFilePath,
+      task: snapshot.originalTask,
+    };
+    return [head, middle, tail];
+  },
 
   /** partial-move（status 確定保持 / cardOrder のみ補正）の dispatch 列（pure）。 */
   partialRollbackDispatches: (
@@ -339,9 +357,13 @@ const MoveExecution = {
       return guardAfterUpdate;
     }
     if (!updateResult.ok) {
+      const beforeRollback = ProjectSessionState.visibleData(deps.getState());
+      const currentTask = beforeRollback?.tasks.find(
+        (t) => t.filePath === params.taskFilePath,
+      );
       MoveExecution.dispatchAll(
         deps,
-        MoveSnapshot.rollbackCrossDispatches(snapshot, params),
+        MoveSnapshot.rollbackCrossDispatches(snapshot, params, currentTask),
       );
       safeCallback(callbacks?.onRollback, {
         taskFilePath: params.taskFilePath,
