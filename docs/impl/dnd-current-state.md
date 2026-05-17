@@ -195,7 +195,7 @@ update_task IPC (command.rs:24-83)
 
 - 物理: `.spec-board/config.json` 内の `cardOrder: { [columnName]: filePath[] }`
 - 型: `BTreeMap<String, Vec<String>>` (`src-tauri/src/config.rs`)
-- 載っていない task は「カラム末尾」扱い（`clean_card_order`）
+- 載っていない task は「カラム末尾」扱い（FE 側 `src/domains/project-data` の `ProjectData.applyCardOrderUpdated` がこの規則を適用する。BE の `clean_card_order` は不在パス / 不在キーの除去だけで、未掲載タスクを末尾に補完する処理は持たない）
 - 更新経路: `updateCardOrder` IPC（**FE 側のみ存在、BE handler 無し**）
 
 ---
