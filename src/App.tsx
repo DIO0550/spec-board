@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
 import {
@@ -103,6 +104,14 @@ export const App = () => {
   const [createModalParent, setCreateModalParent] = useState<
     string | undefined
   >(undefined);
+  const [announcement, setAnnouncement] = useState<LiveAnnouncement | null>(
+    null,
+  );
+  const announceCounterRef = useRef(0);
+  const announce = useCallback((text: string) => {
+    announceCounterRef.current += 1;
+    setAnnouncement({ id: announceCounterRef.current, text });
+  }, []);
 
   // プロジェクト切替時に UI 状態（選択中タスク・作成モーダル）をリセットする。
   // loaded 状態の path が「実際に別 path に変わった」ときだけ trigger する。
@@ -391,7 +400,34 @@ export const App = () => {
 
   const handleTaskDrop = useCallback(
     async (params: MoveTaskParams): Promise<void> => {
-      const result = await moveTask(params);
+      const targetTitle =
+        tasks.find((t) => t.filePath === params.taskFilePath)?.title ??
+        params.taskFilePath;
+      /**
+       * カラム間 status 変更の楽観 dispatch 直後に呼ばれる callback。
+       * 同一カラム並び替え（fromColumn === toColumn）では LiveRegion を更新しない。
+       *
+       * @param event optimistic 通知 payload
+       */
+      const onOptimisticApplied = (event: {
+        fromColumn: string;
+        toColumn: string;
+      }): void => {
+        if (event.fromColumn !== event.toColumn) {
+          announce(`「${targetTitle}」を「${event.toColumn}」に移動しました`);
+        }
+      };
+      /**
+       * カラム間 updateTask 失敗時の rollback 完了直後に呼ばれる callback。
+       * LiveRegion に「取り消しました」を流す。
+       */
+      const onRollback = (): void => {
+        announce(`「${targetTitle}」の移動を取り消しました`);
+      };
+      const result = await moveTask(params, {
+        onOptimisticApplied,
+        onRollback,
+      });
       if (!result.ok) {
         if (result.error.kind === "partial-move") {
           showToast(result.error.message, "error");
@@ -401,7 +437,7 @@ export const App = () => {
         showToast(`タスクの移動に失敗しました: ${message}`, "error");
       }
     },
-    [moveTask, showToast],
+    [tasks, moveTask, announce, showToast],
   );
 
   const handleTaskDelete = useCallback(
@@ -498,6 +534,7 @@ export const App = () => {
         />
       )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <LiveRegion announcement={announcement} />
     </div>
   );
 };
