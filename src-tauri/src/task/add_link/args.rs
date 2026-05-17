@@ -1,7 +1,7 @@
 //! `add_link` Tauri command の引数 DTO。
 //!
-//! sourcePath / targetPath は絶対パスまたは project_root 相対のいずれも受け、
-//! 共通の path normalization helper で project_root 相対の正規形に倒す。
+//! sourceFilePath / targetFilePath は絶対パスまたは project_root 相対のいずれも
+//! 受け、共通の path normalization helper で project_root 相対の正規形に倒す。
 
 use std::path::{Component, Path, PathBuf};
 
