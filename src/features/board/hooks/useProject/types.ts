@@ -9,7 +9,7 @@ import type {
   ColumnsCommand,
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
-import type { MoveTaskParams } from "./actions/moveTask";
+import type { MoveTaskCallbacks, MoveTaskParams } from "./actions/moveTask";
 import type { ProjectError } from "./errors";
 import type { ProjectSessionState } from "./state/projectSessionState";
 
@@ -17,7 +17,7 @@ export type {
   ColumnsCommand,
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
-export type { MoveTaskParams } from "./actions/moveTask";
+export type { MoveTaskCallbacks, MoveTaskParams } from "./actions/moveTask";
 
 export type UpdateColumnsInput = ColumnsCommand | ColumnsCommandBuilder;
 
@@ -63,10 +63,15 @@ export type UseProjectResult = {
   ) => Promise<ResultT<{ applied: boolean }, ProjectError>>;
   /**
    * task のカラム間移動 / カラム内並び替えを単一 entry point で受け付ける。
+   * 楽観 dispatch / rollback の発生を callback で通知する。
    * @param params 移動パラメータ
+   * @param callbacks 楽観 / rollback の通知 callback（省略可）
    * @returns 成否を表す Result または ProjectError
    */
-  moveTask: (params: MoveTaskParams) => Promise<ResultT<void, ProjectError>>;
+  moveTask: (
+    params: MoveTaskParams,
+    callbacks?: MoveTaskCallbacks,
+  ) => Promise<ResultT<void, ProjectError>>;
   /** project state を初期状態に戻す。 */
   reset: () => void;
 };

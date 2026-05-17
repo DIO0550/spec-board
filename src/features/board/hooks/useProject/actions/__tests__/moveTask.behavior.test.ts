@@ -29,6 +29,11 @@ vi.mock("@/lib/tauri", async () => {
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const updateCardOrderMock = vi.mocked(updateCardOrderInvoke);
 
+/**
+ * Task payload を最小限の overrides で生成するテストヘルパ。
+ * @param overrides 上書きする TaskPayload フィールド
+ * @returns ProjectData に格納可能な Task
+ */
 const makeTask = (overrides: Partial<TaskPayload>): Task =>
   Task.fromPayload({
     id: overrides.filePath ?? "id",
@@ -43,6 +48,11 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     ...overrides,
   });
 
+/**
+ * filePath / status の組から ProjectData を生成するテストヘルパ。
+ * @param pairs [filePath, status] のタプル配列
+ * @returns Todo / Done カラムを持つ ProjectData
+ */
 const makeData = (
   pairs: ReadonlyArray<readonly [string, string]>,
 ): ProjectData => ({
@@ -59,6 +69,11 @@ type Harness = {
   deps: Parameters<typeof moveTaskAction>[0];
 };
 
+/**
+ * loaded 状態の moveTaskAction 実行に必要な harness を組み立てる。
+ * @param data 初期 ProjectData
+ * @returns moveTaskAction 呼び出しに必要な harness
+ */
 const setupLoaded = (data: ProjectData): Harness => {
   const state = {
     current: { kind: "loaded", path: "/p", data } as ProjectState,
@@ -138,7 +153,7 @@ test("カラム間移動: updateTask 成功後 updateCardOrder が呼ばれる",
   });
 });
 
-test("カラム間移動: task-updated → card-order-updated の順で dispatch される", async () => {
+test("カラム間移動: 楽観 → 確定の順で task-updated x2 + card-order-updated x2 が dispatch される", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -159,7 +174,40 @@ test("カラム間移動: task-updated → card-order-updated の順で dispatch
   expect(harness.actions.map((a) => a.type)).toEqual([
     "task-updated",
     "card-order-updated",
+    "task-updated",
+    "card-order-updated",
   ]);
+});
+
+test("カラム間移動: 楽観 dispatch が IPC 完了前に getState() に反映される", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  const movedA = makeTask({ filePath: "tasks/a.md", status: "Done" });
+
+  let snapshotDuringIpc: ProjectData | null = null;
+  updateTaskMock.mockImplementation(async () => {
+    snapshotDuringIpc =
+      (harness.state.current as { data?: ProjectData }).data ?? null;
+    return Result.ok(movedA);
+  });
+  updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  expect(snapshotDuringIpc).not.toBeNull();
+  const inDone = (snapshotDuringIpc as unknown as ProjectData).tasks
+    .filter((t) => t.status === "Done")
+    .map((t) => t.filePath);
+  expect(inDone).toEqual(["tasks/a.md", "tasks/b.md"]);
 });
 
 test("カラム間移動成功後、ProjectData.tasks に target が toIndex 位置で含まれる", async () => {
@@ -188,7 +236,7 @@ test("カラム間移動成功後、ProjectData.tasks に target が toIndex 位
   expect(inDone).toEqual(["tasks/b.md", "tasks/a.md", "tasks/c.md"]);
 });
 
-test("fromColumn === toColumn で並び順変化があれば updateCardOrder が呼ばれる", async () => {
+test("同一カラム並び替え: 楽観 → 確定で card-order-updated が 2 回 dispatch される", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -207,11 +255,14 @@ test("fromColumn === toColumn で並び順変化があれば updateCardOrder が
 
   expect(result.ok).toBe(true);
   expect(updateTaskMock).not.toHaveBeenCalled();
-  expect(updateTaskMock).toHaveBeenCalledTimes(0);
   expect(updateCardOrderMock).toHaveBeenCalledWith({
     columnName: "Todo",
     filePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
   });
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "card-order-updated",
+    "card-order-updated",
+  ]);
 });
 
 test("カラム内並び替え後の ProjectData.tasks 表示順が filePaths と一致", async () => {
@@ -239,7 +290,7 @@ test("カラム内並び替え後の ProjectData.tasks 表示順が filePaths �
   ]);
 });
 
-test("並び順変化なし → IPC を呼ばず Result.ok", async () => {
+test("並び順変化なし → IPC を呼ばず Result.ok / 楽観 dispatch も走らない", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -257,9 +308,10 @@ test("並び順変化なし → IPC を呼ばず Result.ok", async () => {
   expect(result.ok).toBe(true);
   expect(updateTaskMock).toHaveBeenCalledTimes(0);
   expect(updateCardOrderMock).toHaveBeenCalledTimes(0);
+  expect(harness.actions).toEqual([]);
 });
 
-test("同一カラムで updateCardOrder が Result.err → ProjectError.tauri、card-order-updated は dispatch されない", async () => {
+test("同一カラム並び替え: updateCardOrder 失敗 → 楽観 dispatch が rollback され state 原状", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -282,10 +334,17 @@ test("同一カラムで updateCardOrder が Result.err → ProjectError.tauri�
   expect((result as { error: ProjectError }).error.kind).toBe("tauri");
   expect(updateTaskMock).not.toHaveBeenCalled();
   expect(updateCardOrderMock).toHaveBeenCalledTimes(1);
-  expect(harness.actions.map((a) => a.type)).toEqual([]);
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "card-order-updated",
+    "card-order-updated",
+  ]);
+  const next = harness.state.current as { data: ProjectData };
+  expect(
+    next.data.tasks.filter((t) => t.status === "Todo").map((t) => t.filePath),
+  ).toEqual(["tasks/a.md", "tasks/b.md", "tasks/c.md"]);
 });
 
-test("updateTask が Result.err なら ProjectError.tauri を返し updateCardOrder は呼ばれない", async () => {
+test("updateTask が Result.err なら ProjectError.tauri を返し updateCardOrder は呼ばれない / カラムは原状", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -310,9 +369,79 @@ test("updateTask が Result.err なら ProjectError.tauri を返し updateCardOr
   expect(result.ok).toBe(false);
   expect((result as { error: ProjectError }).error.kind).toBe("tauri");
   expect(updateCardOrderMock).not.toHaveBeenCalled();
+  const next = harness.state.current as { data: ProjectData };
+  const todoPaths = next.data.tasks
+    .filter((t) => t.status === "Todo")
+    .map((t) => t.filePath);
+  const donePaths = next.data.tasks
+    .filter((t) => t.status === "Done")
+    .map((t) => t.filePath);
+  expect(todoPaths).toEqual(["tasks/a.md"]);
+  expect(donePaths).toEqual(["tasks/b.md"]);
 });
 
-test("カラム間で updateTask 成功 / updateCardOrder 失敗 → task-updated は dispatch、card-order-updated は dispatch されず Result.err", async () => {
+test("カラム間移動: updateTask 失敗時の rollback dispatch 順序が固定される", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  updateTaskMock.mockResolvedValue(Result.err(new TauriError("UNKNOWN", "x")));
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "task-updated",
+    "card-order-updated",
+    "card-order-updated",
+    "task-updated",
+    "card-order-updated",
+  ]);
+});
+
+test("カラム間移動: updateTask 失敗時に onRollback callback が呼ばれ、onOptimisticApplied は事前に 1 度呼ばれている", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  updateTaskMock.mockResolvedValue(Result.err(new TauriError("UNKNOWN", "x")));
+
+  const optimistic = vi.fn();
+  const rollback = vi.fn();
+  await moveTaskAction(
+    harness.deps,
+    {
+      taskFilePath: "tasks/a.md",
+      fromColumn: "Todo",
+      toColumn: "Done",
+      toIndex: 0,
+    },
+    { onOptimisticApplied: optimistic, onRollback: rollback },
+  );
+
+  expect(optimistic).toHaveBeenCalledTimes(1);
+  expect(optimistic).toHaveBeenCalledWith({
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+  });
+  expect(rollback).toHaveBeenCalledTimes(1);
+  expect(rollback).toHaveBeenCalledWith({
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+  });
+});
+
+test("カラム間で updateTask 成功 / updateCardOrder 失敗 → partial-move: status 確定保持 / cardOrder 補正 / onRollback は呼ばれない", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -325,6 +454,47 @@ test("カラム間で updateTask 成功 / updateCardOrder 失敗 → task-update
     Result.err(new TauriError("UNKNOWN", "x")),
   );
 
+  const rollback = vi.fn();
+  const result = await moveTaskAction(
+    harness.deps,
+    {
+      taskFilePath: "tasks/a.md",
+      fromColumn: "Todo",
+      toColumn: "Done",
+      toIndex: 0,
+    },
+    { onRollback: rollback },
+  );
+
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(result.ok).toBe(false);
+  expect((result as { error: ProjectError }).error.kind).toBe("partial-move");
+  expect(rollback).not.toHaveBeenCalled();
+
+  const next = harness.state.current as { data: ProjectData };
+  const target = next.data.tasks.find((t) => t.filePath === "tasks/a.md");
+  expect(target?.status).toBe("Done");
+  const donePaths = next.data.tasks
+    .filter((t) => t.status === "Done")
+    .map((t) => t.filePath);
+  expect(donePaths).toEqual(["tasks/b.md", "tasks/a.md"]);
+  const todoPaths = next.data.tasks
+    .filter((t) => t.status === "Todo")
+    .map((t) => t.filePath);
+  expect(todoPaths).toEqual([]);
+});
+
+test("callbacks 未指定でも例外なく動作する（カラム間成功）", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  const movedA = makeTask({ filePath: "tasks/a.md", status: "Done" });
+  updateTaskMock.mockResolvedValue(Result.ok(movedA));
+  updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
+
   const result = await moveTaskAction(harness.deps, {
     taskFilePath: "tasks/a.md",
     fromColumn: "Todo",
@@ -332,10 +502,66 @@ test("カラム間で updateTask 成功 / updateCardOrder 失敗 → task-update
     toIndex: 0,
   });
 
+  expect(result.ok).toBe(true);
+});
+
+test("onOptimisticApplied が throw しても queue 進行は止まらず IPC が呼ばれる", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  const movedA = makeTask({ filePath: "tasks/a.md", status: "Done" });
+  updateTaskMock.mockResolvedValue(Result.ok(movedA));
+  updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
+
+  const result = await moveTaskAction(
+    harness.deps,
+    {
+      taskFilePath: "tasks/a.md",
+      fromColumn: "Todo",
+      toColumn: "Done",
+      toIndex: 0,
+    },
+    {
+      onOptimisticApplied: () => {
+        throw new Error("boom");
+      },
+    },
+  );
+
+  expect(result.ok).toBe(true);
   expect(updateTaskMock).toHaveBeenCalledTimes(1);
-  expect(result.ok).toBe(false);
-  expect((result as { error: ProjectError }).error.kind).toBe("partial-move");
-  expect(harness.actions.map((a) => a.type)).toEqual(["task-updated"]);
+});
+
+test("同一カラム並び替えでは onOptimisticApplied / onRollback は呼ばれない", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Todo"],
+      ["tasks/c.md", "Todo"],
+    ]),
+  );
+  updateCardOrderMock.mockResolvedValue(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+
+  const optimistic = vi.fn();
+  const rollback = vi.fn();
+  await moveTaskAction(
+    harness.deps,
+    {
+      taskFilePath: "tasks/a.md",
+      fromColumn: "Todo",
+      toColumn: "Todo",
+      toIndex: 2,
+    },
+    { onOptimisticApplied: optimistic, onRollback: rollback },
+  );
+
+  expect(optimistic).not.toHaveBeenCalled();
+  expect(rollback).not.toHaveBeenCalled();
 });
 
 test("session が loaded でない時 invalidState で抜ける", async () => {
@@ -362,7 +588,7 @@ test("session が loaded でない時 invalidState で抜ける", async () => {
   expect(updateTaskMock).not.toHaveBeenCalled();
 });
 
-test("IPC 中に projectVersion が変わると invalidState で抜ける", async () => {
+test("IPC 中に projectVersion が変わると invalidState で抜け、rollback dispatch も走らない", async () => {
   const harness = setupLoaded(
     makeData([
       ["tasks/a.md", "Todo"],
@@ -375,16 +601,62 @@ test("IPC 中に projectVersion が変わると invalidState で抜ける", asyn
     return Result.ok(movedA);
   });
 
-  const result = await moveTaskAction(harness.deps, {
+  const rollback = vi.fn();
+  const result = await moveTaskAction(
+    harness.deps,
+    {
+      taskFilePath: "tasks/a.md",
+      fromColumn: "Todo",
+      toColumn: "Done",
+      toIndex: 0,
+    },
+    { onRollback: rollback },
+  );
+
+  expect(result.ok).toBe(false);
+  expect((result as { error: ProjectError }).error.kind).toBe("invalid-state");
+  expect(updateCardOrderMock).not.toHaveBeenCalled();
+  expect(rollback).not.toHaveBeenCalled();
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "task-updated",
+    "card-order-updated",
+  ]);
+});
+
+test("楽観 dispatch + 外部 listen の二重 dispatch でも最終 state が同じ（idempotent）", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  const movedA = makeTask({ filePath: "tasks/a.md", status: "Done" });
+  updateTaskMock.mockResolvedValue(Result.ok(movedA));
+  updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
+
+  await moveTaskAction(harness.deps, {
     taskFilePath: "tasks/a.md",
     fromColumn: "Todo",
     toColumn: "Done",
     toIndex: 0,
   });
+  const beforeReplay = harness.state.current;
 
-  expect(result.ok).toBe(false);
-  expect((result as { error: ProjectError }).error.kind).toBe("invalid-state");
-  expect(updateCardOrderMock).not.toHaveBeenCalled();
+  harness.deps.dispatchSync({
+    type: "task-updated",
+    originalFilePath: "tasks/a.md",
+    task: movedA,
+  });
+  harness.deps.dispatchSync({
+    type: "card-order-updated",
+    columnName: "Done",
+    filePaths: ["tasks/a.md", "tasks/b.md"],
+  });
+  const afterReplay = harness.state.current;
+
+  expect((afterReplay as { data: ProjectData }).data).toEqual(
+    (beforeReplay as { data: ProjectData }).data,
+  );
 });
 
 test.each([
@@ -432,4 +704,5 @@ test.each([
   const result = await moveTaskAction(harness.deps, params);
   expect(result.ok).toBe(false);
   expect((result as { error: ProjectError }).error.kind).toBe("invalid-state");
+  expect(harness.actions).toEqual([]);
 });
