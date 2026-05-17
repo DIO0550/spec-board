@@ -452,6 +452,42 @@ test("rollback 中に外部 listener が task-updated を dispatch していた�
   expect(target?.status).toBe("InProgress");
 });
 
+test("rollback: status=toColumn のまま title 等が concurrent 更新された場合、rollback task は current のタイトルを保持し status のみ fromColumn に戻る", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  // 楽観 dispatch 後、IPC 待機中に外部 listener が title だけを書き換える
+  // （status は optimistic と同じ Done のまま）。
+  updateTaskMock.mockImplementation(async () => {
+    harness.deps.dispatchSync({
+      type: "task-updated",
+      originalFilePath: "tasks/a.md",
+      task: makeTask({
+        filePath: "tasks/a.md",
+        status: "Done",
+        title: "外部更新後タイトル",
+      }),
+    });
+    return Result.err(new TauriError("UNKNOWN", "x"));
+  });
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  const next = harness.state.current as { data: ProjectData };
+  const target = next.data.tasks.find((t) => t.filePath === "tasks/a.md");
+  // status は fromColumn=Todo に戻る一方、title は外部更新の値を保持する。
+  expect(target?.status).toBe("Todo");
+  expect(target?.title).toBe("外部更新後タイトル");
+});
+
 test("カラム間移動: updateTask 失敗時に onRollback callback が呼ばれ、onOptimisticApplied は事前に 1 度呼ばれている", async () => {
   const harness = setupLoaded(
     makeData([

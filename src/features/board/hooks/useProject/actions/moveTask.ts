@@ -160,12 +160,17 @@ export const MoveSnapshot = {
    * 同一 task を concurrent に更新している可能性があるため、`currentTask`
    * を見て分岐する:
    *
-   * - `currentTask` が optimistic 状態（status === toColumn）と一致する場合
-   *   は通常の 3 段 rollback（cardOrder(to 旧) → task(原) → cardOrder(from 旧)）。
+   * - `currentTask` が optimistic 状態（status === toColumn）に留まっている
+   *   場合は、move 関連のフィールド（status）のみを fromColumn に戻し、
+   *   その他のフィールド（title / body / labels / 等）は currentTask の値を
+   *   そのまま採用する task-updated を発火する。これにより status は同じだが
+   *   title 等が外部更新されたケースでも concurrent な更新を保護する。
+   *   通常の 3 段（cardOrder(to 旧) → task(rollback) → cardOrder(from 旧)）。
    *   ②で task が fromColumn 末尾に補完される現象を③で打ち消す前提。
-   * - `currentTask` が optimistic と乖離している場合は外部 listener による
-   *   concurrent 更新が入ったとみなし、task-updated rollback を省略して
-   *   cardOrder のみ復元する。外部更新を snapshot で上書きしない保護策。
+   * - `currentTask` が optimistic と乖離している（status が toColumn 以外 /
+   *   task が消失した）場合は、外部 listener による status / 存在の concurrent
+   *   更新が入ったとみなし、task-updated rollback を省略して cardOrder のみ
+   *   復元する。snapshot で上書きしないことで外部更新を保護する。
    *
    * @param snapshot drop 直前 snapshot
    * @param params 移動パラメータ
@@ -177,8 +182,6 @@ export const MoveSnapshot = {
     params: MoveTaskParams,
     currentTask: Task | undefined,
   ): readonly ProjectAction[] => {
-    const taskMatchesOptimistic =
-      currentTask !== undefined && currentTask.status === params.toColumn;
     const head: ProjectAction = {
       type: "card-order-updated",
       columnName: params.toColumn,
@@ -189,13 +192,13 @@ export const MoveSnapshot = {
       columnName: params.fromColumn,
       filePaths: [...snapshot.fromColumnOrderBefore],
     };
-    if (!taskMatchesOptimistic) {
+    if (currentTask === undefined || currentTask.status !== params.toColumn) {
       return [head, tail];
     }
     const middle: ProjectAction = {
       type: "task-updated",
       originalFilePath: params.taskFilePath,
-      task: snapshot.originalTask,
+      task: { ...currentTask, status: params.fromColumn },
     };
     return [head, middle, tail];
   },
