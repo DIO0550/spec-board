@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer } from "react";
+import { useCallback, useMemo, useReducer, useRef } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
@@ -101,21 +101,30 @@ export const Board = ({
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
 
   const [dragState, dispatch] = useReducer(dragReducer, null);
-  const [, dispatchColumnDrag] = useReducer(
-    ColumnDragState.reducer,
-    ColumnDragState.initial,
-  );
+  // hover state は初期実装では UI に未配線のため、Board の再レンダーを避けるべく
+  // useRef に保持する。reducer は維持しつつ ref を mutate する形にし、将来
+  // hover プレースホルダ表示を導入する際に useState / useReducer に差し戻す。
+  const columnDragStateRef = useRef(ColumnDragState.initial);
 
   const handleColumnDragStart = useCallback((columnName: string) => {
-    dispatchColumnDrag({ type: "start", fromColumnName: columnName });
+    columnDragStateRef.current = ColumnDragState.reducer(
+      columnDragStateRef.current,
+      { type: "start", fromColumnName: columnName },
+    );
   }, []);
 
   const handleColumnDragEnd = useCallback(() => {
-    dispatchColumnDrag({ type: "end" });
+    columnDragStateRef.current = ColumnDragState.reducer(
+      columnDragStateRef.current,
+      { type: "end" },
+    );
   }, []);
 
   const handleColumnHover = useCallback((columnName: string) => {
-    dispatchColumnDrag({ type: "hover", hoverColumnName: columnName });
+    columnDragStateRef.current = ColumnDragState.reducer(
+      columnDragStateRef.current,
+      { type: "hover", hoverColumnName: columnName },
+    );
   }, []);
 
   const handleColumnDrop = useCallback(
@@ -125,7 +134,10 @@ export const Board = ({
       } catch {
         // unhandled rejection を防ぐため明示的に握る。エラー表示は App 側の責務。
       } finally {
-        dispatchColumnDrag({ type: "end" });
+        columnDragStateRef.current = ColumnDragState.reducer(
+          columnDragStateRef.current,
+          { type: "end" },
+        );
       }
     },
     [onColumnReorder],
