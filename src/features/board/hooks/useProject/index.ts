@@ -45,6 +45,7 @@ import type {
   UseProjectResult,
 } from "./types";
 
+export { PROJECT_SWITCHED_MESSAGE } from "./actions/updateColumns";
 export type { ProjectError } from "./errors";
 export type { ProjectData, ProjectState } from "./reducer";
 export type {

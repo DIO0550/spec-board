@@ -7,6 +7,7 @@ import {
   EmptyState,
   HeaderBar,
   type MoveTaskParams,
+  PROJECT_SWITCHED_MESSAGE,
   type ProjectError,
   type ProjectState,
   type ReorderColumnsEvent,
@@ -470,9 +471,22 @@ export const App = () => {
         params.toColumnName,
         { onOptimisticApplied, onRollback },
       );
-      if (!result.ok) {
-        showToast("カラムの並び替えに失敗しました", "error");
+      if (result.ok) {
+        return;
       }
+      // project switch (invalid-state + PROJECT_SWITCHED_MESSAGE) は reducer が
+      // 既に新 project に切替済みで、楽観 dispatch / rollback も走らないため
+      // toast を出さない（無関係なエラー通知になる）。
+      if (
+        result.error.kind === "invalid-state" &&
+        result.error.message === PROJECT_SWITCHED_MESSAGE
+      ) {
+        return;
+      }
+      showToast(
+        `カラムの並び替えに失敗しました: ${projectErrorMessage(result.error)}`,
+        "error",
+      );
     },
     [reorderColumns, announce, showToast],
   );

@@ -17,4 +17,4 @@ export type {
   UseProjectOptions,
   UseProjectResult,
 } from "./hooks/useProject";
-export { useProject } from "./hooks/useProject";
+export { PROJECT_SWITCHED_MESSAGE, useProject } from "./hooks/useProject";
