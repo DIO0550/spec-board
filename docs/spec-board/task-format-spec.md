@@ -88,6 +88,7 @@ links:
 - リンクは**双方向**として扱う。片方のタスクに `links` を設定すると、リンク先タスクからも関連タスクとして表示される（リンク先のフロントマターには書き込まない。表示時に逆引きする）
 - 指定されたファイルが存在しない場合、リンク切れとして警告アイコンを表示
 - Tauri command `add_link({ sourceFilePath, targetFilePath })` で `links` への追加が可能。同じ target がすでに含まれる場合は noop（書き込みもキャッシュ更新も行わない）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する）
+- Tauri command `remove_link({ sourceFilePath, targetFilePath })` で `links` から target の完全一致エントリを **すべて** 取り除く（パス表記揺れは正規化して吸収）。最後の 1 件を消した場合は `links:` キーごと消える。target がすでに含まれていない場合は冪等な no-op として成功を返す（書き込みもキャッシュ更新も行わない）。target タスクが削除済みで存在しなくても source の `links` からの除去は実行する（dangling link 掃除の用途を兼ねる）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する点は `add_link` と同じ）
 
 ### 本文
 

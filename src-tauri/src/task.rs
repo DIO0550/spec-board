@@ -9,6 +9,7 @@ pub mod label;
 pub mod parse;
 pub mod path_lookup;
 pub(crate) mod path_normalization;
+pub mod remove_link;
 pub mod reverse_links;
 pub mod task_content;
 pub mod task_file_name;
