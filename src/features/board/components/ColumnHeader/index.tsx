@@ -1,5 +1,6 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useId, useRef, useState } from "react";
+import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
 
 /** カラムヘッダーの Props */
 type ColumnHeaderProps = {
@@ -25,6 +26,20 @@ type ColumnHeaderProps = {
    * @param event - 発生した MouseEvent
    */
   onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
+  /**
+   * カラム DnD ハンドルとして最外殻 div を draggable にするか。
+   * false / 未指定なら DnD は無効（既存挙動）。
+   */
+  draggable?: boolean;
+  /**
+   * カラム DnD の dragstart 通知。最外殻 dragstart 発火直後、
+   * `setData(COLUMN_DRAG_MIME_TYPE, name)` の後に呼ばれる。
+   * 子 `data-column-dnd-disabled` 要素発火の dragstart は preventDefault されて呼ばれない。
+   * @param columnName 自カラム名
+   */
+  onColumnDragStart?: (columnName: string) => void;
+  /** カラム DnD の dragend 通知。dragstart が中止された場合は呼ばれない。 */
+  onColumnDragEnd?: () => void;
 };
 
 /**
@@ -40,12 +55,16 @@ export const ColumnHeader = ({
   onRename,
   existingColumnNames = [],
   onContextMenu,
+  draggable = false,
+  onColumnDragStart,
+  onColumnDragEnd,
 }: ColumnHeaderProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(name);
   const [isBusy, setIsBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
+  const dragGuardRef = useRef(false);
   const reactId = useId();
   const errorId = `${reactId}-error`;
 
@@ -58,6 +77,10 @@ export const ColumnHeader = ({
 
   const startEditing = () => {
     if (!onRename) {
+      return;
+    }
+    if (dragGuardRef.current) {
+      dragGuardRef.current = false;
       return;
     }
     isCancelledRef.current = false;
@@ -116,6 +139,31 @@ export const ColumnHeader = ({
     }
   };
 
+  const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+    const target = e.target as Element | null;
+    if (target?.closest?.("[data-column-dnd-disabled]")) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData(COLUMN_DRAG_MIME_TYPE, name);
+    e.dataTransfer.effectAllowed = "move";
+    dragGuardRef.current = true;
+    onColumnDragStart?.(name);
+  };
+
+  const handleDragEnd = () => {
+    onColumnDragEnd?.();
+    setTimeout(() => {
+      dragGuardRef.current = false;
+    }, 0);
+  };
+
+  const handleRootClick = () => {
+    if (dragGuardRef.current) {
+      dragGuardRef.current = false;
+    }
+  };
+
   const trimmedInput = inputValue.trim();
   const isDuplicate =
     trimmedInput.length > 0 &&
@@ -123,9 +171,15 @@ export const ColumnHeader = ({
     existingColumnNames.includes(trimmedInput);
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu is a secondary trigger for mouse users; the inner menu button provides the keyboard-accessible path
+    // biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu / draggable are secondary triggers for mouse users; rename / menu buttons inside provide the keyboard-accessible path
+    // biome-ignore lint/a11y/useKeyWithClickEvents: root onClick only consumes dragGuardRef after dragend; rename / menu buttons inside provide the keyboard-accessible path
     <div
       className="flex items-center justify-between px-2 py-2"
+      data-testid="column-header"
+      draggable={draggable}
+      onDragStart={draggable ? handleDragStart : undefined}
+      onDragEnd={draggable ? handleDragEnd : undefined}
+      onClick={draggable ? handleRootClick : undefined}
       onContextMenu={onContextMenu}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -154,6 +208,7 @@ export const ColumnHeader = ({
               aria-invalid={isDuplicate}
               aria-describedby={isDuplicate ? errorId : undefined}
               className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none disabled:bg-gray-100"
+              data-column-dnd-disabled
               data-testid="column-rename-input"
             />
             {isDuplicate && (
@@ -169,6 +224,7 @@ export const ColumnHeader = ({
               onClick={startEditing}
               aria-label={`${name}の名前を変更`}
               className="rounded px-1 py-0.5 hover:bg-gray-100"
+              data-column-dnd-disabled
               data-testid="column-name-button"
             >
               {name}
@@ -189,6 +245,7 @@ export const ColumnHeader = ({
             aria-label={`${name}のメニューを開く`}
             aria-haspopup="menu"
             className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            data-column-dnd-disabled
             data-testid="column-menu-button"
           >
             ⋯
@@ -199,6 +256,7 @@ export const ColumnHeader = ({
           onClick={onAddClick}
           aria-label={`${name}に追加`}
           className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          data-column-dnd-disabled
         >
           + 追加
         </button>

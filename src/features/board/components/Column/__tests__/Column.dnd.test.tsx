@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
+import { COLUMN_DRAG_MIME_TYPE } from "../../Board/columnDragState";
 import { DRAG_MIME_TYPE, type DragState } from "../../Board/dragState";
 import { Column } from "..";
 
@@ -292,4 +293,85 @@ test("dragState.hoverColumn が他カラムの時は placeholder が出ない", 
   expect(
     container?.querySelector("[data-testid='drop-placeholder']"),
   ).toBeNull();
+});
+
+test("column MIME の dragover で preventDefault + onColumnHover(name)", () => {
+  const onColumnHover = vi.fn();
+  render({
+    name: "Todo",
+    tasks: [],
+    onAddClick: vi.fn(),
+    onColumnHover,
+  });
+  const section = querySection();
+  const event = createDragEvent("dragover");
+  event.dataTransfer.setData(COLUMN_DRAG_MIME_TYPE, "Done");
+  act(() => {
+    section.dispatchEvent(event);
+  });
+  expect(event.defaultPrevented).toBe(true);
+  expect(onColumnHover).toHaveBeenCalledWith("Todo");
+});
+
+test("column MIME の drop で onColumnDrop({fromColumnName, toColumnName})", () => {
+  const onColumnDrop = vi.fn();
+  render({
+    name: "Todo",
+    tasks: [],
+    onAddClick: vi.fn(),
+    onColumnDrop,
+  });
+  const section = querySection();
+  const event = createDragEvent("drop");
+  event.dataTransfer.setData(COLUMN_DRAG_MIME_TYPE, "Done");
+  act(() => {
+    section.dispatchEvent(event);
+  });
+  expect(event.defaultPrevented).toBe(true);
+  expect(onColumnDrop).toHaveBeenCalledWith({
+    fromColumnName: "Done",
+    toColumnName: "Todo",
+  });
+});
+
+test("column MIME の drop で fromColumnName が空文字列なら onColumnDrop は呼ばれない", () => {
+  const onColumnDrop = vi.fn();
+  render({
+    name: "Todo",
+    tasks: [],
+    onAddClick: vi.fn(),
+    onColumnDrop,
+  });
+  const section = querySection();
+  const event = createDragEvent("drop");
+  event.dataTransfer.setData(COLUMN_DRAG_MIME_TYPE, "");
+  act(() => {
+    section.dispatchEvent(event);
+  });
+  expect(onColumnDrop).not.toHaveBeenCalled();
+});
+
+test("columnDraggable=true を渡すと内部 ColumnHeader に draggable=true が配線される", () => {
+  render({
+    name: "Todo",
+    tasks: [],
+    onAddClick: vi.fn(),
+    columnDraggable: true,
+  });
+  const header = container?.querySelector<HTMLElement>(
+    "[data-testid='column-header']",
+  );
+  expect(header?.getAttribute("draggable")).toBe("true");
+});
+
+test("columnDraggable=false / 未指定なら ColumnHeader の draggable は false", () => {
+  render({
+    name: "Todo",
+    tasks: [],
+    onAddClick: vi.fn(),
+  });
+  const header = container?.querySelector<HTMLElement>(
+    "[data-testid='column-header']",
+  );
+  expect(header?.getAttribute("draggable")).toBe("false");
 });
