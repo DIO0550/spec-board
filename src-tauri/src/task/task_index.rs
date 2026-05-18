@@ -24,6 +24,7 @@ use crate::task::path_lookup::{
     normalize_relative_path_for_input, normalize_task_path_for_lookup, parent_lookup_index,
     task_path_index,
 };
+use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
 use crate::task::task_content::TaskContent;
 use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
@@ -545,6 +546,87 @@ impl TaskIndex {
         })
     }
 
+    /// 既存 source `Task` から target を `links` 上で除去した結果を計算する pure
+    /// aggregate method。
+    ///
+    /// 呼び出し前提:
+    ///
+    /// - `source_existing` は effect 層が cache snapshot から `intent.source` で
+    ///   引き当て済みの `&Task`。
+    /// - `source_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    ///
+    /// 振る舞い:
+    ///
+    /// 1. source / target を lookup 用に正規化する。失敗時は `SourceNotFound` /
+    ///    `InvalidTargetPath` を返す（args 段階で reject 済みなので通常到達不可）。
+    /// 2. `source_parsed.frontmatter.links` を走査し、normalize 結果が target_norm と
+    ///    完全一致する要素を **すべて** 除去する。表記揺れで重複登録されている場合は
+    ///    一括で掃除される。
+    /// 3. 1 件も除去されなければ `NoOp { existing_task }` を返す（冪等成功）。
+    /// 4. 除去ありなら `frontmatter::serialize` で書き戻し用 string を生成し、
+    ///    `TaskContent::try_new` で scanner eligible 検証、`task_from_parsed` で
+    ///    `updated_task` を再構築して `Write` Outcome を返す。
+    ///
+    /// add_link との差分: target が aggregate に存在するかは検証しない（dangling
+    /// link 掃除のユースケースを許容する）。self-link チェックも不要（src/tgt が
+    /// 同一の場合、もとから links に含まれていれば NoOp ではなく Write になり
+    /// 1 件除去されるだけ）。parent / children 不変条件は links 削除では影響しないため
+    /// 検証しない。
+    pub(crate) fn plan_remove_link(
+        &self,
+        _project_root: &Path,
+        intent: RemoveLinkIntent,
+        source_existing: &Task,
+        source_parsed: Parsed,
+    ) -> Result<RemoveLinkOutcome, RemoveLinkError> {
+        let source_str = intent.source.to_string_lossy();
+        let _source_norm =
+            normalize_link_path_for_lookup(source_str.as_ref()).ok_or_else(|| {
+                RemoveLinkError::SourceNotFound {
+                    path: source_str.clone().into_owned(),
+                }
+            })?;
+        let target_str = intent.target.to_string_lossy();
+        let target_norm = normalize_link_path_for_lookup(target_str.as_ref()).ok_or_else(|| {
+            RemoveLinkError::InvalidTargetPath {
+                path: target_str.clone().into_owned(),
+            }
+        })?;
+
+        let Parsed {
+            mut frontmatter,
+            body,
+        } = source_parsed;
+
+        let original_len = frontmatter.links.len();
+        frontmatter
+            .links
+            .retain(|l| normalize_link_path_for_lookup(l).as_deref() != Some(target_norm.as_str()));
+        if frontmatter.links.len() == original_len {
+            return Ok(RemoveLinkOutcome::NoOp {
+                existing_task: source_existing.clone(),
+            });
+        }
+
+        let file_content = frontmatter::serialize(&Parsed {
+            frontmatter: frontmatter.clone(),
+            body: body.clone(),
+        });
+        TaskContent::try_new(file_content.clone()).map_err(RemoveLinkError::from)?;
+
+        let context = TaskParseContext {
+            file_path: source_existing.file_path.as_path_buf(),
+            default_status: source_existing.status.clone(),
+        };
+        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+
+        Ok(RemoveLinkOutcome::Write {
+            updated_task,
+            file_content,
+            target_normalized: target_norm,
+        })
+    }
+
     /// 削除対象 path を parent に持つ直接の子 task の **プロジェクトルート相対** path を
     /// snapshot 順で列挙する pure aggregate query。
     ///
@@ -720,6 +802,16 @@ pub struct AddLinkIntent {
     pub target: PathBuf,
 }
 
+/// `remove_link` IPC 境界から domain に渡される削除意図。
+///
+/// `AddLinkIntent` とは別型で持つ。意味的な混同を避けるためと、aggregate method
+/// の引数型から `add_link` モジュールへの依存を切るため。
+#[derive(Debug, Clone)]
+pub struct RemoveLinkIntent {
+    pub source: PathBuf,
+    pub target: PathBuf,
+}
+
 /// `TaskIndex::plan_add_link` の計算結果。effect 層が消費する。
 #[derive(Debug)]
 pub(crate) enum AddLinkOutcome {
@@ -732,6 +824,26 @@ pub(crate) enum AddLinkOutcome {
     },
     NoOp {
         /// IPC 戻り値に使う既存 source の現在状態（plan_add_link に渡された
+        /// `source_existing` の clone）。
+        existing_task: Task,
+    },
+}
+
+/// `TaskIndex::plan_remove_link` の計算結果。effect 層が消費する。
+///
+/// `Write` は実際に `links` から target エントリを除去した場合。`NoOp` は
+/// 元から含まれていない場合の冪等成功。
+#[derive(Debug)]
+pub(crate) enum RemoveLinkOutcome {
+    Write {
+        updated_task: Task,
+        file_content: String,
+        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path
+        /// （`normalize_link_path_for_lookup` の出力形）。
+        target_normalized: String,
+    },
+    NoOp {
+        /// IPC 戻り値に使う既存 source の現在状態（plan_remove_link に渡された
         /// `source_existing` の clone）。
         existing_task: Task,
     },
@@ -1084,3 +1196,7 @@ mod task_index_plan_delete_abort_tests;
 #[cfg(test)]
 #[path = "task_index_plan_add_link_tests.rs"]
 mod task_index_plan_add_link_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_remove_link_tests.rs"]
+mod task_index_plan_remove_link_tests;
