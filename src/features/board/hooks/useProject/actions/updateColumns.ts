@@ -49,6 +49,110 @@ const toProjectError = (error: ProjectColumnsValidationError): ProjectError =>
   ProjectError.invalidState(error.message);
 
 /**
+ * `enqueueProjectCommand` 内で実行する column 更新ロジックを取り出した helper。
+ * version は queue 取得時点で固定済みの値を受け取る前提。
+ *
+ * queue を再取得しない別 action（例: `reorderColumnsAction`）からも、
+ * 同 queue 内で直接呼び出して doneColumn refresh / validation / version guard
+ * / 確定 dispatch のロジックを共有するためにエクスポートする。
+ *
+ * @param deps column 更新に必要な queue / version / state / dispatch 依存
+ * @param command 静的な column 更新命令、または最新 ProjectData から命令を作る builder
+ * @param version queue 取得時点の project version
+ * @returns invoke したかどうかを含む Result
+ */
+export const runUpdateColumnsInsideQueue = async (
+  deps: UpdateColumnsActionDeps,
+  command: ColumnsCommand | ColumnsCommandBuilder,
+  version: number,
+): Promise<ResultT<{ applied: boolean }, ProjectError>> => {
+  if (!isProjectCurrent(deps.projectVersion, version)) {
+    return switchedProject();
+  }
+
+  const visibleData = ProjectSessionState.visibleData(deps.getState());
+  if (visibleData === null) {
+    return Result.err(ProjectError.invalidState());
+  }
+
+  let resolved = ColumnsCommand.resolve(command, visibleData);
+  if (!resolved.ok) {
+    return Result.err(resolved.error);
+  }
+  if (resolved.value === null) {
+    return Result.ok({ applied: false });
+  }
+
+  let commandToApply = resolved.value;
+  if (
+    ProjectColumns.isDoneColumnSensitive(visibleData.columns, commandToApply) &&
+    visibleData.doneColumn === undefined &&
+    commandToApply.doneColumn === undefined
+  ) {
+    const refresh = await getColumnsInvoke();
+    if (!isProjectCurrent(deps.projectVersion, version)) {
+      return switchedProject();
+    }
+    if (!refresh.ok) {
+      return Result.err(ProjectError.tauri(refresh.error));
+    }
+
+    const enrichedData: ProjectData = {
+      ...visibleData,
+      doneColumn: refresh.value.doneColumn,
+    };
+    deps.dispatchSync({
+      type: "done-column-refreshed",
+      doneColumn: refresh.value.doneColumn,
+    });
+
+    resolved = ColumnsCommand.resolve(command, enrichedData);
+    if (!resolved.ok) {
+      return Result.err(resolved.error);
+    }
+    if (resolved.value === null) {
+      return Result.ok({ applied: false });
+    }
+    commandToApply = resolved.value;
+  }
+
+  const knownDoneColumn = ProjectSessionState.visibleData(
+    deps.getState(),
+  )?.doneColumn;
+  const validation = ProjectColumns.validateDoneColumn(
+    knownDoneColumn,
+    commandToApply,
+  );
+  if (!validation.ok) {
+    return Result.err(toProjectError(validation.error));
+  }
+
+  if (!isProjectCurrent(deps.projectVersion, version)) {
+    return switchedProject();
+  }
+
+  const result = await updateColumnsInvoke({
+    columns: commandToApply.columns,
+    renames: commandToApply.renames,
+    doneColumn: commandToApply.doneColumn,
+  });
+  if (!result.ok) {
+    return Result.err(ProjectError.tauri(result.error));
+  }
+  if (!isProjectCurrent(deps.projectVersion, version)) {
+    return switchedProject();
+  }
+
+  deps.dispatchSync({
+    type: "columns-replaced",
+    columns: commandToApply.columns,
+    renames: commandToApply.renames,
+    doneColumn: commandToApply.doneColumn,
+  });
+  return Result.ok({ applied: true });
+};
+
+/**
  * column 更新 command を解決・検証し、Tauri update_columns と state 反映を直列実行する。
  *
  * @param deps column 更新に必要な queue / version / state / dispatch 依存
@@ -64,93 +168,7 @@ export const updateColumnsAction = (
   }
 
   const version = deps.projectVersion.current;
-  return enqueueProjectCommand(deps.projectCommandQueue, async () => {
-    if (!isProjectCurrent(deps.projectVersion, version)) {
-      return switchedProject();
-    }
-
-    const visibleData = ProjectSessionState.visibleData(deps.getState());
-    if (visibleData === null) {
-      return Result.err(ProjectError.invalidState());
-    }
-
-    let resolved = ColumnsCommand.resolve(command, visibleData);
-    if (!resolved.ok) {
-      return Result.err(resolved.error);
-    }
-    if (resolved.value === null) {
-      return Result.ok({ applied: false });
-    }
-
-    let commandToApply = resolved.value;
-    if (
-      ProjectColumns.isDoneColumnSensitive(
-        visibleData.columns,
-        commandToApply,
-      ) &&
-      visibleData.doneColumn === undefined &&
-      commandToApply.doneColumn === undefined
-    ) {
-      const refresh = await getColumnsInvoke();
-      if (!isProjectCurrent(deps.projectVersion, version)) {
-        return switchedProject();
-      }
-      if (!refresh.ok) {
-        return Result.err(ProjectError.tauri(refresh.error));
-      }
-
-      const enrichedData: ProjectData = {
-        ...visibleData,
-        doneColumn: refresh.value.doneColumn,
-      };
-      deps.dispatchSync({
-        type: "done-column-refreshed",
-        doneColumn: refresh.value.doneColumn,
-      });
-
-      resolved = ColumnsCommand.resolve(command, enrichedData);
-      if (!resolved.ok) {
-        return Result.err(resolved.error);
-      }
-      if (resolved.value === null) {
-        return Result.ok({ applied: false });
-      }
-      commandToApply = resolved.value;
-    }
-
-    const knownDoneColumn = ProjectSessionState.visibleData(
-      deps.getState(),
-    )?.doneColumn;
-    const validation = ProjectColumns.validateDoneColumn(
-      knownDoneColumn,
-      commandToApply,
-    );
-    if (!validation.ok) {
-      return Result.err(toProjectError(validation.error));
-    }
-
-    if (!isProjectCurrent(deps.projectVersion, version)) {
-      return switchedProject();
-    }
-
-    const result = await updateColumnsInvoke({
-      columns: commandToApply.columns,
-      renames: commandToApply.renames,
-      doneColumn: commandToApply.doneColumn,
-    });
-    if (!result.ok) {
-      return Result.err(ProjectError.tauri(result.error));
-    }
-    if (!isProjectCurrent(deps.projectVersion, version)) {
-      return switchedProject();
-    }
-
-    deps.dispatchSync({
-      type: "columns-replaced",
-      columns: commandToApply.columns,
-      renames: commandToApply.renames,
-      doneColumn: commandToApply.doneColumn,
-    });
-    return Result.ok({ applied: true });
-  });
+  return enqueueProjectCommand(deps.projectCommandQueue, () =>
+    runUpdateColumnsInsideQueue(deps, command, version),
+  );
 };
