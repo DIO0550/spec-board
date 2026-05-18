@@ -9,6 +9,7 @@ import {
   type MoveTaskParams,
   type ProjectError,
   type ProjectState,
+  type ReorderColumnsEvent,
   useProject,
 } from "./features/board";
 import { DetailPanel } from "./features/detail";
@@ -91,6 +92,7 @@ export const App = () => {
     deleteTask,
     updateColumns,
     moveTask,
+    reorderColumns,
   } = useProject({
     onError: (err) => {
       showToast(projectErrorMessage(err), "error");
@@ -440,6 +442,41 @@ export const App = () => {
     [tasks, moveTask, announce, showToast],
   );
 
+  const handleColumnReorder = useCallback(
+    async (params: {
+      fromColumnName: string;
+      toColumnName: string;
+    }): Promise<void> => {
+      /**
+       * 楽観 dispatch 直後に呼ばれる callback。LiveRegion で「N 番目に移動しました」をアナウンスする。
+       *
+       * @param event optimistic 通知 payload
+       */
+      const onOptimisticApplied = (event: ReorderColumnsEvent): void => {
+        announce(
+          `「${event.columnName}」を ${event.toIndex + 1} 番目に移動しました`,
+        );
+      };
+      /**
+       * rollback 完了直後に呼ばれる callback。LiveRegion に取り消しをアナウンスする。
+       *
+       * @param event rollback 通知 payload
+       */
+      const onRollback = (event: ReorderColumnsEvent): void => {
+        announce(`「${event.columnName}」の移動を取り消しました`);
+      };
+      const result = await reorderColumns(
+        params.fromColumnName,
+        params.toColumnName,
+        { onOptimisticApplied, onRollback },
+      );
+      if (!result.ok) {
+        showToast("カラムの並び替えに失敗しました", "error");
+      }
+    },
+    [reorderColumns, announce, showToast],
+  );
+
   const handleTaskDelete = useCallback(
     async (id: string): Promise<void> => {
       const filePath = tasks.find((t) => t.id === id)?.filePath;
@@ -491,6 +528,7 @@ export const App = () => {
           onDeleteColumn={handleDeleteColumn}
           onTaskClick={handleTaskClick}
           onTaskDrop={handleTaskDrop}
+          onColumnReorder={handleColumnReorder}
         />
         {tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
