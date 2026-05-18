@@ -1,8 +1,16 @@
-import { useCallback, useMemo, useReducer } from "react";
+import { useCallback, useMemo, useReducer, useRef } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
-import { Column, type ColumnTaskDropParams } from "../Column";
+import {
+  Column,
+  type ColumnDropParams,
+  type ColumnTaskDropParams,
+} from "../Column";
+import {
+  ColumnDragState,
+  type ColumnDragState as ColumnDragStateT,
+} from "./columnDragState";
 import { DragAction, dragReducer } from "./dragState";
 
 /** ボードの Props */
@@ -51,6 +59,13 @@ type BoardProps = {
    */
   // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
   onTaskDrop?: (params: ColumnTaskDropParams) => Promise<unknown> | void;
+  /**
+   * Board が column の drop を受けたら呼ぶ。App.tsx で useProject.reorderColumns に配線する。
+   * 同期 / 非同期どちらのハンドラも受け付ける。
+   * @param params 並び替えパラメータ
+   */
+  // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
+  onColumnReorder?: (params: ColumnDropParams) => Promise<unknown> | void;
 };
 
 /**
@@ -68,6 +83,7 @@ export const Board = ({
   onRenameColumn,
   onDeleteColumn,
   onTaskDrop,
+  onColumnReorder,
 }: BoardProps) => {
   const sorted = useMemo(
     () => [...columns].sort((a, b) => a.order - b.order),
@@ -88,6 +104,47 @@ export const Board = ({
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
 
   const [dragState, dispatch] = useReducer(dragReducer, null);
+  // hover state は初期実装では UI に未配線のため、Board の再レンダーを避けるべく
+  // useRef に保持する。reducer は維持しつつ ref を mutate する形にし、将来
+  // hover プレースホルダ表示を導入する際に useState / useReducer に差し戻す。
+  const columnDragStateRef = useRef<ColumnDragStateT>(ColumnDragState.initial);
+
+  const handleColumnDragStart = useCallback((columnName: string) => {
+    columnDragStateRef.current = ColumnDragState.reducer(
+      columnDragStateRef.current,
+      { type: "start", fromColumnName: columnName },
+    );
+  }, []);
+
+  const handleColumnDragEnd = useCallback(() => {
+    columnDragStateRef.current = ColumnDragState.reducer(
+      columnDragStateRef.current,
+      { type: "end" },
+    );
+  }, []);
+
+  const handleColumnHover = useCallback((columnName: string) => {
+    columnDragStateRef.current = ColumnDragState.reducer(
+      columnDragStateRef.current,
+      { type: "hover", hoverColumnName: columnName },
+    );
+  }, []);
+
+  const handleColumnDrop = useCallback(
+    async (params: ColumnDropParams) => {
+      try {
+        await onColumnReorder?.(params);
+      } catch {
+        // unhandled rejection を防ぐため明示的に握る。エラー表示は App 側の責務。
+      } finally {
+        columnDragStateRef.current = ColumnDragState.reducer(
+          columnDragStateRef.current,
+          { type: "end" },
+        );
+      }
+    },
+    [onColumnReorder],
+  );
 
   const handleDragStart = useCallback(
     (taskFilePath: string, fromColumn: string) => {
@@ -149,6 +206,11 @@ export const Board = ({
           onTaskDrop={handleTaskDrop}
           onTaskDragStart={handleDragStart}
           onTaskDragEnd={handleDragEnd}
+          columnDraggable={sorted.length > 1}
+          onColumnDragStart={handleColumnDragStart}
+          onColumnDragEnd={handleColumnDragEnd}
+          onColumnHover={handleColumnHover}
+          onColumnDrop={handleColumnDrop}
         />
       ))}
       {onAddColumn && (

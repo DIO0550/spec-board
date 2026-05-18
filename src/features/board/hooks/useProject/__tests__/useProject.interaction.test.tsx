@@ -1820,3 +1820,189 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
   expect(tasks.map((t) => t.filePath)).toEqual(["tasks/a-renamed.md"]);
 });
+
+// === reorderColumns ===
+
+const threeColumnPayload: OpenProjectPayload = {
+  tasks: [],
+  columns: ["A", "B", "C"],
+};
+
+const openLoadedThree = async (probe: { latest: UseProjectResult }) => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p3"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(threeColumnPayload));
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [
+        { name: "A", order: 0 },
+        { name: "B", order: 1 },
+        { name: "C", order: 2 },
+      ],
+      doneColumn: "C",
+    }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+};
+
+test("reorderColumns (idle) → invalid-state を即返す、invoke 未呼び出し", async () => {
+  const probe = renderHook();
+  let result!: Awaited<ReturnType<UseProjectResult["reorderColumns"]>>;
+  await act(async () => {
+    result = await probe.latest.reorderColumns("A", "C");
+  });
+  expect(result).toMatchObject({ ok: false, error: { kind: "invalid-state" } });
+  expect(updateColumnsMock).not.toHaveBeenCalled();
+});
+
+test("reorderColumns ('A','A') no-op → applied=false、invoke / dispatch 未発生", async () => {
+  const probe = renderHook();
+  await openLoadedThree(probe);
+  const before = (
+    probe.latest.state as { data: { columns: { name: string }[] } }
+  ).data.columns.map((c) => c.name);
+  let result!: Awaited<ReturnType<UseProjectResult["reorderColumns"]>>;
+  await act(async () => {
+    result = await probe.latest.reorderColumns("A", "A");
+  });
+  expect(result).toEqual({ ok: true, value: { applied: false } });
+  expect(updateColumnsMock).not.toHaveBeenCalled();
+  const after = (
+    probe.latest.state as { data: { columns: { name: string }[] } }
+  ).data.columns.map((c) => c.name);
+  expect(after).toEqual(before);
+});
+
+test("reorderColumns ('A','C') 成功 → invoke が期待 columns で呼ばれる + state 更新 + applied=true", async () => {
+  const probe = renderHook();
+  await openLoadedThree(probe);
+  updateColumnsMock.mockResolvedValueOnce(Result.ok(undefined));
+  let result!: Awaited<ReturnType<UseProjectResult["reorderColumns"]>>;
+  await act(async () => {
+    result = await probe.latest.reorderColumns("A", "C");
+  });
+  expect(result).toEqual({ ok: true, value: { applied: true } });
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+  expect(updateColumnsMock).toHaveBeenCalledWith({
+    columns: [
+      { name: "B", order: 0 },
+      { name: "C", order: 1 },
+      { name: "A", order: 2 },
+    ],
+    renames: [],
+    doneColumn: undefined,
+  });
+  const data = (probe.latest.state as { data: { columns: { name: string }[] } })
+    .data;
+  expect(data.columns.map((c) => c.name)).toEqual(["B", "C", "A"]);
+});
+
+test("reorderColumns 失敗 → state.data.columns が元の順序にロールバックされる", async () => {
+  const probe = renderHook();
+  await openLoadedThree(probe);
+  updateColumnsMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "boom")),
+  );
+  let result!: Awaited<ReturnType<UseProjectResult["reorderColumns"]>>;
+  await act(async () => {
+    result = await probe.latest.reorderColumns("A", "C");
+  });
+  expect(result).toMatchObject({ ok: false, error: { kind: "tauri" } });
+  const data = (probe.latest.state as { data: { columns: { name: string }[] } })
+    .data;
+  expect(data.columns.map((c) => c.name)).toEqual(["A", "B", "C"]);
+});
+
+test("reorderColumns: callbacks.onOptimisticApplied / onRollback が想定 event で発火", async () => {
+  const probe = renderHook();
+  await openLoadedThree(probe);
+  updateColumnsMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "boom")),
+  );
+  const onOptimisticApplied = vi.fn();
+  const onRollback = vi.fn();
+  await act(async () => {
+    await probe.latest.reorderColumns("A", "C", {
+      onOptimisticApplied,
+      onRollback,
+    });
+  });
+  expect(onOptimisticApplied).toHaveBeenCalledTimes(1);
+  expect(onOptimisticApplied).toHaveBeenCalledWith({
+    fromColumnName: "A",
+    toColumnName: "C",
+    columnName: "A",
+    fromIndex: 0,
+    toIndex: 2,
+  });
+  expect(onRollback).toHaveBeenCalledTimes(1);
+  expect(onRollback).toHaveBeenCalledWith({
+    fromColumnName: "A",
+    toColumnName: "C",
+    columnName: "A",
+    fromIndex: 0,
+    toIndex: 2,
+  });
+});
+
+test("reorderColumns: queue 内で fromColumnName が削除済みなら applied=false / invoke / dispatch / callback すべて未発生", async () => {
+  const probe = renderHook();
+  await openLoadedThree(probe);
+
+  // 1 回目: A を削除する updateColumns を enqueue（解決を遅らせる）
+  let resolveDelete!: (r: ResultT<void, TauriError>) => void;
+  updateColumnsMock.mockImplementationOnce(
+    () =>
+      new Promise<ResultT<void, TauriError>>((r) => {
+        resolveDelete = r;
+      }),
+  );
+
+  let deletePromise!: Promise<unknown>;
+  act(() => {
+    deletePromise = probe.latest.updateColumns({
+      columns: [
+        { name: "B", order: 0 },
+        { name: "C", order: 1 },
+      ],
+      renames: [],
+      doneColumn: "C",
+    });
+  });
+
+  const onOptimisticApplied = vi.fn();
+  const onRollback = vi.fn();
+  let reorderPromise!: Promise<
+    Awaited<ReturnType<UseProjectResult["reorderColumns"]>>
+  >;
+  act(() => {
+    reorderPromise = probe.latest.reorderColumns("A", "C", {
+      onOptimisticApplied,
+      onRollback,
+    });
+  });
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolveDelete(Result.ok(undefined));
+    await deletePromise;
+  });
+  const result = await act(async () => reorderPromise);
+
+  expect(result).toEqual({ ok: true, value: { applied: false } });
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+  expect(onOptimisticApplied).not.toHaveBeenCalled();
+  expect(onRollback).not.toHaveBeenCalled();
+  const data = (probe.latest.state as { data: { columns: { name: string }[] } })
+    .data;
+  expect(data.columns.map((c) => c.name)).toEqual(["B", "C"]);
+});

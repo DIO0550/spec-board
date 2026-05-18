@@ -18,6 +18,7 @@ import {
   openProject as openProjectInvoke,
   TauriError,
   updateCardOrder as updateCardOrderInvoke,
+  updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
@@ -49,6 +50,7 @@ const openProjectMock = vi.mocked(openProjectInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const updateCardOrderMock = vi.mocked(updateCardOrderInvoke);
+const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -94,6 +96,7 @@ beforeEach(() => {
   });
   updateTaskMock.mockReset();
   updateCardOrderMock.mockReset();
+  updateColumnsMock.mockReset();
 });
 
 afterEach(() => {
@@ -307,4 +310,109 @@ test("drop 後の LiveRegion は同一の安定 DOM ノードを維持しつつ 
   const after = liveRegion();
   expect(after).toBe(before);
   expect(liveRegionText()).toBe("「A タスク」を「Done」に移動しました");
+});
+
+// === column reorder ===
+
+const threeColumnPayload: OpenProjectPayload = {
+  tasks: [],
+  columns: ["A", "B", "C"],
+};
+
+const openThreeColumnProject = async (): Promise<void> => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p3"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(threeColumnPayload));
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [
+        { name: "A", order: 0 },
+        { name: "B", order: 1 },
+        { name: "C", order: 2 },
+      ],
+      doneColumn: "C",
+    }),
+  );
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const dropColumnAToC = async (): Promise<void> => {
+  const headers = container?.querySelectorAll<HTMLElement>(
+    "[data-testid='column-header']",
+  );
+  const headerA = headers?.[0];
+  const sectionC = container?.querySelector<HTMLElement>(
+    "section[aria-label='C']",
+  );
+  const startEvent = createDragEvent("dragstart");
+  await act(async () => {
+    headerA?.dispatchEvent(startEvent);
+  });
+  const drop = createDragEvent("drop", {
+    dataTransfer: startEvent.dataTransfer,
+  });
+  await act(async () => {
+    sectionC?.dispatchEvent(drop);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+test("column 並び替え成功 → LiveRegion に「N 番目に移動しました」", async () => {
+  mountApp();
+  await openThreeColumnProject();
+  updateColumnsMock.mockResolvedValueOnce(Result.ok(undefined));
+
+  await dropColumnAToC();
+
+  expect(liveRegionText()).toBe("「A」を 3 番目に移動しました");
+});
+
+test("column 並び替え失敗 → LiveRegion に「取り消しました」", async () => {
+  mountApp();
+  await openThreeColumnProject();
+  updateColumnsMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "boom")),
+  );
+
+  await dropColumnAToC();
+
+  expect(liveRegionText()).toBe("「A」の移動を取り消しました");
+});
+
+test("column 同位置 drop (no-op) では LiveRegion が更新されない", async () => {
+  mountApp();
+  await openThreeColumnProject();
+
+  const headers = container?.querySelectorAll<HTMLElement>(
+    "[data-testid='column-header']",
+  );
+  const headerA = headers?.[0];
+  const sectionA = container?.querySelector<HTMLElement>(
+    "section[aria-label='A']",
+  );
+  const startEvent = createDragEvent("dragstart");
+  await act(async () => {
+    headerA?.dispatchEvent(startEvent);
+  });
+  const drop = createDragEvent("drop", {
+    dataTransfer: startEvent.dataTransfer,
+  });
+  await act(async () => {
+    sectionA?.dispatchEvent(drop);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(liveRegion()?.textContent).toBe("");
+  expect(updateColumnsMock).not.toHaveBeenCalled();
 });

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { Task } from "@/types/task";
+import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
 import { DRAG_MIME_TYPE, DragState } from "../Board/dragState";
 import { ColumnContextMenu } from "../ColumnContextMenu";
 import { ColumnHeader } from "../ColumnHeader";
@@ -21,6 +22,12 @@ export type ColumnTaskDropParams = {
   readonly fromColumn: string;
   readonly toColumn: string;
   readonly toIndex: number;
+};
+
+/** カラム drop 確定時に呼ばれる引数。 */
+export type ColumnDropParams = {
+  readonly fromColumnName: string;
+  readonly toColumnName: string;
 };
 
 /** 個別カラムの Props */
@@ -71,6 +78,22 @@ type ColumnProps = {
   onTaskDragStart?: (taskFilePath: string, fromColumn: string) => void;
   /** 子 TaskCard の dragend を Board に伝える。 */
   onTaskDragEnd?: () => void;
+  /** 自カラムヘッダーを DnD ハンドルにするか。1 カラム時は false で渡す。 */
+  columnDraggable?: boolean;
+  /**
+   * カラム DnD の dragstart 通知（ColumnHeader からそのまま透過）。
+   * @param columnName 自カラム名
+   */
+  onColumnDragStart?: (columnName: string) => void;
+  /** カラム DnD の dragend 通知。 */
+  onColumnDragEnd?: () => void;
+  /**
+   * dragover 中に hover ターゲットとなったカラム名通知。
+   * @param columnName 自カラム名
+   */
+  onColumnHover?: (columnName: string) => void;
+  /** カラム drop 確定通知。 */
+  onColumnDrop?: (params: ColumnDropParams) => void;
 };
 
 /**
@@ -94,6 +117,11 @@ export const Column = ({
   onTaskDrop,
   onTaskDragStart,
   onTaskDragEnd,
+  columnDraggable = false,
+  onColumnDragStart,
+  onColumnDragEnd,
+  onColumnHover,
+  onColumnDrop,
 }: ColumnProps) => {
   const tasksByFilePath = useMemo(
     () => new Map(allTasks.map((t) => [t.filePath, t])),
@@ -107,6 +135,12 @@ export const Column = ({
   const pendingClientYRef = useRef(0);
 
   const handleDragOver = (e: DragEvent<HTMLElement>) => {
+    if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      onColumnHover?.(name);
+      return;
+    }
     if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
       return;
     }
@@ -162,6 +196,16 @@ export const Column = ({
   };
 
   const handleDrop = (e: DragEvent<HTMLElement>) => {
+    if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
+      // column MIME を持つ drop はアプリ側でハンドルする意図なので、payload が
+      // 空でも preventDefault してブラウザ既定動作（リンクナビゲーション等）を抑止する。
+      e.preventDefault();
+      const fromColumnName = e.dataTransfer.getData(COLUMN_DRAG_MIME_TYPE);
+      if (fromColumnName) {
+        onColumnDrop?.({ fromColumnName, toColumnName: name });
+      }
+      return;
+    }
     if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
       return;
     }
@@ -260,7 +304,8 @@ export const Column = ({
 
   const hasTasks = tasks.length > 0;
   // pending 中も confirm ボタンを disabled にして二重実行を防ぐ
-  const confirmDisabled = (hasTasks && destColumn === "") || isDeleting;
+  const needsDestColumn = hasTasks && destColumn === "";
+  const confirmDisabled = needsDestColumn || isDeleting;
   // タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
   // メニュー側で削除操作そのものを封じる。
   const canDeleteEffective =
@@ -282,6 +327,9 @@ export const Column = ({
         onRename={onRename}
         existingColumnNames={existingColumnNames}
         onContextMenu={handleContextMenu}
+        draggable={columnDraggable}
+        onColumnDragStart={onColumnDragStart}
+        onColumnDragEnd={onColumnDragEnd}
       />
       <ul ref={listRef} className="flex-1 overflow-y-auto px-2 pb-2">
         {tasks.map((task, i) => {

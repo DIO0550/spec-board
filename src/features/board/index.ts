@@ -9,8 +9,12 @@ export type {
   ProjectData,
   ProjectError,
   ProjectState,
+  ReorderColumnsCallbacks,
+  ReorderColumnsEvent,
+  ReorderColumnsParams,
+  ReorderColumnsResult,
   UpdateColumnsInput,
   UseProjectOptions,
   UseProjectResult,
 } from "./hooks/useProject";
-export { useProject } from "./hooks/useProject";
+export { PROJECT_SWITCHED_MESSAGE, useProject } from "./hooks/useProject";

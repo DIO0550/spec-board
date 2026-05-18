@@ -14,6 +14,11 @@ import {
 } from "./actions/moveTask";
 import { openProjectAction } from "./actions/openProject";
 import {
+  type ReorderColumnsCallbacks,
+  type ReorderColumnsResult,
+  reorderColumnsAction,
+} from "./actions/reorderColumns";
+import {
   createTaskAction,
   deleteTaskAction,
   updateTaskAction,
@@ -40,6 +45,7 @@ import type {
   UseProjectResult,
 } from "./types";
 
+export { PROJECT_SWITCHED_MESSAGE } from "./actions/updateColumns";
 export type { ProjectError } from "./errors";
 export type { ProjectData, ProjectState } from "./reducer";
 export type {
@@ -47,6 +53,10 @@ export type {
   ColumnsCommandBuilder,
   MoveTaskCallbacks,
   MoveTaskParams,
+  ReorderColumnsCallbacks,
+  ReorderColumnsEvent,
+  ReorderColumnsParams,
+  ReorderColumnsResult,
   UpdateColumnsInput,
   UseProjectOptions,
   UseProjectResult,
@@ -266,6 +276,20 @@ export const useProject = (
     [actionDeps],
   );
 
+  const reorderColumns = useCallback(
+    (
+      fromColumnName: string,
+      toColumnName: string,
+      callbacks?: ReorderColumnsCallbacks,
+    ): Promise<ResultT<ReorderColumnsResult, ProjectError>> =>
+      reorderColumnsAction(
+        actionDeps(),
+        { fromColumnName, toColumnName },
+        callbacks,
+      ),
+    [actionDeps],
+  );
+
   const reset = useCallback((): void => {
     invalidateOpenRequests(projectVersionRef.current);
     invalidateProject(projectVersionRef.current);
@@ -280,6 +304,7 @@ export const useProject = (
     deleteTask,
     updateColumns,
     moveTask,
+    reorderColumns,
     reset,
   };
 };

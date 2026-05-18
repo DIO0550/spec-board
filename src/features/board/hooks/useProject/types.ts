@@ -10,6 +10,11 @@ import type {
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
 import type { MoveTaskCallbacks, MoveTaskParams } from "./actions/moveTask";
+import type {
+  ReorderColumnsCallbacks,
+  ReorderColumnsParams,
+  ReorderColumnsResult,
+} from "./actions/reorderColumns";
 import type { ProjectError } from "./errors";
 import type { ProjectSessionState } from "./state/projectSessionState";
 
@@ -18,6 +23,12 @@ export type {
   ColumnsCommandBuilder,
 } from "./actions/columnsCommand";
 export type { MoveTaskCallbacks, MoveTaskParams } from "./actions/moveTask";
+export type {
+  ReorderColumnsCallbacks,
+  ReorderColumnsEvent,
+  ReorderColumnsParams,
+  ReorderColumnsResult,
+} from "./actions/reorderColumns";
 
 export type UpdateColumnsInput = ColumnsCommand | ColumnsCommandBuilder;
 
@@ -72,6 +83,20 @@ export type UseProjectResult = {
     params: MoveTaskParams,
     callbacks?: MoveTaskCallbacks,
   ) => Promise<ResultT<void, ProjectError>>;
+  /**
+   * カラムを並び替えて全カラムの order を 0-origin で再採番する。
+   * 楽観 dispatch / rollback / a11y announce は callback で通知する。
+   *
+   * @param fromColumnName 移動元カラム名
+   * @param toColumnName 移動先カラム名
+   * @param callbacks 楽観 / rollback の通知 callback（省略可）
+   * @returns invoke / dispatch まで進んだかを表す Result
+   */
+  reorderColumns: (
+    fromColumnName: ReorderColumnsParams["fromColumnName"],
+    toColumnName: ReorderColumnsParams["toColumnName"],
+    callbacks?: ReorderColumnsCallbacks,
+  ) => Promise<ResultT<ReorderColumnsResult, ProjectError>>;
   /** project state を初期状態に戻す。 */
   reset: () => void;
 };
