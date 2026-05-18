@@ -302,7 +302,8 @@ export const Column = ({
 
   const hasTasks = tasks.length > 0;
   // pending 中も confirm ボタンを disabled にして二重実行を防ぐ
-  const confirmDisabled = (hasTasks && destColumn === "") || isDeleting;
+  const needsDestColumn = hasTasks && destColumn === "";
+  const confirmDisabled = needsDestColumn || isDeleting;
   // タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
   // メニュー側で削除操作そのものを封じる。
   const canDeleteEffective =
