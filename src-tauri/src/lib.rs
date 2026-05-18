@@ -34,7 +34,8 @@ pub fn run() {
             project::open::open_project,
             task::get::get_tasks,
             task::create::create_task,
-            task::update::update_task
+            task::update::update_task,
+            task::add_link::add_link
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

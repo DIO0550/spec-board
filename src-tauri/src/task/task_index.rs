@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::column_name::ColumnName;
+use crate::task::add_link::error::AddLinkError;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
 use crate::task::delete::error::DeleteTaskError;
@@ -20,7 +21,8 @@ use crate::task::label::Label;
 use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
 use crate::task::path_lookup::{
     normalize_link_path_for_lookup, normalize_parent_path_for_lookup,
-    normalize_task_path_for_lookup, parent_lookup_index, task_path_index,
+    normalize_relative_path_for_input, normalize_task_path_for_lookup, parent_lookup_index,
+    task_path_index,
 };
 use crate::task::reverse_links::build_reverse_links;
 use crate::task::task_content::TaskContent;
@@ -450,6 +452,99 @@ impl TaskIndex {
         })
     }
 
+    /// 既存 source `Task` に対して target を `links` に追加した結果を計算する pure
+    /// aggregate method。
+    ///
+    /// 呼び出し前提:
+    ///
+    /// - `source_existing` は effect 層が cache snapshot から `intent.source` で
+    ///   引き当て済みの `&Task`（snapshot に無ければ effect 層が早期 `SourceNotFound`）。
+    /// - `source_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    ///
+    /// 振る舞い:
+    ///
+    /// 1. source / target を lookup 用に正規化する。
+    /// 2. 同一 path への self-link は `SelfLink` で reject。
+    /// 3. target が aggregate に存在しなければ `TargetNotFound`。
+    /// 4. `source.links` に target が既に含まれていれば `NoOp` を返す（表記揺れ吸収）。
+    /// 5. それ以外は `links` 末尾に正規化済み相対 path を push し、`frontmatter::serialize`
+    ///    で書き戻し用文字列を作る。`TaskContent::try_new` で scanner eligible 検証も行う。
+    /// 6. `task_from_parsed` で `updated_task` を再構築して `Write` Outcome を返す。
+    pub(crate) fn plan_add_link(
+        &self,
+        _project_root: &Path,
+        intent: AddLinkIntent,
+        source_existing: &Task,
+        source_parsed: Parsed,
+    ) -> Result<AddLinkOutcome, AddLinkError> {
+        let source_str = intent.source.to_string_lossy();
+        let source_norm = normalize_link_path_for_lookup(source_str.as_ref()).ok_or_else(|| {
+            AddLinkError::SourceNotFound {
+                path: source_str.clone().into_owned(),
+            }
+        })?;
+        let target_str = intent.target.to_string_lossy();
+        let target_norm = normalize_link_path_for_lookup(target_str.as_ref()).ok_or_else(|| {
+            AddLinkError::TargetNotFound {
+                path: target_str.clone().into_owned(),
+            }
+        })?;
+
+        if source_norm == target_norm {
+            return Err(AddLinkError::SelfLink { path: target_norm });
+        }
+
+        let target_in_index = self
+            .tasks
+            .iter()
+            .any(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target_norm);
+        if !target_in_index {
+            return Err(AddLinkError::TargetNotFound { path: target_norm });
+        }
+
+        let existing_set: HashSet<String> = source_parsed
+            .frontmatter
+            .links
+            .iter()
+            .filter_map(|l| normalize_link_path_for_lookup(l))
+            .collect();
+        if existing_set.contains(&target_norm) {
+            return Ok(AddLinkOutcome::NoOp {
+                existing_task: source_existing.clone(),
+            });
+        }
+
+        let push_str = normalize_relative_path_for_input(target_str.as_ref()).ok_or_else(|| {
+            AddLinkError::TargetNotFound {
+                path: target_str.clone().into_owned(),
+            }
+        })?;
+
+        let Parsed {
+            mut frontmatter,
+            body,
+        } = source_parsed;
+        frontmatter.links.push(push_str);
+
+        let file_content = frontmatter::serialize(&Parsed {
+            frontmatter: frontmatter.clone(),
+            body: body.clone(),
+        });
+        TaskContent::try_new(file_content.clone()).map_err(AddLinkError::from)?;
+
+        let context = TaskParseContext {
+            file_path: source_existing.file_path.as_path_buf(),
+            default_status: source_existing.status.clone(),
+        };
+        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+
+        Ok(AddLinkOutcome::Write {
+            updated_task,
+            file_content,
+            target_normalized: target_norm,
+        })
+    }
+
     /// 削除対象 path を parent に持つ直接の子 task の **プロジェクトルート相対** path を
     /// snapshot 順で列挙する pure aggregate query。
     ///
@@ -613,6 +708,33 @@ pub struct UpdateTaskOutcome {
     pub file_content: String,
     /// parent が変化した場合のみ true。effect 層は TaskIndex を再構築する。
     pub needs_full_rebuild: bool,
+}
+
+/// `add_link` IPC 境界から domain に渡される追加意図。
+///
+/// `source` / `target` はいずれも project_root 相対の正規化済み path。
+/// args 変換層で `into_intent` を通して構築される。
+#[derive(Debug, Clone)]
+pub struct AddLinkIntent {
+    pub source: PathBuf,
+    pub target: PathBuf,
+}
+
+/// `TaskIndex::plan_add_link` の計算結果。effect 層が消費する。
+#[derive(Debug)]
+pub(crate) enum AddLinkOutcome {
+    Write {
+        updated_task: Task,
+        file_content: String,
+        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path
+        /// （`normalize_link_path_for_lookup` の出力形）。
+        target_normalized: String,
+    },
+    NoOp {
+        /// IPC 戻り値に使う既存 source の現在状態（plan_add_link に渡された
+        /// `source_existing` の clone）。
+        existing_task: Task,
+    },
 }
 
 /// `TaskIndex::plan_create` の計算結果。effect 層が消費する。
@@ -912,6 +1034,29 @@ fn find_task_mut<'a>(
     cache.get_mut(&PathBuf::from(normalized))
 }
 
+/// cache から `normalized` 一致の `Task` を immutable で引き当てる helper。
+///
+/// `find_task_mut_by_normalized` の immutable 版。effect 層の cache commit で
+/// mutate 前の事前検証（target 存在確認）に使う想定。複数 `&mut` を同時に取れない
+/// `HashMap` の制約下で「検証 → mutate」の 2 段構成を可能にする。
+pub(crate) fn find_task_by_normalized<'a>(
+    cache: &'a HashMap<PathBuf, Task>,
+    normalized: &str,
+) -> Option<&'a Task> {
+    cache.get(&PathBuf::from(normalized))
+}
+
+/// cache から `normalized` 一致の `Task` を mutable で引き当てる helper。
+///
+/// `find_task_mut` を task ドメイン外（add_link effect 層など）から呼べるよう
+/// `pub(crate)` で再公開する。
+pub(crate) fn find_task_mut_by_normalized<'a>(
+    cache: &'a mut HashMap<PathBuf, Task>,
+    normalized: &str,
+) -> Option<&'a mut Task> {
+    find_task_mut(cache, normalized)
+}
+
 #[cfg(test)]
 #[path = "task_index_tests.rs"]
 mod task_index_tests;
@@ -935,3 +1080,7 @@ mod task_index_clear_children_tests;
 #[cfg(test)]
 #[path = "task_index_plan_delete_abort_tests.rs"]
 mod task_index_plan_delete_abort_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_add_link_tests.rs"]
+mod task_index_plan_add_link_tests;
