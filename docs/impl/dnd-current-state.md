@@ -12,20 +12,23 @@
 
 drop 1 回で動く layer の数:
 
-```
-TaskCard (dragstart)
-  → Board (useReducer DragState)
-    → Column (dragover rAF throttle → drop)
-      → App.handleTaskDrop (callback 組み立て + LiveRegion 接続)
-        → moveTaskAction (orchestrator: preflight + queue)
-          → MoveSnapshot (snapshot VO)  +  MoveExecution (effect 層)
-            → updateTask IPC
-              → update_task_impl (read → plan_update → write_ignore register → write、unregister は write 失敗時のみ。success path では watcher 側で consume される設計)
-                → TaskIndex::plan_update (parent_changed なら全体 hierarchy 再検証)
-            → updateCardOrder IPC
-              → (BE 未実装、config.json の cardOrder を更新する想定)
-          → ProjectAction dispatch (楽観 / 確定 / rollback x1〜3 段)
-        → LiveRegion で screen reader へ announce
+```mermaid
+flowchart TD
+    TC["TaskCard<br/>(dragstart)"] --> BD["Board<br/>useReducer DragState"]
+    BD --> CL["Column<br/>dragover rAF throttle → drop"]
+    CL --> APP["App.handleTaskDrop<br/>callback 組み立て + LiveRegion 接続"]
+    APP --> MTA["moveTaskAction<br/>(orchestrator)<br/>preflight + queue"]
+    MTA --> SNAP["MoveSnapshot (snapshot VO)<br/>+ MoveExecution (effect 層)"]
+    SNAP --> UT["updateTask IPC"]
+    SNAP --> UCO["updateCardOrder IPC"]
+    UT --> UTI["update_task_impl<br/>(BE)<br/>read → plan_update<br/>→ write_ignore.register<br/>→ write_existing<br/>(unregister は write 失敗時のみ)"]
+    UTI --> PU["TaskIndex::plan_update<br/>parent_changed なら<br/>validate_parent_hierarchy"]
+    UCO -.BE 未実装.-> UCOBE["config.json の cardOrder を<br/>更新する想定"]
+    SNAP --> DISP["ProjectAction dispatch<br/>楽観 / 確定 / rollback x1〜3 段"]
+    DISP --> LR["LiveRegion で<br/>screen reader へ announce"]
+
+    style UCO stroke-dasharray: 5 5
+    style UCOBE fill:#fee,stroke:#f66
 ```
 
 ---
@@ -143,6 +146,56 @@ TaskCard (dragstart)
                    dispatch card-order-updated 確定 → Result.ok
 ```
 
+#### crossColumn の状態遷移（成功 / 各失敗パス）
+
+```mermaid
+flowchart TD
+    START([drop 確定]) --> OPT["楽観 dispatch x2<br/>① task-updated(status=toColumn)<br/>② card-order-updated(toColumn, 新順)"]
+    OPT --> CB1["safeCallback(onOptimisticApplied)<br/>→ LiveRegion announce"]
+    CB1 --> IPC1["await updateTask(IPC #1)"]
+    IPC1 --> VG1{"versionGuard<br/>(project 切替なし?)"}
+    VG1 -->|version 不一致| INVALID([Result.err invalid-state])
+    VG1 -->|OK| R1{"updateTask 結果?"}
+    R1 -->|失敗| RB["rollback dispatch x2〜3<br/>(currentTask 分岐は次の図)"]
+    RB --> CB2["safeCallback(onRollback)<br/>→ LiveRegion announce"]
+    CB2 --> ERR1([Result.err tauri])
+    R1 -->|成功| CONF["dispatch task-updated<br/>(BE 確定値で上書き)"]
+    CONF --> REC["buildMovedFilePaths<br/>(latest)で最終順序"]
+    REC --> IPC2["await updateCardOrder(IPC #2)"]
+    IPC2 --> VG2{"versionGuard"}
+    VG2 -->|version 不一致| INVALID
+    VG2 -->|OK| R2{"updateCardOrder 結果?"}
+    R2 -->|失敗| PART["partial-rollback dispatch x2<br/>cardOrder(to 旧) + cardOrder(from 旧)<br/>※ task の status は戻さない"]
+    PART --> ERR2([Result.err partialMove])
+    R2 -->|成功| OK["dispatch card-order-updated<br/>(確定)"]
+    OK --> DONE([Result.ok])
+
+    style RB fill:#fee,stroke:#f66
+    style PART fill:#fee,stroke:#fa0
+    style INVALID fill:#eef,stroke:#88f
+```
+
+#### rollback の `currentTask` 乖離判定（updateTask 失敗時）
+
+```mermaid
+flowchart TD
+    FAIL([updateTask IPC 失敗]) --> READ["beforeRollback = visibleData(state)<br/>currentTask = beforeRollback.tasks.find(filePath)"]
+    READ --> Q{"currentTask の状態?"}
+    Q -->|undefined<br/>(task 消失)| TWO
+    Q -->|status ≠ toColumn<br/>(外部 listener が status 更新)| TWO
+    Q -->|status === toColumn<br/>(楽観維持)| THREE
+
+    TWO["**2 段 rollback**<br/>① cardOrder(toColumn, 旧順)<br/>② cardOrder(fromColumn, 旧順)<br/>※ task-updated は省略<br/>(外部更新を上書きしないため)"]
+    THREE["**3 段 rollback**<br/>① cardOrder(toColumn, 旧順)<br/>② task-updated(currentTask, status=fromColumn)<br/>③ cardOrder(fromColumn, 旧順)<br/>※ status 以外のフィールドは<br/>currentTask の値を採用<br/>(concurrent 更新を保護)"]
+
+    TWO --> CB[safeCallback onRollback]
+    THREE --> CB
+    CB --> END([Result.err tauri])
+
+    style TWO fill:#ffe,stroke:#cc0
+    style THREE fill:#fee,stroke:#f66
+```
+
 ### 同一カラム並び替え
 
 ```
@@ -183,6 +236,35 @@ update_task IPC (command.rs:24-83)
   │       （success path では unregister せず、watcher 側で write_ignore.consume される設計）
   │
   └─ commit_cache (needs_full_rebuild=true のときだけ TaskIndex を rebuild)
+```
+
+#### update_task の write_ignore タイミング
+
+```mermaid
+flowchart TD
+    IN([update_task IPC]) --> CHK["state.check_tasks_cache_lock<br/>+ write_ignore.is_empty"]
+    CHK --> ARG["UpdateTaskArgs<br/>→ UpdateTaskIntent<br/>(filePath 相対化 + lexical 正規化)"]
+    ARG --> SNAP["tasks_snapshot から<br/>existing_task を引く"]
+    SNAP --> READ["FileIO::read<br/>(frontmatter + body)"]
+    READ --> PU["TaskIndex::plan_update<br/>frontmatter 反映<br/>+ parent_changed 判定<br/>+ validate_parent_hierarchy"]
+    PU --> WA{"watcher_active?"}
+    WA -->|true| REG["write_ignore.register(abs)"]
+    WA -->|false| WRITE
+    REG --> WRITE["FileIO::write_existing"]
+    WRITE --> WR{"write 結果?"}
+    WR -->|失敗| UNREG["write_ignore.unregister(abs)<br/>(失敗時のみ)"]
+    UNREG --> ERR([Result.err])
+    WR -->|成功| CC["commit_cache<br/>(needs_full_rebuild=true なら<br/>TaskIndex を full rebuild)"]
+    CC --> OK([Result.ok updated_task])
+
+    WATCHER([fs watcher]) -.write event 検知.-> CONSUME{"write_ignore に<br/>登録あり?"}
+    CONSUME -->|あり| SKIP["consume してイベント抑止<br/>(自己発火回避)"]
+    CONSUME -->|なし| EMIT["IPC で FE に通知"]
+
+    style REG fill:#efe,stroke:#0a0
+    style UNREG fill:#fee,stroke:#f66
+    style SKIP fill:#eef,stroke:#88f
+    style WATCHER fill:#ffe,stroke:#cc0
 ```
 
 > 「BE が status 変更を watcher 経由で検知して、旧カラムの cardOrder から自動除去する」
