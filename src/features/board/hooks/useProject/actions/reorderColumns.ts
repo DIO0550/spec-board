@@ -286,9 +286,7 @@ export const reorderColumnsAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(
-        ProjectError.invalidState("プロジェクトが切り替わりました"),
-      );
+      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
     }
     const data = ProjectSessionState.visibleData(deps.getState());
     if (data === null) {
