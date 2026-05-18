@@ -7,7 +7,10 @@ import {
   type ColumnDropParams,
   type ColumnTaskDropParams,
 } from "../Column";
-import { ColumnDragState } from "./columnDragState";
+import {
+  ColumnDragState,
+  type ColumnDragState as ColumnDragStateT,
+} from "./columnDragState";
 import { DragAction, dragReducer } from "./dragState";
 
 /** ボードの Props */
@@ -104,7 +107,7 @@ export const Board = ({
   // hover state は初期実装では UI に未配線のため、Board の再レンダーを避けるべく
   // useRef に保持する。reducer は維持しつつ ref を mutate する形にし、将来
   // hover プレースホルダ表示を導入する際に useState / useReducer に差し戻す。
-  const columnDragStateRef = useRef(ColumnDragState.initial);
+  const columnDragStateRef = useRef<ColumnDragStateT>(ColumnDragState.initial);
 
   const handleColumnDragStart = useCallback((columnName: string) => {
     columnDragStateRef.current = ColumnDragState.reducer(
