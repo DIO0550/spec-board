@@ -203,6 +203,48 @@ test("invoke 失敗時 Result.err(ProjectError.tauri(...)) を返す", async () 
   });
 });
 
+test("project switch 以外の invalid-state (visibleData null 等) は rollback dispatch + onRollback を実行する", async () => {
+  // snapshot 採取後 / queue 実行前に state が idle に巻き戻ったケースを再現する。
+  // runUpdateColumnsInsideQueue が visibleData === null で invalid-state を返すが、
+  // 戻り message は PROJECT_SWITCHED_MESSAGE ではないので reducer は loaded のまま。
+  // この場合は楽観 dispatch を rollback すべき。
+  const harness = setupLoaded(makeData());
+  const data = (harness.state.current as { data: ProjectData }).data;
+  const snapshot = ReorderSnapshot.from(data, "A", "C");
+
+  // snapshot 採取後に getState を idle 返却に差し替える
+  harness.deps.getState = () => ({ kind: "idle" }) as ProjectState;
+
+  const onRollback = vi.fn();
+  const result = await ReorderExecution.run(
+    harness.deps,
+    { fromColumnName: "A", toColumnName: "C" },
+    snapshot,
+    harness.deps.projectVersion.current,
+    { onRollback },
+  );
+
+  expect(result).toMatchObject({
+    ok: false,
+    error: { kind: "invalid-state" },
+  });
+  // PROJECT_SWITCHED_MESSAGE 以外の invalid-state なので rollback が走る
+  expect(onRollback).toHaveBeenCalledTimes(1);
+  const replacedActions = harness.actions.filter(
+    (a) => a.type === "columns-replaced",
+  );
+  expect(replacedActions[replacedActions.length - 1]).toEqual({
+    type: "columns-replaced",
+    columns: [
+      { name: "A", order: 0 },
+      { name: "B", order: 1 },
+      { name: "C", order: 2 },
+    ],
+    renames: [],
+    doneColumn: undefined,
+  });
+});
+
 test("project switch 中 (invalid-state) は rollback dispatch / onRollback を行わず invalid-state を返す", async () => {
   const harness = setupLoaded(makeData());
   const initialVersion = harness.deps.projectVersion.current;

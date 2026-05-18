@@ -8,7 +8,10 @@ import { ProjectSessionState } from "../state/projectSessionState";
 import type { ColumnsCommandBuilder } from "./columnsCommand";
 import { reorderColumnsByIndex } from "./reorderColumnsByIndex";
 import type { TaskActionDeps } from "./tasks";
-import { runUpdateColumnsInsideQueue } from "./updateColumns";
+import {
+  PROJECT_SWITCHED_MESSAGE,
+  runUpdateColumnsInsideQueue,
+} from "./updateColumns";
 
 /** `useProject.reorderColumns` が受け取るパラメータ。 */
 export type ReorderColumnsParams = {
@@ -248,7 +251,13 @@ export const ReorderExecution = {
     if (result.ok) {
       return Result.ok({ applied: true });
     }
-    if (result.error.kind === "invalid-state") {
+    // invalid-state でも project switch（reducer が新 project に切替済み）以外は
+    // rollback すべき。doneColumn validation 失敗や visibleData == null のケースでは
+    // reducer は loaded のままなので楽観 dispatch を before 列に戻す必要がある。
+    const isStaleProject =
+      result.error.kind === "invalid-state" &&
+      result.error.message === PROJECT_SWITCHED_MESSAGE;
+    if (isStaleProject) {
       return Result.err(result.error);
     }
     deps.dispatchSync(ReorderSnapshot.rollbackDispatch(snapshot));

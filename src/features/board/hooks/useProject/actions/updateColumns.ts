@@ -32,12 +32,20 @@ export type UpdateColumnsActionDeps = {
 };
 
 /**
+ * project switch を示す invalid-state エラーの message 文字列。
+ * reorder などの後段 effect は、楽観 dispatch を rollback すべきかどうかを
+ * この message と照合して判定する（switch 時は reducer が新 project に
+ * 切替済みのため rollback してはならない）。
+ */
+export const PROJECT_SWITCHED_MESSAGE = "プロジェクトが切り替わりました";
+
+/**
  * project 世代が変わったときに返す共通エラーを作成する。
  *
  * @returns applied=false ではなく stale command を表す invalid-state
  */
 const switchedProject = (): ResultT<{ applied: boolean }, ProjectError> =>
-  Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
+  Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
 
 /**
  * ProjectColumns の domain validation error を useProject の error 型に変換する。

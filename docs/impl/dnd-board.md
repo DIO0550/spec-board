@@ -112,6 +112,8 @@ reorder の IPC は既存 `updateColumnsAction` の queue 内ロジック（vers
 
 reorder の `ColumnsCommandBuilder` は **current 引数を見ず snapshot.afterColumns をそのまま返す**。これにより楽観 dispatch 適用済みの state を渡しても二重並び替えが起きない（snapshot 採取時点で name → index 解決済みのため）。
 
-### invalid-state は rollback しない
+### project switch 時のみ rollback をスキップする
 
-`runUpdateColumnsInsideQueue` が `Result.err(invalid-state)` を返した場合（project switch 等）は、reducer が既に新 project の state に切り替わっているため、`beforeColumns` を流すと逆に古い columns を上書きしてしまう。rollback dispatch / callback を行わず、err をそのまま return する。それ以外（`tauri-error` 等）のみ rollback する。
+`runUpdateColumnsInsideQueue` は project switch だけでなく `visibleData === null` や doneColumn validation 失敗でも `invalid-state` を返す。後者では reducer は `loaded` のままなので、楽観 dispatch をそのまま放置すると UI が永続的にズレる。
+
+project switch だけを区別する必要があるので、`updateColumns.ts` が `PROJECT_SWITCHED_MESSAGE` 定数（`"プロジェクトが切り替わりました"`）をエクスポートし、`ReorderExecution` は `error.kind === "invalid-state" && error.message === PROJECT_SWITCHED_MESSAGE` のときだけ rollback / callback をスキップする。それ以外の invalid-state は `tauri-error` と同じ扱いで rollback + callback を実行する。
