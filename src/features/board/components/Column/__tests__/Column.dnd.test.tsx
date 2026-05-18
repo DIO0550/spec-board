@@ -334,7 +334,7 @@ test("column MIME の drop で onColumnDrop({fromColumnName, toColumnName})", ()
   });
 });
 
-test("column MIME の drop で fromColumnName が空文字列なら onColumnDrop は呼ばれない", () => {
+test("column MIME の drop で fromColumnName が空文字列なら onColumnDrop は呼ばれないが preventDefault は実行される", () => {
   const onColumnDrop = vi.fn();
   render({
     name: "Todo",
@@ -349,6 +349,7 @@ test("column MIME の drop で fromColumnName が空文字列なら onColumnDrop
     section.dispatchEvent(event);
   });
   expect(onColumnDrop).not.toHaveBeenCalled();
+  expect(event.defaultPrevented).toBe(true);
 });
 
 test("columnDraggable=true を渡すと内部 ColumnHeader に draggable=true が配線される", () => {

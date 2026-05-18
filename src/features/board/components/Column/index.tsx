@@ -197,9 +197,11 @@ export const Column = ({
 
   const handleDrop = (e: DragEvent<HTMLElement>) => {
     if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
+      // column MIME を持つ drop はアプリ側でハンドルする意図なので、payload が
+      // 空でも preventDefault してブラウザ既定動作（リンクナビゲーション等）を抑止する。
+      e.preventDefault();
       const fromColumnName = e.dataTransfer.getData(COLUMN_DRAG_MIME_TYPE);
       if (fromColumnName) {
-        e.preventDefault();
         onColumnDrop?.({ fromColumnName, toColumnName: name });
       }
       return;
