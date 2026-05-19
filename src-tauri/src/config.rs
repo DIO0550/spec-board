@@ -51,6 +51,7 @@
 //! md ファイルの走査・フロントマター抽出・`config.json` への書き出しは別レイヤの責務。
 
 pub mod column_name;
+pub mod get_columns;
 
 use log::warn;
 use serde::{Deserialize, Serialize};
