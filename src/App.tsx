@@ -14,7 +14,11 @@ import {
   useProject,
 } from "./features/board";
 import { DetailPanel } from "./features/detail";
-import { TaskCreateModal, type TaskFormValues } from "./features/task-form";
+import {
+  TaskCreateModal,
+  type TaskFormValues,
+  useTaskCreate,
+} from "./features/task-form";
 import type { Column } from "./types/column";
 import type { Task } from "./types/task";
 
@@ -99,6 +103,7 @@ export const App = () => {
       showToast(projectErrorMessage(err), "error");
     },
   });
+  const { submit: submitCreateTask } = useTaskCreate({ createTask });
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [createModalStatus, setCreateModalStatus] = useState<string | null>(
@@ -389,7 +394,7 @@ export const App = () => {
 
   const handleCreateTask = useCallback(
     async (values: TaskFormValues): Promise<void> => {
-      const result = await createTask(values);
+      const result = await submitCreateTask(values);
       if (!result.ok) {
         // モーダルを閉じない: TaskCreateModal は onSubmit reject で開いたままになる
         const message = projectErrorMessage(result.error);
@@ -398,7 +403,7 @@ export const App = () => {
       }
       showToast("タスクを作成しました", "success");
     },
-    [createTask, showToast],
+    [submitCreateTask, showToast],
   );
 
   const handleTaskDrop = useCallback(
