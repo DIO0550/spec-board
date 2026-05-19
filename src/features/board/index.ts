@@ -7,7 +7,6 @@ export type {
   MoveTaskCallbacks,
   MoveTaskParams,
   ProjectData,
-  ProjectError,
   ProjectState,
   ReorderColumnsCallbacks,
   ReorderColumnsEvent,
@@ -17,4 +16,8 @@ export type {
   UseProjectOptions,
   UseProjectResult,
 } from "./hooks/useProject";
-export { PROJECT_SWITCHED_MESSAGE, useProject } from "./hooks/useProject";
+export {
+  PROJECT_SWITCHED_MESSAGE,
+  ProjectError,
+  useProject,
+} from "./hooks/useProject";
