@@ -57,11 +57,7 @@ fn returns_columns_sorted_by_order() {
     state.replace_config(Some(cfg)).expect("writable");
 
     let payload = get_columns_impl(&state).expect("正常系");
-    let names: Vec<String> = payload
-        .columns
-        .iter()
-        .map(|c| c.name.to_string())
-        .collect();
+    let names: Vec<String> = payload.columns.iter().map(|c| c.name.to_string()).collect();
     assert_eq!(names, vec!["Todo", "Doing", "Done"]);
 }
 
