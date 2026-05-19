@@ -88,9 +88,6 @@ pub(crate) fn get_columns_impl(state: &AppState) -> Result<GetColumnsPayload, Ge
         "config invariant violation: columns must be non-empty"
     );
 
-    let mut columns: Vec<Column> = config.columns.clone();
-    columns.sort_by_key(|column| column.order);
-
     let done_column = config
         .resolved_done_column()
         .expect(
@@ -98,6 +95,9 @@ pub(crate) fn get_columns_impl(state: &AppState) -> Result<GetColumnsPayload, Ge
         )
         .as_str()
         .to_string();
+
+    let mut columns: Vec<Column> = config.columns;
+    columns.sort_by_key(|column| column.order);
 
     Ok(GetColumnsPayload {
         columns,
