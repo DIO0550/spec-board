@@ -4,7 +4,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::Column;
-use crate::state::AppState;
+use crate::state::{AppState, AppStateError};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,8 +21,15 @@ pub enum GetColumnsError {
     StateLockPoisoned,
 }
 
-pub(crate) fn get_columns_impl(_state: &AppState) -> Result<GetColumnsPayload, GetColumnsError> {
-    unimplemented!()
+impl From<AppStateError> for GetColumnsError {
+    fn from(_: AppStateError) -> Self {
+        GetColumnsError::StateLockPoisoned
+    }
+}
+
+pub(crate) fn get_columns_impl(state: &AppState) -> Result<GetColumnsPayload, GetColumnsError> {
+    let _config = state.config()?.ok_or(GetColumnsError::NoProjectOpen)?;
+    unimplemented!("happy path is implemented in the next cycle")
 }
 
 #[cfg(test)]
