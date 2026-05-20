@@ -405,33 +405,31 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
-///    - `set_project_path` / `replace_config` / `replace_tasks_cache`: 値の swap のみ
+///    - `take_watcher_handle().stop()`: 新 cache が書かれる前に旧 watcher を必ず停止
+///    - `replace_project_and_config`: `project_path` と `config` を**両 lock 同時保持下で
+///      atomic に swap**する（`update_card_order` 等の reader が「新 path + 旧 config」を
+///      観測して旧 config を新プロジェクトの `config.json` に書き出す cross-project
+///      corruption を防ぐ）
+///    - `replace_tasks_cache`: tasks_cache を新値に置換
 ///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
-///    - `install_watcher_handle`: 旧 watcher の `stop()` 呼び出しを最後に行う
-///      （panic はここで発生し得るが、ほかの全てのフィールドは既に新値で確定済み）
+///    - `install_watcher_handle`: 新 watcher を install。旧 handle は既に上で
+///      `stop()` 済みのため、ここでは新 handle を置くだけ
 ///
-/// AppState の各 setter は単一フィールドのみを操作し、guard を保持したまま他の
-/// setter を呼ばないため、AppState の lock 取得順序ルール
-/// （複数 guard 同時保持時の AB-BA 防止）には抵触しない。
+/// `replace_project_and_config` は `project_path → config` の AppState lock 順序
+/// 契約に従って両 lock を順に取得・同時保持する。他の setter は単一フィールドのみを
+/// 操作するため、AppState の AB-BA 防止規約に抵触しない。
 ///
 /// `tasks_cache` の key は `PathBuf::from(task.file_path)`（`task.file_path` は
 /// 既に root 相対の正規化済み文字列）。
-/// `open_project` の commit 段階の一般化版。
 ///
-/// `prepare` の実行と GUIDE.md 書き込みは呼び出し側
-/// （`open_project_impl`）で順序を制御するため、本関数には
-/// **既に確保済みの `prepared`** を直接渡す。これにより watcher 起動失敗時に
-/// `.spec-board/GUIDE.md` を新 dir に書き込んでしまう副作用を避けられる。
+/// `prepare` の実行と GUIDE.md 書き込みは呼び出し側（`open_project_impl`）で
+/// 順序を制御するため、本関数には **既に確保済みの `prepared`** を直接渡す。
+/// これにより watcher 起動失敗時に `.spec-board/GUIDE.md` を新 dir に書き込んで
+/// しまう副作用を避けられる。
 ///
-/// 残りの手順は仕様どおり:
-///
-/// 1. 旧 watcher を `take_watcher_handle` で取り出して `stop()`（新 cache が
-///    書かれる前に旧 watcher を必ず停止して race を防ぐ）
-/// 2. project_path / config / tasks_cache / write_ignore.clear の commit を
-///    1 ステップずつ実行
-/// 3. `watcher.spawn(prepared, state, root, config)` で adapter スレッドを起動し、
-///    返り値を `install_watcher_handle` で AppState に格納する。spawn は panic
-///    以外で失敗しない契約。
+/// 最後に `watcher.spawn(prepared, state, root, config)` で adapter スレッドを
+/// 起動し、返り値を `install_watcher_handle` で AppState に格納する。spawn は
+/// panic 以外で失敗しない契約。
 pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     state: &Arc<AppState>,
     root: &Path,
