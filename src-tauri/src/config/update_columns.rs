@@ -191,11 +191,16 @@ pub(crate) fn update_columns_impl(
     }
 
     // (5) watcher 起動有無に応じて write_ignore を bulk 登録
+    //     登録した path は失敗パスで unregister し、後続の本物のユーザー編集イベントが
+    //     stale な ignore エントリで抑止されないようにする。
     let watcher_active = state.is_watcher_installed()?;
-    if watcher_active && !plan.rename_targets.is_empty() {
-        let paths: Vec<PathBuf> = plan.rename_targets.iter().map(abs_for).collect();
+    let registered_paths: Vec<PathBuf> = if watcher_active && !plan.rename_targets.is_empty() {
+        let paths: Vec<PathBuf> = plan.rename_targets.iter().map(&abs_for).collect();
         state.write_ignore().register_bulk(&paths)?;
-    }
+        paths
+    } else {
+        Vec::new()
+    };
 
     // (6) rename 対象 md を順次 atomic write。失敗時は rollback
     let mut written: Vec<PathBuf> = Vec::new();
@@ -210,15 +215,18 @@ pub(crate) fn update_columns_impl(
                 Ok(()) => written.push(abs),
                 Err(source) => {
                     rollback_md(&written, &originals, io)?;
+                    cleanup_registered_write_ignores(state, &registered_paths);
                     return Err(UpdateColumnsError::RenameWriteFailed { path: abs, source });
                 }
             },
             Ok(None) => {
                 rollback_md(&written, &originals, io)?;
+                cleanup_registered_write_ignores(state, &registered_paths);
                 return Err(UpdateColumnsError::RenameMissingFrontmatter { path: abs });
             }
             Err(source) => {
                 rollback_md(&written, &originals, io)?;
+                cleanup_registered_write_ignores(state, &registered_paths);
                 return Err(UpdateColumnsError::RenameParseFailed { path: abs, source });
             }
         }
@@ -230,11 +238,13 @@ pub(crate) fn update_columns_impl(
         Ok(s) => s,
         Err(source) => {
             rollback_md(&written, &originals, io)?;
+            cleanup_registered_write_ignores(state, &registered_paths);
             return Err(UpdateColumnsError::ConfigSerializeFailed { source });
         }
     };
     if let Err(source) = config_writer.write_atomic(&config_path, &content) {
         rollback_md(&written, &originals, io)?;
+        cleanup_registered_write_ignores(state, &registered_paths);
         return Err(UpdateColumnsError::ConfigWriteFailed {
             path: config_path,
             source,
@@ -254,6 +264,18 @@ pub(crate) fn update_columns_impl(
     write_guide_markdown_best_effort(&project_root, &plan.new_config);
 
     Ok(())
+}
+
+/// 失敗パスで `register_bulk` 済み path の write_ignore エントリを掃除する best-effort helper。
+///
+/// 一括登録した path をそのまま放置すると、watcher の consume が one-shot のため
+/// 後続の本物のユーザー編集イベントが stale な ignore エントリに飲まれてしまう。
+/// 失敗時は明示的に unregister し、cache と fs の整合性は別途 `rollback_md` で復元する。
+/// 内部 Mutex の poison 等は無視する（既に別エラーで失敗パスにいるため）。
+fn cleanup_registered_write_ignores(state: &AppState, paths: &[PathBuf]) {
+    for path in paths {
+        let _ = state.write_ignore().unregister(path);
+    }
 }
 
 /// rollback ループ。既に書き換え済みの md を `originals` の内容で書き戻す。
