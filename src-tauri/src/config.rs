@@ -208,10 +208,7 @@ impl Config {
         // 空配列の `renames: []` は「未指定」と同義扱いにする。
         // `is_some()` のままだと空配列だけが送られた場合に no-op 判定にならず、
         // config.json / GUIDE.md が無意味に再書き込みされてしまうため。
-        let has_renames = args
-            .renames
-            .as_ref()
-            .is_some_and(|v| !v.is_empty());
+        let has_renames = args.renames.as_ref().is_some_and(|v| !v.is_empty());
         if args.columns.is_none() && args.done_column.is_none() && !has_renames {
             return Ok(UpdateColumnsPlan {
                 new_config: self.clone(),

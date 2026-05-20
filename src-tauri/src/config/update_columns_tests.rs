@@ -269,7 +269,10 @@ fn write_ignore_lock_poisoned_converts_to_state_lock_poisoned() {
 #[test]
 fn write_ignore_cleanup_worker_spawn_failed_maps_to_dedicated_variant() {
     let err: UpdateColumnsError = WriteIgnoreError::CleanupWorkerSpawnFailed.into();
-    assert!(matches!(err, UpdateColumnsError::WriteIgnoreWorkerSpawnFailed));
+    assert!(matches!(
+        err,
+        UpdateColumnsError::WriteIgnoreWorkerSpawnFailed
+    ));
 }
 
 #[test]
