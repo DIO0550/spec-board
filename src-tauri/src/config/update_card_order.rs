@@ -83,14 +83,13 @@ pub fn update_card_order(
 
 /// 単体テスト境界の本体関数。
 ///
-/// 1. `AppState` の lock 健全性 probe
-/// 2. `project_path` snapshot 取得（None → `NoProjectOpen`）
-/// 3. `config` snapshot 取得（None → `NoProjectOpen`）
-/// 4. `column_name` が `Config.columns` に存在するか検証
-/// 5. snapshot の `card_order[column_name]` を `file_paths` で上書き
-/// 6. `serde_json::to_string_pretty` でシリアライズ
-/// 7. `write_config_json` で disk に書き込み
-/// 8. 成功したら `replace_config` で in-memory を更新
+/// 1. `snapshot_project_and_config` で `project_path` と `config` を
+///    両 lock 同時保持下で atomic に取得（どちらかが `None` → `NoProjectOpen`）
+/// 2. `column_name` が `Config.columns` に存在するか検証
+/// 3. snapshot の `card_order[column_name]` を `file_paths` で上書き
+/// 4. `serde_json::to_string_pretty` でシリアライズ
+/// 5. `write_config_json` で disk に書き込み
+/// 6. 成功したら `replace_config` で in-memory を更新
 ///
 /// disk write 失敗時は `replace_config` を呼ばないため、in-memory の `Config` は
 /// 呼び出し前の値のまま保たれる。
