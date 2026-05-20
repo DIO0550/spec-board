@@ -114,6 +114,100 @@ fn read_config_json_returns_content_when_present() {
     assert_eq!(result.as_deref(), Some(content));
 }
 
+// ───────── write_config_json ─────────
+
+#[test]
+fn write_config_json_creates_file_with_given_content() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join(".spec-board");
+    std::fs::create_dir(&dir).unwrap();
+    let content = r#"{"version":1}"#;
+
+    let path = write_config_json(tmp.path(), content).unwrap();
+
+    assert_eq!(path, dir.join("config.json"));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+}
+
+#[test]
+fn write_config_json_overwrites_existing_file() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join(".spec-board");
+    std::fs::create_dir(&dir).unwrap();
+    let path = dir.join("config.json");
+    std::fs::write(&path, "old").unwrap();
+
+    let written_path = write_config_json(tmp.path(), "new").unwrap();
+
+    assert_eq!(written_path, path);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "new");
+}
+
+#[test]
+fn write_config_json_creates_spec_board_dir_when_missing() {
+    let tmp = TempDir::new().unwrap();
+    assert!(!tmp.path().join(".spec-board").exists());
+
+    let path = write_config_json(tmp.path(), "{}").unwrap();
+
+    assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "{}");
+}
+
+#[test]
+fn write_config_json_preserves_utf8_and_newlines() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join(".spec-board");
+    std::fs::create_dir(&dir).unwrap();
+    let content = "こんにちは\n世界\r\n🦀\n";
+
+    let path = write_config_json(tmp.path(), content).unwrap();
+
+    assert_eq!(std::fs::read(path).unwrap(), content.as_bytes());
+}
+
+#[cfg(unix)]
+#[test]
+fn write_config_json_rejects_when_target_is_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let dir = tmp.path().join(".spec-board");
+    std::fs::create_dir(&dir).unwrap();
+    let target = outside.path().join("external.json");
+    std::fs::write(&target, "keep").unwrap();
+    let config_path = dir.join("config.json");
+    symlink(&target, &config_path).unwrap();
+
+    let err = write_config_json(tmp.path(), "new").unwrap_err();
+
+    let ConfigIoError::Io { path, source } = err;
+    assert_eq!(path, config_path);
+    assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(source.to_string().contains("is a symlink"));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+}
+
+#[cfg(unix)]
+#[test]
+fn write_config_json_rejects_spec_board_dir_symlink_without_writing_target() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let outside_config = outside.path().join("config.json");
+    symlink(outside.path(), tmp.path().join(".spec-board")).unwrap();
+
+    let err = write_config_json(tmp.path(), "new").unwrap_err();
+
+    let ConfigIoError::Io { path, source } = err;
+    assert_eq!(path, tmp.path().join(".spec-board"));
+    assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(source.to_string().contains("is a symlink"));
+    assert!(!outside_config.exists());
+}
+
 #[test]
 fn write_guide_markdown_creates_spec_board_dir_and_file_when_absent() {
     let tmp = TempDir::new().unwrap();

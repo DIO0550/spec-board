@@ -275,8 +275,17 @@ links:（任意）
 | filePaths | `Vec<String>` | はい | 新しい並び順のファイルパス配列 |
 
 **振る舞い**:
-1. `config.json` の `cardOrder[columnName]` を `filePaths` で上書き
-2. 更新後の設定を保存
+1. `columnName` が `columns[]` に存在しない場合は更新を拒否し、`config.json` を変更しない（エラー文字列: `カラムが見つかりません: {columnName}`）
+2. `filePaths` は FE が事前に正規化した結果をそのまま `cardOrder[columnName]` に保存する。バックエンド側では未存在ファイルパスの除外などのフィルタを行わない
+3. 既存キーがあれば**上書き**、無ければ**新規追加**として `cardOrder` に書き込む
+4. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
+5. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、本書き込みによって FE への変更通知（emit）は走らない
+6. disk への書き込みが成功した後に AppState の `Config` を更新する。disk 失敗時は in-memory の `Config` を変更しない（次回呼び出しで再試行可能）
+
+**並行性**:
+
+- **逐次**呼び出し（前の呼び出しが完了してから次が始まる場合）は、最後の呼び出しの結果が最終的に保存される（後勝ち）。
+- **並行**呼び出し時の厳密な整合性は本機能では保証しない。実装上は `state.config()? → mutate → disk write → replace_config` が連続した 2 つの config lock 取得で構成されるため、その間に別 writer が割り込むと古い snapshot で disk が上書きされる race window が残る。本ケースは現状の DnD UX 上の問題が観測されていないため受容しており、将来 `AppState::with_config_mut` のような atomic update helper を導入した時点で改善する。
 
 ## エラーハンドリング
 
