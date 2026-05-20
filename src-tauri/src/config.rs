@@ -262,7 +262,16 @@ impl Config {
             if !valid_names.contains(new_key.as_str()) {
                 continue;
             }
-            new_card_order.insert(new_key, paths.clone());
+            // 複数の旧キーが同じ new_key に collapse する場合（例: args.columns で
+            // 残す側として B のみ指定 + rename A→B が指定され、旧 card_order に
+            // A と B 両方の entry がある）に paths を後勝ち上書きしないよう、
+            // 既存 Vec へ append + 重複除去（first-occurrence wins）でマージする。
+            let entry = new_card_order.entry(new_key).or_default();
+            for path in paths {
+                if !entry.contains(path) {
+                    entry.push(path.clone());
+                }
+            }
         }
 
         let mut rename_targets: Vec<RenameTarget> = Vec::new();

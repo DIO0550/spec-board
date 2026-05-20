@@ -469,6 +469,30 @@ fn plan_card_order_swap_a_to_b_and_b_to_a_preserves_both_entries() {
 }
 
 #[test]
+fn plan_card_order_collapse_merges_paths_first_occurrence_wins() {
+    // 旧 card_order に A と B 両方の entry がある状態で、args.columns で B のみを残し
+    // rename A→B を指定すると、A の paths と B の paths が同じ new_key="B" に集約される。
+    // 後勝ち上書きで一方のリストが消えないよう、append + first-occurrence wins でマージされる。
+    let mut card_order = BTreeMap::new();
+    card_order.insert("A".into(), vec!["a.md".into(), "shared.md".into()]);
+    card_order.insert("B".into(), vec!["b.md".into(), "shared.md".into()]);
+    let config = config_with_card_order(vec![col("A", 0), col("B", 1)], Some("B"), card_order);
+    let args = UpdateColumnsArgs {
+        columns: Some(vec![col("B", 0)]),
+        renames: Some(vec![rename("A", "B")]),
+        ..Default::default()
+    };
+    let plan = config.plan_update_columns(&args, &[]).expect("ok");
+    let merged = plan.new_config.card_order.get("B").expect("B exists");
+    // A の entries (a.md, shared.md) → B の entries (b.md) の順で、shared.md は重複除去で
+    // 1 つだけ残る。順序は BTreeMap の iteration 順（A, B）に従う。
+    assert_eq!(
+        merged,
+        &vec!["a.md".to_string(), "shared.md".to_string(), "b.md".to_string()]
+    );
+}
+
+#[test]
 fn plan_done_column_none_args_keeps_existing_done_column_when_not_renamed() {
     let config = config_with(vec![col("Todo", 0), col("Done", 1)], Some("Done"));
     let args = UpdateColumnsArgs {
