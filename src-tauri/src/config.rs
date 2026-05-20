@@ -16,8 +16,8 @@
 //! （保存値には書き戻さない）。
 //!
 //! # ファイル I/O の境界
-//! 低レベル I/O（`.spec-board/` の作成、`config.json` の raw 読み込み）は
-//! サブクレート `spec-board-fs::config_io` に集約する。本モジュールは
+//! 低レベル I/O（`.spec-board/` の作成、`config.json` の raw 読み込み / 書き出し）は
+//! サブクレート `spec_board_fs::config::config_io` に集約する。本モジュールは
 //! その raw 文字列を以下の経路で解釈し、薄い責務に留める:
 //!
 //! - 軽量スキーマ [`VersionOnly`] を `serde_json::from_str` で適用して `version` を
@@ -40,11 +40,13 @@
 //! `.spec-board/GUIDE.md` への best-effort 書き込み helper を提供する。
 //! 更新タイミング制御と Tauri コマンド公開は command 層の責務。
 //!
+//! # スコープ
+//! - `update_card_order` Tauri command（`cardOrder` の上書き保存）
+//!
 //! # スコープ外（別 Issue で実装）
-//! - `config.json` の書き出し（atomic write / `.bak` 退避の永続化 / 並行書き込み制御）
+//! - `.bak` 退避の永続化 / 並行書き込みの厳密な整合性制御
 //! - `doneColumn` の整合性検証 / カラム名空間の正規化
 //! - 実フィールド変換を伴う実マイグレーション（本モジュールはフックのみ提供）
-//! - Tauri コマンド層
 //!
 //! 既存タスクの `(path, status)` 列から `Config` を組み立てる純粋関数
 //! [`build_config_from_statuses`] は本モジュールに同居する。
@@ -52,6 +54,7 @@
 
 pub mod column_name;
 pub mod get_columns;
+pub mod update_card_order;
 
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -158,6 +161,14 @@ impl Config {
             return Some(name);
         }
         self.columns.iter().max_by_key(|c| c.order).map(|c| &c.name)
+    }
+
+    /// 指定された名前のカラムが [`Self::columns`] に存在するかを返す。
+    ///
+    /// 比較は完全一致（case-sensitive）。`cardOrder` の更新前に
+    /// 「未知のカラムに対する書き込み」を弾くプリチェックとして利用する。
+    pub fn has_column(&self, name: &str) -> bool {
+        self.columns.iter().any(|c| c.name.as_str() == name)
     }
 
     /// この設定から GUIDE.md の Markdown 本文を生成する。

@@ -115,6 +115,70 @@ impl AppState {
         Ok(())
     }
 
+    /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** snapshot する。
+    ///
+    /// 一方の lock だけを取得して順に読むと、両フィールドを別々に更新する writer と
+    /// 割り込み合った際に「新 project_path + 旧 config」または「旧 project_path + 新 config」
+    /// の組を観測してしまう。本 API は両 lock を順に同時保持して両フィールドを clone する
+    /// ことで、その不整合観測を防ぐ atomic 読み取り API として機能する。lock 取得順序は
+    /// AppState の契約に従って `project_path → config` を遵守する。
+    ///
+    /// 同時更新側は [`Self::replace_project_and_config`] / [`Self::replace_config_if_project_matches`]
+    /// で同様に両 lock を同時保持して書き換えることで、reader 側の観測整合性を確保する。
+    ///
+    /// 戻り値はそれぞれ clone 済み snapshot のため、呼び出し側が長く保持しても
+    /// AppState 側の lock は保持されない。
+    pub fn snapshot_project_and_config(
+        &self,
+    ) -> Result<(Option<PathBuf>, Option<crate::config::Config>), AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let config_guard = lock(&self.config)?;
+        Ok((path_guard.clone(), config_guard.clone()))
+    }
+
+    /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** swap する。
+    ///
+    /// 両フィールドを別 lock で順次更新すると、その間に reader（例:
+    /// `update_card_order`）が「新 path + 旧 config」を観測し、旧 config を新
+    /// プロジェクトの `config.json` に書き出してしまう cross-project corruption が
+    /// 起き得る。本 API は両 lock を保持したまま swap することでその不整合を防ぐ。
+    /// lock 取得順序は AppState の契約に従って `project_path → config` を遵守する。
+    pub fn replace_project_and_config(
+        &self,
+        path: Option<PathBuf>,
+        config: Option<crate::config::Config>,
+    ) -> Result<(), AppStateError> {
+        let mut path_guard = lock(&self.project_path)?;
+        let mut config_guard = lock(&self.config)?;
+        *path_guard = path;
+        *config_guard = config;
+        Ok(())
+    }
+
+    /// 現在の `project_path` が `expected_path` と一致する場合のみ `config` を更新する。
+    ///
+    /// `snapshot_project_and_config` で読んだ snapshot を mutate して書き戻す flow で、
+    /// snapshot 取得から書き戻しまでの間に `open_project` が project を swap した
+    /// ケースを検出するための atomic check-and-set。lock 取得順序は
+    /// `project_path → config` を遵守する。
+    ///
+    /// - `expected_path` が一致 → `config` を更新して `Ok(true)`
+    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
+    pub fn replace_config_if_project_matches(
+        &self,
+        expected_path: &std::path::Path,
+        config: crate::config::Config,
+    ) -> Result<bool, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let mut config_guard = lock(&self.config)?;
+        if path_guard.as_deref() == Some(expected_path) {
+            *config_guard = Some(config);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// タスクキャッシュ全体を新しい map で置き換える。
     ///
     /// 旧エントリは破棄されるため部分更新には使えない。`PathBuf` は呼び出し側
