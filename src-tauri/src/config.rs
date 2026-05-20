@@ -17,7 +17,7 @@
 //!
 //! # ファイル I/O の境界
 //! 低レベル I/O（`.spec-board/` の作成、`config.json` の raw 読み込み / 書き出し）は
-//! サブクレート `spec-board-fs::config_io` に集約する。本モジュールは
+//! サブクレート `spec_board_fs::config::config_io` に集約する。本モジュールは
 //! その raw 文字列を以下の経路で解釈し、薄い責務に留める:
 //!
 //! - 軽量スキーマ [`VersionOnly`] を `serde_json::from_str` で適用して `version` を
