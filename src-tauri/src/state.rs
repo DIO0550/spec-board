@@ -152,6 +152,30 @@ impl AppState {
         Ok(())
     }
 
+    /// 現在の `project_path` が `expected_path` と一致する場合のみ `config` を更新する。
+    ///
+    /// `snapshot_project_and_config` で読んだ snapshot を mutate して書き戻す flow で、
+    /// snapshot 取得から書き戻しまでの間に `open_project` が project を swap した
+    /// ケースを検出するための atomic check-and-set。lock 取得順序は
+    /// `project_path → config` を遵守する。
+    ///
+    /// - `expected_path` が一致 → `config` を更新して `Ok(true)`
+    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
+    pub fn replace_config_if_project_matches(
+        &self,
+        expected_path: &std::path::Path,
+        config: crate::config::Config,
+    ) -> Result<bool, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let mut config_guard = lock(&self.config)?;
+        if path_guard.as_deref() == Some(expected_path) {
+            *config_guard = Some(config);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// タスクキャッシュ全体を新しい map で置き換える。
     ///
     /// 旧エントリは破棄されるため部分更新には使えない。`PathBuf` は呼び出し側

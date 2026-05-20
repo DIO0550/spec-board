@@ -12,9 +12,11 @@
 //! `AppState` の lock 契約 `project_path → config → tasks_cache →
 //! watcher_handle → write_ignore` の前半 2 項目のみを順に使用する。
 //! 読み取り側は `snapshot_project_and_config` で `project_path` と `config`
-//! を同時保持して snapshot し、書き戻し時のみ `config` lock を単独で
-//! 短時間取得する。これにより `open_project` の commit が両者を更新する
-//! 途中で割り込んで「新 path + 旧 config」を観測する race を防ぐ。
+//! を同時保持して snapshot し、書き戻し時も `replace_config_if_project_matches`
+//! で両 lock を同時保持して `project_path` の一致確認 + `config` 更新を行う。
+//! これにより `open_project` の commit が両者を atomic に swap する間に
+//! 「新 path + 旧 config」を観測する race と、snapshot 取得後の swap で
+//! 旧 config を新プロジェクトの in-memory state に注入する race の双方を防ぐ。
 //!
 //! # エラー文字列の契約
 //!
@@ -90,10 +92,12 @@ pub fn update_card_order(
 /// 3. snapshot の `card_order[column_name]` を `file_paths` で上書き
 /// 4. `serde_json::to_string_pretty` でシリアライズ
 /// 5. `write_config_json` で disk に書き込み
-/// 6. 成功したら `replace_config` で in-memory を更新
+/// 6. `replace_config_if_project_matches` で `project_path` が snapshot 時と
+///    一致する場合のみ in-memory `config` を更新（不一致時は cross-project
+///    corruption を避けるため no-op）
 ///
-/// disk write 失敗時は `replace_config` を呼ばないため、in-memory の `Config` は
-/// 呼び出し前の値のまま保たれる。
+/// disk write 失敗時は `replace_config_if_project_matches` を呼ばないため、
+/// in-memory の `Config` は呼び出し前の値のまま保たれる。
 pub(crate) fn update_card_order_impl(
     state: &AppState,
     column_name: String,
@@ -115,7 +119,13 @@ pub(crate) fn update_card_order_impl(
     let json = serde_json::to_string_pretty(&config)?;
     write_config_json(&project_root, &json)?;
 
-    state.replace_config(Some(config))?;
+    // snapshot 取得後に並行 `open_project` で project が swap されると、
+    // ここで旧プロジェクト由来の config を新プロジェクトの in-memory state に
+    // 注入してしまう。`project_path` が snapshot 時と一致する場合のみ更新する
+    // atomic check-and-set で cross-project corruption を防ぐ。
+    // 不一致時の disk write 自体は旧 project の `.spec-board/config.json` に
+    // 対する操作のため、旧 project 視点では整合的であり no-op で問題ない。
+    state.replace_config_if_project_matches(&project_root, config)?;
 
     Ok(())
 }
