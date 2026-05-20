@@ -289,7 +289,7 @@ fn column_rename_deserializes_camel_case() {
 }
 
 #[test]
-fn column_in_args_serializes_with_camel_case_name() {
+fn column_in_args_deserializes_from_camel_case_name() {
     let json = r#"{ "columns": [{ "name": "In Progress", "order": 1 }] }"#;
     let args: UpdateColumnsArgs = serde_json::from_str(json).expect("should deserialize");
     let columns = args.columns.expect("columns");
