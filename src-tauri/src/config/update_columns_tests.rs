@@ -488,7 +488,11 @@ fn plan_card_order_collapse_merges_paths_first_occurrence_wins() {
     // 1 つだけ残る。順序は BTreeMap の iteration 順（A, B）に従う。
     assert_eq!(
         merged,
-        &vec!["a.md".to_string(), "shared.md".to_string(), "b.md".to_string()]
+        &vec![
+            "a.md".to_string(),
+            "shared.md".to_string(),
+            "b.md".to_string()
+        ]
     );
 }
 
