@@ -1081,6 +1081,46 @@ fn validate_unique_column_names_treats_whitespace_variants_as_distinct() {
     }
 }
 
+// ───────── has_column ─────────
+
+#[test]
+fn has_column_returns_true_when_column_exists() {
+    let config = Config {
+        version: 1,
+        columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+        card_order: BTreeMap::new(),
+        done_column: None,
+    };
+    assert!(config.has_column("Todo"));
+    assert!(config.has_column("In Progress"));
+    assert!(config.has_column("Done"));
+}
+
+#[test]
+fn has_column_returns_false_when_column_missing() {
+    let config = Config {
+        version: 1,
+        columns: vec![col("Todo", 0), col("Done", 1)],
+        card_order: BTreeMap::new(),
+        done_column: None,
+    };
+    assert!(!config.has_column("Doing"));
+    assert!(!config.has_column(""));
+}
+
+#[test]
+fn has_column_returns_false_when_case_differs() {
+    let config = Config {
+        version: 1,
+        columns: vec![col("Todo", 0)],
+        card_order: BTreeMap::new(),
+        done_column: None,
+    };
+    assert!(!config.has_column("todo"));
+    assert!(!config.has_column("TODO"));
+    assert!(config.has_column("Todo"));
+}
+
 // ───────── load_or_default (version migration) ─────────
 
 fn write_config(tmp: &TempDir, content: &str) -> PathBuf {

@@ -12,12 +12,14 @@
 //! - [`ensure_spec_board_dir`]: `<project_root>/.spec-board/` を冪等に作成
 //! - [`read_config_json`]: `<project_root>/.spec-board/config.json` の中身を文字列で返す
 //!   （ファイル不在は `Ok(None)`）
+//! - [`write_config_json`]: `<project_root>/.spec-board/config.json` へ文字列を書き込む
+//!   （tmp → rename ベース、symlink 拒否）
 //! - [`guide_markdown_path`]: `<project_root>/.spec-board/GUIDE.md` のパスを返す
 //! - [`write_guide_markdown`]: `<project_root>/.spec-board/GUIDE.md` へ文字列を書き込む
 //!
 //! # スコープ外
 //!
-//! - `config.json` の書き出し（atomic write / `.bak` 退避）は別モジュール / 別 Issue
+//! - `.bak` への退避 / version migration（本体クレート側で実施）
 //! - JSON のパース / シリアライズは本体クレート側
 
 use std::io::Write as _;
@@ -31,6 +33,7 @@ const SPEC_BOARD_DIR: &str = ".spec-board";
 const CONFIG_FILE_NAME: &str = "config.json";
 const GUIDE_MARKDOWN_FILE_NAME: &str = "GUIDE.md";
 static GUIDE_MARKDOWN_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+static CONFIG_JSON_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// `config_io` モジュールのファイル I/O で発生し得るエラー。
 ///
@@ -221,6 +224,40 @@ pub fn write_guide_markdown(project_root: &Path, content: &str) -> Result<PathBu
     write_file_via_tmp(&guide_path, content, &tmp_path)?;
 
     Ok(guide_path)
+}
+
+/// `<project_root>/.spec-board/config.json` へ JSON 文字列を書き込む。
+///
+/// 書き込み前に [`ensure_spec_board_dir`] を呼び、`.spec-board/` が無い場合は作成する。
+/// 既存 `config.json` は fresh tmp file へ書いてから `rename` で置き換える。
+/// `.spec-board/` または `config.json` が symlink の場合は、project root 外のファイルを
+/// 上書きしないよう拒否する。
+///
+/// # Errors
+///
+/// - `project_root` が存在しない / ディレクトリでない / アクセスできない
+/// - `<project_root>/.spec-board` がファイルまたは symlink として存在する
+/// - `<project_root>/.spec-board/config.json` が symlink として存在する
+/// - 権限不足等で `.spec-board/` 作成または `config.json` 書き込みが失敗する
+pub fn write_config_json(project_root: &Path, content: &str) -> Result<PathBuf, ConfigIoError> {
+    let spec_board_dir = ensure_spec_board_dir(project_root)?;
+    reject_existing_symlink(&spec_board_dir)?;
+    let target = config_path(project_root);
+    reject_existing_symlink(&target)?;
+
+    let tmp_path = unique_config_json_tmp_path(&spec_board_dir);
+    write_file_via_tmp(&target, content, &tmp_path)?;
+
+    Ok(target)
+}
+
+fn unique_config_json_tmp_path(spec_board_dir: &Path) -> PathBuf {
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let counter = CONFIG_JSON_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    spec_board_dir.join(format!("{CONFIG_FILE_NAME}.tmp.{pid}.{nanos}.{counter}"))
 }
 
 fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
