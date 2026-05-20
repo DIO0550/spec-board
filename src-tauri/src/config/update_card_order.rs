@@ -2,9 +2,10 @@
 //!
 //! フロントエンドの DnD 並び替え結果を `.spec-board/config.json` の
 //! `cardOrder[columnName]` に**上書き保存**する書き込み専用 command。
-//! `state.config()` から snapshot を clone → 上書き → disk write →
-//! `replace_config` の順で進める。disk write が失敗した場合は
-//! `replace_config` を呼ばないため in-memory の `Config` は変更されない。
+//! `AppState::snapshot_project_and_config` で `project_path` と `config` を
+//! atomic に snapshot → snapshot 上で上書き → disk write → `replace_config`
+//! の順で進める。disk write が失敗した場合は `replace_config` を呼ばない
+//! ため in-memory の `Config` は変更されない。
 //!
 //! # ロック取得順序
 //!
