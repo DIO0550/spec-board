@@ -11,8 +11,6 @@ use crate::config::column_name::ColumnName;
 use crate::config::Column;
 use crate::config::Config;
 use crate::config::FsConfigWriter;
-use crate::config::RenameTarget;
-use crate::config::UpdateColumnsPlan;
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
@@ -731,17 +729,6 @@ fn plan_rename_targets_includes_old_and_new_status() {
     let plan = config.plan_update_columns(&args, &tasks).expect("ok");
     assert_eq!(plan.rename_targets[0].old_status, "A");
     assert_eq!(plan.rename_targets[0].new_status, "Alpha");
-}
-
-// Reference unused imports to silence dead-code (will be exercised by Tasks 6-7).
-#[allow(dead_code)]
-fn _silence_unused() {
-    let _ = std::marker::PhantomData::<FrontmatterError>;
-    let _ = UpdateColumnsPlan {
-        new_config: Config::default(),
-        rename_targets: Vec::<RenameTarget>::new(),
-        is_noop: true,
-    };
 }
 
 // ───── rewrite_status_in_md tests ─────
