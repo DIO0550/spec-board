@@ -261,6 +261,7 @@ links:（任意）
 |:-------|:-----|:---------------|
 | プロジェクト未オープン | `AppState` に project_path / config が無い | プロジェクトが開かれていません |
 | 内部 lock 破損 | `AppState` または `WriteIgnoreRegistry` の Mutex が poison | 内部状態のロックが破損しました |
+| watcher 補助スレッド起動失敗 | `WriteIgnoreRegistry` の cleanup worker 起動失敗 | watcher の補助スレッド起動に失敗しました |
 | カラム全削除 | `columns: []`（空配列）が指定された | カラムを 0 件にすることはできません |
 | カラム名重複 | 同名のカラムが存在する | カラム名が重複しています: {name} |
 | 不在 rename from | `rename.from` が現在の columns に無い | 存在しないカラム名のリネームが指定されました: {name} |
