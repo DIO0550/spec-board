@@ -3,9 +3,14 @@
 //! フロントエンドの DnD 並び替え結果を `.spec-board/config.json` の
 //! `cardOrder[columnName]` に**上書き保存**する書き込み専用 command。
 //! `AppState::snapshot_project_and_config` で `project_path` と `config` を
-//! atomic に snapshot → snapshot 上で上書き → disk write → `replace_config`
-//! の順で進める。disk write が失敗した場合は `replace_config` を呼ばない
-//! ため in-memory の `Config` は変更されない。
+//! atomic に snapshot → snapshot 上で上書き → disk write →
+//! `replace_config_if_project_matches` で `project_path` が snapshot 時と一致
+//! する場合のみ in-memory `config` を更新、の順で進める。disk write が失敗した
+//! 場合は `replace_config_if_project_matches` を呼ばないため in-memory の
+//! `Config` は変更されない。並行 `open_project` で project が swap された
+//! 場合も `project_path` 不一致により in-memory 更新は no-op になり、
+//! cross-project corruption は発生しない（旧 project への disk write は
+//! 旧 project 視点では整合的）。
 //!
 //! # ロック取得順序
 //!
