@@ -452,8 +452,11 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
         cache.insert(PathBuf::from(task.file_path.as_str()), task.clone());
     }
 
-    state.set_project_path(Some(root.to_path_buf()))?;
-    state.replace_config(Some(config.clone()))?;
+    // `project_path` と `config` を atomic に swap する。別 lock で順次更新すると、
+    // 他 command（例: `update_card_order`）が「新 path + 旧 config」を観測して
+    // 旧 config を新プロジェクトの `.spec-board/config.json` に書き出してしまう
+    // cross-project corruption を起こしうる。
+    state.replace_project_and_config(Some(root.to_path_buf()), Some(config.clone()))?;
     state.replace_tasks_cache(cache)?;
     state.write_ignore().clear()?;
 

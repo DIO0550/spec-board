@@ -115,6 +115,43 @@ impl AppState {
         Ok(())
     }
 
+    /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** snapshot する。
+    ///
+    /// `open_project` の commit が `project_path → config` の順で両者を更新する間に
+    /// 他の writer / reader が割り込み、「新 project_path + 旧 config」または
+    /// 「旧 project_path + 新 config」の組を観測してしまう race を防ぐための
+    /// atomic 読み取り API。lock 取得順序は AppState の契約に従って
+    /// `project_path → config` を遵守する。
+    ///
+    /// 戻り値はそれぞれ clone 済み snapshot のため、呼び出し側が長く保持しても
+    /// AppState 側の lock は保持されない。
+    pub fn snapshot_project_and_config(
+        &self,
+    ) -> Result<(Option<PathBuf>, Option<crate::config::Config>), AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let config_guard = lock(&self.config)?;
+        Ok((path_guard.clone(), config_guard.clone()))
+    }
+
+    /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** swap する。
+    ///
+    /// `open_project` の commit が両者を別々に書き換えると、その間に
+    /// `snapshot_project_and_config` 等が「新 path + 旧 config」を観測しうる。
+    /// 本 API は両 lock を保持したまま swap することで cross-project corruption
+    /// （新プロジェクトの `config.json` を旧 config で上書きするなど）を防ぐ。
+    /// lock 取得順序は AppState の契約に従って `project_path → config` を遵守する。
+    pub fn replace_project_and_config(
+        &self,
+        path: Option<PathBuf>,
+        config: Option<crate::config::Config>,
+    ) -> Result<(), AppStateError> {
+        let mut path_guard = lock(&self.project_path)?;
+        let mut config_guard = lock(&self.config)?;
+        *path_guard = path;
+        *config_guard = config;
+        Ok(())
+    }
+
     /// タスクキャッシュ全体を新しい map で置き換える。
     ///
     /// 旧エントリは破棄されるため部分更新には使えない。`PathBuf` は呼び出し側

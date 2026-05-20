@@ -10,7 +10,10 @@
 //!
 //! `AppState` の lock 契約 `project_path → config → tasks_cache →
 //! watcher_handle → write_ignore` の前半 2 項目のみを順に使用する。
-//! 各 lock は clone / replace の最小区間でしか保持しない（同時保持なし）。
+//! 読み取り側は `snapshot_project_and_config` で `project_path` と `config`
+//! を同時保持して snapshot し、書き戻し時のみ `config` lock を単独で
+//! 短時間取得する。これにより `open_project` の commit が両者を更新する
+//! 途中で割り込んで「新 path + 旧 config」を観測する race を防ぐ。
 //!
 //! # エラー文字列の契約
 //!
@@ -96,14 +99,12 @@ pub(crate) fn update_card_order_impl(
     column_name: String,
     file_paths: Vec<String>,
 ) -> Result<(), UpdateCardOrderError> {
-    state.check_project_path_lock()?;
-    state.check_config_lock()?;
-
-    let project_root = state
-        .project_path()?
-        .ok_or(UpdateCardOrderError::NoProjectOpen)?;
-
-    let mut config = state.config()?.ok_or(UpdateCardOrderError::NoProjectOpen)?;
+    // `project_path` と `config` を atomic に snapshot して、`open_project` の
+    // 両者更新の間に割り込んで「新 path + 旧 config」を観測する race を防ぐ
+    // （単独の `project_path()? → config()?` 連続呼びでは race window が生じる）。
+    let (project_root, config) = state.snapshot_project_and_config()?;
+    let project_root = project_root.ok_or(UpdateCardOrderError::NoProjectOpen)?;
+    let mut config = config.ok_or(UpdateCardOrderError::NoProjectOpen)?;
 
     if !config.has_column(&column_name) {
         return Err(UpdateCardOrderError::UnknownColumn { column_name });
