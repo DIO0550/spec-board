@@ -1173,11 +1173,23 @@ fn fault_read_original_fails_does_not_modify_anything() {
     )
     .unwrap_err();
 
-    assert!(matches!(err, UpdateColumnsError::RenameWriteFailed { .. }));
+    assert!(matches!(err, UpdateColumnsError::RenameReadFailed { .. }));
     let after_cfg = fs::read_to_string(dir.path().join(".spec-board/config.json")).unwrap();
     let after_md = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(before_cfg, after_cfg);
     assert_eq!(before_md, after_md);
+}
+
+#[test]
+fn rename_read_failed_display() {
+    let err = UpdateColumnsError::RenameReadFailed {
+        path: PathBuf::from("tasks/x.md"),
+        source: TaskIoError::from(std::io::Error::other("boom")),
+    };
+    assert_eq!(
+        err.to_string(),
+        "カラム名の変更対象 md の読み込みに失敗しました: tasks/x.md"
+    );
 }
 
 #[test]

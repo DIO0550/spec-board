@@ -89,6 +89,13 @@ pub enum UpdateColumnsError {
     #[error("カラム名の変更対象 md にフロントマターがありません: {path}", path = path.display())]
     RenameMissingFrontmatter { path: PathBuf },
 
+    #[error("カラム名の変更対象 md の読み込みに失敗しました: {path}", path = path.display())]
+    RenameReadFailed {
+        path: PathBuf,
+        #[source]
+        source: TaskIoError,
+    },
+
     #[error("カラム名の変更中にエラーが発生しました。変更を元に戻しました")]
     RenameWriteFailed {
         path: PathBuf,
@@ -178,12 +185,14 @@ pub(crate) fn update_columns_impl(
     let abs_for = |target: &RenameTarget| project_root.join(target.rel_path.as_str());
 
     // (4) 原本 bytes を読み込んで HashMap に保持（key = abs_path）
+    //     ここで失敗してもまだ書き換えていないため `RenameReadFailed` を使う
+    //     （「変更を元に戻しました」を含む `RenameWriteFailed` は誤解を招く）。
     let mut originals: HashMap<PathBuf, Vec<u8>> = HashMap::new();
     for target in &plan.rename_targets {
         let abs = abs_for(target);
         let bytes = io
             .read(&abs)
-            .map_err(|source| UpdateColumnsError::RenameWriteFailed {
+            .map_err(|source| UpdateColumnsError::RenameReadFailed {
                 path: abs.clone(),
                 source,
             })?;
