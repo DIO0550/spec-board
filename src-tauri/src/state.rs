@@ -117,11 +117,14 @@ impl AppState {
 
     /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** snapshot する。
     ///
-    /// `open_project` の commit が `project_path → config` の順で両者を更新する間に
-    /// 他の writer / reader が割り込み、「新 project_path + 旧 config」または
-    /// 「旧 project_path + 新 config」の組を観測してしまう race を防ぐための
-    /// atomic 読み取り API。lock 取得順序は AppState の契約に従って
-    /// `project_path → config` を遵守する。
+    /// 一方の lock だけを取得して順に読むと、両フィールドを別々に更新する writer と
+    /// 割り込み合った際に「新 project_path + 旧 config」または「旧 project_path + 新 config」
+    /// の組を観測してしまう。本 API は両 lock を順に同時保持して両フィールドを clone する
+    /// ことで、その不整合観測を防ぐ atomic 読み取り API として機能する。lock 取得順序は
+    /// AppState の契約に従って `project_path → config` を遵守する。
+    ///
+    /// 同時更新側は [`Self::replace_project_and_config`] / [`Self::replace_config_if_project_matches`]
+    /// で同様に両 lock を同時保持して書き換えることで、reader 側の観測整合性を確保する。
     ///
     /// 戻り値はそれぞれ clone 済み snapshot のため、呼び出し側が長く保持しても
     /// AppState 側の lock は保持されない。
@@ -135,10 +138,10 @@ impl AppState {
 
     /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** swap する。
     ///
-    /// `open_project` の commit が両者を別々に書き換えると、その間に
-    /// `snapshot_project_and_config` 等が「新 path + 旧 config」を観測しうる。
-    /// 本 API は両 lock を保持したまま swap することで cross-project corruption
-    /// （新プロジェクトの `config.json` を旧 config で上書きするなど）を防ぐ。
+    /// 両フィールドを別 lock で順次更新すると、その間に reader（例:
+    /// `update_card_order`）が「新 path + 旧 config」を観測し、旧 config を新
+    /// プロジェクトの `config.json` に書き出してしまう cross-project corruption が
+    /// 起き得る。本 API は両 lock を保持したまま swap することでその不整合を防ぐ。
     /// lock 取得順序は AppState の契約に従って `project_path → config` を遵守する。
     pub fn replace_project_and_config(
         &self,
