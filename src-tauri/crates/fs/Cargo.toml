@@ -12,3 +12,8 @@ notify = "8"
 
 [dev-dependencies]
 tempfile = "3"
+
+[features]
+# テスト専用 API（mutex poison ヘルパ等）。本番 build では無効。
+# spec-board 側の `[dev-dependencies]` で `features = ["test-utils"]` を有効化する。
+test-utils = []
