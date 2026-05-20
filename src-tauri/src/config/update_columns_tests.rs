@@ -301,6 +301,21 @@ fn plan_args_all_none_returns_noop_plan() {
 }
 
 #[test]
+fn plan_empty_renames_array_is_treated_as_noop() {
+    let config = config_with(vec![col("Todo", 0), col("Done", 1)], Some("Done"));
+    let args = UpdateColumnsArgs {
+        renames: Some(Vec::new()),
+        ..Default::default()
+    };
+    let plan = config.plan_update_columns(&args, &[]).expect("ok");
+    assert!(
+        plan.is_noop,
+        "空配列の renames は未指定と同義として no-op 扱いにすべき"
+    );
+    assert_eq!(plan.new_config, config);
+}
+
+#[test]
 fn plan_columns_only_reorder_returns_new_config_with_same_names() {
     let config = config_with(
         vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
