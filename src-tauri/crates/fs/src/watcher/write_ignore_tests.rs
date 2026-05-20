@@ -283,6 +283,79 @@ fn clear_returns_error_when_lock_is_poisoned() {
 }
 
 #[test]
+fn register_bulk_inserts_all_paths_in_one_lock() {
+    let registry = WriteIgnoreRegistry::new();
+    let paths = vec![
+        PathBuf::from("tasks/a.md"),
+        PathBuf::from("tasks/b.md"),
+        PathBuf::from("tasks/c.md"),
+    ];
+
+    registry
+        .register_bulk(&paths)
+        .expect("register_bulk should succeed");
+
+    assert_eq!(3, registry.len().expect("registry should be readable"));
+    for path in &paths {
+        assert!(registry
+            .should_ignore(path)
+            .expect("registry should be readable"));
+    }
+}
+
+#[test]
+fn register_bulk_with_duplicates_within_input_is_idempotent() {
+    let registry = WriteIgnoreRegistry::new();
+    let paths = vec![
+        PathBuf::from("tasks/a.md"),
+        PathBuf::from("tasks/a.md"),
+        PathBuf::from("tasks/b.md"),
+    ];
+
+    registry
+        .register_bulk(&paths)
+        .expect("register_bulk should succeed");
+
+    assert_eq!(2, registry.len().expect("registry should be readable"));
+}
+
+#[test]
+fn register_bulk_empty_slice_returns_ok() {
+    let registry = WriteIgnoreRegistry::new();
+
+    registry
+        .register_bulk(&[])
+        .expect("register_bulk on empty input should be Ok");
+
+    assert!(registry.is_empty().expect("registry should be readable"));
+}
+
+#[test]
+fn register_bulk_returns_lock_poisoned_when_mutex_poisoned() {
+    let registry = Arc::new(WriteIgnoreRegistry::new());
+    let poisoned_registry = Arc::clone(&registry);
+
+    let handle = thread::spawn(move || {
+        let _guard = poisoned_registry
+            .ignored_paths
+            .lock()
+            .expect("registry should be lockable before poison");
+
+        panic!("poison write_ignore registry lock");
+    });
+
+    assert!(handle.join().is_err());
+
+    let paths = vec![PathBuf::from("tasks/a.md")];
+    assert_eq!(
+        WriteIgnoreError::LockPoisoned,
+        registry
+            .register_bulk(&paths)
+            .expect_err("poisoned lock should be reported")
+    );
+}
+
+#[test]
 fn returns_error_when_lock_is_poisoned() {
     let registry = Arc::new(WriteIgnoreRegistry::new());
     let poisoned_registry = Arc::clone(&registry);

@@ -1374,7 +1374,7 @@ fn load_or_default_returns_backup_failed_when_bak_path_is_directory() {
 
 #[cfg(unix)]
 #[test]
-fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_symlink() {
+fn write_atomic_to_path_does_not_truncate_external_file_via_pre_created_tmp_symlink() {
     let dir = TempDir::new().unwrap();
     let dst = dir.path().join("config.json.bak");
     let tmp = dir.path().join("config.json.bak.tmp");
@@ -1384,7 +1384,7 @@ fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_syml
     std::fs::write(&target, "untouched").unwrap();
     std::os::unix::fs::symlink(&target, &tmp).unwrap();
 
-    write_backup_to_path(&dst, "fresh content", &tmp).unwrap();
+    write_atomic_to_path(&dst, "fresh content", &tmp).unwrap();
 
     let target_content = std::fs::read_to_string(&target).unwrap();
     assert_eq!(
@@ -1491,7 +1491,7 @@ fn load_or_default_does_not_cleanup_when_spec_board_is_symlink() {
 }
 
 #[test]
-fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_hard_link() {
+fn write_atomic_to_path_does_not_truncate_external_file_via_pre_created_tmp_hard_link() {
     let dir = TempDir::new().unwrap();
     let dst = dir.path().join("config.json.bak");
     let tmp = dir.path().join("config.json.bak.tmp");
@@ -1501,7 +1501,7 @@ fn write_backup_to_path_does_not_truncate_external_file_via_pre_created_tmp_hard
     std::fs::write(&target, "untouched").unwrap();
     std::fs::hard_link(&target, &tmp).unwrap();
 
-    write_backup_to_path(&dst, "fresh content", &tmp).unwrap();
+    write_atomic_to_path(&dst, "fresh content", &tmp).unwrap();
 
     let target_content = std::fs::read_to_string(&target).unwrap();
     assert_eq!(

@@ -52,13 +52,17 @@
 
 pub mod column_name;
 pub mod get_columns;
+pub mod update_columns;
 
 use log::warn;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::config::column_name::ColumnName;
+use crate::config::update_columns::{ColumnRename, UpdateColumnsArgs, UpdateColumnsError};
+use crate::task::task_file_path::TaskFilePath;
+use crate::task::task_index::Task;
 use spec_board_fs::config::config_io::{self, write_guide_markdown, ConfigIoError};
 use thiserror::Error;
 
@@ -168,6 +172,190 @@ impl Config {
     pub fn guide_markdown(&self) -> String {
         generate_guide_markdown(self)
     }
+
+    /// `update_columns` の純粋計算部。引数と現在のタスクスナップショットから
+    /// 新しい `Config`・rename 対象タスク・no-op フラグを組み立てる。
+    ///
+    /// 検証順序は renames → columns → doneColumn。`args.columns` 指定時は
+    /// FE 提供の最終形をそのまま採用し、aggregate 側で order の再採番は行わない。
+    ///
+    /// # Errors
+    ///
+    /// - `EmptyColumns` — 最終 columns 候補が空
+    /// - `DuplicateColumnName` — rename 適用後の名前空間で重複
+    /// - `UnknownRenameFrom` — `rename.from` が現在の columns に存在しない
+    /// - `DuplicateRenameFrom` — 同じ `from` を複数 rename で指定
+    /// - `EmptyRenameTo` — `rename.to` が空
+    /// - `UnknownDoneColumn` — `doneColumn` が新 columns に存在しない
+    /// - `RenameToMissingFromColumns` — `args.columns` と renames を同時指定した
+    ///   際に `rename.to` が新 columns に含まれていない
+    pub fn plan_update_columns(
+        &self,
+        args: &UpdateColumnsArgs,
+        tasks: &[Task],
+    ) -> Result<UpdateColumnsPlan, UpdateColumnsError> {
+        if args.columns.is_none() && args.done_column.is_none() && args.renames.is_none() {
+            return Ok(UpdateColumnsPlan {
+                new_config: self.clone(),
+                rename_targets: Vec::new(),
+                is_noop: true,
+            });
+        }
+
+        let rename_map = build_rename_map(self, args.renames.as_deref().unwrap_or(&[]))?;
+
+        let candidate_columns = match args.columns.as_ref() {
+            Some(cols) => cols.clone(),
+            None => apply_renames_to_columns(&self.columns, &rename_map),
+        };
+
+        if candidate_columns.is_empty() {
+            return Err(UpdateColumnsError::EmptyColumns);
+        }
+
+        validate_unique_column_names(&candidate_columns)
+            .map_err(|name| UpdateColumnsError::DuplicateColumnName { name })?;
+
+        if args.columns.is_some() && !rename_map.is_empty() {
+            for to in rename_map.values() {
+                if !candidate_columns
+                    .iter()
+                    .any(|c| c.name.as_str() == to.as_str())
+                {
+                    return Err(UpdateColumnsError::RenameToMissingFromColumns {
+                        name: to.clone(),
+                    });
+                }
+            }
+        }
+
+        let new_done: Option<ColumnName> = match args.done_column.as_deref() {
+            Some(name) => Some(ColumnName::from_lenient(name)),
+            None => self
+                .done_column
+                .as_ref()
+                .map(|c| match rename_map.get(c.as_str()) {
+                    Some(new_name) => ColumnName::from_lenient(new_name),
+                    None => c.clone(),
+                }),
+        };
+
+        if let Some(d) = &new_done {
+            if !candidate_columns
+                .iter()
+                .any(|c| c.name.as_str() == d.as_str())
+            {
+                return Err(UpdateColumnsError::UnknownDoneColumn {
+                    name: d.as_str().to_string(),
+                });
+            }
+        }
+
+        let valid_names: HashSet<&str> =
+            candidate_columns.iter().map(|c| c.name.as_str()).collect();
+        let mut new_card_order: CardOrder = BTreeMap::new();
+        for (key, paths) in &self.card_order {
+            let new_key = rename_map
+                .get(key.as_str())
+                .cloned()
+                .unwrap_or_else(|| key.clone());
+            if !valid_names.contains(new_key.as_str()) {
+                continue;
+            }
+            new_card_order.insert(new_key, paths.clone());
+        }
+
+        let mut rename_targets: Vec<RenameTarget> = Vec::new();
+        for task in tasks {
+            let status_str = task.status.as_str();
+            if let Some(new_status) = rename_map.get(status_str) {
+                rename_targets.push(RenameTarget {
+                    rel_path: task.file_path.clone(),
+                    old_status: status_str.to_string(),
+                    new_status: new_status.clone(),
+                });
+            }
+        }
+
+        Ok(UpdateColumnsPlan {
+            new_config: Config {
+                version: self.version,
+                columns: candidate_columns,
+                card_order: new_card_order,
+                done_column: new_done,
+            },
+            rename_targets,
+            is_noop: false,
+        })
+    }
+}
+
+/// `Config::plan_update_columns` の戻り値。
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateColumnsPlan {
+    /// 書き出し対象の新しい Config（columns / done_column / card_order すべて反映済み）
+    pub new_config: Config,
+    /// rename 対象タスクと書き換え後の status 文字列
+    pub rename_targets: Vec<RenameTarget>,
+    /// 何も変更しない no-op フラグ（args 全 None 時 true）
+    pub is_noop: bool,
+}
+
+/// rename 対象 1 件分。`rel_path` はプロジェクトルートからの相対パス。
+/// effect 層が `project_root.join(rel_path.as_str())` で絶対パスを組み立てる。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenameTarget {
+    pub rel_path: TaskFilePath,
+    pub old_status: String,
+    pub new_status: String,
+}
+
+/// rename 指示列を `HashMap<from, to>` に正規化する。
+///
+/// `from == to` は冪等 skip、`to` 空は `EmptyRenameTo`、重複 `from` は
+/// `DuplicateRenameFrom`、存在しない `from` は `UnknownRenameFrom` を返す。
+fn build_rename_map(
+    config: &Config,
+    renames: &[ColumnRename],
+) -> Result<HashMap<String, String>, UpdateColumnsError> {
+    let mut map: HashMap<String, String> = HashMap::new();
+    for r in renames {
+        if r.from == r.to {
+            continue;
+        }
+        if r.to.is_empty() {
+            return Err(UpdateColumnsError::EmptyRenameTo);
+        }
+        if map.contains_key(&r.from) {
+            return Err(UpdateColumnsError::DuplicateRenameFrom {
+                name: r.from.clone(),
+            });
+        }
+        if !config.columns.iter().any(|c| c.name.as_str() == r.from) {
+            return Err(UpdateColumnsError::UnknownRenameFrom {
+                name: r.from.clone(),
+            });
+        }
+        map.insert(r.from.clone(), r.to.clone());
+    }
+    Ok(map)
+}
+
+/// `args.columns` 未指定時の候補 columns を rename_map を適用して派生する。
+fn apply_renames_to_columns(
+    columns: &[Column],
+    rename_map: &HashMap<String, String>,
+) -> Vec<Column> {
+    columns
+        .iter()
+        .map(|c| match rename_map.get(c.name.as_str()) {
+            Some(new_name) => Column {
+                name: ColumnName::from_lenient(new_name),
+                order: c.order,
+            },
+            None => c.clone(),
+        })
+        .collect()
 }
 
 /// [`Config`] から GUIDE.md の Markdown 本文を生成する。
@@ -654,7 +842,10 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
     let pid = std::process::id();
     let tmp = spec_board_dir.join(format!("config.json.bak.tmp.{pid}.{nanos}.{counter}"));
 
-    write_backup_to_path(&dst, content, &tmp)
+    write_atomic_to_path(&dst, content, &tmp).map_err(|source| LoadConfigError::BackupFailed {
+        path: dst.clone(),
+        source,
+    })
 }
 
 /// `backup_config_json` 内の tmp パス生成で使う process-local 連番カウンタ。
@@ -662,12 +853,11 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
 static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 use std::sync::atomic::Ordering;
 
-/// `tmp` に `content` を書き出してから `rename(tmp, dst)` で atomic に置き換える。
+/// `tmp` に `content` を書き出してから `rename(tmp, dst)` で atomic に置き換える低レベル io 関数。
 ///
-/// [`backup_config_json`] の中核ロジック。本関数は **`tmp` パスをパラメータとして受け取る**
-/// ため、テストから固定パス（例: `config.json.bak.tmp`）を渡して unlink + create_new
-/// 防御を直接 exercise できる。プロダクションコードは [`backup_config_json`] が
-/// `pid + nanos + counter` から派生した unique パスを渡す。
+/// 本関数は **`tmp` パスをパラメータとして受け取る**ため、テストから固定パス
+/// （例: `config.json.bak.tmp`）を渡して unlink + create_new 防御を直接 exercise できる。
+/// プロダクションコードは呼び出し側が `pid + nanos + counter` から派生した unique パスを渡す。
 ///
 /// # 手順
 ///
@@ -677,68 +867,87 @@ use std::sync::atomic::Ordering;
 /// 3. `write_all` で `content` を書き込み。失敗時は tmp ファイルを best-effort で削除して
 ///    orphan ガベージを残さない。
 /// 4. `rename(tmp, dst)` で atomic 置換。失敗時も tmp を best-effort 削除。
-fn write_backup_to_path(dst: &Path, content: &str, tmp: &Path) -> Result<(), LoadConfigError> {
+///
+/// 戻り値の `io::Result<()>` をどう詰め替えるかは呼び出し側の責務。
+/// `backup_config_json` は [`LoadConfigError::BackupFailed`] に、
+/// `update_columns` 経路は `UpdateColumnsError::ConfigWriteFailed` に詰める。
+pub(crate) fn write_atomic_to_path(dst: &Path, content: &str, tmp: &Path) -> std::io::Result<()> {
     use std::io::Write as _;
 
-    // ディレクトリエントリレベルで stale / 攻撃者が事前作成した tmp を除去する。
-    // symlink / hard link の場合もディレクトリエントリだけを削除し、リンク先や
-    // inode は破壊しない。
     match std::fs::remove_file(tmp) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(source) => {
-            return Err(LoadConfigError::BackupFailed {
-                path: tmp.to_path_buf(),
-                source,
-            });
-        }
+        Err(source) => return Err(source),
     }
 
-    // O_CREAT | O_EXCL semantics: 直前 unlink との race で誰かが再作成していたら
-    // 失敗する（攻撃者が race で再作成しても fresh inode への書き込みは確保される）。
     let mut tmp_file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(tmp)
-        .map_err(|source| LoadConfigError::BackupFailed {
-            path: tmp.to_path_buf(),
-            source,
-        })?;
+        .open(tmp)?;
     if let Err(source) = tmp_file.write_all(content.as_bytes()) {
-        // write_all 失敗時に partially written な tmp が残ると、tmp 名は呼び出しごとに
-        // unique なため後続 load では再利用 / cleanup されず orphan ガベージとして
-        // `.spec-board/` に蓄積する。best-effort で削除する。
         drop(tmp_file);
         let _ = std::fs::remove_file(tmp);
-        return Err(LoadConfigError::BackupFailed {
-            path: tmp.to_path_buf(),
-            source,
-        });
+        return Err(source);
     }
-    // ENOSPC / EIO 等は flush / close で初めて表面化することがある。`sync_all` で
-    // データ + メタデータの永続化を強制し、その失敗を明示的にエラーとして扱う
-    // （`drop(tmp_file)` は close エラーを無視するため、ここで観測しないと
-    // 「rename 後の `.bak` が truncate / 破損していたのに Ok(()) が返る」事象を
-    // 引き起こしうる）。失敗時は `write_all` 失敗時と同様に best-effort で tmp を削除。
     if let Err(source) = tmp_file.sync_all() {
         drop(tmp_file);
         let _ = std::fs::remove_file(tmp);
-        return Err(LoadConfigError::BackupFailed {
-            path: tmp.to_path_buf(),
-            source,
-        });
+        return Err(source);
     }
     drop(tmp_file);
 
-    std::fs::rename(tmp, dst).map_err(|source| {
-        // Best-effort: rename 失敗時にも tmp を消す（次回 load 時の冪等性確保）。
+    std::fs::rename(tmp, dst).inspect_err(|_| {
         let _ = std::fs::remove_file(tmp);
-        LoadConfigError::BackupFailed {
-            path: dst.to_path_buf(),
-            source,
-        }
-    })?;
-    Ok(())
+    })
+}
+
+/// `update_columns` などが `config.json` を atomic write するためのポート。
+///
+/// 本番実装は [`FsConfigWriter`]。テストでは failure injection 用の mock を実装する。
+pub trait ConfigWriter {
+    /// `dst` に `content` を atomic に書き出す。
+    ///
+    /// # Errors
+    ///
+    /// - 中間 tmp ファイルの作成 / 書き込み / sync / rename に失敗した場合
+    ///   `std::io::Error` を返す。
+    fn write_atomic(&self, dst: &Path, content: &str) -> std::io::Result<()>;
+}
+
+/// 本番実装。内部で [`write_atomic_to_path`] と [`unique_atomic_tmp_path`] を呼ぶ。
+pub struct FsConfigWriter;
+
+impl ConfigWriter for FsConfigWriter {
+    fn write_atomic(&self, dst: &Path, content: &str) -> std::io::Result<()> {
+        let tmp = unique_atomic_tmp_path(dst);
+        write_atomic_to_path(dst, content, &tmp)
+    }
+}
+
+/// `<dst>` に対して呼び出しごとに unique な tmp パスを生成する。
+///
+/// `update_columns` から `config.json` の atomic write を行う際にも使用するため
+/// pub(crate) 公開。`backup_config_json` 内の tmp 命名規約と同じ形式
+/// （`{dst}.tmp.{pid}.{nanos}.{counter}`）を共有し、
+/// process-local AtomicU64 counter で in-process 一意性を担保する。
+pub(crate) fn unique_atomic_tmp_path(dst: &Path) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+
+    let file_name = dst
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("atomic");
+    let tmp_name = format!("{file_name}.tmp.{pid}.{nanos}.{counter}");
+
+    match dst.parent() {
+        Some(parent) => parent.join(tmp_name),
+        None => PathBuf::from(tmp_name),
+    }
 }
 
 /// `<project_root>/.spec-board/` 配下に残っている orphan `config.json.bak.tmp.*`

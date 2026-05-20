@@ -246,20 +246,34 @@ links:（任意）
 | doneColumn | `String` | いいえ | 完了カラム名。**rename 適用後の名前空間**で指定する。未指定時は変更しない |
 
 **振る舞い**:
-1. `renames` が指定され、かつ空でない場合、該当するタスクのmdファイルの `status` を一括更新（空配列または未指定の場合はこのステップをスキップ）
+1. すべての引数が未指定（`columns`/`doneColumn`/`renames` のいずれも `None`）の場合は no-op として `Ok(())` を返し、ファイルや state を一切変更しない
+2. `renames` 内で `from == to` の項目は冪等にスキップ
+3. `renames` が指定され、かつ空でない場合、該当するタスクのmdファイルの `status` を一括更新（空配列または未指定の場合はこのステップをスキップ）
    - 一括更新は**トランザクション的**に処理。途中で1件でも失敗した場合、変更済みファイルを元に戻してエラーを返却
-2. `columns` が指定されている場合、カラム集合を上書きして `config.json` に保存
-3. `doneColumn` が指定されている場合、完了カラム名を更新して `config.json` に保存
-4. `GUIDE.md` を再生成
-5. 戻り値なし（更新後の設定が必要な場合は呼び出し側が `get_columns` で取得する）
+4. `columns` が指定されている場合、カラム集合を上書きして `config.json` に保存
+5. `doneColumn` が指定されている場合、完了カラム名を更新して `config.json` に保存
+6. `GUIDE.md` を再生成
+7. 戻り値なし（更新後の設定が必要な場合は呼び出し側が `get_columns` で取得する）
 
 **エラー**:
 
 | ケース | 条件 | エラーメッセージ |
 |:-------|:-----|:---------------|
+| プロジェクト未オープン | `AppState` に project_path / config が無い | プロジェクトが開かれていません |
+| 内部 lock 破損 | `AppState` または `WriteIgnoreRegistry` の Mutex が poison | 内部状態のロックが破損しました |
 | カラム全削除 | `columns: []`（空配列）が指定された | カラムを 0 件にすることはできません |
 | カラム名重複 | 同名のカラムが存在する | カラム名が重複しています: {name} |
+| 不在 rename from | `rename.from` が現在の columns に無い | 存在しないカラム名のリネームが指定されました: {name} |
+| 重複 rename from | 同じ `from` を複数 rename で指定 | 同じカラム名のリネームが複数指定されました: {name} |
+| 空 rename to | `rename.to` が空文字列 | リネーム後のカラム名が空です |
+| 不在 doneColumn | `doneColumn` が新 columns に無い | 指定された完了カラムが存在しません: {name} |
+| rename.to が新 columns に欠落 | `args.columns` と `renames` を同時指定したが `rename.to` が新 columns に含まれない | リネーム後のカラム名が新しい columns に含まれていません: {name} |
+| md frontmatter パース失敗 | rename 対象 md の YAML パースに失敗 | カラム名の変更中にフロントマターのパースに失敗しました |
+| md frontmatter 不在 | rename 対象 md に frontmatter が無い | カラム名の変更対象 md にフロントマターがありません: {path} |
 | 一括更新失敗 | リネーム中のファイル書き込み失敗 | カラム名の変更中にエラーが発生しました。変更を元に戻しました |
+| ロールバック失敗 | rollback 中の書き戻しに失敗（二重失敗） | カラム名の変更失敗後のロールバックに失敗しました: {path} |
+| config.json シリアライズ失敗 | `serde_json::to_string_pretty` 失敗 | config.json のシリアライズに失敗しました |
+| config.json 書き込み失敗 | atomic write 失敗（権限・ディスク容量等） | config.json の書き込みに失敗しました: {path} |
 
 ---
 

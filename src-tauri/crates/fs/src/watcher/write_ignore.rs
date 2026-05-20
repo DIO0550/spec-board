@@ -39,6 +39,26 @@ impl WriteIgnoreRegistry {
         Ok(ignored_paths.insert(path.as_ref().to_path_buf()))
     }
 
+    /// Registers multiple paths atomically under a single lock.
+    ///
+    /// 空スライスは何もせず即座に `Ok(())` を返す。重複は HashSet によって自然に
+    /// 1 件に丸まる。register と同じく path の正規化は行わない。
+    ///
+    /// # Errors
+    ///
+    /// - 内部の Mutex が poison 状態になっている場合 → [`WriteIgnoreError::LockPoisoned`]
+    pub fn register_bulk(&self, paths: &[PathBuf]) -> Result<(), WriteIgnoreError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let mut ignored_paths = self.lock()?;
+        for path in paths {
+            ignored_paths.insert(path.clone());
+        }
+        Ok(())
+    }
+
     /// Returns whether the path is currently registered.
     ///
     /// # Errors
@@ -104,6 +124,23 @@ impl WriteIgnoreRegistry {
         let mut ignored_paths = self.lock()?;
         ignored_paths.clear();
         Ok(())
+    }
+
+    /// Test 用に内部 Mutex を poison させる。
+    ///
+    /// `update_columns_impl` の preflight / register 経路で `WriteIgnoreError::LockPoisoned`
+    /// → `StateLockPoisoned` 変換を effect 層レベルで再現するために公開する。
+    /// `cfg(test)` 内または `test-utils` feature 有効時のみコンパイルされ、本番 build では存在しない。
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn poison_lock_for_testing(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    let _guard = self.ignored_paths.lock().expect("lock before poison");
+                    panic!("poison write_ignore lock for testing");
+                });
+            });
+        }));
     }
 
     /// Locks the registry and maps poisoned mutex errors into the module error type.
