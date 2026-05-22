@@ -1781,6 +1781,21 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
     );
 
     let snap = state.tasks_snapshot().unwrap();
+    assert_eq!(
+        snap.len(),
+        2,
+        "expected 2 tasks in snapshot, got {}",
+        snap.len()
+    );
+    let mut paths: Vec<String> = snap
+        .iter()
+        .map(|t| t.file_path.as_str().to_string())
+        .collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
+    );
     for t in &snap {
         assert_eq!(t.status.as_str(), "Todo");
     }
