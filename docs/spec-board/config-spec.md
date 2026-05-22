@@ -248,7 +248,7 @@ links:（任意）
 **振る舞い**:
 1. すべての引数が未指定（`columns`/`doneColumn`/`renames` のいずれも `None`）の場合は no-op として `Ok(())` を返し、ファイルや state を一切変更しない
 2. `renames` 内で `from == to` の項目は冪等にスキップ
-3. `renames` が指定され、かつ空でない場合、該当するタスクの md ファイルの `status` を一括更新（空配列または未指定の場合はこのステップをスキップ）。`from == to` の項目は冪等にスキップされ、md にも `WriteIgnoreRegistry` にも一切触らない。一括更新はトランザクション的に処理され、以下の段階で進行する:
+3. `renames` が指定され、かつ空でない場合、該当するタスクの md ファイルの `status` を一括更新（空配列または未指定の場合はこのステップをスキップ）。`from == to` の項目は冪等にスキップされ、md への書き込みも `WriteIgnoreRegistry` の登録/解除も行わない（preflight 時の `write_ignore` 健全性 probe は通常通り走る）。一括更新はトランザクション的に処理され、以下の段階で進行する:
    - **(a) pre-read**: 対象 md 全件の原本 bytes をメモリに読み込む。1 件でも読み込み失敗した場合は `RenameReadFailed` を返し、disk を一切変更せず終了する。
    - **(b) write_ignore 登録**: watcher 起動中 (`is_watcher_installed() == true`) のみ、対象 md のパスを `WriteIgnoreRegistry` に bulk 登録する。watcher 未起動時は登録をスキップ。
    - **(c) 順次 write**: 各 md の frontmatter `status` を新カラム名に書き換えて atomic write。途中で 1 件でも失敗した場合、書き込み完了済み md を原本 bytes で書き戻し、**rollback が成功した場合に限り** 登録済み write_ignore エントリを解除してから失敗エラーを返す。rollback 自体が失敗した場合は `RenameRollbackFailed` を返し、その時点で early return するため write_ignore の解除は行われない（現状仕様）。
