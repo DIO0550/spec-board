@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 
+use spec_board_fs::watcher::handle::NoopWatcherHandle;
+
 use crate::config::column_name::ColumnName;
 use crate::config::Column;
 use crate::config::Config;
@@ -1716,4 +1718,75 @@ fn fault_write_ignore_lock_poisoned_returns_state_lock_poisoned() {
     )
     .unwrap_err();
     assert!(matches!(err, UpdateColumnsError::StateLockPoisoned));
+}
+
+#[test]
+fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
+    let dir = tempdir();
+    write_initial_config(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Done", "order": 1 }
+            ],
+            "cardOrder": {},
+            "doneColumn": "Done"
+        }"#,
+    );
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\nbody\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\nbody\n",
+    );
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    state
+        .install_watcher_handle(Box::new(NoopWatcherHandle::new()))
+        .expect("install noop watcher handle");
+    assert!(state.is_watcher_installed().unwrap());
+
+    let before_a = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
+    let before_b = fs::read_to_string(dir.path().join("tasks/b.md")).unwrap();
+
+    let io = FailingTaskIo::new().fail_write_at_indices([1]);
+    let err = update_columns_impl(
+        &state,
+        &io,
+        &FsConfigWriter,
+        UpdateColumnsArgs {
+            renames: Some(vec![rename("Todo", "To Do")]),
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, UpdateColumnsError::RenameWriteFailed { .. }));
+
+    assert!(
+        state.write_ignore().is_empty().unwrap(),
+        "write_ignore registry must be empty after failed rename"
+    );
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("tasks/a.md")).unwrap(),
+        before_a
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("tasks/b.md")).unwrap(),
+        before_b
+    );
+
+    let snap = state.tasks_snapshot().unwrap();
+    for t in &snap {
+        assert_eq!(t.status.as_str(), "Todo");
+    }
 }
