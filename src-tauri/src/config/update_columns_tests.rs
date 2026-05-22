@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 
-use spec_board_fs::watcher::handle::NoopWatcherHandle;
-
 use crate::config::column_name::ColumnName;
 use crate::config::Column;
 use crate::config::Config;
@@ -1749,9 +1747,6 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    state
-        .install_watcher_handle(Box::new(NoopWatcherHandle::new()))
-        .expect("install noop watcher handle");
     assert!(state.is_watcher_installed().unwrap());
 
     let before_a = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
