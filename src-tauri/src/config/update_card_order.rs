@@ -35,6 +35,8 @@
 //! `ConfigIo` を `IO_ERROR` 系（内側メッセージ次第で `NOT_FOUND` /
 //! `PERMISSION_DENIED` に転ぶ）として扱う想定。
 
+use std::io::ErrorKind;
+use std::path::Path;
 use std::sync::Arc;
 
 use spec_board_fs::config::config_io::{write_config_json, ConfigIoError};
@@ -119,7 +121,8 @@ pub(crate) fn update_card_order_impl(
         return Err(UpdateCardOrderError::UnknownColumn { column_name });
     }
 
-    config.card_order.insert(column_name, file_paths);
+    let cleaned = cleanup_missing_paths(&project_root, file_paths);
+    config.card_order.insert(column_name, cleaned);
 
     let json = serde_json::to_string_pretty(&config)?;
     write_config_json(&project_root, &json)?;
@@ -133,6 +136,22 @@ pub(crate) fn update_card_order_impl(
     state.replace_config_if_project_matches(&project_root, config)?;
 
     Ok(())
+}
+
+/// `file_paths` のうち `project_root` 配下に実在しないエントリを除外して返す。
+///
+/// 各パスを `project_root.join(rel)` で解決し `std::fs::metadata` で判定する。
+/// `Err(NotFound)` のみ除外し、`permission denied` など他の I/O エラーは
+/// ユーザーのカード並びを誤って失わないために保守的に保持する。
+/// 入力順は保持する。
+fn cleanup_missing_paths(project_root: &Path, file_paths: Vec<String>) -> Vec<String> {
+    file_paths
+        .into_iter()
+        .filter(|rel| match std::fs::metadata(project_root.join(rel)) {
+            Ok(_) => true,
+            Err(e) => e.kind() != ErrorKind::NotFound,
+        })
+        .collect()
 }
 
 #[cfg(test)]
