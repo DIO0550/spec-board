@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import type { TitleValidationError } from "@/features/task-form/lib/fields/title";
 import { TaskFormTitle } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -58,12 +59,12 @@ test("入力で onChange が呼ばれる", () => {
   expect(onChange).toHaveBeenCalledWith("abc");
 });
 
-test("error 指定で error メッセージと aria 属性が描画される", () => {
+test("error 指定で aria 属性が描画される", () => {
   render({
     value: "",
     onChange: vi.fn(),
     disabled: false,
-    error: "必須",
+    error: { code: "EMPTY" },
   });
   const input = container?.querySelector(
     "[data-testid='task-form-title']",
@@ -71,9 +72,48 @@ test("error 指定で error メッセージと aria 属性が描画される", (
   const errorEl = container?.querySelector(
     "[data-testid='task-form-title-error']",
   );
-  expect(errorEl?.textContent).toBe("必須");
+  expect(errorEl).toBeTruthy();
   expect(input.getAttribute("aria-invalid")).toBe("true");
   expect(input.getAttribute("aria-describedby")).toBe(errorEl?.id);
+});
+
+test("4 種エラーそれぞれで対応する日本語メッセージが描画される", () => {
+  const cases: Array<[TitleValidationError, string, string]> = [
+    [{ code: "EMPTY" }, "タイトルを入力してください", "EMPTY"],
+    [
+      { code: "DUPLICATE", fileName: "fix-login-bug.md" },
+      "同じ名前のタスクがすでに存在します",
+      "DUPLICATE",
+    ],
+    [
+      { code: "TOO_LONG", max: 200, actual: 201 },
+      "タイトルは200文字以内で入力してください",
+      "TOO_LONG",
+    ],
+    [
+      { code: "FORBIDDEN_CHAR", chars: ["<", ">"] },
+      "使用できない文字が含まれています: < >",
+      "FORBIDDEN_CHAR",
+    ],
+  ];
+  for (const [error, expected, label] of cases) {
+    render({
+      value: "",
+      onChange: vi.fn(),
+      disabled: false,
+      error,
+    });
+    const errorEl = container?.querySelector(
+      "[data-testid='task-form-title-error']",
+    );
+    expect(errorEl?.textContent, label).toBe(expected);
+    act(() => {
+      root?.unmount();
+    });
+    container?.remove();
+    container = null;
+    root = null;
+  }
 });
 
 test("label の htmlFor と input の id が一致する", () => {

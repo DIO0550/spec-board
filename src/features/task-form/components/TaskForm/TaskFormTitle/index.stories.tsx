@@ -17,6 +17,27 @@ type Story = StoryObj<typeof TaskFormTitle>;
 
 export const Default: Story = {};
 
-export const WithError: Story = {
-  args: { value: "", error: "タイトルを入力してください" },
+export const WithEmptyError: Story = {
+  args: { value: "", error: { code: "EMPTY" } },
+};
+
+export const WithDuplicateError: Story = {
+  args: {
+    value: "Fix login bug",
+    error: { code: "DUPLICATE", fileName: "fix-login-bug.md" },
+  },
+};
+
+export const WithTooLongError: Story = {
+  args: {
+    value: "a".repeat(201),
+    error: { code: "TOO_LONG", max: 200, actual: 201 },
+  },
+};
+
+export const WithForbiddenCharError: Story = {
+  args: {
+    value: "a<b>c",
+    error: { code: "FORBIDDEN_CHAR", chars: ["<", ">"] },
+  },
 };

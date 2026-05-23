@@ -1,4 +1,6 @@
 import { useId } from "react";
+import type { TitleValidationError } from "@/features/task-form/lib/fields/title";
+import { titleErrorMessage } from "./titleErrorMessage";
 
 type TaskFormTitleProps = {
   /** 現在値 */
@@ -8,8 +10,8 @@ type TaskFormTitleProps = {
    * @param value - 新しい値
    */
   onChange: (value: string) => void;
-  /** エラーメッセージ。undefined なら「エラーなし」 */
-  error?: string;
+  /** 構造化エラー。undefined なら「エラーなし」。表示直前に titleErrorMessage で日本語化する。 */
+  error?: TitleValidationError;
   /** 無効化 */
   disabled: boolean;
 };
@@ -55,7 +57,7 @@ export const TaskFormTitle = ({
           className="mt-1 text-xs text-red-600"
           data-testid="task-form-title-error"
         >
-          {error}
+          {titleErrorMessage(error)}
         </p>
       )}
     </div>
