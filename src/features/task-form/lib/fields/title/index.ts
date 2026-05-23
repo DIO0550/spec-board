@@ -85,7 +85,14 @@ export const TitleField = {
         actual: trimmed.length,
       });
     }
-    const fileName = `${KebabCase.from(trimmed)}.md`;
+    const kebabBase = KebabCase.from(trimmed);
+    if (kebabBase.length === 0) {
+      // 記号のみ・アンダースコアのみ等で kebab base が空になる入力は
+      // ファイル名 base が作れず、BE 側でも InvalidTitle となるため
+      // EMPTY 扱いで弾く。
+      return Result.err({ code: "EMPTY" });
+    }
+    const fileName = `${kebabBase}.md`;
     if (ctx.existingFileNames.has(fileName)) {
       return Result.err({ code: "DUPLICATE", fileName });
     }

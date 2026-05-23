@@ -29,6 +29,20 @@ test("validate: 空白のみは EMPTY（trim 判定）", () => {
   );
 });
 
+test("validate: kebab 後空文字になる入力（記号/アンダースコアのみ）は EMPTY", () => {
+  const cases: Array<[string, string]> = [
+    ["!!!", "ASCII 記号のみ"],
+    ["___", "アンダースコアのみ"],
+    [".", "ドットのみ"],
+    ["-_-", "ハイフン・アンダースコア混在"],
+  ];
+  for (const [input, label] of cases) {
+    expect(TitleField.validate(input, emptyCtx), label).toEqual(
+      Result.err({ code: "EMPTY" }),
+    );
+  }
+});
+
 test("validate: 非空文字で Ok", () => {
   expect(TitleField.validate("abc", emptyCtx)).toEqual(Result.ok(undefined));
 });
