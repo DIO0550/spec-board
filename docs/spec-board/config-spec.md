@@ -296,7 +296,7 @@ links:（任意）
 
 **振る舞い**:
 1. `columnName` が `columns[]` に存在しない場合は更新を拒否し、`config.json` を変更しない（エラー文字列: `カラムが見つかりません: {columnName}`）
-2. `filePaths` は FE が事前に正規化した結果をそのまま `cardOrder[columnName]` に保存する。バックエンド側では未存在ファイルパスの除外などのフィルタを行わない
+2. `filePaths` は FE が正規化済みの project-relative path であることを前提とし、BE 側では `canonicalize` や `project_root` 配下に収まっているかの containment 検証は行わない。各パスを `project_root.join(path)` で解決した結果に対し `std::fs::metadata` を呼び、`Err` が `ErrorKind::NotFound` の場合のみ除外する。`permission denied` 等の `NotFound` 以外の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。クリーンアップ後の配列を `cardOrder[columnName]` に上書き保存する。順序は入力 `filePaths` を保持し、削除対象のみ抜く
 3. 既存キーがあれば**上書き**、無ければ**新規追加**として `cardOrder` に書き込む
 4. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
 5. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、本書き込みによって FE への変更通知（emit）は走らない

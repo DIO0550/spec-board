@@ -28,11 +28,22 @@ fn read_config_json(project_root: &Path) -> Config {
     serde_json::from_str(&raw).expect("config.json is valid")
 }
 
+fn write_md(root: &Path, rel: &str, content: &str) {
+    let abs = root.join(rel);
+    if let Some(parent) = abs.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(abs, content).unwrap();
+}
+
 #[test]
 fn overwrites_existing_card_order_entry() {
     let dir = tempdir();
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
+
+    write_md(dir.path(), "tasks/a.md", "");
+    write_md(dir.path(), "tasks/b.md", "");
 
     update_card_order_impl(
         &state,
@@ -98,6 +109,9 @@ fn last_call_wins_on_consecutive_invocations() {
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
+    write_md(dir.path(), "tasks/a.md", "");
+    write_md(dir.path(), "tasks/b.md", "");
+
     update_card_order_impl(
         &state,
         "Todo".to_string(),
@@ -126,6 +140,8 @@ fn inserts_new_entry_when_column_not_in_card_order() {
 
     let initial = state.config().unwrap().unwrap();
     assert!(!initial.card_order.contains_key("In Progress"));
+
+    write_md(dir.path(), "tasks/x.md", "");
 
     update_card_order_impl(
         &state,
@@ -186,4 +202,69 @@ fn state_config_remains_unchanged_when_disk_write_fails() {
     );
 
     assert_eq!(fs::read_to_string(&target).unwrap(), "keep");
+}
+
+#[test]
+fn cleans_up_to_empty_when_all_paths_missing() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    update_card_order_impl(
+        &state,
+        "Todo".to_string(),
+        vec![
+            "tasks/missing-1.md".to_string(),
+            "tasks/missing-2.md".to_string(),
+        ],
+    )
+    .expect("update should succeed");
+
+    let on_disk = read_config_json(dir.path());
+    assert_eq!(on_disk.card_order.get("Todo"), Some(&Vec::<String>::new()));
+}
+
+#[test]
+fn cleans_up_only_missing_paths_in_mixed_input() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    write_md(dir.path(), "tasks/exists-1.md", "");
+    write_md(dir.path(), "tasks/exists-2.md", "");
+
+    update_card_order_impl(
+        &state,
+        "Todo".to_string(),
+        vec![
+            "tasks/exists-1.md".to_string(),
+            "tasks/missing.md".to_string(),
+            "tasks/exists-2.md".to_string(),
+        ],
+    )
+    .expect("update should succeed");
+
+    let on_disk = read_config_json(dir.path());
+    assert_eq!(
+        on_disk.card_order.get("Todo"),
+        Some(&vec![
+            "tasks/exists-1.md".to_string(),
+            "tasks/exists-2.md".to_string()
+        ])
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn keeps_path_when_metadata_returns_non_notfound_error() {
+    let dir = tempdir();
+
+    // NUL バイトを含む相対パスは fs::metadata で ErrorKind::InvalidInput を返す
+    // （非 NotFound）。保守的に保持されることを確認する。
+    let nul_path = "tasks/with\0nul.md".to_string();
+    let input = vec![nul_path.clone()];
+
+    let result = super::cleanup_missing_paths(dir.path(), input);
+
+    assert_eq!(result, vec![nul_path]);
 }
