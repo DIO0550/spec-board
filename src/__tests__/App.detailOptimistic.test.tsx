@@ -1,0 +1,244 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+  vi,
+} from "vitest";
+import { App } from "@/App";
+import {
+  getColumns as getColumnsInvoke,
+  type OpenProjectPayload,
+  openDirectoryDialog,
+  openProject as openProjectInvoke,
+  TauriError,
+  updateTask as updateTaskInvoke,
+} from "@/lib/tauri";
+import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    openDirectoryDialog: vi.fn(),
+    openProject: vi.fn(),
+    getColumns: vi.fn(),
+    createTask: vi.fn(),
+    updateTask: vi.fn(),
+    deleteTask: vi.fn(),
+    updateColumns: vi.fn(),
+    updateCardOrder: vi.fn(),
+  };
+});
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}));
+
+const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
+const openProjectMock = vi.mocked(openProjectInvoke);
+const getColumnsMock = vi.mocked(getColumnsInvoke);
+const updateTaskMock = vi.mocked(updateTaskInvoke);
+
+const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
+  IS_REACT_ACT_ENVIRONMENT?: boolean;
+};
+let previousIsReactActEnvironment: boolean | undefined;
+let hadIsReactActEnvironment = false;
+
+beforeAll(() => {
+  hadIsReactActEnvironment =
+    "IS_REACT_ACT_ENVIRONMENT" in reactActEnvironmentGlobal;
+  previousIsReactActEnvironment =
+    reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT;
+  reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+afterAll(() => {
+  reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT =
+    previousIsReactActEnvironment;
+  const keysToDelete = hadIsReactActEnvironment
+    ? []
+    : (["IS_REACT_ACT_ENVIRONMENT"] as const);
+  for (const key of keysToDelete) {
+    Reflect.deleteProperty(reactActEnvironmentGlobal, key);
+  }
+});
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+beforeEach(() => {
+  openDirectoryDialogMock.mockReset();
+  openProjectMock.mockReset();
+  getColumnsMock.mockReset();
+  getColumnsMock.mockResolvedValue({
+    ok: true,
+    value: {
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Doing", order: 1 },
+        { name: "Done", order: 2 },
+      ],
+      doneColumn: "Done",
+    },
+  });
+  updateTaskMock.mockReset();
+});
+
+afterEach(() => {
+  act(() => {
+    root?.unmount();
+  });
+  container?.remove();
+  container = null;
+  root = null;
+});
+
+const taskA: Task = Task.fromPayload({
+  id: "a",
+  title: "A タスク",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/a.md",
+});
+
+const payload: OpenProjectPayload = {
+  tasks: [taskA],
+  columns: ["Todo", "Doing", "Done"],
+};
+
+/**
+ * App を mount する。
+ */
+const mountApp = (): void => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(<App />);
+  });
+};
+
+/**
+ * 「開く」ボタンを押下して project を読み込ませる。
+ */
+const openSuccessfully = async (): Promise<void> => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  const buttons = container?.querySelectorAll("header button") ?? [];
+  const openBtn = Array.from(buttons).find((b) => b.textContent === "開く") as
+    | HTMLButtonElement
+    | undefined;
+  await act(async () => {
+    openBtn?.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+/**
+ * TaskCard を click して DetailPanel を開く。
+ */
+const openDetailPanel = (): void => {
+  const card = container?.querySelector<HTMLElement>(
+    "[data-testid='task-card']",
+  );
+  act(() => {
+    card?.click();
+  });
+};
+
+/**
+ * data-testid から HTMLSelectElement を取得する。
+ *
+ * @param testId data-testid 値
+ * @returns 該当要素
+ */
+const getSelect = (testId: string): HTMLSelectElement =>
+  document.querySelector(`[data-testid="${testId}"]`) as HTMLSelectElement;
+
+/**
+ * select 要素に change イベントを発火し、queue 内 microtask を 1 度だけ flush する。
+ * 楽観 dispatch は `enqueueProjectCommand` の microtask で走るため、ここで await が必要。
+ *
+ * @param select 対象 select
+ * @param value 設定する value
+ */
+const changeSelectValue = async (
+  select: HTMLSelectElement,
+  value: string,
+): Promise<void> => {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  await act(async () => {
+    setter?.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    // 楽観 dispatch (queue の microtask) を 1 度だけ流す
+    await Promise.resolve();
+  });
+};
+
+test("StatusSelect 操作 → updateTask resolve 前に DetailPanel の StatusSelect 表示が新値（楽観反映）", async () => {
+  mountApp();
+  await openSuccessfully();
+  openDetailPanel();
+  expect(getSelect("status-select").value).toBe("Todo");
+
+  type UpdateTaskResult = Awaited<ReturnType<typeof updateTaskMock>>;
+  let resolveUpdate: (value: UpdateTaskResult) => void = () => {};
+  updateTaskMock.mockReturnValueOnce(
+    new Promise<UpdateTaskResult>((resolve) => {
+      resolveUpdate = resolve;
+    }),
+  );
+
+  await changeSelectValue(getSelect("status-select"), "Doing");
+  // IPC resolve 前に楽観反映で Select 表示が Doing になっている
+  expect(getSelect("status-select").value).toBe("Doing");
+
+  await act(async () => {
+    resolveUpdate(Result.ok({ ...taskA, status: "Doing" }));
+    await Promise.resolve();
+  });
+  // 確定後も Doing のまま
+  expect(getSelect("status-select").value).toBe("Doing");
+});
+
+test("IPC 失敗時 → DetailPanel Select 表示が元値に戻り、エラートーストが出る", async () => {
+  mountApp();
+  await openSuccessfully();
+  openDetailPanel();
+  expect(getSelect("status-select").value).toBe("Todo");
+
+  updateTaskMock.mockResolvedValueOnce(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+
+  await changeSelectValue(getSelect("status-select"), "Doing");
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  // rollback で Select 表示が Todo に戻る
+  expect(getSelect("status-select").value).toBe("Todo");
+  // エラートーストが出る
+  const errorToast = document.querySelector('[data-testid="toast-error"]');
+  expect(errorToast).not.toBeNull();
+});

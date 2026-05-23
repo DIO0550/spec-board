@@ -83,7 +83,196 @@ export const createTaskAction = (
 };
 
 /**
- * 現在の active project の task を更新し、成功時に reducer へ反映する。
+ * UpdateTaskParams のうち、Task に flat に写像できる楽観更新対象キー。
+ *
+ * - `parent` は除外: Task 側で hierarchy.parentFilePath にネストされ、親側
+ *   hierarchy.childFilePaths にも波及するため、楽観構築コストが見合わない
+ *   （BE 確定 dispatch まで反映を待つ）。
+ * - `filePath` は lookup key で本体ではないため除外。
+ */
+const OPTIMISTIC_FIELDS = [
+  "title",
+  "status",
+  "priority",
+  "labels",
+  "body",
+] as const;
+type OptimisticField = (typeof OPTIMISTIC_FIELDS)[number];
+
+/**
+ * `Object.prototype.hasOwnProperty.call` の薄いラッパ。
+ * `Object.hasOwn` は ES2022 で tsconfig の `lib: ES2020` だと型エラーになるため避ける。
+ *
+ * @param obj 検査対象のオブジェクト
+ * @param key 自身のプロパティかを判定するキー名
+ * @returns obj 自身がキーを保有していれば true
+ */
+const hasOwn = (obj: object, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(obj, key);
+
+/**
+ * params に実際に含まれている楽観更新対象キーだけを抽出する。
+ *
+ * BE `UpdateTaskArgs` の各フィールドは `Option<T>` で `None = 不変` のため、
+ * 明示的に `undefined` を渡しても BE 側は反応しない。楽観 dispatch だけが
+ * `undefined` を Task に混入させると確定 dispatch で元値に戻り flicker するため、
+ * 全フィールドで `undefined` を楽観対象から除外する。
+ */
+const pickOptimisticKeys = (
+  params: UpdateTaskParams,
+): readonly OptimisticField[] =>
+  OPTIMISTIC_FIELDS.filter((key) => {
+    if (!hasOwn(params, key)) {
+      return false;
+    }
+    if (params[key] === undefined) {
+      return false;
+    }
+    return true;
+  });
+
+/**
+ * params の指定キー 1 つを task に楽観反映する pure helper。
+ * `pickOptimisticKeys` が `undefined` 除外済みである前提のもとで type narrowing する。
+ *
+ * @param task 反映対象の Task
+ * @param params 更新パラメータ
+ * @param key 反映するキー
+ * @returns key を params の値で上書きした新 Task
+ */
+const applyOptimisticField = (
+  task: Task,
+  params: UpdateTaskParams,
+  key: OptimisticField,
+): Task => {
+  switch (key) {
+    case "title":
+      return params.title !== undefined
+        ? { ...task, title: params.title }
+        : task;
+    case "status":
+      return params.status !== undefined
+        ? { ...task, status: params.status }
+        : task;
+    case "priority":
+      return params.priority !== undefined
+        ? { ...task, priority: params.priority }
+        : task;
+    case "labels":
+      return params.labels !== undefined
+        ? { ...task, labels: params.labels }
+        : task;
+    case "body":
+      return params.body !== undefined
+        ? { ...task, body: params.body }
+        : task;
+  }
+};
+
+/**
+ * snapshot に対し、抽出済みの楽観対象キーだけを params の値で上書きした Task を作る。
+ *
+ * @param current ベースとなる現在 Task（snapshot）
+ * @param params 更新パラメータ
+ * @param keys 反映するキー集合（`pickOptimisticKeys` で抽出済み）
+ * @returns 楽観反映後の Task
+ */
+const buildOptimisticTask = (
+  current: Task,
+  params: UpdateTaskParams,
+  keys: readonly OptimisticField[],
+): Task => keys.reduce((task, key) => applyOptimisticField(task, params, key), current);
+
+/** filePath で現在の Task を visibleData から引き当てる。 */
+const findCurrentTask = (
+  state: ProjectStateT,
+  filePath: string,
+): Task | undefined =>
+  ProjectSessionState.visibleData(state)?.tasks.find(
+    (task) => task.filePath === filePath,
+  );
+
+/** 配列の浅い等値（同 reference または順序付き値一致）。labels 比較用。 */
+const arrayShallowEq = (
+  a: readonly string[],
+  b: readonly string[],
+): boolean =>
+  a === b || (a.length === b.length && a.every((v, i) => v === b[i]));
+
+/** 1 キー単位で「現在値 === 楽観値」かを判定する。 */
+const isKeyStillOptimistic = (
+  current: Task,
+  optimistic: Task,
+  key: OptimisticField,
+): boolean => {
+  if (key === "labels") {
+    return arrayShallowEq(current.labels, optimistic.labels);
+  }
+  return current[key] === optimistic[key];
+};
+
+/**
+ * 指定キー 1 つを snapshot 値で task に戻す pure helper。
+ *
+ * @param task ベースとなる現在 Task
+ * @param snapshot 反映する snapshot Task
+ * @param key 戻すキー
+ * @returns key を snapshot の値に戻した新 Task
+ */
+const applySnapshotField = (
+  task: Task,
+  snapshot: Task,
+  key: OptimisticField,
+): Task => {
+  switch (key) {
+    case "title":
+      return { ...task, title: snapshot.title };
+    case "status":
+      return { ...task, status: snapshot.status };
+    case "priority":
+      return { ...task, priority: snapshot.priority };
+    case "labels":
+      return { ...task, labels: snapshot.labels };
+    case "body":
+      return { ...task, body: snapshot.body };
+  }
+};
+
+/**
+ * 失敗 rollback dispatch 用に、current ベースで「楽観値そのままのキーだけ snapshot 値に戻した」
+ * task を組み立てる。外部 listener が触った他キーは current のまま保護する。
+ * 全キーが既に外部更新済みなら undefined を返し、rollback dispatch を完全 skip する。
+ *
+ * @param current rollback 直前の最新 Task
+ * @param optimistic 楽観 dispatch で流した Task
+ * @param snapshot 楽観前の snapshot Task
+ * @param keys 楽観対象キー集合
+ * @returns rollback 用 Task。全キー既に外部更新済みなら undefined
+ */
+const buildRollbackTask = (
+  current: Task,
+  optimistic: Task,
+  snapshot: Task,
+  keys: readonly OptimisticField[],
+): Task | undefined => {
+  const restoreKeys = keys.filter((key) =>
+    isKeyStillOptimistic(current, optimistic, key),
+  );
+  if (restoreKeys.length === 0) {
+    return undefined;
+  }
+  return restoreKeys.reduce(
+    (task, key) => applySnapshotField(task, snapshot, key),
+    current,
+  );
+};
+
+/**
+ * 現在の active project の task を更新し、楽観 dispatch → IPC → 確定/rollback dispatch
+ * 構造で reducer に反映する。
+ *
+ * 楽観反映の対象は `OPTIMISTIC_FIELDS`（title / status / priority / labels / body）のみ。
+ * `parent` は hierarchy ネストのため BE 確定まで触らない。
  *
  * @param deps task action に必要な queue / version / state / dispatch 依存
  * @param params update_task に渡す更新パラメータ
@@ -104,16 +293,62 @@ export const updateTaskAction = (
       !ProjectSessionState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
+      return Result.err(
+        ProjectError.invalidState("プロジェクトが切り替わりました"),
+      );
+    }
+
+    const snapshot = findCurrentTask(deps.getState(), params.filePath);
+    if (snapshot === undefined) {
+      return Result.err(
+        ProjectError.invalidState("更新対象のタスクが見つかりません"),
+      );
+    }
+    const optimisticKeys = pickOptimisticKeys(params);
+    const optimisticTask = buildOptimisticTask(
+      snapshot,
+      params,
+      optimisticKeys,
+    );
+
+    if (optimisticKeys.length > 0) {
+      deps.dispatchSync({
+        type: "task-updated",
+        originalFilePath: params.filePath,
+        task: optimisticTask,
+      });
     }
 
     const result = await updateTaskInvoke(params);
+
+    if (!isProjectCurrent(deps.projectVersion, version)) {
+      return Result.err(
+        ProjectError.invalidState("プロジェクトが切り替わりました"),
+      );
+    }
+
     if (!result.ok) {
+      if (optimisticKeys.length > 0) {
+        const current = findCurrentTask(deps.getState(), params.filePath);
+        if (current !== undefined) {
+          const rollbackTask = buildRollbackTask(
+            current,
+            optimisticTask,
+            snapshot,
+            optimisticKeys,
+          );
+          if (rollbackTask !== undefined) {
+            deps.dispatchSync({
+              type: "task-updated",
+              originalFilePath: params.filePath,
+              task: rollbackTask,
+            });
+          }
+        }
+      }
       return Result.err(ProjectError.tauri(result.error));
     }
-    if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
-    }
+
     deps.dispatchSync({
       type: "task-updated",
       originalFilePath: params.filePath,
