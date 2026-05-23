@@ -6,6 +6,7 @@ import {
   type UseTaskFormFieldsResult,
   useTaskFormFields,
 } from "@/features/task-form/hooks/useTaskFormFields";
+import { TITLE_MAX_LENGTH } from "@/features/task-form/lib/fields/title";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { Task } from "@/types/task";
 
@@ -154,11 +155,14 @@ test("handleSubmit: 空白のみタイトルでも EMPTY エラー", () => {
   expect(get().state.errors.title?.code).toBe("EMPTY");
 });
 
-test("handleSubmit: TOO_LONG（201 文字）", () => {
+test("handleSubmit: TOO_LONG（TITLE_MAX_LENGTH + 1 文字）", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
-    get().dispatch({ type: "title", value: "a".repeat(201) });
+    get().dispatch({
+      type: "title",
+      value: "a".repeat(TITLE_MAX_LENGTH + 1),
+    });
   });
   act(() => {
     get().handleSubmit(makeFormEvent());
