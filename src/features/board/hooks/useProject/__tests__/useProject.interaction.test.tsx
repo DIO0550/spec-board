@@ -565,19 +565,58 @@ test("updateTask (loaded) 成功 → Result.ok(task) + 該当差し替え", asyn
   ).toBe("renamed");
 });
 
-test("updateTask (loaded) 失敗 → Result.err、state 不変", async () => {
+test("updateTask (loaded) 失敗 → Result.err、楽観 → rollback で state が snapshot に戻る", async () => {
   const probe = renderHook();
   await openLoaded(probe);
   const err = new TauriError("IO_ERROR", "io");
   updateTaskMock.mockResolvedValueOnce(Result.err(err));
   let result!: Awaited<ReturnType<UseProjectResult["updateTask"]>>;
   await act(async () => {
-    result = await probe.latest.updateTask({ filePath: "tasks/a.md" });
+    result = await probe.latest.updateTask({
+      filePath: "tasks/a.md",
+      status: "Doing",
+    });
   });
   expect(result.ok).toBe(false);
+  // 楽観反映後に rollback されて元の taskA に戻る
   expect(
     (probe.latest.state as { data: { tasks: Task[] } }).data.tasks,
   ).toEqual([taskA]);
+});
+
+test("updateTask 楽観対象キーなし ({ filePath, parent } のみ) → 楽観 dispatch skip、IPC 成功時に BE 値で確定 dispatch", async () => {
+  const probe = renderHook();
+  await openLoaded(probe);
+  // BE が parent 付与済み task を返す想定
+  const updated: Task = {
+    ...taskA,
+    hierarchy: { ...taskA.hierarchy, parentFilePath: "tasks/parent.md" },
+  };
+  let stateDuringIpc: Task | null = null;
+  updateTaskMock.mockImplementationOnce(async () => {
+    // IPC await 中の state スナップショット: 楽観 dispatch が skip されているので
+    // hierarchy.parentFilePath はまだ更新されていない（taskA のまま）
+    const data = (probe.latest.state as { data: { tasks: Task[] } }).data;
+    stateDuringIpc = data.tasks[0];
+    return Result.ok(updated);
+  });
+  let result!: Awaited<ReturnType<UseProjectResult["updateTask"]>>;
+  await act(async () => {
+    result = await probe.latest.updateTask({
+      filePath: "tasks/a.md",
+      parent: "tasks/parent.md",
+    });
+  });
+  expect(result).toEqual({ ok: true, value: updated });
+  // IPC 中の state は楽観反映されていない（parent は元のまま）
+  expect(
+    (stateDuringIpc as Task | null)?.hierarchy.parentFilePath,
+  ).toBeUndefined();
+  // 確定 dispatch で BE 値が反映される
+  expect(
+    (probe.latest.state as { data: { tasks: Task[] } }).data.tasks[0].hierarchy
+      .parentFilePath,
+  ).toBe("tasks/parent.md");
 });
 
 test("updateTask (idle) → invalid-state を即返す、invoke 未呼び出し", async () => {
