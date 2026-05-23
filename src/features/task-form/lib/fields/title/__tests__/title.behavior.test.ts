@@ -120,11 +120,7 @@ test("validate: 優先順位は EMPTY → FORBIDDEN_CHAR → TOO_LONG → DUPLIC
 
   const cases: Array<[string, TitleValidationError, string]> = [
     ["", { code: "EMPTY" }, "empty wins over everything"],
-    [
-      "   ",
-      { code: "EMPTY" },
-      "whitespace-only also EMPTY (priority over FORBIDDEN even if char present in source)",
-    ],
+    ["   ", { code: "EMPTY" }, "whitespace-only is EMPTY"],
     [
       longForbidden,
       { code: "FORBIDDEN_CHAR", chars: ["<"] },
