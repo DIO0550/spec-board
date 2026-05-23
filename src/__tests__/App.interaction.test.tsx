@@ -485,6 +485,43 @@ test("DetailPanel の status 変更 → updateTask invoke が呼ばれ + 成功 
   expect(container?.textContent).toContain("タスクを更新しました");
 });
 
+test("DetailPanel タイトル inline 編集 Enter → updateTask invoke が { filePath, title } で呼ばれ + 成功 toast", async () => {
+  mountApp();
+  await openSuccessfully();
+  await openDetailPanelForFirstTask();
+
+  const updatedTitle = "新しいタイトル";
+  const updated: Task = { ...taskA, title: updatedTitle };
+  updateTaskMock.mockResolvedValueOnce(Result.ok(updated));
+
+  const titleDisplay = querySelectorRequired<HTMLInputElement>(
+    '[data-testid="editable-text-display"]',
+  );
+  await act(async () => {
+    titleDisplay.click();
+  });
+  const titleInput = querySelectorRequired<HTMLInputElement>(
+    '[data-testid="editable-text-input"]',
+  );
+  await act(async () => {
+    setInputValue(titleInput, updatedTitle);
+  });
+  await act(async () => {
+    titleInput.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(updateTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateTaskMock).toHaveBeenCalledWith(
+    expect.objectContaining({ filePath: "tasks/a.md", title: updatedTitle }),
+  );
+  expect(container?.textContent).toContain("タスクを更新しました");
+});
+
 test("DetailPanel の status 変更失敗時 → updateTask invoke + エラー toast 表示", async () => {
   mountApp();
   await openSuccessfully();
