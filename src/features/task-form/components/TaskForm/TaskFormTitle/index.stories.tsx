@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { TITLE_MAX_LENGTH } from "@/features/task-form/lib/fields/title";
 import { TaskFormTitle } from ".";
 
 const meta: Meta<typeof TaskFormTitle> = {
@@ -17,6 +18,31 @@ type Story = StoryObj<typeof TaskFormTitle>;
 
 export const Default: Story = {};
 
-export const WithError: Story = {
-  args: { value: "", error: "タイトルを入力してください" },
+export const WithEmptyError: Story = {
+  args: { value: "", error: { code: "EMPTY" } },
+};
+
+export const WithDuplicateError: Story = {
+  args: {
+    value: "Fix login bug",
+    error: { code: "DUPLICATE", fileName: "fix-login-bug.md" },
+  },
+};
+
+export const WithTooLongError: Story = {
+  args: {
+    value: "a".repeat(TITLE_MAX_LENGTH + 1),
+    error: {
+      code: "TOO_LONG",
+      max: TITLE_MAX_LENGTH,
+      actual: TITLE_MAX_LENGTH + 1,
+    },
+  },
+};
+
+export const WithForbiddenCharError: Story = {
+  args: {
+    value: "a<b>c",
+    error: { code: "FORBIDDEN_CHAR", chars: ["<", ">"] },
+  },
 };

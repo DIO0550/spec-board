@@ -13,6 +13,8 @@ type TaskCreateModalProps = {
   parentCandidates?: Task[];
   /** 親タスクの初期値（サブIssue 追加時の自動設定用） */
   initialParent?: string;
+  /** 重複判定に使う既存タスク一覧。未指定なら DUPLICATE 判定なし。 */
+  existingTasks?: readonly Task[];
   /**
    * 送信時のコールバック。reject した場合モーダルは閉じない。
    * 親側でトースト通知などのエラーハンドリングを行う想定。
@@ -35,6 +37,7 @@ export const TaskCreateModal = ({
   initialStatus,
   parentCandidates,
   initialParent,
+  existingTasks,
   onSubmit,
   onClose,
 }: TaskCreateModalProps) => {
@@ -111,6 +114,7 @@ export const TaskCreateModal = ({
           initialStatus={initialStatus}
           parentCandidates={parentCandidates}
           initialParent={initialParent}
+          existingTasks={existingTasks}
           isSubmitting={isSubmitting}
           onSubmit={handleSubmit}
           onCancel={onClose}

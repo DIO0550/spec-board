@@ -585,6 +585,7 @@ export const App = () => {
           columns={columns}
           initialStatus={createModalStatus}
           parentCandidates={tasks}
+          existingTasks={tasks}
           initialParent={createModalParent}
           onSubmit={handleCreateTask}
           onClose={handleCloseCreateModal}

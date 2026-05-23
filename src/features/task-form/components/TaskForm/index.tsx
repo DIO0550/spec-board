@@ -24,6 +24,8 @@ type TaskFormProps = {
   parentCandidates?: Task[];
   /** 親タスクの初期値（サブIssue 追加時の自動設定用） */
   initialParent?: string;
+  /** 重複判定に使う既存タスク一覧。未指定なら DUPLICATE 判定なし。 */
+  existingTasks?: readonly Task[];
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
   /** 送信ボタンのラベル（デフォルト: "作成"） */
@@ -51,6 +53,7 @@ export const TaskForm = ({
   initialStatus,
   parentCandidates,
   initialParent,
+  existingTasks,
   isSubmitting = false,
   submitLabel = "作成",
   cancelLabel = "キャンセル",
@@ -64,6 +67,7 @@ export const TaskForm = ({
     initialParent,
     parentFieldVisible: parentCandidates !== undefined,
     isSubmitting,
+    existingTasks,
     onSubmit,
     finalizeLabels: labels.finalizeLabels,
   });
