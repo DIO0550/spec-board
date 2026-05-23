@@ -1,5 +1,44 @@
+import { KebabCase } from "@/domains/KebabCase";
+import { Result } from "@/utils/result";
+
 /** TitleField が保持する値の型（生の入力文字列） */
 export type TitleField = string;
+
+/** タイトルに許容する最大文字数（trim 後） */
+export const TITLE_MAX_LENGTH = 200;
+
+/**
+ * タイトルに使用を禁止する文字（OS ファイル名予約文字）。
+ * 配列の順序は FORBIDDEN_CHAR エラーの `chars` 列挙順にも使用する。
+ */
+export const FORBIDDEN_TITLE_CHARS = [
+  "<",
+  ">",
+  ":",
+  '"',
+  "/",
+  "\\",
+  "|",
+  "?",
+  "*",
+] as const;
+
+/** タイトルバリデーションのエラー判別共用体。 */
+export type TitleValidationError =
+  | { code: "EMPTY" }
+  | { code: "DUPLICATE"; fileName: string }
+  | { code: "TOO_LONG"; max: number; actual: number }
+  | { code: "FORBIDDEN_CHAR"; chars: string[] };
+
+/** バリデーションに渡すコンテキスト。 */
+export type TitleValidationContext = {
+  /**
+   * kebab(title) + ".md" の重複判定に使う既存ファイル名集合（basename ベース）。
+   * 呼び出し側で「作成先 dirname に同居する既存タスク」だけに絞り込んだ集合を渡す。
+   * 重複判定が不要な場合は空 Set を渡す。
+   */
+  existingFileNames: ReadonlySet<string>;
+};
 
 /**
  * タイトル field の companion object。
@@ -13,18 +52,43 @@ export const TitleField = {
   initial: (): TitleField => "",
 
   /**
-   * タイトルをバリデーションする。
-   * trim 後が空の場合にエラー文字列、妥当ならば undefined を返す。
-   * @param v - 現在の値
-   * @returns エラー文字列または undefined
-   */
-  validate: (v: TitleField): string | undefined =>
-    v.trim().length === 0 ? "タイトルを入力してください" : undefined,
-
-  /**
    * 送信用に値を正規化する（前後空白除去）。
    * @param v - 現在の値
    * @returns 正規化された値
    */
   normalize: (v: TitleField): string => v.trim(),
+
+  /**
+   * タイトルをバリデーションする。
+   * 優先順位は EMPTY → FORBIDDEN_CHAR → TOO_LONG → DUPLICATE。
+   * 最初にマッチしたエラーのみ返し、後続は評価しない。
+   * @param v 現在の値
+   * @param ctx 重複判定用コンテキスト（必須）
+   * @returns Result<void, TitleValidationError>
+   */
+  validate: (
+    v: TitleField,
+    ctx: TitleValidationContext,
+  ): Result<void, TitleValidationError> => {
+    const trimmed = v.trim();
+    if (trimmed.length === 0) {
+      return Result.err({ code: "EMPTY" });
+    }
+    const forbidden = FORBIDDEN_TITLE_CHARS.filter((c) => v.includes(c));
+    if (forbidden.length > 0) {
+      return Result.err({ code: "FORBIDDEN_CHAR", chars: [...forbidden] });
+    }
+    if (trimmed.length > TITLE_MAX_LENGTH) {
+      return Result.err({
+        code: "TOO_LONG",
+        max: TITLE_MAX_LENGTH,
+        actual: trimmed.length,
+      });
+    }
+    const fileName = `${KebabCase.from(trimmed)}.md`;
+    if (ctx.existingFileNames.has(fileName)) {
+      return Result.err({ code: "DUPLICATE", fileName });
+    }
+    return Result.ok(undefined);
+  },
 };
