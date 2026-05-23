@@ -7,6 +7,7 @@ import {
   useTaskFormFields,
 } from "@/features/task-form/hooks/useTaskFormFields";
 import type { TaskFormValues } from "@/features/task-form/types";
+import { Task } from "@/types/task";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -69,6 +70,25 @@ const makeFormEvent = () =>
     preventDefault: vi.fn(),
   }) as unknown as React.FormEvent<HTMLFormElement>;
 
+/**
+ * テスト用の Task を生成するファクトリ。
+ * filePath 以外はデフォルト値で埋める。
+ * @param filePath Task の filePath
+ * @returns Task インスタンス
+ */
+const makeTask = (filePath: string): Task =>
+  Task.fromPayload({
+    id: filePath,
+    title: filePath,
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath,
+  });
+
 test("初期 state: values はデフォルト、errors は空、parent は visible=false で undefined", () => {
   const { get } = render(defaultArgs());
   expect(get().state.values).toEqual({
@@ -90,47 +110,38 @@ test("parentFieldVisible=true + initialParent が初期 state に反映される
   expect(get().state.values.parent).toBe("tasks/p-1.md");
 });
 
-test("dispatch title（空）: values.title と errors.title が同時更新される", () => {
+test("dispatch title: 入力時は errors.title をクリアするのみ（再 validate しない）", () => {
   const { get } = render(defaultArgs());
   act(() => {
     get().dispatch({ type: "title", value: "" });
   });
   expect(get().state.values.title).toBe("");
-  expect(get().state.errors.title).toBe("タイトルを入力してください");
+  expect(get().state.errors.title).toBeUndefined();
 });
 
-test("dispatch title（有効）: errors.title が undefined に戻る", () => {
+test("dispatch title: エラー表示中に値を変えると errors.title が undefined になる", () => {
   const { get } = render(defaultArgs());
   act(() => {
-    get().dispatch({ type: "title", value: "" });
+    get().handleSubmit(makeFormEvent());
   });
-  expect(get().state.errors.title).toBe("タイトルを入力してください");
+  expect(get().state.errors.title?.code).toBe("EMPTY");
   act(() => {
     get().dispatch({ type: "title", value: "abc" });
   });
   expect(get().state.errors.title).toBeUndefined();
 });
 
-test("dispatch validateAll: 現在の values を再検証して errors を更新する", () => {
-  const { get } = render(defaultArgs());
-  expect(get().state.errors.title).toBeUndefined();
-  act(() => {
-    get().dispatch({ type: "validateAll" });
-  });
-  expect(get().state.errors.title).toBe("タイトルを入力してください");
-});
-
-test("handleSubmit: 空タイトルでは onSubmit を呼ばず errors.title をセット", () => {
+test("handleSubmit: 空タイトルでは onSubmit を呼ばず errors.title.code = EMPTY", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().handleSubmit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
-  expect(get().state.errors.title).toBe("タイトルを入力してください");
+  expect(get().state.errors.title?.code).toBe("EMPTY");
 });
 
-test("handleSubmit: 空白のみタイトルでも errors.title がセットされる", () => {
+test("handleSubmit: 空白のみタイトルでも EMPTY エラー", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -140,7 +151,114 @@ test("handleSubmit: 空白のみタイトルでも errors.title がセットさ�
     get().handleSubmit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
-  expect(get().state.errors.title).toBe("タイトルを入力してください");
+  expect(get().state.errors.title?.code).toBe("EMPTY");
+});
+
+test("handleSubmit: TOO_LONG（201 文字）", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "a".repeat(201) });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.title?.code).toBe("TOO_LONG");
+});
+
+test("handleSubmit: FORBIDDEN_CHAR", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "a<b" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.title?.code).toBe("FORBIDDEN_CHAR");
+});
+
+test("handleSubmit DUPLICATE: parent なし → tasks/ 直下の既存タスクと一致", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({
+    ...defaultArgs(),
+    onSubmit,
+    existingTasks: [makeTask("tasks/fix-login-bug.md")],
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+});
+
+test("handleSubmit DUPLICATE: parent あり → 親 dirname スコープで判定", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({
+    ...defaultArgs(),
+    onSubmit,
+    parentFieldVisible: true,
+    initialParent: "tasks/parent/parent.md",
+    existingTasks: [makeTask("tasks/parent/fix-login-bug.md")],
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+});
+
+test("handleSubmit DUPLICATE スコープ外: parent なしで他 dirname にだけ同名 → 重複扱いしない", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({
+    ...defaultArgs(),
+    onSubmit,
+    existingTasks: [makeTask("tasks/parent/fix-login-bug.md")],
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(get().state.errors.title).toBeUndefined();
+});
+
+test("handleSubmit DUPLICATE: Windows パス区切り (\\) でも検出される", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({
+    ...defaultArgs(),
+    onSubmit,
+    existingTasks: [makeTask("tasks\\fix-login-bug.md")],
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+});
+
+test("入力中は重複判定しない（onChange で重複 title を入力しても errors.title は undefined）", () => {
+  const { get } = render({
+    ...defaultArgs(),
+    existingTasks: [makeTask("tasks/fix-login-bug.md")],
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  expect(get().state.errors.title).toBeUndefined();
 });
 
 test("handleSubmit: isSubmitting=true では何もしない", () => {
