@@ -122,26 +122,66 @@ const pickOptimisticKeys = (
   params: UpdateTaskParams,
 ): readonly OptimisticField[] =>
   OPTIMISTIC_FIELDS.filter((key) => {
-    if (!hasOwn(params, key)) {return false;}
-    if (params[key] === undefined) {return false;}
+    if (!hasOwn(params, key)) {
+      return false;
+    }
+    if (params[key] === undefined) {
+      return false;
+    }
     return true;
   });
 
 /**
+ * params の指定キー 1 つを task に楽観反映する pure helper。
+ * `pickOptimisticKeys` が `undefined` 除外済みである前提のもとで type narrowing する。
+ *
+ * @param task 反映対象の Task
+ * @param params 更新パラメータ
+ * @param key 反映するキー
+ * @returns key を params の値で上書きした新 Task
+ */
+const applyOptimisticField = (
+  task: Task,
+  params: UpdateTaskParams,
+  key: OptimisticField,
+): Task => {
+  switch (key) {
+    case "title":
+      return params.title !== undefined
+        ? { ...task, title: params.title }
+        : task;
+    case "status":
+      return params.status !== undefined
+        ? { ...task, status: params.status }
+        : task;
+    case "priority":
+      return params.priority !== undefined
+        ? { ...task, priority: params.priority }
+        : task;
+    case "labels":
+      return params.labels !== undefined
+        ? { ...task, labels: params.labels }
+        : task;
+    case "body":
+      return params.body !== undefined
+        ? { ...task, body: params.body }
+        : task;
+  }
+};
+
+/**
  * snapshot に対し、抽出済みの楽観対象キーだけを params の値で上書きした Task を作る。
+ *
+ * @param current ベースとなる現在 Task（snapshot）
+ * @param params 更新パラメータ
+ * @param keys 反映するキー集合（`pickOptimisticKeys` で抽出済み）
+ * @returns 楽観反映後の Task
  */
 const buildOptimisticTask = (
   current: Task,
   params: UpdateTaskParams,
   keys: readonly OptimisticField[],
-): Task => {
-  const overrides: Partial<Task> = {};
-  for (const key of keys) {
-    // biome-ignore lint/suspicious/noExplicitAny: Task / UpdateTaskParams の key 単位 copy
-    (overrides as any)[key] = (params as any)[key];
-  }
-  return { ...current, ...overrides };
-};
+): Task => keys.reduce((task, key) => applyOptimisticField(task, params, key), current);
 
 /** filePath で現在の Task を visibleData から引き当てる。 */
 const findCurrentTask = (
@@ -165,14 +205,49 @@ const isKeyStillOptimistic = (
   optimistic: Task,
   key: OptimisticField,
 ): boolean => {
-  if (key === "labels") {return arrayShallowEq(current.labels, optimistic.labels);}
+  if (key === "labels") {
+    return arrayShallowEq(current.labels, optimistic.labels);
+  }
   return current[key] === optimistic[key];
+};
+
+/**
+ * 指定キー 1 つを snapshot 値で task に戻す pure helper。
+ *
+ * @param task ベースとなる現在 Task
+ * @param snapshot 反映する snapshot Task
+ * @param key 戻すキー
+ * @returns key を snapshot の値に戻した新 Task
+ */
+const applySnapshotField = (
+  task: Task,
+  snapshot: Task,
+  key: OptimisticField,
+): Task => {
+  switch (key) {
+    case "title":
+      return { ...task, title: snapshot.title };
+    case "status":
+      return { ...task, status: snapshot.status };
+    case "priority":
+      return { ...task, priority: snapshot.priority };
+    case "labels":
+      return { ...task, labels: snapshot.labels };
+    case "body":
+      return { ...task, body: snapshot.body };
+  }
 };
 
 /**
  * 失敗 rollback dispatch 用に、current ベースで「楽観値そのままのキーだけ snapshot 値に戻した」
  * task を組み立てる。外部 listener が触った他キーは current のまま保護する。
  * 全キーが既に外部更新済みなら undefined を返し、rollback dispatch を完全 skip する。
+ *
+ * @param current rollback 直前の最新 Task
+ * @param optimistic 楽観 dispatch で流した Task
+ * @param snapshot 楽観前の snapshot Task
+ * @param keys 楽観対象キー集合
+ * @returns rollback 用 Task。全キー既に外部更新済みなら undefined
  */
 const buildRollbackTask = (
   current: Task,
@@ -180,16 +255,16 @@ const buildRollbackTask = (
   snapshot: Task,
   keys: readonly OptimisticField[],
 ): Task | undefined => {
-  const overrides: Partial<Task> = {};
-  let anyRestored = false;
-  for (const key of keys) {
-    if (isKeyStillOptimistic(current, optimistic, key)) {
-      // biome-ignore lint/suspicious/noExplicitAny: Task の key 単位 copy
-      (overrides as any)[key] = (snapshot as any)[key];
-      anyRestored = true;
-    }
+  const restoreKeys = keys.filter((key) =>
+    isKeyStillOptimistic(current, optimistic, key),
+  );
+  if (restoreKeys.length === 0) {
+    return undefined;
   }
-  return anyRestored ? { ...current, ...overrides } : undefined;
+  return restoreKeys.reduce(
+    (task, key) => applySnapshotField(task, snapshot, key),
+    current,
+  );
 };
 
 /**
