@@ -160,7 +160,7 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
     case "validateAll":
       return {
         ...state,
-        errors: { title: action.error },
+        errors: { ...state.errors, title: action.error },
       };
     default: {
       action satisfies never;
