@@ -186,16 +186,20 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
 export const useTaskFormFields = (
   args: UseTaskFormFieldsArgs,
 ): UseTaskFormFieldsResult => {
-  const [state, dispatch] = useReducer(reducer, args, (a) => ({
-    values: {
-      title: TitleField.initial(),
-      status: a.initialStatus,
-      priority: PriorityField.initial(),
-      parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
-      body: "",
-    },
-    errors: {},
-  }));
+  const [state, dispatch] = useReducer(
+    reducer,
+    args,
+    (a): FieldsState => ({
+      values: {
+        title: TitleField.initial(),
+        status: a.initialStatus,
+        priority: PriorityField.initial(),
+        parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
+        body: "",
+      },
+      errors: {},
+    }),
+  );
 
   const { isSubmitting, onSubmit, finalizeLabels, existingTasks } = args;
   const handleSubmit = useCallback(
