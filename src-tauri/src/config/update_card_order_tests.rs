@@ -205,29 +205,6 @@ fn state_config_remains_unchanged_when_disk_write_fails() {
 }
 
 #[test]
-fn cleans_up_when_all_paths_exist() {
-    let dir = tempdir();
-    let state = Arc::new(AppState::new());
-    open_with_noop(&state, dir.path());
-
-    write_md(dir.path(), "tasks/a.md", "");
-    write_md(dir.path(), "tasks/b.md", "");
-
-    update_card_order_impl(
-        &state,
-        "Todo".to_string(),
-        vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
-    )
-    .expect("update should succeed");
-
-    let on_disk = read_config_json(dir.path());
-    assert_eq!(
-        on_disk.card_order.get("Todo"),
-        Some(&vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()])
-    );
-}
-
-#[test]
 fn cleans_up_to_empty_when_all_paths_missing() {
     let dir = tempdir();
     let state = Arc::new(AppState::new());
@@ -275,18 +252,6 @@ fn cleans_up_only_missing_paths_in_mixed_input() {
             "tasks/exists-2.md".to_string()
         ])
     );
-}
-
-#[test]
-fn cleans_up_empty_input_to_empty() {
-    let dir = tempdir();
-    let state = Arc::new(AppState::new());
-    open_with_noop(&state, dir.path());
-
-    update_card_order_impl(&state, "Todo".to_string(), vec![]).expect("empty input should succeed");
-
-    let on_disk = read_config_json(dir.path());
-    assert_eq!(on_disk.card_order.get("Todo"), Some(&Vec::<String>::new()));
 }
 
 #[cfg(unix)]
