@@ -226,6 +226,11 @@ export const useTaskFormFields = (
         dispatch({ type: "validateAll", error: result.error });
         return;
       }
+      // 前回 submit で残った DUPLICATE 等の古いエラー表示を消す。
+      // parent / existingTasks が変わって今回 Ok になったケースが該当する。
+      if (state.errors.title !== undefined) {
+        dispatch({ type: "validateAll", error: undefined });
+      }
       const labels = finalizeLabels();
       onSubmit({
         title: TitleField.normalize(state.values.title),
@@ -236,7 +241,14 @@ export const useTaskFormFields = (
         labels: [...labels],
       });
     },
-    [isSubmitting, onSubmit, finalizeLabels, existingTasks, state.values],
+    [
+      isSubmitting,
+      onSubmit,
+      finalizeLabels,
+      existingTasks,
+      state.values,
+      state.errors.title,
+    ],
   );
 
   return { state, dispatch, handleSubmit };

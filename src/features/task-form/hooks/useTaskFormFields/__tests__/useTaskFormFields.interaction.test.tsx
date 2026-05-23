@@ -250,6 +250,64 @@ test("handleSubmit DUPLICATE: Windows パス区切り (\\) でも検出される
   expect(get().state.errors.title?.code).toBe("DUPLICATE");
 });
 
+test("handleSubmit: 直前の DUPLICATE エラーが残った状態でも、再 submit が Ok なら errors.title をクリアする", () => {
+  const onSubmit = vi.fn();
+  let tasks: readonly Task[] = [makeTask("tasks/fix-login-bug.md")];
+  const Wrapper = (
+    props: Omit<UseTaskFormFieldsArgs, "existingTasks"> & {
+      existingTasks: readonly Task[];
+      onResult: (r: UseTaskFormFieldsResult) => void;
+    },
+  ) => {
+    const { onResult, ...args } = props;
+    const result = useTaskFormFields(args);
+    useEffect(() => {
+      onResult(result);
+    });
+    return null;
+  };
+  let latest: UseTaskFormFieldsResult | null = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  const renderWith = (current: readonly Task[]) => {
+    act(() => {
+      root?.render(
+        createElement(Wrapper, {
+          initialStatus: "Todo",
+          parentFieldVisible: false,
+          isSubmitting: false,
+          onSubmit,
+          finalizeLabels: () => [],
+          existingTasks: current,
+          onResult: (r) => {
+            latest = r;
+          },
+        }),
+      );
+    });
+  };
+  renderWith(tasks);
+  const get = () => latest as unknown as UseTaskFormFieldsResult;
+
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+  expect(onSubmit).not.toHaveBeenCalled();
+
+  tasks = [];
+  renderWith(tasks);
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(get().state.errors.title).toBeUndefined();
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+});
+
 test("入力中は重複判定しない（onChange で重複 title を入力しても errors.title は undefined）", () => {
   const { get } = render({
     ...defaultArgs(),
