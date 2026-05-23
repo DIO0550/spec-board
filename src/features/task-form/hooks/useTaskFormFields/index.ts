@@ -209,10 +209,15 @@ export const useTaskFormFields = (
         return;
       }
       const parentFilePath = state.values.parent;
+      const parentDir =
+        parentFilePath !== undefined ? pathDirname(parentFilePath) : undefined;
+      // parent が "parent.md" のように dirname を含まない bare filename だと
+      // pathDirname が空文字を返すため、root 配下扱いで DEFAULT_TARGET_DIR に
+      // フォールバックして、tasks/ 直下の既存タスクと比較できるようにする。
       const targetDir =
-        parentFilePath !== undefined
-          ? pathDirname(parentFilePath)
-          : DEFAULT_TARGET_DIR;
+        parentDir === undefined || parentDir === ""
+          ? DEFAULT_TARGET_DIR
+          : parentDir;
 
       const existingFileNames = new Set<string>();
       if (existingTasks !== undefined) {

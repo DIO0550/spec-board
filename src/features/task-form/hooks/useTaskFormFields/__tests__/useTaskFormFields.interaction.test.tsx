@@ -237,6 +237,25 @@ test("handleSubmit DUPLICATE スコープ外: parent なしで他 dirname にだ
   expect(get().state.errors.title).toBeUndefined();
 });
 
+test("handleSubmit DUPLICATE: parent が bare filename のときは tasks/ 直下と比較する", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({
+    ...defaultArgs(),
+    onSubmit,
+    parentFieldVisible: true,
+    initialParent: "parent.md",
+    existingTasks: [makeTask("tasks/fix-login-bug.md")],
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Login Bug" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+});
+
 test("handleSubmit DUPLICATE: Windows パス区切り (\\) でも検出される", () => {
   const onSubmit = vi.fn();
   const { get } = render({
