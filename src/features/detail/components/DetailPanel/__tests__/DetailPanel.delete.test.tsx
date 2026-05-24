@@ -438,6 +438,59 @@ test("子ありタスク: abort に切替後の確定で onDelete(id, 'abort')",
   expect(onDelete.mock.calls[0]).toEqual(["task-abort", "abort"]);
 });
 
+test("子あり / abort で onDelete が reject したらダイアログが維持され isBusy が解除される", async () => {
+  const onDelete = vi.fn().mockRejectedValue(new Error("task has children"));
+  render({
+    task: createTask({ id: "task-abort-fail", children: ["a.md"] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete,
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="delete-orphan-strategy-abort"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="delete-orphan-strategy-abort"]',
+      ) as HTMLInputElement
+    ).click();
+  });
+  await act(async () => {
+    (
+      document.querySelector(
+        '[data-testid="confirm-confirm-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  expect(onDelete).toHaveBeenCalledWith("task-abort-fail", "abort");
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="confirm-dialog"]'),
+    ).toBeTruthy();
+    const confirmBtn = document.querySelector(
+      '[data-testid="confirm-confirm-button"]',
+    ) as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(false);
+    expect(confirmBtn.textContent).toBe("削除");
+  });
+});
+
 test("ファイルパスがパネル下部に表示される", async () => {
   render({
     task: createTask({ filePath: "projects/my-task.md" }),
