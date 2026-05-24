@@ -7,7 +7,7 @@ export type UseParentTaskArgs = {
   /** 現在表示中のタスク */
   task: Task;
   /** 全タスク一覧（読込中など未指定可） */
-  allTasks: readonly Task[] | undefined;
+  allTasks?: readonly Task[];
 };
 
 /** useParentTask の戻り値 */
