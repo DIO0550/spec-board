@@ -204,34 +204,46 @@ test("IME 変換中(isComposing=true)の Cmd+Enter は onConfirm を呼ばず do
   const onConfirm = vi.fn();
   const docHandler = vi.fn();
   document.addEventListener("keydown", docHandler);
-  mount({ body: "abc", onConfirm });
-  clickDisplay();
-  setTextareaValue("変換中");
-  pressKeyOn(requireTextarea(), "Enter", { metaKey: true, isComposing: true });
-  expect(onConfirm).not.toHaveBeenCalled();
-  expect(docHandler).not.toHaveBeenCalled();
-  document.removeEventListener("keydown", docHandler);
+  try {
+    mount({ body: "abc", onConfirm });
+    clickDisplay();
+    setTextareaValue("変換中");
+    pressKeyOn(requireTextarea(), "Enter", {
+      metaKey: true,
+      isComposing: true,
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(docHandler).not.toHaveBeenCalled();
+  } finally {
+    document.removeEventListener("keydown", docHandler);
+  }
 });
 
 test("Cmd+Enter で keydown が document へ伝播しない（stopPropagation）", () => {
   const onConfirm = vi.fn();
   const docHandler = vi.fn();
   document.addEventListener("keydown", docHandler);
-  mount({ body: "abc", onConfirm });
-  clickDisplay();
-  setTextareaValue("xyz");
-  pressKeyOn(requireTextarea(), "Enter", { metaKey: true });
-  expect(docHandler).not.toHaveBeenCalled();
-  document.removeEventListener("keydown", docHandler);
+  try {
+    mount({ body: "abc", onConfirm });
+    clickDisplay();
+    setTextareaValue("xyz");
+    pressKeyOn(requireTextarea(), "Enter", { metaKey: true });
+    expect(docHandler).not.toHaveBeenCalled();
+  } finally {
+    document.removeEventListener("keydown", docHandler);
+  }
 });
 
 test("Esc で keydown が document へ伝播しない（stopPropagation）", () => {
   const onConfirm = vi.fn();
   const docHandler = vi.fn();
   document.addEventListener("keydown", docHandler);
-  mount({ body: "abc", onConfirm });
-  clickDisplay();
-  pressKeyOn(requireTextarea(), "Escape");
-  expect(docHandler).not.toHaveBeenCalled();
-  document.removeEventListener("keydown", docHandler);
+  try {
+    mount({ body: "abc", onConfirm });
+    clickDisplay();
+    pressKeyOn(requireTextarea(), "Escape");
+    expect(docHandler).not.toHaveBeenCalled();
+  } finally {
+    document.removeEventListener("keydown", docHandler);
+  }
 });
