@@ -380,16 +380,43 @@ export const deleteTaskAction = (
       !ProjectSessionState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
+      return Result.err(
+        ProjectError.invalidState("プロジェクトが切り替わりました"),
+      );
+    }
+
+    // ProjectData 全体を snapshot として採取する。
+    // 削除で掃除される他 task の hierarchy / links / reverseLinks も含めて
+    // rollback で完全復元したいので、task 単体ではなく ProjectData 単位で取る。
+    // visibleData は loaded / loading.previousLoaded 以外では null を返す契約。
+    const snapshot = ProjectSessionState.visibleData(deps.getState());
+    const hasTarget =
+      snapshot !== null &&
+      snapshot.tasks.some((t) => t.filePath === params.filePath);
+
+    if (hasTarget) {
+      deps.dispatchSync({ type: "task-deleted", filePath: params.filePath });
     }
 
     const result = await deleteTaskInvoke(params);
+
+    if (!isProjectCurrent(deps.projectVersion, version)) {
+      // project が切り替わった場合は rollback dispatch も skip する。
+      // 通知抑止と rollback skip を分離せず、両方とも skip する方針。
+      return Result.err(
+        ProjectError.invalidState("プロジェクトが切り替わりました"),
+      );
+    }
+
     if (!result.ok) {
+      // 失敗 rollback: 楽観 dispatch を行った場合のみ snapshot 全体で復元する。
+      if (hasTarget && snapshot !== null) {
+        deps.dispatchSync({ type: "state-replaced", data: snapshot });
+      }
       return Result.err(ProjectError.tauri(result.error));
     }
-    if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
-    }
+
+    // 確定 dispatch (冪等)。楽観 dispatch を skip した経路でも常に発火する。
     deps.dispatchSync({ type: "task-deleted", filePath: params.filePath });
     return Result.ok(undefined);
   });

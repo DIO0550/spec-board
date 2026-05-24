@@ -649,19 +649,48 @@ test("deleteTask (loaded) 成功 → Result.ok + 除去", async () => {
   ).toEqual([]);
 });
 
-test("deleteTask (loaded) 失敗 → Result.err、state 不変", async () => {
+test("deleteTask (loaded) pending 中は tasks 空 → 失敗 resolve で snapshot 復元", async () => {
   const probe = renderHook();
   await openLoaded(probe);
-  const err = new TauriError("IO_ERROR", "io");
-  deleteTaskMock.mockResolvedValueOnce(Result.err(err));
-  let result!: Awaited<ReturnType<UseProjectResult["deleteTask"]>>;
-  await act(async () => {
-    result = await probe.latest.deleteTask({ filePath: "tasks/a.md" });
+
+  let resolveInvoke!: (r: ResultT<void, TauriError>) => void;
+  deleteTaskMock.mockReturnValueOnce(
+    new Promise<ResultT<void, TauriError>>((r) => {
+      resolveInvoke = r;
+    }),
+  );
+
+  let resultPromise!: Promise<
+    Awaited<ReturnType<UseProjectResult["deleteTask"]>>
+  >;
+  act(() => {
+    resultPromise = probe.latest.deleteTask({ filePath: "tasks/a.md" });
   });
-  expect(result.ok).toBe(false);
+  // queue の microtask を進めて楽観 dispatch を反映させる
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  // 楽観反映: invoke 未完了でも tasks から target が消えている
   expect(
     (probe.latest.state as { data: { tasks: Task[] } }).data.tasks,
-  ).toEqual([taskA]);
+  ).toEqual([]);
+
+  // 失敗 resolve → state-replaced rollback で snapshot が完全復元される
+  const err = new TauriError("IO_ERROR", "io");
+  let result!: Awaited<ReturnType<UseProjectResult["deleteTask"]>>;
+  await act(async () => {
+    resolveInvoke(Result.err(err));
+    result = await resultPromise;
+  });
+
+  expect(result.ok).toBe(false);
+  const restored = (probe.latest.state as { data: { tasks: Task[] } }).data
+    .tasks;
+  expect(restored).toHaveLength(1);
+  expect(restored[0].filePath).toBe(taskA.filePath);
+  expect(restored[0].title).toBe(taskA.title);
 });
 
 test("deleteTask orphanStrategy: 'clear' を invoke にそのまま forwarding", async () => {

@@ -21,6 +21,11 @@ export type ProjectAction =
   | { type: "task-created"; task: Task }
   | { type: "task-updated"; originalFilePath: string; task: Task }
   | { type: "task-deleted"; filePath: string }
+  // ProjectData 全体を snapshot で完全復元するための action。
+  // 主に削除失敗時の rollback で使う (削除に伴い他 task の hierarchy / links /
+  // reverseLinks も掃除されるため、task 単体差し替えでは戻しきれない)。
+  // 他用途で使う際は ProjectData の不変条件を呼び出し側で保証すること。
+  | { type: "state-replaced"; data: ProjectData }
   | {
       type: "columns-replaced";
       columns: Column[];
@@ -67,6 +72,8 @@ export const reducer = (
       return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.applyTaskDeleted(data, action.filePath),
       );
+    case "state-replaced":
+      return ProjectSessionState.updateData(state, () => action.data);
     case "columns-replaced":
       return ProjectSessionState.updateData(state, (data) =>
         ProjectDataDomain.replaceColumns(data, {
