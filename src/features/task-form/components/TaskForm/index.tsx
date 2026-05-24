@@ -24,6 +24,12 @@ type TaskFormProps = {
   parentCandidates?: Task[];
   /** 親タスクの初期値（サブIssue 追加時の自動設定用） */
   initialParent?: string;
+  /**
+   * 親フィールドのみを変更不可にするフラグ。
+   * サブIssue 追加経路で親が自動セットされた状態を保護するために使う。
+   * parentCandidates が undefined のときは無視される。
+   */
+  parentReadOnly?: boolean;
   /** 重複判定に使う既存タスク一覧。未指定なら DUPLICATE 判定なし。 */
   existingTasks?: readonly Task[];
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
@@ -53,6 +59,7 @@ export const TaskForm = ({
   initialStatus,
   parentCandidates,
   initialParent,
+  parentReadOnly,
   existingTasks,
   isSubmitting = false,
   submitLabel = "作成",
@@ -119,6 +126,7 @@ export const TaskForm = ({
           value={fields.state.values.parent}
           onChange={(value) => fields.dispatch({ type: "parent", value })}
           disabled={isSubmitting}
+          readOnly={parentReadOnly}
         />
       )}
       <TaskFormBody

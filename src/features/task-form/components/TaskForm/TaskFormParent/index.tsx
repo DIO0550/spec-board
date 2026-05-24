@@ -13,6 +13,8 @@ type TaskFormParentProps = {
   onChange: (value: string | undefined) => void;
   /** 無効化 */
   disabled: boolean;
+  /** 親フィールドを変更不可にする。ParentTaskSelect に pass-through する。 */
+  readOnly?: boolean;
 };
 
 /**
@@ -27,6 +29,7 @@ export const TaskFormParent = ({
   value,
   onChange,
   disabled,
+  readOnly,
 }: TaskFormParentProps) => {
   return (
     <ParentTaskSelect
@@ -34,6 +37,7 @@ export const TaskFormParent = ({
       value={value}
       onChange={onChange}
       disabled={disabled}
+      readOnly={readOnly}
     />
   );
 };

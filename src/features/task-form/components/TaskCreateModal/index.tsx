@@ -13,6 +13,11 @@ type TaskCreateModalProps = {
   parentCandidates?: Task[];
   /** 親タスクの初期値（サブIssue 追加時の自動設定用） */
   initialParent?: string;
+  /**
+   * 親フィールドのみを変更不可にするフラグ。
+   * サブIssue 追加経路で自動セットされた親を保護するために使う。TaskForm に pass-through する。
+   */
+  parentReadOnly?: boolean;
   /** 重複判定に使う既存タスク一覧。未指定なら DUPLICATE 判定なし。 */
   existingTasks?: readonly Task[];
   /**
@@ -37,6 +42,7 @@ export const TaskCreateModal = ({
   initialStatus,
   parentCandidates,
   initialParent,
+  parentReadOnly,
   existingTasks,
   onSubmit,
   onClose,
@@ -114,6 +120,7 @@ export const TaskCreateModal = ({
           initialStatus={initialStatus}
           parentCandidates={parentCandidates}
           initialParent={initialParent}
+          parentReadOnly={parentReadOnly}
           existingTasks={existingTasks}
           isSubmitting={isSubmitting}
           onSubmit={handleSubmit}

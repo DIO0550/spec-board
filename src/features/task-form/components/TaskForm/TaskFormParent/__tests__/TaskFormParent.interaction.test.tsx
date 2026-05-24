@@ -81,3 +81,17 @@ test("受け取った props が ParentTaskSelect にそのまま渡る", () => {
   expect(passedProps.onChange).toBe(onChange);
   expect(passedProps.disabled).toBe(true);
 });
+
+test("readOnly props を ParentTaskSelect に pass-through する", () => {
+  render({
+    tasks: mockTasks,
+    value: "tasks/p-1.md",
+    onChange: vi.fn(),
+    disabled: false,
+    readOnly: true,
+  });
+  const lastCall =
+    parentTaskSelectSpy.mock.calls[parentTaskSelectSpy.mock.calls.length - 1];
+  const passedProps = lastCall[0] as { readOnly?: boolean };
+  expect(passedProps.readOnly).toBe(true);
+});

@@ -13,6 +13,14 @@ type ParentTaskSelectProps = {
   onChange: (filePath: string | undefined) => void;
   /** 無効化（送信中など） */
   disabled?: boolean;
+  /**
+   * 親フィールドを変更不可にする。
+   * true のとき × ボタンを描画しない。さらに `value === undefined` の場合も
+   * 検索 input は描画されず、未設定 placeholder のみ表示する（props 単体で
+   * 「変更不可」契約を自己完結させる）。
+   * disabled と直交し、両方 true でも独立に効く。
+   */
+  readOnly?: boolean;
 };
 
 /**
@@ -27,6 +35,7 @@ export const ParentTaskSelect = ({
   value,
   onChange,
   disabled = false,
+  readOnly = false,
 }: ParentTaskSelectProps) => {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -69,29 +78,46 @@ export const ParentTaskSelect = ({
     setQuery("");
   };
 
+  const selectedLabel = selected ? selected.title || selected.filePath : value;
+  const showSelectedLike = selectedLabel !== undefined;
+  const showReadOnlyEmpty = !showSelectedLike && readOnly;
+
   return (
     <div data-testid="parent-task-select">
       <div className="mb-1 block text-xs font-medium text-gray-700">
-        {selected ? "親タスク" : <label htmlFor={inputId}>親タスク</label>}
+        {showSelectedLike || showReadOnlyEmpty ? (
+          "親タスク"
+        ) : (
+          <label htmlFor={inputId}>親タスク</label>
+        )}
       </div>
-      {selected ? (
+      {showSelectedLike ? (
         <div className="flex items-center gap-2 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm">
           <span
             className="min-w-0 flex-1 truncate text-gray-800"
             data-testid="parent-task-selected"
           >
-            {selected.title || selected.filePath}
+            {selectedLabel}
           </span>
-          <button
-            type="button"
-            aria-label="親タスクを解除"
-            className="rounded text-gray-400 hover:text-gray-700 disabled:opacity-50"
-            disabled={disabled}
-            onClick={handleClear}
-            data-testid="parent-task-clear"
-          >
-            ×
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label="親タスクを解除"
+              className="rounded text-gray-400 hover:text-gray-700 disabled:opacity-50"
+              disabled={disabled}
+              onClick={handleClear}
+              data-testid="parent-task-clear"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ) : showReadOnlyEmpty ? (
+        <div
+          className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-500"
+          data-testid="parent-task-readonly-empty"
+        >
+          （未設定）
         </div>
       ) : (
         <div className="relative">

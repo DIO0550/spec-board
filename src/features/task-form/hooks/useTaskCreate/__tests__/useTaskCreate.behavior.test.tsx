@@ -225,7 +225,7 @@ test("T7: injected createTask が reject すると submit も reject し、isSub
   expect(probe.latest.isSubmitting).toBe(false);
 });
 
-test("T3: TaskFormValues が CreateTaskParams にそのまま pass-through される", async () => {
+test("T3: priority / parent が undefined のとき CreateTaskParams から key 自体を含めない", async () => {
   const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
   const probe = renderHook({ createTask });
   const values: TaskFormValues = {
@@ -238,12 +238,39 @@ test("T3: TaskFormValues が CreateTaskParams にそのまま pass-through さ�
     await probe.latest.submit(values);
   });
   expect(createTask).toHaveBeenCalledTimes(1);
+  const params = createTask.mock.calls[0][0] as Record<string, unknown>;
+  expect(params).toEqual({
+    title: "T",
+    status: "TODO",
+    labels: [],
+    body: "",
+  });
+  expect(params).not.toHaveProperty("priority");
+  expect(params).not.toHaveProperty("parent");
+  expect(Object.prototype.hasOwnProperty.call(params, "priority")).toBe(false);
+  expect(Object.prototype.hasOwnProperty.call(params, "parent")).toBe(false);
+});
+
+test("T3b: priority / parent が値を持つときは CreateTaskParams に含まれる", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+  const probe = renderHook({ createTask });
+  const values: TaskFormValues = {
+    title: "T",
+    status: "TODO",
+    priority: "High",
+    labels: ["bug"],
+    parent: "tasks/parent.md",
+    body: "body",
+  };
+  await act(async () => {
+    await probe.latest.submit(values);
+  });
   expect(createTask).toHaveBeenCalledWith({
     title: "T",
     status: "TODO",
-    priority: undefined,
-    labels: [],
-    parent: undefined,
-    body: "",
+    priority: "High",
+    labels: ["bug"],
+    parent: "tasks/parent.md",
+    body: "body",
   });
 });
