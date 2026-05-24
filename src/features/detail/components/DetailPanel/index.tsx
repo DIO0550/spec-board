@@ -6,10 +6,12 @@ import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailLabels } from "@/features/detail/hooks/useDetailLabels";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
+import { useParentTask } from "@/features/detail/hooks/useParentTask";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { LabelEditor } from "../LabelEditor";
 import { MarkdownBody } from "../MarkdownBody";
+import { ParentLink } from "../ParentLink";
 import { PrioritySelect } from "../PrioritySelect";
 import { StatusSelect } from "../StatusSelect";
 import { SubIssueSection } from "../SubIssueSection";
@@ -43,6 +45,11 @@ type DetailPanelProps = {
    * @param parentFilePath - 親タスクのファイルパス
    */
   onAddSubIssue?: (parentFilePath: string) => void;
+  /**
+   * 別のタスクへ詳細パネルの表示対象を切り替えるコールバック。
+   * @param taskId - 切り替え先タスクの id
+   */
+  onSelectTask?: (taskId: string) => void;
 };
 
 /**
@@ -59,6 +66,7 @@ export const DetailPanel = ({
   onTaskUpdate,
   onDelete,
   onAddSubIssue,
+  onSelectTask,
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
@@ -68,6 +76,8 @@ export const DetailPanel = ({
     columns,
     doneColumn,
   });
+
+  const { parentTask } = useParentTask({ task, allTasks });
 
   const labels = useDetailLabels({ task, onTaskUpdate });
 
@@ -125,7 +135,10 @@ export const DetailPanel = ({
         className="fixed top-0 right-0 z-50 flex h-full w-[480px] max-w-full animate-slide-in flex-col bg-white shadow-xl"
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-          <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            {parentTask && onSelectTask && (
+              <ParentLink parentTask={parentTask} onSelect={onSelectTask} />
+            )}
             <EditableText
               value={task.title || task.filePath}
               onConfirm={handleTitleConfirm}

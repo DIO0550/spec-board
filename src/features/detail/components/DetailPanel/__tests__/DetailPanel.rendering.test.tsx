@@ -245,6 +245,106 @@ test("サブIssue 追加ボタンクリックで onAddSubIssue が親のファ�
   expect(onAddSubIssue).toHaveBeenCalledWith("tasks/parent.md");
 });
 
+test("親タスクが allTasks に存在し onSelectTask があるとき ParentLink が表示される", async () => {
+  const parent = createTask({
+    id: "parent",
+    title: "親タスクABC",
+    filePath: "tasks/parent.md",
+  });
+  const child = createTask({
+    id: "child",
+    title: "子タスク",
+    filePath: "tasks/child.md",
+    parent: "tasks/parent.md",
+  });
+  render({
+    task: child,
+    columns: testColumns,
+    allTasks: [parent, child],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onSelectTask: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-parent-link"]'),
+    ).toBeTruthy();
+  });
+  const link = document.querySelector(
+    '[data-testid="detail-parent-link"]',
+  ) as HTMLElement;
+  expect(link.textContent).toBe("親: 親タスクABC");
+});
+
+test("parentFilePath が無い task では ParentLink が描画されない", async () => {
+  render({
+    task: createTask({ filePath: "tasks/standalone.md" }),
+    columns: testColumns,
+    allTasks: [],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onSelectTask: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+  });
+  expect(
+    document.querySelector('[data-testid="detail-parent-link"]'),
+  ).toBeNull();
+});
+
+test("孤児参照（allTasks に親無し）のとき ParentLink が描画されない", async () => {
+  const child = createTask({
+    id: "child",
+    filePath: "tasks/child.md",
+    parent: "tasks/missing.md",
+  });
+  render({
+    task: child,
+    columns: testColumns,
+    allTasks: [child],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onSelectTask: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+  });
+  expect(
+    document.querySelector('[data-testid="detail-parent-link"]'),
+  ).toBeNull();
+});
+
+test("onSelectTask 未指定のとき ParentLink が描画されない", async () => {
+  const parent = createTask({
+    id: "parent",
+    title: "親",
+    filePath: "tasks/parent.md",
+  });
+  const child = createTask({
+    id: "child",
+    filePath: "tasks/child.md",
+    parent: "tasks/parent.md",
+  });
+  render({
+    task: child,
+    columns: testColumns,
+    allTasks: [parent, child],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+  });
+  expect(
+    document.querySelector('[data-testid="detail-parent-link"]'),
+  ).toBeNull();
+});
+
 test("allTasks 未指定のときサブIssue セクションは表示されない", async () => {
   render({
     task: createTask({ filePath: "tasks/parent.md" }),
