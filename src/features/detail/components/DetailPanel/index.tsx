@@ -229,13 +229,18 @@ export const DetailPanel = ({
           onCancel={deleteFlow.cancelDelete}
         >
           {task.hierarchy.childFilePaths.length > 0 && (
-            <fieldset
+            <div
+              role="radiogroup"
+              aria-labelledby="orphan-strategy-label"
               data-testid="delete-orphan-strategy-radiogroup"
               className="mt-2 flex flex-col gap-1 rounded border border-gray-200 p-2 text-sm"
             >
-              <legend className="px-1 text-xs text-gray-600">
+              <p
+                id="orphan-strategy-label"
+                className="px-1 text-xs text-gray-600"
+              >
                 子タスクの処理
-              </legend>
+              </p>
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -258,7 +263,7 @@ export const DetailPanel = ({
                 />
                 削除を中止（abort）
               </label>
-            </fieldset>
+            </div>
           )}
         </ConfirmDialog>
       )}
