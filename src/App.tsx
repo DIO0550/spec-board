@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
@@ -112,6 +112,12 @@ export const App = () => {
   const [createModalParent, setCreateModalParent] = useState<
     string | undefined
   >(undefined);
+  // サブIssue 追加経路で親が自動セットされたことを示す state。
+  // 値が入っているとき parentCandidates は親 1 件に絞られ、UI 上 read-only になる。
+  // 親が tasks から消えても本 state は残るため、ParentTaskSelect の filePath fallback が起動する。
+  const [subIssueParentPath, setSubIssueParentPath] = useState<
+    string | undefined
+  >(undefined);
   const [announcement, setAnnouncement] = useState<LiveAnnouncement | null>(
     null,
   );
@@ -137,14 +143,25 @@ export const App = () => {
     setSelectedTaskId(null);
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
+    setSubIssueParentPath(undefined);
   } else if (state.kind !== "loaded" && createModalStatus !== null) {
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
+    setSubIssueParentPath(undefined);
   }
 
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
+  // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
+  // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
+  const parentCandidates = useMemo(() => {
+    if (subIssueParentPath === undefined) {
+      return tasks;
+    }
+    return tasks.filter((t) => t.filePath === subIssueParentPath);
+  }, [tasks, subIssueParentPath]);
+  const parentReadOnly = subIssueParentPath !== undefined;
   // path 末尾セグメントを project 名として表示する。OS の path separator は
   // / / \ どちらにも対応する (Windows / POSIX 双方)。
   const displayedPath = state.kind === "loaded" ? state.path : null;
@@ -190,6 +207,7 @@ export const App = () => {
   const handleAddTask = useCallback((columnName: string) => {
     setCreateModalStatus(columnName);
     setCreateModalParent(undefined);
+    setSubIssueParentPath(undefined);
   }, []);
 
   const handleAddColumn = useCallback(
@@ -371,6 +389,7 @@ export const App = () => {
   const handleCloseCreateModal = useCallback(() => {
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
+    setSubIssueParentPath(undefined);
   }, []);
 
   const defaultCreateStatus =
@@ -388,6 +407,7 @@ export const App = () => {
       }
       setCreateModalStatus(defaultCreateStatus);
       setCreateModalParent(parentFilePath);
+      setSubIssueParentPath(parentFilePath);
     },
     [defaultCreateStatus, showToast],
   );
@@ -584,9 +604,10 @@ export const App = () => {
         <TaskCreateModal
           columns={columns}
           initialStatus={createModalStatus}
-          parentCandidates={tasks}
+          parentCandidates={parentCandidates}
           existingTasks={tasks}
           initialParent={createModalParent}
+          parentReadOnly={parentReadOnly}
           onSubmit={handleCreateTask}
           onClose={handleCloseCreateModal}
         />

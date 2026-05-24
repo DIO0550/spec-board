@@ -32,17 +32,18 @@ export type UseTaskCreateResult = {
 };
 
 /**
- * TaskFormValues を BE 仕様の CreateTaskParams にそのまま pass-through する。
+ * TaskFormValues を BE 仕様の CreateTaskParams に変換する。
+ * priority / parent は undefined のとき key 自体を含めず、BE 側で None として扱わせる。
  * @param values フォーム値
  * @returns BE invoke 用のパラメータ
  */
 const toCreateTaskParams = (values: TaskFormValues): CreateTaskParams => ({
   title: values.title,
   status: values.status,
-  priority: values.priority,
   labels: values.labels,
-  parent: values.parent,
   body: values.body,
+  ...(values.priority !== undefined && { priority: values.priority }),
+  ...(values.parent !== undefined && { parent: values.parent }),
 });
 
 /**
