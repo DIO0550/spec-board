@@ -17,6 +17,7 @@ import {
 import { ProjectError } from "../errors";
 import type { ProjectAction, ProjectState as ProjectStateT } from "../reducer";
 import { ProjectSessionState } from "../state/projectSessionState";
+import { PROJECT_SWITCHED_MESSAGE } from "./updateColumns";
 
 export type TaskActionDeps = {
   projectVersion: ProjectVersion;
@@ -67,7 +68,7 @@ export const createTaskAction = (
       !ProjectSessionState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
+      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
     }
 
     const result = await createTaskInvoke(params);
@@ -75,7 +76,7 @@ export const createTaskAction = (
       return Result.err(ProjectError.tauri(result.error));
     }
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
+      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
     }
     deps.dispatchSync({ type: "task-created", task: result.value });
     return Result.ok(result.value);
@@ -294,7 +295,7 @@ export const updateTaskAction = (
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(
-        ProjectError.invalidState("プロジェクトが切り替わりました"),
+        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
       );
     }
 
@@ -323,7 +324,7 @@ export const updateTaskAction = (
 
     if (!isProjectCurrent(deps.projectVersion, version)) {
       return Result.err(
-        ProjectError.invalidState("プロジェクトが切り替わりました"),
+        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
       );
     }
 
@@ -381,7 +382,7 @@ export const deleteTaskAction = (
       !isProjectCurrent(deps.projectVersion, version)
     ) {
       return Result.err(
-        ProjectError.invalidState("プロジェクトが切り替わりました"),
+        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
       );
     }
 
@@ -404,7 +405,7 @@ export const deleteTaskAction = (
       // project が切り替わった場合は rollback dispatch も skip する。
       // 通知抑止と rollback skip を分離せず、両方とも skip する方針。
       return Result.err(
-        ProjectError.invalidState("プロジェクトが切り替わりました"),
+        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
       );
     }
 
