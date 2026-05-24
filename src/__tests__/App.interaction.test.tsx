@@ -806,9 +806,8 @@ test("子タスクのカードをクリック → DetailPanel 表示 → 親リ�
   await openParentChildProject();
 
   const cards = Array.from(
-    container?.querySelectorAll<HTMLDivElement>(
-      '[data-testid="task-card"]',
-    ) ?? [],
+    container?.querySelectorAll<HTMLDivElement>('[data-testid="task-card"]') ??
+      [],
   );
   const childCard = cards.find(
     (card) =>

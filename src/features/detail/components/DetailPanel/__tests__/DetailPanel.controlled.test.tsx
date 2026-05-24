@@ -192,7 +192,6 @@ test("PrioritySelect で「なし」を選ぶと onTaskUpdate(task.id, { priorit
   expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { priority: undefined });
 });
 
-
 test("ParentLink クリックで onSelectTask が parentTask.id 引数で 1 回呼ばれる", () => {
   const onSelectTask = vi.fn();
   const parent = createTask({
@@ -215,7 +214,7 @@ test("ParentLink クリックで onSelectTask が parentTask.id 引数で 1 回�
     onSelectTask,
   });
   const link = document.querySelector(
-    "[data-testid=\"detail-parent-link\"]",
+    '[data-testid="detail-parent-link"]',
   ) as HTMLButtonElement;
   expect(link).toBeTruthy();
   act(() => {
