@@ -128,6 +128,13 @@ export const DetailPanel = ({
     [task.id, onTaskUpdate],
   );
 
+  const handleBodyConfirm = useCallback(
+    (body: string) => {
+      onTaskUpdate(task.id, { body });
+    },
+    [task.id, onTaskUpdate],
+  );
+
   useEffect(() => {
     panelRef.current?.focus();
   }, []);
@@ -207,7 +214,13 @@ export const DetailPanel = ({
                 onAddSubIssue={onAddSubIssue}
               />
             )}
-            <MarkdownBody body={task.body} />
+            {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
+            {/* MarkdownBody を再マウントして edit 状態をリセットする（stale state 防止）。 */}
+            <MarkdownBody
+              key={task.id}
+              body={task.body}
+              onConfirm={handleBodyConfirm}
+            />
           </div>
         </div>
         <div className="border-t border-gray-200 px-4 py-3">

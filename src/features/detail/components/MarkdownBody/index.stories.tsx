@@ -43,3 +43,14 @@ export const Inline: Story = {
     body: "テキストには **強調** や `inline code` が含まれることがあります。",
   },
 };
+
+export const EditablePlaceholder: Story = {
+  args: { body: "", onConfirm: () => {} },
+};
+
+export const EditableWithContent: Story = {
+  args: {
+    body: "# 編集可能な本文\n\n- 項目 1\n- 項目 2",
+    onConfirm: () => {},
+  },
+};
