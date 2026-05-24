@@ -8,8 +8,8 @@ import {
   HeaderBar,
   type MoveTaskParams,
   PROJECT_SWITCHED_MESSAGE,
-  type ProjectError,
   type ProjectState,
+  projectErrorMessage,
   type ReorderColumnsEvent,
   useProject,
 } from "./features/board";
@@ -21,19 +21,6 @@ import {
 } from "./features/task-form";
 import type { Column } from "./types/column";
 import type { Task } from "./types/task";
-
-/**
- * `ProjectError` から人間可読なメッセージを取り出す。
- *
- * @param err useProject から運ばれるエラー
- * @returns toast 等に出せる文字列
- */
-const projectErrorMessage = (err: ProjectError): string => {
-  if (err.kind === "tauri") {
-    return err.error.message;
-  }
-  return err.message;
-};
 
 /** State の表示用 ProjectData を返すための内部型。 */
 type DisplayableData = {

@@ -47,6 +47,7 @@ import type {
 
 export { PROJECT_SWITCHED_MESSAGE } from "./actions/updateColumns";
 export { ProjectError } from "./errors";
+export { projectErrorMessage } from "./projectErrorMessage";
 export type { ProjectData, ProjectState } from "./reducer";
 export type {
   ColumnsCommand,
