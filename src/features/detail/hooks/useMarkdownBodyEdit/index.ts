@@ -145,6 +145,11 @@ export const useMarkdownBodyEdit = (
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        // IME 変換中の Escape は変換候補のキャンセル用途で押されるのが一般的。
+        // edit モードをキャンセルすると下書きを失うため IME 側に処理を委ねる。
+        if (e.nativeEvent.isComposing) {
+          return;
+        }
         cancel();
       }
     },

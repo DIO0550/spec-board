@@ -269,6 +269,26 @@ test("IME 変換中(isComposing=true)の Cmd+Enter は onConfirm 未発火、pre
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
 });
 
+test("IME 変換中(isComposing=true)の Esc は cancel を呼ばず mode/editValue を維持する（IME 候補キャンセル用途を尊重）", () => {
+  const onConfirm = vi.fn();
+  mount({ body: "abc", onConfirm });
+  act(() => {
+    captured?.handleDisplayClick();
+  });
+  act(() => {
+    captured?.setEditValue("draft");
+  });
+  const e = makeFakeKey({ key: "Escape", isComposing: true });
+  act(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
+    captured?.handleTextareaKeyDown(e as any);
+  });
+  expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
+  expect(captured?.editValue).toBe("draft");
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect(e.stopPropagation).toHaveBeenCalled();
+});
+
 test("Esc で onConfirm 未発火 + editValue が body に戻り display へ遷移", () => {
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
