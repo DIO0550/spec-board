@@ -751,3 +751,92 @@ test("moveTask 部分失敗（partial-move）→ 並び順保存失敗の専用 
   expect(container?.textContent).toContain("並び順の保存に失敗しました");
   expect(container?.textContent).not.toContain("タスクの移動に失敗しました");
 });
+
+const parentTask: Task = Task.fromPayload({
+  id: "p",
+  title: "親タスクABC",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: ["tasks/child.md"],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/parent.md",
+});
+
+const childTask: Task = Task.fromPayload({
+  id: "c",
+  title: "子タスクXYZ",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/child.md",
+  parent: "tasks/parent.md",
+});
+
+const parentChildPayload: OpenProjectPayload = {
+  tasks: [parentTask, childTask],
+  columns: ["Todo", "Done"],
+};
+
+const openParentChildProject = async () => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(parentChildPayload));
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const dialogTitleValue = (): string | null | undefined => {
+  const dialog = container?.querySelector('[role="dialog"]');
+  const titleInput = dialog?.querySelector(
+    '[data-testid="editable-text-display"]',
+  ) as HTMLInputElement | null;
+  return titleInput?.value;
+};
+
+test("子タスクのカードをクリック → DetailPanel 表示 → 親リンククリックで親タスクの DetailPanel に切り替わる", async () => {
+  mountApp();
+  await openParentChildProject();
+
+  const cards = Array.from(
+    container?.querySelectorAll<HTMLDivElement>(
+      '[data-testid="task-card"]',
+    ) ?? [],
+  );
+  const childCard = cards.find(
+    (card) =>
+      card.querySelector('[data-testid="task-card-title"]')?.textContent ===
+      "子タスクXYZ",
+  );
+  expect(childCard).toBeDefined();
+
+  await act(async () => {
+    childCard?.click();
+  });
+
+  // 誤選択の早期検出: DetailPanel が子タスクで開いていることを確認
+  expect(container?.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(dialogTitleValue()).toBe("子タスクXYZ");
+
+  const parentLink = querySelectorRequired<HTMLButtonElement>(
+    '[data-testid="detail-parent-link"]',
+  );
+  expect(parentLink.textContent).toBe("親: 親タスクABC");
+
+  await act(async () => {
+    parentLink.click();
+  });
+
+  expect(dialogTitleValue()).toBe("親タスクABC");
+  // 親タスクには親が無いので ParentLink は描画されない
+  expect(
+    container?.querySelector('[data-testid="detail-parent-link"]'),
+  ).toBeNull();
+});

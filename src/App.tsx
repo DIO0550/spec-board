@@ -180,6 +180,10 @@ export const App = () => {
     setSelectedTaskId(taskId);
   }, []);
 
+  const handleSelectTask = useCallback((taskId: string) => {
+    setSelectedTaskId(taskId);
+  }, []);
+
   const handleCloseDetail = useCallback(() => {
     setSelectedTaskId(null);
   }, []);
@@ -598,6 +602,7 @@ export const App = () => {
           onTaskUpdate={handleTaskUpdate}
           onDelete={handleTaskDelete}
           onAddSubIssue={handleAddSubIssue}
+          onSelectTask={handleSelectTask}
         />
       )}
       {createModalStatus !== null && (
