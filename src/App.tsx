@@ -94,6 +94,10 @@ export const App = () => {
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
+  // 存在する間は selectedTask 計算の fallback として参照され、DetailPanel が
+  // pending 中も描画継続できる。rollback で tasks に戻れば自然と fallback は不要になる。
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
   const [createModalStatus, setCreateModalStatus] = useState<string | null>(
     null,
   );
@@ -127,15 +131,27 @@ export const App = () => {
   const loadedPath = state.kind === "loaded" ? state.path : null;
   const [prevLoadedPath, setPrevLoadedPath] = useState<string | null>(null);
   if (loadedPath !== null && loadedPath !== prevLoadedPath) {
+    // project が切り替わった: 旧 project の UI state を一括 reset する。
+    // 削除 pending 中の snapshot を残すと、新 project の DetailPanel に
+    // 旧 project の task が fallback として表示されてしまう。
     setPrevLoadedPath(loadedPath);
     setSelectedTaskId(null);
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
     setSubIssueParentPath(undefined);
-  } else if (state.kind !== "loaded" && createModalStatus !== null) {
-    setCreateModalStatus(null);
-    setCreateModalParent(undefined);
-    setSubIssueParentPath(undefined);
+    setPendingDeleteTask(null);
+  } else if (state.kind !== "loaded") {
+    // loaded から非 loaded (loading / error / idle) に抜けた: project を
+    // 閉じた / 再 open 中 / 失敗状態。pending 中の snapshot と create modal は
+    // それぞれ独立に保持されうるため、両方を同 render pass で reset する。
+    if (pendingDeleteTask !== null) {
+      setPendingDeleteTask(null);
+    }
+    if (createModalStatus !== null) {
+      setCreateModalStatus(null);
+      setCreateModalParent(undefined);
+      setSubIssueParentPath(undefined);
+    }
   }
 
   const tasks = tasksOf(state);
@@ -160,9 +176,21 @@ export const App = () => {
           .filter((seg) => seg.length > 0)
           .pop() ?? displayedPath)
       : undefined;
-  const selectedTask = selectedTaskId
-    ? (tasks.find((t) => t.id === selectedTaskId) ?? null)
-    : null;
+  const selectedTask = ((): Task | null => {
+    if (selectedTaskId === null) {
+      return null;
+    }
+    const found = tasks.find((t) => t.id === selectedTaskId);
+    if (found !== undefined) {
+      return found;
+    }
+    // 削除楽観 dispatch 中は tasks から消えているので snapshot を fallback として使う。
+    // rollback で tasks に戻れば自然と found 側に切り替わる。
+    if (pendingDeleteTask !== null && pendingDeleteTask.id === selectedTaskId) {
+      return pendingDeleteTask;
+    }
+    return null;
+  })();
 
   const handleTaskClick = useCallback((taskId: string) => {
     setSelectedTaskId(taskId);
@@ -510,22 +538,46 @@ export const App = () => {
 
   const handleTaskDelete = useCallback(
     async (id: string, orphanStrategy?: OrphanStrategy): Promise<void> => {
-      const filePath = tasks.find((t) => t.id === id)?.filePath;
-      if (filePath === undefined) {
+      const target = tasks.find((t) => t.id === id);
+      if (target === undefined) {
         return;
       }
+      const { filePath, title } = target;
+      // 楽観 dispatch で tasks から target が消える前に snapshot を保持する。
+      // pendingDeleteTask が存在する限り DetailPanel は描画を継続できる。
+      setPendingDeleteTask(target);
+
       const result = await deleteTask({ filePath, orphanStrategy });
+
       if (!result.ok) {
-        // useDeleteFlow は onDelete の resolve を success とみなして dialog を閉じる。
-        // 失敗時は reject + error toast で dialog を維持し、ユーザに retry を促す。
+        // rollback で tasks に target が戻るので snapshot は不要になる。
+        setPendingDeleteTask(null);
+
+        // project switch 由来の invalid-state は新 project に対する無関係な通知に
+        // なるため toast / announce を出さない (reorderColumns と同方針)。
+        // ただし useDeleteFlow は onDelete の resolve を success とみなすので、
+        // 原因を残した Error を throw して deleting → error 遷移を成立させる
+        // (UI には出ないが、useDeleteFlow.state.reason / ログ追跡で原因を保持する)。
+        // queue 直列化により通常はこの経路に乗らない防御的フォールバック。
+        if (
+          result.error.kind === "invalid-state" &&
+          result.error.message === PROJECT_SWITCHED_MESSAGE
+        ) {
+          throw new Error(PROJECT_SWITCHED_MESSAGE);
+        }
+
         const message = projectErrorMessage(result.error);
         showToast(`タスクの削除に失敗しました: ${message}`, "error");
+        announce(`「${title}」の削除を取り消しました`);
         throw new Error(message);
       }
+
       setSelectedTaskId(null);
+      setPendingDeleteTask(null);
       showToast("タスクを削除しました", "success");
+      announce(`「${title}」を削除しました`);
     },
-    [tasks, deleteTask, showToast],
+    [tasks, deleteTask, showToast, announce],
   );
 
   /**
