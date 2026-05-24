@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EditableText } from "@/components/EditableText";
 import type { Priority } from "@/domains/priority";
@@ -7,6 +7,7 @@ import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailLabels } from "@/features/detail/hooks/useDetailLabels";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
 import { useParentTask } from "@/features/detail/hooks/useParentTask";
+import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { LabelEditor } from "../LabelEditor";
@@ -37,8 +38,12 @@ type DetailPanelProps = {
   /**
    * タスク削除時のコールバック
    * @param id - 削除対象のタスクID
+   * @param orphanStrategy - 子タスクがある場合の処理方針（子なし時は未指定）
    */
-  onDelete: (id: string) => void | Promise<void>;
+  onDelete: (
+    id: string,
+    orphanStrategy?: OrphanStrategy,
+  ) => void | Promise<void>;
   /**
    * サブIssue 追加ボタン押下時のコールバック。
    * 指定された親タスクのファイルパスでタスク作成フォームを開く想定。
@@ -81,11 +86,21 @@ export const DetailPanel = ({
 
   const labels = useDetailLabels({ task, onTaskUpdate });
 
-  const handleDelete = useCallback(
-    () => onDelete(task.id),
-    [task.id, onDelete],
-  );
+  const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
+
+  const handleDelete = useCallback(() => {
+    if (task.hierarchy.childFilePaths.length > 0) {
+      return onDelete(task.id, orphanStrategy);
+    }
+    return onDelete(task.id);
+  }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
   const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
+
+  useEffect(() => {
+    if (deleteFlow.isOpen) {
+      setOrphanStrategy("clear");
+    }
+  }, [deleteFlow.isOpen]);
 
   useEscToClose({
     disabled: deleteFlow.isOpen,
@@ -215,13 +230,55 @@ export const DetailPanel = ({
       {deleteFlow.isOpen && (
         <ConfirmDialog
           title="タスクの削除"
-          message={`「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`}
+          message={
+            task.hierarchy.childFilePaths.length > 0
+              ? `「${task.title || task.filePath}」を削除しますか？子タスクが ${task.hierarchy.childFilePaths.length} 件あります。`
+              : `「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`
+          }
           confirmLabel={deleteFlow.isBusy ? "削除中…" : "削除"}
           confirmDisabled={deleteFlow.isBusy}
           cancelDisabled={deleteFlow.isBusy}
           onConfirm={deleteFlow.confirmDelete}
           onCancel={deleteFlow.cancelDelete}
-        />
+        >
+          {task.hierarchy.childFilePaths.length > 0 && (
+            <div
+              role="radiogroup"
+              aria-labelledby="orphan-strategy-label"
+              data-testid="delete-orphan-strategy-radiogroup"
+              className="mt-2 flex flex-col gap-1 rounded border border-gray-200 p-2 text-sm"
+            >
+              <p
+                id="orphan-strategy-label"
+                className="px-1 text-xs text-gray-600"
+              >
+                子タスクの処理
+              </p>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="orphan-strategy"
+                  value="clear"
+                  checked={orphanStrategy === "clear"}
+                  onChange={() => setOrphanStrategy("clear")}
+                  data-testid="delete-orphan-strategy-clear"
+                />
+                子タスクの親リンクを解除して削除（clear）
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="orphan-strategy"
+                  value="abort"
+                  checked={orphanStrategy === "abort"}
+                  onChange={() => setOrphanStrategy("abort")}
+                  data-testid="delete-orphan-strategy-abort"
+                />
+                削除を中止（abort）
+              </label>
+            </div>
+          )}
+        </ConfirmDialog>
       )}
     </>
   );

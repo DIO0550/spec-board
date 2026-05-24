@@ -62,6 +62,27 @@ test.for([
 });
 
 test.for([
+  [
+    "「task has children: foo/bar.md (children: ...)」",
+    "task has children: foo/bar.md (children: child-1.md)",
+    "HAS_CHILDREN",
+  ],
+  [
+    "「Task Has Children: 大文字混在」",
+    "Task Has Children: parent.md",
+    "HAS_CHILDREN",
+  ],
+] as const)("%s は HAS_CHILDREN に分類される", ([, message, code]) => {
+  const e = TauriError.from(new Error(message));
+  expect(e.code).toBe(code);
+});
+
+test("文字列 reject 'task has children: foo.md' も HAS_CHILDREN に分類される", () => {
+  const e = TauriError.from("task has children: foo.md");
+  expect(e.code).toBe("HAS_CHILDREN");
+});
+
+test.for([
   ["「action」", "action required"],
   ["「optional」", "optional field missing"],
   ["「sparse」", "sparse data"],

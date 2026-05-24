@@ -6,6 +6,7 @@ export type TauriErrorCode =
   | "PERMISSION_DENIED"
   | "IO_ERROR"
   | "PARSE_ERROR"
+  | "HAS_CHILDREN"
   | "UNKNOWN";
 
 const FALLBACK_MESSAGE = "不明なエラーが発生しました";
@@ -18,6 +19,7 @@ const PATTERNS: ReadonlyArray<{
   { regex: /アクセスできません|permission/i, code: "PERMISSION_DENIED" },
   { regex: /\bio\b|i\/o|読み取り|書き込み/i, code: "IO_ERROR" },
   { regex: /\bparse\b|フロントマター/i, code: "PARSE_ERROR" },
+  { regex: /task has children/i, code: "HAS_CHILDREN" },
 ];
 
 /**

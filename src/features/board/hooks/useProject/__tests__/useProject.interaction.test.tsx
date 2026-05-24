@@ -664,6 +664,52 @@ test("deleteTask (loaded) 失敗 → Result.err、state 不変", async () => {
   ).toEqual([taskA]);
 });
 
+test("deleteTask orphanStrategy: 'clear' を invoke にそのまま forwarding", async () => {
+  const probe = renderHook();
+  await openLoaded(probe);
+  deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
+  await act(async () => {
+    await probe.latest.deleteTask({
+      filePath: "tasks/a.md",
+      orphanStrategy: "clear",
+    } satisfies DeleteTaskParams);
+  });
+  expect(deleteTaskMock).toHaveBeenCalledWith({
+    filePath: "tasks/a.md",
+    orphanStrategy: "clear",
+  });
+});
+
+test("deleteTask orphanStrategy: 'abort' を invoke にそのまま forwarding", async () => {
+  const probe = renderHook();
+  await openLoaded(probe);
+  deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
+  await act(async () => {
+    await probe.latest.deleteTask({
+      filePath: "tasks/a.md",
+      orphanStrategy: "abort",
+    } satisfies DeleteTaskParams);
+  });
+  expect(deleteTaskMock).toHaveBeenCalledWith({
+    filePath: "tasks/a.md",
+    orphanStrategy: "abort",
+  });
+});
+
+test("deleteTask orphanStrategy 未指定なら invoke にも未指定で forwarding", async () => {
+  const probe = renderHook();
+  await openLoaded(probe);
+  deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
+  await act(async () => {
+    await probe.latest.deleteTask({
+      filePath: "tasks/a.md",
+    } satisfies DeleteTaskParams);
+  });
+  expect(deleteTaskMock).toHaveBeenCalledWith({
+    filePath: "tasks/a.md",
+  });
+});
+
 test("deleteTask (idle) → invalid-state を即返す、invoke 未呼び出し", async () => {
   const probe = renderHook();
   let result!: Awaited<ReturnType<UseProjectResult["deleteTask"]>>;

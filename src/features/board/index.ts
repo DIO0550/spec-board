@@ -19,5 +19,6 @@ export type {
 export {
   PROJECT_SWITCHED_MESSAGE,
   ProjectError,
+  projectErrorMessage,
   useProject,
 } from "./hooks/useProject";

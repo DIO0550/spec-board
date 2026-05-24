@@ -2,14 +2,15 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
+import type { OrphanStrategy } from "@/lib/tauri";
 import {
   Board,
   EmptyState,
   HeaderBar,
   type MoveTaskParams,
   PROJECT_SWITCHED_MESSAGE,
-  type ProjectError,
   type ProjectState,
+  projectErrorMessage,
   type ReorderColumnsEvent,
   useProject,
 } from "./features/board";
@@ -21,19 +22,6 @@ import {
 } from "./features/task-form";
 import type { Column } from "./types/column";
 import type { Task } from "./types/task";
-
-/**
- * `ProjectError` から人間可読なメッセージを取り出す。
- *
- * @param err useProject から運ばれるエラー
- * @returns toast 等に出せる文字列
- */
-const projectErrorMessage = (err: ProjectError): string => {
-  if (err.kind === "tauri") {
-    return err.error.message;
-  }
-  return err.message;
-};
 
 /** State の表示用 ProjectData を返すための内部型。 */
 type DisplayableData = {
@@ -521,12 +509,12 @@ export const App = () => {
   );
 
   const handleTaskDelete = useCallback(
-    async (id: string): Promise<void> => {
+    async (id: string, orphanStrategy?: OrphanStrategy): Promise<void> => {
       const filePath = tasks.find((t) => t.id === id)?.filePath;
       if (filePath === undefined) {
         return;
       }
-      const result = await deleteTask({ filePath });
+      const result = await deleteTask({ filePath, orphanStrategy });
       if (!result.ok) {
         // useDeleteFlow は onDelete の resolve を success とみなして dialog を閉じる。
         // 失敗時は reject + error toast で dialog を維持し、ユーザに retry を促す。
