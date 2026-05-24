@@ -146,6 +146,19 @@ test("同フレーム連続 remove も合算される", () => {
   expect(onTaskUpdate).toHaveBeenNthCalledWith(2, "t1", { labels: ["c"] });
 });
 
+test("onTaskUpdate が同期 throw した場合、エラーは呼び出し側に伝播する（hook 側で握り潰さない）", () => {
+  const onTaskUpdate = vi.fn(() => {
+    throw new Error("sync throw");
+  });
+  const task = makeTask({ id: "t1", labels: ["existing"] });
+  const probe = renderHook({ task, onTaskUpdate });
+  expect(() => {
+    act(() => {
+      probe.latest.add("new-label");
+    });
+  }).toThrow("sync throw");
+});
+
 test("task.labels prop 変更後の add は新 labels ベースで合算される（render 中代入）", () => {
   const onTaskUpdate = vi.fn();
   const task1 = makeTask({ id: "t1", labels: ["a"] });

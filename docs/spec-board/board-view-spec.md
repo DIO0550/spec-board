@@ -156,6 +156,13 @@ stateDiagram-v2
 | 楽観 dispatch 前 invalid-state（preflight 失敗: target 消失 / status 乖離 / toColumn 消失 / 開始前 version 切替） | なし（楽観 dispatch も `onOptimisticApplied` も発火しない） | `invalid-state` メッセージ |
 | 楽観 dispatch 後 invalid-state（IPC 中の projectVersion 切替） | 「『タイトル』を『toColumn』に移動しました」のみ（state は新 project に切替済みのため取消アナウンスは流さない） | 「プロジェクトが切り替わりました」 |
 
+## DetailPanel の field 編集と楽観更新
+
+DetailPanel 上で `status` / `priority` / `labels` を編集すると、UI は IPC（`update_task`）の応答を待たずに即時反映される（楽観更新）。
+IPC が失敗した場合は編集前の値に自動ロールバックし、画面右上にエラートーストを表示する。
+成功時も成功トーストを 1 件表示する。
+ファイル監視で外部から同じタスクが書き換えられたケースでも、楽観中のキーが既に外部値で上書きされていればロールバックは行わない（外部値を優先する整合性ルール）。
+
 ## 制限事項
 
 - 同一プロジェクト内のタスク数が1,000件を超える場合のパフォーマンスは保証しない
