@@ -86,6 +86,26 @@ test("readOnly=true && value が tasks 不在 → filePath fallback + × 非描�
   ).toBeNull();
 });
 
+test("readOnly=true && value=undefined → 検索 input を描画せず未設定 placeholder のみ表示", () => {
+  render({
+    tasks: [
+      makeTask({ id: "t-1", title: "候補", filePath: "tasks/candidate.md" }),
+    ],
+    value: undefined,
+    onChange: vi.fn(),
+    readOnly: true,
+  });
+  expect(
+    document.querySelector('[data-testid="parent-task-input"]'),
+  ).toBeNull();
+  expect(document.querySelector('[data-testid="parent-task-list"]')).toBeNull();
+  const placeholder = document.querySelector(
+    '[data-testid="parent-task-readonly-empty"]',
+  );
+  expect(placeholder).toBeTruthy();
+  expect(placeholder?.textContent).toContain("未設定");
+});
+
 test("readOnly=false && value が tasks 不在 → filePath fallback + × 描画", () => {
   render({
     tasks: [],

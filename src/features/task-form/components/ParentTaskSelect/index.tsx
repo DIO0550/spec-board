@@ -15,8 +15,9 @@ type ParentTaskSelectProps = {
   disabled?: boolean;
   /**
    * 親フィールドを変更不可にする。
-   * true のとき × ボタンを描画しない。検索 input への影響はなく、
-   * value !== undefined が前提のためそもそも検索 input フェーズには入らない想定。
+   * true のとき × ボタンを描画しない。さらに `value === undefined` の場合も
+   * 検索 input は描画されず、未設定 placeholder のみ表示する（props 単体で
+   * 「変更不可」契約を自己完結させる）。
    * disabled と直交し、両方 true でも独立に効く。
    */
   readOnly?: boolean;
@@ -79,11 +80,12 @@ export const ParentTaskSelect = ({
 
   const selectedLabel = selected ? selected.title || selected.filePath : value;
   const showSelectedLike = selectedLabel !== undefined;
+  const showReadOnlyEmpty = !showSelectedLike && readOnly;
 
   return (
     <div data-testid="parent-task-select">
       <div className="mb-1 block text-xs font-medium text-gray-700">
-        {showSelectedLike ? (
+        {showSelectedLike || showReadOnlyEmpty ? (
           "親タスク"
         ) : (
           <label htmlFor={inputId}>親タスク</label>
@@ -109,6 +111,13 @@ export const ParentTaskSelect = ({
               ×
             </button>
           )}
+        </div>
+      ) : showReadOnlyEmpty ? (
+        <div
+          className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-500"
+          data-testid="parent-task-readonly-empty"
+        >
+          （未設定）
         </div>
       ) : (
         <div className="relative">
