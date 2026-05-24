@@ -191,3 +191,35 @@ test("PrioritySelect で「なし」を選ぶと onTaskUpdate(task.id, { priorit
   expect(onTaskUpdate).toHaveBeenCalledTimes(1);
   expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { priority: undefined });
 });
+
+test("ParentLink クリックで onSelectTask が parentTask.id 引数で 1 回呼ばれる", () => {
+  const onSelectTask = vi.fn();
+  const parent = createTask({
+    id: "parent-id",
+    title: "親",
+    filePath: "tasks/parent.md",
+  });
+  const child = createTask({
+    id: "child-id",
+    filePath: "tasks/child.md",
+    parent: "tasks/parent.md",
+  });
+  render({
+    task: child,
+    columns: testColumns,
+    allTasks: [parent, child],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onSelectTask,
+  });
+  const link = document.querySelector(
+    '[data-testid="detail-parent-link"]',
+  ) as HTMLButtonElement;
+  expect(link).toBeTruthy();
+  act(() => {
+    link.click();
+  });
+  expect(onSelectTask).toHaveBeenCalledTimes(1);
+  expect(onSelectTask).toHaveBeenCalledWith("parent-id");
+});

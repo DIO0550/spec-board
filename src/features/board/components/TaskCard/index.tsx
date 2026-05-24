@@ -53,7 +53,9 @@ const CardContent = ({
     <>
       <div className="flex items-center gap-1.5">
         <PriorityBadge priority={task.priority} />
-        <p className="text-sm text-gray-800">{displayTitle}</p>
+        <p data-testid="task-card-title" className="text-sm text-gray-800">
+          {displayTitle}
+        </p>
       </div>
       {task.labels.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
