@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
+import type { OrphanStrategy } from "@/lib/tauri";
 import {
   Board,
   EmptyState,
@@ -504,12 +505,12 @@ export const App = () => {
   );
 
   const handleTaskDelete = useCallback(
-    async (id: string): Promise<void> => {
+    async (id: string, orphanStrategy?: OrphanStrategy): Promise<void> => {
       const filePath = tasks.find((t) => t.id === id)?.filePath;
       if (filePath === undefined) {
         return;
       }
-      const result = await deleteTask({ filePath });
+      const result = await deleteTask({ filePath, orphanStrategy });
       if (!result.ok) {
         // useDeleteFlow は onDelete の resolve を success とみなして dialog を閉じる。
         // 失敗時は reject + error toast で dialog を維持し、ユーザに retry を促す。
