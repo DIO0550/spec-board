@@ -36,8 +36,12 @@ type DetailPanelProps = {
   /**
    * タスク削除時のコールバック
    * @param id - 削除対象のタスクID
+   * @param orphanStrategy - 子タスクがある場合の処理方針（子なし時は未指定）
    */
-  onDelete: (id: string) => void | Promise<void>;
+  onDelete: (
+    id: string,
+    orphanStrategy?: OrphanStrategy,
+  ) => void | Promise<void>;
   /**
    * サブIssue 追加ボタン押下時のコールバック。
    * 指定された親タスクのファイルパスでタスク作成フォームを開く想定。
@@ -74,10 +78,12 @@ export const DetailPanel = ({
 
   const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
 
-  const handleDelete = useCallback(
-    () => onDelete(task.id),
-    [task.id, onDelete],
-  );
+  const handleDelete = useCallback(() => {
+    if (task.hierarchy.childFilePaths.length > 0) {
+      return onDelete(task.id, orphanStrategy);
+    }
+    return onDelete(task.id);
+  }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
   const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
 
   useEffect(() => {

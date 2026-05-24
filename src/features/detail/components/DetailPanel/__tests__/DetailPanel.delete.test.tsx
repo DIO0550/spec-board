@@ -323,6 +323,121 @@ test("子ありタスク: message に子タスク件数が含まれる", async (
   });
 });
 
+test("子なしタスク: 確定で onDelete が引数 1 つで呼ばれる", async () => {
+  const onDelete = vi.fn();
+  render({
+    task: createTask({ id: "task-no-children", children: [] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete,
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="confirm-confirm-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="confirm-confirm-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  expect(onDelete.mock.calls[0]).toEqual(["task-no-children"]);
+});
+
+test("子ありタスク: clear のまま確定で onDelete(id, 'clear')", async () => {
+  const onDelete = vi.fn();
+  render({
+    task: createTask({ id: "task-with-children", children: ["a.md"] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete,
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="confirm-confirm-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="confirm-confirm-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  expect(onDelete.mock.calls[0]).toEqual(["task-with-children", "clear"]);
+});
+
+test("子ありタスク: abort に切替後の確定で onDelete(id, 'abort')", async () => {
+  const onDelete = vi.fn();
+  render({
+    task: createTask({ id: "task-abort", children: ["a.md"] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete,
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="delete-orphan-strategy-abort"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="delete-orphan-strategy-abort"]',
+      ) as HTMLInputElement
+    ).click();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="confirm-confirm-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  expect(onDelete.mock.calls[0]).toEqual(["task-abort", "abort"]);
+});
+
 test("ファイルパスがパネル下部に表示される", async () => {
   render({
     task: createTask({ filePath: "projects/my-task.md" }),
