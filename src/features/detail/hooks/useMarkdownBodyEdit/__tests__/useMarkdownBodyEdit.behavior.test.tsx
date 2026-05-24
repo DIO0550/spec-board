@@ -269,7 +269,7 @@ test("IME 変換中(isComposing=true)の Cmd+Enter は onConfirm 未発火、pre
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
 });
 
-test("IME 変換中(isComposing=true)の Esc は cancel を呼ばず mode/editValue を維持する（IME 候補キャンセル用途を尊重）", () => {
+test("IME 変換中(isComposing=true)の Esc は cancel を呼ばず mode/editValue を維持する。preventDefault は呼ばず IME の候補キャンセルを尊重、stopPropagation は呼んで document へ漏らさない", () => {
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
@@ -285,7 +285,7 @@ test("IME 変換中(isComposing=true)の Esc は cancel を呼ばず mode/editVa
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
   expect(captured?.editValue).toBe("draft");
-  expect(e.preventDefault).toHaveBeenCalled();
+  expect(e.preventDefault).not.toHaveBeenCalled();
   expect(e.stopPropagation).toHaveBeenCalled();
 });
 

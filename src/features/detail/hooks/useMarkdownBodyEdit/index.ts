@@ -143,13 +143,13 @@ export const useMarkdownBodyEdit = (
         return;
       }
       if (e.key === "Escape") {
-        e.preventDefault();
+        // document の useEscToClose 遮断には stopPropagation だけで十分。
+        // IME 変換中は preventDefault を呼ばず IME 側の既定動作（変換候補のキャンセル）を残す。
         e.stopPropagation();
-        // IME 変換中の Escape は変換候補のキャンセル用途で押されるのが一般的。
-        // edit モードをキャンセルすると下書きを失うため IME 側に処理を委ねる。
         if (e.nativeEvent.isComposing) {
           return;
         }
+        e.preventDefault();
         cancel();
       }
     },
