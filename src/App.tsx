@@ -556,13 +556,14 @@ export const App = () => {
         // project switch 由来の invalid-state は新 project に対する無関係な通知に
         // なるため toast / announce を出さない (reorderColumns と同方針)。
         // ただし useDeleteFlow は onDelete の resolve を success とみなすので、
-        // 無言の Error を throw して deleting → error 遷移を成立させる。
+        // 原因を残した Error を throw して deleting → error 遷移を成立させる
+        // (UI には出ないが、useDeleteFlow.state.reason / ログ追跡で原因を保持する)。
         // queue 直列化により通常はこの経路に乗らない防御的フォールバック。
         if (
           result.error.kind === "invalid-state" &&
           result.error.message === PROJECT_SWITCHED_MESSAGE
         ) {
-          throw new Error("");
+          throw new Error(PROJECT_SWITCHED_MESSAGE);
         }
 
         const message = projectErrorMessage(result.error);
