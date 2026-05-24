@@ -211,7 +211,11 @@ export const DetailPanel = ({
       {deleteFlow.isOpen && (
         <ConfirmDialog
           title="タスクの削除"
-          message={`「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`}
+          message={
+            task.hierarchy.childFilePaths.length > 0
+              ? `「${task.title || task.filePath}」を削除しますか？子タスクが ${task.hierarchy.childFilePaths.length} 件あります。`
+              : `「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`
+          }
           confirmLabel={deleteFlow.isBusy ? "削除中…" : "削除"}
           confirmDisabled={deleteFlow.isBusy}
           cancelDisabled={deleteFlow.isBusy}

@@ -296,6 +296,33 @@ test("子ありタスク: 初期表示で clear ラジオが checked", async () 
   expect(abortRadio.checked).toBe(false);
 });
 
+test("子ありタスク: message に子タスク件数が含まれる", async () => {
+  render({
+    task: createTask({ children: ["a.md", "b.md"] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    const dialog = document.querySelector('[data-testid="confirm-dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toContain("子タスクが 2 件あります");
+  });
+});
+
 test("ファイルパスがパネル下部に表示される", async () => {
   render({
     task: createTask({ filePath: "projects/my-task.md" }),
