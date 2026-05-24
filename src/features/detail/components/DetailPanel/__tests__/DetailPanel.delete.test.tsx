@@ -202,6 +202,100 @@ test("onDeleteが失敗した場合、ダイアログが開いたままでisDele
   });
 });
 
+test("子ありタスク: 確認ダイアログに orphan-strategy ラジオグループが表示される", async () => {
+  render({
+    task: createTask({ children: ["child-1.md"] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector(
+        '[data-testid="delete-orphan-strategy-radiogroup"]',
+      ),
+    ).toBeTruthy();
+  });
+});
+
+test("子なしタスク: 確認ダイアログに orphan-strategy ラジオグループが表示されない", async () => {
+  render({
+    task: createTask({ children: [] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="confirm-dialog"]'),
+    ).toBeTruthy();
+  });
+  expect(
+    document.querySelector('[data-testid="delete-orphan-strategy-radiogroup"]'),
+  ).toBeNull();
+});
+
+test("子ありタスク: 初期表示で clear ラジオが checked", async () => {
+  render({
+    task: createTask({ children: ["child-1.md"] }),
+    columns: testColumns,
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="delete-orphan-strategy-clear"]'),
+    ).toBeTruthy();
+  });
+  const clearRadio = document.querySelector(
+    '[data-testid="delete-orphan-strategy-clear"]',
+  ) as HTMLInputElement;
+  const abortRadio = document.querySelector(
+    '[data-testid="delete-orphan-strategy-abort"]',
+  ) as HTMLInputElement;
+  expect(clearRadio.checked).toBe(true);
+  expect(abortRadio.checked).toBe(false);
+});
+
 test("ファイルパスがパネル下部に表示される", async () => {
   render({
     task: createTask({ filePath: "projects/my-task.md" }),

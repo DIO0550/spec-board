@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EditableText } from "@/components/EditableText";
 import type { Priority } from "@/domains/priority";
@@ -6,6 +6,7 @@ import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailLabels } from "@/features/detail/hooks/useDetailLabels";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
+import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { LabelEditor } from "../LabelEditor";
@@ -71,11 +72,19 @@ export const DetailPanel = ({
 
   const labels = useDetailLabels({ task, onTaskUpdate });
 
+  const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
+
   const handleDelete = useCallback(
     () => onDelete(task.id),
     [task.id, onDelete],
   );
   const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
+
+  useEffect(() => {
+    if (deleteFlow.isOpen) {
+      setOrphanStrategy("clear");
+    }
+  }, [deleteFlow.isOpen]);
 
   useEscToClose({
     disabled: deleteFlow.isOpen,
@@ -208,7 +217,40 @@ export const DetailPanel = ({
           cancelDisabled={deleteFlow.isBusy}
           onConfirm={deleteFlow.confirmDelete}
           onCancel={deleteFlow.cancelDelete}
-        />
+        >
+          {task.hierarchy.childFilePaths.length > 0 && (
+            <fieldset
+              data-testid="delete-orphan-strategy-radiogroup"
+              className="mt-2 flex flex-col gap-1 rounded border border-gray-200 p-2 text-sm"
+            >
+              <legend className="px-1 text-xs text-gray-600">
+                子タスクの処理
+              </legend>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="orphan-strategy"
+                  value="clear"
+                  checked={orphanStrategy === "clear"}
+                  onChange={() => setOrphanStrategy("clear")}
+                  data-testid="delete-orphan-strategy-clear"
+                />
+                子タスクの親リンクを解除して削除（clear）
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="orphan-strategy"
+                  value="abort"
+                  checked={orphanStrategy === "abort"}
+                  onChange={() => setOrphanStrategy("abort")}
+                  data-testid="delete-orphan-strategy-abort"
+                />
+                削除を中止（abort）
+              </label>
+            </fieldset>
+          )}
+        </ConfirmDialog>
       )}
     </>
   );
