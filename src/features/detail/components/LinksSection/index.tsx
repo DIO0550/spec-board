@@ -70,6 +70,7 @@ export const LinksSection = (props: LinksSectionProps) => {
       <h3 className="text-sm font-medium text-gray-700">関連タスク</h3>
       <ul
         data-testid="links-section-linked"
+        aria-label="関連リンク先（このタスクから他のタスクへのリンク）"
         className="flex flex-col gap-1 text-sm text-gray-700"
       >
         {props.task.links.linkedFilePaths.map((p) => (
@@ -84,6 +85,7 @@ export const LinksSection = (props: LinksSectionProps) => {
       </ul>
       <ul
         data-testid="links-section-reverse"
+        aria-label="関連リンク元（他のタスクからこのタスクへの逆リンク）"
         className="flex flex-col gap-1 text-sm text-gray-500"
       >
         {props.task.links.reverseLinkedFilePaths.map((p) => (
