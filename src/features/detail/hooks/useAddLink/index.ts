@@ -39,23 +39,26 @@ export type UseAddLinkResult = {
  */
 export const useAddLink = (args: UseAddLinkArgs): UseAddLinkResult => {
   const [isBusy, setIsBusy] = useState(false);
+  // 同一 tick の連続呼出を 1 回のみ通過させる sync guard。
+  // `useState(isBusy)` は次 render まで反映されないため、ref で同期判定する必要がある。
   const inFlightRef = useRef(false);
-  const onAddLinkRef = useRef(args.onAddLink);
-  onAddLinkRef.current = args.onAddLink;
 
-  const addLink = useCallback(async (targetFilePath: string) => {
-    if (inFlightRef.current) {
-      return;
-    }
-    inFlightRef.current = true;
-    setIsBusy(true);
-    try {
-      await onAddLinkRef.current(targetFilePath);
-    } finally {
-      inFlightRef.current = false;
-      setIsBusy(false);
-    }
-  }, []);
+  const addLink = useCallback(
+    async (targetFilePath: string) => {
+      if (inFlightRef.current) {
+        return;
+      }
+      inFlightRef.current = true;
+      setIsBusy(true);
+      try {
+        await args.onAddLink(targetFilePath);
+      } finally {
+        inFlightRef.current = false;
+        setIsBusy(false);
+      }
+    },
+    [args.onAddLink],
+  );
 
   return { isBusy, addLink };
 };
