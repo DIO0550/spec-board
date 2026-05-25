@@ -7,6 +7,7 @@ import type {
 } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import type { Result as ResultT } from "@/utils/result";
+import { addLinkAction } from "./actions/addLink";
 import {
   type MoveTaskCallbacks,
   type MoveTaskParams,
@@ -291,6 +292,15 @@ export const useProject = (
     [actionDeps],
   );
 
+  const addLink = useCallback(
+    (params: {
+      filePath: string;
+      targetFilePath: string;
+    }): Promise<ResultT<Task, ProjectError>> =>
+      addLinkAction(actionDeps(), params),
+    [actionDeps],
+  );
+
   const reset = useCallback((): void => {
     invalidateOpenRequests(projectVersionRef.current);
     invalidateProject(projectVersionRef.current);
@@ -306,6 +316,7 @@ export const useProject = (
     updateColumns,
     moveTask,
     reorderColumns,
+    addLink,
     reset,
   };
 };

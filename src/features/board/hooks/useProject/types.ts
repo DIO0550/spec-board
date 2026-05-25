@@ -97,6 +97,17 @@ export type UseProjectResult = {
     toColumnName: ReorderColumnsParams["toColumnName"],
     callbacks?: ReorderColumnsCallbacks,
   ) => Promise<ResultT<ReorderColumnsResult, ProjectError>>;
+  /**
+   * source タスクから target タスクへの link を追加し、source / target 両方に
+   * 楽観 dispatch → IPC → 成功で source canonical / 失敗で条件付き rollback する。
+   *
+   * @param params link 元 / 先 filePath
+   * @returns 更新後の source Task または ProjectError
+   */
+  addLink: (params: {
+    filePath: string;
+    targetFilePath: string;
+  }) => Promise<ResultT<Task, ProjectError>>;
   /** project state を初期状態に戻す。 */
   reset: () => void;
 };

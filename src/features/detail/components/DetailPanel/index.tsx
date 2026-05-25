@@ -10,7 +10,9 @@ import { useParentTask } from "@/features/detail/hooks/useParentTask";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import type { Result } from "@/utils/result";
 import { LabelEditor } from "../LabelEditor";
+import { LinksSection } from "../LinksSection";
 import { MarkdownBody } from "../MarkdownBody";
 import { ParentLink } from "../ParentLink";
 import { PrioritySelect } from "../PrioritySelect";
@@ -55,6 +57,17 @@ type DetailPanelProps = {
    * @param taskId - 切り替え先タスクの id
    */
   onSelectTask?: (taskId: string) => void;
+  /**
+   * リンク追加コールバック。source / target の filePath を受け取る。
+   * 渡されない場合や `allTasks` が undefined の場合は LinksSection を描画しない。
+   * @param sourceFilePath リンク元 filePath
+   * @param targetFilePath リンク先 filePath
+   * @returns invoke 結果
+   */
+  onAddLink?: (
+    sourceFilePath: string,
+    targetFilePath: string,
+  ) => Promise<Result<Task, unknown>>;
 };
 
 /**
@@ -72,6 +85,7 @@ export const DetailPanel = ({
   onDelete,
   onAddSubIssue,
   onSelectTask,
+  onAddLink,
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
@@ -212,6 +226,20 @@ export const DetailPanel = ({
                 childTasks={childTasks}
                 doneColumn={effectiveDoneColumn}
                 onAddSubIssue={onAddSubIssue}
+              />
+            )}
+            {onAddLink !== undefined && allTasks !== undefined && (
+              // key=links-${task.id}: task 切替で LinksSection をリマウントし
+              // popover の isOpen / 検索 query 等の内部 state を確実にリセットする。
+              // MarkdownBody も同じ pattern で `key={task.id}` を使うため、ネームスペース
+              // 接頭辞 "links-" で同階層でのキー衝突を防いでいる。
+              <LinksSection
+                key={`links-${task.id}`}
+                task={task}
+                allTasks={allTasks}
+                parentFilePath={parentTask?.filePath ?? null}
+                childrenFilePaths={childTasks.map((t) => t.filePath)}
+                onAddLink={onAddLink}
               />
             )}
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
