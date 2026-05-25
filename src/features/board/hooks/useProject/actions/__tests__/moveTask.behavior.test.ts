@@ -265,6 +265,38 @@ test("同一カラム並び替え: 楽観 → 確定で card-order-updated が 2
   ]);
 });
 
+test("同一カラム並び替え: 楽観 dispatch payload の filePaths が buildMovedFilePaths 結果と一致", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Todo"],
+      ["tasks/c.md", "Todo"],
+    ]),
+  );
+  updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Todo",
+    toIndex: 2,
+  });
+
+  const expectedPaths = ["tasks/b.md", "tasks/a.md", "tasks/c.md"];
+  expect(harness.actions).toEqual([
+    {
+      type: "card-order-updated",
+      columnName: "Todo",
+      filePaths: expectedPaths,
+    },
+    {
+      type: "card-order-updated",
+      columnName: "Todo",
+      filePaths: expectedPaths,
+    },
+  ]);
+});
+
 test("カラム内並び替え後の ProjectData.tasks 表示順が filePaths と一致", async () => {
   const harness = setupLoaded(
     makeData([
@@ -342,6 +374,41 @@ test("同一カラム並び替え: updateCardOrder 失敗 → 楽観 dispatch �
   expect(
     next.data.tasks.filter((t) => t.status === "Todo").map((t) => t.filePath),
   ).toEqual(["tasks/a.md", "tasks/b.md", "tasks/c.md"]);
+});
+
+test("同一カラム並び替え失敗時: rollback dispatch の filePaths が toColumnOrderBefore に正確に戻る", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Todo"],
+      ["tasks/c.md", "Todo"],
+    ]),
+  );
+  updateCardOrderMock.mockResolvedValue(
+    Result.err(new TauriError("IO_ERROR", "io fail")),
+  );
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Todo",
+    toIndex: 2,
+  });
+
+  const optimisticPaths = ["tasks/b.md", "tasks/a.md", "tasks/c.md"];
+  const rollbackPaths = ["tasks/a.md", "tasks/b.md", "tasks/c.md"];
+  expect(harness.actions).toEqual([
+    {
+      type: "card-order-updated",
+      columnName: "Todo",
+      filePaths: optimisticPaths,
+    },
+    {
+      type: "card-order-updated",
+      columnName: "Todo",
+      filePaths: rollbackPaths,
+    },
+  ]);
 });
 
 test("updateTask が Result.err なら ProjectError.tauri を返し updateCardOrder は呼ばれない / カラムは原状", async () => {
