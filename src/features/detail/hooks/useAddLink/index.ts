@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 
@@ -21,8 +21,7 @@ export type UseAddLinkResult = {
   /** リンク追加中フラグ（UI disable 用） */
   readonly isBusy: boolean;
   /**
-   * 候補選択時に呼ぶ。`useRef` ベースの in-flight guard により同一 tick の連続呼出は
-   * 1 回のみ通過する。
+   * 候補選択時に呼ぶ。invoke 完了まで `isBusy` が `true` になる。
    *
    * @param targetFilePath リンク先 filePath
    */
@@ -30,30 +29,27 @@ export type UseAddLinkResult = {
 };
 
 /**
- * DetailPanel の関連タスク追加 UI 用フック。二重発火 guard を `useRef` で持つ
- * （`useState(isBusy)` は次 render まで反映されないため、同一 tick の連続呼出を
- * 防ぐには ref が必要）。
+ * DetailPanel の関連タスク追加 UI 用フック。`isBusy` を管理するだけの薄い wrapper。
+ *
+ * 連続発火の防止は呼び出し側に委ねる:
+ * - LinksSection は候補選択で `setIsOpen(false)` し popover を unmount するため
+ *   候補ボタンが消える
+ * - `+ リンク追加` ボタンは `disabled={isBusy}` で再オープンを抑止する
+ * - 万一同時呼出が起きても downstream `addLinkAction` は `enqueueProjectCommand`
+ *   で直列化され、`TaskLinks.appendLinkedFilePath` の重複ガードで no-op になる
  *
  * @param args - {@link UseAddLinkArgs}
  * @returns {@link UseAddLinkResult}
  */
 export const useAddLink = (args: UseAddLinkArgs): UseAddLinkResult => {
   const [isBusy, setIsBusy] = useState(false);
-  // 同一 tick の連続呼出を 1 回のみ通過させる sync guard。
-  // `useState(isBusy)` は次 render まで反映されないため、ref で同期判定する必要がある。
-  const inFlightRef = useRef(false);
 
   const addLink = useCallback(
     async (targetFilePath: string) => {
-      if (inFlightRef.current) {
-        return;
-      }
-      inFlightRef.current = true;
       setIsBusy(true);
       try {
         await args.onAddLink(targetFilePath);
       } finally {
-        inFlightRef.current = false;
         setIsBusy(false);
       }
     },
