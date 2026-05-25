@@ -1,4 +1,5 @@
 import type { Task } from "@/types/task";
+import { arrayShallowEq } from "@/utils/array";
 
 /** Task の関連リンク情報 */
 export type TaskLinks = {
@@ -70,25 +71,6 @@ const removeLinkedPath = (
 const hasLinkChanges = (current: TaskLinks, next: TaskLinks): boolean =>
   next.linkedFilePaths !== current.linkedFilePaths ||
   next.reverseLinkedFilePaths !== current.reverseLinkedFilePaths;
-
-/**
- * 順序込みの浅い等値判定。`linkedFilePaths` / `reverseLinkedFilePaths` の rollback 判定に用いる。
- * @param a 配列 1
- * @param b 配列 2
- * @returns 同一参照または要素が順序込みで一致すれば true
- */
-const arrayShallowEq = (
-  a: readonly string[],
-  b: readonly string[],
-): boolean => {
-  if (a === b) {
-    return true;
-  }
-  if (a.length !== b.length) {
-    return false;
-  }
-  return a.every((v, i) => v === b[i]);
-};
 
 /**
  * 候補母集団から `self` 自身・既存 link 関係・親子関係を除いた候補配列を返す。
