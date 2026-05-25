@@ -86,6 +86,7 @@ export const App = () => {
     updateColumns,
     moveTask,
     reorderColumns,
+    addLink,
   } = useProject({
     onError: (err) => {
       showToast(projectErrorMessage(err), "error");
@@ -536,6 +537,41 @@ export const App = () => {
     [reorderColumns, announce, showToast],
   );
 
+  const handleAddLink = useCallback(
+    async (sourceFilePath: string, targetFilePath: string) => {
+      const source = tasks.find((t) => t.filePath === sourceFilePath);
+      const target = tasks.find((t) => t.filePath === targetFilePath);
+      const sourceTitle = source?.title || sourceFilePath;
+      const targetTitle = target?.title || targetFilePath;
+
+      const result = await addLink({
+        filePath: sourceFilePath,
+        targetFilePath,
+      });
+
+      if (!result.ok) {
+        // project switch 由来の invalid-state は新 project に対する無関係な通知
+        // になるため toast / announce を出さない（move/delete と同方針）。
+        if (
+          result.error.kind === "invalid-state" &&
+          result.error.message === PROJECT_SWITCHED_MESSAGE
+        ) {
+          return result;
+        }
+        const message = projectErrorMessage(result.error);
+        showToast(`リンクの追加に失敗しました: ${message}`, "error");
+        announce(
+          `「${sourceTitle}」への「${targetTitle}」のリンク追加を取り消しました`,
+        );
+        return result;
+      }
+
+      announce(`「${sourceTitle}」に「${targetTitle}」をリンクしました`);
+      return result;
+    },
+    [tasks, addLink, announce, showToast],
+  );
+
   const handleTaskDelete = useCallback(
     async (id: string, orphanStrategy?: OrphanStrategy): Promise<void> => {
       const target = tasks.find((t) => t.id === id);
@@ -643,6 +679,7 @@ export const App = () => {
           onDelete={handleTaskDelete}
           onAddSubIssue={handleAddSubIssue}
           onSelectTask={handleSelectTask}
+          onAddLink={handleAddLink}
         />
       )}
       {createModalStatus !== null && (
