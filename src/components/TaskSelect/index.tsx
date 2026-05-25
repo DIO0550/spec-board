@@ -1,0 +1,265 @@
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { Task } from "@/types/task";
+
+/** TaskSelect の Props */
+export type TaskSelectProps = {
+  /** 選択候補となるタスク一覧 */
+  readonly tasks: readonly Task[];
+  /** 候補から除外する filePath 集合（呼び出し側で重複・自身などを除外する用途） */
+  readonly excludeFilePaths?: readonly string[];
+  /** 現在選択中のタスクのファイルパス（未選択時は null） */
+  readonly value: string | null;
+  /**
+   * 選択変更時のコールバック
+   * @param filePath - 選択されたタスクのファイルパス（解除時は null）
+   */
+  readonly onChange: (filePath: string | null) => void;
+  /** Escape / 外側クリックなど popover を閉じたい時の通知 */
+  readonly onClose?: () => void;
+  /** 検索入力の placeholder */
+  readonly placeholder?: string;
+  /** ラベル文言（指定時のみラベル領域を描画） */
+  readonly label?: string;
+  /** 無効化（送信中など） */
+  readonly disabled?: boolean;
+  /**
+   * 変更不可。`value === null` の場合は検索 input を描画せず未設定 placeholder のみ表示し、
+   * 値がある場合は × ボタンを描画しない。disabled と直交する。
+   */
+  readonly readOnly?: boolean;
+  /**
+   * 全 data-testid に共通する prefix（既定 "task-select"）。
+   * 出力規則は `${prefix}-{role}` 固定接尾辞ルール:
+   *  - root container: `${prefix}-select`
+   *  - selected label: `${prefix}-selected`
+   *  - clear button:   `${prefix}-clear`
+   *  - readOnly empty: `${prefix}-readonly-empty`
+   *  - search input:   `${prefix}-input`
+   *  - candidate list: `${prefix}-list`
+   *  - option:         `${prefix}-option-${task.id}`
+   *  - empty fallback: `${prefix}-empty`
+   */
+  readonly testIdPrefix?: string;
+  /** マウント時に検索 input をフォーカスする（popover 起動用途）。 */
+  readonly autoFocus?: boolean;
+};
+
+/**
+ * タスク一覧から検索 + 部分一致フィルタで選択する汎用コンポーネント。
+ * ParentTaskSelect / LinksSection などから wrapper で利用する。
+ *
+ * @param props - {@link TaskSelectProps}
+ * @returns タスク選択 UI
+ */
+export const TaskSelect = ({
+  tasks,
+  excludeFilePaths = [],
+  value,
+  onChange,
+  onClose,
+  placeholder = "タスクを検索して選択",
+  label,
+  disabled = false,
+  readOnly = false,
+  testIdPrefix = "task-select",
+  autoFocus = false,
+}: TaskSelectProps) => {
+  const prefix = testIdPrefix;
+  const [query, setQuery] = useState("");
+  const [isOpen, setIsOpen] = useState(autoFocus);
+  const id = useId();
+  const inputId = `${id}-task-select-input`;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus();
+    }
+  }, [autoFocus]);
+
+  useEffect(() => {
+    if (onClose === undefined) {
+      return;
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    if (onClose === undefined) {
+      return;
+    }
+    const handleMouseDown = (e: MouseEvent) => {
+      if (containerRef.current === null) {
+        return;
+      }
+      if (e.target instanceof Node && containerRef.current.contains(e.target)) {
+        return;
+      }
+      onClose();
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [onClose]);
+
+  const selected = useMemo(
+    () => tasks.find((t) => t.filePath === value),
+    [tasks, value],
+  );
+
+  const candidates = useMemo(() => {
+    const excluded = new Set(excludeFilePaths);
+    const filtered = tasks.filter((t) => !excluded.has(t.filePath));
+    const q = query.trim().toLowerCase();
+    if (q.length === 0) {
+      return filtered;
+    }
+    return filtered.filter((t) => {
+      const title = (t.title || t.filePath).toLowerCase();
+      return title.includes(q) || t.filePath.toLowerCase().includes(q);
+    });
+  }, [tasks, excludeFilePaths, query]);
+
+  const handleSelect = (task: Task) => {
+    onChange(task.filePath);
+    setQuery("");
+    setIsOpen(false);
+  };
+
+  const handleClear = () => {
+    onChange(null);
+    setQuery("");
+  };
+
+  const selectedLabel = selected
+    ? selected.title || selected.filePath
+    : value !== null
+      ? value
+      : undefined;
+  const showSelectedLike = selectedLabel !== undefined;
+  const showReadOnlyEmpty = !showSelectedLike && readOnly;
+
+  return (
+    <div ref={containerRef} data-testid={`${prefix}-select`}>
+      {label !== undefined && (
+        <div className="mb-1 block text-xs font-medium text-gray-700">
+          {showSelectedLike || showReadOnlyEmpty ? (
+            label
+          ) : (
+            <label htmlFor={inputId}>{label}</label>
+          )}
+        </div>
+      )}
+      {showSelectedLike ? (
+        <div className="flex items-center gap-2 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm">
+          <span
+            className="min-w-0 flex-1 truncate text-gray-800"
+            data-testid={`${prefix}-selected`}
+          >
+            {selectedLabel}
+          </span>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label={label !== undefined ? `${label}を解除` : "選択を解除"}
+              className="rounded text-gray-400 hover:text-gray-700 disabled:opacity-50"
+              disabled={disabled}
+              onClick={handleClear}
+              data-testid={`${prefix}-clear`}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ) : showReadOnlyEmpty ? (
+        <div
+          className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-500"
+          data-testid={`${prefix}-readonly-empty`}
+        >
+          （未設定）
+        </div>
+      ) : (
+        <div className="relative">
+          <input
+            id={inputId}
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setIsOpen(true);
+            }}
+            onFocus={() => setIsOpen(true)}
+            onBlur={() => {
+              if (blurTimeoutRef.current !== null) {
+                window.clearTimeout(blurTimeoutRef.current);
+              }
+              blurTimeoutRef.current = window.setTimeout(() => {
+                blurTimeoutRef.current = null;
+                setIsOpen(false);
+              }, 100);
+            }}
+            disabled={disabled}
+            placeholder={placeholder}
+            className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
+            data-testid={`${prefix}-input`}
+          />
+          {isOpen && candidates.length > 0 && (
+            <div
+              className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
+              data-testid={`${prefix}-list`}
+            >
+              {candidates.map((task) => {
+                const isSelected = task.filePath === value;
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    disabled={disabled}
+                    className="block w-full truncate px-2 py-1 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelect(task);
+                    }}
+                    data-testid={`${prefix}-option-${task.id}`}
+                  >
+                    {task.title || task.filePath}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {isOpen && candidates.length === 0 && (
+            <p
+              className="absolute left-0 right-0 z-10 mt-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 shadow-lg"
+              data-testid={`${prefix}-empty`}
+            >
+              該当するタスクがありません
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
