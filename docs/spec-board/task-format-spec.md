@@ -90,6 +90,19 @@ links:
 - Tauri command `add_link({ sourceFilePath, targetFilePath })` で `links` への追加が可能。同じ target がすでに含まれる場合は noop（書き込みもキャッシュ更新も行わない）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する）
 - Tauri command `remove_link({ sourceFilePath, targetFilePath })` で `links` から target の完全一致エントリを **すべて** 取り除く（パス表記揺れは正規化して吸収）。最後の 1 件を消した場合は `links:` キーごと消える。target がすでに含まれていない場合は冪等な no-op として成功を返す（書き込みもキャッシュ更新も行わない）。target タスクが削除済みで存在しなくても source の `links` からの除去は実行する（dangling link 掃除の用途を兼ねる）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する点は `add_link` と同じ）
 
+#### DetailPanel 上のリンク追加 UI
+
+- DetailPanel に **関連タスクセクション** を持ち、`linkedFilePaths` と `reverseLinkedFilePaths` を区別して一覧表示する
+- `+ リンク追加` ボタン → タスク候補ポップオーバから対象を選択することでリンクを追加する
+- 候補からは **自身 / 既に link 済みのタスク / 逆リンク済みのタスク / 親 / 子** をすべて除外する
+- 選択直後に **source / target 両方を楽観 dispatch** で更新する:
+  - source: `linkedFilePaths` に target を append
+  - target: `reverseLinkedFilePaths` に source を append（add_link の IPC 戻り値には target が含まれず、watcher event も target 側 disk 変更が無いため発火しない。FE 側で楽観 dispatch しないと target 反映が永続的に欠落する）
+- `add_link` invoke 成功時は source を IPC 戻り値の canonical Task で再 dispatch する。target は IPC が返さないため楽観値のまま据え置く
+- `add_link` invoke 失敗時は source / target 両方を **条件付き rollback** する。`current.links` と `optimistic.links` の配列等値判定（順序込みの浅い等値）が一致する場合のみ snapshot へ戻し、IPC 中に別経路で同 path の再追加や別 path の追加が入っていた場合は rollback dispatch 自体を skip する（外部更新を巻き戻して破壊しない）
+- 同一 tick の連続選択は `useRef<boolean>` ベースの in-flight guard で 1 回のみ通す
+- task 切替（`task.id` 変化）時は DetailPanel が LinksSection に名前空間付き key を付与してリマウントし、ポップオーバの開閉 / 検索クエリ等の内部 state を確実にリセットする
+
 ### 本文
 
 - フロントマターの `---` 閉じタグ以降がMarkdown本文
