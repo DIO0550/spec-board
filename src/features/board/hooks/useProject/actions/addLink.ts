@@ -9,9 +9,15 @@ import { ProjectSessionState } from "../state/projectSessionState";
 import type { TaskActionDeps } from "./tasks";
 import { PROJECT_SWITCHED_MESSAGE } from "./updateColumns";
 
-/** addLinkAction の引数。BE add_link IPC と同じ形式。 */
+/**
+ * addLinkAction の引数。
+ *
+ * 他の task action（`updateTaskAction` / `deleteTaskAction` 等）と命名を揃えて
+ * リンク元を `filePath` で受ける。IPC 呼出時には `addLinkInvoke` の引数
+ * `{ sourceFilePath, targetFilePath }` に詰め替える（フィールド名は IPC 側と異なる）。
+ */
 export type AddLinkActionParams = {
-  /** リンク元タスクの filePath */
+  /** リンク元タスクの filePath（IPC 側では `sourceFilePath` に対応） */
   readonly filePath: string;
   /** リンク先タスクの filePath */
   readonly targetFilePath: string;
