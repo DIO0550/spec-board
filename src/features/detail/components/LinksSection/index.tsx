@@ -9,7 +9,7 @@ import type { Result } from "@/utils/result";
 export type LinksSectionProps = {
   /** 表示対象タスク */
   readonly task: Task;
-  /** プロジェクトの全タスク（候補絞り込み + 表示名解決に使用） */
+  /** プロジェクトの全タスク（候補絞り込み用。`TaskLinks.buildAddLinkCandidates` の母集団） */
   readonly allTasks: readonly Task[];
   /** 親タスクの filePath（無ければ null） */
   readonly parentFilePath: string | null;
