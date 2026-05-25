@@ -53,12 +53,17 @@ export const LinksSection = (props: LinksSectionProps) => {
     onAddLink: (target) => props.onAddLink(sourceFilePath, target),
   });
 
-  const handleSelect = async (targetFilePath: string | null) => {
+  // TaskSelect.onChange は同期戻り値型のため、ここで async 関数を渡すと
+  // 戻り Promise が await されず unhandled rejection の原因になる。
+  // 同期関数として宣言し、addLink の Promise は void + catch で明示的に握る。
+  // （useAddLink 側で try/finally による isBusy 復帰は済んでいるため、ここでの catch は
+  // 防御的ガード。エラー通知は App.handleAddLink の toast/announce 経路で行う）
+  const handleSelect = (targetFilePath: string | null): void => {
     if (targetFilePath === null) {
       return;
     }
     setIsOpen(false);
-    await addLink(targetFilePath);
+    void addLink(targetFilePath).catch(() => undefined);
   };
 
   return (
