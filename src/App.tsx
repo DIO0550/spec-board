@@ -31,6 +31,34 @@ type DisplayableData = {
 };
 
 /**
+ * `handleSelectTask` の本体ロジック。
+ * target が tasks に無い場合は遷移を行わない（null を返す）。
+ * - setSelectedTaskId をしてしまうと selectedTask が null になり、
+ *   DetailPanel が unmount して MarkdownBody の未保存編集が破棄される。
+ * - 例: watcher による外部削除や、render と click の間に対象が消えたレース。
+ * 純粋関数として抽出してユニットテスト可能にしている。
+ *
+ * @param tasks 現在の tasks 配列
+ * @param taskId 選択対象 id
+ * @returns 遷移可能なときは `{ selectedTaskId, announceText }`、不可能なときは null
+ */
+export const selectTaskOutcome = (
+  tasks: readonly Task[],
+  taskId: string,
+): { selectedTaskId: string; announceText: string } | null => {
+  const target = tasks.find((t) => t.id === taskId);
+  if (target === undefined) {
+    return null;
+  }
+  // タイトル未設定タスクは DetailPanel ヘッダ等 UI 側で filePath に
+  // フォールバックされるため、SR への読み上げも同じ表示に揃える。
+  return {
+    selectedTaskId: taskId,
+    announceText: `「${target.title || target.filePath}」を表示中`,
+  };
+};
+
+/**
  * 表示可能な ProjectData を返す。
  * - loaded: state.data
  * - それ以外: null
@@ -198,18 +226,12 @@ export const App = () => {
 
   const handleSelectTask = useCallback(
     (taskId: string) => {
-      // target が tasks に無い場合は遷移自体を行わない。
-      // setSelectedTaskId をしてしまうと selectedTask が null になり、
-      // DetailPanel が unmount して MarkdownBody 等の未保存編集が破棄される。
-      // 例: watcher による外部削除や、render と click の間に対象が消えたレース。
-      const target = tasks.find((t) => t.id === taskId);
-      if (target === undefined) {
+      const outcome = selectTaskOutcome(tasks, taskId);
+      if (outcome === null) {
         return;
       }
-      setSelectedTaskId(taskId);
-      // タイトル未設定タスクは DetailPanel ヘッダ等 UI 側で filePath に
-      // フォールバックされるため、SR への読み上げも同じ表示に揃える。
-      announce(`「${target.title || target.filePath}」を表示中`);
+      setSelectedTaskId(outcome.selectedTaskId);
+      announce(outcome.announceText);
     },
     [tasks, announce],
   );
