@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { TaskSelect } from "@/components/TaskSelect";
 import { TaskLinks } from "@/domains/task-links";
 import { useAddLink } from "@/features/detail/hooks/useAddLink";
+import { useRemoveLink } from "@/features/detail/hooks/useRemoveLink";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 
@@ -25,11 +26,22 @@ export type LinksSectionProps = {
     sourceFilePath: string,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
+  /**
+   * リンク削除コールバック。source filePath / target filePath を受け取る。
+   * forward 削除では source=表示中タスク、reverse 削除では source=相手タスクになる。
+   * @param sourceFilePath リンク元（md が書き換わる側）の filePath
+   * @param targetFilePath リンク先の filePath
+   * @returns invoke 結果
+   */
+  readonly onRemoveLink: (
+    sourceFilePath: string,
+    targetFilePath: string,
+  ) => Promise<Result<Task, unknown>>;
 };
 
 /**
  * DetailPanel の関連タスクセクション。`linkedFilePaths` / `reverseLinkedFilePaths`
- * を一覧表示し、`+ リンク追加` 押下で TaskSelect popover を開いて候補から選択する。
+ * を一覧表示し、`+ リンク追加` で候補から選択、各リンク行末尾の × ボタンで削除する。
  *
  * @param props - {@link LinksSectionProps}
  * @returns 関連タスク UI
@@ -49,9 +61,23 @@ export const LinksSection = (props: LinksSectionProps) => {
   );
 
   const sourceFilePath = props.task.filePath;
-  const { isBusy, addLink } = useAddLink({
+  const { isBusy: isBusyAdd, addLink } = useAddLink({
     onAddLink: (target) => props.onAddLink(sourceFilePath, target),
   });
+
+  // forward link 用: source=表示中タスク、target=相手
+  const { isBusy: isBusyRemoveForward, removeLink: removeForward } =
+    useRemoveLink({
+      onRemoveLink: (target) => props.onRemoveLink(sourceFilePath, target),
+    });
+  // reverse link 用: source=相手タスク、target=表示中タスク（IPC の source/target が反転）
+  const { isBusy: isBusyRemoveReverse, removeLink: removeReverse } =
+    useRemoveLink({
+      onRemoveLink: (otherSource) =>
+        props.onRemoveLink(otherSource, sourceFilePath),
+    });
+  const isBusyRemove = isBusyRemoveForward || isBusyRemoveReverse;
+  const isBusyAny = isBusyAdd || isBusyRemove;
 
   // TaskSelect.onChange は同期戻り値型のため、ここで async 関数を渡すと
   // 戻り Promise が await されず unhandled rejection の原因になる。
@@ -64,6 +90,22 @@ export const LinksSection = (props: LinksSectionProps) => {
     }
     setIsOpen(false);
     void addLink(targetFilePath).catch(() => undefined);
+  };
+
+  /**
+   * forward link 行の × クリックハンドラ。
+   * @param target 削除対象の link 先 filePath
+   */
+  const handleRemoveForward = (target: string): void => {
+    void removeForward(target).catch(() => undefined);
+  };
+
+  /**
+   * reverse link 行の × クリックハンドラ。
+   * @param otherSource 削除対象の link 元 filePath（相手タスク）
+   */
+  const handleRemoveReverse = (otherSource: string): void => {
+    void removeReverse(otherSource).catch(() => undefined);
   };
 
   return (
@@ -82,9 +124,19 @@ export const LinksSection = (props: LinksSectionProps) => {
           <li
             key={p}
             data-testid={`links-section-linked-${p}`}
-            className="truncate"
+            className="flex items-center justify-between gap-2"
           >
-            {p}
+            <span className="min-w-0 flex-1 truncate">{p}</span>
+            <button
+              type="button"
+              onClick={() => handleRemoveForward(p)}
+              disabled={isBusyAny}
+              aria-label="リンクを削除"
+              data-testid={`links-section-linked-remove-${p}`}
+              className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+            >
+              ×
+            </button>
           </li>
         ))}
       </ul>
@@ -97,9 +149,19 @@ export const LinksSection = (props: LinksSectionProps) => {
           <li
             key={p}
             data-testid={`links-section-reverse-${p}`}
-            className="truncate"
+            className="flex items-center justify-between gap-2"
           >
-            {p}
+            <span className="min-w-0 flex-1 truncate">{p}</span>
+            <button
+              type="button"
+              onClick={() => handleRemoveReverse(p)}
+              disabled={isBusyAny}
+              aria-label="リンクを削除"
+              data-testid={`links-section-reverse-remove-${p}`}
+              className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+            >
+              ×
+            </button>
           </li>
         ))}
       </ul>
@@ -117,7 +179,7 @@ export const LinksSection = (props: LinksSectionProps) => {
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          disabled={isBusy}
+          disabled={isBusyAny}
           data-testid="links-section-add-button"
           className="self-start rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50"
         >

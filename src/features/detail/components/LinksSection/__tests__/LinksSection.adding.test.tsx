@@ -58,6 +58,10 @@ const renderWrapped = (
   });
 };
 
+const noopOnRemoveLink = vi.fn(async () =>
+  Result.ok(makeTask({ filePath: "tasks/x.md" })),
+);
+
 test("+ ボタン押下で TaskSelect popover が表示される", () => {
   const self = makeTask({ filePath: "tasks/self.md" });
   const candidate = makeTask({ filePath: "tasks/c1.md", title: "C1" });
@@ -68,6 +72,7 @@ test("+ ボタン押下で TaskSelect popover が表示される", () => {
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink,
+    onRemoveLink: noopOnRemoveLink,
   });
 
   const addButton = document.querySelector(
@@ -99,6 +104,7 @@ test("popover の候補に self / linked / reverseLinked / parent / children は
     parentFilePath: "tasks/parent.md",
     childrenFilePaths: ["tasks/child.md"],
     onAddLink: vi.fn(async () => Result.ok(self)),
+    onRemoveLink: noopOnRemoveLink,
   });
 
   act(() => {
@@ -130,6 +136,7 @@ test("候補選択で onAddLink が source/target で呼ばれ popover が閉じ
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink,
+    onRemoveLink: noopOnRemoveLink,
   });
 
   act(() => {
@@ -164,6 +171,7 @@ test("task 切替（key 変化）で popover が閉じる（リマウント挙�
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: vi.fn(async () => Result.ok(taskA)),
+    onRemoveLink: noopOnRemoveLink,
   };
   renderWrapped({ ...props, taskKey: taskA.id });
 

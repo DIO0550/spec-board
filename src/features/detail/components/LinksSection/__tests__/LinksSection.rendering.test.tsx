@@ -44,6 +44,10 @@ const noopOnAddLink = vi.fn(async () =>
   Result.ok(makeTask({ filePath: "tasks/x.md" })),
 );
 
+const noopOnRemoveLink = vi.fn(async () =>
+  Result.ok(makeTask({ filePath: "tasks/x.md" })),
+);
+
 test("linkedFilePaths が一覧表示される", () => {
   const task = makeTask({
     filePath: "tasks/self.md",
@@ -55,6 +59,7 @@ test("linkedFilePaths が一覧表示される", () => {
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
   });
 
   expect(
@@ -80,6 +85,7 @@ test("reverseLinkedFilePaths が区別された testid で表示される", () =
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
   });
 
   expect(
@@ -97,6 +103,7 @@ test("初期状態では `+ リンク追加` ボタンが表示され popover �
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
   });
 
   expect(
