@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
 import { useToasts } from "@/hooks/useToasts";
+import { selectTaskOutcome } from "@/lib/selectTaskOutcome";
 import type { OrphanStrategy } from "@/lib/tauri";
 import {
   Board,
@@ -28,34 +29,6 @@ type DisplayableData = {
   readonly tasks: Task[];
   readonly columns: Column[];
   readonly doneColumn?: string;
-};
-
-/**
- * `handleSelectTask` の本体ロジック。
- * target が tasks に無い場合は遷移を行わない（null を返す）。
- * - setSelectedTaskId をしてしまうと selectedTask が null になり、
- *   DetailPanel が unmount して MarkdownBody の未保存編集が破棄される。
- * - 例: watcher による外部削除や、render と click の間に対象が消えたレース。
- * 純粋関数として抽出してユニットテスト可能にしている。
- *
- * @param tasks 現在の tasks 配列
- * @param taskId 選択対象 id
- * @returns 遷移可能なときは `{ selectedTaskId, announceText }`、不可能なときは null
- */
-export const selectTaskOutcome = (
-  tasks: readonly Task[],
-  taskId: string,
-): { selectedTaskId: string; announceText: string } | null => {
-  const target = tasks.find((t) => t.id === taskId);
-  if (target === undefined) {
-    return null;
-  }
-  // タイトル未設定タスクは DetailPanel ヘッダ等 UI 側で filePath に
-  // フォールバックされるため、SR への読み上げも同じ表示に揃える。
-  return {
-    selectedTaskId: taskId,
-    announceText: `「${target.title || target.filePath}」を表示中`,
-  };
 };
 
 /**

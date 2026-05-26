@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { selectTaskOutcome } from "@/App";
 import { Task, type TaskPayload } from "@/types/task";
+import { selectTaskOutcome } from "..";
 
 const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
   Task.fromPayload({
