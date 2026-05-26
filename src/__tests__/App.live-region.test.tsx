@@ -390,32 +390,31 @@ test("column 並び替え失敗 → LiveRegion に「取り消しました」", 
 
 // === DetailPanel 内タスク遷移 announce ===
 
-const parentTask: Task = Task.fromPayload({
-  id: "p1",
-  title: "親タスク",
-  status: "Todo",
-  labels: [],
-  links: [],
-  children: ["tasks/c1.md"],
-  reverseLinks: [],
-  body: "",
-  filePath: "tasks/p1.md",
-});
-
-const childTask: Task = Task.fromPayload({
-  id: "c1",
-  title: "子1",
-  status: "Todo",
-  labels: [],
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: "tasks/c1.md",
-  parent: "tasks/p1.md",
-});
-
 const openParentChildProject = async (): Promise<void> => {
+  // テスト間で同一 Task インスタンスを共有しないよう、呼び出しごとに生成する。
+  const parentTask: Task = Task.fromPayload({
+    id: "p1",
+    title: "親タスク",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: ["tasks/c1.md"],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/p1.md",
+  });
+  const childTask: Task = Task.fromPayload({
+    id: "c1",
+    title: "子1",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/c1.md",
+    parent: "tasks/p1.md",
+  });
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pc"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
