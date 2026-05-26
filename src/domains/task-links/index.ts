@@ -137,7 +137,10 @@ const appendReverseLinkedFilePath = (
 
 /**
  * source 側の楽観反映用。`linkedFilePaths` から `target` を取り除いた新 links を返す。
- * 含まれていなければ元 links を同一参照で返す（不要 dispatch 抑止）。
+ * 含まれていなければ元 links を **同一参照** で返す。これは API 契約として「変更が
+ * 無いことを呼出側が `next === prev` で検出できる」ようにするためのもの。現状の呼出側
+ * (`removeLinkAction`) は task を spread して常に dispatch するため自動的な抑止は
+ * 行われず、抑止が必要なら呼出側で参照比較して skip する責務がある。
  *
  * @param links 元の links
  * @param target 取り除く link 先 filePath
