@@ -248,13 +248,13 @@ test("SubIssueSection 子クリックで onSelectTask が childId 引数で 1 �
     onAddSubIssue: vi.fn(),
     onSelectTask,
   });
-  const childBtn = document.querySelector(
+  const childBtn = document.querySelector<HTMLButtonElement>(
     '[data-testid="sub-issue-item-child-id"]',
-  ) as HTMLButtonElement;
-  expect(childBtn).toBeTruthy();
-  expect(childBtn.disabled).toBe(false);
+  );
+  expect(childBtn).not.toBeNull();
+  expect(childBtn?.disabled).toBe(false);
   act(() => {
-    childBtn.click();
+    childBtn?.click();
   });
   expect(onSelectTask).toHaveBeenCalledTimes(1);
   expect(onSelectTask).toHaveBeenCalledWith("child-id");
