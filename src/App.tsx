@@ -87,6 +87,7 @@ export const App = () => {
     moveTask,
     reorderColumns,
     addLink,
+    removeLink,
   } = useProject({
     onError: (err) => {
       showToast(projectErrorMessage(err), "error");
@@ -572,6 +573,41 @@ export const App = () => {
     [tasks, addLink, announce, showToast],
   );
 
+  const handleRemoveLink = useCallback(
+    async (sourceFilePath: string, targetFilePath: string) => {
+      const source = tasks.find((t) => t.filePath === sourceFilePath);
+      const target = tasks.find((t) => t.filePath === targetFilePath);
+      const sourceTitle = source?.title || sourceFilePath;
+      const targetTitle = target?.title || targetFilePath;
+
+      const result = await removeLink({
+        filePath: sourceFilePath,
+        targetFilePath,
+      });
+
+      if (!result.ok) {
+        if (
+          result.error.kind === "invalid-state" &&
+          result.error.message === PROJECT_SWITCHED_MESSAGE
+        ) {
+          return result;
+        }
+        const message = projectErrorMessage(result.error);
+        showToast(`リンクの削除に失敗しました: ${message}`, "error");
+        announce(
+          `「${sourceTitle}」から「${targetTitle}」へのリンク削除を取り消しました`,
+        );
+        return result;
+      }
+
+      announce(
+        `「${sourceTitle}」から「${targetTitle}」へのリンクを削除しました`,
+      );
+      return result;
+    },
+    [tasks, removeLink, announce, showToast],
+  );
+
   const handleTaskDelete = useCallback(
     async (id: string, orphanStrategy?: OrphanStrategy): Promise<void> => {
       const target = tasks.find((t) => t.id === id);
@@ -680,6 +716,7 @@ export const App = () => {
           onAddSubIssue={handleAddSubIssue}
           onSelectTask={handleSelectTask}
           onAddLink={handleAddLink}
+          onRemoveLink={handleRemoveLink}
         />
       )}
       {createModalStatus !== null && (

@@ -11,6 +11,7 @@ import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
+import { Result as ResultDomain } from "@/utils/result";
 import { LabelEditor } from "../LabelEditor";
 import { LinksSection } from "../LinksSection";
 import { MarkdownBody } from "../MarkdownBody";
@@ -18,6 +19,16 @@ import { ParentLink } from "../ParentLink";
 import { PrioritySelect } from "../PrioritySelect";
 import { StatusSelect } from "../StatusSelect";
 import { SubIssueSection } from "../SubIssueSection";
+
+/**
+ * `onRemoveLink` 未指定時に LinksSection に渡す no-op fallback。
+ * 既存呼出元が `onRemoveLink` を渡し忘れても × ボタンの click が型エラーで落ちないようにする。
+ * 戻り値は `Result.err(undefined)` だが LinksSection の `useRemoveLink` は Result を捨てる
+ * ため UI には影響しない（× クリックは isBusy トグルだけして何も起きない）。
+ * @returns 常に `Result.err(undefined)`
+ */
+const noopRemoveLink = async (): Promise<Result<Task, unknown>> =>
+  ResultDomain.err(undefined);
 
 /** 詳細パネルの Props */
 type DetailPanelProps = {
@@ -68,6 +79,19 @@ type DetailPanelProps = {
     sourceFilePath: string,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
+  /**
+   * リンク削除コールバック。source / target の filePath を受け取る。
+   * forward 削除では source=表示中タスク、reverse 削除では source=相手タスクが入る。
+   * `onAddLink` と同じく LinksSection 描画には `onAddLink` の有無を条件とするため、
+   * `onRemoveLink` の有無は描画判定には影響しない（無ければ × ボタンの click が no-op）。
+   * @param sourceFilePath リンク元（md が書き換わる側）の filePath
+   * @param targetFilePath リンク先の filePath
+   * @returns invoke 結果
+   */
+  onRemoveLink?: (
+    sourceFilePath: string,
+    targetFilePath: string,
+  ) => Promise<Result<Task, unknown>>;
 };
 
 /**
@@ -86,6 +110,7 @@ export const DetailPanel = ({
   onAddSubIssue,
   onSelectTask,
   onAddLink,
+  onRemoveLink,
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
@@ -240,6 +265,7 @@ export const DetailPanel = ({
                 parentFilePath={parentTask?.filePath ?? null}
                 childrenFilePaths={childTasks.map((t) => t.filePath)}
                 onAddLink={onAddLink}
+                onRemoveLink={onRemoveLink ?? noopRemoveLink}
               />
             )}
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
