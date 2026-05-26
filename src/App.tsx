@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
+import { selectTaskOutcome } from "@/domains/task-selection";
 import { useToasts } from "@/hooks/useToasts";
-import { selectTaskOutcome } from "@/lib/selectTaskOutcome";
 import type { OrphanStrategy } from "@/lib/tauri";
 import {
   Board,
