@@ -207,7 +207,9 @@ export const App = () => {
         return;
       }
       setSelectedTaskId(taskId);
-      announce(`「${target.title}」を表示中`);
+      // タイトル未設定タスクは DetailPanel ヘッダ等 UI 側で filePath に
+      // フォールバックされるため、SR への読み上げも同じ表示に揃える。
+      announce(`「${target.title || target.filePath}」を表示中`);
     },
     [tasks, announce],
   );
