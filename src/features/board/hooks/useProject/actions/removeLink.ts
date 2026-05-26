@@ -71,14 +71,27 @@ export const removeLinkAction = (
         ProjectError.invalidState("リンク元のタスクが見つかりません"),
       );
     }
-    const targetSnap = findCurrentTask(deps.getState(), params.targetFilePath);
+    // self-link (filePath === targetFilePath) は同一 Task に対する 2 段 dispatch だと
+    // 2 回目が 1 回目を上書きして片方の楽観更新が失われる。同一 Task の場合は
+    // linkedFilePaths と reverseLinkedFilePaths を 1 回の dispatch でまとめて更新する。
+    const isSelfLink = params.filePath === params.targetFilePath;
+    const targetSnap = isSelfLink
+      ? undefined
+      : findCurrentTask(deps.getState(), params.targetFilePath);
 
+    const sourceForwardLinks = TaskLinks.removeLinkedFilePath(
+      sourceSnap.links,
+      params.targetFilePath,
+    );
+    const optimisticSourceLinks = isSelfLink
+      ? TaskLinks.removeReverseLinkedFilePath(
+          sourceForwardLinks,
+          params.filePath,
+        )
+      : sourceForwardLinks;
     const optimisticSource: Task = {
       ...sourceSnap,
-      links: TaskLinks.removeLinkedFilePath(
-        sourceSnap.links,
-        params.targetFilePath,
-      ),
+      links: optimisticSourceLinks,
     };
     deps.dispatchSync({
       type: "task-updated",
@@ -117,18 +130,35 @@ export const removeLinkAction = (
       }
       const currentSource = findCurrentTask(deps.getState(), params.filePath);
       if (currentSource !== undefined) {
-        const restoredLinks = TaskLinks.restoreLinkedFilePathsIfStillOptimistic(
-          {
+        // self-link の場合は source 側で linkedFilePaths と reverseLinkedFilePaths の
+        // 両方が楽観更新されているので、両 field を独立に still-optimistic 判定し
+        // 戻せる方だけ snapshot に差し戻す。通常ケースでは reverse 判定は走らない。
+        const forwardRestored =
+          TaskLinks.restoreLinkedFilePathsIfStillOptimistic({
             snapshot: sourceSnap.links,
             optimistic: optimisticSource.links,
             current: currentSource.links,
-          },
-        );
-        if (restoredLinks !== undefined) {
+          });
+        const reverseRestored = isSelfLink
+          ? TaskLinks.restoreReverseLinkedFilePathsIfStillOptimistic({
+              snapshot: sourceSnap.links,
+              optimistic: optimisticSource.links,
+              current: currentSource.links,
+            })
+          : undefined;
+        if (forwardRestored !== undefined || reverseRestored !== undefined) {
+          const mergedLinks: TaskLinks = {
+            linkedFilePaths:
+              forwardRestored?.linkedFilePaths ??
+              currentSource.links.linkedFilePaths,
+            reverseLinkedFilePaths:
+              reverseRestored?.reverseLinkedFilePaths ??
+              currentSource.links.reverseLinkedFilePaths,
+          };
           deps.dispatchSync({
             type: "task-updated",
             originalFilePath: params.filePath,
-            task: { ...currentSource, links: restoredLinks },
+            task: { ...currentSource, links: mergedLinks },
           });
         }
       }

@@ -335,6 +335,41 @@ test("IPC 失敗時の Result.err は ProjectError.tauri を運ぶ", async () =>
   expect(error.kind).toBe("tauri");
 });
 
+test("self-link 削除では source 側 1 回の dispatch で linkedFilePaths と reverseLinkedFilePaths の両方が消える", async () => {
+  // self-link: A.links が [A] かつ A.reverseLinks も [A] の状態
+  const selfTask = makeTask({
+    filePath: "tasks/a.md",
+    title: "A",
+    links: ["tasks/a.md"],
+    reverseLinks: ["tasks/a.md"],
+  });
+  const harness = setupLoaded(makeData([selfTask]));
+  removeLinkMock.mockResolvedValue(
+    Result.ok(
+      okTask({
+        id: "tasks/a.md",
+        filePath: "tasks/a.md",
+        links: [],
+        reverseLinks: [],
+      }),
+    ),
+  );
+
+  await removeLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "tasks/a.md",
+  });
+
+  const sourceUpdates = harness.actions.filter(
+    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+  );
+  // 楽観 dispatch (1) + canonical 再 dispatch (1) = 2
+  expect(sourceUpdates).toHaveLength(2);
+  const optimistic = asTaskUpdated(sourceUpdates[0]);
+  expect(optimistic.task.links.linkedFilePaths).toEqual([]);
+  expect(optimistic.task.links.reverseLinkedFilePaths).toEqual([]);
+});
+
 test("idle state では preflight invalid-state で IPC を呼ばない", async () => {
   const state = { current: { kind: "idle" } as ProjectState };
   const actions: ProjectAction[] = [];
