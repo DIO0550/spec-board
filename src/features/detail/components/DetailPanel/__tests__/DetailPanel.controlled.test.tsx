@@ -1,6 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, assert, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
 import { DetailPanel } from "..";
 
@@ -251,10 +251,10 @@ test("SubIssueSection 子クリックで onSelectTask が childId 引数で 1 �
   const childBtn = document.querySelector<HTMLButtonElement>(
     '[data-testid="sub-issue-item-child-id"]',
   );
-  expect(childBtn).not.toBeNull();
-  expect(childBtn?.disabled).toBe(false);
+  assert(childBtn !== null, "sub-issue-item-child-id ボタンが見つからない");
+  expect(childBtn.disabled).toBe(false);
   act(() => {
-    childBtn?.click();
+    childBtn.click();
   });
   expect(onSelectTask).toHaveBeenCalledTimes(1);
   expect(onSelectTask).toHaveBeenCalledWith("child-id");
