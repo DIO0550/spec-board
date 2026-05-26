@@ -423,6 +423,17 @@ const openParentChildProject = async (): Promise<void> => {
       columns: ["Todo", "Done"],
     }),
   );
+  // beforeEach の暗黙初期化に依存させず、必要な columns / doneColumn を
+  // helper 自身で明示することでテスト追加・並び替え時のフレークを防ぐ。
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      doneColumn: "Done",
+    }),
+  );
   await act(async () => {
     clickHeaderOpenButton();
   });
