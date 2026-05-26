@@ -1,6 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, assert, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
 import { DetailPanel } from "..";
 
@@ -222,4 +222,40 @@ test("ParentLink クリックで onSelectTask が parentTask.id 引数で 1 回�
   });
   expect(onSelectTask).toHaveBeenCalledTimes(1);
   expect(onSelectTask).toHaveBeenCalledWith("parent-id");
+});
+
+test("SubIssueSection 子クリックで onSelectTask が childId 引数で 1 回呼ばれる", () => {
+  const onSelectTask = vi.fn();
+  const parent = createTask({
+    id: "parent-id",
+    title: "親",
+    filePath: "tasks/parent.md",
+  });
+  const child = createTask({
+    id: "child-id",
+    title: "子1",
+    filePath: "tasks/child.md",
+    parent: "tasks/parent.md",
+  });
+  render({
+    task: parent,
+    columns: testColumns,
+    allTasks: [parent, child],
+    doneColumn: "Done",
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onAddSubIssue: vi.fn(),
+    onSelectTask,
+  });
+  const childBtn = document.querySelector<HTMLButtonElement>(
+    '[data-testid="sub-issue-item-child-id"]',
+  );
+  assert(childBtn !== null, "sub-issue-item-child-id ボタンが見つからない");
+  expect(childBtn.disabled).toBe(false);
+  act(() => {
+    childBtn.click();
+  });
+  expect(onSelectTask).toHaveBeenCalledTimes(1);
+  expect(onSelectTask).toHaveBeenCalledWith("child-id");
 });

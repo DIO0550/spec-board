@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
+import { selectTaskOutcome } from "@/domains/task-selection";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import {
@@ -197,9 +198,17 @@ export const App = () => {
     setSelectedTaskId(taskId);
   }, []);
 
-  const handleSelectTask = useCallback((taskId: string) => {
-    setSelectedTaskId(taskId);
-  }, []);
+  const handleSelectTask = useCallback(
+    (taskId: string) => {
+      const outcome = selectTaskOutcome(tasks, taskId);
+      if (outcome === null) {
+        return;
+      }
+      setSelectedTaskId(outcome.selectedTaskId);
+      announce(outcome.announceText);
+    },
+    [tasks, announce],
+  );
 
   const handleCloseDetail = useCallback(() => {
     setSelectedTaskId(null);

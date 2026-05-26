@@ -176,6 +176,7 @@ export const DetailPanel = ({
               <ParentLink parentTask={parentTask} onSelect={onSelectTask} />
             )}
             <EditableText
+              key={task.id}
               value={task.title || task.filePath}
               onConfirm={handleTitleConfirm}
               ariaLabel="タスクタイトル"
@@ -226,6 +227,7 @@ export const DetailPanel = ({
                 childTasks={childTasks}
                 doneColumn={effectiveDoneColumn}
                 onAddSubIssue={onAddSubIssue}
+                onChildClick={onSelectTask}
               />
             )}
             {onAddLink !== undefined && allTasks !== undefined && (
