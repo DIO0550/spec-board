@@ -388,6 +388,113 @@ test("column 並び替え失敗 → LiveRegion に「取り消しました」", 
   expect(liveRegionText()).toBe("「A」の移動を取り消しました");
 });
 
+// === DetailPanel 内タスク遷移 announce ===
+
+const parentTask: Task = Task.fromPayload({
+  id: "p1",
+  title: "親タスク",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: ["tasks/c1.md"],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/p1.md",
+});
+
+const childTask: Task = Task.fromPayload({
+  id: "c1",
+  title: "子1",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/c1.md",
+  parent: "tasks/p1.md",
+});
+
+const openParentChildProject = async (): Promise<void> => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pc"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({
+      tasks: [parentTask, childTask],
+      columns: ["Todo", "Done"],
+    }),
+  );
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const clickParentCard = async (): Promise<void> => {
+  const cards = container?.querySelectorAll<HTMLElement>(
+    "[data-testid='task-card']",
+  );
+  const parentCard = Array.from(cards ?? []).find(
+    (c) =>
+      c.querySelector('[data-testid="task-card-title"]')?.textContent ===
+      "親タスク",
+  );
+  await act(async () => {
+    parentCard?.click();
+  });
+};
+
+const clickChildSubIssue = async (): Promise<void> => {
+  const childBtn = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="sub-issue-item-c1"]',
+  );
+  await act(async () => {
+    childBtn?.click();
+  });
+};
+
+const clickParentLink = async (): Promise<void> => {
+  const link = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="detail-parent-link"]',
+  );
+  await act(async () => {
+    link?.click();
+  });
+};
+
+const detailTitleValue = (): string | null => {
+  const input = container?.querySelector<HTMLInputElement>(
+    '[aria-label="タスクタイトル"]',
+  );
+  return input?.value ?? null;
+};
+
+test("DetailPanel の子クリックで LiveRegion に「{title}を表示中」が流れ、DetailPanel が子に切り替わる", async () => {
+  mountApp();
+  await openParentChildProject();
+  await clickParentCard();
+  expect(detailTitleValue()).toBe("親タスク");
+
+  await clickChildSubIssue();
+
+  expect(liveRegionText()).toBe("「子1」を表示中");
+  expect(detailTitleValue()).toBe("子1");
+});
+
+test("ParentLink クリックでも LiveRegion に「{title}を表示中」が流れ、親に戻る", async () => {
+  mountApp();
+  await openParentChildProject();
+  await clickParentCard();
+  await clickChildSubIssue();
+  expect(detailTitleValue()).toBe("子1");
+
+  await clickParentLink();
+
+  expect(liveRegionText()).toBe("「親タスク」を表示中");
+  expect(detailTitleValue()).toBe("親タスク");
+});
+
 test("column 同位置 drop (no-op) では LiveRegion が更新されない", async () => {
   mountApp();
   await openThreeColumnProject();
