@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   afterAll,
   afterEach,
+  assert,
   beforeAll,
   beforeEach,
   expect,
@@ -439,8 +440,9 @@ const clickParentCard = async (): Promise<void> => {
       c.querySelector('[data-testid="task-card-title"]')?.textContent ===
       "親タスク",
   );
+  assert(parentCard !== undefined, "親タスクの task-card が見つからない");
   await act(async () => {
-    parentCard?.click();
+    parentCard.click();
   });
 };
 
@@ -448,8 +450,9 @@ const clickChildSubIssue = async (): Promise<void> => {
   const childBtn = container?.querySelector<HTMLButtonElement>(
     '[data-testid="sub-issue-item-c1"]',
   );
+  assert(childBtn != null, "sub-issue-item-c1 ボタンが見つからない");
   await act(async () => {
-    childBtn?.click();
+    childBtn.click();
   });
 };
 
@@ -457,8 +460,9 @@ const clickParentLink = async (): Promise<void> => {
   const link = container?.querySelector<HTMLButtonElement>(
     '[data-testid="detail-parent-link"]',
   );
+  assert(link != null, "detail-parent-link が見つからない");
   await act(async () => {
-    link?.click();
+    link.click();
   });
 };
 
