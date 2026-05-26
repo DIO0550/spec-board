@@ -204,3 +204,59 @@ test("onRemoveLink pending 中は section 内の全 × button と + button が d
   ) as HTMLButtonElement;
   expect(firstBtnAfter.disabled).toBe(false);
 });
+
+test("popover が開いた状態で × クリックすると TaskSelect の input と候補ボタンが disabled になる", () => {
+  // × クリック中に popover が開いていると候補選択で addLink が並行実行できてしまうため、
+  // TaskSelect 側にも disabled が伝播することを検証する。
+  let resolveCb: ((r: Result<Task, unknown>) => void) | null = null;
+  const onRemoveLink = vi.fn(
+    () =>
+      new Promise<Result<Task, unknown>>((resolve) => {
+        resolveCb = resolve;
+      }),
+  );
+  const candidate = makeTask({ filePath: "tasks/c.md", title: "C" });
+  const self = makeTask({
+    filePath: "tasks/self.md",
+    links: ["tasks/a.md"],
+  });
+  render({
+    task: self,
+    allTasks: [self, candidate],
+    parentFilePath: null,
+    childrenFilePaths: [],
+    onAddLink: noopOnAddLink,
+    onRemoveLink,
+  });
+
+  // popover を開く
+  const addBtn = document.querySelector(
+    '[data-testid="links-section-add-button"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    addBtn.click();
+  });
+
+  // 開いた状態で × クリックして busy にする
+  const removeBtn = document.querySelector(
+    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    removeBtn.click();
+  });
+
+  // TaskSelect 内の search input と候補ボタンが disabled になっていること
+  const input = document.querySelector(
+    '[data-testid="links-section-input"]',
+  ) as HTMLInputElement;
+  expect(input.disabled).toBe(true);
+  const option = document.querySelector(
+    `[data-testid="links-section-option-${candidate.id}"]`,
+  ) as HTMLButtonElement;
+  expect(option.disabled).toBe(true);
+
+  // resolve で busy 解除 → disabled も解除される
+  act(() => {
+    resolveCb?.(Result.ok(self));
+  });
+});

@@ -173,6 +173,7 @@ export const LinksSection = (props: LinksSectionProps) => {
           onClose={() => setIsOpen(false)}
           placeholder="タスクを検索..."
           autoFocus
+          disabled={isBusyAny}
           testIdPrefix="links-section"
         />
       ) : (
