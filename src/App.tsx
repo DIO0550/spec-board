@@ -196,9 +196,21 @@ export const App = () => {
     setSelectedTaskId(taskId);
   }, []);
 
-  const handleSelectTask = useCallback((taskId: string) => {
-    setSelectedTaskId(taskId);
-  }, []);
+  const handleSelectTask = useCallback(
+    (taskId: string) => {
+      // target が tasks に無い場合は遷移自体を行わない。
+      // setSelectedTaskId をしてしまうと selectedTask が null になり、
+      // DetailPanel が unmount して MarkdownBody 等の未保存編集が破棄される。
+      // 例: watcher による外部削除や、render と click の間に対象が消えたレース。
+      const target = tasks.find((t) => t.id === taskId);
+      if (target === undefined) {
+        return;
+      }
+      setSelectedTaskId(taskId);
+      announce(`「${target.title}」を表示中`);
+    },
+    [tasks, announce],
+  );
 
   const handleCloseDetail = useCallback(() => {
     setSelectedTaskId(null);

@@ -162,6 +162,7 @@ export const DetailPanel = ({
               <ParentLink parentTask={parentTask} onSelect={onSelectTask} />
             )}
             <EditableText
+              key={task.id}
               value={task.title || task.filePath}
               onConfirm={handleTitleConfirm}
               ariaLabel="タスクタイトル"
@@ -212,6 +213,7 @@ export const DetailPanel = ({
                 childTasks={childTasks}
                 doneColumn={effectiveDoneColumn}
                 onAddSubIssue={onAddSubIssue}
+                onChildClick={onSelectTask}
               />
             )}
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
