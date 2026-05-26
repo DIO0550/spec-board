@@ -14,6 +14,7 @@ import {
   moveTaskAction,
 } from "./actions/moveTask";
 import { openProjectAction } from "./actions/openProject";
+import { removeLinkAction } from "./actions/removeLink";
 import {
   type ReorderColumnsCallbacks,
   type ReorderColumnsResult,
@@ -301,6 +302,15 @@ export const useProject = (
     [actionDeps],
   );
 
+  const removeLink = useCallback(
+    (params: {
+      filePath: string;
+      targetFilePath: string;
+    }): Promise<ResultT<Task, ProjectError>> =>
+      removeLinkAction(actionDeps(), params),
+    [actionDeps],
+  );
+
   const reset = useCallback((): void => {
     invalidateOpenRequests(projectVersionRef.current);
     invalidateProject(projectVersionRef.current);
@@ -317,6 +327,7 @@ export const useProject = (
     moveTask,
     reorderColumns,
     addLink,
+    removeLink,
     reset,
   };
 };

@@ -40,6 +40,7 @@ const candidate = makeTask({
 });
 
 const noopAddLink = async () => Result.ok(self);
+const noopRemoveLink = async () => Result.ok(self);
 
 const meta: Meta<typeof LinksSection> = {
   component: LinksSection,
@@ -50,6 +51,7 @@ const meta: Meta<typeof LinksSection> = {
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopAddLink,
+    onRemoveLink: noopRemoveLink,
   },
 };
 

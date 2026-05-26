@@ -108,6 +108,17 @@ export type UseProjectResult = {
     filePath: string;
     targetFilePath: string;
   }) => Promise<ResultT<Task, ProjectError>>;
+  /**
+   * source タスクから target タスクへの link を削除し、source / target 両方に
+   * 楽観 dispatch → IPC → 成功で source canonical / 失敗で条件付き rollback する。
+   *
+   * @param params link 元 / 先 filePath
+   * @returns 更新後の source Task または ProjectError
+   */
+  removeLink: (params: {
+    filePath: string;
+    targetFilePath: string;
+  }) => Promise<ResultT<Task, ProjectError>>;
   /** project state を初期状態に戻す。 */
   reset: () => void;
 };

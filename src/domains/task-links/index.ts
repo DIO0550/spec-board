@@ -136,6 +136,50 @@ const appendReverseLinkedFilePath = (
 };
 
 /**
+ * source 側の楽観反映用。`linkedFilePaths` から `target` を取り除いた新 links を返す。
+ * 含まれていなければ元 links を **同一参照** で返す。これは API 契約として「変更が
+ * 無いことを呼出側が `next === prev` で検出できる」ようにするためのもの。現状の呼出側
+ * (`removeLinkAction`) は task を spread して常に dispatch するため自動的な抑止は
+ * 行われず、抑止が必要なら呼出側で参照比較して skip する責務がある。
+ *
+ * @param links 元の links
+ * @param target 取り除く link 先 filePath
+ * @returns 削除後の links（不在時は元の参照）
+ */
+const removeLinkedFilePath = (links: TaskLinks, target: string): TaskLinks => {
+  if (!links.linkedFilePaths.includes(target)) {
+    return links;
+  }
+  return {
+    ...links,
+    linkedFilePaths: links.linkedFilePaths.filter((p) => p !== target),
+  };
+};
+
+/**
+ * target 側の楽観反映用。`reverseLinkedFilePaths` から `source` を取り除いた新 links を返す。
+ * 含まれていなければ元 links を同一参照で返す。
+ *
+ * @param links 元の links
+ * @param source 取り除く link 元 filePath
+ * @returns 削除後の links（不在時は元の参照）
+ */
+const removeReverseLinkedFilePath = (
+  links: TaskLinks,
+  source: string,
+): TaskLinks => {
+  if (!links.reverseLinkedFilePaths.includes(source)) {
+    return links;
+  }
+  return {
+    ...links,
+    reverseLinkedFilePaths: links.reverseLinkedFilePaths.filter(
+      (p) => p !== source,
+    ),
+  };
+};
+
+/**
  * source 側 rollback 判定。
  *
  * `current.linkedFilePaths` が `optimistic.linkedFilePaths` と順序込みで一致する場合のみ、
@@ -210,6 +254,8 @@ export const TaskLinks = {
   buildAddLinkCandidates,
   appendLinkedFilePath,
   appendReverseLinkedFilePath,
+  removeLinkedFilePath,
+  removeReverseLinkedFilePath,
   restoreLinkedFilePathsIfStillOptimistic,
   restoreReverseLinkedFilePathsIfStillOptimistic,
 } as const;
