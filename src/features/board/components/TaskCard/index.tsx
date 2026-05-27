@@ -10,8 +10,10 @@ import { SubIssueProgress } from "../SubIssueProgress";
 type TaskCardProps = {
   /** 表示するタスク */
   task: Task;
-  /** 子タスクの配列（children を解決済み） */
-  childTasks?: Task[];
+  /** 子タスクの配列（直下子のみ。<details> 内一覧用） */
+  childTasks?: readonly Task[];
+  /** 全子孫タスク（X/Y サマリ + 進捗バー用、再帰展開済） */
+  descendantTasks?: readonly Task[];
   /** 完了カラム名 */
   doneColumn?: string;
   /** 所属カラム名。onDragStart の引数に使う。 */
@@ -41,12 +43,18 @@ type TaskCardProps = {
 const CardContent = ({
   task,
   childTasks = [],
+  descendantTasks,
   doneColumn = "Done",
 }: {
   task: Task;
-  childTasks?: Task[];
+  childTasks?: readonly Task[];
+  descendantTasks?: readonly Task[];
   doneColumn?: string;
 }) => {
+  // descendantTasks 未指定の呼出元では childTasks にフォールバック（直下子のみで集計）。
+  // 本 PR 以前の振る舞いと同等になり、新規呼出元（Column）が descendantTasks を渡したときだけ
+  // 全子孫ベースのカウントに切替わる。
+  const effectiveDescendants = descendantTasks ?? childTasks;
   const displayTitle = task.title || task.filePath;
 
   return (
@@ -64,7 +72,11 @@ const CardContent = ({
           ))}
         </div>
       )}
-      <SubIssueProgress childTasks={childTasks} doneColumn={doneColumn} />
+      <SubIssueProgress
+        childTasks={childTasks}
+        descendantTasks={effectiveDescendants}
+        doneColumn={doneColumn}
+      />
     </>
   );
 };
@@ -77,6 +89,7 @@ const CardContent = ({
 export const TaskCard = ({
   task,
   childTasks,
+  descendantTasks,
   doneColumn,
   fromColumn,
   isDragging = false,
@@ -118,6 +131,7 @@ export const TaskCard = ({
         <CardContent
           task={task}
           childTasks={childTasks}
+          descendantTasks={descendantTasks}
           doneColumn={doneColumn}
         />
       </div>
@@ -155,6 +169,7 @@ export const TaskCard = ({
       <CardContent
         task={task}
         childTasks={childTasks}
+        descendantTasks={descendantTasks}
         doneColumn={doneColumn}
       />
     </div>

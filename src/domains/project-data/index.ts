@@ -67,6 +67,64 @@ const syncParentChildren = (
 };
 
 /**
+ * 2 つの parentFilePath が同じ task path を指すか判定する。
+ * `parentReferencesTaskPath` は path 正規化（`./`, `\\` 差）を吸収する。
+ *
+ * @param a 比較対象 A（undefined 可）
+ * @param b 比較対象 B（undefined 可）
+ * @returns 同じ path を指す or 両方 undefined のとき true
+ */
+const parentReferencesEquivalent = (
+  a: string | undefined,
+  b: string | undefined,
+): boolean => {
+  if (a === undefined && b === undefined) {
+    return true;
+  }
+  if (a === undefined || b === undefined) {
+    return false;
+  }
+  return parentReferencesTaskPath(a, b);
+};
+
+/**
+ * 旧親 task の children から付け替え済み child の filePath を除去する。
+ *
+ * @param tasks 現在の task 配列
+ * @param oldParentFilePath 旧 parent filePath（無ければ no-op）
+ * @param childFilePath 付け替えられた child の filePath
+ * @returns 旧親の children から child を除いた task 配列
+ */
+const detachChildFromOldParent = (
+  tasks: Task[],
+  oldParentFilePath: string | undefined,
+  childFilePath: string,
+): Task[] => {
+  if (oldParentFilePath === undefined) {
+    return tasks;
+  }
+
+  return tasks.map((current) => {
+    if (
+      !parentReferencesTaskPath(oldParentFilePath, current.filePath) ||
+      !current.hierarchy.childFilePaths.includes(childFilePath)
+    ) {
+      return current;
+    }
+
+    return {
+      ...current,
+      hierarchy: {
+        ...current.hierarchy,
+        childFilePaths: current.hierarchy.childFilePaths.filter(
+          (fp) => fp !== childFilePath,
+        ),
+      },
+    };
+  });
+};
+
+/**
  * 削除済み path への参照を hierarchy / links から取り除いた `Task` を返す。
  * @param task 整合させる task
  * @param filePath 削除済み task の filePath
@@ -108,12 +166,43 @@ export const ProjectData = {
     data: ProjectData,
     originalFilePath: string,
     task: Task,
-  ): ProjectData => ({
-    ...data,
-    tasks: data.tasks.map((current) =>
+  ): ProjectData => {
+    const previous = data.tasks.find((t) => t.filePath === originalFilePath);
+
+    // previous が無いケース（late / out-of-order な task-updated event）は
+    // tasks に挿入されないので、parent-sync で他 task の childFilePaths に
+    // dangling な参照を作らないよう no-op で返す（呼び出し時の data をそのまま）。
+    if (previous === undefined) {
+      return data;
+    }
+
+    const oldParent = previous.hierarchy.parentFilePath;
+    const newParent = task.hierarchy.parentFilePath;
+    const parentUnchanged = parentReferencesEquivalent(oldParent, newParent);
+    const filePathChanged = originalFilePath !== task.filePath;
+
+    const replaced = data.tasks.map((current) =>
       current.filePath === originalFilePath ? task : current,
-    ),
-  }),
+    );
+
+    // 親が同値かつ filePath も不変なら他 task 参照は触らない。
+    if (parentUnchanged && !filePathChanged) {
+      return { ...data, tasks: replaced };
+    }
+
+    // 旧親からの除去は必ず originalFilePath（旧パス）で行う。
+    // rename 時に新パスで detach するとゴーストが残る。
+    const detached = detachChildFromOldParent(
+      replaced,
+      oldParent,
+      originalFilePath,
+    );
+    // 新親への登録は新 filePath（rename 後の値）を使う。
+    // parent が変わらない rename のみのケースでも、旧親の childFilePaths を
+    // 新パスへ更新するために旧親→新親の経路を辿る。
+    const synced = syncParentChildren(detached, newParent, task.filePath);
+    return { ...data, tasks: synced };
+  },
 
   /**
    * task を削除し、親子関係と link / reverseLink から参照を掃除する。

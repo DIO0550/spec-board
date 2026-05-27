@@ -4,8 +4,10 @@ import type { Task } from "@/types/task";
 type SubIssueSectionProps = {
   /** 親タスク */
   parentTask: Task;
-  /** 直接の子タスク一覧 */
+  /** 直接の子タスク一覧（<ul> リスト表示用） */
   childTasks: readonly Task[];
+  /** 全子孫タスク（進捗カウント・進捗バー算出用、再帰展開済） */
+  descendantTasks: readonly Task[];
   /** 完了として扱うカラム名 */
   doneColumn: string;
   /**
@@ -31,71 +33,75 @@ type SubIssueSectionProps = {
 export const SubIssueSection = ({
   parentTask,
   childTasks,
+  descendantTasks,
   doneColumn,
   onAddSubIssue,
   onChildClick,
 }: SubIssueSectionProps) => {
   const { total, doneCount, percentage } = SubIssue.progress(
-    childTasks,
+    descendantTasks,
     doneColumn,
   );
+
+  // 進捗バー（サマリと visual bar）は全子孫を対象に算出する。
+  // 直下子リストは childTasks 単独で描画する。両者は独立した条件で表示判定する。
+  const showProgress = total > 0;
+  const showChildList = childTasks.length > 0;
 
   return (
     <div data-testid="sub-issue-section">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium text-gray-500">
-          サブIssue {total > 0 ? `(${doneCount}/${total})` : ""}
+          サブIssue {showProgress ? `(${doneCount}/${total})` : ""}
         </span>
       </div>
-      {total > 0 && (
-        <>
-          <div className="mb-2 flex items-center gap-2">
+      {showProgress && (
+        <div className="mb-2 flex items-center gap-2">
+          <div
+            className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
+            role="progressbar"
+            aria-valuenow={percentage}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`進捗 ${doneCount}/${total}`}
+          >
             <div
-              className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
-              role="progressbar"
-              aria-valuenow={percentage}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`進捗 ${doneCount}/${total}`}
-            >
-              <div
-                className="h-full rounded-full bg-green-500 transition-all"
-                style={{ width: `${percentage}%` }}
-              />
-            </div>
-            <span className="text-xs text-gray-500">
-              {doneCount}/{total}
-            </span>
+              className="h-full rounded-full bg-green-500 transition-all"
+              style={{ width: `${percentage}%` }}
+            />
           </div>
-          <ul className="mb-2 space-y-1 text-sm text-gray-700">
-            {childTasks.map((child) => {
-              const isDone = child.status === doneColumn;
-              const label = child.title || child.filePath;
-              return (
-                <li key={child.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent"
-                    disabled={onChildClick === undefined}
-                    onClick={() => onChildClick?.(child.id)}
-                    data-testid={`sub-issue-item-${child.id}`}
+          <span className="text-xs text-gray-500">
+            {doneCount}/{total}
+          </span>
+        </div>
+      )}
+      {showChildList && (
+        <ul className="mb-2 space-y-1 text-sm text-gray-700">
+          {childTasks.map((child) => {
+            const isDone = child.status === doneColumn;
+            const label = child.title || child.filePath;
+            return (
+              <li key={child.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent"
+                  disabled={onChildClick === undefined}
+                  onClick={() => onChildClick?.(child.id)}
+                  data-testid={`sub-issue-item-${child.id}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={isDone ? "text-green-600" : "text-gray-400"}
                   >
-                    <span
-                      aria-hidden="true"
-                      className={isDone ? "text-green-600" : "text-gray-400"}
-                    >
-                      {isDone ? "✓" : "○"}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{label}</span>
-                    <span className="text-xs text-gray-500">
-                      {child.status}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+                    {isDone ? "✓" : "○"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <span className="text-xs text-gray-500">{child.status}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
       <button
         type="button"

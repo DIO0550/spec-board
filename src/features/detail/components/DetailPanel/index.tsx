@@ -114,7 +114,7 @@ export const DetailPanel = ({
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
-  const { childTasks, effectiveDoneColumn } = useChildTasks({
+  const { childTasks, descendantTasks, effectiveDoneColumn } = useChildTasks({
     parentFilePath: task.filePath,
     allTasks,
     columns,
@@ -250,6 +250,7 @@ export const DetailPanel = ({
               <SubIssueSection
                 parentTask={task}
                 childTasks={childTasks}
+                descendantTasks={descendantTasks}
                 doneColumn={effectiveDoneColumn}
                 onAddSubIssue={onAddSubIssue}
                 onChildClick={onSelectTask}

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { Task } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
 import { DRAG_MIME_TYPE, DragState } from "../Board/dragState";
@@ -127,6 +128,24 @@ export const Column = ({
     () => new Map(allTasks.map((t) => [t.filePath, t])),
     [allTasks],
   );
+  // 各 TaskCard の進捗バーは「全子孫」基準で算出するため、Column 単位で
+  // allTasks 全件分の子孫 list を 1 度だけ構築し、tasks.map 内で都度 DFS が
+  // 走るのを避ける。lookup Map を共有して 1 root あたりの DFS は O(子孫数)
+  // 相当に抑えられるが、最悪ケース（diamond / 深い chain）では allTasks
+  // 全体でみると O(N * 平均子孫数) になる点に留意。
+  // Board レベルで Column 間共有まで持ち上げる最適化は別 Issue で扱う。
+  const descendantsByFilePath = useMemo(() => {
+    const map = new Map<string, readonly Task[]>();
+    for (const t of allTasks) {
+      map.set(
+        t.filePath,
+        TaskHierarchy.collectDescendants(allTasks, t.filePath, {
+          lookup: tasksByFilePath,
+        }),
+      );
+    }
+    return map;
+  }, [allTasks, tasksByFilePath]);
   const listRef = useRef<HTMLUListElement>(null);
   // dragover は高頻度発火するため、rAF 同フレーム内では rect 再計算を 1 回に
   // 抑制する。pendingFrameRef が null でない間は新規 rAF を予約せず、最後の
@@ -294,8 +313,11 @@ export const Column = ({
     setIsConfirming(false);
   };
 
+  /**
+   * 削除確認ダイアログのキャンセルハンドラ。
+   * pending 中（IPC 応答待ち）はキャンセル操作も抑止する。
+   */
   const handleCancel = () => {
-    // pending 中はキャンセルも抑止
     if (isDeleting) {
       return;
     }
@@ -336,6 +358,8 @@ export const Column = ({
           const childTasks = task.hierarchy.childFilePaths
             .map((fp) => tasksByFilePath.get(fp))
             .filter((t): t is Task => t !== undefined);
+          const descendantTasks =
+            descendantsByFilePath.get(task.filePath) ?? [];
           return (
             <Fragment key={task.id}>
               {placeholderIndex === i && (
@@ -349,6 +373,7 @@ export const Column = ({
                 <TaskCard
                   task={task}
                   childTasks={childTasks}
+                  descendantTasks={descendantTasks}
                   doneColumn={doneColumn}
                   fromColumn={name}
                   isDragging={DragState.isDraggingTask(

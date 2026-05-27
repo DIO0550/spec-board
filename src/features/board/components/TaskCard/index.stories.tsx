@@ -12,6 +12,7 @@ const meta: Meta<typeof TaskCard> = {
   args: {
     task: baseTask,
     childTasks: [],
+    descendantTasks: [],
     doneColumn: "Done",
     fromColumn: "Todo",
     onDragStart: fn(),
@@ -63,6 +64,22 @@ export const WithChildren: Story = {
   args: {
     task: { ...baseTask },
     childTasks,
+    descendantTasks: childTasks,
+  },
+};
+
+export const WithDescendantsBeyondDirectChildren: Story = {
+  args: {
+    task: { ...baseTask },
+    childTasks,
+    descendantTasks: [
+      ...childTasks,
+      ...initialTasks.slice(0, 3).map((t) => ({
+        ...t,
+        id: `extra-${t.id}`,
+        status: "Done",
+      })),
+    ],
   },
 };
 
@@ -76,5 +93,6 @@ export const Minimal: Story = {
       title: "最小構成のタスク",
     },
     childTasks: [],
+    descendantTasks: [],
   },
 };

@@ -133,3 +133,35 @@ test("ラベルが5個以上で折り返し表示", async () => {
     expect(wrapper).toBeTruthy();
   });
 });
+
+test("descendantTasks ベースで進捗サマリが表示される（直下子 2 + 孫 3 で 3/5）", async () => {
+  const childTasks = [
+    createTask({ id: "c1", status: "Todo" }),
+    createTask({ id: "c2", status: "Done" }),
+  ];
+  const descendantTasks = [
+    createTask({ id: "c1", status: "Todo" }),
+    createTask({ id: "c2", status: "Done" }),
+    createTask({ id: "g1", status: "Done" }),
+    createTask({ id: "g2", status: "Done" }),
+    createTask({ id: "g3", status: "Todo" }),
+  ];
+  render({
+    task: createTask({
+      id: "parent",
+      title: "親",
+      children: ["tasks/c1.md", "tasks/c2.md"],
+    }),
+    childTasks,
+    descendantTasks,
+    doneColumn: "Done",
+    onClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const bar = container?.querySelector(
+      "[role='progressbar']",
+    ) as HTMLElement | null;
+    expect(bar?.getAttribute("aria-valuenow")).toBe("60");
+    expect(container?.textContent).toContain("3/5");
+  });
+});

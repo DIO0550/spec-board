@@ -230,6 +230,7 @@ test("SubIssueSection 子クリックで onSelectTask が childId 引数で 1 �
     id: "parent-id",
     title: "親",
     filePath: "tasks/parent.md",
+    children: ["tasks/child.md"],
   });
   const child = createTask({
     id: "child-id",
