@@ -166,6 +166,7 @@ test("allTasks から子タスクを解決してサブIssue 進捗を表示す�
     id: "parent",
     title: "親",
     filePath: "tasks/parent.md",
+    children: ["tasks/child-1.md", "tasks/child-2.md"],
   });
   const child1 = createTask({
     id: "child-1",
@@ -212,6 +213,65 @@ test("allTasks から子タスクを解決してサブIssue 進捗を表示す�
   ).toBeTruthy();
   expect(
     document.querySelector('[data-testid="sub-issue-item-other"]'),
+  ).toBeNull();
+});
+
+test("3 階層 allTasks（root + 子 1 + 孫 2、うち done 1）から DetailPanel が 1/3 サマリを表示する", async () => {
+  const grand1 = createTask({
+    id: "g1",
+    title: "孫1",
+    status: "Done",
+    filePath: "tasks/g1.md",
+    parent: "tasks/c1.md",
+  });
+  const grand2 = createTask({
+    id: "g2",
+    title: "孫2",
+    status: "Todo",
+    filePath: "tasks/g2.md",
+    parent: "tasks/c1.md",
+  });
+  const child = createTask({
+    id: "c1",
+    title: "子1",
+    status: "Todo",
+    filePath: "tasks/c1.md",
+    parent: "tasks/root.md",
+    children: ["tasks/g1.md", "tasks/g2.md"],
+  });
+  const root = createTask({
+    id: "root",
+    title: "親",
+    filePath: "tasks/root.md",
+    children: ["tasks/c1.md"],
+  });
+  render({
+    task: root,
+    columns: testColumns,
+    allTasks: [root, child, grand1, grand2],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onAddSubIssue: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="sub-issue-section"]'),
+    ).toBeTruthy();
+  });
+  const section = document.querySelector(
+    '[data-testid="sub-issue-section"]',
+  ) as HTMLElement;
+  expect(section.textContent).toContain("サブIssue (1/3)");
+  // 直下子リストは「子1」のみ（孫は含まない）
+  expect(
+    document.querySelector('[data-testid="sub-issue-item-c1"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="sub-issue-item-g1"]'),
+  ).toBeNull();
+  expect(
+    document.querySelector('[data-testid="sub-issue-item-g2"]'),
   ).toBeNull();
 });
 
