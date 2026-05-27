@@ -168,25 +168,38 @@ export const ProjectData = {
     task: Task,
   ): ProjectData => {
     const previous = data.tasks.find((t) => t.filePath === originalFilePath);
-    const oldParent = previous?.hierarchy.parentFilePath;
+
+    // previous が無いケース（late / out-of-order な task-updated event）は
+    // tasks に挿入されないので、parent-sync で他 task の childFilePaths に
+    // dangling な参照を作らないよう no-op で返す（呼び出し時の data をそのまま）。
+    if (previous === undefined) {
+      return data;
+    }
+
+    const oldParent = previous.hierarchy.parentFilePath;
     const newParent = task.hierarchy.parentFilePath;
+    const parentUnchanged = parentReferencesEquivalent(oldParent, newParent);
+    const filePathChanged = originalFilePath !== task.filePath;
 
     const replaced = data.tasks.map((current) =>
       current.filePath === originalFilePath ? task : current,
     );
 
-    // parent 表記の正規化差（./ や \\ の差）まで含めて同値なら children 同期を省く。
-    // 一致時は他 task の参照を不要に書き換えず元 reference を保つ。
-    const parentUnchanged = parentReferencesEquivalent(oldParent, newParent);
-    if (parentUnchanged) {
+    // 親が同値かつ filePath も不変なら他 task 参照は触らない。
+    if (parentUnchanged && !filePathChanged) {
       return { ...data, tasks: replaced };
     }
 
+    // 旧親からの除去は必ず originalFilePath（旧パス）で行う。
+    // rename 時に新パスで detach するとゴーストが残る。
     const detached = detachChildFromOldParent(
       replaced,
       oldParent,
-      task.filePath,
+      originalFilePath,
     );
+    // 新親への登録は新 filePath（rename 後の値）を使う。
+    // parent が変わらない rename のみのケースでも、旧親の childFilePaths を
+    // 新パスへ更新するために旧親→新親の経路を辿る。
     const synced = syncParentChildren(detached, newParent, task.filePath);
     return { ...data, tasks: synced };
   },
