@@ -77,7 +77,7 @@ test("linked リンクの各 li に × ボタンが表示される（testid / ar
   }
 });
 
-test("reverse リンクの各 li にも × ボタンが表示される", () => {
+test("reverse 行には × 削除ボタンが存在しない（reverseLinks は読み取り専用）", () => {
   const self = makeTask({
     filePath: "tasks/self.md",
     reverseLinks: ["tasks/r1.md"],
@@ -89,13 +89,58 @@ test("reverse リンクの各 li にも × ボタンが表示される", () => {
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
     onRemoveLink: vi.fn(async () => Result.ok(self)),
+    onLinkClick: vi.fn(),
   });
 
-  const btn = document.querySelector(
-    '[data-testid="links-section-reverse-remove-tasks/r1.md"]',
-  ) as HTMLButtonElement | null;
-  expect(btn).toBeTruthy();
-  expect(btn?.getAttribute("aria-label")).toBe("リンクを削除");
+  expect(
+    document.querySelector('[data-testid="links-section-reverse-tasks/r1.md"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector(
+      '[data-testid="links-section-reverse-remove-tasks/r1.md"]',
+    ),
+  ).toBeNull();
+});
+
+test("forward 行は navigate button と × button が独立してクリック可能", async () => {
+  const self = makeTask({
+    filePath: "tasks/self.md",
+    links: ["tasks/a.md"],
+  });
+  const onRemoveLink = vi.fn(async () => Result.ok(self));
+  const onLinkClick = vi.fn();
+  render({
+    task: self,
+    allTasks: [self],
+    parentFilePath: null,
+    childrenFilePaths: [],
+    onAddLink: noopOnAddLink,
+    onRemoveLink,
+    onLinkClick,
+  });
+
+  const navBtn = document.querySelector(
+    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+  ) as HTMLButtonElement;
+  const removeBtn = document.querySelector(
+    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+  ) as HTMLButtonElement;
+  expect(navBtn).toBeTruthy();
+  expect(removeBtn).toBeTruthy();
+
+  await act(async () => {
+    navBtn.click();
+  });
+  expect(onLinkClick).toHaveBeenCalledTimes(1);
+  expect(onLinkClick).toHaveBeenCalledWith("tasks/a.md");
+  expect(onRemoveLink).not.toHaveBeenCalled();
+
+  await act(async () => {
+    removeBtn.click();
+  });
+  expect(onRemoveLink).toHaveBeenCalledTimes(1);
+  expect(onRemoveLink).toHaveBeenCalledWith("tasks/self.md", "tasks/a.md");
+  expect(onLinkClick).toHaveBeenCalledTimes(1);
 });
 
 test("forward × クリックで onRemoveLink(sourceFilePath, targetFilePath) が呼ばれる", async () => {
@@ -123,32 +168,7 @@ test("forward × クリックで onRemoveLink(sourceFilePath, targetFilePath) �
   expect(onRemoveLink).toHaveBeenCalledWith("tasks/self.md", "tasks/a.md");
 });
 
-test("reverse × クリックで onRemoveLink(相手, 表示中タスク) で source/target が反転する", async () => {
-  const self = makeTask({
-    filePath: "tasks/self.md",
-    reverseLinks: ["tasks/other.md"],
-  });
-  const onRemoveLink = vi.fn(async () => Result.ok(self));
-  render({
-    task: self,
-    allTasks: [self],
-    parentFilePath: null,
-    childrenFilePaths: [],
-    onAddLink: noopOnAddLink,
-    onRemoveLink,
-  });
-
-  const btn = document.querySelector(
-    '[data-testid="links-section-reverse-remove-tasks/other.md"]',
-  ) as HTMLButtonElement;
-  await act(async () => {
-    btn.click();
-  });
-
-  expect(onRemoveLink).toHaveBeenCalledWith("tasks/other.md", "tasks/self.md");
-});
-
-test("onRemoveLink pending 中は section 内の全 × button と + button が disabled", async () => {
+test("onRemoveLink pending 中は forward × button と + button が disabled", async () => {
   let resolveCb: ((r: Result<Task, unknown>) => void) | null = null;
   const onRemoveLink = vi.fn(
     () =>
@@ -159,7 +179,6 @@ test("onRemoveLink pending 中は section 内の全 × button と + button が d
   const self = makeTask({
     filePath: "tasks/self.md",
     links: ["tasks/a.md", "tasks/b.md"],
-    reverseLinks: ["tasks/r.md"],
   });
   render({
     task: self,
@@ -177,11 +196,10 @@ test("onRemoveLink pending 中は section 内の全 × button と + button が d
     firstBtn.click();
   });
 
-  // 全 × ボタンが disabled
+  // 全 forward × ボタンが disabled
   for (const sel of [
     "links-section-linked-remove-tasks/a.md",
     "links-section-linked-remove-tasks/b.md",
-    "links-section-reverse-remove-tasks/r.md",
   ]) {
     const btn = document.querySelector(
       `[data-testid="${sel}"]`,

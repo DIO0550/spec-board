@@ -22,9 +22,10 @@ import { SubIssueSection } from "../SubIssueSection";
 
 /**
  * `onRemoveLink` 未指定時に LinksSection に渡す no-op fallback。
- * 既存呼出元が `onRemoveLink` を渡し忘れても × ボタンの click が型エラーで落ちないようにする。
- * 戻り値は `Result.err(undefined)` だが LinksSection の `useRemoveLink` は Result を捨てる
- * ため UI には影響しない（× クリックは isBusy トグルだけして何も起きない）。
+ * 既存呼出元が `onRemoveLink` を渡し忘れても forward 削除の × ボタンの click が
+ * 型エラーで落ちないようにする。戻り値は `Result.err(undefined)` だが LinksSection の
+ * `useRemoveLink` は Result を捨てるため UI には影響しない（× クリックは isBusy トグル
+ * だけして何も起きない）。
  * @returns 常に `Result.err(undefined)`
  */
 const noopRemoveLink = async (): Promise<Result<Task, unknown>> =>
@@ -81,7 +82,7 @@ type DetailPanelProps = {
   ) => Promise<Result<Task, unknown>>;
   /**
    * リンク削除コールバック。source / target の filePath を受け取る。
-   * forward 削除では source=表示中タスク、reverse 削除では source=相手タスクが入る。
+   * forward 削除のみが対象（source=表示中タスク）。reverse 行には削除 UI がない。
    * `onAddLink` と同じく LinksSection 描画には `onAddLink` の有無を条件とするため、
    * `onRemoveLink` の有無は描画判定には影響しない（無ければ × ボタンの click が no-op）。
    * @param sourceFilePath リンク元（md が書き換わる側）の filePath
@@ -269,6 +270,7 @@ export const DetailPanel = ({
                 childrenFilePaths={childTasks.map((t) => t.filePath)}
                 onAddLink={onAddLink}
                 onRemoveLink={onRemoveLink ?? noopRemoveLink}
+                onLinkClick={onSelectTask}
               />
             )}
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}

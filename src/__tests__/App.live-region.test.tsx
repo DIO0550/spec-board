@@ -509,6 +509,148 @@ test("ParentLink クリックでも LiveRegion に「{title}を表示中」が�
   expect(detailTitleValue()).toBe("親タスク");
 });
 
+// === DetailPanel 内 LinksSection 行クリック遷移 announce ===
+//
+// links 行 / reverse 行クリック → handleSelectTask → selectTaskOutcome → announce + in-place 切替の
+// E2E パス。fixture は `Task.id === Task.filePath` の不変条件に従い `id` と `filePath` を同値で作る。
+
+const openLinkedTasksProject = async (options?: {
+  withBrokenLink?: boolean;
+  withSelfLink?: boolean;
+}): Promise<void> => {
+  const linkedA: Task = Task.fromPayload({
+    id: "tasks/la.md",
+    title: "A",
+    status: "Todo",
+    labels: [],
+    links: options?.withSelfLink
+      ? ["tasks/lb.md", "tasks/la.md"]
+      : options?.withBrokenLink
+        ? ["tasks/lb.md", "tasks/missing.md"]
+        : ["tasks/lb.md"],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/la.md",
+  });
+  const linkedB: Task = Task.fromPayload({
+    id: "tasks/lb.md",
+    title: "B",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: ["tasks/la.md"],
+    body: "",
+    filePath: "tasks/lb.md",
+  });
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pl"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({
+      tasks: [linkedA, linkedB],
+      columns: ["Todo", "Done"],
+    }),
+  );
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      doneColumn: "Done",
+    }),
+  );
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const clickTaskCardByTitle = async (title: string): Promise<void> => {
+  const cards = container?.querySelectorAll<HTMLElement>(
+    "[data-testid='task-card']",
+  );
+  const card = Array.from(cards ?? []).find(
+    (c) =>
+      c.querySelector('[data-testid="task-card-title"]')?.textContent === title,
+  );
+  assert(card !== undefined, `${title} の task-card が見つからない`);
+  await act(async () => {
+    card.click();
+  });
+};
+
+const clickLinkedNavigate = async (filePath: string): Promise<void> => {
+  const btn = container?.querySelector<HTMLButtonElement>(
+    `[data-testid="links-section-linked-navigate-${filePath}"]`,
+  );
+  assert(btn != null, `linked-navigate ${filePath} ボタンが見つからない`);
+  await act(async () => {
+    btn.click();
+  });
+};
+
+const clickReverseNavigate = async (filePath: string): Promise<void> => {
+  const btn = container?.querySelector<HTMLButtonElement>(
+    `[data-testid="links-section-reverse-navigate-${filePath}"]`,
+  );
+  assert(btn != null, `reverse-navigate ${filePath} ボタンが見つからない`);
+  await act(async () => {
+    btn.click();
+  });
+};
+
+test("DetailPanel の links 行クリックで LiveRegion に「{title}を表示中」が流れ、in-place 切替される", async () => {
+  mountApp();
+  await openLinkedTasksProject();
+  await clickTaskCardByTitle("A");
+  expect(detailTitleValue()).toBe("A");
+
+  await clickLinkedNavigate("tasks/lb.md");
+
+  expect(liveRegionText()).toBe("「B」を表示中");
+  expect(detailTitleValue()).toBe("B");
+});
+
+test("DetailPanel の reverseLinks 行クリックでも in-place 切替される", async () => {
+  mountApp();
+  await openLinkedTasksProject();
+  await clickTaskCardByTitle("B");
+  expect(detailTitleValue()).toBe("B");
+
+  await clickReverseNavigate("tasks/la.md");
+
+  expect(liveRegionText()).toBe("「A」を表示中");
+  expect(detailTitleValue()).toBe("A");
+});
+
+test("壊れたリンクの行クリックは no-op（selectedTaskId 不変、announce なし）", async () => {
+  mountApp();
+  await openLinkedTasksProject({ withBrokenLink: true });
+  await clickTaskCardByTitle("A");
+
+  const beforeText = liveRegionText();
+  await clickLinkedNavigate("tasks/missing.md");
+
+  // 画面は A のまま、LiveRegion も変化なし
+  expect(detailTitleValue()).toBe("A");
+  expect(liveRegionText()).toBe(beforeText);
+});
+
+test("自タスクを指す links 行クリックでは selectedTaskId 不変、LiveRegion は再アナウンスされる", async () => {
+  mountApp();
+  await openLinkedTasksProject({ withSelfLink: true });
+  await clickTaskCardByTitle("A");
+  expect(detailTitleValue()).toBe("A");
+
+  await clickLinkedNavigate("tasks/la.md");
+
+  expect(detailTitleValue()).toBe("A");
+  expect(liveRegionText()).toContain("「A」を表示中");
+});
+
 test("column 同位置 drop (no-op) では LiveRegion が更新されない", async () => {
   mountApp();
   await openThreeColumnProject();

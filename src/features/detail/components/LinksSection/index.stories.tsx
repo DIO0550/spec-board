@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { LinksSection } from ".";
@@ -52,6 +53,7 @@ const meta: Meta<typeof LinksSection> = {
     childrenFilePaths: [],
     onAddLink: noopAddLink,
     onRemoveLink: noopRemoveLink,
+    onLinkClick: fn(),
   },
 };
 
@@ -95,5 +97,19 @@ export const WithBothDirections: Story = {
       reverseLinks: ["tasks/reverse-a.md"],
     }),
     allTasks: [self, linkedA, reverseA, candidate],
+  },
+};
+
+export const NavigationDisabled: Story = {
+  args: {
+    task: makeTask({
+      id: "self",
+      title: "自タスク",
+      filePath: "tasks/self.md",
+      links: ["tasks/linked-a.md"],
+      reverseLinks: ["tasks/reverse-a.md"],
+    }),
+    allTasks: [self, linkedA, reverseA, candidate],
+    onLinkClick: undefined,
   },
 };
