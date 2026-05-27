@@ -43,6 +43,7 @@ function render(props: Parameters<typeof SubIssueProgress>[0]) {
 test("children が存在する場合、進捗バーが表示される", () => {
   render({
     childTasks: [createTask({ id: "c1", status: "Todo" })],
+    descendantTasks: [createTask({ id: "c1", status: "Todo" })],
     doneColumn: "Done",
   });
   const progressBar = container?.querySelector("[role='progressbar']");
@@ -50,25 +51,29 @@ test("children が存在する場合、進捗バーが表示される", () => {
 });
 
 test("完了数/全数が正しい割合で表示される", () => {
+  const descendants = [
+    createTask({ id: "c1", status: "Done" }),
+    createTask({ id: "c2", status: "Todo" }),
+    createTask({ id: "c3", status: "Done" }),
+    createTask({ id: "c4", status: "In Progress" }),
+    createTask({ id: "c5", status: "Todo" }),
+  ];
   render({
-    childTasks: [
-      createTask({ id: "c1", status: "Done" }),
-      createTask({ id: "c2", status: "Todo" }),
-      createTask({ id: "c3", status: "Done" }),
-      createTask({ id: "c4", status: "In Progress" }),
-      createTask({ id: "c5", status: "Todo" }),
-    ],
+    childTasks: descendants,
+    descendantTasks: descendants,
     doneColumn: "Done",
   });
   expect(container?.textContent).toContain("2/5");
 });
 
 test("▶ クリックで子タスクリストが展開される", () => {
+  const directChildren = [
+    createTask({ id: "c1", title: "タスクA", status: "Todo" }),
+    createTask({ id: "c2", title: "タスクB", status: "Done" }),
+  ];
   render({
-    childTasks: [
-      createTask({ id: "c1", title: "タスクA", status: "Todo" }),
-      createTask({ id: "c2", title: "タスクB", status: "Done" }),
-    ],
+    childTasks: directChildren,
+    descendantTasks: directChildren,
     doneColumn: "Done",
   });
   const details = container?.querySelector("details") as HTMLDetailsElement;
@@ -84,18 +89,20 @@ test("▶ クリックで子タスクリストが展開される", () => {
   expect(container?.textContent).toContain("タスクB");
 });
 
-test("children が空配列で非表示", () => {
-  render({ childTasks: [], doneColumn: "Done" });
+test("descendantTasks が空配列で非表示", () => {
+  render({ childTasks: [], descendantTasks: [], doneColumn: "Done" });
   expect(container?.innerHTML).toBe("");
 });
 
-test("全子タスクが完了の場合、バーが 100% になる", () => {
+test("全子孫タスクが完了の場合、バーが 100% になる", () => {
+  const descendants = [
+    createTask({ id: "c1", status: "Done" }),
+    createTask({ id: "c2", status: "Done" }),
+    createTask({ id: "c3", status: "Done" }),
+  ];
   render({
-    childTasks: [
-      createTask({ id: "c1", status: "Done" }),
-      createTask({ id: "c2", status: "Done" }),
-      createTask({ id: "c3", status: "Done" }),
-    ],
+    childTasks: descendants,
+    descendantTasks: descendants,
     doneColumn: "Done",
   });
   const progressBar = container?.querySelector(
@@ -103,4 +110,42 @@ test("全子タスクが完了の場合、バーが 100% になる", () => {
   ) as HTMLElement;
   expect(progressBar.getAttribute("aria-valuenow")).toBe("100");
   expect(container?.textContent).toContain("3/3");
+});
+
+test("descendantTasks=5件(done=2)、childTasks=2件: サマリが 2/5、aria-valuenow=40", () => {
+  render({
+    childTasks: [
+      createTask({ id: "c1", status: "Done" }),
+      createTask({ id: "c2", status: "Todo" }),
+    ],
+    descendantTasks: [
+      createTask({ id: "c1", status: "Done" }),
+      createTask({ id: "c2", status: "Todo" }),
+      createTask({ id: "g1", status: "Done" }),
+      createTask({ id: "g2", status: "Todo" }),
+      createTask({ id: "g3", status: "Todo" }),
+    ],
+    doneColumn: "Done",
+  });
+  const bar = container?.querySelector("[role='progressbar']") as HTMLElement;
+  expect(bar.getAttribute("aria-valuenow")).toBe("40");
+  expect(container?.textContent).toContain("2/5");
+});
+
+test("<details> 内 <ul> の <li> 数は childTasks.length と一致する（descendantTasks ではない）", () => {
+  render({
+    childTasks: [
+      createTask({ id: "c1", title: "child1", status: "Todo" }),
+      createTask({ id: "c2", title: "child2", status: "Todo" }),
+    ],
+    descendantTasks: [
+      createTask({ id: "c1", status: "Todo" }),
+      createTask({ id: "c2", status: "Todo" }),
+      createTask({ id: "g1", status: "Todo" }),
+      createTask({ id: "g2", status: "Todo" }),
+    ],
+    doneColumn: "Done",
+  });
+  const lis = container?.querySelectorAll("details ul li");
+  expect(lis?.length).toBe(2);
 });

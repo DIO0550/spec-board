@@ -1,7 +1,11 @@
 import type { Task } from "@/types/task";
 
 type SubIssueProgressProps = {
-  childTasks: Task[];
+  /** 直下子（<details> 内の名前一覧用） */
+  childTasks: readonly Task[];
+  /** 全子孫（X/Y サマリ + 進捗バーの算出元） */
+  descendantTasks: readonly Task[];
+  /** 完了として扱うカラム名 */
   doneColumn: string;
 };
 
@@ -32,14 +36,17 @@ const StatusIcon = ({ isDone }: { isDone: boolean }) => {
  */
 export const SubIssueProgress = ({
   childTasks,
+  descendantTasks,
   doneColumn,
 }: SubIssueProgressProps) => {
-  if (childTasks.length === 0) {
+  if (descendantTasks.length === 0) {
     return null;
   }
 
-  const total = childTasks.length;
-  const doneCount = childTasks.filter((t) => t.status === doneColumn).length;
+  const total = descendantTasks.length;
+  const doneCount = descendantTasks.filter(
+    (t) => t.status === doneColumn,
+  ).length;
   const percentage = Math.round((doneCount / total) * 100);
 
   return (
