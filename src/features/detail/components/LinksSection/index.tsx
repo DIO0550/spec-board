@@ -28,7 +28,7 @@ export type LinksSectionProps = {
   ) => Promise<Result<Task, unknown>>;
   /**
    * リンク削除コールバック。source filePath / target filePath を受け取る。
-   * forward 削除では source=表示中タスク、reverse 削除では source=相手タスクになる。
+   * forward 削除のみが対象。reverse 行には削除ボタンを表示しない。
    * @param sourceFilePath リンク元（md が書き換わる側）の filePath
    * @param targetFilePath リンク先の filePath
    * @returns invoke 結果
@@ -37,11 +37,18 @@ export type LinksSectionProps = {
     sourceFilePath: string,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
+  /**
+   * リンク行（forward / reverse 両方）のクリックで発火するコールバック。
+   * クリックされたリンク先タスクの filePath（= id）が渡される。
+   * 未指定時は行 button を disabled にする。
+   */
+  readonly onLinkClick?: (taskId: string) => void;
 };
 
 /**
  * DetailPanel の関連タスクセクション。`linkedFilePaths` / `reverseLinkedFilePaths`
- * を一覧表示し、`+ リンク追加` で候補から選択、各リンク行末尾の × ボタンで削除する。
+ * を一覧表示し、`+ リンク追加` で候補から選択、forward (linked) 行末尾の × ボタン
+ * で削除する。reverse 行は読み取り専用で削除 UI を持たない。
  *
  * @param props - {@link LinksSectionProps}
  * @returns 関連タスク UI
@@ -70,14 +77,8 @@ export const LinksSection = (props: LinksSectionProps) => {
     useRemoveLink({
       onRemoveLink: (target) => props.onRemoveLink(sourceFilePath, target),
     });
-  // reverse link 用: source=相手タスク、target=表示中タスク（IPC の source/target が反転）
-  const { isBusy: isBusyRemoveReverse, removeLink: removeReverse } =
-    useRemoveLink({
-      onRemoveLink: (otherSource) =>
-        props.onRemoveLink(otherSource, sourceFilePath),
-    });
-  const isBusyRemove = isBusyRemoveForward || isBusyRemoveReverse;
-  const isBusyAny = isBusyAdd || isBusyRemove;
+  const isBusyAny = isBusyAdd || isBusyRemoveForward;
+  const isLinkClickDisabled = props.onLinkClick === undefined;
 
   // TaskSelect.onChange は同期戻り値型のため、ここで async 関数を渡すと
   // 戻り Promise が await されず unhandled rejection の原因になる。
@@ -100,14 +101,6 @@ export const LinksSection = (props: LinksSectionProps) => {
     void removeForward(target).catch(() => undefined);
   };
 
-  /**
-   * reverse link 行の × クリックハンドラ。
-   * @param otherSource 削除対象の link 元 filePath（相手タスク）
-   */
-  const handleRemoveReverse = (otherSource: string): void => {
-    void removeReverse(otherSource).catch(() => undefined);
-  };
-
   return (
     <section
       data-testid="links-section"
@@ -126,7 +119,15 @@ export const LinksSection = (props: LinksSectionProps) => {
             data-testid={`links-section-linked-${p}`}
             className="flex items-center justify-between gap-2"
           >
-            <span className="min-w-0 flex-1 truncate">{p}</span>
+            <button
+              type="button"
+              onClick={() => props.onLinkClick?.(p)}
+              disabled={isLinkClickDisabled}
+              data-testid={`links-section-linked-navigate-${p}`}
+              className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+            >
+              {p}
+            </button>
             <button
               type="button"
               onClick={() => handleRemoveForward(p)}
@@ -149,18 +150,16 @@ export const LinksSection = (props: LinksSectionProps) => {
           <li
             key={p}
             data-testid={`links-section-reverse-${p}`}
-            className="flex items-center justify-between gap-2"
+            className="flex items-center gap-2"
           >
-            <span className="min-w-0 flex-1 truncate">{p}</span>
             <button
               type="button"
-              onClick={() => handleRemoveReverse(p)}
-              disabled={isBusyAny}
-              aria-label="リンクを削除"
-              data-testid={`links-section-reverse-remove-${p}`}
-              className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+              onClick={() => props.onLinkClick?.(p)}
+              disabled={isLinkClickDisabled}
+              data-testid={`links-section-reverse-navigate-${p}`}
+              className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
-              ×
+              {p}
             </button>
           </li>
         ))}

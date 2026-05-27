@@ -60,6 +60,7 @@ test("linkedFilePaths が一覧表示される", () => {
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
     onRemoveLink: noopOnRemoveLink,
+    onLinkClick: vi.fn(),
   });
 
   expect(
@@ -86,6 +87,7 @@ test("reverseLinkedFilePaths が区別された testid で表示される", () =
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
     onRemoveLink: noopOnRemoveLink,
+    onLinkClick: vi.fn(),
   });
 
   expect(
@@ -93,6 +95,54 @@ test("reverseLinkedFilePaths が区別された testid で表示される", () =
       '[data-testid="links-section-reverse-tasks/r-1.md"]',
     ),
   ).toBeTruthy();
+});
+
+test("reverse 行に × 削除ボタンが存在しない", () => {
+  const task = makeTask({
+    filePath: "tasks/self.md",
+    reverseLinks: ["tasks/r-1.md"],
+  });
+  render({
+    task,
+    allTasks: [task],
+    parentFilePath: null,
+    childrenFilePaths: [],
+    onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
+    onLinkClick: vi.fn(),
+  });
+
+  expect(
+    document.querySelector(
+      '[data-testid="links-section-reverse-remove-tasks/r-1.md"]',
+    ),
+  ).toBeNull();
+});
+
+test("linked <ul> が reverse <ul> より DOM 上で先に出現する", () => {
+  const task = makeTask({
+    filePath: "tasks/self.md",
+    links: ["tasks/linked-1.md"],
+    reverseLinks: ["tasks/r-1.md"],
+  });
+  render({
+    task,
+    allTasks: [task],
+    parentFilePath: null,
+    childrenFilePaths: [],
+    onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
+    onLinkClick: vi.fn(),
+  });
+
+  const linkedUl = document.querySelector(
+    '[data-testid="links-section-linked"]',
+  );
+  const reverseUl = document.querySelector(
+    '[data-testid="links-section-reverse"]',
+  );
+  const position = linkedUl?.compareDocumentPosition(reverseUl as Node) ?? 0;
+  expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test("初期状態では `+ リンク追加` ボタンが表示され popover は閉じている", () => {
@@ -104,6 +154,7 @@ test("初期状態では `+ リンク追加` ボタンが表示され popover �
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
     onRemoveLink: noopOnRemoveLink,
+    onLinkClick: vi.fn(),
   });
 
   expect(

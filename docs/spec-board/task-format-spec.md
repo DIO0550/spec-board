@@ -87,12 +87,13 @@ links:
 - 省略可能。省略時は空配列として扱う
 - リンクは**双方向**として扱う。片方のタスクに `links` を設定すると、リンク先タスクからも関連タスクとして表示される（リンク先のフロントマターには書き込まない。表示時に逆引きする）
 - 指定されたファイルが存在しない場合、リンク切れとして警告アイコンを表示
+- 壊れたリンク（target が tasks に存在しない）の関連タスク行クリックは完全 no-op（announce / 追加 UI フィードバックなし）。警告アイコン表示の実装有無は別 Issue で扱う（本仕様は撤回せず据え置く）
 - Tauri command `add_link({ sourceFilePath, targetFilePath })` で `links` への追加が可能。同じ target がすでに含まれる場合は noop（書き込みもキャッシュ更新も行わない）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する）
 - Tauri command `remove_link({ sourceFilePath, targetFilePath })` で `links` から target の完全一致エントリを **すべて** 取り除く（パス表記揺れは正規化して吸収）。最後の 1 件を消した場合は `links:` キーごと消える。target がすでに含まれていない場合は冪等な no-op として成功を返す（書き込みもキャッシュ更新も行わない）。target タスクが削除済みで存在しなくても source の `links` からの除去は実行する（dangling link 掃除の用途を兼ねる）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する点は `add_link` と同じ）
 
 #### DetailPanel 上のリンク追加 UI
 
-- DetailPanel に **関連タスクセクション** を持ち、`linkedFilePaths` と `reverseLinkedFilePaths` を区別して一覧表示する
+- DetailPanel に **関連タスクセクション** を持ち、`linkedFilePaths` と `reverseLinkedFilePaths` を区別して一覧表示する（`links` → `reverseLinks` の順）。各行は button としてフォーカス可能で、クリックで in-place にパネル内容が切り替わる。`reverseLinks` 行は読み取り専用で削除 UI（× ボタン）を持たない（削除は forward 側で行う）
 - `+ リンク追加` ボタン → タスク候補ポップオーバから対象を選択することでリンクを追加する
 - 候補からは **自身 / 既に link 済みのタスク / 逆リンク済みのタスク / 親 / 子** をすべて除外する
 - 選択直後に **source / target 両方を楽観 dispatch** で更新する:

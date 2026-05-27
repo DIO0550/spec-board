@@ -150,6 +150,90 @@ test("LinksSection の候補選択で onAddLink が source/target 付きで呼�
   expect(onAddLink).toHaveBeenCalledWith("tasks/self.md", "tasks/c.md");
 });
 
+test("DetailPanel に onSelectTask を渡すと LinksSection links 行 click で呼ばれる", async () => {
+  const self = createTask({
+    filePath: "tasks/self.md",
+    links: ["tasks/linked.md"],
+  });
+  const linked = createTask({ filePath: "tasks/linked.md", title: "Linked" });
+  const onSelectTask = vi.fn();
+  render({
+    task: self,
+    columns: testColumns,
+    allTasks: [self, linked],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onAddLink: vi.fn(async () => Result.ok(self)),
+    onSelectTask,
+  });
+
+  const btn = document.querySelector(
+    '[data-testid="links-section-linked-navigate-tasks/linked.md"]',
+  ) as HTMLButtonElement;
+  expect(btn).toBeTruthy();
+  await act(async () => {
+    btn.click();
+  });
+  expect(onSelectTask).toHaveBeenCalledTimes(1);
+  expect(onSelectTask).toHaveBeenCalledWith("tasks/linked.md");
+});
+
+test("DetailPanel に onSelectTask を渡すと LinksSection reverse 行 click でも呼ばれる", async () => {
+  const self = createTask({
+    filePath: "tasks/self.md",
+    reverseLinks: ["tasks/other.md"],
+  });
+  const other = createTask({ filePath: "tasks/other.md", title: "Other" });
+  const onSelectTask = vi.fn();
+  render({
+    task: self,
+    columns: testColumns,
+    allTasks: [self, other],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onAddLink: vi.fn(async () => Result.ok(self)),
+    onSelectTask,
+  });
+
+  const btn = document.querySelector(
+    '[data-testid="links-section-reverse-navigate-tasks/other.md"]',
+  ) as HTMLButtonElement;
+  expect(btn).toBeTruthy();
+  await act(async () => {
+    btn.click();
+  });
+  expect(onSelectTask).toHaveBeenCalledTimes(1);
+  expect(onSelectTask).toHaveBeenCalledWith("tasks/other.md");
+});
+
+test("DetailPanel に onSelectTask を渡さない場合、LinksSection の navigate button は disabled", () => {
+  const self = createTask({
+    filePath: "tasks/self.md",
+    links: ["tasks/a.md"],
+    reverseLinks: ["tasks/r.md"],
+  });
+  render({
+    task: self,
+    columns: testColumns,
+    allTasks: [self],
+    onClose: vi.fn(),
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+    onAddLink: vi.fn(async () => Result.ok(self)),
+  });
+
+  const forwardBtn = document.querySelector(
+    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+  ) as HTMLButtonElement;
+  const reverseBtn = document.querySelector(
+    '[data-testid="links-section-reverse-navigate-tasks/r.md"]',
+  ) as HTMLButtonElement;
+  expect(forwardBtn.disabled).toBe(true);
+  expect(reverseBtn.disabled).toBe(true);
+});
+
 test("DetailPanel に異なる task.id を渡すと LinksSection が再マウントされ popover が閉じる", () => {
   const taskA = createTask({ filePath: "tasks/a.md" });
   const taskB = createTask({ filePath: "tasks/b.md" });

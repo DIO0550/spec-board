@@ -270,26 +270,9 @@ test("forward 削除: linked × クリックで該当 li が消え、IPC に sou
   );
 });
 
-test("reverse 削除: reverse × クリックで IPC に source=相手/target=自分（反転）で渡る", async () => {
+test("reverse 行には × 削除ボタンが存在しない（reverseLinks は読み取り専用）", async () => {
   const taskA = makeTaskAWithLink();
   const taskB = makeTaskBReversed();
-  removeLinkMock.mockResolvedValue(
-    Result.ok(
-      Task.fromPayload({
-        id: "a",
-        title: "A",
-        status: "Todo",
-        labels: [],
-        links: [],
-        children: [],
-        reverseLinks: [],
-        body: "",
-        filePath: "tasks/a.md",
-        extras: {},
-        warnings: [],
-      }),
-    ),
-  );
 
   mountApp();
   await openProjectWith([taskA, taskB]);
@@ -298,23 +281,11 @@ test("reverse 削除: reverse × クリックで IPC に source=相手/target=�
   expect(
     document.querySelector('[data-testid="links-section-reverse-tasks/a.md"]'),
   ).toBeTruthy();
-
-  await clickRemoveButton(
-    '[data-testid="links-section-reverse-remove-tasks/a.md"]',
-  );
-
   expect(
-    document.querySelector('[data-testid="links-section-reverse-tasks/a.md"]'),
+    document.querySelector(
+      '[data-testid="links-section-reverse-remove-tasks/a.md"]',
+    ),
   ).toBeNull();
-  // reverse 削除では source/target が反転
-  expect(removeLinkMock).toHaveBeenCalledWith({
-    sourceFilePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
-  });
-  // announce 文面は forward と同じテンプレ（source が md 書き換え側 = A）
-  expect(queryLiveRegionText()).toContain(
-    "「A」から「B」へのリンクを削除しました",
-  );
 });
 
 test("IPC 失敗時は該当 li が復活し、取り消し announce が出る", async () => {
