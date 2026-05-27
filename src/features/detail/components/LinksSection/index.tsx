@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { TaskSelect } from "@/components/TaskSelect";
 import { TaskLinks } from "@/domains/task-links";
+import { linkReferencesTaskPath } from "@/domains/task-path";
 import { useAddLink } from "@/features/detail/hooks/useAddLink";
 import { useRemoveLink } from "@/features/detail/hooks/useRemoveLink";
 import type { Task } from "@/types/task";
@@ -80,6 +81,17 @@ export const LinksSection = (props: LinksSectionProps) => {
   const isBusyAny = isBusyAdd || isBusyRemoveForward;
   const isLinkClickDisabled = props.onLinkClick === undefined;
 
+  // linkedFilePaths は frontmatter 由来で `./tasks/b.md` / `tasks\\b.md` 等の表記揺れを
+  // 保持する。`selectTaskOutcome` は `Task.id`（canonical）一致でのみ解決するため、
+  // 行クリック時は allTasks から表記揺れを吸収して canonical id に解決してから渡す。
+  // 解決できない（壊れたリンク）場合は raw 値を渡し、上流 selectTaskOutcome の no-op に委ねる。
+  const handleLinkClick = (linkPath: string): void => {
+    const resolved = props.allTasks.find((t) =>
+      linkReferencesTaskPath(linkPath, t.filePath),
+    );
+    props.onLinkClick?.(resolved?.id ?? linkPath);
+  };
+
   // TaskSelect.onChange は同期戻り値型のため、ここで async 関数を渡すと
   // 戻り Promise が await されず unhandled rejection の原因になる。
   // 同期関数として宣言し、addLink の Promise は void + catch で明示的に握る。
@@ -121,7 +133,7 @@ export const LinksSection = (props: LinksSectionProps) => {
           >
             <button
               type="button"
-              onClick={() => props.onLinkClick?.(p)}
+              onClick={() => handleLinkClick(p)}
               disabled={isLinkClickDisabled}
               data-testid={`links-section-linked-navigate-${p}`}
               className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
@@ -154,7 +166,7 @@ export const LinksSection = (props: LinksSectionProps) => {
           >
             <button
               type="button"
-              onClick={() => props.onLinkClick?.(p)}
+              onClick={() => handleLinkClick(p)}
               disabled={isLinkClickDisabled}
               data-testid={`links-section-reverse-navigate-${p}`}
               className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"

@@ -36,6 +36,28 @@ export const parentReferencesTaskPath = (
 };
 
 /**
+ * link 参照（`linkedFilePaths` / `reverseLinkedFilePaths` の要素）が Task.filePath を
+ * 指しているかを判定する。frontmatter 由来の link は verbatim 保持されるため、
+ * `./tasks/b.md` / `tasks\\b.md` などの表記揺れを normalize 経由で吸収する。
+ * @param link Task.links.linkedFilePaths / reverseLinkedFilePaths の要素
+ * @param filePath - 比較対象の Task.filePath
+ * @returns link が filePath を指す場合 true
+ */
+export const linkReferencesTaskPath = (
+  link: string,
+  filePath: string,
+): boolean => {
+  if (link === filePath) {
+    return true;
+  }
+  const linkLookupPath = normalizeParentPathForLookup(link);
+  if (linkLookupPath === undefined) {
+    return false;
+  }
+  return linkLookupPath === normalizeTaskPathForLookup(filePath);
+};
+
+/**
  * parent 参照を lookup 用に正規化する。絶対 path / Windows drive prefix は対象外として undefined を返す。
  * @param parent Task.hierarchy.parentFilePath
  * @returns 正規化済み path、対象外なら undefined

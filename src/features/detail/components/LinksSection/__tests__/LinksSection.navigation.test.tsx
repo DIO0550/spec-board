@@ -269,6 +269,67 @@ test("onLinkClick 未指定時、navigate button は disabled になり click �
   expect(forwardBtn.disabled).toBe(true);
 });
 
+test("forward 行の link path に表記揺れ（./prefix）があっても canonical id で onLinkClick が呼ばれる", async () => {
+  // frontmatter が `./tasks/target.md` のような verbatim 文字列を持つケース。
+  // Task.id は canonical な `tasks/target.md` のため、raw 値で onSelectTask しても
+  // selectTaskOutcome が null を返して no-op になる。LinksSection 側で allTasks から
+  // 表記揺れを吸収し canonical id を渡すことで正しく遷移できる。
+  const target = makeTask({
+    filePath: "tasks/target.md",
+    title: "Target",
+  });
+  const self = makeTask({
+    filePath: "tasks/self.md",
+    links: ["./tasks/target.md"],
+  });
+  const onLinkClick = vi.fn();
+  render({
+    task: self,
+    allTasks: [self, target],
+    parentFilePath: null,
+    childrenFilePaths: [],
+    onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
+    onLinkClick,
+  });
+
+  const btn = document.querySelector(
+    '[data-testid="links-section-linked-navigate-./tasks/target.md"]',
+  ) as HTMLButtonElement;
+  expect(btn).toBeTruthy();
+  await act(async () => {
+    btn.click();
+  });
+  expect(onLinkClick).toHaveBeenCalledTimes(1);
+  expect(onLinkClick).toHaveBeenCalledWith("tasks/target.md");
+});
+
+test("壊れたリンク（target が allTasks に居ない）クリックでは raw 値を渡し上流に no-op を委ねる", async () => {
+  const self = makeTask({
+    filePath: "tasks/self.md",
+    links: ["tasks/missing.md"],
+  });
+  const onLinkClick = vi.fn();
+  render({
+    task: self,
+    allTasks: [self],
+    parentFilePath: null,
+    childrenFilePaths: [],
+    onAddLink: noopOnAddLink,
+    onRemoveLink: noopOnRemoveLink,
+    onLinkClick,
+  });
+
+  const btn = document.querySelector(
+    '[data-testid="links-section-linked-navigate-tasks/missing.md"]',
+  ) as HTMLButtonElement;
+  await act(async () => {
+    btn.click();
+  });
+  expect(onLinkClick).toHaveBeenCalledTimes(1);
+  expect(onLinkClick).toHaveBeenCalledWith("tasks/missing.md");
+});
+
 test("forward × クリック直後の busy 状態でも navigate button は disabled にならず click 可能", async () => {
   let resolveCb: ((r: Result<Task, unknown>) => void) | null = null;
   const onRemoveLink = vi.fn(
