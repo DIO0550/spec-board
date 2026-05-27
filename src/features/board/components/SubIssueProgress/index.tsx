@@ -32,7 +32,7 @@ const StatusIcon = ({ isDone }: { isDone: boolean }) => {
 
 /**
  * @param props - {@link SubIssueProgressProps}
- * @returns サブIssue進捗バーと子タスクリスト。子タスクが空の場合は null
+ * @returns サブIssue進捗バーと直下子タスクリスト。子孫（descendantTasks）が空の場合は null
  */
 export const SubIssueProgress = ({
   childTasks,
