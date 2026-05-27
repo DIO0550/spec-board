@@ -83,3 +83,49 @@ test("aria-label にカラム名が設定される", async () => {
     expect(section?.getAttribute("aria-label")).toBe("Done");
   });
 });
+
+test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard サマリが 1/3 になる", async () => {
+  const grand1 = createTask({
+    id: "g1",
+    title: "孫1",
+    status: "Done",
+    filePath: "tasks/g1.md",
+  });
+  const grand2 = createTask({
+    id: "g2",
+    title: "孫2",
+    status: "Todo",
+    filePath: "tasks/g2.md",
+  });
+  const child = createTask({
+    id: "c1",
+    title: "子1",
+    status: "Todo",
+    filePath: "tasks/c1.md",
+    children: ["tasks/g1.md", "tasks/g2.md"],
+  });
+  const root = createTask({
+    id: "root",
+    title: "親",
+    status: "Todo",
+    filePath: "tasks/root.md",
+    children: ["tasks/c1.md"],
+  });
+  const allTasks = [root, child, grand1, grand2];
+
+  render({
+    name: "Todo",
+    tasks: [root],
+    allTasks,
+    doneColumn: "Done",
+    onAddClick: vi.fn(),
+  });
+
+  await vi.waitFor(() => {
+    const bar = container?.querySelector(
+      "[role='progressbar']",
+    ) as HTMLElement | null;
+    expect(bar?.getAttribute("aria-valuenow")).toBe("33");
+    expect(container?.textContent).toContain("1/3");
+  });
+});
