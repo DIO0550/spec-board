@@ -313,8 +313,11 @@ export const Column = ({
     setIsConfirming(false);
   };
 
+  /**
+   * 削除確認ダイアログのキャンセルハンドラ。
+   * pending 中（IPC 応答待ち）はキャンセル操作も抑止する。
+   */
   const handleCancel = () => {
-    // pending 中はキャンセルも抑止
     if (isDeleting) {
       return;
     }
