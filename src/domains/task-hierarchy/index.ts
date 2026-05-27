@@ -67,6 +67,72 @@ const hasHierarchyChanges = (
   next.parentFilePath !== current.parentFilePath ||
   next.childFilePaths !== current.childFilePaths;
 
+/** `collectDescendants` のオプション */
+export type CollectDescendantsOptions = {
+  /** 事前構築済みの filePath → Task lookup Map。未指定なら内部で `allTasks` から構築する。 */
+  lookup?: ReadonlyMap<string, Task>;
+};
+
+/**
+ * 与えられた `allTasks` から `filePath` → `Task` の lookup Map を構築する。
+ * @param allTasks 全タスク
+ * @returns filePath をキーにした Map
+ */
+const buildLookup = (allTasks: readonly Task[]): ReadonlyMap<string, Task> =>
+  new Map(allTasks.map((task) => [task.filePath, task]));
+
+/**
+ * `rootFilePath` を起点に DFS で子孫を収集する。
+ * 重複訪問と root 自身の混入を `visited` Set で防ぐ。
+ * @param rootFilePath 起点とする root の filePath
+ * @param lookup filePath → Task の検索 Map
+ * @returns 子孫タスク（root 自身は含まない、preorder）
+ */
+const dfsDescendants = (
+  rootFilePath: string,
+  lookup: ReadonlyMap<string, Task>,
+): Task[] => {
+  const result: Task[] = [];
+  const visited = new Set<string>();
+  // root 自身を先に visited に入れることで、サイクル時に root へ戻ってきても
+  // 結果に混入させない（自己参照 A→A も同じ理由で打ち切られる）。
+  visited.add(rootFilePath);
+
+  const root = lookup.get(rootFilePath);
+  if (root === undefined) {
+    return result;
+  }
+
+  // pop ベースの stack で DFS する。子は逆順に push することで
+  // preorder（最初に発見した順）の探索順を維持しつつ、配列先頭操作の
+  // O(n) コスト（shift / unshift）を避ける。
+  const stack: string[] = [];
+  for (let i = root.hierarchy.childFilePaths.length - 1; i >= 0; i--) {
+    stack.push(root.hierarchy.childFilePaths[i]);
+  }
+  while (stack.length > 0) {
+    const filePath = stack.pop();
+    if (filePath === undefined) {
+      continue;
+    }
+    if (visited.has(filePath)) {
+      continue;
+    }
+    visited.add(filePath);
+    const task = lookup.get(filePath);
+    if (task === undefined) {
+      continue;
+    }
+    result.push(task);
+    const children = task.hierarchy.childFilePaths;
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push(children[i]);
+    }
+  }
+
+  return result;
+};
+
 export const TaskHierarchy = {
   /**
    * Task の親子階層から削除済み task への参照を取り除く。
@@ -83,5 +149,29 @@ export const TaskHierarchy = {
     }
 
     return { ...task, hierarchy };
+  },
+
+  /**
+   * `rootFilePath` を起点に全子孫タスクを再帰収集する。
+   *
+   * - root 自身は結果に含まない（子孫のみ）
+   * - サイクル（A→B→A）や自己参照（A→A）でも有限ステップで停止する
+   * - 同じ子孫に複数経路で到達しても 1 度だけ含める（visited Set による集合 semantics）
+   * - `childFilePaths` が指す path が `allTasks` に存在しない場合はスキップする
+   * - `options.lookup` を渡すと内部での Map 構築を省略できる（呼び出し側で `tasksByFilePath` 等を共有したいケース向け）
+   * - 戻り値は DFS preorder（最初に発見した順）。順序に依存させないこと
+   *
+   * @param allTasks 探索対象の全タスク
+   * @param rootFilePath 起点とする root の filePath
+   * @param options lookup 共有のためのオプション
+   * @returns root から到達可能な子孫タスク
+   */
+  collectDescendants: (
+    allTasks: readonly Task[],
+    rootFilePath: string,
+    options?: CollectDescendantsOptions,
+  ): readonly Task[] => {
+    const lookup = options?.lookup ?? buildLookup(allTasks);
+    return dfsDescendants(rootFilePath, lookup);
   },
 } as const;
