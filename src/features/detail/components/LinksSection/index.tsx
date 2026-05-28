@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
+import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { TaskSelect } from "@/components/TaskSelect";
-import { WarningIcon } from "@/components/WarningIcon";
 import { TaskLinks } from "@/domains/task-links";
 import { linkReferencesTaskPath } from "@/domains/task-path";
 import { useAddLink } from "@/features/detail/hooks/useAddLink";
@@ -148,14 +148,10 @@ export const LinksSection = (props: LinksSectionProps) => {
                 className="flex items-center justify-between gap-2"
               >
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1">
-                  <WarningIcon size={14} />
-                  <span className="text-xs text-yellow-700">リンク切れ</span>
-                  <span
-                    data-testid={`links-section-linked-broken-${i}`}
-                    className="min-w-0 truncate text-gray-500 line-through"
-                  >
-                    {p}
-                  </span>
+                  <BrokenRefLabel
+                    rawPath={p}
+                    pathTestId={`links-section-linked-broken-${i}`}
+                  />
                 </span>
                 <button
                   type="button"
@@ -219,14 +215,10 @@ export const LinksSection = (props: LinksSectionProps) => {
                 className="flex items-center gap-2"
               >
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1">
-                  <WarningIcon size={14} />
-                  <span className="text-xs text-yellow-700">リンク切れ</span>
-                  <span
-                    data-testid={`links-section-reverse-broken-${i}`}
-                    className="min-w-0 truncate text-gray-500 line-through"
-                  >
-                    {p}
-                  </span>
+                  <BrokenRefLabel
+                    rawPath={p}
+                    pathTestId={`links-section-reverse-broken-${i}`}
+                  />
                 </span>
               </li>
             );

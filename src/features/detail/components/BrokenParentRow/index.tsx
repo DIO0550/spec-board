@@ -1,4 +1,4 @@
-import { WarningIcon } from "@/components/WarningIcon";
+import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 
 type BrokenParentRowProps = {
   /** リンク切れと判定された parent の raw path 文字列 */
@@ -7,7 +7,7 @@ type BrokenParentRowProps = {
 
 /**
  * DetailPanel の parent 行。参照先 Task が一覧に存在しない（リンク切れ）場合に表示する。
- * 取消線スタイルの path 文字列と {@link WarningIcon} + 「リンク切れ」テキストを並べる。
+ * 共通プリミティブ {@link BrokenRefLabel} を flex row でラップした薄いレイアウトのみ提供する。
  *
  * @param props - {@link BrokenParentRowProps}
  * @returns parent リンク切れ行
@@ -18,11 +18,7 @@ export const BrokenParentRow = ({ parentFilePath }: BrokenParentRowProps) => {
       data-testid="broken-parent-row"
       className="flex items-center gap-1.5 text-xs text-gray-500"
     >
-      <WarningIcon size={14} />
-      <span className="text-yellow-700">リンク切れ</span>
-      <span className="truncate text-gray-500 line-through">
-        {parentFilePath}
-      </span>
+      <BrokenRefLabel rawPath={parentFilePath} />
     </div>
   );
 };
