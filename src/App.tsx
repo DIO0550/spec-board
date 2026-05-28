@@ -1,6 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ToastContainer } from "@/components/ToastContainer";
+import {
+  buildTasksByNormalizedPath,
+  countTasksWithBrokenLink,
+} from "@/domains/broken-link";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
@@ -160,6 +164,26 @@ export const App = () => {
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
+  const tasksByNormalizedPath = useMemo(
+    () => buildTasksByNormalizedPath(tasks),
+    [tasks],
+  );
+  // Toast 発火管理用 ref。`prevLoadedPath` (UI リセット用、render-phase 更新) と
+  // 役割を分離するため別 ref を持つ。
+  const toastFiredForLoadedPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.kind !== "loaded") {
+      return;
+    }
+    if (toastFiredForLoadedPathRef.current === loadedPath) {
+      return;
+    }
+    toastFiredForLoadedPathRef.current = loadedPath;
+    const n = countTasksWithBrokenLink(tasks, tasksByNormalizedPath);
+    if (n >= 1) {
+      showToast(`リンク切れが ${n} 件あります`, "warning");
+    }
+  }, [state.kind, loadedPath, tasks, tasksByNormalizedPath, showToast]);
   // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
   // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
   const parentCandidates = useMemo(() => {
@@ -685,6 +709,7 @@ export const App = () => {
         <Board
           columns={columns}
           tasks={tasks}
+          tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
           onAddTask={handleAddTask}
           onAddColumn={handleAddColumn}
@@ -718,6 +743,7 @@ export const App = () => {
           task={selectedTask}
           columns={columns}
           allTasks={tasks}
+          tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
           onClose={handleCloseDetail}
           onTaskUpdate={handleTaskUpdate}

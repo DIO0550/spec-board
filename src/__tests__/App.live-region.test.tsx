@@ -626,17 +626,21 @@ test("DetailPanel の reverseLinks 行クリックでも in-place 切替され�
   expect(detailTitleValue()).toBe("A");
 });
 
-test("壊れたリンクの行クリックは no-op（selectedTaskId 不変、announce なし）", async () => {
+test("壊れたリンクは navigate ボタンが描画されず click 不可（broken 行のみ表示）", async () => {
   mountApp();
   await openLinkedTasksProject({ withBrokenLink: true });
   await clickTaskCardByTitle("A");
 
-  const beforeText = liveRegionText();
-  await clickLinkedNavigate("tasks/missing.md");
-
-  // 画面は A のまま、LiveRegion も変化なし
+  const navigateBtn = container?.querySelector(
+    '[data-testid="links-section-linked-navigate-tasks/missing.md"]',
+  );
+  expect(navigateBtn).toBeNull();
+  const brokenRow = container?.querySelector(
+    '[data-testid="links-section-linked-tasks/missing.md"]',
+  );
+  expect(brokenRow?.getAttribute("data-broken")).toBe("true");
+  // 画面は A のまま
   expect(detailTitleValue()).toBe("A");
-  expect(liveRegionText()).toBe(beforeText);
 });
 
 test("自タスクを指す links 行クリックでは selectedTaskId 不変、LiveRegion は再アナウンスされる", async () => {
