@@ -126,10 +126,9 @@ test("reverseLinks の broken 要素も WarningIcon が出る", () => {
     onAddLink: vi.fn(async () => Result.ok(task)),
     tasksByNormalizedPath: buildTasksByNormalizedPath([task]),
   });
-  const row = document.querySelector(
-    '[data-testid="links-section-reverse-tasks/gone.md"]',
-  );
+  const row = document.querySelector('[data-testid="links-section-reverse-0"]');
   expect(row?.getAttribute("data-broken")).toBe("true");
+  expect(row?.getAttribute("data-path")).toBe("tasks/gone.md");
 });
 
 test("children の broken 要素が SubIssueSection で表示される", () => {

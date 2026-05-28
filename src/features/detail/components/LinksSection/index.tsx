@@ -204,13 +204,14 @@ export const LinksSection = (props: LinksSectionProps) => {
         aria-label="関連リンク元（他のタスクからこのタスクへの逆リンク）"
         className="flex flex-col gap-1 text-sm text-gray-500"
       >
-        {props.task.links.reverseLinkedFilePaths.map((p) => {
+        {props.task.links.reverseLinkedFilePaths.map((p, i) => {
           const isBroken = props.brokenReverseLinkPaths?.has(p) ?? false;
           if (isBroken) {
             return (
               <li
                 key={p}
-                data-testid={`links-section-reverse-${p}`}
+                data-testid={`links-section-reverse-${i}`}
+                data-path={p}
                 data-broken="true"
                 className="flex items-center gap-2"
               >
@@ -218,7 +219,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                   <WarningIcon size={14} />
                   <span className="text-xs text-yellow-700">リンク切れ</span>
                   <span
-                    data-testid={`links-section-reverse-broken-${p}`}
+                    data-testid={`links-section-reverse-broken-${i}`}
                     className="min-w-0 truncate text-gray-500 line-through"
                   >
                     {p}

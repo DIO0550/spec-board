@@ -106,10 +106,9 @@ test("brokenReverseLinkPaths に含まれる reverse 行にも WarningIcon と�
     onLinkClick: vi.fn(),
     brokenReverseLinkPaths: new Set(["tasks/gone.md"]),
   });
-  const row = document.querySelector(
-    '[data-testid="links-section-reverse-tasks/gone.md"]',
-  );
+  const row = document.querySelector('[data-testid="links-section-reverse-0"]');
   expect(row?.getAttribute("data-broken")).toBe("true");
+  expect(row?.getAttribute("data-path")).toBe("tasks/gone.md");
   expect(row?.querySelector('[data-testid="warning-icon"]')).not.toBeNull();
   expect(row?.textContent).toContain("リンク切れ");
 });
