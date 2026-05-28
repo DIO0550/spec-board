@@ -72,24 +72,32 @@ test("parentCycle warning を持つとき role=alert 要素が描画される", 
 
 test("バナーのメッセージに『親タスクが循環しています』が含まれる", () => {
   render(makeTask([cycleWarning]));
-  const banner = container?.querySelector('[data-testid="cycle-warning-banner"]');
+  const banner = container?.querySelector(
+    '[data-testid="cycle-warning-banner"]',
+  );
   expect(banner?.textContent).toContain("親タスクが循環しています");
 });
 
 test("warnings が空のとき何もレンダーされない", () => {
   render(makeTask([]));
-  const banner = container?.querySelector('[data-testid="cycle-warning-banner"]');
+  const banner = container?.querySelector(
+    '[data-testid="cycle-warning-banner"]',
+  );
   expect(banner).toBeNull();
 });
 
 test("parentNotFound のみのとき、バナーは表示されない", () => {
   render(makeTask([parentNotFoundWarning]));
-  const banner = container?.querySelector('[data-testid="cycle-warning-banner"]');
+  const banner = container?.querySelector(
+    '[data-testid="cycle-warning-banner"]',
+  );
   expect(banner).toBeNull();
 });
 
 test("parentCycle と parentNotFound が併存していてもバナーが表示される", () => {
   render(makeTask([cycleWarning, parentNotFoundWarning]));
-  const banner = container?.querySelector('[data-testid="cycle-warning-banner"]');
+  const banner = container?.querySelector(
+    '[data-testid="cycle-warning-banner"]',
+  );
   expect(banner).not.toBeNull();
 });

@@ -87,12 +87,8 @@ test("warning が無いタスクでは循環バナーが表示されない", () 
 
 test("循環バナーはタスクタイトル入力より DOM 上で前に出る", () => {
   render(createTaskWithWarnings([cycleWarning]));
-  const banner = document.querySelector(
-    '[data-testid="cycle-warning-banner"]',
-  );
-  const titleInput = document.querySelector(
-    '[aria-label="タスクタイトル"]',
-  );
+  const banner = document.querySelector('[data-testid="cycle-warning-banner"]');
+  const titleInput = document.querySelector('[aria-label="タスクタイトル"]');
   expect(banner).not.toBeNull();
   expect(titleInput).not.toBeNull();
   const relation = banner?.compareDocumentPosition(titleInput as Node) ?? 0;
