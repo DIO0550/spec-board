@@ -13,6 +13,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::remove_link::args::RemoveLinkArgs;
 use crate::task::remove_link::error::{RemoveLinkCommandError, RemoveLinkError};
 use crate::task::task_index::{find_task_mut_by_normalized, RemoveLinkOutcome, Task, TaskIndex};
+use crate::task::warning::TaskWarningCode;
 
 /// `remove_link` Tauri command 薄層。
 #[tauri::command]
@@ -133,20 +134,31 @@ fn commit_cache(
                 });
             }
 
-            // 派生フィールド (children / reverse_links / warnings) と parent を
-            // 保持しつつ parse 由来フィールドのみ上書きする。remove_link は
-            // parent / title / status / labels / extras を一切変更せず links を
-            // 縮めるだけのため、warnings と parent は既存値の保持で正しい状態が
-            // 維持される。特に scan で `parent=None` 化された循環 task に対する
-            // link 削除で、disk 由来の生 parent が復活して cycle 状態が崩れるのを
-            // 防ぐ。
+            // 派生フィールド (children / reverse_links / warnings) を保持しつつ
+            // parse 由来フィールドのみ上書きする。remove_link は parent / title /
+            // status / labels / extras を一切変更せず links を縮めるだけのため、
+            // warnings は既存値の保持で正しい状態が維持される。
+            //
+            // parent は通常は `updated_task` 側（disk と一致した値）を採用するが、
+            // 既存 cache が ParentCycle warning を持つ場合に限り cache 側の
+            // `parent=None` を維持する。これは scan で循環判定されたノードの
+            // cycle 状態を link 削除程度の操作で崩さないため。ファイル本体が
+            // 外部編集で変わった場合は watcher 再 scan で再判定される。
             let source_entry = cache
                 .get_mut(&source_key)
                 .expect("source presence verified above");
+            let was_cycle_member = source_entry.warnings.iter().any(|w| {
+                w.code == TaskWarningCode::ParentCycle
+                    && w.field.as_deref() == Some("parent")
+            });
             let preserved_children = std::mem::take(&mut source_entry.children);
             let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
             let preserved_warnings = std::mem::take(&mut source_entry.warnings);
-            let preserved_parent = source_entry.parent.take();
+            let preserved_parent = if was_cycle_member {
+                source_entry.parent.take()
+            } else {
+                updated.parent.clone()
+            };
             *source_entry = Task {
                 children: preserved_children,
                 reverse_links: preserved_reverse,
