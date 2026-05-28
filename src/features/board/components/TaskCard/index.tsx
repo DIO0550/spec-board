@@ -1,5 +1,6 @@
 import type { DragEvent } from "react";
 import { useRef } from "react";
+import { WarningIcon } from "@/components/WarningIcon";
 import type { Task } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../Board/dragState";
 import { LabelTag } from "../LabelTag";
@@ -20,6 +21,11 @@ type TaskCardProps = {
   fromColumn: string;
   /** ドラッグ中フラグ（Board の DragState から配布） */
   isDragging?: boolean;
+  /**
+   * 1 件でもリンク切れ参照を持つかどうか。true のときカード隅に警告アイコンのみを表示する。
+   * 詳細はパネルで確認できるためカードはアイコンのみのミニマル表示にする。
+   */
+  hasBrokenLink?: boolean;
   /**
    * カードクリック時のコールバック
    * @param taskId - クリックされたタスクのID
@@ -45,11 +51,13 @@ const CardContent = ({
   childTasks = [],
   descendantTasks,
   doneColumn = "Done",
+  hasBrokenLink = false,
 }: {
   task: Task;
   childTasks?: readonly Task[];
   descendantTasks?: readonly Task[];
   doneColumn?: string;
+  hasBrokenLink?: boolean;
 }) => {
   // descendantTasks 未指定の呼出元では childTasks にフォールバック（直下子のみで集計）。
   // 本 PR 以前の振る舞いと同等になり、新規呼出元（Column）が descendantTasks を渡したときだけ
@@ -64,6 +72,11 @@ const CardContent = ({
         <p data-testid="task-card-title" className="text-sm text-gray-800">
           {displayTitle}
         </p>
+        {hasBrokenLink && (
+          <span className="ml-auto shrink-0">
+            <WarningIcon size={14} />
+          </span>
+        )}
       </div>
       {task.labels.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
@@ -93,6 +106,7 @@ export const TaskCard = ({
   doneColumn,
   fromColumn,
   isDragging = false,
+  hasBrokenLink = false,
   onClick,
   onDragStart,
   onDragEnd,
@@ -133,6 +147,7 @@ export const TaskCard = ({
           childTasks={childTasks}
           descendantTasks={descendantTasks}
           doneColumn={doneColumn}
+          hasBrokenLink={hasBrokenLink}
         />
       </div>
     );
@@ -171,6 +186,7 @@ export const TaskCard = ({
         childTasks={childTasks}
         descendantTasks={descendantTasks}
         doneColumn={doneColumn}
+        hasBrokenLink={hasBrokenLink}
       />
     </div>
   );
