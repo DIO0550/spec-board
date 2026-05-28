@@ -16,6 +16,7 @@ pub enum TaskWarningCode {
     ParentNotFound,
     NonStringExtraKeyIgnored,
     ExtraValueNotJsonCompatible,
+    ParentCycle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,3 +26,7 @@ pub struct TaskWarning {
     pub field: Option<String>,
     pub message: String,
 }
+
+#[cfg(test)]
+#[path = "warning_tests.rs"]
+mod warning_tests;

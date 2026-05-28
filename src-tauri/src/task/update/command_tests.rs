@@ -681,3 +681,86 @@ fn update_task_registers_write_ignore_and_consumes_on_modified_and_renamed_event
     );
     assert!(state.write_ignore().is_empty().unwrap());
 }
+
+/// scan 経路で循環判定された task のタイトルを更新しても、
+/// 次の cache snapshot で parentCycle warning と parent=None が保持されること。
+#[test]
+fn update_title_on_cycle_task_preserves_parent_cycle_warning() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_md(
+        root,
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n",
+    );
+    seed_md(
+        root,
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n",
+    );
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let before = state.tasks_snapshot().unwrap();
+    let before_a = before.iter().find(|t| t.file_path == "tasks/a.md").unwrap();
+    assert!(before_a.parent.is_none());
+    assert!(before_a
+        .warnings
+        .iter()
+        .any(|w| w.code == TaskWarningCode::ParentCycle));
+
+    let mut args = args_for("tasks/a.md");
+    args.title = Some("Renamed".into());
+
+    let updated = update_task_impl(&state, &FsTaskIo, args).expect("update title ok");
+    assert_eq!(updated.title.as_str(), "Renamed");
+    assert!(
+        updated.parent.is_none(),
+        "parent should remain None on cycle task after non-parent update"
+    );
+    assert!(
+        updated
+            .warnings
+            .iter()
+            .any(|w| w.code == TaskWarningCode::ParentCycle),
+        "parentCycle warning must be preserved after non-parent update"
+    );
+
+    let after = state.tasks_snapshot().unwrap();
+    let after_b = after.iter().find(|t| t.file_path == "tasks/b.md").unwrap();
+    assert!(after_b.parent.is_none());
+    assert!(after_b
+        .warnings
+        .iter()
+        .any(|w| w.code == TaskWarningCode::ParentCycle));
+}
+
+#[test]
+fn update_body_on_cycle_task_preserves_parent_cycle_warning() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_md(
+        root,
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\nold body\n",
+    );
+    seed_md(
+        root,
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n",
+    );
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let mut args = args_for("tasks/a.md");
+    args.body = Some("new body".into());
+
+    let updated = update_task_impl(&state, &FsTaskIo, args).expect("update body ok");
+    assert!(updated.parent.is_none());
+    assert!(updated
+        .warnings
+        .iter()
+        .any(|w| w.code == TaskWarningCode::ParentCycle));
+}

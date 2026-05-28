@@ -20,9 +20,9 @@ use crate::task::frontmatter::{self, Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
 use crate::task::path_lookup::{
-    normalize_link_path_for_lookup, normalize_parent_path_for_lookup,
-    normalize_relative_path_for_input, normalize_task_path_for_lookup, parent_lookup_index,
-    task_path_index,
+    append_child_to_parent, clear_children, normalize_link_path_for_lookup,
+    normalize_parent_path_for_lookup, normalize_relative_path_for_input,
+    normalize_task_path_for_lookup, parent_lookup_index, task_lookup_index, task_path_index,
 };
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
@@ -139,6 +139,79 @@ impl TaskIndex {
         Ok(Self {
             tasks: build_children(self.tasks)?,
         })
+    }
+
+    /// scan 経路用。親チェーンに循環が含まれる場合は Err を返さず、ループ内の
+    /// 全 task に `parentCycle` warning を付けて `parent = None` に置き換える
+    /// ことで scan 全体を継続させる。親チェーンの深さが `MAX_PARENT_DEPTH` を
+    /// 超える (TooDeep) 場合のみ既存どおり `Err` を返す。
+    ///
+    /// 既存 `build_children` と同様、最初に `validate_parent_existence` を
+    /// 実行して `ParentNotFound` warning を従来通り付与する。children 構築は
+    /// 循環ノードを `parent = None` 化した後に行うため、cycle member は
+    /// children 逆引きから自然に除外される。
+    pub fn build_children_with_warnings(mut self) -> Result<Self, TaskParseError> {
+        self.tasks = validate_parent_existence(self.tasks);
+
+        let parent_lookup = parent_lookup_index(&self.tasks);
+
+        // 各起点ごとに walk するための (normalized_path, origin_path) ペアを
+        // 事前に収集する。origin は TooDeep 時の `file_path` に使う。
+        let starts: Vec<(String, String)> = self
+            .tasks
+            .iter()
+            .map(|task| {
+                (
+                    normalize_task_path_for_lookup(task.file_path.as_str()),
+                    task.file_path.as_str().to_string(),
+                )
+            })
+            .collect();
+
+        let mut cycle_members: HashSet<String> = HashSet::new();
+        for (start_norm, start_origin) in starts {
+            match walk_parent_chain_collecting_cycle(&start_norm, &start_origin, &parent_lookup) {
+                ParentChainOutcome::Ok => {}
+                ParentChainOutcome::Cycle { members } => {
+                    for member in members {
+                        cycle_members.insert(member);
+                    }
+                }
+                ParentChainOutcome::TooDeep { file_path } => {
+                    return Err(TaskParseError::CycleOrTooDeep {
+                        reason: ParentHierarchyErrorReason::TooDeep,
+                        file_path,
+                    });
+                }
+            }
+        }
+
+        self.mark_cycle_members(&cycle_members);
+        Ok(self.build_children_links_only())
+    }
+
+    fn mark_cycle_members(&mut self, normalized_paths: &HashSet<String>) {
+        for task in &mut self.tasks {
+            let task_norm = normalize_task_path_for_lookup(task.file_path.as_str());
+            if !normalized_paths.contains(&task_norm) {
+                continue;
+            }
+            push_parent_cycle_warning(task);
+            task.parent = None;
+        }
+    }
+
+    /// children を逆引きで構築するが、parent chain の hierarchy 検証は行わない。
+    /// `build_children_with_warnings` が cycle member を `parent = None` 化した
+    /// 後に呼び、cycle が children 逆引きで再構築されないことを呼び出し側で保証する。
+    fn build_children_links_only(self) -> Self {
+        let mut tasks = self.tasks;
+        clear_children(&mut tasks);
+        let parent_index = task_lookup_index(&tasks);
+        for child_index in 0..tasks.len() {
+            append_child_to_parent(child_index, &mut tasks, &parent_index);
+        }
+        Self { tasks }
     }
 
     /// 各 Task の `links` を逆引きして `reverse_links` を構築する。
@@ -1121,6 +1194,78 @@ fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>
     }
 
     push_parent_not_found(task);
+}
+
+/// `build_children_with_warnings` での parent chain 走査結果。
+///
+/// `Cycle.members` は循環ループに含まれる task の正規化済み path 集合。
+/// tail 部分（cycle に到達するまでの経路）は含まない。
+enum ParentChainOutcome {
+    Ok,
+    Cycle { members: Vec<String> },
+    TooDeep { file_path: String },
+}
+
+/// 起点 task から parent chain を walk し、循環または TooDeep を検出する。
+///
+/// traversal stack (`Vec<String>`) と position (`HashMap<String, usize>`) で
+/// 経路上の正規化済み path を保持し、再出現した path の index 以降のみを cycle
+/// member として返す。これにより tail 付き循環 (`D → A → B → A`) でも tail (`D`)
+/// を巻き込まずに循環本体だけを抽出できる。
+///
+/// 深さ判定の順序は既存 `validate_parent_chain` と一致させる:
+/// 1) current の cycle 判定（stack/position 挿入時）
+/// 2) parent lookup
+/// 3) parent が None なら Ok 終端
+/// 4) `depth += 1`
+/// 5) `depth > MAX_PARENT_DEPTH` なら TooDeep
+/// 6) current = parent
+fn walk_parent_chain_collecting_cycle(
+    start_norm: &str,
+    start_origin: &str,
+    parent_lookup: &HashMap<String, Option<String>>,
+) -> ParentChainOutcome {
+    let mut stack: Vec<String> = Vec::new();
+    let mut position: HashMap<String, usize> = HashMap::new();
+    let mut current = start_norm.to_string();
+    let mut depth: usize = 0;
+
+    loop {
+        if let Some(&idx) = position.get(&current) {
+            let members = stack[idx..].to_vec();
+            return ParentChainOutcome::Cycle { members };
+        }
+        position.insert(current.clone(), stack.len());
+        stack.push(current.clone());
+
+        let Some(Some(parent)) = parent_lookup.get(&current) else {
+            return ParentChainOutcome::Ok;
+        };
+
+        depth += 1;
+        if depth > MAX_PARENT_DEPTH {
+            return ParentChainOutcome::TooDeep {
+                file_path: start_origin.to_string(),
+            };
+        }
+
+        current = parent.clone();
+    }
+}
+
+fn push_parent_cycle_warning(task: &mut Task) {
+    let already_exists = task.warnings.iter().any(|warning| {
+        warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
+    });
+    if already_exists {
+        return;
+    }
+
+    task.warnings.push(TaskWarning {
+        code: TaskWarningCode::ParentCycle,
+        field: Some("parent".to_string()),
+        message: "parent chain forms a cycle".to_string(),
+    });
 }
 
 fn push_parent_not_found(task: &mut Task) {

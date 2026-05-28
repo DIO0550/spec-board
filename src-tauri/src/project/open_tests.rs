@@ -425,10 +425,10 @@ fn config_load_failure_when_spec_board_path_is_a_file_returns_io_category() {
 }
 
 #[test]
-fn parent_cycle_returns_scan_failed_with_io_marker() {
+fn parent_cycle_returns_scan_success_with_warnings() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
-    // a -> b -> a の循環
+    // a -> b -> a の循環。scan は成功し、A・B 両方に parentCycle warning が付く。
     write_md(
         dir.path(),
         "tasks/a.md",
@@ -441,19 +441,25 @@ fn parent_cycle_returns_scan_failed_with_io_marker() {
     );
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
-    let err = open_with_noop(Arc::clone(&state), &raw).expect_err("cycle should fail");
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("cycle should not error");
 
-    match err {
-        OpenProjectError::ScanFailed { ref message } => {
-            // wrapper Display "io scan failed: ..." 側で \bio\b を満たすため、
-            // message 内に "io" を二重に埋め込まない契約。最終 Display には
-            // 必ず "io" が含まれることを担保する。
-            assert!(!message.starts_with("io"), "message: {message}");
-            let display = err.to_string();
-            assert!(display.starts_with("io scan failed:"));
-            assert!(display.contains("io"));
-        }
-        other => panic!("expected ScanFailed, got {other:?}"),
+    let ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["tasks/a.md", "tasks/b.md"]);
+
+    for task in &payload.tasks {
+        assert!(
+            task.warnings.iter().any(|w| {
+                w.code == crate::task::warning::TaskWarningCode::ParentCycle
+                    && w.field.as_deref() == Some("parent")
+            }),
+            "{} should have parentCycle warning",
+            task.file_path.as_str()
+        );
+        assert!(
+            task.parent.is_none(),
+            "{} parent should be cleared by cycle warning",
+            task.file_path.as_str()
+        );
     }
 }
 

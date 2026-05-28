@@ -13,6 +13,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
+use crate::task::warning::{TaskWarning, TaskWarningCode};
 
 /// `update_task` Tauri command 薄層。
 #[tauri::command]
@@ -119,14 +120,47 @@ fn commit_cache(
                 }
                 Ok(cache.get(&cache_key).cloned())
             } else {
-                cache.insert(cache_key.clone(), outcome.updated_task.clone());
-                Ok(Some(outcome.updated_task.clone()))
+                // 非 parent 更新では、scan で cycle member とマークされた状態
+                // (parent=None + parentCycle warning) を新しい cache 値でも
+                // 維持する。`outcome.updated_task` は disk の生の `parent:` を
+                // 復活させているため、明示的に override しないとバナーが消える。
+                let was_cycle_member = cache
+                    .get(&cache_key)
+                    .map(|prev| {
+                        prev.warnings.iter().any(|w| {
+                            w.code == TaskWarningCode::ParentCycle
+                                && w.field.as_deref() == Some("parent")
+                        })
+                    })
+                    .unwrap_or(false);
+                let mut next = outcome.updated_task.clone();
+                if was_cycle_member {
+                    next.parent = None;
+                    ensure_parent_cycle_warning(&mut next.warnings);
+                }
+                cache.insert(cache_key.clone(), next.clone());
+                Ok(Some(next))
             }
         })?;
 
     returned?.ok_or(UpdateTaskCommandError::Validation(
         UpdateTaskError::FileNotFound(cache_key),
     ))
+}
+
+/// `warnings` に既に `ParentCycle` (field=`parent`) があれば何もせず、無ければ追加する。
+fn ensure_parent_cycle_warning(warnings: &mut Vec<TaskWarning>) {
+    let already = warnings
+        .iter()
+        .any(|w| w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent"));
+    if already {
+        return;
+    }
+    warnings.push(TaskWarning {
+        code: TaskWarningCode::ParentCycle,
+        field: Some("parent".to_string()),
+        message: "parent chain forms a cycle".to_string(),
+    });
 }
 
 #[cfg(test)]
