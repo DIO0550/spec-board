@@ -248,16 +248,20 @@ test("forward 削除: linked × クリックで該当 li が消え、IPC に sou
   clickTaskCard("A");
   // 初期状態で linked 行が存在
   expect(
-    document.querySelector('[data-testid="links-section-linked-tasks/b.md"]'),
+    document.querySelector(
+      '[data-path="tasks/b.md"][data-testid^="links-section-linked-"]',
+    ),
   ).toBeTruthy();
 
   await clickRemoveButton(
-    '[data-testid="links-section-linked-remove-tasks/b.md"]',
+    'button[data-path="tasks/b.md"][data-testid^="links-section-linked-remove-"]',
   );
 
   // 該当 li が消えている
   expect(
-    document.querySelector('[data-testid="links-section-linked-tasks/b.md"]'),
+    document.querySelector(
+      '[data-path="tasks/b.md"][data-testid^="links-section-linked-"]',
+    ),
   ).toBeNull();
   // IPC は { sourceFilePath: 自分, targetFilePath: 相手 }
   expect(removeLinkMock).toHaveBeenCalledWith({
@@ -278,13 +282,13 @@ test("reverse 行には × 削除ボタンが存在しない（reverseLinks は�
   await openProjectWith([taskA, taskB]);
 
   clickTaskCard("B");
+  const reverseRow = document.querySelector(
+    'li[data-path="tasks/a.md"][data-testid^="links-section-reverse-"]',
+  );
+  expect(reverseRow).toBeTruthy();
+  // reverse 行には × 削除ボタンが存在しない
   expect(
-    document.querySelector('[data-testid="links-section-reverse-tasks/a.md"]'),
-  ).toBeTruthy();
-  expect(
-    document.querySelector(
-      '[data-testid="links-section-reverse-remove-tasks/a.md"]',
-    ),
+    reverseRow?.querySelector('button[aria-label="リンクを削除"]'),
   ).toBeNull();
 });
 
@@ -300,12 +304,14 @@ test("IPC 失敗時は該当 li が復活し、取り消し announce が出る",
 
   clickTaskCard("A");
   await clickRemoveButton(
-    '[data-testid="links-section-linked-remove-tasks/b.md"]',
+    'button[data-path="tasks/b.md"][data-testid^="links-section-linked-remove-"]',
   );
 
   // 該当 li が復活
   expect(
-    document.querySelector('[data-testid="links-section-linked-tasks/b.md"]'),
+    document.querySelector(
+      '[data-path="tasks/b.md"][data-testid^="links-section-linked-"]',
+    ),
   ).toBeTruthy();
   // 取り消し announce
   expect(queryLiveRegionText()).toContain(

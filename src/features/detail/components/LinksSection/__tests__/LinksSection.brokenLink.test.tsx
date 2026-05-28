@@ -84,9 +84,8 @@ test("brokenLinkPaths に含まれない linked 行は WarningIcon が出ない"
     onLinkClick: vi.fn(),
     brokenLinkPaths: new Set(),
   });
-  const row = document.querySelector(
-    '[data-testid="links-section-linked-tasks/alive.md"]',
-  );
+  const row = document.querySelector('[data-testid="links-section-linked-0"]');
+  expect(row?.getAttribute("data-path")).toBe("tasks/alive.md");
   expect(row?.getAttribute("data-broken")).toBeNull();
   expect(row?.querySelector('[data-testid="warning-icon"]')).toBeNull();
 });
@@ -127,9 +126,8 @@ test("brokenReverseLinkPaths に含まれない reverse 行は WarningIcon が�
     onRemoveLink: noopOnRemoveLink,
     onLinkClick: vi.fn(),
   });
-  const row = document.querySelector(
-    '[data-testid="links-section-reverse-tasks/alive.md"]',
-  );
+  const row = document.querySelector('[data-testid="links-section-reverse-0"]');
+  expect(row?.getAttribute("data-path")).toBe("tasks/alive.md");
   expect(row?.querySelector('[data-testid="warning-icon"]')).toBeNull();
 });
 
@@ -168,9 +166,6 @@ test("brokenLinkPaths 未指定でも既存の linked 行は表示される（�
     onRemoveLink: noopOnRemoveLink,
     onLinkClick: vi.fn(),
   });
-  expect(
-    document.querySelector(
-      '[data-testid="links-section-linked-tasks/alive.md"]',
-    ),
-  ).not.toBeNull();
+  const row = document.querySelector('[data-testid="links-section-linked-0"]');
+  expect(row?.getAttribute("data-path")).toBe("tasks/alive.md");
 });

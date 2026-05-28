@@ -173,14 +173,16 @@ export const LinksSection = (props: LinksSectionProps) => {
           return (
             <li
               key={p}
-              data-testid={`links-section-linked-${p}`}
+              data-testid={`links-section-linked-${i}`}
+              data-path={p}
               className="flex items-center justify-between gap-2"
             >
               <button
                 type="button"
                 onClick={() => handleLinkClick(p)}
                 disabled={isLinkClickDisabled}
-                data-testid={`links-section-linked-navigate-${p}`}
+                data-testid={`links-section-linked-navigate-${i}`}
+                data-path={p}
                 className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 {p}
@@ -190,7 +192,8 @@ export const LinksSection = (props: LinksSectionProps) => {
                 onClick={() => handleRemoveForward(p)}
                 disabled={isBusyAny}
                 aria-label="リンクを削除"
-                data-testid={`links-section-linked-remove-${p}`}
+                data-testid={`links-section-linked-remove-${i}`}
+                data-path={p}
                 className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
               >
                 ×
@@ -231,14 +234,16 @@ export const LinksSection = (props: LinksSectionProps) => {
           return (
             <li
               key={p}
-              data-testid={`links-section-reverse-${p}`}
+              data-testid={`links-section-reverse-${i}`}
+              data-path={p}
               className="flex items-center gap-2"
             >
               <button
                 type="button"
                 onClick={() => handleLinkClick(p)}
                 disabled={isLinkClickDisabled}
-                data-testid={`links-section-reverse-navigate-${p}`}
+                data-testid={`links-section-reverse-navigate-${i}`}
+                data-path={p}
                 className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 {p}

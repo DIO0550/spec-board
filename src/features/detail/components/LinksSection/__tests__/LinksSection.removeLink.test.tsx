@@ -67,11 +67,17 @@ test("linked リンクの各 li に × ボタンが表示される（testid / ar
     onRemoveLink: vi.fn(async () => Result.ok(self)),
   });
 
-  for (const p of ["tasks/a.md", "tasks/b.md"]) {
+  const expected: ReadonlyArray<{ readonly i: number; readonly path: string }> =
+    [
+      { i: 0, path: "tasks/a.md" },
+      { i: 1, path: "tasks/b.md" },
+    ];
+  for (const { i, path } of expected) {
     const btn = document.querySelector(
-      `[data-testid="links-section-linked-remove-${p}"]`,
+      `[data-testid="links-section-linked-remove-${i}"]`,
     ) as HTMLButtonElement | null;
     expect(btn).toBeTruthy();
+    expect(btn?.getAttribute("data-path")).toBe(path);
     expect(btn?.getAttribute("aria-label")).toBe("リンクを削除");
     expect(btn?.textContent).toBe("×");
   }
@@ -92,13 +98,13 @@ test("reverse 行には × 削除ボタンが存在しない（reverseLinks は�
     onLinkClick: vi.fn(),
   });
 
+  const reverseRow = document.querySelector(
+    '[data-testid="links-section-reverse-0"]',
+  );
+  expect(reverseRow?.getAttribute("data-path")).toBe("tasks/r1.md");
+  // reverse 行には × 削除ボタンが存在しない
   expect(
-    document.querySelector('[data-testid="links-section-reverse-tasks/r1.md"]'),
-  ).toBeTruthy();
-  expect(
-    document.querySelector(
-      '[data-testid="links-section-reverse-remove-tasks/r1.md"]',
-    ),
+    reverseRow?.querySelector('button[aria-label="リンクを削除"]'),
   ).toBeNull();
 });
 
@@ -120,10 +126,10 @@ test("forward 行は navigate button と × button が独立してクリック�
   });
 
   const navBtn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   const removeBtn = document.querySelector(
-    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+    '[data-testid="links-section-linked-remove-0"]',
   ) as HTMLButtonElement;
   expect(navBtn).toBeTruthy();
   expect(removeBtn).toBeTruthy();
@@ -159,7 +165,7 @@ test("forward × クリックで onRemoveLink(sourceFilePath, targetFilePath) �
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+    '[data-testid="links-section-linked-remove-0"]',
   ) as HTMLButtonElement;
   await act(async () => {
     btn.click();
@@ -190,7 +196,7 @@ test("onRemoveLink pending 中は forward × button と + button が disabled", 
   });
 
   const firstBtn = document.querySelector(
-    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+    '[data-testid="links-section-linked-remove-0"]',
   ) as HTMLButtonElement;
   act(() => {
     firstBtn.click();
@@ -198,8 +204,8 @@ test("onRemoveLink pending 中は forward × button と + button が disabled", 
 
   // 全 forward × ボタンが disabled
   for (const sel of [
-    "links-section-linked-remove-tasks/a.md",
-    "links-section-linked-remove-tasks/b.md",
+    "links-section-linked-remove-0",
+    "links-section-linked-remove-1",
   ]) {
     const btn = document.querySelector(
       `[data-testid="${sel}"]`,
@@ -218,7 +224,7 @@ test("onRemoveLink pending 中は forward × button と + button が disabled", 
   });
 
   const firstBtnAfter = document.querySelector(
-    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+    '[data-testid="links-section-linked-remove-0"]',
   ) as HTMLButtonElement;
   expect(firstBtnAfter.disabled).toBe(false);
 });
@@ -257,7 +263,7 @@ test("popover が開いた状態で × クリックすると TaskSelect の inpu
 
   // 開いた状態で × クリックして busy にする
   const removeBtn = document.querySelector(
-    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+    '[data-testid="links-section-linked-remove-0"]',
   ) as HTMLButtonElement;
   act(() => {
     removeBtn.click();

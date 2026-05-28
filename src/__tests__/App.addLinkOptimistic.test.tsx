@@ -241,7 +241,7 @@ test("source に link 追加後、target を開くと reverseLinkedFilePaths に
   clickTaskCard("B");
 
   const reverseLi = document.querySelector(
-    '[data-testid="links-section-reverse-tasks/a.md"]',
+    'li[data-path="tasks/a.md"][data-testid^="links-section-reverse-"]',
   );
   expect(reverseLi).toBeTruthy();
 });
