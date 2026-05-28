@@ -19,6 +19,11 @@ type BoardProps = {
   columns: ColumnType[];
   /** タスクの配列 */
   tasks: Task[];
+  /**
+   * 「正規化済み Task.filePath → Task」の lookup Map。各 TaskCard の broken link 判定に使用する。
+   * Board 自身では使用せず、Column へ pass-through する。
+   */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
   /** カラムの「+ 追加」ボタンクリック時のコールバック
@@ -76,6 +81,7 @@ type BoardProps = {
 export const Board = ({
   columns,
   tasks,
+  tasksByNormalizedPath,
   doneColumn,
   onAddTask,
   onTaskClick,
@@ -186,6 +192,7 @@ export const Board = ({
           name={col.name}
           tasks={tasksByStatus[col.name] ?? []}
           allTasks={tasks}
+          tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
           onAddClick={() => onAddTask(col.name)}
           onTaskClick={onTaskClick}

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { hasAnyBrokenLink } from "@/domains/broken-link";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { Task } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
@@ -39,6 +40,11 @@ type ColumnProps = {
   tasks: Task[];
   /** 全タスクの配列（子タスク解決用） */
   allTasks?: Task[];
+  /**
+   * 「正規化済み Task.filePath → Task」の lookup Map。broken link 判定に使用する。
+   * 未指定時は判定をスキップし、TaskCard に `hasBrokenLink={false}` を渡す。
+   */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
   /** 「+ 追加」ボタンクリック時のコールバック */
@@ -106,6 +112,7 @@ export const Column = ({
   name,
   tasks,
   allTasks = [],
+  tasksByNormalizedPath,
   doneColumn,
   onAddClick,
   onTaskClick,
@@ -146,6 +153,16 @@ export const Column = ({
     }
     return map;
   }, [allTasks, tasksByFilePath]);
+  const hasBrokenLinkByFilePath = useMemo(() => {
+    const map = new Map<string, boolean>();
+    if (tasksByNormalizedPath === undefined) {
+      return map;
+    }
+    for (const t of tasks) {
+      map.set(t.filePath, hasAnyBrokenLink(t, tasksByNormalizedPath));
+    }
+    return map;
+  }, [tasks, tasksByNormalizedPath]);
   const listRef = useRef<HTMLUListElement>(null);
   // dragover は高頻度発火するため、rAF 同フレーム内では rect 再計算を 1 回に
   // 抑制する。pendingFrameRef が null でない間は新規 rAF を予約せず、最後の
@@ -294,8 +311,11 @@ export const Column = ({
     setIsConfirming(true);
   };
 
+  /**
+   * 削除確認ダイアログの「削除」確定ハンドラ。
+   * pending 中の二重実行は guard し、reject 時は dialog を維持する。
+   */
   const handleConfirm = async () => {
-    // re-entrant guard: pending 中の confirm ボタン連打を抑止
     if (isDeleting) {
       return;
     }
@@ -380,6 +400,9 @@ export const Column = ({
                     dragState ?? null,
                     task.filePath,
                   )}
+                  hasBrokenLink={
+                    hasBrokenLinkByFilePath.get(task.filePath) ?? false
+                  }
                   onClick={onTaskClick}
                   onDragStart={onTaskDragStart}
                   onDragEnd={onTaskDragEnd}
