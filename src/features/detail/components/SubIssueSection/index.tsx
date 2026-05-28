@@ -34,7 +34,12 @@ type SubIssueSectionProps = {
 /** 行描画用の中間表現。`childFilePaths` 順を維持しつつ「resolved Task / broken path」を切り替える。 */
 type ChildRow =
   | { readonly kind: "resolved"; readonly task: Task }
-  | { readonly kind: "broken"; readonly rawPath: string };
+  | {
+      readonly kind: "broken";
+      readonly rawPath: string;
+      /** broken 行の連番（0 始まり）。CSS セレクタが扱いにくい raw path の代替 testid キー。 */
+      readonly brokenIndex: number;
+    };
 
 /**
  * `childFilePaths` の順序を保ちながら、各 path を `childTasks` から解決するか broken 行として残すかを決める。
@@ -52,6 +57,7 @@ export const buildChildRowList = (
   brokenChildPaths: ReadonlySet<string> | undefined,
 ): readonly ChildRow[] => {
   const rows: ChildRow[] = [];
+  let brokenIndex = 0;
   for (const rawPath of childFilePaths) {
     const resolved = childTasks.find((t) =>
       linkReferencesTaskPath(rawPath, t.filePath),
@@ -61,7 +67,8 @@ export const buildChildRowList = (
       continue;
     }
     if (brokenChildPaths?.has(rawPath)) {
-      rows.push({ kind: "broken", rawPath });
+      rows.push({ kind: "broken", rawPath, brokenIndex });
+      brokenIndex += 1;
     }
   }
   return rows;
@@ -130,8 +137,9 @@ export const SubIssueSection = ({
             if (row.kind === "broken") {
               return (
                 <li
-                  key={`broken-${row.rawPath}`}
-                  data-testid={`sub-issue-broken-${row.rawPath}`}
+                  key={`broken-${row.brokenIndex}-${row.rawPath}`}
+                  data-testid={`sub-issue-broken-${row.brokenIndex}`}
+                  data-path={row.rawPath}
                   data-broken="true"
                   className="flex items-center gap-2 px-1.5 py-1"
                 >

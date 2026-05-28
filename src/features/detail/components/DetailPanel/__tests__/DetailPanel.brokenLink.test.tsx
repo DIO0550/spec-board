@@ -148,10 +148,9 @@ test("children の broken 要素が SubIssueSection で表示される", () => {
     onAddSubIssue: vi.fn(),
     tasksByNormalizedPath: buildTasksByNormalizedPath([task]),
   });
-  const row = document.querySelector(
-    '[data-testid="sub-issue-broken-tasks/dead.md"]',
-  );
+  const row = document.querySelector('[data-testid="sub-issue-broken-0"]');
   expect(row).not.toBeNull();
+  expect(row?.getAttribute("data-path")).toBe("tasks/dead.md");
   expect(row?.querySelector('[data-testid="warning-icon"]')).not.toBeNull();
 });
 

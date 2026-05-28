@@ -59,9 +59,8 @@ test("`childFilePaths` の順序通りに描画される (解決済 → ボタ�
   );
   expect(items.length).toBe(2);
   expect(items[0].getAttribute("data-testid")).toBe("sub-issue-item-c1");
-  expect(items[1].getAttribute("data-testid")).toBe(
-    "sub-issue-broken-tasks/dead.md",
-  );
+  expect(items[1].getAttribute("data-testid")).toBe("sub-issue-broken-0");
+  expect(items[1].getAttribute("data-path")).toBe("tasks/dead.md");
 });
 
 test("正常な child は従来通りボタン行が描画される", () => {
@@ -123,9 +122,9 @@ test("`childTasks.length === 0` でも `brokenChildPaths.size > 0` なら broken
     onAddSubIssue: vi.fn(),
     brokenChildPaths: new Set(["tasks/dead.md"]),
   });
-  expect(
-    document.querySelector('[data-testid="sub-issue-broken-tasks/dead.md"]'),
-  ).not.toBeNull();
+  const row = document.querySelector('[data-testid="sub-issue-broken-0"]');
+  expect(row).not.toBeNull();
+  expect(row?.getAttribute("data-path")).toBe("tasks/dead.md");
 });
 
 test("broken 行に WarningIcon と取消線 path が描画される", () => {
@@ -142,9 +141,8 @@ test("broken 行に WarningIcon と取消線 path が描画される", () => {
     onAddSubIssue: vi.fn(),
     brokenChildPaths: new Set(["tasks/dead.md"]),
   });
-  const row = document.querySelector(
-    '[data-testid="sub-issue-broken-tasks/dead.md"]',
-  );
+  const row = document.querySelector('[data-testid="sub-issue-broken-0"]');
+  expect(row?.getAttribute("data-path")).toBe("tasks/dead.md");
   expect(row?.querySelector('[data-testid="warning-icon"]')).not.toBeNull();
   expect(row?.querySelector(".line-through")?.textContent).toBe(
     "tasks/dead.md",
@@ -161,5 +159,9 @@ test("buildChildRowList: 解決済タスクは resolved、broken set 一致は b
   );
   expect(rows.length).toBe(2);
   expect(rows[0]).toEqual({ kind: "resolved", task: c1 });
-  expect(rows[1]).toEqual({ kind: "broken", rawPath: "tasks/dead.md" });
+  expect(rows[1]).toEqual({
+    kind: "broken",
+    rawPath: "tasks/dead.md",
+    brokenIndex: 0,
+  });
 });
