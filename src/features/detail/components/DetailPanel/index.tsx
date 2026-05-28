@@ -103,14 +103,6 @@ type DetailPanelProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
 };
 
-/** 4 種参照すべて「broken なし」を意味する empty BrokenLinkSet。tasksByNormalizedPath 未指定時の fallback。 */
-const EMPTY_BROKEN_LINKS = {
-  parent: false,
-  links: new Set<string>(),
-  children: new Set<string>(),
-  reverseLinks: new Set<string>(),
-} as const;
-
 /**
  * 右側からスライドインするタスク詳細パネル
  * @param props - {@link DetailPanelProps}
@@ -143,12 +135,10 @@ export const DetailPanel = ({
 
   const labels = useDetailLabels({ task, onTaskUpdate });
 
-  const brokenLinks = useMemo(() => {
-    if (tasksByNormalizedPath === undefined) {
-      return EMPTY_BROKEN_LINKS;
-    }
-    return getBrokenLinks(task, tasksByNormalizedPath);
-  }, [task, tasksByNormalizedPath]);
+  const brokenLinks = useMemo(
+    () => getBrokenLinks(task, tasksByNormalizedPath),
+    [task, tasksByNormalizedPath],
+  );
 
   const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
 
