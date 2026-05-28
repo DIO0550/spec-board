@@ -148,8 +148,7 @@ fn commit_cache(
                 .get_mut(&source_key)
                 .expect("source presence verified above");
             let was_cycle_member = source_entry.warnings.iter().any(|w| {
-                w.code == TaskWarningCode::ParentCycle
-                    && w.field.as_deref() == Some("parent")
+                w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent")
             });
             let preserved_children = std::mem::take(&mut source_entry.children);
             let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
