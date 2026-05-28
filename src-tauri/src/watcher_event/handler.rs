@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::task::parse::{normalized_task_file_path, task_from_markdown, TaskParseContext};
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
+use crate::task::warning::{ensure_parent_cycle_warning, has_parent_cycle_warning};
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::FsEvent;
 
@@ -194,11 +194,7 @@ fn handle_upsert(
         // 反映する。新規 cycle の検出はフル再 scan に委ねる。
         let was_cycle_member = cache
             .get(&cache_key)
-            .map(|prev| {
-                prev.warnings.iter().any(|w| {
-                    w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent")
-                })
-            })
+            .map(|prev| has_parent_cycle_warning(&prev.warnings))
             .unwrap_or(false);
         let mut next = task;
         if was_cycle_member && next.parent.is_some() {

@@ -27,15 +27,21 @@ pub struct TaskWarning {
     pub message: String,
 }
 
+/// `warnings` 配列に `ParentCycle` (field=`parent`) が含まれているかを判定する
+/// 共通 helper。`watcher_event` / `update` / `add_link` / `remove_link` の
+/// 各経路で同じ判定が必要になるため、ここに集約することで条件のズレを防ぐ。
+pub fn has_parent_cycle_warning(warnings: &[TaskWarning]) -> bool {
+    warnings.iter().any(|warning| {
+        warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
+    })
+}
+
 /// `warnings` 配列に `ParentCycle` (field=`parent`) が既存なら何もせず、
 /// 無ければ追加する共通 helper。message / field の文言を 1 箇所に集約することで
 /// scan 経路 (`task_index::mark_cycle_members`) と update 経路
 /// (`task::update::command::commit_cache`) の間で表記揺れが起きないようにする。
 pub fn ensure_parent_cycle_warning(warnings: &mut Vec<TaskWarning>) {
-    let already_exists = warnings.iter().any(|warning| {
-        warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
-    });
-    if already_exists {
+    if has_parent_cycle_warning(warnings) {
         return;
     }
 

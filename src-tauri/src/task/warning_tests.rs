@@ -1,4 +1,39 @@
-use super::{TaskWarning, TaskWarningCode};
+use super::{has_parent_cycle_warning, TaskWarning, TaskWarningCode};
+
+#[test]
+fn has_parent_cycle_warning_returns_true_when_code_and_field_match() {
+    let warnings = vec![TaskWarning {
+        code: TaskWarningCode::ParentCycle,
+        field: Some("parent".to_string()),
+        message: "parent chain forms a cycle".to_string(),
+    }];
+    assert!(has_parent_cycle_warning(&warnings));
+}
+
+#[test]
+fn has_parent_cycle_warning_returns_false_when_field_mismatches() {
+    let warnings = vec![TaskWarning {
+        code: TaskWarningCode::ParentCycle,
+        field: Some("links".to_string()),
+        message: "x".to_string(),
+    }];
+    assert!(!has_parent_cycle_warning(&warnings));
+}
+
+#[test]
+fn has_parent_cycle_warning_returns_false_for_other_codes() {
+    let warnings = vec![TaskWarning {
+        code: TaskWarningCode::ParentNotFound,
+        field: Some("parent".to_string()),
+        message: "x".to_string(),
+    }];
+    assert!(!has_parent_cycle_warning(&warnings));
+}
+
+#[test]
+fn has_parent_cycle_warning_returns_false_for_empty_slice() {
+    assert!(!has_parent_cycle_warning(&[]));
+}
 
 #[test]
 fn parent_cycle_code_serializes_to_camel_case_string() {

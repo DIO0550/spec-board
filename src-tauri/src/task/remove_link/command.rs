@@ -13,7 +13,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::remove_link::args::RemoveLinkArgs;
 use crate::task::remove_link::error::{RemoveLinkCommandError, RemoveLinkError};
 use crate::task::task_index::{find_task_mut_by_normalized, RemoveLinkOutcome, Task, TaskIndex};
-use crate::task::warning::TaskWarningCode;
+use crate::task::warning::has_parent_cycle_warning;
 
 /// `remove_link` Tauri command 薄層。
 #[tauri::command]
@@ -147,9 +147,7 @@ fn commit_cache(
             let source_entry = cache
                 .get_mut(&source_key)
                 .expect("source presence verified above");
-            let was_cycle_member = source_entry.warnings.iter().any(|w| {
-                w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent")
-            });
+            let was_cycle_member = has_parent_cycle_warning(&source_entry.warnings);
             let preserved_children = std::mem::take(&mut source_entry.children);
             let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
             let preserved_warnings = std::mem::take(&mut source_entry.warnings);

@@ -13,7 +13,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
-use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
+use crate::task::warning::{ensure_parent_cycle_warning, has_parent_cycle_warning};
 
 /// `update_task` Tauri command 薄層。
 #[tauri::command]
@@ -126,12 +126,7 @@ fn commit_cache(
                 // 復活させているため、明示的に override しないとバナーが消える。
                 let was_cycle_member = cache
                     .get(&cache_key)
-                    .map(|prev| {
-                        prev.warnings.iter().any(|w| {
-                            w.code == TaskWarningCode::ParentCycle
-                                && w.field.as_deref() == Some("parent")
-                        })
-                    })
+                    .map(|prev| has_parent_cycle_warning(&prev.warnings))
                     .unwrap_or(false);
                 let mut next = outcome.updated_task.clone();
                 if was_cycle_member {
