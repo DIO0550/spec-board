@@ -765,3 +765,68 @@ fn modify_event_for_non_cycle_task_does_not_inject_parent_cycle_warning() {
         "非 cycle task に parentCycle warning が混入してはならない"
     );
 }
+
+#[test]
+fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
+    use crate::task::parse::{task_from_markdown, TaskParseContext};
+    use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
+
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+
+    // 元々 A.md は parent: tasks/b.md で B.md と循環していた。
+    let a_initial = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nbody\n";
+    let abs_a = write_md(dir.path(), "tasks/a.md", a_initial);
+    write_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n\nbody\n",
+    );
+
+    let parse_ctx = TaskParseContext {
+        file_path: PathBuf::from("tasks/a.md"),
+        default_status: "Todo".into(),
+    };
+    let mut seeded = task_from_markdown(a_initial.as_bytes(), &parse_ctx).expect("parse seed");
+    seeded.parent = None;
+    ensure_parent_cycle_warning(&mut seeded.warnings);
+    state
+        .with_tasks_cache_mut(|cache| {
+            cache.insert(PathBuf::from("tasks/a.md"), seeded);
+        })
+        .expect("seed cache");
+
+    // ユーザーが外部編集で A.md から parent を除去して循環を解消した。
+    let a_resolved = "---\ntitle: A\nstatus: Todo\n---\n\nresolved body\n";
+    write_md(dir.path(), "tasks/a.md", a_resolved);
+
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    handle_event(&FsEvent::Modified(abs_a), &ctx).expect("modify ok");
+
+    let snapshot = state.tasks_snapshot().expect("readable");
+    let a = snapshot
+        .iter()
+        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .expect("A in cache");
+
+    assert!(
+        a.parent.is_none(),
+        "disk 側で parent を消した結果がそのまま反映される"
+    );
+    assert!(
+        !a.warnings
+            .iter()
+            .any(|w| w.code == TaskWarningCode::ParentCycle),
+        "disk 側で parent が消えた以上、parentCycle warning は維持しない"
+    );
+
+    let emitted = &entries(&log)[0].1["task"];
+    assert!(
+        emitted.get("parent").is_none_or(|v| v.is_null()),
+        "emit payload も parent=None を反映する"
+    );
+}
+
+fn entries(log: &EmitLog) -> Vec<(String, Value)> {
+    log.lock().unwrap().clone()
+}

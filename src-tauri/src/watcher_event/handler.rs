@@ -188,7 +188,10 @@ fn handle_upsert(
         };
         // 直前まで cycle member として正規化されていた task は、disk 由来の raw
         // `parent:` で warning とバナーを失わせないよう、parent=None と
-        // parentCycle warning を引き継ぐ。新規 cycle の検出はフル再 scan に委ねる。
+        // parentCycle warning を引き継ぐ。
+        // ただし新しい parsed task の parent が None の場合は、ユーザーが外部編集で
+        // 親参照を消して循環を解消したとみなし、preserve せず disk の状態をそのまま
+        // 反映する。新規 cycle の検出はフル再 scan に委ねる。
         let was_cycle_member = cache
             .get(&cache_key)
             .map(|prev| {
@@ -198,7 +201,7 @@ fn handle_upsert(
             })
             .unwrap_or(false);
         let mut next = task;
-        if was_cycle_member {
+        if was_cycle_member && next.parent.is_some() {
             next.parent = None;
             ensure_parent_cycle_warning(&mut next.warnings);
         }
