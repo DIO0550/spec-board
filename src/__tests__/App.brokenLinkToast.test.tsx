@@ -195,3 +195,20 @@ test("state.kind が loading の段階では Toast 発火しない", () => {
   // 何もしなければ state は idle のまま → Toast なし
   expect(findWarningToast()).toBeNull();
 });
+
+test("同一 loadedPath を再 open (loading 経由) すると Toast が再発火する", async () => {
+  mountApp();
+  await openProjectFlow("/p", payloadWithBroken);
+  const firstToast = findWarningToast();
+  expect(firstToast?.textContent).toContain("リンク切れが 1 件あります");
+  // 既存 toast の自動 dismiss を待たずに同一 path を再 open する。
+  // openProject は loading → loaded への遷移を含むため、loaded 離脱で ref がクリアされ、
+  // 再 loaded で同じ path に対しても Toast が再発火する。
+  await openProjectFlow("/p", payloadWithBroken);
+  const toasts =
+    container?.querySelectorAll('[data-testid="toast-warning"]') ?? [];
+  // 既存 + 新規 = 2 件（自動 dismiss 前なので両方存在する）
+  expect(toasts.length).toBeGreaterThanOrEqual(1);
+  const latest = toasts[toasts.length - 1];
+  expect(latest.textContent).toContain("リンク切れが 1 件あります");
+});

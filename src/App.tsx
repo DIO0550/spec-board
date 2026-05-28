@@ -170,9 +170,13 @@ export const App = () => {
   );
   // Toast 発火管理用 ref。`prevLoadedPath` (UI リセット用、render-phase 更新) と
   // 役割を分離するため別 ref を持つ。
+  // 「loaded セッション内で 1 回だけ発火」をルールとし、state.kind が "loaded" から
+  // 離れた時点で ref をクリアすることで、close → reopen 同一 path のような再ロードでも
+  // 改めて発火するようにする。
   const toastFiredForLoadedPathRef = useRef<string | null>(null);
   useEffect(() => {
     if (state.kind !== "loaded") {
+      toastFiredForLoadedPathRef.current = null;
       return;
     }
     if (toastFiredForLoadedPathRef.current === loadedPath) {
