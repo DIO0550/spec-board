@@ -1,3 +1,5 @@
+import { WarningIcon } from "@/components/WarningIcon";
+import { linkReferencesTaskPath } from "@/domains/task-path";
 import { SubIssue } from "@/features/detail/domains/sub-issue";
 import type { Task } from "@/types/task";
 
@@ -21,6 +23,48 @@ type SubIssueSectionProps = {
    * @param childId - 対象の子タスクID
    */
   onChildClick?: (childId: string) => void;
+  /**
+   * `parentTask.hierarchy.childFilePaths` のうちリンク切れと判定された raw path 集合。
+   * 該当 path の行は WarningIcon + 「リンク切れ」テキスト + 取消線スタイルで表示する。
+   * 未指定時は broken 行を一切描画しない（後方互換）。
+   */
+  brokenChildPaths?: ReadonlySet<string>;
+};
+
+/** 行描画用の中間表現。`childFilePaths` 順を維持しつつ「resolved Task / broken path」を切り替える。 */
+type ChildRow =
+  | { readonly kind: "resolved"; readonly task: Task }
+  | { readonly kind: "broken"; readonly rawPath: string };
+
+/**
+ * `childFilePaths` の順序を保ちながら、各 path を `childTasks` から解決するか broken 行として残すかを決める。
+ * - `childTasks` に同 filePath または `linkReferencesTaskPath` 一致の task があれば resolved
+ * - それ以外で `brokenChildPaths` に含まれていれば broken
+ * - どちらにも当たらない path はスキップ（過剰描画を防ぐ）
+ * @param childFilePaths 親 task の raw 参照配列
+ * @param childTasks 解決済み子タスク
+ * @param brokenChildPaths broken と判定された raw path 集合
+ * @returns 描画順に並んだ {@link ChildRow}
+ */
+export const buildChildRowList = (
+  childFilePaths: readonly string[],
+  childTasks: readonly Task[],
+  brokenChildPaths: ReadonlySet<string> | undefined,
+): readonly ChildRow[] => {
+  const rows: ChildRow[] = [];
+  for (const rawPath of childFilePaths) {
+    const resolved = childTasks.find((t) =>
+      linkReferencesTaskPath(rawPath, t.filePath),
+    );
+    if (resolved !== undefined) {
+      rows.push({ kind: "resolved", task: resolved });
+      continue;
+    }
+    if (brokenChildPaths?.has(rawPath)) {
+      rows.push({ kind: "broken", rawPath });
+    }
+  }
+  return rows;
 };
 
 /**
@@ -37,16 +81,21 @@ export const SubIssueSection = ({
   doneColumn,
   onAddSubIssue,
   onChildClick,
+  brokenChildPaths,
 }: SubIssueSectionProps) => {
   const { total, doneCount, percentage } = SubIssue.progress(
     descendantTasks,
     doneColumn,
   );
 
-  // 進捗バー（サマリと visual bar）は全子孫を対象に算出する。
-  // 直下子リストは childTasks 単独で描画する。両者は独立した条件で表示判定する。
+  const rows = buildChildRowList(
+    parentTask.hierarchy.childFilePaths,
+    childTasks,
+    brokenChildPaths,
+  );
+
   const showProgress = total > 0;
-  const showChildList = childTasks.length > 0;
+  const showChildList = rows.length > 0;
 
   return (
     <div data-testid="sub-issue-section">
@@ -77,7 +126,24 @@ export const SubIssueSection = ({
       )}
       {showChildList && (
         <ul className="mb-2 space-y-1 text-sm text-gray-700">
-          {childTasks.map((child) => {
+          {rows.map((row) => {
+            if (row.kind === "broken") {
+              return (
+                <li
+                  key={`broken-${row.rawPath}`}
+                  data-testid={`sub-issue-broken-${row.rawPath}`}
+                  data-broken="true"
+                  className="flex items-center gap-2 px-1.5 py-1"
+                >
+                  <WarningIcon size={14} />
+                  <span className="text-xs text-yellow-700">リンク切れ</span>
+                  <span className="min-w-0 flex-1 truncate text-gray-500 line-through">
+                    {row.rawPath}
+                  </span>
+                </li>
+              );
+            }
+            const child = row.task;
             const isDone = child.status === doneColumn;
             const label = child.title || child.filePath;
             return (
