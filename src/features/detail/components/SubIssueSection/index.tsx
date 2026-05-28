@@ -46,8 +46,9 @@ type ChildRow =
 
 /**
  * `childFilePaths` の順序を保ちながら、各 path を `childTasks` から解決するか broken 行として残すかを決める。
- * - `childTasks` に同 filePath または `linkReferencesTaskPath` 一致の task があれば resolved
- * - それ以外で `brokenChildPaths` に含まれていれば broken
+ * - `normalizeRefPathForLookup` で正規化したキーが `childTasks` の `normalizeTaskPathForLookup(filePath)` と一致すれば resolved
+ *   （空文字 / 絶対 path / Windows drive prefix は正規化が undefined を返すため、resolved にならず broken 扱いに回る）
+ * - resolved にできなかった path が `brokenChildPaths` に含まれていれば broken
  * - どちらにも当たらない path はスキップ（過剰描画を防ぐ）
  * @param childFilePaths 親 task の raw 参照配列
  * @param childTasks 解決済み子タスク
