@@ -1,5 +1,8 @@
 import { WarningIcon } from "@/components/WarningIcon";
-import { linkReferencesTaskPath } from "@/domains/task-path";
+import {
+  normalizeRefPathForLookup,
+  normalizeTaskPathForLookup,
+} from "@/domains/task-path";
 import { SubIssue } from "@/features/detail/domains/sub-issue";
 import type { Task } from "@/types/task";
 
@@ -56,12 +59,20 @@ export const buildChildRowList = (
   childTasks: readonly Task[],
   brokenChildPaths: ReadonlySet<string> | undefined,
 ): readonly ChildRow[] => {
+  // 子タスクを正規化済み filePath で 1 度だけ Map 化し、各 rawPath は 1 回の
+  // 正規化 + Map 参照で解決する。childFilePaths × childTasks の二重ループを避けて
+  // O(childFilePaths + childTasks) に抑える。
+  const childByNormalizedPath = new Map<string, Task>();
+  for (const t of childTasks) {
+    childByNormalizedPath.set(normalizeTaskPathForLookup(t.filePath), t);
+  }
+
   const rows: ChildRow[] = [];
   let brokenIndex = 0;
   for (const rawPath of childFilePaths) {
-    const resolved = childTasks.find((t) =>
-      linkReferencesTaskPath(rawPath, t.filePath),
-    );
+    const refKey = normalizeRefPathForLookup(rawPath);
+    const resolved =
+      refKey === undefined ? undefined : childByNormalizedPath.get(refKey);
     if (resolved !== undefined) {
       rows.push({ kind: "resolved", task: resolved });
       continue;
