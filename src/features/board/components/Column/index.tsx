@@ -153,16 +153,6 @@ export const Column = ({
     }
     return map;
   }, [allTasks, tasksByFilePath]);
-  const hasBrokenLinkByFilePath = useMemo(() => {
-    const map = new Map<string, boolean>();
-    if (tasksByNormalizedPath === undefined) {
-      return map;
-    }
-    for (const t of tasks) {
-      map.set(t.filePath, hasAnyBrokenLink(t, tasksByNormalizedPath));
-    }
-    return map;
-  }, [tasks, tasksByNormalizedPath]);
   const listRef = useRef<HTMLUListElement>(null);
   // dragover は高頻度発火するため、rAF 同フレーム内では rect 再計算を 1 回に
   // 抑制する。pendingFrameRef が null でない間は新規 rAF を予約せず、最後の
@@ -401,7 +391,8 @@ export const Column = ({
                     task.filePath,
                   )}
                   hasBrokenLink={
-                    hasBrokenLinkByFilePath.get(task.filePath) ?? false
+                    tasksByNormalizedPath !== undefined &&
+                    hasAnyBrokenLink(task, tasksByNormalizedPath)
                   }
                   onClick={onTaskClick}
                   onDragStart={onTaskDragStart}
