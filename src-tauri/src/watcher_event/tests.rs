@@ -735,7 +735,7 @@ fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
 
     let emitted = &entries[0].1["task"];
     assert!(
-        emitted.get("parent").map_or(true, |v| v.is_null()),
+        emitted.get("parent").is_none_or(|v| v.is_null()),
         "emit payload も parent=None を反映する"
     );
 }
