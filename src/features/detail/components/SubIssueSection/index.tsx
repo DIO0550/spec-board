@@ -1,8 +1,7 @@
-import { WarningIcon } from "@/components/WarningIcon";
-import {
-  normalizeRefPathForLookup,
-  normalizeTaskPathForLookup,
-} from "@/domains/task-path";
+import { useMemo } from "react";
+import { BrokenRefLabel } from "@/components/BrokenRefLabel";
+import { buildTasksByNormalizedPath } from "@/domains/broken-link";
+import { normalizeRefPathForLookup } from "@/domains/task-path";
 import { SubIssue } from "@/features/detail/domains/sub-issue";
 import type { Task } from "@/types/task";
 
@@ -62,11 +61,8 @@ export const buildChildRowList = (
 ): readonly ChildRow[] => {
   // 子タスクを正規化済み filePath で 1 度だけ Map 化し、各 rawPath は 1 回の
   // 正規化 + Map 参照で解決する。childFilePaths × childTasks の二重ループを避けて
-  // O(childFilePaths + childTasks) に抑える。
-  const childByNormalizedPath = new Map<string, Task>();
-  for (const t of childTasks) {
-    childByNormalizedPath.set(normalizeTaskPathForLookup(t.filePath), t);
-  }
+  // O(childFilePaths + childTasks) に抑える。broken-link ドメインと同じ key 規約。
+  const childByNormalizedPath = buildTasksByNormalizedPath(childTasks);
 
   const rows: ChildRow[] = [];
   let brokenIndex = 0;
@@ -107,10 +103,14 @@ export const SubIssueSection = ({
     doneColumn,
   );
 
-  const rows = buildChildRowList(
-    parentTask.hierarchy.childFilePaths,
-    childTasks,
-    brokenChildPaths,
+  const rows = useMemo(
+    () =>
+      buildChildRowList(
+        parentTask.hierarchy.childFilePaths,
+        childTasks,
+        brokenChildPaths,
+      ),
+    [parentTask.hierarchy.childFilePaths, childTasks, brokenChildPaths],
   );
 
   const showProgress = total > 0;
@@ -155,11 +155,7 @@ export const SubIssueSection = ({
                   data-broken="true"
                   className="flex items-center gap-2 px-1.5 py-1"
                 >
-                  <WarningIcon size={14} />
-                  <span className="text-xs text-yellow-700">リンク切れ</span>
-                  <span className="min-w-0 flex-1 truncate text-gray-500 line-through">
-                    {row.rawPath}
-                  </span>
+                  <BrokenRefLabel rawPath={row.rawPath} />
                 </li>
               );
             }
