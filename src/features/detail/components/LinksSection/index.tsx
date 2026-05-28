@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { TaskSelect } from "@/components/TaskSelect";
+import { WarningIcon } from "@/components/WarningIcon";
 import { TaskLinks } from "@/domains/task-links";
 import { linkReferencesTaskPath } from "@/domains/task-path";
 import { useAddLink } from "@/features/detail/hooks/useAddLink";
@@ -44,6 +45,16 @@ export type LinksSectionProps = {
    * 未指定時は行 button を disabled にする。
    */
   readonly onLinkClick?: (taskId: string) => void;
+  /**
+   * forward link でリンク切れと判定された raw path 集合。
+   * 該当行は WarningIcon + 「リンク切れ」テキスト + 取消線スタイル付き path 表示になる。
+   */
+  readonly brokenLinkPaths?: ReadonlySet<string>;
+  /**
+   * reverse link でリンク切れと判定された raw path 集合。
+   * 該当行は WarningIcon + 「リンク切れ」テキスト + 取消線スタイル付き path 表示になる。
+   */
+  readonly brokenReverseLinkPaths?: ReadonlySet<string>;
 };
 
 /**
@@ -125,56 +136,114 @@ export const LinksSection = (props: LinksSectionProps) => {
         aria-label="関連リンク先（このタスクから他のタスクへのリンク）"
         className="flex flex-col gap-1 text-sm text-gray-700"
       >
-        {props.task.links.linkedFilePaths.map((p) => (
-          <li
-            key={p}
-            data-testid={`links-section-linked-${p}`}
-            className="flex items-center justify-between gap-2"
-          >
-            <button
-              type="button"
-              onClick={() => handleLinkClick(p)}
-              disabled={isLinkClickDisabled}
-              data-testid={`links-section-linked-navigate-${p}`}
-              className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        {props.task.links.linkedFilePaths.map((p) => {
+          const isBroken = props.brokenLinkPaths?.has(p) ?? false;
+          if (isBroken) {
+            return (
+              <li
+                key={p}
+                data-testid={`links-section-linked-${p}`}
+                data-broken="true"
+                className="flex items-center justify-between gap-2"
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1">
+                  <WarningIcon size={14} />
+                  <span className="text-xs text-yellow-700">リンク切れ</span>
+                  <span
+                    data-testid={`links-section-linked-broken-${p}`}
+                    className="min-w-0 truncate text-gray-500 line-through"
+                  >
+                    {p}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveForward(p)}
+                  disabled={isBusyAny}
+                  aria-label="リンクを削除"
+                  data-testid={`links-section-linked-remove-${p}`}
+                  className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+                >
+                  ×
+                </button>
+              </li>
+            );
+          }
+          return (
+            <li
+              key={p}
+              data-testid={`links-section-linked-${p}`}
+              className="flex items-center justify-between gap-2"
             >
-              {p}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRemoveForward(p)}
-              disabled={isBusyAny}
-              aria-label="リンクを削除"
-              data-testid={`links-section-linked-remove-${p}`}
-              className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
-            >
-              ×
-            </button>
-          </li>
-        ))}
+              <button
+                type="button"
+                onClick={() => handleLinkClick(p)}
+                disabled={isLinkClickDisabled}
+                data-testid={`links-section-linked-navigate-${p}`}
+                className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+              >
+                {p}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRemoveForward(p)}
+                disabled={isBusyAny}
+                aria-label="リンクを削除"
+                data-testid={`links-section-linked-remove-${p}`}
+                className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </li>
+          );
+        })}
       </ul>
       <ul
         data-testid="links-section-reverse"
         aria-label="関連リンク元（他のタスクからこのタスクへの逆リンク）"
         className="flex flex-col gap-1 text-sm text-gray-500"
       >
-        {props.task.links.reverseLinkedFilePaths.map((p) => (
-          <li
-            key={p}
-            data-testid={`links-section-reverse-${p}`}
-            className="flex items-center gap-2"
-          >
-            <button
-              type="button"
-              onClick={() => handleLinkClick(p)}
-              disabled={isLinkClickDisabled}
-              data-testid={`links-section-reverse-navigate-${p}`}
-              className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        {props.task.links.reverseLinkedFilePaths.map((p) => {
+          const isBroken = props.brokenReverseLinkPaths?.has(p) ?? false;
+          if (isBroken) {
+            return (
+              <li
+                key={p}
+                data-testid={`links-section-reverse-${p}`}
+                data-broken="true"
+                className="flex items-center gap-2"
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1">
+                  <WarningIcon size={14} />
+                  <span className="text-xs text-yellow-700">リンク切れ</span>
+                  <span
+                    data-testid={`links-section-reverse-broken-${p}`}
+                    className="min-w-0 truncate text-gray-500 line-through"
+                  >
+                    {p}
+                  </span>
+                </span>
+              </li>
+            );
+          }
+          return (
+            <li
+              key={p}
+              data-testid={`links-section-reverse-${p}`}
+              className="flex items-center gap-2"
             >
-              {p}
-            </button>
-          </li>
-        ))}
+              <button
+                type="button"
+                onClick={() => handleLinkClick(p)}
+                disabled={isLinkClickDisabled}
+                data-testid={`links-section-reverse-navigate-${p}`}
+                className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+              >
+                {p}
+              </button>
+            </li>
+          );
+        })}
       </ul>
       {isOpen ? (
         <TaskSelect
