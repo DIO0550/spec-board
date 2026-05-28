@@ -13,7 +13,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
-use crate::task::warning::{TaskWarning, TaskWarningCode};
+use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
 
 /// `update_task` Tauri command 薄層。
 #[tauri::command]
@@ -146,21 +146,6 @@ fn commit_cache(
     returned?.ok_or(UpdateTaskCommandError::Validation(
         UpdateTaskError::FileNotFound(cache_key),
     ))
-}
-
-/// `warnings` に既に `ParentCycle` (field=`parent`) があれば何もせず、無ければ追加する。
-fn ensure_parent_cycle_warning(warnings: &mut Vec<TaskWarning>) {
-    let already = warnings
-        .iter()
-        .any(|w| w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent"));
-    if already {
-        return;
-    }
-    warnings.push(TaskWarning {
-        code: TaskWarningCode::ParentCycle,
-        field: Some("parent".to_string()),
-        message: "parent chain forms a cycle".to_string(),
-    });
 }
 
 #[cfg(test)]

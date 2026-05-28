@@ -31,7 +31,7 @@ use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_title::TaskTitle;
 use crate::task::update::error::UpdateTaskError;
-use crate::task::warning::{TaskWarning, TaskWarningCode};
+use crate::task::warning::{ensure_parent_cycle_warning, TaskWarning, TaskWarningCode};
 
 const MAX_PARENT_DEPTH: usize = 20;
 
@@ -196,7 +196,7 @@ impl TaskIndex {
             if !normalized_paths.contains(&task_norm) {
                 continue;
             }
-            push_parent_cycle_warning(task);
+            ensure_parent_cycle_warning(&mut task.warnings);
             task.parent = None;
         }
     }
@@ -1251,21 +1251,6 @@ fn walk_parent_chain_collecting_cycle(
 
         current = parent.clone();
     }
-}
-
-fn push_parent_cycle_warning(task: &mut Task) {
-    let already_exists = task.warnings.iter().any(|warning| {
-        warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
-    });
-    if already_exists {
-        return;
-    }
-
-    task.warnings.push(TaskWarning {
-        code: TaskWarningCode::ParentCycle,
-        field: Some("parent".to_string()),
-        message: "parent chain forms a cycle".to_string(),
-    });
 }
 
 fn push_parent_not_found(task: &mut Task) {
