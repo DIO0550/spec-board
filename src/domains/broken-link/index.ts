@@ -17,6 +17,14 @@ export type BrokenLinkSet = {
   readonly reverseLinks: ReadonlySet<string>;
 };
 
+/** 4 種いずれも broken なしを意味する frozen な empty BrokenLinkSet。`undefined` map 時の戻り値で再利用する。 */
+const EMPTY_BROKEN_LINK_SET: BrokenLinkSet = {
+  parent: false,
+  links: new Set<string>(),
+  children: new Set<string>(),
+  reverseLinks: new Set<string>(),
+};
+
 /**
  * タスク配列から「正規化済み path → Task」の lookup Map を構築する。
  * @param tasks - 母集団のタスク配列
@@ -52,60 +60,41 @@ export const isBrokenLink = (
 };
 
 /**
- * 与えられた ref 配列のうち broken なものだけを残した Set を返す。
- * @param refs - 走査する ref 配列
- * @param tasksByNormalizedPath - lookup Map
- * @returns broken な ref の Set（raw 値）
- */
-const collectBrokenRefs = (
-  refs: readonly string[],
-  tasksByNormalizedPath: ReadonlyMap<string, Task>,
-): ReadonlySet<string> => {
-  const out = new Set<string>();
-  for (const ref of refs) {
-    if (isBrokenLink(ref, tasksByNormalizedPath)) {
-      out.add(ref);
-    }
-  }
-  return out;
-};
-
-/**
- * 与えられた ref 配列のいずれかが broken なら true を返す。短絡評価で Set 割り当てを行わない。
- * @param refs - 走査する ref 配列
- * @param tasksByNormalizedPath - lookup Map
- * @returns 1 件以上 broken なら true
- */
-const hasBrokenRef = (
-  refs: readonly string[],
-  tasksByNormalizedPath: ReadonlyMap<string, Task>,
-): boolean => refs.some((ref) => isBrokenLink(ref, tasksByNormalizedPath));
-
-/**
  * 1 タスクの 4 種参照に対する broken link 判定をまとめて返す。
+ * `tasksByNormalizedPath` が未指定の場合は全 set が empty の {@link BrokenLinkSet} を返す
+ * （呼出元での fallback を不要にする）。
  * @param task - 判定対象タスク
- * @param tasksByNormalizedPath - lookup Map
+ * @param tasksByNormalizedPath - lookup Map（未指定で broken 判定をスキップ）
  * @returns 4 種それぞれの broken 判定集合
  */
 export const getBrokenLinks = (
   task: Task,
-  tasksByNormalizedPath: ReadonlyMap<string, Task>,
+  tasksByNormalizedPath: ReadonlyMap<string, Task> | undefined,
 ): BrokenLinkSet => {
+  if (tasksByNormalizedPath === undefined) {
+    return EMPTY_BROKEN_LINK_SET;
+  }
+  /**
+   * 与えられた raw ref 配列のうち broken なものだけを残した Set を返すローカル helper。
+   * @param refs 対象 ref 配列
+   * @returns broken な ref の Set（raw 値）
+   */
+  const collect = (refs: readonly string[]): ReadonlySet<string> => {
+    const out = new Set<string>();
+    for (const ref of refs) {
+      if (isBrokenLink(ref, tasksByNormalizedPath)) {
+        out.add(ref);
+      }
+    }
+    return out;
+  };
   const parentRef = task.hierarchy.parentFilePath;
-  const parentBroken =
-    parentRef !== undefined && isBrokenLink(parentRef, tasksByNormalizedPath);
-
   return {
-    parent: parentBroken,
-    links: collectBrokenRefs(task.links.linkedFilePaths, tasksByNormalizedPath),
-    children: collectBrokenRefs(
-      task.hierarchy.childFilePaths,
-      tasksByNormalizedPath,
-    ),
-    reverseLinks: collectBrokenRefs(
-      task.links.reverseLinkedFilePaths,
-      tasksByNormalizedPath,
-    ),
+    parent:
+      parentRef !== undefined && isBrokenLink(parentRef, tasksByNormalizedPath),
+    links: collect(task.links.linkedFilePaths),
+    children: collect(task.hierarchy.childFilePaths),
+    reverseLinks: collect(task.links.reverseLinkedFilePaths),
   };
 };
 
@@ -123,17 +112,19 @@ export const hasAnyBrokenLink = (
   task: Task,
   tasksByNormalizedPath: ReadonlyMap<string, Task>,
 ): boolean => {
+  /**
+   * `tasksByNormalizedPath` を bind した単一 ref 用の判定 helper。
+   * @param ref 判定対象 raw ref
+   * @returns broken なら true
+   */
+  const isBroken = (ref: string): boolean =>
+    isBrokenLink(ref, tasksByNormalizedPath);
   const parentRef = task.hierarchy.parentFilePath;
-  if (
-    parentRef !== undefined &&
-    isBrokenLink(parentRef, tasksByNormalizedPath)
-  ) {
-    return true;
-  }
   return (
-    hasBrokenRef(task.links.linkedFilePaths, tasksByNormalizedPath) ||
-    hasBrokenRef(task.hierarchy.childFilePaths, tasksByNormalizedPath) ||
-    hasBrokenRef(task.links.reverseLinkedFilePaths, tasksByNormalizedPath)
+    (parentRef !== undefined && isBroken(parentRef)) ||
+    task.links.linkedFilePaths.some(isBroken) ||
+    task.hierarchy.childFilePaths.some(isBroken) ||
+    task.links.reverseLinkedFilePaths.some(isBroken)
   );
 };
 
