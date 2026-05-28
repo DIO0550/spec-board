@@ -71,6 +71,17 @@ const collectBrokenRefs = (
 };
 
 /**
+ * 与えられた ref 配列のいずれかが broken なら true を返す。短絡評価で Set 割り当てを行わない。
+ * @param refs - 走査する ref 配列
+ * @param tasksByNormalizedPath - lookup Map
+ * @returns 1 件以上 broken なら true
+ */
+const hasBrokenRef = (
+  refs: readonly string[],
+  tasksByNormalizedPath: ReadonlyMap<string, Task>,
+): boolean => refs.some((ref) => isBrokenLink(ref, tasksByNormalizedPath));
+
+/**
  * 1 タスクの 4 種参照に対する broken link 判定をまとめて返す。
  * @param task - 判定対象タスク
  * @param tasksByNormalizedPath - lookup Map
@@ -101,6 +112,9 @@ export const getBrokenLinks = (
 /**
  * タスクに 1 件でも broken link が含まれているかを返す。
  * TaskCard の警告アイコン表示判定に使用する。
+ *
+ * `getBrokenLinks` 経由ではなく各 ref 配列を `some(isBrokenLink)` で短絡評価する。
+ * Board/Column 側でタスク数分繰り返されるため、不要な Set 割り当てを避けてコストを抑える。
  * @param task - 判定対象タスク
  * @param tasksByNormalizedPath - lookup Map
  * @returns 1 件以上 broken なら true
@@ -109,12 +123,17 @@ export const hasAnyBrokenLink = (
   task: Task,
   tasksByNormalizedPath: ReadonlyMap<string, Task>,
 ): boolean => {
-  const s = getBrokenLinks(task, tasksByNormalizedPath);
+  const parentRef = task.hierarchy.parentFilePath;
+  if (
+    parentRef !== undefined &&
+    isBrokenLink(parentRef, tasksByNormalizedPath)
+  ) {
+    return true;
+  }
   return (
-    s.parent ||
-    s.links.size > 0 ||
-    s.children.size > 0 ||
-    s.reverseLinks.size > 0
+    hasBrokenRef(task.links.linkedFilePaths, tasksByNormalizedPath) ||
+    hasBrokenRef(task.hierarchy.childFilePaths, tasksByNormalizedPath) ||
+    hasBrokenRef(task.links.reverseLinkedFilePaths, tasksByNormalizedPath)
   );
 };
 
