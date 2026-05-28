@@ -14,10 +14,11 @@ type WarningIconProps = {
  * @param props - {@link WarningIconProps}
  * @returns warning triangle 形状の SVG
  */
-export const WarningIcon = (props: WarningIconProps) => {
-  const label = props.label ?? "リンク切れあり";
-  const size = props.size ?? 16;
-  const className = props.className ?? "text-yellow-500";
+export const WarningIcon = ({
+  label = "リンク切れあり",
+  size = 16,
+  className = "text-yellow-500",
+}: WarningIconProps) => {
   return (
     <svg
       role="img"
