@@ -62,10 +62,9 @@ test("brokenLinkPaths に含まれる linked 行に WarningIcon と『リンク�
     onLinkClick: vi.fn(),
     brokenLinkPaths: new Set(["tasks/dead.md"]),
   });
-  const row = document.querySelector(
-    '[data-testid="links-section-linked-tasks/dead.md"]',
-  );
+  const row = document.querySelector('[data-testid="links-section-linked-0"]');
   expect(row?.getAttribute("data-broken")).toBe("true");
+  expect(row?.getAttribute("data-path")).toBe("tasks/dead.md");
   expect(row?.querySelector('[data-testid="warning-icon"]')).not.toBeNull();
   expect(row?.textContent).toContain("リンク切れ");
 });
@@ -151,7 +150,7 @@ test("リンク切れ path は取消線スタイル (line-through) で表示さ�
     brokenLinkPaths: new Set(["tasks/dead.md"]),
   });
   const struck = document.querySelector(
-    '[data-testid="links-section-linked-broken-tasks/dead.md"]',
+    '[data-testid="links-section-linked-broken-0"]',
   );
   expect(struck?.getAttribute("class")).toContain("line-through");
 });

@@ -636,9 +636,9 @@ test("壊れたリンクは navigate ボタンが描画されず click 不可（
   );
   expect(navigateBtn).toBeNull();
   const brokenRow = container?.querySelector(
-    '[data-testid="links-section-linked-tasks/missing.md"]',
+    '[data-broken="true"][data-path="tasks/missing.md"]',
   );
-  expect(brokenRow?.getAttribute("data-broken")).toBe("true");
+  expect(brokenRow).not.toBeNull();
   // 画面は A のまま
   expect(detailTitleValue()).toBe("A");
 });

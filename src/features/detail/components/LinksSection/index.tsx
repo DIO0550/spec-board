@@ -136,13 +136,14 @@ export const LinksSection = (props: LinksSectionProps) => {
         aria-label="関連リンク先（このタスクから他のタスクへのリンク）"
         className="flex flex-col gap-1 text-sm text-gray-700"
       >
-        {props.task.links.linkedFilePaths.map((p) => {
+        {props.task.links.linkedFilePaths.map((p, i) => {
           const isBroken = props.brokenLinkPaths?.has(p) ?? false;
           if (isBroken) {
             return (
               <li
                 key={p}
-                data-testid={`links-section-linked-${p}`}
+                data-testid={`links-section-linked-${i}`}
+                data-path={p}
                 data-broken="true"
                 className="flex items-center justify-between gap-2"
               >
@@ -150,7 +151,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                   <WarningIcon size={14} />
                   <span className="text-xs text-yellow-700">リンク切れ</span>
                   <span
-                    data-testid={`links-section-linked-broken-${p}`}
+                    data-testid={`links-section-linked-broken-${i}`}
                     className="min-w-0 truncate text-gray-500 line-through"
                   >
                     {p}
@@ -161,7 +162,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                   onClick={() => handleRemoveForward(p)}
                   disabled={isBusyAny}
                   aria-label="リンクを削除"
-                  data-testid={`links-section-linked-remove-${p}`}
+                  data-testid={`links-section-linked-remove-${i}`}
                   className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
                 >
                   ×

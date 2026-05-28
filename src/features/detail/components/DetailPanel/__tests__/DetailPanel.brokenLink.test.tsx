@@ -105,10 +105,9 @@ test("links の broken 要素に WarningIcon が出る (LinksSection 経由)", (
     onAddLink: vi.fn(async () => Result.ok(task)),
     tasksByNormalizedPath: buildTasksByNormalizedPath([task]),
   });
-  const row = document.querySelector(
-    '[data-testid="links-section-linked-tasks/dead.md"]',
-  );
+  const row = document.querySelector('[data-testid="links-section-linked-0"]');
   expect(row?.getAttribute("data-broken")).toBe("true");
+  expect(row?.getAttribute("data-path")).toBe("tasks/dead.md");
   expect(row?.querySelector('[data-testid="warning-icon"]')).not.toBeNull();
 });
 
