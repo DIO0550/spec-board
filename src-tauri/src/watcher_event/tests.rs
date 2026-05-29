@@ -803,6 +803,10 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     handle_event(&FsEvent::Modified(abs_a), &ctx).expect("modify ok");
 
+    let entries = drain_log(&log);
+    assert_eq!(1, entries.len(), "one emit expected");
+    assert_eq!("task-updated", entries[0].0);
+
     let snapshot = state.tasks_snapshot().expect("readable");
     let a = snapshot
         .iter()
@@ -820,13 +824,9 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
         "disk 側で parent が消えた以上、parentCycle warning は維持しない"
     );
 
-    let emitted = &entries(&log)[0].1["task"];
+    let emitted = &entries[0].1["task"];
     assert!(
         emitted.get("parent").is_none_or(|v| v.is_null()),
         "emit payload も parent=None を反映する"
     );
-}
-
-fn entries(log: &EmitLog) -> Vec<(String, Value)> {
-    log.lock().unwrap().clone()
 }
