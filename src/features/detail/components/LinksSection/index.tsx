@@ -210,7 +210,8 @@ export const LinksSection = (props: LinksSectionProps) => {
           if (isBroken) {
             return (
               <li
-                key={p}
+                // biome-ignore lint/suspicious/noArrayIndexKey: reverseLinkedFilePaths は payload 由来の raw 配列で重複を含み得るため、index を含めて React key 衝突を防ぐ
+                key={`${i}-${p}`}
                 data-testid={`links-section-reverse-${i}`}
                 data-path={p}
                 data-broken="true"
