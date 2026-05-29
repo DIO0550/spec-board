@@ -207,7 +207,9 @@ test("同一 loadedPath を再 open (loading 経由) すると Toast が再発�
   await openProjectFlow("/p", payloadWithBroken);
   const toasts =
     container?.querySelectorAll('[data-testid="toast-warning"]') ?? [];
-  // 既存 + 新規 = 2 件（自動 dismiss 前なので両方存在する）
+  // 自動 dismiss のタイミングは setTimeout 制御で揺らぐため厳密な件数は要求せず、
+  // 「再発火後も warning Toast が少なくとも 1 件は存在する」ことだけ検証する。
+  // 直近 toast のメッセージで「再発火」を担保する。
   expect(toasts.length).toBeGreaterThanOrEqual(1);
   const latest = toasts[toasts.length - 1];
   expect(latest.textContent).toContain("リンク切れが 1 件あります");
