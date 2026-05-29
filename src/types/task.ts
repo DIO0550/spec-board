@@ -23,7 +23,8 @@ export type TaskWarningCode =
   | "invalidParentIgnored"
   | "parentNotFound"
   | "nonStringExtraKeyIgnored"
-  | "extraValueNotJsonCompatible";
+  | "extraValueNotJsonCompatible"
+  | "parentCycle";
 
 /** Task 生成時に継続可能な問題として返る warning。 */
 export type TaskWarning = {

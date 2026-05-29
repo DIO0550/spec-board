@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use super::{
     resolve_parent_for_new_task, validate_chain_from_parent, validate_parent_existence,
-    validate_parent_hierarchy, ParentHierarchyErrorReason, Task,
+    validate_parent_hierarchy, ParentHierarchyErrorReason, Task, TaskIndex,
 };
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
 use crate::task::warning::{TaskWarning, TaskWarningCode};
@@ -351,6 +351,279 @@ fn validate_chain_from_parent_edge_20_returns_too_deep() {
     assert_eq!(
         validate_chain_from_parent(0, &tasks),
         Err(ParentHierarchyErrorReason::TooDeep),
+    );
+}
+
+fn task_by_path<'a>(tasks: &'a [Task], path: &str) -> &'a Task {
+    tasks
+        .iter()
+        .find(|t| t.file_path.as_str() == path)
+        .unwrap_or_else(|| panic!("expected task at `{path}` in {:?}", tasks))
+}
+
+fn has_parent_cycle_warning(task: &Task) -> bool {
+    task.warnings.iter().any(|warning| {
+        warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
+    })
+}
+
+#[test]
+fn build_children_with_warnings_keeps_parent_when_no_cycle() {
+    let tasks = vec![
+        task_without_parent("tasks/parent.md"),
+        task_with_parent("tasks/child.md", "tasks/parent.md"),
+    ];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("no cycle, no too-deep");
+    let tasks = index.into_tasks();
+
+    let child = task_by_path(&tasks, "tasks/child.md");
+    assert_eq!(child.parent, Some("tasks/parent.md".into()));
+    assert!(!has_parent_cycle_warning(child));
+    let parent = task_by_path(&tasks, "tasks/parent.md");
+    assert!(!has_parent_cycle_warning(parent));
+    // children も build される
+    assert_eq!(
+        parent.children,
+        vec!["tasks/child.md".to_string()],
+        "non-cycle parent should still gain its child"
+    );
+}
+
+#[test]
+fn build_children_with_warnings_keeps_parent_not_found_warning() {
+    let tasks = vec![task_with_parent("tasks/child.md", "tasks/missing.md")];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("missing parent should not error");
+    let tasks = index.into_tasks();
+
+    let child = task_by_path(&tasks, "tasks/child.md");
+    assert!(child.warnings.iter().any(|warning| {
+        warning.code == TaskWarningCode::ParentNotFound
+            && warning.field.as_deref() == Some("parent")
+    }));
+    // parent_not_found のままで parent は保持されている
+    assert_eq!(child.parent, Some("tasks/missing.md".into()));
+    assert!(!has_parent_cycle_warning(child));
+}
+
+#[test]
+fn build_children_with_warnings_marks_self_loop_as_cycle() {
+    let tasks = vec![task_with_parent("tasks/a.md", "tasks/a.md")];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("self loop should warn, not error");
+    let tasks = index.into_tasks();
+
+    let a = task_by_path(&tasks, "tasks/a.md");
+    assert!(has_parent_cycle_warning(a), "self loop must add warning");
+    assert_eq!(a.parent, None, "self loop must clear parent");
+    assert!(
+        a.children.is_empty(),
+        "self loop should not become its own child"
+    );
+}
+
+#[test]
+fn build_children_with_warnings_marks_two_node_cycle() {
+    let tasks = vec![
+        task_with_parent("tasks/a.md", "tasks/b.md"),
+        task_with_parent("tasks/b.md", "tasks/a.md"),
+    ];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("two-node cycle should warn, not error");
+    let tasks = index.into_tasks();
+
+    let a = task_by_path(&tasks, "tasks/a.md");
+    let b = task_by_path(&tasks, "tasks/b.md");
+    assert!(has_parent_cycle_warning(a));
+    assert!(has_parent_cycle_warning(b));
+    assert_eq!(a.parent, None);
+    assert_eq!(b.parent, None);
+    assert!(a.children.is_empty());
+    assert!(b.children.is_empty());
+}
+
+#[test]
+fn build_children_with_warnings_marks_three_node_cycle() {
+    let tasks = vec![
+        task_with_parent("tasks/a.md", "tasks/b.md"),
+        task_with_parent("tasks/b.md", "tasks/c.md"),
+        task_with_parent("tasks/c.md", "tasks/a.md"),
+    ];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("three-node cycle should warn, not error");
+    let tasks = index.into_tasks();
+
+    for path in ["tasks/a.md", "tasks/b.md", "tasks/c.md"] {
+        let task = task_by_path(&tasks, path);
+        assert!(
+            has_parent_cycle_warning(task),
+            "{path} should have parentCycle warning"
+        );
+        assert_eq!(task.parent, None, "{path} should have parent cleared");
+    }
+}
+
+#[test]
+fn build_children_with_warnings_excludes_tail_from_cycle() {
+    // D は A→B→A の cycle に到達する tail。D 自身は cycle の一部ではない。
+    let tasks = vec![
+        task_with_parent("tasks/d.md", "tasks/a.md"),
+        task_with_parent("tasks/a.md", "tasks/b.md"),
+        task_with_parent("tasks/b.md", "tasks/a.md"),
+    ];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("tail cycle should warn, not error");
+    let tasks = index.into_tasks();
+
+    let a = task_by_path(&tasks, "tasks/a.md");
+    let b = task_by_path(&tasks, "tasks/b.md");
+    let d = task_by_path(&tasks, "tasks/d.md");
+    assert!(has_parent_cycle_warning(a));
+    assert!(has_parent_cycle_warning(b));
+    assert!(
+        !has_parent_cycle_warning(d),
+        "D is only a tail and must not be flagged"
+    );
+    assert_eq!(
+        d.parent,
+        Some("tasks/a.md".into()),
+        "D's parent must be kept"
+    );
+}
+
+#[test]
+fn build_children_with_warnings_detects_separator_variation_cycle() {
+    let tasks = vec![
+        task_with_parent("tasks/a.md", ".\\tasks\\b.md"),
+        task_with_parent("tasks/b.md", "./tasks/a.md"),
+    ];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("separator variation cycle should warn, not error");
+    let tasks = index.into_tasks();
+
+    assert!(has_parent_cycle_warning(task_by_path(&tasks, "tasks/a.md")));
+    assert!(has_parent_cycle_warning(task_by_path(&tasks, "tasks/b.md")));
+}
+
+#[test]
+fn build_children_with_warnings_keeps_existing_warning_when_adding_cycle() {
+    // 循環 task に既存 warning (invalidTitleUsedFileName) を併存させたケース。
+    // タイトル `123` は数値として yaml にパースされて invalidTitleUsedFileName warning を生む。
+    let raw_a = "---\ntitle: 123\nstatus: Todo\nparent: tasks/b.md\n---\n";
+    let raw_b = "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n";
+    let tasks = vec![
+        task_from(raw_a, "tasks/a.md"),
+        task_from(raw_b, "tasks/b.md"),
+    ];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("warning + cycle");
+    let tasks = index.into_tasks();
+
+    let a = task_by_path(&tasks, "tasks/a.md");
+    assert!(
+        a.warnings
+            .iter()
+            .any(|w| w.code == TaskWarningCode::InvalidTitleUsedFileName),
+        "pre-existing warning must be preserved"
+    );
+    assert!(has_parent_cycle_warning(a));
+}
+
+#[test]
+fn build_children_with_warnings_does_not_duplicate_cycle_warning() {
+    let mut task_a = task_with_parent("tasks/a.md", "tasks/b.md");
+    task_a.warnings.push(TaskWarning {
+        code: TaskWarningCode::ParentCycle,
+        field: Some("parent".into()),
+        message: "parent chain forms a cycle".to_string(),
+    });
+    let tasks = vec![task_a, task_with_parent("tasks/b.md", "tasks/a.md")];
+
+    let index = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("duplicate cycle warning should not error");
+    let tasks = index.into_tasks();
+
+    let a = task_by_path(&tasks, "tasks/a.md");
+    let cycle_count = a
+        .warnings
+        .iter()
+        .filter(|w| w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent"))
+        .count();
+    assert_eq!(cycle_count, 1, "parentCycle warning must not be duplicated");
+}
+
+#[test]
+fn build_children_with_warnings_returns_too_deep_for_depth_over_max() {
+    let result = TaskIndex::new(parent_chain_with_edge_count(21)).build_children_with_warnings();
+
+    assert!(matches!(
+        result,
+        Err(TaskParseError::CycleOrTooDeep {
+            file_path,
+            reason: ParentHierarchyErrorReason::TooDeep,
+        }) if file_path == "tasks/0.md"
+    ));
+}
+
+#[test]
+fn build_children_with_warnings_accepts_max_depth() {
+    let index = TaskIndex::new(parent_chain_with_edge_count(20))
+        .build_children_with_warnings()
+        .expect("depth=20 must be accepted");
+    let tasks = index.into_tasks();
+
+    // 全 task が parent 維持・cycle warning なし
+    for task in &tasks {
+        assert!(
+            !has_parent_cycle_warning(task),
+            "{} should not be cyclic",
+            task.file_path.as_str()
+        );
+    }
+}
+
+#[test]
+fn build_children_with_warnings_prefers_too_deep_over_cycle() {
+    // 深さ上限 (>20) を超えるノード列の最後で root へループバックさせる。
+    // walk 中で depth > MAX_PARENT_DEPTH に先にヒットして TooDeep が返るべき。
+    let mut tasks = Vec::new();
+    for index in 0..22 {
+        tasks.push(task_with_parent(
+            &format!("tasks/{index}.md"),
+            &format!("tasks/{}.md", index + 1),
+        ));
+    }
+    // 最後の task を 0 へループバック
+    tasks.push(task_with_parent("tasks/22.md", "tasks/0.md"));
+
+    let result = TaskIndex::new(tasks).build_children_with_warnings();
+    assert!(
+        matches!(
+            result,
+            Err(TaskParseError::CycleOrTooDeep {
+                reason: ParentHierarchyErrorReason::TooDeep,
+                ..
+            })
+        ),
+        "TooDeep must precede cycle detection when depth limit is reached first: {result:?}"
     );
 }
 

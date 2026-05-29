@@ -333,3 +333,41 @@ fn registers_write_ignore_for_write_path() {
         "write_ignore must hold exactly one entry for the source path"
     );
 }
+
+#[test]
+fn remove_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
+    use crate::task::warning::TaskWarningCode;
+
+    let dir = tempdir();
+    let root = dir.path();
+    // A -> B -> A の循環。A には事前に C への link が貼られている。
+    seed_md(
+        root,
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\nlinks:\n  - tasks/c.md\n---\n",
+    );
+    seed_md(
+        root,
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n",
+    );
+    seed_md(root, "tasks/c.md", "---\ntitle: C\nstatus: Todo\n---\n");
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let returned = remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/c.md"))
+        .expect("remove_link should succeed");
+
+    assert!(
+        returned.parent.is_none(),
+        "cycle source must keep parent=None"
+    );
+    assert!(
+        returned
+            .warnings
+            .iter()
+            .any(|w| w.code == TaskWarningCode::ParentCycle),
+        "cycle source must keep parentCycle warning"
+    );
+}

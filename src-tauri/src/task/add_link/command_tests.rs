@@ -225,3 +225,43 @@ fn add_link_registers_write_ignore_then_writes() {
         "write_ignore must hold exactly one entry for the source path"
     );
 }
+
+/// scan で cycle member とマークされた source task に add_link しても、
+/// cache 上の `parent=None` と `parentCycle` warning が崩れないこと。
+#[test]
+fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
+    use crate::task::warning::TaskWarningCode;
+
+    let dir = tempdir();
+    let root = dir.path();
+    // A -> B -> A の循環。さらに link 先となる無関係 task C を用意。
+    seed_md(
+        root,
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n",
+    );
+    seed_md(
+        root,
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n",
+    );
+    seed_md(root, "tasks/c.md", "---\ntitle: C\nstatus: Todo\n---\n");
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let returned = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/c.md"))
+        .expect("add_link should succeed");
+
+    assert!(
+        returned.parent.is_none(),
+        "cycle source must keep parent=None"
+    );
+    assert!(
+        returned
+            .warnings
+            .iter()
+            .any(|w| w.code == TaskWarningCode::ParentCycle),
+        "cycle source must keep parentCycle warning"
+    );
+}
