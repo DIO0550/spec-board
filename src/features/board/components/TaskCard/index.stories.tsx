@@ -34,6 +34,10 @@ export const Dragging: Story = {
   args: { isDragging: true },
 };
 
+export const WithBrokenLink: Story = {
+  args: { hasBrokenLink: true },
+};
+
 export const Draggable: Story = {
   args: {
     onDragStart: fn(),

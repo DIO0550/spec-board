@@ -27,7 +27,7 @@ export const parentReferencesTaskPath = (
     return true;
   }
 
-  const parentLookupPath = normalizeParentPathForLookup(parent);
+  const parentLookupPath = normalizeRefPathForLookup(parent);
   if (parentLookupPath === undefined) {
     return false;
   }
@@ -50,7 +50,7 @@ export const linkReferencesTaskPath = (
   if (link === filePath) {
     return true;
   }
-  const linkLookupPath = normalizeParentPathForLookup(link);
+  const linkLookupPath = normalizeRefPathForLookup(link);
   if (linkLookupPath === undefined) {
     return false;
   }
@@ -58,19 +58,20 @@ export const linkReferencesTaskPath = (
 };
 
 /**
- * parent 参照を lookup 用に正規化する。絶対 path / Windows drive prefix は対象外として undefined を返す。
- * @param parent Task.hierarchy.parentFilePath
+ * 参照 path（parent / links / children / reverseLinks 要素）を lookup 用に正規化する。
+ * 空文字 / 絶対 path / Windows drive prefix は「参照対象外」として undefined を返す。
+ * @param ref 参照 path 文字列
  * @returns 正規化済み path、対象外なら undefined
  */
-const normalizeParentPathForLookup = (parent: string): string | undefined => {
-  if (parent === "" || parent.startsWith("/") || parent.startsWith("\\")) {
+export const normalizeRefPathForLookup = (ref: string): string | undefined => {
+  if (ref === "" || ref.startsWith("/") || ref.startsWith("\\")) {
     return undefined;
   }
-  if (WINDOWS_DRIVE_PREFIX_PATTERN.test(parent)) {
+  if (WINDOWS_DRIVE_PREFIX_PATTERN.test(ref)) {
     return undefined;
   }
 
-  const pathText = parent.replace(/\\/g, "/");
+  const pathText = ref.replace(/\\/g, "/");
   const normalized = normalizePathParts(pathText, false);
   if (normalized === "") {
     return undefined;

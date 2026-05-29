@@ -169,9 +169,10 @@ test("DetailPanel に onSelectTask を渡すと LinksSection links 行 click で
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/linked.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   expect(btn).toBeTruthy();
+  expect(btn.getAttribute("data-path")).toBe("tasks/linked.md");
   await act(async () => {
     btn.click();
   });
@@ -198,9 +199,10 @@ test("DetailPanel に onSelectTask を渡すと LinksSection reverse 行 click �
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-reverse-navigate-tasks/other.md"]',
+    '[data-testid="links-section-reverse-navigate-0"]',
   ) as HTMLButtonElement;
   expect(btn).toBeTruthy();
+  expect(btn.getAttribute("data-path")).toBe("tasks/other.md");
   await act(async () => {
     btn.click();
   });
@@ -225,10 +227,10 @@ test("DetailPanel に onSelectTask を渡さない場合、LinksSection の navi
   });
 
   const forwardBtn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   const reverseBtn = document.querySelector(
-    '[data-testid="links-section-reverse-navigate-tasks/r.md"]',
+    '[data-testid="links-section-reverse-navigate-0"]',
   ) as HTMLButtonElement;
   expect(forwardBtn.disabled).toBe(true);
   expect(reverseBtn.disabled).toBe(true);

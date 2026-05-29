@@ -583,8 +583,10 @@ const clickTaskCardByTitle = async (title: string): Promise<void> => {
 };
 
 const clickLinkedNavigate = async (filePath: string): Promise<void> => {
+  // 各 linked 行は raw path を testid に埋め込まず data-path 属性で保持するため、
+  // path 由来の selector エスケープ問題を避けるためにここで lookup する。
   const btn = container?.querySelector<HTMLButtonElement>(
-    `[data-testid="links-section-linked-navigate-${filePath}"]`,
+    `button[data-path="${filePath}"][data-testid^="links-section-linked-navigate-"]`,
   );
   assert(btn != null, `linked-navigate ${filePath} ボタンが見つからない`);
   await act(async () => {
@@ -594,7 +596,7 @@ const clickLinkedNavigate = async (filePath: string): Promise<void> => {
 
 const clickReverseNavigate = async (filePath: string): Promise<void> => {
   const btn = container?.querySelector<HTMLButtonElement>(
-    `[data-testid="links-section-reverse-navigate-${filePath}"]`,
+    `button[data-path="${filePath}"][data-testid^="links-section-reverse-navigate-"]`,
   );
   assert(btn != null, `reverse-navigate ${filePath} ボタンが見つからない`);
   await act(async () => {
@@ -626,17 +628,21 @@ test("DetailPanel の reverseLinks 行クリックでも in-place 切替され�
   expect(detailTitleValue()).toBe("A");
 });
 
-test("壊れたリンクの行クリックは no-op（selectedTaskId 不変、announce なし）", async () => {
+test("壊れたリンクは navigate ボタンが描画されず click 不可（broken 行のみ表示）", async () => {
   mountApp();
   await openLinkedTasksProject({ withBrokenLink: true });
   await clickTaskCardByTitle("A");
 
-  const beforeText = liveRegionText();
-  await clickLinkedNavigate("tasks/missing.md");
-
-  // 画面は A のまま、LiveRegion も変化なし
+  const navigateBtn = container?.querySelector(
+    'button[data-path="tasks/missing.md"][data-testid^="links-section-linked-navigate-"]',
+  );
+  expect(navigateBtn).toBeNull();
+  const brokenRow = container?.querySelector(
+    '[data-broken="true"][data-path="tasks/missing.md"]',
+  );
+  expect(brokenRow).not.toBeNull();
+  // 画面は A のまま
   expect(detailTitleValue()).toBe("A");
-  expect(liveRegionText()).toBe(beforeText);
 });
 
 test("自タスクを指す links 行クリックでは selectedTaskId 不変、LiveRegion は再アナウンスされる", async () => {

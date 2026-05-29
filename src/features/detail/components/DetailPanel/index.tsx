@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EditableText } from "@/components/EditableText";
+import { getBrokenLinks } from "@/domains/broken-link";
 import type { Priority } from "@/domains/priority";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
@@ -12,6 +13,7 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { Result as ResultDomain } from "@/utils/result";
+import { BrokenParentRow } from "../BrokenParentRow";
 import { CycleWarningBanner } from "../CycleWarningBanner";
 import { LabelEditor } from "../LabelEditor";
 import { LinksSection } from "../LinksSection";
@@ -94,6 +96,12 @@ type DetailPanelProps = {
     sourceFilePath: string,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
+  /**
+   * 「正規化済み Task.filePath → Task」の lookup Map。
+   * 渡された場合のみ broken link 判定を行い、parent / links / children / reverseLinks の
+   * 4 箇所にリンク切れ警告を表示する。未指定時は警告 UI を出さない（後方互換）。
+   */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
 };
 
 /**
@@ -113,6 +121,7 @@ export const DetailPanel = ({
   onSelectTask,
   onAddLink,
   onRemoveLink,
+  tasksByNormalizedPath,
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
@@ -126,6 +135,11 @@ export const DetailPanel = ({
   const { parentTask } = useParentTask({ task, allTasks });
 
   const labels = useDetailLabels({ task, onTaskUpdate });
+
+  const brokenLinks = useMemo(
+    () => getBrokenLinks(task, tasksByNormalizedPath),
+    [task, tasksByNormalizedPath],
+  );
 
   const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
 
@@ -203,6 +217,13 @@ export const DetailPanel = ({
             {parentTask && onSelectTask && (
               <ParentLink parentTask={parentTask} onSelect={onSelectTask} />
             )}
+            {!parentTask &&
+              brokenLinks.parent &&
+              task.hierarchy.parentFilePath !== undefined && (
+                <BrokenParentRow
+                  parentFilePath={task.hierarchy.parentFilePath}
+                />
+              )}
             <EditableText
               key={task.id}
               value={task.title || task.filePath}
@@ -257,6 +278,7 @@ export const DetailPanel = ({
                 doneColumn={effectiveDoneColumn}
                 onAddSubIssue={onAddSubIssue}
                 onChildClick={onSelectTask}
+                brokenChildPaths={brokenLinks.children}
               />
             )}
             {onAddLink !== undefined && allTasks !== undefined && (
@@ -273,6 +295,8 @@ export const DetailPanel = ({
                 onAddLink={onAddLink}
                 onRemoveLink={onRemoveLink ?? noopRemoveLink}
                 onLinkClick={onSelectTask}
+                brokenLinkPaths={brokenLinks.links}
+                brokenReverseLinkPaths={brokenLinks.reverseLinks}
               />
             )}
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}

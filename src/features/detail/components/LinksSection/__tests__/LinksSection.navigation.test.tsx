@@ -64,9 +64,10 @@ test("forward 行 button クリックで onLinkClick(filePath) が呼ばれる",
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   expect(btn).toBeTruthy();
+  expect(btn.getAttribute("data-path")).toBe("tasks/a.md");
   await act(async () => {
     btn.click();
   });
@@ -91,9 +92,10 @@ test("reverse 行 button クリックで onLinkClick(filePath) が呼ばれる",
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-reverse-navigate-tasks/r.md"]',
+    '[data-testid="links-section-reverse-navigate-0"]',
   ) as HTMLButtonElement;
   expect(btn).toBeTruthy();
+  expect(btn.getAttribute("data-path")).toBe("tasks/r.md");
   await act(async () => {
     btn.click();
   });
@@ -118,10 +120,10 @@ test("複数 forward links がある場合、それぞれの navigate button が
   });
 
   const btnA = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   const btnB = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/b.md"]',
+    '[data-testid="links-section-linked-navigate-1"]',
   ) as HTMLButtonElement;
   await act(async () => {
     btnA.click();
@@ -150,25 +152,21 @@ test("forward 行は navigate button と × button の 2 つを持ち、reverse 
   });
 
   expect(
-    document.querySelector(
-      '[data-testid="links-section-linked-navigate-tasks/a.md"]',
-    ),
+    document.querySelector('[data-testid="links-section-linked-navigate-0"]'),
   ).toBeTruthy();
   expect(
-    document.querySelector(
-      '[data-testid="links-section-linked-remove-tasks/a.md"]',
-    ),
+    document.querySelector('[data-testid="links-section-linked-remove-0"]'),
   ).toBeTruthy();
 
   expect(
-    document.querySelector(
-      '[data-testid="links-section-reverse-navigate-tasks/r.md"]',
-    ),
+    document.querySelector('[data-testid="links-section-reverse-navigate-0"]'),
   ).toBeTruthy();
+  // reverse 行には × 削除ボタンが存在しない
+  const reverseRow = document.querySelector(
+    '[data-testid="links-section-reverse-0"]',
+  );
   expect(
-    document.querySelector(
-      '[data-testid="links-section-reverse-remove-tasks/r.md"]',
-    ),
+    reverseRow?.querySelector('button[aria-label="リンクを削除"]'),
   ).toBeNull();
 });
 
@@ -218,10 +216,10 @@ test("同一 ID が linked と reverse 両方にある場合、両方の行が�
   });
 
   const forwardBtn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/dup.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   const reverseBtn = document.querySelector(
-    '[data-testid="links-section-reverse-navigate-tasks/dup.md"]',
+    '[data-testid="links-section-reverse-navigate-0"]',
   ) as HTMLButtonElement;
   expect(forwardBtn).toBeTruthy();
   expect(reverseBtn).toBeTruthy();
@@ -253,10 +251,10 @@ test("onLinkClick 未指定時、navigate button は disabled になり click �
   });
 
   const forwardBtn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   const reverseBtn = document.querySelector(
-    '[data-testid="links-section-reverse-navigate-tasks/r.md"]',
+    '[data-testid="links-section-reverse-navigate-0"]',
   ) as HTMLButtonElement;
   expect(forwardBtn.disabled).toBe(true);
   expect(reverseBtn.disabled).toBe(true);
@@ -294,9 +292,10 @@ test("forward 行の link path に表記揺れ（./prefix）があっても cano
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-./tasks/target.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   expect(btn).toBeTruthy();
+  expect(btn.getAttribute("data-path")).toBe("./tasks/target.md");
   await act(async () => {
     btn.click();
   });
@@ -321,7 +320,7 @@ test("壊れたリンク（target が allTasks に居ない）クリックでは
   });
 
   const btn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/missing.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   await act(async () => {
     btn.click();
@@ -355,7 +354,7 @@ test("forward × クリック直後の busy 状態でも navigate button は dis
   });
 
   const removeBtn = document.querySelector(
-    '[data-testid="links-section-linked-remove-tasks/a.md"]',
+    '[data-testid="links-section-linked-remove-0"]',
   ) as HTMLButtonElement;
   act(() => {
     removeBtn.click();
@@ -364,11 +363,11 @@ test("forward × クリック直後の busy 状態でも navigate button は dis
   // busy 中: × button は disabled だが navigate button は有効
   expect(removeBtn.disabled).toBe(true);
   const navBtn = document.querySelector(
-    '[data-testid="links-section-linked-navigate-tasks/a.md"]',
+    '[data-testid="links-section-linked-navigate-0"]',
   ) as HTMLButtonElement;
   expect(navBtn.disabled).toBe(false);
   const reverseNavBtn = document.querySelector(
-    '[data-testid="links-section-reverse-navigate-tasks/r.md"]',
+    '[data-testid="links-section-reverse-navigate-0"]',
   ) as HTMLButtonElement;
   expect(reverseNavBtn.disabled).toBe(false);
 

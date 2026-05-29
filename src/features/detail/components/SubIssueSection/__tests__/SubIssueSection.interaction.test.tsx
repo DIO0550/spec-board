@@ -108,9 +108,15 @@ test("「+ サブIssue 追加」ボタンで親のファイルパスが渡され
 
 test("子タスククリックで onChildClick が呼ばれる", () => {
   const onChildClick = vi.fn();
-  const c1 = makeTask({ id: "c1", title: "子1" });
+  const c1 = makeTask({ id: "c1", title: "子1", filePath: "tasks/c1.md" });
+  const parent = makeTask({
+    id: "p-1",
+    title: "親タスク",
+    filePath: "tasks/parent.md",
+    children: ["tasks/c1.md"],
+  });
   render({
-    parentTask: PARENT,
+    parentTask: parent,
     childTasks: [c1],
     descendantTasks: [c1],
     doneColumn: "Done",
@@ -127,9 +133,15 @@ test("子タスククリックで onChildClick が呼ばれる", () => {
 });
 
 test("onChildClick が未指定なら子タスクのボタンは無効化される", () => {
-  const c1 = makeTask({ id: "c1", title: "子1" });
+  const c1 = makeTask({ id: "c1", title: "子1", filePath: "tasks/c1.md" });
+  const parent = makeTask({
+    id: "p-1",
+    title: "親タスク",
+    filePath: "tasks/parent.md",
+    children: ["tasks/c1.md"],
+  });
   render({
-    parentTask: PARENT,
+    parentTask: parent,
     childTasks: [c1],
     descendantTasks: [c1],
     doneColumn: "Done",
@@ -142,15 +154,30 @@ test("onChildClick が未指定なら子タスクのボタンは無効化され�
 });
 
 test("descendantTasks=5件(done=3)、childTasks=2件: 進捗バー aria-valuenow=60、サマリ 3/5、<li> 2 件", () => {
+  const c1 = makeTask({
+    id: "c1",
+    title: "子1",
+    status: "Done",
+    filePath: "tasks/c1.md",
+  });
+  const c2 = makeTask({
+    id: "c2",
+    title: "子2",
+    status: "Todo",
+    filePath: "tasks/c2.md",
+  });
+  const parent = makeTask({
+    id: "p-1",
+    title: "親タスク",
+    filePath: "tasks/parent.md",
+    children: ["tasks/c1.md", "tasks/c2.md"],
+  });
   render({
-    parentTask: PARENT,
-    childTasks: [
-      makeTask({ id: "c1", title: "子1", status: "Done" }),
-      makeTask({ id: "c2", title: "子2", status: "Todo" }),
-    ],
+    parentTask: parent,
+    childTasks: [c1, c2],
     descendantTasks: [
-      makeTask({ id: "c1", status: "Done" }),
-      makeTask({ id: "c2", status: "Todo" }),
+      c1,
+      c2,
       makeTask({ id: "g1", status: "Done" }),
       makeTask({ id: "g2", status: "Done" }),
       makeTask({ id: "g3", status: "Todo" }),

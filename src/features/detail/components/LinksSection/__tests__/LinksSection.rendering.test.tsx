@@ -63,16 +63,14 @@ test("linkedFilePaths が一覧表示される", () => {
     onLinkClick: vi.fn(),
   });
 
-  expect(
-    document.querySelector(
-      '[data-testid="links-section-linked-tasks/linked-1.md"]',
-    ),
-  ).toBeTruthy();
-  expect(
-    document.querySelector(
-      '[data-testid="links-section-linked-tasks/linked-2.md"]',
-    ),
-  ).toBeTruthy();
+  const linkedRow1 = document.querySelector(
+    '[data-testid="links-section-linked-0"]',
+  );
+  expect(linkedRow1?.getAttribute("data-path")).toBe("tasks/linked-1.md");
+  const linkedRow2 = document.querySelector(
+    '[data-testid="links-section-linked-1"]',
+  );
+  expect(linkedRow2?.getAttribute("data-path")).toBe("tasks/linked-2.md");
 });
 
 test("reverseLinkedFilePaths が区別された testid で表示される", () => {
@@ -90,11 +88,10 @@ test("reverseLinkedFilePaths が区別された testid で表示される", () =
     onLinkClick: vi.fn(),
   });
 
-  expect(
-    document.querySelector(
-      '[data-testid="links-section-reverse-tasks/r-1.md"]',
-    ),
-  ).toBeTruthy();
+  const reverseRow = document.querySelector(
+    '[data-testid="links-section-reverse-0"]',
+  );
+  expect(reverseRow?.getAttribute("data-path")).toBe("tasks/r-1.md");
 });
 
 test("reverse 行に × 削除ボタンが存在しない", () => {
@@ -112,10 +109,12 @@ test("reverse 行に × 削除ボタンが存在しない", () => {
     onLinkClick: vi.fn(),
   });
 
+  // reverse 行には × 削除ボタンが存在しない（aria-label="リンクを削除"）
+  const reverseRow = document.querySelector(
+    '[data-testid="links-section-reverse-0"]',
+  );
   expect(
-    document.querySelector(
-      '[data-testid="links-section-reverse-remove-tasks/r-1.md"]',
-    ),
+    reverseRow?.querySelector('button[aria-label="リンクを削除"]'),
   ).toBeNull();
 });
 
