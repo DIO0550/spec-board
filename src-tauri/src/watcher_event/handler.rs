@@ -19,6 +19,7 @@ use serde_json::json;
 
 use crate::task::parse::{normalized_task_file_path, task_from_markdown, TaskParseContext};
 use crate::task::task_file_path::TaskFilePath;
+use crate::task::warning::{ensure_parent_cycle_warning, has_parent_cycle_warning};
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::FsEvent;
 
@@ -179,16 +180,31 @@ fn handle_upsert(
         }
     };
     let cache_key = PathBuf::from(task.file_path.as_str());
-    let event_name = ctx.state.with_tasks_cache_mut(|cache| {
+    let (event_name, emitted_task) = ctx.state.with_tasks_cache_mut(|cache| {
         let event = match mode {
             UpsertMode::Auto if cache.contains_key(&cache_key) => "task-updated",
             UpsertMode::Auto => "task-created",
             UpsertMode::ForceCreated => "task-created",
         };
-        cache.insert(cache_key, task.clone());
-        event
+        // 直前まで cycle member として正規化されていた task は、disk 由来の raw
+        // `parent:` で warning とバナーを失わせないよう、parent=None と
+        // parentCycle warning を引き継ぐ。
+        // ただし新しい parsed task の parent が None の場合は、ユーザーが外部編集で
+        // 親参照を消して循環を解消したとみなし、preserve せず disk の状態をそのまま
+        // 反映する。新規 cycle の検出はフル再 scan に委ねる。
+        let was_cycle_member = cache
+            .get(&cache_key)
+            .map(|prev| has_parent_cycle_warning(&prev.warnings))
+            .unwrap_or(false);
+        let mut next = task;
+        if was_cycle_member && next.parent.is_some() {
+            next.parent = None;
+            ensure_parent_cycle_warning(&mut next.warnings);
+        }
+        cache.insert(cache_key, next.clone());
+        (event, next)
     })?;
-    (ctx.emit)(event_name, json!({ "task": task }));
+    (ctx.emit)(event_name, json!({ "task": emitted_task }));
     Ok(())
 }
 

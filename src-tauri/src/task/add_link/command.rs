@@ -15,6 +15,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::task_index::{
     find_task_by_normalized, find_task_mut_by_normalized, AddLinkOutcome, Task, TaskIndex,
 };
+use crate::task::warning::has_parent_cycle_warning;
 
 /// `add_link` Tauri command 薄層。
 #[tauri::command]
@@ -145,16 +146,29 @@ fn commit_cache(
             // 派生 warning も再生成しない。add_link は parent / title / status /
             // labels / extras を一切変更せず links のみ追加するため、warnings は
             // 既存値をそのまま保持すれば正しい状態が維持される。
+            //
+            // parent は通常は `updated_task` 側（disk と一致した値）を採用するが、
+            // 既存 cache が ParentCycle warning を持つ場合に限り cache 側の
+            // `parent=None` を維持する。これは scan で循環判定されたノードの
+            // cycle 状態を link 追加程度の操作で崩さないため。ファイル本体が
+            // 外部編集で変わった場合は watcher 再 scan で再判定される。
             let source_entry = cache
                 .get_mut(&source_key)
                 .expect("source presence verified above");
+            let was_cycle_member = has_parent_cycle_warning(&source_entry.warnings);
             let preserved_children = std::mem::take(&mut source_entry.children);
             let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
             let preserved_warnings = std::mem::take(&mut source_entry.warnings);
+            let preserved_parent = if was_cycle_member {
+                source_entry.parent.take()
+            } else {
+                updated.parent.clone()
+            };
             *source_entry = Task {
                 children: preserved_children,
                 reverse_links: preserved_reverse,
                 warnings: preserved_warnings,
+                parent: preserved_parent,
                 ..updated.clone()
             };
             let returned_task = source_entry.clone();

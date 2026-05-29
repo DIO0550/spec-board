@@ -200,7 +200,7 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     let tasks = collect_tasks(root, &md_paths, &default_status);
 
     let tasks = TaskIndex::new(tasks)
-        .build_children()
+        .build_children_with_warnings()
         .map_err(map_hierarchy_error)?
         .build_reverse_links()
         .into_tasks();
