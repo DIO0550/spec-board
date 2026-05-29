@@ -17,7 +17,7 @@ export type BrokenLinkSet = {
   readonly reverseLinks: ReadonlySet<string>;
 };
 
-/** 4 種いずれも broken なしを意味する frozen な empty BrokenLinkSet。`undefined` map 時の戻り値で再利用する。 */
+/** 4 種いずれも broken なしを意味する empty `BrokenLinkSet`。`undefined` map 時の戻り値として共有する（実体は通常の `Set` で freeze はされていないが、呼出元は読み取りのみで使う前提）。 */
 const EMPTY_BROKEN_LINK_SET: BrokenLinkSet = {
   parent: false,
   links: new Set<string>(),
