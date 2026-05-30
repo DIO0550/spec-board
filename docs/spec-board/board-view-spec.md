@@ -99,8 +99,17 @@ stateDiagram-v2
 |:------------|:---------|:---------|:----------------|
 | ディレクトリ読み込み失敗 | 指定ディレクトリが存在しない、またはアクセス権限がない | トースト通知 | 別のディレクトリを選択 |
 | mdファイルパースエラー | フロントマターの形式が不正 | トースト通知 + 該当カードにエラーアイコン表示 | mdファイルを手動修正 |
-| ファイル書き込み失敗 | ディスク容量不足、権限エラー | トースト通知 | ファイルシステムの状態を確認 |
+| ファイル書き込み失敗 | ディスク容量不足、権限エラー | トースト通知（書き込み系コマンドは下記の一元化対象） | ファイルシステムの状態を確認 |
 | リンク切れ (プロジェクトロード時) | 開いたプロジェクトに `parent` / `links` / `children` / `reverseLinks` のいずれかが解決できないタスクが N >= 1 件含まれる | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「リンク切れが N 件あります」を 1 回表示。同一 `loadedPath` 内では再発火しない（別 project に切替後、N >= 1 なら再度 1 回発火する） | 詳細パネルで該当 path を確認し、リンクを削除するか参照先ファイルを作成。詳細は [task-card-spec.md](./task-card-spec.md) の「エラー表示」セクション参照 |
+
+### 書き込み失敗トーストの一元化
+
+書き込み（ミューテーション）系コマンドの失敗トーストは、各ハンドラではなく IPC ラッパ層（`invokeWrapped`）に集約して発火する。これにより失敗通知の source of truth を一本化し、握り潰し・通知の不統一・二重通知を防ぐ。
+
+- **共通トースト対象（allowlist）**: `create_task` / `update_task` / `delete_task` / `add_link` / `remove_link` / `update_columns` の失敗。`invokeWrapped` が「&lt;操作&gt;に失敗しました: &lt;詳細&gt;」を 1 件発火する。操作ラベルはコマンド単位で決まる（例: `update_columns` 由来はカラムの追加 / 改名 / 削除 / 並び替えのいずれでも「カラムの更新に失敗しました」に統一される）。`HAS_CHILDREN` 詳細は「子タスクが存在するため削除できません」に翻訳する。
+- **App 側の重複抑止**: App 各ハンドラは、失敗が allowlist 由来（= `invokeWrapped` が通知済み）のときだけ自前の失敗トーストを抑止する。判定は起点コマンド名を保持する `TauriError.command` に基づく。
+- **サイレント化させないもの（App 側が従来どおり通知）**: allowlist 外の tauri 失敗（`open_project` / 同一カラム `update_card_order` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
+- **成功トースト・partial-move 専用文・LiveRegion アナウンス**は本一元化の影響を受けず従来どおり表示する。`update_card_order` は意図的に allowlist 外とし、partial-move 区別を保つ。
 
 ## アクセシビリティ
 
@@ -140,7 +149,7 @@ stateDiagram-v2
 
 - ESC キー押下: ブラウザが `dragend` を発火し、自動で IDLE 状態へ復帰
 - Drag 直後の synthetic click: `dragGuardRef` で次の macrotask まで `onClick` を抑止し、誤って詳細パネルが開かないようにする
-- IPC 失敗（generic）: `update_task` 失敗 / 同一カラム内の `update_card_order` 失敗時は「タスクの移動に失敗しました: &lt;原因&gt;」トーストを表示。dragState は finally で必ず null に戻す
+- IPC 失敗（generic）: カラム間移動の `update_task` 失敗時は書き込み失敗通知の一元化により「タスクの更新に失敗しました: &lt;原因&gt;」トーストを表示する（`update_task` は共通トースト対象コマンドのため `invokeWrapped` 層が発火し、App 側の汎用「タスクの移動に失敗しました」は二重通知回避のため抑止される）。同一カラム内の `update_card_order` 失敗は共通トースト対象外のため、従来どおり App 側が「タスクの移動に失敗しました: &lt;原因&gt;」を表示する。dragState は finally で必ず null に戻す
 - IPC 部分失敗（partial-move）: カラム間移動で `update_task` 成功 + `update_card_order` 失敗のときは、カラム移動だけは完了しているため「カラムの移動は完了しましたが、並び順の保存に失敗しました。手動で並び替えてください。」と区別して表示する
 - stale state: queue 実行時に対象タスクが見つからない / `fromColumn` と `status` が乖離 / `toColumn` が消滅した場合は `invalid-state` で抜ける
 
@@ -151,7 +160,7 @@ stateDiagram-v2
 | イベント | LiveRegion アナウンス | エラー toast |
 |:--|:--|:--|
 | カラム間移動成功 | 「『タイトル』を『toColumn』に移動しました」 | なし |
-| カラム間移動失敗（`updateTask` reject、フル rollback 後） | 「『タイトル』を『toColumn』に移動しました」→「『タイトル』の移動を取り消しました」 | 「タスクの移動に失敗しました: ...」 |
+| カラム間移動失敗（`updateTask` reject、フル rollback 後） | 「『タイトル』を『toColumn』に移動しました」→「『タイトル』の移動を取り消しました」 | 「タスクの更新に失敗しました: ...」（`update_task` 共通トーストを `invokeWrapped` 層が発火。App 汎用「移動に失敗」は抑止） |
 | partial-move（status 確定 + cardOrder のみ補正） | 「『タイトル』を『toColumn』に移動しました」のみ（status は永続化済みのため取消アナウンスは流さない） | partial-move 用エラー toast |
 | 同一カラム並び替え（成功 / 失敗いずれも） | なし（`onOptimisticApplied` はカラム間 status 変更時のみ呼ぶ契約） | 失敗時のみ「タスクの移動に失敗しました: ...」 |
 | 楽観 dispatch 前 invalid-state（preflight 失敗: target 消失 / status 乖離 / toColumn 消失 / 開始前 version 切替） | なし（楽観 dispatch も `onOptimisticApplied` も発火しない） | `invalid-state` メッセージ |
