@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task, TaskWarning, TaskWarningCode } from "@/types/task";
 
 type TaskFixtureOverrides = Partial<Omit<Task, "links" | "hierarchy">> &
   Pick<Task, "id"> & {
@@ -31,4 +31,14 @@ export const makeTask = (overrides: TaskFixtureOverrides): Task => ({
     parentFilePath: overrides.parent,
     childFilePaths: overrides.children ?? [],
   },
+});
+
+/**
+ * テスト用に単一 warning code を持つ `TaskWarning` を生成するファクトリ。
+ * @param code warning code
+ * @returns 当該 code のダミー `TaskWarning`
+ */
+export const warn = (code: TaskWarningCode): TaskWarning => ({
+  code,
+  message: `dummy message for ${code}`,
 });

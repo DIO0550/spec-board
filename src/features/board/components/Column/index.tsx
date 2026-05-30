@@ -9,6 +9,7 @@ import {
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { hasAnyBrokenLink } from "@/domains/broken-link";
+import { hasParseError } from "@/domains/parse-error";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { Task } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
@@ -394,6 +395,7 @@ export const Column = ({
                     tasksByNormalizedPath !== undefined &&
                     hasAnyBrokenLink(task, tasksByNormalizedPath)
                   }
+                  hasParseError={hasParseError(task)}
                   onClick={onTaskClick}
                   onDragStart={onTaskDragStart}
                   onDragEnd={onTaskDragEnd}

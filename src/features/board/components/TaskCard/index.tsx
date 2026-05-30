@@ -1,5 +1,6 @@
 import type { DragEvent } from "react";
 import { useRef } from "react";
+import { ParseErrorIcon } from "@/components/ParseErrorIcon";
 import { WarningIcon } from "@/components/WarningIcon";
 import type { Task } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../Board/dragState";
@@ -27,6 +28,11 @@ type TaskCardProps = {
    */
   hasBrokenLink?: boolean;
   /**
+   * 1 件でもパースエラー警告（invalid 系コード）を持つかどうか。
+   * true のときカード隅に赤いパースエラーアイコンを表示する（リンク切れアイコンと併存可）。
+   */
+  hasParseError?: boolean;
+  /**
    * カードクリック時のコールバック
    * @param taskId - クリックされたタスクのID
    */
@@ -52,12 +58,14 @@ const CardContent = ({
   descendantTasks,
   doneColumn = "Done",
   hasBrokenLink = false,
+  hasParseError = false,
 }: {
   task: Task;
   childTasks?: readonly Task[];
   descendantTasks?: readonly Task[];
   doneColumn?: string;
   hasBrokenLink?: boolean;
+  hasParseError?: boolean;
 }) => {
   // descendantTasks 未指定の呼出元では childTasks にフォールバック（直下子のみで集計）。
   // 本 PR 以前の振る舞いと同等になり、新規呼出元（Column）が descendantTasks を渡したときだけ
@@ -72,9 +80,10 @@ const CardContent = ({
         <p data-testid="task-card-title" className="text-sm text-gray-800">
           {displayTitle}
         </p>
-        {hasBrokenLink && (
-          <span className="ml-auto shrink-0">
-            <WarningIcon size={14} />
+        {(hasBrokenLink || hasParseError) && (
+          <span className="ml-auto flex shrink-0 gap-1">
+            {hasBrokenLink && <WarningIcon size={14} />}
+            {hasParseError && <ParseErrorIcon size={14} />}
           </span>
         )}
       </div>
@@ -107,6 +116,7 @@ export const TaskCard = ({
   fromColumn,
   isDragging = false,
   hasBrokenLink = false,
+  hasParseError = false,
   onClick,
   onDragStart,
   onDragEnd,
@@ -148,6 +158,7 @@ export const TaskCard = ({
           descendantTasks={descendantTasks}
           doneColumn={doneColumn}
           hasBrokenLink={hasBrokenLink}
+          hasParseError={hasParseError}
         />
       </div>
     );
@@ -187,6 +198,7 @@ export const TaskCard = ({
         descendantTasks={descendantTasks}
         doneColumn={doneColumn}
         hasBrokenLink={hasBrokenLink}
+        hasParseError={hasParseError}
       />
     </div>
   );
