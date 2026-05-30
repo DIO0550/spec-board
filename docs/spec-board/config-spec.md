@@ -15,6 +15,7 @@ project-root/
 │   ├── config.json                          # プロジェクト設定（カラム・カード順序など）
 │   ├── config.json.bak                      # 古い version の config を読み込んだ際のマイグレーション前バックアップ（後述「マイグレーション」節）
 │   ├── config.json.bak.tmp.{pid}.{nanos}.{counter}  # backup 書き出し中の一時ファイル（rename で `.bak` に昇格／load 冒頭に閾値超過の orphan は cleanup）
+│   ├── labels.yml                           # ラベルマスタ定義（説明・グループ・色などのメタ情報。後述「labels.yml スキーマ」節）
 │   └── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
 └── tasks/
     └── ...
@@ -73,6 +74,58 @@ project-root/
 
 - サブIssue進捗バーにおける「完了」の判定基準となるカラム
 - 未設定の場合は `columns` の最後のカラムをデフォルトとして使用
+
+## labels.yml スキーマ
+
+タスク frontmatter の `labels`（自由文字列の配列）に対し、説明・グループ・色などのメタ情報を一元管理する「ラベルマスタ定義ファイル」を `.spec-board/labels.yml` に置く。`config.json` とは別ファイルで管理し、トップレベルの `labels:` キー配下に定義の配列を並べる。
+
+```yaml
+# .spec-board/labels.yml
+labels:
+  - name: bug
+    description: バグ報告
+    group: type
+    color: "#D73A4A"        # 必ずクォートする（unquoted な #... は YAML コメント扱いになる）
+    updated: "2026-05-30T12:00:00Z"
+  - name: enhancement       # name のみ（他フィールドは任意・省略可）
+```
+
+### フィールド定義
+
+| フィールド | 型 | 必須 | デフォルト | 説明 |
+|:----------|:---|:-----|:----------|:-----|
+| labels | `LabelDefinition[]` | いいえ | `[]` | ラベル定義の配列。トップレベルキー欠落 / `null` / 空配列はいずれも空レジストリ（= 全ラベル暗黙扱い）に正規化される |
+| labels[].name | `string` | はい | - | ラベル識別子。完全一致・未正規化（trim / 大文字小文字統一なし）。空文字 `""` は不可 |
+| labels[].description | `string` | いいえ | なし | ラベルの説明文 |
+| labels[].group | `string` | いいえ | なし | UI 上のグルーピングに使うグループ名（グルーピングの表示は表示層の責務） |
+| labels[].color | `string` | いいえ | なし（既定色） | `#RRGGBB` 形式の色。不正形式は lenient に「色なし（既定色）」へ倒す（後述） |
+| labels[].updated | `string` | いいえ | なし | 最終更新日時。ISO 8601 を推奨するが形式は検証せず文字列のまま保持する |
+
+### 配置・読み込み
+
+- `.spec-board/labels.yml` に配置する。ファイル不在時は空レジストリ（`labels: []`）として扱い、プロジェクトは正常に開ける（後方互換）。
+- プロジェクトオープン時（`open_project`）に読み込み、`AppState` に保持する。取得は独立した `get_labels` コマンドで行う（`open_project` の payload には同梱しない）。
+- 空ファイル / コメントのみ / `---`（null ドキュメント）/ `labels:` キー欠落 / `labels: null` はいずれも空レジストリに正規化する。
+
+### color の lenient 解釈
+
+- `color` は `#RRGGBB`（`#` + 16 進 6 桁）のみ妥当とみなす。妥当な場合のみ色として保持する。
+- 不正形式（`"red"` / `"#GGG"` 等）・型不一致（数値 `123` / マッピング `{}`）・欠落・`null` はエラーにせず「色なし」へ倒す。payload では `color` を省略し、既定色の適用は FE 表示層の責務とする。
+- **`color` はクォート必須**: YAML では `#` 以降がコメント扱いになるため、`color: #1A2B3C`（クォートなし）は値が `null` と解釈され、silently 既定色へ倒れる。必ず `color: "#1A2B3C"` とクォートする。
+
+### name 一意性の検証
+
+- `name` はマスタ内で完全一致・一意。重複が見つかれば load 時に拒否し、`open_project` は `labels load failed (parse)` として失敗する。
+- `name` が空文字 `""` の定義も load 時に拒否する（`labels load failed (parse)`）。空白のみ `"   "` は trim しない方針のため許容する（未正規化）。
+- ここでの「一意性 / 空拒否」はマスタ定義 `labels.yml` 自身に対する制約であり、**frontmatter の未定義ラベル**（labels.yml に存在しないラベル名）は警告なく暗黙許容する点と区別する。
+
+### スキーマの前方互換
+
+- 未知のトップレベルキー / 定義内キーは無視する（`deny_unknown_fields` は付けない）。将来のフィールド追加に対する前方互換のため。
+- lenient なのは `color` のみ。`name` / `description` / `group` / `updated` は文字列型を strict に検証し、文字列以外（数値 `123` / bool / mapping / sequence 等）が来た場合は `labels load failed (parse)` として扱う（`description: "123"` のようにクォートすれば文字列として受理される）。
+- `get_labels` payload は labels.yml の定義順をそのまま保持する（並べ替えない）。`group` での UI グルーピングは表示層の責務。
+
+> **スコープ境界**: 本仕様は labels.yml のスキーマ確定・読み込み・`get_labels` コマンド・invoke ラッパまでを対象とする。実際のラベル色の UI 反映（既定色の具体値 / design token 定義）は別 Issue で扱う。
 
 ## 設定の初期化
 
