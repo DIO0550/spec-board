@@ -11,7 +11,13 @@ use crate::project::OpenProjectIntent;
 
 fn open_with_noop(state: Arc<AppState>, path: &str) {
     let intent = OpenProjectIntent::try_from(path.to_string()).expect("non-empty path");
-    open_project_impl(&state, &intent, &NoopWatcherFactory).expect("open should succeed");
+    open_project_impl(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &NoopWatcherFactory,
+    )
+    .expect("open should succeed");
 }
 
 fn tempdir() -> TempDir {

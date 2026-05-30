@@ -38,6 +38,7 @@ pub fn run() {
             task::add_link::add_link,
             task::remove_link::remove_link,
             config::get_columns::get_columns,
+            config::get_labels::get_labels,
             config::update_card_order::update_card_order,
             config::update_columns::update_columns
         ])
