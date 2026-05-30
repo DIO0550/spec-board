@@ -5,6 +5,7 @@ import {
   buildTasksByNormalizedPath,
   countTasksWithBrokenLink,
 } from "@/domains/broken-link";
+import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
@@ -188,6 +189,26 @@ export const App = () => {
       showToast(`リンク切れが ${n} 件あります`, "warning");
     }
   }, [state.kind, loadedPath, tasks, tasksByNormalizedPath, showToast]);
+
+  // パースエラー Toast 発火管理用 ref。リンク切れ Toast (toastFiredForLoadedPathRef) とは
+  // 判定ドメイン・文言が別なので発火管理を分離する。ルールは同じく「loaded セッション内
+  // 1 回発火」。state.kind が "loaded" を離れた時点で ref をクリアし、close → reopen /
+  // 別 project 切替後 N >= 1 なら改めて 1 回発火する。
+  const parseErrorToastFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.kind !== "loaded") {
+      parseErrorToastFiredRef.current = null;
+      return;
+    }
+    if (parseErrorToastFiredRef.current === loadedPath) {
+      return;
+    }
+    parseErrorToastFiredRef.current = loadedPath;
+    const n = countTasksWithParseError(tasks);
+    if (n >= 1) {
+      showToast(`パースエラーが ${n} 件あります`, "warning");
+    }
+  }, [state.kind, loadedPath, tasks, showToast]);
   // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
   // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
   const parentCandidates = useMemo(() => {
