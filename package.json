@@ -16,7 +16,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "release:tag": "scripts/create-release-tag.sh"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
