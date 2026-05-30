@@ -19,6 +19,7 @@ import { LabelEditor } from "../LabelEditor";
 import { LinksSection } from "../LinksSection";
 import { MarkdownBody } from "../MarkdownBody";
 import { ParentLink } from "../ParentLink";
+import { ParseErrorBanner } from "../ParseErrorBanner";
 import { PrioritySelect } from "../PrioritySelect";
 import { StatusSelect } from "../StatusSelect";
 import { SubIssueSection } from "../SubIssueSection";
@@ -214,6 +215,7 @@ export const DetailPanel = ({
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <CycleWarningBanner task={task} />
+            <ParseErrorBanner task={task} />
             {parentTask && onSelectTask && (
               <ParentLink parentTask={parentTask} onSelect={onSelectTask} />
             )}
