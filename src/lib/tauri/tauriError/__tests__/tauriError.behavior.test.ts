@@ -109,3 +109,17 @@ test("TauriError は Error / TauriError として instanceof で識別できる"
   expect(e).toBeInstanceOf(Error);
   expect(e).toBeInstanceOf(TauriError);
 });
+
+test("from(raw, command) は起点コマンド名を command に保持する", () => {
+  const e = TauriError.from(new Error("書き込みに失敗しました"), "create_task");
+  expect(e.command).toBe("create_task");
+});
+
+test("from(raw) で command を省略すると command は undefined（後方互換）", () => {
+  const raw = new Error("書き込みに失敗しました");
+  const e = TauriError.from(raw);
+  expect(e.command).toBeUndefined();
+  expect(e.message).toBe("書き込みに失敗しました");
+  expect(e.code).toBe("IO_ERROR");
+  expect(e.cause).toBe(raw);
+});
