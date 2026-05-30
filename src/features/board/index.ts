@@ -21,4 +21,5 @@ export {
   ProjectError,
   projectErrorMessage,
   useProject,
+  wasNotifiedByInvokeWrapped,
 } from "./hooks/useProject";
