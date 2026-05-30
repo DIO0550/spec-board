@@ -55,6 +55,9 @@ jobs:
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Apple 証明書を使わない ad-hoc 署名。universal バイナリは lipo 結合で
+          # 署名が外れるため、これが無いと Apple Silicon で起動できないことがある
+          APPLE_SIGNING_IDENTITY: "-"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: spec-board ${{ github.ref_name }}
