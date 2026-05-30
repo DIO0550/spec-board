@@ -8,16 +8,19 @@ import {
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
+import { registerToastSink } from "@/lib/tauri/toastSink";
 import {
   Board,
   EmptyState,
   HeaderBar,
   type MoveTaskParams,
   PROJECT_SWITCHED_MESSAGE,
+  type ProjectError,
   type ProjectState,
   projectErrorMessage,
   type ReorderColumnsEvent,
   useProject,
+  wasNotifiedByInvokeWrapped,
 } from "./features/board";
 import { DetailPanel } from "./features/detail";
 import {
@@ -95,10 +98,34 @@ export const App = () => {
     removeLink,
   } = useProject({
     onError: (err) => {
+      // invokeWrapped が既に通知済み（allowlist 由来 tauri）なら二重通知を避ける。
+      // allowlist 外 tauri（open_project / get_columns refresh / update_card_order 同一カラム）
+      // と非 tauri（invalid-state / validation）は invokeWrapped が出さないのでここで通知する。
+      if (wasNotifiedByInvokeWrapped(err)) {
+        return;
+      }
       showToast(projectErrorMessage(err), "error");
     },
   });
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
+
+  // invokeWrapped 層の失敗トーストを App の showToast へ橋渡しする。
+  // React 19 strict-mode の二重マウント / showToast 再生成に追従するため依存配列に
+  // showToast を入れ、register が返す cleanup で必ず解除する。cleanup は「自分が登録した
+  // sink のときだけ」解除するため、再マウント順序の入れ替わりで新しい sink を誤って消さない。
+  useEffect(() => registerToastSink(showToast), [showToast]);
+
+  // 書き込み失敗の error トーストを出す共通ガード。allowlist 由来失敗は invokeWrapped が
+  // 既に通知済みのため抑止し、allowlist 外 tauri / 非 tauri 失敗だけ App 側で出す
+  // （サイレント化防止）。成功トースト・partial-move 専用文・announce・throw は各ハンドラ側に残す。
+  const showErrorUnlessNotified = useCallback(
+    (error: ProjectError, message: string): void => {
+      if (!wasNotifiedByInvokeWrapped(error)) {
+        showToast(message, "error");
+      }
+    },
+    [showToast],
+  );
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
@@ -252,15 +279,15 @@ export const App = () => {
       // filePath は lookup key なので spread 順序を後置にして上書き防止
       const result = await updateTask({ ...updates, filePath });
       if (!result.ok) {
-        showToast(
+        showErrorUnlessNotified(
+          result.error,
           `タスクの更新に失敗しました: ${projectErrorMessage(result.error)}`,
-          "error",
         );
         return;
       }
       showToast("タスクを更新しました", "success");
     },
-    [tasks, updateTask, showToast],
+    [tasks, updateTask, showToast, showErrorUnlessNotified],
   );
 
   const handleAddTask = useCallback((columnName: string) => {
@@ -294,7 +321,10 @@ export const App = () => {
       });
       if (!result.ok) {
         const message = projectErrorMessage(result.error);
-        showToast(`カラムの追加に失敗しました: ${message}`, "error");
+        showErrorUnlessNotified(
+          result.error,
+          `カラムの追加に失敗しました: ${message}`,
+        );
         // AddColumnButton が editor を維持できるよう reject し直す
         throw new Error(message);
       }
@@ -308,7 +338,7 @@ export const App = () => {
       }
       showToast("カラムを追加しました", "success");
     },
-    [columns, updateColumns, showToast],
+    [columns, updateColumns, showToast, showErrorUnlessNotified],
   );
 
   const handleRenameColumn = useCallback(
@@ -340,7 +370,10 @@ export const App = () => {
       });
       if (!result.ok) {
         const message = projectErrorMessage(result.error);
-        showToast(`カラム名の変更に失敗しました: ${message}`, "error");
+        showErrorUnlessNotified(
+          result.error,
+          `カラム名の変更に失敗しました: ${message}`,
+        );
         // ColumnHeader が edit mode を維持できるよう reject し直す
         throw new Error(message);
       }
@@ -354,7 +387,7 @@ export const App = () => {
       }
       showToast("カラム名を変更しました", "success");
     },
-    [columns, updateColumns, showToast],
+    [columns, updateColumns, showToast, showErrorUnlessNotified],
   );
 
   const handleDeleteColumn = useCallback(
@@ -428,7 +461,10 @@ export const App = () => {
       });
       if (!result.ok) {
         const message = projectErrorMessage(result.error);
-        showToast(`カラムの削除に失敗しました: ${message}`, "error");
+        showErrorUnlessNotified(
+          result.error,
+          `カラムの削除に失敗しました: ${message}`,
+        );
         // Column の ConfirmDialog が維持できるよう reject し直す
         throw new Error(message);
       }
@@ -442,7 +478,7 @@ export const App = () => {
       }
       showToast("カラムを削除しました", "success");
     },
-    [columns, tasks, updateColumns, showToast],
+    [columns, tasks, updateColumns, showToast, showErrorUnlessNotified],
   );
 
   const handleCloseCreateModal = useCallback(() => {
@@ -477,12 +513,15 @@ export const App = () => {
       if (!result.ok) {
         // モーダルを閉じない: TaskCreateModal は onSubmit reject で開いたままになる
         const message = projectErrorMessage(result.error);
-        showToast(`タスクの作成に失敗しました: ${message}`, "error");
+        showErrorUnlessNotified(
+          result.error,
+          `タスクの作成に失敗しました: ${message}`,
+        );
         throw new Error(message);
       }
       showToast("タスクを作成しました", "success");
     },
-    [submitCreateTask, showToast],
+    [submitCreateTask, showToast, showErrorUnlessNotified],
   );
 
   const handleTaskDrop = useCallback(
@@ -520,11 +559,16 @@ export const App = () => {
           showToast(result.error.message, "error");
           return;
         }
-        const message = projectErrorMessage(result.error);
-        showToast(`タスクの移動に失敗しました: ${message}`, "error");
+        // cross-column の update_task 失敗（allowlist 由来）は invokeWrapped が通知済み → 抑止。
+        // 同一カラム並び替えの update_card_order 失敗（allowlist 外 tauri）はサイレント化を
+        // 避けるため従来どおり generic を出す。
+        showErrorUnlessNotified(
+          result.error,
+          `タスクの移動に失敗しました: ${projectErrorMessage(result.error)}`,
+        );
       }
     },
-    [tasks, moveTask, announce, showToast],
+    [tasks, moveTask, announce, showToast, showErrorUnlessNotified],
   );
 
   const handleColumnReorder = useCallback(
@@ -567,12 +611,14 @@ export const App = () => {
       ) {
         return;
       }
-      showToast(
+      // update_columns 失敗（reorderColumnsAction は updateColumns 経由）は invokeWrapped が
+      // 通知済み → 抑止。invalid-state 等の非 tauri はサイレント化を避けるため残す。
+      showErrorUnlessNotified(
+        result.error,
         `カラムの並び替えに失敗しました: ${projectErrorMessage(result.error)}`,
-        "error",
       );
     },
-    [reorderColumns, announce, showToast],
+    [reorderColumns, announce, showErrorUnlessNotified],
   );
 
   const handleAddLink = useCallback(
@@ -597,7 +643,12 @@ export const App = () => {
           return result;
         }
         const message = projectErrorMessage(result.error);
-        showToast(`リンクの追加に失敗しました: ${message}`, "error");
+        // add_link 失敗は invokeWrapped が通知済み → 抑止。非 tauri は残す。
+        // announce（取消）は通知有無に関わらず常に残す。
+        showErrorUnlessNotified(
+          result.error,
+          `リンクの追加に失敗しました: ${message}`,
+        );
         announce(
           `「${sourceTitle}」への「${targetTitle}」のリンク追加を取り消しました`,
         );
@@ -607,7 +658,7 @@ export const App = () => {
       announce(`「${sourceTitle}」に「${targetTitle}」をリンクしました`);
       return result;
     },
-    [tasks, addLink, announce, showToast],
+    [tasks, addLink, announce, showErrorUnlessNotified],
   );
 
   const handleRemoveLink = useCallback(
@@ -630,7 +681,12 @@ export const App = () => {
           return result;
         }
         const message = projectErrorMessage(result.error);
-        showToast(`リンクの削除に失敗しました: ${message}`, "error");
+        // remove_link 失敗は invokeWrapped が通知済み → 抑止。非 tauri は残す。
+        // announce（取消）は通知有無に関わらず常に残す。
+        showErrorUnlessNotified(
+          result.error,
+          `リンクの削除に失敗しました: ${message}`,
+        );
         announce(
           `「${sourceTitle}」から「${targetTitle}」へのリンク削除を取り消しました`,
         );
@@ -642,7 +698,7 @@ export const App = () => {
       );
       return result;
     },
-    [tasks, removeLink, announce, showToast],
+    [tasks, removeLink, announce, showErrorUnlessNotified],
   );
 
   const handleTaskDelete = useCallback(
@@ -676,7 +732,12 @@ export const App = () => {
         }
 
         const message = projectErrorMessage(result.error);
-        showToast(`タスクの削除に失敗しました: ${message}`, "error");
+        // delete_task 失敗は invokeWrapped が通知済み → 抑止。非 tauri は残す。
+        // announce（取消）と throw は通知有無に関わらず常に残す。
+        showErrorUnlessNotified(
+          result.error,
+          `タスクの削除に失敗しました: ${message}`,
+        );
         announce(`「${title}」の削除を取り消しました`);
         throw new Error(message);
       }
@@ -686,7 +747,7 @@ export const App = () => {
       showToast("タスクを削除しました", "success");
       announce(`「${title}」を削除しました`);
     },
-    [tasks, deleteTask, showToast, announce],
+    [tasks, deleteTask, showToast, announce, showErrorUnlessNotified],
   );
 
   /**
