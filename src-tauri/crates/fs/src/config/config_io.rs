@@ -32,8 +32,161 @@ use thiserror::Error;
 const SPEC_BOARD_DIR: &str = ".spec-board";
 const CONFIG_FILE_NAME: &str = "config.json";
 const GUIDE_MARKDOWN_FILE_NAME: &str = "GUIDE.md";
+/// `.spec-board/labels.yml`（ラベルマスタ定義）のファイル名。
+///
+/// 中身（YAML）のパース / シリアライズは本体クレート側の責務であり、本サブクレートは
+/// [`SpecBoardDir`] 経由で raw `String` の読み書きのみを担当する（境界規約）。
+pub const LABELS_FILE_NAME: &str = "labels.yml";
 static GUIDE_MARKDOWN_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 static CONFIG_JSON_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+static SPEC_BOARD_DIR_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// プロジェクトの `.spec-board/` ディレクトリを管理し、配下ファイルの
+/// **format 非依存**な raw `String` I/O を提供するリソース管理 struct。
+///
+/// `project_root` を保持するため、呼び出し側は project_root を毎回引数で引き回さない。
+/// 本 struct は **パースをしない**（YAML / JSON の解釈は本体クレート `spec-board` 側の
+/// store の責務）。`.spec-board/` という「リソース」を所有する境界として機能する。
+///
+/// # 提供する操作
+///
+/// - [`SpecBoardDir::file_path`]: `.spec-board/<file_name>` の絶対パス（存在有無は問わない）
+/// - [`SpecBoardDir::ensure`]: `.spec-board/` を冪等に作成
+/// - [`SpecBoardDir::read_file`]: 配下ファイルを raw `String` で読む（不在のみ `Ok(None)`）
+/// - [`SpecBoardDir::write_file`]: 配下ファイルへ tmp→rename の atomic write（symlink 拒否込み）
+pub struct SpecBoardDir {
+    project_root: PathBuf,
+}
+
+impl SpecBoardDir {
+    /// `project_root` を保持する [`SpecBoardDir`] を生成する。
+    pub fn new(project_root: impl Into<PathBuf>) -> Self {
+        Self {
+            project_root: project_root.into(),
+        }
+    }
+
+    /// `.spec-board/<file_name>` の絶対パス相当を返す（純粋計算、I/O なし）。
+    ///
+    /// `project_root` が相対パスなら戻り値も相対パスになる（`canonicalize` は行わない）。
+    pub fn file_path(&self, file_name: &str) -> PathBuf {
+        self.project_root.join(SPEC_BOARD_DIR).join(file_name)
+    }
+
+    /// `.spec-board/` を冪等に作成し、その `PathBuf` を返す。
+    ///
+    /// 詳細なエラー条件は [`ensure_spec_board_dir`] と同じ。
+    pub fn ensure(&self) -> Result<PathBuf, ConfigIoError> {
+        ensure_spec_board_dir(&self.project_root)
+    }
+
+    /// `.spec-board/<file_name>` の中身を `String` で読み込む。
+    ///
+    /// - 対象ファイルが存在しない場合のみ `Ok(None)` を返す（呼び出し側で Default 初期化に分岐）。
+    /// - 中身が不正フォーマットでも本層では検査せず、生の文字列として返す（パースは本体クレート）。
+    /// - `project_root` / `.spec-board/` の不在・非ディレクトリ、壊れた symlink（dangling）は
+    ///   `Err(ConfigIoError::Io)` を返す（「ファイル不在」と「環境異常」を呼び出し側で区別可能にするため）。
+    ///
+    /// # Errors
+    ///
+    /// - `project_root` / `.spec-board/` 不在 / アクセス不可 / 非ディレクトリ
+    /// - 対象ファイルがディレクトリ / 特殊ファイル / dangling symlink として存在する
+    /// - 権限不足等で `read_to_string` が失敗する
+    pub fn read_file(&self, file_name: &str) -> Result<Option<String>, ConfigIoError> {
+        Self::validate_file_name(file_name)?;
+        validate_dir(&self.project_root)?;
+        let spec_board_dir = self.project_root.join(SPEC_BOARD_DIR);
+        validate_dir(&spec_board_dir)?;
+
+        let path = self.file_path(file_name);
+
+        // dir entry の存在は `symlink_metadata` で先に確認する。`metadata` は symlink を
+        // 辿るため dangling symlink を `NotFound` として `Ok(None)` 扱いしてしまうが、
+        // これは「ファイル不在」ではなく環境異常として `Err(Io)` を返したい。
+        if let Err(e) = std::fs::symlink_metadata(&path) {
+            return if e.kind() == std::io::ErrorKind::NotFound {
+                Ok(None)
+            } else {
+                Err(io_err(&path, e))
+            };
+        }
+
+        let meta = std::fs::metadata(&path).map_err(|e| io_err(&path, e))?;
+        if !meta.is_file() {
+            let kind = if meta.is_dir() {
+                std::io::ErrorKind::IsADirectory
+            } else {
+                std::io::ErrorKind::InvalidInput
+            };
+            return Err(io_err(&path, std::io::Error::from(kind)));
+        }
+
+        let content = std::fs::read_to_string(&path).map_err(|e| io_err(&path, e))?;
+        Ok(Some(content))
+    }
+
+    /// `.spec-board/<file_name>` へ `content` を書き込む。
+    ///
+    /// 書き込み前に [`SpecBoardDir::ensure`] で `.spec-board/` を作成し、fresh tmp file へ
+    /// 書いてから `rename` で置き換える。`.spec-board/` または対象ファイルが symlink の場合は、
+    /// project root 外のファイル上書きを防ぐため拒否する。
+    ///
+    /// # Errors
+    ///
+    /// - `project_root` が存在しない / 非ディレクトリ / アクセス不可
+    /// - `.spec-board/` または対象ファイルが symlink として存在する
+    /// - 権限不足等で `.spec-board/` 作成または書き込みが失敗する
+    pub fn write_file(&self, file_name: &str, content: &str) -> Result<PathBuf, ConfigIoError> {
+        Self::validate_file_name(file_name)?;
+        let spec_board_dir = self.ensure()?;
+        reject_existing_symlink(&spec_board_dir)?;
+        let target = self.file_path(file_name);
+        reject_existing_symlink(&target)?;
+
+        let tmp_path = unique_spec_board_tmp_path(&spec_board_dir, file_name);
+        write_file_via_tmp(&target, content, &tmp_path)?;
+
+        Ok(target)
+    }
+
+    /// `file_name` が `.spec-board/` 直下の単一ファイル名であることを検証する。
+    ///
+    /// パスセパレータ・`..`（親ディレクトリ）・絶対パス・空文字を拒否し、`.spec-board/`
+    /// 外への読み書き（path traversal）を防ぐ。現状の呼び出しは定数ファイル名のみだが、
+    /// `SpecBoardDir` は公開 API のため、将来ユーザー入力由来の名前が渡された場合の
+    /// 防御として正規化された単一コンポーネント（`Component::Normal` 1 個）だけを許可する。
+    fn validate_file_name(file_name: &str) -> Result<(), ConfigIoError> {
+        use std::path::Component;
+        let mut components = Path::new(file_name).components();
+        let is_single_normal = matches!(
+            (components.next(), components.next()),
+            (Some(Component::Normal(_)), None)
+        );
+        if !is_single_normal {
+            return Err(io_err(
+                Path::new(file_name),
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("invalid .spec-board file name: `{file_name}`"),
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// `.spec-board/<file_name>.tmp.{pid}.{nanos}.{counter}` 形式の unique tmp パスを生成する。
+///
+/// `file_name` をプレフィックスに含めることで、異なる対象ファイルの並行書き込みでも
+/// tmp パスが衝突しない。`counter` は process-local AtomicU64 で in-process 一意性を担保。
+fn unique_spec_board_tmp_path(spec_board_dir: &Path, file_name: &str) -> PathBuf {
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let counter = SPEC_BOARD_DIR_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    spec_board_dir.join(format!("{file_name}.tmp.{pid}.{nanos}.{counter}"))
+}
 
 /// `config_io` モジュールのファイル I/O で発生し得るエラー。
 ///
@@ -164,41 +317,9 @@ pub fn ensure_spec_board_dir(project_root: &Path) -> Result<PathBuf, ConfigIoErr
 ///   存在する場合（`Ok(None)` には**しない**。dir entry は存在するため「設定ファイル
 ///   不在」ではなく環境異常として扱う）
 pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoError> {
-    validate_dir(project_root)?;
-    let spec_board_dir = project_root.join(SPEC_BOARD_DIR);
-    validate_dir(&spec_board_dir)?;
-
-    let config_path = config_path(project_root);
-
-    // dir entry の存在は `symlink_metadata` で先に確認する。`metadata` は
-    // symlink を辿るため、dangling symlink (リンク先が消えた状態) を
-    // `NotFound` として `Ok(None)` 扱いしてしまうが、これは「設定ファイル
-    // 不在」ではなく環境異常（壊れた symlink）として `Err(Io)` を返したい。
-    if let Err(e) = std::fs::symlink_metadata(&config_path) {
-        return if e.kind() == std::io::ErrorKind::NotFound {
-            Ok(None)
-        } else {
-            Err(io_err(&config_path, e))
-        };
-    }
-
-    // symlink_metadata が成功 = dir entry は存在する。ここで `metadata` が
-    // `NotFound` を返すのは dangling symlink のときのみ。
-    // 「壊れた symlink」を `Ok(None)` にしないため、`Err` として伝播する。
-    let meta = std::fs::metadata(&config_path).map_err(|e| io_err(&config_path, e))?;
-    if !meta.is_file() {
-        // ディレクトリの場合は `IsADirectory`、それ以外の非ファイル（特殊ファイル等）は
-        // `InvalidInput` を返す。呼び出し側が `ErrorKind` で分岐できるよう明示する。
-        let kind = if meta.is_dir() {
-            std::io::ErrorKind::IsADirectory
-        } else {
-            std::io::ErrorKind::InvalidInput
-        };
-        return Err(io_err(&config_path, std::io::Error::from(kind)));
-    }
-
-    let content = std::fs::read_to_string(&config_path).map_err(|e| io_err(&config_path, e))?;
-    Ok(Some(content))
+    // raw String の読み込みは format 非依存の `SpecBoardDir` に委譲する。
+    // `config.json` 固有の検査（version / schema）は本体クレート側の責務。
+    SpecBoardDir::new(project_root).read_file(CONFIG_FILE_NAME)
 }
 
 /// `<project_root>/.spec-board/GUIDE.md` へ Markdown 文字列を書き込む。

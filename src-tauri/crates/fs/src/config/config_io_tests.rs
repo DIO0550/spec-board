@@ -417,3 +417,98 @@ fn read_config_json_returns_err_when_config_is_unreadable() {
         }
     }
 }
+
+// ───────── SpecBoardDir（format 非依存 raw I/O） ─────────
+
+#[test]
+fn labels_file_name_is_labels_yml() {
+    assert_eq!(LABELS_FILE_NAME, "labels.yml");
+}
+
+#[test]
+fn spec_board_dir_read_file_returns_content_when_present() {
+    let tmp = TempDir::new().unwrap();
+    let spec_board = tmp.path().join(".spec-board");
+    std::fs::create_dir(&spec_board).unwrap();
+    std::fs::write(spec_board.join(LABELS_FILE_NAME), "labels: []\n").unwrap();
+
+    let dir = SpecBoardDir::new(tmp.path());
+    let content = dir.read_file(LABELS_FILE_NAME).unwrap();
+    assert_eq!(content, Some("labels: []\n".to_string()));
+}
+
+#[test]
+fn spec_board_dir_read_file_returns_none_when_file_absent() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".spec-board")).unwrap();
+
+    let dir = SpecBoardDir::new(tmp.path());
+    let content = dir.read_file(LABELS_FILE_NAME).unwrap();
+    assert_eq!(content, None);
+}
+
+#[test]
+fn spec_board_dir_read_file_errs_when_spec_board_is_file() {
+    let tmp = TempDir::new().unwrap();
+    // `.spec-board` をディレクトリではなくファイルにする = 環境異常
+    std::fs::write(tmp.path().join(".spec-board"), b"not a dir").unwrap();
+
+    let dir = SpecBoardDir::new(tmp.path());
+    let err = dir.read_file(LABELS_FILE_NAME).unwrap_err();
+    let ConfigIoError::Io { .. } = err;
+}
+
+#[test]
+fn spec_board_dir_write_then_read_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let dir = SpecBoardDir::new(tmp.path());
+
+    let written = dir.write_file(LABELS_FILE_NAME, "labels:\n  - name: bug\n").unwrap();
+    assert_eq!(written, tmp.path().join(".spec-board").join(LABELS_FILE_NAME));
+
+    let content = dir.read_file(LABELS_FILE_NAME).unwrap();
+    assert_eq!(content, Some("labels:\n  - name: bug\n".to_string()));
+}
+
+#[test]
+fn spec_board_dir_write_creates_spec_board_dir_when_absent() {
+    let tmp = TempDir::new().unwrap();
+    let dir = SpecBoardDir::new(tmp.path());
+
+    dir.write_file(LABELS_FILE_NAME, "labels: []\n").unwrap();
+    assert!(tmp.path().join(".spec-board").is_dir());
+}
+
+#[cfg(unix)]
+#[test]
+fn spec_board_dir_write_rejects_symlink_leaf() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().unwrap();
+    let spec_board = tmp.path().join(".spec-board");
+    std::fs::create_dir(&spec_board).unwrap();
+    let outside = tmp.path().join("outside.yml");
+    std::fs::write(&outside, b"original").unwrap();
+    // labels.yml を project 外ファイルへの symlink にする
+    symlink(&outside, spec_board.join(LABELS_FILE_NAME)).unwrap();
+
+    let dir = SpecBoardDir::new(tmp.path());
+    let err = dir.write_file(LABELS_FILE_NAME, "overwritten").unwrap_err();
+    let ConfigIoError::Io { .. } = err;
+    // symlink 先のファイルが上書きされていないこと
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "original");
+}
+
+#[test]
+fn spec_board_dir_rejects_path_traversal_file_names() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".spec-board")).unwrap();
+    let dir = SpecBoardDir::new(tmp.path());
+
+    for bad in ["../outside.yml", "../../etc/passwd", "sub/dir.yml", "/abs.yml", ""] {
+        let read_err = dir.read_file(bad).unwrap_err();
+        let ConfigIoError::Io { .. } = read_err;
+        let write_err = dir.write_file(bad, "x").unwrap_err();
+        let ConfigIoError::Io { .. } = write_err;
+    }
+}
