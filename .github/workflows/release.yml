@@ -70,7 +70,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           BUNDLE_DIR="src-tauri/target/universal-apple-darwin/release/bundle"
-          # 既存の release が無ければ draft で作成（既にあれば作成失敗を握りつぶす）
+          # .app はディレクトリなので、そのままでは release 添付できない。
+          # ditto で zip に固めてからアップロードする (.app の symlink 等を保持)
+          APP_PATH="$(ls -d "$BUNDLE_DIR"/macos/*.app | head -n1)"
+          APP_NAME="$(basename "$APP_PATH" .app)"
+          APP_ZIP="$BUNDLE_DIR/macos/${APP_NAME}_${TAG#v}_universal.app.zip"
+          ditto -c -k --keepParent "$APP_PATH" "$APP_ZIP"
+          # 既存の release が無ければ公開状態で作成（既にあれば作成失敗を握りつぶす）
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "spec-board $TAG" --generate-notes
-          gh release upload "$TAG" "$BUNDLE_DIR"/dmg/*.dmg --clobber
+            || gh release create "$TAG" --title "spec-board $TAG" --generate-notes
+          gh release upload "$TAG" "$BUNDLE_DIR"/dmg/*.dmg "$APP_ZIP" --clobber
