@@ -65,17 +65,26 @@ export class TauriError extends Error {
   readonly code: TauriErrorCode;
   /** 元の reject 値（dev tools 参照用） */
   readonly cause?: unknown;
+  /** この error を生んだ Tauri コマンド名（invokeWrapped が付与）。allowlist 判定に使う。 */
+  readonly command?: string;
 
   /**
    * @param code エラー分類コード
    * @param message 人間可読メッセージ
    * @param cause 元の reject 値（任意）
+   * @param command 起点となった Tauri コマンド名（任意）
    */
-  constructor(code: TauriErrorCode, message: string, cause?: unknown) {
+  constructor(
+    code: TauriErrorCode,
+    message: string,
+    cause?: unknown,
+    command?: string,
+  ) {
     super(message);
     this.name = "TauriError";
     this.code = code;
     this.cause = cause;
+    this.command = command;
   }
 
   /**
@@ -88,12 +97,13 @@ export class TauriError extends Error {
    * code 判定は本 Issue では最小限の文字列パターンマッチのみ（マッチ不能は UNKNOWN）。
    *
    * @param raw invoke が reject した任意の値
-   * @returns 正規化済み TauriError（cause === raw）
+   * @param command 起点となった Tauri コマンド名（任意）。invokeWrapped から渡される
+   * @returns 正規化済み TauriError（cause === raw, command を保持）
    */
-  static from(raw: unknown): TauriError {
+  static from(raw: unknown, command?: string): TauriError {
     const extracted = extractMessage(raw);
     const message = extracted ?? FALLBACK_MESSAGE;
     const code = extracted === null ? "UNKNOWN" : classifyCode(extracted);
-    return new TauriError(code, message, raw);
+    return new TauriError(code, message, raw, command);
   }
 }
