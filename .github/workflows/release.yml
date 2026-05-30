@@ -19,16 +19,18 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
+    env:
+      # Apple 証明書を使わない ad-hoc 署名。universal バイナリは lipo 結合で
+      # 署名が外れるため、これが無いと Apple Silicon で起動できないことがある
+      APPLE_SIGNING_IDENTITY: "-"
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
-        with:
-          version: 10.33.0
+      - name: Enable pnpm via corepack
+        run: corepack enable
 
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -37,30 +39,36 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Install Rust targets with rustup
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Cache cargo and build target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          workspaces: "src-tauri -> target"
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and attach to release
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+      - name: Build macOS universal app
+        run: pnpm tauri build --target universal-apple-darwin
+
+      - name: Attach artifacts to release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Apple 証明書を使わない ad-hoc 署名。universal バイナリは lipo 結合で
-          # 署名が外れるため、これが無いと Apple Silicon で起動できないことがある
-          APPLE_SIGNING_IDENTITY: "-"
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: spec-board ${{ github.ref_name }}
-          releaseDraft: true
-          prerelease: false
-          args: --target universal-apple-darwin
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          BUNDLE_DIR="src-tauri/target/universal-apple-darwin/release/bundle"
+          # 既存の release が無ければ draft で作成（既にあれば作成失敗を握りつぶす）
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --draft --title "spec-board $TAG" --generate-notes
+          gh release upload "$TAG" "$BUNDLE_DIR"/dmg/*.dmg --clobber
