@@ -94,7 +94,7 @@ test("labels が ['bug', 'frontend'] の場合、2つのタグが表示される
     onClick: vi.fn(),
   });
   await vi.waitFor(() => {
-    const tags = container?.querySelectorAll(".bg-gray-100");
+    const tags = container?.querySelectorAll('[data-testid="label-tag"]');
     expect(tags?.length).toBe(2);
     expect(tags?.[0]?.textContent).toBe("bug");
     expect(tags?.[1]?.textContent).toBe("frontend");
@@ -127,7 +127,7 @@ test("ラベルが5個以上で折り返し表示", async () => {
     onClick: vi.fn(),
   });
   await vi.waitFor(() => {
-    const tags = container?.querySelectorAll(".bg-gray-100");
+    const tags = container?.querySelectorAll('[data-testid="label-tag"]');
     expect(tags?.length).toBe(5);
     const wrapper = container?.querySelector(".flex-wrap");
     expect(wrapper).toBeTruthy();

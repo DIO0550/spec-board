@@ -70,6 +70,7 @@ flowchart TD
 | [file-system-spec.md](./file-system-spec.md) | [BE] mdファイルのパース・ファイル監視・CRUD操作 |
 | [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット定義・フロントマター仕様 |
 | [config-spec.md](./config-spec.md) | [BE] 設定ファイル・カラム管理・カード並び順・AIエージェント向けガイド |
+| [label-registry-spec.md](./label-registry-spec.md) | [FE] ラベルのグループ分類・oklch カラーパレット・グループ色割当 |
 
 ## 非機能要件
 
