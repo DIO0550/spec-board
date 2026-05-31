@@ -1431,7 +1431,7 @@ impl LabelRegistryStore for YamlLabelRegistryStore {
         if content.trim().is_empty() {
             return Ok(LabelRegistry::default());
         }
-        let path = self.dir.file_path(LABELS_FILE_NAME);
+        let path = self.dir.file_path(LABELS_FILE_NAME)?;
         // Option で受けることで、コメントのみ / `---`（null ドキュメント）も None → Default に倒す。
         let registry = serde_yaml_ng::from_str::<Option<LabelRegistry>>(&content)
             .map_err(|source| LoadLabelsError::Parse { path, source })?

@@ -68,8 +68,25 @@ impl SpecBoardDir {
 
     /// `.spec-board/<file_name>` の絶対パス相当を返す（純粋計算、I/O なし）。
     ///
-    /// `project_root` が相対パスなら戻り値も相対パスになる（`canonicalize` は行わない）。
-    pub fn file_path(&self, file_name: &str) -> PathBuf {
+    /// `read_file` / `write_file` と同じく `file_name` を検証し、パスセパレータ・`..`・
+    /// 絶対パス・空文字を拒否する。これにより公開 API として `.spec-board/` 外を指す
+    /// パスを生成できないようにする（path traversal 防止。`read_file`/`write_file` だけが
+    /// 検証する非対称を解消する）。`project_root` が相対パスなら戻り値も相対パスになる
+    /// （`canonicalize` は行わない）。
+    ///
+    /// # Errors
+    ///
+    /// - `file_name` が単一の通常コンポーネントでない（`..` / セパレータ / 絶対パス / 空）場合
+    pub fn file_path(&self, file_name: &str) -> Result<PathBuf, ConfigIoError> {
+        Self::validate_file_name(file_name)?;
+        Ok(self.join_unchecked(file_name))
+    }
+
+    /// `.spec-board/<file_name>` を検証せず join する内部ヘルパー。
+    ///
+    /// 呼び出し側で先に [`SpecBoardDir::validate_file_name`] 済みであることを前提とする
+    /// （`read_file` / `write_file` は冒頭で検証してからこれを使う）。
+    fn join_unchecked(&self, file_name: &str) -> PathBuf {
         self.project_root.join(SPEC_BOARD_DIR).join(file_name)
     }
 
@@ -98,7 +115,7 @@ impl SpecBoardDir {
         let spec_board_dir = self.project_root.join(SPEC_BOARD_DIR);
         validate_dir(&spec_board_dir)?;
 
-        let path = self.file_path(file_name);
+        let path = self.join_unchecked(file_name);
 
         // dir entry の存在は `symlink_metadata` で先に確認する。`metadata` は symlink を
         // 辿るため dangling symlink を `NotFound` として `Ok(None)` 扱いしてしまうが、
@@ -140,7 +157,7 @@ impl SpecBoardDir {
         Self::validate_file_name(file_name)?;
         let spec_board_dir = self.ensure()?;
         reject_existing_symlink(&spec_board_dir)?;
-        let target = self.file_path(file_name);
+        let target = self.join_unchecked(file_name);
         reject_existing_symlink(&target)?;
 
         let tmp_path = unique_spec_board_tmp_path(&spec_board_dir, file_name);

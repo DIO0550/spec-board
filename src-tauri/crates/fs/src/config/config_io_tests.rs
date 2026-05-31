@@ -523,3 +523,19 @@ fn spec_board_dir_rejects_path_traversal_file_names() {
         let ConfigIoError::Io { .. } = write_err;
     }
 }
+
+#[test]
+fn spec_board_dir_file_path_validates_and_rejects_traversal() {
+    let tmp = TempDir::new().unwrap();
+    let dir = SpecBoardDir::new(tmp.path());
+
+    // 正常: 単一ファイル名は .spec-board/ 直下の絶対パス
+    let ok = dir.file_path(LABELS_FILE_NAME).unwrap();
+    assert_eq!(ok, tmp.path().join(".spec-board").join(LABELS_FILE_NAME));
+
+    // 異常: 親ディレクトリ / セパレータ / 絶対パス / 空は拒否
+    for bad in ["../outside.yml", "sub/dir.yml", "/abs.yml", ""] {
+        let err = dir.file_path(bad).unwrap_err();
+        let ConfigIoError::Io { .. } = err;
+    }
+}
