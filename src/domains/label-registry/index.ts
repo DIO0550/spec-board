@@ -184,9 +184,13 @@ export const LabelRegistry = {
     if (normalized === "") {
       return LIGHT_PALETTE[FIXED_GROUP_INDEX.default];
     }
-    const fixed = (FIXED_GROUP_INDEX as Record<string, number | undefined>)[
+    // Object.prototype 由来の名前（"constructor" / "__proto__" 等）を固定枠と
+    // 誤認しないよう、値が number の自前プロパティのみを固定割当として採用する
+    // （継承プロパティは function / object 等で number にならない）。
+    const candidate = (FIXED_GROUP_INDEX as Record<string, unknown>)[
       normalized
     ];
+    const fixed = typeof candidate === "number" ? candidate : undefined;
     const index =
       fixed ?? DYNAMIC_OFFSET + stableHashIndex(normalized, DYNAMIC_SIZE);
     return LIGHT_PALETTE[index];
