@@ -112,7 +112,7 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 設定画面のラベルタブ（[board-view-spec.md](./board-view-spec.md) 参照）は、ラベルマスタ定義 `LabelDefinition`（`name` / `group?` / `color?` 等）1 件ごとにスワッチ色を以下の優先順位で解決する。
 
 1. **`color`（マスタ定義色・最優先）**: `#RRGGBB` 形式の単色が定義されていれば、その単色をスワッチに適用する。
-2. **`group`（明示グループ）**: `color` が無く `group` が定義されていれば、`LabelRegistry.tokensForGroup(group)` の `ColorTokens` を適用する。`name` の prefix からグループを導出する `tokensForLabel` ではなく、明示された `group` を優先する。
+2. **`group`（明示グループ）**: `color` が無く `group` が**定義されていれば**（空文字 `""` も「定義済み」として扱う）、`LabelRegistry.tokensForGroup(group)` の `ColorTokens` を適用する。`name` の prefix からグループを導出する `tokensForLabel` ではなく、明示された `group` を優先する。空文字は `tokensForGroup("")` が既定（default 群）色へ正規化するため、name 由来の色にはフォールバックしない。
 3. **`name`（prefix 由来・フォールバック）**: `color` も `group` も無ければ `LabelRegistry.tokensForLabel(name)`（`name` の prefix からグループを導出）を適用する。
 
 スワッチへの適用規則:
