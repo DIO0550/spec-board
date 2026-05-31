@@ -40,7 +40,10 @@ pub fn run() {
             config::get_columns::get_columns,
             config::get_labels::get_labels,
             config::update_card_order::update_card_order,
-            config::update_columns::update_columns
+            config::update_columns::update_columns,
+            config::create_label::create_label,
+            config::update_label::update_label,
+            config::delete_label::delete_label
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

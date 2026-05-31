@@ -1,8 +1,12 @@
 //! `get_labels_impl` のユニットテスト。
 
+use std::path::PathBuf;
+
 use super::{get_labels_impl, GetLabelsError, GetLabelsPayload};
-use crate::config::{LabelColor, LabelDefinition, LabelRegistry};
+use crate::config::{LabelColor, LabelDefinition, LabelGroup, LabelRegistry};
 use crate::state::{AppState, AppStateError};
+use crate::task::label::Label;
+use crate::task::task_index::Task;
 
 fn label(name: &str, color: Option<&str>) -> LabelDefinition {
     LabelDefinition {
@@ -12,6 +16,33 @@ fn label(name: &str, color: Option<&str>) -> LabelDefinition {
         color: color.and_then(LabelColor::from_hex),
         updated: None,
     }
+}
+
+fn task_with_labels(id: &str, labels: &[&str]) -> Task {
+    Task {
+        id: id.into(),
+        file_path: id.into(),
+        title: format!("title-{id}").into(),
+        status: "Todo".into(),
+        priority: None,
+        labels: labels.iter().map(|l| Label::from(*l)).collect(),
+        parent: None,
+        links: Vec::new(),
+        children: Vec::new(),
+        reverse_links: Vec::new(),
+        body: String::new(),
+        extras: Default::default(),
+        warnings: Vec::new(),
+    }
+}
+
+fn set_tasks(state: &AppState, tasks: Vec<Task>) {
+    let cache = tasks
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| (PathBuf::from(format!("{i}.md")), t))
+        .collect();
+    state.replace_tasks_cache(cache).expect("writable");
 }
 
 #[test]
@@ -24,13 +55,14 @@ fn returns_err_when_no_project_open() {
 #[test]
 fn returns_empty_payload_when_registry_is_empty() {
     let state = AppState::new();
-    // labels.yml 不在 = 空レジストリでも Ok（暗黙ラベル）
+    // labels.yml 不在 = 空レジストリでも Ok（暗黙ラベル）。タスクも無いので usage は空。
     state
         .replace_labels(Some(LabelRegistry::default()))
         .expect("writable");
 
     let payload = get_labels_impl(&state).expect("正常系");
-    assert_eq!(payload, GetLabelsPayload { labels: vec![] });
+    assert!(payload.labels.is_empty());
+    assert!(payload.usage_counts.is_empty());
 }
 
 #[test]
@@ -60,7 +92,7 @@ fn returns_all_fields_in_payload() {
         labels: vec![LabelDefinition {
             name: "bug".to_string(),
             description: Some("バグ".to_string()),
-            group: Some("type".to_string()),
+            group: LabelGroup::from_lenient("type"),
             color: LabelColor::from_hex("#D73A4A"),
             updated: Some("2026-05-30T00:00:00Z".to_string()),
         }],
@@ -71,12 +103,91 @@ fn returns_all_fields_in_payload() {
     let label = &payload.labels[0];
     assert_eq!(label.name, "bug");
     assert_eq!(label.description.as_deref(), Some("バグ"));
-    assert_eq!(label.group.as_deref(), Some("type"));
+    assert_eq!(label.group.as_ref().map(LabelGroup::as_str), Some("type"));
     assert_eq!(
         label.color.as_ref().map(LabelColor::as_str),
         Some("#D73A4A")
     );
     assert_eq!(label.updated.as_deref(), Some("2026-05-30T00:00:00Z"));
+}
+
+#[test]
+fn usage_counts_empty_when_no_task_uses_labels() {
+    let state = AppState::new();
+    state
+        .replace_labels(Some(LabelRegistry {
+            labels: vec![label("bug", None)],
+        }))
+        .expect("writable");
+    set_tasks(&state, Vec::new());
+
+    let payload = get_labels_impl(&state).expect("正常系");
+    assert_eq!(payload.usage_counts.get("bug"), None);
+}
+
+#[test]
+fn usage_counts_counts_matching_task_labels() {
+    let state = AppState::new();
+    state
+        .replace_labels(Some(LabelRegistry {
+            labels: vec![label("bug", None), label("feat", None)],
+        }))
+        .expect("writable");
+    set_tasks(
+        &state,
+        vec![
+            task_with_labels("a", &["bug"]),
+            task_with_labels("b", &["bug", "feat"]),
+            task_with_labels("c", &["bug"]),
+        ],
+    );
+
+    let payload = get_labels_impl(&state).expect("正常系");
+    assert_eq!(payload.usage_counts.get("bug"), Some(&3));
+    assert_eq!(payload.usage_counts.get("feat"), Some(&1));
+}
+
+#[test]
+fn duplicate_label_within_task_counts_once() {
+    let state = AppState::new();
+    state
+        .replace_labels(Some(LabelRegistry {
+            labels: vec![label("bug", None)],
+        }))
+        .expect("writable");
+    set_tasks(&state, vec![task_with_labels("a", &["bug", "bug"])]);
+
+    let payload = get_labels_impl(&state).expect("正常系");
+    assert_eq!(payload.usage_counts.get("bug"), Some(&1));
+}
+
+#[test]
+fn implicit_label_appears_in_counts_not_in_labels() {
+    let state = AppState::new();
+    // registry には bug のみ定義。タスクは registry 未定義の "impl" を使う。
+    state
+        .replace_labels(Some(LabelRegistry {
+            labels: vec![label("bug", None)],
+        }))
+        .expect("writable");
+    set_tasks(&state, vec![task_with_labels("a", &["impl"])]);
+
+    let payload = get_labels_impl(&state).expect("正常系");
+    // 暗黙ラベルは usage_counts に現れるが labels には現れない。
+    assert_eq!(payload.usage_counts.get("impl"), Some(&1));
+    let names: Vec<&str> = payload.labels.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(names, vec!["bug"]);
+}
+
+#[test]
+fn payload_separates_labels_and_usage_counts() {
+    // payload 型は labels（定義）と usage_counts（派生値）を別フィールドで持つ。
+    let payload = GetLabelsPayload {
+        labels: vec![label("bug", None)],
+        usage_counts: [("bug".to_string(), 2usize)].into_iter().collect(),
+    };
+    assert_eq!(payload.labels.len(), 1);
+    assert_eq!(payload.usage_counts.get("bug"), Some(&2));
 }
 
 #[test]

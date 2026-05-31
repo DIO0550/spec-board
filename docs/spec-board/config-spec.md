@@ -97,7 +97,7 @@ labels:
 | labels | `LabelDefinition[]` | いいえ | `[]` | ラベル定義の配列。トップレベルキー欠落 / `null` / 空配列はいずれも空レジストリ（= 全ラベル暗黙扱い）に正規化される |
 | labels[].name | `string` | はい | - | ラベル識別子。完全一致・未正規化（trim / 大文字小文字統一なし）。空文字 `""` は不可 |
 | labels[].description | `string` | いいえ | なし | ラベルの説明文 |
-| labels[].group | `string` | いいえ | なし | UI 上のグルーピングに使うグループ名（グルーピングの表示は表示層の責務） |
+| labels[].group | `string` | いいえ | なし | UI 上のグルーピングに使うグループ名（グルーピングの表示は表示層の責務）。空文字 `""` は未指定として扱い `None` に正規化する（trim / 大文字小文字統一はしない） |
 | labels[].color | `string` | いいえ | なし（既定色） | `#RRGGBB` 形式の色。不正形式は lenient に「色なし（既定色）」へ倒す（後述） |
 | labels[].updated | `string` | いいえ | なし | 最終更新日時。ISO 8601 を推奨するが形式は検証せず文字列のまま保持する |
 
@@ -125,7 +125,40 @@ labels:
 - lenient なのは `color` のみ。`name` / `description` / `group` / `updated` は文字列型を strict に検証し、文字列以外（数値 `123` / bool / mapping / sequence 等）が来た場合は `labels load failed (parse)` として扱う（`description: "123"` のようにクォートすれば文字列として受理される）。
 - `get_labels` payload は labels.yml の定義順をそのまま保持する（並べ替えない）。`group` での UI グルーピングは表示層の責務。
 
-> **スコープ境界**: 本仕様は labels.yml のスキーマ確定・読み込み・`get_labels` コマンド・invoke ラッパまでを対象とする。実際のラベル色の UI 反映（既定色の具体値 / design token 定義）は別 Issue で扱う。
+### get_labels の使用数集計
+
+`get_labels` の payload は定義（labels.yml 由来）と派生値（使用数）を別フィールドで返す（1 オブジェクトに混ぜない）。
+
+```ts
+type GetLabelsPayload = {
+  labels: LabelDefinition[];          // 定義順を保持
+  usageCounts: { [name: string]: number }; // ラベル名 → 使用タスク件数
+};
+```
+
+- `usageCounts` は「そのラベルを使っているタスクの件数」。1 タスク内で同じラベルが重複していても 1 件（タスク単位で重複排除）。照合は完全一致・未正規化。
+- `usageCounts` はタスク側（frontmatter）由来のため、labels.yml に未定義の暗黙ラベルのキーも含み得る。FE は `labels[].name` で引くため余分なキーは無害（暗黙ラベルは `labels` に現れない）。
+- 集計は表示用のため eventual consistency を許容する（labels と tasks を厳密に同一トランザクションでは観測しない）。
+- **FE 型ドリフト注意**: FE の TS 型は手書きのため、Rust 側の `usageCounts` 追加だけでは TS ビルドは壊れない。`GetLabelsPayload` の TS 型に `usageCounts` を追加して追従する必要がある（FE 実装は別 Issue）。
+
+### ラベル CRUD コマンド
+
+ラベルマスタの書き込みは 3 コマンドで行う。いずれも成功時に `.spec-board/labels.yml` を atomic に上書きし、in-memory state にも反映する。
+
+| コマンド | 引数 | 戻り値 | 説明 |
+|:---------|:-----|:-------|:-----|
+| `create_label` | `{ name, description?, group?, color? }` | `Unit` | 新規ラベルを追記する。`name` 重複・空文字 `""` は拒否。`group` 空文字 / `color` 不正 hex は未指定に倒す（lenient）。`updated` はサーバが現在時刻を自動セット |
+| `update_label` | `{ name, description?, group?, color? }` | `Unit` | 既存ラベルの metadata を更新する。`name` は同一性キーで **rename しない**。不在 `name` は拒否。`updated` をサーバが自動更新 |
+| `delete_label` | `{ name }` | `{ usageCount }` | 指定ラベルを削除する。不在 `name` は拒否。削除前の使用タスク件数を返す |
+
+- **`update_label` は PUT セマンティクス**: FE は全フィールドを送る契約。`description` / `group` / `color` を未指定（または `null`）で送ると、その既存値は**クリアされる**（部分更新ではない）。`color` の不正 hex も既定色（未指定）へ倒れる。
+- **`updated` の自動セット**: `create_label` / `update_label` 時にサーバが現在時刻を ISO 8601 / RFC 3339（UTC・`Z` 終端）でセットする。FE / 引数からは指定できない。
+- **`delete_label` の usageCount**: 削除前に算出した使用タスク件数（`get_labels` の `usageCounts` と同じ意味）。`usageCount > 0`（使用中）でも削除は実行し、タスク frontmatter の `labels` は一切変更しない（タスク側は暗黙ラベルとして残る）。delete の usageCount は labels と tasks を整合スナップショットで観測した値。
+- **エラー文字列契約**（FE のパターンマッチ整合のため `get_labels` と完全一致）:
+  - プロジェクト未オープン → `"プロジェクトが開かれていません"`
+  - 内部状態の lock 破損 → `"内部状態のロックが破損しました"`
+
+> **スコープ境界**: 本仕様は labels.yml のスキーマ確定・読み込み・`get_labels`（使用数集計含む）・`create_label` / `update_label` / `delete_label`・invoke ラッパまでを対象とする（Rust バックエンド）。FE 連携（`usageCounts` の TS 型追従・ラベル編集 UI）と実際のラベル色の UI 反映（既定色の具体値 / design token 定義）は別 Issue で扱う。
 
 ## 設定の初期化
 

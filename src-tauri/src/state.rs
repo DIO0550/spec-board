@@ -71,6 +71,33 @@ pub struct AppState {
     write_ignore: WriteIgnoreRegistry,
 }
 
+/// ラベル `create` / `update` コマンドが書き込み前に必要とするスナップショット。
+///
+/// `project_path` と `labels` を **同一の lock 取得トランザクション**で観測した値を
+/// まとめて運ぶ。複数フィールドの取得を `snapshot_..._and_...` のように `and` 連結した
+/// 関数名で表す代わりに、運ぶ内容を表す専用 context 型として定義する。
+#[derive(Debug, Clone)]
+pub struct LabelWriteContext {
+    /// snapshot 時点の project root。未オープン時は `None`。
+    pub project_root: Option<PathBuf>,
+    /// snapshot 時点のラベルレジストリ。未オープン時は `None`。
+    pub labels: Option<LabelRegistry>,
+}
+
+/// ラベル `delete` コマンドが書き込み前に必要とするスナップショット。
+///
+/// 削除前 usageCount を「labels と tasks の整合した観測」から算出するため、
+/// `project_path` / `labels` に加えて `tasks_cache` も同一トランザクションで取得する。
+#[derive(Debug, Clone)]
+pub struct LabelDeleteContext {
+    /// snapshot 時点の project root。未オープン時は `None`。
+    pub project_root: Option<PathBuf>,
+    /// snapshot 時点のラベルレジストリ。未オープン時は `None`。
+    pub labels: Option<LabelRegistry>,
+    /// snapshot 時点の全タスク（usageCount 算出用）。
+    pub tasks: Vec<Task>,
+}
+
 impl AppState {
     /// 全フィールドを初期状態にした `AppState` を生成する。
     ///
@@ -197,6 +224,64 @@ impl AppState {
         let mut config_guard = lock(&self.config)?;
         if path_guard.as_deref() == Some(expected_path) {
             *config_guard = Some(config);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// `project_path` と `labels` を**両方の lock を順に同時保持した状態で** snapshot する。
+    ///
+    /// `create_label` / `update_label` が書き込み前に使う。別々に `project_path()?` →
+    /// `labels()?` と取得すると、その間に `open_project` が project を swap して
+    /// 「新 path + 旧 labels」を観測する race window が生じる。本 API は両 lock を順に
+    /// 同時保持して両フィールドを clone することで整合 snapshot を返す。lock 取得順序は
+    /// AppState の契約に従って `project_path → labels` を遵守する。
+    pub fn snapshot_label_write(&self) -> Result<LabelWriteContext, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let labels_guard = lock(&self.labels)?;
+        Ok(LabelWriteContext {
+            project_root: path_guard.clone(),
+            labels: labels_guard.clone(),
+        })
+    }
+
+    /// `project_path` / `labels` / `tasks_cache` を**3 つの lock を順に同時保持した状態で**
+    /// snapshot する。
+    ///
+    /// `delete_label` が使う。削除前 usageCount は「削除前に何件のタスクで使われていたか」
+    /// という操作結果のため、labels と tasks を整合した 1 回の観測から算出する必要がある
+    /// （別々に取得すると不整合な組を観測し得る）。lock 取得順序は AppState の契約に従って
+    /// `project_path → labels → tasks_cache` を遵守する。
+    pub fn snapshot_label_delete(&self) -> Result<LabelDeleteContext, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let labels_guard = lock(&self.labels)?;
+        let tasks_guard = lock(&self.tasks_cache)?;
+        Ok(LabelDeleteContext {
+            project_root: path_guard.clone(),
+            labels: labels_guard.clone(),
+            tasks: tasks_guard.values().cloned().collect(),
+        })
+    }
+
+    /// 現在の `project_path` が `expected_path` と一致する場合のみ `labels` を差し替える。
+    ///
+    /// `snapshot_label_write` / `snapshot_label_delete` で読んだ snapshot を mutate し
+    /// disk write 成功後に書き戻す flow で、snapshot 取得から書き戻しまでの間に
+    /// `open_project` が project を swap したケースを検出するための atomic check-and-set。
+    /// lock 取得順序は `project_path → labels` を遵守する。
+    ///
+    /// - `expected_path` が一致 → `labels` を更新して `Ok(true)`
+    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
+    pub fn replace_labels_if_project_matches(
+        &self,
+        expected_path: &std::path::Path,
+        labels: LabelRegistry,
+    ) -> Result<bool, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let mut labels_guard = lock(&self.labels)?;
+        if path_guard.as_deref() == Some(expected_path) {
+            *labels_guard = Some(labels);
             Ok(true)
         } else {
             Ok(false)
@@ -348,3 +433,6 @@ fn lock<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, AppStateError> {
 
 #[cfg(test)]
 mod state_tests;
+
+#[cfg(test)]
+mod state_label_tests;
