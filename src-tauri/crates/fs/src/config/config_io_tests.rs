@@ -463,8 +463,13 @@ fn spec_board_dir_write_then_read_roundtrip() {
     let tmp = TempDir::new().unwrap();
     let dir = SpecBoardDir::new(tmp.path());
 
-    let written = dir.write_file(LABELS_FILE_NAME, "labels:\n  - name: bug\n").unwrap();
-    assert_eq!(written, tmp.path().join(".spec-board").join(LABELS_FILE_NAME));
+    let written = dir
+        .write_file(LABELS_FILE_NAME, "labels:\n  - name: bug\n")
+        .unwrap();
+    assert_eq!(
+        written,
+        tmp.path().join(".spec-board").join(LABELS_FILE_NAME)
+    );
 
     let content = dir.read_file(LABELS_FILE_NAME).unwrap();
     assert_eq!(content, Some("labels:\n  - name: bug\n".to_string()));
@@ -505,7 +510,13 @@ fn spec_board_dir_rejects_path_traversal_file_names() {
     std::fs::create_dir(tmp.path().join(".spec-board")).unwrap();
     let dir = SpecBoardDir::new(tmp.path());
 
-    for bad in ["../outside.yml", "../../etc/passwd", "sub/dir.yml", "/abs.yml", ""] {
+    for bad in [
+        "../outside.yml",
+        "../../etc/passwd",
+        "sub/dir.yml",
+        "/abs.yml",
+        "",
+    ] {
         let read_err = dir.read_file(bad).unwrap_err();
         let ConfigIoError::Io { .. } = read_err;
         let write_err = dir.write_file(bad, "x").unwrap_err();
