@@ -88,6 +88,19 @@ test("group は name の prefix より優先される（tokensForGroup ≠ token
   expect(html).toContain(groupBg);
 });
 
+test('group が空文字で定義済みなら tokensForGroup("")（既定色）になり name 由来色にはならない', () => {
+  useLabelListMock.mockReturnValue({
+    kind: "loaded",
+    labels: [{ name: "priority:high", group: "" }],
+  });
+  const emptyGroupBg = LabelRegistry.tokensForGroup("").bg;
+  const nameBg = LabelRegistry.tokensForLabel("priority:high").bg;
+  expect(emptyGroupBg).not.toBe(nameBg);
+  const html = renderToStaticMarkup(createElement(LabelSettingsTab));
+  expect(html).toContain(emptyGroupBg);
+  expect(html).not.toContain(nameBg);
+});
+
 test("loaded で labels が空のとき「ラベルなし」相当の表示になる", () => {
   useLabelListMock.mockReturnValue({ kind: "loaded", labels: [] });
   render();
