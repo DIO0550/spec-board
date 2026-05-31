@@ -23,7 +23,13 @@ fn tempdir() -> TempDir {
 fn open_with_noop(state: Arc<AppState>, path: &Path) {
     let intent = OpenProjectIntent::try_from(path.to_str().expect("utf-8").to_string())
         .expect("non-empty path");
-    open_project_impl(&state, &intent, &NoopWatcherFactory).expect("open should succeed");
+    open_project_impl(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &NoopWatcherFactory,
+    )
+    .expect("open should succeed");
 }
 
 fn seed_md(root: &Path, rel: &str, content: &str) {

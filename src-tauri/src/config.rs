@@ -54,6 +54,7 @@
 
 pub mod column_name;
 pub mod get_columns;
+pub mod get_labels;
 pub mod update_card_order;
 pub mod update_columns;
 
@@ -66,7 +67,9 @@ use crate::config::column_name::ColumnName;
 use crate::config::update_columns::{ColumnRename, UpdateColumnsArgs, UpdateColumnsError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::Task;
-use spec_board_fs::config::config_io::{self, write_guide_markdown, ConfigIoError};
+use spec_board_fs::config::config_io::{
+    self, write_guide_markdown, ConfigIoError, SpecBoardDir, LABELS_FILE_NAME,
+};
 use thiserror::Error;
 
 /// `cardOrder` の型エイリアス。キー = カラム名、値 = タスクファイルパスの並び順配列。
@@ -1176,5 +1179,277 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
     Ok(config)
 }
 
+// ───────── ラベルマスタ（`.spec-board/labels.yml`） ─────────
+
+/// `labels.yml` 全体。トップレベルは `labels:` キー配下の定義配列。
+///
+/// 将来 `version` 等のメタを同階層に追加しやすい構造にしてある。`labels:` キー欠落 /
+/// `labels: null` / 空配列のいずれも空 `Vec`（= 全ラベル暗黙扱い）に正規化する。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelRegistry {
+    /// ラベル定義の配列。lenient deserialize は Label 固有のロジックなので
+    /// module free function ではなく aggregate の関連関数に紐づける。
+    #[serde(default, deserialize_with = "LabelRegistry::deserialize_labels")]
+    pub labels: Vec<LabelDefinition>,
+}
+
+impl LabelRegistry {
+    /// `labels:` フィールドの lenient deserialize。`null`（YAML の `~` / キー単独）でも
+    /// 空 `Vec` に倒す（`#[serde(default)]` だけでは `labels: null` が Vec の deserialize で
+    /// 落ちるため）。Label 固有ロジックなので aggregate の関連関数として保持する。
+    fn deserialize_labels<'de, D>(de: D) -> Result<Vec<LabelDefinition>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let opt = Option::<Vec<LabelDefinition>>::deserialize(de)?;
+        Ok(opt.unwrap_or_default())
+    }
+
+    /// マスタ整合性を検証する。
+    ///
+    /// (1) `name` 空文字拒否（既存 `Label::try_from_str` 同方針、trim しない）、
+    /// (2) `name` の完全一致重複検出（未正規化・完全一致一意）。定義順は保持したまま
+    /// 検証のみ行う。ドメイン不変条件なので aggregate に同居させる。load / save 双方が
+    /// `#[from]` で自エラーへ持ち上げる。
+    fn validate(&self) -> Result<(), LabelValidationError> {
+        let mut seen: HashSet<&str> = HashSet::with_capacity(self.labels.len());
+        for label in &self.labels {
+            if label.name.is_empty() {
+                return Err(LabelValidationError::EmptyLabelName);
+            }
+            if !seen.insert(label.name.as_str()) {
+                return Err(LabelValidationError::DuplicateLabelName {
+                    name: label.name.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// 単一ラベルのマスタ定義。`name` のみ必須、他は任意。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelDefinition {
+    /// ラベル識別子（必須）。完全一致・未正規化（trim / case 正規化なし）。
+    /// 文字列以外（数値 / bool / mapping 等）は型不一致として deserialize で拒否する
+    /// （lenient なのは `color` のみという契約）。
+    #[serde(deserialize_with = "LabelDefinition::deserialize_string")]
+    pub name: String,
+    #[serde(
+        default,
+        deserialize_with = "LabelDefinition::deserialize_opt_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "LabelDefinition::deserialize_opt_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub group: Option<String>,
+    /// `#RRGGBB`。不正形式・型不一致（`123` / `{}` 等）は lenient に `None`（既定色）へ倒す。
+    #[serde(
+        default,
+        deserialize_with = "LabelColor::deserialize_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub color: Option<LabelColor>,
+    /// 最終更新日時（任意）。形式検証は行わず文字列のまま保持する。
+    #[serde(
+        default,
+        deserialize_with = "LabelDefinition::deserialize_opt_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated: Option<String>,
+}
+
+impl LabelDefinition {
+    /// 文字列フィールド（`name`）の strict deserialize。文字列以外は型不一致エラー。
+    /// `color` 以外は lenient フォールバックを設けない契約のため、数値 / bool / 構造などは
+    /// `LoadLabelsError::Parse` に倒す。Label 固有ロジックなので型に紐づける。
+    fn deserialize_string<'de, D>(de: D) -> Result<String, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match serde_yaml_ng::Value::deserialize(de)? {
+            serde_yaml_ng::Value::String(s) => Ok(s),
+            other => Err(serde::de::Error::custom(format!(
+                "label field must be a string, found {}",
+                yaml_value_type(&other)
+            ))),
+        }
+    }
+
+    /// 任意文字列フィールド（`description` / `group` / `updated`）の strict deserialize。
+    /// `null` のみ `None` を許し、文字列は `Some`、それ以外の型は型不一致エラーに倒す。
+    fn deserialize_opt_string<'de, D>(de: D) -> Result<Option<String>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match serde_yaml_ng::Value::deserialize(de)? {
+            serde_yaml_ng::Value::Null => Ok(None),
+            serde_yaml_ng::Value::String(s) => Ok(Some(s)),
+            other => Err(serde::de::Error::custom(format!(
+                "expected a string, found {}",
+                yaml_value_type(&other)
+            ))),
+        }
+    }
+}
+
+/// `serde_yaml_ng::Value` の種別名を返す（型不一致エラーメッセージ用）。
+fn yaml_value_type(value: &serde_yaml_ng::Value) -> &'static str {
+    match value {
+        serde_yaml_ng::Value::Null => "null",
+        serde_yaml_ng::Value::Bool(_) => "boolean",
+        serde_yaml_ng::Value::Number(_) => "number",
+        serde_yaml_ng::Value::String(_) => "string",
+        serde_yaml_ng::Value::Sequence(_) => "sequence",
+        serde_yaml_ng::Value::Mapping(_) => "mapping",
+        serde_yaml_ng::Value::Tagged(_) => "tagged value",
+    }
+}
+
+/// `#RRGGBB` 形式の色 VO。constructor で形式を強制する。
+///
+/// `Deserialize` は derive せず、フィールド側の関連関数 [`LabelColor::deserialize_opt`]
+/// 経由でのみ生成する（不正値を `None` に倒すため）。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LabelColor(String);
+
+impl LabelColor {
+    /// `#RRGGBB`（`#` + 16 進 6 桁）のみ受理する。それ以外は `None`。
+    pub fn from_hex(raw: &str) -> Option<Self> {
+        let is_valid = raw.len() == 7
+            && raw.starts_with('#')
+            && raw[1..].bytes().all(|b| b.is_ascii_hexdigit());
+        is_valid.then(|| Self(raw.to_string()))
+    }
+
+    /// 保持している `#RRGGBB` 文字列を返す。
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// `color` フィールドの lenient deserialize。`serde_yaml_ng::Value` で一旦受け、
+    /// 「文字列かつ `#RRGGBB` 妥当」のみ `Some(LabelColor)`、それ以外（不正文字列 /
+    /// 数値 / mapping / null）は `None` に倒す。**エラーにしない**。LabelColor 固有
+    /// ロジックなので関連関数として型に紐づける。
+    fn deserialize_opt<'de, D>(de: D) -> Result<Option<LabelColor>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_yaml_ng::Value::deserialize(de)?;
+        Ok(value.as_str().and_then(LabelColor::from_hex))
+    }
+}
+
+/// ラベルマスタの整合性違反。`LabelRegistry::validate` が返すドメインエラー。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum LabelValidationError {
+    /// `name` が完全一致で重複している（未正規化・完全一致一意の契約違反）。
+    #[error("duplicate label name in labels.yml: `{name}`")]
+    DuplicateLabelName { name: String },
+    /// `name` が空文字（`""`）。識別子として無効。空白のみ（`"   "`）は trim しない方針のため許容する。
+    #[error("label name must not be empty in labels.yml")]
+    EmptyLabelName,
+}
+
+/// `labels.yml` の読み込みエラー。`labels load failed (io|parse)` 方針に揃える。
+#[derive(Debug, Error)]
+pub enum LoadLabelsError {
+    #[error(transparent)]
+    Io(#[from] ConfigIoError),
+    #[error("failed to parse labels.yml at `{path}`: {source}", path = path.display())]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: serde_yaml_ng::Error,
+    },
+    /// マスタ整合性違反（name 空 / 重複）。load / save 双方で共有する。
+    #[error(transparent)]
+    Validation(#[from] LabelValidationError),
+}
+
+/// `labels.yml` の書き込みエラー（save 経路）。
+#[derive(Debug, Error)]
+pub enum SaveLabelsError {
+    #[error(transparent)]
+    Io(#[from] ConfigIoError),
+    #[error("failed to serialize labels: {0}")]
+    Serialize(#[source] serde_yaml_ng::Error),
+    /// 不整合なマスタは保存させない（load と同じ不変条件を共有）。
+    #[error(transparent)]
+    Validation(#[from] LabelValidationError),
+}
+
+/// ラベルマスタの永続化を抽象化する trait（format / 配置に非依存）。
+///
+/// 呼び出し側（`open_project` 等）はこの trait にのみ依存し、保存形式（YAML）も
+/// 具象型名も意識しない。テスト時はモック実装を注入できる。
+pub trait LabelRegistryStore {
+    /// マスタを読み込む。不在 / 空相当は Default（空レジストリ）。
+    fn load(&self) -> Result<LabelRegistry, LoadLabelsError>;
+    /// マスタを保存する（編集機能向け。本 Issue では read 経路が主だが対称性のため定義）。
+    fn save(&self, registry: &LabelRegistry) -> Result<(), SaveLabelsError>;
+}
+
+/// 既定の [`LabelRegistryStore`] を生成するファクトリ。**これが唯一の入口**。
+///
+/// 呼び出し側は具象型を名指しせず、trait だけを受け取る。形式の差し替え（JSON 等）は
+/// ここの戻り値を変えるだけで完結する。
+pub fn label_registry_store(project_root: &Path) -> impl LabelRegistryStore {
+    YamlLabelRegistryStore::new(project_root)
+}
+
+/// `.spec-board/labels.yml`（YAML 形式）でラベルマスタを管理する具象 store。
+///
+/// 形式（YAML）と配置（labels.yml）の知識をここに閉じ込める。I/O は内包する
+/// [`SpecBoardDir`]（リソース管理 struct）へ委譲する。`pub(crate)`: モジュール外からは
+/// [`label_registry_store`] ファクトリ + trait 経由でのみ触る。
+pub(crate) struct YamlLabelRegistryStore {
+    dir: SpecBoardDir,
+}
+
+impl YamlLabelRegistryStore {
+    pub(crate) fn new(project_root: impl Into<PathBuf>) -> Self {
+        Self {
+            dir: SpecBoardDir::new(project_root),
+        }
+    }
+}
+
+impl LabelRegistryStore for YamlLabelRegistryStore {
+    fn load(&self) -> Result<LabelRegistry, LoadLabelsError> {
+        // raw String 取得は SpecBoardDir（format 非依存）、YAML パースは本 store（境界規約）。
+        let Some(content) = self.dir.read_file(LABELS_FILE_NAME)? else {
+            return Ok(LabelRegistry::default());
+        };
+        // 空白のみは Default（serde に渡すと unit/null で落ちるため先に弾く）。
+        if content.trim().is_empty() {
+            return Ok(LabelRegistry::default());
+        }
+        let path = self.dir.file_path(LABELS_FILE_NAME)?;
+        // Option で受けることで、コメントのみ / `---`（null ドキュメント）も None → Default に倒す。
+        let registry = serde_yaml_ng::from_str::<Option<LabelRegistry>>(&content)
+            .map_err(|source| LoadLabelsError::Parse { path, source })?
+            .unwrap_or_default();
+        registry.validate()?;
+        Ok(registry)
+    }
+
+    fn save(&self, registry: &LabelRegistry) -> Result<(), SaveLabelsError> {
+        registry.validate()?;
+        let content = serde_yaml_ng::to_string(registry).map_err(SaveLabelsError::Serialize)?;
+        self.dir.write_file(LABELS_FILE_NAME, &content)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod config_tests;
+
+#[cfg(test)]
+mod label_registry_tests;

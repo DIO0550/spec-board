@@ -13,6 +13,13 @@ export type {
 export { updateColumns } from "./columnCommands/updateColumns";
 export { openDirectoryDialog } from "./dialog/openDirectoryDialog";
 
+// labelCommands
+export { getLabels } from "./labelCommands/getLabels";
+export type {
+  GetLabelsPayload,
+  LabelDefinition,
+} from "./labelCommands/types";
+
 // linkCommands
 export { addLink } from "./linkCommands/addLink";
 export { removeLink } from "./linkCommands/removeLink";

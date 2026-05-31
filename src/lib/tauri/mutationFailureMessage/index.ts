@@ -6,7 +6,7 @@ const HAS_CHILDREN_MESSAGE = "子タスクが存在するため削除できま�
  * 書き込み（ミューテーション）コマンド名 → 日本語操作ラベルの写像。
  * このテーブルに載っている cmd のみ失敗トースト対象（= allowlist）。
  * update_card_order は partial-move 専用文を useProject 側に残すため除外。
- * get_tasks / get_columns / open_project は読み取り系のため除外。
+ * get_tasks / get_columns / get_labels / open_project は読み取り系のため除外。
  *
  * `as const satisfies` でリテラルキーを保ちつつ値型を検証する。
  * （`Readonly<Record<string,string>>` 注釈だと keyof が string に潰れる）

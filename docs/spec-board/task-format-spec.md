@@ -72,6 +72,7 @@ links:
 - 省略可能。省略時は空配列として扱う
 - 各ラベルは任意の文字列
 - 重複するラベルはパース時に除去
+- frontmatter の `labels` は自由文字列であり、ラベルマスタ `.spec-board/labels.yml`（[config-spec.md](./config-spec.md) 「labels.yml スキーマ」参照）に未定義のラベルも**警告なく暗黙許容**する。labels.yml の読み込みは frontmatter の `labels` に一切干渉せず非破壊である（マスタはあくまで説明・色などのメタ情報の付与に使う）
 
 #### parent
 

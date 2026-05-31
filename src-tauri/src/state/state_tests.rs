@@ -9,7 +9,7 @@ use std::thread;
 
 use spec_board_fs::watcher::handle::WatcherHandle;
 
-use crate::config::{CardOrder, Column, Config};
+use crate::config::{CardOrder, Column, Config, LabelDefinition, LabelRegistry};
 use crate::task::task_index::Task;
 
 fn sample_task(id: &str, file_path: &str) -> Task {
@@ -39,6 +39,18 @@ fn sample_config() -> Config {
         }],
         card_order: CardOrder::default(),
         done_column: None,
+    }
+}
+
+fn sample_labels() -> LabelRegistry {
+    LabelRegistry {
+        labels: vec![LabelDefinition {
+            name: "bug".to_string(),
+            description: None,
+            group: None,
+            color: None,
+            updated: None,
+        }],
     }
 }
 
@@ -72,6 +84,7 @@ fn new_initializes_all_fields_to_empty() {
 
     assert_eq!(None, state.project_path().expect("readable"));
     assert_eq!(None, state.config().expect("readable"));
+    assert_eq!(None, state.labels().expect("readable"));
     assert!(state.tasks_snapshot().expect("readable").is_empty());
     assert!(state.take_watcher_handle().expect("readable").is_none());
     assert!(state.write_ignore().is_empty().expect("readable"));
@@ -510,4 +523,109 @@ fn write_ignore_forwarder_routes_to_inner_registry() {
 fn app_state_is_send_sync_static() {
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
     assert_send_sync_static::<AppState>();
+}
+
+// ───────── labels（6 番目フィールド） ─────────
+
+#[test]
+fn replace_labels_round_trip_and_overwrite() {
+    let state = AppState::new();
+    state
+        .replace_labels(Some(sample_labels()))
+        .expect("writable");
+    assert_eq!(Some(sample_labels()), state.labels().expect("readable"));
+
+    state.replace_labels(None).expect("writable");
+    assert_eq!(None, state.labels().expect("readable"));
+}
+
+#[test]
+fn labels_lock_poison_is_reported() {
+    let state = Arc::new(AppState::new());
+    poison_mutex(Arc::clone(&state), |s| {
+        let _guard = s.labels.lock().expect("lockable before panic");
+        panic!("poison labels");
+    });
+
+    assert_eq!(
+        AppStateError::LockPoisoned,
+        state.labels().expect_err("poisoned read")
+    );
+    assert_eq!(
+        AppStateError::LockPoisoned,
+        state
+            .replace_labels(Some(sample_labels()))
+            .expect_err("poisoned write")
+    );
+}
+
+#[test]
+fn check_labels_lock_returns_ok_for_healthy_state() {
+    let state = AppState::new();
+    state.check_labels_lock().expect("healthy lock");
+}
+
+#[test]
+fn check_labels_lock_reports_poison() {
+    let state = Arc::new(AppState::new());
+    poison_mutex(Arc::clone(&state), |s| {
+        let _guard = s.labels.lock().expect("lockable before panic");
+        panic!("poison labels");
+    });
+
+    assert_eq!(
+        AppStateError::LockPoisoned,
+        state.check_labels_lock().expect_err("poisoned probe"),
+    );
+}
+
+#[test]
+fn check_all_locks_reports_poison_when_labels_is_poisoned() {
+    let state = Arc::new(AppState::new());
+    poison_mutex(Arc::clone(&state), |s| {
+        let _guard = s.labels.lock().expect("lockable before panic");
+        panic!("poison labels");
+    });
+
+    assert_eq!(
+        AppStateError::LockPoisoned,
+        state.check_all_locks().expect_err("poisoned"),
+    );
+}
+
+#[test]
+fn replace_project_config_and_labels_swaps_three_fields() {
+    let state = AppState::new();
+    let path = PathBuf::from("/tmp/project");
+    state
+        .replace_project_config_and_labels(
+            Some(path.clone()),
+            Some(sample_config()),
+            Some(sample_labels()),
+        )
+        .expect("writable");
+
+    assert_eq!(Some(path), state.project_path().expect("readable"));
+    assert_eq!(Some(sample_config()), state.config().expect("readable"));
+    assert_eq!(Some(sample_labels()), state.labels().expect("readable"));
+}
+
+#[test]
+fn replace_project_config_and_labels_can_clear_all_to_none() {
+    let state = AppState::new();
+    state
+        .replace_project_config_and_labels(
+            Some(PathBuf::from("/tmp/project")),
+            Some(sample_config()),
+            Some(sample_labels()),
+        )
+        .expect("writable");
+
+    state
+        .replace_project_config_and_labels(None, None, None)
+        .expect("writable");
+
+    assert_eq!(None, state.project_path().expect("readable"));
+    assert_eq!(None, state.config().expect("readable"));
+    assert_eq!(None, state.labels().expect("readable"));
 }

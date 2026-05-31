@@ -29,7 +29,8 @@ fn open_with_noop(
     path: &str,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let intent = OpenProjectIntent::try_from(path.to_string())?;
-    open_project_impl(&state, &intent, &NoopWatcherFactory)
+    let labels_store = crate::config::label_registry_store(intent.as_path());
+    open_project_impl(&state, &intent, &labels_store, &NoopWatcherFactory)
 }
 
 /// `prepare` で `WatcherInitFailed` を返すテスト用 factory。
@@ -578,8 +579,13 @@ fn watcher_init_failure_keeps_app_state_completely_unchanged() {
     let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
     let intent = OpenProjectIntent::try_from(other_raw.clone()).expect("non-empty path");
     let factory = FailingPrepareFactory::new("synthetic init failure");
-    let err = open_project_impl(&state, &intent, &factory)
-        .expect_err("watcher init failure should be returned");
+    let err = open_project_impl(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &factory,
+    )
+    .expect_err("watcher init failure should be returned");
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 
     // AppState の全フィールドが 1 回目の状態のまま残ることを確認する。
@@ -606,7 +612,13 @@ fn watcher_init_failure_does_not_write_guide_md_in_new_dir() {
 
     let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
     let factory = FailingPrepareFactory::new("synthetic init failure");
-    let err = open_project_impl(&state, &intent, &factory).expect_err("watcher init failure");
+    let err = open_project_impl(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &factory,
+    )
+    .expect_err("watcher init failure");
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 
     let guide = dir.path().join(".spec-board").join("GUIDE.md");
@@ -630,7 +642,13 @@ fn watcher_init_failure_does_not_invoke_old_watcher_stop() {
 
     let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
     let factory = FailingPrepareFactory::new("synth");
-    let err = open_project_impl(&state, &intent, &factory).expect_err("watcher init failure");
+    let err = open_project_impl(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &factory,
+    )
+    .expect_err("watcher init failure");
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 }
 
@@ -657,7 +675,13 @@ fn old_watcher_is_stopped_before_state_commit() {
         stop_calls: Arc::clone(&stop_counter),
         state: Arc::clone(&state),
     };
-    open_project_impl(&state, &intent, &factory).expect("open should succeed");
+    open_project_impl(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &factory,
+    )
+    .expect("open should succeed");
 
     assert_eq!(1, stop_counter.load(Ordering::SeqCst));
 }
@@ -819,4 +843,142 @@ fn open_project_payload_round_trip() {
     };
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(serialized, r#"{"tasks":[],"columns":["Todo","Done"]}"#);
+}
+
+// ───────── labels.yml 読み込み（open_project 経由） ─────────
+
+fn write_labels_yml(root: &Path, content: &str) {
+    let dir = root.join(".spec-board");
+    fs::create_dir_all(&dir).expect("create .spec-board");
+    fs::write(dir.join("labels.yml"), content).expect("write labels.yml");
+}
+
+#[test]
+fn open_commits_labels_from_labels_yml() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_labels_yml(
+        dir.path(),
+        "labels:\n  - name: bug\n    color: \"#D73A4A\"\n  - name: enhancement\n",
+    );
+
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("open should succeed");
+
+    let registry = state.labels().expect("readable").expect("labels committed");
+    let names: Vec<&str> = registry.labels.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(names, vec!["bug", "enhancement"]);
+}
+
+#[test]
+fn open_without_labels_yml_commits_empty_registry() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("open should succeed");
+
+    let registry = state
+        .labels()
+        .expect("readable")
+        .expect("labels committed (default)");
+    assert!(registry.labels.is_empty());
+}
+
+#[test]
+fn open_fails_with_parse_category_for_broken_labels_yml() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_labels_yml(dir.path(), "labels:\n  - name: bug\n  invalid: : :\n");
+
+    let err = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect_err("broken labels.yml should fail open");
+    assert!(
+        matches!(
+            err,
+            OpenProjectError::LabelsLoadFailed {
+                category: "parse",
+                ..
+            }
+        ),
+        "got {err:?}"
+    );
+    assert!(err.to_string().contains("labels load failed (parse)"));
+}
+
+#[test]
+fn open_fails_with_parse_category_for_duplicate_label_name() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_labels_yml(dir.path(), "labels:\n  - name: bug\n  - name: bug\n");
+
+    let err = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect_err("duplicate name should fail open");
+    assert!(
+        matches!(
+            err,
+            OpenProjectError::LabelsLoadFailed {
+                category: "parse",
+                ..
+            }
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn reopen_into_project_without_labels_yml_resets_labels_to_empty() {
+    let state = Arc::new(AppState::new());
+
+    // 1 回目: labels.yml ありのプロジェクト
+    let dir1 = tempdir();
+    write_labels_yml(dir1.path(), "labels:\n  - name: bug\n");
+    open_with_noop(Arc::clone(&state), dir1.path().to_str().expect("utf-8"))
+        .expect("first open should succeed");
+    assert_eq!(
+        1,
+        state
+            .labels()
+            .expect("readable")
+            .expect("some")
+            .labels
+            .len()
+    );
+
+    // 2 回目: labels.yml 不在の別プロジェクト → 旧 labels が残らず Default(空) へ置換
+    let dir2 = tempdir();
+    open_with_noop(Arc::clone(&state), dir2.path().to_str().expect("utf-8"))
+        .expect("second open should succeed");
+    assert!(state
+        .labels()
+        .expect("readable")
+        .expect("some")
+        .labels
+        .is_empty());
+}
+
+#[test]
+fn failed_open_due_to_broken_labels_keeps_previous_state() {
+    let state = Arc::new(AppState::new());
+
+    // 1 回目: 正常プロジェクト
+    let dir1 = tempdir();
+    write_md(dir1.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_labels_yml(dir1.path(), "labels:\n  - name: bug\n");
+    open_with_noop(Arc::clone(&state), dir1.path().to_str().expect("utf-8"))
+        .expect("first open should succeed");
+    let project_before = state.project_path().expect("readable");
+    let labels_before = state.labels().expect("readable");
+
+    // 2 回目: 壊れ labels.yml の別プロジェクト → load は commit より前なので旧 state 非破壊
+    let dir2 = tempdir();
+    write_labels_yml(dir2.path(), "labels:\n  - name: bug\n  invalid: : :\n");
+    let err = open_with_noop(Arc::clone(&state), dir2.path().to_str().expect("utf-8"))
+        .expect_err("broken labels.yml should fail open");
+    assert!(matches!(err, OpenProjectError::LabelsLoadFailed { .. }));
+
+    assert_eq!(project_before, state.project_path().expect("readable"));
+    assert_eq!(labels_before, state.labels().expect("readable"));
 }

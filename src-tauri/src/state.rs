@@ -10,7 +10,7 @@
 //! AB-BA デッドロックを防ぐための運用規約である。
 //!
 //! ```text
-//! project_path → config → tasks_cache → watcher_handle → write_ignore
+//! project_path → config → labels → tasks_cache → watcher_handle → write_ignore
 //! ```
 //!
 //! - 単一フィールドのみを操作するアクセサは順序を意識する必要はない。
@@ -24,7 +24,7 @@
 //! 公開アクセサを通すことで以下を保証する。
 //!
 //! - `AppState` 自身が保持する `Mutex`（`project_path` / `config` /
-//!   `tasks_cache` / `watcher_handle`）の `PoisonError` を
+//!   `labels` / `tasks_cache` / `watcher_handle`）の `PoisonError` を
 //!   `AppStateError::LockPoisoned` へ統一変換する。
 //!   ただし `write_ignore` は `WriteIgnoreRegistry` 内部で独自の `Mutex` を
 //!   持つため例外で、forwarder 経由の操作は `WriteIgnoreError::LockPoisoned`
@@ -42,7 +42,7 @@ use thiserror::Error;
 use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
-use crate::config::Config;
+use crate::config::{Config, LabelRegistry};
 use crate::task::task_index::Task;
 
 /// `tauri::Builder::manage` に渡すために `'static` を含む trait object 型。
@@ -65,6 +65,7 @@ pub enum AppStateError {
 pub struct AppState {
     project_path: Mutex<Option<PathBuf>>,
     config: Mutex<Option<Config>>,
+    labels: Mutex<Option<LabelRegistry>>,
     tasks_cache: Mutex<HashMap<PathBuf, Task>>,
     watcher_handle: Mutex<Option<BoxedWatcherHandle>>,
     write_ignore: WriteIgnoreRegistry,
@@ -73,7 +74,7 @@ pub struct AppState {
 impl AppState {
     /// 全フィールドを初期状態にした `AppState` を生成する。
     ///
-    /// `project_path` / `config` / `watcher_handle` は `None`、
+    /// `project_path` / `config` / `labels` / `watcher_handle` は `None`、
     /// `tasks_cache` は空 HashMap、`write_ignore` は空 registry になる。
     ///
     /// 初期化エントリーポイントは `new()` のみとし、`Default` 実装は意図的に
@@ -83,6 +84,7 @@ impl AppState {
         Self {
             project_path: Mutex::new(None),
             config: Mutex::new(None),
+            labels: Mutex::new(None),
             tasks_cache: Mutex::new(HashMap::new()),
             watcher_handle: Mutex::new(None),
             write_ignore: WriteIgnoreRegistry::new(),
@@ -115,6 +117,22 @@ impl AppState {
         Ok(())
     }
 
+    /// 現在保持している `LabelRegistry` を clone して返す。
+    ///
+    /// プロジェクト未オープン時は `None`。labels.yml 不在で開いた場合は
+    /// `Some(LabelRegistry::default())`（空レジストリ）が入る。
+    pub fn labels(&self) -> Result<Option<LabelRegistry>, AppStateError> {
+        let guard = lock(&self.labels)?;
+        Ok(guard.clone())
+    }
+
+    /// `LabelRegistry` を丸ごと差し替える。`None` を渡すと未保持状態に戻せる。
+    pub fn replace_labels(&self, labels: Option<LabelRegistry>) -> Result<(), AppStateError> {
+        let mut guard = lock(&self.labels)?;
+        *guard = labels;
+        Ok(())
+    }
+
     /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** snapshot する。
     ///
     /// 一方の lock だけを取得して順に読むと、両フィールドを別々に更新する writer と
@@ -123,7 +141,7 @@ impl AppState {
     /// ことで、その不整合観測を防ぐ atomic 読み取り API として機能する。lock 取得順序は
     /// AppState の契約に従って `project_path → config` を遵守する。
     ///
-    /// 同時更新側は [`Self::replace_project_and_config`] / [`Self::replace_config_if_project_matches`]
+    /// 同時更新側は [`Self::replace_project_config_and_labels`] / [`Self::replace_config_if_project_matches`]
     /// で同様に両 lock を同時保持して書き換えることで、reader 側の観測整合性を確保する。
     ///
     /// 戻り値はそれぞれ clone 済み snapshot のため、呼び出し側が長く保持しても
@@ -136,22 +154,28 @@ impl AppState {
         Ok((path_guard.clone(), config_guard.clone()))
     }
 
-    /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** swap する。
+    /// `project_path` / `config` / `labels` を**3 つの lock を順に同時保持した状態で** swap する。
     ///
-    /// 両フィールドを別 lock で順次更新すると、その間に reader（例:
+    /// 各フィールドを別 lock で順次更新すると、その間に reader（例:
     /// `update_card_order`）が「新 path + 旧 config」を観測し、旧 config を新
     /// プロジェクトの `config.json` に書き出してしまう cross-project corruption が
-    /// 起き得る。本 API は両 lock を保持したまま swap することでその不整合を防ぐ。
-    /// lock 取得順序は AppState の契約に従って `project_path → config` を遵守する。
-    pub fn replace_project_and_config(
+    /// 起き得る。本 API は 3 つの lock を保持したまま swap することでその不整合を防ぐ。
+    /// lock 取得順序は AppState の契約に従って `project_path → config → labels` を遵守する。
+    ///
+    /// commit の整合範囲は `project_path / config / labels` の 3 フィールドに限定され、
+    /// `tasks_cache` 等との間は従来どおり非 atomic（別更新）である。
+    pub fn replace_project_config_and_labels(
         &self,
         path: Option<PathBuf>,
         config: Option<crate::config::Config>,
+        labels: Option<LabelRegistry>,
     ) -> Result<(), AppStateError> {
         let mut path_guard = lock(&self.project_path)?;
         let mut config_guard = lock(&self.config)?;
+        let mut labels_guard = lock(&self.labels)?;
         *path_guard = path;
         *config_guard = config;
+        *labels_guard = labels;
         Ok(())
     }
 
@@ -264,6 +288,15 @@ impl AppState {
         Ok(())
     }
 
+    /// `labels` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `labels()` と異なりクローンを行わないため、pre-flight 用途で
+    /// `LabelRegistry` のコピーコストを避けられる。
+    pub fn check_labels_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.labels)?;
+        Ok(())
+    }
+
     /// `tasks_cache` 用 `Mutex` の健全性をチェックする副作用なしの probe。
     ///
     /// `tasks_snapshot()` と異なり全 `Task` の clone+collect を行わないため、
@@ -283,7 +316,7 @@ impl AppState {
         Ok(())
     }
 
-    /// AppState が保持する 4 つの `Mutex` フィールドすべての lock 健全性を
+    /// AppState が保持する 5 つの `Mutex` フィールドすべての lock 健全性を
     /// 一括 probe する副作用なしの API。
     ///
     /// `WriteIgnoreRegistry` は AppState の `Mutex` ではなく内部に独自の
@@ -292,6 +325,7 @@ impl AppState {
     pub fn check_all_locks(&self) -> Result<(), AppStateError> {
         self.check_project_path_lock()?;
         self.check_config_lock()?;
+        self.check_labels_lock()?;
         self.check_tasks_cache_lock()?;
         self.check_watcher_handle_lock()?;
         Ok(())

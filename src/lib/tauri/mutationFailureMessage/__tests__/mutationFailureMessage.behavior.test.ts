@@ -19,6 +19,7 @@ test.for([
 test.for([
   "get_tasks",
   "get_columns",
+  "get_labels",
   "open_project",
   "update_card_order",
 ] as const)("allowlist 外の cmd '%s' で isMutationCommand が false", (cmd) => {

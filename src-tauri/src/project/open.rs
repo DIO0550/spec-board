@@ -39,6 +39,8 @@
 //! | `ScanFailed` | `io scan failed: ...` | `IO_ERROR` |
 //! | `ConfigLoadFailed` (`category="io"`) | `config load failed (io): ...` | `IO_ERROR` |
 //! | `ConfigLoadFailed` (`category="parse"`) | `config load failed (parse): ...` | `PARSE_ERROR` |
+//! | `LabelsLoadFailed` (`category="io"`) | `labels load failed (io): ...` | `IO_ERROR` |
+//! | `LabelsLoadFailed` (`category="parse"`) | `labels load failed (parse): ...` | `PARSE_ERROR` |
 //! | `NotADirectory` | `ディレクトリではありません: ...` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //! | `StateLockPoisoned` | `内部状態のロックが破損しました` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //!
@@ -70,7 +72,8 @@ use std::sync::Arc;
 
 use crate::config::column_name::ColumnName;
 use crate::config::{
-    load_or_default, write_guide_markdown_best_effort, Column, Config, LoadConfigError,
+    label_registry_store, load_or_default, write_guide_markdown_best_effort, Column, Config,
+    LabelRegistry, LabelRegistryStore, LoadConfigError, LoadLabelsError,
 };
 use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
@@ -119,6 +122,15 @@ pub enum OpenProjectError {
     /// FE 正規表現 (`\bio\b` / `\bparse\b`) にマッチさせる。
     #[error("config load failed ({category}): {message}")]
     ConfigLoadFailed {
+        category: &'static str,
+        message: String,
+    },
+    /// `.spec-board/labels.yml` の読み込みに失敗した。
+    ///
+    /// `category` は `"io"` または `"parse"`。`config load failed` と同じ Display 契約に
+    /// 揃え、FE 正規表現（`\bio\b` / `\bparse\b`）にマッチさせる。
+    #[error("labels load failed ({category}): {message}")]
+    LabelsLoadFailed {
         category: &'static str,
         message: String,
     },
@@ -175,7 +187,10 @@ pub fn open_project(
 ) -> Result<OpenProjectPayload, String> {
     let intent = OpenProjectIntent::try_from(path).map_err(|e| e.to_string())?;
     let watcher = TauriWatcherFactory::new(app);
-    open_project_impl(state.inner(), &intent, &watcher).map_err(|e| e.to_string())
+    // ファクトリで既定の labels store（YAML 具象）を生成して注入する。
+    // effect 層は `&dyn LabelRegistryStore` のみに依存し、具象型も YAML 形式も知らない。
+    let labels_store = label_registry_store(intent.as_path());
+    open_project_impl(state.inner(), &intent, &labels_store, &watcher).map_err(|e| e.to_string())
 }
 
 /// `open_project` Tauri command の effect 層本体（テスト容易性のための一般化版）。
@@ -185,6 +200,7 @@ pub fn open_project(
 pub(crate) fn open_project_impl<W: WatcherFactory>(
     state: &Arc<AppState>,
     intent: &OpenProjectIntent,
+    labels_store: &dyn LabelRegistryStore,
     watcher: &W,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let root = intent.as_path();
@@ -193,6 +209,8 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     check_app_state_locks(state)?;
 
     let config = load_or_default(root).map_err(map_load_config_error)?;
+    // ラベルマスタも config と同様 commit 前に読み込む（load 失敗時は旧 state 非破壊）。
+    let labels = labels_store.load().map_err(map_load_labels_error)?;
 
     let md_paths = scan_md_files(root).map_err(|e| map_scan_error(e, raw_path))?;
 
@@ -212,12 +230,12 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
 
     write_guide_markdown_best_effort(root, &config);
 
-    commit_app_state_with_prepared(state, root, &config, &tasks, prepared, watcher)?;
+    commit_app_state_with_prepared(state, root, &config, &labels, &tasks, prepared, watcher)?;
 
     Ok(build_payload(tasks, &config))
 }
 
-/// AppState 4 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
+/// AppState 5 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
 ///
 /// scan / parse / GUIDE 副作用を実行する前に呼び出すことで、lock poison が
 /// 確定している場合に `.spec-board/GUIDE.md` の不要な書き出しや scan の無駄を
@@ -363,6 +381,21 @@ fn map_load_config_error(err: LoadConfigError) -> OpenProjectError {
     }
 }
 
+/// `LoadLabelsError` を `category` 付きの `LabelsLoadFailed` に分類する。
+///
+/// - `Io` → `category: "io"`
+/// - `Parse`（YAML 構文）/ `Validation`（name 空・重複のマスタ整合性違反）→ `category: "parse"`
+fn map_load_labels_error(err: LoadLabelsError) -> OpenProjectError {
+    let category = match &err {
+        LoadLabelsError::Io(_) => "io",
+        LoadLabelsError::Parse { .. } | LoadLabelsError::Validation(_) => "parse",
+    };
+    OpenProjectError::LabelsLoadFailed {
+        category,
+        message: err.to_string(),
+    }
+}
+
 /// `TaskParseError` を `ScanFailed` に詰め直す。
 ///
 /// `build_children` は `validate_parent_hierarchy` 経由で `CycleOrTooDeep` のみ
@@ -381,7 +414,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///
 /// # ロック健全性の早期検出（pre-flight の限界）
 ///
-/// 5 つの lock を独立して順次取得するため、**真の atomic な commit ではない**。
+/// 6 つの lock を独立して順次取得するため、**真の atomic な commit ではない**。
 /// commit 冒頭で実行する pre-flight は「commit 開始時点で既に poison している
 /// mutex を早期検出して副作用前に Err 復帰させる」ためのものであり、
 /// pre-flight 後 / 個別 setter 呼び出し中に他スレッドの panic 等で後続 lock が
@@ -399,25 +432,25 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
 ///
-/// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
+/// 1. **pre-flight**: `project_path` / `config` / `labels` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
 ///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `take_watcher_handle().stop()`: 新 cache が書かれる前に旧 watcher を必ず停止
-///    - `replace_project_and_config`: `project_path` と `config` を**両 lock 同時保持下で
-///      atomic に swap**する（`update_card_order` 等の reader が「新 path + 旧 config」を
-///      観測して旧 config を新プロジェクトの `config.json` に書き出す cross-project
-///      corruption を防ぐ）
+///    - `replace_project_config_and_labels`: `project_path` / `config` / `labels` を
+///      **3 lock 同時保持下で atomic に swap**する（`update_card_order` 等の reader が
+///      「新 path + 旧 config」を観測して旧 config を新プロジェクトの `config.json` に
+///      書き出す cross-project corruption を防ぐ）
 ///    - `replace_tasks_cache`: tasks_cache を新値に置換
 ///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
 ///    - `install_watcher_handle`: 新 watcher を install。旧 handle は既に上で
 ///      `stop()` 済みのため、ここでは新 handle を置くだけ
 ///
-/// `replace_project_and_config` は `project_path → config` の AppState lock 順序
-/// 契約に従って両 lock を順に取得・同時保持する。他の setter は単一フィールドのみを
-/// 操作するため、AppState の AB-BA 防止規約に抵触しない。
+/// `replace_project_config_and_labels` は `project_path → config → labels` の AppState
+/// lock 順序契約に従って 3 lock を順に取得・同時保持する。他の setter は単一フィールド
+/// のみを操作するため、AppState の AB-BA 防止規約に抵触しない。
 ///
 /// `tasks_cache` の key は `PathBuf::from(task.file_path)`（`task.file_path` は
 /// 既に root 相対の正規化済み文字列）。
@@ -434,6 +467,7 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     state: &Arc<AppState>,
     root: &Path,
     config: &Config,
+    labels: &LabelRegistry,
     tasks: &[Task],
     prepared: W::Prepared,
     watcher: &W,
@@ -454,7 +488,11 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     // 他 command（例: `update_card_order`）が「新 path + 旧 config」を観測して
     // 旧 config を新プロジェクトの `.spec-board/config.json` に書き出してしまう
     // cross-project corruption を起こしうる。
-    state.replace_project_and_config(Some(root.to_path_buf()), Some(config.clone()))?;
+    state.replace_project_config_and_labels(
+        Some(root.to_path_buf()),
+        Some(config.clone()),
+        Some(labels.clone()),
+    )?;
     state.replace_tasks_cache(cache)?;
     state.write_ignore().clear()?;
 

@@ -17,6 +17,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | `update_task` | 既存タスクのmdファイルを更新 |
 | `delete_task` | タスクのmdファイルを削除 |
 | `get_columns` | カラム設定を取得（[config-spec.md](./config-spec.md) 参照） |
+| `get_labels` | ラベルマスタ定義を取得（[config-spec.md](./config-spec.md) 「labels.yml スキーマ」参照） |
 | `update_columns` | カラム設定を更新（[config-spec.md](./config-spec.md) 参照） |
 | `update_card_order` | カラム内のカード並び順を更新（[config-spec.md](./config-spec.md) 参照） |
 | `add_link` | タスク間の関連リンクを追加 |
@@ -28,7 +29,9 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 **説明**: 指定ディレクトリをプロジェクトとして開き、配下のmdファイルをスキャンしてタスク一覧を返す。同時に `notify` ベースの実 watcher を起動し、`task-created` / `task-updated` / `task-deleted` を `tauri::AppHandle::emit` でフロントエンドに配信する adapter を `AppState` に設置する。
 
-> 本コマンド呼び出しでは GUIDE.md の best-effort 書き出し（`<project_root>/.spec-board/GUIDE.md`）と `AppState` の 5 フィールド（`project_path` / `config` / `tasks_cache` / `watcher_handle` / `write_ignore`）の更新を、(1) watcher 起動準備 → (2) 旧 watcher 停止 → (3) state commit → (4) adapter spawn の 4 段階で行う。watcher 起動が失敗した場合は AppState を一切変更せず `WatcherInitFailed` を返す（旧プロジェクトを表示したまま動作継続）。
+> 本コマンド呼び出しでは GUIDE.md の best-effort 書き出し（`<project_root>/.spec-board/GUIDE.md`）と `AppState` の 6 フィールド（`project_path` / `config` / `labels` / `tasks_cache` / `watcher_handle` / `write_ignore`）の更新を、(1) watcher 起動準備 → (2) 旧 watcher 停止 → (3) state commit → (4) adapter spawn の 4 段階で行う。watcher 起動が失敗した場合は AppState を一切変更せず `WatcherInitFailed` を返す（旧プロジェクトを表示したまま動作継続）。
+
+> `.spec-board/labels.yml`（ラベルマスタ）も config 読み込みと同じく open 時に読み込み、`AppState.labels` に commit する。不在時は空レジストリ（`labels: []`）で開け、後方互換を保つ。壊れた YAML / name 重複 / name 空文字は `labels load failed (parse)`、I/O 異常は `labels load failed (io)` として open に失敗する。取得は独立コマンド `get_labels` で行い、本コマンドの payload には同梱しない。
 
 **引数**:
 

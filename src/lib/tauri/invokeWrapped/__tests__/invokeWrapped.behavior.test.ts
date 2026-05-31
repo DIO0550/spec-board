@@ -59,6 +59,7 @@ test("成功時は sink が呼ばれず Result.ok(value) を返す", async () =>
 test.for([
   "get_tasks",
   "get_columns",
+  "get_labels",
   "open_project",
 ] as const)("読み取り系 '%s' の reject では sink が発火しない", async (cmd) => {
   invokeMock.mockRejectedValueOnce(new Error("read boom"));
