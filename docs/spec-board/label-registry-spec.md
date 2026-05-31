@@ -107,6 +107,21 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 - CSS 変数は使わず TS 文字列トークンを直接バインドする
 - Tailwind の色クラス（旧 `bg-gray-100`）は除去し、レイアウト系クラス（`inline-flex` 等）と `border` のみ残す
 
+### 設定画面ラベルタブでの色解決（color → group → name）
+
+設定画面のラベルタブ（[board-view-spec.md](./board-view-spec.md) 参照）は、ラベルマスタ定義 `LabelDefinition`（`name` / `group?` / `color?` 等）1 件ごとにスワッチ色を以下の優先順位で解決する。
+
+1. **`color`（マスタ定義色・最優先）**: `#RRGGBB` 形式の単色が定義されていれば、その単色をスワッチに適用する。
+2. **`group`（明示グループ）**: `color` が無く `group` が定義されていれば、`LabelRegistry.tokensForGroup(group)` の `ColorTokens` を適用する。`name` の prefix からグループを導出する `tokensForLabel` ではなく、明示された `group` を優先する。
+3. **`name`（prefix 由来・フォールバック）**: `color` も `group` も無ければ `LabelRegistry.tokensForLabel(name)`（`name` の prefix からグループを導出）を適用する。
+
+スワッチへの適用規則:
+
+- **単色 `#RRGGBB`**: その単色を `backgroundColor` にバインドする。
+- **`ColorTokens`（`group` / `name` 経路）**: `LabelTag` と同様に `color`（`fg`）/ `backgroundColor`（`bg`）/ `borderColor`（`bd`）にバインドする。`dot` は小丸インジケータ用の予約トークンで本タブでは未使用。
+
+いずれも CSS 変数を作らずインライン `style` にバインドする。`color` の値が不正・欠落している場合は省略され、上記 2→3 の既定色解決にフォールバックする。
+
 ## 公開 API
 
 | シンボル | 種別 | 説明 |
@@ -129,9 +144,11 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 
 - [task-card-spec.md](./task-card-spec.md) — ラベルタグを含むタスクカードの表示仕様
 - [task-format-spec.md](./task-format-spec.md) — ラベルを含む md フロントマター仕様
+- [board-view-spec.md](./board-view-spec.md) — 設定画面ラベルタブ（読み取り表示）の挙動
 
 ## 変更履歴
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
 | 1.0 | 2026-05-31 | 初版作成 | - |
+| 1.1 | 2026-05-31 | 設定画面ラベルタブの色解決優先順位（color → group → name）とスワッチ適用規則を追記 | - |
