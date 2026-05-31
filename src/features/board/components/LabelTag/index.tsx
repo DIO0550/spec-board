@@ -1,3 +1,5 @@
+import { LabelRegistry } from "@/domains/label-registry";
+
 type LabelTagProps = {
   /** ラベル名 */
   label: string;
@@ -5,11 +7,16 @@ type LabelTagProps = {
 
 /**
  * @param props - {@link LabelTagProps}
- * @returns ラベルタグ要素
+ * @returns グループ色を適用したラベルタグ要素
  */
 export const LabelTag = ({ label }: LabelTagProps) => {
+  const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
   return (
-    <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
+    <span
+      data-testid="label-tag"
+      className="inline-flex items-center rounded border px-1.5 py-0.5 text-xs"
+      style={{ color: fg, backgroundColor: bg, borderColor: bd }}
+    >
       {label}
     </span>
   );
