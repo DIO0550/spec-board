@@ -2,6 +2,8 @@
 type HeaderBarProps = {
   /** プロジェクト名（未指定時は「spec-board」を表示） */
   projectName?: string;
+  /** 設定画面表示中か。true のとき設定ボタンを「ボードへ戻る」に切替（既定 false） */
+  isSettingsView?: boolean;
   /** 設定ボタンのクリックハンドラ */
   onSettingsClick: () => void;
   /** 「開く」ボタンのクリックハンドラ */
@@ -15,6 +17,7 @@ type HeaderBarProps = {
  */
 export const HeaderBar = ({
   projectName,
+  isSettingsView = false,
   onSettingsClick,
   onOpenClick,
 }: HeaderBarProps) => {
@@ -29,7 +32,7 @@ export const HeaderBar = ({
           onClick={onSettingsClick}
           className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
         >
-          設定
+          {isSettingsView ? "ボードへ戻る" : "設定"}
         </button>
         <button
           type="button"
