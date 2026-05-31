@@ -110,3 +110,25 @@ test.each([
 ])("tokensForGroup(%j) は default 群 index 0 を返し動的枠に落ちない", (group) => {
   expect(LabelRegistry.tokensForGroup(group)).toBe(LabelRegistry.PALETTE[0]);
 });
+
+test.each([
+  ["constructor"],
+  ["__proto__"],
+  ["valueOf"],
+  ["toString"],
+  ["hasOwnProperty"],
+])("tokensForGroup(%j) は Object.prototype 由来の名前でも throw せず動的枠 index 5..9 を返す", (group) => {
+  const tokens = LabelRegistry.tokensForGroup(group);
+  const index = LabelRegistry.PALETTE.indexOf(tokens);
+  expect(index).toBeGreaterThanOrEqual(5);
+  expect(index).toBeLessThanOrEqual(9);
+});
+
+test.each([
+  ["constructor:x"],
+  ["__proto__:x"],
+])("tokensForLabel(%j) は Object.prototype 由来 prefix でも throw せず有効な ColorTokens を返す", (label) => {
+  const tokens = LabelRegistry.tokensForLabel(label);
+  expect(LabelRegistry.PALETTE.indexOf(tokens)).toBeGreaterThanOrEqual(0);
+  expect(tokens.bg).toMatch(OKLCH_PATTERN);
+});
