@@ -15,6 +15,7 @@ import {
   createTask as createTaskInvoke,
   deleteTask as deleteTaskInvoke,
   getColumns as getColumnsInvoke,
+  getLabels as getLabelsInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
@@ -35,6 +36,7 @@ vi.mock("@/lib/tauri", async () => {
     openDirectoryDialog: vi.fn(),
     openProject: vi.fn(),
     getColumns: vi.fn(),
+    getLabels: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
+const getLabelsMock = vi.mocked(getLabelsInvoke);
 const createTaskMock = vi.mocked(createTaskInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const deleteTaskMock = vi.mocked(deleteTaskInvoke);
@@ -100,6 +103,9 @@ beforeEach(() => {
       doneColumn: "Done",
     },
   });
+  getLabelsMock.mockReset();
+  // 設定画面のラベルタブが getLabels を読むため、既定で空一覧を返す。
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
   createTaskMock.mockReset();
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
@@ -838,4 +844,126 @@ test("子タスクのカードをクリック → DetailPanel 表示 → 親リ�
   expect(
     container?.querySelector('[data-testid="detail-parent-link"]'),
   ).toBeNull();
+});
+
+// === 画面区分（view）/ 設定画面遷移の統合テスト ===
+
+const clickHeaderSettingsButton = () => {
+  const buttons = container?.querySelectorAll("header button") ?? [];
+  const btn = Array.from(buttons).find((b) => b.textContent === "設定") as
+    | HTMLButtonElement
+    | undefined;
+  btn?.click();
+};
+
+const clickHeaderBackButton = () => {
+  const buttons = container?.querySelectorAll("header button") ?? [];
+  const btn = Array.from(buttons).find(
+    (b) => b.textContent === "ボードへ戻る",
+  ) as HTMLButtonElement | undefined;
+  btn?.click();
+};
+
+const flush = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+test("HeaderBar「設定」click で SettingsScreen（SubNav/ラベルタブ）が main に表示される", async () => {
+  mountApp();
+  await act(async () => {
+    clickHeaderSettingsButton();
+  });
+  await flush();
+  expect(container?.querySelector('[role="tablist"]')).not.toBeNull();
+  const tab = container?.querySelector('[role="tab"]');
+  expect(tab?.textContent).toBe("ラベル");
+});
+
+test("settings 表示中の「ボードへ戻る」click で board（EmptyState）に復帰する", async () => {
+  mountApp();
+  await act(async () => {
+    clickHeaderSettingsButton();
+  });
+  await flush();
+  expect(container?.querySelector('[role="tablist"]')).not.toBeNull();
+  await act(async () => {
+    clickHeaderBackButton();
+  });
+  await flush();
+  expect(container?.querySelector('[role="tablist"]')).toBeNull();
+  expect(container?.textContent).toContain(
+    "プロジェクトフォルダを選択して開始してください",
+  );
+});
+
+test("読込→settings→board 往復で読込済み board 状態（A タスク）が保持される", async () => {
+  mountApp();
+  await openSuccessfully();
+  expect(container?.textContent).toContain("A タスク");
+  await act(async () => {
+    clickHeaderSettingsButton();
+  });
+  await flush();
+  // settings 表示中は board が差し替えられ非表示
+  expect(container?.textContent).not.toContain("A タスク");
+  await act(async () => {
+    clickHeaderBackButton();
+  });
+  await flush();
+  // board 状態は据え置き保持されており再表示される
+  expect(container?.textContent).toContain("A タスク");
+});
+
+test("未読込（EmptyState）で settings→戻るしてもクラッシュせず EmptyState に復帰する", async () => {
+  mountApp();
+  await act(async () => {
+    clickHeaderSettingsButton();
+  });
+  await flush();
+  await act(async () => {
+    clickHeaderBackButton();
+  });
+  await flush();
+  expect(container?.textContent).toContain(
+    "プロジェクトフォルダを選択して開始してください",
+  );
+});
+
+test("タスク選択中に settings へ遷移すると DetailPanel が非表示になり、board 復帰で再表示される", async () => {
+  mountApp();
+  await openSuccessfully();
+  await openDetailPanelForFirstTask();
+  expect(container?.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(async () => {
+    clickHeaderSettingsButton();
+  });
+  await flush();
+  expect(container?.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => {
+    clickHeaderBackButton();
+  });
+  await flush();
+  expect(container?.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+test("settings 表示中に HeaderBar「開く」を押すと board に戻り openProject が呼ばれる", async () => {
+  mountApp();
+  await act(async () => {
+    clickHeaderSettingsButton();
+  });
+  await flush();
+  expect(container?.querySelector('[role="tablist"]')).not.toBeNull();
+
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  await act(async () => {
+    clickHeaderOpenButton();
+  });
+  await flush();
+
+  expect(container?.querySelector('[role="tablist"]')).toBeNull();
+  expect(openProjectMock).toHaveBeenCalled();
+  expect(container?.textContent).toContain("A タスク");
 });
