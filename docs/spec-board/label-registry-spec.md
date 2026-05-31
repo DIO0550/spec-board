@@ -48,6 +48,9 @@
 | `"type :feature"` | `type` | prefix 末尾の空白を trim |
 | `"  type:feature"` | `type` | 全体 trim 後に prefix 抽出 |
 | `"type:"` / `"type:   "` | `type` | value 側は判定に使わない |
+| `"constructor:x"` / `"__proto__:x"` | その他 prefix（動的枠） | `Object.prototype` 継承名は固定枠と誤認せず、動的枠へフォールバック（throw しない） |
+
+> **固定枠判定の安全性**: 固定割当は値が数値の**自前プロパティ**のみを採用する。`constructor` / `__proto__` 等の `Object.prototype` 継承メンバ名が prefix になっても固定枠（index 0..4）には決して一致せず、その他 prefix として動的枠（index 5..9）に決定的に割り当てられる。
 
 ## カラーパレット
 
