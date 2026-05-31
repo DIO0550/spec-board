@@ -432,7 +432,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
 ///
-/// 1. **pre-flight**: `project_path` / `config` / `tasks_cache` /
+/// 1. **pre-flight**: `project_path` / `config` / `labels` / `tasks_cache` /
 ///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
 ///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
