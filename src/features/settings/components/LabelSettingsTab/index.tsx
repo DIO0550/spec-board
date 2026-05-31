@@ -8,6 +8,8 @@ import { useLabelList } from "../../hooks/useLabelList";
  * 優先順位は color（マスタ定義色） → group（明示グループ） → name（prefix 由来）。
  * color がある場合はその単色を背景に使い、無い場合は LabelRegistry の
  * グループトークン（fg/bg/bd）を適用する。CSS 変数は作らずインライン style に束ねる。
+ * group は「定義されているか」で判定する（空文字も定義済みとして tokensForGroup に渡し、
+ * 既定色へ正規化させる）。未定義のときだけ name prefix からグループを導出する。
  * @param label - ラベルマスタ定義 1 件
  * @returns スワッチ要素へ束ねるインライン style
  */
@@ -15,9 +17,10 @@ const resolveSwatchStyle = (label: LabelDefinition): CSSProperties => {
   if (label.color) {
     return { backgroundColor: label.color };
   }
-  const tokens = label.group
-    ? LabelRegistry.tokensForGroup(label.group)
-    : LabelRegistry.tokensForLabel(label.name);
+  const tokens =
+    label.group !== undefined
+      ? LabelRegistry.tokensForGroup(label.group)
+      : LabelRegistry.tokensForLabel(label.name);
   return {
     color: tokens.fg,
     backgroundColor: tokens.bg,
