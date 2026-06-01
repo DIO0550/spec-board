@@ -6,16 +6,20 @@ import { SubNav, subNavPanelId, subNavTabId } from "../SubNav";
 /** 設定画面に登録するタブ一覧（現状はラベルタブ 1 枠。NonEmptySettingsTabs で 1 件以上を保証）。 */
 const SETTINGS_TABS: NonEmptySettingsTabs = [{ id: "labels", label: "ラベル" }];
 
+type ActivePanelProps = {
+  /** アクティブタブの識別子 */
+  tabId: string;
+};
+
 /**
- * アクティブタブ ID に対応するパネルを描画する。
- * id → コンポーネントの対応付けは view 層の責務として本関数（switch）に閉じ込め、
- * タブのデータ型（SettingsTab）には持たせない。返すのは要素なので各パネルは
- * 独自の reconciliation 境界・hooks state を持つ。未知 id は描画しない。
- * @param id アクティブタブの識別子
+ * アクティブタブ ID に対応するパネルを描画するコンポーネント。
+ * id → コンポーネントの対応付けは view 層の責務として本コンポーネント（switch）に
+ * 閉じ込め、タブのデータ型（SettingsTab）には持たせない。未知 id は描画しない。
+ * @param props tabId を含む props
  * @returns 対応するパネル要素、未知 id なら null
  */
-const renderActivePanel = (id: string): ReactNode => {
-  switch (id) {
+const ActivePanel = ({ tabId }: ActivePanelProps): ReactNode => {
+  switch (tabId) {
     case "labels":
       return <LabelSettingsTab />;
     default:
@@ -45,7 +49,7 @@ export const SettingsScreen = () => {
         aria-labelledby={subNavTabId(activeTab.id)}
         className="flex-1 overflow-auto p-4"
       >
-        {renderActivePanel(activeTab.id)}
+        <ActivePanel tabId={activeTab.id} />
       </div>
     </div>
   );
