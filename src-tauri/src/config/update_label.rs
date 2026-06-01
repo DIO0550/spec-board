@@ -90,7 +90,8 @@ pub(crate) fn update_label_impl(
     let project_root = ctx.project_root.ok_or(UpdateLabelError::NoProjectOpen)?;
     let registry = ctx.labels.ok_or(UpdateLabelError::NoProjectOpen)?;
 
-    let next = registry.plan_update_label(UpdateLabelIntent::from(args), clock)?;
+    let intent: UpdateLabelIntent = args.into();
+    let next = registry.plan_update_label(intent, clock)?;
 
     let store = label_registry_store(&project_root);
     store.save(&next)?;
