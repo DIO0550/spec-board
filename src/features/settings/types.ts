@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import type { ComponentType } from "react";
 
-/** 設定サブナビのタブ 1 件。render はそのタブのパネル UI を返す描画関数。 */
+/** 設定サブナビのタブ 1 件。Panel はそのタブのパネル UI コンポーネント。 */
 export type SettingsTab = {
   /**
    * タブ識別子（一意）。`settings-tab-${id}` / `settings-panel-${id}` の DOM id に
@@ -9,8 +9,12 @@ export type SettingsTab = {
   id: string;
   /** タブに表示するラベル文言 */
   label: string;
-  /** タブ選択時に main へ描画するパネルを返す（遅延描画・props 拡張に耐える） */
-  render: () => ReactNode;
+  /**
+   * タブ選択時に main へ描画するパネルコンポーネント。
+   * 関数呼び出し（render()）でツリーへ差し込むのではなく `<Panel />` 要素として描画するため、
+   * 独自の reconciliation 境界・hooks state・DevTools 表示名を持てる。
+   */
+  Panel: ComponentType;
 };
 
 /** 1 件以上を型レベルで保証するタブ一覧（空配列を排除し selectActive の戻り値を非 null に固定）。 */
