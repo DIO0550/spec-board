@@ -16,12 +16,8 @@ afterEach(() => {
   container = null;
 });
 
-const tabA: SettingsTab = { id: "labels", label: "ラベル", Panel: () => null };
-const tabB: SettingsTab = {
-  id: "appearance",
-  label: "外観",
-  Panel: () => null,
-};
+const tabA: SettingsTab = { id: "labels", label: "ラベル" };
+const tabB: SettingsTab = { id: "appearance", label: "外観" };
 
 /**
  * SubNav をレンダリングするヘルパー

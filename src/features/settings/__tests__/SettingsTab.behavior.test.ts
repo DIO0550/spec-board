@@ -4,8 +4,8 @@ import {
   SettingsTab,
 } from "@/features/settings/types";
 
-const tabA: SettingsTab = { id: "a", label: "A", Panel: () => null };
-const tabB: SettingsTab = { id: "b", label: "B", Panel: () => null };
+const tabA: SettingsTab = { id: "a", label: "A" };
+const tabB: SettingsTab = { id: "b", label: "B" };
 
 test("selectActive: 一致する ID のタブを返す", () => {
   const tabs: NonEmptySettingsTabs = [tabA, tabB];
