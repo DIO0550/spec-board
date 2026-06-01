@@ -99,7 +99,7 @@ pub(crate) fn create_label_impl(
     let project_root = ctx.project_root.ok_or(CreateLabelError::NoProjectOpen)?;
     let registry = ctx.labels.ok_or(CreateLabelError::NoProjectOpen)?;
 
-    let definition = LabelDefinition::from(args);
+    let definition: LabelDefinition = args.into();
     let next = registry.plan_create_label(definition, clock)?;
 
     let store = label_registry_store(&project_root);
