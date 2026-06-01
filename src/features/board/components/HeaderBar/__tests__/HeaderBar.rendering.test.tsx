@@ -82,3 +82,39 @@ test("「開く」ボタンクリックでコールバックが呼ばれる", as
   btn?.click();
   expect(onOpenClick).toHaveBeenCalledTimes(1);
 });
+
+test("isSettingsView 未指定（既定 false）では設定ボタンが「設定」表示", async () => {
+  renderHeaderBar();
+  await vi.waitFor(() => {
+    const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(texts).toContain("設定");
+    expect(texts).not.toContain("ボードへ戻る");
+  });
+});
+
+test("isSettingsView=true では設定ボタンが「ボードへ戻る」表示", async () => {
+  renderHeaderBar({ isSettingsView: true });
+  await vi.waitFor(() => {
+    const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(texts).toContain("ボードへ戻る");
+    expect(texts).not.toContain("設定");
+  });
+});
+
+test("isSettingsView=true でも設定ボタン click で onSettingsClick が呼ばれる", async () => {
+  const onSettingsClick = vi.fn();
+  renderHeaderBar({ isSettingsView: true, onSettingsClick });
+  let btn: HTMLButtonElement | undefined;
+  await vi.waitFor(() => {
+    btn = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (b): b is HTMLButtonElement => b.textContent === "ボードへ戻る",
+    );
+    expect(btn).toBeDefined();
+  });
+  btn?.click();
+  expect(onSettingsClick).toHaveBeenCalledTimes(1);
+});

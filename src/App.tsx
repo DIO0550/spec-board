@@ -7,6 +7,7 @@ import {
 } from "@/domains/broken-link";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
+import { useAppView } from "@/hooks/useAppView";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
@@ -24,6 +25,7 @@ import {
   wasNotifiedByInvokeWrapped,
 } from "./features/board";
 import { DetailPanel } from "./features/detail";
+import { SettingsScreen } from "./features/settings";
 import {
   TaskCreateModal,
   type TaskFormValues,
@@ -86,6 +88,7 @@ const doneColumnOf = (state: ProjectState): string | undefined =>
  */
 export const App = () => {
   const { toasts, showToast, dismissToast } = useToasts();
+  const { view, navigate } = useAppView();
   const {
     state,
     openProject,
@@ -127,6 +130,14 @@ export const App = () => {
     },
     [showToast],
   );
+
+  // settings 表示中に「開く」を押した場合も board に戻してから開く。
+  // openProject は成功/失敗/キャンセルを区別しない Promise<void> のため、
+  // 押下時点で board へ戻す（board は EmptyState を含め常に有効な画面）。
+  const handleOpenClick = useCallback(() => {
+    navigate("board");
+    openProject();
+  }, [navigate, openProject]);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
@@ -820,11 +831,16 @@ export const App = () => {
     <div className="flex h-screen w-screen flex-col overflow-hidden">
       <HeaderBar
         projectName={projectName}
-        onSettingsClick={() => {}}
-        onOpenClick={openProject}
+        isSettingsView={view === "settings"}
+        onSettingsClick={() =>
+          navigate(view === "settings" ? "board" : "settings")
+        }
+        onOpenClick={handleOpenClick}
       />
-      <main className="flex flex-1 overflow-hidden">{renderMain()}</main>
-      {selectedTask && (
+      <main className="flex flex-1 overflow-hidden">
+        {view === "settings" ? <SettingsScreen /> : renderMain()}
+      </main>
+      {view === "board" && selectedTask && (
         <DetailPanel
           task={selectedTask}
           columns={columns}
@@ -840,7 +856,7 @@ export const App = () => {
           onRemoveLink={handleRemoveLink}
         />
       )}
-      {createModalStatus !== null && (
+      {view === "board" && createModalStatus !== null && (
         <TaskCreateModal
           columns={columns}
           initialStatus={createModalStatus}
