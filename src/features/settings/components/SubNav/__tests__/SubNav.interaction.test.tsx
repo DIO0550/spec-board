@@ -16,11 +16,11 @@ afterEach(() => {
   container = null;
 });
 
-const tabA: SettingsTab = { id: "labels", label: "ラベル", render: () => null };
+const tabA: SettingsTab = { id: "labels", label: "ラベル", Panel: () => null };
 const tabB: SettingsTab = {
   id: "appearance",
   label: "外観",
-  render: () => null,
+  Panel: () => null,
 };
 
 /**
