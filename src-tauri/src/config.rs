@@ -52,11 +52,17 @@
 //! [`build_config_from_statuses`] は本モジュールに同居する。
 //! md ファイルの走査・フロントマター抽出・`config.json` への書き出しは別レイヤの責務。
 
+pub mod clock;
 pub mod column_name;
+pub mod create_label;
+pub mod delete_label;
 pub mod get_columns;
 pub mod get_labels;
 pub mod update_card_order;
 pub mod update_columns;
+pub mod update_label;
+
+pub use clock::{Clock, SystemClock};
 
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -1243,12 +1249,14 @@ pub struct LabelDefinition {
         skip_serializing_if = "Option::is_none"
     )]
     pub description: Option<String>,
+    /// 分類グループ（任意）。`color` と同様にドメイン VO で表し、空文字は `None`
+    /// （未指定）へ正規化する（生の `String` をドメイン/IPC 境界に漏らさない）。
     #[serde(
         default,
-        deserialize_with = "LabelDefinition::deserialize_opt_string",
+        deserialize_with = "LabelGroup::deserialize_opt",
         skip_serializing_if = "Option::is_none"
     )]
-    pub group: Option<String>,
+    pub group: Option<LabelGroup>,
     /// `#RRGGBB`。不正形式・型不一致（`123` / `{}` 等）は lenient に `None`（既定色）へ倒す。
     #[serde(
         default,
@@ -1346,6 +1354,50 @@ impl LabelColor {
     }
 }
 
+/// ラベルの分類グループを表す値オブジェクト。
+///
+/// `LabelColor` と同様にドメイン型として扱い、生の `String` をドメイン / IPC 境界へ
+/// 漏らさない。group には色のような形式制約はない（未正規化の自由文字列）ため、
+/// 空文字のみを「未指定」(`None`) に倒す lenient 構築とする（trim / case 正規化はしない）。
+/// `#[serde(transparent)]` により labels.yml 上は文字列としてそのまま round-trip する。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct LabelGroup(String);
+
+impl LabelGroup {
+    /// 空文字は `None`（未指定）へ。それ以外はそのまま保持する。
+    pub fn from_lenient(value: impl Into<String>) -> Option<Self> {
+        let s = value.into();
+        if s.is_empty() {
+            None
+        } else {
+            Some(Self(s))
+        }
+    }
+
+    /// 保持しているグループ名を返す。
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// `group` フィールドの lenient deserialize。`null` / 空文字は `None`、非空文字列は
+    /// `Some(LabelGroup)`、それ以外の型（数値 / mapping 等）は型不一致エラーに倒す。
+    /// LabelGroup 固有ロジックなので関連関数として型に紐づける。
+    fn deserialize_opt<'de, D>(de: D) -> Result<Option<LabelGroup>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match serde_yaml_ng::Value::deserialize(de)? {
+            serde_yaml_ng::Value::Null => Ok(None),
+            serde_yaml_ng::Value::String(s) => Ok(LabelGroup::from_lenient(s)),
+            other => Err(serde::de::Error::custom(format!(
+                "expected a string, found {}",
+                yaml_value_type(&other)
+            ))),
+        }
+    }
+}
+
 /// ラベルマスタの整合性違反。`LabelRegistry::validate` が返すドメインエラー。
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum LabelValidationError {
@@ -1355,6 +1407,106 @@ pub enum LabelValidationError {
     /// `name` が空文字（`""`）。識別子として無効。空白のみ（`"   "`）は trim しない方針のため許容する。
     #[error("label name must not be empty in labels.yml")]
     EmptyLabelName,
+}
+
+/// `LabelRegistry::plan_update_label` の入力。
+///
+/// `name` を同一性キーとし rename を構造的に不可能にする（target と new name を
+/// 分離するフィールドを持たないため）。`group` / `color` は command 側でドメイン VO
+/// （`LabelGroup` / `LabelColor`）へ lenient 変換済みの値を受ける。
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateLabelIntent {
+    pub name: String,
+    pub description: Option<String>,
+    pub group: Option<LabelGroup>,
+    pub color: Option<LabelColor>,
+}
+
+/// `LabelRegistry::plan_update_label` のドメインエラー。command 層がこれを wrap する。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum UpdateLabelPlanError {
+    /// 更新対象 `name` が空文字。
+    #[error("label name must not be empty")]
+    EmptyName,
+    /// 指定 `name` のラベルが存在しない。
+    #[error("label not found: `{name}`")]
+    NotFound { name: String },
+    /// 更新後のレジストリが不変条件に違反した。
+    #[error(transparent)]
+    Validation(#[from] LabelValidationError),
+}
+
+/// `LabelRegistry::plan_delete_label` のドメインエラー。command 層がこれを wrap する。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum DeleteLabelPlanError {
+    /// 指定 `name` のラベルが存在しない。
+    #[error("label not found: `{name}`")]
+    NotFound { name: String },
+}
+
+impl LabelRegistry {
+    /// 新ラベルを追加した新 registry を返す（副作用なし）。
+    ///
+    /// `updated` は `clock` の現在時刻で自動セットする。空名・完全一致重複は既存
+    /// [`LabelRegistry::validate`] の再利用で拒否する。ドメイン不変条件の検証を
+    /// aggregate に同居させる方針。
+    pub fn plan_create_label(
+        &self,
+        mut definition: LabelDefinition,
+        clock: &dyn Clock,
+    ) -> Result<LabelRegistry, LabelValidationError> {
+        definition.updated = Some(clock.now_iso8601());
+        let mut next = self.clone();
+        next.labels.push(definition);
+        next.validate()?;
+        Ok(next)
+    }
+
+    /// 既存ラベルの metadata を更新した新 registry を返す（副作用なし）。
+    ///
+    /// `intent.name` は同一性キーで rename しない。不在なら `NotFound`、空名なら
+    /// `EmptyName`。未指定 optional はクリアする（PUT セマンティクス）。`updated` を
+    /// `clock` で更新する。
+    pub fn plan_update_label(
+        &self,
+        intent: UpdateLabelIntent,
+        clock: &dyn Clock,
+    ) -> Result<LabelRegistry, UpdateLabelPlanError> {
+        if intent.name.is_empty() {
+            return Err(UpdateLabelPlanError::EmptyName);
+        }
+        let mut next = self.clone();
+        let slot = next
+            .labels
+            .iter_mut()
+            .find(|l| l.name == intent.name)
+            .ok_or_else(|| UpdateLabelPlanError::NotFound {
+                name: intent.name.clone(),
+            })?;
+        // name は維持し metadata のみ差し替える（未指定 = None = クリア）。
+        slot.description = intent.description;
+        slot.group = intent.group;
+        slot.color = intent.color;
+        slot.updated = Some(clock.now_iso8601());
+        next.validate()?;
+        Ok(next)
+    }
+
+    /// 指定 `name` のラベルを削除した新 registry を返す（副作用なし）。不在なら `NotFound`。
+    pub fn plan_delete_label(
+        &self,
+        target_name: &str,
+    ) -> Result<LabelRegistry, DeleteLabelPlanError> {
+        let exists = self.labels.iter().any(|l| l.name == target_name);
+        if !exists {
+            return Err(DeleteLabelPlanError::NotFound {
+                name: target_name.to_string(),
+            });
+        }
+        let mut next = self.clone();
+        next.labels.retain(|l| l.name != target_name);
+        Ok(next)
+    }
 }
 
 /// `labels.yml` の読み込みエラー。`labels load failed (io|parse)` 方針に揃える。

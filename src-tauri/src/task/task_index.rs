@@ -108,6 +108,30 @@ impl TaskIndex {
         &self.tasks
     }
 
+    /// 各ラベル名を「何件のタスクで使われているか」を数えて返す。
+    ///
+    /// 1 タスク内で同じラベルが重複していても 1 件（タスク単位で重複排除）。完全一致・
+    /// 未正規化（trim / case 変換なし）。キーは所有 `String` で返し、呼び出し側
+    /// （`get_labels` / `delete_label`）が借用ライフタイムに縛られないようにする。
+    /// 使用数集計は label/config ドメインではなく task 集約に置くことで、依存方向を
+    /// label/config → task の一方向に保つ（task は label を知らない）。
+    pub fn label_usage_counts(tasks: &[Task]) -> HashMap<String, usize> {
+        tasks
+            .iter()
+            // 各タスクを「そのタスクが持つ distinct なラベル集合」へ変換（タスク内重複排除）。
+            .flat_map(|task| {
+                task.labels
+                    .iter()
+                    .map(|label| label.as_str())
+                    .collect::<HashSet<&str>>()
+            })
+            // distinct ラベルを 1 件ずつ畳み込んで件数マップへ集約する。
+            .fold(HashMap::new(), |mut counts, label| {
+                *counts.entry(label.to_owned()).or_insert(0) += 1;
+                counts
+            })
+    }
+
     /// aggregate が保持する `Task` を `id` 昇順に並べた `Vec<Task>` を返す。
     ///
     /// `get_tasks` 等の読み取り API が依存する「id 昇順」契約をこの aggregate に
@@ -1306,6 +1330,10 @@ mod task_index_tests;
 #[cfg(test)]
 #[path = "task_index_parent_chain_tests.rs"]
 mod task_index_parent_chain_tests;
+
+#[cfg(test)]
+#[path = "task_index_label_usage_tests.rs"]
+mod task_index_label_usage_tests;
 
 #[cfg(test)]
 #[path = "task_index_plan_create_tests.rs"]

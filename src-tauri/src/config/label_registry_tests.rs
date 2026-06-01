@@ -2,8 +2,8 @@
 //! ユニットテスト。load / save / color lenient / validate / format 抽象（trait モック）を網羅する。
 
 use super::{
-    label_registry_store, LabelColor, LabelDefinition, LabelRegistry, LabelRegistryStore,
-    LabelValidationError, LoadLabelsError, SaveLabelsError,
+    label_registry_store, LabelColor, LabelDefinition, LabelGroup, LabelRegistry,
+    LabelRegistryStore, LabelValidationError, LoadLabelsError, SaveLabelsError,
 };
 use tempfile::TempDir;
 
@@ -30,7 +30,7 @@ fn load_parses_definitions_with_all_fields() {
     let label = &registry.labels[0];
     assert_eq!(label.name, "bug");
     assert_eq!(label.description.as_deref(), Some("バグ報告"));
-    assert_eq!(label.group.as_deref(), Some("type"));
+    assert_eq!(label.group.as_ref().map(LabelGroup::as_str), Some("type"));
     assert_eq!(
         label.color.as_ref().map(LabelColor::as_str),
         Some("#D73A4A")
@@ -252,7 +252,7 @@ fn save_then_load_roundtrips_registry() {
             LabelDefinition {
                 name: "bug".to_string(),
                 description: Some("バグ".to_string()),
-                group: Some("type".to_string()),
+                group: LabelGroup::from_lenient("type"),
                 color: LabelColor::from_hex("#D73A4A"),
                 updated: Some("2026-05-30T00:00:00Z".to_string()),
             },
