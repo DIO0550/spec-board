@@ -1,6 +1,8 @@
-import type { ComponentType } from "react";
-
-/** 設定サブナビのタブ 1 件。Panel はそのタブのパネル UI コンポーネント。 */
+/**
+ * 設定サブナビのタブ 1 件（表示用データのみ）。
+ * 「どのコンポーネントを描画するか」は view 層（SettingsScreen）の責務なので
+ * ここには持たせない。本型・companion は React 非依存の純粋ロジックに保つ。
+ */
 export type SettingsTab = {
   /**
    * タブ識別子（一意）。`settings-tab-${id}` / `settings-panel-${id}` の DOM id に
@@ -9,12 +11,6 @@ export type SettingsTab = {
   id: string;
   /** タブに表示するラベル文言 */
   label: string;
-  /**
-   * タブ選択時に main へ描画するパネルコンポーネント。
-   * 関数呼び出し（render()）でツリーへ差し込むのではなく `<Panel />` 要素として描画するため、
-   * 独自の reconciliation 境界・hooks state・DevTools 表示名を持てる。
-   */
-  Panel: ComponentType;
 };
 
 /** 1 件以上を型レベルで保証するタブ一覧（空配列を排除し selectActive の戻り値を非 null に固定）。 */
