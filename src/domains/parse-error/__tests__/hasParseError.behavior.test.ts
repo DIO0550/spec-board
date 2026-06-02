@@ -24,6 +24,7 @@ test.each<{ code: TaskWarningCode }>([
   { code: "parentNotFound" },
   { code: "missingTitleUsedFileName" },
   { code: "missingStatusUsedDefault" },
+  { code: "invalidDue" },
 ])("除外コード $code のみで false", ({ code }) => {
   const task = makeTask({ id: "x", warnings: [warn(code)] });
   expect(hasParseError(task)).toBe(false);
@@ -33,6 +34,14 @@ test("invalid + 除外コード混在で true（invalid が 1 つでもあれば
   const task = makeTask({
     id: "x",
     warnings: [warn("invalidStatusUsedDefault"), warn("parentCycle")],
+  });
+  expect(hasParseError(task)).toBe(true);
+});
+
+test("invalidStatusUsedDefault + invalidDue 混在で true（invalidDue は寄与しない）", () => {
+  const task = makeTask({
+    id: "x",
+    warnings: [warn("invalidStatusUsedDefault"), warn("invalidDue")],
   });
   expect(hasParseError(task)).toBe(true);
 });
