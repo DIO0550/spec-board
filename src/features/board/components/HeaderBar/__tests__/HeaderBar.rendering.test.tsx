@@ -83,7 +83,7 @@ test("「開く」ボタンクリックでコールバックが呼ばれる", as
   expect(onOpenClick).toHaveBeenCalledTimes(1);
 });
 
-test("isSettingsView 未指定（既定 false）では設定ボタンが「設定」表示", async () => {
+test("view 未指定（既定 board）では設定ボタンが「設定」表示", async () => {
   renderHeaderBar();
   await vi.waitFor(() => {
     const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
@@ -94,8 +94,19 @@ test("isSettingsView 未指定（既定 false）では設定ボタンが「設�
   });
 });
 
-test("isSettingsView=true では設定ボタンが「ボードへ戻る」表示", async () => {
-  renderHeaderBar({ isSettingsView: true });
+test("view='board' では設定ボタンが「設定」表示", async () => {
+  renderHeaderBar({ view: "board" });
+  await vi.waitFor(() => {
+    const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(texts).toContain("設定");
+    expect(texts).not.toContain("ボードへ戻る");
+  });
+});
+
+test("view='settings' では設定ボタンが「ボードへ戻る」表示", async () => {
+  renderHeaderBar({ view: "settings" });
   await vi.waitFor(() => {
     const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
       (b) => b.textContent,
@@ -105,9 +116,20 @@ test("isSettingsView=true では設定ボタンが「ボードへ戻る」表示
   });
 });
 
-test("isSettingsView=true でも設定ボタン click で onSettingsClick が呼ばれる", async () => {
+test("view='detail' では設定ボタンが「設定」表示（detail は board 扱いの文言）", async () => {
+  renderHeaderBar({ view: "detail" });
+  await vi.waitFor(() => {
+    const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(texts).toContain("設定");
+    expect(texts).not.toContain("ボードへ戻る");
+  });
+});
+
+test("view='settings' でも設定ボタン click で onSettingsClick が呼ばれる", async () => {
   const onSettingsClick = vi.fn();
-  renderHeaderBar({ isSettingsView: true, onSettingsClick });
+  renderHeaderBar({ view: "settings", onSettingsClick });
   let btn: HTMLButtonElement | undefined;
   await vi.waitFor(() => {
     btn = Array.from(container?.querySelectorAll("button") ?? []).find(

@@ -24,7 +24,7 @@ import {
   useProject,
   wasNotifiedByInvokeWrapped,
 } from "./features/board";
-import { DetailPanel } from "./features/detail";
+import { DetailPanel, DetailScreen } from "./features/detail";
 import { SettingsScreen } from "./features/settings";
 import {
   TaskCreateModal,
@@ -186,6 +186,11 @@ export const App = () => {
     setCreateModalParent(undefined);
     setSubIssueParentPath(undefined);
     setPendingDeleteTask(null);
+    // detail（全画面ビュー）表示中にプロジェクトが切り替わったら、選択タスク消失で
+    // 「選択タスクなしの全画面ビュー」が残らないよう同 render pass で board へ戻す。
+    if (view === "detail") {
+      navigate("board");
+    }
   } else if (state.kind !== "loaded") {
     // loaded から非 loaded (loading / error / idle) に抜けた: project を
     // 閉じた / 再 open 中 / 失敗状態。pending 中の snapshot と create modal は
@@ -197,6 +202,10 @@ export const App = () => {
       setCreateModalStatus(null);
       setCreateModalParent(undefined);
       setSubIssueParentPath(undefined);
+    }
+    // 非 loaded（プロジェクトを閉じた等）に抜けた場合も detail に取り残さない。
+    if (view === "detail") {
+      navigate("board");
     }
   }
 
@@ -282,6 +291,18 @@ export const App = () => {
     return null;
   })();
 
+  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す。
+  // 削除確定後・外部更新でのタスク消失等、render-phase reset で拾えない経路の保険。
+  // selectedTaskId も同 render pass でクリアし、同一 ID 再出現時の DetailPanel 意図せぬ
+  // 復活を防ぐ。同条件は次 render で成立しなくなるため無限ループしない（navigate は安定参照、
+  // setSelectedTaskId(null) は冪等）。
+  if (view === "detail" && selectedTask === null) {
+    navigate("board");
+    if (selectedTaskId !== null) {
+      setSelectedTaskId(null);
+    }
+  }
+
   const handleTaskClick = useCallback((taskId: string) => {
     setSelectedTaskId(taskId);
   }, []);
@@ -301,6 +322,28 @@ export const App = () => {
   const handleCloseDetail = useCallback(() => {
     setSelectedTaskId(null);
   }, []);
+
+  // detail（全画面ビュー）からの「← 戻る」/ Esc。board へ戻すと同時に選択を解除し、
+  // board をクリーン表示にする（選択が残ると view==="board" && selectedTask で
+  // DetailPanel が再表示されてしまうため、選択クリアを必須とする）。
+  const handleBackToBoard = useCallback(() => {
+    navigate("board");
+    setSelectedTaskId(null);
+  }, [navigate]);
+
+  // HeaderBar 設定トグル。settings 中なら board へ戻す。board / detail からは settings へ。
+  // detail から来た場合は選択を解除し、settings → board 復帰後に DetailPanel が
+  // 再表示されないようにする（detail と settings は排他）。
+  const handleSettingsClick = useCallback(() => {
+    if (view === "settings") {
+      navigate("board");
+      return;
+    }
+    if (view === "detail") {
+      setSelectedTaskId(null);
+    }
+    navigate("settings");
+  }, [view, navigate]);
 
   const handleTaskUpdate = useCallback(
     async (id: string, updates: Partial<Omit<Task, "id">>) => {
@@ -831,14 +874,29 @@ export const App = () => {
     <div className="flex h-screen w-screen flex-col overflow-hidden">
       <HeaderBar
         projectName={projectName}
-        isSettingsView={view === "settings"}
-        onSettingsClick={() =>
-          navigate(view === "settings" ? "board" : "settings")
-        }
+        view={view}
+        onSettingsClick={handleSettingsClick}
         onOpenClick={handleOpenClick}
       />
       <main className="flex flex-1 overflow-hidden">
-        {view === "settings" ? <SettingsScreen /> : renderMain()}
+        {view === "settings" && <SettingsScreen />}
+        {view === "detail" && selectedTask && (
+          <DetailScreen
+            task={selectedTask}
+            columns={columns}
+            allTasks={tasks}
+            tasksByNormalizedPath={tasksByNormalizedPath}
+            doneColumn={doneColumn}
+            onBack={handleBackToBoard}
+            onTaskUpdate={handleTaskUpdate}
+            onDelete={handleTaskDelete}
+            onAddSubIssue={handleAddSubIssue}
+            onSelectTask={handleSelectTask}
+            onAddLink={handleAddLink}
+            onRemoveLink={handleRemoveLink}
+          />
+        )}
+        {view !== "settings" && view !== "detail" && renderMain()}
       </main>
       {view === "board" && selectedTask && (
         <DetailPanel
@@ -848,6 +906,7 @@ export const App = () => {
           tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
           onClose={handleCloseDetail}
+          onExpand={() => navigate("detail")}
           onTaskUpdate={handleTaskUpdate}
           onDelete={handleTaskDelete}
           onAddSubIssue={handleAddSubIssue}
