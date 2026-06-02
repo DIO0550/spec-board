@@ -16,6 +16,7 @@ use crate::task::add_link::error::AddLinkError;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
 use crate::task::delete::error::DeleteTaskError;
+use crate::task::due::Due;
 use crate::task::frontmatter::{self, Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
@@ -47,6 +48,10 @@ pub struct Task {
     pub labels: Vec<Label>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<TaskFilePath>,
+    /// 期限（`YYYY-MM-DD`）を表す `Due` VO。検証は parse 時に行い、不正でも原文を保持する。
+    /// 表示用の typed フィールド（透過シリアライズで文字列）だが、round-trip 保持は extras 側が担う。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due: Option<Due>,
     pub links: Vec<TaskFilePath>,
     pub children: Vec<TaskFilePath>,
     pub reverse_links: Vec<TaskFilePath>,
@@ -1096,6 +1101,7 @@ fn build_provisional_task(
         priority: None,
         labels: Vec::new(),
         parent,
+        due: None,
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),

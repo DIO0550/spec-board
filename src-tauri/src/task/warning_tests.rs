@@ -60,3 +60,16 @@ fn parent_cycle_warning_serializes_with_camel_case_field_names() {
     assert_eq!(serialized["field"], "parent");
     assert_eq!(serialized["message"], "parent chain forms a cycle");
 }
+
+#[test]
+fn invalid_due_code_serializes_to_camel_case_string() {
+    let serialized = serde_json::to_string(&TaskWarningCode::InvalidDue).expect("serialize code");
+    assert_eq!(serialized, "\"invalidDue\"");
+}
+
+#[test]
+fn invalid_due_code_round_trips_through_serde() {
+    let json = "\"invalidDue\"";
+    let deserialized: TaskWarningCode = serde_json::from_str(json).expect("deserialize code");
+    assert_eq!(deserialized, TaskWarningCode::InvalidDue);
+}

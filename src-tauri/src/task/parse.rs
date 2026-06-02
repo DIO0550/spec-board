@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
+use crate::task::due::Due;
 use crate::task::frontmatter::{parse_bytes, FrontmatterError, Parsed};
 use crate::task::label::Label;
 use crate::task::path_normalization::normalize_path_parts;
@@ -54,6 +55,7 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
     let title = extract_title(&parsed, context, &mut warnings);
     let status = extract_status(&parsed, context, &mut warnings);
     let parent = extract_parent(&parsed, &mut warnings);
+    let due = extract_due(&parsed, &mut warnings);
     let extras = convert_extras(&parsed, &mut warnings);
     let file_path = normalized_task_file_path(&context.file_path);
     let labels = parsed
@@ -77,6 +79,7 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         priority: parsed.frontmatter.priority,
         labels,
         parent,
+        due,
         links,
         children: Vec::new(),
         reverse_links: Vec::new(),
@@ -172,6 +175,44 @@ fn extract_parent(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<Ta
             None
         }
     }
+}
+
+/// extras["due"] を読み、`Task.due`（`Due` VO・原文保持）を返す。
+///
+/// - キー無し / 空文字 → None（warning なし、省略相当）
+/// - `YYYY-MM-DD` として妥当 → Some(Due)
+/// - 不正フォーマット → Some(Due)（原文保持）を返しつつ invalidDue warning を push
+/// - 文字列でない due（数値・マッピング等）→ invalidDue warning を付与して None
+fn extract_due(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<Due> {
+    let raw = match extract_string_extra(&parsed.frontmatter.extras, "due") {
+        Ok(Some(value)) => value,
+        Ok(None) => {
+            return None;
+        }
+        Err(()) => {
+            warnings.push(warning(
+                TaskWarningCode::InvalidDue,
+                Some("due"),
+                "due is not a string; value was ignored",
+            ));
+            return None;
+        }
+    };
+
+    if raw.is_empty() {
+        return None;
+    }
+
+    let due = Due::from_lenient(raw);
+    if !due.is_valid() {
+        warnings.push(warning(
+            TaskWarningCode::InvalidDue,
+            Some("due"),
+            "due is not a valid YYYY-MM-DD date; original value was kept",
+        ));
+    }
+
+    Some(due)
 }
 
 fn convert_extras(

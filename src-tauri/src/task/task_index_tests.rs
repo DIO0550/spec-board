@@ -152,6 +152,30 @@ fn task_json_round_trip_omits_none_optional_fields() {
 }
 
 #[test]
+fn task_serializes_due_as_string_when_present() {
+    let task = task_from(
+        "---\ntitle: T\nstatus: Todo\ndue: 2026-06-30\n---\n",
+        "tasks/t.md",
+    );
+
+    let json_value = serde_json::to_value(task).unwrap();
+
+    assert_eq!(json_value["due"], json!("2026-06-30"));
+}
+
+#[test]
+fn task_omits_due_when_absent() {
+    let task = task_from("---\ntitle: T\nstatus: Todo\n---\n", "tasks/t.md");
+
+    let json_value = serde_json::to_value(task).unwrap();
+
+    assert!(
+        json_value.get("due").is_none(),
+        "due should be omitted when None"
+    );
+}
+
+#[test]
 fn insert_new_task_into_empty_cache_adds_one_entry() {
     let mut cache = HashMap::new();
     let new_task = task_without_parent("tasks/new.md");

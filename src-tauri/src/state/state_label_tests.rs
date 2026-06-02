@@ -34,6 +34,7 @@ fn sample_task(id: &str) -> Task {
         priority: None,
         labels: Vec::new(),
         parent: None,
+        due: None,
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),
