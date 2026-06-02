@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DueBadge } from "@/components/DueBadge";
 import { EditableText } from "@/components/EditableText";
 import { getBrokenLinks } from "@/domains/broken-link";
 import type { Priority } from "@/domains/priority";
@@ -266,6 +267,7 @@ export const DetailPanel = ({
                 value={task.priority}
                 onChange={handlePriorityChange}
               />
+              <DueBadge due={task.due} />
             </div>
             <LabelEditor
               labels={task.labels}
