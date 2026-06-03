@@ -1,17 +1,11 @@
-import { act, createElement } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { BrokenLinkSet } from "@/domains/broken-link";
+import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
+import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { Task, type TaskPayload } from "@/types/task";
+import { Result } from "@/utils/result";
 import { DetailFields } from "..";
-
-/** リンク切れなしの BrokenLinkSet */
-const noBrokenLinks: BrokenLinkSet = {
-  parent: false,
-  links: new Set<string>(),
-  children: new Set<string>(),
-  reverseLinks: new Set<string>(),
-};
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -52,78 +46,111 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 }
 
 /**
- * DetailFields の必須 props にデフォルトを与えるヘルパー。
- * @param overrides - 上書きする props
- * @returns DetailFields の props
+ * テスト用の編集ハンドラ群を生成する。
+ * @returns DetailFieldHandlers
  */
-function buildProps(
-  overrides: Partial<Parameters<typeof DetailFields>[0]> = {},
-): Parameters<typeof DetailFields>[0] {
-  const task = overrides.task ?? createTask();
-  return {
-    task,
-    columns: testColumns,
-    childTasks: [],
-    descendantTasks: [],
-    effectiveDoneColumn: "Done",
-    parentTask: null,
-    brokenLinks: noBrokenLinks,
-    onStatusChange: vi.fn(),
-    onPriorityChange: vi.fn(),
-    onLabelAdd: vi.fn(),
-    onLabelRemove: vi.fn(),
-    ...overrides,
-  };
-}
+const createHandlers = (): DetailFieldHandlers => ({
+  onStatusChange: vi.fn(),
+  onPriorityChange: vi.fn(),
+  onLabelAdd: vi.fn(),
+  onLabelRemove: vi.fn(),
+});
+
+/** 空の子タスク解決結果 */
+const emptyChildInfo: UseChildTasksResult = {
+  childTasks: [],
+  descendantTasks: [],
+  effectiveDoneColumn: "Done",
+};
 
 /**
- * DetailFields をレンダリングするヘルパー
- * @param props - DetailFields に渡す props
+ * 任意の React 要素をレンダリングするヘルパー
+ * @param node - レンダリング対象
  */
-function render(props: Parameters<typeof DetailFields>[0]) {
+function render(node: ReactNode) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(DetailFields, props));
+    root?.render(node);
   });
 }
 
-test("StatusSelect / PrioritySelect が描画される", () => {
-  render(buildProps());
+test("StatusPriority で Status/Priority が描画される", () => {
+  render(
+    <DetailFields
+      task={createTask()}
+      columns={testColumns}
+      handlers={createHandlers()}
+    >
+      <DetailFields.StatusPriority />
+    </DetailFields>,
+  );
   expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
   expect(
     document.querySelector('[data-testid="priority-select"]'),
   ).toBeTruthy();
 });
 
-test("LabelEditor が描画される", () => {
-  render(buildProps());
+test("Labels で LabelEditor が描画される", () => {
+  render(
+    <DetailFields
+      task={createTask()}
+      columns={testColumns}
+      handlers={createHandlers()}
+    >
+      <DetailFields.Labels />
+    </DetailFields>,
+  );
   expect(document.querySelector('[data-testid="label-editor"]')).toBeTruthy();
 });
 
-test("onAddSubIssue + allTasks ありで SubIssueSection が描画される", () => {
+test("SubIssue で SubIssueSection が描画される", () => {
   const task = createTask({ filePath: "tasks/parent.md" });
-  render(buildProps({ task, allTasks: [task], onAddSubIssue: vi.fn() }));
+  render(
+    <DetailFields task={task} columns={testColumns} handlers={createHandlers()}>
+      <DetailFields.SubIssue
+        childInfo={emptyChildInfo}
+        brokenChildPaths={new Set()}
+        onAddSubIssue={vi.fn()}
+      />
+    </DetailFields>,
+  );
   expect(
     document.querySelector('[data-testid="sub-issue-section"]'),
   ).toBeTruthy();
 });
 
-test("onAddLink + allTasks ありで LinksSection が描画される", () => {
+test("Links で LinksSection が描画される", () => {
   const task = createTask();
-  render(buildProps({ task, allTasks: [task], onAddLink: vi.fn() }));
+  render(
+    <DetailFields task={task} columns={testColumns} handlers={createHandlers()}>
+      <DetailFields.Links
+        allTasks={[task]}
+        parentFilePath={null}
+        childrenFilePaths={[]}
+        onAddLink={vi.fn(async () => Result.ok(task))}
+        brokenLinkPaths={new Set()}
+        brokenReverseLinkPaths={new Set()}
+      />
+    </DetailFields>,
+  );
   expect(document.querySelector('[data-testid="links-section"]')).toBeTruthy();
 });
 
-test("onAddLink 無しでは LinksSection が描画されない（後方互換）", () => {
-  const task = createTask();
-  render(buildProps({ task, allTasks: [task] }));
+test("呼び出し側が並べた部品のみが描画される（Links を並べなければ非描画）", () => {
+  render(
+    <DetailFields
+      task={createTask()}
+      columns={testColumns}
+      handlers={createHandlers()}
+    >
+      <DetailFields.StatusPriority />
+      <DetailFields.Labels />
+    </DetailFields>,
+  );
+  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
   expect(document.querySelector('[data-testid="links-section"]')).toBeNull();
-});
-
-test("allTasks 無しでは SubIssueSection が描画されない", () => {
-  render(buildProps({ onAddSubIssue: vi.fn() }));
   expect(
     document.querySelector('[data-testid="sub-issue-section"]'),
   ).toBeNull();

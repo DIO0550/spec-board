@@ -1,17 +1,9 @@
-import { act, createElement } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { BrokenLinkSet } from "@/domains/broken-link";
+import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { Task, type TaskPayload } from "@/types/task";
 import { DetailFields } from "..";
-
-/** リンク切れなしの BrokenLinkSet */
-const noBrokenLinks: BrokenLinkSet = {
-  parent: false,
-  links: new Set<string>(),
-  children: new Set<string>(),
-  reverseLinks: new Set<string>(),
-};
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -52,40 +44,30 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 }
 
 /**
- * DetailFields の必須 props にデフォルトを与えるヘルパー。
- * @param overrides - 上書きする props
- * @returns DetailFields の props
+ * テスト用の編集ハンドラ群を生成する。
+ * @param overrides - 上書きするハンドラ
+ * @returns DetailFieldHandlers
  */
-function buildProps(
-  overrides: Partial<Parameters<typeof DetailFields>[0]> = {},
-): Parameters<typeof DetailFields>[0] {
-  const task = overrides.task ?? createTask();
-  return {
-    task,
-    columns: testColumns,
-    childTasks: [],
-    descendantTasks: [],
-    effectiveDoneColumn: "Done",
-    parentTask: null,
-    brokenLinks: noBrokenLinks,
-    onStatusChange: vi.fn(),
-    onPriorityChange: vi.fn(),
-    onLabelAdd: vi.fn(),
-    onLabelRemove: vi.fn(),
-    ...overrides,
-  };
-}
+const createHandlers = (
+  overrides: Partial<DetailFieldHandlers> = {},
+): DetailFieldHandlers => ({
+  onStatusChange: vi.fn(),
+  onPriorityChange: vi.fn(),
+  onLabelAdd: vi.fn(),
+  onLabelRemove: vi.fn(),
+  ...overrides,
+});
 
 /**
- * DetailFields をレンダリングするヘルパー
- * @param props - DetailFields に渡す props
+ * 任意の React 要素をレンダリングするヘルパー
+ * @param node - レンダリング対象
  */
-function render(props: Parameters<typeof DetailFields>[0]) {
+function render(node: ReactNode) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(DetailFields, props));
+    root?.render(node);
   });
 }
 
@@ -105,34 +87,49 @@ const changeSelect = (select: HTMLSelectElement, value: string): void => {
   });
 };
 
-test("StatusSelect 変更で onStatusChange が呼ばれる", () => {
+test("StatusPriority の変更で onStatusChange / onPriorityChange が呼ばれる", () => {
   const onStatusChange = vi.fn();
-  render(buildProps({ onStatusChange }));
-  const select = document.querySelector(
-    '[data-testid="status-select"]',
-  ) as HTMLSelectElement;
-  changeSelect(select, "Done");
-  expect(onStatusChange).toHaveBeenCalledWith("Done");
-});
-
-test("PrioritySelect 変更で onPriorityChange が呼ばれる", () => {
   const onPriorityChange = vi.fn();
-  render(buildProps({ onPriorityChange }));
-  const select = document.querySelector(
-    '[data-testid="priority-select"]',
-  ) as HTMLSelectElement;
-  changeSelect(select, "High");
+  render(
+    <DetailFields
+      task={createTask()}
+      columns={testColumns}
+      handlers={createHandlers({ onStatusChange, onPriorityChange })}
+    >
+      <DetailFields.StatusPriority />
+    </DetailFields>,
+  );
+  changeSelect(
+    document.querySelector(
+      '[data-testid="status-select"]',
+    ) as HTMLSelectElement,
+    "Done",
+  );
+  expect(onStatusChange).toHaveBeenCalledWith("Done");
+  changeSelect(
+    document.querySelector(
+      '[data-testid="priority-select"]',
+    ) as HTMLSelectElement,
+    "High",
+  );
   expect(onPriorityChange).toHaveBeenCalledWith("High");
 });
 
-test("LabelEditor で追加すると onLabelAdd が呼ばれる", () => {
+test("Labels の追加で onLabelAdd が呼ばれる", () => {
   const onLabelAdd = vi.fn();
-  render(buildProps({ onLabelAdd }));
-  const addButton = document.querySelector(
-    '[data-testid="label-add-button"]',
-  ) as HTMLElement;
+  render(
+    <DetailFields
+      task={createTask()}
+      columns={testColumns}
+      handlers={createHandlers({ onLabelAdd })}
+    >
+      <DetailFields.Labels />
+    </DetailFields>,
+  );
   act(() => {
-    addButton.click();
+    (
+      document.querySelector('[data-testid="label-add-button"]') as HTMLElement
+    ).click();
   });
   const input = document.querySelector(
     '[data-testid="label-input"]',
@@ -153,14 +150,29 @@ test("LabelEditor で追加すると onLabelAdd が呼ばれる", () => {
   expect(onLabelAdd).toHaveBeenCalledWith("bug");
 });
 
-test("LabelEditor で削除すると onLabelRemove が呼ばれる", () => {
+test("Labels の削除で onLabelRemove が呼ばれる", () => {
   const onLabelRemove = vi.fn();
-  render(buildProps({ task: createTask({ labels: ["bug"] }), onLabelRemove }));
-  const removeButton = document.querySelector(
-    '[aria-label="ラベル「bug」を削除"]',
-  ) as HTMLElement;
+  render(
+    <DetailFields
+      task={createTask({ labels: ["bug"] })}
+      columns={testColumns}
+      handlers={createHandlers({ onLabelRemove })}
+    >
+      <DetailFields.Labels />
+    </DetailFields>,
+  );
   act(() => {
-    removeButton.click();
+    (
+      document.querySelector(
+        '[aria-label="ラベル「bug」を削除"]',
+      ) as HTMLElement
+    ).click();
   });
   expect(onLabelRemove).toHaveBeenCalledWith("bug");
+});
+
+test("Root の外で部品を使うと例外を投げる（誤用検知）", () => {
+  expect(() => {
+    render(<DetailFields.Labels />);
+  }).toThrow();
 });

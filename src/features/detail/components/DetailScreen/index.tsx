@@ -99,7 +99,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
     onRemoveLink,
   } = props;
 
-  const { childTasks, descendantTasks, effectiveDoneColumn } = useChildTasks({
+  const childInfo = useChildTasks({
     parentFilePath: task.filePath,
     allTasks,
     columns,
@@ -139,15 +139,10 @@ export const DetailScreen = (props: DetailScreenProps) => {
           task={task}
           columns={columns}
           allTasks={allTasks}
-          childTasks={childTasks}
-          descendantTasks={descendantTasks}
-          effectiveDoneColumn={effectiveDoneColumn}
+          childInfo={childInfo}
           parentTask={parentTask}
           brokenLinks={brokenLinks}
-          onStatusChange={fieldHandlers.onStatusChange}
-          onPriorityChange={fieldHandlers.onPriorityChange}
-          onLabelAdd={fieldHandlers.onLabelAdd}
-          onLabelRemove={fieldHandlers.onLabelRemove}
+          handlers={fieldHandlers}
           onAddSubIssue={onAddSubIssue}
           onSelectTask={onSelectTask}
           onAddLink={onAddLink}

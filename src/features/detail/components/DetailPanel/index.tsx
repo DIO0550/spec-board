@@ -110,7 +110,7 @@ export const DetailPanel = ({
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
-  const { childTasks, descendantTasks, effectiveDoneColumn } = useChildTasks({
+  const childInfo = useChildTasks({
     parentFilePath: task.filePath,
     allTasks,
     columns,
@@ -252,21 +252,33 @@ export const DetailPanel = ({
             <DetailFields
               task={task}
               columns={columns}
-              allTasks={allTasks}
-              childTasks={childTasks}
-              descendantTasks={descendantTasks}
-              effectiveDoneColumn={effectiveDoneColumn}
-              parentTask={parentTask}
-              brokenLinks={brokenLinks}
-              onStatusChange={fieldHandlers.onStatusChange}
-              onPriorityChange={fieldHandlers.onPriorityChange}
-              onLabelAdd={fieldHandlers.onLabelAdd}
-              onLabelRemove={fieldHandlers.onLabelRemove}
-              onAddSubIssue={onAddSubIssue}
-              onSelectTask={onSelectTask}
-              onAddLink={onAddLink}
-              onRemoveLink={onRemoveLink}
-            />
+              handlers={fieldHandlers}
+            >
+              <DetailFields.StatusPriority />
+              <DetailFields.Labels />
+              {onAddSubIssue && allTasks !== undefined && (
+                <DetailFields.SubIssue
+                  childInfo={childInfo}
+                  brokenChildPaths={brokenLinks.children}
+                  onAddSubIssue={onAddSubIssue}
+                  onChildClick={onSelectTask}
+                />
+              )}
+              {onAddLink !== undefined && allTasks !== undefined && (
+                <DetailFields.Links
+                  allTasks={allTasks}
+                  parentFilePath={parentTask?.filePath ?? null}
+                  childrenFilePaths={childInfo.childTasks.map(
+                    (t) => t.filePath,
+                  )}
+                  onAddLink={onAddLink}
+                  onRemoveLink={onRemoveLink}
+                  onLinkClick={onSelectTask}
+                  brokenLinkPaths={brokenLinks.links}
+                  brokenReverseLinkPaths={brokenLinks.reverseLinks}
+                />
+              )}
+            </DetailFields>
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
             {/* MarkdownBody を再マウントして edit 状態をリセットする（stale state 防止）。 */}
             <MarkdownBody

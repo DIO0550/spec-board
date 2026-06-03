@@ -63,15 +63,19 @@ function buildProps(
   return {
     task,
     columns: testColumns,
-    childTasks: [],
-    descendantTasks: [],
-    effectiveDoneColumn: "Done",
+    childInfo: {
+      childTasks: [],
+      descendantTasks: [],
+      effectiveDoneColumn: "Done",
+    },
     parentTask: null,
     brokenLinks: noBrokenLinks,
-    onStatusChange: vi.fn(),
-    onPriorityChange: vi.fn(),
-    onLabelAdd: vi.fn(),
-    onLabelRemove: vi.fn(),
+    handlers: {
+      onStatusChange: vi.fn(),
+      onPriorityChange: vi.fn(),
+      onLabelAdd: vi.fn(),
+      onLabelRemove: vi.fn(),
+    },
     onDelete: vi.fn(),
     ...overrides,
   };
