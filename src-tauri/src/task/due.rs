@@ -10,10 +10,39 @@ use serde::Serialize;
 #[serde(transparent)]
 pub struct Due(String);
 
+/// 生の due 文字列を分類した結果。frontmatter 由来の値が「期限なし / 妥当 / 不正」の
+/// どれに当たるかという判断を Due ドメインに集約する。warning 発行や extras からの
+/// 読み取りは呼び出し側（parse 層）の責務として残す。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DueFromRaw {
+    /// 空文字（省略相当）。期限なし扱いで warning も無し。
+    Unset,
+    /// `YYYY-MM-DD` として妥当な値。
+    Valid(Due),
+    /// 解釈不能なフォーマット。原文は保持する（呼び出し側で warning を付与）。
+    Invalid(Due),
+}
+
 impl Due {
     /// frontmatter 由来の値を verbatim 保持して構築する（不正値も保持）。
     pub fn from_lenient<S: Into<String>>(value: S) -> Self {
         Self(value.into())
+    }
+
+    /// 生の due 文字列を `DueFromRaw`（Unset / Valid / Invalid）へ分類する。
+    ///
+    /// 空文字は `Unset`、`YYYY-MM-DD` として妥当なら `Valid`、それ以外は原文を保持した
+    /// `Invalid` を返す。frontmatter からの読み取りや warning 発行は呼び出し側に委ねる。
+    pub fn from_raw(raw: &str) -> DueFromRaw {
+        if raw.is_empty() {
+            return DueFromRaw::Unset;
+        }
+        let due = Self::from_lenient(raw);
+        if due.is_valid() {
+            DueFromRaw::Valid(due)
+        } else {
+            DueFromRaw::Invalid(due)
+        }
     }
 
     pub fn as_str(&self) -> &str {

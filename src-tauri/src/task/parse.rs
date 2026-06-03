@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
-use crate::task::due::Due;
+use crate::task::due::{Due, DueFromRaw};
 use crate::task::frontmatter::{parse_bytes, FrontmatterError, Parsed};
 use crate::task::label::Label;
 use crate::task::path_normalization::normalize_path_parts;
@@ -199,20 +199,18 @@ fn extract_due(parsed: &Parsed, warnings: &mut Vec<TaskWarning>) -> Option<Due> 
         }
     };
 
-    if raw.is_empty() {
-        return None;
+    match Due::from_raw(&raw) {
+        DueFromRaw::Unset => None,
+        DueFromRaw::Valid(due) => Some(due),
+        DueFromRaw::Invalid(due) => {
+            warnings.push(warning(
+                TaskWarningCode::InvalidDue,
+                Some("due"),
+                "due is not a valid YYYY-MM-DD date; original value was kept",
+            ));
+            Some(due)
+        }
     }
-
-    let due = Due::from_lenient(raw);
-    if !due.is_valid() {
-        warnings.push(warning(
-            TaskWarningCode::InvalidDue,
-            Some("due"),
-            "due is not a valid YYYY-MM-DD date; original value was kept",
-        ));
-    }
-
-    Some(due)
 }
 
 fn convert_extras(

@@ -1,4 +1,4 @@
-use super::Due;
+use super::{Due, DueFromRaw};
 
 #[test]
 fn is_valid_format_accepts_normal_dates() {
@@ -79,4 +79,29 @@ fn deserializes_leniently_from_string() {
     let due: Due = serde_json::from_str("\"2026/6/30\"").expect("deserialize");
     assert_eq!(due.as_str(), "2026/6/30");
     assert!(!due.is_valid());
+}
+
+#[test]
+fn from_raw_classifies_empty_as_unset() {
+    assert_eq!(Due::from_raw(""), DueFromRaw::Unset);
+}
+
+#[test]
+fn from_raw_classifies_well_formed_date_as_valid() {
+    assert_eq!(
+        Due::from_raw("2026-06-30"),
+        DueFromRaw::Valid(Due::from_lenient("2026-06-30"))
+    );
+}
+
+#[test]
+fn from_raw_classifies_invalid_format_as_invalid_keeping_original() {
+    let cases = ["2026/6/30", "tomorrow", "2026-02-29"];
+    for raw in cases {
+        assert_eq!(
+            Due::from_raw(raw),
+            DueFromRaw::Invalid(Due::from_lenient(raw)),
+            "{raw} should be classified as Invalid with original kept"
+        );
+    }
 }
