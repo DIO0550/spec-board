@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
-/** アプリの画面区分。board（既定）と settings の 2 区分。view 追加時はここに増やすだけ。 */
-export type AppView = "board" | "settings";
+/** アプリの画面区分。board（既定）/ settings / detail（全画面詳細）の 3 区分。 */
+export type AppView = "board" | "settings" | "detail";
 
 /** useAppView の返り値。view state と単一の遷移ハンドラ。 */
 export type UseAppViewResult = {
@@ -25,6 +25,9 @@ export type UseAppViewResult = {
 export const normalizeAppView = (candidate: string): AppView => {
   if (candidate === "settings") {
     return "settings";
+  }
+  if (candidate === "detail") {
+    return "detail";
   }
   return "board";
 };

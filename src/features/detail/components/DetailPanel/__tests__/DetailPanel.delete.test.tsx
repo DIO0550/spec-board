@@ -491,6 +491,41 @@ test("子あり / abort で onDelete が reject したらダイアログが維�
   });
 });
 
+test("削除確認ダイアログ表示中の Esc ではパネルが閉じない（onClose 未発火）", async () => {
+  const onClose = vi.fn();
+  render({
+    task: createTask(),
+    columns: testColumns,
+    onClose,
+    onTaskUpdate: vi.fn(),
+    onDelete: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="detail-delete-button"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-delete-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="confirm-dialog"]'),
+    ).toBeTruthy();
+  });
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  // useEscToClose は deleteFlow.isOpen 中 disabled のためパネルは閉じない
+  // （onClose 未発火・パネル DOM は残存）。ダイアログ自体は ConfirmDialog の Esc で閉じてよい。
+  expect(onClose).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-testid="detail-overlay"]')).toBeTruthy();
+});
+
 test("ファイルパスがパネル下部に表示される", async () => {
   render({
     task: createTask({ filePath: "projects/my-task.md" }),

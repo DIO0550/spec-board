@@ -115,9 +115,61 @@ test("useAppView: navigate トグルで settings から board に戻る", () => 
   expect((latest as unknown as UseAppViewResult).view).toBe("board");
 });
 
+test("useAppView: navigate('detail') で detail へ遷移する", () => {
+  let latest: UseAppViewResult | null = null;
+  render(
+    createElement(UseAppViewProbe, {
+      onResult: (r) => {
+        latest = r;
+      },
+    }),
+  );
+  act(() => {
+    (latest as unknown as UseAppViewResult).navigate("detail");
+  });
+  expect((latest as unknown as UseAppViewResult).view).toBe("detail");
+});
+
+test("useAppView: detail から board へ navigate できる（戻る動線）", () => {
+  let latest: UseAppViewResult | null = null;
+  render(
+    createElement(UseAppViewProbe, {
+      onResult: (r) => {
+        latest = r;
+      },
+    }),
+  );
+  act(() => {
+    (latest as unknown as UseAppViewResult).navigate("detail");
+  });
+  act(() => {
+    (latest as unknown as UseAppViewResult).navigate("board");
+  });
+  expect((latest as unknown as UseAppViewResult).view).toBe("board");
+});
+
+test("useAppView: detail から settings へ navigate できる（排他遷移）", () => {
+  let latest: UseAppViewResult | null = null;
+  render(
+    createElement(UseAppViewProbe, {
+      onResult: (r) => {
+        latest = r;
+      },
+    }),
+  );
+  act(() => {
+    (latest as unknown as UseAppViewResult).navigate("detail");
+  });
+  act(() => {
+    (latest as unknown as UseAppViewResult).navigate("settings");
+  });
+  expect((latest as unknown as UseAppViewResult).view).toBe("settings");
+});
+
 test.each([
   ["settings", "settings"],
   ["board", "board"],
+  ["detail", "detail"],
   ["xxx", "board"],
   ["", "board"],
 ])("normalizeAppView('%s') は '%s' を返す（生文字列 → AppView 正規化）", (input, expected) => {
