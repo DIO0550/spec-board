@@ -20,14 +20,6 @@ impl Due {
         &self.0
     }
 
-    pub fn into_string(self) -> String {
-        self.0
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     /// 保持している値が `YYYY-MM-DD`（構文 + 月日範囲 + うるう年）として妥当かを返す。
     pub fn is_valid(&self) -> bool {
         Self::is_valid_format(&self.0)

@@ -80,9 +80,3 @@ fn deserializes_leniently_from_string() {
     assert_eq!(due.as_str(), "2026/6/30");
     assert!(!due.is_valid());
 }
-
-#[test]
-fn empty_value_is_empty() {
-    assert!(Due::from_lenient("").is_empty());
-    assert!(!Due::from_lenient("2026-06-30").is_empty());
-}
