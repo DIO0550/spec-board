@@ -1,40 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { DueBadge } from "@/components/DueBadge";
 import { EditableText } from "@/components/EditableText";
 import { getBrokenLinks } from "@/domains/broken-link";
-import type { Priority } from "@/domains/priority";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
-import { useDetailLabels } from "@/features/detail/hooks/useDetailLabels";
+import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
 import { useParentTask } from "@/features/detail/hooks/useParentTask";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
-import { Result as ResultDomain } from "@/utils/result";
 import { BrokenParentRow } from "../BrokenParentRow";
 import { CycleWarningBanner } from "../CycleWarningBanner";
-import { LabelEditor } from "../LabelEditor";
-import { LinksSection } from "../LinksSection";
+import { DetailFields } from "../DetailFields";
 import { MarkdownBody } from "../MarkdownBody";
 import { ParentLink } from "../ParentLink";
 import { ParseErrorBanner } from "../ParseErrorBanner";
-import { PrioritySelect } from "../PrioritySelect";
-import { StatusSelect } from "../StatusSelect";
-import { SubIssueSection } from "../SubIssueSection";
-
-/**
- * `onRemoveLink` 未指定時に LinksSection に渡す no-op fallback。
- * 既存呼出元が `onRemoveLink` を渡し忘れても forward 削除の × ボタンの click が
- * 型エラーで落ちないようにする。戻り値は `Result.err(undefined)` だが LinksSection の
- * `useRemoveLink` は Result を捨てるため UI には影響しない（× クリックは isBusy トグル
- * だけして何も起きない）。
- * @returns 常に `Result.err(undefined)`
- */
-const noopRemoveLink = async (): Promise<Result<Task, unknown>> =>
-  ResultDomain.err(undefined);
 
 /** 詳細パネルの Props */
 type DetailPanelProps = {
@@ -88,8 +70,6 @@ type DetailPanelProps = {
   /**
    * リンク削除コールバック。source / target の filePath を受け取る。
    * forward 削除のみが対象（source=表示中タスク）。reverse 行には削除 UI がない。
-   * `onAddLink` と同じく LinksSection 描画には `onAddLink` の有無を条件とするため、
-   * `onRemoveLink` の有無は描画判定には影響しない（無ければ × ボタンの click が no-op）。
    * @param sourceFilePath リンク元（md が書き換わる側）の filePath
    * @param targetFilePath リンク先の filePath
    * @returns invoke 結果
@@ -104,6 +84,8 @@ type DetailPanelProps = {
    * 4 箇所にリンク切れ警告を表示する。未指定時は警告 UI を出さない（後方互換）。
    */
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** 「全画面で開く」押下ハンドラ。未指定時はボタンを表示しない（後方互換）。 */
+  onExpand?: () => void;
 };
 
 /**
@@ -124,10 +106,11 @@ export const DetailPanel = ({
   onAddLink,
   onRemoveLink,
   tasksByNormalizedPath,
+  onExpand,
 }: DetailPanelProps) => {
   const panelRef = useRef<HTMLElement>(null);
 
-  const { childTasks, descendantTasks, effectiveDoneColumn } = useChildTasks({
+  const childInfo = useChildTasks({
     parentFilePath: task.filePath,
     allTasks,
     columns,
@@ -136,7 +119,7 @@ export const DetailPanel = ({
 
   const { parentTask } = useParentTask({ task, allTasks });
 
-  const labels = useDetailLabels({ task, onTaskUpdate });
+  const fieldHandlers = useDetailFieldHandlers(task, onTaskUpdate);
 
   const brokenLinks = useMemo(
     () => getBrokenLinks(task, tasksByNormalizedPath),
@@ -167,20 +150,6 @@ export const DetailPanel = ({
   const handleTitleConfirm = useCallback(
     (title: string) => {
       onTaskUpdate(task.id, { title });
-    },
-    [task.id, onTaskUpdate],
-  );
-
-  const handleStatusChange = useCallback(
-    (status: string) => {
-      onTaskUpdate(task.id, { status });
-    },
-    [task.id, onTaskUpdate],
-  );
-
-  const handlePriorityChange = useCallback(
-    (priority: Priority | undefined) => {
-      onTaskUpdate(task.id, { priority });
     },
     [task.id, onTaskUpdate],
   );
@@ -234,6 +203,29 @@ export const DetailPanel = ({
               ariaLabel="タスクタイトル"
             />
           </div>
+          {onExpand && (
+            <button
+              type="button"
+              aria-label="全画面で開く"
+              data-testid="detail-expand-button"
+              className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              onClick={onExpand}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l3.293 3.293a1 1 0 01-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm14 12a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-3.293-3.293a1 1 0 011.414-1.414L15 13.586V12a1 1 0 012 0v4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             aria-label="閉じる"
@@ -257,52 +249,36 @@ export const DetailPanel = ({
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-4">
-            <div className="flex gap-4">
-              <StatusSelect
-                value={task.status}
-                columns={columns}
-                onChange={handleStatusChange}
-              />
-              <PrioritySelect
-                value={task.priority}
-                onChange={handlePriorityChange}
-              />
-              <DueBadge due={task.due} />
-            </div>
-            <LabelEditor
-              labels={task.labels}
-              onAdd={labels.add}
-              onRemove={labels.remove}
-            />
-            {onAddSubIssue && allTasks !== undefined && (
-              <SubIssueSection
-                parentTask={task}
-                childTasks={childTasks}
-                descendantTasks={descendantTasks}
-                doneColumn={effectiveDoneColumn}
-                onAddSubIssue={onAddSubIssue}
-                onChildClick={onSelectTask}
-                brokenChildPaths={brokenLinks.children}
-              />
-            )}
-            {onAddLink !== undefined && allTasks !== undefined && (
-              // key=links-${task.id}: task 切替で LinksSection をリマウントし
-              // popover の isOpen / 検索 query 等の内部 state を確実にリセットする。
-              // MarkdownBody も同じ pattern で `key={task.id}` を使うため、ネームスペース
-              // 接頭辞 "links-" で同階層でのキー衝突を防いでいる。
-              <LinksSection
-                key={`links-${task.id}`}
-                task={task}
-                allTasks={allTasks}
-                parentFilePath={parentTask?.filePath ?? null}
-                childrenFilePaths={childTasks.map((t) => t.filePath)}
-                onAddLink={onAddLink}
-                onRemoveLink={onRemoveLink ?? noopRemoveLink}
-                onLinkClick={onSelectTask}
-                brokenLinkPaths={brokenLinks.links}
-                brokenReverseLinkPaths={brokenLinks.reverseLinks}
-              />
-            )}
+            <DetailFields
+              task={task}
+              columns={columns}
+              handlers={fieldHandlers}
+            >
+              <DetailFields.StatusPriority />
+              <DetailFields.Labels />
+              {onAddSubIssue && allTasks !== undefined && (
+                <DetailFields.SubIssue
+                  childInfo={childInfo}
+                  brokenChildPaths={brokenLinks.children}
+                  onAddSubIssue={onAddSubIssue}
+                  onChildClick={onSelectTask}
+                />
+              )}
+              {onAddLink !== undefined && allTasks !== undefined && (
+                <DetailFields.Links
+                  allTasks={allTasks}
+                  parentFilePath={parentTask?.filePath ?? null}
+                  childrenFilePaths={childInfo.childTasks.map(
+                    (t) => t.filePath,
+                  )}
+                  onAddLink={onAddLink}
+                  onRemoveLink={onRemoveLink}
+                  onLinkClick={onSelectTask}
+                  brokenLinkPaths={brokenLinks.links}
+                  brokenReverseLinkPaths={brokenLinks.reverseLinks}
+                />
+              )}
+            </DetailFields>
             {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
             {/* MarkdownBody を再マウントして edit 状態をリセットする（stale state 防止）。 */}
             <MarkdownBody
