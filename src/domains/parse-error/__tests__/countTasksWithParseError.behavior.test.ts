@@ -32,3 +32,9 @@ test("除外コードのみの task は非カウント", () => {
   const b = makeTask({ id: "b", warnings: [warn("parentNotFound")] });
   expect(countTasksWithParseError([a, b])).toBe(0);
 });
+
+test("invalidDue のみの task 配列は 0（parse-error 対象外）", () => {
+  const a = makeTask({ id: "a", warnings: [warn("invalidDue")] });
+  const b = makeTask({ id: "b", warnings: [warn("invalidDue")] });
+  expect(countTasksWithParseError([a, b])).toBe(0);
+});

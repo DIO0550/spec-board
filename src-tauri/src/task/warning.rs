@@ -17,6 +17,7 @@ pub enum TaskWarningCode {
     NonStringExtraKeyIgnored,
     ExtraValueNotJsonCompatible,
     ParentCycle,
+    InvalidDue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

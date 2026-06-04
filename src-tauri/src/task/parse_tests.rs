@@ -277,3 +277,95 @@ fn invalid_yaml_or_encoding_returns_frontmatter_error() {
         Err(TaskParseError::Frontmatter(_))
     ));
 }
+
+fn has_invalid_due_warning(task: &Task) -> bool {
+    task.warnings
+        .iter()
+        .any(|w| w.code == TaskWarningCode::InvalidDue && w.field.as_deref() == Some("due"))
+}
+
+#[test]
+fn valid_future_due_is_kept_without_warning() {
+    let task = task_from(
+        "---\ntitle: T\nstatus: Todo\ndue: 2026-06-30\n---\n",
+        "tasks/t.md",
+    );
+
+    assert_eq!(task.due.as_ref().map(|d| d.as_str()), Some("2026-06-30"));
+    assert!(!has_invalid_due_warning(&task));
+    assert_eq!(
+        task.extras.get("due"),
+        Some(&json!("2026-06-30")),
+        "due also remains in extras for round-trip"
+    );
+}
+
+#[test]
+fn valid_past_due_is_kept_without_warning() {
+    let task = task_from(
+        "---\ntitle: T\nstatus: Todo\ndue: 2020-01-01\n---\n",
+        "tasks/t.md",
+    );
+
+    assert_eq!(task.due.as_ref().map(|d| d.as_str()), Some("2020-01-01"));
+    assert!(!has_invalid_due_warning(&task));
+}
+
+#[test]
+fn missing_due_key_is_none_without_warning() {
+    let task = task_from("---\ntitle: T\nstatus: Todo\n---\n", "tasks/t.md");
+
+    assert_eq!(task.due, None);
+    assert!(!has_invalid_due_warning(&task));
+}
+
+#[test]
+fn empty_due_is_treated_as_unset_without_warning() {
+    let task = task_from(
+        "---\ntitle: T\nstatus: Todo\ndue: \"\"\n---\n",
+        "tasks/t.md",
+    );
+
+    assert_eq!(task.due, None);
+    assert!(!has_invalid_due_warning(&task));
+}
+
+#[test]
+fn invalid_due_keeps_original_and_warns() {
+    let cases = ["2026/6/30", "tomorrow", "2026-13-40", "2026-02-29"];
+    for raw in cases {
+        let task = task_from(
+            &format!("---\ntitle: T\nstatus: Todo\ndue: \"{raw}\"\n---\n"),
+            "tasks/t.md",
+        );
+
+        assert_eq!(
+            task.due.as_ref().map(|d| d.as_str()),
+            Some(raw),
+            "{raw} should be kept verbatim"
+        );
+        assert!(has_invalid_due_warning(&task), "{raw} should warn");
+    }
+}
+
+#[test]
+fn valid_leap_year_due_is_kept_without_warning() {
+    let task = task_from(
+        "---\ntitle: T\nstatus: Todo\ndue: 2024-02-29\n---\n",
+        "tasks/t.md",
+    );
+
+    assert_eq!(task.due.as_ref().map(|d| d.as_str()), Some("2024-02-29"));
+    assert!(!has_invalid_due_warning(&task));
+}
+
+#[test]
+fn non_string_due_warns_and_is_none() {
+    let task = task_from(
+        "---\ntitle: T\nstatus: Todo\ndue: 12345\n---\n",
+        "tasks/t.md",
+    );
+
+    assert_eq!(task.due, None);
+    assert!(has_invalid_due_warning(&task));
+}

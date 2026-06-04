@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext } from "react";
+import { DueBadge } from "@/components/DueBadge";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import type { Column } from "@/types/column";
@@ -106,6 +107,7 @@ const DetailFieldsStatusPriority = () => {
         value={task.priority}
         onChange={handlers.onPriorityChange}
       />
+      <DueBadge due={task.due} />
     </div>
   );
 };

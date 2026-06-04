@@ -2,6 +2,7 @@ pub mod add_link;
 pub mod children;
 pub mod create;
 pub mod delete;
+pub mod due;
 pub mod frontmatter;
 pub mod get;
 pub mod io;
