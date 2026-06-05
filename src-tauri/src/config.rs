@@ -1774,7 +1774,7 @@ impl MilestoneDefinition {
         match serde_yaml_ng::Value::deserialize(de)? {
             serde_yaml_ng::Value::String(s) => Ok(s),
             other => Err(serde::de::Error::custom(format!(
-                "milestone field must be a string, found {}",
+                "milestones[].name must be a string, found {}",
                 yaml_value_type(&other)
             ))),
         }
