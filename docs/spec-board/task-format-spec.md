@@ -19,6 +19,7 @@ priority: Medium
 labels:
   - bug
   - frontend
+milestone: v0.3
 parent: tasks/parent-task.md
 links:
   - tasks/related-task.md
@@ -39,6 +40,7 @@ links:
 | status | `string` | 推奨 | 最初のカラム名 | タスクのステータス。ボードのカラムに対応。省略時は最初のカラムをデフォルト設定 |
 | priority | `string` | いいえ | なし（バッジ非表示） | 優先度。`High` / `Medium` / `Low` のいずれか。省略時はバッジを表示しない |
 | labels | `string[]` | いいえ | `[]` | ラベルの配列。カテゴリやタグとして使用 |
+| milestone | `string` | いいえ | なし | マイルストーン参照キー（単数）。リリース単位の束ね。`.spec-board/milestones.yml` の `name` と対応（未定義値も暗黙許容） |
 | parent | `string` | いいえ | なし | 親タスクのファイルパス（プロジェクトルートからの相対パス） |
 | links | `string[]` | いいえ | `[]` | 関連タスクのファイルパスの配列 |
 
@@ -73,6 +75,14 @@ links:
 - 各ラベルは任意の文字列
 - 重複するラベルはパース時に除去
 - frontmatter の `labels` は自由文字列であり、ラベルマスタ `.spec-board/labels.yml`（[config-spec.md](./config-spec.md) 「labels.yml スキーマ」参照）に未定義のラベルも**警告なく暗黙許容**する。labels.yml の読み込みは frontmatter の `labels` に一切干渉せず非破壊である（マスタはあくまで説明・色などのメタ情報の付与に使う）
+
+#### milestone
+
+- 省略可能。省略時はマイルストーン未割当タスクとして扱う
+- **単数の文字列**（例: `milestone: v0.3`）。labels の `string[]` とは異なり、1 タスク = 1 マイルストーンとする（複数所属はスコープ外）
+- frontmatter の `milestone` は自由文字列であり、マイルストーンマスタ `.spec-board/milestones.yml`（[config-spec.md](./config-spec.md) 「milestones.yml スキーマ」参照）に未定義の値も**警告なく暗黙許容**する。milestones.yml の読み込みは frontmatter の `milestone` に一切干渉せず非破壊である（マスタはあくまで表示名・期日・並び順・状態などのメタ情報の付与に使う）
+- 型不一致時の扱い（`priority` の不正値を無視する方針に倣う）: `milestone` が文字列以外（配列 / 数値 / bool / mapping 等）・`null`・空文字 `""` の場合は**省略（未割当）として扱い、パースエラーにはしない**
+- マスタ定義ファイルが存在しない / 空の場合は、すべての `milestone` 値を暗黙のマイルストーンとして扱う（後方互換）
 
 #### parent
 
@@ -178,7 +188,7 @@ flowchart TD
 | ID | ルール | 説明 |
 |:---|:-------|:-----|
 | SL-001 | フロントマター再構成 | 変更されたフィールドのみを更新し、未知フィールドは保持 |
-| SL-002 | フィールド順序 | `title` → `status` → `priority` → `labels` → `parent` → `links` → その他の順序で出力 |
+| SL-002 | フィールド順序 | `title` → `status` → `priority` → `labels` → `milestone` → `parent` → `links` → その他の順序で出力 |
 | SL-003 | 本文保持 | 本文部分は変更せずにそのまま保持 |
 | SL-004 | 改行コード | LF（`\n`）で統一 |
 | SL-005 | 末尾改行 | ファイル末尾に改行を付与 |
@@ -223,6 +233,7 @@ labels:
   - feature
   - frontend
   - backend
+milestone: v0.3
 links:
   - tasks/product-list-redesign.md
 ---
@@ -334,7 +345,7 @@ title / status / priority / labels / body 単独の更新では再構築しな�
 
 ## 関連仕様
 
-- [config-spec.md](./config-spec.md) - 設定ファイルのスキーマ・AIエージェント向けGUIDE.md仕様
+- [config-spec.md](./config-spec.md) - 設定ファイルのスキーマ・labels.yml / milestones.yml マスタ・AIエージェント向けGUIDE.md仕様
 - [file-system-spec.md](./file-system-spec.md) - ファイルの読み書き・監視の実装仕様
 - [task-card-spec.md](./task-card-spec.md) - パースされたデータの表示仕様
 - [board-view-spec.md](./board-view-spec.md) - ステータスとカラムの対応関係
