@@ -2,11 +2,16 @@ import type { DragEvent } from "react";
 import { useRef } from "react";
 import { ParseErrorIcon } from "@/components/ParseErrorIcon";
 import { WarningIcon } from "@/components/WarningIcon";
+import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../Board/dragState";
 import { LabelTag } from "../LabelTag";
+import { MilestoneBadge } from "../MilestoneBadge";
 import { PriorityBadge } from "../PriorityBadge";
 import { SubIssueProgress } from "../SubIssueProgress";
+
+/** name → マイルストーン定義の Map（バッジ表示用）。 */
+export type MilestonesByName = Map<string, MilestoneDefinition>;
 
 /** タスクカードの Props */
 type TaskCardProps = {
@@ -18,6 +23,8 @@ type TaskCardProps = {
   descendantTasks?: readonly Task[];
   /** 完了カラム名 */
   doneColumn?: string;
+  /** name → マイルストーン定義の Map（バッジの title/due 解決用。未指定は name 表示） */
+  milestonesByName?: MilestonesByName;
   /** 所属カラム名。onDragStart の引数に使う。 */
   fromColumn: string;
   /** ドラッグ中フラグ（Board の DragState から配布） */
@@ -57,6 +64,7 @@ const CardContent = ({
   childTasks = [],
   descendantTasks,
   doneColumn = "Done",
+  milestonesByName,
   hasBrokenLink = false,
   hasParseError = false,
 }: {
@@ -64,6 +72,7 @@ const CardContent = ({
   childTasks?: readonly Task[];
   descendantTasks?: readonly Task[];
   doneColumn?: string;
+  milestonesByName?: MilestonesByName;
   hasBrokenLink?: boolean;
   hasParseError?: boolean;
 }) => {
@@ -87,6 +96,14 @@ const CardContent = ({
           </span>
         )}
       </div>
+      {task.milestone ? (
+        <div className="mt-1.5 flex">
+          <MilestoneBadge
+            name={task.milestone}
+            definition={milestonesByName?.get(task.milestone)}
+          />
+        </div>
+      ) : null}
       {task.labels.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {task.labels.map((label) => (
@@ -113,6 +130,7 @@ export const TaskCard = ({
   childTasks,
   descendantTasks,
   doneColumn,
+  milestonesByName,
   fromColumn,
   isDragging = false,
   hasBrokenLink = false,
@@ -157,6 +175,7 @@ export const TaskCard = ({
           childTasks={childTasks}
           descendantTasks={descendantTasks}
           doneColumn={doneColumn}
+          milestonesByName={milestonesByName}
           hasBrokenLink={hasBrokenLink}
           hasParseError={hasParseError}
         />
@@ -197,6 +216,7 @@ export const TaskCard = ({
         childTasks={childTasks}
         descendantTasks={descendantTasks}
         doneColumn={doneColumn}
+        milestonesByName={milestonesByName}
         hasBrokenLink={hasBrokenLink}
         hasParseError={hasParseError}
       />
