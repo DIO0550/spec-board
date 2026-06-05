@@ -24,7 +24,8 @@ export type TaskWarningCode =
   | "parentNotFound"
   | "nonStringExtraKeyIgnored"
   | "extraValueNotJsonCompatible"
-  | "parentCycle";
+  | "parentCycle"
+  | "invalidDue";
 
 /** Task 生成時に継続可能な問題として返る warning。 */
 export type TaskWarning = {
@@ -48,6 +49,12 @@ export type TaskPayload = {
   priority?: Priority;
   /** マイルストーン参照キー（単数・未設定可） */
   milestone?: string;
+  /**
+   * 期限（`YYYY-MM-DD` の原文。未設定可）。
+   * Rust 側が不正フォーマットも原文保持するため、検証済みの branded `Due` ではなく
+   * 生 `string` として持つ（表示時に `Due.format` で検証して弾く）。
+   */
+  due?: string;
   /** ラベルの配列 */
   labels: string[];
   /** 親タスクのファイルパス（親がない場合は未設定） */
@@ -83,6 +90,11 @@ export type Task = {
   priority?: Priority;
   /** マイルストーン参照キー（単数・未設定可） */
   milestone?: string;
+  /**
+   * 期限（`YYYY-MM-DD` の原文。未設定可）。
+   * 不正フォーマットも原文保持されるため検証済みの branded `Due` ではなく生 `string`。
+   */
+  due?: string;
   /** ラベルの配列 */
   labels: string[];
   /** Markdown 本文 */
@@ -112,6 +124,7 @@ export const Task = {
     status: payload.status,
     priority: payload.priority,
     milestone: payload.milestone,
+    due: payload.due,
     labels: payload.labels,
     body: payload.body,
     filePath: payload.filePath,

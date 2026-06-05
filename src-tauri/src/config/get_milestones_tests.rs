@@ -28,6 +28,7 @@ fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
         status: "Todo".into(),
         priority: None,
         milestone: milestone.map(str::to_owned),
+        due: None,
         labels: Vec::new(),
         parent: None,
         links: Vec::new(),

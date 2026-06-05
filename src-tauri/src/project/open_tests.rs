@@ -808,6 +808,7 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         milestone: None,
         labels: Vec::new(),
         parent: None,
+        due: None,
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),

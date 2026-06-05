@@ -43,6 +43,7 @@ links:
 | milestone | `string` | いいえ | なし | マイルストーン参照キー（単数）。リリース単位の束ね。`.spec-board/milestones.yml` の `name` と対応（未定義値も暗黙許容） |
 | parent | `string` | いいえ | なし | 親タスクのファイルパス（プロジェクトルートからの相対パス） |
 | links | `string[]` | いいえ | `[]` | 関連タスクのファイルパスの配列 |
+| due | `string`（`YYYY-MM-DD`） | いいえ | なし（バッジ非表示） | 期限。ISO 8601 の日付のみ（時刻なし）。省略・空文字はバッジ非表示 |
 
 ### フィールド詳細
 
@@ -103,6 +104,15 @@ links:
 - 壊れたリンク（target が tasks に存在しない）の関連タスク行クリックは完全 no-op（announce / 追加 UI フィードバックなし）。警告アイコン表示の実装有無は別 Issue で扱う（本仕様は撤回せず据え置く）
 - Tauri command `add_link({ sourceFilePath, targetFilePath })` で `links` への追加が可能。同じ target がすでに含まれる場合は noop（書き込みもキャッシュ更新も行わない）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する）
 - Tauri command `remove_link({ sourceFilePath, targetFilePath })` で `links` から target の完全一致エントリを **すべて** 取り除く（パス表記揺れは正規化して吸収）。最後の 1 件を消した場合は `links:` キーごと消える。target がすでに含まれていない場合は冪等な no-op として成功を返す（書き込みもキャッシュ更新も行わない）。target タスクが削除済みで存在しなくても source の `links` からの除去は実行する（dangling link 掃除の用途を兼ねる）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する点は `add_link` と同じ）
+
+#### due
+
+- フォーマットは `YYYY-MM-DD`（例: `due: 2026-06-30`）。時刻・タイムゾーンは扱わない。
+- 省略時は期限なし。空文字 `due: ""` は省略相当として扱い、warning も付与しない。
+- 解釈不能なフォーマット（`2026/6/30`, `tomorrow`, `2026-13-40`, 存在しない日付 `2026-02-29` 等）は `invalidDue` warning を付与しつつ、frontmatter の原文値はそのまま保持する（非破壊）。
+- 値はバックエンドでは生の文字列として保持し、相対表示（「今日」「あと X 日」「X 日超過」）と期限切れ強調はフロントエンドが今日を基準に算出する。
+- due は typed フィールドではなく extras として記述順を保持するため、他フィールド更新時の再シリアライズでも値は失われない。
+- 入力 UI は本仕様の範囲外（表示のみ）。作成・更新フォームには due 入力欄を設けない。
 
 #### DetailPanel 上のリンク追加 UI
 
@@ -173,6 +183,10 @@ flowchart TD
 - scan 時に親チェーンが循環している場合、ループに含まれる全 task に `parentCycle` warning を付与し、各 task の `parent` を `None` に置き換える。ファイル本体の YAML `parent:` キーは変更しない（ユーザーが手で修正できるよう原文を残す）
 - `extras` の非文字列 key は除外し、`nonStringExtraKeyIgnored` warning を付与する
 - `extras` の JSON 非互換 value は除外し、`extraValueNotJsonCompatible` warning を付与する
+- `due` がキー無し・空文字の場合は期限なし（`None`）として扱い、warning は付与しない
+- `due` が `YYYY-MM-DD`（構文・月日範囲・うるう年）として妥当な文字列なら原文をそのまま typed フィールドに保持する
+- `due` が文字列だが妥当な `YYYY-MM-DD` でない場合は原文を保持しつつ `invalidDue` warning を付与する。`due` が文字列以外（数値・マッピング等）の場合は値を無視し `invalidDue` warning を付与する
+- `due` は typed フィールド化せず extras にも残すため、他フィールド更新時の再シリアライズでも値・記述順が保持される（round-trip 保持）
 
 ### Task 変換時 warning code
 
@@ -180,6 +194,7 @@ flowchart TD
 |:--|:--|:--|:--|
 | `parentNotFound` | `parent` | `parent` が文字列だが、読み込み済み Task の `file_path` に存在しない | `parent` 値は保持し、Task の `warnings` に追加する |
 | `parentCycle` | `parent` | scan 時に親チェーンが循環している（自己参照含む）と検出された | ループに含まれる全 task の `warnings` に追加し、各 task の `parent` を `None` に置き換える（ファイル本体の YAML は無変更） |
+| `invalidDue` | `due` | `due` が `YYYY-MM-DD` として解釈できない、または文字列以外 | 原文は保持する（非破壊）。Task の `warnings` に追加するが、parse-error バナー・カードのエラーアイコンの対象には**含めない** |
 
 ## シリアライズ仕様
 
@@ -188,7 +203,7 @@ flowchart TD
 | ID | ルール | 説明 |
 |:---|:-------|:-----|
 | SL-001 | フロントマター再構成 | 変更されたフィールドのみを更新し、未知フィールドは保持 |
-| SL-002 | フィールド順序 | `title` → `status` → `priority` → `labels` → `milestone` → `parent` → `links` → その他の順序で出力 |
+| SL-002 | フィールド順序 | `title` → `status` → `priority` → `labels` → `milestone` → `parent` → `links` → その他の順序で出力。`due` は typed フィールドではなく「その他（extras）」としてユーザー記述順を保持し、typed 順序には組み込まない |
 | SL-003 | 本文保持 | 本文部分は変更せずにそのまま保持 |
 | SL-004 | 改行コード | LF（`\n`）で統一 |
 | SL-005 | 末尾改行 | ファイル末尾に改行を付与 |

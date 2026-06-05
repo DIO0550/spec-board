@@ -32,6 +32,7 @@ fn task_with_labels(id: &str, labels: &[&str]) -> Task {
         milestone: None,
         labels: labels.iter().map(|l| Label::from(*l)).collect(),
         parent: None,
+        due: None,
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),

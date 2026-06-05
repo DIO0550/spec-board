@@ -25,6 +25,7 @@ fn sample_task(id: &str, file_path: &str) -> Task {
         milestone: None,
         labels: Vec::new(),
         parent: None,
+        due: None,
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),

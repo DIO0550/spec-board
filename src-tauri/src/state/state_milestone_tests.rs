@@ -36,6 +36,7 @@ fn sample_task(id: &str) -> Task {
         status: "Todo".into(),
         priority: None,
         milestone: None,
+        due: None,
         labels: Vec::new(),
         parent: None,
         links: Vec::new(),

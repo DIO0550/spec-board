@@ -35,6 +35,7 @@ fn task_with(file_path: &str, parent: Option<&str>) -> Task {
         milestone: None,
         labels: Vec::new(),
         parent: parent.map(TaskFilePath::from_lenient),
+        due: None,
         links: Vec::new(),
         children: Vec::new(),
         reverse_links: Vec::new(),

@@ -1104,3 +1104,35 @@ fn serialize_omits_milestone_line_when_none() {
         "expected no `milestone:` line:\n{output}"
     );
 }
+
+/// due は typed フィールドではなく extras に残るため、parse → serialize で
+/// 値と記述順（links の後）が保持され、消えない。
+#[test]
+fn serialize_preserves_valid_due_as_extra() {
+    let input = "---\ntitle: A\nlabels: [bug]\nlinks: [a.md]\ndue: 2026-06-30\n---\nbody\n";
+    let parsed = parse(input).unwrap().unwrap();
+    let output = serialize(&parsed);
+
+    assert_keys_in_order(&output, &["title", "labels", "links", "due"]);
+    let reparsed = parse(&output).unwrap().unwrap();
+    assert_eq!(
+        reparsed.frontmatter.extras.get("due"),
+        Some(&serde_yaml_ng::Value::String("2026-06-30".into())),
+        "due value should survive round-trip"
+    );
+}
+
+/// 不正フォーマットの due も extras 値としてそのまま round-trip 保持される。
+#[test]
+fn serialize_preserves_invalid_due_as_extra() {
+    let input = "---\ntitle: A\nlinks: [a.md]\ndue: 2026/6/30\n---\nbody\n";
+    let parsed = parse(input).unwrap().unwrap();
+    let output = serialize(&parsed);
+    let reparsed = parse(&output).unwrap().unwrap();
+
+    assert_eq!(
+        reparsed.frontmatter.extras.get("due"),
+        Some(&serde_yaml_ng::Value::String("2026/6/30".into())),
+        "invalid due value should also survive round-trip"
+    );
+}

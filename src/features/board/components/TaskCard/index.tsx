@@ -1,5 +1,6 @@
 import type { DragEvent } from "react";
 import { useRef } from "react";
+import { DueBadge } from "@/components/DueBadge";
 import { ParseErrorIcon } from "@/components/ParseErrorIcon";
 import { WarningIcon } from "@/components/WarningIcon";
 import type { MilestoneDefinition } from "@/lib/tauri";
@@ -86,6 +87,7 @@ const CardContent = ({
     <>
       <div className="flex items-center gap-1.5">
         <PriorityBadge priority={task.priority} />
+        <DueBadge due={task.due} />
         <p data-testid="task-card-title" className="text-sm text-gray-800">
           {displayTitle}
         </p>
