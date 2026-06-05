@@ -1013,3 +1013,94 @@ fn serialize_dumps_extras_title_status_parent_at_typed_position_for_non_string()
         );
     }
 }
+
+// ───────── milestone（typed・単数・lenient） ─────────
+
+/// `milestone: v0.3` は `Some("v0.3")` にパースされる。
+#[test]
+fn parse_milestone_string_is_some() {
+    let parsed = parse("---\ntitle: A\nmilestone: v0.3\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed.frontmatter.milestone.as_deref(), Some("v0.3"));
+}
+
+/// 文字列以外・null・空文字は `None`（lenient・parse エラーにしない）。
+#[test]
+fn parse_milestone_non_string_or_empty_is_none() {
+    let cases = [
+        "---\ntitle: A\nmilestone: [v0.3]\n---\nbody\n",
+        "---\ntitle: A\nmilestone: 123\n---\nbody\n",
+        "---\ntitle: A\nmilestone: null\n---\nbody\n",
+        "---\ntitle: A\nmilestone: \"\"\n---\nbody\n",
+    ];
+    for input in cases {
+        let parsed = parse(input).unwrap().unwrap();
+        assert!(
+            parsed.frontmatter.milestone.is_none(),
+            "milestone should be None for: {input:?}"
+        );
+    }
+}
+
+/// milestone は labels の後・parent の前（SL-002 順序）で出力される。
+#[test]
+fn serialize_places_milestone_between_labels_and_parent() {
+    let input = "---\ntitle: A\nstatus: TODO\npriority: High\nlabels: [bug]\nmilestone: v0.3\nparent: tasks/p.md\nlinks: [a.md]\n---\nbody\n";
+    let parsed = parse(input).unwrap().unwrap();
+    let output = serialize(&parsed);
+    assert_keys_in_order(
+        &output,
+        &[
+            "title",
+            "status",
+            "priority",
+            "labels",
+            "milestone",
+            "parent",
+            "links",
+        ],
+    );
+}
+
+/// milestone を持つ frontmatter で、milestone が extras に二重流入しない（TYPED_KEYS）。
+#[test]
+fn parse_milestone_does_not_leak_into_extras() {
+    let parsed = parse("---\ntitle: A\nmilestone: v0.3\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    assert!(!parsed
+        .frontmatter
+        .extras
+        .contains_key(serde_yaml_ng::Value::String("milestone".into())));
+}
+
+/// milestone + 未知 extras 混在で round-trip が安定（2 周しても不変・extras 二重流入なし）。
+#[test]
+fn serialize_milestone_round_trip_is_stable() {
+    let input =
+        "---\ntitle: A\nstatus: TODO\nlabels: [bug]\nmilestone: v0.3\nassignee: alice\n---\nbody\n";
+    let parsed = parse(input).unwrap().unwrap();
+    let output = serialize(&parsed);
+    let reparsed = parse(&output).unwrap().unwrap();
+    assert_eq!(reparsed.frontmatter.milestone.as_deref(), Some("v0.3"));
+    assert!(!reparsed
+        .frontmatter
+        .extras
+        .contains_key(serde_yaml_ng::Value::String("milestone".into())));
+    // fixed-point: もう 1 周しても同一。
+    assert_eq!(serialize(&reparsed), output);
+}
+
+/// milestone 不在の frontmatter は milestone 行を出力しない（後方互換・skip_serializing）。
+#[test]
+fn serialize_omits_milestone_line_when_none() {
+    let parsed = parse("---\ntitle: A\nstatus: TODO\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    let output = serialize(&parsed);
+    assert!(
+        !output.contains("milestone:"),
+        "expected no `milestone:` line:\n{output}"
+    );
+}

@@ -20,6 +20,8 @@ pub struct CreateTaskArgs {
     pub status: String,
     /// 優先度文字列。`"High" | "Medium" | "Low"` 想定。値域は frontmatter 側で検証。
     pub priority: Option<String>,
+    /// マイルストーン参照キー（単数の自由文字列）。空文字 / 未指定は未割当。
+    pub milestone: Option<String>,
     /// ラベル一覧。未指定時は空配列。
     #[serde(default)]
     pub labels: Vec<String>,
@@ -40,6 +42,7 @@ impl From<CreateTaskArgs> for CreateTaskIntent {
             title: TaskTitle::from_lenient(args.title),
             status: ColumnName::from_lenient(args.status),
             priority,
+            milestone: args.milestone,
             labels: args.labels.into_iter().map(Label::from).collect(),
             parent: args.parent.map(TaskFilePath::from_lenient),
             body: args.body,

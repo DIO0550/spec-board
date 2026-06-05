@@ -19,6 +19,7 @@ fn sample_task(id: &str, file_path: &str) -> Task {
         title: format!("title-{id}").into(),
         status: "Todo".into(),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         links: Vec::new(),

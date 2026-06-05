@@ -57,6 +57,7 @@ fn task(path: &str, status: &str) -> Task {
         title: TaskTitle::from_lenient("t"),
         status: ColumnName::from_lenient(status),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         links: Vec::new(),

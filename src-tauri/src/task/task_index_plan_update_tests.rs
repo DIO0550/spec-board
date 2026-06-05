@@ -24,6 +24,7 @@ fn make_task(file_path: &str, parent: Option<&str>) -> Task {
         title: "T".into(),
         status: ColumnName::from_lenient("Todo"),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: parent.map(TaskFilePath::from_lenient),
         links: Vec::new(),
@@ -45,6 +46,7 @@ fn empty_intent(rel: &str) -> UpdateTaskIntent {
         title: None,
         status: None,
         priority: None,
+        milestone: None,
         labels: None,
         parent: None,
         body: None,
@@ -844,4 +846,75 @@ fn plan_update_three_node_descendant_cycle_returns_parent_cycle() {
         }
         other => panic!("expected ParentCycleOrTooDeep(Cycle), got {other:?}"),
     }
+}
+
+// ───────── milestone（3 値セマンティクス） ─────────
+
+#[test]
+fn plan_update_milestone_none_keeps_existing() {
+    let task = make_task("tasks/a.md", None);
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nmilestone: v0.3\n---\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    // intent.milestone = None → 不変。
+    let outcome = index
+        .plan_update(project_root(), empty_intent("tasks/a.md"), &task, parsed)
+        .expect("ok");
+
+    assert!(outcome.file_content.contains("milestone: v0.3"));
+    assert_eq!(outcome.updated_task.milestone.as_deref(), Some("v0.3"));
+}
+
+#[test]
+fn plan_update_milestone_empty_clears() {
+    let task = make_task("tasks/a.md", None);
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nmilestone: v0.3\n---\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.milestone = Some(String::new()); // クリア
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+
+    assert!(!outcome.file_content.contains("milestone:"));
+    assert_eq!(outcome.updated_task.milestone, None);
+}
+
+#[test]
+fn plan_update_milestone_set_replaces_value() {
+    let task = make_task("tasks/a.md", None);
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nmilestone: v0.3\n---\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.milestone = Some("v0.4".to_string());
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+
+    assert!(outcome.file_content.contains("milestone: v0.4"));
+    assert!(!outcome.file_content.contains("milestone: v0.3"));
+    assert_eq!(outcome.updated_task.milestone.as_deref(), Some("v0.4"));
+}
+
+#[test]
+fn plan_update_milestone_set_preserves_unknown_extras() {
+    // round-trip: 既存 extras（assignee）を壊さず milestone のみ差し替える。
+    let task = make_task("tasks/a.md", None);
+    let parsed =
+        parsed_from_md("---\ntitle: A\nstatus: Todo\nmilestone: v0.3\nassignee: alice\n---\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let mut intent = empty_intent("tasks/a.md");
+    intent.milestone = Some("v0.4".to_string());
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("ok");
+
+    assert!(outcome.file_content.contains("milestone: v0.4"));
+    assert!(outcome.file_content.contains("assignee: alice"));
 }

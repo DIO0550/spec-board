@@ -794,6 +794,7 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         title: "B".into(),
         status: "A".into(),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         links: Vec::new(),

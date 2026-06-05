@@ -75,6 +75,7 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         title,
         status,
         priority: parsed.frontmatter.priority,
+        milestone: parsed.frontmatter.milestone,
         labels,
         parent,
         links,
@@ -178,7 +179,15 @@ fn convert_extras(
     parsed: &Parsed,
     warnings: &mut Vec<TaskWarning>,
 ) -> BTreeMap<String, serde_json::Value> {
-    const TYPED_KEYS: [&str; 6] = ["title", "status", "priority", "labels", "parent", "links"];
+    const TYPED_KEYS: [&str; 7] = [
+        "title",
+        "status",
+        "priority",
+        "labels",
+        "milestone",
+        "parent",
+        "links",
+    ];
     let mut extras = BTreeMap::new();
 
     for (key, value) in &parsed.frontmatter.extras {

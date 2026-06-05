@@ -72,6 +72,7 @@ fn intent_with(
         title: TaskTitle::from_lenient(title.to_string()),
         status: ColumnName::from_lenient(status.to_string()),
         priority: priority.and_then(Priority::from_ascii_ci),
+        milestone: None,
         labels: labels.into_iter().map(Label::from).collect(),
         parent: parent.map(TaskFilePath::from_lenient),
         body: body.map(|s| s.to_string()),
@@ -134,6 +135,60 @@ fn from_intent_renders_labels_and_parent_and_body() {
     assert!(s.contains("- api"));
     assert!(s.contains("parent: tasks/p.md"));
     assert!(s.ends_with("hello body\n"), "body trailing:\n{s}");
+}
+
+#[test]
+fn from_intent_renders_milestone_in_sl002_order() {
+    use crate::config::column_name::ColumnName;
+    use crate::task::label::Label;
+    use crate::task::task_title::TaskTitle;
+
+    let intent = CreateTaskIntent {
+        title: TaskTitle::from_lenient("T".to_string()),
+        status: ColumnName::from_lenient("Todo".to_string()),
+        priority: None,
+        milestone: Some("v0.3".to_string()),
+        labels: vec![Label::from("bug")],
+        parent: None,
+        body: None,
+    };
+    let content = TaskContent::from_intent(&intent, None).expect("valid");
+    let s = content.as_str();
+    assert!(
+        s.contains("milestone: v0.3"),
+        "milestone line expected:\n{s}"
+    );
+    // labels の後・parent（なし）の前。labels 行 → milestone 行の順序を確認。
+    let labels_pos = s.find("labels:").expect("labels present");
+    let milestone_pos = s.find("milestone:").expect("milestone present");
+    assert!(
+        labels_pos < milestone_pos,
+        "labels should precede milestone:\n{s}"
+    );
+}
+
+#[test]
+fn from_intent_omits_milestone_when_empty_or_unspecified() {
+    use crate::config::column_name::ColumnName;
+    use crate::task::task_title::TaskTitle;
+
+    for milestone in [None, Some(String::new())] {
+        let intent = CreateTaskIntent {
+            title: TaskTitle::from_lenient("T".to_string()),
+            status: ColumnName::from_lenient("Todo".to_string()),
+            priority: None,
+            milestone,
+            labels: Vec::new(),
+            parent: None,
+            body: None,
+        };
+        let content = TaskContent::from_intent(&intent, None).expect("valid");
+        assert!(
+            !content.as_str().contains("milestone:"),
+            "milestone line should be omitted:\n{}",
+            content.as_str()
+        );
+    }
 }
 
 #[test]
