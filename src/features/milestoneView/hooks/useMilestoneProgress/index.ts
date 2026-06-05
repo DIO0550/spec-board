@@ -30,11 +30,30 @@ export const computeMilestoneProgress = (
   tasks: Task[],
   doneColumn: string | undefined,
 ): Map<string, MilestoneProgress> => {
+  // milestoneNames で全エントリを初期化してから tasks を 1 パス集計し、
+  // O(milestoneNames × tasks) ではなく O(tasks + milestones) に抑える。
+  const totals = new Map<string, { total: number; done: number }>();
+  for (const name of milestoneNames) {
+    totals.set(name, { total: 0, done: 0 });
+  }
+  for (const task of tasks) {
+    if (task.milestone === undefined) {
+      continue;
+    }
+    const entry = totals.get(task.milestone);
+    // registry に無い milestone 名を持つタスクは集計対象外。
+    if (entry === undefined) {
+      continue;
+    }
+    entry.total += 1;
+    if (task.status === doneColumn) {
+      entry.done += 1;
+    }
+  }
+
   const progress = new Map<string, MilestoneProgress>();
   for (const name of milestoneNames) {
-    const belonging = tasks.filter((task) => task.milestone === name);
-    const total = belonging.length;
-    const done = belonging.filter((task) => task.status === doneColumn).length;
+    const { total, done } = totals.get(name) ?? { total: 0, done: 0 };
     const hasRatio = doneColumn !== undefined && total > 0;
     progress.set(name, {
       total,
