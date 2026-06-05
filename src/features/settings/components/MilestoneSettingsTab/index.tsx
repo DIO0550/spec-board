@@ -89,11 +89,22 @@ export const MilestoneSettingsTab = ({
   /** フォーム送信（新規作成 or 更新）。成功時はフォームをリセットする。 */
   const handleSubmit = async (): Promise<void> => {
     const args = toArgs(form);
-    const ok =
-      editingName === null
-        ? await create(args)
-        : await update({ ...args, name: editingName });
-    if (ok) {
+    if (editingName === null) {
+      const created = await create(args);
+      if (created) {
+        resetForm();
+      }
+      return;
+    }
+    // 更新は PUT セマンティクスで未指定フィールドがクリアされるため、UI で編集できない
+    // description は既存定義の値を引き継いで消失を防ぐ。
+    const existing = milestones.find((def) => def.name === editingName);
+    const updated = await update({
+      ...args,
+      name: editingName,
+      description: existing?.description,
+    });
+    if (updated) {
       resetForm();
     }
   };
