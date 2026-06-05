@@ -46,6 +46,8 @@ export type TaskPayload = {
   status: string;
   /** 優先度（未設定可） */
   priority?: Priority;
+  /** マイルストーン参照キー（単数・未設定可） */
+  milestone?: string;
   /** ラベルの配列 */
   labels: string[];
   /** 親タスクのファイルパス（親がない場合は未設定） */
@@ -79,6 +81,8 @@ export type Task = {
   status: string;
   /** 優先度（未設定可） */
   priority?: Priority;
+  /** マイルストーン参照キー（単数・未設定可） */
+  milestone?: string;
   /** ラベルの配列 */
   labels: string[];
   /** Markdown 本文 */
@@ -107,6 +111,7 @@ export const Task = {
     title: payload.title,
     status: payload.status,
     priority: payload.priority,
+    milestone: payload.milestone,
     labels: payload.labels,
     body: payload.body,
     filePath: payload.filePath,
