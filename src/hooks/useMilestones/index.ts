@@ -62,7 +62,8 @@ export const useMilestones = (
       setState(IDLE_STATE);
       return;
     }
-    setState((prev) => ({ ...prev, status: "loading" }));
+    // loading 開始時は前回値を残さずクリアする（projectKey 変更 / reload 時の stale 表示防止）。
+    setState({ milestones: [], usageCounts: {}, status: "loading" });
     const result = await getMilestones();
     // 取得中に projectKey が変わっていたら古い応答は捨てる。
     if (latestKeyRef.current !== key) {
