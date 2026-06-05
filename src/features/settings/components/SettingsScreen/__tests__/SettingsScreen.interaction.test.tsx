@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { getLabels } from "@/lib/tauri";
+import { getLabels, getMilestones } from "@/lib/tauri";
 import { Result } from "@/utils/result";
 import { SettingsScreen } from "..";
 
@@ -11,10 +11,12 @@ vi.mock("@/lib/tauri", async () => {
   return {
     ...actual,
     getLabels: vi.fn(),
+    getMilestones: vi.fn(),
   };
 });
 
 const getLabelsMock = vi.mocked(getLabels);
+const getMilestonesMock = vi.mocked(getMilestones);
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -22,6 +24,10 @@ let root: ReturnType<typeof createRoot> | null = null;
 beforeEach(() => {
   getLabelsMock.mockReset();
   getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+  getMilestonesMock.mockReset();
+  getMilestonesMock.mockResolvedValue(
+    Result.ok({ milestones: [], usageCounts: {} }),
+  );
 });
 
 afterEach(() => {
