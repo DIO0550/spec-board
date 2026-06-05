@@ -19,11 +19,23 @@ export type {
   GetLabelsPayload,
   LabelDefinition,
 } from "./labelCommands/types";
-
 // linkCommands
 export { addLink } from "./linkCommands/addLink";
 export { removeLink } from "./linkCommands/removeLink";
 export type { LinkParams } from "./linkCommands/types";
+// milestoneCommands
+export { createMilestone } from "./milestoneCommands/createMilestone";
+export { deleteMilestone } from "./milestoneCommands/deleteMilestone";
+export { getMilestones } from "./milestoneCommands/getMilestones";
+export type {
+  CreateMilestoneArgs,
+  DeleteMilestonePayload,
+  GetMilestonesPayload,
+  MilestoneDefinition,
+  MilestoneState,
+  UpdateMilestoneArgs,
+} from "./milestoneCommands/types";
+export { updateMilestone } from "./milestoneCommands/updateMilestone";
 
 // taskCommands
 export { createTask } from "./taskCommands/createTask";

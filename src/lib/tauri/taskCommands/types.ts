@@ -31,6 +31,8 @@ export type CreateTaskParams = {
   status: string;
   /** 優先度（任意） */
   priority?: Priority;
+  /** マイルストーン参照キー（任意・単数。空文字/未指定は未割当） */
+  milestone?: string;
   /** ラベル一覧（任意） */
   labels?: string[];
   /** 親タスクのファイルパス（任意） */
@@ -49,6 +51,8 @@ export type UpdateTaskParams = {
   status?: string;
   /** 優先度（任意） */
   priority?: Priority;
+  /** マイルストーン参照キー（任意・3 値: undefined=不変 / ""=クリア / name=設定） */
+  milestone?: string;
   /** ラベル一覧（任意） */
   labels?: string[];
   /** 親タスクのファイルパス（任意。空文字で親解除） */
