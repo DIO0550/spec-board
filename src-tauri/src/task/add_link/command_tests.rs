@@ -28,6 +28,7 @@ fn open_with_noop(state: Arc<AppState>, path: &Path) {
         &state,
         &intent,
         &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
         &NoopWatcherFactory,
     )
     .expect("open should succeed");

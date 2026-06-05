@@ -9,7 +9,10 @@ use std::thread;
 
 use spec_board_fs::watcher::handle::WatcherHandle;
 
-use crate::config::{CardOrder, Column, Config, LabelDefinition, LabelRegistry};
+use crate::config::{
+    CardOrder, Column, Config, LabelDefinition, LabelRegistry, MilestoneDefinition,
+    MilestoneRegistry,
+};
 use crate::task::task_index::Task;
 
 fn sample_task(id: &str, file_path: &str) -> Task {
@@ -50,6 +53,20 @@ fn sample_labels() -> LabelRegistry {
             description: None,
             group: None,
             color: None,
+            updated: None,
+        }],
+    }
+}
+
+fn sample_milestones() -> MilestoneRegistry {
+    MilestoneRegistry {
+        milestones: vec![MilestoneDefinition {
+            name: "v0.3".to_string(),
+            title: None,
+            description: None,
+            due: None,
+            order: None,
+            state: None,
             updated: None,
         }],
     }
@@ -595,38 +612,45 @@ fn check_all_locks_reports_poison_when_labels_is_poisoned() {
 }
 
 #[test]
-fn replace_project_config_and_labels_swaps_three_fields() {
+fn replace_project_config_labels_and_milestones_swaps_four_fields() {
     let state = AppState::new();
     let path = PathBuf::from("/tmp/project");
     state
-        .replace_project_config_and_labels(
+        .replace_project_config_labels_and_milestones(
             Some(path.clone()),
             Some(sample_config()),
             Some(sample_labels()),
+            Some(sample_milestones()),
         )
         .expect("writable");
 
     assert_eq!(Some(path), state.project_path().expect("readable"));
     assert_eq!(Some(sample_config()), state.config().expect("readable"));
     assert_eq!(Some(sample_labels()), state.labels().expect("readable"));
+    assert_eq!(
+        Some(sample_milestones()),
+        state.milestones().expect("readable")
+    );
 }
 
 #[test]
-fn replace_project_config_and_labels_can_clear_all_to_none() {
+fn replace_project_config_labels_and_milestones_can_clear_all_to_none() {
     let state = AppState::new();
     state
-        .replace_project_config_and_labels(
+        .replace_project_config_labels_and_milestones(
             Some(PathBuf::from("/tmp/project")),
             Some(sample_config()),
             Some(sample_labels()),
+            Some(sample_milestones()),
         )
         .expect("writable");
 
     state
-        .replace_project_config_and_labels(None, None, None)
+        .replace_project_config_labels_and_milestones(None, None, None, None)
         .expect("writable");
 
     assert_eq!(None, state.project_path().expect("readable"));
     assert_eq!(None, state.config().expect("readable"));
     assert_eq!(None, state.labels().expect("readable"));
+    assert_eq!(None, state.milestones().expect("readable"));
 }

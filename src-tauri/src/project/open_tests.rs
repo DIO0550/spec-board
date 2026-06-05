@@ -30,7 +30,14 @@ fn open_with_noop(
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let intent = OpenProjectIntent::try_from(path.to_string())?;
     let labels_store = crate::config::label_registry_store(intent.as_path());
-    open_project_impl(&state, &intent, &labels_store, &NoopWatcherFactory)
+    let milestones_store = crate::config::milestone_registry_store(intent.as_path());
+    open_project_impl(
+        &state,
+        &intent,
+        &labels_store,
+        &milestones_store,
+        &NoopWatcherFactory,
+    )
 }
 
 /// `prepare` で `WatcherInitFailed` を返すテスト用 factory。
@@ -583,6 +590,7 @@ fn watcher_init_failure_keeps_app_state_completely_unchanged() {
         &state,
         &intent,
         &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
         &factory,
     )
     .expect_err("watcher init failure should be returned");
@@ -616,6 +624,7 @@ fn watcher_init_failure_does_not_write_guide_md_in_new_dir() {
         &state,
         &intent,
         &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
         &factory,
     )
     .expect_err("watcher init failure");
@@ -646,6 +655,7 @@ fn watcher_init_failure_does_not_invoke_old_watcher_stop() {
         &state,
         &intent,
         &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
         &factory,
     )
     .expect_err("watcher init failure");
@@ -679,6 +689,7 @@ fn old_watcher_is_stopped_before_state_commit() {
         &state,
         &intent,
         &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
         &factory,
     )
     .expect("open should succeed");
@@ -982,4 +993,157 @@ fn failed_open_due_to_broken_labels_keeps_previous_state() {
 
     assert_eq!(project_before, state.project_path().expect("readable"));
     assert_eq!(labels_before, state.labels().expect("readable"));
+}
+
+// ───────── milestones.yml 読み込み（open_project 経由） ─────────
+
+fn write_milestones_yml(root: &Path, content: &str) {
+    let dir = root.join(".spec-board");
+    fs::create_dir_all(&dir).expect("create .spec-board");
+    fs::write(dir.join("milestones.yml"), content).expect("write milestones.yml");
+}
+
+#[test]
+fn open_commits_milestones_from_milestones_yml() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_milestones_yml(
+        dir.path(),
+        "milestones:\n  - name: v0.3\n    title: v0.3 リリース\n  - name: v0.4\n",
+    );
+
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("open should succeed");
+
+    let registry = state
+        .milestones()
+        .expect("readable")
+        .expect("milestones committed");
+    let names: Vec<&str> = registry
+        .milestones
+        .iter()
+        .map(|m| m.name.as_str())
+        .collect();
+    assert_eq!(names, vec!["v0.3", "v0.4"]);
+}
+
+#[test]
+fn open_without_milestones_yml_commits_empty_registry() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("open should succeed");
+
+    let registry = state
+        .milestones()
+        .expect("readable")
+        .expect("milestones committed (default)");
+    assert!(registry.milestones.is_empty());
+}
+
+#[test]
+fn open_fails_with_parse_category_for_broken_milestones_yml() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    // ルートが sequence（mapping 以外）→ 構造不正
+    write_milestones_yml(dir.path(), "- v0.3\n- v0.4\n");
+
+    let err = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect_err("broken milestones.yml should fail open");
+    assert!(
+        matches!(
+            err,
+            OpenProjectError::MilestonesLoadFailed {
+                category: "parse",
+                ..
+            }
+        ),
+        "got {err:?}"
+    );
+    assert!(err.to_string().contains("milestones load failed (parse)"));
+}
+
+#[test]
+fn open_fails_with_parse_category_for_duplicate_milestone_name() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_milestones_yml(dir.path(), "milestones:\n  - name: v0.3\n  - name: v0.3\n");
+
+    let err = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect_err("duplicate name should fail open");
+    assert!(
+        matches!(
+            err,
+            OpenProjectError::MilestonesLoadFailed {
+                category: "parse",
+                ..
+            }
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn open_commits_config_labels_and_milestones_together() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_labels_yml(dir.path(), "labels:\n  - name: bug\n");
+    write_milestones_yml(dir.path(), "milestones:\n  - name: v0.3\n");
+
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("open should succeed");
+
+    // config / labels / milestones が一貫して反映される
+    assert!(state.config().expect("readable").is_some());
+    assert_eq!(
+        1,
+        state
+            .labels()
+            .expect("readable")
+            .expect("some")
+            .labels
+            .len()
+    );
+    assert_eq!(
+        1,
+        state
+            .milestones()
+            .expect("readable")
+            .expect("some")
+            .milestones
+            .len()
+    );
+}
+
+#[test]
+fn reopen_into_project_without_milestones_yml_resets_to_empty() {
+    let state = Arc::new(AppState::new());
+
+    let dir1 = tempdir();
+    write_milestones_yml(dir1.path(), "milestones:\n  - name: v0.3\n");
+    open_with_noop(Arc::clone(&state), dir1.path().to_str().expect("utf-8"))
+        .expect("first open should succeed");
+    assert_eq!(
+        1,
+        state
+            .milestones()
+            .expect("readable")
+            .expect("some")
+            .milestones
+            .len()
+    );
+
+    let dir2 = tempdir();
+    open_with_noop(Arc::clone(&state), dir2.path().to_str().expect("utf-8"))
+        .expect("second open should succeed");
+    assert!(state
+        .milestones()
+        .expect("readable")
+        .expect("some")
+        .milestones
+        .is_empty());
 }

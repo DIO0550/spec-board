@@ -43,7 +43,11 @@ pub fn run() {
             config::update_columns::update_columns,
             config::create_label::create_label,
             config::update_label::update_label,
-            config::delete_label::delete_label
+            config::delete_label::delete_label,
+            config::get_milestones::get_milestones,
+            config::create_milestone::create_milestone,
+            config::update_milestone::update_milestone,
+            config::delete_milestone::delete_milestone
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
