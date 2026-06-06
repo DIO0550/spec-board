@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EditableText } from "@/components/EditableText";
 import { getBrokenLinks } from "@/domains/broken-link";
@@ -6,6 +6,7 @@ import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
+import { useFocusTrap } from "@/features/detail/hooks/useFocusTrap";
 import { useParentTask } from "@/features/detail/hooks/useParentTask";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
@@ -108,8 +109,6 @@ export const DetailPanel = ({
   tasksByNormalizedPath,
   onExpand,
 }: DetailPanelProps) => {
-  const panelRef = useRef<HTMLElement>(null);
-
   const childInfo = useChildTasks({
     parentFilePath: task.filePath,
     allTasks,
@@ -135,6 +134,10 @@ export const DetailPanel = ({
     return onDelete(task.id);
   }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
   const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
+
+  // 削除ダイアログ表示中（deleteFlow.isOpen）はトラップを無効化し、二重トラップを避ける。
+  // hook が ref を所有して返すため、この ref をそのまま aside の取り付けと mount focus に使う。
+  const panelRef = useFocusTrap<HTMLElement>({ active: !deleteFlow.isOpen });
 
   useEffect(() => {
     if (deleteFlow.isOpen) {
@@ -180,9 +183,9 @@ export const DetailPanel = ({
         aria-modal="true"
         aria-label="タスク詳細"
         tabIndex={-1}
-        className="fixed top-0 right-0 z-50 flex h-full w-[480px] max-w-full animate-slide-in flex-col bg-white shadow-xl"
+        className="fixed top-0 right-0 z-50 flex h-full w-full max-w-full animate-slide-in flex-col bg-white shadow-xl sm:w-[480px]"
       >
-        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 sm:px-4 sm:py-3">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <CycleWarningBanner task={task} />
             <ParseErrorBanner task={task} />
@@ -208,7 +211,7 @@ export const DetailPanel = ({
               type="button"
               aria-label="全画面で開く"
               data-testid="detail-expand-button"
-              className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               onClick={onExpand}
             >
               <svg
@@ -229,7 +232,7 @@ export const DetailPanel = ({
           <button
             type="button"
             aria-label="閉じる"
-            className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             onClick={onClose}
           >
             <svg
@@ -247,7 +250,7 @@ export const DetailPanel = ({
             </svg>
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           <div className="flex flex-col gap-4">
             <DetailFields
               task={task}
@@ -288,7 +291,7 @@ export const DetailPanel = ({
             />
           </div>
         </div>
-        <div className="border-t border-gray-200 px-4 py-3">
+        <div className="border-t border-gray-200 px-3 py-2 sm:px-4 sm:py-3">
           <p
             className="mb-3 truncate text-xs text-gray-400"
             data-testid="detail-file-path"
@@ -297,7 +300,7 @@ export const DetailPanel = ({
           </p>
           <button
             type="button"
-            className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+            className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
             data-testid="detail-delete-button"
             onClick={deleteFlow.requestDelete}
           >

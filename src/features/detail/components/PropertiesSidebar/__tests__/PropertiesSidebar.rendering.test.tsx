@@ -139,3 +139,14 @@ test("削除ボタンが描画される", () => {
     document.querySelector('[data-testid="detail-delete-button"]'),
   ).toBeTruthy();
 });
+
+test("削除ボタンに focus-visible リング（red）クラスを含む（DetailPanel とトーン統一）", () => {
+  render(buildProps());
+  const cls = (
+    document.querySelector(
+      '[data-testid="detail-delete-button"]',
+    ) as HTMLElement
+  ).className;
+  expect(cls).toContain("focus-visible:ring-2");
+  expect(cls).toContain("focus-visible:ring-red-500");
+});

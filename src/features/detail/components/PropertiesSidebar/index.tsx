@@ -166,7 +166,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
       </DetailFields>
       <button
         type="button"
-        className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+        className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
         data-testid="detail-delete-button"
         onClick={deleteFlow.requestDelete}
       >

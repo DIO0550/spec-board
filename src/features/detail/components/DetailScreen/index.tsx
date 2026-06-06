@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getBrokenLinks } from "@/domains/broken-link";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
@@ -115,15 +115,29 @@ export const DetailScreen = (props: DetailScreenProps) => {
   // 削除 ConfirmDialog 表示中は Esc を「戻る」に使わない。PropertiesSidebar から
   // 開閉通知を受けて disabled に反映する。
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  // 全画面ビュー展開時に section 自身へフォーカスを移す（ビュー先頭へ移動）。
+  // 既存 DetailPanel の panelRef.focus() と同一パターン。useEffect の [] でマウント時 1 回だけ実行する。
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    sectionRef.current?.focus();
+  }, []);
+
   useEscToClose({ disabled: isDeleteDialogOpen, onEscape: onBack });
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-      <div className="flex flex-1 flex-col overflow-y-auto p-4">
+    <section
+      ref={sectionRef}
+      tabIndex={-1}
+      aria-label="タスク詳細"
+      className="flex flex-1 flex-col overflow-hidden focus:outline-none md:flex-row"
+    >
+      <h1 className="sr-only">{task.title || task.filePath}</h1>
+      <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
         <button
           type="button"
           data-testid="detail-back-button"
-          className="mb-4 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-800"
+          className="mb-4 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           onClick={onBack}
         >
           ← 戻る
@@ -134,7 +148,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
           onBodyConfirm={(body) => onTaskUpdate(task.id, { body })}
         />
       </div>
-      <div className="w-full shrink-0 overflow-y-auto border-t border-gray-200 p-4 md:w-[360px] md:border-t-0 md:border-l">
+      <div className="w-full shrink-0 overflow-y-auto border-t border-gray-200 p-4 md:w-[360px] md:border-t-0 md:border-l md:p-6">
         <PropertiesSidebar
           task={task}
           columns={columns}
@@ -151,6 +165,6 @@ export const DetailScreen = (props: DetailScreenProps) => {
           onDeleteFlowOpenChange={setDeleteDialogOpen}
         />
       </div>
-    </div>
+    </section>
   );
 };
