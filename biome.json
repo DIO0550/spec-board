@@ -20,6 +20,19 @@
     "indentStyle": "space",
     "indentWidth": 2
   },
+  "linter": {
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "useExhaustiveDependencies": {
+          "level": "warn",
+          "options": {
+            "hooks": [{ "name": "useFocusTrap", "stableResult": true }]
+          }
+        }
+      }
+    }
+  },
   "overrides": [
     {
       "includes": ["**/*.json", "**/*.jsonc", "tsconfig*.json", "biome.json"],
