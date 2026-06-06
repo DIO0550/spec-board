@@ -74,6 +74,7 @@ fn intent_with(
         priority: priority.and_then(Priority::from_ascii_ci),
         labels: labels.into_iter().map(Label::from).collect(),
         parent: parent.map(TaskFilePath::from_lenient),
+        links: Vec::new(),
         body: body.map(|s| s.to_string()),
     }
 }
@@ -81,7 +82,7 @@ fn intent_with(
 #[test]
 fn from_intent_renders_title_and_status_in_fixed_order() {
     let intent = intent_with("Foo Bar", "Todo", None, vec![], None, None);
-    let content = TaskContent::from_intent(&intent, None).expect("valid");
+    let content = TaskContent::from_intent(&intent, None, &[]).expect("valid");
     let s = content.as_str();
     assert!(s.starts_with("---\ntitle: Foo Bar\nstatus: Todo\n"));
     assert!(!s.contains("priority:"));
@@ -94,7 +95,7 @@ fn from_intent_normalizes_priority_case_insensitively() {
     let cases: Vec<(&str, &str)> = vec![("high", "High"), ("HIGH", "High"), ("MeDiUm", "Medium")];
     for (input, expected) in cases {
         let intent = intent_with("T", "Todo", Some(input), vec![], None, None);
-        let content = TaskContent::from_intent(&intent, None).expect("valid");
+        let content = TaskContent::from_intent(&intent, None, &[]).expect("valid");
         let s = content.as_str();
         assert!(
             s.contains(&format!("priority: {expected}")),
@@ -106,7 +107,7 @@ fn from_intent_normalizes_priority_case_insensitively() {
 #[test]
 fn from_intent_omits_priority_for_invalid_string() {
     let intent = intent_with("T", "Todo", Some("urgent"), vec![], None, None);
-    let content = TaskContent::from_intent(&intent, None).expect("valid");
+    let content = TaskContent::from_intent(&intent, None, &[]).expect("valid");
     let s = content.as_str();
     assert!(
         !s.contains("priority:"),
@@ -124,7 +125,7 @@ fn from_intent_renders_labels_and_parent_and_body() {
         Some("tasks/p.md"),
         Some("hello body"),
     );
-    let content = TaskContent::from_intent(&intent, Some("tasks/p.md")).expect("valid");
+    let content = TaskContent::from_intent(&intent, Some("tasks/p.md"), &[]).expect("valid");
     let s = content.as_str();
     assert!(s.contains("title: T"));
     assert!(s.contains("status: Todo"));
@@ -140,7 +141,7 @@ fn from_intent_renders_labels_and_parent_and_body() {
 fn from_intent_rejects_body_larger_than_scanner_max_size() {
     let huge = "a".repeat(1024 * 1024 + 1);
     let intent = intent_with("Huge", "Todo", None, vec![], None, Some(&huge));
-    let err = TaskContent::from_intent(&intent, None).expect_err("should fail");
+    let err = TaskContent::from_intent(&intent, None, &[]).expect_err("should fail");
     assert!(matches!(
         err,
         CreateTaskError::ContentNotScannerEligible {
@@ -155,11 +156,70 @@ fn from_intent_rejects_body_with_nul_byte_in_first_8kb() {
     bad_body.push('\u{0000}');
     bad_body.push_str("world");
     let intent = intent_with("Nul", "Todo", None, vec![], None, Some(&bad_body));
-    let err = TaskContent::from_intent(&intent, None).expect_err("should fail");
+    let err = TaskContent::from_intent(&intent, None, &[]).expect_err("should fail");
     assert!(matches!(
         err,
         CreateTaskError::ContentNotScannerEligible {
             reason: ContentRejectReason::BinaryDetected,
         }
     ));
+}
+
+// ---------------------------------------------------------------------------
+// from_intent — links 出力（フィールド順 / 空キー省略 / 複数件）
+// ---------------------------------------------------------------------------
+
+#[test]
+fn from_intent_renders_normalized_links() {
+    let intent = intent_with("T", "Todo", None, vec![], None, None);
+    let content =
+        TaskContent::from_intent(&intent, None, &["tasks/a.md".to_string()]).expect("valid");
+    let s = content.as_str();
+    assert!(s.contains("links:"));
+    assert!(s.contains("- tasks/a.md"));
+}
+
+#[test]
+fn from_intent_renders_links_in_fixed_field_order() {
+    let intent = intent_with(
+        "T",
+        "Todo",
+        Some("High"),
+        vec!["bug"],
+        Some("tasks/p.md"),
+        None,
+    );
+    let content =
+        TaskContent::from_intent(&intent, Some("tasks/p.md"), &["tasks/a.md".to_string()])
+            .expect("valid");
+    let s = content.as_str();
+    // title → status → priority → labels → parent → links の順を検証。
+    let title = s.find("title:").expect("title");
+    let status = s.find("status:").expect("status");
+    let priority = s.find("priority:").expect("priority");
+    let labels = s.find("labels:").expect("labels");
+    let parent = s.find("parent:").expect("parent");
+    let links = s.find("links:").expect("links");
+    assert!(title < status);
+    assert!(status < priority);
+    assert!(priority < labels);
+    assert!(labels < parent);
+    assert!(parent < links);
+}
+
+#[test]
+fn from_intent_omits_links_key_when_empty() {
+    let intent = intent_with("T", "Todo", None, vec![], None, None);
+    let content = TaskContent::from_intent(&intent, None, &[]).expect("valid");
+    assert!(!content.as_str().contains("links:"));
+}
+
+#[test]
+fn from_intent_renders_multiple_links() {
+    let intent = intent_with("T", "Todo", None, vec![], None, None);
+    let links = vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()];
+    let content = TaskContent::from_intent(&intent, None, &links).expect("valid");
+    let s = content.as_str();
+    assert!(s.contains("- tasks/a.md"));
+    assert!(s.contains("- tasks/b.md"));
 }

@@ -25,6 +25,10 @@ pub struct CreateTaskArgs {
     pub labels: Vec<String>,
     /// 親タスクへのプロジェクトルート相対パス（例: `tasks/parent-task.md`）。
     pub parent: Option<String>,
+    /// 関連タスク（links）へのプロジェクトルート相対パス一覧。未指定時は空配列。
+    /// 生の raw path をそのまま受け取り、dedup・正規化は `plan_create` で行う。
+    #[serde(default)]
+    pub links: Vec<String>,
     /// 本文（Markdown）。未指定時は空文字列扱い。
     pub body: Option<String>,
 }
@@ -42,7 +46,13 @@ impl From<CreateTaskArgs> for CreateTaskIntent {
             priority,
             labels: args.labels.into_iter().map(Label::from).collect(),
             parent: args.parent.map(TaskFilePath::from_lenient),
+            // raw のまま詰める。dedup・パス正規化・lenient 保持は plan_create が担う。
+            links: args.links,
             body: args.body,
         }
     }
 }
+
+#[cfg(test)]
+#[path = "args_tests.rs"]
+mod args_tests;
