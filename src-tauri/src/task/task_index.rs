@@ -1094,7 +1094,6 @@ fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {
     task
 }
 
-/// augmented hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
 /// 作成時 links の lenient 正規化。
 ///
 /// 空・絶対・drive prefix のパスは除外し、正規化後に重複を除去する
@@ -1114,6 +1113,7 @@ fn normalize_create_links(raw_links: &[String]) -> Vec<String> {
     normalized
 }
 
+/// augmented hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
 fn build_provisional_task(
     rel_path: &Path,
     intent: &CreateTaskIntent,
