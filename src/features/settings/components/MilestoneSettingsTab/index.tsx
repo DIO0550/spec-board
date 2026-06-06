@@ -20,19 +20,36 @@ const EMPTY_FORM: FormValues = {
   state: "",
 };
 
+/** 非負整数のみ（先頭末尾空白許容）を表す order の検証パターン。 */
+const NON_NEGATIVE_INTEGER = /^\d+$/;
+
+/**
+ * order 入力を非負整数 or undefined に正規化する。
+ * `Number.parseInt` は "1.5" / "2abc" を 1 / 2 と部分パースしてしまうため、
+ * 文字列全体が整数のときだけ採用し、それ以外（小数・余剰文字・空）は undefined に倒す。
+ * @param raw - order の生入力
+ * @returns 非負整数、または未割当を表す undefined
+ */
+const toOrder = (raw: string): number | undefined => {
+  const trimmed = raw.trim();
+  if (!NON_NEGATIVE_INTEGER.test(trimmed)) {
+    return undefined;
+  }
+  return Number.parseInt(trimmed, 10);
+};
+
 /**
  * フォーム入力値を CreateMilestoneArgs に正規化する。
- * 空文字フィールドは undefined（未割当）に倒す。order は数値化できる場合のみ採用。
+ * 空文字フィールドは undefined（未割当）に倒す。order は文字列全体が非負整数のときのみ採用。
  * @param values - フォーム入力値
  * @returns 送信用 args
  */
 const toArgs = (values: FormValues): CreateMilestoneArgs => {
-  const order = Number.parseInt(values.order, 10);
   return {
     name: values.name,
     title: values.title === "" ? undefined : values.title,
     due: values.due === "" ? undefined : values.due,
-    order: Number.isFinite(order) && order >= 0 ? order : undefined,
+    order: toOrder(values.order),
     state: values.state === "" ? undefined : values.state,
   };
 };

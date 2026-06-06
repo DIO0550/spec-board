@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { MilestoneDefinition } from "@/lib/tauri";
-import { updateMilestone } from "@/lib/tauri";
+import { createMilestone, updateMilestone } from "@/lib/tauri";
 import { Result } from "@/utils/result";
 import { MilestoneSettingsTab } from "..";
 
@@ -97,5 +97,49 @@ test("編集→更新で UI 非対応の description が既存値のまま引き
   expect(updateMock).toHaveBeenCalledTimes(1);
   expect(updateMock).toHaveBeenCalledWith(
     expect.objectContaining({ name: "v0.3", description: "重要な備考" }),
+  );
+});
+
+const createMock = vi.mocked(createMilestone);
+
+const fillField = (label: string, value: string): void => {
+  const input = container?.querySelector(
+    `[aria-label="${label}"]`,
+  ) as HTMLInputElement | null;
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(input, value);
+  input?.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+test.each([
+  ["1.5", undefined],
+  ["2abc", undefined],
+  ["-1", undefined],
+  ["", undefined],
+  ["3", 3],
+  ["0", 0],
+])("新規作成で order=%j は %j に正規化される（部分パースを受理しない）", async (input, expected) => {
+  createMock.mockReset();
+  createMock.mockResolvedValue(Result.ok(undefined));
+  await mount();
+
+  await act(async () => {
+    fillField("name", "v1.0");
+    fillField("order", input);
+  });
+
+  await act(async () => {
+    const form = container?.querySelector("form");
+    form?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+  });
+
+  expect(createMock).toHaveBeenCalledTimes(1);
+  expect(createMock).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "v1.0", order: expected }),
   );
 });
