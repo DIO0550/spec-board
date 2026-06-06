@@ -1,6 +1,8 @@
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import { Button } from "@/components/Button";
+import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
+import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column } from "@/types/column";
@@ -10,6 +12,7 @@ import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormLabels } from "./TaskFormLabels";
 import { LabelChip } from "./TaskFormLabels/LabelChip";
 import { LabelInput } from "./TaskFormLabels/LabelInput";
+import { TaskFormLinks } from "./TaskFormLinks";
 import { TaskFormParent } from "./TaskFormParent";
 import { TaskFormPriority } from "./TaskFormPriority";
 import { TaskFormStatus } from "./TaskFormStatus";
@@ -69,6 +72,8 @@ export const TaskForm = ({
 }: TaskFormProps) => {
   const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
+  // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
+  const links = useLinksInput();
   const fields = useTaskFormFields({
     initialStatus,
     initialParent,
@@ -77,7 +82,25 @@ export const TaskForm = ({
     existingTasks,
     onSubmit,
     finalizeLabels: labels.finalizeLabels,
+    finalizeLinks: links.finalizeLinks,
   });
+  const parentValue = fields.state.values.parent;
+  // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
+  const linkCandidates = useMemo(
+    () =>
+      TaskLinks.buildCreateLinkCandidates({
+        allTasks: existingTasks ?? [],
+        parentFilePath: parentValue,
+        selectedFilePaths: links.links,
+      }),
+    [existingTasks, parentValue, links.links],
+  );
+  // chip の title 表示用に選択済み filePath を全タスクから逆引きする。
+  const selectedLinkTasks = links.links
+    .map((filePath) =>
+      (existingTasks ?? []).find((task) => task.filePath === filePath),
+    )
+    .filter((task): task is Task => task !== undefined);
   return (
     <form
       className="flex flex-col gap-4"
@@ -129,6 +152,14 @@ export const TaskForm = ({
           readOnly={parentReadOnly}
         />
       )}
+      <TaskFormLinks
+        links={links.links}
+        selectedTasks={selectedLinkTasks}
+        candidates={linkCandidates}
+        onAdd={links.addLink}
+        onRemove={links.removeLink}
+        disabled={isSubmitting}
+      />
       <TaskFormBody
         value={fields.state.values.body}
         onChange={(value) => fields.dispatch({ type: "body", value })}

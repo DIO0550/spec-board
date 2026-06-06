@@ -67,6 +67,46 @@ const syncParentChildren = (
 };
 
 /**
+ * 作成タスクの forward link 先 target に reverse link を冪等追加する。
+ * BE の `insert_new_task_into_cache` による target 側 `reverse_links` 更新に対応する
+ * FE 側 optimistic 反映。これが無いと target の reverse は再 open まで stale になる。
+ *
+ * @param tasks 同期対象のタスク配列
+ * @param linkedFilePaths 作成タスクの forward link 先 filePath 配列
+ * @param createdFilePath 作成タスクの filePath
+ * @returns reverse link を反映したタスク配列
+ */
+const syncCreatedTaskReverseLinks = (
+  tasks: Task[],
+  linkedFilePaths: readonly string[],
+  createdFilePath: string,
+): Task[] => {
+  if (linkedFilePaths.length === 0) {
+    return tasks;
+  }
+
+  const targets = new Set(linkedFilePaths);
+  return tasks.map((current) => {
+    if (!targets.has(current.filePath)) {
+      return current;
+    }
+    if (current.links.reverseLinkedFilePaths.includes(createdFilePath)) {
+      return current;
+    }
+    return {
+      ...current,
+      links: {
+        ...current.links,
+        reverseLinkedFilePaths: [
+          ...current.links.reverseLinkedFilePaths,
+          createdFilePath,
+        ],
+      },
+    };
+  });
+};
+
+/**
  * 2 つの parentFilePath が同じ task path を指すか判定する。
  * `parentReferencesTaskPath` は path 正規化（`./`, `\\` 差）を吸収する。
  *
@@ -151,7 +191,12 @@ export const ProjectData = {
       task.hierarchy.parentFilePath,
       task.filePath,
     );
-    return { ...data, tasks: tasksWithParentSync };
+    const tasksWithReverseSync = syncCreatedTaskReverseLinks(
+      tasksWithParentSync,
+      task.links.linkedFilePaths,
+      task.filePath,
+    );
+    return { ...data, tasks: tasksWithReverseSync };
   },
 
   /**

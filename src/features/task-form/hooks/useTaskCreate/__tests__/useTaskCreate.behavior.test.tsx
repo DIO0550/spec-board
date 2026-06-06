@@ -54,6 +54,7 @@ const valuesFixture: TaskFormValues = {
   title: "fixture",
   status: "TODO",
   labels: [],
+  links: [],
   body: "",
 };
 
@@ -232,6 +233,7 @@ test("T3: priority / parent が undefined のとき CreateTaskParams から key 
     title: "T",
     status: "TODO",
     labels: [],
+    links: [],
     body: "",
   };
   await act(async () => {
@@ -243,12 +245,11 @@ test("T3: priority / parent が undefined のとき CreateTaskParams から key 
     title: "T",
     status: "TODO",
     labels: [],
+    links: [],
     body: "",
   });
   expect(params).not.toHaveProperty("priority");
   expect(params).not.toHaveProperty("parent");
-  expect(Object.prototype.hasOwnProperty.call(params, "priority")).toBe(false);
-  expect(Object.prototype.hasOwnProperty.call(params, "parent")).toBe(false);
 });
 
 test("T3b: priority / parent が値を持つときは CreateTaskParams に含まれる", async () => {
@@ -260,6 +261,7 @@ test("T3b: priority / parent が値を持つときは CreateTaskParams に含ま
     priority: "High",
     labels: ["bug"],
     parent: "tasks/parent.md",
+    links: ["tasks/related.md"],
     body: "body",
   };
   await act(async () => {
@@ -271,6 +273,7 @@ test("T3b: priority / parent が値を持つときは CreateTaskParams に含ま
     priority: "High",
     labels: ["bug"],
     parent: "tasks/parent.md",
+    links: ["tasks/related.md"],
     body: "body",
   });
 });

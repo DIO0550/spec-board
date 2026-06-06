@@ -46,6 +46,7 @@ const defaultArgs = (): UseTaskFormFieldsArgs => ({
   isSubmitting: false,
   onSubmit: vi.fn(),
   finalizeLabels: () => [],
+  finalizeLinks: () => [],
 });
 
 const render = (args: UseTaskFormFieldsArgs) => {
@@ -302,6 +303,7 @@ test("handleSubmit: 直前の DUPLICATE エラーが残った状態でも、再 
           isSubmitting: false,
           onSubmit,
           finalizeLabels: () => [],
+          finalizeLinks: () => [],
           existingTasks: current,
           onResult: (r) => {
             latest = r;
@@ -385,6 +387,7 @@ test("handleSubmit 正常系: 正規化された値が onSubmit に渡る", () =
     priority: "High",
     labels: [],
     parent: undefined,
+    links: [],
     body: "b",
   });
 });
@@ -419,4 +422,23 @@ test("handleSubmit: labels は finalizeLabels の戻り値が使われる", () =
   expect(commit).toHaveBeenCalledTimes(1);
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.labels).toEqual(["a", "b"]);
+});
+
+test("handleSubmit: links は finalizeLinks の戻り値が使われる", () => {
+  const onSubmit = vi.fn();
+  const finalize = vi.fn(() => ["tasks/a.md", "tasks/b.md"]);
+  const { get } = render({
+    ...defaultArgs(),
+    onSubmit,
+    finalizeLinks: finalize,
+  });
+  act(() => {
+    get().dispatch({ type: "title", value: "t" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(finalize).toHaveBeenCalledTimes(1);
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect(values.links).toEqual(["tasks/a.md", "tasks/b.md"]);
 });

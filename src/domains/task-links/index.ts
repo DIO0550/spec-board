@@ -21,6 +21,19 @@ export type BuildAddLinkCandidatesArgs = {
   readonly childrenFilePaths: readonly string[];
 };
 
+/**
+ * `buildCreateLinkCandidates` 引数。作成フローには自タスク・children が存在しない
+ * ため `buildAddLinkCandidatesArgs` とは別型。
+ */
+export type BuildCreateLinkCandidatesArgs = {
+  /** 候補母集団のタスク一覧 */
+  readonly allTasks: readonly Task[];
+  /** 親タスクの filePath（未選択なら undefined） */
+  readonly parentFilePath: string | undefined;
+  /** 既に links に選択済みの filePath 配列 */
+  readonly selectedFilePaths: readonly string[];
+};
+
 /** rollback 判定 helper 群の共通引数。 */
 export type RestoreLinksArgs = {
   /** 楽観 dispatch 前の links snapshot */
@@ -92,6 +105,26 @@ const buildAddLinkCandidates = (args: BuildAddLinkCandidatesArgs): Task[] => {
   }
   for (const p of args.childrenFilePaths) {
     excluded.add(p);
+  }
+  return args.allTasks.filter((task) => !excluded.has(task.filePath));
+};
+
+/**
+ * 作成フロー用の候補算出。母集団 `allTasks` から parent と選択済み filePath を
+ * 除いた候補配列を返す。作成中タスクは未保存のため自己除外は不要。
+ *
+ * filePath は完全一致で除外する。UI 経由では parentFilePath / selectedFilePaths は
+ * 常に `Task.filePath`（正規化済み）として渡る前提のため表記揺れは混入しない。
+ *
+ * @param args 母集団・parent・選択済み
+ * @returns create-link 候補となる Task 配列
+ */
+const buildCreateLinkCandidates = (
+  args: BuildCreateLinkCandidatesArgs,
+): Task[] => {
+  const excluded = new Set<string>(args.selectedFilePaths);
+  if (args.parentFilePath !== undefined) {
+    excluded.add(args.parentFilePath);
   }
   return args.allTasks.filter((task) => !excluded.has(task.filePath));
 };
@@ -252,6 +285,7 @@ export const TaskLinks = {
     return { ...task, links: taskLinks };
   },
   buildAddLinkCandidates,
+  buildCreateLinkCandidates,
   appendLinkedFilePath,
   appendReverseLinkedFilePath,
   removeLinkedFilePath,

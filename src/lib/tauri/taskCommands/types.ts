@@ -35,6 +35,8 @@ export type CreateTaskParams = {
   labels?: string[];
   /** 親タスクのファイルパス（任意） */
   parent?: string;
+  /** 関連タスク（links）のファイルパス一覧（任意） */
+  links?: string[];
   /** Markdown 本文（任意） */
   body?: string;
 };

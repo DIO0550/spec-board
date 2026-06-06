@@ -12,6 +12,8 @@ export type TaskFormValues = {
   labels: string[];
   /** 親タスクのファイルパス（任意） */
   parent?: string;
+  /** 関連タスク（links）のファイルパス一覧 */
+  links: string[];
   /** 本文（Markdown） */
   body: string;
 };
