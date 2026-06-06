@@ -857,6 +857,7 @@ export const App = () => {
           tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
           milestonesByName={milestonesResource.byName}
+          milestones={milestonesResource.milestones}
           onAddTask={handleAddTask}
           onAddColumn={handleAddColumn}
           onRenameColumn={handleRenameColumn}
