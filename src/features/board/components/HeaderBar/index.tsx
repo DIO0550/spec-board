@@ -8,6 +8,11 @@ type HeaderBarProps = {
   view?: AppView;
   /** 設定ボタンのクリックハンドラ */
   onSettingsClick: () => void;
+  /**
+   * マイルストーンビュー切替ボタンのクリックハンドラ。
+   * 未指定（プロジェクト未オープン等）のときはボタンを表示しない。
+   */
+  onMilestoneClick?: () => void;
   /** 「開く」ボタンのクリックハンドラ */
   onOpenClick: () => void;
 };
@@ -21,6 +26,7 @@ export const HeaderBar = ({
   projectName,
   view = "board",
   onSettingsClick,
+  onMilestoneClick,
   onOpenClick,
 }: HeaderBarProps) => {
   return (
@@ -29,6 +35,15 @@ export const HeaderBar = ({
         {projectName ?? "spec-board"}
       </h1>
       <div className="flex items-center gap-2">
+        {onMilestoneClick && (
+          <button
+            type="button"
+            onClick={onMilestoneClick}
+            className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+          >
+            {view === "milestone" ? "ボードへ戻る" : "マイルストーン"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onSettingsClick}

@@ -26,6 +26,7 @@ import {
   wasNotifiedByInvokeWrapped,
 } from "./features/board";
 import { DetailPanel, DetailScreen } from "./features/detail";
+import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
 import {
   TaskCreateModal,
@@ -204,8 +205,9 @@ export const App = () => {
       setCreateModalParent(undefined);
       setSubIssueParentPath(undefined);
     }
-    // 非 loaded（プロジェクトを閉じた等）に抜けた場合も detail に取り残さない。
-    if (view === "detail") {
+    // 非 loaded（プロジェクトを閉じた等）に抜けた場合は detail / milestone に
+    // 取り残さない（milestone は HeaderBar の戻るボタンも非表示になるため）。
+    if (view === "detail" || view === "milestone") {
       navigate("board");
     }
   }
@@ -348,6 +350,20 @@ export const App = () => {
       setSelectedTaskId(null);
     }
     navigate("settings");
+  }, [view, navigate]);
+
+  // HeaderBar マイルストーン切替。milestone 中なら board へ戻す。detail から来た場合は
+  // 選択を解除する（detail と milestone は排他）。プロジェクト未オープン時は
+  // HeaderBar 側でボタン自体を非表示にするため、本ハンドラは loaded 前提で配線する。
+  const handleMilestoneClick = useCallback(() => {
+    if (view === "milestone") {
+      navigate("board");
+      return;
+    }
+    if (view === "detail") {
+      setSelectedTaskId(null);
+    }
+    navigate("milestone");
   }, [view, navigate]);
 
   const handleTaskUpdate = useCallback(
@@ -883,10 +899,20 @@ export const App = () => {
         projectName={projectName}
         view={view}
         onSettingsClick={handleSettingsClick}
+        onMilestoneClick={
+          state.kind === "loaded" ? handleMilestoneClick : undefined
+        }
         onOpenClick={handleOpenClick}
       />
       <main className="flex flex-1 overflow-hidden">
         {view === "settings" && <SettingsScreen />}
+        {view === "milestone" && (
+          <MilestoneViewScreen
+            resource={milestonesResource}
+            tasks={tasks}
+            doneColumn={doneColumn}
+          />
+        )}
         {view === "detail" && selectedTask && (
           <DetailScreen
             task={selectedTask}
@@ -903,7 +929,10 @@ export const App = () => {
             onRemoveLink={handleRemoveLink}
           />
         )}
-        {view !== "settings" && view !== "detail" && renderMain()}
+        {view !== "settings" &&
+          view !== "detail" &&
+          view !== "milestone" &&
+          renderMain()}
       </main>
       {view === "board" && selectedTask && (
         <DetailPanel
