@@ -18,6 +18,9 @@ const MUTATION_COMMAND_LABELS = {
   add_link: "リンクの追加",
   remove_link: "リンクの削除",
   update_columns: "カラムの更新",
+  create_milestone: "マイルストーンの作成",
+  update_milestone: "マイルストーンの更新",
+  delete_milestone: "マイルストーンの削除",
 } as const satisfies Record<string, string>;
 
 /** 書き込み allowlist に含まれるコマンド名の union 型（テーブルのキーが source of truth）。 */

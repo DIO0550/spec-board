@@ -32,6 +32,7 @@ fn sample_task(id: &str) -> Task {
         title: format!("title-{id}").into(),
         status: "Todo".into(),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         due: None,

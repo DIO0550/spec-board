@@ -25,6 +25,7 @@ fn task_with_labels(id: &str, labels: &[&str]) -> Task {
         title: format!("title-{id}").into(),
         status: "Todo".into(),
         priority: None,
+        milestone: None,
         labels: labels.iter().map(|l| Label::from(*l)).collect(),
         parent: None,
         due: None,

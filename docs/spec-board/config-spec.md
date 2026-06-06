@@ -16,6 +16,7 @@ project-root/
 │   ├── config.json.bak                      # 古い version の config を読み込んだ際のマイグレーション前バックアップ（後述「マイグレーション」節）
 │   ├── config.json.bak.tmp.{pid}.{nanos}.{counter}  # backup 書き出し中の一時ファイル（rename で `.bak` に昇格／load 冒頭に閾値超過の orphan は cleanup）
 │   ├── labels.yml                           # ラベルマスタ定義（説明・グループ・色などのメタ情報。後述「labels.yml スキーマ」節）
+│   ├── milestones.yml                       # マイルストーンマスタ定義（表示名・期日・並び順・状態などのメタ情報。後述「milestones.yml スキーマ」節）
 │   └── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
 └── tasks/
     └── ...
@@ -160,6 +161,66 @@ type GetLabelsPayload = {
 
 > **スコープ境界**: 本仕様は labels.yml のスキーマ確定・読み込み・`get_labels`（使用数集計含む）・`create_label` / `update_label` / `delete_label`・invoke ラッパまでを対象とする（Rust バックエンド）。FE 連携（`usageCounts` の TS 型追従・ラベル編集 UI）と実際のラベル色の UI 反映（既定色の具体値 / design token 定義）は別 Issue で扱う。
 
+## milestones.yml スキーマ
+
+タスク frontmatter の `milestone`（単数の自由文字列・参照キー）に対し、表示名・期日・並び順・状態などのメタ情報を一元管理する「マイルストーンマスタ定義ファイル」を `.spec-board/milestones.yml` に置く。`config.json` とは別ファイルで管理し、トップレベルの `milestones:` キー配下に定義の配列を並べる。labels.yml と同じハイブリッド構成（frontmatter 自由文字列 + yml マスタ・非破壊・暗黙許容）を踏襲する。
+
+```yaml
+# .spec-board/milestones.yml
+milestones:
+  - name: v0.3
+    title: v0.3 リリース
+    description: ラベル/マイルストーン基盤の整備
+    due: "2026-07-31"          # 期日。ISO 8601（日付 / 日時）を推奨。クォート推奨
+    order: 0                    # 並び順（昇順。0 始まり）
+    state: open                 # open / closed 等。task の status とは別概念
+    updated: "2026-06-03T12:00:00Z"
+  - name: v0.4                  # name のみ（他フィールドは任意・省略可）
+```
+
+### フィールド定義
+
+| フィールド | 型 | 必須 | デフォルト | 説明 |
+|:----------|:---|:-----|:----------|:-----|
+| milestones | `MilestoneDefinition[]` | いいえ | `[]` | マイルストーン定義の配列。トップレベルキー欠落 / `null` / 空配列はいずれも空レジストリ（= 全マイルストーン暗黙扱い）に正規化される |
+| milestones[].name | `string` | はい | - | マイルストーン識別子。frontmatter `milestone` から参照される値。完全一致・未正規化（trim / 大文字小文字統一なし）。空文字 `""` は不可 |
+| milestones[].title | `string` | いいえ | なし | 人間可読な表示名（例: `v0.3 リリース`）。未指定時は表示層が `name` をフォールバック表示する |
+| milestones[].description | `string` | いいえ | なし | マイルストーンの説明文 |
+| milestones[].due | `string` | いいえ | なし | 期日（リリース予定日 / 締切）。ISO 8601 を推奨するが形式は検証せず文字列のまま保持する。並び替え・進捗表示に利用 |
+| milestones[].order | `number` | いいえ | なし | 表示順序（昇順）。**有限の非負整数のみ有効**。小数 / 負数 / `null` / 型不一致は未指定（並び順なし）に倒す。並び規則: 有効な `order` を持つ要素を `order` 昇順で先に並べ、同一 `order` は定義順を保持する。`order` 未指定の要素は有効 `order` 付き要素の後ろに定義順で並べる |
+| milestones[].state | `string` | いいえ | `open`（表示層フォールバック） | マイルストーンの開閉状態。`open` / `closed` 等。**task frontmatter の `status` とは別概念**。未知値は表示層が `open` 相当にフォールバックする |
+| milestones[].updated | `string` | いいえ | なし | 最終更新日時。ISO 8601 を推奨するが形式は検証せず文字列のまま保持する |
+
+### 配置・読み込み
+
+- `.spec-board/milestones.yml` に配置する。ファイル不在時は空レジストリ（`milestones: []`）として扱い、プロジェクトは正常に開ける（後方互換）。
+- 空ファイル / コメントのみ / `---`（null ドキュメント）/ `milestones:` キー欠落 / `milestones: null` はいずれも空レジストリに正規化する。
+- **YAML ルート型**: YAML ドキュメントのルートは mapping を要求する。ルートが sequence（`[]` / `[...]`）/ scalar（`foo` など）の場合は load エラーとする（ファイル全体が配列 / スカラのケースは「キー欠落（空レジストリ）」ではなく構造不正として扱う。null ドキュメント `---` のみは空レジストリ正規化の対象）。
+- **構造の strict 検証**: ルート mapping 配下の `milestones` が**配列以外**（mapping `{}` / スカラ `foo` など）、または**配列要素が mapping 以外**（`[null]` / `["v0.3"]` など）の場合は load エラーとして拒否する（labels.yml の strict 解釈に合わせる）。
+- プロジェクトオープン時（`open_project`）に読み込み in-memory state に保持し、独立コマンド `get_milestones` で取得する（labels.yml の `open_project` / `get_labels` の振り分けに倣う）。
+
+### lenient 解釈
+
+lenient には **2 つの軸**がある（labels.yml が「lenient なのは color のみ」と単軸で語るのに対し、milestones は型と値で層が分かれる点に注意）。
+
+- **型レベルの lenient（`order` のみ）**: `order` が型不一致（文字列など）・小数・負数・`null` の場合はエラーにせず未指定（並び順なし）に倒す。有効値は有限の非負整数のみ。文字列フィールドはこの型 lenient の対象外で文字列型を strict に検証する。
+- **値レベルの lenient（`state`）**: `state` は文字列型としては strict に検証するが、**未知の文字列値**（`open` / `closed` 以外）もエラーにせず保持する。表示層が既定（`open` 相当）にフォールバックする。文字列以外の型（数値 / bool / mapping 等）が来た場合は load エラー。
+- `due` / `updated` は形式（ISO 8601 等）を検証せず文字列のまま保持する（型は strict に文字列を要求）。
+- 任意文字列フィールド（`title` / `description`）の空文字 `""` は未指定として `None` に正規化する（trim はしない。labels.yml の `group` 空文字正規化に倣う。`name` の空文字のみ拒否対象）。
+- frontmatter `milestone` 値がマスタ未定義の場合は警告を出さず素通しする（暗黙許容・非破壊。「name 一意性の検証」節と区別）。
+
+### name 一意性の検証
+
+- `name` はマスタ内で完全一致・一意。重複が見つかれば load 時に拒否する（labels.yml の `labels load failed (parse)` に倣い、`milestones load failed (parse)` とする）。
+- `name` が空文字 `""` の定義も load 時に拒否する。空白のみ `"   "` は trim しない方針のため許容する（未正規化）。
+- ここでの「一意性 / 空拒否」はマスタ定義 `milestones.yml` 自身に対する制約であり、**frontmatter の未定義マイルストーン値**は警告なく暗黙許容する点と区別する。
+
+### スキーマの前方互換
+
+- 未知のトップレベルキー / 定義内キーは無視する（`deny_unknown_fields` は付けない）。将来のフィールド追加に対する前方互換のため。
+- `name` / `title` / `description` / `state` / `due` / `updated` は文字列型を strict に検証する（型不一致は load エラー）。`order` のみ数値型 + lenient フォールバック。
+- マスタの定義順は payload でそのまま保持する（並べ替えない）。`order` による並びは表示層の責務とする。
+
 ## 設定の初期化
 
 ### 初回オープン時の振る舞い
@@ -260,6 +321,7 @@ status: Todo（推奨・省略時は既定カラムにフォールバック。�
 priority: Medium（任意・High / Medium / Low）
 labels:（任意）
   - ラベル名
+milestone: v0.3（任意・マイルストーン名。.spec-board/milestones.yml の name と対応）
 parent: tasks/parent-task.md（任意・親タスクのパス）
 links:（任意）
   - tasks/related-task.md

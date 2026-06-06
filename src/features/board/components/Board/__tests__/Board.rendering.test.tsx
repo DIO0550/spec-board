@@ -146,9 +146,9 @@ test("onAddColumn 指定時はボード右端にカラム追加ボタンが表�
     );
     expect(button).toBeTruthy();
   });
-  const boardChildren = Array.from(
-    container?.firstElementChild?.children ?? [],
-  );
+  // ルート直下はカラム行（+ 任意でフィルタツールバー）。カラム行は末尾要素。
+  const columnsRow = container?.firstElementChild?.lastElementChild;
+  const boardChildren = Array.from(columnsRow?.children ?? []);
   const lastChild = boardChildren[boardChildren.length - 1];
   expect(lastChild?.getAttribute("data-testid")).toBe("add-column-button");
 });
@@ -225,4 +225,47 @@ test("既存カラム名と同じ名前は onAddColumn に渡されない", asyn
     );
   });
   expect(onAddColumn).not.toHaveBeenCalled();
+});
+
+const setSelectValue = (select: HTMLSelectElement, value: string): void => {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(select, value);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+};
+
+test("milestones 指定時はフィルタが描画され、選択でカードが絞り込まれる", async () => {
+  render({
+    columns: defaultColumns,
+    tasks: [
+      createTask({ id: "a", filePath: "tasks/a.md", milestone: "v0.3" }),
+      createTask({ id: "b", filePath: "tasks/b.md", milestone: "v0.4" }),
+    ],
+    milestones: [{ name: "v0.3" }, { name: "v0.4" }],
+    onAddTask: vi.fn(),
+  });
+  const select = container?.querySelector(
+    'select[aria-label="マイルストーンで絞り込み"]',
+  ) as HTMLSelectElement | null;
+  expect(select).toBeTruthy();
+  expect(container?.querySelectorAll('[data-testid="task-card"]').length).toBe(
+    2,
+  );
+
+  act(() => {
+    setSelectValue(select as HTMLSelectElement, "milestone:v0.3");
+  });
+  expect(container?.querySelectorAll('[data-testid="task-card"]').length).toBe(
+    1,
+  );
+});
+
+test("milestones 未指定時はフィルタを描画しない", async () => {
+  render({ columns: defaultColumns, tasks: [], onAddTask: vi.fn() });
+  const select = container?.querySelector(
+    'select[aria-label="マイルストーンで絞り込み"]',
+  );
+  expect(select).toBeNull();
 });

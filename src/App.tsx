@@ -5,9 +5,11 @@ import {
   buildTasksByNormalizedPath,
   countTasksWithBrokenLink,
 } from "@/domains/broken-link";
+import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useAppView } from "@/hooks/useAppView";
+import { useMilestones } from "@/hooks/useMilestones";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
@@ -25,6 +27,7 @@ import {
   wasNotifiedByInvokeWrapped,
 } from "./features/board";
 import { DetailPanel, DetailScreen } from "./features/detail";
+import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
 import {
   TaskCreateModal,
@@ -82,6 +85,33 @@ const columnsOf = (state: ProjectState): Column[] =>
  */
 const doneColumnOf = (state: ProjectState): string | undefined =>
   displayableDataOf(state)?.doneColumn;
+
+/**
+ * 現在選択中のタスクを解決する。selectedTaskId が tasks に存在すればそれを返し、
+ * 削除楽観 dispatch 中（tasks から消えている間）は pendingDeleteTask snapshot を
+ * fallback として返す（rollback で tasks に戻れば自然と tasks 側へ切り替わる）。
+ * @param selectedTaskId 選択中タスクの ID（未選択は null）
+ * @param tasks 現在のタスク一覧
+ * @param pendingDeleteTask 削除楽観中の snapshot（無ければ null）
+ * @returns 選択中タスク、または解決不能 / 未選択なら null
+ */
+const resolveSelectedTask = (
+  selectedTaskId: string | null,
+  tasks: Task[],
+  pendingDeleteTask: Task | null,
+): Task | null => {
+  if (selectedTaskId === null) {
+    return null;
+  }
+  const found = tasks.find((t) => t.id === selectedTaskId);
+  if (found !== undefined) {
+    return found;
+  }
+  if (pendingDeleteTask !== null && pendingDeleteTask.id === selectedTaskId) {
+    return pendingDeleteTask;
+  }
+  return null;
+};
 
 /**
  * @returns アプリケーションのルートレイアウトシェル
@@ -203,8 +233,9 @@ export const App = () => {
       setCreateModalParent(undefined);
       setSubIssueParentPath(undefined);
     }
-    // 非 loaded（プロジェクトを閉じた等）に抜けた場合も detail に取り残さない。
-    if (view === "detail") {
+    // 非 loaded（プロジェクトを閉じた等）に抜けた場合は detail / milestone に
+    // 取り残さない（milestone は HeaderBar の戻るボタンも非表示になるため）。
+    if (view === "detail" || view === "milestone") {
       navigate("board");
     }
   }
@@ -215,6 +246,20 @@ export const App = () => {
   const tasksByNormalizedPath = useMemo(
     () => buildTasksByNormalizedPath(tasks),
     [tasks],
+  );
+  // ボード / マイルストーンビューへ配るマイルストーンリソース（唯一の取得点）。
+  // loaded path を projectKey にすることで、プロジェクト切替時に再取得され、
+  // 未オープン時は idle（空）になる。
+  const milestonesResource = useMilestones(loadedPath ?? undefined);
+  // 設定画面の使用数はバックエンドのスナップショット（resource.usageCounts）だと
+  // タスク変更後に stale になり、削除確認が「未使用」と誤判定しうる。live な tasks から
+  // 毎回算出した usageCounts で上書きして渡し、常に現在の参照状況を反映させる。
+  const settingsMilestonesResource = useMemo(
+    () => ({
+      ...milestonesResource,
+      usageCounts: Milestone.usageCounts(tasks),
+    }),
+    [milestonesResource, tasks],
   );
   // Toast 発火管理用 ref。`prevLoadedPath` (UI リセット用、render-phase 更新) と
   // 役割を分離するため別 ref を持つ。
@@ -275,21 +320,11 @@ export const App = () => {
           .filter((seg) => seg.length > 0)
           .pop() ?? displayedPath)
       : undefined;
-  const selectedTask = ((): Task | null => {
-    if (selectedTaskId === null) {
-      return null;
-    }
-    const found = tasks.find((t) => t.id === selectedTaskId);
-    if (found !== undefined) {
-      return found;
-    }
-    // 削除楽観 dispatch 中は tasks から消えているので snapshot を fallback として使う。
-    // rollback で tasks に戻れば自然と found 側に切り替わる。
-    if (pendingDeleteTask !== null && pendingDeleteTask.id === selectedTaskId) {
-      return pendingDeleteTask;
-    }
-    return null;
-  })();
+  const selectedTask = resolveSelectedTask(
+    selectedTaskId,
+    tasks,
+    pendingDeleteTask,
+  );
 
   // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す。
   // 削除確定後・外部更新でのタスク消失等、render-phase reset で拾えない経路の保険。
@@ -343,6 +378,20 @@ export const App = () => {
       setSelectedTaskId(null);
     }
     navigate("settings");
+  }, [view, navigate]);
+
+  // HeaderBar マイルストーン切替。milestone 中なら board へ戻す。detail から来た場合は
+  // 選択を解除する（detail と milestone は排他）。プロジェクト未オープン時は
+  // HeaderBar 側でボタン自体を非表示にするため、本ハンドラは loaded 前提で配線する。
+  const handleMilestoneClick = useCallback(() => {
+    if (view === "milestone") {
+      navigate("board");
+      return;
+    }
+    if (view === "detail") {
+      setSelectedTaskId(null);
+    }
+    navigate("milestone");
   }, [view, navigate]);
 
   const handleTaskUpdate = useCallback(
@@ -851,6 +900,8 @@ export const App = () => {
           tasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
+          milestonesByName={milestonesResource.byName}
+          milestones={milestonesResource.milestones}
           onAddTask={handleAddTask}
           onAddColumn={handleAddColumn}
           onRenameColumn={handleRenameColumn}
@@ -876,10 +927,22 @@ export const App = () => {
         projectName={projectName}
         view={view}
         onSettingsClick={handleSettingsClick}
+        onMilestoneClick={
+          state.kind === "loaded" ? handleMilestoneClick : undefined
+        }
         onOpenClick={handleOpenClick}
       />
       <main className="flex flex-1 overflow-hidden">
-        {view === "settings" && <SettingsScreen />}
+        {view === "settings" && (
+          <SettingsScreen milestones={settingsMilestonesResource} />
+        )}
+        {view === "milestone" && (
+          <MilestoneViewScreen
+            resource={milestonesResource}
+            tasks={tasks}
+            doneColumn={doneColumn}
+          />
+        )}
         {view === "detail" && selectedTask && (
           <DetailScreen
             task={selectedTask}
@@ -896,7 +959,10 @@ export const App = () => {
             onRemoveLink={handleRemoveLink}
           />
         )}
-        {view !== "settings" && view !== "detail" && renderMain()}
+        {view !== "settings" &&
+          view !== "detail" &&
+          view !== "milestone" &&
+          renderMain()}
       </main>
       {view === "board" && selectedTask && (
         <DetailPanel

@@ -57,6 +57,7 @@ fn task(path: &str, status: &str) -> Task {
         title: TaskTitle::from_lenient("t"),
         status: ColumnName::from_lenient(status),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         due: None,
@@ -814,6 +815,7 @@ fn open_with_noop(state: Arc<AppState>, path: &Path) {
         &state,
         &intent,
         &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
         &NoopWatcherFactory,
     )
     .expect("open should succeed");

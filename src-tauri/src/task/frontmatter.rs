@@ -56,6 +56,10 @@ pub struct Frontmatter {
     /// 型不一致や要素単位の非文字列はすべて除外し、エラー化しない。
     #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
     pub labels: Vec<String>,
+    /// マイルストーン参照キー（単数の自由文字列）。priority と同じく typed フィールドで、
+    /// 文字列以外・null・空文字は `None`（未割当）に倒す lenient 解釈。
+    #[serde(default, deserialize_with = "deserialize_milestone_lenient")]
+    pub milestone: Option<String>,
     /// 関連タスクのファイルパス配列。labels と同じ正規化ロジックを共有する。
     #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
     pub links: Vec<String>,
@@ -79,6 +83,25 @@ where
         return Ok(None);
     };
     Ok(Priority::from_ascii_ci(&s))
+}
+
+/// `milestone` フィールド用の lenient deserializer（priority の単数版）。
+///
+/// `serde_yaml_ng::Value::deserialize` で一度 `Value` を受け取り、`Value::String` かつ
+/// 非空のときのみ `Some(s)`。文字列以外（数値 / 配列 / mapping / null / bool）と空文字は
+/// `None`（未割当）に倒す。milestone 値の型不一致でパースエラーにはしない。
+fn deserialize_milestone_lenient<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_yaml_ng::Value::deserialize(deserializer)?;
+    let serde_yaml_ng::Value::String(s) = value else {
+        return Ok(None);
+    };
+    if s.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(s))
 }
 
 /// `labels` / `links` フィールド用の共通 lenient deserializer。
@@ -302,7 +325,15 @@ pub fn serialize(parsed: &Parsed) -> String {
 fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
     use serde_yaml_ng::{Mapping, Value};
 
-    const TYPED_KEYS: [&str; 6] = ["title", "status", "priority", "labels", "parent", "links"];
+    const TYPED_KEYS: [&str; 7] = [
+        "title",
+        "status",
+        "priority",
+        "labels",
+        "milestone",
+        "parent",
+        "links",
+    ];
     let mut map = Mapping::new();
 
     if let Some(v) = fm.extras.get("title") {
@@ -326,6 +357,10 @@ fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
             Value::String("labels".into()),
             string_vec_to_value_sequence(&fm.labels),
         );
+    }
+
+    if let Some(ref m) = fm.milestone {
+        map.insert(Value::String("milestone".into()), Value::String(m.clone()));
     }
 
     if let Some(v) = fm.extras.get("parent") {

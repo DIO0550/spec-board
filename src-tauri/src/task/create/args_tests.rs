@@ -26,6 +26,7 @@ fn from_args_moves_links_raw_without_normalization() {
         title: "T".into(),
         status: "Todo".into(),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         links: vec!["./tasks/a.md".into(), "./tasks/a.md".into()],

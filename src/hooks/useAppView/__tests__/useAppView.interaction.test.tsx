@@ -170,6 +170,7 @@ test.each([
   ["settings", "settings"],
   ["board", "board"],
   ["detail", "detail"],
+  ["milestone", "milestone"],
   ["xxx", "board"],
   ["", "board"],
 ])("normalizeAppView('%s') は '%s' を返す（生文字列 → AppView 正規化）", (input, expected) => {

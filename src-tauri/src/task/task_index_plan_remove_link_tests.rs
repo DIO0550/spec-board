@@ -18,6 +18,7 @@ fn make_task(file_path: &str) -> Task {
         title: "T".into(),
         status: ColumnName::from_lenient("Todo"),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent: None,
         due: None,

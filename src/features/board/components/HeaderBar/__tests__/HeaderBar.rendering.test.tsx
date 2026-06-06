@@ -140,3 +140,38 @@ test("view='settings' でも設定ボタン click で onSettingsClick が呼ば�
   btn?.click();
   expect(onSettingsClick).toHaveBeenCalledTimes(1);
 });
+
+test("onMilestoneClick 未指定時はマイルストーンボタンを表示しない", async () => {
+  renderHeaderBar();
+  await vi.waitFor(() => {
+    const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(texts).not.toContain("マイルストーン");
+  });
+});
+
+test("onMilestoneClick 指定時はマイルストーンボタンが表示され click で呼ばれる", async () => {
+  const onMilestoneClick = vi.fn();
+  renderHeaderBar({ onMilestoneClick });
+  let btn: HTMLButtonElement | undefined;
+  await vi.waitFor(() => {
+    btn = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (b): b is HTMLButtonElement => b.textContent === "マイルストーン",
+    );
+    expect(btn).toBeDefined();
+  });
+  btn?.click();
+  expect(onMilestoneClick).toHaveBeenCalledTimes(1);
+});
+
+test("view='milestone' ではマイルストーンボタンが「ボードへ戻る」表示", async () => {
+  renderHeaderBar({ view: "milestone", onMilestoneClick: vi.fn() });
+  await vi.waitFor(() => {
+    const texts = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.textContent,
+    );
+    expect(texts).toContain("ボードへ戻る");
+    expect(texts).not.toContain("マイルストーン");
+  });
+});
