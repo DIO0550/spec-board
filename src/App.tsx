@@ -5,6 +5,7 @@ import {
   buildTasksByNormalizedPath,
   countTasksWithBrokenLink,
 } from "@/domains/broken-link";
+import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useAppView } from "@/hooks/useAppView";
@@ -223,6 +224,16 @@ export const App = () => {
   // loaded path を projectKey にすることで、プロジェクト切替時に再取得され、
   // 未オープン時は idle（空）になる。
   const milestonesResource = useMilestones(loadedPath ?? undefined);
+  // 設定画面の使用数はバックエンドのスナップショット（resource.usageCounts）だと
+  // タスク変更後に stale になり、削除確認が「未使用」と誤判定しうる。live な tasks から
+  // 毎回算出した usageCounts で上書きして渡し、常に現在の参照状況を反映させる。
+  const settingsMilestonesResource = useMemo(
+    () => ({
+      ...milestonesResource,
+      usageCounts: Milestone.usageCounts(tasks),
+    }),
+    [milestonesResource, tasks],
+  );
   // Toast 発火管理用 ref。`prevLoadedPath` (UI リセット用、render-phase 更新) と
   // 役割を分離するため別 ref を持つ。
   // 「loaded セッション内で 1 回だけ発火」をルールとし、state.kind が "loaded" から
@@ -906,7 +917,7 @@ export const App = () => {
       />
       <main className="flex flex-1 overflow-hidden">
         {view === "settings" && (
-          <SettingsScreen milestones={milestonesResource} />
+          <SettingsScreen milestones={settingsMilestonesResource} />
         )}
         {view === "milestone" && (
           <MilestoneViewScreen

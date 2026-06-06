@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import type { MilestoneDefinition } from "@/lib/tauri";
+import { Task } from "@/types/task";
 import { Milestone } from "../index";
 
 test.each([
@@ -38,4 +39,40 @@ test("byName は name キーの Map を作る", () => {
   const map = Milestone.byName(milestones);
   expect(map.get("v0.3")).toEqual({ name: "v0.3" });
   expect(map.size).toBe(2);
+});
+
+const taskWithMilestone = (id: string, milestone: string | undefined): Task =>
+  Task.fromPayload({
+    id,
+    title: id,
+    status: "Todo",
+    milestone,
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: `tasks/${id}.md`,
+  });
+
+test("usageCounts は milestone ごとの使用数を数える", () => {
+  const tasks = [
+    taskWithMilestone("a", "v0.3"),
+    taskWithMilestone("b", "v0.3"),
+    taskWithMilestone("c", "v0.4"),
+  ];
+  expect(Milestone.usageCounts(tasks)).toEqual({ "v0.3": 2, "v0.4": 1 });
+});
+
+test("usageCounts は未設定（undefined / 空文字）のタスクを数えない", () => {
+  const tasks = [
+    taskWithMilestone("a", undefined),
+    taskWithMilestone("b", ""),
+    taskWithMilestone("c", "v0.3"),
+  ];
+  expect(Milestone.usageCounts(tasks)).toEqual({ "v0.3": 1 });
+});
+
+test("usageCounts はタスク 0 件で空オブジェクトを返す", () => {
+  expect(Milestone.usageCounts([])).toEqual({});
 });
