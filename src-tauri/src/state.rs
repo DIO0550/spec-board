@@ -10,7 +10,7 @@
 //! AB-BA デッドロックを防ぐための運用規約である。
 //!
 //! ```text
-//! project_path → config → labels → tasks_cache → watcher_handle → write_ignore
+//! project_path → config → labels → milestones → tasks_cache → watcher_handle → write_ignore
 //! ```
 //!
 //! - 単一フィールドのみを操作するアクセサは順序を意識する必要はない。
@@ -42,7 +42,7 @@ use thiserror::Error;
 use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
-use crate::config::{Config, LabelRegistry};
+use crate::config::{Config, LabelRegistry, MilestoneRegistry};
 use crate::task::task_index::Task;
 
 /// `tauri::Builder::manage` に渡すために `'static` を含む trait object 型。
@@ -66,6 +66,7 @@ pub struct AppState {
     project_path: Mutex<Option<PathBuf>>,
     config: Mutex<Option<Config>>,
     labels: Mutex<Option<LabelRegistry>>,
+    milestones: Mutex<Option<MilestoneRegistry>>,
     tasks_cache: Mutex<HashMap<PathBuf, Task>>,
     watcher_handle: Mutex<Option<BoxedWatcherHandle>>,
     write_ignore: WriteIgnoreRegistry,
@@ -98,6 +99,32 @@ pub struct LabelDeleteContext {
     pub tasks: Vec<Task>,
 }
 
+/// マイルストーン `create` / `update` コマンドが書き込み前に必要とするスナップショット。
+///
+/// `LabelWriteContext` と同型。`project_path` と `milestones` を同一の lock 取得
+/// トランザクションで観測した値をまとめて運ぶ。
+#[derive(Debug, Clone)]
+pub struct MilestoneWriteContext {
+    /// snapshot 時点の project root。未オープン時は `None`。
+    pub project_root: Option<PathBuf>,
+    /// snapshot 時点のマイルストーンレジストリ。未オープン時は `None`。
+    pub milestones: Option<MilestoneRegistry>,
+}
+
+/// マイルストーン `delete` コマンドが書き込み前に必要とするスナップショット。
+///
+/// 削除前 usageCount を「milestones と tasks の整合した観測」から算出するため、
+/// `project_path` / `milestones` に加えて `tasks_cache` も同一トランザクションで取得する。
+#[derive(Debug, Clone)]
+pub struct MilestoneDeleteContext {
+    /// snapshot 時点の project root。未オープン時は `None`。
+    pub project_root: Option<PathBuf>,
+    /// snapshot 時点のマイルストーンレジストリ。未オープン時は `None`。
+    pub milestones: Option<MilestoneRegistry>,
+    /// snapshot 時点の全タスク（usageCount 算出用）。
+    pub tasks: Vec<Task>,
+}
+
 impl AppState {
     /// 全フィールドを初期状態にした `AppState` を生成する。
     ///
@@ -112,6 +139,7 @@ impl AppState {
             project_path: Mutex::new(None),
             config: Mutex::new(None),
             labels: Mutex::new(None),
+            milestones: Mutex::new(None),
             tasks_cache: Mutex::new(HashMap::new()),
             watcher_handle: Mutex::new(None),
             write_ignore: WriteIgnoreRegistry::new(),
@@ -160,6 +188,25 @@ impl AppState {
         Ok(())
     }
 
+    /// 現在保持している `MilestoneRegistry` を clone して返す。
+    ///
+    /// プロジェクト未オープン時は `None`。milestones.yml 不在で開いた場合は
+    /// `Some(MilestoneRegistry::default())`（空レジストリ）が入る。
+    pub fn milestones(&self) -> Result<Option<MilestoneRegistry>, AppStateError> {
+        let guard = lock(&self.milestones)?;
+        Ok(guard.clone())
+    }
+
+    /// `MilestoneRegistry` を丸ごと差し替える。`None` を渡すと未保持状態に戻せる。
+    pub fn replace_milestones(
+        &self,
+        milestones: Option<MilestoneRegistry>,
+    ) -> Result<(), AppStateError> {
+        let mut guard = lock(&self.milestones)?;
+        *guard = milestones;
+        Ok(())
+    }
+
     /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** snapshot する。
     ///
     /// 一方の lock だけを取得して順に読むと、両フィールドを別々に更新する writer と
@@ -168,7 +215,7 @@ impl AppState {
     /// ことで、その不整合観測を防ぐ atomic 読み取り API として機能する。lock 取得順序は
     /// AppState の契約に従って `project_path → config` を遵守する。
     ///
-    /// 同時更新側は [`Self::replace_project_config_and_labels`] / [`Self::replace_config_if_project_matches`]
+    /// 同時更新側は [`Self::replace_project_config_labels_and_milestones`] / [`Self::replace_config_if_project_matches`]
     /// で同様に両 lock を同時保持して書き換えることで、reader 側の観測整合性を確保する。
     ///
     /// 戻り値はそれぞれ clone 済み snapshot のため、呼び出し側が長く保持しても
@@ -181,28 +228,33 @@ impl AppState {
         Ok((path_guard.clone(), config_guard.clone()))
     }
 
-    /// `project_path` / `config` / `labels` を**3 つの lock を順に同時保持した状態で** swap する。
+    /// `project_path` / `config` / `labels` / `milestones` を**4 つの lock を順に同時保持
+    /// した状態で** swap する。
     ///
     /// 各フィールドを別 lock で順次更新すると、その間に reader（例:
     /// `update_card_order`）が「新 path + 旧 config」を観測し、旧 config を新
     /// プロジェクトの `config.json` に書き出してしまう cross-project corruption が
-    /// 起き得る。本 API は 3 つの lock を保持したまま swap することでその不整合を防ぐ。
-    /// lock 取得順序は AppState の契約に従って `project_path → config → labels` を遵守する。
+    /// 起き得る。本 API は 4 つの lock を保持したまま swap することでその不整合を防ぐ。
+    /// lock 取得順序は AppState の契約に従って `project_path → config → labels → milestones`
+    /// を遵守する。
     ///
-    /// commit の整合範囲は `project_path / config / labels` の 3 フィールドに限定され、
-    /// `tasks_cache` 等との間は従来どおり非 atomic（別更新）である。
-    pub fn replace_project_config_and_labels(
+    /// commit の整合範囲は `project_path / config / labels / milestones` の 4 フィールドに
+    /// 限定され、`tasks_cache` 等との間は従来どおり非 atomic（別更新）である。
+    pub fn replace_project_config_labels_and_milestones(
         &self,
         path: Option<PathBuf>,
         config: Option<crate::config::Config>,
         labels: Option<LabelRegistry>,
+        milestones: Option<MilestoneRegistry>,
     ) -> Result<(), AppStateError> {
         let mut path_guard = lock(&self.project_path)?;
         let mut config_guard = lock(&self.config)?;
         let mut labels_guard = lock(&self.labels)?;
+        let mut milestones_guard = lock(&self.milestones)?;
         *path_guard = path;
         *config_guard = config;
         *labels_guard = labels;
+        *milestones_guard = milestones;
         Ok(())
     }
 
@@ -282,6 +334,59 @@ impl AppState {
         let mut labels_guard = lock(&self.labels)?;
         if path_guard.as_deref() == Some(expected_path) {
             *labels_guard = Some(labels);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// `project_path` と `milestones` を**両方の lock を順に同時保持した状態で** snapshot する。
+    ///
+    /// `create_milestone` / `update_milestone` が書き込み前に使う。`snapshot_label_write`
+    /// と同型。lock 取得順序は AppState の契約に従って `project_path → milestones` を遵守する。
+    pub fn snapshot_milestone_write(&self) -> Result<MilestoneWriteContext, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let milestones_guard = lock(&self.milestones)?;
+        Ok(MilestoneWriteContext {
+            project_root: path_guard.clone(),
+            milestones: milestones_guard.clone(),
+        })
+    }
+
+    /// `project_path` / `milestones` / `tasks_cache` を**3 つの lock を順に同時保持した
+    /// 状態で** snapshot する。
+    ///
+    /// `delete_milestone` / `get_milestones` が使う。削除前 usageCount は milestones と
+    /// tasks を整合した 1 回の観測から算出する必要がある。lock 取得順序は AppState の契約に
+    /// 従って `project_path → milestones → tasks_cache` を遵守する。
+    pub fn snapshot_milestone_delete(&self) -> Result<MilestoneDeleteContext, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let milestones_guard = lock(&self.milestones)?;
+        let tasks_guard = lock(&self.tasks_cache)?;
+        Ok(MilestoneDeleteContext {
+            project_root: path_guard.clone(),
+            milestones: milestones_guard.clone(),
+            tasks: tasks_guard.values().cloned().collect(),
+        })
+    }
+
+    /// 現在の `project_path` が `expected_path` と一致する場合のみ `milestones` を差し替える。
+    ///
+    /// `snapshot_milestone_write` / `snapshot_milestone_delete` で読んだ snapshot を mutate
+    /// し disk write 成功後に書き戻す flow で、並行 `open_project` による project swap を
+    /// 検出するための atomic check-and-set。lock 取得順序は `project_path → milestones`。
+    ///
+    /// - `expected_path` が一致 → `milestones` を更新して `Ok(true)`
+    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
+    pub fn replace_milestones_if_project_matches(
+        &self,
+        expected_path: &std::path::Path,
+        milestones: MilestoneRegistry,
+    ) -> Result<bool, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
+        let mut milestones_guard = lock(&self.milestones)?;
+        if path_guard.as_deref() == Some(expected_path) {
+            *milestones_guard = Some(milestones);
             Ok(true)
         } else {
             Ok(false)
@@ -382,6 +487,15 @@ impl AppState {
         Ok(())
     }
 
+    /// `milestones` 用 `Mutex` の健全性をチェックする副作用なしの probe。
+    ///
+    /// `milestones()` と異なりクローンを行わないため、pre-flight 用途で
+    /// `MilestoneRegistry` のコピーコストを避けられる。
+    pub fn check_milestones_lock(&self) -> Result<(), AppStateError> {
+        let _guard = lock(&self.milestones)?;
+        Ok(())
+    }
+
     /// `tasks_cache` 用 `Mutex` の健全性をチェックする副作用なしの probe。
     ///
     /// `tasks_snapshot()` と異なり全 `Task` の clone+collect を行わないため、
@@ -401,7 +515,7 @@ impl AppState {
         Ok(())
     }
 
-    /// AppState が保持する 5 つの `Mutex` フィールドすべての lock 健全性を
+    /// AppState が保持する 6 つの `Mutex` フィールドすべての lock 健全性を
     /// 一括 probe する副作用なしの API。
     ///
     /// `WriteIgnoreRegistry` は AppState の `Mutex` ではなく内部に独自の
@@ -411,6 +525,7 @@ impl AppState {
         self.check_project_path_lock()?;
         self.check_config_lock()?;
         self.check_labels_lock()?;
+        self.check_milestones_lock()?;
         self.check_tasks_cache_lock()?;
         self.check_watcher_handle_lock()?;
         Ok(())
@@ -436,3 +551,6 @@ mod state_tests;
 
 #[cfg(test)]
 mod state_label_tests;
+
+#[cfg(test)]
+mod state_milestone_tests;

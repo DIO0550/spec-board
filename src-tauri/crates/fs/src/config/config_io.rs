@@ -37,6 +37,11 @@ const GUIDE_MARKDOWN_FILE_NAME: &str = "GUIDE.md";
 /// 中身（YAML）のパース / シリアライズは本体クレート側の責務であり、本サブクレートは
 /// [`SpecBoardDir`] 経由で raw `String` の読み書きのみを担当する（境界規約）。
 pub const LABELS_FILE_NAME: &str = "labels.yml";
+/// `.spec-board/milestones.yml`（マイルストーンマスタ定義）のファイル名。
+///
+/// labels.yml と同様、中身（YAML）のパース / シリアライズは本体クレート側の責務で
+/// あり、本サブクレートは [`SpecBoardDir`] 経由で raw `String` の読み書きのみを担当する。
+pub const MILESTONES_FILE_NAME: &str = "milestones.yml";
 static GUIDE_MARKDOWN_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 static CONFIG_JSON_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SPEC_BOARD_DIR_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);

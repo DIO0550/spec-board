@@ -41,6 +41,8 @@
 //! | `ConfigLoadFailed` (`category="parse"`) | `config load failed (parse): ...` | `PARSE_ERROR` |
 //! | `LabelsLoadFailed` (`category="io"`) | `labels load failed (io): ...` | `IO_ERROR` |
 //! | `LabelsLoadFailed` (`category="parse"`) | `labels load failed (parse): ...` | `PARSE_ERROR` |
+//! | `MilestonesLoadFailed` (`category="io"`) | `milestones load failed (io): ...` | `IO_ERROR` |
+//! | `MilestonesLoadFailed` (`category="parse"`) | `milestones load failed (parse): ...` | `PARSE_ERROR` |
 //! | `NotADirectory` | `ディレクトリではありません: ...` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //! | `StateLockPoisoned` | `内部状態のロックが破損しました` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //!
@@ -72,8 +74,10 @@ use std::sync::Arc;
 
 use crate::config::column_name::ColumnName;
 use crate::config::{
-    label_registry_store, load_or_default, write_guide_markdown_best_effort, Column, Config,
-    LabelRegistry, LabelRegistryStore, LoadConfigError, LoadLabelsError,
+    label_registry_store, load_or_default, milestone_registry_store,
+    write_guide_markdown_best_effort, Column, Config, LabelRegistry, LabelRegistryStore,
+    LoadConfigError, LoadLabelsError, LoadMilestonesError, MilestoneRegistry,
+    MilestoneRegistryStore,
 };
 use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
@@ -134,6 +138,15 @@ pub enum OpenProjectError {
         category: &'static str,
         message: String,
     },
+    /// `.spec-board/milestones.yml` の読み込みに失敗した。
+    ///
+    /// `category` は `"io"` または `"parse"`。`labels load failed` と同じ Display 契約に
+    /// 揃え、FE 正規表現（`\bio\b` / `\bparse\b`）にマッチさせる。
+    #[error("milestones load failed ({category}): {message}")]
+    MilestonesLoadFailed {
+        category: &'static str,
+        message: String,
+    },
     /// Watcher 初期化失敗（inotify 上限 / poll fallback 失敗 / path missing 等）。
     ///
     /// FE 側 `PATTERNS` には未対応のため `UNKNOWN` 分類になる。失敗時は
@@ -190,7 +203,15 @@ pub fn open_project(
     // ファクトリで既定の labels store（YAML 具象）を生成して注入する。
     // effect 層は `&dyn LabelRegistryStore` のみに依存し、具象型も YAML 形式も知らない。
     let labels_store = label_registry_store(intent.as_path());
-    open_project_impl(state.inner(), &intent, &labels_store, &watcher).map_err(|e| e.to_string())
+    let milestones_store = milestone_registry_store(intent.as_path());
+    open_project_impl(
+        state.inner(),
+        &intent,
+        &labels_store,
+        &milestones_store,
+        &watcher,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// `open_project` Tauri command の effect 層本体（テスト容易性のための一般化版）。
@@ -201,6 +222,7 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     state: &Arc<AppState>,
     intent: &OpenProjectIntent,
     labels_store: &dyn LabelRegistryStore,
+    milestones_store: &dyn MilestoneRegistryStore,
     watcher: &W,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let root = intent.as_path();
@@ -211,6 +233,8 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     let config = load_or_default(root).map_err(map_load_config_error)?;
     // ラベルマスタも config と同様 commit 前に読み込む（load 失敗時は旧 state 非破壊）。
     let labels = labels_store.load().map_err(map_load_labels_error)?;
+    // マイルストーンマスタも labels と同様 commit 前に読み込む（load 失敗時は旧 state 非破壊）。
+    let milestones = milestones_store.load().map_err(map_load_milestones_error)?;
 
     let md_paths = scan_md_files(root).map_err(|e| map_scan_error(e, raw_path))?;
 
@@ -230,7 +254,12 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
 
     write_guide_markdown_best_effort(root, &config);
 
-    commit_app_state_with_prepared(state, root, &config, &labels, &tasks, prepared, watcher)?;
+    let masters = CommittedMasters {
+        config: &config,
+        labels: &labels,
+        milestones: &milestones,
+    };
+    commit_app_state_with_prepared(state, root, masters, &tasks, prepared, watcher)?;
 
     Ok(build_payload(tasks, &config))
 }
@@ -396,6 +425,21 @@ fn map_load_labels_error(err: LoadLabelsError) -> OpenProjectError {
     }
 }
 
+/// `LoadMilestonesError` を `category` 付きの `MilestonesLoadFailed` に分類する。
+///
+/// - `Io` → `category: "io"`
+/// - `Parse`（YAML 構文）/ `Validation`（name 空・重複のマスタ整合性違反）→ `category: "parse"`
+fn map_load_milestones_error(err: LoadMilestonesError) -> OpenProjectError {
+    let category = match &err {
+        LoadMilestonesError::Io(_) => "io",
+        LoadMilestonesError::Parse { .. } | LoadMilestonesError::Validation(_) => "parse",
+    };
+    OpenProjectError::MilestonesLoadFailed {
+        category,
+        message: err.to_string(),
+    }
+}
+
 /// `TaskParseError` を `ScanFailed` に詰め直す。
 ///
 /// `build_children` は `validate_parent_hierarchy` 経由で `CycleOrTooDeep` のみ
@@ -439,18 +483,18 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
 /// 2. **書き込み**: 副作用を以下の順で実行する。
 ///    - `take_watcher_handle().stop()`: 新 cache が書かれる前に旧 watcher を必ず停止
-///    - `replace_project_config_and_labels`: `project_path` / `config` / `labels` を
-///      **3 lock 同時保持下で atomic に swap**する（`update_card_order` 等の reader が
-///      「新 path + 旧 config」を観測して旧 config を新プロジェクトの `config.json` に
-///      書き出す cross-project corruption を防ぐ）
+///    - `replace_project_config_labels_and_milestones`: `project_path` / `config` /
+///      `labels` / `milestones` を **4 lock 同時保持下で atomic に swap**する
+///      （`update_card_order` 等の reader が「新 path + 旧 config」を観測して旧 config を
+///      新プロジェクトの `config.json` に書き出す cross-project corruption を防ぐ）
 ///    - `replace_tasks_cache`: tasks_cache を新値に置換
 ///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
 ///    - `install_watcher_handle`: 新 watcher を install。旧 handle は既に上で
 ///      `stop()` 済みのため、ここでは新 handle を置くだけ
 ///
-/// `replace_project_config_and_labels` は `project_path → config → labels` の AppState
-/// lock 順序契約に従って 3 lock を順に取得・同時保持する。他の setter は単一フィールド
-/// のみを操作するため、AppState の AB-BA 防止規約に抵触しない。
+/// `replace_project_config_labels_and_milestones` は `project_path → config → labels →
+/// milestones` の AppState lock 順序契約に従って 4 lock を順に取得・同時保持する。他の
+/// setter は単一フィールドのみを操作するため、AppState の AB-BA 防止規約に抵触しない。
 ///
 /// `tasks_cache` の key は `PathBuf::from(task.file_path)`（`task.file_path` は
 /// 既に root 相対の正規化済み文字列）。
@@ -463,11 +507,20 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 最後に `watcher.spawn(prepared, state, root, config)` で adapter スレッドを
 /// 起動し、返り値を `install_watcher_handle` で AppState に格納する。spawn は
 /// panic 以外で失敗しない契約。
+/// `commit_app_state_with_prepared` に渡す確定済みマスタ群（config + 2 レジストリ）。
+///
+/// commit 関数の引数肥大を避けるため、atomic swap 対象のマスタ群を 1 つの借用
+/// 構造体にまとめて運ぶ。`tasks` / `prepared` / `watcher` は性質が異なるため含めない。
+pub(crate) struct CommittedMasters<'a> {
+    pub config: &'a Config,
+    pub labels: &'a LabelRegistry,
+    pub milestones: &'a MilestoneRegistry,
+}
+
 pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     state: &Arc<AppState>,
     root: &Path,
-    config: &Config,
-    labels: &LabelRegistry,
+    masters: CommittedMasters<'_>,
     tasks: &[Task],
     prepared: W::Prepared,
     watcher: &W,
@@ -484,19 +537,20 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
         cache.insert(PathBuf::from(task.file_path.as_str()), task.clone());
     }
 
-    // `project_path` と `config` を atomic に swap する。別 lock で順次更新すると、
-    // 他 command（例: `update_card_order`）が「新 path + 旧 config」を観測して
+    // `project_path` / `config` / `labels` / `milestones` を atomic に swap する。別 lock で
+    // 順次更新すると、他 command（例: `update_card_order`）が「新 path + 旧 config」を観測して
     // 旧 config を新プロジェクトの `.spec-board/config.json` に書き出してしまう
     // cross-project corruption を起こしうる。
-    state.replace_project_config_and_labels(
+    state.replace_project_config_labels_and_milestones(
         Some(root.to_path_buf()),
-        Some(config.clone()),
-        Some(labels.clone()),
+        Some(masters.config.clone()),
+        Some(masters.labels.clone()),
+        Some(masters.milestones.clone()),
     )?;
     state.replace_tasks_cache(cache)?;
     state.write_ignore().clear()?;
 
-    let handle = watcher.spawn(prepared, state, root, config);
+    let handle = watcher.spawn(prepared, state, root, masters.config);
     state.install_watcher_handle(handle)?;
     Ok(())
 }

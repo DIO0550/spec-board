@@ -45,6 +45,9 @@ pub struct Task {
     pub status: ColumnName,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
+    /// マイルストーン参照キー（単数の自由文字列）。未割当時は `None`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub milestone: Option<String>,
     pub labels: Vec<Label>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<TaskFilePath>,
@@ -133,6 +136,21 @@ impl TaskIndex {
             // distinct ラベルを 1 件ずつ畳み込んで件数マップへ集約する。
             .fold(HashMap::new(), |mut counts, label| {
                 *counts.entry(label.to_owned()).or_insert(0) += 1;
+                counts
+            })
+    }
+
+    /// マイルストーン名ごとの使用タスク件数を集計する。
+    ///
+    /// labels（複数）と異なり milestone は単数 string のため、`Option` を 0/1 件に
+    /// 展開して畳み込む（タスク内重複は構造的に発生しない）。マスタ未定義の値も
+    /// 出現名で計上する（完全一致・未正規化）。未割当（`None`）は計上しない。
+    pub fn milestone_usage_counts(tasks: &[Task]) -> HashMap<String, usize> {
+        tasks
+            .iter()
+            .filter_map(|task| task.milestone.as_deref())
+            .fold(HashMap::new(), |mut counts, name| {
+                *counts.entry(name.to_owned()).or_insert(0) += 1;
                 counts
             })
     }
@@ -469,6 +487,14 @@ impl TaskIndex {
         }
         if let Some(priority) = intent.priority {
             frontmatter.priority = Some(priority);
+        }
+        // milestone は 3 値セマンティクス: None = 不変 / Some("") = クリア / Some(name) = 設定。
+        if let Some(milestone) = &intent.milestone {
+            if milestone.is_empty() {
+                frontmatter.milestone = None;
+            } else {
+                frontmatter.milestone = Some(milestone.clone());
+            }
         }
         if let Some(labels) = &intent.labels {
             frontmatter.labels = labels.clone();
@@ -864,6 +890,8 @@ pub struct CreateTaskIntent {
     pub title: TaskTitle,
     pub status: ColumnName,
     pub priority: Option<Priority>,
+    /// マイルストーン参照キー（単数の自由文字列）。未指定 / 空文字は `None`（未割当）。
+    pub milestone: Option<String>,
     pub labels: Vec<Label>,
     pub parent: Option<TaskFilePath>,
     pub body: Option<String>,
@@ -880,6 +908,9 @@ pub struct UpdateTaskIntent {
     pub title: Option<String>,
     pub status: Option<String>,
     pub priority: Option<Priority>,
+    /// マイルストーンの更新意図（既存 parent と同じ 3 値セマンティクス）:
+    /// `None` = 不変 / `Some("")` = クリア / `Some(name)` = 設定。
+    pub milestone: Option<String>,
     pub labels: Option<Vec<String>>,
     pub parent: Option<String>,
     pub body: Option<String>,
@@ -1099,6 +1130,7 @@ fn build_provisional_task(
         title: intent.title.clone(),
         status: intent.status.clone(),
         priority: None,
+        milestone: None,
         labels: Vec::new(),
         parent,
         due: None,
@@ -1340,6 +1372,10 @@ mod task_index_parent_chain_tests;
 #[cfg(test)]
 #[path = "task_index_label_usage_tests.rs"]
 mod task_index_label_usage_tests;
+
+#[cfg(test)]
+#[path = "task_index_milestone_usage_tests.rs"]
+mod task_index_milestone_usage_tests;
 
 #[cfg(test)]
 #[path = "task_index_plan_create_tests.rs"]

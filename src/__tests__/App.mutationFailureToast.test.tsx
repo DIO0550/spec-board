@@ -270,6 +270,9 @@ const makeInvoke =
     const responders: Record<string, Responder> = {
       open_project: () => Promise.resolve(openProjectRawPayload),
       get_columns: () => Promise.resolve(getColumnsRawPayload),
+      // App が loaded 時に useMilestones から呼ぶ読み取り系。空レジストリを返す。
+      get_milestones: () =>
+        Promise.resolve({ milestones: [], usageCounts: {} }),
       ...overrides,
     };
     return (responders[cmd] ?? resolveUndefined)();

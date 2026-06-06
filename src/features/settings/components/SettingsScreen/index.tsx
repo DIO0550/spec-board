@@ -1,38 +1,58 @@
 import { type ReactNode, useState } from "react";
+import type { MilestonesResource } from "@/hooks/useMilestones";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
 import { LabelSettingsTab } from "../LabelSettingsTab";
+import { MilestoneSettingsTab } from "../MilestoneSettingsTab";
 import { SubNav, subNavPanelId, subNavTabId } from "../SubNav";
 
-/** 設定画面に登録するタブ一覧（現状はラベルタブ 1 枠。NonEmptySettingsTabs で 1 件以上を保証）。 */
-const SETTINGS_TABS: NonEmptySettingsTabs = [{ id: "labels", label: "ラベル" }];
+/** 設定画面に登録するタブ一覧（ラベル / マイルストーン）。 */
+const SETTINGS_TABS: NonEmptySettingsTabs = [
+  { id: "labels", label: "ラベル" },
+  { id: "milestones", label: "マイルストーン" },
+];
 
 type ActivePanelProps = {
   /** アクティブタブの識別子 */
   tabId: string;
+  /** マイルストーンリソース（milestones タブへ配る） */
+  milestones: MilestonesResource;
 };
 
 /**
  * アクティブタブ ID に対応するパネルを描画するコンポーネント。
  * id → コンポーネントの対応付けは view 層の責務として本コンポーネント（switch）に
  * 閉じ込め、タブのデータ型（SettingsTab）には持たせない。未知 id は描画しない。
- * @param props tabId を含む props
+ * @param props - tabId とリソースを含む props
  * @returns 対応するパネル要素、未知 id なら null
  */
-const ActivePanel = ({ tabId }: ActivePanelProps): ReactNode => {
+const ActivePanel = ({ tabId, milestones }: ActivePanelProps): ReactNode => {
   switch (tabId) {
     case "labels":
       return <LabelSettingsTab />;
+    case "milestones":
+      return <MilestoneSettingsTab resource={milestones} />;
     default:
       return null;
   }
 };
 
+type SettingsScreenProps = {
+  /**
+   * マイルストーンリソース。App が唯一の取得点（useMilestones）として保持するものを
+   * 受け取り、board / milestoneView と共有する。設定タブでの CRUD 後の reload が
+   * 同一リソースに効くため、バッジ / フィルタ / 専用ビューが即時に最新化される。
+   */
+  milestones: MilestonesResource;
+};
+
 /**
  * 設定画面本体。SubNav + アクティブタブのパネルを合成する。
- * board state には依存しない（App 側で保持・据え置き）。
+ * board state には依存しない（App 側で保持・据え置き）。マイルストーンリソースは
+ * App から共有で受け取る（独自取得はしない）。
+ * @param props - {@link SettingsScreenProps}
  * @returns 設定画面要素
  */
-export const SettingsScreen = () => {
+export const SettingsScreen = ({ milestones }: SettingsScreenProps) => {
   const [activeTabId, setActiveTabId] = useState<string>(SETTINGS_TABS[0].id);
   const activeTab = SettingsTab.selectActive(SETTINGS_TABS, activeTabId);
 
@@ -49,7 +69,7 @@ export const SettingsScreen = () => {
         aria-labelledby={subNavTabId(activeTab.id)}
         className="flex-1 overflow-auto p-4"
       >
-        <ActivePanel tabId={activeTab.id} />
+        <ActivePanel tabId={activeTab.id} milestones={milestones} />
       </div>
     </div>
   );

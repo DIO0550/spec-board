@@ -70,8 +70,8 @@ flowchart TD
 | [board-view-spec.md](./board-view-spec.md) | [FE] カンバンボードUI・カラム管理・ドラッグ&ドロップ |
 | [task-card-spec.md](./task-card-spec.md) | [FE] タスクカード表示・詳細パネル・作成/編集フォーム |
 | [file-system-spec.md](./file-system-spec.md) | [BE] mdファイルのパース・ファイル監視・CRUD操作 |
-| [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット定義・フロントマター仕様 |
-| [config-spec.md](./config-spec.md) | [BE] 設定ファイル・カラム管理・カード並び順・AIエージェント向けガイド |
+| [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット定義・フロントマター仕様（priority / labels / milestone / parent / links） |
+| [config-spec.md](./config-spec.md) | [BE] 設定ファイル・カラム管理・カード並び順・labels.yml / milestones.yml マスタ・AIエージェント向けガイド |
 | [label-registry-spec.md](./label-registry-spec.md) | [FE] ラベルのグループ分類・oklch カラーパレット・グループ色割当 |
 
 ## 非機能要件
@@ -91,6 +91,7 @@ flowchart TD
 | タスクカード | ボード上の各タスクを表すカード型UI要素 |
 | フロントマター | mdファイル冒頭のYAMLメタデータブロック（`---` で囲まれた部分） |
 | カラム | ボードビューにおけるステータス別の列。ユーザーが自由に定義可能 |
+| マイルストーン | タスクをリリース単位で束ねる横断メタ情報。frontmatter `milestone`（単数）で参照し、`.spec-board/milestones.yml` でメタ情報（表示名・期日・並び順・状態）を定義する |
 
 ## 変更履歴
 

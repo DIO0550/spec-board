@@ -9,6 +9,7 @@ fn raw_args(file_path: &str) -> UpdateTaskArgs {
         title: None,
         status: None,
         priority: None,
+        milestone: None,
         labels: None,
         parent: None,
         body: None,

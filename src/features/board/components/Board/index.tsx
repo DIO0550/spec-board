@@ -1,12 +1,16 @@
 import { useCallback, useMemo, useReducer, useRef } from "react";
+import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
+import { useMilestoneFilter } from "../../hooks/useMilestoneFilter";
 import { AddColumnButton } from "../AddColumnButton";
 import {
   Column,
   type ColumnDropParams,
   type ColumnTaskDropParams,
 } from "../Column";
+import { MilestoneFilter } from "../MilestoneFilter";
+import type { MilestonesByName } from "../TaskCard";
 import {
   ColumnDragState,
   type ColumnDragState as ColumnDragStateT,
@@ -26,6 +30,16 @@ type BoardProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
+  /**
+   * name → マイルストーン定義の Map。Board 自身では使用せず、Column 経由で各 TaskCard の
+   * バッジ（title / due 解決）へ pass-through する。
+   */
+  milestonesByName?: MilestonesByName;
+  /**
+   * 絞り込み UI の選択肢に並べるマイルストーン定義（registry 由来）。
+   * 未指定 / 空のときは絞り込みツールバーを表示しない。
+   */
+  milestones?: readonly MilestoneDefinition[];
   /** カラムの「+ 追加」ボタンクリック時のコールバック
    * @param columnName - 追加対象のカラム名
    */
@@ -83,6 +97,8 @@ export const Board = ({
   tasks,
   tasksByNormalizedPath,
   doneColumn,
+  milestonesByName,
+  milestones,
   onAddTask,
   onTaskClick,
   onAddColumn,
@@ -96,16 +112,21 @@ export const Board = ({
     [columns],
   );
 
+  // マイルストーン絞り込み。filtered をカラム表示に使い、子孫/子の解決には全 tasks を
+  // 使う（allTasks へは絞り込み前の tasks を渡す）ため hierarchy のカウントは正確なまま。
+  const { filter, setFilter, filtered } = useMilestoneFilter(tasks);
+  const showMilestoneFilter = milestones !== undefined && milestones.length > 0;
+
   const tasksByStatus = useMemo(() => {
     const grouped: Record<string, Task[]> = {};
-    for (const task of tasks) {
+    for (const task of filtered) {
       if (!grouped[task.status]) {
         grouped[task.status] = [];
       }
       grouped[task.status].push(task);
     }
     return grouped;
-  }, [tasks]);
+  }, [filtered]);
 
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
 
@@ -185,47 +206,59 @@ export const Board = ({
   );
 
   return (
-    <div className="flex h-full gap-4 overflow-x-auto p-4">
-      {sorted.map((col) => (
-        <Column
-          key={col.name}
-          name={col.name}
-          tasks={tasksByStatus[col.name] ?? []}
-          allTasks={tasks}
-          tasksByNormalizedPath={tasksByNormalizedPath}
-          doneColumn={doneColumn}
-          onAddClick={() => onAddTask(col.name)}
-          onTaskClick={onTaskClick}
-          onRename={
-            onRenameColumn
-              ? (newName) => onRenameColumn(col.name, newName)
-              : undefined
-          }
-          existingColumnNames={columnNames.filter((n) => n !== col.name)}
-          onDelete={
-            onDeleteColumn
-              ? (destColumn) => onDeleteColumn(col.name, destColumn)
-              : undefined
-          }
-          canDelete={columns.length > 1}
-          dragState={dragState}
-          onDragHover={handleDragHover}
-          onTaskDrop={handleTaskDrop}
-          onTaskDragStart={handleDragStart}
-          onTaskDragEnd={handleDragEnd}
-          columnDraggable={sorted.length > 1}
-          onColumnDragStart={handleColumnDragStart}
-          onColumnDragEnd={handleColumnDragEnd}
-          onColumnHover={handleColumnHover}
-          onColumnDrop={handleColumnDrop}
-        />
-      ))}
-      {onAddColumn && (
-        <AddColumnButton
-          existingColumnNames={columnNames}
-          onAdd={onAddColumn}
-        />
+    <div className="flex h-full flex-col">
+      {showMilestoneFilter && (
+        <div className="flex items-center gap-2 px-4 pt-4">
+          <MilestoneFilter
+            milestones={milestones}
+            filter={filter}
+            onChange={setFilter}
+          />
+        </div>
       )}
+      <div className="flex flex-1 gap-4 overflow-x-auto p-4">
+        {sorted.map((col) => (
+          <Column
+            key={col.name}
+            name={col.name}
+            tasks={tasksByStatus[col.name] ?? []}
+            allTasks={tasks}
+            tasksByNormalizedPath={tasksByNormalizedPath}
+            doneColumn={doneColumn}
+            milestonesByName={milestonesByName}
+            onAddClick={() => onAddTask(col.name)}
+            onTaskClick={onTaskClick}
+            onRename={
+              onRenameColumn
+                ? (newName) => onRenameColumn(col.name, newName)
+                : undefined
+            }
+            existingColumnNames={columnNames.filter((n) => n !== col.name)}
+            onDelete={
+              onDeleteColumn
+                ? (destColumn) => onDeleteColumn(col.name, destColumn)
+                : undefined
+            }
+            canDelete={columns.length > 1}
+            dragState={dragState}
+            onDragHover={handleDragHover}
+            onTaskDrop={handleTaskDrop}
+            onTaskDragStart={handleDragStart}
+            onTaskDragEnd={handleDragEnd}
+            columnDraggable={sorted.length > 1}
+            onColumnDragStart={handleColumnDragStart}
+            onColumnDragEnd={handleColumnDragEnd}
+            onColumnHover={handleColumnHover}
+            onColumnDrop={handleColumnDrop}
+          />
+        ))}
+        {onAddColumn && (
+          <AddColumnButton
+            existingColumnNames={columnNames}
+            onAdd={onAddColumn}
+          />
+        )}
+      </div>
     </div>
   );
 };

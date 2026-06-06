@@ -100,6 +100,12 @@ fn render_markdown_from_intent(
 
     let frontmatter = Frontmatter {
         priority: intent.priority,
+        // 空文字は未割当として frontmatter から省く（lenient deserializer と対称）。
+        milestone: intent
+            .milestone
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
         labels: intent.labels.iter().map(|l| l.to_string()).collect(),
         links: Vec::new(),
         extras,

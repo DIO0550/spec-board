@@ -278,6 +278,25 @@ fn invalid_yaml_or_encoding_returns_frontmatter_error() {
     ));
 }
 
+#[test]
+fn milestone_is_transferred_to_task() {
+    let task = task_from("---\ntitle: A\nmilestone: v0.3\n---\nbody\n", "a.md");
+    assert_eq!(task.milestone.as_deref(), Some("v0.3"));
+}
+
+#[test]
+fn milestone_is_excluded_from_extras() {
+    // TYPED_KEYS（parse.rs 側）に milestone が含まれ、extras に二重流入しない。
+    let task = task_from("---\ntitle: A\nmilestone: v0.3\n---\nbody\n", "a.md");
+    assert!(!task.extras.contains_key("milestone"));
+}
+
+#[test]
+fn milestone_absent_is_none() {
+    let task = task_from("---\ntitle: A\n---\nbody\n", "a.md");
+    assert_eq!(task.milestone, None);
+}
+
 fn has_invalid_due_warning(task: &Task) -> bool {
     task.warnings
         .iter()

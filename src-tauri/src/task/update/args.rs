@@ -22,6 +22,9 @@ pub struct UpdateTaskArgs {
     /// `"High" | "Medium" | "Low"` 想定。不正値は `None` に倒す lenient 変換。
     /// `None` = 未指定（不変）。priority クリアは本 Issue ではサポートしない。
     pub priority: Option<String>,
+    /// マイルストーンの更新意図（既存 parent と同型の 3 値）:
+    /// `None` = 不変 / `Some("")` = クリア / `Some(name)` = 設定。
+    pub milestone: Option<String>,
     pub labels: Option<Vec<String>>,
     /// 空文字で親解除、`None` で不変、`Some(path)` で上書き。
     pub parent: Option<String>,
@@ -40,6 +43,7 @@ impl UpdateTaskArgs {
             title: self.title,
             status: self.status,
             priority,
+            milestone: self.milestone,
             labels: self.labels,
             parent: self.parent,
             body: self.body,
