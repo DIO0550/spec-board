@@ -53,11 +53,17 @@ export const useMilestones = (
   projectKey: string | undefined,
 ): MilestonesResource => {
   const [state, setState] = useState<ResourceState>(IDLE_STATE);
-  // 最新リクエストの projectKey を保持し、stale 応答を破棄する判定に使う。
+  // reload() が現在の projectKey で再取得するために最新 key を保持する。
   const latestKeyRef = useRef<string | undefined>(undefined);
+  // 各 load 呼び出しに採番する世代 id。最新世代の応答だけが state を確定する。
+  // key 比較だけでは同一 projectKey の重複ロード（初回 + reload）で古い応答が
+  // 後勝ちしてしまうため、key ではなく世代 id で stale 応答を破棄する。
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async (key: string | undefined): Promise<void> => {
     latestKeyRef.current = key;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     if (key === undefined) {
       setState(IDLE_STATE);
       return;
@@ -65,8 +71,8 @@ export const useMilestones = (
     // loading 開始時は前回値を残さずクリアする（projectKey 変更 / reload 時の stale 表示防止）。
     setState({ milestones: [], usageCounts: {}, status: "loading" });
     const result = await getMilestones();
-    // 取得中に projectKey が変わっていたら古い応答は捨てる。
-    if (latestKeyRef.current !== key) {
+    // この応答より後に開始された load があれば（key 同一でも）古い応答として捨てる。
+    if (requestIdRef.current !== requestId) {
       return;
     }
     if (result.ok) {

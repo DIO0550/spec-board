@@ -151,3 +151,57 @@ test("getMilestones が err を返すと status が error になる", async () =
   expect(latest?.status).toBe("error");
   expect(latest?.error).toBe("取得失敗");
 });
+
+type Deferred = {
+  promise: Promise<Awaited<ReturnType<typeof getMilestones>>>;
+  resolve: (value: Awaited<ReturnType<typeof getMilestones>>) => void;
+};
+
+const makeDeferred = (): Deferred => {
+  let resolve: Deferred["resolve"] = () => {};
+  const promise = new Promise<Awaited<ReturnType<typeof getMilestones>>>(
+    (r) => {
+      resolve = r;
+    },
+  );
+  return { promise, resolve };
+};
+
+test("同一 projectKey で初回ロードと reload が競合しても古い応答は新しい結果を上書きしない", async () => {
+  const deferreds: Deferred[] = [];
+  getMilestonesMock.mockImplementation(() => {
+    const deferred = makeDeferred();
+    deferreds.push(deferred);
+    return deferred.promise;
+  });
+
+  // 初回ロード（pending のまま）。
+  const latest = await mount("proj-1");
+  expect(latest?.status).toBe("loading");
+
+  // reload を重ねて 2 本目のリクエストを開始（こちらも pending）。
+  await act(async () => {
+    void latest?.reload();
+    await Promise.resolve();
+  });
+  expect(deferreds.length).toBe(2);
+
+  // 後発（reload）を先に解決 → 新しい一覧が確定する。
+  await act(async () => {
+    deferreds[1].resolve(
+      Result.ok({ milestones: [{ name: "new" }], usageCounts: { new: 1 } }),
+    );
+    await Promise.resolve();
+  });
+
+  // 先発（初回）が後から解決しても、古い世代なので破棄される。
+  await act(async () => {
+    deferreds[0].resolve(
+      Result.ok({ milestones: [{ name: "old" }], usageCounts: { old: 9 } }),
+    );
+    await Promise.resolve();
+  });
+
+  expect(captured.current?.milestones).toEqual([{ name: "new" }]);
+  expect(captured.current?.usageCounts).toEqual({ new: 1 });
+});
