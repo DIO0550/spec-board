@@ -905,7 +905,9 @@ export const App = () => {
         onOpenClick={handleOpenClick}
       />
       <main className="flex flex-1 overflow-hidden">
-        {view === "settings" && <SettingsScreen />}
+        {view === "settings" && (
+          <SettingsScreen milestones={milestonesResource} />
+        )}
         {view === "milestone" && (
           <MilestoneViewScreen
             resource={milestonesResource}

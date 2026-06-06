@@ -1,7 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { getLabels, getMilestones } from "@/lib/tauri";
+import type { MilestonesResource } from "@/hooks/useMilestones";
+import { getLabels } from "@/lib/tauri";
 import { Result } from "@/utils/result";
 import { SettingsScreen } from "..";
 
@@ -11,12 +12,19 @@ vi.mock("@/lib/tauri", async () => {
   return {
     ...actual,
     getLabels: vi.fn(),
-    getMilestones: vi.fn(),
   };
 });
 
 const getLabelsMock = vi.mocked(getLabels);
-const getMilestonesMock = vi.mocked(getMilestones);
+
+// マイルストーンリソースは App から共有される前提（SettingsScreen 自身は取得しない）。
+const milestonesResource: MilestonesResource = {
+  milestones: [],
+  usageCounts: {},
+  byName: new Map(),
+  status: "loaded",
+  reload: vi.fn(async () => {}),
+};
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -24,10 +32,6 @@ let root: ReturnType<typeof createRoot> | null = null;
 beforeEach(() => {
   getLabelsMock.mockReset();
   getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
-  getMilestonesMock.mockReset();
-  getMilestonesMock.mockResolvedValue(
-    Result.ok({ milestones: [], usageCounts: {} }),
-  );
 });
 
 afterEach(() => {
@@ -47,7 +51,9 @@ const mountSettingsScreen = async () => {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(createElement(SettingsScreen));
+    root?.render(
+      createElement(SettingsScreen, { milestones: milestonesResource }),
+    );
   });
   await act(async () => {
     await Promise.resolve();

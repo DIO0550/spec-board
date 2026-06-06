@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { type MilestonesResource, useMilestones } from "@/hooks/useMilestones";
+import type { MilestonesResource } from "@/hooks/useMilestones";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
 import { LabelSettingsTab } from "../LabelSettingsTab";
 import { MilestoneSettingsTab } from "../MilestoneSettingsTab";
@@ -10,13 +10,6 @@ const SETTINGS_TABS: NonEmptySettingsTabs = [
   { id: "labels", label: "ラベル" },
   { id: "milestones", label: "マイルストーン" },
 ];
-
-/**
- * 設定画面が開いている間のマイルストーン取得を有効化する projectKey。
- * 設定画面は project オープン時のみ到達するため定数で有効化し、画面の再マウント
- * （view 切替）ごとに再取得される。
- */
-const SETTINGS_PROJECT_KEY = "settings";
 
 type ActivePanelProps = {
   /** アクティブタブの識別子 */
@@ -43,16 +36,25 @@ const ActivePanel = ({ tabId, milestones }: ActivePanelProps): ReactNode => {
   }
 };
 
+type SettingsScreenProps = {
+  /**
+   * マイルストーンリソース。App が唯一の取得点（useMilestones）として保持するものを
+   * 受け取り、board / milestoneView と共有する。設定タブでの CRUD 後の reload が
+   * 同一リソースに効くため、バッジ / フィルタ / 専用ビューが即時に最新化される。
+   */
+  milestones: MilestonesResource;
+};
+
 /**
  * 設定画面本体。SubNav + アクティブタブのパネルを合成する。
  * board state には依存しない（App 側で保持・据え置き）。マイルストーンリソースは
- * 本画面で取得し、milestones タブへ配る（唯一の取得点）。
+ * App から共有で受け取る（独自取得はしない）。
+ * @param props - {@link SettingsScreenProps}
  * @returns 設定画面要素
  */
-export const SettingsScreen = () => {
+export const SettingsScreen = ({ milestones }: SettingsScreenProps) => {
   const [activeTabId, setActiveTabId] = useState<string>(SETTINGS_TABS[0].id);
   const activeTab = SettingsTab.selectActive(SETTINGS_TABS, activeTabId);
-  const milestones = useMilestones(SETTINGS_PROJECT_KEY);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
