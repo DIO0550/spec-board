@@ -255,7 +255,7 @@ test("milestones 指定時はフィルタが描画され、選択でカードが
   );
 
   act(() => {
-    setSelectValue(select as HTMLSelectElement, "v0.3");
+    setSelectValue(select as HTMLSelectElement, "milestone:v0.3");
   });
   expect(container?.querySelectorAll('[data-testid="task-card"]').length).toBe(
     1,

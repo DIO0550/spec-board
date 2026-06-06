@@ -13,8 +13,11 @@ type MilestoneFilterProps = {
   onChange: (next: MilestoneFilterValue) => void;
 };
 
-const ALL_VALUE = "__all__";
-const UNASSIGNED_VALUE = "__unassigned__";
+const ALL_VALUE = "all";
+const UNASSIGNED_VALUE = "unassigned";
+// milestone 名は自由文字列のため、制御用 option 値（all / unassigned）と衝突しないよう
+// 専用 prefix を付けてエンコードする。"milestone:" で始まる名前も prefix 込みで一意になる。
+const MILESTONE_PREFIX = "milestone:";
 
 /**
  * select の選択値を MilestoneFilter に変換する。
@@ -28,7 +31,7 @@ const toFilter = (value: string): MilestoneFilterValue => {
   if (value === UNASSIGNED_VALUE) {
     return { kind: "unassigned" };
   }
-  return { kind: "milestone", name: value };
+  return { kind: "milestone", name: value.slice(MILESTONE_PREFIX.length) };
 };
 
 /**
@@ -43,7 +46,7 @@ const toValue = (filter: MilestoneFilterValue): string => {
   if (filter.kind === "unassigned") {
     return UNASSIGNED_VALUE;
   }
-  return filter.name;
+  return `${MILESTONE_PREFIX}${filter.name}`;
 };
 
 /**
@@ -67,7 +70,7 @@ export const MilestoneFilter = ({
       <option value={ALL_VALUE}>すべてのマイルストーン</option>
       <option value={UNASSIGNED_VALUE}>未割当</option>
       {milestones.map((m) => (
-        <option key={m.name} value={m.name}>
+        <option key={m.name} value={`${MILESTONE_PREFIX}${m.name}`}>
           {m.title ?? m.name}
         </option>
       ))}
