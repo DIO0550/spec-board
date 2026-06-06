@@ -7,6 +7,7 @@ import {
   type ColumnDropParams,
   type ColumnTaskDropParams,
 } from "../Column";
+import type { MilestonesByName } from "../TaskCard";
 import {
   ColumnDragState,
   type ColumnDragState as ColumnDragStateT,
@@ -26,6 +27,11 @@ type BoardProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
+  /**
+   * name → マイルストーン定義の Map。Board 自身では使用せず、Column 経由で各 TaskCard の
+   * バッジ（title / due 解決）へ pass-through する。
+   */
+  milestonesByName?: MilestonesByName;
   /** カラムの「+ 追加」ボタンクリック時のコールバック
    * @param columnName - 追加対象のカラム名
    */
@@ -83,6 +89,7 @@ export const Board = ({
   tasks,
   tasksByNormalizedPath,
   doneColumn,
+  milestonesByName,
   onAddTask,
   onTaskClick,
   onAddColumn,
@@ -194,6 +201,7 @@ export const Board = ({
           allTasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
+          milestonesByName={milestonesByName}
           onAddClick={() => onAddTask(col.name)}
           onTaskClick={onTaskClick}
           onRename={

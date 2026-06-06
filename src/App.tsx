@@ -8,6 +8,7 @@ import {
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useAppView } from "@/hooks/useAppView";
+import { useMilestones } from "@/hooks/useMilestones";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
@@ -216,6 +217,10 @@ export const App = () => {
     () => buildTasksByNormalizedPath(tasks),
     [tasks],
   );
+  // ボード / マイルストーンビューへ配るマイルストーンリソース（唯一の取得点）。
+  // loaded path を projectKey にすることで、プロジェクト切替時に再取得され、
+  // 未オープン時は idle（空）になる。
+  const milestonesResource = useMilestones(loadedPath ?? undefined);
   // Toast 発火管理用 ref。`prevLoadedPath` (UI リセット用、render-phase 更新) と
   // 役割を分離するため別 ref を持つ。
   // 「loaded セッション内で 1 回だけ発火」をルールとし、state.kind が "loaded" から
@@ -851,6 +856,7 @@ export const App = () => {
           tasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
+          milestonesByName={milestonesResource.byName}
           onAddTask={handleAddTask}
           onAddColumn={handleAddColumn}
           onRenameColumn={handleRenameColumn}

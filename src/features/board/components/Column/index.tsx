@@ -16,7 +16,7 @@ import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
 import { DRAG_MIME_TYPE, DragState } from "../Board/dragState";
 import { ColumnContextMenu } from "../ColumnContextMenu";
 import { ColumnHeader } from "../ColumnHeader";
-import { TaskCard } from "../TaskCard";
+import { type MilestonesByName, TaskCard } from "../TaskCard";
 import { computeHoverIndex } from "./dragHover";
 
 /** Drop 確定時に呼ばれる引数。 */
@@ -48,6 +48,11 @@ type ColumnProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
+  /**
+   * name → マイルストーン定義の Map。各 TaskCard のバッジ（title / due 解決）へ
+   * pass-through する。未指定時は name 表示にフォールバックする。
+   */
+  milestonesByName?: MilestonesByName;
   /** 「+ 追加」ボタンクリック時のコールバック */
   onAddClick: () => void;
   /**
@@ -115,6 +120,7 @@ export const Column = ({
   allTasks = [],
   tasksByNormalizedPath,
   doneColumn,
+  milestonesByName,
   onAddClick,
   onTaskClick,
   onRename,
@@ -386,6 +392,7 @@ export const Column = ({
                   childTasks={childTasks}
                   descendantTasks={descendantTasks}
                   doneColumn={doneColumn}
+                  milestonesByName={milestonesByName}
                   fromColumn={name}
                   isDragging={DragState.isDraggingTask(
                     dragState ?? null,
