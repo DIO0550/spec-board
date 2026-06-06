@@ -87,6 +87,33 @@ const doneColumnOf = (state: ProjectState): string | undefined =>
   displayableDataOf(state)?.doneColumn;
 
 /**
+ * 現在選択中のタスクを解決する。selectedTaskId が tasks に存在すればそれを返し、
+ * 削除楽観 dispatch 中（tasks から消えている間）は pendingDeleteTask snapshot を
+ * fallback として返す（rollback で tasks に戻れば自然と tasks 側へ切り替わる）。
+ * @param selectedTaskId 選択中タスクの ID（未選択は null）
+ * @param tasks 現在のタスク一覧
+ * @param pendingDeleteTask 削除楽観中の snapshot（無ければ null）
+ * @returns 選択中タスク、または解決不能 / 未選択なら null
+ */
+const resolveSelectedTask = (
+  selectedTaskId: string | null,
+  tasks: Task[],
+  pendingDeleteTask: Task | null,
+): Task | null => {
+  if (selectedTaskId === null) {
+    return null;
+  }
+  const found = tasks.find((t) => t.id === selectedTaskId);
+  if (found !== undefined) {
+    return found;
+  }
+  if (pendingDeleteTask !== null && pendingDeleteTask.id === selectedTaskId) {
+    return pendingDeleteTask;
+  }
+  return null;
+};
+
+/**
  * @returns アプリケーションのルートレイアウトシェル
  */
 export const App = () => {
@@ -293,21 +320,11 @@ export const App = () => {
           .filter((seg) => seg.length > 0)
           .pop() ?? displayedPath)
       : undefined;
-  const selectedTask = ((): Task | null => {
-    if (selectedTaskId === null) {
-      return null;
-    }
-    const found = tasks.find((t) => t.id === selectedTaskId);
-    if (found !== undefined) {
-      return found;
-    }
-    // 削除楽観 dispatch 中は tasks から消えているので snapshot を fallback として使う。
-    // rollback で tasks に戻れば自然と found 側に切り替わる。
-    if (pendingDeleteTask !== null && pendingDeleteTask.id === selectedTaskId) {
-      return pendingDeleteTask;
-    }
-    return null;
-  })();
+  const selectedTask = resolveSelectedTask(
+    selectedTaskId,
+    tasks,
+    pendingDeleteTask,
+  );
 
   // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す。
   // 削除確定後・外部更新でのタスク消失等、render-phase reset で拾えない経路の保険。
