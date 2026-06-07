@@ -179,7 +179,7 @@ stateDiagram-v2
 | スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。カラム間移動の楽観 dispatch 直後に `aria-live="polite"` のライブリージョン（視覚非表示 / `role="status"` / `aria-atomic="true"`）で「移動しました」を通知。`updateTask` 失敗によるフル rollback 時はさらに「移動を取り消しました」を追加通知する。partial-move（status 確定 + cardOrder のみ rollback）および「楽観 dispatch 後の projectVersion 不一致」では追加の取消アナウンスは流さない（既に「移動しました」が発火済みで status は永続化済み、または state が新 project に切替済みのため）。同一カラム並び替え、および「楽観 dispatch 前 invalid-state（preflight 失敗）」ではライブリージョンを更新しない（エラー toast のみ） |
 | フォーカス管理 | ドラッグ&ドロップ完了後、移動したカードにフォーカスを維持 |
 | 全画面詳細ビュー（DetailScreen）のフォーカス | `<section aria-label="タスク詳細" tabIndex="-1">` のランドマークと視覚非表示の `<h1>`（タスクタイトル）を持つ。マウント時に section へフォーカスを移し、ビュー先頭へキーボード/SR フォーカスを移動する。「← 戻る」/ Esc で board へ戻る（削除確認ダイアログ表示中、および作成モーダル表示中は Esc を抑止して各モーダルの Esc と競合させない）。**focus trap は適用しない**: DetailScreen は modal ではなく、HeaderBar と AppSidebar が `detail` 区分でも常時操作可能なため、Tab フォーカスを DetailScreen 内に閉じ込めるとそれらの操作系へキーボードで到達できなくなる。よって Tab は通常どおり画面全体を巡回させる |
-| ヘッダ操作ボタンのフォーカス可視化 | 詳細ビューの「← 戻る」ボタンおよび削除ボタンに `focus-visible:ring-2 focus-visible:ring-blue-500`（削除は `ring-red-500`）を付与し、キーボードフォーカスを可視化する |
+| ヘッダ操作ボタンのフォーカス可視化 | 詳細ビューの「← 戻る」ボタンに `focus-visible:ring-2 focus-visible:ring-accent`、削除ボタンに `focus-visible:ring-2 focus-visible:ring-red-500` を付与し、キーボードフォーカスを可視化する（アクセント色はテーマのセマンティックトークンに追従する） |
 
 ## ドラッグ&ドロップ仕様
 
