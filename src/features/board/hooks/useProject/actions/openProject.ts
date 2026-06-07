@@ -51,6 +51,10 @@ const resolveProjectPath = async ({
     if (!projectVersion.active) {
       return null;
     }
+    // ディレクトリダイアログ表示中に最近一覧をクリックした場合の二重 open を防ぐ。
+    if (dialogOpening.current) {
+      return null;
+    }
     return explicitPath;
   }
 
