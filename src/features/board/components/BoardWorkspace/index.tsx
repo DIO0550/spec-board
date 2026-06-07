@@ -197,19 +197,31 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
         filteredCount={filtered.length}
         totalCount={tasks.length}
       />
-      <div
-        role="tabpanel"
-        id={tabNavPanelId(VIEW_TAB_PREFIX, viewMode)}
-        aria-labelledby={tabNavTabId(VIEW_TAB_PREFIX, viewMode)}
-        className="min-h-0 flex-1 overflow-auto"
-      >
-        <ActiveBoardView
-          viewMode={viewMode}
-          filtered={filtered}
-          filterActive={isActive}
-          workspace={props}
-        />
-      </div>
+      {/* 各タブの aria-controls が常に有効な id を指すよう、tabpanel 要素は全ビュー分を
+          描画する。非アクティブは hidden で隠し、中身（ビュー本体）はアクティブ時のみ
+          レンダーして無駄な走査・描画を避ける。 */}
+      {VIEW_TABS.map((tab) => {
+        const isActiveTab = tab.id === viewMode;
+        return (
+          <div
+            key={tab.id}
+            role="tabpanel"
+            id={tabNavPanelId(VIEW_TAB_PREFIX, tab.id)}
+            aria-labelledby={tabNavTabId(VIEW_TAB_PREFIX, tab.id)}
+            hidden={!isActiveTab}
+            className="min-h-0 flex-1 overflow-auto"
+          >
+            {isActiveTab && (
+              <ActiveBoardView
+                viewMode={viewMode}
+                filtered={filtered}
+                filterActive={isActive}
+                workspace={props}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
