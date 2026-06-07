@@ -53,6 +53,30 @@ const prefersDark = (): boolean => {
   return window.matchMedia(DARK_MEDIA_QUERY).matches;
 };
 
+/**
+ * MediaQueryList の変更を購読する。`addEventListener` が未実装の環境
+ * （古い WebKit / WKWebView）では deprecated な `addListener` にフォールバックする。
+ * @param mediaQuery - 購読対象の MediaQueryList
+ * @param listener - 変更時に呼ぶハンドラ
+ * @returns 購読解除関数
+ */
+const subscribeMediaQuery = (
+  mediaQuery: MediaQueryList,
+  listener: () => void,
+): (() => void) => {
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", listener);
+    return () => {
+      mediaQuery.removeEventListener("change", listener);
+    };
+  }
+  // 古い WebKit / WKWebView 向けフォールバック（非推奨 API だが互換のため使用）。
+  mediaQuery.addListener(listener);
+  return () => {
+    mediaQuery.removeListener(listener);
+  };
+};
+
 /** ThemeProvider の Props。 */
 type ThemeProviderProps = {
   /** 配下に外観設定を供給する子要素 */
@@ -87,10 +111,7 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
       return;
     }
     const mediaQuery = window.matchMedia(DARK_MEDIA_QUERY);
-    mediaQuery.addEventListener("change", apply);
-    return () => {
-      mediaQuery.removeEventListener("change", apply);
-    };
+    return subscribeMediaQuery(mediaQuery, apply);
   }, [appearance]);
 
   const setTheme = useCallback((theme: ThemeMode) => {
