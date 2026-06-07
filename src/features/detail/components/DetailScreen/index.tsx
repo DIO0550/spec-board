@@ -29,6 +29,12 @@ export type DetailScreenProps = {
   /** ボードへ戻るハンドラ（← 戻るボタン / Esc 共通） */
   onBack: () => void;
   /**
+   * 上位モーダル（タスク作成モーダル等）の表示中フラグ。
+   * true の間は DetailScreen の Esc（戻る）を停止し、上位モーダル側の Esc と
+   * 競合（戻る誤発火）しないようにする。
+   */
+  isUpperModalOpen?: boolean;
+  /**
    * タスク更新時のコールバック
    * @param id - 更新対象のタスクID
    * @param updates - 更新するフィールド
@@ -97,6 +103,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
     onSelectTask,
     onAddLink,
     onRemoveLink,
+    isUpperModalOpen = false,
   } = props;
 
   const childInfo = useChildTasks({
@@ -116,14 +123,19 @@ export const DetailScreen = (props: DetailScreenProps) => {
   // 開閉通知を受けて disabled に反映する。
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  // 削除ダイアログ または 上位モーダル（作成モーダル等）表示中は Esc（戻る）を停止し、
+  // モーダル自身の Esc と競合（戻る誤発火）しないようにする。
+  const escSuspended = isDeleteDialogOpen || isUpperModalOpen;
+
   // 全画面ビュー展開時に section 自身へフォーカスを移す（ビュー先頭へ移動）。
-  // 既存 DetailPanel の panelRef.focus() と同一パターン。useEffect の [] でマウント時 1 回だけ実行する。
+  // DetailScreen は modal ではなく、HeaderBar / AppSidebar が detail 区分でも常時
+  // 操作可能なため focus trap は適用しない（キーボードでヘッダ/サイドバーへ到達できるようにする）。
   const sectionRef = useRef<HTMLElement>(null);
   useEffect(() => {
     sectionRef.current?.focus();
   }, []);
 
-  useEscToClose({ disabled: isDeleteDialogOpen, onEscape: onBack });
+  useEscToClose({ disabled: escSuspended, onEscape: onBack });
 
   return (
     <section

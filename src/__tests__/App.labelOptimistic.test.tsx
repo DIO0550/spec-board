@@ -149,8 +149,8 @@ const openSuccessfully = async (seedTask: Task): Promise<void> => {
   });
 };
 
-/** TaskCard を click して DetailPanel を開く。 */
-const openDetailPanel = (): void => {
+/** TaskCard を click して DetailScreen を開く。 */
+const openDetailScreen = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -230,7 +230,7 @@ test("ラベル追加 → 楽観反映 → IPC resolve で確定し、成功 toa
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await addLabelViaUI("new-label");
 
@@ -274,7 +274,7 @@ test("ラベル追加で invoke が失敗した場合、labels が元に戻り�
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await addLabelViaUI("new-label");
 
@@ -306,7 +306,7 @@ test("× 削除 → 楽観反映 → IPC resolve で確定し、成功 toast と
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await removeLabelViaUI("bug");
 
@@ -344,7 +344,7 @@ test("× 削除で invoke が失敗した場合、labels が元に戻りエラ�
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await removeLabelViaUI("bug");
 

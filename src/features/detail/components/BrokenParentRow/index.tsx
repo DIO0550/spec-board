@@ -6,7 +6,7 @@ type BrokenParentRowProps = {
 };
 
 /**
- * DetailPanel の parent 行。参照先 Task が一覧に存在しない（リンク切れ）場合に表示する。
+ * DetailScreen の parent 行。参照先 Task が一覧に存在しない（リンク切れ）場合に表示する。
  * 共通プリミティブ {@link BrokenRefLabel} を flex row でラップした薄いレイアウトのみ提供する。
  *
  * @param props - {@link BrokenParentRowProps}

@@ -141,6 +141,31 @@ test("md ブレークポイントの 2 ペインクラスが維持される", ()
   expect(sidebarWrapper.className).toContain("md:border-l");
 });
 
+test("focus trap を持たない（Tab は preventDefault されず、ヘッダ/サイドバーへ到達可能）", () => {
+  render(buildProps());
+  // DetailScreen は modal ではなく HeaderBar / AppSidebar が常時操作可能なため
+  // focus trap を適用しない。document に Tab を流しても DetailScreen は捕捉しない。
+  const event = new KeyboardEvent("keydown", {
+    key: "Tab",
+    cancelable: true,
+    bubbles: true,
+  });
+  act(() => {
+    document.dispatchEvent(event);
+  });
+  expect(event.defaultPrevented).toBe(false);
+});
+
+test("上位モーダル表示中（isUpperModalOpen）の Esc は onBack を発火しない", () => {
+  const onBack = vi.fn();
+  render(buildProps({ isUpperModalOpen: true, onBack }));
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  // Esc は上位モーダル側に委ね、DetailScreen の「戻る」は発火しない。
+  expect(onBack).not.toHaveBeenCalled();
+});
+
 test("既存の data-testid が維持される（回帰）", () => {
   render(buildProps());
   expect(

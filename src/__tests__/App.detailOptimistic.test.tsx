@@ -149,9 +149,9 @@ const openSuccessfully = async (): Promise<void> => {
 };
 
 /**
- * TaskCard を click して DetailPanel を開く。
+ * TaskCard を click して DetailScreen を開く。
  */
-const openDetailPanel = (): void => {
+const openDetailScreen = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -192,10 +192,10 @@ const changeSelectValue = async (
   });
 };
 
-test("StatusSelect 操作 → updateTask resolve 前に DetailPanel の StatusSelect 表示が新値（楽観反映）", async () => {
+test("StatusSelect 操作 → updateTask resolve 前に DetailScreen の StatusSelect 表示が新値（楽観反映）", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
+  openDetailScreen();
   expect(getSelect("status-select").value).toBe("Todo");
 
   type UpdateTaskResult = Awaited<ReturnType<typeof updateTaskMock>>;
@@ -218,10 +218,10 @@ test("StatusSelect 操作 → updateTask resolve 前に DetailPanel の StatusSe
   expect(getSelect("status-select").value).toBe("Doing");
 });
 
-test("IPC 失敗時 → DetailPanel Select 表示が元値に戻り、エラートーストが出る", async () => {
+test("IPC 失敗時 → DetailScreen Select 表示が元値に戻り、エラートーストが出る", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
+  openDetailScreen();
   expect(getSelect("status-select").value).toBe("Todo");
 
   updateTaskMock.mockResolvedValueOnce(

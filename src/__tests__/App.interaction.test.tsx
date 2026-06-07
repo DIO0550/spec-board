@@ -442,9 +442,9 @@ test("AddColumnButton で重複名を入力 → updateColumns invoke は呼ば�
   expect(container?.textContent).toContain("同じ名前のカラムが既に存在します");
 });
 
-// === DetailPanel 経由の updateTask / deleteTask DOM テスト ===
+// === DetailScreen 経由の updateTask / deleteTask DOM テスト ===
 
-const openDetailPanelForFirstTask = async (): Promise<void> => {
+const openDetailScreenForFirstTask = async (): Promise<void> => {
   // TaskCard は div role="button"。最初に見つかった card をクリック
   const card = querySelectorRequired<HTMLDivElement>('[role="button"]');
   await act(async () => {
@@ -461,12 +461,12 @@ const setSelectValue = (select: HTMLSelectElement, value: string): void => {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 };
 
-test("DetailPanel の status 変更 → updateTask invoke が呼ばれ + 成功 toast", async () => {
+test("DetailScreen の status 変更 → updateTask invoke が呼ばれ + 成功 toast", async () => {
   mountApp();
   await openSuccessfully();
 
-  await openDetailPanelForFirstTask();
-  // 詳細パネルが開いている
+  await openDetailScreenForFirstTask();
+  // 詳細（DetailScreen）が開いている
   expect(
     container?.querySelector('[data-testid="status-select"]'),
   ).not.toBeNull();
@@ -491,10 +491,10 @@ test("DetailPanel の status 変更 → updateTask invoke が呼ばれ + 成功 
   expect(container?.textContent).toContain("タスクを更新しました");
 });
 
-test("DetailPanel タイトル inline 編集 Enter → updateTask invoke が { filePath, title } で呼ばれ + 成功 toast", async () => {
+test("DetailScreen タイトル inline 編集 Enter → updateTask invoke が { filePath, title } で呼ばれ + 成功 toast", async () => {
   mountApp();
   await openSuccessfully();
-  await openDetailPanelForFirstTask();
+  await openDetailScreenForFirstTask();
 
   const updatedTitle = "新しいタイトル";
   const updated: Task = { ...taskA, title: updatedTitle };
@@ -528,10 +528,10 @@ test("DetailPanel タイトル inline 編集 Enter → updateTask invoke が { f
   expect(container?.textContent).toContain("タスクを更新しました");
 });
 
-test("DetailPanel の status 変更失敗時 → updateTask invoke + エラー toast 表示", async () => {
+test("DetailScreen の status 変更失敗時 → updateTask invoke + エラー toast 表示", async () => {
   mountApp();
   await openSuccessfully();
-  await openDetailPanelForFirstTask();
+  await openDetailScreenForFirstTask();
 
   updateTaskMock.mockResolvedValueOnce(
     Result.err(new TauriError("IO_ERROR", "io fail")),
@@ -551,10 +551,10 @@ test("DetailPanel の status 変更失敗時 → updateTask invoke + エラー t
   expect(container?.textContent).not.toContain("タスクを更新しました");
 });
 
-test("DetailPanel 削除 → deleteTask invoke が呼ばれ Board から消えて DetailPanel が閉じる", async () => {
+test("DetailScreen 削除 → deleteTask invoke が呼ばれ Board から消えて DetailScreen が閉じる", async () => {
   mountApp();
   await openSuccessfully();
-  await openDetailPanelForFirstTask();
+  await openDetailScreenForFirstTask();
 
   deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
 
@@ -578,14 +578,14 @@ test("DetailPanel 削除 → deleteTask invoke が呼ばれ Board から消え�
   expect(deleteTaskMock).toHaveBeenCalledTimes(1);
   expect(deleteTaskMock).toHaveBeenCalledWith({ filePath: "tasks/a.md" });
   expect(container?.textContent).toContain("タスクを削除しました");
-  // DetailPanel が閉じる: status-select が DOM から消える
+  // DetailScreen が閉じる: status-select が DOM から消える
   expect(container?.querySelector('[data-testid="status-select"]')).toBeNull();
 });
 
-test("DetailPanel 削除失敗時 → deleteTask invoke + ConfirmDialog が閉じない (DeleteFlow が error 状態)", async () => {
+test("DetailScreen 削除失敗時 → deleteTask invoke + ConfirmDialog が閉じない (DeleteFlow が error 状態)", async () => {
   mountApp();
   await openSuccessfully();
-  await openDetailPanelForFirstTask();
+  await openDetailScreenForFirstTask();
 
   deleteTaskMock.mockResolvedValueOnce(
     Result.err(new TauriError("PERMISSION_DENIED", "perm fail")),
@@ -609,7 +609,7 @@ test("DetailPanel 削除失敗時 → deleteTask invoke + ConfirmDialog が閉�
 
   expect(deleteTaskMock).toHaveBeenCalledTimes(1);
   expect(container?.textContent).toContain("タスクの削除に失敗しました");
-  // DetailPanel は閉じていない
+  // DetailScreen は閉じていない
   expect(
     container?.querySelector('[data-testid="status-select"]'),
   ).not.toBeNull();
@@ -623,8 +623,8 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   mountApp();
   await openSuccessfully();
 
-  // A の最初の task をクリックして DetailPanel を開く
-  await openDetailPanelForFirstTask();
+  // A の最初の task をクリックして DetailScreen を開く
+  await openDetailScreenForFirstTask();
   expect(
     container?.querySelector('[data-testid="status-select"]'),
   ).not.toBeNull();
@@ -653,7 +653,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
     await Promise.resolve();
   });
 
-  // B のレンダー時点で DetailPanel が閉じていることを確認
+  // B のレンダー時点で DetailScreen が閉じていることを確認
   // (render-phase reset により selectedTaskId が null になっているため、
   //  B の task A が誤って開かれない)
   expect(container?.querySelector('[data-testid="status-select"]')).toBeNull();
@@ -800,14 +800,14 @@ const openParentChildProject = async () => {
 };
 
 const dialogTitleValue = (): string | null | undefined => {
-  const dialog = container?.querySelector('[role="dialog"]');
-  const titleInput = dialog?.querySelector(
+  const screen = container?.querySelector('section[aria-label="タスク詳細"]');
+  const titleInput = screen?.querySelector(
     '[data-testid="editable-text-display"]',
   ) as HTMLInputElement | null;
   return titleInput?.value;
 };
 
-test("子タスクのカードをクリック → DetailPanel 表示 → 親リンククリックで親タスクの DetailPanel に切り替わる", async () => {
+test("子タスクのカードをクリック → DetailScreen 表示 → 親リンククリックで親タスクの DetailScreen に切り替わる", async () => {
   mountApp();
   await openParentChildProject();
 
@@ -826,8 +826,10 @@ test("子タスクのカードをクリック → DetailPanel 表示 → 親リ�
     childCard?.click();
   });
 
-  // 誤選択の早期検出: DetailPanel が子タスクで開いていることを確認
-  expect(container?.querySelector('[role="dialog"]')).not.toBeNull();
+  // 誤選択の早期検出: DetailScreen が子タスクで開いていることを確認
+  expect(
+    container?.querySelector('section[aria-label="タスク詳細"]'),
+  ).not.toBeNull();
   expect(dialogTitleValue()).toBe("子タスクXYZ");
 
   const parentLink = querySelectorRequired<HTMLButtonElement>(
@@ -934,21 +936,30 @@ test("未読込（EmptyState）で settings→戻るしてもクラッシュせ�
   );
 });
 
-test("タスク選択中に settings へ遷移すると DetailPanel が非表示になり、board 復帰で再表示される", async () => {
+test("detail 表示中に settings へ遷移すると DetailScreen が非表示になり、board 復帰でも再表示されない（detail と settings は排他・選択解除）", async () => {
   mountApp();
   await openSuccessfully();
-  await openDetailPanelForFirstTask();
-  expect(container?.querySelector('[role="dialog"]')).not.toBeNull();
+  await openDetailScreenForFirstTask();
+  expect(
+    container?.querySelector('section[aria-label="タスク詳細"]'),
+  ).not.toBeNull();
   await act(async () => {
     clickHeaderSettingsButton();
   });
   await flush();
-  expect(container?.querySelector('[role="dialog"]')).toBeNull();
+  expect(
+    container?.querySelector('section[aria-label="タスク詳細"]'),
+  ).toBeNull();
   await act(async () => {
     clickHeaderBackButton();
   });
   await flush();
-  expect(container?.querySelector('[role="dialog"]')).not.toBeNull();
+  // detail と settings は排他で、settings 遷移時に選択を解除するため
+  // board 復帰後に detail は再表示されない（board がクリーン表示される）。
+  expect(
+    container?.querySelector('section[aria-label="タスク詳細"]'),
+  ).toBeNull();
+  expect(container?.textContent).toContain("A タスク");
 });
 
 test("settings 表示中に HeaderBar「開く」を押すと board に戻り openProject が呼ばれる", async () => {

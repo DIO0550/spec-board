@@ -14,7 +14,7 @@ export type MilestonesResource = {
   milestones: MilestoneDefinition[];
   /** マイルストーン名 → 使用タスク件数 */
   usageCounts: Record<string, number>;
-  /** name → 定義の Map（TaskCard / DetailPanel が引く） */
+  /** name → 定義の Map（TaskCard / DetailScreen が引く） */
   byName: Map<string, MilestoneDefinition>;
   /** 取得状態 */
   status: MilestonesStatus;

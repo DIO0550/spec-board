@@ -14,7 +14,7 @@ const PARSE_ERROR_CODES: ReadonlySet<TaskWarningCode> = new Set([
 
 /**
  * タスクが 1 件でもパースエラー warning を持つかを返す。
- * カードの赤アイコン / 詳細パネルの赤バナー表示判定に使用する。
+ * カードの赤アイコン / 詳細（DetailScreen）の赤バナー表示判定に使用する。
  * @param task - 判定対象タスク
  * @returns invalid 系コードを 1 つでも含めば true
  */

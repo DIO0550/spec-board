@@ -8,7 +8,7 @@ export type ParseErrorBannerProps = {
 };
 
 /**
- * DetailPanel ヘッダー内に表示するパースエラーバナー（赤系）。
+ * DetailScreen ヘッダー内に表示するパースエラーバナー（赤系）。
  * `task.warnings` に invalid 系コードを含むときのみ描画し、md の手動修正を促す。
  * dismiss 不可で `role="alert"` を持つ。判定は `domains/parse-error` に委譲する。
  *

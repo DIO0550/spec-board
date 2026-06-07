@@ -58,7 +58,7 @@ export type LinksSectionProps = {
 };
 
 /**
- * DetailPanel の関連タスクセクション。`linkedFilePaths` / `reverseLinkedFilePaths`
+ * DetailScreen の関連タスクセクション。`linkedFilePaths` / `reverseLinkedFilePaths`
  * を一覧表示し、`+ リンク追加` で候補から選択、forward (linked) 行末尾の × ボタン
  * で削除する。reverse 行は読み取り専用で削除 UI を持たない。
  *

@@ -28,7 +28,7 @@ export type UseRemoveLinkResult = {
 };
 
 /**
- * DetailPanel の関連タスク削除 UI 用フック。`isBusy` を管理するだけの薄い wrapper。
+ * DetailScreen の関連タスク削除 UI 用フック。`isBusy` を管理するだけの薄い wrapper。
  *
  * 連続発火の防止は呼び出し側の LinksSection が button disabled で行う。
  * 万一同時呼出が起きても downstream `removeLinkAction` は `enqueueProjectCommand`

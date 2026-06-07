@@ -231,12 +231,13 @@ test("source に link 追加後、target を開くと reverseLinkedFilePaths に
   openLinkPopover();
   await selectCandidate("b");
 
-  // B を開いて reverseLinkedFilePaths に A が含まれていることを確認
-  const closeBtn = document.querySelector(
-    'aside[aria-label="タスク詳細"] [aria-label="閉じる"]',
+  // detail（A）から board へ戻り、B を開いて reverseLinkedFilePaths に A が
+  // 含まれていることを確認する。
+  const backBtn = document.querySelector(
+    '[data-testid="detail-back-button"]',
   ) as HTMLButtonElement | null;
   act(() => {
-    closeBtn?.click();
+    backBtn?.click();
   });
   clickTaskCard("B");
 
