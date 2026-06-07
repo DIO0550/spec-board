@@ -56,7 +56,7 @@ export const HeaderBar = ({
         <button
           type="button"
           onClick={onOpenClick}
-          className="rounded bg-accent px-3 py-1.5 text-sm text-white hover:brightness-95"
+          className="rounded bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:brightness-95"
         >
           開く
         </button>

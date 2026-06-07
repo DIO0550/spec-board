@@ -254,7 +254,7 @@ export const MilestoneSettingsTab = ({
           <button
             type="submit"
             disabled={form.name === ""}
-            className="rounded bg-accent px-3 py-1 text-sm text-white disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1 text-sm text-accent-foreground disabled:opacity-50"
           >
             {editingName === null ? "作成" : "更新"}
           </button>

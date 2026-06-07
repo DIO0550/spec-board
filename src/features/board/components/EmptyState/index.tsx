@@ -16,7 +16,7 @@ export const EmptyState = (props: EmptyStateProps) => {
         <button
           type="button"
           onClick={props.onOpenProject}
-          className="rounded bg-accent px-4 py-2 text-white hover:brightness-95"
+          className="rounded bg-accent px-4 py-2 text-accent-foreground hover:brightness-95"
         >
           プロジェクトを開く
         </button>

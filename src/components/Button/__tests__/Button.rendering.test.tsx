@@ -31,7 +31,7 @@ test("primary variant のクラスが描画される", async () => {
     expect(btn).toBeTruthy();
     expect(btn?.textContent).toBe("送信");
     expect(btn?.className).toContain("bg-accent");
-    expect(btn?.className).toContain("text-white");
+    expect(btn?.className).toContain("text-accent-foreground");
     expect(btn?.className).toContain("px-4");
     expect(btn?.className).toContain("py-2");
     expect(btn?.className).toContain("rounded");

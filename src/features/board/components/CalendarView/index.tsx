@@ -49,7 +49,8 @@ const todayLocal = (): string => {
  */
 export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
   const [visibleMonth, setVisibleMonth] = useState<YearMonth>(currentYearMonth);
-  const today = todayLocal();
+  // 今日の日付は再マウントまで不変でよいため固定化する（親再レンダーでの再計算を避ける）。
+  const today = useMemo(() => todayLocal(), []);
 
   const weeks = useMemo(
     () => buildMonthGrid(visibleMonth.year, visibleMonth.month),
@@ -117,7 +118,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
               <div
                 className={
                   isToday
-                    ? "mb-1 inline-flex size-5 items-center justify-center rounded-full bg-accent text-xs text-white"
+                    ? "mb-1 inline-flex size-5 items-center justify-center rounded-full bg-accent text-xs text-accent-foreground"
                     : "mb-1 text-xs text-muted"
                 }
               >
