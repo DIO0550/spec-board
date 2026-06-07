@@ -46,7 +46,9 @@ const FileNodeItem = memo(
                 : "flex w-full items-center px-2 py-0.5 text-left text-xs text-foreground hover:bg-surface-muted"
             }
           >
-            <span className="truncate">{node.task.title}</span>
+            <span className="truncate" title={node.task.title}>
+              {node.name}
+            </span>
           </button>
         </li>
       );
