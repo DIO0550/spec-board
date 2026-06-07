@@ -78,3 +78,18 @@ test("親参照の表記揺れ（./ 付き）も正規化して親子を解決�
   expect(tree).toHaveLength(1);
   expect(tree[0].children[0].task.id).toBe("child");
 });
+
+test("閉じた親循環のタスクもルートとして可視化される（到達不能にしない）", () => {
+  const tasks = [
+    buildTask({ id: "a", filePath: "tasks/a.md", parent: "tasks/b.md" }),
+    buildTask({ id: "b", filePath: "tasks/b.md", parent: "tasks/a.md" }),
+  ];
+
+  const tree = buildTaskTree(tasks);
+
+  // 循環成分が空にならず、全タスクがツリーのどこかに 1 回ずつ現れる
+  const collectIds = (nodes: ReturnType<typeof buildTaskTree>): string[] =>
+    nodes.flatMap((node) => [node.task.id, ...collectIds(node.children)]);
+  expect(tree.length).toBeGreaterThan(0);
+  expect(collectIds(tree).sort()).toEqual(["a", "b"]);
+});

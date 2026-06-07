@@ -57,5 +57,15 @@ export const buildTaskTree = (tasks: Task[]): TaskTreeNode[] => {
     return { task, depth, children };
   };
 
-  return roots.map((task) => buildNode(task, 0));
+  const result = roots.map((task) => buildNode(task, 0));
+
+  // 閉じた親循環（A.parent=B / B.parent=A など）は全員が「親あり」となり roots に
+  // 入らず到達不能になる。visited にならなかったタスクをルートとして救済し可視化する。
+  for (const task of tasks) {
+    if (!visited.has(normalizeTaskPathForLookup(task.filePath))) {
+      result.push(buildNode(task, 0));
+    }
+  }
+
+  return result;
 };
