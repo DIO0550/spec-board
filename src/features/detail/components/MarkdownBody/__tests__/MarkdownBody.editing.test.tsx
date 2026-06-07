@@ -198,7 +198,7 @@ test("空文字に編集した Cmd+Enter は onConfirm('') を呼ぶ", () => {
 });
 
 test("IME 変換中(isComposing=true)の Cmd+Enter は onConfirm を呼ばず document keydown へも伝播しない", () => {
-  // document リスナを使うのは useEscToClose（DetailPanel）が document.addEventListener で
+  // document リスナを使うのは useEscToClose（DetailScreen）が document.addEventListener で
   // 購読しているため。container 上のリスナは React の event delegation も同じノードで
   // 動くため stopPropagation の効果を観測できない。
   const onConfirm = vi.fn();
