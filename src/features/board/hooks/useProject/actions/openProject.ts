@@ -46,6 +46,11 @@ const resolveProjectPath = async ({
   onError,
 }: ResolveProjectPathDeps): Promise<string | null> => {
   if (explicitPath !== undefined) {
+    // ダイアログ経由と同様に、解決後のプロジェクト無効化（unmount/deactivate）と
+    // 競合した場合は open-start に進ませない。
+    if (!projectVersion.active) {
+      return null;
+    }
     return explicitPath;
   }
 
