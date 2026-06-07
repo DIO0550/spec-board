@@ -26,7 +26,7 @@ import {
   useProject,
   wasNotifiedByInvokeWrapped,
 } from "./features/board";
-import { DetailPanel, DetailScreen } from "./features/detail";
+import { DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
 import {
@@ -171,7 +171,7 @@ export const App = () => {
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
-  // 存在する間は selectedTask 計算の fallback として参照され、DetailPanel が
+  // 存在する間は selectedTask 計算の fallback として参照され、DetailScreen が
   // pending 中も描画継続できる。rollback で tasks に戻れば自然と fallback は不要になる。
   const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
   const [createModalStatus, setCreateModalStatus] = useState<string | null>(
@@ -208,7 +208,7 @@ export const App = () => {
   const [prevLoadedPath, setPrevLoadedPath] = useState<string | null>(null);
   if (loadedPath !== null && loadedPath !== prevLoadedPath) {
     // project が切り替わった: 旧 project の UI state を一括 reset する。
-    // 削除 pending 中の snapshot を残すと、新 project の DetailPanel に
+    // 削除 pending 中の snapshot を残すと、新 project の DetailScreen に
     // 旧 project の task が fallback として表示されてしまう。
     setPrevLoadedPath(loadedPath);
     setSelectedTaskId(null);
@@ -328,7 +328,7 @@ export const App = () => {
 
   // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す。
   // 削除確定後・外部更新でのタスク消失等、render-phase reset で拾えない経路の保険。
-  // selectedTaskId も同 render pass でクリアし、同一 ID 再出現時の DetailPanel 意図せぬ
+  // selectedTaskId も同 render pass でクリアし、同一 ID 再出現時の DetailScreen 意図せぬ
   // 復活を防ぐ。同条件は次 render で成立しなくなるため無限ループしない（navigate は安定参照、
   // setSelectedTaskId(null) は冪等）。
   if (view === "detail" && selectedTask === null) {
@@ -338,9 +338,15 @@ export const App = () => {
     }
   }
 
-  const handleTaskClick = useCallback((taskId: string) => {
-    setSelectedTaskId(taskId);
-  }, []);
+  // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
+  // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
+  const handleTaskClick = useCallback(
+    (taskId: string) => {
+      setSelectedTaskId(taskId);
+      navigate("detail");
+    },
+    [navigate],
+  );
 
   const handleSelectTask = useCallback(
     (taskId: string) => {
@@ -354,20 +360,15 @@ export const App = () => {
     [tasks, announce],
   );
 
-  const handleCloseDetail = useCallback(() => {
-    setSelectedTaskId(null);
-  }, []);
-
   // detail（全画面ビュー）からの「← 戻る」/ Esc。board へ戻すと同時に選択を解除し、
-  // board をクリーン表示にする（選択が残ると view==="board" && selectedTask で
-  // DetailPanel が再表示されてしまうため、選択クリアを必須とする）。
+  // board をクリーン表示にする。
   const handleBackToBoard = useCallback(() => {
     navigate("board");
     setSelectedTaskId(null);
   }, [navigate]);
 
   // HeaderBar 設定トグル。settings 中なら board へ戻す。board / detail からは settings へ。
-  // detail から来た場合は選択を解除し、settings → board 復帰後に DetailPanel が
+  // detail から来た場合は選択を解除し、settings → board 復帰後に DetailScreen が
   // 再表示されないようにする（detail と settings は排他）。
   const handleSettingsClick = useCallback(() => {
     if (view === "settings") {
@@ -833,7 +834,7 @@ export const App = () => {
       }
       const { filePath, title } = target;
       // 楽観 dispatch で tasks から target が消える前に snapshot を保持する。
-      // pendingDeleteTask が存在する限り DetailPanel は描画を継続できる。
+      // pendingDeleteTask が存在する限り DetailScreen は描画を継続できる。
       setPendingDeleteTask(target);
 
       const result = await deleteTask({ filePath, orphanStrategy });
@@ -950,6 +951,7 @@ export const App = () => {
             allTasks={tasks}
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
+            isUpperModalOpen={createModalStatus !== null}
             onBack={handleBackToBoard}
             onTaskUpdate={handleTaskUpdate}
             onDelete={handleTaskDelete}
@@ -964,35 +966,22 @@ export const App = () => {
           view !== "milestone" &&
           renderMain()}
       </main>
-      {view === "board" && selectedTask && (
-        <DetailPanel
-          task={selectedTask}
-          columns={columns}
-          allTasks={tasks}
-          tasksByNormalizedPath={tasksByNormalizedPath}
-          doneColumn={doneColumn}
-          onClose={handleCloseDetail}
-          onExpand={() => navigate("detail")}
-          onTaskUpdate={handleTaskUpdate}
-          onDelete={handleTaskDelete}
-          onAddSubIssue={handleAddSubIssue}
-          onSelectTask={handleSelectTask}
-          onAddLink={handleAddLink}
-          onRemoveLink={handleRemoveLink}
-        />
-      )}
-      {view === "board" && createModalStatus !== null && (
-        <TaskCreateModal
-          columns={columns}
-          initialStatus={createModalStatus}
-          parentCandidates={parentCandidates}
-          existingTasks={tasks}
-          initialParent={createModalParent}
-          parentReadOnly={parentReadOnly}
-          onSubmit={handleCreateTask}
-          onClose={handleCloseCreateModal}
-        />
-      )}
+      {/* タスク作成モーダルは board / detail 区分で表示する。detail（全画面詳細）の */}
+      {/* 「+ サブIssue追加」からも親 self-set で作成フォームを開けるようにする */}
+      {/* （settings / milestone 区分では非表示）。 */}
+      {(view === "board" || view === "detail") &&
+        createModalStatus !== null && (
+          <TaskCreateModal
+            columns={columns}
+            initialStatus={createModalStatus}
+            parentCandidates={parentCandidates}
+            existingTasks={tasks}
+            initialParent={createModalParent}
+            parentReadOnly={parentReadOnly}
+            onSubmit={handleCreateTask}
+            onClose={handleCloseCreateModal}
+          />
+        )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <LiveRegion announcement={announcement} />
     </div>
