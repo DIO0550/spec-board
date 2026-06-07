@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getBrokenLinks } from "@/domains/broken-link";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
 import { useParentTask } from "@/features/detail/hooks/useParentTask";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -28,6 +29,12 @@ export type DetailScreenProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** ボードへ戻るハンドラ（← 戻るボタン / Esc 共通） */
   onBack: () => void;
+  /**
+   * 上位モーダル（タスク作成モーダル等）の表示中フラグ。
+   * true の間は DetailScreen の focus trap と Esc（戻る）を停止し、
+   * 上位モーダル側のフォーカス管理 / Esc と競合しないようにする。
+   */
+  isUpperModalOpen?: boolean;
   /**
    * タスク更新時のコールバック
    * @param id - 更新対象のタスクID
@@ -97,6 +104,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
     onSelectTask,
     onAddLink,
     onRemoveLink,
+    isUpperModalOpen = false,
   } = props;
 
   const childInfo = useChildTasks({
@@ -116,14 +124,20 @@ export const DetailScreen = (props: DetailScreenProps) => {
   // 開閉通知を受けて disabled に反映する。
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  // 削除ダイアログ または 上位モーダル（作成モーダル等）表示中は、DetailScreen の
+  // focus trap / Esc を停止する。上位モーダルは自前の focus 管理・Esc を持つため、
+  // 二重トラップや Esc の競合（戻る誤発火）を避ける。
+  const shortcutsSuspended = isDeleteDialogOpen || isUpperModalOpen;
+
+  // focus trap の containerRef を section に取り付け、Tab 循環を DetailScreen 内へ閉じ込める。
+  const sectionRef = useFocusTrap<HTMLElement>({ active: !shortcutsSuspended });
   // 全画面ビュー展開時に section 自身へフォーカスを移す（ビュー先頭へ移動）。
-  // 既存 DetailPanel の panelRef.focus() と同一パターン。useEffect の [] でマウント時 1 回だけ実行する。
-  const sectionRef = useRef<HTMLElement>(null);
+  // マウント時 1 回だけ実行する。
   useEffect(() => {
     sectionRef.current?.focus();
   }, []);
 
-  useEscToClose({ disabled: isDeleteDialogOpen, onEscape: onBack });
+  useEscToClose({ disabled: shortcutsSuspended, onEscape: onBack });
 
   return (
     <section
