@@ -53,3 +53,26 @@ test("normalizeRecentProjects は path を欠く要素を除外する", () => {
   ]);
   expect(result).toEqual([{ path: "/ok", name: "ok" }]);
 });
+
+test("normalizeRecentProjects は復元時に重複 path を先頭優先で除去する", () => {
+  const result = normalizeRecentProjects([
+    { path: "/a", name: "first" },
+    { path: "/b", name: "b" },
+    { path: "/a", name: "dup" },
+  ]);
+  expect(result).toEqual([
+    { path: "/a", name: "first" },
+    { path: "/b", name: "b" },
+  ]);
+});
+
+test("normalizeRecentProjects は復元時に最大 8 件へ切り詰める", () => {
+  const stored = Array.from({ length: 12 }, (_, i) => ({
+    path: `/p${i}`,
+    name: `p${i}`,
+  }));
+  const result = normalizeRecentProjects(stored);
+  expect(result).toHaveLength(8);
+  expect(result[0].path).toBe("/p0");
+  expect(result[7].path).toBe("/p7");
+});

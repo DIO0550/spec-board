@@ -51,6 +51,7 @@ export const normalizeRecentProjects = (value: unknown): RecentProject[] => {
   if (!Array.isArray(value)) {
     return [];
   }
+  const seenPaths = new Set<string>();
   const result: RecentProject[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) {
@@ -60,11 +61,20 @@ export const normalizeRecentProjects = (value: unknown): RecentProject[] => {
     if (typeof record.path !== "string" || record.path === "") {
       continue;
     }
+    // 手動編集や旧バージョン由来で重複 path・上限超過が混入しうるため、
+    // 復元時点でも不変条件（path 重複なし・最大 MAX 件・先頭優先）を強制する。
+    if (seenPaths.has(record.path)) {
+      continue;
+    }
+    seenPaths.add(record.path);
     const name =
       typeof record.name === "string" && record.name !== ""
         ? record.name
         : basenameOf(record.path);
     result.push({ path: record.path, name });
+    if (result.length >= MAX_RECENT_PROJECTS) {
+      break;
+    }
   }
   return result;
 };
