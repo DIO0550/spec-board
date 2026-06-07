@@ -10,6 +10,7 @@ import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useAppView } from "@/hooks/useAppView";
 import { useMilestones } from "@/hooks/useMilestones";
+import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
@@ -29,7 +30,7 @@ import {
 import { DetailPanel, DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
-import { ThemeProvider } from "./features/shell";
+import { AppSidebar, ThemeProvider } from "./features/shell";
 import {
   TaskCreateModal,
   type TaskFormValues,
@@ -123,6 +124,7 @@ export const App = () => {
   const {
     state,
     openProject,
+    openProjectByPath,
     createTask,
     updateTask,
     deleteTask,
@@ -169,6 +171,18 @@ export const App = () => {
     navigate("board");
     openProject();
   }, [navigate, openProject]);
+
+  const { projects: recentProjects, add: addRecentProject } =
+    useRecentProjects();
+
+  // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
+  const handleOpenProjectPath = useCallback(
+    (path: string) => {
+      navigate("board");
+      openProjectByPath(path);
+    },
+    [navigate, openProjectByPath],
+  );
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
@@ -240,6 +254,13 @@ export const App = () => {
       navigate("board");
     }
   }
+
+  // プロジェクトを読み込めたら最近開いた一覧へ記録する（サイドバーからの再オープン用）。
+  useEffect(() => {
+    if (loadedPath !== null) {
+      addRecentProject(loadedPath);
+    }
+  }, [loadedPath, addRecentProject]);
 
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
@@ -934,38 +955,50 @@ export const App = () => {
           }
           onOpenClick={handleOpenClick}
         />
-        <main className="flex flex-1 overflow-hidden">
-          {view === "settings" && (
-            <SettingsScreen milestones={settingsMilestonesResource} />
-          )}
-          {view === "milestone" && (
-            <MilestoneViewScreen
-              resource={milestonesResource}
-              tasks={tasks}
-              doneColumn={doneColumn}
-            />
-          )}
-          {view === "detail" && selectedTask && (
-            <DetailScreen
-              task={selectedTask}
-              columns={columns}
-              allTasks={tasks}
-              tasksByNormalizedPath={tasksByNormalizedPath}
-              doneColumn={doneColumn}
-              onBack={handleBackToBoard}
-              onTaskUpdate={handleTaskUpdate}
-              onDelete={handleTaskDelete}
-              onAddSubIssue={handleAddSubIssue}
-              onSelectTask={handleSelectTask}
-              onAddLink={handleAddLink}
-              onRemoveLink={handleRemoveLink}
-            />
-          )}
-          {view !== "settings" &&
-            view !== "detail" &&
-            view !== "milestone" &&
-            renderMain()}
-        </main>
+        <div className="flex flex-1 overflow-hidden">
+          <AppSidebar
+            projectName={projectName}
+            currentPath={displayedPath ?? undefined}
+            recentProjects={recentProjects}
+            tasks={tasks}
+            selectedTaskId={selectedTaskId}
+            onOpenProject={handleOpenClick}
+            onOpenProjectPath={handleOpenProjectPath}
+            onSelectTask={handleTaskClick}
+          />
+          <main className="flex flex-1 overflow-hidden">
+            {view === "settings" && (
+              <SettingsScreen milestones={settingsMilestonesResource} />
+            )}
+            {view === "milestone" && (
+              <MilestoneViewScreen
+                resource={milestonesResource}
+                tasks={tasks}
+                doneColumn={doneColumn}
+              />
+            )}
+            {view === "detail" && selectedTask && (
+              <DetailScreen
+                task={selectedTask}
+                columns={columns}
+                allTasks={tasks}
+                tasksByNormalizedPath={tasksByNormalizedPath}
+                doneColumn={doneColumn}
+                onBack={handleBackToBoard}
+                onTaskUpdate={handleTaskUpdate}
+                onDelete={handleTaskDelete}
+                onAddSubIssue={handleAddSubIssue}
+                onSelectTask={handleSelectTask}
+                onAddLink={handleAddLink}
+                onRemoveLink={handleRemoveLink}
+              />
+            )}
+            {view !== "settings" &&
+              view !== "detail" &&
+              view !== "milestone" &&
+              renderMain()}
+          </main>
+        </div>
         {view === "board" && selectedTask && (
           <DetailPanel
             task={selectedTask}

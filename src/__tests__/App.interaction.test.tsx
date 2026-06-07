@@ -906,8 +906,11 @@ test("読込→settings→board 往復で読込済み board 状態（A タスク
     clickHeaderSettingsButton();
   });
   await flush();
-  // settings 表示中は board が差し替えられ非表示
-  expect(container?.textContent).not.toContain("A タスク");
+  // settings 表示中は main の board が settings に差し替えられる
+  // （サイドバーのファイルツリーには常時タスク名が出るため main に絞って確認する）
+  expect(container?.querySelector("main")?.textContent).not.toContain(
+    "A タスク",
+  );
   await act(async () => {
     clickHeaderBackButton();
   });
