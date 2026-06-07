@@ -32,15 +32,19 @@
 	--color-border: #3f3f46;
 }
 
-/* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。 */
+/* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。
+   明度の高い green / amber は既定の白前景だと bg-accent 上で WCAG AA(4.5:1) を
+   満たさないため、accent-foreground を暗色へ上書きしてコントラストを確保する。 */
 :root[data-accent="violet"] {
 	--color-accent: #7c3aed;
 }
 :root[data-accent="green"] {
 	--color-accent: #16a34a;
+	--color-accent-foreground: #052e16;
 }
 :root[data-accent="amber"] {
 	--color-accent: #d97706;
+	--color-accent-foreground: #431407;
 }
 :root[data-accent="rose"] {
 	--color-accent: #e11d48;
