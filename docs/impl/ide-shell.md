@@ -53,6 +53,18 @@ Tailwind v4 の `@theme` で定義し、各コンポーネントは `bg-surface`
 - 絞り込みの純ロジックは `applyTaskFilter`（`src/features/board/lib/applyTaskFilter`）に切り出し、
   AND 結合・各軸 OR・キーワード部分一致をユニットテストで担保した。UI とフックは薄い配線に留めている。
 
+## TabNav 汎用化は「受け皿の提供」までで、settings/SubNav は据え置き
+
+ビュー切替サブバーのために汎用 `TabNav`（`src/components/TabNav`）を新設したが、既存の
+`settings/SubNav` は **TabNav へ移行せず据え置いた**。当初は「SubNav を TabNav に統合して
+重複排除」も検討したが、SubNav は `settings-tab-*` / `settings-panel-*` という DOM id 規約に
+依存した既存テスト群を持つため、移行すると回帰リスクとテスト改修コストが上振れする。
+
+汎用抽出の主目的は「横断再利用の受け皿を用意すること」であり、それは `BoardWorkspace` が
+`TabNav` を採用した時点で達成済み。SubNav と TabNav は tablist の描画規約こそ似ているが、
+**設定タブ**と**ボードのビュー切替**は別ドメイン概念で別々に変化しうるため、現時点の軽微な
+重複は意図的に許容する（将来 settings に手を入れる際に TabNav へ寄せる余地は残す）。
+
 ## ビュー別ロジックも純関数へ
 
 ツリー構築（`buildTaskTree`）・カレンダーの月グリッド（`calendarMonth`）・ファイルツリー構築
