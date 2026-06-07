@@ -40,7 +40,7 @@ export type DetailFieldHandlers = {
 /**
  * 詳細フィールド編集ハンドラを束ねる共有 hook。
  * `onTaskUpdate` を status/priority の細粒度ハンドラへ、`useDetailLabels` を
- * label 追加/削除ハンドラへ変換し、DetailPanel / DetailScreen で共有する。
+ * label 追加/削除ハンドラへ変換し、DetailScreen で共有する。
  * これにより「onTaskUpdate → 細粒度ハンドラ + ラベル合算」の変換を両コンテナで
  * 重複実装しない。
  *

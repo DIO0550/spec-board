@@ -12,7 +12,7 @@ export type ParentLinkProps = {
 };
 
 /**
- * DetailPanel ヘッダーで親タスクへの遷移リンクを表示するボタン。
+ * DetailScreen ヘッダーで親タスクへの遷移リンクを表示するボタン。
  * @param props - 親タスクと選択コールバック
  * @returns 親タスク遷移ボタン
  */

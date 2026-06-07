@@ -7,7 +7,7 @@ export type CycleWarningBannerProps = {
 };
 
 /**
- * DetailPanel ヘッダー直下に表示する循環警告バナー。
+ * DetailScreen ヘッダー直下に表示する循環警告バナー。
  * `task.warnings` に `parentCycle` を含むときのみ描画し、ユーザーに
  * 親タスクの循環を通知する。dismiss 不可で `role="alert"` を持つ。
  *
