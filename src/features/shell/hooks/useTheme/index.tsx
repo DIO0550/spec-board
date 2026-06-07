@@ -63,6 +63,9 @@ const prefersDark = (): boolean => {
 /** MediaQueryList の変更ハンドラ（引数なし）。 */
 type MediaQueryChangeListener = () => void;
 
+/** 購読を解除する関数。 */
+type Unsubscribe = () => void;
+
 /**
  * MediaQueryList の変更を購読する。`addEventListener` が未実装の環境
  * （古い WebKit / WKWebView）では deprecated な `addListener` にフォールバックする。
@@ -73,7 +76,7 @@ type MediaQueryChangeListener = () => void;
 const subscribeMediaQuery = (
   mediaQuery: MediaQueryList,
   listener: MediaQueryChangeListener,
-): MediaQueryChangeListener => {
+): Unsubscribe => {
   if (typeof mediaQuery.addEventListener === "function") {
     mediaQuery.addEventListener("change", listener);
     return () => {
