@@ -16,6 +16,12 @@
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 
+/* ライトテーマ既定。OS がダーク配色でもフォームコントロール/スクロールバーを
+   ライト配色に揃える（light/dark の両方で color-scheme を明示する）。 */
+:root {
+	color-scheme: light;
+}
+
 /* ダークテーマの上書き（surface 系のみ。accent は data-accent 側で制御）。 */
 :root[data-theme="dark"] {
 	color-scheme: dark;
