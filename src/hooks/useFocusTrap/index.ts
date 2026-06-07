@@ -21,7 +21,7 @@ const FOCUSABLE_SELECTOR = [
 
 // 現時点の簡易実装: focusable 判定は上記セレクタ（disabled / tabindex=-1 除外）のみで行い、
 // hidden / aria-hidden / inert / CSS 非表示の追加除外は行わない。理由は 2 つ:
-//  (1) 現状の DetailPanel / DetailScreen 内に条件付き非表示の focusable 要素は無い（DetailFields は常時可視）。
+//  (1) 現状の DetailScreen 内に条件付き非表示の focusable 要素は無い（DetailFields は常時可視）。
 //  (2) テスト環境 happy-dom はレイアウトを持たず offsetParent が常に null になりうるため、
 //      offsetParent ベースの可視性フィルタを入れると本体テストが壊れる。
 // 将来コンテナ内に hidden DOM を残す UI（popover 等）が増えた場合は、実フォーカス可能性で絞る
