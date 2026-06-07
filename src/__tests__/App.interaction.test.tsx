@@ -963,7 +963,11 @@ test("settings 表示中に HeaderBar「開く」を押すと board に戻り op
   });
   await flush();
 
-  expect(container?.querySelector('[role="tablist"]')).toBeNull();
+  // board 復帰後はビュー切替タブが出る一方、設定固有の「ラベル」タブは消える
+  const tabTexts = Array.from(
+    container?.querySelectorAll('[role="tab"]') ?? [],
+  ).map((tab) => tab.textContent);
+  expect(tabTexts).not.toContain("ラベル");
   expect(openProjectMock).toHaveBeenCalled();
   expect(container?.textContent).toContain("A タスク");
 });

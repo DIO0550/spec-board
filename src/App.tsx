@@ -14,7 +14,7 @@ import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
 import {
-  Board,
+  BoardWorkspace,
   EmptyState,
   HeaderBar,
   type MoveTaskParams,
@@ -896,7 +896,7 @@ export const App = () => {
     // 重ねて表示する。
     return (
       <div className="relative flex flex-1 overflow-hidden">
-        <Board
+        <BoardWorkspace
           columns={columns}
           tasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
