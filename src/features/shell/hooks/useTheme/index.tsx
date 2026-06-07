@@ -53,6 +53,9 @@ const prefersDark = (): boolean => {
   return window.matchMedia(DARK_MEDIA_QUERY).matches;
 };
 
+/** MediaQueryList の変更ハンドラ（引数なし）。 */
+type MediaQueryChangeListener = () => void;
+
 /**
  * MediaQueryList の変更を購読する。`addEventListener` が未実装の環境
  * （古い WebKit / WKWebView）では deprecated な `addListener` にフォールバックする。
@@ -62,8 +65,8 @@ const prefersDark = (): boolean => {
  */
 const subscribeMediaQuery = (
   mediaQuery: MediaQueryList,
-  listener: () => void,
-): (() => void) => {
+  listener: MediaQueryChangeListener,
+): MediaQueryChangeListener => {
   if (typeof mediaQuery.addEventListener === "function") {
     mediaQuery.addEventListener("change", listener);
     return () => {
