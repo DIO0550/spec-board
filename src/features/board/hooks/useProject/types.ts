@@ -41,6 +41,11 @@ export type UseProjectResult = {
   /** ディレクトリダイアログを開いて project を読み込む。 */
   openProject: () => Promise<void>;
   /**
+   * ダイアログを開かず指定パスの project を直接読み込む（最近開いた一覧からの再オープン用）。
+   * @param path 開くプロジェクトの絶対パス
+   */
+  openProjectByPath: (path: string) => Promise<void>;
+  /**
    * task を作成し、成功時に state へ反映する。
    * @param params 作成パラメータ
    * @returns 作成結果または ProjectError
