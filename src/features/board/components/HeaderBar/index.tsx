@@ -1,3 +1,4 @@
+import { ThemeToggleButton } from "@/features/shell";
 import type { AppView } from "@/hooks/useAppView";
 
 /** ヘッダーバーの Props */
@@ -35,6 +36,7 @@ export const HeaderBar = ({
         {projectName ?? "spec-board"}
       </h1>
       <div className="flex items-center gap-2">
+        <ThemeToggleButton />
         {onMilestoneClick && (
           <button
             type="button"

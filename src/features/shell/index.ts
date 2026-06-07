@@ -1,3 +1,4 @@
+export { ThemeToggleButton } from "./components/ThemeToggleButton";
 export type { ThemeContextValue } from "./hooks/useTheme";
 export { ThemeProvider, useTheme } from "./hooks/useTheme";
 export {

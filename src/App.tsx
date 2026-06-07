@@ -29,6 +29,7 @@ import {
 import { DetailPanel, DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
+import { ThemeProvider } from "./features/shell";
 import {
   TaskCreateModal,
   type TaskFormValues,
@@ -922,35 +923,58 @@ export const App = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <HeaderBar
-        projectName={projectName}
-        view={view}
-        onSettingsClick={handleSettingsClick}
-        onMilestoneClick={
-          state.kind === "loaded" ? handleMilestoneClick : undefined
-        }
-        onOpenClick={handleOpenClick}
-      />
-      <main className="flex flex-1 overflow-hidden">
-        {view === "settings" && (
-          <SettingsScreen milestones={settingsMilestonesResource} />
-        )}
-        {view === "milestone" && (
-          <MilestoneViewScreen
-            resource={milestonesResource}
-            tasks={tasks}
-            doneColumn={doneColumn}
-          />
-        )}
-        {view === "detail" && selectedTask && (
-          <DetailScreen
+    <ThemeProvider>
+      <div className="flex h-screen w-screen flex-col overflow-hidden">
+        <HeaderBar
+          projectName={projectName}
+          view={view}
+          onSettingsClick={handleSettingsClick}
+          onMilestoneClick={
+            state.kind === "loaded" ? handleMilestoneClick : undefined
+          }
+          onOpenClick={handleOpenClick}
+        />
+        <main className="flex flex-1 overflow-hidden">
+          {view === "settings" && (
+            <SettingsScreen milestones={settingsMilestonesResource} />
+          )}
+          {view === "milestone" && (
+            <MilestoneViewScreen
+              resource={milestonesResource}
+              tasks={tasks}
+              doneColumn={doneColumn}
+            />
+          )}
+          {view === "detail" && selectedTask && (
+            <DetailScreen
+              task={selectedTask}
+              columns={columns}
+              allTasks={tasks}
+              tasksByNormalizedPath={tasksByNormalizedPath}
+              doneColumn={doneColumn}
+              onBack={handleBackToBoard}
+              onTaskUpdate={handleTaskUpdate}
+              onDelete={handleTaskDelete}
+              onAddSubIssue={handleAddSubIssue}
+              onSelectTask={handleSelectTask}
+              onAddLink={handleAddLink}
+              onRemoveLink={handleRemoveLink}
+            />
+          )}
+          {view !== "settings" &&
+            view !== "detail" &&
+            view !== "milestone" &&
+            renderMain()}
+        </main>
+        {view === "board" && selectedTask && (
+          <DetailPanel
             task={selectedTask}
             columns={columns}
             allTasks={tasks}
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
-            onBack={handleBackToBoard}
+            onClose={handleCloseDetail}
+            onExpand={() => navigate("detail")}
             onTaskUpdate={handleTaskUpdate}
             onDelete={handleTaskDelete}
             onAddSubIssue={handleAddSubIssue}
@@ -959,42 +983,21 @@ export const App = () => {
             onRemoveLink={handleRemoveLink}
           />
         )}
-        {view !== "settings" &&
-          view !== "detail" &&
-          view !== "milestone" &&
-          renderMain()}
-      </main>
-      {view === "board" && selectedTask && (
-        <DetailPanel
-          task={selectedTask}
-          columns={columns}
-          allTasks={tasks}
-          tasksByNormalizedPath={tasksByNormalizedPath}
-          doneColumn={doneColumn}
-          onClose={handleCloseDetail}
-          onExpand={() => navigate("detail")}
-          onTaskUpdate={handleTaskUpdate}
-          onDelete={handleTaskDelete}
-          onAddSubIssue={handleAddSubIssue}
-          onSelectTask={handleSelectTask}
-          onAddLink={handleAddLink}
-          onRemoveLink={handleRemoveLink}
-        />
-      )}
-      {view === "board" && createModalStatus !== null && (
-        <TaskCreateModal
-          columns={columns}
-          initialStatus={createModalStatus}
-          parentCandidates={parentCandidates}
-          existingTasks={tasks}
-          initialParent={createModalParent}
-          parentReadOnly={parentReadOnly}
-          onSubmit={handleCreateTask}
-          onClose={handleCloseCreateModal}
-        />
-      )}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      <LiveRegion announcement={announcement} />
-    </div>
+        {view === "board" && createModalStatus !== null && (
+          <TaskCreateModal
+            columns={columns}
+            initialStatus={createModalStatus}
+            parentCandidates={parentCandidates}
+            existingTasks={tasks}
+            initialParent={createModalParent}
+            parentReadOnly={parentReadOnly}
+            onSubmit={handleCreateTask}
+            onClose={handleCloseCreateModal}
+          />
+        )}
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+        <LiveRegion announcement={announcement} />
+      </div>
+    </ThemeProvider>
   );
 };
