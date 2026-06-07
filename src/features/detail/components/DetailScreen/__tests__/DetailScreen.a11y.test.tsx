@@ -80,36 +80,6 @@ function render(props: Parameters<typeof DetailScreen>[0]) {
 const getSection = (): HTMLElement =>
   document.querySelector('section[aria-label="タスク詳細"]') as HTMLElement;
 
-/**
- * 指定 testid の要素を click する。
- * @param testId - data-testid
- */
-const click = (testId: string): void => {
-  act(() => {
-    (
-      document.querySelector(`[data-testid="${testId}"]`) as HTMLElement
-    ).click();
-  });
-};
-
-/**
- * Tab キーの keydown を document に dispatch する。
- * @param shiftKey - Shift 同時押しか
- * @returns dispatch した KeyboardEvent（defaultPrevented を検証できる）
- */
-const dispatchTab = (shiftKey = false): KeyboardEvent => {
-  const event = new KeyboardEvent("keydown", {
-    key: "Tab",
-    shiftKey,
-    cancelable: true,
-    bubbles: true,
-  });
-  act(() => {
-    document.dispatchEvent(event);
-  });
-  return event;
-};
-
 test("タスクタイトルを表す h1 が 1 つ存在する", () => {
   render(buildProps({ task: createTask({ title: "見出しタスク" }) }));
   const headings = document.querySelectorAll("h1");
@@ -171,29 +141,18 @@ test("md ブレークポイントの 2 ペインクラスが維持される", ()
   expect(sidebarWrapper.className).toContain("md:border-l");
 });
 
-test("section にフォーカスがある状態で Tab を押すと focus が DetailScreen 内に留まる", () => {
+test("focus trap を持たない（Tab は preventDefault されず、ヘッダ/サイドバーへ到達可能）", () => {
   render(buildProps());
-  const section = getSection();
-  // マウント時に section へ初期フォーカスが当たっている。
-  expect(document.activeElement).toBe(section);
-  const event = dispatchTab();
-  // focus trap が作動し、背後へ抜けず DetailScreen 内へ引き込まれる。
-  expect(event.defaultPrevented).toBe(true);
-  expect(section.contains(document.activeElement)).toBe(true);
-});
-
-test("削除ダイアログ表示中は focus trap が無効化される（二重トラップ回避）", () => {
-  render(buildProps());
-  click("detail-delete-button");
-  const event = dispatchTab();
-  // active=false でリスナーが解除され、Tab は素通り（preventDefault されない）。
-  expect(event.defaultPrevented).toBe(false);
-});
-
-test("上位モーダル表示中（isUpperModalOpen）は focus trap が無効化される", () => {
-  render(buildProps({ isUpperModalOpen: true }));
-  const event = dispatchTab();
-  // 上位モーダル（作成モーダル等）に Tab を委ねるため trap は作動しない。
+  // DetailScreen は modal ではなく HeaderBar / AppSidebar が常時操作可能なため
+  // focus trap を適用しない。document に Tab を流しても DetailScreen は捕捉しない。
+  const event = new KeyboardEvent("keydown", {
+    key: "Tab",
+    cancelable: true,
+    bubbles: true,
+  });
+  act(() => {
+    document.dispatchEvent(event);
+  });
   expect(event.defaultPrevented).toBe(false);
 });
 
