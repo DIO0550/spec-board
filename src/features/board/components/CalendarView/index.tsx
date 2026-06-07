@@ -130,7 +130,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                     <button
                       type="button"
                       onClick={() => onTaskClick?.(task.id)}
-                      className="w-full truncate rounded bg-accent-soft px-1 py-0.5 text-left text-xs text-accent hover:brightness-95"
+                      className="w-full truncate rounded bg-accent-soft px-1 py-0.5 text-left text-xs text-foreground hover:brightness-95"
                     >
                       {task.title}
                     </button>
