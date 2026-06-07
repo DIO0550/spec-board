@@ -19,7 +19,7 @@ export const TaskFormLabels = ({ htmlFor, children }: TaskFormLabelsProps) => {
     <div>
       <label
         htmlFor={htmlFor}
-        className="mb-1 block text-xs font-medium text-gray-700"
+        className="mb-1 block text-xs font-medium text-foreground"
       >
         ラベル
       </label>

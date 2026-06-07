@@ -88,7 +88,7 @@ const CardContent = ({
       <div className="flex items-center gap-1.5">
         <PriorityBadge priority={task.priority} />
         <DueBadge due={task.due} />
-        <p data-testid="task-card-title" className="text-sm text-gray-800">
+        <p data-testid="task-card-title" className="text-sm text-foreground">
           {displayTitle}
         </p>
         {(hasBrokenLink || hasParseError) && (
@@ -170,7 +170,7 @@ export const TaskCard = ({
         aria-grabbed={isDragging}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        className={`w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm${draggingClass}`}
+        className={`w-full rounded-lg border border-border bg-surface p-3 text-left shadow-sm${draggingClass}`}
       >
         <CardContent
           task={task}
@@ -196,7 +196,7 @@ export const TaskCard = ({
       onDragEnd={handleDragEnd}
       role="button"
       tabIndex={0}
-      className={`w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md${draggingClass}`}
+      className={`w-full cursor-pointer rounded-lg border border-border bg-surface p-3 text-left shadow-sm hover:border-accent hover:shadow-md${draggingClass}`}
       onClick={() => {
         if (dragGuardRef.current) {
           return;

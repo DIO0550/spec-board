@@ -155,13 +155,11 @@ export const MilestoneSettingsTab = ({
   };
 
   if (status === "loading" || status === "idle") {
-    return <p className="text-sm text-gray-500">読み込み中…</p>;
+    return <p className="text-sm text-muted">読み込み中…</p>;
   }
   if (status === "error") {
     return (
-      <p className="text-sm text-gray-500">
-        マイルストーンを読み込めませんでした
-      </p>
+      <p className="text-sm text-muted">マイルストーンを読み込めませんでした</p>
     );
   }
 
@@ -169,7 +167,7 @@ export const MilestoneSettingsTab = ({
     <div className="flex flex-col gap-4">
       <ul className="flex flex-col gap-1">
         {milestones.length === 0 ? (
-          <li className="text-sm text-gray-500">マイルストーンなし</li>
+          <li className="text-sm text-muted">マイルストーンなし</li>
         ) : (
           milestones.map((def) => (
             <li
@@ -178,16 +176,16 @@ export const MilestoneSettingsTab = ({
               data-testid="milestone-row"
             >
               <span className="font-medium">{def.title ?? def.name}</span>
-              <span className="text-gray-400">{def.name}</span>
+              <span className="text-muted">{def.name}</span>
               {def.due !== undefined ? (
-                <span className="text-gray-400">{def.due}</span>
+                <span className="text-muted">{def.due}</span>
               ) : null}
-              <span className="text-gray-400">
+              <span className="text-muted">
                 使用 {usageCounts[def.name] ?? 0}
               </span>
               <button
                 type="button"
-                className="text-blue-600"
+                className="text-accent"
                 onClick={() => startEdit(def)}
               >
                 編集
@@ -256,7 +254,7 @@ export const MilestoneSettingsTab = ({
           <button
             type="submit"
             disabled={form.name === ""}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1 text-sm text-white disabled:opacity-50"
           >
             {editingName === null ? "作成" : "更新"}
           </button>

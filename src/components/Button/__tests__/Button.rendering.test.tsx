@@ -30,7 +30,7 @@ test("primary variant のクラスが描画される", async () => {
     const btn = container?.querySelector("button");
     expect(btn).toBeTruthy();
     expect(btn?.textContent).toBe("送信");
-    expect(btn?.className).toContain("bg-blue-600");
+    expect(btn?.className).toContain("bg-accent");
     expect(btn?.className).toContain("text-white");
     expect(btn?.className).toContain("px-4");
     expect(btn?.className).toContain("py-2");
@@ -42,9 +42,9 @@ test("secondary variant のクラスが描画される", async () => {
   render({ variant: "secondary", children: "キャンセル" });
   await vi.waitFor(() => {
     const btn = container?.querySelector("button");
-    expect(btn?.className).toContain("text-gray-700");
-    expect(btn?.className).toContain("hover:bg-gray-100");
-    expect(btn?.className).not.toContain("bg-blue-600");
+    expect(btn?.className).toContain("text-foreground");
+    expect(btn?.className).toContain("hover:bg-surface-muted");
+    expect(btn?.className).not.toContain("bg-accent");
   });
 });
 

@@ -883,7 +883,7 @@ export const App = () => {
     if (state.kind === "loading") {
       return (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-gray-500">読み込み中…</p>
+          <p className="text-muted">読み込み中…</p>
         </div>
       );
     }
@@ -912,7 +912,7 @@ export const App = () => {
         />
         {tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
-            <p className="rounded bg-white/90 px-4 py-2 text-sm text-gray-500 shadow">
+            <p className="rounded bg-surface/90 px-4 py-2 text-sm text-muted shadow">
               タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
             </p>
           </div>

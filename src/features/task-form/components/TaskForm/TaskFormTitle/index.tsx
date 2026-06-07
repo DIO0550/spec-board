@@ -36,7 +36,7 @@ export const TaskFormTitle = ({
     <div>
       <label
         htmlFor={titleId}
-        className="mb-1 block text-xs font-medium text-gray-700"
+        className="mb-1 block text-xs font-medium text-foreground"
       >
         タイトル <span className="text-red-600">*</span>
       </label>
@@ -48,7 +48,7 @@ export const TaskFormTitle = ({
         disabled={disabled}
         aria-invalid={hasError}
         aria-describedby={hasError ? titleErrorId : undefined}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
+        className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
         data-testid="task-form-title"
       />
       {hasError && (

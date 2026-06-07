@@ -25,11 +25,11 @@ export const StatusSelect = ({
 }: StatusSelectProps) => {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm font-medium text-gray-500">ステータス</span>
+      <span className="text-sm font-medium text-muted">ステータス</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 hover:border-blue-300 focus:border-blue-400 focus:outline-none"
+        className="rounded border border-border bg-surface px-2 py-1 text-sm text-foreground hover:border-accent focus:border-accent focus:outline-none"
         data-testid="status-select"
         aria-label="ステータス"
       >

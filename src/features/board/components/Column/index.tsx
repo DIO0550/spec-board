@@ -352,7 +352,7 @@ export const Column = ({
 
   return (
     <section
-      className="flex h-full w-72 min-w-72 flex-col rounded-lg bg-gray-50"
+      className="flex h-full w-72 min-w-72 flex-col rounded-lg bg-surface-muted"
       aria-label={name}
       data-testid={`column-${name}`}
       onDragOver={handleDragOver}
@@ -442,12 +442,12 @@ export const Column = ({
           onCancel={handleCancel}
         >
           {hasTasks && otherColumnNames.length > 0 && (
-            <label className="mt-4 block text-sm text-gray-700">
+            <label className="mt-4 block text-sm text-foreground">
               移動先カラム
               <select
                 value={destColumn}
                 onChange={(e) => setDestColumn(e.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                className="mt-1 w-full rounded border border-border px-2 py-1 text-sm"
                 data-testid="column-delete-destination"
               >
                 {otherColumnNames.map((n) => (

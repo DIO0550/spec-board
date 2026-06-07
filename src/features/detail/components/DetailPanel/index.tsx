@@ -183,9 +183,9 @@ export const DetailPanel = ({
         aria-modal="true"
         aria-label="タスク詳細"
         tabIndex={-1}
-        className="fixed top-0 right-0 z-50 flex h-full w-full max-w-full animate-slide-in flex-col bg-white shadow-xl sm:w-[480px]"
+        className="fixed top-0 right-0 z-50 flex h-full w-full max-w-full animate-slide-in flex-col bg-surface shadow-xl sm:w-[480px]"
       >
-        <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 sm:px-4 sm:py-3">
+        <div className="flex items-center justify-between border-b border-border px-3 py-2 sm:px-4 sm:py-3">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <CycleWarningBanner task={task} />
             <ParseErrorBanner task={task} />
@@ -211,7 +211,7 @@ export const DetailPanel = ({
               type="button"
               aria-label="全画面で開く"
               data-testid="detail-expand-button"
-              className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+              className="ml-2 shrink-0 rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
               onClick={onExpand}
             >
               <svg
@@ -232,7 +232,7 @@ export const DetailPanel = ({
           <button
             type="button"
             aria-label="閉じる"
-            className="ml-2 shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+            className="ml-2 shrink-0 rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
             onClick={onClose}
           >
             <svg
@@ -291,9 +291,9 @@ export const DetailPanel = ({
             />
           </div>
         </div>
-        <div className="border-t border-gray-200 px-3 py-2 sm:px-4 sm:py-3">
+        <div className="border-t border-border px-3 py-2 sm:px-4 sm:py-3">
           <p
-            className="mb-3 truncate text-xs text-gray-400"
+            className="mb-3 truncate text-xs text-muted"
             data-testid="detail-file-path"
           >
             {task.filePath}
@@ -327,12 +327,9 @@ export const DetailPanel = ({
               role="radiogroup"
               aria-labelledby="orphan-strategy-label"
               data-testid="delete-orphan-strategy-radiogroup"
-              className="mt-2 flex flex-col gap-1 rounded border border-gray-200 p-2 text-sm"
+              className="mt-2 flex flex-col gap-1 rounded border border-border p-2 text-sm"
             >
-              <p
-                id="orphan-strategy-label"
-                className="px-1 text-xs text-gray-600"
-              >
+              <p id="orphan-strategy-label" className="px-1 text-xs text-muted">
                 子タスクの処理
               </p>
               <label className="flex items-center gap-2">

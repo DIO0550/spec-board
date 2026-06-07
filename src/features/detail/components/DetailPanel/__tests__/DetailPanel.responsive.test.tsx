@@ -100,20 +100,20 @@ test("本文ラッパのパディングに p-3 と sm:p-4 を含む", () => {
   expect(bodyWrapper.className).toContain("sm:p-4");
 });
 
-test("全画面で開くボタンに focus-visible リング（blue）クラスを含む", () => {
+test("全画面で開くボタンに focus-visible リング（accent）クラスを含む", () => {
   render(buildProps());
   const cls = classOf("detail-expand-button");
   expect(cls).toContain("focus-visible:ring-2");
-  expect(cls).toContain("focus-visible:ring-blue-500");
+  expect(cls).toContain("focus-visible:ring-accent");
 });
 
-test("閉じるボタンに focus-visible リング（blue）クラスを含む", () => {
+test("閉じるボタンに focus-visible リング（accent）クラスを含む", () => {
   render(buildProps());
   const closeBtn = document.querySelector(
     '[aria-label="閉じる"]',
   ) as HTMLElement;
   expect(closeBtn.className).toContain("focus-visible:ring-2");
-  expect(closeBtn.className).toContain("focus-visible:ring-blue-500");
+  expect(closeBtn.className).toContain("focus-visible:ring-accent");
 });
 
 test("削除ボタンに focus-visible リング（red）クラスを含む", () => {

@@ -39,15 +39,13 @@ export const LabelSettingsTab = () => {
   const state = useLabelList();
 
   if (state.kind === "loading") {
-    return <p className="text-sm text-gray-500">読み込み中…</p>;
+    return <p className="text-sm text-muted">読み込み中…</p>;
   }
   if (state.kind === "error") {
-    return (
-      <p className="text-sm text-gray-500">ラベルを読み込めませんでした</p>
-    );
+    return <p className="text-sm text-muted">ラベルを読み込めませんでした</p>;
   }
   if (state.labels.length === 0) {
-    return <p className="text-sm text-gray-500">ラベルなし</p>;
+    return <p className="text-sm text-muted">ラベルなし</p>;
   }
   return (
     <ul className="flex flex-wrap gap-2">
