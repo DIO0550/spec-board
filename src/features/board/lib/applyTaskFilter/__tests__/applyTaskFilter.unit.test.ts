@@ -6,6 +6,7 @@ import {
   EMPTY_TASK_FILTER,
   isTaskFilterActive,
   matchesTaskFilter,
+  pruneTaskFilter,
   type TaskFilterCriteria,
 } from "../index";
 
@@ -37,6 +38,48 @@ const criteria = (
 test("空条件はすべてのタスクに一致する", () => {
   const task = buildTask({ title: "何か" });
   expect(matchesTaskFilter(task, EMPTY_TASK_FILTER)).toBe(true);
+});
+
+test("pruneTaskFilter は利用可能な選択肢から外れた status/label を間引く", () => {
+  const input = criteria({
+    statuses: ["Todo", "Done"],
+    labels: ["bug", "old"],
+  });
+  const result = pruneTaskFilter(input, {
+    statuses: ["Done"],
+    labels: ["bug"],
+    milestoneNames: [],
+  });
+  expect(result.statuses).toEqual(["Done"]);
+  expect(result.labels).toEqual(["bug"]);
+});
+
+test("pruneTaskFilter は削除されたマイルストーン条件を all に戻す", () => {
+  const input = criteria({ milestone: { kind: "milestone", name: "v0.3" } });
+  const result = pruneTaskFilter(input, {
+    statuses: [],
+    labels: [],
+    milestoneNames: ["v0.4"],
+  });
+  expect(result.milestone).toEqual({ kind: "all" });
+});
+
+test("pruneTaskFilter は keyword / priorities と存続する条件を保持する", () => {
+  const input = criteria({
+    keyword: "auth",
+    priorities: ["High"],
+    statuses: ["Done"],
+    milestone: { kind: "milestone", name: "v0.4" },
+  });
+  const result = pruneTaskFilter(input, {
+    statuses: ["Done"],
+    labels: [],
+    milestoneNames: ["v0.4"],
+  });
+  expect(result.keyword).toBe("auth");
+  expect(result.priorities).toEqual(["High"]);
+  expect(result.statuses).toEqual(["Done"]);
+  expect(result.milestone).toEqual({ kind: "milestone", name: "v0.4" });
 });
 
 test("キーワードはタイトルへ部分一致する（大文字小文字無視）", () => {

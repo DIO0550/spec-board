@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   type TabItem,
   TabNav,
@@ -13,6 +13,7 @@ import {
   useBoardViewMode,
 } from "../../hooks/useBoardViewMode";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
+import { pruneTaskFilter } from "../../lib/applyTaskFilter";
 import { Board } from "../Board";
 import { CalendarView } from "../CalendarView";
 import type { ColumnDropParams, ColumnTaskDropParams } from "../Column";
@@ -176,6 +177,27 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
     () => columns.map((column) => column.name),
     [columns],
   );
+  const milestoneNames = useMemo(
+    () => (milestones ?? []).map((milestone) => milestone.name),
+    [milestones],
+  );
+
+  // カラムのリネーム/削除やマイルストーン削除で選択肢が消えると、UI に出ない条件が
+  // 「隠れフィルタ」として残り続ける。選択肢が変わるたびに条件を間引いて解消する。
+  useEffect(() => {
+    const pruned = pruneTaskFilter(criteria, {
+      statuses,
+      labels: availableLabels,
+      milestoneNames,
+    });
+    const changed =
+      pruned.statuses.length !== criteria.statuses.length ||
+      pruned.labels.length !== criteria.labels.length ||
+      pruned.milestone !== criteria.milestone;
+    if (changed) {
+      setCriteria(pruned);
+    }
+  }, [criteria, statuses, availableLabels, milestoneNames, setCriteria]);
 
   return (
     <div className="flex h-full flex-col">

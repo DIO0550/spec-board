@@ -146,3 +146,39 @@ export const isTaskFilterActive = (criteria: TaskFilterCriteria): boolean => {
     criteria.milestone.kind !== "all"
   );
 };
+
+/** 現在利用可能な絞り込み選択肢（間引きの基準）。 */
+export type TaskFilterOptions = {
+  /** 選択可能なステータス（カラム名）一覧 */
+  statuses: readonly string[];
+  /** 選択可能なラベル名一覧 */
+  labels: readonly string[];
+  /** 選択可能なマイルストーン名一覧 */
+  milestoneNames: readonly string[];
+};
+
+/**
+ * 利用可能な選択肢から外れた条件を間引く。カラムのリネーム/削除やマイルストーン削除で
+ * UI に出なくなった条件が「隠れフィルタ」として残り続けるのを防ぐ。
+ * 選択肢に依存しない keyword / priorities は保持する。
+ * @param criteria - 現在の絞り込み条件
+ * @param options - 現在利用可能な選択肢
+ * @returns 間引き後の条件
+ */
+export const pruneTaskFilter = (
+  criteria: TaskFilterCriteria,
+  options: TaskFilterOptions,
+): TaskFilterCriteria => {
+  const statuses = criteria.statuses.filter((status) =>
+    options.statuses.includes(status),
+  );
+  const labels = criteria.labels.filter((label) =>
+    options.labels.includes(label),
+  );
+  const milestone =
+    criteria.milestone.kind === "milestone" &&
+    !options.milestoneNames.includes(criteria.milestone.name)
+      ? ({ kind: "all" } as const)
+      : criteria.milestone;
+  return { ...criteria, statuses, labels, milestone };
+};
