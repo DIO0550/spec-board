@@ -11,6 +11,7 @@ import { loadAppearance, saveAppearance } from "../../lib/appearanceStorage";
 import {
   applyAppearanceDataset,
   resolveAppearanceDataset,
+  resolveThemeMode,
 } from "../../lib/applyAppearance";
 import type { Accent, Appearance, Density, ThemeMode } from "../../types";
 
@@ -20,6 +21,11 @@ const DARK_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 export type ThemeContextValue = {
   /** 現在の外観設定 */
   appearance: Appearance;
+  /**
+   * 実際に適用される配色（`system` は OS 設定を解決済み）。OS 配色の変更にも追従して
+   * 更新されるため、実効配色に依存する表示（テーマトグルのアイコン等）はこれを参照する。
+   */
+  resolvedTheme: "light" | "dark";
   /**
    * テーマモードを変更する。
    * @param theme - 新しいテーマモード
@@ -95,15 +101,18 @@ type ThemeProviderProps = {
  */
 export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
+  // OS 配色（ダークか）を state として保持する。これにより system テーマ選択中の
+  // OS 配色変更で context 値が変わり、実効配色に依存する consumer も再描画される。
+  const [systemDark, setSystemDark] = useState<boolean>(prefersDark);
 
+  // 外観設定 / OS 配色が変わるたびに永続化と documentElement への反映を行う。
   useEffect(() => {
     saveAppearance(appearance);
-    const apply = () => {
-      applyAppearanceDataset(
-        resolveAppearanceDataset(appearance, prefersDark()),
-      );
-    };
-    apply();
+    applyAppearanceDataset(resolveAppearanceDataset(appearance, systemDark));
+  }, [appearance, systemDark]);
+
+  // system テーマ選択中のみ OS 配色の変更を購読し、systemDark state を更新する。
+  useEffect(() => {
     if (appearance.theme !== "system") {
       return;
     }
@@ -114,8 +123,12 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
       return;
     }
     const mediaQuery = window.matchMedia(DARK_MEDIA_QUERY);
-    return subscribeMediaQuery(mediaQuery, apply);
-  }, [appearance]);
+    // 購読開始時点の値で同期しておく（light↔system 往復で取りこぼさないため）。
+    setSystemDark(mediaQuery.matches);
+    return subscribeMediaQuery(mediaQuery, () => {
+      setSystemDark(mediaQuery.matches);
+    });
+  }, [appearance.theme]);
 
   const setTheme = useCallback((theme: ThemeMode) => {
     setAppearance((prev) => ({ ...prev, theme }));
@@ -127,9 +140,11 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
     setAppearance((prev) => ({ ...prev, accent }));
   }, []);
 
+  const resolvedTheme = resolveThemeMode(appearance.theme, systemDark);
+
   const value = useMemo<ThemeContextValue>(
-    () => ({ appearance, setTheme, setDensity, setAccent }),
-    [appearance, setTheme, setDensity, setAccent],
+    () => ({ appearance, resolvedTheme, setTheme, setDensity, setAccent }),
+    [appearance, resolvedTheme, setTheme, setDensity, setAccent],
   );
 
   return (
