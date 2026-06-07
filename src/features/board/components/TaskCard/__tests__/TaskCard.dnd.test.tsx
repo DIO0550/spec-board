@@ -56,6 +56,35 @@ test.each([
   expect(card.getAttribute("draggable")).toBe("true");
 });
 
+test("disableDrag=true では draggable=false 属性になる", () => {
+  render({
+    task: makeTask(),
+    fromColumn: "Todo",
+    disableDrag: true,
+    onClick: vi.fn(),
+  });
+  const card = queryCard();
+  expect(card.getAttribute("draggable")).toBe("false");
+});
+
+test("disableDrag=true では dragstart しても onDragStart / setData が呼ばれない", () => {
+  const onDragStart = vi.fn();
+  render({
+    task: makeTask({ filePath: "tasks/a.md" }),
+    fromColumn: "Todo",
+    disableDrag: true,
+    onDragStart,
+    onClick: vi.fn(),
+  });
+  const card = queryCard();
+  const event = createDragEvent("dragstart");
+  act(() => {
+    card.dispatchEvent(event);
+  });
+  expect(onDragStart).not.toHaveBeenCalled();
+  expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe("");
+});
+
 test("dragstart で dataTransfer.setData(DRAG_MIME_TYPE, filePath) が呼ばれる", () => {
   render({
     task: makeTask({ filePath: "tasks/a.md" }),

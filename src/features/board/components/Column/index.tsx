@@ -94,6 +94,11 @@ type ColumnProps = {
   /** 自カラムヘッダーを DnD ハンドルにするか。1 カラム時は false で渡す。 */
   columnDraggable?: boolean;
   /**
+   * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合が全タスクと
+   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。
+   */
+  dndDisabled?: boolean;
+  /**
    * カラム DnD の dragstart 通知（ColumnHeader からそのまま透過）。
    * @param columnName 自カラム名
    */
@@ -133,6 +138,7 @@ export const Column = ({
   onTaskDragStart,
   onTaskDragEnd,
   columnDraggable = false,
+  dndDisabled = false,
   onColumnDragStart,
   onColumnDragEnd,
   onColumnHover,
@@ -366,7 +372,7 @@ export const Column = ({
         onRename={onRename}
         existingColumnNames={existingColumnNames}
         onContextMenu={handleContextMenu}
-        draggable={columnDraggable}
+        draggable={columnDraggable && !dndDisabled}
         onColumnDragStart={onColumnDragStart}
         onColumnDragEnd={onColumnDragEnd}
       />
@@ -398,6 +404,7 @@ export const Column = ({
                     dragState ?? null,
                     task.filePath,
                   )}
+                  disableDrag={dndDisabled}
                   hasBrokenLink={
                     tasksByNormalizedPath !== undefined &&
                     hasAnyBrokenLink(task, tasksByNormalizedPath)

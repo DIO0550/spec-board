@@ -107,6 +107,11 @@ type ActiveBoardViewProps = {
   viewMode: BoardViewMode;
   /** 絞り込み後のタスク */
   filtered: Task[];
+  /**
+   * 絞り込みが有効か。board 表示時に Board の DnD を無効化し、隠れたカードを跨ぐ
+   * 並べ替えで cardOrder が壊れるのを防ぐ。
+   */
+  filterActive: boolean;
   /** BoardWorkspace が受け取った全 props（board 表示時に Board へ委譲する） */
   workspace: BoardWorkspaceProps;
 };
@@ -120,6 +125,7 @@ type ActiveBoardViewProps = {
 const ActiveBoardView = ({
   viewMode,
   filtered,
+  filterActive,
   workspace,
 }: ActiveBoardViewProps) => {
   if (viewMode === "list") {
@@ -146,6 +152,7 @@ const ActiveBoardView = ({
       onAddColumn={workspace.onAddColumn}
       onRenameColumn={workspace.onRenameColumn}
       onDeleteColumn={workspace.onDeleteColumn}
+      dndDisabled={filterActive}
       onTaskDrop={workspace.onTaskDrop}
       onColumnReorder={workspace.onColumnReorder}
     />
@@ -199,6 +206,7 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
         <ActiveBoardView
           viewMode={viewMode}
           filtered={filtered}
+          filterActive={isActive}
           workspace={props}
         />
       </div>

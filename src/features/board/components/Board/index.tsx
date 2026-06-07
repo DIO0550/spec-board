@@ -37,6 +37,11 @@ type BoardProps = {
    * バッジ（title / due 解決）へ pass-through する。
    */
   milestonesByName?: MilestonesByName;
+  /**
+   * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合（tasks）が全タスクと
+   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。Column へ pass-through する。
+   */
+  dndDisabled?: boolean;
   /** カラムの「+ 追加」ボタンクリック時のコールバック
    * @param columnName - 追加対象のカラム名
    */
@@ -96,6 +101,7 @@ export const Board = ({
   tasksByNormalizedPath,
   doneColumn,
   milestonesByName,
+  dndDisabled = false,
   onAddTask,
   onTaskClick,
   onAddColumn,
@@ -213,6 +219,7 @@ export const Board = ({
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
             milestonesByName={milestonesByName}
+            dndDisabled={dndDisabled}
             onAddClick={() => onAddTask(col.name)}
             onTaskClick={onTaskClick}
             onRename={
