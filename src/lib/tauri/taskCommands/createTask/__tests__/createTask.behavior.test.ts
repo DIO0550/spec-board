@@ -60,6 +60,24 @@ test("任意フィールドが全指定された場合 camelCase のまま invok
   });
 });
 
+test("links 配列を指定すると camelCase のまま invoke 引数に反映される", async () => {
+  vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
+  await createTask({
+    title: "T",
+    status: "Todo",
+    links: ["tasks/a.md", "tasks/b.md"],
+  });
+  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
+  expect(args.links).toEqual(["tasks/a.md", "tasks/b.md"]);
+});
+
+test("links 未指定時は invoke 引数に links キーが含まれない", async () => {
+  vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
+  await createTask({ title: "T", status: "Todo" });
+  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
+  expect("links" in args).toBe(false);
+});
+
 test("optional に undefined を明示指定した場合 undefined のまま渡る（ラッパで加工しない）", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await createTask({

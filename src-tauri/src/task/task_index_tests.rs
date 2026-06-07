@@ -220,6 +220,26 @@ fn insert_new_task_appends_to_target_reverse_links_when_link_exists() {
 }
 
 #[test]
+fn insert_new_task_appends_target_reverse_link_only_once_for_duplicate_targets() {
+    let target = task_without_parent("tasks/target.md");
+    let mut cache = cache_from(vec![target]);
+    let new_task = task_with_links_and_parent(
+        "tasks/source.md",
+        None,
+        &["tasks/target.md", "tasks/target.md"],
+    );
+
+    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
+
+    let updated_target = cache.get(&PathBuf::from("tasks/target.md")).unwrap();
+    assert_eq!(
+        vec![TaskFilePath::from("tasks/source.md")],
+        updated_target.reverse_links,
+        "duplicate targets must append reverse link only once"
+    );
+}
+
+#[test]
 fn insert_new_task_resolves_incoming_parent_into_new_task_children() {
     let existing = task_with_parent("tasks/a.md", "tasks/new.md");
     let mut cache = cache_from(vec![existing]);

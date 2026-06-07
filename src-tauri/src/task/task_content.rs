@@ -63,8 +63,9 @@ impl TaskContent {
     pub fn from_intent(
         intent: &CreateTaskIntent,
         resolved_parent_path: Option<&str>,
+        normalized_links: &[String],
     ) -> Result<Self, CreateTaskError> {
-        let raw = render_markdown_from_intent(intent, resolved_parent_path);
+        let raw = render_markdown_from_intent(intent, resolved_parent_path, normalized_links);
         Self::try_new(raw).map_err(|err| match err {
             TaskContentError::TooLarge { size, .. } => CreateTaskError::ContentNotScannerEligible {
                 reason: ContentRejectReason::TooLarge { size },
@@ -79,6 +80,7 @@ impl TaskContent {
 fn render_markdown_from_intent(
     intent: &CreateTaskIntent,
     resolved_parent_path: Option<&str>,
+    normalized_links: &[String],
 ) -> String {
     use serde_yaml_ng::{Mapping, Value};
 
@@ -107,7 +109,7 @@ fn render_markdown_from_intent(
             .filter(|s| !s.is_empty())
             .map(str::to_owned),
         labels: intent.labels.iter().map(|l| l.to_string()).collect(),
-        links: Vec::new(),
+        links: normalized_links.to_vec(),
         extras,
     };
 

@@ -430,10 +430,16 @@ impl TaskIndex {
 
         let resolved_parent_path =
             parent_index.map(|i| snapshot_slice[i].file_path.as_str().to_string());
-        let content = TaskContent::from_intent(intent, resolved_parent_path.as_deref())?;
+        let normalized_links = normalize_create_links(&intent.links);
+        let content =
+            TaskContent::from_intent(intent, resolved_parent_path.as_deref(), &normalized_links)?;
 
-        let provisional =
-            build_provisional_task(&rel_path, intent, resolved_parent_path.as_deref());
+        let provisional = build_provisional_task(
+            &rel_path,
+            intent,
+            resolved_parent_path.as_deref(),
+            &normalized_links,
+        );
         self.validate_with_new_task(&provisional, parent_str)?;
 
         Ok(CreateTaskOutcome {
@@ -894,6 +900,9 @@ pub struct CreateTaskIntent {
     pub milestone: Option<String>,
     pub labels: Vec<Label>,
     pub parent: Option<TaskFilePath>,
+    /// 関連タスクへの生の raw 相対 path。`plan_create` が
+    /// `normalize_create_links` で dedup・パス正規化・lenient 保持を行う。
+    pub links: Vec<String>,
     pub body: Option<String>,
 }
 
@@ -1116,14 +1125,38 @@ fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {
     task
 }
 
+/// 作成時 links の lenient 正規化。
+///
+/// 空・絶対・drive prefix のパスは除外し、正規化後に重複を除去する
+/// （先勝ち = 最初の出現順を保持）。存在しないパスも parent 同一パスも reject せず
+/// 保持する（self/parent 除外は FE ピッカー側の責務。dangling はフロント派生で警告表示する）。
+fn normalize_create_links(raw_links: &[String]) -> Vec<String> {
+    let mut normalized: Vec<String> = Vec::new();
+    for raw in raw_links {
+        let Some(candidate) = normalize_relative_path_for_input(raw) else {
+            continue;
+        };
+        if normalized.contains(&candidate) {
+            continue;
+        }
+        normalized.push(candidate);
+    }
+    normalized
+}
+
 /// augmented hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
 fn build_provisional_task(
     rel_path: &Path,
     intent: &CreateTaskIntent,
     resolved_parent_path: Option<&str>,
+    normalized_links: &[String],
 ) -> Task {
     let file_path = TaskFilePath::from_lenient(rel_path.to_string_lossy().replace('\\', "/"));
     let parent = resolved_parent_path.map(TaskFilePath::from_lenient);
+    let links = normalized_links
+        .iter()
+        .map(|link| TaskFilePath::from_lenient(link.clone()))
+        .collect();
     Task {
         id: file_path.clone(),
         file_path,
@@ -1134,7 +1167,7 @@ fn build_provisional_task(
         labels: Vec::new(),
         parent,
         due: None,
-        links: Vec::new(),
+        links,
         children: Vec::new(),
         reverse_links: Vec::new(),
         body: String::new(),

@@ -20,6 +20,7 @@ fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
         milestone: None,
         labels: Vec::<Label>::new(),
         parent: parent.map(TaskFilePath::from_lenient),
+        links: Vec::new(),
         body: None,
     }
 }
@@ -198,6 +199,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
         milestone: None,
         labels: vec![Label::from("bug"), Label::from("api")],
         parent: None,
+        links: Vec::new(),
         body: Some("Detailed description.".to_string()),
     };
 
@@ -207,4 +209,129 @@ fn intent_with_priority_and_labels_renders_into_content() {
     assert!(s.contains("- bug"));
     assert!(s.contains("- api"));
     assert!(s.contains("Detailed description."));
+}
+
+// ---------------------------------------------------------------------------
+// links の lenient 正規化（dedup / パス正規化 / lenient 保持）
+// ---------------------------------------------------------------------------
+
+fn intent_with_links(title: &str, parent: Option<&str>, links: Vec<&str>) -> CreateTaskIntent {
+    CreateTaskIntent {
+        title: TaskTitle::from_lenient(title.to_string()),
+        status: ColumnName::from_lenient("Todo".to_string()),
+        priority: None,
+        milestone: None,
+        labels: Vec::<Label>::new(),
+        parent: parent.map(TaskFilePath::from_lenient),
+        links: links.into_iter().map(|s| s.to_string()).collect(),
+        body: None,
+    }
+}
+
+#[test]
+fn normalizes_single_link_into_content() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["tasks/a.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    let s = outcome.content.as_str();
+    assert!(s.contains("links:"));
+    assert!(s.contains("- tasks/a.md"));
+}
+
+#[test]
+fn preserves_order_of_multiple_links() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["tasks/a.md", "tasks/b.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    let s = outcome.content.as_str();
+    let a = s.find("- tasks/a.md").expect("a present");
+    let b = s.find("- tasks/b.md").expect("b present");
+    assert!(a < b, "input order must be preserved");
+}
+
+#[test]
+fn omits_links_key_when_empty() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec![]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    assert!(!outcome.content.as_str().contains("links:"));
+}
+
+#[test]
+fn dedups_duplicate_links() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["tasks/a.md", "tasks/a.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    let s = outcome.content.as_str();
+    assert_eq!(s.matches("- tasks/a.md").count(), 1, "should dedup to 1");
+}
+
+#[test]
+fn dedups_links_after_path_normalization() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["./tasks/a.md", "tasks/a.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    let s = outcome.content.as_str();
+    assert_eq!(
+        s.matches("- tasks/a.md").count(),
+        1,
+        "normalized forms must converge and dedup"
+    );
+}
+
+#[test]
+fn excludes_absolute_and_drive_prefix_links() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["/abs/x.md", "C:\\x.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    assert!(
+        !outcome.content.as_str().contains("links:"),
+        "absolute / drive-prefix paths are excluded, leaving no links"
+    );
+}
+
+#[test]
+fn keeps_link_same_as_parent_path_leniently() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(vec![task_with("tasks/p.md", None)]);
+    let intent = intent_with_links("Child", Some("tasks/p.md"), vec!["tasks/p.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    let s = outcome.content.as_str();
+    // parent と同一パスでも reject せず links に保持する（除外は FE ピッカーの責務）。
+    assert!(s.contains("parent: tasks/p.md"));
+    assert!(s.contains("- tasks/p.md"));
+}
+
+#[test]
+fn keeps_nonexistent_link_leniently() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["tasks/ghost.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    assert!(outcome.content.as_str().contains("- tasks/ghost.md"));
+}
+
+#[test]
+fn keeps_parent_traversal_link_leniently() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_links("A", None, vec!["../outside.md"]);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+    // normalize_path_parts は `..` を保持するため dangling として残る。
+    assert!(outcome.content.as_str().contains("../outside.md"));
 }

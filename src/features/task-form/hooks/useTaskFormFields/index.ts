@@ -35,6 +35,11 @@ export type UseTaskFormFieldsArgs = {
    * @returns 最終ラベル配列
    */
   finalizeLabels: () => string[];
+  /**
+   * 送信時に最終 links を同期取得する関数。useLinksInput から渡される想定。
+   * @returns 最終 links 配列
+   */
+  finalizeLinks: () => string[];
 };
 
 /** 各 field の現在値 */
@@ -201,7 +206,13 @@ export const useTaskFormFields = (
     }),
   );
 
-  const { isSubmitting, onSubmit, finalizeLabels, existingTasks } = args;
+  const {
+    isSubmitting,
+    onSubmit,
+    finalizeLabels,
+    finalizeLinks,
+    existingTasks,
+  } = args;
   const handleSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
@@ -241,6 +252,7 @@ export const useTaskFormFields = (
         dispatch({ type: "validateAll", error: undefined });
       }
       const labels = finalizeLabels();
+      const links = finalizeLinks();
       onSubmit({
         title: TitleField.normalize(state.values.title),
         status: state.values.status,
@@ -248,12 +260,14 @@ export const useTaskFormFields = (
         parent: state.values.parent,
         body: state.values.body,
         labels: [...labels],
+        links: [...links],
       });
     },
     [
       isSubmitting,
       onSubmit,
       finalizeLabels,
+      finalizeLinks,
       existingTasks,
       state.values,
       state.errors.title,

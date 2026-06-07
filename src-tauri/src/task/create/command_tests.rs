@@ -39,6 +39,7 @@ fn args_with_title(title: &str) -> CreateTaskArgs {
         milestone: None,
         labels: Vec::new(),
         parent: None,
+        links: Vec::new(),
         body: None,
     }
 }
@@ -77,6 +78,7 @@ fn create_task_with_priority_and_labels_and_body_renders_full_frontmatter() {
         milestone: None,
         labels: vec!["bug".into(), "api".into()],
         parent: None,
+        links: Vec::new(),
         body: Some("Detailed description.".into()),
     };
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
@@ -108,6 +110,7 @@ fn create_task_under_parent_places_into_parent_dir_and_updates_children() {
         milestone: None,
         labels: Vec::new(),
         parent: Some("issues/82/parent.md".into()),
+        links: Vec::new(),
         body: None,
     };
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
@@ -149,6 +152,7 @@ fn create_task_normalizes_raw_parent_path_to_resolved_dir() {
             milestone: None,
             labels: Vec::new(),
             parent: Some(raw.to_string()),
+            links: Vec::new(),
             body: None,
         };
         let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
@@ -407,4 +411,104 @@ fn create_task_detects_augmented_cycle_via_dangling_parent_resolution() {
     assert!(!dir.path().join("tasks/new.md").exists());
     let snap = state.tasks_snapshot().unwrap();
     assert_eq!(1, snap.len());
+}
+
+// ---------------------------------------------------------------------------
+// links 付き作成（書き込み / dangling 保持 / dedup / cache reverse_links 更新）
+// ---------------------------------------------------------------------------
+
+#[test]
+fn create_task_with_links_writes_links_into_md() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Linker");
+    args.links = vec!["tasks/a.md".into()];
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    let abs = dir.path().join(task.file_path.as_str());
+    let content = fs::read_to_string(&abs).expect("read");
+    assert!(content.contains("links:"));
+    assert!(content.contains("- tasks/a.md"));
+}
+
+#[test]
+fn create_task_without_links_omits_links_key() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let task =
+        create_task_impl(&state, &FsTaskIo, args_with_title("No Links")).expect("create succeeds");
+
+    let abs = dir.path().join(task.file_path.as_str());
+    let content = fs::read_to_string(&abs).expect("read");
+    assert!(!content.contains("links:"), "links key must be omitted");
+}
+
+#[test]
+fn create_task_keeps_dangling_link_and_succeeds() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Dangler");
+    args.links = vec!["tasks/ghost.md".into()];
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds despite dangling");
+
+    let abs = dir.path().join(task.file_path.as_str());
+    let content = fs::read_to_string(&abs).expect("read");
+    assert!(content.contains("- tasks/ghost.md"));
+}
+
+#[test]
+fn create_task_dedups_links_before_writing() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Dedup");
+    args.links = vec!["./tasks/a.md".into(), "tasks/a.md".into()];
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    let abs = dir.path().join(task.file_path.as_str());
+    let content = fs::read_to_string(&abs).expect("read");
+    assert_eq!(
+        content.matches("- tasks/a.md").count(),
+        1,
+        "dedup to 1 entry"
+    );
+}
+
+#[test]
+fn create_task_with_existing_target_updates_reverse_links_in_cache() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    let target_md = "---\ntitle: Target\nstatus: Todo\n---\n";
+    let target_abs = dir.path().join("tasks/target.md");
+    fs::create_dir_all(target_abs.parent().unwrap()).unwrap();
+    fs::write(&target_abs, target_md).unwrap();
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Source");
+    args.links = vec!["tasks/target.md".into()];
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    // 返却タスクの links に target を含む。
+    assert!(task.links.iter().any(|l| l.as_str() == "tasks/target.md"));
+
+    // cache 内 target の reverse_links に作成タスク path が追加される。
+    let snap = state.tasks_snapshot().expect("snapshot");
+    let target_task = snap
+        .iter()
+        .find(|t| t.file_path == "tasks/target.md")
+        .expect("target in cache");
+    assert!(
+        target_task
+            .reverse_links
+            .iter()
+            .any(|r| r.as_str() == task.file_path.as_str()),
+        "source path must be appended to target.reverse_links",
+    );
 }

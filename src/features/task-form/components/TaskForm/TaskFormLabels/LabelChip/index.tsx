@@ -8,6 +8,16 @@ type LabelChipProps = {
   onRemove: () => void;
   /** 無効化（× ボタンが disabled になる） */
   disabled?: boolean;
+  /**
+   * 削除ボタンの aria-label を上書きする。
+   * 未指定時は「ラベル「{label}」を削除」（既存挙動）。
+   */
+  removeAriaLabel?: string;
+  /**
+   * chip 本体の hover ツールチップ（`title` 属性）。
+   * 未指定時は付与しない。同名タスク判別で filePath を表示する用途。
+   */
+  title?: string;
 };
 
 /**
@@ -19,13 +29,18 @@ export const LabelChip = ({
   label,
   onRemove,
   disabled = false,
+  removeAriaLabel,
+  title,
 }: LabelChipProps) => {
   return (
-    <span className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
+    <span
+      title={title}
+      className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700"
+    >
       {label}
       <button
         type="button"
-        aria-label={`ラベル「${label}」を削除`}
+        aria-label={removeAriaLabel ?? `ラベル「${label}」を削除`}
         className="ml-0.5 rounded text-gray-400 hover:text-gray-700"
         disabled={disabled}
         onClick={onRemove}

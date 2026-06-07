@@ -103,6 +103,7 @@ test("タイトル入力して送信すると onSubmit が正規化値で呼ば�
     priority: undefined,
     labels: [],
     parent: undefined,
+    links: [],
     body: "",
   });
 });
