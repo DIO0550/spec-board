@@ -48,7 +48,7 @@ const toggleValue = <T,>(list: readonly T[], value: T): T[] => {
  */
 const chipClass = (isActive: boolean): string => {
   if (isActive) {
-    return "rounded-full border border-accent bg-accent-soft px-2.5 py-0.5 text-xs text-accent";
+    return "rounded-full border border-accent bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-foreground";
   }
   return "rounded-full border border-border px-2.5 py-0.5 text-xs text-muted hover:bg-surface-muted";
 };

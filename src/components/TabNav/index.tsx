@@ -73,7 +73,7 @@ export const TabNav = ({
             onClick={() => onSelect(tab.id)}
             className={
               isActive
-                ? "border-b-2 border-accent px-3 py-2 text-sm text-accent"
+                ? "border-b-2 border-accent px-3 py-2 text-sm font-medium text-foreground"
                 : "px-3 py-2 text-sm text-muted hover:bg-surface-muted"
             }
           >

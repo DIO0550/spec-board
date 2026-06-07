@@ -42,7 +42,7 @@ const FileNodeItem = memo(
             style={indent}
             className={
               isSelected
-                ? "flex w-full items-center px-2 py-0.5 text-left text-xs text-accent"
+                ? "flex w-full items-center bg-accent-soft px-2 py-0.5 text-left text-xs font-medium text-foreground"
                 : "flex w-full items-center px-2 py-0.5 text-left text-xs text-foreground hover:bg-surface-muted"
             }
           >
