@@ -19,14 +19,14 @@ type MarkdownBodyProps = {
 };
 
 const TEXTAREA_CLASS_NAME =
-  "w-full min-h-[12rem] resize-none overflow-y-auto rounded border border-blue-400 px-2 py-1 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
+  "w-full min-h-[12rem] resize-none overflow-y-auto rounded border border-accent px-2 py-1 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 const DISPLAY_EDITABLE_WRAPPER_CLASS_NAME =
-  "min-h-[3rem] cursor-text rounded px-1 py-0.5 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
+  "min-h-[3rem] cursor-text rounded px-1 py-0.5 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 const DISPLAY_READONLY_WRAPPER_CLASS_NAME = "space-y-4";
 
-const PLACEHOLDER_CLASS_NAME = "text-sm text-gray-400";
+const PLACEHOLDER_CLASS_NAME = "text-sm text-muted";
 
 /**
  * インライントークンを React ノードに変換する。

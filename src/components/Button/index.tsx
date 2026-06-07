@@ -5,9 +5,9 @@ export type ButtonVariant = "primary" | "secondary";
 
 const VARIANT_CLASS_NAME: Record<ButtonVariant, string> = {
   primary:
-    "rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50",
+    "rounded bg-accent px-4 py-2 text-sm text-accent-foreground hover:brightness-95 disabled:opacity-50",
   secondary:
-    "rounded px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50",
+    "rounded px-4 py-2 text-sm text-foreground hover:bg-surface-muted disabled:opacity-50",
 };
 
 type ButtonProps = Omit<

@@ -207,7 +207,7 @@ export const ColumnHeader = ({
               aria-label="カラム名"
               aria-invalid={isDuplicate}
               aria-describedby={isDuplicate ? errorId : undefined}
-              className="w-full min-w-32 rounded border border-blue-400 px-1 py-0.5 text-sm font-semibold text-gray-900 outline-none disabled:bg-gray-100"
+              className="w-full min-w-32 rounded border border-accent px-1 py-0.5 text-sm font-semibold text-foreground outline-none disabled:bg-surface-muted"
               data-column-dnd-disabled
               data-testid="column-rename-input"
             />
@@ -218,12 +218,12 @@ export const ColumnHeader = ({
             )}
           </div>
         ) : onRename ? (
-          <h2 className="text-sm font-semibold text-gray-700">
+          <h2 className="text-sm font-semibold text-foreground">
             <button
               type="button"
               onClick={startEditing}
               aria-label={`${name}の名前を変更`}
-              className="rounded px-1 py-0.5 hover:bg-gray-100"
+              className="rounded px-1 py-0.5 hover:bg-surface-muted"
               data-column-dnd-disabled
               data-testid="column-name-button"
             >
@@ -231,9 +231,9 @@ export const ColumnHeader = ({
             </button>
           </h2>
         ) : (
-          <h2 className="text-sm font-semibold text-gray-700">{name}</h2>
+          <h2 className="text-sm font-semibold text-foreground">{name}</h2>
         )}
-        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600">
+        <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-muted">
           {taskCount}
         </span>
       </div>
@@ -244,7 +244,7 @@ export const ColumnHeader = ({
             onClick={onContextMenu}
             aria-label={`${name}のメニューを開く`}
             aria-haspopup="menu"
-            className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            className="rounded px-2 py-1 text-sm text-muted hover:bg-surface-muted hover:text-foreground"
             data-column-dnd-disabled
             data-testid="column-menu-button"
           >
@@ -255,7 +255,7 @@ export const ColumnHeader = ({
           type="button"
           onClick={onAddClick}
           aria-label={`${name}に追加`}
-          className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          className="rounded px-2 py-1 text-sm text-muted hover:bg-surface-muted hover:text-foreground"
           data-column-dnd-disabled
         >
           + 追加

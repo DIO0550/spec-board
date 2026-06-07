@@ -191,12 +191,9 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
               role="radiogroup"
               aria-labelledby="orphan-strategy-label"
               data-testid="delete-orphan-strategy-radiogroup"
-              className="mt-2 flex flex-col gap-1 rounded border border-gray-200 p-2 text-sm"
+              className="mt-2 flex flex-col gap-1 rounded border border-border p-2 text-sm"
             >
-              <p
-                id="orphan-strategy-label"
-                className="px-1 text-xs text-gray-600"
-              >
+              <p id="orphan-strategy-label" className="px-1 text-xs text-muted">
                 子タスクの処理
               </p>
               <label className="flex items-center gap-2">

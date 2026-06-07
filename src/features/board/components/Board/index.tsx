@@ -1,15 +1,12 @@
 import { useCallback, useMemo, useReducer, useRef } from "react";
-import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
-import { useMilestoneFilter } from "../../hooks/useMilestoneFilter";
 import { AddColumnButton } from "../AddColumnButton";
 import {
   Column,
   type ColumnDropParams,
   type ColumnTaskDropParams,
 } from "../Column";
-import { MilestoneFilter } from "../MilestoneFilter";
 import type { MilestonesByName } from "../TaskCard";
 import {
   ColumnDragState,
@@ -21,8 +18,13 @@ import { DragAction, dragReducer } from "./dragState";
 type BoardProps = {
   /** カラム定義の配列 */
   columns: ColumnType[];
-  /** タスクの配列 */
+  /** カラムへ表示するタスクの配列（絞り込み済みの表示用集合） */
   tasks: Task[];
+  /**
+   * 階層カウント（子孫数など）の解決に使う全タスク集合。絞り込みで tasks が減っても
+   * 子孫カウントを正確に保つため、未絞り込みの全タスクを渡す。未指定なら tasks を使う。
+   */
+  allTasks?: Task[];
   /**
    * 「正規化済み Task.filePath → Task」の lookup Map。各 TaskCard の broken link 判定に使用する。
    * Board 自身では使用せず、Column へ pass-through する。
@@ -36,10 +38,10 @@ type BoardProps = {
    */
   milestonesByName?: MilestonesByName;
   /**
-   * 絞り込み UI の選択肢に並べるマイルストーン定義（registry 由来）。
-   * 未指定 / 空のときは絞り込みツールバーを表示しない。
+   * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合（tasks）が全タスクと
+   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。Column へ pass-through する。
    */
-  milestones?: readonly MilestoneDefinition[];
+  dndDisabled?: boolean;
   /** カラムの「+ 追加」ボタンクリック時のコールバック
    * @param columnName - 追加対象のカラム名
    */
@@ -95,10 +97,11 @@ type BoardProps = {
 export const Board = ({
   columns,
   tasks,
+  allTasks,
   tasksByNormalizedPath,
   doneColumn,
   milestonesByName,
-  milestones,
+  dndDisabled = false,
   onAddTask,
   onTaskClick,
   onAddColumn,
@@ -112,23 +115,32 @@ export const Board = ({
     [columns],
   );
 
-  // マイルストーン絞り込み。filtered をカラム表示に使い、子孫/子の解決には全 tasks を
-  // 使う（allTasks へは絞り込み前の tasks を渡す）ため hierarchy のカウントは正確なまま。
-  const { filter, setFilter, filtered } = useMilestoneFilter(tasks);
-  const showMilestoneFilter = milestones !== undefined && milestones.length > 0;
+  // 階層カウントの解決には全タスク集合を使う。絞り込みで tasks が減っても子孫数を
+  // 正確に保つため、未指定時のみ表示用 tasks にフォールバックする。
+  const hierarchyTasks = allTasks ?? tasks;
 
   const tasksByStatus = useMemo(() => {
     const grouped: Record<string, Task[]> = {};
-    for (const task of filtered) {
+    for (const task of tasks) {
       if (!grouped[task.status]) {
         grouped[task.status] = [];
       }
       grouped[task.status].push(task);
     }
     return grouped;
-  }, [filtered]);
+  }, [tasks]);
 
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
+
+  // 列削除はフィルタで隠れたタスクも含む全件に作用するため、削除判定用の件数は
+  // 絞り込み前の全タスク（hierarchyTasks）から status 別に数える。
+  const deletionCountByStatus = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const task of hierarchyTasks) {
+      counts[task.status] = (counts[task.status] ?? 0) + 1;
+    }
+    return counts;
+  }, [hierarchyTasks]);
 
   const [dragState, dispatch] = useReducer(dragReducer, null);
   // hover state は初期実装では UI に未配線のため、Board の再レンダーを避けるべく
@@ -207,25 +219,17 @@ export const Board = ({
 
   return (
     <div className="flex h-full flex-col">
-      {showMilestoneFilter && (
-        <div className="flex items-center gap-2 px-4 pt-4">
-          <MilestoneFilter
-            milestones={milestones}
-            filter={filter}
-            onChange={setFilter}
-          />
-        </div>
-      )}
       <div className="flex flex-1 gap-4 overflow-x-auto p-4">
         {sorted.map((col) => (
           <Column
             key={col.name}
             name={col.name}
             tasks={tasksByStatus[col.name] ?? []}
-            allTasks={tasks}
+            allTasks={hierarchyTasks}
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
             milestonesByName={milestonesByName}
+            dndDisabled={dndDisabled}
             onAddClick={() => onAddTask(col.name)}
             onTaskClick={onTaskClick}
             onRename={
@@ -234,6 +238,7 @@ export const Board = ({
                 : undefined
             }
             existingColumnNames={columnNames.filter((n) => n !== col.name)}
+            deletionTaskCount={deletionCountByStatus[col.name] ?? 0}
             onDelete={
               onDeleteColumn
                 ? (destColumn) => onDeleteColumn(col.name, destColumn)

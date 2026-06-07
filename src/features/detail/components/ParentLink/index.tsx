@@ -34,7 +34,7 @@ export const ParentLink = (props: ParentLinkProps) => {
       onClick={handleClick}
       aria-label={`親タスクに遷移: ${displayTitle}`}
       data-testid="detail-parent-link"
-      className="inline-flex max-w-full items-center rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100 hover:text-blue-600 hover:underline focus:outline-none focus-visible:bg-gray-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+      className="inline-flex max-w-full items-center rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface-muted hover:text-accent hover:underline focus:outline-none focus-visible:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
     >
       <span className="truncate">親: {displayTitle}</span>
     </button>

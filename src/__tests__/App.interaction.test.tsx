@@ -906,8 +906,11 @@ test("読込→settings→board 往復で読込済み board 状態（A タスク
     clickHeaderSettingsButton();
   });
   await flush();
-  // settings 表示中は board が差し替えられ非表示
-  expect(container?.textContent).not.toContain("A タスク");
+  // settings 表示中は main の board が settings に差し替えられる
+  // （サイドバーのファイルツリーには常時タスク名が出るため main に絞って確認する）
+  expect(container?.querySelector("main")?.textContent).not.toContain(
+    "A タスク",
+  );
   await act(async () => {
     clickHeaderBackButton();
   });
@@ -963,7 +966,11 @@ test("settings 表示中に HeaderBar「開く」を押すと board に戻り op
   });
   await flush();
 
-  expect(container?.querySelector('[role="tablist"]')).toBeNull();
+  // board 復帰後はビュー切替タブが出る一方、設定固有の「ラベル」タブは消える
+  const tabTexts = Array.from(
+    container?.querySelectorAll('[role="tab"]') ?? [],
+  ).map((tab) => tab.textContent);
+  expect(tabTexts).not.toContain("ラベル");
   expect(openProjectMock).toHaveBeenCalled();
   expect(container?.textContent).toContain("A タスク");
 });

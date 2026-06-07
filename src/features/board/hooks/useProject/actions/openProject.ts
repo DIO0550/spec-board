@@ -19,10 +19,72 @@ export type DialogOpening = {
   current: boolean;
 };
 
+type ResolveProjectPathDeps = {
+  /** 明示パス。指定時はダイアログを開かずこれを返す。 */
+  explicitPath?: string;
+  /** ダイアログ二重オープン防止フラグ */
+  dialogOpening: DialogOpening;
+  /** プロジェクトの有効性バージョン */
+  projectVersion: ProjectVersion;
+  /**
+   * 失敗時に呼び出される任意のコールバック。
+   * @param error 通知する ProjectError
+   */
+  onError?: (error: ProjectError) => void;
+};
+
+/**
+ * 開くプロジェクトのパスを決める。明示パスがあればそれを、なければディレクトリ
+ * ダイアログで選んだパスを返す。キャンセル・失敗・無効化時は null。
+ * @param deps - パス解決に必要な依存
+ * @returns 開くべきパス、開かない場合は null
+ */
+const resolveProjectPath = async ({
+  explicitPath,
+  dialogOpening,
+  projectVersion,
+  onError,
+}: ResolveProjectPathDeps): Promise<string | null> => {
+  if (explicitPath !== undefined) {
+    // ダイアログ経由と同様に、解決後のプロジェクト無効化（unmount/deactivate）と
+    // 競合した場合は open-start に進ませない。
+    if (!projectVersion.active) {
+      return null;
+    }
+    // ディレクトリダイアログ表示中に最近一覧をクリックした場合の二重 open を防ぐ。
+    if (dialogOpening.current) {
+      return null;
+    }
+    return explicitPath;
+  }
+
+  if (dialogOpening.current) {
+    return null;
+  }
+  dialogOpening.current = true;
+
+  const dialogResult = await openDirectoryDialog();
+  dialogOpening.current = false;
+
+  if (!projectVersion.active) {
+    return null;
+  }
+  if (!dialogResult.ok) {
+    onError?.({ kind: "tauri", error: dialogResult.error });
+    return null;
+  }
+  return dialogResult.value;
+};
+
 export type OpenProjectActionDeps = {
   projectVersion: ProjectVersion;
   projectCommandQueue: ProjectCommandQueue;
   dialogOpening: DialogOpening;
+  /**
+   * 開くプロジェクトのパス。指定時はディレクトリダイアログを開かず直接このパスを開く
+   * （最近開いたプロジェクトからの再オープン用）。未指定時はダイアログで選択する。
+   */
+  path?: string;
   /**
    * reducer に同期的に action を投げる dispatcher。
    * @param action 反映する ProjectAction
@@ -36,7 +98,8 @@ export type OpenProjectActionDeps = {
 };
 
 /**
- * directory dialog から project を開き、tasks / columns を一貫した ProjectData として state に反映する。
+ * project を開き、tasks / columns を一貫した ProjectData として state に反映する。
+ * deps.path 指定時はそのパスを、未指定時は directory dialog で選んだパスを開く。
  *
  * @param deps openProject に必要な queue / version / dispatch 依存
  */
@@ -44,27 +107,16 @@ export const openProjectAction = async ({
   projectVersion,
   projectCommandQueue,
   dialogOpening,
+  path: explicitPath,
   dispatchSync,
   onError,
 }: OpenProjectActionDeps): Promise<void> => {
-  if (dialogOpening.current) {
-    return;
-  }
-  dialogOpening.current = true;
-
-  const dialogResult = await openDirectoryDialog();
-  dialogOpening.current = false;
-
-  if (!projectVersion.active) {
-    return;
-  }
-
-  if (!dialogResult.ok) {
-    onError?.({ kind: "tauri", error: dialogResult.error });
-    return;
-  }
-
-  const path = dialogResult.value;
+  const path = await resolveProjectPath({
+    explicitPath,
+    dialogOpening,
+    projectVersion,
+    onError,
+  });
   if (path === null) {
     return;
   }

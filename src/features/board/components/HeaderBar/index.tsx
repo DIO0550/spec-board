@@ -1,3 +1,4 @@
+import { ThemeToggleButton } from "@/features/shell";
 import type { AppView } from "@/hooks/useAppView";
 
 /** ヘッダーバーの Props */
@@ -30,16 +31,17 @@ export const HeaderBar = ({
   onOpenClick,
 }: HeaderBarProps) => {
   return (
-    <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
-      <h1 className="text-lg font-semibold text-gray-800">
+    <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-2">
+      <h1 className="text-lg font-semibold text-foreground">
         {projectName ?? "spec-board"}
       </h1>
       <div className="flex items-center gap-2">
+        <ThemeToggleButton />
         {onMilestoneClick && (
           <button
             type="button"
             onClick={onMilestoneClick}
-            className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+            className="rounded px-3 py-1.5 text-sm text-muted hover:bg-surface-muted"
           >
             {view === "milestone" ? "ボードへ戻る" : "マイルストーン"}
           </button>
@@ -47,14 +49,14 @@ export const HeaderBar = ({
         <button
           type="button"
           onClick={onSettingsClick}
-          className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+          className="rounded px-3 py-1.5 text-sm text-muted hover:bg-surface-muted"
         >
           {view === "settings" ? "ボードへ戻る" : "設定"}
         </button>
         <button
           type="button"
           onClick={onOpenClick}
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+          className="rounded bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:brightness-95"
         >
           開く
         </button>

@@ -119,14 +119,14 @@ export const SubIssueSection = ({
   return (
     <div data-testid="sub-issue-section">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-500">
+        <span className="text-xs font-medium text-muted">
           サブIssue {showProgress ? `(${doneCount}/${total})` : ""}
         </span>
       </div>
       {showProgress && (
         <div className="mb-2 flex items-center gap-2">
           <div
-            className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
+            className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted"
             role="progressbar"
             aria-valuenow={percentage}
             aria-valuemin={0}
@@ -138,13 +138,13 @@ export const SubIssueSection = ({
               style={{ width: `${percentage}%` }}
             />
           </div>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted">
             {doneCount}/{total}
           </span>
         </div>
       )}
       {showChildList && (
-        <ul className="mb-2 space-y-1 text-sm text-gray-700">
+        <ul className="mb-2 space-y-1 text-sm text-foreground">
           {rows.map((row) => {
             if (row.kind === "broken") {
               return (
@@ -166,19 +166,19 @@ export const SubIssueSection = ({
               <li key={child.id}>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent"
+                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-surface-muted disabled:cursor-default disabled:hover:bg-transparent"
                   disabled={onChildClick === undefined}
                   onClick={() => onChildClick?.(child.id)}
                   data-testid={`sub-issue-item-${child.id}`}
                 >
                   <span
                     aria-hidden="true"
-                    className={isDone ? "text-green-600" : "text-gray-400"}
+                    className={isDone ? "text-green-600" : "text-muted"}
                   >
                     {isDone ? "✓" : "○"}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{label}</span>
-                  <span className="text-xs text-gray-500">{child.status}</span>
+                  <span className="text-xs text-muted">{child.status}</span>
                 </button>
               </li>
             );
@@ -187,7 +187,7 @@ export const SubIssueSection = ({
       )}
       <button
         type="button"
-        className="w-full rounded border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-600 hover:border-gray-400 hover:text-gray-800 disabled:opacity-50"
+        className="w-full rounded border border-dashed border-border px-2 py-1 text-xs text-muted hover:border-border hover:text-foreground disabled:opacity-50"
         onClick={() => onAddSubIssue(parentTask.filePath)}
         data-testid="sub-issue-add-button"
       >

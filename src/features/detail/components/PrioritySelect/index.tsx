@@ -27,13 +27,13 @@ const toSelectValue = (p: Priority | undefined): string => p ?? "";
 export const PrioritySelect = ({ value, onChange }: PrioritySelectProps) => {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm font-medium text-gray-500">優先度</span>
+      <span className="text-sm font-medium text-muted">優先度</span>
       <select
         value={toSelectValue(value)}
         onChange={(e) => {
           onChange(Priority.parse(e.target.value));
         }}
-        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 hover:border-blue-300 focus:border-blue-400 focus:outline-none"
+        className="rounded border border-border bg-surface px-2 py-1 text-sm text-foreground hover:border-accent focus:border-accent focus:outline-none"
         data-testid="priority-select"
         aria-label="優先度"
       >

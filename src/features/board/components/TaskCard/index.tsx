@@ -31,6 +31,11 @@ type TaskCardProps = {
   /** ドラッグ中フラグ（Board の DragState から配布） */
   isDragging?: boolean;
   /**
+   * ドラッグを無効化するか。フィルタ有効時など、表示集合が全タスクと異なり
+   * 並べ替えが cardOrder を壊しうる状況で true にしてカードのドラッグを止める。
+   */
+  disableDrag?: boolean;
+  /**
    * 1 件でもリンク切れ参照を持つかどうか。true のときカード隅に警告アイコンのみを表示する。
    * 詳細はパネルで確認できるためカードはアイコンのみのミニマル表示にする。
    */
@@ -88,7 +93,7 @@ const CardContent = ({
       <div className="flex items-center gap-1.5">
         <PriorityBadge priority={task.priority} />
         <DueBadge due={task.due} />
-        <p data-testid="task-card-title" className="text-sm text-gray-800">
+        <p data-testid="task-card-title" className="text-sm text-foreground">
           {displayTitle}
         </p>
         {(hasBrokenLink || hasParseError) && (
@@ -135,6 +140,7 @@ export const TaskCard = ({
   milestonesByName,
   fromColumn,
   isDragging = false,
+  disableDrag = false,
   hasBrokenLink = false,
   hasParseError = false,
   onClick,
@@ -144,6 +150,9 @@ export const TaskCard = ({
   const dragGuardRef = useRef(false);
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+    if (disableDrag) {
+      return;
+    }
     e.dataTransfer.setData(DRAG_MIME_TYPE, task.filePath);
     e.dataTransfer.effectAllowed = "move";
     dragGuardRef.current = true;
@@ -164,13 +173,13 @@ export const TaskCard = ({
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: HTML5 native DnD requires draggable handlers on the card container; CardContent may include interactive descendants so a semantic element is unsuitable
       <div
-        draggable
+        draggable={!disableDrag}
         data-dragging={dataDragging}
         data-testid="task-card"
         aria-grabbed={isDragging}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        className={`w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm${draggingClass}`}
+        className={`w-full rounded-lg border border-border bg-surface p-3 text-left shadow-sm${draggingClass}`}
       >
         <CardContent
           task={task}
@@ -188,7 +197,7 @@ export const TaskCard = ({
   return (
     // biome-ignore lint/a11y/useSemanticElements: CardContent may include interactive descendants such as details/summary, so a semantic <button> cannot be used as the card container
     <div
-      draggable
+      draggable={!disableDrag}
       data-dragging={dataDragging}
       data-testid="task-card"
       aria-grabbed={isDragging}
@@ -196,7 +205,7 @@ export const TaskCard = ({
       onDragEnd={handleDragEnd}
       role="button"
       tabIndex={0}
-      className={`w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm hover:border-blue-300 hover:shadow-md${draggingClass}`}
+      className={`w-full cursor-pointer rounded-lg border border-border bg-surface p-3 text-left shadow-sm hover:border-accent hover:shadow-md${draggingClass}`}
       onClick={() => {
         if (dragGuardRef.current) {
           return;

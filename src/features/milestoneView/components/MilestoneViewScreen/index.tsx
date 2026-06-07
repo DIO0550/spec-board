@@ -55,17 +55,15 @@ export const MilestoneViewScreen = ({
   const progress = useMilestoneProgress(names, tasks, doneColumn);
 
   if (resource.status === "loading" || resource.status === "idle") {
-    return <p className="text-sm text-gray-500">読み込み中…</p>;
+    return <p className="text-sm text-muted">読み込み中…</p>;
   }
   if (resource.status === "error") {
     return (
-      <p className="text-sm text-gray-500">
-        マイルストーンを読み込めませんでした
-      </p>
+      <p className="text-sm text-muted">マイルストーンを読み込めませんでした</p>
     );
   }
   if (sorted.length === 0) {
-    return <p className="text-sm text-gray-500">マイルストーンなし</p>;
+    return <p className="text-sm text-muted">マイルストーンなし</p>;
   }
 
   return (
@@ -77,20 +75,20 @@ export const MilestoneViewScreen = ({
           <li
             key={def.name}
             data-testid="milestone-view-row"
-            className="flex flex-col gap-1 rounded border border-gray-200 p-3"
+            className="flex flex-col gap-1 rounded border border-border p-3"
           >
             <div className="flex items-center gap-2">
               <span className="font-medium">{def.title ?? def.name}</span>
               {def.due !== undefined ? (
-                <span className="text-sm text-gray-400">{def.due}</span>
+                <span className="text-sm text-muted">{def.due}</span>
               ) : null}
-              <span className="text-xs text-gray-500">{state}</span>
-              <span className="ml-auto text-sm text-gray-500">
+              <span className="text-xs text-muted">{state}</span>
+              <span className="ml-auto text-sm text-muted">
                 {p?.done ?? 0} / {p?.total ?? 0}
               </span>
             </div>
             {p?.ratio !== undefined ? (
-              <div className="h-2 w-full rounded bg-gray-100">
+              <div className="h-2 w-full rounded bg-surface-muted">
                 <div
                   data-testid="milestone-progress-bar"
                   className="h-2 rounded bg-indigo-500"

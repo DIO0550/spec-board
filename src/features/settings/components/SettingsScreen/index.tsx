@@ -1,14 +1,16 @@
 import { type ReactNode, useState } from "react";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
+import { AppearanceSettingsTab } from "../AppearanceSettingsTab";
 import { LabelSettingsTab } from "../LabelSettingsTab";
 import { MilestoneSettingsTab } from "../MilestoneSettingsTab";
 import { SubNav, subNavPanelId, subNavTabId } from "../SubNav";
 
-/** 設定画面に登録するタブ一覧（ラベル / マイルストーン）。 */
+/** 設定画面に登録するタブ一覧（ラベル / マイルストーン / 外観）。 */
 const SETTINGS_TABS: NonEmptySettingsTabs = [
   { id: "labels", label: "ラベル" },
   { id: "milestones", label: "マイルストーン" },
+  { id: "appearance", label: "外観" },
 ];
 
 type ActivePanelProps = {
@@ -31,6 +33,8 @@ const ActivePanel = ({ tabId, milestones }: ActivePanelProps): ReactNode => {
       return <LabelSettingsTab />;
     case "milestones":
       return <MilestoneSettingsTab resource={milestones} />;
+    case "appearance":
+      return <AppearanceSettingsTab />;
     default:
       return null;
   }

@@ -2,6 +2,64 @@
 
 @theme {
 	--animate-slide-in: slide-in 0.2s ease-out;
+
+	/* 意味トークン（既定値 = light テーマ）。
+	   各コンポーネントは bg-surface / text-foreground 等のユーティリティで参照し、
+	   実値は data-theme / data-accent 属性で実行時に上書きする。 */
+	--color-surface: #ffffff;
+	--color-surface-muted: #f3f4f6;
+	--color-foreground: #111827;
+	--color-muted: #6b7280;
+	--color-border: #e5e7eb;
+	--color-accent: #2563eb;
+	--color-accent-foreground: #ffffff;
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+/* ライトテーマ既定。OS がダーク配色でもフォームコントロール/スクロールバーを
+   ライト配色に揃える（light/dark の両方で color-scheme を明示する）。 */
+:root {
+	color-scheme: light;
+}
+
+/* ダークテーマの上書き（surface 系のみ。accent は data-accent 側で制御）。 */
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--color-surface: #1c1c1f;
+	--color-surface-muted: #27272b;
+	--color-foreground: #e5e7eb;
+	--color-muted: #9ca3af;
+	--color-border: #3f3f46;
+}
+
+/* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。
+   明度の高い green / amber は既定の白前景だと bg-accent 上で WCAG AA(4.5:1) を
+   満たさないため、accent-foreground を暗色へ上書きしてコントラストを確保する。 */
+:root[data-accent="violet"] {
+	--color-accent: #7c3aed;
+}
+:root[data-accent="green"] {
+	--color-accent: #16a34a;
+	--color-accent-foreground: #052e16;
+}
+:root[data-accent="amber"] {
+	--color-accent: #d97706;
+	--color-accent-foreground: #431407;
+}
+:root[data-accent="rose"] {
+	--color-accent: #e11d48;
+}
+
+/* 表示密度。rem ベースの Tailwind 余白・文字サイズを root font-size で一括スケールする。 */
+:root[data-density="compact"] {
+	font-size: 14px;
+}
+
+@layer base {
+	body {
+		background-color: var(--color-surface);
+		color: var(--color-foreground);
+	}
 }
 
 @keyframes slide-in {

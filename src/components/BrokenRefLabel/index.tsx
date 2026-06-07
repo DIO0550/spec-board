@@ -28,7 +28,7 @@ export const BrokenRefLabel = ({
       <span className="text-xs text-yellow-700">リンク切れ</span>
       <span
         data-testid={pathTestId}
-        className="min-w-0 flex-1 truncate text-gray-500 line-through"
+        className="min-w-0 flex-1 truncate text-muted line-through"
       >
         {rawPath}
       </span>

@@ -77,6 +77,12 @@ type ColumnProps = {
   onDelete?: (destColumn: string | undefined) => void | Promise<void>;
   /** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
   canDelete?: boolean;
+  /**
+   * 削除判定に使うフィルタ前の列内タスク件数。フィルタで表示カードが減っても
+   * 削除は全件（隠れタスク含む）に作用するため、移動先セレクタ要否・確認文言は
+   * この件数で判断する。未指定時は表示中の tasks.length にフォールバックする。
+   */
+  deletionTaskCount?: number;
   /** Board から渡される DragState（自カラムが drop ターゲットか判断）。 */
   dragState?: DragState;
   /** dragover 時の hoverIndex 通知。 */
@@ -93,6 +99,11 @@ type ColumnProps = {
   onTaskDragEnd?: () => void;
   /** 自カラムヘッダーを DnD ハンドルにするか。1 カラム時は false で渡す。 */
   columnDraggable?: boolean;
+  /**
+   * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合が全タスクと
+   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。
+   */
+  dndDisabled?: boolean;
   /**
    * カラム DnD の dragstart 通知（ColumnHeader からそのまま透過）。
    * @param columnName 自カラム名
@@ -127,12 +138,14 @@ export const Column = ({
   existingColumnNames,
   onDelete,
   canDelete = true,
+  deletionTaskCount,
   dragState,
   onDragHover,
   onTaskDrop,
   onTaskDragStart,
   onTaskDragEnd,
   columnDraggable = false,
+  dndDisabled = false,
   onColumnDragStart,
   onColumnDragEnd,
   onColumnHover,
@@ -308,6 +321,9 @@ export const Column = ({
     setIsConfirming(true);
   };
 
+  // 削除はフィルタで隠れたタスクも含む全件に作用するため、フィルタ前の件数で判定する。
+  const deletionCount = deletionTaskCount ?? tasks.length;
+
   /**
    * 削除確認ダイアログの「削除」確定ハンドラ。
    * pending 中の二重実行は guard し、reject 時は dialog を維持する。
@@ -316,7 +332,7 @@ export const Column = ({
     if (isDeleting) {
       return;
     }
-    const hasTasksInside = tasks.length > 0;
+    const hasTasksInside = deletionCount > 0;
     setIsDeleting(true);
     try {
       await onDelete?.(hasTasksInside ? destColumn : undefined);
@@ -341,7 +357,7 @@ export const Column = ({
     setIsConfirming(false);
   };
 
-  const hasTasks = tasks.length > 0;
+  const hasTasks = deletionCount > 0;
   // pending 中も confirm ボタンを disabled にして二重実行を防ぐ
   const needsDestColumn = hasTasks && destColumn === "";
   const confirmDisabled = needsDestColumn || isDeleting;
@@ -352,7 +368,7 @@ export const Column = ({
 
   return (
     <section
-      className="flex h-full w-72 min-w-72 flex-col rounded-lg bg-gray-50"
+      className="flex h-full w-72 min-w-72 flex-col rounded-lg bg-surface-muted"
       aria-label={name}
       data-testid={`column-${name}`}
       onDragOver={handleDragOver}
@@ -366,7 +382,7 @@ export const Column = ({
         onRename={onRename}
         existingColumnNames={existingColumnNames}
         onContextMenu={handleContextMenu}
-        draggable={columnDraggable}
+        draggable={columnDraggable && !dndDisabled}
         onColumnDragStart={onColumnDragStart}
         onColumnDragEnd={onColumnDragEnd}
       />
@@ -398,6 +414,7 @@ export const Column = ({
                     dragState ?? null,
                     task.filePath,
                   )}
+                  disableDrag={dndDisabled}
                   hasBrokenLink={
                     tasksByNormalizedPath !== undefined &&
                     hasAnyBrokenLink(task, tasksByNormalizedPath)
@@ -433,7 +450,7 @@ export const Column = ({
           title="カラムを削除"
           message={
             hasTasks
-              ? `「${name}」には ${tasks.length} 件のタスクがあります。移動先を選択してください。`
+              ? `「${name}」には ${deletionCount} 件のタスクがあります。移動先を選択してください。`
               : `「${name}」を削除します。よろしいですか？`
           }
           confirmLabel="削除"
@@ -442,12 +459,12 @@ export const Column = ({
           onCancel={handleCancel}
         >
           {hasTasks && otherColumnNames.length > 0 && (
-            <label className="mt-4 block text-sm text-gray-700">
+            <label className="mt-4 block text-sm text-foreground">
               移動先カラム
               <select
                 value={destColumn}
                 onChange={(e) => setDestColumn(e.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                className="mt-1 w-full rounded border border-border px-2 py-1 text-sm"
                 data-testid="column-delete-destination"
               >
                 {otherColumnNames.map((n) => (

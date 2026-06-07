@@ -162,7 +162,7 @@ export const TaskSelect = ({
   return (
     <div ref={containerRef} data-testid={`${prefix}-select`}>
       {label !== undefined && (
-        <div className="mb-1 block text-xs font-medium text-gray-700">
+        <div className="mb-1 block text-xs font-medium text-foreground">
           {showSelectedLike || showReadOnlyEmpty ? (
             label
           ) : (
@@ -171,9 +171,9 @@ export const TaskSelect = ({
         </div>
       )}
       {showSelectedLike ? (
-        <div className="flex items-center gap-2 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm">
+        <div className="flex items-center gap-2 rounded border border-border bg-surface-muted px-2 py-1 text-sm">
           <span
-            className="min-w-0 flex-1 truncate text-gray-800"
+            className="min-w-0 flex-1 truncate text-foreground"
             data-testid={`${prefix}-selected`}
           >
             {selectedLabel}
@@ -182,7 +182,7 @@ export const TaskSelect = ({
             <button
               type="button"
               aria-label={label !== undefined ? `${label}を解除` : "選択を解除"}
-              className="rounded text-gray-400 hover:text-gray-700 disabled:opacity-50"
+              className="rounded text-muted hover:text-foreground disabled:opacity-50"
               disabled={disabled}
               onClick={handleClear}
               data-testid={`${prefix}-clear`}
@@ -193,7 +193,7 @@ export const TaskSelect = ({
         </div>
       ) : showReadOnlyEmpty ? (
         <div
-          className="rounded border border-gray-300 bg-gray-50 px-2 py-1 text-sm text-gray-500"
+          className="rounded border border-border bg-surface-muted px-2 py-1 text-sm text-muted"
           data-testid={`${prefix}-readonly-empty`}
         >
           （未設定）
@@ -221,12 +221,12 @@ export const TaskSelect = ({
             }}
             disabled={disabled}
             placeholder={placeholder}
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
+            className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
             data-testid={`${prefix}-input`}
           />
           {isOpen && candidates.length > 0 && (
             <div
-              className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
+              className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded border border-border bg-surface shadow-lg"
               data-testid={`${prefix}-list`}
             >
               {candidates.map((task) => {
@@ -237,7 +237,7 @@ export const TaskSelect = ({
                     type="button"
                     aria-pressed={isSelected}
                     disabled={disabled}
-                    className="block w-full truncate px-2 py-1 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    className="block w-full truncate px-2 py-1 text-left text-sm text-foreground hover:bg-surface-muted disabled:opacity-50"
                     onMouseDown={(e) => {
                       e.preventDefault();
                       handleSelect(task);
@@ -252,7 +252,7 @@ export const TaskSelect = ({
           )}
           {isOpen && candidates.length === 0 && (
             <p
-              className="absolute left-0 right-0 z-10 mt-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 shadow-lg"
+              className="absolute left-0 right-0 z-10 mt-1 rounded border border-border bg-surface px-2 py-1 text-xs text-muted shadow-lg"
               data-testid={`${prefix}-empty`}
             >
               該当するタスクがありません
