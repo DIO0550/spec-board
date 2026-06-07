@@ -145,6 +145,30 @@ test("タスクなしの場合、移動先ドロップダウンは表示され�
   expect(dropdown).toBeFalsy();
 });
 
+test("表示カードが空でも deletionTaskCount>0（フィルタで隠れている）なら移動先ドロップダウンを表示する", () => {
+  render({
+    name: "Todo",
+    tasks: [],
+    deletionTaskCount: 2,
+    onAddClick: vi.fn(),
+    onDelete: vi.fn(),
+    existingColumnNames: ["Done"],
+  });
+  const header = container?.querySelector("section > div") as HTMLElement;
+  dispatchContextMenu(header);
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="column-context-menu-delete"]',
+      ) as HTMLButtonElement
+    ).click();
+  });
+  const dropdown = document.querySelector(
+    '[data-testid="column-delete-destination"]',
+  );
+  expect(dropdown).toBeTruthy();
+});
+
 test("タスクありで確定すると onDelete が移動先と共に呼ばれる", () => {
   const onDelete = vi.fn();
   render({

@@ -77,6 +77,12 @@ type ColumnProps = {
   onDelete?: (destColumn: string | undefined) => void | Promise<void>;
   /** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
   canDelete?: boolean;
+  /**
+   * 削除判定に使うフィルタ前の列内タスク件数。フィルタで表示カードが減っても
+   * 削除は全件（隠れタスク含む）に作用するため、移動先セレクタ要否・確認文言は
+   * この件数で判断する。未指定時は表示中の tasks.length にフォールバックする。
+   */
+  deletionTaskCount?: number;
   /** Board から渡される DragState（自カラムが drop ターゲットか判断）。 */
   dragState?: DragState;
   /** dragover 時の hoverIndex 通知。 */
@@ -132,6 +138,7 @@ export const Column = ({
   existingColumnNames,
   onDelete,
   canDelete = true,
+  deletionTaskCount,
   dragState,
   onDragHover,
   onTaskDrop,
@@ -314,6 +321,9 @@ export const Column = ({
     setIsConfirming(true);
   };
 
+  // 削除はフィルタで隠れたタスクも含む全件に作用するため、フィルタ前の件数で判定する。
+  const deletionCount = deletionTaskCount ?? tasks.length;
+
   /**
    * 削除確認ダイアログの「削除」確定ハンドラ。
    * pending 中の二重実行は guard し、reject 時は dialog を維持する。
@@ -322,7 +332,7 @@ export const Column = ({
     if (isDeleting) {
       return;
     }
-    const hasTasksInside = tasks.length > 0;
+    const hasTasksInside = deletionCount > 0;
     setIsDeleting(true);
     try {
       await onDelete?.(hasTasksInside ? destColumn : undefined);
@@ -347,7 +357,7 @@ export const Column = ({
     setIsConfirming(false);
   };
 
-  const hasTasks = tasks.length > 0;
+  const hasTasks = deletionCount > 0;
   // pending 中も confirm ボタンを disabled にして二重実行を防ぐ
   const needsDestColumn = hasTasks && destColumn === "";
   const confirmDisabled = needsDestColumn || isDeleting;
@@ -440,7 +450,7 @@ export const Column = ({
           title="カラムを削除"
           message={
             hasTasks
-              ? `「${name}」には ${tasks.length} 件のタスクがあります。移動先を選択してください。`
+              ? `「${name}」には ${deletionCount} 件のタスクがあります。移動先を選択してください。`
               : `「${name}」を削除します。よろしいですか？`
           }
           confirmLabel="削除"

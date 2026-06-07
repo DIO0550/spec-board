@@ -132,6 +132,16 @@ export const Board = ({
 
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
 
+  // 列削除はフィルタで隠れたタスクも含む全件に作用するため、削除判定用の件数は
+  // 絞り込み前の全タスク（hierarchyTasks）から status 別に数える。
+  const deletionCountByStatus = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const task of hierarchyTasks) {
+      counts[task.status] = (counts[task.status] ?? 0) + 1;
+    }
+    return counts;
+  }, [hierarchyTasks]);
+
   const [dragState, dispatch] = useReducer(dragReducer, null);
   // hover state は初期実装では UI に未配線のため、Board の再レンダーを避けるべく
   // useRef に保持する。reducer は維持しつつ ref を mutate する形にし、将来
@@ -228,6 +238,7 @@ export const Board = ({
                 : undefined
             }
             existingColumnNames={columnNames.filter((n) => n !== col.name)}
+            deletionTaskCount={deletionCountByStatus[col.name] ?? 0}
             onDelete={
               onDeleteColumn
                 ? (destColumn) => onDeleteColumn(col.name, destColumn)
