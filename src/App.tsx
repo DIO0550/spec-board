@@ -364,6 +364,16 @@ export const App = () => {
     setSelectedTaskId(taskId);
   }, []);
 
+  // サイドバーは全画面区分で常時表示されるため、settings/milestone/detail 表示中に
+  // ファイルを選んでも詳細が開けるよう board へ戻してから選択する（DetailPanel は board のみ）。
+  const handleSidebarSelectTask = useCallback(
+    (taskId: string) => {
+      navigate("board");
+      setSelectedTaskId(taskId);
+    },
+    [navigate],
+  );
+
   const handleSelectTask = useCallback(
     (taskId: string) => {
       const outcome = selectTaskOutcome(tasks, taskId);
@@ -964,7 +974,7 @@ export const App = () => {
             selectedTaskId={selectedTaskId}
             onOpenProject={handleOpenClick}
             onOpenProjectPath={handleOpenProjectPath}
-            onSelectTask={handleTaskClick}
+            onSelectTask={handleSidebarSelectTask}
           />
           <main className="flex flex-1 overflow-hidden">
             {view === "settings" && (
