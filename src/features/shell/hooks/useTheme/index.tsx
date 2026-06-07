@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
 } from "react";
@@ -106,7 +107,9 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   const [systemDark, setSystemDark] = useState<boolean>(prefersDark);
 
   // 外観設定 / OS 配色が変わるたびに永続化と documentElement への反映を行う。
-  useEffect(() => {
+  // 初回ペイント前に dataset を適用して FOUC（一瞬ライト表示）を抑えるため
+  // useLayoutEffect を使う（保存は副作用として同居させる）。
+  useLayoutEffect(() => {
     saveAppearance(appearance);
     applyAppearanceDataset(resolveAppearanceDataset(appearance, systemDark));
   }, [appearance, systemDark]);
