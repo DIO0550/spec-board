@@ -116,9 +116,9 @@ links:
 - due は typed フィールドではなく extras として記述順を保持するため、他フィールド更新時の再シリアライズでも値は失われない。
 - 入力 UI は本仕様の範囲外（表示のみ）。作成・更新フォームには due 入力欄を設けない。
 
-#### DetailPanel 上のリンク追加 UI
+#### DetailScreen 上のリンク追加 UI
 
-- DetailPanel に **関連タスクセクション** を持ち、`linkedFilePaths` と `reverseLinkedFilePaths` を区別して一覧表示する（`links` → `reverseLinks` の順）。各行は button としてフォーカス可能で、クリックで in-place にパネル内容が切り替わる。`reverseLinks` 行は読み取り専用で削除 UI（× ボタン）を持たない（削除は forward 側で行う）
+- DetailScreen に **関連タスクセクション** を持ち、`linkedFilePaths` と `reverseLinkedFilePaths` を区別して一覧表示する（`links` → `reverseLinks` の順）。各行は button としてフォーカス可能で、クリックで in-place に詳細の表示対象が切り替わる。`reverseLinks` 行は読み取り専用で削除 UI（× ボタン）を持たない（削除は forward 側で行う）
 - `+ リンク追加` ボタン → タスク候補ポップオーバから対象を選択することでリンクを追加する
 - 候補からは **自身 / 既に link 済みのタスク / 逆リンク済みのタスク / 親 / 子** をすべて除外する
 - 選択直後に **source / target 両方を楽観 dispatch** で更新する:
@@ -127,7 +127,7 @@ links:
 - `add_link` invoke 成功時は source を IPC 戻り値の canonical Task で再 dispatch する。target は IPC が返さないため楽観値のまま据え置く
 - `add_link` invoke 失敗時は source / target 両方を **条件付き rollback** する。`current.links` と `optimistic.links` の配列等値判定（順序込みの浅い等値）が一致する場合のみ snapshot へ戻し、IPC 中に別経路で同 path の再追加や別 path の追加が入っていた場合は rollback dispatch 自体を skip する（外部更新を巻き戻して破壊しない）
 - 同一 tick の連続選択は `useRef<boolean>` ベースの in-flight guard で 1 回のみ通す
-- task 切替（`task.id` 変化）時は DetailPanel が LinksSection に名前空間付き key を付与してリマウントし、ポップオーバの開閉 / 検索クエリ等の内部 state を確実にリセットする
+- task 切替（`task.id` 変化）時は DetailScreen が LinksSection に名前空間付き key を付与してリマウントし、ポップオーバの開閉 / 検索クエリ等の内部 state を確実にリセットする
 
 ### 本文
 
