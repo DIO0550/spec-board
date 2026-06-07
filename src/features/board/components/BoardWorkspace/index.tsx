@@ -1,5 +1,10 @@
 import { useMemo } from "react";
-import { type TabItem, TabNav, tabNavPanelId } from "@/components/TabNav";
+import {
+  type TabItem,
+  TabNav,
+  tabNavPanelId,
+  tabNavTabId,
+} from "@/components/TabNav";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -188,6 +193,7 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
       <div
         role="tabpanel"
         id={tabNavPanelId(VIEW_TAB_PREFIX, viewMode)}
+        aria-labelledby={tabNavTabId(VIEW_TAB_PREFIX, viewMode)}
         className="min-h-0 flex-1 overflow-auto"
       >
         <ActiveBoardView
