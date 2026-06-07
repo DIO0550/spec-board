@@ -151,7 +151,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
         <button
           type="button"
           data-testid="detail-back-button"
-          className="mb-4 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+          className="mb-4 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-sm text-muted hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
           onClick={onBack}
         >
           ← 戻る
@@ -162,7 +162,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
           onBodyConfirm={(body) => onTaskUpdate(task.id, { body })}
         />
       </div>
-      <div className="w-full shrink-0 overflow-y-auto border-t border-gray-200 p-4 md:w-[360px] md:border-t-0 md:border-l md:p-6">
+      <div className="w-full shrink-0 overflow-y-auto border-t border-border p-4 md:w-[360px] md:border-t-0 md:border-l md:p-6">
         <PropertiesSidebar
           task={task}
           columns={columns}

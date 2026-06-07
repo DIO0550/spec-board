@@ -33,7 +33,7 @@ export const DueBadge = ({ due, today = todayLocal() }: DueBadgeProps) => {
   const overdue = Due.isOverdue(due, today);
   const styles = overdue
     ? "bg-red-100 text-red-800"
-    : "bg-gray-100 text-gray-700";
+    : "bg-surface-muted text-foreground";
 
   return (
     <span

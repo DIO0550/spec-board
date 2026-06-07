@@ -1,4 +1,5 @@
 export { Board } from "./components/Board";
+export { BoardWorkspace } from "./components/BoardWorkspace";
 export { EmptyState } from "./components/EmptyState";
 export { HeaderBar } from "./components/HeaderBar";
 export type {

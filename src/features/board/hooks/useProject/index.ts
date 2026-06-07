@@ -235,6 +235,19 @@ export const useProject = (
     [dispatchSync, onError],
   );
 
+  const openProjectByPath = useCallback(
+    (path: string): Promise<void> =>
+      openProjectAction({
+        projectVersion: projectVersionRef.current,
+        projectCommandQueue: projectCommandQueueRef.current,
+        dialogOpening: dialogOpeningRef,
+        path,
+        dispatchSync,
+        onError,
+      }),
+    [dispatchSync, onError],
+  );
+
   const actionDeps = useCallback(
     () => ({
       projectVersion: projectVersionRef.current,
@@ -321,6 +334,7 @@ export const useProject = (
   return {
     state,
     openProject,
+    openProjectByPath,
     createTask,
     updateTask,
     deleteTask,

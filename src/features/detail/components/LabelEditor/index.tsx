@@ -62,18 +62,18 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
 
   return (
     <div data-testid="label-editor">
-      <div className="mb-1 text-xs font-medium text-gray-500">ラベル</div>
+      <div className="mb-1 text-xs font-medium text-muted">ラベル</div>
       <div className="flex flex-wrap gap-1.5">
         {[...new Set(labels)].map((label) => (
           <span
             key={label}
-            className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700"
+            className="inline-flex items-center gap-0.5 rounded bg-surface-muted px-1.5 py-0.5 text-xs text-foreground"
           >
             {label}
             <button
               type="button"
               aria-label={`ラベル「${label}」を削除`}
-              className="ml-0.5 rounded text-gray-400 hover:text-gray-700"
+              className="ml-0.5 rounded text-muted hover:text-foreground"
               onClick={() => onRemove(label)}
             >
               ×
@@ -88,14 +88,14 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
             onChange={(e) => input.setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
-            className="rounded border border-blue-400 px-1.5 py-0.5 text-xs outline-none"
+            className="rounded border border-accent px-1.5 py-0.5 text-xs outline-none"
             data-testid="label-input"
             placeholder="ラベル名"
           />
         ) : (
           <button
             type="button"
-            className="rounded border border-dashed border-gray-300 px-1.5 py-0.5 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700"
+            className="rounded border border-dashed border-border px-1.5 py-0.5 text-xs text-muted hover:border-border hover:text-foreground"
             data-testid="label-add-button"
             onClick={input.startAdding}
           >

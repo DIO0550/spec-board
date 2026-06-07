@@ -28,7 +28,7 @@ export const TaskFormBody = ({
     <div>
       <label
         htmlFor={bodyId}
-        className="mb-1 block text-xs font-medium text-gray-700"
+        className="mb-1 block text-xs font-medium text-foreground"
       >
         説明
       </label>
@@ -38,7 +38,7 @@ export const TaskFormBody = ({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         rows={4}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
+        className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
         data-testid="task-form-body"
       />
     </div>

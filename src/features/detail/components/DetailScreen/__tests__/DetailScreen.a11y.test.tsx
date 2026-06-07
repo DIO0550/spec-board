@@ -146,7 +146,7 @@ test("戻るボタンに focus-visible リングクラスを含む", () => {
     document.querySelector('[data-testid="detail-back-button"]') as HTMLElement
   ).className;
   expect(cls).toContain("focus-visible:ring-2");
-  expect(cls).toContain("focus-visible:ring-blue-500");
+  expect(cls).toContain("focus-visible:ring-accent");
 });
 
 test("削除ボタンに focus-visible リング（red）クラスを含む", () => {

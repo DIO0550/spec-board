@@ -44,7 +44,7 @@ export const LabelInput = ({
       onBlur={onBlur}
       disabled={disabled}
       placeholder="Enter で追加"
-      className="flex-1 min-w-[100px] rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-blue-500 disabled:bg-gray-100"
+      className="flex-1 min-w-[100px] rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
       data-testid="task-form-label-input"
     />
   );

@@ -73,20 +73,20 @@ export const ConfirmDialog = ({
         aria-labelledby={titleId}
         aria-describedby={messageId}
         tabIndex={-1}
-        className="fixed top-1/2 left-1/2 z-[70] w-[400px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-2xl"
+        className="fixed top-1/2 left-1/2 z-[70] w-[400px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface p-6 shadow-2xl"
         data-testid="confirm-dialog"
       >
-        <h2 id={titleId} className="text-lg font-semibold text-gray-900">
+        <h2 id={titleId} className="text-lg font-semibold text-foreground">
           {title}
         </h2>
-        <p id={messageId} className="mt-2 text-sm text-gray-600">
+        <p id={messageId} className="mt-2 text-sm text-muted">
           {message}
         </p>
         {children}
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"
-            className="rounded px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+            className="rounded px-4 py-2 text-sm text-foreground hover:bg-surface-muted disabled:opacity-50"
             data-testid="confirm-cancel-button"
             disabled={cancelDisabled}
             onClick={onCancel}

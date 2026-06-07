@@ -32,7 +32,7 @@ test("未来日は「あと X 日」を非強調バッジで表示する", async
     const badge = container?.querySelector("span");
     expect(badge).toBeTruthy();
     expect(badge?.textContent).toBe("あと 9 日");
-    expect(badge?.className).toContain("bg-gray-100");
+    expect(badge?.className).toContain("bg-surface-muted");
   });
 });
 

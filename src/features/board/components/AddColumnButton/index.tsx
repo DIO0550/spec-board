@@ -104,7 +104,7 @@ export const AddColumnButton = ({
 
   if (isEditing) {
     return (
-      <div className="flex h-fit w-72 min-w-72 flex-col gap-1 rounded-lg bg-gray-50 p-2">
+      <div className="flex h-fit w-72 min-w-72 flex-col gap-1 rounded-lg bg-surface-muted p-2">
         <input
           ref={inputRef}
           type="text"
@@ -127,7 +127,7 @@ export const AddColumnButton = ({
           aria-label="カラム名"
           aria-invalid={isDuplicate}
           aria-describedby={isDuplicate ? errorId : undefined}
-          className="w-full rounded border border-blue-400 px-2 py-1 text-sm text-gray-900 outline-none disabled:bg-gray-100"
+          className="w-full rounded border border-accent px-2 py-1 text-sm text-foreground outline-none disabled:bg-surface-muted"
           data-testid="add-column-input"
         />
         {isDuplicate && (
@@ -144,7 +144,7 @@ export const AddColumnButton = ({
       type="button"
       onClick={startEditing}
       aria-label="カラムを追加"
-      className="h-fit w-72 min-w-72 rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-500 hover:border-gray-400 hover:text-gray-700"
+      className="h-fit w-72 min-w-72 rounded-lg border-2 border-dashed border-border px-4 py-2 text-sm text-muted hover:border-border hover:text-foreground"
       data-testid="add-column-button"
     >
       + カラムを追加

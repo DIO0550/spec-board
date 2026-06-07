@@ -109,10 +109,10 @@ export const TaskCreateModal = ({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="fixed top-1/2 left-1/2 z-[70] w-[480px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-2xl"
+        className="fixed top-1/2 left-1/2 z-[70] w-[480px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface p-6 shadow-2xl"
         data-testid="task-create-dialog"
       >
-        <h2 id={titleId} className="mb-4 text-lg font-semibold text-gray-900">
+        <h2 id={titleId} className="mb-4 text-lg font-semibold text-foreground">
           新規タスクを作成
         </h2>
         <TaskForm

@@ -16,7 +16,7 @@ export const BrokenParentRow = ({ parentFilePath }: BrokenParentRowProps) => {
   return (
     <div
       data-testid="broken-parent-row"
-      className="flex items-center gap-1.5 text-xs text-gray-500"
+      className="flex items-center gap-1.5 text-xs text-muted"
     >
       <BrokenRefLabel rawPath={parentFilePath} />
     </div>

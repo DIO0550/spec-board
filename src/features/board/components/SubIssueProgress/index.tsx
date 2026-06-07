@@ -24,7 +24,7 @@ const StatusIcon = ({ isDone }: { isDone: boolean }) => {
     );
   }
   return (
-    <span className="text-gray-400" role="img" aria-label={label}>
+    <span className="text-muted" role="img" aria-label={label}>
       ○
     </span>
   );
@@ -55,13 +55,13 @@ export const SubIssueProgress = ({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-gray-600 hover:text-gray-800 [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
           <span aria-hidden="true">▶</span>
           <span>
             サブIssue ({doneCount}/{total})
           </span>
         </summary>
-        <ul className="mt-1 ml-4 space-y-0.5 text-xs text-gray-700">
+        <ul className="mt-1 ml-4 space-y-0.5 text-xs text-foreground">
           {childTasks.map((child) => (
             <li key={child.id} className="flex items-center gap-1.5">
               <StatusIcon isDone={child.status === doneColumn} />
@@ -72,7 +72,7 @@ export const SubIssueProgress = ({
       </details>
       <div className="mt-1 flex items-center gap-2">
         <div
-          className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
+          className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted"
           role="progressbar"
           aria-valuenow={percentage}
           aria-valuemin={0}
@@ -84,7 +84,7 @@ export const SubIssueProgress = ({
             style={{ width: `${percentage}%` }}
           />
         </div>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-muted">
           {doneCount}/{total}
         </span>
       </div>

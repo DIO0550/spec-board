@@ -10,11 +10,12 @@ import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useAppView } from "@/hooks/useAppView";
 import { useMilestones } from "@/hooks/useMilestones";
+import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
 import {
-  Board,
+  BoardWorkspace,
   EmptyState,
   HeaderBar,
   type MoveTaskParams,
@@ -29,6 +30,7 @@ import {
 import { DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
+import { AppSidebar, ThemeProvider } from "./features/shell";
 import {
   TaskCreateModal,
   type TaskFormValues,
@@ -122,6 +124,7 @@ export const App = () => {
   const {
     state,
     openProject,
+    openProjectByPath,
     createTask,
     updateTask,
     deleteTask,
@@ -168,6 +171,18 @@ export const App = () => {
     navigate("board");
     openProject();
   }, [navigate, openProject]);
+
+  const { projects: recentProjects, add: addRecentProject } =
+    useRecentProjects();
+
+  // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
+  const handleOpenProjectPath = useCallback(
+    (path: string) => {
+      navigate("board");
+      openProjectByPath(path);
+    },
+    [navigate, openProjectByPath],
+  );
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
@@ -239,6 +254,13 @@ export const App = () => {
       navigate("board");
     }
   }
+
+  // プロジェクトを読み込めたら最近開いた一覧へ記録する（サイドバーからの再オープン用）。
+  useEffect(() => {
+    if (loadedPath !== null) {
+      addRecentProject(loadedPath);
+    }
+  }, [loadedPath, addRecentProject]);
 
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
@@ -341,6 +363,16 @@ export const App = () => {
   // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
   // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
   const handleTaskClick = useCallback(
+    (taskId: string) => {
+      setSelectedTaskId(taskId);
+      navigate("detail");
+    },
+    [navigate],
+  );
+
+  // サイドバーは全画面区分で常時表示される。詳細は detail 区分へ一本化したため、
+  // どの区分から選んでも選択 + navigate("detail") で全画面詳細(DetailScreen)を開く。
+  const handleSidebarSelectTask = useCallback(
     (taskId: string) => {
       setSelectedTaskId(taskId);
       navigate("detail");
@@ -884,7 +916,7 @@ export const App = () => {
     if (state.kind === "loading") {
       return (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-gray-500">読み込み中…</p>
+          <p className="text-muted">読み込み中…</p>
         </div>
       );
     }
@@ -896,7 +928,7 @@ export const App = () => {
     // 重ねて表示する。
     return (
       <div className="relative flex flex-1 overflow-hidden">
-        <Board
+        <BoardWorkspace
           columns={columns}
           tasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
@@ -913,7 +945,7 @@ export const App = () => {
         />
         {tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
-            <p className="rounded bg-white/90 px-4 py-2 text-sm text-gray-500 shadow">
+            <p className="rounded bg-surface/90 px-4 py-2 text-sm text-muted shadow">
               タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
             </p>
           </div>
@@ -923,67 +955,81 @@ export const App = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <HeaderBar
-        projectName={projectName}
-        view={view}
-        onSettingsClick={handleSettingsClick}
-        onMilestoneClick={
-          state.kind === "loaded" ? handleMilestoneClick : undefined
-        }
-        onOpenClick={handleOpenClick}
-      />
-      <main className="flex flex-1 overflow-hidden">
-        {view === "settings" && (
-          <SettingsScreen milestones={settingsMilestonesResource} />
-        )}
-        {view === "milestone" && (
-          <MilestoneViewScreen
-            resource={milestonesResource}
+    <ThemeProvider>
+      <div className="flex h-screen w-screen flex-col overflow-hidden">
+        <HeaderBar
+          projectName={projectName}
+          view={view}
+          onSettingsClick={handleSettingsClick}
+          onMilestoneClick={
+            state.kind === "loaded" ? handleMilestoneClick : undefined
+          }
+          onOpenClick={handleOpenClick}
+        />
+        <div className="flex flex-1 overflow-hidden">
+          <AppSidebar
+            projectName={projectName}
+            currentPath={displayedPath ?? undefined}
+            recentProjects={recentProjects}
             tasks={tasks}
-            doneColumn={doneColumn}
+            selectedTaskId={selectedTaskId}
+            onOpenProject={handleOpenClick}
+            onOpenProjectPath={handleOpenProjectPath}
+            onSelectTask={handleSidebarSelectTask}
           />
-        )}
-        {view === "detail" && selectedTask && (
-          <DetailScreen
-            task={selectedTask}
-            columns={columns}
-            allTasks={tasks}
-            tasksByNormalizedPath={tasksByNormalizedPath}
-            doneColumn={doneColumn}
-            isUpperModalOpen={createModalStatus !== null}
-            onBack={handleBackToBoard}
-            onTaskUpdate={handleTaskUpdate}
-            onDelete={handleTaskDelete}
-            onAddSubIssue={handleAddSubIssue}
-            onSelectTask={handleSelectTask}
-            onAddLink={handleAddLink}
-            onRemoveLink={handleRemoveLink}
-          />
-        )}
-        {view !== "settings" &&
-          view !== "detail" &&
-          view !== "milestone" &&
-          renderMain()}
-      </main>
-      {/* タスク作成モーダルは board / detail 区分で表示する。detail（全画面詳細）の */}
-      {/* 「+ サブIssue追加」からも親 self-set で作成フォームを開けるようにする */}
-      {/* （settings / milestone 区分では非表示）。 */}
-      {(view === "board" || view === "detail") &&
-        createModalStatus !== null && (
-          <TaskCreateModal
-            columns={columns}
-            initialStatus={createModalStatus}
-            parentCandidates={parentCandidates}
-            existingTasks={tasks}
-            initialParent={createModalParent}
-            parentReadOnly={parentReadOnly}
-            onSubmit={handleCreateTask}
-            onClose={handleCloseCreateModal}
-          />
-        )}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      <LiveRegion announcement={announcement} />
-    </div>
+          <main className="flex flex-1 overflow-hidden">
+            {view === "settings" && (
+              <SettingsScreen milestones={settingsMilestonesResource} />
+            )}
+            {view === "milestone" && (
+              <MilestoneViewScreen
+                resource={milestonesResource}
+                tasks={tasks}
+                doneColumn={doneColumn}
+              />
+            )}
+            {view === "detail" && selectedTask && (
+              <DetailScreen
+                task={selectedTask}
+                columns={columns}
+                allTasks={tasks}
+                tasksByNormalizedPath={tasksByNormalizedPath}
+                doneColumn={doneColumn}
+                isUpperModalOpen={createModalStatus !== null}
+                onBack={handleBackToBoard}
+                onTaskUpdate={handleTaskUpdate}
+                onDelete={handleTaskDelete}
+                onAddSubIssue={handleAddSubIssue}
+                onSelectTask={handleSelectTask}
+                onAddLink={handleAddLink}
+                onRemoveLink={handleRemoveLink}
+              />
+            )}
+            {view !== "settings" &&
+              view !== "detail" &&
+              view !== "milestone" &&
+              renderMain()}
+          </main>
+        </div>
+        {/* タスク作成モーダルは board / detail 区分で表示する。detail（全画面詳細）の */}
+        {/* 「+ サブIssue追加」からも親 self-set で作成フォームを開けるようにする */}
+        {/* （settings / milestone 区分では非表示）。 */}
+        {(view === "board" || view === "detail") &&
+          createModalStatus !== null && (
+            <TaskCreateModal
+              columns={columns}
+              initialStatus={createModalStatus}
+              parentCandidates={parentCandidates}
+              existingTasks={tasks}
+              initialParent={createModalParent}
+              parentReadOnly={parentReadOnly}
+              onSubmit={handleCreateTask}
+              onClose={handleCloseCreateModal}
+            />
+          )}
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+        <LiveRegion announcement={announcement} />
+      </div>
+    </ThemeProvider>
   );
 };

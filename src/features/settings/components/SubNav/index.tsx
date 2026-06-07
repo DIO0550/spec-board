@@ -38,7 +38,7 @@ type SubNavProps = {
  */
 export const SubNav = ({ tabs, activeTabId, onSelect }: SubNavProps) => {
   return (
-    <div role="tablist" className="flex gap-1 border-b border-gray-200">
+    <div role="tablist" className="flex gap-1 border-b border-border">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         return (
@@ -52,8 +52,8 @@ export const SubNav = ({ tabs, activeTabId, onSelect }: SubNavProps) => {
             onClick={() => onSelect(tab.id)}
             className={
               isActive
-                ? "border-b-2 border-blue-600 px-3 py-2 text-sm text-blue-700"
-                : "px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                ? "border-b-2 border-accent px-3 py-2 text-sm font-medium text-foreground"
+                : "px-3 py-2 text-sm text-muted hover:bg-surface-muted"
             }
           >
             {tab.label}

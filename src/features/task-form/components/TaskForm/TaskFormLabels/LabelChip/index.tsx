@@ -35,13 +35,13 @@ export const LabelChip = ({
   return (
     <span
       title={title}
-      className="inline-flex items-center gap-0.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700"
+      className="inline-flex items-center gap-0.5 rounded bg-surface-muted px-1.5 py-0.5 text-xs text-foreground"
     >
       {label}
       <button
         type="button"
         aria-label={removeAriaLabel ?? `ラベル「${label}」を削除`}
-        className="ml-0.5 rounded text-gray-400 hover:text-gray-700"
+        className="ml-0.5 rounded text-muted hover:text-foreground"
         disabled={disabled}
         onClick={onRemove}
       >

@@ -130,11 +130,11 @@ export const LinksSection = (props: LinksSectionProps) => {
       aria-label="関連タスク"
       className="flex flex-col gap-2"
     >
-      <h3 className="text-sm font-medium text-gray-700">関連タスク</h3>
+      <h3 className="text-sm font-medium text-foreground">関連タスク</h3>
       <ul
         data-testid="links-section-linked"
         aria-label="関連リンク先（このタスクから他のタスクへのリンク）"
-        className="flex flex-col gap-1 text-sm text-gray-700"
+        className="flex flex-col gap-1 text-sm text-foreground"
       >
         {props.task.links.linkedFilePaths.map((p, i) => {
           const isBroken = props.brokenLinkPaths?.has(p) ?? false;
@@ -160,7 +160,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                   disabled={isBusyAny}
                   aria-label="リンクを削除"
                   data-testid={`links-section-linked-remove-${i}`}
-                  className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+                  className="shrink-0 rounded px-1 text-xs text-muted hover:bg-surface-muted hover:text-foreground disabled:opacity-50"
                 >
                   ×
                 </button>
@@ -181,7 +181,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                 disabled={isLinkClickDisabled}
                 data-testid={`links-section-linked-navigate-${i}`}
                 data-path={p}
-                className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-surface-muted disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
               >
                 {p}
               </button>
@@ -192,7 +192,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                 aria-label="リンクを削除"
                 data-testid={`links-section-linked-remove-${i}`}
                 data-path={p}
-                className="shrink-0 rounded px-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+                className="shrink-0 rounded px-1 text-xs text-muted hover:bg-surface-muted hover:text-foreground disabled:opacity-50"
               >
                 ×
               </button>
@@ -203,7 +203,7 @@ export const LinksSection = (props: LinksSectionProps) => {
       <ul
         data-testid="links-section-reverse"
         aria-label="関連リンク元（他のタスクからこのタスクへの逆リンク）"
-        className="flex flex-col gap-1 text-sm text-gray-500"
+        className="flex flex-col gap-1 text-sm text-muted"
       >
         {props.task.links.reverseLinkedFilePaths.map((p, i) => {
           const isBroken = props.brokenReverseLinkPaths?.has(p) ?? false;
@@ -240,7 +240,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                 disabled={isLinkClickDisabled}
                 data-testid={`links-section-reverse-navigate-${i}`}
                 data-path={p}
-                className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left hover:bg-surface-muted disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
               >
                 {p}
               </button>
@@ -265,7 +265,7 @@ export const LinksSection = (props: LinksSectionProps) => {
           onClick={() => setIsOpen(true)}
           disabled={isBusyAny}
           data-testid="links-section-add-button"
-          className="self-start rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+          className="self-start rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-muted disabled:opacity-50"
         >
           + リンク追加
         </button>

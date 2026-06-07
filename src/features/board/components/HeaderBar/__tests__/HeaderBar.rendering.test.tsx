@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { ThemeProvider } from "@/features/shell";
 import { HeaderBar } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -21,11 +22,15 @@ function renderHeaderBar(props: Partial<Parameters<typeof HeaderBar>[0]> = {}) {
   root = createRoot(container);
   act(() => {
     root?.render(
-      createElement(HeaderBar, {
-        onSettingsClick: vi.fn(),
-        onOpenClick: vi.fn(),
-        ...props,
-      }),
+      createElement(
+        ThemeProvider,
+        null,
+        createElement(HeaderBar, {
+          onSettingsClick: vi.fn(),
+          onOpenClick: vi.fn(),
+          ...props,
+        }),
+      ),
     );
   });
   return root;
