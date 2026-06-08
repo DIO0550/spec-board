@@ -1690,11 +1690,15 @@ fn config_json_round_trip_omits_done_column_when_none() {
 #[test]
 fn column_color_from_hex_accepts_lowercase_six_digits() {
     assert_eq!(
-        ColumnColor::from_hex("#000000").as_ref().map(ColumnColor::as_str),
+        ColumnColor::from_hex("#000000")
+            .as_ref()
+            .map(ColumnColor::as_str),
         Some("#000000")
     );
     assert_eq!(
-        ColumnColor::from_hex("#abcdef").as_ref().map(ColumnColor::as_str),
+        ColumnColor::from_hex("#abcdef")
+            .as_ref()
+            .map(ColumnColor::as_str),
         Some("#abcdef")
     );
 }
@@ -1702,7 +1706,9 @@ fn column_color_from_hex_accepts_lowercase_six_digits() {
 #[test]
 fn column_color_from_hex_normalizes_uppercase_to_lowercase() {
     assert_eq!(
-        ColumnColor::from_hex("#ABCDEF").as_ref().map(ColumnColor::as_str),
+        ColumnColor::from_hex("#ABCDEF")
+            .as_ref()
+            .map(ColumnColor::as_str),
         Some("#abcdef")
     );
 }
