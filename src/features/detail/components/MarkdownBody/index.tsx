@@ -3,11 +3,24 @@ import {
   type Block,
   type InlineToken,
   Markdown,
+  type TaskListItem,
 } from "@/features/detail/domains/markdown";
 import {
   MarkdownBodyEditMode,
   useMarkdownBodyEdit,
 } from "@/features/detail/hooks/useMarkdownBodyEdit";
+import { BodyTaskProgress } from "../BodyTaskProgress";
+
+/** renderBlock に渡す checkbox のインタラクション制御 */
+type RenderBlockOptions = {
+  /** checkbox を操作可能にするか（onConfirm 指定時のみ true） */
+  interactive: boolean;
+  /**
+   * checkbox toggle 時に呼ぶハンドラ。
+   * @param sourceLine - 反転対象の source 行番号
+   */
+  onToggle: (sourceLine: number) => void;
+};
 
 type MarkdownBodyProps = {
   body: string;
@@ -46,12 +59,65 @@ const renderInline = (tokens: readonly InlineToken[]): ReactNode[] =>
   });
 
 /**
+ * 空 checkbox（本文なし）でもアクセシブル名が空にならないための fallback 文言。
+ */
+const EMPTY_TASK_ARIA_LABEL = "本文タスクを切り替え";
+
+/**
+ * ul の 1 項目（task / plain）を li に変換する。
+ * task 項目はネイティブ checkbox（`dangerouslySetInnerHTML` 不使用）で描画し、
+ * 親 display ラッパへの click / keydown 伝播を止めて edit 同時起動を防ぐ。
+ *
+ * @param item - 描画する項目
+ * @param idx - 同名アイテムでの key 衝突回避用 index
+ * @param options - checkbox のインタラクション制御
+ * @returns li 要素
+ */
+const renderListItem = (
+  item: TaskListItem,
+  idx: number,
+  options: RenderBlockOptions,
+): ReactNode => {
+  if (item.kind === "task") {
+    return (
+      <li
+        key={`${idx}-task`}
+        className="-ml-6 flex list-none items-start gap-2"
+      >
+        <input
+          type="checkbox"
+          checked={item.checked}
+          disabled={!options.interactive}
+          onChange={() => options.onToggle(item.sourceLine)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label={
+            item.text === "" ? EMPTY_TASK_ARIA_LABEL : `${item.text} を切り替え`
+          }
+        />
+        <span>{renderInline(Markdown.tokenizeInline(item.text))}</span>
+      </li>
+    );
+  }
+  return (
+    <li key={`${idx}-plain`}>
+      {renderInline(Markdown.tokenizeInline(item.text))}
+    </li>
+  );
+};
+
+/**
  * Block 型を JSX に変換する。
  * @param block - 1 ブロック
  * @param key - React の key
+ * @param options - checkbox のインタラクション制御
  * @returns React 要素
  */
-const renderBlock = (block: Block, key: number): ReactNode => {
+const renderBlock = (
+  block: Block,
+  key: number,
+  options: RenderBlockOptions,
+): ReactNode => {
   if (block.type === "h1") {
     return (
       <h1 key={key} className="mt-8 mb-4 text-3xl font-bold leading-tight">
@@ -74,15 +140,29 @@ const renderBlock = (block: Block, key: number): ReactNode => {
     );
   }
   if (block.type === "ul") {
+    const { done, total } = Markdown.countTaskProgress(block.items);
     return (
-      <ul key={key} className="list-disc pl-6">
-        {block.items.map((item, idx) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: 同名アイテムや空文字 (`- `) で key 衝突しないよう idx を併用する
-          <li key={`${idx}-${item}`}>
-            {renderInline(Markdown.tokenizeInline(item))}
-          </li>
+      <div key={key}>
+        <BodyTaskProgress done={done} total={total} />
+        <ul className="list-disc pl-6">
+          {block.items.map((item, idx) => renderListItem(item, idx, options))}
+        </ul>
+      </div>
+    );
+  }
+  if (block.type === "blockquote") {
+    return (
+      <blockquote
+        key={key}
+        className="border-l-4 border-surface-muted pl-4 text-muted"
+      >
+        {block.lines.map((line, idx) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 同文言行で key 衝突しないよう idx を併用する
+          <p key={`${idx}-${line}`}>
+            {renderInline(Markdown.tokenizeInline(line))}
+          </p>
         ))}
-      </ul>
+      </blockquote>
     );
   }
   if (block.type === "codeblock") {
@@ -107,6 +187,20 @@ const renderBlock = (block: Block, key: number): ReactNode => {
  */
 export const MarkdownBody = ({ body, onConfirm }: MarkdownBodyProps) => {
   const edit = useMarkdownBodyEdit({ body, onConfirm });
+
+  const handleToggle = (sourceLine: number) => {
+    if (onConfirm === undefined) {
+      return;
+    }
+    onConfirm(Markdown.toggleTaskAt(body, sourceLine));
+  };
+
+  // checkbox を操作可能にするのは編集確定経路（onConfirm）が存在する場合のみ。
+  // edit モード中は textarea を描画するため renderBlock 自体が呼ばれない。
+  const renderOptions = {
+    interactive: onConfirm !== undefined,
+    onToggle: handleToggle,
+  };
 
   if (edit.mode === MarkdownBodyEditMode.Edit) {
     return (
@@ -133,7 +227,7 @@ export const MarkdownBody = ({ body, onConfirm }: MarkdownBodyProps) => {
         className={DISPLAY_READONLY_WRAPPER_CLASS_NAME}
         data-testid="markdown-body"
       >
-        {blocks.map((block, i) => renderBlock(block, i))}
+        {blocks.map((block, i) => renderBlock(block, i, renderOptions))}
       </div>
     );
   }
@@ -153,7 +247,7 @@ export const MarkdownBody = ({ body, onConfirm }: MarkdownBodyProps) => {
         <span className={PLACEHOLDER_CLASS_NAME}>本文を追加…</span>
       ) : (
         <div className="space-y-4">
-          {blocks.map((block, i) => renderBlock(block, i))}
+          {blocks.map((block, i) => renderBlock(block, i, renderOptions))}
         </div>
       )}
     </div>
