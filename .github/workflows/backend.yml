@@ -60,7 +60,12 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: |
+          # cache hit 時は ~/.cargo/bin に既にバイナリがあるため再インストールしない
+          # （tracking 情報なしの再 install は untracked 衝突でエラーになる）。
+          if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
+            cargo install cargo-llvm-cov --locked
+          fi
 
       - name: Generate coverage
         if: always()
