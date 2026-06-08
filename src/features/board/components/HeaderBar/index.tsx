@@ -1,3 +1,4 @@
+import { ThemeToggleButton } from "@/features/shell";
 import type { AppView } from "@/hooks/useAppView";
 
 /** ヘッダーバーの Props */
@@ -17,8 +18,9 @@ type HeaderBarProps = {
 
 /**
  * ボード上部のヘッダーバー。
- * プロジェクト名見出しとテーマトグルはサイドバー（ProjectSwitcher / ThemeToggleButton）へ
- * 集約したため、ここではビュー固有アクション（マイルストーン切替 / 設定 / 開く）のみを右寄せで表示する。
+ * プロジェクト名見出しはサイドバー（ProjectSwitcher）へ集約したため持たないが、
+ * テーマのライト ⇔ ダーク クイックトグルは spec（board-view-spec）に従いヘッダーに保持する。
+ * 残りはビュー固有アクション（マイルストーン切替 / 設定 / 開く）を右寄せで表示する。
  * @param props - {@link HeaderBarProps}
  * @returns ヘッダーバー要素
  */
@@ -31,6 +33,7 @@ export const HeaderBar = ({
   return (
     <header className="flex items-center justify-end border-b border-border bg-surface px-4 py-2">
       <div className="flex items-center gap-2">
+        <ThemeToggleButton />
         {onMilestoneClick && (
           <button
             type="button"

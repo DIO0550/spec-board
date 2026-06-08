@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { ThemeProvider } from "@/features/shell";
 import { HeaderBar } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -21,24 +22,27 @@ function renderHeaderBar(props: Partial<Parameters<typeof HeaderBar>[0]> = {}) {
   root = createRoot(container);
   act(() => {
     root?.render(
-      createElement(HeaderBar, {
-        onSettingsClick: vi.fn(),
-        onOpenClick: vi.fn(),
-        ...props,
-      }),
+      createElement(
+        ThemeProvider,
+        null,
+        createElement(HeaderBar, {
+          onSettingsClick: vi.fn(),
+          onOpenClick: vi.fn(),
+          ...props,
+        }),
+      ),
     );
   });
   return root;
 }
 
-test("テーマトグルボタンは表示されない（サイドバーへ集約）", async () => {
+test("テーマのクイックトグルが表示される（spec: ヘッダーに配置）", async () => {
   renderHeaderBar();
   await vi.waitFor(() => {
     const labels = Array.from(container?.querySelectorAll("button") ?? []).map(
-      (b) => b.getAttribute("aria-label"),
+      (b) => b.getAttribute("aria-label") ?? "",
     );
-    expect(labels).not.toContain("ライトテーマに切り替え");
-    expect(labels).not.toContain("ダークテーマに切り替え");
+    expect(labels.some((l) => l.includes("テーマに切り替え"))).toBe(true);
   });
 });
 
