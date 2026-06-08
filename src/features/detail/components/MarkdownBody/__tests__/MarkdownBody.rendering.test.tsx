@@ -104,3 +104,58 @@ test("連続する空行が1つの段落区切りとして扱われる", () => {
   expect(paragraphs[0]?.textContent).toBe("段落1");
   expect(paragraphs[1]?.textContent).toBe("段落2");
 });
+
+test("- [ ] / - [x] が checkbox として描画され、2 個目が checked", () => {
+  render("- [ ] a\n- [x] b");
+  const checkboxes = document.querySelectorAll<HTMLInputElement>(
+    'input[type="checkbox"]',
+  );
+  expect(checkboxes.length).toBe(2);
+  expect(checkboxes[0]?.checked).toBe(false);
+  expect(checkboxes[1]?.checked).toBe(true);
+});
+
+test("タスクリスト直上に進捗バー（aria-valuenow=50, テキスト 1/2）が描画される", () => {
+  render("- [ ] a\n- [x] b");
+  const bar = document.querySelector('[role="progressbar"]');
+  expect(bar?.getAttribute("aria-valuenow")).toBe("50");
+  expect(container?.textContent).toContain("1/2");
+});
+
+test("checkbox 0 件の箇条書きでは進捗バーを描画しない", () => {
+  render("- a\n- b");
+  expect(document.querySelector('[role="progressbar"]')).toBeNull();
+});
+
+test("> 引用が blockquote 要素として描画される", () => {
+  render("> quote");
+  const quote = document.querySelector("blockquote");
+  expect(quote).toBeTruthy();
+  expect(quote?.textContent).toContain("quote");
+});
+
+test("task と plain の混在で task li のみ checkbox を持つ", () => {
+  render("- [ ] a\n- plain");
+  const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+  expect(checkboxes.length).toBe(1);
+});
+
+test("task 本文の <script> はテキストとして描画され実行されない", () => {
+  render("- [ ] <script>x</script>");
+  expect(container?.querySelector("script")).toBeNull();
+  expect(container?.textContent).toContain("script");
+});
+
+test("空 checkbox の aria-label は空にならず固定文言になる", () => {
+  render("- [ ]");
+  const checkbox = document.querySelector('input[type="checkbox"]');
+  expect(checkbox?.getAttribute("aria-label")).toBe("本文タスクを切り替え");
+});
+
+test("onConfirm 未指定（read-only）では checkbox が disabled", () => {
+  render("- [ ] a");
+  const checkbox = document.querySelector<HTMLInputElement>(
+    'input[type="checkbox"]',
+  );
+  expect(checkbox?.disabled).toBe(true);
+});
