@@ -11,8 +11,11 @@ type ColumnHeaderProps = {
   taskCount: number;
   /** ヘッダー上端アクセント帯の色（`#rrggbb`）。未指定・不正時はフォールバックパレット。 */
   color?: string;
-  /** カラムの表示順インデックス（color 未指定時のフォールバック色決定に使う）。 */
-  order?: number;
+  /**
+   * カラムの表示順インデックス（color 未指定時のフォールバック色決定に使う）。
+   * フォールバック色決定に必須のため、呼び出し側は必ず表示順インデックスを渡す。
+   */
+  order: number;
   /** 「+ 追加」ボタンクリック時のコールバック */
   onAddClick: () => void;
   /**
@@ -57,7 +60,7 @@ export const ColumnHeader = ({
   name,
   taskCount,
   color,
-  order = 0,
+  order,
   onAddClick,
   onRename,
   existingColumnNames = [],

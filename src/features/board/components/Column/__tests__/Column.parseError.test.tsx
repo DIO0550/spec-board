@@ -42,12 +42,14 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
-function render(props: Parameters<typeof Column>[0]) {
+function render(
+  props: Omit<Parameters<typeof Column>[0], "order"> & { order?: number },
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(Column, props));
+    root?.render(createElement(Column, { order: 0, ...props }));
   });
 }
 

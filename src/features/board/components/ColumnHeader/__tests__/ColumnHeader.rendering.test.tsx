@@ -15,12 +15,16 @@ afterEach(() => {
   container = null;
 });
 
-function render(props: Parameters<typeof ColumnHeader>[0]) {
+function render(
+  props: Omit<Parameters<typeof ColumnHeader>[0], "order"> & {
+    order?: number;
+  },
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(ColumnHeader, props));
+    root?.render(createElement(ColumnHeader, { order: 0, ...props }));
   });
 }
 
@@ -71,8 +75,12 @@ test("color 指定時は上ボーダーが指定色になる", async () => {
     onAddClick: vi.fn(),
   });
   await vi.waitFor(() => {
-    const header = container?.querySelector("[data-testid='column-header']");
-    expect(header?.getAttribute("style")).toContain("#1a2b3c");
+    const header = container?.querySelector<HTMLElement>(
+      "[data-testid='column-header']",
+    );
+    // happy-dom / 実ブラウザで hex が rgb へ正規化される場合があるため両方を許容する。
+    const border = header?.style.borderTopColor ?? "";
+    expect(["#1a2b3c", "rgb(26, 43, 60)"]).toContain(border);
   });
 });
 
@@ -85,8 +93,12 @@ test("color 大文字は小文字化して上ボーダーに適用される", as
     onAddClick: vi.fn(),
   });
   await vi.waitFor(() => {
-    const header = container?.querySelector("[data-testid='column-header']");
-    expect(header?.getAttribute("style")).toContain("#1a2b3c");
+    const header = container?.querySelector<HTMLElement>(
+      "[data-testid='column-header']",
+    );
+    // happy-dom / 実ブラウザで hex が rgb へ正規化される場合があるため両方を許容する。
+    const border = header?.style.borderTopColor ?? "";
+    expect(["#1a2b3c", "rgb(26, 43, 60)"]).toContain(border);
   });
 });
 
