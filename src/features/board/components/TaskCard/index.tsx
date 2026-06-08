@@ -126,7 +126,8 @@ const CardContent = ({
       )}
       <SubIssueProgress
         childTasks={childTasks}
-        descendantTasks={effectiveDescendants}
+        done={done}
+        total={total}
         doneColumn={doneColumn}
       />
       <footer className="mt-2 flex items-center gap-2 text-xs text-muted">

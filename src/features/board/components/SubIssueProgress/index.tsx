@@ -1,12 +1,13 @@
-import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { Task } from "@/types/task";
 
 type SubIssueProgressProps = {
   /** 直下子（<details> 内の名前一覧用） */
   childTasks: readonly Task[];
-  /** 全子孫（進捗バーの算出元） */
-  descendantTasks: readonly Task[];
-  /** 完了として扱うカラム名 */
+  /** 全子孫の完了数（呼び出し側で `countSubIssueProgress` により集計済み） */
+  done: number;
+  /** 全子孫の総数（呼び出し側で `countSubIssueProgress` により集計済み） */
+  total: number;
+  /** 完了として扱うカラム名（子リストの完了アイコン判定用） */
   doneColumn: string;
 };
 
@@ -33,23 +34,21 @@ const StatusIcon = ({ isDone }: { isDone: boolean }) => {
 
 /**
  * @param props - {@link SubIssueProgressProps}
- * @returns サブIssue進捗バーと直下子タスクリスト。子孫（descendantTasks）が空の場合は null。
+ * @returns サブIssue進捗バーと直下子タスクリスト。総数（total）が 0 の場合は null。
  *   X/Y 数値表記はカードフッターへ集約したため、本コンポーネントはバーのみ表示し、
  *   進捗値は progressbar の aria 属性でスクリーンリーダーへ提供する。
+ *   done/total は呼び出し側（TaskCard）が集計した値を受け取り、二重集計を避ける。
  */
 export const SubIssueProgress = ({
   childTasks,
-  descendantTasks,
+  done,
+  total,
   doneColumn,
 }: SubIssueProgressProps) => {
-  if (descendantTasks.length === 0) {
+  if (total === 0) {
     return null;
   }
 
-  const { done, total } = TaskHierarchy.countSubIssueProgress(
-    descendantTasks,
-    doneColumn,
-  );
   const percentage = Math.round((done / total) * 100);
 
   return (

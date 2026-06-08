@@ -40,10 +40,11 @@ function render(props: Parameters<typeof SubIssueProgress>[0]) {
   });
 }
 
-test("children が存在する場合、進捗バーが表示される", () => {
+test("total が 1 以上で進捗バーが表示される", () => {
   render({
     childTasks: [createTask({ id: "c1", status: "Todo" })],
-    descendantTasks: [createTask({ id: "c1", status: "Todo" })],
+    done: 0,
+    total: 1,
     doneColumn: "Done",
   });
   const progressBar = container?.querySelector("[role='progressbar']");
@@ -51,34 +52,23 @@ test("children が存在する場合、進捗バーが表示される", () => {
 });
 
 test("視覚テキストには X/Y 数値を表示しない（フッターへ集約）", () => {
-  const descendants = [
-    createTask({ id: "c1", status: "Done" }),
-    createTask({ id: "c2", status: "Todo" }),
-    createTask({ id: "c3", status: "Done" }),
-    createTask({ id: "c4", status: "In Progress" }),
-    createTask({ id: "c5", status: "Todo" }),
-  ];
   render({
-    childTasks: descendants,
-    descendantTasks: descendants,
+    childTasks: [createTask({ id: "c1", status: "Done" })],
+    done: 2,
+    total: 5,
     doneColumn: "Done",
   });
   expect(container?.textContent).not.toContain("2/5");
 });
 
-test("progressbar に進捗が aria 属性として残る（2/5 → aria-label と aria-valuenow=40）", () => {
+test("progressbar に進捗が aria 属性として残る（done=2/total=5 → aria-label と aria-valuenow=40）", () => {
   render({
     childTasks: [
       createTask({ id: "c1", status: "Done" }),
       createTask({ id: "c2", status: "Todo" }),
     ],
-    descendantTasks: [
-      createTask({ id: "c1", status: "Done" }),
-      createTask({ id: "c2", status: "Todo" }),
-      createTask({ id: "g1", status: "Done" }),
-      createTask({ id: "g2", status: "Todo" }),
-      createTask({ id: "g3", status: "Todo" }),
-    ],
+    done: 2,
+    total: 5,
     doneColumn: "Done",
   });
   const bar = container?.querySelector("[role='progressbar']") as HTMLElement;
@@ -93,7 +83,8 @@ test("▶ クリックで子タスクリストが展開される", () => {
   ];
   render({
     childTasks: directChildren,
-    descendantTasks: directChildren,
+    done: 1,
+    total: 2,
     doneColumn: "Done",
   });
   const details = container?.querySelector("details") as HTMLDetailsElement;
@@ -109,20 +100,16 @@ test("▶ クリックで子タスクリストが展開される", () => {
   expect(container?.textContent).toContain("タスクB");
 });
 
-test("descendantTasks が空配列で非表示", () => {
-  render({ childTasks: [], descendantTasks: [], doneColumn: "Done" });
+test("total が 0 で非表示", () => {
+  render({ childTasks: [], done: 0, total: 0, doneColumn: "Done" });
   expect(container?.innerHTML).toBe("");
 });
 
 test("全子孫タスクが完了の場合、バーが 100% になる", () => {
-  const descendants = [
-    createTask({ id: "c1", status: "Done" }),
-    createTask({ id: "c2", status: "Done" }),
-    createTask({ id: "c3", status: "Done" }),
-  ];
   render({
-    childTasks: descendants,
-    descendantTasks: descendants,
+    childTasks: [createTask({ id: "c1", status: "Done" })],
+    done: 3,
+    total: 3,
     doneColumn: "Done",
   });
   const progressBar = container?.querySelector(
@@ -131,18 +118,14 @@ test("全子孫タスクが完了の場合、バーが 100% になる", () => {
   expect(progressBar.getAttribute("aria-valuenow")).toBe("100");
 });
 
-test("<details> 内 <ul> の <li> 数は childTasks.length と一致する（descendantTasks ではない）", () => {
+test("<details> 内 <ul> の <li> 数は childTasks.length と一致する（done/total ではない）", () => {
   render({
     childTasks: [
       createTask({ id: "c1", title: "child1", status: "Todo" }),
       createTask({ id: "c2", title: "child2", status: "Todo" }),
     ],
-    descendantTasks: [
-      createTask({ id: "c1", status: "Todo" }),
-      createTask({ id: "c2", status: "Todo" }),
-      createTask({ id: "g1", status: "Todo" }),
-      createTask({ id: "g2", status: "Todo" }),
-    ],
+    done: 0,
+    total: 4,
     doneColumn: "Done",
   });
   const lis = container?.querySelectorAll("details ul li");
