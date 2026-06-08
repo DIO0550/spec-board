@@ -12,14 +12,17 @@ fn default_returns_spec_baseline_columns_and_done_column() {
             Column {
                 name: "Todo".into(),
                 order: 0,
+                color: None,
             },
             Column {
                 name: "In Progress".into(),
                 order: 1,
+                color: None,
             },
             Column {
                 name: "Done".into(),
                 order: 2,
+                color: None,
             },
         ]
     );
@@ -57,7 +60,8 @@ fn roundtrip_spec_example_json() {
         parsed.columns[0],
         Column {
             name: "Todo".into(),
-            order: 0
+            order: 0,
+            color: None,
         }
     );
     assert_eq!(parsed.card_order.get("Todo").unwrap().len(), 2);
@@ -72,6 +76,7 @@ fn column_roundtrip() {
             Column {
                 name: "Todo".into(),
                 order: 0,
+                color: None,
             },
         ),
         (
@@ -79,6 +84,7 @@ fn column_roundtrip() {
             Column {
                 name: "In Progress".into(),
                 order: 1,
+                color: None,
             },
         ),
     ];
@@ -143,6 +149,7 @@ fn field_names_are_camel_case_in_json() {
         columns: vec![Column {
             name: "Todo".into(),
             order: 0,
+            color: None,
         }],
         card_order: BTreeMap::from([("Todo".to_string(), vec!["tasks/a.md".to_string()])]),
         done_column: Some("Todo".into()),
@@ -239,6 +246,7 @@ fn resolved_done_column_parametrized() {
         Column {
             name: name.into(),
             order,
+            color: None,
         }
     }
 
@@ -602,6 +610,7 @@ fn col(name: &str, order: u32) -> Column {
     Column {
         name: name.into(),
         order,
+        color: None,
     }
 }
 
@@ -1674,4 +1683,96 @@ fn config_json_round_trip_omits_done_column_when_none() {
     let parsed: Config = serde_json::from_str(json).unwrap();
     let serialized = serde_json::to_string(&parsed).unwrap();
     assert_eq!(serialized, json);
+}
+
+// ───────── ColumnColor ─────────
+
+#[test]
+fn column_color_from_hex_accepts_lowercase_six_digits() {
+    assert_eq!(
+        ColumnColor::from_hex("#000000").as_ref().map(ColumnColor::as_str),
+        Some("#000000")
+    );
+    assert_eq!(
+        ColumnColor::from_hex("#abcdef").as_ref().map(ColumnColor::as_str),
+        Some("#abcdef")
+    );
+}
+
+#[test]
+fn column_color_from_hex_normalizes_uppercase_to_lowercase() {
+    assert_eq!(
+        ColumnColor::from_hex("#ABCDEF").as_ref().map(ColumnColor::as_str),
+        Some("#abcdef")
+    );
+}
+
+#[test]
+fn column_color_from_hex_rejects_malformed() {
+    assert_eq!(ColumnColor::from_hex("000000"), None);
+    assert_eq!(ColumnColor::from_hex("#12345"), None);
+    assert_eq!(ColumnColor::from_hex("#GGGGGG"), None);
+    assert_eq!(ColumnColor::from_hex(""), None);
+}
+
+#[test]
+fn column_deserialize_accepts_and_normalizes_valid_color() {
+    let col: Column =
+        serde_json::from_str(r##"{"name":"Todo","order":0,"color":"#1A2B3C"}"##).unwrap();
+    assert_eq!(col.color.as_ref().map(ColumnColor::as_str), Some("#1a2b3c"));
+}
+
+#[test]
+fn column_deserialize_lenient_invalid_color_becomes_none() {
+    for raw in [
+        r#"{"name":"Todo","order":0,"color":"red"}"#,
+        r##"{"name":"Todo","order":0,"color":"#12345"}"##,
+        r#"{"name":"Todo","order":0,"color":123}"#,
+        r#"{"name":"Todo","order":0,"color":null}"#,
+    ] {
+        let col: Column = serde_json::from_str(raw).unwrap();
+        assert_eq!(col.color, None, "input: {raw}");
+    }
+}
+
+#[test]
+fn column_deserialize_missing_color_is_none() {
+    let col: Column = serde_json::from_str(r#"{"name":"Todo","order":0}"#).unwrap();
+    assert_eq!(col.color, None);
+}
+
+#[test]
+fn column_roundtrip_preserves_color() {
+    let json = r##"{"name":"Todo","order":0,"color":"#1a2b3c"}"##;
+    let col: Column = serde_json::from_str(json).unwrap();
+    let serialized = serde_json::to_string(&col).unwrap();
+    assert_eq!(serialized, json);
+}
+
+#[test]
+fn serialize_omits_column_color_when_none() {
+    let col = Column {
+        name: "Todo".into(),
+        order: 0,
+        color: None,
+    };
+    let serialized = serde_json::to_string(&col).unwrap();
+    assert_eq!(serialized, r#"{"name":"Todo","order":0}"#);
+}
+
+#[test]
+fn rename_preserves_column_color() {
+    let columns = vec![Column {
+        name: "Todo".into(),
+        order: 0,
+        color: ColumnColor::from_hex("#1a2b3c"),
+    }];
+    let mut rename_map = HashMap::new();
+    rename_map.insert("Todo".to_string(), "Backlog".to_string());
+    let renamed = apply_renames_to_columns(&columns, &rename_map);
+    assert_eq!(renamed[0].name.as_str(), "Backlog");
+    assert_eq!(
+        renamed[0].color.as_ref().map(ColumnColor::as_str),
+        Some("#1a2b3c")
+    );
 }

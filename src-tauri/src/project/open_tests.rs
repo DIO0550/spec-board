@@ -786,14 +786,17 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
             Column {
                 name: "Z".into(),
                 order: 2,
+                color: None,
             },
             Column {
                 name: "A".into(),
                 order: 0,
+                color: None,
             },
             Column {
                 name: "M".into(),
                 order: 1,
+                color: None,
             },
         ],
         card_order: CardOrder::default(),

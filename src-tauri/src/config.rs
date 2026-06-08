@@ -116,6 +116,41 @@ pub struct Config {
 
 const DEFAULT_VERSION: u32 = 1;
 
+/// `#rrggbb` 形式のカラムアクセント色 VO。constructor で形式を強制し、
+/// 大文字を小文字へ正規化して保持する（`#ABCDEF` → `#abcdef`）。
+///
+/// `Deserialize` は derive せず、フィールド側の関連関数 [`ColumnColor::deserialize_opt`]
+/// 経由でのみ生成する（不正値を `None` に倒すため）。`columns[].color` は config.json
+/// （JSON）に載るため、`serde_yaml_ng::Value` ではなく `serde_json::Value` で受ける。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ColumnColor(String);
+
+impl ColumnColor {
+    /// `#RRGGBB`（`#` + 16 進 6 桁）のみ受理し、小文字へ正規化して保持する。それ以外は `None`。
+    pub fn from_hex(raw: &str) -> Option<Self> {
+        let is_valid = raw.len() == 7
+            && raw.starts_with('#')
+            && raw[1..].bytes().all(|b| b.is_ascii_hexdigit());
+        is_valid.then(|| Self(raw.to_ascii_lowercase()))
+    }
+
+    /// 保持している `#rrggbb` 文字列を返す。
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// `color` フィールドの lenient deserialize。`serde_json::Value` で一旦受け、
+    /// 「文字列かつ `#RRGGBB` 妥当」のみ `Some(ColumnColor)`、それ以外（不正文字列 /
+    /// 数値 / null）は `None` に倒す。**エラーにしない**。
+    fn deserialize_opt<'de, D>(de: D) -> Result<Option<ColumnColor>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(de)?;
+        Ok(value.as_str().and_then(ColumnColor::from_hex))
+    }
+}
+
 /// カラム（ステータス）定義。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
@@ -123,6 +158,14 @@ pub struct Column {
     pub name: ColumnName,
     /// カラムの表示順序（0 始まり昇順を想定。連番である必要はない）。
     pub order: u32,
+    /// カラムヘッダーのアクセント色（任意）。`#RRGGBB` 妥当値のみ保持し、
+    /// 不正・欠落時は `None`。`None` のときは serialize で `color` キーごと省略する。
+    #[serde(
+        default,
+        deserialize_with = "ColumnColor::deserialize_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub color: Option<ColumnColor>,
 }
 
 /// spec L85 の初回オープン時デフォルト / spec L223 の読み込み失敗時フォールバックで
@@ -145,6 +188,7 @@ impl Default for Config {
             .map(|(i, name)| Column {
                 name: ColumnName::from_lenient(*name),
                 order: i as u32,
+                color: None,
             })
             .collect();
         let done_column = DEFAULT_COLUMN_NAMES
@@ -389,6 +433,7 @@ fn apply_renames_to_columns(
             Some(new_name) => Column {
                 name: ColumnName::from_lenient(new_name),
                 order: c.order,
+                color: c.color.clone(),
             },
             None => c.clone(),
         })
@@ -582,6 +627,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         .map(|(i, name)| Column {
             name: ColumnName::from_lenient(name),
             order: i as u32,
+            color: None,
         })
         .collect();
     let done_column = columns.last().map(|c| c.name.clone());
@@ -622,7 +668,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
 /// use std::collections::{BTreeMap, HashSet};
 /// let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
 /// map.insert("Todo".into(), vec!["a.md".into(), "x.md".into()]);
-/// let columns = vec![Column { name: "Todo".into(), order: 0 }];
+/// let columns = vec![Column { name: "Todo".into(), order: 0, color: None }];
 /// let mut existing: HashSet<String> = HashSet::new();
 /// existing.insert("a.md".to_string());
 /// let cleaned = clean_card_order(&map, &columns, &existing);
