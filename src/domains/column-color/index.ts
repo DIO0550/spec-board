@@ -50,9 +50,11 @@ export const ColumnColor = {
     if (normalized !== null) {
       return normalized;
     }
-    // 負値・非整数の order でも範囲外参照（undefined）にならないよう正規化する。
+    // 負値・非整数・非有限値（NaN / ±Infinity）の order でも範囲外参照（undefined）に
+    // ならないよう正規化する。非有限値は先頭トークン（index 0）へ倒す。
     const length = FALLBACK_PALETTE.length;
-    const paletteIndex = ((Math.trunc(orderIndex) % length) + length) % length;
+    const safeIndex = Number.isFinite(orderIndex) ? Math.trunc(orderIndex) : 0;
+    const paletteIndex = ((safeIndex % length) + length) % length;
     return FALLBACK_PALETTE[paletteIndex];
   },
 } as const;

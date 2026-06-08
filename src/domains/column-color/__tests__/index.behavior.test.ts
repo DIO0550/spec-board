@@ -50,3 +50,13 @@ test("負の order でも範囲外にならず有効なトークンを返す", (
     FALLBACK_TOKEN_PATTERN,
   );
 });
+
+test.each([
+  ["NaN", Number.NaN],
+  ["正の Infinity", Number.POSITIVE_INFINITY],
+  ["負の Infinity", Number.NEGATIVE_INFINITY],
+])("非有限な order（%s）でも undefined にならず有効なトークンを返す", (_label, order) => {
+  expect(ColumnColor.resolveAccent(undefined, order)).toMatch(
+    FALLBACK_TOKEN_PATTERN,
+  );
+});
