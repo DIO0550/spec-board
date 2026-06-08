@@ -1,7 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { ThemeProvider } from "@/features/shell";
 import { HeaderBar } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -22,31 +21,32 @@ function renderHeaderBar(props: Partial<Parameters<typeof HeaderBar>[0]> = {}) {
   root = createRoot(container);
   act(() => {
     root?.render(
-      createElement(
-        ThemeProvider,
-        null,
-        createElement(HeaderBar, {
-          onSettingsClick: vi.fn(),
-          onOpenClick: vi.fn(),
-          ...props,
-        }),
-      ),
+      createElement(HeaderBar, {
+        onSettingsClick: vi.fn(),
+        onOpenClick: vi.fn(),
+        ...props,
+      }),
     );
   });
   return root;
 }
 
-test("プロジェクト名が表示される", async () => {
-  renderHeaderBar({ projectName: "My Project" });
+test("テーマトグルボタンは表示されない（サイドバーへ集約）", async () => {
+  renderHeaderBar();
   await vi.waitFor(() => {
-    expect(container?.textContent).toContain("My Project");
+    const labels = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.getAttribute("aria-label"),
+    );
+    expect(labels).not.toContain("ライトテーマに切り替え");
+    expect(labels).not.toContain("ダークテーマに切り替え");
   });
 });
 
-test("未選択時はデフォルト名「spec-board」が表示される", async () => {
+test("プロジェクト名見出し（h1）は表示されない（サイドバーへ集約）", async () => {
   renderHeaderBar();
   await vi.waitFor(() => {
-    expect(container?.textContent).toContain("spec-board");
+    expect(container?.querySelector("h1")).toBeNull();
+    expect(container?.textContent).not.toContain("spec-board");
   });
 });
 

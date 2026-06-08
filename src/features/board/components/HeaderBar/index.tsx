@@ -1,10 +1,7 @@
-import { ThemeToggleButton } from "@/features/shell";
 import type { AppView } from "@/hooks/useAppView";
 
 /** ヘッダーバーの Props */
 type HeaderBarProps = {
-  /** プロジェクト名（未指定時は「spec-board」を表示） */
-  projectName?: string;
   /** 現在の画面区分。settings 中のみ「ボードへ戻る」表記に切替（board / detail は「設定」、既定 board） */
   view?: AppView;
   /** 設定ボタンのクリックハンドラ */
@@ -19,24 +16,21 @@ type HeaderBarProps = {
 };
 
 /**
- * ボード上部のヘッダーバー
+ * ボード上部のヘッダーバー。
+ * プロジェクト名見出しとテーマトグルはサイドバー（ProjectSwitcher / ThemeToggleButton）へ
+ * 集約したため、ここではビュー固有アクション（マイルストーン切替 / 設定 / 開く）のみを右寄せで表示する。
  * @param props - {@link HeaderBarProps}
  * @returns ヘッダーバー要素
  */
 export const HeaderBar = ({
-  projectName,
   view = "board",
   onSettingsClick,
   onMilestoneClick,
   onOpenClick,
 }: HeaderBarProps) => {
   return (
-    <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-2">
-      <h1 className="text-lg font-semibold text-foreground">
-        {projectName ?? "spec-board"}
-      </h1>
+    <header className="flex items-center justify-end border-b border-border bg-surface px-4 py-2">
       <div className="flex items-center gap-2">
-        <ThemeToggleButton />
         {onMilestoneClick && (
           <button
             type="button"

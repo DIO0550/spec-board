@@ -957,7 +957,6 @@ export const App = () => {
     <ThemeProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden">
         <HeaderBar
-          projectName={projectName}
           view={view}
           onSettingsClick={handleSettingsClick}
           onMilestoneClick={
