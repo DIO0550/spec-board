@@ -165,3 +165,89 @@ test("descendantTasks ベースで進捗サマリが表示される（直下子 
     expect(container?.textContent).toContain("3/5");
   });
 });
+
+test("フッターにタスク ID が常時表示される（links 0 / 子孫 0）", async () => {
+  render({
+    task: createTask({ id: "task-99", links: [], children: [] }),
+    onClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const id = container?.querySelector('[data-testid="task-card-id"]');
+    expect(id?.textContent).toBe("task-99");
+  });
+});
+
+test("links が 2 件の場合、フッターにリンク件数が表示される", async () => {
+  render({
+    task: createTask({ links: ["tasks/a.md", "tasks/b.md"] }),
+    onClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const linkCount = container?.querySelector(
+      '[data-testid="task-card-link-count"]',
+    );
+    expect(linkCount?.textContent).toContain("2");
+  });
+});
+
+test("links が 0 件の場合、リンク件数要素は表示されない", async () => {
+  render({ task: createTask({ links: [] }), onClick: vi.fn() });
+  await vi.waitFor(() => {
+    expect(container?.textContent).toContain("task-1");
+  });
+  const linkCount = container?.querySelector(
+    '[data-testid="task-card-link-count"]',
+  );
+  expect(linkCount).toBeNull();
+});
+
+test("子孫が存在する場合、フッターにサブIssue X/Y が表示される", async () => {
+  const childTasks = [createTask({ id: "c1", status: "Done" })];
+  const descendantTasks = [
+    createTask({ id: "c1", status: "Done" }),
+    createTask({ id: "c2", status: "Todo" }),
+  ];
+  render({
+    task: createTask({ id: "parent", children: ["tasks/c1.md"] }),
+    childTasks,
+    descendantTasks,
+    doneColumn: "Done",
+    onClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const count = container?.querySelector(
+      '[data-testid="task-card-subissue-count"]',
+    );
+    expect(count?.textContent).toBe("1/2");
+  });
+});
+
+test("子孫が 0 件の場合、サブIssue X/Y 要素は表示されない", async () => {
+  render({
+    task: createTask({ id: "task-1", children: [] }),
+    childTasks: [],
+    descendantTasks: [],
+    doneColumn: "Done",
+    onClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(container?.textContent).toContain("task-1");
+  });
+  const count = container?.querySelector(
+    '[data-testid="task-card-subissue-count"]',
+  );
+  expect(count).toBeNull();
+});
+
+test("長いタスク ID は truncate クラスで省略表示される", async () => {
+  render({
+    task: createTask({
+      id: "this-is-an-extremely-long-task-identifier-that-should-be-truncated",
+    }),
+    onClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const id = container?.querySelector('[data-testid="task-card-id"]');
+    expect(id?.className).toContain("truncate");
+  });
+});

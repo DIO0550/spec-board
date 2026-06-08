@@ -37,6 +37,13 @@ export type ColumnDropParams = {
 type ColumnProps = {
   /** ステータス名 */
   name: string;
+  /** ヘッダー上端アクセント帯の色（`#rrggbb`）。未指定・不正時はフォールバックパレット。 */
+  color?: string;
+  /**
+   * カラムの表示順インデックス（color 未指定時のフォールバック色決定に使う）。
+   * フォールバック色決定に必須のため、呼び出し側（Board）は表示順インデックスを渡す。
+   */
+  order: number;
   /** カラムに属するタスクの配列 */
   tasks: Task[];
   /** 全タスクの配列（子タスク解決用） */
@@ -127,6 +134,8 @@ type ColumnProps = {
  */
 export const Column = ({
   name,
+  color,
+  order,
   tasks,
   allTasks = [],
   tasksByNormalizedPath,
@@ -378,6 +387,8 @@ export const Column = ({
       <ColumnHeader
         name={name}
         taskCount={tasks.length}
+        color={color}
+        order={order}
         onAddClick={onAddClick}
         onRename={onRename}
         existingColumnNames={existingColumnNames}

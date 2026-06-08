@@ -17,10 +17,14 @@ export default meta;
 
 type Story = StoryObj<typeof HeaderBar>;
 
-export const WithProject: Story = {
-  args: { projectName: "my-board-project" },
+export const BoardView: Story = {
+  args: { view: "board" },
 };
 
-export const NoProject: Story = {
-  args: { projectName: undefined },
+export const SettingsView: Story = {
+  args: { view: "settings" },
+};
+
+export const WithMilestone: Story = {
+  args: { view: "board", onMilestoneClick: () => {} },
 };

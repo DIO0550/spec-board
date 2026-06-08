@@ -3,9 +3,11 @@ import type { Task } from "@/types/task";
 type SubIssueProgressProps = {
   /** 直下子（<details> 内の名前一覧用） */
   childTasks: readonly Task[];
-  /** 全子孫（X/Y サマリ + 進捗バーの算出元） */
-  descendantTasks: readonly Task[];
-  /** 完了として扱うカラム名 */
+  /** 全子孫の完了数（呼び出し側で `countSubIssueProgress` により集計済み） */
+  done: number;
+  /** 全子孫の総数（呼び出し側で `countSubIssueProgress` により集計済み） */
+  total: number;
+  /** 完了として扱うカラム名（子リストの完了アイコン判定用） */
   doneColumn: string;
 };
 
@@ -32,22 +34,22 @@ const StatusIcon = ({ isDone }: { isDone: boolean }) => {
 
 /**
  * @param props - {@link SubIssueProgressProps}
- * @returns サブIssue進捗バーと直下子タスクリスト。子孫（descendantTasks）が空の場合は null
+ * @returns サブIssue進捗バーと直下子タスクリスト。総数（total）が 0 の場合は null。
+ *   X/Y 数値表記はカードフッターへ集約したため、本コンポーネントはバーのみ表示し、
+ *   進捗値は progressbar の aria 属性でスクリーンリーダーへ提供する。
+ *   done/total は呼び出し側（TaskCard）が集計した値を受け取り、二重集計を避ける。
  */
 export const SubIssueProgress = ({
   childTasks,
-  descendantTasks,
+  done,
+  total,
   doneColumn,
 }: SubIssueProgressProps) => {
-  if (descendantTasks.length === 0) {
+  if (total === 0) {
     return null;
   }
 
-  const total = descendantTasks.length;
-  const doneCount = descendantTasks.filter(
-    (t) => t.status === doneColumn,
-  ).length;
-  const percentage = Math.round((doneCount / total) * 100);
+  const percentage = Math.round((done / total) * 100);
 
   return (
     <div className="mt-2">
@@ -57,9 +59,7 @@ export const SubIssueProgress = ({
       >
         <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
           <span aria-hidden="true">▶</span>
-          <span>
-            サブIssue ({doneCount}/{total})
-          </span>
+          <span>サブIssue</span>
         </summary>
         <ul className="mt-1 ml-4 space-y-0.5 text-xs text-foreground">
           {childTasks.map((child) => (
@@ -70,23 +70,18 @@ export const SubIssueProgress = ({
           ))}
         </ul>
       </details>
-      <div className="mt-1 flex items-center gap-2">
+      <div
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-muted"
+        role="progressbar"
+        aria-valuenow={percentage}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`進捗 ${done}/${total}`}
+      >
         <div
-          className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted"
-          role="progressbar"
-          aria-valuenow={percentage}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`進捗 ${doneCount}/${total}`}
-        >
-          <div
-            className="h-full rounded-full bg-green-500 transition-all"
-            style={{ width: `${percentage}%` }}
-          />
-        </div>
-        <span className="text-xs text-muted">
-          {doneCount}/{total}
-        </span>
+          className="h-full rounded-full bg-green-500 transition-all"
+          style={{ width: `${percentage}%` }}
+        />
       </div>
     </div>
   );

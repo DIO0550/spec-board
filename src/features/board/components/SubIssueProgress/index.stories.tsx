@@ -28,7 +28,8 @@ const meta: Meta<typeof SubIssueProgress> = {
   component: SubIssueProgress,
   args: {
     childTasks: [],
-    descendantTasks: [],
+    done: 0,
+    total: 0,
     doneColumn: "Done",
   },
 };
@@ -38,14 +39,11 @@ export default meta;
 type Story = StoryObj<typeof SubIssueProgress>;
 
 export const Empty: Story = {
-  args: { childTasks: [], descendantTasks: [] },
+  args: { childTasks: [], done: 0, total: 0 },
 };
 
 export const InProgress: Story = {
-  args: {
-    childTasks: directChildren,
-    descendantTasks: directChildren,
-  },
+  args: { childTasks: directChildren, done: 2, total: 4 },
 };
 
 export const AllDone: Story = {
@@ -55,22 +53,11 @@ export const AllDone: Story = {
       makeChild("c2", "Done", "完了 2"),
       makeChild("c3", "Done", "完了 3"),
     ],
-    descendantTasks: [
-      makeChild("c1", "Done", "完了 1"),
-      makeChild("c2", "Done", "完了 2"),
-      makeChild("c3", "Done", "完了 3"),
-    ],
+    done: 3,
+    total: 3,
   },
 };
 
 export const WithDescendantsBeyondDirectChildren: Story = {
-  args: {
-    childTasks: directChildren,
-    descendantTasks: [
-      ...directChildren,
-      makeChild("g1", "Todo", "孫 1"),
-      makeChild("g2", "Done", "孫 2"),
-      makeChild("g3", "Todo", "孫 3"),
-    ],
-  },
+  args: { childTasks: directChildren, done: 3, total: 7 },
 };

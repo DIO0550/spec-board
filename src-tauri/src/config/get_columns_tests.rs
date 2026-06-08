@@ -9,6 +9,7 @@ fn column(name: &str, order: u32) -> Column {
     Column {
         name: ColumnName::from(name),
         order,
+        color: None,
     }
 }
 

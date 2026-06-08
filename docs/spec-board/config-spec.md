@@ -34,7 +34,7 @@ project-root/
 {
   "version": 1,
   "columns": [
-    { "name": "Todo", "order": 0 },
+    { "name": "Todo", "order": 0, "color": "#2563eb" },
     { "name": "In Progress", "order": 1 },
     { "name": "Done", "order": 2 }
   ],
@@ -55,6 +55,7 @@ project-root/
 | columns | `Column[]` | はい | `[Todo, In Progress, Done]`（`Config::default` baseline） | カラム（ステータス）定義の配列。**最低 1 つのカラムが必須**であり、`columns: []` は load 時に `EmptyColumns` エラーで拒否される（[エラーハンドリング](#エラーハンドリング) 参照） |
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順） |
+| columns[].color | `string` | いいえ | なし（フォールバックパレット） | カラムヘッダー上端アクセント帯の `#RRGGBB` 色。不正形式・型不一致・欠落・`null` は lenient に「色なし」へ倒す（後述）。`None` 時は serialize で `color` キーごと省略され、既定値の適用は FE 表示層の責務 |
 | cardOrder | `Record<string, string[]>` | はい | `{}` | カラム名をキー、そのカラム内のタスクファイルパスの配列を値とする。配列順がカード表示順 |
 | doneColumn | `string` | いいえ | 最後のカラム名 | 「完了」として扱うカラム名。サブIssue進捗バーの完了判定に使用 |
 
@@ -63,6 +64,13 @@ project-root/
 - 最低1つのカラムが必要
 - カラム名の重複は不可
 - `order` は連番である必要はないが、昇順でソートして表示に使用
+- `color` はカラムヘッダー上端のアクセント帯に使う任意の色。設定済みのカラムは reorder / rename を行っても `color` が保持される
+
+#### color の lenient 解釈
+
+- `color` は `#RRGGBB`（`#` + 16 進 6 桁）のみ妥当とみなし、妥当な場合のみ色として保持する。大文字は小文字へ正規化する（`#ABCDEF` → `#abcdef`）。
+- 不正形式（`"red"` / `"#12345"` 等）・型不一致（数値 `123`）・欠落・`null` はエラーにせず「色なし」へ倒す。payload では `color` を省略し、フォールバックパレット（`order` index ベースのテーマトークン）の適用は FE 表示層の責務とする。
+- `color` 未設定（`None`）のカラムを serialize すると `color` キーは出力されない（`skip_serializing_if`）。これにより既存 `config.json` を reorder / rename で書き戻しても `color` キーは付与されず、差分が生じない。
 
 ### cardOrder
 

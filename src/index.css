@@ -14,6 +14,16 @@
 	--color-accent: #2563eb;
 	--color-accent-foreground: #ffffff;
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+
+	/* カラムヘッダー上端のアクセント帯フォールバック色（color 未設定/不正時）。
+	   order index → 色を決定的に写像する。ライト既定値。
+	   domains/column-color の FALLBACK_PALETTE と 1:1 対応する。 */
+	--color-column-accent-1: #2563eb;
+	--color-column-accent-2: #16a34a;
+	--color-column-accent-3: #d97706;
+	--color-column-accent-4: #7c3aed;
+	--color-column-accent-5: #e11d48;
+	--color-column-accent-6: #0891b2;
 }
 
 /* ライトテーマ既定。OS がダーク配色でもフォームコントロール/スクロールバーを
@@ -30,6 +40,14 @@
 	--color-foreground: #e5e7eb;
 	--color-muted: #9ca3af;
 	--color-border: #3f3f46;
+
+	/* カラムアクセント帯のダーク値（@theme のライト値を上書きしテーマ追従）。 */
+	--color-column-accent-1: #3b82f6;
+	--color-column-accent-2: #22c55e;
+	--color-column-accent-3: #f59e0b;
+	--color-column-accent-4: #a78bfa;
+	--color-column-accent-5: #fb7185;
+	--color-column-accent-6: #22d3ee;
 }
 
 /* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。

@@ -15,12 +15,16 @@ afterEach(() => {
   container = null;
 });
 
-function render(props: Parameters<typeof ColumnHeader>[0]) {
+function render(
+  props: Omit<Parameters<typeof ColumnHeader>[0], "order"> & {
+    order?: number;
+  },
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(ColumnHeader, props));
+    root?.render(createElement(ColumnHeader, { order: 0, ...props }));
   });
 }
 

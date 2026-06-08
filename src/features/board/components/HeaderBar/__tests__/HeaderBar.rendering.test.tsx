@@ -36,17 +36,21 @@ function renderHeaderBar(props: Partial<Parameters<typeof HeaderBar>[0]> = {}) {
   return root;
 }
 
-test("プロジェクト名が表示される", async () => {
-  renderHeaderBar({ projectName: "My Project" });
+test("テーマのクイックトグルが表示される（spec: ヘッダーに配置）", async () => {
+  renderHeaderBar();
   await vi.waitFor(() => {
-    expect(container?.textContent).toContain("My Project");
+    const labels = Array.from(container?.querySelectorAll("button") ?? []).map(
+      (b) => b.getAttribute("aria-label") ?? "",
+    );
+    expect(labels.some((l) => l.includes("テーマに切り替え"))).toBe(true);
   });
 });
 
-test("未選択時はデフォルト名「spec-board」が表示される", async () => {
+test("プロジェクト名見出し（h1）は表示されない（サイドバーへ集約）", async () => {
   renderHeaderBar();
   await vi.waitFor(() => {
-    expect(container?.textContent).toContain("spec-board");
+    expect(container?.querySelector("h1")).toBeNull();
+    expect(container?.textContent).not.toContain("spec-board");
   });
 });
 

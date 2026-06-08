@@ -59,3 +59,16 @@ test("gap がある order でも 0-origin 連番に完全正規化される", ()
     { name: "A", order: 2 },
   ]);
 });
+
+test("color を持つカラムを並び替えても color が脱落しない", () => {
+  const before: readonly Column[] = [
+    { name: "A", order: 0, color: "#111111" },
+    { name: "B", order: 1, color: "#222222" },
+    { name: "C", order: 2 },
+  ];
+  expect(reorderColumnsByIndex(before, 0, 2)).toEqual([
+    { name: "B", order: 0, color: "#222222" },
+    { name: "C", order: 1 },
+    { name: "A", order: 2, color: "#111111" },
+  ]);
+});

@@ -37,15 +37,21 @@ jobs:
             libsoup-3.0-dev
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy, llvm-tools-preview
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
+          rustup default stable
 
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          workspaces: "src-tauri -> target"
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
@@ -54,9 +60,12 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
-        with:
-          tool: cargo-llvm-cov
+        run: |
+          # cache hit 時は ~/.cargo/bin に既にバイナリがあるため再インストールしない
+          # （tracking 情報なしの再 install は untracked 衝突でエラーになる）。
+          if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
+            cargo install cargo-llvm-cov --locked
+          fi
 
       - name: Generate coverage
         if: always()
@@ -124,7 +133,20 @@ jobs:
 
       - name: Post coverage comment
         continue-on-error: true
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
-        with:
-          header: backend-coverage
-          path: coverage.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ ! -f coverage.md ]; then
+            echo "coverage.md not found; skipping"
+            exit 0
+          fi
+          MARKER="<!-- sticky-comment: backend-coverage -->"
+          BODY=$(printf '%s\n%s' "$MARKER" "$(cat coverage.md)")
+          EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][0].id // empty")
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING}" -f body="$BODY"
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
+          fi
