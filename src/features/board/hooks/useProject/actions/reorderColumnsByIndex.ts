@@ -44,5 +44,5 @@ export const reorderColumnsByIndex = (
   const next = [...columns];
   const [moved] = next.splice(fromIndex, 1);
   next.splice(toIndex, 0, moved);
-  return next.map((column, order) => ({ name: column.name, order }));
+  return next.map((column, order) => ({ ...column, order }));
 };
