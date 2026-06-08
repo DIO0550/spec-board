@@ -151,7 +151,7 @@ const openSuccessfully = async (seedTask: Task, path = "/p"): Promise<void> => {
   await clickHeaderOpenButton();
 };
 
-const openDetailPanel = (): void => {
+const openDetailScreen = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -183,11 +183,13 @@ const clickConfirmButton = async (): Promise<void> => {
 const queryTaskCard = (): HTMLElement | null =>
   container?.querySelector<HTMLElement>("[data-testid='task-card']") ?? null;
 
-const queryDetailPanel = (): HTMLElement | null =>
-  document.querySelector<HTMLElement>('aside[aria-label="タスク詳細"]');
+const queryDetailScreen = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('section[aria-label="タスク詳細"]');
 
-const queryDetailFilePath = (): HTMLElement | null =>
-  document.querySelector<HTMLElement>('[data-testid="detail-file-path"]');
+const queryDetailTitleValue = (): string =>
+  document.querySelector<HTMLInputElement>(
+    '[data-testid="editable-text-display"]',
+  )?.value ?? "";
 
 const queryConfirmDialog = (): HTMLElement | null =>
   document.querySelector<HTMLElement>('[data-testid="confirm-dialog"]');
@@ -208,17 +210,17 @@ const makeDeferredDelete = (): {
   return { pending, resolveDelete };
 };
 
-test("削除確定 → pending 中: カード消失 + DetailPanel 維持 → invoke 成功で panel close + toast + announce", async () => {
+test("削除確定 → pending 中: カード消失 + DetailScreen 維持 → invoke 成功で panel close + toast + announce", async () => {
   const seedTask = makeSeedTask();
   const { pending, resolveDelete } = makeDeferredDelete();
   deleteTaskMock.mockReturnValueOnce(pending);
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
-  // DetailPanel が開いて seed task の filePath が表示されている
-  expect(queryDetailFilePath()?.textContent).toBe(seedFilePath);
+  // DetailScreen が開いて seed task の filePath が表示されている
+  expect(queryDetailTitleValue()).toBe(seedTitle);
 
   await clickDeleteButton();
   expect(queryConfirmDialog()).not.toBeNull();
@@ -227,9 +229,9 @@ test("削除確定 → pending 中: カード消失 + DetailPanel 維持 → inv
 
   // invoke pending 中: Board からカードが消えている (楽観反映)
   expect(queryTaskCard()).toBeNull();
-  // DetailPanel は pendingDeleteTask snapshot 経由で維持される
-  expect(queryDetailPanel()).not.toBeNull();
-  expect(queryDetailFilePath()?.textContent).toBe(seedFilePath);
+  // DetailScreen は pendingDeleteTask snapshot 経由で維持される
+  expect(queryDetailScreen()).not.toBeNull();
+  expect(queryDetailTitleValue()).toBe(seedTitle);
 
   await act(async () => {
     resolveDelete(Result.ok(undefined));
@@ -237,9 +239,9 @@ test("削除確定 → pending 中: カード消失 + DetailPanel 維持 → inv
     await Promise.resolve();
   });
 
-  // 成功: DetailPanel が閉じる
+  // 成功: DetailScreen が閉じる
   await vi.waitFor(() => {
-    expect(queryDetailPanel()).toBeNull();
+    expect(queryDetailScreen()).toBeNull();
   });
 
   // toast success + live-region に削除アナウンス
@@ -251,19 +253,19 @@ test("削除確定 → pending 中: カード消失 + DetailPanel 維持 → inv
   expect(queryLiveRegionText()).toContain(`「${seedTitle}」を削除しました`);
 });
 
-test("削除確定 → invoke 失敗で rollback + DetailPanel 継続表示 + announce 取り消し", async () => {
+test("削除確定 → invoke 失敗で rollback + DetailScreen 継続表示 + announce 取り消し", async () => {
   const seedTask = makeSeedTask();
   const { pending, resolveDelete } = makeDeferredDelete();
   deleteTaskMock.mockReturnValueOnce(pending);
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await clickDeleteButton();
   await clickConfirmButton();
 
-  // 楽観反映後にカードが消えている
+  // detail 表示中はボードが描画されないため、楽観反映でカードは DOM に存在しない
   expect(queryTaskCard()).toBeNull();
 
   await act(async () => {
@@ -272,13 +274,11 @@ test("削除確定 → invoke 失敗で rollback + DetailPanel 継続表示 + an
     await Promise.resolve();
   });
 
-  // rollback で Board にカード復活
+  // 失敗後も DetailScreen は閉じず、表示対象タスクが維持される（detail に留まる）
   await vi.waitFor(() => {
-    expect(queryTaskCard()).not.toBeNull();
+    expect(queryDetailScreen()).not.toBeNull();
   });
-  // DetailPanel は引き続き表示
-  expect(queryDetailPanel()).not.toBeNull();
-  expect(queryDetailFilePath()?.textContent).toBe(seedFilePath);
+  expect(queryDetailTitleValue()).toBe(seedTitle);
 
   // toast error + live-region に取り消しアナウンス
   const errorToast = document.querySelector('[data-testid="toast-error"]');
@@ -290,6 +290,19 @@ test("削除確定 → invoke 失敗で rollback + DetailPanel 継続表示 + an
 
   // useDeleteFlow は error 状態で ConfirmDialog が維持される
   expect(queryConfirmDialog()).not.toBeNull();
+
+  // rollback の確認: 「← 戻る」で board へ戻すと復活したカードが見える
+  await act(async () => {
+    (
+      document.querySelector(
+        '[data-testid="detail-back-button"]',
+      ) as HTMLElement
+    ).click();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(queryTaskCard()).not.toBeNull();
 });
 
 test("失敗後の retry: ConfirmDialog '削除' 再押下で 2 回目 invoke が成功", async () => {
@@ -299,7 +312,7 @@ test("失敗後の retry: ConfirmDialog '削除' 再押下で 2 回目 invoke �
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await clickDeleteButton();
   await clickConfirmButton();
@@ -326,28 +339,28 @@ test("失敗後の retry: ConfirmDialog '削除' 再押下で 2 回目 invoke �
     await Promise.resolve();
   });
 
-  // 成功: DetailPanel が閉じる
+  // 成功: DetailScreen が閉じる
   await vi.waitFor(() => {
-    expect(queryDetailPanel()).toBeNull();
+    expect(queryDetailScreen()).toBeNull();
   });
   expect(deleteTaskMock).toHaveBeenCalledTimes(2);
 });
 
-test("削除 pending 中に open-start (project switch) が走ると pendingDeleteTask が clear され DetailPanel が消える", async () => {
+test("削除 pending 中に open-start (project switch) が走ると pendingDeleteTask が clear され DetailScreen が消える", async () => {
   const seedTask = makeSeedTask();
   const { pending, resolveDelete } = makeDeferredDelete();
   deleteTaskMock.mockReturnValueOnce(pending);
 
   mountApp();
   await openSuccessfully(seedTask, "/p");
-  openDetailPanel();
+  openDetailScreen();
 
   await clickDeleteButton();
   await clickConfirmButton();
 
-  // 楽観反映: Board からカード消失 + DetailPanel は snapshot で残る
+  // 楽観反映: Board からカード消失 + DetailScreen は snapshot で残る
   expect(queryTaskCard()).toBeNull();
-  expect(queryDetailPanel()).not.toBeNull();
+  expect(queryDetailScreen()).not.toBeNull();
 
   // 別 path で openProject を発火する。
   // projectCommandQueue 直列化で openProjectInvoke 自体は delete 完了を待つが
@@ -362,9 +375,9 @@ test("削除 pending 中に open-start (project switch) が走ると pendingDele
   );
   await clickHeaderOpenButton();
 
-  // render-phase reset で pendingDeleteTask が null になり DetailPanel が unmount される
+  // render-phase reset で pendingDeleteTask が null になり DetailScreen が unmount される
   await vi.waitFor(() => {
-    expect(queryDetailPanel()).toBeNull();
+    expect(queryDetailScreen()).toBeNull();
   });
 
   // teardown: delete invoke と open invoke を resolve させて promise を解消する

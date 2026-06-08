@@ -145,7 +145,7 @@ const openSuccessfully = async (seedTask: Task): Promise<void> => {
   });
 };
 
-const openDetailPanel = (): void => {
+const openDetailScreen = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -167,7 +167,7 @@ const makeDeferredUpdate = (): {
   return { pending, resolveUpdate };
 };
 
-/** DetailPanel の MarkdownBody の表示テキストを取得する。 */
+/** DetailScreen の MarkdownBody の表示テキストを取得する。 */
 const queryBodyText = (): string => {
   const display = document.querySelector('[data-testid="markdown-body"]');
   return display?.textContent ?? "";
@@ -215,7 +215,7 @@ test("body 編集 → 楽観反映で IPC resolve 前に UI 上に新 body が�
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await editBodyViaUI("新しい本文");
 
@@ -249,7 +249,7 @@ test("body 編集で IPC が失敗した場合、body が元値に rollback し�
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailPanel();
+  openDetailScreen();
 
   await editBodyViaUI("新しい本文");
 

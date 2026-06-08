@@ -21,7 +21,7 @@ export type DetailBodyProps = {
 };
 
 /**
- * 詳細の本文ペイン。DetailScreen の左ペイン専用（DetailPanel は採用しない）。
+ * 詳細の本文ペイン。DetailScreen の左ペイン専用。
  * タイトル編集 + Markdown 本文 + 本文関連バナー（循環 / パースエラー）を束ねる。
  * ParentLink / BrokenParentRow は本文には含めず、右の PropertiesSidebar に集約する
  * （Parent / Links はサイドバー集約というユーザー決定に従う）。
@@ -35,15 +35,20 @@ export const DetailBody = (props: DetailBodyProps) => {
     <div className="flex flex-col gap-4">
       <CycleWarningBanner task={task} />
       <ParseErrorBanner task={task} />
+      {/* key は task 切替時に編集 state をリセットするための再マウント用。 */}
+      {/* EditableText と MarkdownBody は同じ親の兄弟のため、key 衝突（重複 key で */}
+      {/* 旧要素が残留する）を避けて要素ごとに名前空間を付与する。 */}
       <EditableText
-        key={task.id}
+        key={`title-${task.id}`}
         value={task.title || task.filePath}
         onConfirm={onTitleConfirm}
         ariaLabel="タスクタイトル"
       />
-      {/* key={task.id}: 編集中に表示対象タスクが切替わった場合、 */}
-      {/* MarkdownBody を再マウントして edit 状態をリセットする（stale state 防止）。 */}
-      <MarkdownBody key={task.id} body={task.body} onConfirm={onBodyConfirm} />
+      <MarkdownBody
+        key={`body-${task.id}`}
+        body={task.body}
+        onConfirm={onBodyConfirm}
+      />
     </div>
   );
 };

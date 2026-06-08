@@ -38,7 +38,7 @@
 | カラム | コンテナ | ステータスに対応する縦列。ヘッダーにステータス名とタスク数を表示 | ドロップ先として機能。カラム内でのカード並び替えも可能 |
 | カラムヘッダー | ヘッダー | ステータス名、タスク件数、追加ボタン、上端アクセント色帯 | ステータス名クリックで名前編集。「+ 追加」で新規タスク作成。上端 2px の色帯は `columns[].color`（`#rrggbb`、大文字は小文字化）を反映し、未設定・不正時は `order` index ベースのフォールバックパレット（CSS テーマトークン）で表示してライト/ダーク両テーマに追従する |
 | カラム追加ボタン | ボタン | ボード右端に表示される「+ カラムを追加」ボタン | クリックでカラム名入力フィールドを表示 |
-| タスクカード | カード | [task-card-spec.md](./task-card-spec.md) を参照 | ドラッグ可能。クリックで詳細パネルを開く。サブIssue進捗バーは**バーのみ表示**し、`X/Y` 数値はカードフッターへ集約する（進捗値は progressbar の `aria-label`/`aria-valuenow` で提供）。集計対象は**全子孫タスク**（完了数 `X` は「完了カラム」と一致する件数、総数 `Y` は全子孫件数）。サイクル参照（A→B→A、A→A）下でも有限ステップで停止し、同一子孫は 1 回しか数えない。子孫 0 件のときは進捗バーを表示しない |
+| タスクカード | カード | [task-card-spec.md](./task-card-spec.md) を参照 | ドラッグ可能。クリック（または Enter / Space）で詳細（全画面 2 ペイン）へ遷移する。サブIssue進捗バーは**バーのみ表示**し、`X/Y` 数値はカードフッターへ集約する（進捗値は progressbar の `aria-label`/`aria-valuenow` で提供）。集計対象は**全子孫タスク**（完了数 `X` は「完了カラム」と一致する件数、総数 `Y` は全子孫件数）。サイクル参照（A→B→A、A→A）下でも有限ステップで停止し、同一子孫は 1 回しか数えない。子孫 0 件のときは進捗バーを表示しない |
 
 ## ユーザー操作
 
@@ -99,13 +99,13 @@ stateDiagram-v2
 
 - **既定は `board`**。起動直後・プロジェクト未選択でも従来どおりボード（または「プロジェクトを開く」案内）を表示する。
 - **遷移**: ヘッダーバーの設定ボタンで `board ⇄ settings` をトグルする。設定画面表示中はボタン文言が「ボードへ戻る」になる（`detail` 表示中は `board` と同じく「設定」表記）。
-- **全画面詳細（`detail`）への遷移**: タスクカードをクリックするとまず右スライドパネル（DetailPanel）が開く。パネル右上の「全画面で開く（⤢）」を押すと、`<main>` を占有する全画面 2 ペイン詳細ビュー（DetailScreen）へ展開する（左ペイン＝タイトル＋本文、右ペイン＝プロパティサイドバー）。**この 2 形態（スライドパネル + 全画面 2 ペイン）は確定方針として維持する（Issue #267）。右プロパティサイドバーの集約項目（status / priority / labels / sub-issue / links）構成も変更しない。**
-- **詳細ビューの狭幅レスポンシブ**: DetailPanel は超狭幅では全幅（`w-full`）、`sm`（640px）以上で 480px 固定とし、狭幅時はヘッダ/本文/フッタのパディングを一段詰める。DetailScreen は `md`（768px）未満で本文上・サイドバー下の縦積み（上ボーダー）、`md` 以上で左本文・右 360px サイドバーの横 2 ペイン（左ボーダー）に折り返す。各ペインは個別に縦スクロールする。
-- **`detail` からの戻り**: 全画面詳細ビューの「← 戻る」ボタンまたは Esc キーでボードへ戻る。戻ると選択タスクは解除され（スライドパネルも再表示されない）クリーンなボードになる。削除確認ダイアログ表示中は Esc を無視する。
-- **`detail` と `settings` は排他**: 全画面詳細表示中に「設定」を押すと設定画面へ直行し、詳細は閉じる（選択タスクも解除する）。これにより「detail → settings → board」と辿ってもスライドパネルは復活しない。
+- **全画面詳細（`detail`）への遷移**: タスクカードをクリック（または Enter / Space）すると、選択と同時に `<main>` を占有する全画面 2 ペイン詳細ビュー（DetailScreen）へ即遷移する（左ペイン＝タイトル＋本文、右ペイン＝プロパティサイドバー）。遷移アニメーションは無い。**詳細は全画面 2 ペイン（DetailScreen）の単一形態とする（Issue #267）。board 上に詳細を重ねる形態は持たない。右プロパティサイドバーの集約項目（status / priority / labels / sub-issue / links）構成は維持する。**
+- **詳細ビューの狭幅レスポンシブ**: DetailScreen は `md`（768px）未満で本文上・サイドバー下の縦積み（上ボーダー）、`md` 以上で左本文・右 360px サイドバーの横 2 ペイン（左ボーダー）に折り返す。各ペインは個別に縦スクロールする。
+- **`detail` からの戻り**: 全画面詳細ビューの「← 戻る」ボタンまたは Esc キーでボードへ戻る。戻ると選択タスクは解除されクリーンなボードになる。削除確認ダイアログ表示中は Esc を無視する。
+- **`detail` と `settings` は排他**: 全画面詳細表示中に「設定」を押すと設定画面へ直行し、詳細は閉じる（選択タスクも解除する）。これにより「detail → settings → board」と辿っても詳細は復活しない。
 - **選択タスク消失時のフォールバック**: 全画面詳細表示中にプロジェクト切替・外部更新などで選択タスクが消失した場合は、詳細に取り残さずボードへ戻す。
 - **ボード状態の保持**: 設定画面・全画面詳細表示中もボードの状態（読み込み済みタスク・カラム・作成モーダルの状態など、アプリ最上位で保持する状態）は破棄されず、ボードへ戻ると復帰する。ただしボード内部のスクロール位置は保持対象外。`detail` からの戻りでは選択タスクは（前述のとおり）解除される。
-- **重ね合わせ／全画面 UI の整理**: タスク詳細スライドパネル（DetailPanel）とタスク作成モーダルは `board` 区分でのみ表示する（`settings` / `detail` 表示中は非表示。ボード復帰時に作成モーダル等は再表示）。全画面詳細ビュー（DetailScreen）は `detail` 区分の本体として `<main>` に表示する。トースト通知とアクセシビリティ用ライブリージョンは画面区分に依らず常時表示する。
+- **重ね合わせ／全画面 UI の整理**: 全画面詳細ビュー（DetailScreen）は `detail` 区分の本体として `<main>` に表示する。タスク作成モーダルは `board` / `detail` 区分で表示する（`detail` の「+ サブIssue追加」からも親 self-set で開ける。`settings` / `milestone` 表示中は非表示）。トースト通知とアクセシビリティ用ライブリージョンは画面区分に依らず常時表示する。
 - **「開く」操作**: 設定画面表示中に「開く」を押した場合は、押下時点でボードへ戻したうえでプロジェクトを開く。
 
 ### 設定画面（サブナビ + タブ）
@@ -160,7 +160,7 @@ stateDiagram-v2
 | ディレクトリ読み込み失敗 | 指定ディレクトリが存在しない、またはアクセス権限がない | トースト通知 | 別のディレクトリを選択 |
 | mdファイルパースエラー | フロントマターに invalid 系の値が含まれる（対象 warning code: `invalidTitleUsedFileName` / `invalidStatusUsedDefault` / `invalidParentIgnored` / `nonStringExtraKeyIgnored` / `extraValueNotJsonCompatible`。`parentCycle` は循環バナーで別扱い、`parentNotFound` / `missing*` 系はリンク切れ・別カテゴリで対象外） | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「パースエラーが N 件あります」を 1 回表示（同一 `loadedPath` 内では再発火しない / 別 project 切替後 N >= 1 なら再発火）。加えて該当カードのタイトル行右端に赤いパースエラーアイコンを表示（リンク切れの黄アイコンと併存可） | mdファイルを手動修正 |
 | ファイル書き込み失敗 | ディスク容量不足、権限エラー | トースト通知（書き込み系コマンドは下記の一元化対象） | ファイルシステムの状態を確認 |
-| リンク切れ (プロジェクトロード時) | 開いたプロジェクトに `parent` / `links` / `children` / `reverseLinks` のいずれかが解決できないタスクが N >= 1 件含まれる | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「リンク切れが N 件あります」を 1 回表示。同一 `loadedPath` 内では再発火しない（別 project に切替後、N >= 1 なら再度 1 回発火する） | 詳細パネルで該当 path を確認し、リンクを削除するか参照先ファイルを作成。詳細は [task-card-spec.md](./task-card-spec.md) の「エラー表示」セクション参照 |
+| リンク切れ (プロジェクトロード時) | 開いたプロジェクトに `parent` / `links` / `children` / `reverseLinks` のいずれかが解決できないタスクが N >= 1 件含まれる | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「リンク切れが N 件あります」を 1 回表示。同一 `loadedPath` 内では再発火しない（別 project に切替後、N >= 1 なら再度 1 回発火する） | 詳細（全画面 2 ペイン）で該当 path を確認し、リンクを削除するか参照先ファイルを作成。詳細は [task-card-spec.md](./task-card-spec.md) の「エラー表示」セクション参照 |
 
 ### 書き込み失敗トーストの一元化
 
@@ -175,12 +175,11 @@ stateDiagram-v2
 
 | 観点 | 対応方針 |
 |:-----|:---------|
-| キーボード操作 | Tab でカード間移動、Enter で詳細パネル展開、矢印キーでカラム間移動 |
+| キーボード操作 | Tab でカード間移動、Enter / Space で詳細（全画面 2 ペイン）へ遷移、矢印キーでカラム間移動 |
 | スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。カラム間移動の楽観 dispatch 直後に `aria-live="polite"` のライブリージョン（視覚非表示 / `role="status"` / `aria-atomic="true"`）で「移動しました」を通知。`updateTask` 失敗によるフル rollback 時はさらに「移動を取り消しました」を追加通知する。partial-move（status 確定 + cardOrder のみ rollback）および「楽観 dispatch 後の projectVersion 不一致」では追加の取消アナウンスは流さない（既に「移動しました」が発火済みで status は永続化済み、または state が新 project に切替済みのため）。同一カラム並び替え、および「楽観 dispatch 前 invalid-state（preflight 失敗）」ではライブリージョンを更新しない（エラー toast のみ） |
 | フォーカス管理 | ドラッグ&ドロップ完了後、移動したカードにフォーカスを維持 |
-| 詳細スライドパネル（DetailPanel） | `role="dialog"` / `aria-modal="true"` / `aria-label="タスク詳細"`。マウント時にパネルへフォーカスを移し、表示中は Tab / Shift+Tab フォーカスをパネル内に循環（focus trap）させる。Esc で閉じる（削除ダイアログ表示中は抑止）。なお削除確認ダイアログ（ConfirmDialog）自体の Tab 閉じ込め（focus trap）は本対応の対象外（別 Issue） |
-| 全画面詳細ビュー（DetailScreen） | `<section aria-label="タスク詳細" tabIndex="-1">` のランドマークと視覚非表示の `<h1>`（タスクタイトル）を持つ。展開時に section へフォーカスを移し、キーボード/SR フォーカスを新ビュー先頭へ移動する。「← 戻る」/ Esc で board へ戻る |
-| ヘッダ操作ボタンのフォーカス可視化 | 詳細ビューのヘッダボタン（全画面 ⤢ / 閉じる × / ← 戻る）および削除ボタンに `focus-visible:ring-2 focus-visible:ring-blue-500`（削除は `ring-red-500`）を付与し、キーボードフォーカスを可視化する |
+| 全画面詳細ビュー（DetailScreen）のフォーカス | `<section aria-label="タスク詳細" tabIndex="-1">` のランドマークと視覚非表示の `<h1>`（タスクタイトル）を持つ。マウント時に section へフォーカスを移し、ビュー先頭へキーボード/SR フォーカスを移動する。「← 戻る」/ Esc で board へ戻る（削除確認ダイアログ表示中、および作成モーダル表示中は Esc を抑止して各モーダルの Esc と競合させない）。**focus trap は適用しない**: DetailScreen は modal ではなく、HeaderBar と AppSidebar が `detail` 区分でも常時操作可能なため、Tab フォーカスを DetailScreen 内に閉じ込めるとそれらの操作系へキーボードで到達できなくなる。よって Tab は通常どおり画面全体を巡回させる |
+| ヘッダ操作ボタンのフォーカス可視化 | 詳細ビューの「← 戻る」ボタンに `focus-visible:ring-2 focus-visible:ring-accent`、削除ボタンに `focus-visible:ring-2 focus-visible:ring-red-500` を付与し、キーボードフォーカスを可視化する（アクセント色はテーマのセマンティックトークンに追従する） |
 
 ## ドラッグ&ドロップ仕様
 
@@ -211,7 +210,7 @@ stateDiagram-v2
 ### エッジケース
 
 - ESC キー押下: ブラウザが `dragend` を発火し、自動で IDLE 状態へ復帰
-- Drag 直後の synthetic click: `dragGuardRef` で次の macrotask まで `onClick` を抑止し、誤って詳細パネルが開かないようにする
+- Drag 直後の synthetic click: `dragGuardRef` で次の macrotask まで `onClick` を抑止し、誤って詳細へ遷移しないようにする
 - IPC 失敗（generic）: カラム間移動の `update_task` 失敗時は書き込み失敗通知の一元化により「タスクの更新に失敗しました: &lt;原因&gt;」トーストを表示する（`update_task` は共通トースト対象コマンドのため `invokeWrapped` 層が発火し、App 側の汎用「タスクの移動に失敗しました」は二重通知回避のため抑止される）。同一カラム内の `update_card_order` 失敗は共通トースト対象外のため、従来どおり App 側が「タスクの移動に失敗しました: &lt;原因&gt;」を表示する。dragState は finally で必ず null に戻す
 - IPC 部分失敗（partial-move）: カラム間移動で `update_task` 成功 + `update_card_order` 失敗のときは、カラム移動だけは完了しているため「カラムの移動は完了しましたが、並び順の保存に失敗しました。手動で並び替えてください。」と区別して表示する
 - stale state: queue 実行時に対象タスクが見つからない / `fromColumn` と `status` が乖離 / `toColumn` が消滅した場合は `invalid-state` で抜ける
@@ -229,16 +228,16 @@ stateDiagram-v2
 | 楽観 dispatch 前 invalid-state（preflight 失敗: target 消失 / status 乖離 / toColumn 消失 / 開始前 version 切替） | なし（楽観 dispatch も `onOptimisticApplied` も発火しない） | `invalid-state` メッセージ |
 | 楽観 dispatch 後 invalid-state（IPC 中の projectVersion 切替） | 「『タイトル』を『toColumn』に移動しました」のみ（state は新 project に切替済みのため取消アナウンスは流さない） | 「プロジェクトが切り替わりました」 |
 
-## DetailPanel の field 編集と楽観更新
+## DetailScreen の field 編集と楽観更新
 
-DetailPanel 上で `status` / `priority` / `labels` を編集すると、UI は IPC（`update_task`）の応答を待たずに即時反映される（楽観更新）。
+DetailScreen 上で `status` / `priority` / `labels` を編集すると、UI は IPC（`update_task`）の応答を待たずに即時反映される（楽観更新）。
 IPC が失敗した場合は編集前の値に自動ロールバックし、画面右上にエラートーストを表示する。
 成功時も成功トーストを 1 件表示する。
 ファイル監視で外部から同じタスクが書き換えられたケースでも、楽観中のキーが既に外部値で上書きされていればロールバックは行わない（外部値を優先する整合性ルール）。
 
-## DetailPanel の削除フロー
+## DetailScreen の削除フロー
 
-DetailPanel の「削除」ボタン押下で確認ダイアログを表示する。対象タスクが子タスクを持つかで分岐する。
+DetailScreen の「削除」ボタン押下で確認ダイアログを表示する。対象タスクが子タスクを持つかで分岐する。
 
 - **子なし** (`hierarchy.childFilePaths.length === 0`)
   - メッセージ: 「`「{title}」を削除しますか？この操作は取り消せません。`」
@@ -265,6 +264,6 @@ DetailPanel の「削除」ボタン押下で確認ダイアログを表示す�
 ## 関連仕様
 
 - [config-spec.md](./config-spec.md) - カラム設定・カード並び順の永続化仕様
-- [task-card-spec.md](./task-card-spec.md) - タスクカードの表示内容・詳細パネル・フォーム仕様
+- [task-card-spec.md](./task-card-spec.md) - タスクカードの表示内容・詳細（全画面 2 ペイン）・フォーム仕様
 - [file-system-spec.md](./file-system-spec.md) - ファイル監視・変更検知の仕組み
 - [task-format-spec.md](./task-format-spec.md) - mdファイルのフォーマットとフロントマターの定義

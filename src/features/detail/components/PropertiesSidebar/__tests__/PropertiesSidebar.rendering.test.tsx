@@ -140,7 +140,7 @@ test("削除ボタンが描画される", () => {
   ).toBeTruthy();
 });
 
-test("削除ボタンに focus-visible リング（red）クラスを含む（DetailPanel とトーン統一）", () => {
+test("削除ボタンに focus-visible リング（red）クラスを含む（DetailScreen とトーン統一）", () => {
   render(buildProps());
   const cls = (
     document.querySelector(

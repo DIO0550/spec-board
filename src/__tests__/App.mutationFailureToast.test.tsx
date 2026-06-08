@@ -149,7 +149,7 @@ const clickHeaderOpenButton = async (): Promise<void> => {
   });
 };
 
-const openDetailPanel = (): void => {
+const openDetailScreen = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -288,7 +288,7 @@ test("(b)(c) update_task 失敗で error トーストが 1 件だけ実発火す
 
   mountApp();
   await clickHeaderOpenButton();
-  openDetailPanel();
+  openDetailScreen();
   await editBodyViaUI("新しい本文");
 
   await vi.waitFor(() => {
@@ -310,7 +310,7 @@ test("update_task 成功時は success トーストが出て error トースト�
 
   mountApp();
   await clickHeaderOpenButton();
-  openDetailPanel();
+  openDetailScreen();
   await editBodyViaUI("新しい本文");
 
   await vi.waitFor(() => {

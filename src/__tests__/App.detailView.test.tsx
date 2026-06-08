@@ -160,9 +160,9 @@ const openSuccessfully = async (): Promise<void> => {
 };
 
 /**
- * TaskCard を click して DetailPanel を開く。
+ * TaskCard を click して detail（全画面2ペイン DetailScreen）へ遷移させる。
  */
-const openDetailPanel = (): void => {
+const openDetail = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -209,38 +209,50 @@ const clickBackToBoardHeader = (): void => {
   });
 };
 
-test("カードclick→DetailPanel→⤢で detail（全画面ビュー）へ展開する", async () => {
+test("カード click で detail（DetailScreen）へ即遷移し、スライドパネルは出ない", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  expect(document.querySelector('[data-testid="detail-overlay"]')).toBeTruthy();
-  clickTestId("detail-expand-button");
+  openDetail();
+  // 一本化により DetailScreen（全画面2ペイン）の戻るボタンが現れる。
+  // スライドパネルは廃止済みのため、board の overlay 要素は存在しない。
   expect(
     document.querySelector('[data-testid="detail-back-button"]'),
   ).toBeTruthy();
-  // 全画面化したのでスライドパネル（overlay）は消える
-  expect(document.querySelector('[data-testid="detail-overlay"]')).toBeNull();
 });
 
-test("detail で「← 戻る」→ board（選択クリア・DetailPanel も非表示）", async () => {
+test("カードにフォーカスして Enter で detail へ遷移する", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  const card = container?.querySelector<HTMLElement>(
+    "[data-testid='task-card']",
+  );
+  act(() => {
+    card?.focus();
+    card?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(
+    document.querySelector('[data-testid="detail-back-button"]'),
+  ).toBeTruthy();
+});
+
+test("detail で「← 戻る」→ board（選択クリア・DetailScreen 非表示）", async () => {
+  mountApp();
+  await openSuccessfully();
+  openDetail();
   clickTestId("detail-back-button");
   await flush();
   expect(
     document.querySelector('[data-testid="detail-back-button"]'),
   ).toBeNull();
-  expect(document.querySelector('[data-testid="detail-overlay"]')).toBeNull();
   expect(container?.textContent).toContain("A タスク");
 });
 
 test("detail で Esc → board（選択クリア）", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   act(() => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
@@ -248,25 +260,22 @@ test("detail で Esc → board（選択クリア）", async () => {
   expect(
     document.querySelector('[data-testid="detail-back-button"]'),
   ).toBeNull();
-  expect(document.querySelector('[data-testid="detail-overlay"]')).toBeNull();
 });
 
 test("detail → board でボード state（カラム/タスク）が保持される", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   clickTestId("detail-back-button");
   await flush();
   expect(container?.textContent).toContain("A タスク");
   expect(container?.textContent).toContain("Todo");
 });
 
-test("detail 表示中に「設定」→ settings（detail 完全クローズ）", async () => {
+test("detail 表示中に「設定」→ settings 直行（detail 完全クローズ・選択解除）", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   clickSettings();
   await flush();
   expect(container?.querySelector('[role="tablist"]')).not.toBeNull();
@@ -275,16 +284,14 @@ test("detail 表示中に「設定」→ settings（detail 完全クローズ）
   ).toBeNull();
 });
 
-test("detail →（設定）→ settings →（ボードへ戻る）→ board で DetailPanel が再表示されない", async () => {
+test("detail →（設定）→ settings →（ボードへ戻る）→ board で detail が再表示されない", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   clickSettings();
   await flush();
   clickBackToBoardHeader();
   await flush();
-  expect(document.querySelector('[data-testid="detail-overlay"]')).toBeNull();
   expect(
     document.querySelector('[data-testid="detail-back-button"]'),
   ).toBeNull();
@@ -294,8 +301,7 @@ test("detail →（設定）→ settings →（ボードへ戻る）→ board �
 test("detail のサイドバーから update_task（楽観反映）が呼ばれる", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   updateTaskMock.mockResolvedValueOnce(
     Result.ok({ ...taskA, status: "Doing" }),
   );
@@ -325,8 +331,7 @@ test("detail のサイドバーから update_task（楽観反映）が呼ばれ�
 test("detail 表示中にプロジェクト切替で選択タスク消失→board へフォールバックする", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   expect(
     document.querySelector('[data-testid="detail-back-button"]'),
   ).toBeTruthy();
@@ -362,11 +367,34 @@ test("detail 表示中にプロジェクト切替で選択タスク消失→boar
   expect(container?.textContent).toContain("Z タスク");
 });
 
+test("detail で作成モーダル表示中の Esc は board へ戻さない（モーダルと競合しない）", async () => {
+  mountApp();
+  await openSuccessfully();
+  openDetail();
+  // detail のサブIssue追加から作成モーダルを開く（modal は detail 上に重なる）
+  const addBtn = document.querySelector(
+    '[data-testid="sub-issue-add-button"]',
+  ) as HTMLButtonElement | null;
+  await act(async () => {
+    addBtn?.click();
+  });
+  expect(
+    document.querySelector('[data-testid="task-create-dialog"]'),
+  ).toBeTruthy();
+  // Esc を押しても DetailScreen の「戻る」は発火せず、detail に留まる
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  await flush();
+  expect(
+    document.querySelector('[data-testid="detail-back-button"]'),
+  ).toBeTruthy();
+});
+
 test("detail のサイドバーから delete_task が呼ばれる", async () => {
   mountApp();
   await openSuccessfully();
-  openDetailPanel();
-  clickTestId("detail-expand-button");
+  openDetail();
   deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
   clickTestId("detail-delete-button");
   await act(async () => {

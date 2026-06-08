@@ -12,7 +12,7 @@ type BrokenRefLabelProps = {
 
 /**
  * WarningIcon + 「リンク切れ」テキスト + 取消線 path を並べる共通プリミティブ。
- * DetailPanel の parent / links / reverseLinks / children のリンク切れ行で再利用する。
+ * DetailScreen の parent / links / reverseLinks / children のリンク切れ行で再利用する。
  * 行の枠 (`<li>` / `<div>` 等) と layout 用クラスは呼出元で wrap する。
  *
  * @param props - {@link BrokenRefLabelProps}

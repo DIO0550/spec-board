@@ -68,7 +68,7 @@ flowchart TD
 | 仕様書 | 説明 |
 |:-------|:-----|
 | [board-view-spec.md](./board-view-spec.md) | [FE] カンバンボードUI・カラム管理・ドラッグ&ドロップ |
-| [task-card-spec.md](./task-card-spec.md) | [FE] タスクカード表示・詳細パネル・作成/編集フォーム |
+| [task-card-spec.md](./task-card-spec.md) | [FE] タスクカード表示・詳細（全画面 2 ペイン）・作成/編集フォーム |
 | [file-system-spec.md](./file-system-spec.md) | [BE] mdファイルのパース・ファイル監視・CRUD操作 |
 | [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット定義・フロントマター仕様（priority / labels / milestone / parent / links） |
 | [config-spec.md](./config-spec.md) | [BE] 設定ファイル・カラム管理・カード並び順・labels.yml / milestones.yml マスタ・AIエージェント向けガイド |

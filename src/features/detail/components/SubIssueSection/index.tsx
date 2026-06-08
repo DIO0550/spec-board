@@ -83,7 +83,7 @@ export const buildChildRowList = (
 };
 
 /**
- * 詳細パネル内のサブIssue セクション。
+ * 詳細（DetailScreen）内のサブIssue セクション。
  * 子タスクの進捗と一覧、「+ サブIssue 追加」ボタンを表示する。
  *
  * @param props - {@link SubIssueSectionProps}

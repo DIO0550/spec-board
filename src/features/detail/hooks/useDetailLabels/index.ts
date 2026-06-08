@@ -29,7 +29,7 @@ export type UseDetailLabelsResult = {
 };
 
 /**
- * DetailPanel 側でラベル更新の橋渡しを行う hook。
+ * DetailScreen 側でラベル更新の橋渡しを行う hook。
  * latestLabelsRef を render 中代入で同期し、同フレーム連続発火を合算する。
  *
  * @remarks

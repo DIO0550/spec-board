@@ -111,19 +111,106 @@ test("削除 ConfirmDialog 表示中の Esc は onBack を発火しない（Esc 
   expect(onBack).not.toHaveBeenCalled();
 });
 
-test("サイドバー操作（Status 変更）で onTaskUpdate（共有ハンドラ）が呼ばれる", () => {
-  const onTaskUpdate = vi.fn();
-  render(buildProps({ task: createTask({ id: "t-up" }), onTaskUpdate }));
+/**
+ * select 要素の値を変更し change イベントを発火する。
+ * @param testId - data-testid
+ * @param value - 設定する値
+ */
+const changeSelect = (testId: string, value: string): void => {
   const select = document.querySelector(
-    '[data-testid="status-select"]',
+    `[data-testid="${testId}"]`,
   ) as HTMLSelectElement;
   const setter = Object.getOwnPropertyDescriptor(
     HTMLSelectElement.prototype,
     "value",
   )?.set;
   act(() => {
-    setter?.call(select, "Done");
+    setter?.call(select, value);
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
+};
+
+test("サイドバー操作（Status 変更）で onTaskUpdate（共有ハンドラ）が呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  render(buildProps({ task: createTask({ id: "t-up" }), onTaskUpdate }));
+  changeSelect("status-select", "Done");
   expect(onTaskUpdate).toHaveBeenCalledWith("t-up", { status: "Done" });
+});
+
+test("サイドバー操作（Priority 変更）で onTaskUpdate が呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  render(buildProps({ task: createTask({ id: "t-pri" }), onTaskUpdate }));
+  changeSelect("priority-select", "High");
+  expect(onTaskUpdate).toHaveBeenCalledWith("t-pri", { priority: "High" });
+});
+
+test("タイトル編集確定で onTaskUpdate(id, { title }) が呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  render(
+    buildProps({
+      task: createTask({ id: "t-title", title: "元タイトル" }),
+      onTaskUpdate,
+    }),
+  );
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="editable-text-display"]',
+      ) as HTMLElement
+    ).click();
+  });
+  const input = document.querySelector(
+    '[data-testid="editable-text-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(input, "新タイトル");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(onTaskUpdate).toHaveBeenCalledWith("t-title", { title: "新タイトル" });
+});
+
+test("本文編集確定（Cmd+Enter）で onTaskUpdate(id, { body }) が呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  render(
+    buildProps({
+      task: createTask({ id: "t-body", body: "元の本文" }),
+      onTaskUpdate,
+    }),
+  );
+  act(() => {
+    (
+      document.querySelector('[data-testid="markdown-body"]') as HTMLElement
+    ).click();
+  });
+  const textarea = document.querySelector(
+    '[data-testid="markdown-body-textarea"]',
+  ) as HTMLTextAreaElement;
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(textarea, "新しい本文");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => {
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(onTaskUpdate).toHaveBeenCalledWith("t-body", { body: "新しい本文" });
 });

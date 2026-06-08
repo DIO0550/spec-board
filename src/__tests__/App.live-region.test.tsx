@@ -389,7 +389,7 @@ test("column 並び替え失敗 → LiveRegion に「取り消しました」", 
   expect(liveRegionText()).toBe("「A」の移動を取り消しました");
 });
 
-// === DetailPanel 内タスク遷移 announce ===
+// === DetailScreen 内タスク遷移 announce ===
 
 const openParentChildProject = async (): Promise<void> => {
   // テスト間で同一 Task インスタンスを共有しないよう、呼び出しごとに生成する。
@@ -484,7 +484,7 @@ const detailTitleValue = (): string | null => {
   return input?.value ?? null;
 };
 
-test("DetailPanel の子クリックで LiveRegion に「{title}を表示中」が流れ、DetailPanel が子に切り替わる", async () => {
+test("DetailScreen の子クリックで LiveRegion に「{title}を表示中」が流れ、DetailScreen が子に切り替わる", async () => {
   mountApp();
   await openParentChildProject();
   await clickParentCard();
@@ -509,7 +509,7 @@ test("ParentLink クリックでも LiveRegion に「{title}を表示中」が�
   expect(detailTitleValue()).toBe("親タスク");
 });
 
-// === DetailPanel 内 LinksSection 行クリック遷移 announce ===
+// === DetailScreen 内 LinksSection 行クリック遷移 announce ===
 //
 // links 行 / reverse 行クリック → handleSelectTask → selectTaskOutcome → announce + in-place 切替の
 // E2E パス。fixture は `Task.id === Task.filePath` の不変条件に従い `id` と `filePath` を同値で作る。
@@ -604,7 +604,7 @@ const clickReverseNavigate = async (filePath: string): Promise<void> => {
   });
 };
 
-test("DetailPanel の links 行クリックで LiveRegion に「{title}を表示中」が流れ、in-place 切替される", async () => {
+test("DetailScreen の links 行クリックで LiveRegion に「{title}を表示中」が流れ、in-place 切替される", async () => {
   mountApp();
   await openLinkedTasksProject();
   await clickTaskCardByTitle("A");
@@ -616,7 +616,7 @@ test("DetailPanel の links 行クリックで LiveRegion に「{title}を表示
   expect(detailTitleValue()).toBe("B");
 });
 
-test("DetailPanel の reverseLinks 行クリックでも in-place 切替される", async () => {
+test("DetailScreen の reverseLinks 行クリックでも in-place 切替される", async () => {
   mountApp();
   await openLinkedTasksProject();
   await clickTaskCardByTitle("B");

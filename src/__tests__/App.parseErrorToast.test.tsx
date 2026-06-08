@@ -199,9 +199,9 @@ const parseErrorToastCount = (): number =>
   warningToastTexts().filter((t) => t.includes("パースエラー")).length;
 
 /**
- * 先頭の TaskCard を click して DetailPanel を開く。
+ * 先頭の TaskCard を click して DetailScreen を開く。
  */
-const openDetailPanel = (): void => {
+const openDetailScreen = (): void => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
@@ -281,7 +281,7 @@ test("同一 loadedPath を保ったまま tasks を更新してもパースエ�
   // loading を経由せず（同一 loadedPath のまま）tasks state を更新する。
   // StatusSelect 操作 → updateTask の楽観反映で tasks が差し替わるが、
   // parseErrorToastFiredRef.current === loadedPath のため再発火しない。
-  openDetailPanel();
+  openDetailScreen();
   updateTaskMock.mockResolvedValueOnce(
     Result.ok({ ...taskWithParseError, status: "Done" }),
   );

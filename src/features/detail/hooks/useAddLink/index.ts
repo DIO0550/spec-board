@@ -5,7 +5,7 @@ import type { Result } from "@/utils/result";
 /** useAddLink 引数。 */
 export type UseAddLinkArgs = {
   /**
-   * リンク追加の実呼び出し callback。呼び出し元（DetailPanel 経由で App）が
+   * リンク追加の実呼び出し callback。呼び出し元（DetailScreen 経由で App）が
    * source filePath を bind した形で渡す。
    *
    * @param targetFilePath リンク先 filePath
@@ -29,7 +29,7 @@ export type UseAddLinkResult = {
 };
 
 /**
- * DetailPanel の関連タスク追加 UI 用フック。`isBusy` を管理するだけの薄い wrapper。
+ * DetailScreen の関連タスク追加 UI 用フック。`isBusy` を管理するだけの薄い wrapper。
  *
  * 連続発火の防止は呼び出し側に委ねる:
  * - LinksSection は候補選択で `setIsOpen(false)` し popover を unmount するため

@@ -275,7 +275,15 @@ test("経路3b: subIssue → 直接 handleAddTask（通常作成）で parentRea
   expect(lastModalProps().parentReadOnly).toBe(true);
 
   // close を挟まずに通常作成へ切り替える経路。handleAddTask 側の setSubIssueParentPath(undefined) 漏れを検出する。
-  // close 側は経路3aで modal unmount までを確認し、reset 漏れはこの経路では検出対象にしない。
+  // 一本化後は detail から column 追加ボタンへ直接到達できないため、作成モーダルを
+  // 開いたまま「← 戻る」で board へ戻す（モーダルは board/detail 両区分で描画され、
+  // createModalStatus は維持される）。close は経由しないため reset 漏れの検出対象は保たれる。
+  const backBtn = document.querySelector(
+    '[data-testid="detail-back-button"]',
+  ) as HTMLButtonElement | null;
+  await act(async () => {
+    backBtn?.click();
+  });
   await clickColumnAddButton("Todo");
 
   const props = lastModalProps();
@@ -294,7 +302,7 @@ test("経路4: subIssue モード中に親タスクが tasks から消えると 
   await clickSubIssueAddButton();
   expect((lastModalProps().parentCandidates as Task[]).length).toBe(1);
 
-  // DetailPanel の削除ボタン → ConfirmDialog → 確定 で親タスクを tasks から消す
+  // DetailScreen の削除ボタン → ConfirmDialog → 確定 で親タスクを tasks から消す
   deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
   const deleteBtn = container?.querySelector(
     '[data-testid="detail-delete-button"]',
