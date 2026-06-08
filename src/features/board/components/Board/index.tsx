@@ -220,12 +220,12 @@ export const Board = ({
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-        {sorted.map((col) => (
+        {sorted.map((col, index) => (
           <Column
             key={col.name}
             name={col.name}
             color={col.color}
-            order={col.order}
+            order={index}
             tasks={tasksByStatus[col.name] ?? []}
             allTasks={hierarchyTasks}
             tasksByNormalizedPath={tasksByNormalizedPath}

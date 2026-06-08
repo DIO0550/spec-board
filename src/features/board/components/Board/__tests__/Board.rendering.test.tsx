@@ -229,3 +229,23 @@ test("既存カラム名と同じ名前は onAddColumn に渡されない", asyn
 
 // マイルストーン絞り込みは Board から TaskFilterBar / BoardWorkspace へ移管した。
 // 絞り込みの振る舞いは applyTaskFilter のユニットテストで担保する。
+
+test("color 未指定カラムは非連番 order でも表示順インデックスでフォールバック色を得る", () => {
+  // order が非連番（10, 20）でも、フォールバック色は config の生 order 値ではなく
+  // 表示順インデックス（0, 1）で決定的に割り当てられる。
+  const columns: ColumnType[] = [
+    { name: "First", order: 10 },
+    { name: "Second", order: 20 },
+  ];
+  render({ columns, tasks: [], onAddTask: vi.fn() });
+  const hdrs = Array.from(
+    container?.querySelectorAll<HTMLElement>("[data-testid='column-header']") ??
+      [],
+  );
+  expect(hdrs[0]?.getAttribute("style")).toContain(
+    "var(--color-column-accent-1)",
+  );
+  expect(hdrs[1]?.getAttribute("style")).toContain(
+    "var(--color-column-accent-2)",
+  );
+});
