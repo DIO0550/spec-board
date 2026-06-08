@@ -224,6 +224,8 @@ export const Board = ({
           <Column
             key={col.name}
             name={col.name}
+            color={col.color}
+            order={col.order}
             tasks={tasksByStatus[col.name] ?? []}
             allTasks={hierarchyTasks}
             tasksByNormalizedPath={tasksByNormalizedPath}

@@ -61,3 +61,57 @@ test("「+ 追加」ボタンクリックでコールバックが呼ばれる", 
   btn?.click();
   expect(onAddClick).toHaveBeenCalledTimes(1);
 });
+
+test("color 指定時は上ボーダーが指定色になる", async () => {
+  render({
+    name: "Todo",
+    taskCount: 0,
+    order: 0,
+    color: "#1a2b3c",
+    onAddClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const header = container?.querySelector("[data-testid='column-header']");
+    expect(header?.getAttribute("style")).toContain("#1a2b3c");
+  });
+});
+
+test("color 大文字は小文字化して上ボーダーに適用される", async () => {
+  render({
+    name: "Todo",
+    taskCount: 0,
+    order: 0,
+    color: "#1A2B3C",
+    onAddClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const header = container?.querySelector("[data-testid='column-header']");
+    expect(header?.getAttribute("style")).toContain("#1a2b3c");
+  });
+});
+
+test("color 未指定時はフォールバックトークンの上ボーダーになる", async () => {
+  render({ name: "Todo", taskCount: 0, order: 0, onAddClick: vi.fn() });
+  await vi.waitFor(() => {
+    const header = container?.querySelector("[data-testid='column-header']");
+    expect(header?.getAttribute("style")).toContain(
+      "var(--color-column-accent-",
+    );
+  });
+});
+
+test("不正な color はフォールバックトークンの上ボーダーになる", async () => {
+  render({
+    name: "Todo",
+    taskCount: 0,
+    order: 1,
+    color: "red",
+    onAddClick: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    const header = container?.querySelector("[data-testid='column-header']");
+    expect(header?.getAttribute("style")).toContain(
+      "var(--color-column-accent-",
+    );
+  });
+});

@@ -1,5 +1,6 @@
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useId, useRef, useState } from "react";
+import { ColumnColor } from "@/domains/column-color";
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
 
 /** カラムヘッダーの Props */
@@ -8,6 +9,10 @@ type ColumnHeaderProps = {
   name: string;
   /** カラム内のタスク件数 */
   taskCount: number;
+  /** ヘッダー上端アクセント帯の色（`#rrggbb`）。未指定・不正時はフォールバックパレット。 */
+  color?: string;
+  /** カラムの表示順インデックス（color 未指定時のフォールバック色決定に使う）。 */
+  order?: number;
   /** 「+ 追加」ボタンクリック時のコールバック */
   onAddClick: () => void;
   /**
@@ -51,6 +56,8 @@ type ColumnHeaderProps = {
 export const ColumnHeader = ({
   name,
   taskCount,
+  color,
+  order = 0,
   onAddClick,
   onRename,
   existingColumnNames = [],
@@ -170,11 +177,14 @@ export const ColumnHeader = ({
     trimmedInput !== name &&
     existingColumnNames.includes(trimmedInput);
 
+  const accentColor = ColumnColor.resolveAccent(color, order);
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu / draggable are secondary triggers for mouse users; rename / menu buttons inside provide the keyboard-accessible path
     // biome-ignore lint/a11y/useKeyWithClickEvents: root onClick only consumes dragGuardRef after dragend; rename / menu buttons inside provide the keyboard-accessible path
     <div
-      className="flex items-center justify-between px-2 py-2"
+      className="flex items-center justify-between border-t-2 px-2 py-2"
+      style={{ borderTopColor: accentColor }}
       data-testid="column-header"
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
