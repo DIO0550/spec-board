@@ -28,6 +28,9 @@ const requireTextarea = (): HTMLTextAreaElement => {
 const queryDisplay = (): HTMLElement | null =>
   document.querySelector<HTMLElement>('[data-testid="markdown-body"]');
 
+const queryCheckboxes = (): NodeListOf<HTMLInputElement> =>
+  document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+
 const requireDisplay = (): HTMLElement => {
   const display = queryDisplay();
   expect(display).not.toBeNull();
@@ -246,4 +249,55 @@ test("Esc で keydown が document へ伝播しない（stopPropagation）", () 
   } finally {
     document.removeEventListener("keydown", docHandler);
   }
+});
+
+test("checkbox クリックで onConfirm が toggle 後の本文で呼ばれる", () => {
+  const onConfirm = vi.fn();
+  mount({ body: "- [ ] a", onConfirm });
+  act(() => {
+    queryCheckboxes()[0]?.click();
+  });
+  expect(onConfirm).toHaveBeenCalledTimes(1);
+  expect(onConfirm).toHaveBeenCalledWith("- [x] a");
+});
+
+test("checked な checkbox クリックで onConfirm が off の本文で呼ばれる", () => {
+  const onConfirm = vi.fn();
+  mount({ body: "- [x] a", onConfirm });
+  act(() => {
+    queryCheckboxes()[0]?.click();
+  });
+  expect(onConfirm).toHaveBeenCalledWith("- [ ] a");
+});
+
+test("同一文言の 2 番目の checkbox クリックは sourceLine で対象行のみ反転する", () => {
+  const onConfirm = vi.fn();
+  mount({ body: "- [ ] dup\n- [ ] dup", onConfirm });
+  act(() => {
+    queryCheckboxes()[1]?.click();
+  });
+  expect(onConfirm).toHaveBeenCalledWith("- [ ] dup\n- [x] dup");
+});
+
+test("checkbox クリックでは edit モードに入らない（onClick stopPropagation）", () => {
+  mount({ body: "- [ ] a", onConfirm: vi.fn() });
+  act(() => {
+    queryCheckboxes()[0]?.click();
+  });
+  expect(queryTextarea()).toBeNull();
+});
+
+test("checkbox 上の Space キーは display へ伝播せず edit を起動しない", () => {
+  mount({ body: "- [ ] a", onConfirm: vi.fn() });
+  const checkbox = queryCheckboxes()[0];
+  expect(checkbox).not.toBeUndefined();
+  pressKeyOn(checkbox as HTMLInputElement, " ");
+  expect(queryTextarea()).toBeNull();
+});
+
+test("edit モード中は checkbox が DOM に存在しない", () => {
+  mount({ body: "- [ ] a", onConfirm: vi.fn() });
+  clickDisplay();
+  expect(queryTextarea()).not.toBeNull();
+  expect(queryCheckboxes().length).toBe(0);
 });

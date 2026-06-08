@@ -173,6 +173,27 @@ const queryBodyText = (): string => {
   return display?.textContent ?? "";
 };
 
+/** DetailScreen の MarkdownBody 内の checkbox を NodeList で取得する。 */
+const queryBodyCheckboxes = (): NodeListOf<HTMLInputElement> =>
+  document.querySelectorAll<HTMLInputElement>(
+    '[data-testid="markdown-body"] input[type="checkbox"]',
+  );
+
+/**
+ * DetailScreen の MarkdownBody 内の index 番目の checkbox をクリックする。
+ * @param index - checkbox の 0 始まり index
+ */
+const clickBodyCheckbox = async (index: number): Promise<void> => {
+  const checkboxes = queryBodyCheckboxes();
+  await act(async () => {
+    checkboxes[index]?.click();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
 /**
  * MarkdownBody の display 領域をクリックして textarea を開き、値を流して Cmd+Enter で確定する。
  * @param value - 確定後の body 値
@@ -270,5 +291,94 @@ test("body 編集で IPC が失敗した場合、body が元値に rollback し�
     const errorToast = document.querySelector('[data-testid="toast-error"]');
     expect(errorToast).not.toBeNull();
     expect(errorToast?.textContent).toContain("タスクの更新に失敗しました");
+  });
+});
+
+test("本文 checkbox の toggle で楽観反映され、IPC 成功で success toast が出る", async () => {
+  const seedTask = makeSeedTask("- [ ] todo");
+  const { pending, resolveUpdate } = makeDeferredUpdate();
+  updateTaskMock.mockReturnValueOnce(pending);
+
+  mountApp();
+  await openSuccessfully(seedTask);
+  openDetailScreen();
+
+  await clickBodyCheckbox(0);
+
+  // IPC resolve 前に楽観反映で checkbox が checked になっている
+  expect(queryBodyCheckboxes()[0]?.checked).toBe(true);
+
+  const updatedTask: Task = { ...seedTask, body: "- [x] todo" };
+  await act(async () => {
+    resolveUpdate(Result.ok(updatedTask));
+    await Promise.resolve();
+  });
+
+  expect(updateTaskMock).toHaveBeenCalledWith({
+    filePath: seedFilePath,
+    body: "- [x] todo",
+  });
+
+  await vi.waitFor(() => {
+    const successToast = document.querySelector(
+      '[data-testid="toast-success"]',
+    );
+    expect(successToast).not.toBeNull();
+    expect(successToast?.textContent).toContain("タスクを更新しました");
+  });
+});
+
+test("本文 checkbox の toggle が IPC 失敗で未チェックに rollback しエラー toast が出る", async () => {
+  const seedTask = makeSeedTask("- [ ] todo");
+  const { pending, resolveUpdate } = makeDeferredUpdate();
+  updateTaskMock.mockReturnValueOnce(pending);
+
+  mountApp();
+  await openSuccessfully(seedTask);
+  openDetailScreen();
+
+  await clickBodyCheckbox(0);
+  expect(queryBodyCheckboxes()[0]?.checked).toBe(true);
+
+  await act(async () => {
+    resolveUpdate(Result.err(new TauriError("IO_ERROR", "io fail")));
+    await Promise.resolve();
+  });
+
+  // rollback で checkbox が未チェックに戻る
+  await vi.waitFor(() => {
+    expect(queryBodyCheckboxes()[0]?.checked).toBe(false);
+  });
+
+  await vi.waitFor(() => {
+    const errorToast = document.querySelector('[data-testid="toast-error"]');
+    expect(errorToast).not.toBeNull();
+    expect(errorToast?.textContent).toContain("タスクの更新に失敗しました");
+  });
+});
+
+test("本文 checkbox を連続 toggle すると 2 回目も累積 body から生成される（stale body にならない）", async () => {
+  const seedTask = makeSeedTask("- [ ] a\n- [ ] b");
+  // IPC は渡された body をそのまま保存する Rust update_task の挙動を再現する。
+  updateTaskMock.mockImplementation((params) =>
+    Promise.resolve(
+      Result.ok({ ...seedTask, body: params.body ?? seedTask.body }),
+    ),
+  );
+
+  mountApp();
+  await openSuccessfully(seedTask);
+  openDetailScreen();
+
+  await clickBodyCheckbox(0);
+  await clickBodyCheckbox(1);
+
+  expect(updateTaskMock).toHaveBeenNthCalledWith(1, {
+    filePath: seedFilePath,
+    body: "- [x] a\n- [ ] b",
+  });
+  expect(updateTaskMock).toHaveBeenNthCalledWith(2, {
+    filePath: seedFilePath,
+    body: "- [x] a\n- [x] b",
   });
 });
