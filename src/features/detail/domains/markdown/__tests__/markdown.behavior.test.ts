@@ -51,15 +51,27 @@ test("parse: h2 / h3", () => {
   expect(Markdown.parse("### h3")).toEqual([{ type: "h3", text: "h3" }]);
 });
 
-test("parse: ul (-)", () => {
+test("parse: ul (-) は plain item を保持する", () => {
   expect(Markdown.parse("- a\n- b")).toEqual([
-    { type: "ul", items: ["a", "b"] },
+    {
+      type: "ul",
+      items: [
+        { kind: "plain", text: "a" },
+        { kind: "plain", text: "b" },
+      ],
+    },
   ]);
 });
 
-test("parse: ul (*)", () => {
+test("parse: ul (*) は plain item を保持する", () => {
   expect(Markdown.parse("* a\n* b")).toEqual([
-    { type: "ul", items: ["a", "b"] },
+    {
+      type: "ul",
+      items: [
+        { kind: "plain", text: "a" },
+        { kind: "plain", text: "b" },
+      ],
+    },
   ]);
 });
 
@@ -116,14 +128,15 @@ test("parse: CRLF を含む入力が LF と同等に解釈される", () => {
   );
 });
 
-test("parse: 単独 \\r を含む入力が \\n と同等に解釈される", () => {
-  expect(Markdown.parse("line1\rline2")).toEqual(
-    Markdown.parse("line1\nline2"),
-  );
-  expect(Markdown.parse("# h1\r\r- a\r- b")).toEqual(
-    Markdown.parse("# h1\n\n- a\n- b"),
-  );
-  expect(Markdown.parse("a\r\nb\rc")).toEqual(Markdown.parse("a\nb\nc"));
+test("parse: 単独 \\r（CRLF を伴わない）は行区切りにせず 1 行として扱う", () => {
+  // 行分割は source.split("\n") を真実とし、\r\n の \r のみ吸収する。
+  // 旧 Mac 改行（単独 \r）は非対応で 1 行内に保持される（sourceLine 整合のため）。
+  expect(Markdown.parse("line1\rline2")).toEqual([
+    { type: "paragraph", text: "line1\rline2" },
+  ]);
+  expect(Markdown.parse("a\r\nb\rc")).toEqual([
+    { type: "paragraph", text: "a b\rc" },
+  ]);
 });
 
 test("parse: fence 行の言語タグはパース対象外", () => {
