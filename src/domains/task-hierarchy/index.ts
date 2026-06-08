@@ -174,4 +174,21 @@ export const TaskHierarchy = {
     const lookup = options?.lookup ?? buildLookup(allTasks);
     return dfsDescendants(rootFilePath, lookup);
   },
+
+  /**
+   * 子孫タスクの完了数 / 総数を集計する。
+   * カードフッターと進捗バーが同じ値を表示するための X/Y サマリの単一の真実源。
+   *
+   * @param descendantTasks 集計対象の子孫タスク（`collectDescendants` の結果を想定）
+   * @param doneColumn 完了として扱うカラム名
+   * @returns 完了数 `done` と総数 `total`
+   */
+  countSubIssueProgress: (
+    descendantTasks: readonly Task[],
+    doneColumn: string,
+  ): { done: number; total: number } => {
+    const total = descendantTasks.length;
+    const done = descendantTasks.filter((t) => t.status === doneColumn).length;
+    return { done, total };
+  },
 } as const;

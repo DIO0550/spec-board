@@ -50,7 +50,7 @@ test("children が存在する場合、進捗バーが表示される", () => {
   expect(progressBar).toBeTruthy();
 });
 
-test("完了数/全数が正しい割合で表示される", () => {
+test("視覚テキストには X/Y 数値を表示しない（フッターへ集約）", () => {
   const descendants = [
     createTask({ id: "c1", status: "Done" }),
     createTask({ id: "c2", status: "Todo" }),
@@ -63,7 +63,27 @@ test("完了数/全数が正しい割合で表示される", () => {
     descendantTasks: descendants,
     doneColumn: "Done",
   });
-  expect(container?.textContent).toContain("2/5");
+  expect(container?.textContent).not.toContain("2/5");
+});
+
+test("progressbar に進捗が aria 属性として残る（2/5 → aria-label と aria-valuenow=40）", () => {
+  render({
+    childTasks: [
+      createTask({ id: "c1", status: "Done" }),
+      createTask({ id: "c2", status: "Todo" }),
+    ],
+    descendantTasks: [
+      createTask({ id: "c1", status: "Done" }),
+      createTask({ id: "c2", status: "Todo" }),
+      createTask({ id: "g1", status: "Done" }),
+      createTask({ id: "g2", status: "Todo" }),
+      createTask({ id: "g3", status: "Todo" }),
+    ],
+    doneColumn: "Done",
+  });
+  const bar = container?.querySelector("[role='progressbar']") as HTMLElement;
+  expect(bar.getAttribute("aria-valuenow")).toBe("40");
+  expect(bar.getAttribute("aria-label")).toBe("進捗 2/5");
 });
 
 test("▶ クリックで子タスクリストが展開される", () => {
@@ -109,27 +129,6 @@ test("全子孫タスクが完了の場合、バーが 100% になる", () => {
     "[role='progressbar']",
   ) as HTMLElement;
   expect(progressBar.getAttribute("aria-valuenow")).toBe("100");
-  expect(container?.textContent).toContain("3/3");
-});
-
-test("descendantTasks=5件(done=2)、childTasks=2件: サマリが 2/5、aria-valuenow=40", () => {
-  render({
-    childTasks: [
-      createTask({ id: "c1", status: "Done" }),
-      createTask({ id: "c2", status: "Todo" }),
-    ],
-    descendantTasks: [
-      createTask({ id: "c1", status: "Done" }),
-      createTask({ id: "c2", status: "Todo" }),
-      createTask({ id: "g1", status: "Done" }),
-      createTask({ id: "g2", status: "Todo" }),
-      createTask({ id: "g3", status: "Todo" }),
-    ],
-    doneColumn: "Done",
-  });
-  const bar = container?.querySelector("[role='progressbar']") as HTMLElement;
-  expect(bar.getAttribute("aria-valuenow")).toBe("40");
-  expect(container?.textContent).toContain("2/5");
 });
 
 test("<details> 内 <ul> の <li> 数は childTasks.length と一致する（descendantTasks ではない）", () => {

@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { DueBadge } from "@/components/DueBadge";
 import { ParseErrorIcon } from "@/components/ParseErrorIcon";
 import { WarningIcon } from "@/components/WarningIcon";
+import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../Board/dragState";
@@ -87,6 +88,11 @@ const CardContent = ({
   // 全子孫ベースのカウントに切替わる。
   const effectiveDescendants = descendantTasks ?? childTasks;
   const displayTitle = task.title || task.filePath;
+  const linkCount = task.links.linkedFilePaths.length;
+  const { done, total } = TaskHierarchy.countSubIssueProgress(
+    effectiveDescendants,
+    doneColumn,
+  );
 
   return (
     <>
@@ -123,6 +129,21 @@ const CardContent = ({
         descendantTasks={effectiveDescendants}
         doneColumn={doneColumn}
       />
+      <footer className="mt-2 flex items-center gap-2 text-xs text-muted">
+        <span className="min-w-0 truncate" data-testid="task-card-id">
+          {task.id}
+        </span>
+        {linkCount > 0 && (
+          <span className="shrink-0" data-testid="task-card-link-count">
+            🔗 {linkCount}
+          </span>
+        )}
+        {total > 0 && (
+          <span className="shrink-0" data-testid="task-card-subissue-count">
+            {done}/{total}
+          </span>
+        )}
+      </footer>
     </>
   );
 };
