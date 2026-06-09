@@ -1025,7 +1025,10 @@ export const App = () => {
                 allTasks={tasks}
                 tasksByNormalizedPath={tasksByNormalizedPath}
                 doneColumn={doneColumn}
-                isUpperModalOpen={createModalStatus !== null}
+                // 作成は全画面 create ビューへ分離され detail と共存しないため、
+                // detail に重なる上位モーダルは存在しない（旧 createModalStatus 派生を廃止）。
+                // createModalStatus が stale でも detail の Esc 戻るが抑止されない。
+                isUpperModalOpen={false}
                 onBack={handleBackToBoard}
                 onTaskUpdate={handleTaskUpdate}
                 onDelete={handleTaskDelete}

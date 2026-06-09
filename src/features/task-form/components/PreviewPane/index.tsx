@@ -14,8 +14,8 @@ export type PreviewPaneProps = {
 /** プレビューの表示モード。 */
 type PreviewMode = "raw" | "rendered";
 
-const TAB_BASE_CLASS_NAME =
-  "rounded px-3 py-1 text-sm aria-selected:bg-surface-muted aria-selected:font-semibold";
+const TOGGLE_BASE_CLASS_NAME =
+  "rounded px-3 py-1 text-sm aria-pressed:bg-surface-muted aria-pressed:font-semibold";
 
 /**
  * frontmatter＋本文を結合した最終 markdown を Raw / Rendered でトグル表示する
@@ -38,21 +38,21 @@ export const PreviewPane = (props: PreviewPaneProps) => {
 
   return (
     <aside aria-label="プレビュー" className="flex flex-col gap-2">
-      <div role="tablist" className="flex gap-1">
+      {/* 表示切替のみで tabpanel 関連付けを持たないため、tabs ロールではなく */}
+      {/* aria-pressed の単純トグルとして公開する。 */}
+      <div className="flex gap-1">
         <button
           type="button"
-          role="tab"
-          className={TAB_BASE_CLASS_NAME}
-          aria-selected={mode === "rendered"}
+          className={TOGGLE_BASE_CLASS_NAME}
+          aria-pressed={mode === "rendered"}
           onClick={() => setMode("rendered")}
         >
           レンダリング
         </button>
         <button
           type="button"
-          role="tab"
-          className={TAB_BASE_CLASS_NAME}
-          aria-selected={mode === "raw"}
+          className={TOGGLE_BASE_CLASS_NAME}
+          aria-pressed={mode === "raw"}
           onClick={() => setMode("raw")}
         >
           Raw

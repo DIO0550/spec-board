@@ -56,6 +56,7 @@ const buildInitialPreview = (initialStatus: string): PreviewValues => ({
  */
 export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const { onSubmit, onClose, initialStatus } = props;
+  const sectionRef = useRef<HTMLElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
   // プレビュー用にフォーム現在値を保持（TaskForm からの伝搬で更新）。
@@ -91,9 +92,16 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
     onClose();
   }, [onClose]);
 
+  // mount 時にビューのランドマークへフォーカスを移し、キーボード/SR フォーカスが
+  // 前画面（board / detail）に取り残されないようにする（DetailScreen と同様）。
+  useEffect(() => {
+    sectionRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !submittingRef.current) {
+      // IME 変換中（isComposing）の Esc は変換キャンセル用なので画面を閉じない。
+      if (e.key === "Escape" && !e.isComposing && !submittingRef.current) {
         onClose();
       }
     };
@@ -103,6 +111,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
 
   return (
     <section
+      ref={sectionRef}
       aria-label="タスク作成"
       tabIndex={-1}
       className="flex h-full min-h-0 gap-6 p-6"

@@ -72,6 +72,23 @@ test("ランドマーク section が aria-label と tabindex=-1 を持つ", () =
   expect(section.getAttribute("tabindex")).toBe("-1");
 });
 
+test("mount 時にランドマーク section へフォーカスが移る", () => {
+  render(baseProps());
+  const section = document.querySelector('section[aria-label="タスク作成"]');
+  expect(document.activeElement).toBe(section);
+});
+
+test("IME 変換中（isComposing）の Esc では onClose が呼ばれない", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", isComposing: true }),
+    );
+  });
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 test("Esc キーで onClose が呼ばれる", () => {
   const onClose = vi.fn();
   render(baseProps({ onClose }));
