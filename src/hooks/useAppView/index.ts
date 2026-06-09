@@ -2,9 +2,9 @@ import { useCallback, useState } from "react";
 
 /**
  * アプリの画面区分。board（既定）/ settings / detail（全画面詳細）/ milestone
- * （マイルストーン別ビュー）の 4 区分。
+ * （マイルストーン別ビュー）/ create（全画面2ペインのタスク作成画面）の 5 区分。
  */
-export type AppView = "board" | "settings" | "detail" | "milestone";
+export type AppView = "board" | "settings" | "detail" | "milestone" | "create";
 
 /** useAppView の返り値。view state と単一の遷移ハンドラ。 */
 export type UseAppViewResult = {
@@ -34,6 +34,9 @@ export const normalizeAppView = (candidate: string): AppView => {
   }
   if (candidate === "milestone") {
     return "milestone";
+  }
+  if (candidate === "create") {
+    return "create";
   }
   return "board";
 };
