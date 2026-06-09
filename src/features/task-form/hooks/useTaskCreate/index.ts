@@ -23,7 +23,7 @@ export type UseTaskCreateResult = {
    * injected createTask が契約通り Result を返す限り throw しない。
    * 契約違反（reject/throw）時は finally で isSubmitting を戻したうえで再 throw する。
    * 送信中の再呼び出しは Result.err(invalidState) で短絡する。
-   * @param values TaskCreateModal が submit したフォーム値
+   * @param values TaskCreateScreen が submit したフォーム値
    * @returns 成功時 Task、失敗時 ProjectError を含む Result
    */
   submit: (values: TaskFormValues) => Promise<Result<Task, ProjectError>>;

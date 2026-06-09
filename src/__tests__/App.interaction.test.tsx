@@ -321,7 +321,7 @@ test("Board の '+追加' → Modal 送信 → createTask invoke が呼ばれ ta
   expect(container?.textContent).toContain("タスクを作成しました");
 });
 
-test("createTask 失敗時に TaskCreateModal が閉じない（onSubmit reject）", async () => {
+test("createTask 失敗時に作成画面が閉じない（onSubmit reject）", async () => {
   mountApp();
   await openSuccessfully();
   createTaskMock.mockResolvedValueOnce(

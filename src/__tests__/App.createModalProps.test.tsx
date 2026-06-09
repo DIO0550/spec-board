@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 
-const taskCreateModalSpy = vi.hoisted(() => vi.fn());
+const taskCreateScreenSpy = vi.hoisted(() => vi.fn());
 
 vi.mock("@/features/task-form", async () => {
   const actual = await vi.importActual<typeof import("@/features/task-form")>(
@@ -18,12 +18,12 @@ vi.mock("@/features/task-form", async () => {
   );
   return {
     ...actual,
-    TaskCreateModal: (props: { onClose: () => void }) => {
-      taskCreateModalSpy(props);
+    TaskCreateScreen: (props: { onClose: () => void }) => {
+      taskCreateScreenSpy(props);
       return (
         <button
           type="button"
-          data-testid="mock-task-create-modal-close"
+          data-testid="mock-task-create-screen-close"
           onClick={props.onClose}
         >
           close
@@ -124,7 +124,7 @@ const otherTask = Task.fromPayload({
 const fixtureTasks = [parentTask, otherTask];
 
 beforeEach(() => {
-  taskCreateModalSpy.mockClear();
+  taskCreateScreenSpy.mockClear();
   openDirectoryDialogMock.mockReset();
   openProjectMock.mockReset();
   getColumnsMock.mockReset();
@@ -208,9 +208,18 @@ const clickColumnAddButton = async (columnName: string) => {
 };
 
 const lastModalProps = (): Record<string, unknown> => {
-  const calls = taskCreateModalSpy.mock.calls;
+  const calls = taskCreateScreenSpy.mock.calls;
   expect(calls.length).toBeGreaterThan(0);
   return calls[calls.length - 1][0] as Record<string, unknown>;
+};
+
+const clickDetailBackButton = async () => {
+  const btn = container?.querySelector(
+    '[data-testid="detail-back-button"]',
+  ) as HTMLButtonElement | null;
+  await act(async () => {
+    btn?.click();
+  });
 };
 
 test("経路1: handleAddSubIssue → parentCandidates は親 1 件、parentReadOnly=true", async () => {
@@ -242,31 +251,36 @@ test("経路2: handleAddTask（通常作成）→ parentCandidates は tasks 全
   expect(props.initialParent).toBeUndefined();
 });
 
-test("経路3a: subIssue → close で modal が unmount される（close 経路の発火確認）", async () => {
+test("経路3a: subIssue → close で作成画面が unmount され元の detail へ戻る", async () => {
   mountApp();
   await openProjectWithTasks();
 
   await clickParentTaskCard();
   await clickSubIssueAddButton();
   expect(lastModalProps().parentReadOnly).toBe(true);
-  const callsBeforeClose = taskCreateModalSpy.mock.calls.length;
+  const callsBeforeClose = taskCreateScreenSpy.mock.calls.length;
 
-  // mock TaskCreateModal の閉じるボタンで handleCloseCreateModal を発火させる。
-  // close 後は createModalStatus=null のため modal は再 render されず、spy も追加で呼ばれない。
+  // mock TaskCreateScreen の閉じるボタンで handleCloseCreateModal を発火させる。
+  // close 後は createModalStatus=null のため作成画面は再 render されず、spy も追加で呼ばれない。
+  // 戻り先は returnView="detail" のため、元の detail（親タスク）へ復帰する。
   const closeBtn = container?.querySelector(
-    '[data-testid="mock-task-create-modal-close"]',
+    '[data-testid="mock-task-create-screen-close"]',
   ) as HTMLButtonElement | null;
   await act(async () => {
     closeBtn?.click();
   });
 
   expect(
-    container?.querySelector('[data-testid="mock-task-create-modal-close"]'),
+    container?.querySelector('[data-testid="mock-task-create-screen-close"]'),
   ).toBeNull();
-  expect(taskCreateModalSpy.mock.calls.length).toBe(callsBeforeClose);
+  expect(taskCreateScreenSpy.mock.calls.length).toBe(callsBeforeClose);
+  // 元の detail（親タスク）へ戻っている。
+  expect(
+    container?.querySelector('[data-testid="detail-back-button"]'),
+  ).not.toBeNull();
 });
 
-test("経路3b: subIssue → 直接 handleAddTask（通常作成）で parentReadOnly=false（stale leak 検出）", async () => {
+test("経路3b: subIssue → close → board → 通常作成で parentReadOnly=false（stale leak 検出）", async () => {
   mountApp();
   await openProjectWithTasks();
 
@@ -274,16 +288,16 @@ test("経路3b: subIssue → 直接 handleAddTask（通常作成）で parentRea
   await clickSubIssueAddButton();
   expect(lastModalProps().parentReadOnly).toBe(true);
 
-  // close を挟まずに通常作成へ切り替える経路。handleAddTask 側の setSubIssueParentPath(undefined) 漏れを検出する。
-  // 一本化後は detail から column 追加ボタンへ直接到達できないため、作成モーダルを
-  // 開いたまま「← 戻る」で board へ戻す（モーダルは board/detail 両区分で描画され、
-  // createModalStatus は維持される）。close は経由しないため reset 漏れの検出対象は保たれる。
-  const backBtn = document.querySelector(
-    '[data-testid="detail-back-button"]',
+  // 全画面 create では detail が unmount されるため、まず close で detail へ戻り、
+  // detail の「← 戻る」で board へ戻ってから通常作成（handleAddTask）へ切り替える。
+  // handleAddTask / handleCloseCreateModal の setSubIssueParentPath(undefined) 漏れを検出する。
+  const closeBtn = container?.querySelector(
+    '[data-testid="mock-task-create-screen-close"]',
   ) as HTMLButtonElement | null;
   await act(async () => {
-    backBtn?.click();
+    closeBtn?.click();
   });
+  await clickDetailBackButton();
   await clickColumnAddButton("Todo");
 
   const props = lastModalProps();
@@ -293,35 +307,4 @@ test("経路3b: subIssue → 直接 handleAddTask（通常作成）で parentRea
     "tasks/parent.md",
     "tasks/other.md",
   ]);
-});
-
-test("経路4: subIssue モード中に親タスクが tasks から消えると parentCandidates=[]", async () => {
-  mountApp();
-  await openProjectWithTasks();
-  await clickParentTaskCard();
-  await clickSubIssueAddButton();
-  expect((lastModalProps().parentCandidates as Task[]).length).toBe(1);
-
-  // DetailScreen の削除ボタン → ConfirmDialog → 確定 で親タスクを tasks から消す
-  deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
-  const deleteBtn = container?.querySelector(
-    '[data-testid="detail-delete-button"]',
-  ) as HTMLButtonElement | null;
-  await act(async () => {
-    deleteBtn?.click();
-  });
-  const confirmBtn = container?.querySelector(
-    '[data-testid="confirm-confirm-button"]',
-  ) as HTMLButtonElement | null;
-  await act(async () => {
-    confirmBtn?.click();
-  });
-  await act(async () => {
-    await Promise.resolve();
-  });
-
-  const props = lastModalProps();
-  expect((props.parentCandidates as Task[]).length).toBe(0);
-  expect(props.parentReadOnly).toBe(true);
-  expect(props.initialParent).toBe("tasks/parent.md");
 });
