@@ -20,6 +20,7 @@ import { TaskFormLinks } from "./TaskFormLinks";
 import { TaskFormParent } from "./TaskFormParent";
 import { TaskFormPriority } from "./TaskFormPriority";
 import { TaskFormStatus } from "./TaskFormStatus";
+import { TaskFormSubIssues } from "./TaskFormSubIssues";
 import { TaskFormTitle } from "./TaskFormTitle";
 
 type TaskFormProps = {
@@ -205,6 +206,12 @@ export const TaskForm = ({
       <TaskFormBody
         value={fields.state.values.body}
         onChange={(value) => fields.dispatch({ type: "body", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormSubIssues
+        value={fields.state.values.subIssues}
+        onChange={(value) => fields.dispatch({ type: "subIssues", value })}
+        error={fields.state.errors.subIssues}
         disabled={isSubmitting}
       />
       <TaskFormActions>

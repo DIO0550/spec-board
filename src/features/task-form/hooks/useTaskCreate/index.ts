@@ -16,17 +16,29 @@ export type UseTaskCreateOptions = {
   createTask: (params: CreateTaskParams) => Promise<Result<Task, ProjectError>>;
 };
 
+/** submit 成功時の結果。親 Task と失敗したサブIssue の一覧を持つ。 */
+export type CreateTaskSubmitOutcome = {
+  /** 作成された親タスク */
+  parent: Task;
+  /** 作成に失敗したサブIssue（タイトルとエラー）。空配列なら全件成功 */
+  failedSubIssues: { title: string; error: ProjectError }[];
+};
+
 export type UseTaskCreateResult = {
   /**
-   * フォーム値を CreateTaskParams に変換し createTask を呼ぶ。
+   * 親を作成し、成功時は subIssueTitles を直列ループで子作成する。
+   * 親失敗時は Result.err（子は作成しない）。子の部分失敗はロールバックせず
+   * failedSubIssues に積んで Result.ok で返す（親は残す方針）。
    * 送信中は isSubmitting=true。
    * injected createTask が契約通り Result を返す限り throw しない。
    * 契約違反（reject/throw）時は finally で isSubmitting を戻したうえで再 throw する。
    * 送信中の再呼び出しは Result.err(invalidState) で短絡する。
    * @param values TaskCreateScreen が submit したフォーム値
-   * @returns 成功時 Task、失敗時 ProjectError を含む Result
+   * @returns 成功時 CreateTaskSubmitOutcome、親作成失敗時 ProjectError を含む Result
    */
-  submit: (values: TaskFormValues) => Promise<Result<Task, ProjectError>>;
+  submit: (
+    values: TaskFormValues,
+  ) => Promise<Result<CreateTaskSubmitOutcome, ProjectError>>;
   /** 送信中フラグ。表示専用。 */
   isSubmitting: boolean;
 };
@@ -61,13 +73,34 @@ export const useTaskCreate = (
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const submit = useCallback(
-    async (values: TaskFormValues): Promise<Result<Task, ProjectError>> => {
+    async (
+      values: TaskFormValues,
+    ): Promise<Result<CreateTaskSubmitOutcome, ProjectError>> => {
       if (isSubmitting) {
         return Result.err(ProjectError.invalidState("送信中です"));
       }
       setIsSubmitting(true);
       try {
-        return await createTask(toCreateTaskParams(values));
+        const parentResult = await createTask(toCreateTaskParams(values));
+        if (!parentResult.ok) {
+          // 親の作成に失敗したら子は 1 件も作らない。
+          return Result.err(parentResult.error);
+        }
+        const parent = parentResult.value;
+        // サブIssue は直列に作成し、失敗してもループを継続する（ロールバックしない）。
+        // 子の status / draft は親フォームの値を、parent は連番回避後の確定パスを引き継ぐ。
+        const failedSubIssues: { title: string; error: ProjectError }[] = [];
+        for (const title of values.subIssueTitles) {
+          const childResult = await createTask({
+            title,
+            status: values.status,
+            parent: parent.filePath,
+          });
+          if (!childResult.ok) {
+            failedSubIssues.push({ title, error: childResult.error });
+          }
+        }
+        return Result.ok({ parent, failedSubIssues });
       } finally {
         setIsSubmitting(false);
       }

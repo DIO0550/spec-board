@@ -81,6 +81,7 @@ test("初期 state: values はデフォルト、errors は空、parent は visib
     parent: undefined,
     body: "",
     due: "",
+    subIssues: "",
   });
   expect(get().state.errors).toEqual({});
   expect(get().state.fileNameDirty).toBe(false);
@@ -364,6 +365,7 @@ test("handleSubmit 正常系: 正規化された値が onSubmit に渡る（自�
     parent: undefined,
     links: [],
     body: "b",
+    subIssueTitles: [],
   });
 });
 
@@ -458,4 +460,67 @@ test("handleSubmit: due 未入力（空文字）のとき submit 値に due キ�
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect("due" in values).toBe(false);
+});
+
+test("dispatch subIssues: 値が更新され他 field に影響しない", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "subIssues", value: "子1\n子2" });
+  });
+  expect(get().state.values.subIssues).toBe("子1\n子2");
+  expect(get().state.values.title).toBe("");
+});
+
+test("handleSubmit: submit 値に正規化済み subIssueTitles が入る（空行無視・trim）", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().dispatch({ type: "subIssues", value: "子1\n\n 子2 " });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect(values.subIssueTitles).toEqual(["子1", "子2"]);
+});
+
+test("handleSubmit: サブIssue 違反行では onSubmit を呼ばず errors.subIssues に行番号が入る", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().dispatch({ type: "subIssues", value: "ok\nbad:title" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.subIssues).toEqual({
+    line: 2,
+    error: { code: "FORBIDDEN_CHAR", chars: [":"] },
+  });
+});
+
+test("dispatch subIssues: エラー表示中に再入力すると errors.subIssues がクリアされる", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().dispatch({ type: "subIssues", value: "bad:title" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(get().state.errors.subIssues?.line).toBe(1);
+  act(() => {
+    get().dispatch({ type: "subIssues", value: "fixed" });
+  });
+  expect(get().state.errors.subIssues).toBeUndefined();
 });

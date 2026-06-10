@@ -105,6 +105,7 @@ test("タイトル入力して送信すると onSubmit が正規化値で呼ば�
     parent: undefined,
     links: [],
     body: "",
+    subIssueTitles: [],
   });
 });
 
@@ -485,4 +486,41 @@ test("isSubmitting=true で期限欄も無効化される", () => {
     '[data-testid="task-form-due"]',
   ) as HTMLInputElement;
   expect(due.disabled).toBe(true);
+});
+
+test("サブIssue の違反行で submit すると行番号付きエラーが表示されブロックされる", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const subIssues = document.querySelector(
+    '[data-testid="task-form-sub-issues"]',
+  ) as HTMLTextAreaElement;
+  act(() => {
+    changeInputValue(title, "Valid Title");
+  });
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(subIssues, "ok\nbad:title");
+    subIssues.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  const errorEl = document.querySelector(
+    '[data-testid="task-form-sub-issues-error"]',
+  );
+  expect(errorEl?.textContent).toContain("2 行目:");
+  expect(subIssues.getAttribute("aria-invalid")).toBe("true");
+  expect(subIssues.getAttribute("aria-describedby")).toBe(errorEl?.id);
 });

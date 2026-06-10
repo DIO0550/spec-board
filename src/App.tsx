@@ -707,6 +707,15 @@ export const App = () => {
         );
         throw new Error(message);
       }
+      const { failedSubIssues } = result.value;
+      if (failedSubIssues.length > 0) {
+        // 親と成功した子は残す。失敗した子のみ警告（ロールバックしない）。
+        showToast(
+          `サブIssue ${failedSubIssues.length} 件の作成に失敗しました`,
+          "warning",
+        );
+        return;
+      }
       showToast("タスクを作成しました", "success");
     },
     [submitCreateTask, showToast, showErrorUnlessNotified],

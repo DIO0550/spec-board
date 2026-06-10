@@ -145,3 +145,19 @@ test("期限フィールド（date input）が表示される", () => {
   expect(due).toBeTruthy();
   expect(due.getAttribute("type")).toBe("date");
 });
+
+test("サブIssue フィールドが空行無視のヒントとともに表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const textarea = document.querySelector(
+    '[data-testid="task-form-sub-issues"]',
+  ) as HTMLTextAreaElement;
+  expect(textarea).toBeTruthy();
+  expect(textarea.closest("div")?.textContent).toContain(
+    "1 行につき 1 件のサブIssue を作成します（空行は無視）",
+  );
+});

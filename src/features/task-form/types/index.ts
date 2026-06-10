@@ -20,4 +20,6 @@ export type TaskFormValues = {
   body: string;
   /** 期限 `YYYY-MM-DD`（任意。未指定は due キーを出力しない） */
   due?: string;
+  /** サブIssue タイトル（正規化済み。trim 済み・空行なし。空配列 = サブIssue なし） */
+  subIssueTitles: string[];
 };

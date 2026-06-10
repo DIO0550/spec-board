@@ -8,6 +8,10 @@ import {
 import { ParentField } from "@/features/task-form/lib/fields/parent";
 import { PriorityField } from "@/features/task-form/lib/fields/priority";
 import {
+  SubIssuesField,
+  type SubIssuesValidationError,
+} from "@/features/task-form/lib/fields/subIssues";
+import {
   TitleField,
   type TitleValidationError,
 } from "@/features/task-form/lib/fields/title";
@@ -50,12 +54,14 @@ export type FieldValues = {
   parent: ParentField;
   body: string;
   due: DueField;
+  subIssues: SubIssuesField;
 };
 
 /** 各 field のエラー（値が undefined ならエラーなし） */
 export type FieldErrors = {
   title?: TitleValidationError;
   fileName?: FileNameValidationError;
+  subIssues?: SubIssuesValidationError;
 };
 
 /** useTaskFormFields の state */
@@ -78,10 +84,12 @@ export type FieldsAction =
   | { type: "parent"; value: ParentField }
   | { type: "body"; value: string }
   | { type: "due"; value: string }
+  | { type: "subIssues"; value: string }
   | {
       type: "validateAll";
       titleError: TitleValidationError | undefined;
       fileNameError: FileNameValidationError | undefined;
+      subIssuesError: SubIssuesValidationError | undefined;
     };
 
 /** useTaskFormFields の返却値 */
@@ -164,6 +172,19 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       return Object.is(state.values.due, action.value)
         ? state
         : { ...state, values: { ...state.values, due: action.value } };
+    case "subIssues": {
+      if (
+        Object.is(state.values.subIssues, action.value) &&
+        state.errors.subIssues === undefined
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        values: { ...state.values, subIssues: action.value },
+        errors: { ...state.errors, subIssues: undefined },
+      };
+    }
     case "validateAll":
       return {
         ...state,
@@ -171,6 +192,7 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
           ...state.errors,
           title: action.titleError,
           fileName: action.fileNameError,
+          subIssues: action.subIssuesError,
         },
       };
     default: {
@@ -210,6 +232,7 @@ export const useTaskFormFields = (
         parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
         body: "",
         due: DueField.initial(),
+        subIssues: SubIssuesField.initial(),
       },
       errors: {},
       fileNameDirty: false,
@@ -225,23 +248,29 @@ export const useTaskFormFields = (
       }
       const titleResult = TitleField.validate(state.values.title);
       const fileNameResult = FileNameField.validate(state.values.fileName);
-      if (!titleResult.ok || !fileNameResult.ok) {
+      const subIssuesResult = SubIssuesField.validate(state.values.subIssues);
+      if (!titleResult.ok || !fileNameResult.ok || !subIssuesResult.ok) {
         dispatch({
           type: "validateAll",
           titleError: titleResult.ok ? undefined : titleResult.error,
           fileNameError: fileNameResult.ok ? undefined : fileNameResult.error,
+          subIssuesError: subIssuesResult.ok
+            ? undefined
+            : subIssuesResult.error,
         });
         return;
       }
       // 前回 submit で残った古いエラー表示を消す。
       if (
         state.errors.title !== undefined ||
-        state.errors.fileName !== undefined
+        state.errors.fileName !== undefined ||
+        state.errors.subIssues !== undefined
       ) {
         dispatch({
           type: "validateAll",
           titleError: undefined,
           fileNameError: undefined,
+          subIssuesError: undefined,
         });
       }
       const labels = finalizeLabels();
@@ -260,6 +289,7 @@ export const useTaskFormFields = (
         body: state.values.body,
         labels: [...labels],
         links: [...links],
+        subIssueTitles: SubIssuesField.finalize(state.values.subIssues),
         ...(fileName !== undefined && { fileName }),
         ...(due !== undefined && { due }),
       });
@@ -272,6 +302,7 @@ export const useTaskFormFields = (
       state.values,
       state.errors.title,
       state.errors.fileName,
+      state.errors.subIssues,
       state.fileNameDirty,
     ],
   );
