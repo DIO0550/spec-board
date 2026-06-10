@@ -8,7 +8,8 @@ import {
 import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
-import { useAppView } from "@/hooks/useAppView";
+import { type AppView, useAppView } from "@/hooks/useAppView";
+import { resolveCloseTarget } from "@/hooks/useAppView/resolveCloseTarget";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
@@ -32,7 +33,7 @@ import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen } from "./features/settings";
 import { AppSidebar, ThemeProvider } from "./features/shell";
 import {
-  TaskCreateModal,
+  TaskCreateScreen,
   type TaskFormValues,
   useTaskCreate,
 } from "./features/task-form";
@@ -201,6 +202,10 @@ export const App = () => {
   const [subIssueParentPath, setSubIssueParentPath] = useState<
     string | undefined
   >(undefined);
+  // create（全画面作成画面）を閉じたときの戻り先。create 起動時に直前の view と
+  // 選択タスクを退避し、キャンセル/成功後に元の画面（board / 元の detail）へ戻す。
+  const [returnView, setReturnView] = useState<AppView>("board");
+  const [returnTaskId, setReturnTaskId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<LiveAnnouncement | null>(
     null,
   );
@@ -230,10 +235,12 @@ export const App = () => {
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
     setSubIssueParentPath(undefined);
+    setReturnView("board");
+    setReturnTaskId(null);
     setPendingDeleteTask(null);
-    // detail（全画面ビュー）表示中にプロジェクトが切り替わったら、選択タスク消失で
+    // detail / create（全画面ビュー）表示中にプロジェクトが切り替わったら、選択タスク消失で
     // 「選択タスクなしの全画面ビュー」が残らないよう同 render pass で board へ戻す。
-    if (view === "detail") {
+    if (view === "detail" || view === "create") {
       navigate("board");
     }
   } else if (state.kind !== "loaded") {
@@ -247,10 +254,12 @@ export const App = () => {
       setCreateModalStatus(null);
       setCreateModalParent(undefined);
       setSubIssueParentPath(undefined);
+      setReturnView("board");
+      setReturnTaskId(null);
     }
-    // 非 loaded（プロジェクトを閉じた等）に抜けた場合は detail / milestone に
+    // 非 loaded（プロジェクトを閉じた等）に抜けた場合は detail / milestone / create に
     // 取り残さない（milestone は HeaderBar の戻るボタンも非表示になるため）。
-    if (view === "detail" || view === "milestone") {
+    if (view === "detail" || view === "milestone" || view === "create") {
       navigate("board");
     }
   }
@@ -447,11 +456,18 @@ export const App = () => {
     [tasks, updateTask, showToast, showErrorUnlessNotified],
   );
 
-  const handleAddTask = useCallback((columnName: string) => {
-    setCreateModalStatus(columnName);
-    setCreateModalParent(undefined);
-    setSubIssueParentPath(undefined);
-  }, []);
+  const handleAddTask = useCallback(
+    (columnName: string) => {
+      setCreateModalStatus(columnName);
+      setCreateModalParent(undefined);
+      setSubIssueParentPath(undefined);
+      // board の「+」起点: 戻り先は board。
+      setReturnView("board");
+      setReturnTaskId(null);
+      navigate("create");
+    },
+    [navigate],
+  );
 
   const handleAddColumn = useCallback(
     async (columnName: string): Promise<void> => {
@@ -642,7 +658,15 @@ export const App = () => {
     setCreateModalStatus(null);
     setCreateModalParent(undefined);
     setSubIssueParentPath(undefined);
-  }, []);
+    // 戻り先（board / 元の detail）を純関数で解決し、detail 復帰時は選択タスクを復元する。
+    const target = resolveCloseTarget(returnView, returnTaskId);
+    if (target.selectedTaskId !== null) {
+      setSelectedTaskId(target.selectedTaskId);
+    }
+    setReturnView("board");
+    setReturnTaskId(null);
+    navigate(target.view);
+  }, [returnView, returnTaskId, navigate]);
 
   const defaultCreateStatus =
     columns.length > 0
@@ -653,6 +677,9 @@ export const App = () => {
 
   const handleAddSubIssue = useCallback(
     (parentFilePath: string) => {
+      // 利用可能なステータスがなければ toast して中断（create へ遷移しない）。
+      // これを消すと createModalStatus=null のまま navigate("create") され、
+      // create ビューだが TaskCreateScreen も board も描画されず空画面になる。
       if (defaultCreateStatus === null) {
         showToast("利用可能なステータスがありません", "error");
         return;
@@ -660,15 +687,19 @@ export const App = () => {
       setCreateModalStatus(defaultCreateStatus);
       setCreateModalParent(parentFilePath);
       setSubIssueParentPath(parentFilePath);
+      // detail サブIssue 起点: 戻り先は元の detail（親タスク）。
+      setReturnView("detail");
+      setReturnTaskId(selectedTaskId);
+      navigate("create");
     },
-    [defaultCreateStatus, showToast],
+    [defaultCreateStatus, selectedTaskId, showToast, navigate],
   );
 
   const handleCreateTask = useCallback(
     async (values: TaskFormValues): Promise<void> => {
       const result = await submitCreateTask(values);
       if (!result.ok) {
-        // モーダルを閉じない: TaskCreateModal は onSubmit reject で開いたままになる
+        // 画面を閉じない: TaskCreateScreen は onSubmit reject で開いたままになる
         const message = projectErrorMessage(result.error);
         showErrorUnlessNotified(
           result.error,
@@ -994,7 +1025,10 @@ export const App = () => {
                 allTasks={tasks}
                 tasksByNormalizedPath={tasksByNormalizedPath}
                 doneColumn={doneColumn}
-                isUpperModalOpen={createModalStatus !== null}
+                // 作成は全画面 create ビューへ分離され detail と共存しないため、
+                // detail に重なる上位モーダルは存在しない（旧 createModalStatus 派生を廃止）。
+                // createModalStatus が stale でも detail の Esc 戻るが抑止されない。
+                isUpperModalOpen={false}
                 onBack={handleBackToBoard}
                 onTaskUpdate={handleTaskUpdate}
                 onDelete={handleTaskDelete}
@@ -1004,28 +1038,27 @@ export const App = () => {
                 onRemoveLink={handleRemoveLink}
               />
             )}
+            {/* 全画面2ペインのタスク作成画面。board の「+」/ detail のサブIssue 追加の */}
+            {/* 両導線から navigate("create") で <main> を占有する。 */}
+            {view === "create" && createModalStatus !== null && (
+              <TaskCreateScreen
+                columns={columns}
+                initialStatus={createModalStatus}
+                parentCandidates={parentCandidates}
+                existingTasks={tasks}
+                initialParent={createModalParent}
+                parentReadOnly={parentReadOnly}
+                onSubmit={handleCreateTask}
+                onClose={handleCloseCreateModal}
+              />
+            )}
             {view !== "settings" &&
               view !== "detail" &&
               view !== "milestone" &&
+              view !== "create" &&
               renderMain()}
           </main>
         </div>
-        {/* タスク作成モーダルは board / detail 区分で表示する。detail（全画面詳細）の */}
-        {/* 「+ サブIssue追加」からも親 self-set で作成フォームを開けるようにする */}
-        {/* （settings / milestone 区分では非表示）。 */}
-        {(view === "board" || view === "detail") &&
-          createModalStatus !== null && (
-            <TaskCreateModal
-              columns={columns}
-              initialStatus={createModalStatus}
-              parentCandidates={parentCandidates}
-              existingTasks={tasks}
-              initialParent={createModalParent}
-              parentReadOnly={parentReadOnly}
-              onSubmit={handleCreateTask}
-              onClose={handleCloseCreateModal}
-            />
-          )}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         <LiveRegion announcement={announcement} />
       </div>

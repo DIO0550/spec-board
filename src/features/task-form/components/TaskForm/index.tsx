@@ -1,9 +1,11 @@
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo } from "react";
 import { Button } from "@/components/Button";
 import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
+import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -48,6 +50,13 @@ type TaskFormProps = {
   onSubmit: (values: TaskFormValues) => void;
   /** キャンセル時のコールバック */
   onCancel: () => void;
+  /**
+   * フォーム現在値の変化を親へ通知するコールバック（ライブプレビュー用）。
+   * mount 直後にも初期値で一度発火する。
+   * 値変化時の `useEffect` 依存に含めるため、参照安定なコールバックを渡すこと。
+   * @param values - 集約したフォーム現在値（priority は string、未コミット label も含む）
+   */
+  onValuesChange?: (values: PreviewFrontmatterInput & { body: string }) => void;
 };
 
 /**
@@ -69,6 +78,7 @@ export const TaskForm = ({
   cancelLabel = "キャンセル",
   onSubmit,
   onCancel,
+  onValuesChange,
 }: TaskFormProps) => {
   const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
@@ -85,6 +95,25 @@ export const TaskForm = ({
     finalizeLinks: links.finalizeLinks,
   });
   const parentValue = fields.state.values.parent;
+  // フォーム現在値の変化を親へ通知（ライブプレビュー用）。
+  // props 同期や key 再 mount ではなく effect 通知で持ち上げることで、
+  // useTaskFormFields の「mount 後 props 不変前提」を壊さない。
+  // mount 直後にも発火し、初期値（initialStatus 等）をプレビューへ伝える。
+  // 未コミットの labelInput も pure な finalize で取り込み、送信時の値と一致させる。
+  useEffect(() => {
+    if (onValuesChange === undefined) {
+      return;
+    }
+    onValuesChange({
+      title: fields.state.values.title,
+      status: fields.state.values.status,
+      priority: fields.state.values.priority,
+      parent: fields.state.values.parent ?? "",
+      body: fields.state.values.body,
+      labels: LabelsField.finalize(labels.state),
+      links: links.links,
+    });
+  }, [onValuesChange, fields.state.values, labels.state, links.links]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
   const linkCandidates = useMemo(
     () =>

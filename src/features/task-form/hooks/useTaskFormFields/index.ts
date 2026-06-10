@@ -181,8 +181,9 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
  *
  * **前提**: `parentFieldVisible` / `initialParent` は mount 後に変化しないこと。これらの値は
  * useReducer の初期化関数でのみ参照され、mount 後の変化に追従する useEffect は持たない。
- * 現行の呼び出し元（`TaskCreateModal` 経由で `App.tsx` が条件レンダーする）では、
- * モーダルを開くたびに新 hook インスタンスが mount されるためこの前提で問題ない。
+ * 現行の呼び出し元（`TaskCreateScreen` 経由で `App.tsx` が `view === "create"` で
+ * 条件レンダーする）では、作成画面を開くたびに新 hook インスタンスが mount されるため
+ * この前提で問題ない。
  * 長寿命な親コンポーネントから props を動的に変える用途で再利用する場合は、
  * 呼び出し側で `key` を切り替えて remount するか、本 hook に sync ロジックを再追加すること。
  * @param args - フックの引数

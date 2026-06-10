@@ -367,25 +367,32 @@ test("detail 表示中にプロジェクト切替で選択タスク消失→boar
   expect(container?.textContent).toContain("Z タスク");
 });
 
-test("detail で作成モーダル表示中の Esc は board へ戻さない（モーダルと競合しない）", async () => {
+test("detail のサブIssue追加 → 作成画面で Esc は board ではなく元の detail へ戻す", async () => {
   mountApp();
   await openSuccessfully();
   openDetail();
-  // detail のサブIssue追加から作成モーダルを開く（modal は detail 上に重なる）
+  // detail のサブIssue追加から全画面の作成画面（create ビュー）へ遷移する。
   const addBtn = document.querySelector(
     '[data-testid="sub-issue-add-button"]',
   ) as HTMLButtonElement | null;
   await act(async () => {
     addBtn?.click();
   });
+  // 全画面 create ビューに切り替わり detail は unmount される。
   expect(
-    document.querySelector('[data-testid="task-create-dialog"]'),
+    document.querySelector('[data-testid="task-create-screen"]'),
   ).toBeTruthy();
-  // Esc を押しても DetailScreen の「戻る」は発火せず、detail に留まる
+  expect(
+    document.querySelector('[data-testid="detail-back-button"]'),
+  ).toBeNull();
+  // Esc で作成画面を閉じると、戻り先は board ではなく元の detail（returnView="detail"）。
   act(() => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
   await flush();
+  expect(
+    document.querySelector('[data-testid="task-create-screen"]'),
+  ).toBeNull();
   expect(
     document.querySelector('[data-testid="detail-back-button"]'),
   ).toBeTruthy();

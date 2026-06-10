@@ -229,3 +229,151 @@ test("キャンセルボタン click で親の onCancel が呼ばれる（結合
   });
   expect(onCancel).toHaveBeenCalledTimes(1);
 });
+
+const lastValues = (fn: ReturnType<typeof vi.fn>) =>
+  fn.mock.calls[fn.mock.calls.length - 1][0];
+
+test("onValuesChange は mount 直後に初期値を一度通知する", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  expect(onValuesChange).toHaveBeenCalled();
+  expect(onValuesChange.mock.calls[0][0]).toEqual({
+    title: "",
+    status: "Todo",
+    priority: "",
+    parent: "",
+    body: "",
+    labels: [],
+    links: [],
+  });
+});
+
+test("title 入力で onValuesChange に最新 title が通知される", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "新タイトル");
+  });
+  expect(lastValues(onValuesChange).title).toBe("新タイトル");
+});
+
+test("ラベル確定（Enter）で onValuesChange の labels に反映される", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(labelInput, "bug");
+  });
+  act(() => {
+    labelInput.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(lastValues(onValuesChange).labels).toEqual(["bug"]);
+});
+
+test("未コミットの labelInput も onValuesChange の labels に含まれる（送信時 finalize と一致）", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(labelInput, "pending");
+  });
+  expect(lastValues(onValuesChange).labels).toEqual(["pending"]);
+});
+
+test("links 追加で onValuesChange の links に反映される", () => {
+  const onValuesChange = vi.fn();
+  const candidate = Task.fromPayload({
+    id: "c-1",
+    title: "候補タスク",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/candidate.md",
+  });
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    existingTasks: [candidate],
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const input = document.querySelector(
+    '[data-testid="task-form-links-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    input.focus();
+    input.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+  });
+  const option = document.querySelector(
+    '[data-testid="task-form-links-option-c-1"]',
+  ) as HTMLElement;
+  act(() => {
+    option.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(lastValues(onValuesChange).links).toEqual(["tasks/candidate.md"]);
+});
+
+test("値変化時にフィールド state が保持される（key 再 mount しない）", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  // 未コミットの labelInput を入れた状態で別フィールド（title）を変える。
+  // key 再 mount されると labelInput が初期化されてしまう。
+  act(() => {
+    changeInputValue(labelInput, "draft");
+  });
+  act(() => {
+    changeInputValue(title, "X");
+  });
+  expect(labelInput.value).toBe("draft");
+});
