@@ -11,6 +11,7 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
+import { TaskFormFileName } from "./TaskFormFileName";
 import { TaskFormLabels } from "./TaskFormLabels";
 import { LabelChip } from "./TaskFormLabels/LabelChip";
 import { LabelInput } from "./TaskFormLabels/LabelInput";
@@ -35,7 +36,7 @@ type TaskFormProps = {
    * parentCandidates が undefined のときは無視される。
    */
   parentReadOnly?: boolean;
-  /** 重複判定に使う既存タスク一覧。未指定なら DUPLICATE 判定なし。 */
+  /** links ピッカー候補・選択済み chip の逆引きに使う既存タスク一覧 */
   existingTasks?: readonly Task[];
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
@@ -89,7 +90,6 @@ export const TaskForm = ({
     initialParent,
     parentFieldVisible: parentCandidates !== undefined,
     isSubmitting,
-    existingTasks,
     onSubmit,
     finalizeLabels: labels.finalizeLabels,
     finalizeLinks: links.finalizeLinks,
@@ -141,6 +141,12 @@ export const TaskForm = ({
         value={fields.state.values.title}
         onChange={(value) => fields.dispatch({ type: "title", value })}
         error={fields.state.errors.title}
+        disabled={isSubmitting}
+      />
+      <TaskFormFileName
+        value={fields.state.values.fileName}
+        onChange={(value) => fields.dispatch({ type: "fileName", value })}
+        error={fields.state.errors.fileName}
         disabled={isSubmitting}
       />
       <TaskFormStatus

@@ -7,6 +7,7 @@ export type TauriErrorCode =
   | "IO_ERROR"
   | "PARSE_ERROR"
   | "HAS_CHILDREN"
+  | "INVALID_FILE_NAME"
   | "UNKNOWN";
 
 const FALLBACK_MESSAGE = "不明なエラーが発生しました";
@@ -20,6 +21,7 @@ const PATTERNS: ReadonlyArray<{
   { regex: /\bio\b|i\/o|読み取り|書き込み/i, code: "IO_ERROR" },
   { regex: /\bparse\b|フロントマター/i, code: "PARSE_ERROR" },
   { regex: /task has children/i, code: "HAS_CHILDREN" },
+  { regex: /invalid file name/i, code: "INVALID_FILE_NAME" },
 ];
 
 /**

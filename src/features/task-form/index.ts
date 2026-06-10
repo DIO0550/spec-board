@@ -4,10 +4,7 @@ export type {
   UseTaskCreateResult,
 } from "./hooks/useTaskCreate";
 export { useTaskCreate } from "./hooks/useTaskCreate";
-export type {
-  TitleValidationContext,
-  TitleValidationError,
-} from "./lib/fields/title";
+export type { TitleValidationError } from "./lib/fields/title";
 export {
   FORBIDDEN_TITLE_CHARS,
   TITLE_MAX_LENGTH,

@@ -377,3 +377,70 @@ test("値変化時にフィールド state が保持される（key 再 mount �
   });
   expect(labelInput.value).toBe("draft");
 });
+
+test("title 入力でファイル名欄に kebab-case 値が表示される（自動追従）", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Fix Login Bug");
+  });
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(fileName.value).toBe("fix-login-bug");
+});
+
+test("isSubmitting=true でファイル名欄も無効化される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    isSubmitting: true,
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(fileName.disabled).toBe(true);
+});
+
+test("ファイル名に予約文字を入力して submit するとブロックされエラーが表示される", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Valid Title");
+  });
+  act(() => {
+    changeInputValue(fileName, "a:b");
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  const errorEl = document.querySelector(
+    '[data-testid="task-form-file-name-error"]',
+  );
+  expect(errorEl?.textContent).toContain(
+    "ファイル名に使用できない文字が含まれています",
+  );
+  expect(fileName.getAttribute("aria-invalid")).toBe("true");
+  expect(fileName.getAttribute("aria-describedby")).toBe(errorEl?.id);
+});

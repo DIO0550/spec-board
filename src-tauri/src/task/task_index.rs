@@ -416,14 +416,18 @@ impl TaskIndex {
         let snapshot_slice = self.as_slice();
         let target_dir = resolve_target_dir(parent_index, snapshot_slice);
         let existing = existing_filenames_in_dir(snapshot_slice, &target_dir);
-        let filename = TaskFileName::from_title(&intent.title, &existing).map_err(|err| {
-            match err {
-                TaskFileNameError::InvalidTitle => CreateTaskError::InvalidTitle,
-                // from_title 経路では Empty / ContainsSeparator / NotMarkdown は
-                // 構造的に発生しないが、防御的に InvalidTitle に正規化する。
-                _ => CreateTaskError::InvalidTitle,
-            }
-        })?;
+        let filename = match intent.file_name.as_deref() {
+            Some(name) => TaskFileName::from_explicit(name, &existing)
+                .map_err(CreateTaskError::from_file_name_error)?,
+            None => TaskFileName::from_title(&intent.title, &existing).map_err(|err| {
+                match err {
+                    TaskFileNameError::InvalidTitle => CreateTaskError::InvalidTitle,
+                    // from_title 経路では Empty / ContainsSeparator / NotMarkdown は
+                    // 構造的に発生しないが、防御的に InvalidTitle に正規化する。
+                    _ => CreateTaskError::InvalidTitle,
+                }
+            })?,
+        };
         let rel_path = join_rel_path(&target_dir, &filename);
         let abs_path = project_root.join(&rel_path);
         let target_dir_abs = project_root.join(&target_dir);
@@ -904,6 +908,8 @@ pub struct CreateTaskIntent {
     /// `normalize_create_links` で dedup・パス正規化・lenient 保持を行う。
     pub links: Vec<String>,
     pub body: Option<String>,
+    /// 明示指定するファイル名（`.md` 付き完全名）。`None` ならタイトル由来で自動生成。
+    pub file_name: Option<String>,
 }
 
 /// `update_task` IPC 境界から domain に渡される更新意図。

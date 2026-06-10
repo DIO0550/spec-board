@@ -33,6 +33,9 @@ pub struct CreateTaskArgs {
     pub links: Vec<String>,
     /// 本文（Markdown）。未指定時は空文字列扱い。
     pub body: Option<String>,
+    /// 明示指定するファイル名（`.md` 付き完全名）。未指定ならタイトルから自動生成。
+    /// 検証・連番回避は `plan_create` 側の `TaskFileName::from_explicit` が担う。
+    pub file_name: Option<String>,
 }
 
 /// IPC 境界の `CreateTaskArgs` をドメインの `CreateTaskIntent` に詰め直す。
@@ -52,6 +55,7 @@ impl From<CreateTaskArgs> for CreateTaskIntent {
             // raw のまま詰める。dedup・パス正規化・lenient 保持は plan_create が担う。
             links: args.links,
             body: args.body,
+            file_name: args.file_name,
         }
     }
 }

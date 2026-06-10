@@ -26,19 +26,8 @@ export const FORBIDDEN_TITLE_CHARS = [
 /** タイトルバリデーションのエラー判別共用体。 */
 export type TitleValidationError =
   | { code: "EMPTY" }
-  | { code: "DUPLICATE"; fileName: string }
   | { code: "TOO_LONG"; max: number; actual: number }
   | { code: "FORBIDDEN_CHAR"; chars: string[] };
-
-/** バリデーションに渡すコンテキスト。 */
-export type TitleValidationContext = {
-  /**
-   * kebab(title) + ".md" の重複判定に使う既存ファイル名集合（basename ベース）。
-   * 呼び出し側で「作成先 dirname に同居する既存タスク」だけに絞り込んだ集合を渡す。
-   * 重複判定が不要な場合は空 Set を渡す。
-   */
-  existingFileNames: ReadonlySet<string>;
-};
 
 /**
  * タイトル field の companion object。
@@ -60,16 +49,13 @@ export const TitleField = {
 
   /**
    * タイトルをバリデーションする。
-   * 優先順位は EMPTY → FORBIDDEN_CHAR → TOO_LONG → DUPLICATE。
+   * 優先順位は EMPTY → FORBIDDEN_CHAR → TOO_LONG。
    * 最初にマッチしたエラーのみ返し、後続は評価しない。
+   * ファイル名重複は submit をブロックせず、保存時に BE が連番付与で回避する。
    * @param v 現在の値
-   * @param ctx 重複判定用コンテキスト（必須）
    * @returns Result<void, TitleValidationError>
    */
-  validate: (
-    v: TitleField,
-    ctx: TitleValidationContext,
-  ): Result<void, TitleValidationError> => {
+  validate: (v: TitleField): Result<void, TitleValidationError> => {
     const trimmed = v.trim();
     if (trimmed.length === 0) {
       return Result.err({ code: "EMPTY" });
@@ -91,10 +77,6 @@ export const TitleField = {
       // ファイル名 base が作れず、BE 側でも InvalidTitle となるため
       // EMPTY 扱いで弾く。
       return Result.err({ code: "EMPTY" });
-    }
-    const fileName = `${kebabBase}.md`;
-    if (ctx.existingFileNames.has(fileName)) {
-      return Result.err({ code: "DUPLICATE", fileName });
     }
     return Result.ok(undefined);
   },

@@ -277,3 +277,38 @@ test("T3b: priority / parent が値を持つときは CreateTaskParams に含ま
     body: "body",
   });
 });
+
+test("fileName が指定されたとき CreateTaskParams に含まれる", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+  const probe = renderHook({ createTask });
+  const values: TaskFormValues = {
+    title: "T",
+    fileName: "custom-name.md",
+    status: "TODO",
+    labels: [],
+    links: [],
+    body: "",
+  };
+  await act(async () => {
+    await probe.latest.submit(values);
+  });
+  const params = createTask.mock.calls[0][0] as Record<string, unknown>;
+  expect(params.fileName).toBe("custom-name.md");
+});
+
+test("fileName が undefined のとき CreateTaskParams から key 自体を含めない", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+  const probe = renderHook({ createTask });
+  const values: TaskFormValues = {
+    title: "T",
+    status: "TODO",
+    labels: [],
+    links: [],
+    body: "",
+  };
+  await act(async () => {
+    await probe.latest.submit(values);
+  });
+  const params = createTask.mock.calls[0][0] as Record<string, unknown>;
+  expect(params).not.toHaveProperty("fileName");
+});

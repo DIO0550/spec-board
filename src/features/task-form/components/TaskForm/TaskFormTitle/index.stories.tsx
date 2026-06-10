@@ -22,13 +22,6 @@ export const WithEmptyError: Story = {
   args: { value: "", error: { code: "EMPTY" } },
 };
 
-export const WithDuplicateError: Story = {
-  args: {
-    value: "Fix login bug",
-    error: { code: "DUPLICATE", fileName: "fix-login-bug.md" },
-  },
-};
-
 export const WithTooLongError: Story = {
   args: {
     value: "a".repeat(TITLE_MAX_LENGTH + 1),

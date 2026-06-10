@@ -156,7 +156,7 @@ test("送信中はフィールド・送信ボタンが無効化される", async
   expect(submit.disabled).toBe(true);
 });
 
-test("既存タスクと重複するタイトルは送信されない（DUPLICATE）", () => {
+test("既存タスクと重複するタイトルでも送信される（重複は BE の連番付与で回避）", () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
   render(baseProps({ existingTasks: [DUPLICATE], onSubmit }));
   act(() => {
@@ -165,10 +165,10 @@ test("既存タスクと重複するタイトルは送信されない（DUPLICAT
   act(() => {
     submitForm();
   });
-  expect(onSubmit).not.toHaveBeenCalled();
+  expect(onSubmit).toHaveBeenCalledTimes(1);
   expect(
     document.querySelector('[data-testid="task-form-title-error"]'),
-  ).toBeTruthy();
+  ).toBeNull();
 });
 
 test("左フォームの入力が右プレビューに追従する（ライブプレビュー）", () => {

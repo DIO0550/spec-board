@@ -9,6 +9,7 @@ use thiserror::Error;
 use crate::state::AppStateError;
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::TaskIoError;
+use crate::task::task_file_name::TaskFileNameError;
 use crate::task::task_index::{ParentHierarchyErrorReason, ParentValidationFailure};
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
@@ -16,6 +17,9 @@ use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 pub enum CreateTaskError {
     #[error("タイトルからファイル名を生成できません")]
     InvalidTitle,
+    /// 明示指定されたファイル名が不正（空 / パスセパレータ含み / 非 `.md` 拡張子）。
+    #[error("invalid file name: {0}")]
+    InvalidFileName(String),
     #[error("親タスクが見つかりません: {parent}")]
     ParentNotFound { parent: String },
     #[error("親タスクのチェーン検証に失敗しました ({parent}): {reason}")]
@@ -25,6 +29,14 @@ pub enum CreateTaskError {
     },
     #[error("作成しようとしたタスク本文が scanner の対象外です: {reason}")]
     ContentNotScannerEligible { reason: ContentRejectReason },
+}
+
+impl CreateTaskError {
+    /// 明示ファイル名経路の `TaskFileNameError` を `InvalidFileName` に変換する。
+    /// エラー原因の種別（空 / セパレータ / 非 `.md`）を detail 文字列に含める。
+    pub(crate) fn from_file_name_error(err: TaskFileNameError) -> Self {
+        Self::InvalidFileName(err.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

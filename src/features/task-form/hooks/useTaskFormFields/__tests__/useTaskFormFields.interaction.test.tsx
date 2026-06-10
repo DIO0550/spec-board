@@ -8,7 +8,6 @@ import {
 } from "@/features/task-form/hooks/useTaskFormFields";
 import { TITLE_MAX_LENGTH } from "@/features/task-form/lib/fields/title";
 import type { TaskFormValues } from "@/features/task-form/types";
-import { Task } from "@/types/task";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -72,35 +71,18 @@ const makeFormEvent = () =>
     preventDefault: vi.fn(),
   }) as unknown as React.FormEvent<HTMLFormElement>;
 
-/**
- * テスト用の Task を生成するファクトリ。
- * filePath 以外はデフォルト値で埋める。
- * @param filePath Task の filePath
- * @returns Task インスタンス
- */
-const makeTask = (filePath: string): Task =>
-  Task.fromPayload({
-    id: filePath,
-    title: filePath,
-    status: "Todo",
-    labels: [],
-    links: [],
-    children: [],
-    reverseLinks: [],
-    body: "",
-    filePath,
-  });
-
 test("初期 state: values はデフォルト、errors は空、parent は visible=false で undefined", () => {
   const { get } = render(defaultArgs());
   expect(get().state.values).toEqual({
     title: "",
+    fileName: "",
     status: "Todo",
     priority: "",
     parent: undefined,
     body: "",
   });
   expect(get().state.errors).toEqual({});
+  expect(get().state.fileNameDirty).toBe(false);
 });
 
 test("parentFieldVisible=true + initialParent が初期 state に反映される", () => {
@@ -131,6 +113,54 @@ test("dispatch title: エラー表示中に値を変えると errors.title が u
     get().dispatch({ type: "title", value: "abc" });
   });
   expect(get().state.errors.title).toBeUndefined();
+});
+
+test("dispatch title: ファイル名が kebab-case で自動追従する", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Bug" });
+  });
+  expect(get().state.values.fileName).toBe("fix-bug");
+  expect(get().state.fileNameDirty).toBe(false);
+});
+
+test("dispatch fileName: 手動編集後は title 入力に追従しない", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "fileName", value: "custom" });
+  });
+  expect(get().state.fileNameDirty).toBe(true);
+  act(() => {
+    get().dispatch({ type: "title", value: "New Title" });
+  });
+  expect(get().state.values.fileName).toBe("custom");
+});
+
+test("dispatch fileName: 空文字に戻すと追従を再開し現在の title から再同期する", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "title", value: "First Title" });
+  });
+  act(() => {
+    get().dispatch({ type: "fileName", value: "custom" });
+  });
+  act(() => {
+    get().dispatch({ type: "fileName", value: "" });
+  });
+  expect(get().state.fileNameDirty).toBe(false);
+  expect(get().state.values.fileName).toBe("first-title");
+  act(() => {
+    get().dispatch({ type: "title", value: "Second Title" });
+  });
+  expect(get().state.values.fileName).toBe("second-title");
+});
+
+test("dispatch fileName: 入力値は trim + 末尾 .md 剥がしで正規化される", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "fileName", value: "  custom.MD  " });
+  });
+  expect(get().state.values.fileName).toBe("custom");
 });
 
 test("handleSubmit: 空タイトルでは onSubmit を呼ばず errors.title.code = EMPTY", () => {
@@ -185,49 +215,9 @@ test("handleSubmit: FORBIDDEN_CHAR", () => {
   expect(get().state.errors.title?.code).toBe("FORBIDDEN_CHAR");
 });
 
-test("handleSubmit DUPLICATE: parent なし → tasks/ 直下の既存タスクと一致", () => {
+test("handleSubmit: 既存タスクと重複しうるタイトルでも onSubmit が呼ばれる（DUPLICATE 撤廃）", () => {
   const onSubmit = vi.fn();
-  const { get } = render({
-    ...defaultArgs(),
-    onSubmit,
-    existingTasks: [makeTask("tasks/fix-login-bug.md")],
-  });
-  act(() => {
-    get().dispatch({ type: "title", value: "Fix Login Bug" });
-  });
-  act(() => {
-    get().handleSubmit(makeFormEvent());
-  });
-  expect(onSubmit).not.toHaveBeenCalled();
-  expect(get().state.errors.title?.code).toBe("DUPLICATE");
-});
-
-test("handleSubmit DUPLICATE: parent あり → 親 dirname スコープで判定", () => {
-  const onSubmit = vi.fn();
-  const { get } = render({
-    ...defaultArgs(),
-    onSubmit,
-    parentFieldVisible: true,
-    initialParent: "tasks/parent/parent.md",
-    existingTasks: [makeTask("tasks/parent/fix-login-bug.md")],
-  });
-  act(() => {
-    get().dispatch({ type: "title", value: "Fix Login Bug" });
-  });
-  act(() => {
-    get().handleSubmit(makeFormEvent());
-  });
-  expect(onSubmit).not.toHaveBeenCalled();
-  expect(get().state.errors.title?.code).toBe("DUPLICATE");
-});
-
-test("handleSubmit DUPLICATE スコープ外: parent なしで他 dirname にだけ同名 → 重複扱いしない", () => {
-  const onSubmit = vi.fn();
-  const { get } = render({
-    ...defaultArgs(),
-    onSubmit,
-    existingTasks: [makeTask("tasks/parent/fix-login-bug.md")],
-  });
+  const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "Fix Login Bug" });
   });
@@ -238,110 +228,94 @@ test("handleSubmit DUPLICATE スコープ外: parent なしで他 dirname にだ
   expect(get().state.errors.title).toBeUndefined();
 });
 
-test("handleSubmit DUPLICATE: parent が bare filename のときは tasks/ 直下と比較する", () => {
+test("handleSubmit: 自動追従中（手動未編集）は submit 値に fileName キーが含まれない", () => {
   const onSubmit = vi.fn();
-  const { get } = render({
-    ...defaultArgs(),
-    onSubmit,
-    parentFieldVisible: true,
-    initialParent: "parent.md",
-    existingTasks: [makeTask("tasks/fix-login-bug.md")],
-  });
+  const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
-    get().dispatch({ type: "title", value: "Fix Login Bug" });
+    get().dispatch({ type: "title", value: "Fix Bug" });
   });
   act(() => {
     get().handleSubmit(makeFormEvent());
   });
-  expect(onSubmit).not.toHaveBeenCalled();
-  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect("fileName" in values).toBe(false);
 });
 
-test("handleSubmit DUPLICATE: Windows パス区切り (\\) でも検出される", () => {
+test("handleSubmit: 手動編集後は base に .md を付与した完全名が fileName として送信される", () => {
   const onSubmit = vi.fn();
-  const { get } = render({
-    ...defaultArgs(),
-    onSubmit,
-    existingTasks: [makeTask("tasks\\fix-login-bug.md")],
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "Fix Bug" });
   });
   act(() => {
-    get().dispatch({ type: "title", value: "Fix Login Bug" });
+    get().dispatch({ type: "fileName", value: "custom-name" });
   });
   act(() => {
     get().handleSubmit(makeFormEvent());
   });
-  expect(onSubmit).not.toHaveBeenCalled();
-  expect(get().state.errors.title?.code).toBe("DUPLICATE");
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect(values.fileName).toBe("custom-name.md");
 });
 
-test("handleSubmit: 直前の DUPLICATE エラーが残った状態でも、再 submit が Ok なら errors.title をクリアする", () => {
+test("handleSubmit: fileName 予約文字では onSubmit を呼ばず errors.fileName が設定される", () => {
   const onSubmit = vi.fn();
-  let tasks: readonly Task[] = [makeTask("tasks/fix-login-bug.md")];
-  const Wrapper = (
-    props: Omit<UseTaskFormFieldsArgs, "existingTasks"> & {
-      existingTasks: readonly Task[];
-      onResult: (r: UseTaskFormFieldsResult) => void;
-    },
-  ) => {
-    const { onResult, ...args } = props;
-    const result = useTaskFormFields(args);
-    useEffect(() => {
-      onResult(result);
-    });
-    return null;
-  };
-  let latest: UseTaskFormFieldsResult | null = null;
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-  const renderWith = (current: readonly Task[]) => {
-    act(() => {
-      root?.render(
-        createElement(Wrapper, {
-          initialStatus: "Todo",
-          parentFieldVisible: false,
-          isSubmitting: false,
-          onSubmit,
-          finalizeLabels: () => [],
-          finalizeLinks: () => [],
-          existingTasks: current,
-          onResult: (r) => {
-            latest = r;
-          },
-        }),
-      );
-    });
-  };
-  renderWith(tasks);
-  const get = () => latest as unknown as UseTaskFormFieldsResult;
-
+  const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
-    get().dispatch({ type: "title", value: "Fix Login Bug" });
+    get().dispatch({ type: "title", value: "Valid Title" });
+  });
+  act(() => {
+    get().dispatch({ type: "fileName", value: "a:b" });
   });
   act(() => {
     get().handleSubmit(makeFormEvent());
   });
-  expect(get().state.errors.title?.code).toBe("DUPLICATE");
   expect(onSubmit).not.toHaveBeenCalled();
+  expect(get().state.errors.fileName).toEqual({
+    code: "FORBIDDEN_CHAR",
+    chars: [":"],
+  });
+});
 
-  tasks = [];
-  renderWith(tasks);
+test("dispatch fileName: エラー表示中に再入力すると errors.fileName がクリアされる", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "Valid Title" });
+  });
+  act(() => {
+    get().dispatch({ type: "fileName", value: "a:b" });
+  });
   act(() => {
     get().handleSubmit(makeFormEvent());
   });
-  expect(get().state.errors.title).toBeUndefined();
+  expect(get().state.errors.fileName?.code).toBe("FORBIDDEN_CHAR");
+  act(() => {
+    get().dispatch({ type: "fileName", value: "fixed-name" });
+  });
+  expect(get().state.errors.fileName).toBeUndefined();
+});
+
+test("handleSubmit: fileName エラー解消後の再 submit でエラーがクリアされ送信される", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "Valid Title" });
+  });
+  act(() => {
+    get().dispatch({ type: "fileName", value: "a:b" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  act(() => {
+    get().dispatch({ type: "fileName", value: "fixed-name" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
   expect(onSubmit).toHaveBeenCalledTimes(1);
-});
-
-test("入力中は重複判定しない（onChange で重複 title を入力しても errors.title は undefined）", () => {
-  const { get } = render({
-    ...defaultArgs(),
-    existingTasks: [makeTask("tasks/fix-login-bug.md")],
-  });
-  act(() => {
-    get().dispatch({ type: "title", value: "Fix Login Bug" });
-  });
-  expect(get().state.errors.title).toBeUndefined();
+  expect(get().state.errors.fileName).toBeUndefined();
 });
 
 test("handleSubmit: isSubmitting=true では何もしない", () => {
@@ -356,7 +330,7 @@ test("handleSubmit: isSubmitting=true では何もしない", () => {
   expect(onSubmit).not.toHaveBeenCalled();
 });
 
-test("handleSubmit 正常系: 正規化された値が onSubmit に渡る", () => {
+test("handleSubmit 正常系: 正規化された値が onSubmit に渡る（自動追従中は fileName なし）", () => {
   const onSubmit = vi.fn();
   const commit = vi.fn(() => [] as string[]);
   const { get } = render({

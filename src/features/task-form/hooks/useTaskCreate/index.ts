@@ -45,6 +45,7 @@ const toCreateTaskParams = (values: TaskFormValues): CreateTaskParams => ({
   body: values.body,
   ...(values.priority !== undefined && { priority: values.priority }),
   ...(values.parent !== undefined && { parent: values.parent }),
+  ...(values.fileName !== undefined && { fileName: values.fileName }),
 });
 
 /**

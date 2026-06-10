@@ -21,6 +21,38 @@ fn deserializes_links_array() {
 }
 
 #[test]
+fn deserializes_without_file_name_key_to_none() {
+    // 旧 FE 相当の JSON（fileName キーなし）でも deserialize でき、None に倒れる。
+    let json = r#"{"title":"T","status":"Todo"}"#;
+    let args: CreateTaskArgs = serde_json::from_str(json).expect("should deserialize");
+    assert_eq!(args.file_name, None);
+}
+
+#[test]
+fn deserializes_file_name_key() {
+    let json = r#"{"title":"T","status":"Todo","fileName":"custom-name.md"}"#;
+    let args: CreateTaskArgs = serde_json::from_str(json).expect("should deserialize");
+    assert_eq!(args.file_name, Some("custom-name.md".to_string()));
+}
+
+#[test]
+fn from_args_maps_file_name_to_intent() {
+    let args = CreateTaskArgs {
+        title: "T".into(),
+        status: "Todo".into(),
+        priority: None,
+        milestone: None,
+        labels: Vec::new(),
+        parent: None,
+        links: Vec::new(),
+        body: None,
+        file_name: Some("custom-name.md".into()),
+    };
+    let intent = CreateTaskIntent::from(args);
+    assert_eq!(intent.file_name, Some("custom-name.md".to_string()));
+}
+
+#[test]
 fn from_args_moves_links_raw_without_normalization() {
     let args = CreateTaskArgs {
         title: "T".into(),
@@ -31,6 +63,7 @@ fn from_args_moves_links_raw_without_normalization() {
         parent: None,
         links: vec!["./tasks/a.md".into(), "./tasks/a.md".into()],
         body: None,
+        file_name: None,
     };
     let intent = CreateTaskIntent::from(args);
     // From は dedup も正規化もせず raw のまま詰める（正規化は plan_create の責務）。

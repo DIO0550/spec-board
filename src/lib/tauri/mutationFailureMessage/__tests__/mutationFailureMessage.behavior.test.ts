@@ -48,3 +48,10 @@ test("HAS_CHILDREN は専用文へ翻訳される", () => {
     "タスクの削除に失敗しました: 子タスクが存在するため削除できません",
   );
 });
+
+test("INVALID_FILE_NAME は専用文へ翻訳される", () => {
+  const error = new TauriError("INVALID_FILE_NAME", "invalid file name: x");
+  expect(buildMutationFailureMessage("create_task", error)).toBe(
+    "タスクの作成に失敗しました: ファイル名が不正です（空・パス区切り文字・.md 以外の拡張子は使用できません）",
+  );
+});

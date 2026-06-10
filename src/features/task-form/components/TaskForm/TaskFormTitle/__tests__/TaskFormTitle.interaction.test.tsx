@@ -77,14 +77,9 @@ test("error 指定で aria 属性が描画される", () => {
   expect(input.getAttribute("aria-describedby")).toBe(errorEl?.id);
 });
 
-test("4 種エラーそれぞれで対応する日本語メッセージが描画される", () => {
+test("3 種エラーそれぞれで対応する日本語メッセージが描画される", () => {
   const cases: Array<[TitleValidationError, string, string]> = [
     [{ code: "EMPTY" }, "タイトルを入力してください", "EMPTY"],
-    [
-      { code: "DUPLICATE", fileName: "fix-login-bug.md" },
-      "同じ名前のタスクがすでに存在します",
-      "DUPLICATE",
-    ],
     [
       { code: "TOO_LONG", max: 200, actual: 201 },
       "タイトルは200文字以内で入力してください",

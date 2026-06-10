@@ -41,6 +41,8 @@ export type CreateTaskParams = {
   links?: string[];
   /** Markdown 本文（任意） */
   body?: string;
+  /** 明示ファイル名（`.md` 付き完全名・任意。重複時は BE が連番付与） */
+  fileName?: string;
 };
 
 /** update_task 引数（filePath 必須、それ以外は任意の部分更新）。 */

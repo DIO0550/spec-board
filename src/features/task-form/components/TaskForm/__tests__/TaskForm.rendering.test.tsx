@@ -98,3 +98,36 @@ test("parentCandidates 指定で親タスク選択 UI が表示される", () =>
     document.querySelector('[data-testid="parent-task-select"]'),
   ).toBeTruthy();
 });
+
+test("ファイル名フィールドが .md サフィックス・連番ヒントとともに表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const input = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(input).toBeTruthy();
+  expect(input.parentElement?.textContent).toContain(".md");
+  expect(input.closest("div")?.parentElement?.textContent).toContain(
+    "連番が付きます",
+  );
+});
+
+test("ファイル名エラーなし時は aria-invalid が付与されない", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const input = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(input.getAttribute("aria-invalid")).toBe("false");
+  expect(
+    document.querySelector('[data-testid="task-form-file-name-error"]'),
+  ).toBeNull();
+});

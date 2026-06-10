@@ -58,6 +58,26 @@ impl TaskFileName {
         Self::try_from_str(&raw)
     }
 
+    /// 明示指定されたファイル名（`.md` 付き完全名）を検証し、既存名と衝突する場合は
+    /// 連番サフィックスを付与した一意なファイル名を返す。
+    /// 検証は `try_from_str` と同一（空 / パスセパレータ / 非 `.md` を拒否）。
+    /// `.MD` 等の大文字混在拡張子は受理し、小文字 `.md` に正規化して返す。
+    pub fn from_explicit(
+        value: &str,
+        existing: &HashSet<String>,
+    ) -> Result<Self, TaskFileNameError> {
+        let validated = Self::try_from_str(value)?;
+        // `.md`（大文字小文字混在含む）を剥がした base で連番回避を再実行する。
+        let base = &validated.0[..validated.0.len() - ".md".len()];
+        // try_from_str は値全体の空しか検査しないため、`.md` / `.MD` 単体
+        // （base が空になる入力）はここで明示的に拒否する。
+        if base.is_empty() {
+            return Err(TaskFileNameError::Empty);
+        }
+        let raw = spec_board_fs::task::unique_filename::build_unique_filename(base, "md", existing);
+        Self::try_from_str(&raw)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

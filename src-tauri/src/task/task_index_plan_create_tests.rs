@@ -14,6 +14,7 @@ use crate::task::task_title::TaskTitle;
 
 fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
     CreateTaskIntent {
+        file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
         status: ColumnName::from_lenient("Todo".to_string()),
         priority: None,
@@ -193,6 +194,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
     let root = Path::new("/project");
     let index = TaskIndex::new(Vec::new());
     let intent = CreateTaskIntent {
+        file_name: None,
         title: TaskTitle::from_lenient("Implement Feature".to_string()),
         status: ColumnName::from_lenient("Doing".to_string()),
         priority: Priority::from_ascii_ci("high"),
@@ -217,6 +219,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
 
 fn intent_with_links(title: &str, parent: Option<&str>, links: Vec<&str>) -> CreateTaskIntent {
     CreateTaskIntent {
+        file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
         status: ColumnName::from_lenient("Todo".to_string()),
         priority: None,
@@ -334,4 +337,87 @@ fn keeps_parent_traversal_link_leniently() {
     let outcome = index.plan_create(root, &intent).expect("should succeed");
     // normalize_path_parts は `..` を保持するため dangling として残る。
     assert!(outcome.content.as_str().contains("../outside.md"));
+}
+
+fn intent_with_file_name(title: &str, parent: Option<&str>, file_name: &str) -> CreateTaskIntent {
+    CreateTaskIntent {
+        file_name: Some(file_name.to_string()),
+        ..intent_with(title, parent)
+    }
+}
+
+#[test]
+fn uses_explicit_file_name_when_specified() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with_file_name("Hello World", None, "custom-name.md");
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert_eq!(
+        Path::new("tasks/custom-name.md"),
+        outcome.rel_path.as_path()
+    );
+}
+
+#[test]
+fn appends_suffix_when_explicit_file_name_collides() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(vec![task_with("tasks/custom-name.md", None)]);
+    let intent = intent_with_file_name("Hello", None, "custom-name.md");
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert_eq!(
+        Path::new("tasks/custom-name-1.md"),
+        outcome.rel_path.as_path()
+    );
+}
+
+#[test]
+fn resolves_explicit_file_name_collision_within_parent_dir() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(vec![
+        task_with("issues/82/parent.md", None),
+        task_with("issues/82/custom.md", None),
+    ]);
+    let intent = intent_with_file_name("Child", Some("issues/82/parent.md"), "custom.md");
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    // 親 dir 配下の既存ファイル名と照合して連番判定される。
+    assert_eq!(
+        Path::new("issues/82/custom-1.md"),
+        outcome.rel_path.as_path()
+    );
+}
+
+#[test]
+fn rejects_invalid_explicit_file_names() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let cases = ["a/b.md", "x.txt", ""];
+    for value in cases {
+        let intent = intent_with_file_name("Hello", None, value);
+        let err = index.plan_create(root, &intent).expect_err("should fail");
+        assert!(
+            matches!(err, CreateTaskError::InvalidFileName(_)),
+            "plan_create(file_name={value:?}) は InvalidFileName になるべき (got {err:?})"
+        );
+    }
+}
+
+#[test]
+fn keeps_title_based_generation_when_file_name_absent() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with("Hello World", None);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    // file_name 未指定はタイトル由来生成（リグレッション確認）。
+    assert_eq!(
+        Path::new("tasks/hello-world.md"),
+        outcome.rel_path.as_path()
+    );
 }
