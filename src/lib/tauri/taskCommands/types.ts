@@ -43,6 +43,8 @@ export type CreateTaskParams = {
   body?: string;
   /** 明示ファイル名（`.md` 付き完全名・任意。重複時は BE が連番付与） */
   fileName?: string;
+  /** 期限 `YYYY-MM-DD`（任意。未指定/空は due キーを出力しない） */
+  due?: string;
 };
 
 /** update_task 引数（filePath 必須、それ以外は任意の部分更新）。 */

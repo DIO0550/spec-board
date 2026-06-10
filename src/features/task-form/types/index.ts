@@ -18,4 +18,6 @@ export type TaskFormValues = {
   links: string[];
   /** 本文（Markdown） */
   body: string;
+  /** 期限 `YYYY-MM-DD`（任意。未指定は due キーを出力しない） */
+  due?: string;
 };

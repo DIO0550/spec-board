@@ -1,5 +1,6 @@
 import type { Dispatch, FormEvent } from "react";
 import { useCallback, useReducer } from "react";
+import { DueField } from "@/features/task-form/lib/fields/due";
 import {
   FileNameField,
   type FileNameValidationError,
@@ -48,6 +49,7 @@ export type FieldValues = {
   priority: PriorityField;
   parent: ParentField;
   body: string;
+  due: DueField;
 };
 
 /** 各 field のエラー（値が undefined ならエラーなし） */
@@ -75,6 +77,7 @@ export type FieldsAction =
   | { type: "priority"; value: PriorityField }
   | { type: "parent"; value: ParentField }
   | { type: "body"; value: string }
+  | { type: "due"; value: string }
   | {
       type: "validateAll";
       titleError: TitleValidationError | undefined;
@@ -157,6 +160,10 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       return Object.is(state.values.body, action.value)
         ? state
         : { ...state, values: { ...state.values, body: action.value } };
+    case "due":
+      return Object.is(state.values.due, action.value)
+        ? state
+        : { ...state, values: { ...state.values, due: action.value } };
     case "validateAll":
       return {
         ...state,
@@ -202,6 +209,7 @@ export const useTaskFormFields = (
         priority: PriorityField.initial(),
         parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
         body: "",
+        due: DueField.initial(),
       },
       errors: {},
       fileNameDirty: false,
@@ -243,6 +251,7 @@ export const useTaskFormFields = (
       const fileName = state.fileNameDirty
         ? FileNameField.toParam(state.values.fileName)
         : undefined;
+      const due = DueField.toParam(state.values.due);
       onSubmit({
         title: TitleField.normalize(state.values.title),
         status: state.values.status,
@@ -252,6 +261,7 @@ export const useTaskFormFields = (
         labels: [...labels],
         links: [...links],
         ...(fileName !== undefined && { fileName }),
+        ...(due !== undefined && { due }),
       });
     },
     [

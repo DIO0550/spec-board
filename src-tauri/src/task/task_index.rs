@@ -910,6 +910,8 @@ pub struct CreateTaskIntent {
     pub body: Option<String>,
     /// 明示指定するファイル名（`.md` 付き完全名）。`None` ならタイトル由来で自動生成。
     pub file_name: Option<String>,
+    /// 期限（`YYYY-MM-DD`）。`None` / 空文字なら due キーを出力しない。
+    pub due: Option<String>,
 }
 
 /// `update_task` IPC 境界から domain に渡される更新意図。

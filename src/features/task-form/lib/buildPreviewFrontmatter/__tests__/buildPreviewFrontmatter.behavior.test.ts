@@ -124,3 +124,24 @@ test("list item に改行・先頭スペースを含むとき - <生値> がそ�
     "---\ntitle: タスク\nstatus: todo\nlinks:\n  - a\nb\n  -  spaced\n---",
   );
 });
+
+test("due 指定時は links の後（末尾）に出力する", () => {
+  expect(
+    buildPreviewFrontmatter({
+      ...baseInput,
+      links: ["tasks/a.md"],
+      due: "2026-07-01",
+    }),
+  ).toBe(
+    "---\ntitle: タスク\nstatus: todo\nlinks:\n  - tasks/a.md\ndue: 2026-07-01\n---",
+  );
+});
+
+test.each([[undefined], [""]])(
+  "due が %j のとき due 行を省略する",
+  (due) => {
+    expect(buildPreviewFrontmatter({ ...baseInput, due })).toBe(
+      "---\ntitle: タスク\nstatus: todo\n---",
+    );
+  },
+);

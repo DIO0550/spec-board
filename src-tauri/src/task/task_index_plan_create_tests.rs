@@ -14,6 +14,7 @@ use crate::task::task_title::TaskTitle;
 
 fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
     CreateTaskIntent {
+        due: None,
         file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
         status: ColumnName::from_lenient("Todo".to_string()),
@@ -194,6 +195,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
     let root = Path::new("/project");
     let index = TaskIndex::new(Vec::new());
     let intent = CreateTaskIntent {
+        due: None,
         file_name: None,
         title: TaskTitle::from_lenient("Implement Feature".to_string()),
         status: ColumnName::from_lenient("Doing".to_string()),
@@ -219,6 +221,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
 
 fn intent_with_links(title: &str, parent: Option<&str>, links: Vec<&str>) -> CreateTaskIntent {
     CreateTaskIntent {
+        due: None,
         file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
         status: ColumnName::from_lenient("Todo".to_string()),
@@ -341,6 +344,7 @@ fn keeps_parent_traversal_link_leniently() {
 
 fn intent_with_file_name(title: &str, parent: Option<&str>, file_name: &str) -> CreateTaskIntent {
     CreateTaskIntent {
+        due: None,
         file_name: Some(file_name.to_string()),
         ..intent_with(title, parent)
     }
@@ -420,4 +424,37 @@ fn keeps_title_based_generation_when_file_name_absent() {
         Path::new("tasks/hello-world.md"),
         outcome.rel_path.as_path()
     );
+}
+
+#[test]
+fn writes_due_line_into_content_when_specified() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = CreateTaskIntent {
+        due: Some("2026-07-01".to_string()),
+        ..intent_with("With Due", None)
+    };
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert!(outcome.content.as_str().contains("due: 2026-07-01"));
+}
+
+#[test]
+fn omits_due_key_when_empty_or_absent() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let cases = [None, Some(String::new())];
+    for due in cases {
+        let intent = CreateTaskIntent {
+            due: due.clone(),
+            ..intent_with("No Due", None)
+        };
+        let outcome = index.plan_create(root, &intent).expect("should succeed");
+        assert!(
+            !outcome.content.as_str().contains("due:"),
+            "due={due:?} のとき due キーは出力されないべき (content: {})",
+            outcome.content.as_str()
+        );
+    }
 }

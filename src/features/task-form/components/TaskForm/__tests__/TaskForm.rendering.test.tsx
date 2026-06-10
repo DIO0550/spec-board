@@ -131,3 +131,17 @@ test("ファイル名エラーなし時は aria-invalid が付与されない", 
     document.querySelector('[data-testid="task-form-file-name-error"]'),
   ).toBeNull();
 });
+
+test("期限フィールド（date input）が表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const due = document.querySelector(
+    '[data-testid="task-form-due"]',
+  ) as HTMLInputElement;
+  expect(due).toBeTruthy();
+  expect(due.getAttribute("type")).toBe("date");
+});

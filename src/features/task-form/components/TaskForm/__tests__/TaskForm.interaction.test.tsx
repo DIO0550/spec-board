@@ -251,6 +251,7 @@ test("onValuesChange は mount 直後に初期値を一度通知する", () => {
     body: "",
     labels: [],
     links: [],
+    due: "",
   });
 });
 
@@ -443,4 +444,45 @@ test("ファイル名に予約文字を入力して submit するとブロック
   );
   expect(fileName.getAttribute("aria-invalid")).toBe("true");
   expect(fileName.getAttribute("aria-describedby")).toBe(errorEl?.id);
+});
+
+test("期限を入力して送信すると onSubmit の値に due が含まれる", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const due = document.querySelector(
+    '[data-testid="task-form-due"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Due Task");
+  });
+  act(() => {
+    changeInputValue(due, "2026-07-01");
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(onSubmit.mock.calls[0][0].due).toBe("2026-07-01");
+});
+
+test("isSubmitting=true で期限欄も無効化される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    isSubmitting: true,
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const due = document.querySelector(
+    '[data-testid="task-form-due"]',
+  ) as HTMLInputElement;
+  expect(due.disabled).toBe(true);
 });

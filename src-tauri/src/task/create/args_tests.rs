@@ -38,6 +38,7 @@ fn deserializes_file_name_key() {
 #[test]
 fn from_args_maps_file_name_to_intent() {
     let args = CreateTaskArgs {
+        due: None,
         title: "T".into(),
         status: "Todo".into(),
         priority: None,
@@ -55,6 +56,7 @@ fn from_args_maps_file_name_to_intent() {
 #[test]
 fn from_args_moves_links_raw_without_normalization() {
     let args = CreateTaskArgs {
+        due: None,
         title: "T".into(),
         status: "Todo".into(),
         priority: None,
@@ -71,4 +73,20 @@ fn from_args_moves_links_raw_without_normalization() {
         intent.links,
         vec!["./tasks/a.md".to_string(), "./tasks/a.md".to_string()]
     );
+}
+
+#[test]
+fn deserializes_due_key_and_maps_to_intent() {
+    let json = r#"{"title":"T","status":"Todo","due":"2026-07-01"}"#;
+    let args: CreateTaskArgs = serde_json::from_str(json).expect("should deserialize");
+    assert_eq!(args.due, Some("2026-07-01".to_string()));
+    let intent = CreateTaskIntent::from(args);
+    assert_eq!(intent.due, Some("2026-07-01".to_string()));
+}
+
+#[test]
+fn deserializes_without_due_key_to_none() {
+    let json = r#"{"title":"T","status":"Todo"}"#;
+    let args: CreateTaskArgs = serde_json::from_str(json).expect("should deserialize");
+    assert_eq!(args.due, None);
 }

@@ -80,6 +80,7 @@ test("初期 state: values はデフォルト、errors は空、parent は visib
     priority: "",
     parent: undefined,
     body: "",
+    due: "",
   });
   expect(get().state.errors).toEqual({});
   expect(get().state.fileNameDirty).toBe(false);
@@ -415,4 +416,46 @@ test("handleSubmit: links は finalizeLinks の戻り値が使われる", () => 
   expect(finalize).toHaveBeenCalledTimes(1);
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.links).toEqual(["tasks/a.md", "tasks/b.md"]);
+});
+
+test("dispatch due: 値が更新され他 field に影響しない", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().dispatch({ type: "due", value: "2026-07-01" });
+  });
+  expect(get().state.values.due).toBe("2026-07-01");
+  expect(get().state.values.title).toBe("T");
+  expect(get().state.values.fileName).toBe("t");
+});
+
+test("handleSubmit: due 入力ありのとき submit 値に due が入る", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().dispatch({ type: "due", value: "2026-07-01" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect(values.due).toBe("2026-07-01");
+});
+
+test("handleSubmit: due 未入力（空文字）のとき submit 値に due キーが含まれない", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect("due" in values).toBe(false);
 });

@@ -11,6 +11,7 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
+import { TaskFormDue } from "./TaskFormDue";
 import { TaskFormFileName } from "./TaskFormFileName";
 import { TaskFormLabels } from "./TaskFormLabels";
 import { LabelChip } from "./TaskFormLabels/LabelChip";
@@ -112,6 +113,7 @@ export const TaskForm = ({
       body: fields.state.values.body,
       labels: LabelsField.finalize(labels.state),
       links: links.links,
+      due: fields.state.values.due,
     });
   }, [onValuesChange, fields.state.values, labels.state, links.links]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
@@ -158,6 +160,11 @@ export const TaskForm = ({
       <TaskFormPriority
         value={fields.state.values.priority}
         onChange={(value) => fields.dispatch({ type: "priority", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormDue
+        value={fields.state.values.due}
+        onChange={(value) => fields.dispatch({ type: "due", value })}
         disabled={isSubmitting}
       />
       <TaskFormLabels htmlFor={labelsInputId}>

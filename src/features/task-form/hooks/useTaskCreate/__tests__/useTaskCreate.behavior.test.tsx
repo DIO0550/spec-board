@@ -312,3 +312,42 @@ test("fileName が undefined のとき CreateTaskParams から key 自体を含�
   const params = createTask.mock.calls[0][0] as Record<string, unknown>;
   expect(params).not.toHaveProperty("fileName");
 });
+
+test("due が指定されたとき CreateTaskParams に含まれる", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+  const probe = renderHook({ createTask });
+  const values: TaskFormValues = {
+    title: "T",
+    status: "TODO",
+    labels: [],
+    links: [],
+    body: "",
+    due: "2026-07-01",
+  };
+  await act(async () => {
+    await probe.latest.submit(values);
+  });
+  const params = createTask.mock.calls[0][0] as Record<string, unknown>;
+  expect(params.due).toBe("2026-07-01");
+});
+
+test.each([[undefined], [""]])(
+  "due が %j のとき CreateTaskParams から key 自体を含めない",
+  async (due) => {
+    const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+    const probe = renderHook({ createTask });
+    const values: TaskFormValues = {
+      title: "T",
+      status: "TODO",
+      labels: [],
+      links: [],
+      body: "",
+      ...(due !== undefined && { due }),
+    };
+    await act(async () => {
+      await probe.latest.submit(values);
+    });
+    const params = createTask.mock.calls[0][0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty("due");
+  },
+);
