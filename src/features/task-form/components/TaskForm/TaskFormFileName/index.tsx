@@ -3,7 +3,11 @@ import type { FileNameValidationError } from "@/features/task-form/lib/fields/fi
 import { fileNameErrorMessage } from "./fileNameErrorMessage";
 
 type TaskFormFileNameProps = {
-  /** 現在値（拡張子 .md を除いた base 文字列） */
+  /**
+   * 現在値（ファイル名欄の入力値）。入力中は生のまま保持されるため `.md` や
+   * 前後空白を含み得る。trim + 末尾 `.md` 剥がしは submit 時の
+   * `FileNameField.toParam` が担う。
+   */
   value: string;
   /**
    * 入力変更時のコールバック（手動編集 = タイトル追従停止のトリガ）。
@@ -17,7 +21,7 @@ type TaskFormFileNameProps = {
 };
 
 /**
- * ファイル名入力フィールド。`.md` サフィックスを固定表示し、base のみ編集させる。
+ * ファイル名入力フィールド。`.md` サフィックスを固定表示し、拡張子なしの入力を促す。
  * バリデーション判断は持たず、渡された error prop を表示するだけのステートレスな子。
  * @param props - {@link TaskFormFileNameProps}
  * @returns ファイル名入力 UI
@@ -55,7 +59,7 @@ export const TaskFormFileName = ({
         <span className="shrink-0 text-sm text-muted">.md</span>
       </div>
       <p className="mt-1 text-xs text-muted">
-        空欄でタイトルから自動生成。既存と重複する場合は保存時に連番が付きます
+        未編集の場合はタイトルから自動生成。既存と重複する場合は保存時に連番が付きます
       </p>
       {hasError && (
         <p
