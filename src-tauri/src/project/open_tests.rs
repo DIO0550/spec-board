@@ -803,6 +803,7 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         done_column: None,
     };
     let task_b = Task {
+        draft: false,
         id: "b.md".into(),
         file_path: "b.md".into(),
         title: "B".into(),

@@ -19,6 +19,7 @@ use crate::task::warning::TaskWarningCode;
 fn make_task(file_path: &str, parent: Option<&str>) -> Task {
     let fp = TaskFilePath::from_lenient(file_path);
     Task {
+        draft: false,
         id: fp.clone(),
         file_path: fp,
         title: "T".into(),
@@ -43,6 +44,7 @@ fn parsed_from_md(md: &str) -> Parsed {
 
 fn empty_intent(rel: &str) -> UpdateTaskIntent {
     UpdateTaskIntent {
+        draft: None,
         file_path: PathBuf::from(rel),
         title: None,
         status: None,
@@ -918,4 +920,73 @@ fn plan_update_milestone_set_preserves_unknown_extras() {
 
     assert!(outcome.file_content.contains("milestone: v0.4"));
     assert!(outcome.file_content.contains("assignee: alice"));
+}
+
+#[test]
+fn plan_update_sets_draft_when_some_true() {
+    let task = make_task("tasks/a.md", None);
+    let index = TaskIndex::new(vec![task.clone()]);
+    let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\n---\nbody\n");
+    let intent = UpdateTaskIntent {
+        draft: Some(true),
+        ..empty_intent("tasks/a.md")
+    };
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("should succeed");
+
+    assert!(outcome.file_content.contains("draft: true"));
+    assert!(outcome.updated_task.draft);
+}
+
+#[test]
+fn plan_update_clears_draft_when_some_false() {
+    let task = make_task("tasks/a.md", None);
+    let index = TaskIndex::new(vec![task.clone()]);
+    let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\ndraft: true\n---\nbody\n");
+    let intent = UpdateTaskIntent {
+        draft: Some(false),
+        ..empty_intent("tasks/a.md")
+    };
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("should succeed");
+
+    assert!(!outcome.file_content.contains("draft:"));
+    assert!(!outcome.updated_task.draft);
+}
+
+#[test]
+fn plan_update_keeps_draft_when_none() {
+    let task = make_task("tasks/a.md", None);
+    let index = TaskIndex::new(vec![task.clone()]);
+    let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\ndraft: true\n---\nbody\n");
+    let intent = empty_intent("tasks/a.md");
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("should succeed");
+
+    assert!(outcome.file_content.contains("draft: true"));
+    assert!(outcome.updated_task.draft);
+}
+
+#[test]
+fn plan_update_clearing_draft_on_non_draft_is_idempotent() {
+    let task = make_task("tasks/a.md", None);
+    let index = TaskIndex::new(vec![task.clone()]);
+    let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\n---\nbody\n");
+    let intent = UpdateTaskIntent {
+        draft: Some(false),
+        ..empty_intent("tasks/a.md")
+    };
+
+    let outcome = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect("should succeed");
+
+    assert!(!outcome.file_content.contains("draft:"));
+    assert!(!outcome.updated_task.draft);
 }

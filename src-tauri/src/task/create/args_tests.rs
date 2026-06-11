@@ -38,6 +38,7 @@ fn deserializes_file_name_key() {
 #[test]
 fn from_args_maps_file_name_to_intent() {
     let args = CreateTaskArgs {
+        draft: false,
         due: None,
         title: "T".into(),
         status: "Todo".into(),
@@ -56,6 +57,7 @@ fn from_args_maps_file_name_to_intent() {
 #[test]
 fn from_args_moves_links_raw_without_normalization() {
     let args = CreateTaskArgs {
+        draft: false,
         due: None,
         title: "T".into(),
         status: "Todo".into(),
@@ -89,4 +91,18 @@ fn deserializes_without_due_key_to_none() {
     let json = r#"{"title":"T","status":"Todo"}"#;
     let args: CreateTaskArgs = serde_json::from_str(json).expect("should deserialize");
     assert_eq!(args.due, None);
+}
+
+#[test]
+fn deserializes_draft_variants_and_maps_to_intent() {
+    let cases = [
+        (r#"{"title":"T","status":"Todo","draft":true}"#, true),
+        (r#"{"title":"T","status":"Todo","draft":false}"#, false),
+        (r#"{"title":"T","status":"Todo"}"#, false),
+    ];
+    for (json, expected) in cases {
+        let args: CreateTaskArgs = serde_json::from_str(json).expect("should deserialize");
+        let intent = CreateTaskIntent::from(args);
+        assert_eq!(intent.draft, expected, "json={json}");
+    }
 }

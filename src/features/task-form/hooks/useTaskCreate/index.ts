@@ -59,6 +59,7 @@ const toCreateTaskParams = (values: TaskFormValues): CreateTaskParams => ({
   ...(values.parent !== undefined && { parent: values.parent }),
   ...(values.fileName !== undefined && { fileName: values.fileName }),
   ...(values.due !== undefined && values.due !== "" && { due: values.due }),
+  ...(values.draft === true && { draft: true }),
 });
 
 /**
@@ -95,6 +96,7 @@ export const useTaskCreate = (
             title,
             status: values.status,
             parent: parent.filePath,
+            ...(values.draft === true && { draft: true }),
           });
           if (!childResult.ok) {
             failedSubIssues.push({ title, error: childResult.error });

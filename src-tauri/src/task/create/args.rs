@@ -38,6 +38,9 @@ pub struct CreateTaskArgs {
     pub file_name: Option<String>,
     /// 期限（`YYYY-MM-DD`）。未指定・空文字なら frontmatter に due キーを出力しない。
     pub due: Option<String>,
+    /// 下書きとして作成するか。省略時は false（通常作成）。
+    #[serde(default)]
+    pub draft: bool,
 }
 
 /// IPC 境界の `CreateTaskArgs` をドメインの `CreateTaskIntent` に詰め直す。
@@ -59,6 +62,7 @@ impl From<CreateTaskArgs> for CreateTaskIntent {
             body: args.body,
             file_name: args.file_name,
             due: args.due,
+            draft: args.draft,
         }
     }
 }

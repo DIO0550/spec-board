@@ -63,6 +63,10 @@ pub struct Frontmatter {
     /// 関連タスクのファイルパス配列。labels と同じ正規化ロジックを共有する。
     #[serde(default, deserialize_with = "deserialize_string_vec_lenient")]
     pub links: Vec<String>,
+    /// 下書きフラグ。`Value::Bool(true)` のみ `Some(true)`。
+    /// `false` / 文字列 / 数値 / null 等はすべて `None`（非 draft）に倒す lenient 解釈。
+    #[serde(default, deserialize_with = "deserialize_draft_lenient")]
+    pub draft: Option<bool>,
     #[serde(flatten)]
     pub extras: serde_yaml_ng::Mapping,
 }
@@ -102,6 +106,22 @@ where
         return Ok(None);
     }
     Ok(Some(s))
+}
+
+/// `draft` フィールド用の lenient deserializer（milestone の bool 版）。
+///
+/// `serde_yaml_ng::Value::deserialize` で一度 `Value` を受け取り、`Value::Bool(true)` のみ
+/// `Some(true)`。`false`・文字列・数値・null 等はすべて `None`（非 draft）に倒す。
+/// draft 値の型不一致でパースエラーにはしない（warning も付与しない）。
+fn deserialize_draft_lenient<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_yaml_ng::Value::deserialize(deserializer)?;
+    if value == serde_yaml_ng::Value::Bool(true) {
+        return Ok(Some(true));
+    }
+    Ok(None)
 }
 
 /// `labels` / `links` フィールド用の共通 lenient deserializer。
@@ -317,15 +337,18 @@ pub fn serialize(parsed: &Parsed) -> String {
     out
 }
 
-/// 固定順 6 キー → 残り extras (出現順) の `Mapping` を組み立てる。
+/// 固定順 typed キー → 残り extras (出現順) の `Mapping` を組み立てる。
 ///
 /// title / status / parent は `extras` 内に保持された値を typed 位置で取り出す。
 /// priority は `Option<Priority>` から先頭大文字（High / Medium / Low）で出力する。
 /// labels / links は空配列の場合は対応するキーを出力しない。
+/// draft は `Some(true)` のときのみ `draft: true` を出力する（false は書かない）。
 fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
     use serde_yaml_ng::{Mapping, Value};
 
-    const TYPED_KEYS: [&str; 7] = [
+    // parse.rs の convert_extras にも同名・同内容の定数がある。
+    // typed キーを追加・変更する場合は両方を同時に更新すること。
+    const TYPED_KEYS: [&str; 8] = [
         "title",
         "status",
         "priority",
@@ -333,6 +356,7 @@ fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
         "milestone",
         "parent",
         "links",
+        "draft",
     ];
     let mut map = Mapping::new();
 
@@ -372,6 +396,10 @@ fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
             Value::String("links".into()),
             string_vec_to_value_sequence(&fm.links),
         );
+    }
+
+    if fm.draft == Some(true) {
+        map.insert(Value::String("draft".into()), Value::Bool(true));
     }
 
     for (k, v) in &fm.extras {

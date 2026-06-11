@@ -12,6 +12,8 @@ export type PreviewFrontmatterInput = {
   links: string[];
   /** 期限（`YYYY-MM-DD`）。未指定/空文字は行なし。 */
   due?: string;
+  /** 下書きフラグ。true のときのみ `draft: true` 行を出力。 */
+  draft?: boolean;
 };
 
 /** YAML list item のインデント接頭辞。 */
@@ -41,9 +43,11 @@ const isOmitted = (value: string | undefined): value is undefined | "" =>
 
 /**
  * プレビュー用 frontmatter YAML を組み立てる。
- * フィールド順: title → status → priority → labels → parent → links → due
- * （BE の serialize 出力順に一致させる）。
- * 空値省略: priority 未指定/空文字は行なし / labels・links 空配列は行なし / parent・due 同様。
+ * フィールド順: title → status → priority → labels → parent → links → draft → due
+ * （BE の serialize 出力順に一致させる。draft は typed 固定順で links の後、
+ *  due は extras のため最後）。
+ * 空値省略: priority 未指定/空文字は行なし / labels・links 空配列は行なし /
+ * parent・due 同様 / draft は true のときのみ行を出力。
  * `serde_yaml_ng` の完全一致（エスケープ）までは追わない軽量実装で、
  * 値にコロン・改行・先頭 `#` 等を含むと YAML として崩れ得る（プレビュー目的のため許容）。
  * @param input - フォーム現在値
@@ -61,6 +65,9 @@ export const buildPreviewFrontmatter = (
     lines.push(`parent: ${input.parent}`);
   }
   lines.push(...buildListBlock("links", input.links));
+  if (input.draft === true) {
+    lines.push("draft: true");
+  }
   if (!isOmitted(input.due)) {
     lines.push(`due: ${input.due}`);
   }

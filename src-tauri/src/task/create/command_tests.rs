@@ -33,6 +33,7 @@ fn open_with_noop(state: Arc<AppState>, path: &Path) {
 
 fn args_with_title(title: &str) -> CreateTaskArgs {
     CreateTaskArgs {
+        draft: false,
         due: None,
         file_name: None,
         title: title.into(),
@@ -74,6 +75,7 @@ fn create_task_with_priority_and_labels_and_body_renders_full_frontmatter() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let args = CreateTaskArgs {
+        draft: false,
         due: None,
         file_name: None,
         title: "Implement Feature".into(),
@@ -108,6 +110,7 @@ fn create_task_under_parent_places_into_parent_dir_and_updates_children() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let args = CreateTaskArgs {
+        draft: false,
         due: None,
         file_name: None,
         title: "Child Task".into(),
@@ -152,6 +155,7 @@ fn create_task_normalizes_raw_parent_path_to_resolved_dir() {
     let cases = vec!["./tasks/parent.md", "tasks\\parent.md"];
     for (i, raw) in cases.into_iter().enumerate() {
         let args = CreateTaskArgs {
+            draft: false,
             due: None,
             file_name: None,
             title: format!("Child {i}"),
@@ -607,4 +611,33 @@ fn create_task_without_due_omits_due_key() {
     let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
     assert!(!content.contains("due:"));
     assert!(task.due.is_none());
+}
+
+#[test]
+fn create_task_with_draft_writes_draft_into_md_and_payload() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Draft Task");
+    args.draft = true;
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    assert!(content.contains("draft: true"));
+    assert!(task.draft);
+}
+
+#[test]
+fn create_task_without_draft_omits_draft_key() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let task =
+        create_task_impl(&state, &FsTaskIo, args_with_title("Normal Task")).expect("succeeds");
+
+    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    assert!(!content.contains("draft:"));
+    assert!(!task.draft);
 }

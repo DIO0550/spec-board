@@ -31,6 +31,7 @@ test("fromPayload は flat payload の関連情報を nested domain property に
     title: "Task",
     status: "Todo",
     priority: "High",
+    draft: false,
     labels: ["bug"],
     body: "body",
     filePath: "tasks/task-1.md",

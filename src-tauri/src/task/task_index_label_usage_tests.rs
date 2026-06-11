@@ -7,6 +7,7 @@ use crate::task::label::Label;
 
 fn task_with_labels(id: &str, labels: &[&str]) -> Task {
     Task {
+        draft: false,
         id: id.into(),
         file_path: id.into(),
         title: format!("title-{id}").into(),

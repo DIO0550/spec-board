@@ -115,6 +115,8 @@ fn render_markdown_from_intent(
             .map(str::to_owned),
         labels: intent.labels.iter().map(|l| l.to_string()).collect(),
         links: normalized_links.to_vec(),
+        // 下書きのときのみ draft: true を出力する（false は書かない）。
+        draft: intent.draft.then_some(true),
         extras,
     };
 

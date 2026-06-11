@@ -388,3 +388,27 @@ fn non_string_due_warns_and_is_none() {
     assert_eq!(task.due, None);
     assert!(has_invalid_due_warning(&task));
 }
+
+#[test]
+fn task_from_markdown_maps_draft_true() {
+    let task = task_from(
+        "---\ntitle: A\nstatus: Todo\ndraft: true\n---\nbody\n",
+        "tasks/a.md",
+    );
+    assert!(task.draft);
+}
+
+#[test]
+fn task_from_markdown_maps_absent_draft_to_false() {
+    let task = task_from("---\ntitle: A\nstatus: Todo\n---\nbody\n", "tasks/a.md");
+    assert!(!task.draft);
+}
+
+#[test]
+fn task_from_markdown_excludes_draft_from_extras() {
+    let task = task_from(
+        "---\ntitle: A\nstatus: Todo\ndraft: true\n---\nbody\n",
+        "tasks/a.md",
+    );
+    assert!(!task.extras.contains_key("draft"));
+}

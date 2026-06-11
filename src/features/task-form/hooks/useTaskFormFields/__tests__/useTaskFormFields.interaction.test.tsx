@@ -82,6 +82,7 @@ test("初期 state: values はデフォルト、errors は空、parent は visib
     body: "",
     due: "",
     subIssues: "",
+    draft: false,
   });
   expect(get().state.errors).toEqual({});
   expect(get().state.fileNameDirty).toBe(false);
@@ -366,6 +367,7 @@ test("handleSubmit 正常系: 正規化された値が onSubmit に渡る（自�
     links: [],
     body: "b",
     subIssueTitles: [],
+    draft: false,
   });
 });
 
@@ -523,4 +525,29 @@ test("dispatch subIssues: エラー表示中に再入力すると errors.subIssu
     get().dispatch({ type: "subIssues", value: "fixed" });
   });
   expect(get().state.errors.subIssues).toBeUndefined();
+});
+
+test("dispatch draft: 値が更新され他 field に影響しない", () => {
+  const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "draft", value: true });
+  });
+  expect(get().state.values.draft).toBe(true);
+  expect(get().state.values.title).toBe("");
+});
+
+test("handleSubmit: draft の現在値が submit 値に入る", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
+  act(() => {
+    get().dispatch({ type: "draft", value: true });
+  });
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect(values.draft).toBe(true);
 });

@@ -29,6 +29,7 @@ fn definition(name: &str) -> MilestoneDefinition {
 
 fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
     Task {
+        draft: false,
         id: id.into(),
         file_path: id.into(),
         title: format!("title-{id}").into(),

@@ -55,6 +55,7 @@ export type FieldValues = {
   body: string;
   due: DueField;
   subIssues: SubIssuesField;
+  draft: boolean;
 };
 
 /** 各 field のエラー（値が undefined ならエラーなし） */
@@ -85,6 +86,7 @@ export type FieldsAction =
   | { type: "body"; value: string }
   | { type: "due"; value: string }
   | { type: "subIssues"; value: string }
+  | { type: "draft"; value: boolean }
   | {
       type: "validateAll";
       titleError: TitleValidationError | undefined;
@@ -172,6 +174,10 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       return Object.is(state.values.due, action.value)
         ? state
         : { ...state, values: { ...state.values, due: action.value } };
+    case "draft":
+      return Object.is(state.values.draft, action.value)
+        ? state
+        : { ...state, values: { ...state.values, draft: action.value } };
     case "subIssues": {
       if (
         Object.is(state.values.subIssues, action.value) &&
@@ -233,6 +239,7 @@ export const useTaskFormFields = (
         body: "",
         due: DueField.initial(),
         subIssues: SubIssuesField.initial(),
+        draft: false,
       },
       errors: {},
       fileNameDirty: false,
@@ -290,6 +297,7 @@ export const useTaskFormFields = (
         labels: [...labels],
         links: [...links],
         subIssueTitles: SubIssuesField.finalize(state.values.subIssues),
+        draft: state.values.draft,
         ...(fileName !== undefined && { fileName }),
         ...(due !== undefined && { due }),
       });

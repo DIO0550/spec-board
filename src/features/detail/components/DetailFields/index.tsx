@@ -167,6 +167,36 @@ const DetailFieldsSubIssue = (props: DetailFieldsSubIssueProps) => {
   );
 };
 
+/**
+ * 下書きフィールド。draft タスクのときのみ「下書き」バッジと「下書きを解除」ボタンを
+ * 表示し、クリックで `handlers.onChangeDraft(false)` を呼ぶ。非 draft 時は何も描画しない。
+ * @returns 下書き表示・解除 UI（非 draft 時は null）
+ */
+const DetailFieldsDraft = () => {
+  const { task, handlers } = useDetailFieldsContext();
+  if (!task.draft) {
+    return null;
+  }
+  return (
+    <div className="flex items-center gap-2" data-testid="detail-draft-field">
+      <span
+        data-testid="detail-draft-badge"
+        className="inline-flex items-center rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600"
+      >
+        下書き
+      </span>
+      <button
+        type="button"
+        onClick={() => handlers.onChangeDraft(false)}
+        className="rounded border border-border px-2 py-0.5 text-xs text-foreground hover:border-accent"
+        data-testid="detail-draft-clear"
+      >
+        下書きを解除
+      </button>
+    </div>
+  );
+};
+
 /** Links フィールドの Props（リンク固有データのみ） */
 export type DetailFieldsLinksProps = {
   /** 全タスク一覧（リンク先解決に利用） */
@@ -245,6 +275,7 @@ const DetailFieldsLinks = (props: DetailFieldsLinksProps) => {
 type DetailFieldsComponent = ((props: DetailFieldsProps) => ReactNode) & {
   StatusPriority: typeof DetailFieldsStatusPriority;
   Labels: typeof DetailFieldsLabels;
+  Draft: typeof DetailFieldsDraft;
   SubIssue: typeof DetailFieldsSubIssue;
   Links: typeof DetailFieldsLinks;
 };
@@ -259,6 +290,7 @@ export const DetailFields: DetailFieldsComponent = Object.assign(
   {
     StatusPriority: DetailFieldsStatusPriority,
     Labels: DetailFieldsLabels,
+    Draft: DetailFieldsDraft,
     SubIssue: DetailFieldsSubIssue,
     Links: DetailFieldsLinks,
   },

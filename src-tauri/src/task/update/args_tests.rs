@@ -5,6 +5,7 @@ use crate::task::update::error::UpdateTaskError;
 
 fn raw_args(file_path: &str) -> UpdateTaskArgs {
     UpdateTaskArgs {
+        draft: None,
         file_path: file_path.to_string(),
         title: None,
         status: None,
@@ -143,4 +144,20 @@ fn invalid_priority_string_becomes_none() {
     args.priority = Some("urgent".into());
     let intent = args.into_intent(root).expect("ok");
     assert_eq!(None, intent.priority);
+}
+
+#[test]
+fn draft_three_state_maps_to_intent() {
+    let root = Path::new("/project");
+    let cases = [
+        (Some(true), Some(true)),
+        (Some(false), Some(false)),
+        (None, None),
+    ];
+    for (input, expected) in cases {
+        let mut args = raw_args("tasks/foo.md");
+        args.draft = input;
+        let intent = args.into_intent(root).expect("ok");
+        assert_eq!(intent.draft, expected, "input={input:?}");
+    }
 }

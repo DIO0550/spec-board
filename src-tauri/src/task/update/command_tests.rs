@@ -41,6 +41,7 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
 
 fn args_for(rel: &str) -> UpdateTaskArgs {
     UpdateTaskArgs {
+        draft: None,
         file_path: rel.to_string(),
         title: None,
         status: None,

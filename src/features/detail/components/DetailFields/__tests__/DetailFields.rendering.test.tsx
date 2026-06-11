@@ -54,6 +54,7 @@ const createHandlers = (): DetailFieldHandlers => ({
   onPriorityChange: vi.fn(),
   onLabelAdd: vi.fn(),
   onLabelRemove: vi.fn(),
+  onChangeDraft: vi.fn(),
 });
 
 /** 空の子タスク解決結果 */

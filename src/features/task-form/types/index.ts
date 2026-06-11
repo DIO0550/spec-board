@@ -22,4 +22,6 @@ export type TaskFormValues = {
   due?: string;
   /** サブIssue タイトル（正規化済み。trim 済み・空行なし。空配列 = サブIssue なし） */
   subIssueTitles: string[];
+  /** 下書きフラグ（true のときのみ frontmatter に draft: true を出力） */
+  draft: boolean;
 };

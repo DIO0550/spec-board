@@ -14,6 +14,7 @@ use crate::task::task_title::TaskTitle;
 
 fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
     CreateTaskIntent {
+        draft: false,
         due: None,
         file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
@@ -30,6 +31,7 @@ fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
 fn task_with(file_path: &str, parent: Option<&str>) -> Task {
     let fp = TaskFilePath::from_lenient(file_path);
     Task {
+        draft: false,
         id: fp.clone(),
         file_path: fp,
         title: "T".into(),
@@ -195,6 +197,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
     let root = Path::new("/project");
     let index = TaskIndex::new(Vec::new());
     let intent = CreateTaskIntent {
+        draft: false,
         due: None,
         file_name: None,
         title: TaskTitle::from_lenient("Implement Feature".to_string()),
@@ -221,6 +224,7 @@ fn intent_with_priority_and_labels_renders_into_content() {
 
 fn intent_with_links(title: &str, parent: Option<&str>, links: Vec<&str>) -> CreateTaskIntent {
     CreateTaskIntent {
+        draft: false,
         due: None,
         file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
@@ -457,4 +461,29 @@ fn omits_due_key_when_empty_or_absent() {
             outcome.content.as_str()
         );
     }
+}
+
+#[test]
+fn writes_draft_line_and_marks_provisional_task_when_draft() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = CreateTaskIntent {
+        draft: true,
+        ..intent_with("Draft Task", None)
+    };
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert!(outcome.content.as_str().contains("draft: true"));
+}
+
+#[test]
+fn omits_draft_key_when_not_draft() {
+    let root = Path::new("/project");
+    let index = TaskIndex::new(Vec::new());
+    let intent = intent_with("Normal Task", None);
+
+    let outcome = index.plan_create(root, &intent).expect("should succeed");
+
+    assert!(!outcome.content.as_str().contains("draft:"));
 }

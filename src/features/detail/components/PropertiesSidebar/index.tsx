@@ -143,6 +143,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
       <DetailFields task={task} columns={columns} handlers={handlers}>
         <DetailFields.StatusPriority />
         <DetailFields.Labels />
+        <DetailFields.Draft />
         {onAddSubIssue && allTasks !== undefined && (
           <DetailFields.SubIssue
             childInfo={childInfo}

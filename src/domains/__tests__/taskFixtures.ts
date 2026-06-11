@@ -21,6 +21,7 @@ export const makeTask = (overrides: TaskFixtureOverrides): Task => ({
   body: overrides.body ?? "",
   filePath: overrides.filePath ?? `tasks/${overrides.id}.md`,
   priority: overrides.priority,
+  draft: overrides.draft ?? false,
   extras: overrides.extras ?? {},
   warnings: overrides.warnings ?? [],
   links: {

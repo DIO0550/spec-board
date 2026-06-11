@@ -161,3 +161,18 @@ test("サブIssue フィールドが空行無視のヒントとともに表示�
     "1 行につき 1 件のサブIssue を作成します（空行は無視）",
   );
 });
+
+test("下書きチェックボックスが表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const checkbox = document.querySelector(
+    '[data-testid="task-form-draft"]',
+  ) as HTMLInputElement;
+  expect(checkbox).toBeTruthy();
+  expect(checkbox.getAttribute("type")).toBe("checkbox");
+  expect(checkbox.checked).toBe(false);
+});

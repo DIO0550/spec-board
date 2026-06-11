@@ -57,6 +57,7 @@ const valuesFixture: TaskFormValues = {
   links: [],
   body: "",
   subIssueTitles: [],
+    draft: false,
 };
 
 let container: HTMLDivElement | null = null;
@@ -241,6 +242,7 @@ test("T3: priority / parent が undefined のとき CreateTaskParams から key 
     links: [],
     body: "",
     subIssueTitles: [],
+    draft: false,
   };
   await act(async () => {
     await probe.latest.submit(values);
@@ -270,6 +272,7 @@ test("T3b: priority / parent が値を持つときは CreateTaskParams に含ま
     links: ["tasks/related.md"],
     body: "body",
     subIssueTitles: [],
+    draft: false,
   };
   await act(async () => {
     await probe.latest.submit(values);
@@ -296,6 +299,7 @@ test("fileName が指定されたとき CreateTaskParams に含まれる", async
     links: [],
     body: "",
     subIssueTitles: [],
+    draft: false,
   };
   await act(async () => {
     await probe.latest.submit(values);
@@ -314,6 +318,7 @@ test("fileName が undefined のとき CreateTaskParams から key 自体を含�
     links: [],
     body: "",
     subIssueTitles: [],
+    draft: false,
   };
   await act(async () => {
     await probe.latest.submit(values);
@@ -332,6 +337,7 @@ test("due が指定されたとき CreateTaskParams に含まれる", async () =
     links: [],
     body: "",
     subIssueTitles: [],
+    draft: false,
     due: "2026-07-01",
   };
   await act(async () => {
@@ -354,6 +360,7 @@ test.each([
     links: [],
     body: "",
     subIssueTitles: [],
+    draft: false,
     ...(due !== undefined && { due }),
   };
   await act(async () => {
@@ -450,4 +457,31 @@ test("サブIssue: 0 件なら親のみ作成し failedSubIssues は空配列", 
   expect(result).toEqual(
     Result.ok({ parent: taskFixture, failedSubIssues: [] }),
   );
+});
+
+test("draft: true のとき CreateTaskParams に draft が含まれ、子にも引き継がれる", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+  const probe = renderHook({ createTask });
+  const values: TaskFormValues = {
+    ...valuesFixture,
+    draft: true,
+    subIssueTitles: ["子1"],
+  };
+  await act(async () => {
+    await probe.latest.submit(values);
+  });
+  const parentParams = createTask.mock.calls[0][0] as Record<string, unknown>;
+  const childParams = createTask.mock.calls[1][0] as Record<string, unknown>;
+  expect(parentParams.draft).toBe(true);
+  expect(childParams.draft).toBe(true);
+});
+
+test("draft: false のとき CreateTaskParams から draft キー自体を含めない", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
+  const probe = renderHook({ createTask });
+  await act(async () => {
+    await probe.latest.submit(valuesFixture);
+  });
+  const params = createTask.mock.calls[0][0] as Record<string, unknown>;
+  expect(params).not.toHaveProperty("draft");
 });

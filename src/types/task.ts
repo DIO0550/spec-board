@@ -55,6 +55,8 @@ export type TaskPayload = {
    * 生 `string` として持つ（表示時に `Due.format` で検証して弾く）。
    */
   due?: string;
+  /** 下書きフラグ（true のときのみ payload に現れる） */
+  draft?: boolean;
   /** ラベルの配列 */
   labels: string[];
   /** 親タスクのファイルパス（親がない場合は未設定） */
@@ -95,6 +97,8 @@ export type Task = {
    * 不正フォーマットも原文保持されるため検証済みの branded `Due` ではなく生 `string`。
    */
   due?: string;
+  /** 下書きフラグ（payload 省略時は false） */
+  draft: boolean;
   /** ラベルの配列 */
   labels: string[];
   /** Markdown 本文 */
@@ -125,6 +129,7 @@ export const Task = {
     priority: payload.priority,
     milestone: payload.milestone,
     due: payload.due,
+    draft: payload.draft ?? false,
     labels: payload.labels,
     body: payload.body,
     filePath: payload.filePath,

@@ -106,6 +106,7 @@ test("タイトル入力して送信すると onSubmit が正規化値で呼ば�
     links: [],
     body: "",
     subIssueTitles: [],
+    draft: false,
   });
 });
 
@@ -253,6 +254,7 @@ test("onValuesChange は mount 直後に初期値を一度通知する", () => {
     labels: [],
     links: [],
     due: "",
+    draft: false,
   });
 });
 
@@ -523,4 +525,45 @@ test("サブIssue の違反行で submit すると行番号付きエラーが表
   expect(errorEl?.textContent).toContain("2 行目:");
   expect(subIssues.getAttribute("aria-invalid")).toBe("true");
   expect(subIssues.getAttribute("aria-describedby")).toBe(errorEl?.id);
+});
+
+test("下書きチェック ON で送信すると onSubmit の値に draft: true が含まれる", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const checkbox = document.querySelector(
+    '[data-testid="task-form-draft"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Draft Task");
+  });
+  act(() => {
+    checkbox.click();
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(onSubmit.mock.calls[0][0].draft).toBe(true);
+});
+
+test("isSubmitting=true で下書きチェックボックスも無効化される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    isSubmitting: true,
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const checkbox = document.querySelector(
+    '[data-testid="task-form-draft"]',
+  ) as HTMLInputElement;
+  expect(checkbox.disabled).toBe(true);
 });

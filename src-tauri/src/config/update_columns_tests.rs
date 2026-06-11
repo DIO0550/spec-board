@@ -53,6 +53,7 @@ fn config_with_card_order(
 
 fn task(path: &str, status: &str) -> Task {
     Task {
+        draft: false,
         id: TaskFilePath::from_lenient(path),
         file_path: TaskFilePath::from_lenient(path),
         title: TaskTitle::from_lenient("t"),

@@ -11,6 +11,7 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
+import { TaskFormDraft } from "./TaskFormDraft";
 import { TaskFormDue } from "./TaskFormDue";
 import { TaskFormFileName } from "./TaskFormFileName";
 import { TaskFormLabels } from "./TaskFormLabels";
@@ -115,6 +116,7 @@ export const TaskForm = ({
       labels: LabelsField.finalize(labels.state),
       links: links.links,
       due: fields.state.values.due,
+      draft: fields.state.values.draft,
     });
   }, [onValuesChange, fields.state.values, labels.state, links.links]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
@@ -212,6 +214,11 @@ export const TaskForm = ({
         value={fields.state.values.subIssues}
         onChange={(value) => fields.dispatch({ type: "subIssues", value })}
         error={fields.state.errors.subIssues}
+        disabled={isSubmitting}
+      />
+      <TaskFormDraft
+        checked={fields.state.values.draft}
+        onChange={(value) => fields.dispatch({ type: "draft", value })}
         disabled={isSubmitting}
       />
       <TaskFormActions>

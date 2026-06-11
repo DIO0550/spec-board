@@ -17,6 +17,7 @@ use crate::task::task_index::Task;
 
 fn sample_task(id: &str, file_path: &str) -> Task {
     Task {
+        draft: false,
         id: id.into(),
         file_path: file_path.into(),
         title: format!("title-{id}").into(),

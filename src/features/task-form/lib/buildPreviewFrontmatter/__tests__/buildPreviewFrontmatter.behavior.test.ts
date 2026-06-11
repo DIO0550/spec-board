@@ -145,3 +145,25 @@ test.each([[undefined], [""]])(
     );
   },
 );
+
+test("draft: true のとき links の後・due の前に draft 行を出力する", () => {
+  expect(
+    buildPreviewFrontmatter({
+      ...baseInput,
+      links: ["tasks/a.md"],
+      draft: true,
+      due: "2026-07-01",
+    }),
+  ).toBe(
+    "---\ntitle: タスク\nstatus: todo\nlinks:\n  - tasks/a.md\ndraft: true\ndue: 2026-07-01\n---",
+  );
+});
+
+test.each([[undefined], [false]])(
+  "draft が %j のとき draft 行を省略する",
+  (draft) => {
+    expect(buildPreviewFrontmatter({ ...baseInput, draft })).toBe(
+      "---\ntitle: タスク\nstatus: todo\n---",
+    );
+  },
+);

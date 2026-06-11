@@ -14,6 +14,7 @@ use crate::task::task_file_path::TaskFilePath;
 fn make_task(file_path: &str) -> Task {
     let fp = TaskFilePath::from_lenient(file_path);
     Task {
+        draft: false,
         id: fp.clone(),
         file_path: fp,
         title: "T".into(),

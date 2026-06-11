@@ -1136,3 +1136,100 @@ fn serialize_preserves_invalid_due_as_extra() {
         "invalid due value should also survive round-trip"
     );
 }
+
+/// `draft: true` のみ Some(true)。lenient 解釈で false / 非 bool / null はすべて None。
+#[test]
+fn parse_draft_true_yields_some_true() {
+    let parsed = parse("---\ntitle: A\ndraft: true\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed.frontmatter.draft, Some(true));
+}
+
+#[test]
+fn parse_draft_non_true_values_yield_none() {
+    let cases = [
+        "draft: false",
+        "draft: \"yes\"",
+        "draft: 1",
+        "draft: null",
+        "draft: [true]",
+    ];
+    for line in cases {
+        let input = format!("---\ntitle: A\n{line}\n---\nbody\n");
+        let parsed = parse(&input).unwrap().unwrap();
+        assert_eq!(
+            parsed.frontmatter.draft, None,
+            "{line} は None（非 draft）になるべき"
+        );
+    }
+}
+
+#[test]
+fn parse_draft_absent_yields_none() {
+    let parsed = parse("---\ntitle: A\n---\nbody\n").unwrap().unwrap();
+    assert_eq!(parsed.frontmatter.draft, None);
+}
+
+/// draft が extras に二重流入しない（TYPED_KEYS 8 要素の効果）。
+#[test]
+fn parse_draft_does_not_leak_into_extras() {
+    let parsed = parse("---\ntitle: A\ndraft: true\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    assert!(!parsed
+        .frontmatter
+        .extras
+        .contains_key(serde_yaml_ng::Value::String("draft".into())));
+}
+
+/// serialize は links の後に draft: true を出力する。
+#[test]
+fn serialize_emits_draft_after_links_when_some_true() {
+    let input = "---\ntitle: A\nstatus: TODO\nlinks:\n  - tasks/b.md\ndraft: true\n---\nbody\n";
+    let parsed = parse(input).unwrap().unwrap();
+    let output = serialize(&parsed);
+    let links_pos = output.find("links:").expect("links line");
+    let draft_pos = output.find("draft: true").expect("draft line");
+    assert!(
+        links_pos < draft_pos,
+        "draft は links の後に出力されるべき:\n{output}"
+    );
+}
+
+/// draft round-trip が安定（2 周しても不変）。
+#[test]
+fn serialize_draft_round_trip_is_stable() {
+    let input = "---\ntitle: A\nstatus: TODO\ndraft: true\nassignee: alice\n---\nbody\n";
+    let parsed = parse(input).unwrap().unwrap();
+    let output = serialize(&parsed);
+    let reparsed = parse(&output).unwrap().unwrap();
+    assert_eq!(reparsed.frontmatter.draft, Some(true));
+    assert_eq!(serialize(&reparsed), output);
+}
+
+/// draft 不在・None の frontmatter は draft 行を出力しない。
+#[test]
+fn serialize_omits_draft_line_when_none() {
+    let parsed = parse("---\ntitle: A\nstatus: TODO\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    let output = serialize(&parsed);
+    assert!(
+        !output.contains("draft:"),
+        "expected no `draft:` line:\n{output}"
+    );
+}
+
+/// 非 bool の draft 値（lenient で None 化）は再 serialize で extras 経由の重複出力もなく消える。
+#[test]
+fn serialize_drops_non_bool_draft_without_duplicate_output() {
+    let parsed = parse("---\ntitle: A\nstatus: TODO\ndraft: \"yes\"\n---\nbody\n")
+        .unwrap()
+        .unwrap();
+    let output = serialize(&parsed);
+    assert!(
+        !output.contains("draft"),
+        "非 bool draft は再 serialize で出力されないべき:\n{output}"
+    );
+}
