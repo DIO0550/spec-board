@@ -69,9 +69,9 @@ impl TaskFileName {
         let validated = Self::try_from_str(value)?;
         // `.md`（大文字小文字混在含む）を剥がした base で連番回避を再実行する。
         let base = &validated.0[..validated.0.len() - ".md".len()];
-        // try_from_str は値全体の空しか検査しないため、`.md` / `.MD` 単体
-        // （base が空になる入力）はここで明示的に拒否する。
-        if base.is_empty() {
+        // try_from_str は値全体の空しか検査しないため、`.md` / `.MD` 単体や
+        // 空白のみの base（` .md` 等）はここで明示的に拒否する。
+        if base.trim().is_empty() {
             return Err(TaskFileNameError::Empty);
         }
         let raw = spec_board_fs::task::unique_filename::build_unique_filename(base, "md", existing);

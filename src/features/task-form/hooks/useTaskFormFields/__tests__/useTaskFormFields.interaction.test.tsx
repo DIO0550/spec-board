@@ -158,12 +158,28 @@ test("dispatch fileName: 空文字に戻すと追従を再開し現在の title 
   expect(get().state.values.fileName).toBe("second-title");
 });
 
-test("dispatch fileName: 入力値は trim + 末尾 .md 剥がしで正規化される", () => {
+test("dispatch fileName: 入力値は生のまま保持される（スペース・.md 込みの入力を破壊しない）", () => {
   const { get } = render(defaultArgs());
+  act(() => {
+    get().dispatch({ type: "fileName", value: "my task.md " });
+  });
+  expect(get().state.values.fileName).toBe("my task.md ");
+});
+
+test("handleSubmit: trim + 末尾 .md 剥がしは submit 時に適用される", () => {
+  const onSubmit = vi.fn();
+  const { get } = render({ ...defaultArgs(), onSubmit });
+  act(() => {
+    get().dispatch({ type: "title", value: "T" });
+  });
   act(() => {
     get().dispatch({ type: "fileName", value: "  custom.MD  " });
   });
-  expect(get().state.values.fileName).toBe("custom");
+  act(() => {
+    get().handleSubmit(makeFormEvent());
+  });
+  const values = onSubmit.mock.calls[0][0] as TaskFormValues;
+  expect(values.fileName).toBe("custom.md");
 });
 
 test("handleSubmit: 空タイトルでは onSubmit を呼ばず errors.title.code = EMPTY", () => {

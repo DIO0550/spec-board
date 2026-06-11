@@ -75,7 +75,7 @@ function buildProps(
       onPriorityChange: vi.fn(),
       onLabelAdd: vi.fn(),
       onLabelRemove: vi.fn(),
-  onChangeDraft: vi.fn(),
+      onChangeDraft: vi.fn(),
     },
     onDelete: vi.fn(),
     ...overrides,

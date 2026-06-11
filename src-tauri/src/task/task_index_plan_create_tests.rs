@@ -464,7 +464,7 @@ fn omits_due_key_when_empty_or_absent() {
 }
 
 #[test]
-fn writes_draft_line_and_marks_provisional_task_when_draft() {
+fn writes_draft_line_into_content_when_draft() {
     let root = Path::new("/project");
     let index = TaskIndex::new(Vec::new());
     let intent = CreateTaskIntent {

@@ -57,7 +57,7 @@ const valuesFixture: TaskFormValues = {
   links: [],
   body: "",
   subIssueTitles: [],
-    draft: false,
+  draft: false,
 };
 
 let container: HTMLDivElement | null = null;
@@ -400,7 +400,9 @@ test("サブIssue: 親成功後に子を直列作成し、parent / status を引
 });
 
 test("サブIssue: 親作成が失敗したら子の createTask は 1 回も呼ばれない", async () => {
-  const parentError = ProjectError.tauri(TauriError.from("書き込みに失敗しました"));
+  const parentError = ProjectError.tauri(
+    TauriError.from("書き込みに失敗しました"),
+  );
   const createTask = vi.fn().mockResolvedValue(Result.err(parentError));
   const probe = renderHook({ createTask });
   const values: TaskFormValues = {
@@ -418,7 +420,9 @@ test("サブIssue: 親作成が失敗したら子の createTask は 1 回も呼�
 });
 
 test("サブIssue: 子の部分失敗でもループを継続し failedSubIssues に集約する", async () => {
-  const childError = ProjectError.tauri(TauriError.from("書き込みに失敗しました"));
+  const childError = ProjectError.tauri(
+    TauriError.from("書き込みに失敗しました"),
+  );
   const createTask = vi
     .fn()
     .mockResolvedValueOnce(Result.ok(taskFixture))

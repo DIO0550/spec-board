@@ -3,10 +3,6 @@ import { TITLE_MAX_LENGTH } from "@/features/task-form/lib/fields/title";
 import { Result } from "@/utils/result";
 import { SubIssuesField } from "..";
 
-test("initial は空文字を返す", () => {
-  expect(SubIssuesField.initial()).toBe("");
-});
-
 test("finalize: 3 行入力をタイトル配列に変換する", () => {
   expect(SubIssuesField.finalize("a\nb\nc")).toEqual(["a", "b", "c"]);
 });
@@ -70,5 +66,14 @@ test("validate: 空行混じりでも行番号は raw 入力基準（詰めな�
 test("validate: kebab base が空になる記号のみの行は EMPTY エラー（空行 skip の対象外）", () => {
   expect(SubIssuesField.validate("ok\n---")).toEqual(
     Result.err({ line: 2, error: { code: "EMPTY" } }),
+  );
+});
+
+test("validate: CRLF 改行でも行番号は raw 入力基準で数える", () => {
+  expect(SubIssuesField.validate("ok\r\n\r\nbad:title")).toEqual(
+    Result.err({
+      line: 3,
+      error: { code: "FORBIDDEN_CHAR", chars: [":"] },
+    }),
   );
 });

@@ -1,5 +1,6 @@
 export { TaskCreateScreen } from "./components/TaskCreateScreen";
 export type {
+  CreateTaskSubmitOutcome,
   UseTaskCreateOptions,
   UseTaskCreateResult,
 } from "./hooks/useTaskCreate";

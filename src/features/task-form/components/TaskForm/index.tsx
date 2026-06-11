@@ -103,22 +103,44 @@ export const TaskForm = ({
   // useTaskFormFields の「mount 後 props 不変前提」を壊さない。
   // mount 直後にも発火し、初期値（initialStatus 等）をプレビューへ伝える。
   // 未コミットの labelInput も pure な finalize で取り込み、送信時の値と一致させる。
+  // deps はプレビュー YAML / 本文に寄与する値だけに絞る（fileName / subIssues は
+  // プレビュー非関連の高頻度入力のため、毎キーストロークの再通知 → Markdown
+  // 全文再パースを避ける）。
+  const {
+    title: previewTitle,
+    status: previewStatus,
+    priority: previewPriority,
+    body: previewBody,
+    due: previewDue,
+    draft: previewDraft,
+  } = fields.state.values;
   useEffect(() => {
     if (onValuesChange === undefined) {
       return;
     }
     onValuesChange({
-      title: fields.state.values.title,
-      status: fields.state.values.status,
-      priority: fields.state.values.priority,
-      parent: fields.state.values.parent ?? "",
-      body: fields.state.values.body,
+      title: previewTitle,
+      status: previewStatus,
+      priority: previewPriority,
+      parent: parentValue ?? "",
+      body: previewBody,
       labels: LabelsField.finalize(labels.state),
       links: links.links,
-      due: fields.state.values.due,
-      draft: fields.state.values.draft,
+      due: previewDue,
+      draft: previewDraft,
     });
-  }, [onValuesChange, fields.state.values, labels.state, links.links]);
+  }, [
+    onValuesChange,
+    previewTitle,
+    previewStatus,
+    previewPriority,
+    parentValue,
+    previewBody,
+    previewDue,
+    previewDraft,
+    labels.state,
+    links.links,
+  ]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
   const linkCandidates = useMemo(
     () =>
@@ -160,14 +182,14 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "status", value })}
         disabled={isSubmitting}
       />
-      <TaskFormPriority
-        value={fields.state.values.priority}
-        onChange={(value) => fields.dispatch({ type: "priority", value })}
-        disabled={isSubmitting}
-      />
       <TaskFormDue
         value={fields.state.values.due}
         onChange={(value) => fields.dispatch({ type: "due", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormPriority
+        value={fields.state.values.priority}
+        onChange={(value) => fields.dispatch({ type: "priority", value })}
         disabled={isSubmitting}
       />
       <TaskFormLabels htmlFor={labelsInputId}>

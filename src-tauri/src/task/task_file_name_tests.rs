@@ -122,6 +122,19 @@ fn from_explicit_rejects_extension_only_names() {
 }
 
 #[test]
+fn from_explicit_rejects_whitespace_only_base() {
+    let existing = HashSet::new();
+    let cases = [" .md", "  .MD", "\t.md"];
+    for value in cases {
+        assert_eq!(
+            TaskFileName::from_explicit(value, &existing),
+            Err(TaskFileNameError::Empty),
+            "from_explicit({value:?}) は空白のみ base のため Empty になるべき"
+        );
+    }
+}
+
+#[test]
 fn from_explicit_rejects_path_separators() {
     let existing = HashSet::new();
     assert_eq!(

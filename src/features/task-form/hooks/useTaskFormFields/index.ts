@@ -134,9 +134,8 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       };
     }
     case "fileName": {
-      const normalized = FileNameField.normalizeInput(action.value);
       // 空に戻したらタイトル追従を再開する。
-      if (normalized === "") {
+      if (action.value === "") {
         return {
           ...state,
           fileNameDirty: false,
@@ -147,10 +146,15 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
           errors: { ...state.errors, fileName: undefined },
         };
       }
+      // 入力中は生のまま保持する（trim / 末尾 .md 剥がしは submit 時の toParam が担う。
+      // controlled input への正規化書き戻しはスペース入力等を破壊するため行わない）。
       return {
         ...state,
         fileNameDirty: true,
-        values: { ...state.values, fileName: normalized },
+        values: {
+          ...state.values,
+          fileName: FileNameField.fromInput(action.value),
+        },
         errors: { ...state.errors, fileName: undefined },
       };
     }
