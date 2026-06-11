@@ -62,6 +62,13 @@ impl TaskFileName {
     /// 連番サフィックスを付与した一意なファイル名を返す。
     /// 検証は `try_from_str` と同一（空 / パスセパレータ / 非 `.md` を拒否）。
     /// `.MD` 等の大文字混在拡張子は受理し、小文字 `.md` に正規化して返す。
+    ///
+    /// 衝突照合（`build_unique_filename`）は大文字小文字を区別する単純比較のため、
+    /// case-insensitive な FS（Windows / macOS）で大小文字だけ異なる既存名
+    /// （例: 既存 `Task.md` に対する `task.md` 指定）は連番付与で回避できない。
+    /// この場合は effect 層の `io.write_new`（排他作成）が既存ファイルの上書きを
+    /// 防ぐ最終防衛となり、作成はエラーで失敗する（タイトル由来の `from_title`
+    /// 経路と同じ既知挙動として受容している）。
     pub fn from_explicit(
         value: &str,
         existing: &HashSet<String>,
