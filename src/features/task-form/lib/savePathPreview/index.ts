@@ -62,8 +62,11 @@ const joinDisplayPath = (
   if (projectPath === undefined) {
     return relPath;
   }
+  // Windows パス判定は末尾セパレータ除去の前に行う
+  //（ドライブ直下 `C:\` は除去後 `C:` になり `\` を失うため）。
+  const isWindowsPath = projectPath.includes("\\");
   const trimmed = projectPath.replace(/[/\\]+$/, "");
-  if (trimmed.includes("\\")) {
+  if (isWindowsPath) {
     return `${trimmed}\\${relPath.replace(/\//g, "\\")}`;
   }
   return `${trimmed}/${relPath}`;
