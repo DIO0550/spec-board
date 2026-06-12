@@ -173,3 +173,19 @@ test("disabled=true 中のクリックでは onChange が呼ばれない", () =>
   });
   expect(onChange).not.toHaveBeenCalled();
 });
+
+test("矢印キーでの選択移動と同時にフォーカスも次のチップへ移る", () => {
+  const onChange = vi.fn();
+  render(baseProps({ value: "Doing", onChange }));
+  const current = document.querySelector(
+    "[data-testid='chip-group-chip-Doing']",
+  ) as HTMLButtonElement;
+  act(() => {
+    current.focus();
+    keydownOn(current, "ArrowRight");
+  });
+  const next = document.querySelector(
+    "[data-testid='chip-group-chip-Done']",
+  ) as HTMLButtonElement;
+  expect(document.activeElement).toBe(next);
+});

@@ -77,6 +77,8 @@ export const ChipRadioGroup = (props: ChipRadioGroupProps) => {
   const labelId = `${useId()}-chip-group-label`;
 
   // 矢印キーで前後の選択肢へ選択を移動する（radiogroup の標準操作）。
+  // 選択移動と同時に次のチップへ実フォーカスも移し、フォーカスリングと
+  // aria-checked が別要素に分かれないようにする（roving tabIndex の契約）。
   const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     const delta = arrowDelta(e.key);
     if (delta === undefined) {
@@ -91,6 +93,9 @@ export const ChipRadioGroup = (props: ChipRadioGroupProps) => {
     }
     const length = props.options.length;
     const nextIndex = (currentIndex + delta + length) % length;
+    const group = e.currentTarget.closest('[role="radiogroup"]');
+    const radios = group?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    radios?.[nextIndex]?.focus();
     props.onChange(props.options[nextIndex].value);
   };
 
