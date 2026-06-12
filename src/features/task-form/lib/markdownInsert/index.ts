@@ -209,7 +209,12 @@ const applyLinePrefix = (
     acc += line.length + 1;
   }
   const firstLine = lineIndexAt(lineStarts, selection.start);
-  const lastLine = lineIndexAt(lineStarts, selection.end);
+  // textarea の selectionEnd は exclusive のため、非空選択では end - 1 を
+  // 対象終端にする（end が次行の行頭にあるとき未選択の次行を巻き込まない）。
+  // 空選択（カーソルのみ）は end 位置の行をそのまま対象にする。
+  const endAnchor =
+    selection.end > selection.start ? selection.end - 1 : selection.end;
+  const lastLine = lineIndexAt(lineStarts, endAnchor);
 
   const targets = lines.slice(firstLine, lastLine + 1);
   const shouldStrip = targets.every((line) => rule.isApplied(line));

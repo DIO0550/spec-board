@@ -147,3 +147,28 @@ test("トグルで剥がした行のカーソルは行頭方向へ戻る", () =>
   expect(result.text).toBe("one");
   expect(result.selection).toEqual({ start: 3, end: 3 });
 });
+
+test("選択末尾が次行の行頭にある場合、その次行は対象に含めない（selectionEnd は exclusive）", () => {
+  // "one\ntwo" の start:0 end:4 は 1 行目 + 改行のみの選択で、2 行目は未選択。
+  const result = MarkdownInsert.apply("bulletList", "one\ntwo", {
+    start: 0,
+    end: 4,
+  });
+  expect(result.text).toBe("- one\ntwo");
+});
+
+test("末尾改行込みの全選択でも改行後の空行に付与しない", () => {
+  const result = MarkdownInsert.apply("bulletList", "one\n", {
+    start: 0,
+    end: 4,
+  });
+  expect(result.text).toBe("- one\n");
+});
+
+test("空選択（カーソルが行頭）ではその行が対象になる", () => {
+  const result = MarkdownInsert.apply("heading", "one\ntwo", {
+    start: 4,
+    end: 4,
+  });
+  expect(result.text).toBe("one\n## two");
+});
