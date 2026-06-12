@@ -1,12 +1,31 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { getLabels, TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 import { TaskForm } from "..";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    getLabels: vi.fn(),
+  };
+});
+
+const getLabelsMock = vi.mocked(getLabels);
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
+
+beforeEach(() => {
+  getLabelsMock.mockReset();
+  // 既定はラベルマスタ 0 件（従来挙動 = 候補なし）。
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+});
 
 afterEach(() => {
   act(() => {
@@ -566,4 +585,87 @@ test("isSubmitting=true で下書きチェックボックスも無効化され�
     '[data-testid="task-form-draft"]',
   ) as HTMLInputElement;
   expect(checkbox.disabled).toBe(true);
+});
+
+test("getLabels の候補がラベル入力のサジェストへ配線される（結合）", async () => {
+  getLabelsMock.mockResolvedValue(
+    Result.ok({ labels: [{ name: "bug" }, { name: "feature" }] }),
+  );
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    labelInput.focus();
+    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
+  });
+  const options = Array.from(
+    document.querySelectorAll(
+      '[data-testid="task-form-label-suggest"] [role="option"]',
+    ),
+  );
+  expect(options.map((o) => o.textContent)).toEqual(["bug", "feature"]);
+});
+
+test("getLabels が失敗しても候補なしの従来挙動になる（結合）", async () => {
+  getLabelsMock.mockResolvedValue(Result.err(TauriError.from("読み込み失敗")));
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    labelInput.focus();
+    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-label-suggest"]'),
+  ).toBeNull();
+});
+
+test("候補のクリック確定でラベルチップが追加され入力がクリアされる（結合）", async () => {
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [{ name: "bug" }] }));
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    labelInput.focus();
+    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
+  });
+  const option = document.querySelector(
+    '[data-testid="task-form-label-suggest-option-bug"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    option.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(
+    document.querySelector('[aria-label="ラベル「bug」を削除"]'),
+  ).toBeTruthy();
+  expect(labelInput.value).toBe("");
 });

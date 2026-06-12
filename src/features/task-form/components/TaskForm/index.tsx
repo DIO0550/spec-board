@@ -7,6 +7,7 @@ import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields"
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import type { TaskFormValues } from "@/features/task-form/types";
+import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
@@ -86,6 +87,15 @@ export const TaskForm = ({
 }: TaskFormProps) => {
   const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
+  // ラベルマスタ由来のサジェスト候補。loading / error 時は候補なし（従来の自由入力のみ）。
+  const labelList = useLabelList();
+  const labelSuggestions = useMemo(() => {
+    if (labelList.kind !== "loaded") {
+      return [];
+    }
+    const names = labelList.labels.map((label) => label.name);
+    return LabelsField.suggestionsFor(labels.state, names);
+  }, [labelList, labels.state]);
   // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
   const links = useLinksInput();
   const fields = useTaskFormFields({
@@ -208,6 +218,10 @@ export const TaskForm = ({
           onKeyDown={labels.handleKeyDown}
           onBlur={() => labels.dispatch({ type: "commit" })}
           disabled={isSubmitting}
+          candidates={labelSuggestions}
+          onSelect={(label) =>
+            labels.dispatch({ type: "commitValue", value: label })
+          }
         />
       </TaskFormLabels>
       {parentCandidates !== undefined && (
