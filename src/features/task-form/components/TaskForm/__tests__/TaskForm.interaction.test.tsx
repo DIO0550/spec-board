@@ -669,3 +669,50 @@ test("候補のクリック確定でラベルチップが追加され入力が�
   ).toBeTruthy();
   expect(labelInput.value).toBe("");
 });
+
+test("onDirtyChange は boolean 反転時のみ呼ばれる（title 3 文字連続入力で true 通知は 1 回）", () => {
+  const onDirtyChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onDirtyChange,
+  });
+  // mount 直後に初期状態（false）が一度通知される。
+  expect(onDirtyChange).toHaveBeenCalledTimes(1);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "a");
+  });
+  act(() => {
+    changeInputValue(title, "ab");
+  });
+  act(() => {
+    changeInputValue(title, "abc");
+  });
+  expect(onDirtyChange).toHaveBeenCalledTimes(2);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  act(() => {
+    changeInputValue(title, "");
+  });
+  expect(onDirtyChange).toHaveBeenCalledTimes(3);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+});
+
+test("formRef に form 要素が配線される", () => {
+  const formRef = { current: null as HTMLFormElement | null };
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    formRef,
+  });
+  expect(formRef.current).toBe(
+    document.querySelector('[data-testid="task-form"]'),
+  );
+});

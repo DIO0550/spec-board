@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
@@ -48,17 +49,38 @@ const buildInitialPreview = (initialStatus: string): PreviewValues => ({
 });
 
 /**
+ * form を送信する（キーボードショートカット用）。
+ * `requestSubmit()` を標準経路とし、未対応環境（happy-dom の旧版等）では
+ * cancelable な submit イベントの dispatch にフォールバックする。
+ * @param form - 対象 form 要素（null なら何もしない）
+ */
+const submitFormElement = (form: HTMLFormElement | null): void => {
+  if (form === null) {
+    return;
+  }
+  if (typeof form.requestSubmit === "function") {
+    form.requestSubmit();
+    return;
+  }
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+};
+
+/**
  * 全画面2ペインのタスク作成画面。左=入力フォーム / 右=ライブプレビュー。
  * 送信契約（二重送信防止・成功で自動クローズ・reject 非クローズ）は旧作成モーダルから踏襲する。
- * 全画面ビューのため上位モーダル調停は持たず、Esc/キャンセルの抑止条件は送信中のみ。
+ * ⌘（mac）/ Ctrl（Windows/Linux）+Enter で保存し、Esc / キャンセルは入力ありなら
+ * 破棄確認ダイアログを経由する（未入力なら即閉じる）。
  * @param props - {@link TaskCreateScreenProps}
  * @returns 2ペイン作成画面要素
  */
 export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const { onSubmit, onClose, initialStatus } = props;
   const sectionRef = useRef<HTMLElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState(false);
   // プレビュー用にフォーム現在値を保持（TaskForm からの伝搬で更新）。
   const [previewValues, setPreviewValues] = useState<PreviewValues>(() =>
     buildInitialPreview(initialStatus),
@@ -84,13 +106,17 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
     [onSubmit, onClose],
   );
 
-  // Esc/キャンセル: 送信中のみ無効（全画面ビューのため上位モーダル調停は不要）。
-  const handleClose = useCallback(() => {
+  // Esc/キャンセル: 入力済みなら破棄確認、未入力なら即閉じる。送信中は無効。
+  const requestClose = useCallback(() => {
     if (submittingRef.current) {
       return;
     }
+    if (isDirty) {
+      setIsDiscardDialogOpen(true);
+      return;
+    }
     onClose();
-  }, [onClose]);
+  }, [isDirty, onClose]);
 
   // mount 時にビューのランドマークへフォーカスを移し、キーボード/SR フォーカスが
   // 前画面（board / detail）に取り残されないようにする（DetailScreen と同様）。
@@ -100,14 +126,27 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // IME 変換中（isComposing）の Esc は変換キャンセル用なので画面を閉じない。
-      if (e.key === "Escape" && !e.isComposing && !submittingRef.current) {
-        onClose();
+      // IME 変換中のキー操作は変換確定/キャンセル用なので無視する。
+      if (e.isComposing || submittingRef.current) {
+        return;
+      }
+      // 破棄確認ダイアログ表示中は ConfirmDialog 側が Esc を処理するため、
+      // 画面側のリスナーは何もしない（二重ハンドリング防止）。
+      if (isDiscardDialogOpen) {
+        return;
+      }
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        submitFormElement(formRef.current);
+        return;
+      }
+      if (e.key === "Escape") {
+        requestClose();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [isDiscardDialogOpen, requestClose]);
 
   return (
     <section
@@ -131,12 +170,23 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
           isSubmitting={isSubmitting}
           onSubmit={handleSubmit}
           onValuesChange={setPreviewValues}
-          onCancel={handleClose}
+          onCancel={requestClose}
+          formRef={formRef}
+          onDirtyChange={setIsDirty}
         />
       </div>
       <div className="min-w-0 flex-1 overflow-y-auto border-l border-surface-muted pl-6">
         <PreviewPane values={previewValues} />
       </div>
+      {isDiscardDialogOpen && (
+        <ConfirmDialog
+          title="入力内容を破棄しますか？"
+          message="入力した内容は保存されません。"
+          confirmLabel="破棄する"
+          onConfirm={onClose}
+          onCancel={() => setIsDiscardDialogOpen(false)}
+        />
+      )}
     </section>
   );
 };

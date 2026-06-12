@@ -187,3 +187,177 @@ test("左フォームの入力が右プレビューに追従する（ライブ�
     document.querySelector('[data-testid="markdown-content"]')?.textContent,
   ).toContain("本文プレビュー");
 });
+
+const dispatchDocumentKey = (key: string, init: KeyboardEventInit = {}) => {
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key, ...init }));
+  });
+};
+
+const confirmDialog = () =>
+  document.querySelector('[data-testid="confirm-dialog"]');
+
+test.each([
+  ["metaKey（mac の ⌘+Enter）", { metaKey: true }],
+  ["ctrlKey（Windows/Linux の Ctrl+Enter）", { ctrlKey: true }],
+])("%s + Enter で保存（バリデーション経由で onSubmit 到達）", async (_label, init) => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(baseProps({ onSubmit }));
+  act(() => {
+    setInput("task-form-title", "新タスク");
+  });
+  dispatchDocumentKey("Enter", init);
+  await flush();
+  expect(onSubmit).toHaveBeenCalledOnce();
+  expect(onSubmit.mock.calls[0][0].title).toBe("新タスク");
+});
+
+test("タイトル未入力の ⌘+Enter はバリデーションで止まり onSubmit に到達しない", () => {
+  const onSubmit = vi.fn();
+  render(baseProps({ onSubmit }));
+  dispatchDocumentKey("Enter", { metaKey: true });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(
+    document.querySelector('[data-testid="task-form-title-error"]'),
+  ).toBeTruthy();
+});
+
+test("requestSubmit 未対応環境では submit イベント dispatch にフォールバックして onSubmit に到達する", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(baseProps({ onSubmit }));
+  const form = document.querySelector(
+    '[data-testid="task-form"]',
+  ) as HTMLFormElement;
+  Object.defineProperty(form, "requestSubmit", { value: undefined });
+  act(() => {
+    setInput("task-form-title", "新タスク");
+  });
+  dispatchDocumentKey("Enter", { metaKey: true });
+  await flush();
+  expect(onSubmit).toHaveBeenCalledOnce();
+});
+
+test("未入力で Esc すると破棄確認を出さず即 onClose する", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  dispatchDocumentKey("Escape");
+  expect(confirmDialog()).toBeNull();
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("入力ありで Esc すると破棄確認ダイアログが表示され onClose は呼ばれない", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  act(() => {
+    setInput("task-form-title", "途中入力");
+  });
+  dispatchDocumentKey("Escape");
+  expect(confirmDialog()).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("破棄確認ダイアログの「破棄する」で onClose が呼ばれる", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  act(() => {
+    setInput("task-form-title", "途中入力");
+  });
+  dispatchDocumentKey("Escape");
+  const confirm = document.querySelector(
+    '[data-testid="confirm-confirm-button"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    confirm.click();
+  });
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("破棄確認ダイアログの「キャンセル」でダイアログだけ閉じ、画面と入力が維持される", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  act(() => {
+    setInput("task-form-title", "途中入力");
+  });
+  dispatchDocumentKey("Escape");
+  const cancel = document.querySelector(
+    '[data-testid="confirm-cancel-button"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    cancel.click();
+  });
+  expect(confirmDialog()).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  expect(title.value).toBe("途中入力");
+});
+
+test("入力ありでキャンセルボタンを押すと Esc と同じ破棄確認フローになる", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  act(() => {
+    setInput("task-form-title", "途中入力");
+  });
+  const cancelButton = document.querySelector(
+    '[data-testid="task-form-cancel"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    cancelButton.click();
+  });
+  expect(confirmDialog()).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("IME 変換中（isComposing）の ⌘+Enter では保存が発動しない", () => {
+  const onSubmit = vi.fn();
+  render(baseProps({ onSubmit }));
+  act(() => {
+    setInput("task-form-title", "新タスク");
+  });
+  dispatchDocumentKey("Enter", { metaKey: true, isComposing: true });
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
+test("送信中の ⌘+Enter / Esc は無視される（二重送信・クローズなし）", async () => {
+  const onSubmit = vi.fn(() => new Promise<void>(() => {}));
+  const onClose = vi.fn();
+  render(baseProps({ onSubmit, onClose }));
+  act(() => {
+    setInput("task-form-title", "新タスク");
+  });
+  act(() => {
+    submitForm();
+  });
+  await flush();
+  dispatchDocumentKey("Enter", { metaKey: true });
+  dispatchDocumentKey("Escape");
+  expect(onSubmit).toHaveBeenCalledOnce();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(confirmDialog()).toBeNull();
+});
+
+test("ダイアログ表示中の Esc 1 回ではダイアログだけ閉じ onClose は呼ばれない", () => {
+  const onClose = vi.fn();
+  render(baseProps({ onClose }));
+  act(() => {
+    setInput("task-form-title", "途中入力");
+  });
+  dispatchDocumentKey("Escape");
+  expect(confirmDialog()).toBeTruthy();
+  dispatchDocumentKey("Escape");
+  expect(confirmDialog()).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("ダイアログ表示中の ⌘+Enter では保存が発動せずダイアログも維持される", () => {
+  const onSubmit = vi.fn();
+  render(baseProps({ onSubmit }));
+  act(() => {
+    setInput("task-form-title", "途中入力");
+  });
+  dispatchDocumentKey("Escape");
+  dispatchDocumentKey("Enter", { metaKey: true });
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(confirmDialog()).toBeTruthy();
+});

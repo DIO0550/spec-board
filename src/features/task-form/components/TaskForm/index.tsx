@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { useEffect, useId, useMemo } from "react";
 import { Button } from "@/components/Button";
 import { TaskLinks } from "@/domains/task-links";
@@ -6,6 +7,7 @@ import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
+import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
@@ -62,6 +64,15 @@ type TaskFormProps = {
    * @param values - 集約したフォーム現在値（priority は string、未コミット label も含む）
    */
   onValuesChange?: (values: PreviewFrontmatterInput & { body: string }) => void;
+  /** form 要素への ref（キーボードショートカットからの requestSubmit 用） */
+  formRef?: RefObject<HTMLFormElement | null>;
+  /**
+   * dirty（破棄確認が必要な入力があるか）の変化通知。
+   * mount 直後に初期状態で一度発火し、以降は boolean が反転した時のみ呼ばれる
+   * （毎キーストロークでは呼ばれない）。
+   * @param dirty - 入力済み内容の有無
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 /**
@@ -84,6 +95,8 @@ export const TaskForm = ({
   onSubmit,
   onCancel,
   onValuesChange,
+  formRef,
+  onDirtyChange,
 }: TaskFormProps) => {
   const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
@@ -151,6 +164,23 @@ export const TaskForm = ({
     labels.state,
     links.links,
   ]);
+  // dirty 判定はフル値（fileName / subIssues 含む）から毎レンダー計算するが、
+  // 親への通知は boolean 反転時のみ（useEffect の deps が boolean）のため、
+  // onValuesChange の fileName 除外最適化（毎キーストロークの Markdown 再パース回避）を壊さない。
+  const dirty = isFormDirty({
+    values: fields.state.values,
+    labels: labels.state.labels,
+    labelInput: labels.state.labelInput,
+    links: links.links,
+    initialStatus,
+    initialParent,
+  });
+  useEffect(() => {
+    if (onDirtyChange === undefined) {
+      return;
+    }
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
   const linkCandidates = useMemo(
     () =>
@@ -169,6 +199,7 @@ export const TaskForm = ({
     .filter((task): task is Task => task !== undefined);
   return (
     <form
+      ref={formRef}
       className="flex flex-col gap-4"
       data-testid="task-form"
       noValidate
