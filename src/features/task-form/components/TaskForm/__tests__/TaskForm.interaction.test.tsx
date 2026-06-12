@@ -716,3 +716,115 @@ test("formRef に form 要素が配線される", () => {
     document.querySelector('[data-testid="task-form"]'),
   );
 });
+
+test("fileName 欄直下に保存先パスプレビューが表示され fileName 入力で追従する", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    projectPath: "/tmp/project",
+  });
+  // 未入力時は案内文（pending）。
+  expect(
+    document.querySelector('[data-testid="task-form-path-preview"]'),
+  ).toBeNull();
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "My Task");
+  });
+  const preview = () =>
+    document.querySelector('[data-testid="task-form-path-preview"]');
+  expect(preview()?.textContent).toBe("/tmp/project/tasks/my-task.md");
+  // fileName 欄は title 追従後も手入力で上書きでき、プレビューが追従する。
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(fileName, "custom");
+  });
+  expect(preview()?.textContent).toBe("/tmp/project/tasks/custom.md");
+});
+
+test("無効な fileName 入力でプレビューが警告表示に切り替わる", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(fileName, "a/b");
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-path-warning"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-form-path-preview"]'),
+  ).toBeNull();
+});
+
+test("submit 失敗で fileName 欄エラー表示中はプレビュー警告を抑止し、次の入力でライブ警告へ引き継ぐ", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "T");
+  });
+  act(() => {
+    changeInputValue(fileName, "a/b");
+  });
+  act(() => {
+    submitForm();
+  });
+  // fileName 欄エラーが表示されている間は同文のライブ警告を出さない。
+  expect(
+    document.querySelector('[data-testid="task-form-file-name-error"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-form-path-warning"]'),
+  ).toBeNull();
+  // 次の入力で欄エラーがクリアされ、ライブ警告へ引き継がれる。
+  act(() => {
+    changeInputValue(fileName, "a/bc");
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-file-name-error"]'),
+  ).toBeNull();
+  expect(
+    document.querySelector('[data-testid="task-form-path-warning"]'),
+  ).toBeTruthy();
+});
+
+test("fileName のみの入力では onValuesChange が追加発火しない（既存最適化のリグレッション防止）", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const callsAfterMount = onValuesChange.mock.calls.length;
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(fileName, "custom");
+  });
+  expect(onValuesChange.mock.calls.length).toBe(callsAfterMount);
+});

@@ -8,10 +8,12 @@ import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields"
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
+import { SavePathPreview } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormDraft } from "./TaskFormDraft";
@@ -44,6 +46,8 @@ type TaskFormProps = {
   parentReadOnly?: boolean;
   /** links ピッカー候補・選択済み chip の逆引きに使う既存タスク一覧 */
   existingTasks?: readonly Task[];
+  /** プロジェクト絶対パス（保存先フルパスプレビュー用。未指定なら相対パス表示） */
+  projectPath?: string;
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
   /** 送信ボタンのラベル（デフォルト: "作成"） */
@@ -89,6 +93,7 @@ export const TaskForm = ({
   initialParent,
   parentReadOnly,
   existingTasks,
+  projectPath,
   isSubmitting = false,
   submitLabel = "作成",
   cancelLabel = "キャンセル",
@@ -164,6 +169,30 @@ export const TaskForm = ({
     labels.state,
     links.links,
   ]);
+  // 保存先パスプレビュー。文字列結合のみで Markdown 再パースを伴わないため、
+  // 毎キーストローク再計算でも onValuesChange の fileName 除外最適化と矛盾しない。
+  const pathPreview = useMemo(
+    () =>
+      SavePathPreview.compute({
+        title: fields.state.values.title,
+        fileName: fields.state.values.fileName,
+        parentFilePath:
+          parentValue === "" || parentValue === undefined
+            ? undefined
+            : parentValue,
+        existingTaskFilePaths: (existingTasks ?? []).map(
+          (task) => task.filePath,
+        ),
+        projectPath,
+      }),
+    [
+      fields.state.values.title,
+      fields.state.values.fileName,
+      parentValue,
+      existingTasks,
+      projectPath,
+    ],
+  );
   // dirty 判定はフル値（fileName / subIssues 含む）から毎レンダー計算するが、
   // 親への通知は boolean 反転時のみ（useEffect の deps が boolean）のため、
   // onValuesChange の fileName 除外最適化（毎キーストロークの Markdown 再パース回避）を壊さない。
@@ -216,6 +245,12 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "fileName", value })}
         error={fields.state.errors.fileName}
         disabled={isSubmitting}
+      />
+      <SavePathPreviewView
+        preview={pathPreview}
+        // submit 失敗で fileName 欄エラーが表示されている間は同文のライブ警告を抑止する
+        //（エラーは次の入力でクリアされるため、入力再開後はライブ警告へ引き継がれる）。
+        suppressWarning={fields.state.errors.fileName !== undefined}
       />
       <TaskFormStatus
         columns={columns}

@@ -23,6 +23,8 @@ export type TaskCreateScreenProps = {
   parentReadOnly?: boolean;
   /** 重複判定に使う既存タスク一覧。 */
   existingTasks: readonly Task[];
+  /** プロジェクト絶対パス（保存先フルパスプレビュー用。未指定なら相対パス表示） */
+  projectPath?: string;
   /**
    * 送信時のコールバック。reject した場合は画面を閉じない。
    * 親側でトースト通知などのエラーハンドリングを行う想定。
@@ -167,6 +169,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
           parentCandidates={props.parentCandidates}
           parentReadOnly={props.parentReadOnly}
           existingTasks={props.existingTasks}
+          projectPath={props.projectPath}
           isSubmitting={isSubmitting}
           onSubmit={handleSubmit}
           onValuesChange={setPreviewValues}
