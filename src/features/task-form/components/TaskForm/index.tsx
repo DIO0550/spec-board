@@ -11,6 +11,9 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
+import { TaskFormDraft } from "./TaskFormDraft";
+import { TaskFormDue } from "./TaskFormDue";
+import { TaskFormFileName } from "./TaskFormFileName";
 import { TaskFormLabels } from "./TaskFormLabels";
 import { LabelChip } from "./TaskFormLabels/LabelChip";
 import { LabelInput } from "./TaskFormLabels/LabelInput";
@@ -18,6 +21,7 @@ import { TaskFormLinks } from "./TaskFormLinks";
 import { TaskFormParent } from "./TaskFormParent";
 import { TaskFormPriority } from "./TaskFormPriority";
 import { TaskFormStatus } from "./TaskFormStatus";
+import { TaskFormSubIssues } from "./TaskFormSubIssues";
 import { TaskFormTitle } from "./TaskFormTitle";
 
 type TaskFormProps = {
@@ -35,7 +39,7 @@ type TaskFormProps = {
    * parentCandidates が undefined のときは無視される。
    */
   parentReadOnly?: boolean;
-  /** 重複判定に使う既存タスク一覧。未指定なら DUPLICATE 判定なし。 */
+  /** links ピッカー候補・選択済み chip の逆引きに使う既存タスク一覧 */
   existingTasks?: readonly Task[];
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
@@ -89,7 +93,6 @@ export const TaskForm = ({
     initialParent,
     parentFieldVisible: parentCandidates !== undefined,
     isSubmitting,
-    existingTasks,
     onSubmit,
     finalizeLabels: labels.finalizeLabels,
     finalizeLinks: links.finalizeLinks,
@@ -100,20 +103,44 @@ export const TaskForm = ({
   // useTaskFormFields の「mount 後 props 不変前提」を壊さない。
   // mount 直後にも発火し、初期値（initialStatus 等）をプレビューへ伝える。
   // 未コミットの labelInput も pure な finalize で取り込み、送信時の値と一致させる。
+  // deps はプレビュー YAML / 本文に寄与する値だけに絞る（fileName / subIssues は
+  // プレビュー非関連の高頻度入力のため、毎キーストロークの再通知 → Markdown
+  // 全文再パースを避ける）。
+  const {
+    title: previewTitle,
+    status: previewStatus,
+    priority: previewPriority,
+    body: previewBody,
+    due: previewDue,
+    draft: previewDraft,
+  } = fields.state.values;
   useEffect(() => {
     if (onValuesChange === undefined) {
       return;
     }
     onValuesChange({
-      title: fields.state.values.title,
-      status: fields.state.values.status,
-      priority: fields.state.values.priority,
-      parent: fields.state.values.parent ?? "",
-      body: fields.state.values.body,
+      title: previewTitle,
+      status: previewStatus,
+      priority: previewPriority,
+      parent: parentValue ?? "",
+      body: previewBody,
       labels: LabelsField.finalize(labels.state),
       links: links.links,
+      due: previewDue,
+      draft: previewDraft,
     });
-  }, [onValuesChange, fields.state.values, labels.state, links.links]);
+  }, [
+    onValuesChange,
+    previewTitle,
+    previewStatus,
+    previewPriority,
+    parentValue,
+    previewBody,
+    previewDue,
+    previewDraft,
+    labels.state,
+    links.links,
+  ]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
   const linkCandidates = useMemo(
     () =>
@@ -143,10 +170,21 @@ export const TaskForm = ({
         error={fields.state.errors.title}
         disabled={isSubmitting}
       />
+      <TaskFormFileName
+        value={fields.state.values.fileName}
+        onChange={(value) => fields.dispatch({ type: "fileName", value })}
+        error={fields.state.errors.fileName}
+        disabled={isSubmitting}
+      />
       <TaskFormStatus
         columns={columns}
         value={fields.state.values.status}
         onChange={(value) => fields.dispatch({ type: "status", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormDue
+        value={fields.state.values.due}
+        onChange={(value) => fields.dispatch({ type: "due", value })}
         disabled={isSubmitting}
       />
       <TaskFormPriority
@@ -192,6 +230,17 @@ export const TaskForm = ({
       <TaskFormBody
         value={fields.state.values.body}
         onChange={(value) => fields.dispatch({ type: "body", value })}
+        disabled={isSubmitting}
+      />
+      <TaskFormSubIssues
+        value={fields.state.values.subIssues}
+        onChange={(value) => fields.dispatch({ type: "subIssues", value })}
+        error={fields.state.errors.subIssues}
+        disabled={isSubmitting}
+      />
+      <TaskFormDraft
+        checked={fields.state.values.draft}
+        onChange={(value) => fields.dispatch({ type: "draft", value })}
         disabled={isSubmitting}
       />
       <TaskFormActions>

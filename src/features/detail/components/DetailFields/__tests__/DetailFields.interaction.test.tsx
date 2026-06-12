@@ -55,6 +55,7 @@ const createHandlers = (
   onPriorityChange: vi.fn(),
   onLabelAdd: vi.fn(),
   onLabelRemove: vi.fn(),
+  onChangeDraft: vi.fn(),
   ...overrides,
 });
 

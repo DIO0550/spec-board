@@ -78,6 +78,7 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         status,
         priority: parsed.frontmatter.priority,
         milestone: parsed.frontmatter.milestone,
+        draft: parsed.frontmatter.draft.unwrap_or(false),
         labels,
         parent,
         due,
@@ -218,7 +219,9 @@ fn convert_extras(
     parsed: &Parsed,
     warnings: &mut Vec<TaskWarning>,
 ) -> BTreeMap<String, serde_json::Value> {
-    const TYPED_KEYS: [&str; 7] = [
+    // frontmatter.rs の build_mapping にも同名・同内容の定数がある。
+    // typed キーを追加・変更する場合は両方を同時に更新すること。
+    const TYPED_KEYS: [&str; 8] = [
         "title",
         "status",
         "priority",
@@ -226,6 +229,7 @@ fn convert_extras(
         "milestone",
         "parent",
         "links",
+        "draft",
     ];
     let mut extras = BTreeMap::new();
 

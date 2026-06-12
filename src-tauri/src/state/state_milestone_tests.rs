@@ -30,6 +30,7 @@ fn sample_milestones() -> MilestoneRegistry {
 
 fn sample_task(id: &str) -> Task {
     Task {
+        draft: false,
         id: id.into(),
         file_path: id.into(),
         title: format!("title-{id}").into(),

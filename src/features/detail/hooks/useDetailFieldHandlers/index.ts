@@ -35,6 +35,11 @@ export type DetailFieldHandlers = {
    * @param label - 削除するラベル名
    */
   onLabelRemove: (label: string) => void;
+  /**
+   * 下書きフラグ変更ハンドラ。false で下書き解除（frontmatter から draft キーを除去）。
+   * @param draft - 新しい下書きフラグ
+   */
+  onChangeDraft: (draft: boolean) => void;
 };
 
 /**
@@ -68,10 +73,18 @@ export const useDetailFieldHandlers = (
     [task.id, onTaskUpdate],
   );
 
+  const onChangeDraft = useCallback(
+    (draft: boolean) => {
+      onTaskUpdate(task.id, { draft });
+    },
+    [task.id, onTaskUpdate],
+  );
+
   return {
     onStatusChange,
     onPriorityChange,
     onLabelAdd: labels.add,
     onLabelRemove: labels.remove,
+    onChangeDraft,
   };
 };

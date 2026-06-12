@@ -123,3 +123,20 @@ test("from(raw) で command を省略すると command は undefined（後方互
   expect(e.code).toBe("IO_ERROR");
   expect(e.cause).toBe(raw);
 });
+
+test("from: 'invalid file name: ...' は INVALID_FILE_NAME に分類される", () => {
+  const e = TauriError.from(
+    new Error(
+      "invalid file name: task file name must not contain path separator (got `a/b.md`)",
+    ),
+  );
+  expect(e.code).toBe("INVALID_FILE_NAME");
+});
+
+test.each([
+  ["task has children", "HAS_CHILDREN"],
+  ["親タスクが見つかりません: tasks/x.md", "NOT_FOUND"],
+  ["フロントマターの解析に失敗しました", "PARSE_ERROR"],
+])("既存パターン '%s' は引き続き %s に分類される（非干渉リグレッション）", (message, code) => {
+  expect(TauriError.from(new Error(message)).code).toBe(code);
+});

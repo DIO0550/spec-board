@@ -1,13 +1,21 @@
 import type { Dispatch, FormEvent } from "react";
 import { useCallback, useReducer } from "react";
+import { DueField } from "@/features/task-form/lib/fields/due";
+import {
+  FileNameField,
+  type FileNameValidationError,
+} from "@/features/task-form/lib/fields/fileName";
 import { ParentField } from "@/features/task-form/lib/fields/parent";
 import { PriorityField } from "@/features/task-form/lib/fields/priority";
+import {
+  SubIssuesField,
+  type SubIssuesValidationError,
+} from "@/features/task-form/lib/fields/subIssues";
 import {
   TitleField,
   type TitleValidationError,
 } from "@/features/task-form/lib/fields/title";
 import type { TaskFormValues } from "@/features/task-form/types";
-import type { Task } from "@/types/task";
 
 /** useTaskFormFields の引数 */
 export type UseTaskFormFieldsArgs = {
@@ -19,11 +27,6 @@ export type UseTaskFormFieldsArgs = {
   parentFieldVisible: boolean;
   /** 送信中か（true の間は submit が無視される） */
   isSubmitting: boolean;
-  /**
-   * 既存タスク一覧。submit 時の重複判定スコープ構築に使う。
-   * 未指定なら DUPLICATE 判定は走らない（空 Set 扱い）。
-   */
-  existingTasks?: readonly Task[];
   /**
    * バリデーション通過後に呼ばれる送信コールバック。
    * @param values - 正規化済みフォーム値
@@ -45,31 +48,51 @@ export type UseTaskFormFieldsArgs = {
 /** 各 field の現在値 */
 export type FieldValues = {
   title: TitleField;
+  fileName: FileNameField;
   status: string;
   priority: PriorityField;
   parent: ParentField;
   body: string;
+  due: DueField;
+  subIssues: SubIssuesField;
+  draft: boolean;
 };
 
 /** 各 field のエラー（値が undefined ならエラーなし） */
 export type FieldErrors = {
   title?: TitleValidationError;
+  fileName?: FileNameValidationError;
+  subIssues?: SubIssuesValidationError;
 };
 
 /** useTaskFormFields の state */
 export type FieldsState = {
   values: FieldValues;
   errors: FieldErrors;
+  /**
+   * ファイル名欄が手動編集されたか。false の間は title 入力に kebab-case で追従し、
+   * submit 時も fileName キーを送らない（BE のタイトル由来生成に委ねる）。
+   */
+  fileNameDirty: boolean;
 };
 
 /** state を変化させるアクション（discriminated union） */
 export type FieldsAction =
   | { type: "title"; value: TitleField }
+  | { type: "fileName"; value: string }
   | { type: "status"; value: string }
   | { type: "priority"; value: PriorityField }
   | { type: "parent"; value: ParentField }
   | { type: "body"; value: string }
-  | { type: "validateAll"; error: TitleValidationError | undefined };
+  | { type: "due"; value: string }
+  | { type: "subIssues"; value: string }
+  | { type: "draft"; value: boolean }
+  | {
+      type: "validateAll";
+      titleError: TitleValidationError | undefined;
+      fileNameError: FileNameValidationError | undefined;
+      subIssuesError: SubIssuesValidationError | undefined;
+    };
 
 /** useTaskFormFields の返却値 */
 export type UseTaskFormFieldsResult = {
@@ -85,49 +108,8 @@ export type UseTaskFormFieldsResult = {
 };
 
 /**
- * BE 側 create_task が parent 未指定時に書き込む root dirname。
- * BE が `tasks/` 直下に固定で書き込む実装であることを前提に成立させている。
- * BE 側で root が動的になる変更が入った場合は、args に rootDir 相当を追加するか
- * existingTasks から推定する設計に切り替える必要がある。
- */
-const DEFAULT_TARGET_DIR = "tasks";
-
-/**
- * パス文字列を Windows / POSIX 両対応で分解する。
- * 空セグメントと "." を除去することで `./tasks/foo.md` や `tasks//foo.md` の表記揺れを吸収する。
- * @param p パス文字列
- * @returns 区切り文字でセグメント化した配列
- */
-const pathSegments = (p: string): string[] =>
-  p.split(/[\\/]/).filter((s) => s !== "" && s !== ".");
-
-/**
- * パス文字列の末尾セグメント（basename）を返す。
- * @param p パス文字列
- * @returns 末尾セグメント。セグメントが取れない場合は入力をそのまま返す
- */
-const pathBasename = (p: string): string => {
-  const segments = pathSegments(p);
-  return segments[segments.length - 1] ?? p;
-};
-
-/**
- * パス文字列のディレクトリ部分（dirname）を POSIX 区切りで返す。
- * セグメントが 1 個以下なら空文字を返す。
- * @param p パス文字列
- * @returns dirname 文字列（POSIX 区切り）
- */
-const pathDirname = (p: string): string => {
-  const segments = pathSegments(p);
-  if (segments.length <= 1) {
-    return "";
-  }
-  return segments.slice(0, -1).join("/");
-};
-
-/**
  * TaskForm の field 値・エラー遷移を計算する pure reducer。
- * title 入力時はエラーをクリアするだけにし、再 validate は handleSubmit 側で行う。
+ * title / fileName 入力時はエラーをクリアするだけにし、再 validate は handleSubmit 側で行う。
  * @param state - 現在の state
  * @param action - アクション
  * @returns 新しい state
@@ -141,9 +123,39 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       ) {
         return state;
       }
+      // 手動編集前はタイトルから kebab-case でファイル名を自動追従する。
+      const fileName = state.fileNameDirty
+        ? state.values.fileName
+        : FileNameField.fromTitle(action.value);
       return {
-        values: { ...state.values, title: action.value },
+        ...state,
+        values: { ...state.values, title: action.value, fileName },
         errors: { ...state.errors, title: undefined },
+      };
+    }
+    case "fileName": {
+      // 空に戻したらタイトル追従を再開する。
+      if (action.value === "") {
+        return {
+          ...state,
+          fileNameDirty: false,
+          values: {
+            ...state.values,
+            fileName: FileNameField.fromTitle(state.values.title),
+          },
+          errors: { ...state.errors, fileName: undefined },
+        };
+      }
+      // 入力中は生のまま保持する（trim / 末尾 .md 剥がしは submit 時の toParam が担う。
+      // controlled input への正規化書き戻しはスペース入力等を破壊するため行わない）。
+      return {
+        ...state,
+        fileNameDirty: true,
+        values: {
+          ...state.values,
+          fileName: FileNameField.fromInput(action.value),
+        },
+        errors: { ...state.errors, fileName: undefined },
       };
     }
     case "status":
@@ -162,10 +174,36 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       return Object.is(state.values.body, action.value)
         ? state
         : { ...state, values: { ...state.values, body: action.value } };
+    case "due":
+      return Object.is(state.values.due, action.value)
+        ? state
+        : { ...state, values: { ...state.values, due: action.value } };
+    case "draft":
+      return Object.is(state.values.draft, action.value)
+        ? state
+        : { ...state, values: { ...state.values, draft: action.value } };
+    case "subIssues": {
+      if (
+        Object.is(state.values.subIssues, action.value) &&
+        state.errors.subIssues === undefined
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        values: { ...state.values, subIssues: action.value },
+        errors: { ...state.errors, subIssues: undefined },
+      };
+    }
     case "validateAll":
       return {
         ...state,
-        errors: { ...state.errors, title: action.error },
+        errors: {
+          ...state.errors,
+          title: action.titleError,
+          fileName: action.fileNameError,
+          subIssues: action.subIssuesError,
+        },
       };
     default: {
       action satisfies never;
@@ -176,8 +214,8 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
 
 /**
  * TaskForm の全 field 値・エラー・送信処理をまとめて管理するカスタムフック。
- * バリデーション / 初期値 / 正規化は各 Field モジュール（TitleField / PriorityField / ParentField）に委譲し、
- * ここでは reducer の配線と handleSubmit のみを担う。
+ * バリデーション / 初期値 / 正規化は各 Field モジュール（TitleField / FileNameField /
+ * PriorityField / ParentField）に委譲し、ここでは reducer の配線と handleSubmit のみを担う。
  *
  * **前提**: `parentFieldVisible` / `initialParent` は mount 後に変化しないこと。これらの値は
  * useReducer の初期化関数でのみ参照され、mount 後の変化に追従する useEffect は持たない。
@@ -198,62 +236,62 @@ export const useTaskFormFields = (
     (a): FieldsState => ({
       values: {
         title: TitleField.initial(),
+        fileName: FileNameField.initial(),
         status: a.initialStatus,
         priority: PriorityField.initial(),
         parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
         body: "",
+        due: DueField.initial(),
+        subIssues: SubIssuesField.initial(),
+        draft: false,
       },
       errors: {},
+      fileNameDirty: false,
     }),
   );
 
-  const {
-    isSubmitting,
-    onSubmit,
-    finalizeLabels,
-    finalizeLinks,
-    existingTasks,
-  } = args;
+  const { isSubmitting, onSubmit, finalizeLabels, finalizeLinks } = args;
   const handleSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (isSubmitting) {
         return;
       }
-      const parentFilePath = state.values.parent;
-      const parentDir =
-        parentFilePath !== undefined ? pathDirname(parentFilePath) : undefined;
-      // parent が "parent.md" のように dirname を含まない bare filename だと
-      // pathDirname が空文字を返すため、root 配下扱いで DEFAULT_TARGET_DIR に
-      // フォールバックして、tasks/ 直下の既存タスクと比較できるようにする。
-      const targetDir =
-        parentDir === undefined || parentDir === ""
-          ? DEFAULT_TARGET_DIR
-          : parentDir;
-
-      const existingFileNames = new Set<string>();
-      if (existingTasks !== undefined) {
-        for (const t of existingTasks) {
-          if (pathDirname(t.filePath) === targetDir) {
-            existingFileNames.add(pathBasename(t.filePath));
-          }
-        }
-      }
-
-      const result = TitleField.validate(state.values.title, {
-        existingFileNames,
-      });
-      if (!result.ok) {
-        dispatch({ type: "validateAll", error: result.error });
+      const titleResult = TitleField.validate(state.values.title);
+      const fileNameResult = FileNameField.validate(state.values.fileName);
+      const subIssuesResult = SubIssuesField.validate(state.values.subIssues);
+      if (!titleResult.ok || !fileNameResult.ok || !subIssuesResult.ok) {
+        dispatch({
+          type: "validateAll",
+          titleError: titleResult.ok ? undefined : titleResult.error,
+          fileNameError: fileNameResult.ok ? undefined : fileNameResult.error,
+          subIssuesError: subIssuesResult.ok
+            ? undefined
+            : subIssuesResult.error,
+        });
         return;
       }
-      // 前回 submit で残った DUPLICATE 等の古いエラー表示を消す。
-      // parent / existingTasks が変わって今回 Ok になったケースが該当する。
-      if (state.errors.title !== undefined) {
-        dispatch({ type: "validateAll", error: undefined });
+      // 前回 submit で残った古いエラー表示を消す。
+      if (
+        state.errors.title !== undefined ||
+        state.errors.fileName !== undefined ||
+        state.errors.subIssues !== undefined
+      ) {
+        dispatch({
+          type: "validateAll",
+          titleError: undefined,
+          fileNameError: undefined,
+          subIssuesError: undefined,
+        });
       }
       const labels = finalizeLabels();
       const links = finalizeLinks();
+      // 自動追従中（手動未編集）は fileName キーを省略し、BE のタイトル由来生成に
+      // 委ねる（FE/BE の kebab-case 挙動一致が保証されているため表示と保存名は一致する）。
+      const fileName = state.fileNameDirty
+        ? FileNameField.toParam(state.values.fileName)
+        : undefined;
+      const due = DueField.toParam(state.values.due);
       onSubmit({
         title: TitleField.normalize(state.values.title),
         status: state.values.status,
@@ -262,6 +300,10 @@ export const useTaskFormFields = (
         body: state.values.body,
         labels: [...labels],
         links: [...links],
+        subIssueTitles: SubIssuesField.finalize(state.values.subIssues),
+        draft: state.values.draft,
+        ...(fileName !== undefined && { fileName }),
+        ...(due !== undefined && { due }),
       });
     },
     [
@@ -269,9 +311,11 @@ export const useTaskFormFields = (
       onSubmit,
       finalizeLabels,
       finalizeLinks,
-      existingTasks,
       state.values,
       state.errors.title,
+      state.errors.fileName,
+      state.errors.subIssues,
+      state.fileNameDirty,
     ],
   );
 

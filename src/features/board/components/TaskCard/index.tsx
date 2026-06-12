@@ -7,6 +7,7 @@ import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../Board/dragState";
+import { DraftBadge } from "../DraftBadge";
 import { LabelTag } from "../LabelTag";
 import { MilestoneBadge } from "../MilestoneBadge";
 import { PriorityBadge } from "../PriorityBadge";
@@ -97,6 +98,7 @@ const CardContent = ({
   return (
     <>
       <div className="flex items-center gap-1.5">
+        <DraftBadge draft={task.draft} />
         <PriorityBadge priority={task.priority} />
         <DueBadge due={task.due} />
         <p data-testid="task-card-title" className="text-sm text-foreground">
@@ -189,6 +191,9 @@ export const TaskCard = ({
   };
 
   const draggingClass = isDragging ? " opacity-40" : "";
+  // ドラッグ中は dragging の減光を優先し、draft の opacity は重ねない
+  // （opacity-40 × opacity-60 の重複減光を避ける）。
+  const draftClass = !isDragging && task.draft ? " opacity-60" : "";
   const dataDragging = isDragging ? "true" : undefined;
 
   if (!onClick) {
@@ -201,7 +206,7 @@ export const TaskCard = ({
         aria-grabbed={isDragging}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        className={`w-full rounded-lg border border-border bg-surface p-3 text-left shadow-sm${draggingClass}`}
+        className={`w-full rounded-lg border border-border bg-surface p-3 text-left shadow-sm${draggingClass}${draftClass}`}
       >
         <CardContent
           task={task}
@@ -227,7 +232,7 @@ export const TaskCard = ({
       onDragEnd={handleDragEnd}
       role="button"
       tabIndex={0}
-      className={`w-full cursor-pointer rounded-lg border border-border bg-surface p-3 text-left shadow-sm hover:border-accent hover:shadow-md${draggingClass}`}
+      className={`w-full cursor-pointer rounded-lg border border-border bg-surface p-3 text-left shadow-sm hover:border-accent hover:shadow-md${draggingClass}${draftClass}`}
       onClick={() => {
         if (dragGuardRef.current) {
           return;

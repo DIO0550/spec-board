@@ -99,6 +99,11 @@ fn render_markdown_from_intent(
             Value::String(parent_path.to_string()),
         );
     }
+    // due は typed フィールドではなく extras 保持（既存の表示・warning 経路を維持）。
+    // 未入力（None / 空文字）のときは due キー自体を出力しない。
+    if let Some(due) = intent.due.as_deref().filter(|s| !s.is_empty()) {
+        extras.insert(Value::String("due".into()), Value::String(due.to_string()));
+    }
 
     let frontmatter = Frontmatter {
         priority: intent.priority,
@@ -110,6 +115,8 @@ fn render_markdown_from_intent(
             .map(str::to_owned),
         labels: intent.labels.iter().map(|l| l.to_string()).collect(),
         links: normalized_links.to_vec(),
+        // 下書きのときのみ draft: true を出力する（false は書かない）。
+        draft: intent.draft.then_some(true),
         extras,
     };
 

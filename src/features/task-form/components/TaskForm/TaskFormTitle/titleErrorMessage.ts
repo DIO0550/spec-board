@@ -10,8 +10,6 @@ export const titleErrorMessage = (error: TitleValidationError): string => {
   switch (error.code) {
     case "EMPTY":
       return "タイトルを入力してください";
-    case "DUPLICATE":
-      return "同じ名前のタスクがすでに存在します";
     case "TOO_LONG":
       return `タイトルは${error.max}文字以内で入力してください`;
     case "FORBIDDEN_CHAR":

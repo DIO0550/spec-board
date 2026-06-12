@@ -4,6 +4,8 @@ import type { Priority } from "@/domains/priority";
 export type TaskFormValues = {
   /** タイトル（必須、空文字不可） */
   title: string;
+  /** ファイル名（`.md` 付き完全名・任意。未指定ならタイトル由来で BE が自動生成） */
+  fileName?: string;
   /** ステータス（必須） */
   status: string;
   /** 優先度（任意） */
@@ -16,4 +18,10 @@ export type TaskFormValues = {
   links: string[];
   /** 本文（Markdown） */
   body: string;
+  /** 期限 `YYYY-MM-DD`（任意。未指定は due キーを出力しない） */
+  due?: string;
+  /** サブIssue タイトル（正規化済み。trim 済み・空行なし。空配列 = サブIssue なし） */
+  subIssueTitles: string[];
+  /** 下書きフラグ（true のときのみ frontmatter に draft: true を出力） */
+  draft: boolean;
 };

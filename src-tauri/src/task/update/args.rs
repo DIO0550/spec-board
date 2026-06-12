@@ -29,6 +29,8 @@ pub struct UpdateTaskArgs {
     /// 空文字で親解除、`None` で不変、`Some(path)` で上書き。
     pub parent: Option<String>,
     pub body: Option<String>,
+    /// draft の更新意図（3 値）: 未指定 = 不変 / `Some(true)` = draft 化 / `Some(false)` = 解除。
+    pub draft: Option<bool>,
 }
 
 impl UpdateTaskArgs {
@@ -47,6 +49,7 @@ impl UpdateTaskArgs {
             labels: self.labels,
             parent: self.parent,
             body: self.body,
+            draft: self.draft,
         })
     }
 }

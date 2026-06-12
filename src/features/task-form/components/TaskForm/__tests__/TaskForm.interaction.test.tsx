@@ -105,6 +105,8 @@ test("タイトル入力して送信すると onSubmit が正規化値で呼ば�
     parent: undefined,
     links: [],
     body: "",
+    subIssueTitles: [],
+    draft: false,
   });
 });
 
@@ -251,6 +253,8 @@ test("onValuesChange は mount 直後に初期値を一度通知する", () => {
     body: "",
     labels: [],
     links: [],
+    due: "",
+    draft: false,
   });
 });
 
@@ -376,4 +380,190 @@ test("値変化時にフィールド state が保持される（key 再 mount �
     changeInputValue(title, "X");
   });
   expect(labelInput.value).toBe("draft");
+});
+
+test("title 入力でファイル名欄に kebab-case 値が表示される（自動追従）", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Fix Login Bug");
+  });
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(fileName.value).toBe("fix-login-bug");
+});
+
+test("isSubmitting=true でファイル名欄も無効化される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    isSubmitting: true,
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(fileName.disabled).toBe(true);
+});
+
+test("ファイル名に予約文字を入力して submit するとブロックされエラーが表示される", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Valid Title");
+  });
+  act(() => {
+    changeInputValue(fileName, "a:b");
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  const errorEl = document.querySelector(
+    '[data-testid="task-form-file-name-error"]',
+  );
+  expect(errorEl?.textContent).toContain(
+    "ファイル名に使用できない文字が含まれています",
+  );
+  expect(fileName.getAttribute("aria-invalid")).toBe("true");
+  expect(fileName.getAttribute("aria-describedby")).toBe(errorEl?.id);
+});
+
+test("期限を入力して送信すると onSubmit の値に due が含まれる", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const due = document.querySelector(
+    '[data-testid="task-form-due"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Due Task");
+  });
+  act(() => {
+    changeInputValue(due, "2026-07-01");
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(onSubmit.mock.calls[0][0].due).toBe("2026-07-01");
+});
+
+test("isSubmitting=true で期限欄も無効化される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    isSubmitting: true,
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const due = document.querySelector(
+    '[data-testid="task-form-due"]',
+  ) as HTMLInputElement;
+  expect(due.disabled).toBe(true);
+});
+
+test("サブIssue の違反行で submit すると行番号付きエラーが表示されブロックされる", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const subIssues = document.querySelector(
+    '[data-testid="task-form-sub-issues"]',
+  ) as HTMLTextAreaElement;
+  act(() => {
+    changeInputValue(title, "Valid Title");
+  });
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(subIssues, "ok\nbad:title");
+    subIssues.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+  const errorEl = document.querySelector(
+    '[data-testid="task-form-sub-issues-error"]',
+  );
+  expect(errorEl?.textContent).toContain("2 行目:");
+  expect(subIssues.getAttribute("aria-invalid")).toBe("true");
+  expect(subIssues.getAttribute("aria-describedby")).toBe(errorEl?.id);
+});
+
+test("下書きチェック ON で送信すると onSubmit の値に draft: true が含まれる", () => {
+  const onSubmit = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit,
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const checkbox = document.querySelector(
+    '[data-testid="task-form-draft"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "Draft Task");
+  });
+  act(() => {
+    checkbox.click();
+  });
+  act(() => {
+    submitForm();
+  });
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(onSubmit.mock.calls[0][0].draft).toBe(true);
+});
+
+test("isSubmitting=true で下書きチェックボックスも無効化される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    isSubmitting: true,
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const checkbox = document.querySelector(
+    '[data-testid="task-form-draft"]',
+  ) as HTMLInputElement;
+  expect(checkbox.disabled).toBe(true);
 });

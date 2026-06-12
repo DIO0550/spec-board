@@ -98,3 +98,81 @@ test("parentCandidates 指定で親タスク選択 UI が表示される", () =>
     document.querySelector('[data-testid="parent-task-select"]'),
   ).toBeTruthy();
 });
+
+test("ファイル名フィールドが .md サフィックス・連番ヒントとともに表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const input = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(input).toBeTruthy();
+  expect(input.parentElement?.textContent).toContain(".md");
+  expect(input.closest("div")?.parentElement?.textContent).toContain(
+    "連番が付きます",
+  );
+});
+
+test("ファイル名エラーなし時は aria-invalid が付与されない", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const input = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  expect(input.getAttribute("aria-invalid")).toBe("false");
+  expect(
+    document.querySelector('[data-testid="task-form-file-name-error"]'),
+  ).toBeNull();
+});
+
+test("期限フィールド（date input）が表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const due = document.querySelector(
+    '[data-testid="task-form-due"]',
+  ) as HTMLInputElement;
+  expect(due).toBeTruthy();
+  expect(due.getAttribute("type")).toBe("date");
+});
+
+test("サブIssue フィールドが空行無視のヒントとともに表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const textarea = document.querySelector(
+    '[data-testid="task-form-sub-issues"]',
+  ) as HTMLTextAreaElement;
+  expect(textarea).toBeTruthy();
+  expect(textarea.closest("div")?.textContent).toContain(
+    "1 行につき 1 件のサブIssue を作成します（空行は無視）",
+  );
+});
+
+test("下書きチェックボックスが表示される", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const checkbox = document.querySelector(
+    '[data-testid="task-form-draft"]',
+  ) as HTMLInputElement;
+  expect(checkbox).toBeTruthy();
+  expect(checkbox.getAttribute("type")).toBe("checkbox");
+  expect(checkbox.checked).toBe(false);
+});

@@ -67,3 +67,91 @@ fn from_title_rejects_empty_kebab_base() {
         Err(TaskFileNameError::InvalidTitle)
     );
 }
+
+#[test]
+fn from_explicit_returns_name_as_is_when_no_collision() {
+    let existing = HashSet::new();
+    let name = TaskFileName::from_explicit("my-task.md", &existing).unwrap();
+    assert_eq!(name.as_str(), "my-task.md");
+}
+
+#[test]
+fn from_explicit_appends_index_on_collision() {
+    let mut existing = HashSet::new();
+    existing.insert("my-task.md".to_string());
+    let name = TaskFileName::from_explicit("my-task.md", &existing).unwrap();
+    assert_eq!(name.as_str(), "my-task-1.md");
+}
+
+#[test]
+fn from_explicit_skips_occupied_indices() {
+    let mut existing = HashSet::new();
+    existing.insert("t.md".to_string());
+    existing.insert("t-1.md".to_string());
+    let name = TaskFileName::from_explicit("t.md", &existing).unwrap();
+    assert_eq!(name.as_str(), "t-2.md");
+}
+
+#[test]
+fn from_explicit_normalizes_uppercase_md_extension() {
+    let existing = HashSet::new();
+    let name = TaskFileName::from_explicit("Task.MD", &existing).unwrap();
+    assert_eq!(name.as_str(), "Task.md");
+}
+
+#[test]
+fn from_explicit_rejects_empty() {
+    let existing = HashSet::new();
+    assert_eq!(
+        TaskFileName::from_explicit("", &existing),
+        Err(TaskFileNameError::Empty)
+    );
+}
+
+#[test]
+fn from_explicit_rejects_extension_only_names() {
+    let existing = HashSet::new();
+    let cases = [".md", ".MD"];
+    for value in cases {
+        assert_eq!(
+            TaskFileName::from_explicit(value, &existing),
+            Err(TaskFileNameError::Empty),
+            "from_explicit({value:?}) は base が空のため Empty になるべき"
+        );
+    }
+}
+
+#[test]
+fn from_explicit_rejects_whitespace_only_base() {
+    let existing = HashSet::new();
+    let cases = [" .md", "  .MD", "\t.md"];
+    for value in cases {
+        assert_eq!(
+            TaskFileName::from_explicit(value, &existing),
+            Err(TaskFileNameError::Empty),
+            "from_explicit({value:?}) は空白のみ base のため Empty になるべき"
+        );
+    }
+}
+
+#[test]
+fn from_explicit_rejects_path_separators() {
+    let existing = HashSet::new();
+    assert_eq!(
+        TaskFileName::from_explicit("dir/task.md", &existing),
+        Err(TaskFileNameError::ContainsSeparator("dir/task.md".into()))
+    );
+    assert_eq!(
+        TaskFileName::from_explicit("dir\\task.md", &existing),
+        Err(TaskFileNameError::ContainsSeparator("dir\\task.md".into()))
+    );
+}
+
+#[test]
+fn from_explicit_rejects_non_md_extension() {
+    let existing = HashSet::new();
+    assert_eq!(
+        TaskFileName::from_explicit("task.txt", &existing),
+        Err(TaskFileNameError::NotMarkdown("task.txt".into()))
+    );
+}

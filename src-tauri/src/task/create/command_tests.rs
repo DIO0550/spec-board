@@ -33,6 +33,9 @@ fn open_with_noop(state: Arc<AppState>, path: &Path) {
 
 fn args_with_title(title: &str) -> CreateTaskArgs {
     CreateTaskArgs {
+        draft: false,
+        due: None,
+        file_name: None,
         title: title.into(),
         status: "Todo".into(),
         priority: None,
@@ -72,6 +75,9 @@ fn create_task_with_priority_and_labels_and_body_renders_full_frontmatter() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let args = CreateTaskArgs {
+        draft: false,
+        due: None,
+        file_name: None,
         title: "Implement Feature".into(),
         status: "Doing".into(),
         priority: Some("high".into()),
@@ -104,6 +110,9 @@ fn create_task_under_parent_places_into_parent_dir_and_updates_children() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let args = CreateTaskArgs {
+        draft: false,
+        due: None,
+        file_name: None,
         title: "Child Task".into(),
         status: "Todo".into(),
         priority: None,
@@ -146,6 +155,9 @@ fn create_task_normalizes_raw_parent_path_to_resolved_dir() {
     let cases = vec!["./tasks/parent.md", "tasks\\parent.md"];
     for (i, raw) in cases.into_iter().enumerate() {
         let args = CreateTaskArgs {
+            draft: false,
+            due: None,
+            file_name: None,
             title: format!("Child {i}"),
             status: "Todo".into(),
             priority: None,
@@ -511,4 +523,121 @@ fn create_task_with_existing_target_updates_reverse_links_in_cache() {
             .any(|r| r.as_str() == task.file_path.as_str()),
         "source path must be appended to target.reverse_links",
     );
+}
+
+#[test]
+fn create_task_with_explicit_file_name_writes_md() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Fix Login Bug");
+    args.file_name = Some("custom.md".into());
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    assert_eq!("tasks/custom.md", task.file_path.as_str());
+    let abs = dir.path().join("tasks/custom.md");
+    assert!(abs.exists());
+    let content = fs::read_to_string(&abs).unwrap();
+    assert!(content.contains("title: Fix Login Bug"));
+}
+
+#[test]
+fn create_task_with_duplicate_explicit_file_name_appends_suffix() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut first = args_with_title("First");
+    first.file_name = Some("custom.md".into());
+    create_task_impl(&state, &FsTaskIo, first).expect("first create succeeds");
+    let original = fs::read_to_string(dir.path().join("tasks/custom.md")).unwrap();
+
+    let mut second = args_with_title("Second");
+    second.file_name = Some("custom.md".into());
+    let task = create_task_impl(&state, &FsTaskIo, second).expect("second create succeeds");
+
+    assert_eq!("tasks/custom-1.md", task.file_path.as_str());
+    assert!(dir.path().join("tasks/custom-1.md").exists());
+    // 既存ファイルは上書きされない。
+    assert_eq!(
+        original,
+        fs::read_to_string(dir.path().join("tasks/custom.md")).unwrap()
+    );
+}
+
+#[test]
+fn create_task_with_invalid_file_name_creates_nothing() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Bad Name");
+    args.file_name = Some("bad/name.md".into());
+    let err = create_task_impl(&state, &FsTaskIo, args).expect_err("should fail");
+
+    assert!(matches!(
+        err,
+        CreateTaskCommandError::Validation(CreateTaskError::InvalidFileName(_))
+    ));
+    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert!(!dir.path().join("tasks").join("bad").exists());
+}
+
+#[test]
+fn create_task_with_due_writes_due_into_md_and_payload() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Due Task");
+    args.due = Some("2026-07-01".into());
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    assert!(content.contains("due: 2026-07-01"));
+    assert_eq!(Some("2026-07-01"), task.due.as_ref().map(|d| d.as_str()));
+}
+
+#[test]
+fn create_task_without_due_omits_due_key() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let task =
+        create_task_impl(&state, &FsTaskIo, args_with_title("No Due Task")).expect("succeeds");
+
+    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    assert!(!content.contains("due:"));
+    assert!(task.due.is_none());
+}
+
+#[test]
+fn create_task_with_draft_writes_draft_into_md_and_payload() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Draft Task");
+    args.draft = true;
+    let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    assert!(content.contains("draft: true"));
+    assert!(task.draft);
+}
+
+#[test]
+fn create_task_without_draft_omits_draft_key() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let task =
+        create_task_impl(&state, &FsTaskIo, args_with_title("Normal Task")).expect("succeeds");
+
+    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    assert!(!content.contains("draft:"));
+    assert!(!task.draft);
 }

@@ -2,6 +2,9 @@ import type { TauriError } from "@/lib/tauri/tauriError";
 
 const HAS_CHILDREN_MESSAGE = "子タスクが存在するため削除できません";
 
+const INVALID_FILE_NAME_MESSAGE =
+  "ファイル名が不正です（空・パス区切り文字・.md 以外の拡張子は使用できません）";
+
 /**
  * 書き込み（ミューテーション）コマンド名 → 日本語操作ラベルの写像。
  * このテーブルに載っている cmd のみ失敗トースト対象（= allowlist）。
@@ -44,13 +47,16 @@ export const isMutationCommand = (cmd: string): cmd is MutationCommand =>
   MUTATION_COMMAND_KEYS.has(cmd);
 
 /**
- * TauriError から表示用 detail を取り出す。HAS_CHILDREN のみ専用文へ翻訳。
+ * TauriError から表示用 detail を取り出す。HAS_CHILDREN / INVALID_FILE_NAME のみ専用文へ翻訳。
  * @param error 正規化済み TauriError
  * @returns toast に併記する詳細文字列
  */
 const detailOf = (error: TauriError): string => {
   if (error.code === "HAS_CHILDREN") {
     return HAS_CHILDREN_MESSAGE;
+  }
+  if (error.code === "INVALID_FILE_NAME") {
+    return INVALID_FILE_NAME_MESSAGE;
   }
   return error.message;
 };

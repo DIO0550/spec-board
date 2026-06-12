@@ -41,6 +41,12 @@ export type CreateTaskParams = {
   links?: string[];
   /** Markdown 本文（任意） */
   body?: string;
+  /** 明示ファイル名（`.md` 付き完全名・任意。重複時は BE が連番付与） */
+  fileName?: string;
+  /** 期限 `YYYY-MM-DD`（任意。未指定/空は due キーを出力しない） */
+  due?: string;
+  /** 下書きフラグ（任意。true のときのみ frontmatter に draft: true を出力） */
+  draft?: boolean;
 };
 
 /** update_task 引数（filePath 必須、それ以外は任意の部分更新）。 */
@@ -61,6 +67,8 @@ export type UpdateTaskParams = {
   parent?: string;
   /** Markdown 本文（任意） */
   body?: string;
+  /** draft の更新意図（3 値: undefined=不変 / true=draft 化 / false=解除） */
+  draft?: boolean;
 };
 
 /** 子タスクが存在する場合の処理方針。 */

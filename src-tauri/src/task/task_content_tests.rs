@@ -69,6 +69,9 @@ fn intent_with(
     use crate::task::task_file_path::TaskFilePath;
     use crate::task::task_title::TaskTitle;
     CreateTaskIntent {
+        draft: false,
+        due: None,
+        file_name: None,
         title: TaskTitle::from_lenient(title.to_string()),
         status: ColumnName::from_lenient(status.to_string()),
         priority: priority.and_then(Priority::from_ascii_ci),
@@ -145,6 +148,9 @@ fn from_intent_renders_milestone_in_sl002_order() {
     use crate::task::task_title::TaskTitle;
 
     let intent = CreateTaskIntent {
+        draft: false,
+        due: None,
+        file_name: None,
         title: TaskTitle::from_lenient("T".to_string()),
         status: ColumnName::from_lenient("Todo".to_string()),
         priority: None,
@@ -176,6 +182,9 @@ fn from_intent_omits_milestone_when_empty_or_unspecified() {
 
     for milestone in [None, Some(String::new())] {
         let intent = CreateTaskIntent {
+            draft: false,
+            due: None,
+            file_name: None,
             title: TaskTitle::from_lenient("T".to_string()),
             status: ColumnName::from_lenient("Todo".to_string()),
             priority: None,

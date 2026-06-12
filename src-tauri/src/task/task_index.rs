@@ -55,6 +55,9 @@ pub struct Task {
     /// 表示用の typed フィールド（透過シリアライズで文字列）だが、round-trip 保持は extras 側が担う。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub due: Option<Due>,
+    /// 下書きフラグ。false のときは payload にキーを出力しない（旧 FE との互換維持）。
+    #[serde(skip_serializing_if = "is_false", default)]
+    pub draft: bool,
     pub links: Vec<TaskFilePath>,
     pub children: Vec<TaskFilePath>,
     pub reverse_links: Vec<TaskFilePath>,
@@ -65,6 +68,12 @@ pub struct Task {
     /// key 順序を JSON シリアライズで安定させるため `BTreeMap` を採用。
     pub extras: BTreeMap<String, serde_json::Value>,
     pub warnings: Vec<TaskWarning>,
+}
+
+/// `skip_serializing_if` は `fn(&bool) -> bool` を要求するため専用 helper を置く
+/// （`std::ops::Not::not` は値渡しのため直接指定できない）。
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 /// 親チェーン違反の理由（循環 / 深さ超過）。
@@ -416,14 +425,18 @@ impl TaskIndex {
         let snapshot_slice = self.as_slice();
         let target_dir = resolve_target_dir(parent_index, snapshot_slice);
         let existing = existing_filenames_in_dir(snapshot_slice, &target_dir);
-        let filename = TaskFileName::from_title(&intent.title, &existing).map_err(|err| {
-            match err {
-                TaskFileNameError::InvalidTitle => CreateTaskError::InvalidTitle,
-                // from_title 経路では Empty / ContainsSeparator / NotMarkdown は
-                // 構造的に発生しないが、防御的に InvalidTitle に正規化する。
-                _ => CreateTaskError::InvalidTitle,
-            }
-        })?;
+        let filename = match intent.file_name.as_deref() {
+            Some(name) => TaskFileName::from_explicit(name, &existing)
+                .map_err(CreateTaskError::from_file_name_error)?,
+            None => TaskFileName::from_title(&intent.title, &existing).map_err(|err| {
+                match err {
+                    TaskFileNameError::InvalidTitle => CreateTaskError::InvalidTitle,
+                    // from_title 経路では Empty / ContainsSeparator / NotMarkdown は
+                    // 構造的に発生しないが、防御的に InvalidTitle に正規化する。
+                    _ => CreateTaskError::InvalidTitle,
+                }
+            })?,
+        };
         let rel_path = join_rel_path(&target_dir, &filename);
         let abs_path = project_root.join(&rel_path);
         let target_dir_abs = project_root.join(&target_dir);
@@ -500,6 +513,15 @@ impl TaskIndex {
                 frontmatter.milestone = None;
             } else {
                 frontmatter.milestone = Some(milestone.clone());
+            }
+        }
+        // draft は 3 値セマンティクス: None = 不変 / Some(true) = 設定 / Some(false) = 解除。
+        // 解除時は frontmatter から draft キー自体を除去する（draft: false は書かない）。
+        if let Some(draft) = intent.draft {
+            if draft {
+                frontmatter.draft = Some(true);
+            } else {
+                frontmatter.draft = None;
             }
         }
         if let Some(labels) = &intent.labels {
@@ -904,6 +926,12 @@ pub struct CreateTaskIntent {
     /// `normalize_create_links` で dedup・パス正規化・lenient 保持を行う。
     pub links: Vec<String>,
     pub body: Option<String>,
+    /// 明示指定するファイル名（`.md` 付き完全名）。`None` ならタイトル由来で自動生成。
+    pub file_name: Option<String>,
+    /// 期限（`YYYY-MM-DD`）。`None` / 空文字なら due キーを出力しない。
+    pub due: Option<String>,
+    /// 下書きとして作成するか。true のとき frontmatter に `draft: true` を出力する。
+    pub draft: bool,
 }
 
 /// `update_task` IPC 境界から domain に渡される更新意図。
@@ -923,6 +951,9 @@ pub struct UpdateTaskIntent {
     pub labels: Option<Vec<String>>,
     pub parent: Option<String>,
     pub body: Option<String>,
+    /// draft の更新意図（3 値）: `None` = 不変 / `Some(true)` = draft 化 /
+    /// `Some(false)` = 解除（frontmatter から draft キーを除去）。
+    pub draft: Option<bool>,
 }
 
 /// `TaskIndex::plan_update` の計算結果。effect 層が消費する。
@@ -1164,6 +1195,7 @@ fn build_provisional_task(
         status: intent.status.clone(),
         priority: None,
         milestone: None,
+        draft: intent.draft,
         labels: Vec::new(),
         parent,
         due: None,
