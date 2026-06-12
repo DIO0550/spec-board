@@ -91,8 +91,8 @@ test("parentReadOnly=true で親フィールドが readOnly（解除ボタンな
 
 test("initialStatus が status フィールドに反映される", () => {
   render(baseProps({ initialStatus: "Done" }));
-  const status = document.querySelector(
-    '[data-testid="task-form-status"]',
-  ) as HTMLSelectElement;
-  expect(status.value).toBe("Done");
+  const checkedChip = document.querySelector(
+    '[data-testid="task-form-status"] [role="radio"][aria-checked="true"]',
+  );
+  expect(checkedChip?.textContent).toBe("Done");
 });

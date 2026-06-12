@@ -192,9 +192,9 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  const status = document.querySelector(
-    '[data-testid="task-form-status"]',
-  ) as HTMLSelectElement;
+  const statusChip = document.querySelector(
+    '[data-testid="task-form-status"] [role="radio"]',
+  ) as HTMLButtonElement;
   const submit = document.querySelector(
     '[data-testid="task-form-submit"]',
   ) as HTMLButtonElement;
@@ -208,7 +208,7 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
     '[data-testid="task-form-body"]',
   ) as HTMLTextAreaElement;
   expect(title.disabled).toBe(true);
-  expect(status.disabled).toBe(true);
+  expect(statusChip.disabled).toBe(true);
   expect(submit.disabled).toBe(true);
   expect(cancel.disabled).toBe(true);
   expect(labelInput.disabled).toBe(true);
