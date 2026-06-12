@@ -25,3 +25,11 @@ export const WithValue: Story = { args: { value: "frontend" } };
 export const Disabled: Story = {
   args: { value: "frontend", disabled: true },
 };
+
+export const WithCandidates: Story = {
+  args: {
+    value: "",
+    candidates: ["bug", "feature", "docs"],
+    onSelect: () => {},
+  },
+};
