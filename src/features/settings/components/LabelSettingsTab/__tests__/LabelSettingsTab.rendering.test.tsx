@@ -3,10 +3,10 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vitest";
 import { LabelRegistry } from "@/domains/label-registry";
-import { useLabelList } from "@/features/settings/hooks/useLabelList";
+import { useLabelList } from "@/hooks/useLabelList";
 import { LabelSettingsTab } from "..";
 
-vi.mock("@/features/settings/hooks/useLabelList", () => ({
+vi.mock("@/hooks/useLabelList", () => ({
   useLabelList: vi.fn(),
 }));
 

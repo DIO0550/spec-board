@@ -9,10 +9,7 @@ import {
   test,
   vi,
 } from "vitest";
-import {
-  type LabelListState,
-  useLabelList,
-} from "@/features/settings/hooks/useLabelList";
+import { type LabelListState, useLabelList } from "@/hooks/useLabelList";
 import { getLabels, type LabelDefinition, TauriError } from "@/lib/tauri";
 import { Result } from "@/utils/result";
 
