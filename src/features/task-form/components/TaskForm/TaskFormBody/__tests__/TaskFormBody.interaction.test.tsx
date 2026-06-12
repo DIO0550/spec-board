@@ -59,7 +59,9 @@ test("disabled=true で textarea が disabled", () => {
 });
 
 const textarea = (): HTMLTextAreaElement =>
-  document.querySelector("[data-testid='task-form-body']") as HTMLTextAreaElement;
+  document.querySelector(
+    "[data-testid='task-form-body']",
+  ) as HTMLTextAreaElement;
 
 test("範囲選択して太字ボタンを押すと onChange に装飾済み全文が渡る", () => {
   const onChange = vi.fn();

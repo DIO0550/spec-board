@@ -88,7 +88,12 @@ test("candidates 未指定（従来利用）でも素の input として動作�
 const keydown = (key: string, init: KeyboardEventInit = {}) => {
   act(() => {
     input().dispatchEvent(
-      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }),
+      new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      }),
     );
   });
 };
@@ -128,9 +133,7 @@ test("リスト表示中に外側を mousedown するとリストだけ閉じる
   focusInput();
   expect(listbox()).toBeTruthy();
   act(() => {
-    document.body.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true }),
-    );
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
   });
   expect(listbox()).toBeNull();
   expect(onSelect).not.toHaveBeenCalled();
@@ -141,9 +144,9 @@ test("ArrowDown でハイライトが移動し aria-selected が追従する", (
   focusInput();
   keydown("ArrowDown");
   const selected = () =>
-    Array.from(
-      document.querySelectorAll("[role='option']"),
-    ).map((o) => o.getAttribute("aria-selected"));
+    Array.from(document.querySelectorAll("[role='option']")).map((o) =>
+      o.getAttribute("aria-selected"),
+    );
   expect(selected()).toEqual(["true", "false"]);
   keydown("ArrowDown");
   expect(selected()).toEqual(["false", "true"]);
