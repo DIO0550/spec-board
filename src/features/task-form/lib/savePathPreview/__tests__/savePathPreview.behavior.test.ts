@@ -216,3 +216,13 @@ test("compute: 同じ入力での再計算は同じ結果を返す（べき等�
     SavePathPreview.compute(input),
   );
 });
+
+test("compute: ドライブ直下の projectPath（C:\\）でも \\ 区切りで結合する", () => {
+  const result = SavePathPreview.compute(
+    computeInput({ title: "My Task", projectPath: "C:\\" }),
+  );
+  expect(result).toMatchObject({
+    kind: "path",
+    fullPath: "C:\\tasks\\my-task.md",
+  });
+});
