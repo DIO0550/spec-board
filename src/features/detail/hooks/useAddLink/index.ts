@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 
@@ -29,27 +29,36 @@ export type UseAddLinkResult = {
 };
 
 /**
- * DetailScreen の関連タスク追加 UI 用フック。`isBusy` を管理するだけの薄い wrapper。
+ * DetailScreen の関連タスク追加 UI 用フック。`isBusy` を管理する薄い wrapper。
  *
- * 連続発火の防止は呼び出し側に委ねる:
- * - LinksSection は候補選択で `setIsOpen(false)` し popover を unmount するため
- *   候補ボタンが消える
- * - `+ リンク追加` ボタンは `disabled={isBusy}` で再オープンを抑止する
- * - 万一同時呼出が起きても downstream `addLinkAction` は `enqueueProjectCommand`
- *   で直列化され、`TaskLinks.appendLinkedFilePath` の重複ガードで no-op になる
+ * 実行中の再呼び出しは hook 内の in-flight ガードで短絡する。`isBusy`（state）は
+ * 描画に追従するが反映が非同期なため、同一 tick の連打では `isBusy` を見ても
+ * 二重発行を防げない。同期的に判定できる ref を真の競合制御として併用し、
+ * in-flight 中の 2 回目以降は `onAddLink` を発行せず即 return する。
+ *
+ * 呼び出し側の disabled（LinksSection の popover unmount / `disabled={isBusy}`）や
+ * downstream の `enqueueProjectCommand` 直列化も従来どおり働くが、最後の砦は
+ * この hook 内ガードが担う。
  *
  * @param args - {@link UseAddLinkArgs}
  * @returns {@link UseAddLinkResult}
  */
 export const useAddLink = (args: UseAddLinkArgs): UseAddLinkResult => {
   const [isBusy, setIsBusy] = useState(false);
+  // state 反映を待たずに同期判定するための in-flight フラグ。
+  const inFlightRef = useRef(false);
 
   const addLink = useCallback(
     async (targetFilePath: string) => {
+      if (inFlightRef.current) {
+        return;
+      }
+      inFlightRef.current = true;
       setIsBusy(true);
       try {
         await args.onAddLink(targetFilePath);
       } finally {
+        inFlightRef.current = false;
         setIsBusy(false);
       }
     },

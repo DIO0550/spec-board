@@ -153,3 +153,47 @@ test("onRemoveLink が throw しても finally で isBusy=false に戻る", asyn
 
   expect(probe.latest.isBusy).toBe(false);
 });
+
+test("実行中に再度呼んでも 2 回目は onRemoveLink を発行せず短絡する", async () => {
+  let resolveCb: ((r: Result<Task, unknown>) => void) | null = null;
+  const onRemoveLink = vi.fn(
+    () =>
+      new Promise<Result<Task, unknown>>((resolve) => {
+        resolveCb = resolve;
+      }),
+  );
+  const probe = renderHook({ onRemoveLink });
+
+  let firstPromise: Promise<void> = Promise.resolve();
+  act(() => {
+    firstPromise = probe.latest.removeLink("tasks/b.md");
+  });
+  // 1 回目が in-flight のまま 2 回目を呼ぶ。
+  await act(async () => {
+    await probe.latest.removeLink("tasks/c.md");
+  });
+
+  expect(onRemoveLink).toHaveBeenCalledTimes(1);
+  expect(probe.latest.isBusy).toBe(true);
+
+  await act(async () => {
+    resolveCb?.(Result.ok(stubTask()));
+    await firstPromise;
+  });
+  expect(probe.latest.isBusy).toBe(false);
+});
+
+test("1 回目完了後は再度 removeLink を発行できる", async () => {
+  const onRemoveLink = vi.fn(async () => Result.ok(stubTask()));
+  const probe = renderHook({ onRemoveLink });
+
+  await act(async () => {
+    await probe.latest.removeLink("tasks/b.md");
+  });
+  await act(async () => {
+    await probe.latest.removeLink("tasks/c.md");
+  });
+
+  expect(onRemoveLink).toHaveBeenCalledTimes(2);
+  expect(probe.latest.isBusy).toBe(false);
+});
