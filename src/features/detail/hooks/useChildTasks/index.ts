@@ -35,6 +35,12 @@ const EMPTY_TASKS: readonly Task[] = [];
  * `childTasks` / `descendantTasks` / `effectiveDoneColumn` は独立した useMemo で
  * メモ化しており、`columns` / `doneColumn` の変更だけでは `descendantTasks` の
  * 再計算は走らない。
+ *
+ * hook 化を維持する理由: 戻り値 `UseChildTasksResult` を `PropertiesSidebar` の
+ * prop 型として共有し、3 つの派生値（直下子 / 全子孫 / 完了カラム）と各々の
+ * メモ化境界を 1 つの公開 API にまとめて component 境界をまたいで渡している。
+ * 単一コンポーネント内の useMemo へ展開すると、この共有 ViewModel と独立した
+ * メモ化境界が分散するため hook に残す。
  * @param args - 親ファイルパス・全タスク・カラム・doneColumn
  * @returns 直下子・全子孫・完了カラム名
  */
