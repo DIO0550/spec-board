@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "vitest";
-import { DEFAULT_APPEARANCE } from "../../../types";
+import { DEFAULT_APPEARANCE } from "@/features/shell/types";
 import {
   APPEARANCE_STORAGE_KEY,
   loadAppearance,
