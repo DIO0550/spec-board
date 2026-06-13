@@ -159,18 +159,13 @@ fn commit_cache(
             let preserved_children = std::mem::take(&mut source_entry.children);
             let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
             let preserved_warnings = std::mem::take(&mut source_entry.warnings);
-            let preserved_parent = if was_cycle_member {
-                source_entry.parent.take()
-            } else {
-                updated.parent.clone()
-            };
             *source_entry = Task {
                 children: preserved_children,
                 reverse_links: preserved_reverse,
                 warnings: preserved_warnings,
-                parent: preserved_parent,
                 ..updated.clone()
             };
+            source_entry.preserve_parent_cycle_state(was_cycle_member, false);
             let returned_task = source_entry.clone();
 
             // target の reverse_links に source を append。既に push 済みなら冪等に skip。
