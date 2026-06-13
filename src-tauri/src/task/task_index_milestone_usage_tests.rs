@@ -27,7 +27,7 @@ fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
 
 #[test]
 fn empty_for_no_tasks() {
-    let counts = TaskIndex::milestone_usage_counts(&[]);
+    let counts = TaskIndex::new(Vec::new()).milestone_usage_counts();
     assert!(counts.is_empty());
 }
 
@@ -39,7 +39,7 @@ fn counts_tasks_per_milestone_and_ignores_unassigned() {
         task_with_milestone("c", Some("v0.4")),
         task_with_milestone("d", None),
     ];
-    let counts = TaskIndex::milestone_usage_counts(&tasks);
+    let counts = TaskIndex::new(tasks).milestone_usage_counts();
     assert_eq!(counts.get("v0.3"), Some(&2));
     assert_eq!(counts.get("v0.4"), Some(&1));
     // 未割当は計上しない（キーが存在しない）。
@@ -53,7 +53,7 @@ fn counts_master_undefined_value_by_occurrence() {
         task_with_milestone("a", Some("undefined-ms")),
         task_with_milestone("b", Some("undefined-ms")),
     ];
-    let counts = TaskIndex::milestone_usage_counts(&tasks);
+    let counts = TaskIndex::new(tasks).milestone_usage_counts();
     assert_eq!(counts.get("undefined-ms"), Some(&2));
 }
 
@@ -63,7 +63,7 @@ fn exact_match_is_case_sensitive_and_not_normalized() {
         task_with_milestone("a", Some("V0.3")),
         task_with_milestone("b", Some("v0.3")),
     ];
-    let counts = TaskIndex::milestone_usage_counts(&tasks);
+    let counts = TaskIndex::new(tasks).milestone_usage_counts();
     assert_eq!(counts.get("V0.3"), Some(&1));
     assert_eq!(counts.get("v0.3"), Some(&1));
 }

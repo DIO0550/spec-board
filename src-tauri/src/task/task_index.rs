@@ -131,9 +131,10 @@ impl TaskIndex {
     /// 未正規化（trim / case 変換なし）。キーは所有 `String` で返し、呼び出し側
     /// （`get_labels` / `delete_label`）が借用ライフタイムに縛られないようにする。
     /// 使用数集計は label/config ドメインではなく task 集約に置くことで、依存方向を
-    /// label/config → task の一方向に保つ（task は label を知らない）。
-    pub fn label_usage_counts(tasks: &[Task]) -> HashMap<String, usize> {
-        tasks
+    /// label/config → task の一方向に保つ（task は label を知らない）。aggregate が
+    /// 保持する task 集合を集計対象とするため `&self` メソッドとして公開する。
+    pub fn label_usage_counts(&self) -> HashMap<String, usize> {
+        self.tasks
             .iter()
             // 各タスクを「そのタスクが持つ distinct なラベル集合」へ変換（タスク内重複排除）。
             .flat_map(|task| {
@@ -153,9 +154,10 @@ impl TaskIndex {
     ///
     /// labels（複数）と異なり milestone は単数 string のため、`Option` を 0/1 件に
     /// 展開して畳み込む（タスク内重複は構造的に発生しない）。マスタ未定義の値も
-    /// 出現名で計上する（完全一致・未正規化）。未割当（`None`）は計上しない。
-    pub fn milestone_usage_counts(tasks: &[Task]) -> HashMap<String, usize> {
-        tasks
+    /// 出現名で計上する（完全一致・未正規化）。未割当（`None`）は計上しない。aggregate が
+    /// 保持する task 集合を集計対象とするため `&self` メソッドとして公開する。
+    pub fn milestone_usage_counts(&self) -> HashMap<String, usize> {
+        self.tasks
             .iter()
             .filter_map(|task| task.milestone.as_deref())
             .fold(HashMap::new(), |mut counts, name| {

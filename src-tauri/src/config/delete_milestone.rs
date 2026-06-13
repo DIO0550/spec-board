@@ -93,7 +93,8 @@ pub(crate) fn delete_milestone_impl(
     let registry = ctx.milestones.ok_or(DeleteMilestoneError::NoProjectOpen)?;
 
     // 削除前の使用数（タスク単位・完全一致）。task 集約へ委譲する。
-    let usage_count = TaskIndex::milestone_usage_counts(&ctx.tasks)
+    let usage_count = TaskIndex::new(ctx.tasks)
+        .milestone_usage_counts()
         .get(&args.name)
         .copied()
         .unwrap_or(0);

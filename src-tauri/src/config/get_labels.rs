@@ -90,7 +90,7 @@ pub(crate) fn get_labels_impl(state: &AppState) -> Result<GetLabelsPayload, GetL
     let registry = state.labels()?.ok_or(GetLabelsError::NoProjectOpen)?;
     let tasks = state.tasks_snapshot()?;
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
-    let usage_counts = TaskIndex::label_usage_counts(&tasks);
+    let usage_counts = TaskIndex::new(tasks).label_usage_counts();
     Ok(GetLabelsPayload {
         labels: registry.labels,
         usage_counts,

@@ -75,7 +75,7 @@ pub(crate) fn get_milestones_impl(
     let ctx = state.snapshot_milestone_delete()?;
     let registry = ctx.milestones.ok_or(GetMilestonesError::NoProjectOpen)?;
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
-    let usage_counts = TaskIndex::milestone_usage_counts(&ctx.tasks);
+    let usage_counts = TaskIndex::new(ctx.tasks).milestone_usage_counts();
     Ok(GetMilestonesPayload {
         milestones: registry.milestones,
         usage_counts,
