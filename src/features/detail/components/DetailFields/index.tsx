@@ -15,8 +15,8 @@ import { SubIssueSection } from "../SubIssueSection";
 /**
  * `onRemoveLink` 未指定時に LinksSection に渡す no-op fallback。
  * 既存呼出元が `onRemoveLink` を渡し忘れても forward 削除の × ボタンの click が
- * 型エラーで落ちないようにする。戻り値は `Result.err(undefined)` だが LinksSection の
- * `useRemoveLink` は Result を捨てるため UI には影響しない。
+ * 型エラーで落ちないようにする。戻り値は `Result.err(undefined)` だが LinksSection は
+ * 削除 invoke の Result を捨てるため UI には影響しない。
  * @returns 常に `Result.err(undefined)`
  */
 const noopRemoveLink = async (): Promise<Result<Task, unknown>> =>
