@@ -2,6 +2,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import type { BrokenLinkSet } from "@/domains/broken-link";
+import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
 import { Task, type TaskPayload } from "@/types/task";
 import { PropertiesSidebar } from "..";
 
@@ -12,6 +13,25 @@ const noBrokenLinks: BrokenLinkSet = {
   children: new Set<string>(),
   reverseLinks: new Set<string>(),
 };
+
+/**
+ * 削除フロー（DetailScreen が所有する state）のスタブを生成する。
+ * @param overrides - 上書きするフィールド
+ * @returns UseDeleteFlowResult スタブ
+ */
+function buildDeleteFlow(
+  overrides: Partial<UseDeleteFlowResult> = {},
+): UseDeleteFlowResult {
+  return {
+    state: { kind: "idle" },
+    isOpen: false,
+    isBusy: false,
+    requestDelete: vi.fn(),
+    cancelDelete: vi.fn(),
+    confirmDelete: vi.fn(),
+    ...overrides,
+  };
+}
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -77,7 +97,9 @@ function buildProps(
       onLabelRemove: vi.fn(),
       onChangeDraft: vi.fn(),
     },
-    onDelete: vi.fn(),
+    deleteFlow: buildDeleteFlow(),
+    orphanStrategy: "clear",
+    onOrphanStrategyChange: vi.fn(),
     ...overrides,
   };
 }
