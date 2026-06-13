@@ -42,8 +42,6 @@ pub const LABELS_FILE_NAME: &str = "labels.yml";
 /// labels.yml と同様、中身（YAML）のパース / シリアライズは本体クレート側の責務で
 /// あり、本サブクレートは [`SpecBoardDir`] 経由で raw `String` の読み書きのみを担当する。
 pub const MILESTONES_FILE_NAME: &str = "milestones.yml";
-static GUIDE_MARKDOWN_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-static CONFIG_JSON_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SPEC_BOARD_DIR_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// プロジェクトの `.spec-board/` ディレクトリを管理し、配下ファイルの
@@ -358,15 +356,9 @@ pub fn read_config_json(project_root: &Path) -> Result<Option<String>, ConfigIoE
 /// - `<project_root>/.spec-board/GUIDE.md` が symlink として存在する
 /// - 権限不足等で `.spec-board/` 作成または `GUIDE.md` 書き込みが失敗する
 pub fn write_guide_markdown(project_root: &Path, content: &str) -> Result<PathBuf, ConfigIoError> {
-    let spec_board_dir = ensure_spec_board_dir(project_root)?;
-    reject_existing_symlink(&spec_board_dir)?;
-    let guide_path = guide_markdown_path(project_root);
-    reject_existing_symlink(&guide_path)?;
-
-    let tmp_path = unique_guide_markdown_tmp_path(&spec_board_dir);
-    write_file_via_tmp(&guide_path, content, &tmp_path)?;
-
-    Ok(guide_path)
+    // 書き込みフロー（ensure → symlink 拒否 → tmp→rename）は format 非依存の
+    // `SpecBoardDir::write_file` に集約済みのため、ファイル名だけ渡して委譲する。
+    SpecBoardDir::new(project_root).write_file(GUIDE_MARKDOWN_FILE_NAME, content)
 }
 
 /// `<project_root>/.spec-board/config.json` へ JSON 文字列を書き込む。
@@ -383,24 +375,9 @@ pub fn write_guide_markdown(project_root: &Path, content: &str) -> Result<PathBu
 /// - `<project_root>/.spec-board/config.json` が symlink として存在する
 /// - 権限不足等で `.spec-board/` 作成または `config.json` 書き込みが失敗する
 pub fn write_config_json(project_root: &Path, content: &str) -> Result<PathBuf, ConfigIoError> {
-    let spec_board_dir = ensure_spec_board_dir(project_root)?;
-    reject_existing_symlink(&spec_board_dir)?;
-    let target = config_path(project_root);
-    reject_existing_symlink(&target)?;
-
-    let tmp_path = unique_config_json_tmp_path(&spec_board_dir);
-    write_file_via_tmp(&target, content, &tmp_path)?;
-
-    Ok(target)
-}
-
-fn unique_config_json_tmp_path(spec_board_dir: &Path) -> PathBuf {
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    let counter = CONFIG_JSON_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    spec_board_dir.join(format!("{CONFIG_FILE_NAME}.tmp.{pid}.{nanos}.{counter}"))
+    // 書き込みフロー（ensure → symlink 拒否 → tmp→rename）は format 非依存の
+    // `SpecBoardDir::write_file` に集約済みのため、ファイル名だけ渡して委譲する。
+    SpecBoardDir::new(project_root).write_file(CONFIG_FILE_NAME, content)
 }
 
 fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
@@ -416,17 +393,6 @@ fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(io_err(path, e)),
     }
-}
-
-fn unique_guide_markdown_tmp_path(spec_board_dir: &Path) -> PathBuf {
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    let counter = GUIDE_MARKDOWN_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    spec_board_dir.join(format!(
-        "{GUIDE_MARKDOWN_FILE_NAME}.tmp.{pid}.{nanos}.{counter}"
-    ))
 }
 
 fn write_file_via_tmp(dst: &Path, content: &str, tmp: &Path) -> Result<(), ConfigIoError> {
@@ -511,7 +477,7 @@ fn unique_sibling_path(base: &Path, suffix: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
-    let counter = GUIDE_MARKDOWN_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let counter = SPEC_BOARD_DIR_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let file_name = base
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
