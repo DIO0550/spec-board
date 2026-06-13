@@ -42,9 +42,16 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
   src/                  — spec-board crate（本体）
     main.rs             — エントリーポイント
     lib.rs              — `pub mod` 列挙: `config` / `project` / `state` / `task` / `watcher_event`
-    config.rs           — Config / カラム / cardOrder ロジック（テスト: `config/config_tests.rs`）
+    config.rs           — config ドメイン親（`pub mod` 列挙 + `pub use` 再エクスポートのみ）
     config/
-      config_tests.rs   — `config.rs` のユニットテスト
+      core.rs           — `Config` / `Column` / `ColumnColor` / `CardOrder` などコアスキーマ型 + GUIDE.md 生成 / `update_columns` 純粋計算 / `build_config_from_statuses` 等
+      migration.rs      — `config.json` の `version` マイグレーションフック（`MigrationError` / `migrate_config`）
+      load.rs           — `.spec-board/config.json` の読み込み（`load_or_default` / `LoadConfigError`）+ atomic write インフラ（`ConfigWriter` / `FsConfigWriter` / `write_atomic_to_path`）
+      label_registry.rs — ラベルマスタ（`labels.yml`）のドメイン型 / aggregate / 永続化 store
+      milestone_registry.rs — マイルストーンマスタ（`milestones.yml`）のドメイン型 / aggregate / 永続化 store
+      config_tests.rs   — `core` / `migration` / `load` のユニットテスト
+      label_registry_tests.rs — `label_registry` のユニットテスト
+      milestone_registry_tests.rs — `milestone_registry` のユニットテスト
     state.rs            — `AppState` / lock 取得順序契約（テスト: `state/state_tests.rs`）
     state/
       state_tests.rs    — `state.rs` のユニットテスト
