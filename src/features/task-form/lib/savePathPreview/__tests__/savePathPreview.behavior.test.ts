@@ -226,3 +226,20 @@ test("compute: ドライブ直下の projectPath（C:\\）でも \\ 区切りで
     fullPath: "C:\\tasks\\my-task.md",
   });
 });
+
+test("compute: 親タスクがルート直下（targetDir が空）なら relPath はファイル名のみになり、ルート直下の既存と照合する", () => {
+  const result = SavePathPreview.compute(
+    computeInput({
+      title: "My Task",
+      parentFilePath: "parent.md",
+      existingTaskFilePaths: ["my-task.md", "tasks/my-task.md"],
+      projectPath: "/tmp/p",
+    }),
+  );
+  expect(result).toEqual({
+    kind: "path",
+    fileName: "my-task-1.md",
+    relPath: "my-task-1.md",
+    fullPath: "/tmp/p/my-task-1.md",
+  });
+});
