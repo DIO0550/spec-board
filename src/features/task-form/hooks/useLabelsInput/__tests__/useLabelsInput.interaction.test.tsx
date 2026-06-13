@@ -110,14 +110,14 @@ test("dispatch remove で指定ラベルが除外される", () => {
   expect(get().state.labels).toEqual(["b"]);
 });
 
-test("handleKeyDown: Enter で commit + preventDefault", () => {
+test("commitOnEnter: Enter で commit + preventDefault", () => {
   const get = render();
   act(() => {
     get().dispatch({ type: "setInput", value: "x" });
   });
   const prevent = vi.fn();
   act(() => {
-    get().handleKeyDown({
+    get().commitOnEnter({
       key: "Enter",
       nativeEvent: { isComposing: false },
       preventDefault: prevent,
@@ -127,7 +127,7 @@ test("handleKeyDown: Enter で commit + preventDefault", () => {
   expect(get().state).toEqual({ labels: ["x"], labelInput: "" });
 });
 
-test("handleKeyDown: IME 変換中（isComposing=true）の Enter は preventDefault するが commit しない", () => {
+test("commitOnEnter: IME 変換中（isComposing=true）の Enter は preventDefault するが commit しない", () => {
   const get = render();
   act(() => {
     get().dispatch({ type: "setInput", value: "日本語" });
@@ -135,7 +135,7 @@ test("handleKeyDown: IME 変換中（isComposing=true）の Enter は preventDef
   const prevent = vi.fn();
   const before = get().state;
   act(() => {
-    get().handleKeyDown({
+    get().commitOnEnter({
       key: "Enter",
       nativeEvent: { isComposing: true },
       preventDefault: prevent,
@@ -146,7 +146,7 @@ test("handleKeyDown: IME 変換中（isComposing=true）の Enter は preventDef
   expect(get().state).toBe(before);
 });
 
-test("handleKeyDown: Enter 以外では何もしない", () => {
+test("commitOnEnter: Enter 以外では何もしない", () => {
   const get = render();
   act(() => {
     get().dispatch({ type: "setInput", value: "x" });
@@ -154,7 +154,7 @@ test("handleKeyDown: Enter 以外では何もしない", () => {
   const prevent = vi.fn();
   const before = get().state;
   act(() => {
-    get().handleKeyDown({
+    get().commitOnEnter({
       key: "Tab",
       preventDefault: prevent,
     } as unknown as React.KeyboardEvent<HTMLInputElement>);
