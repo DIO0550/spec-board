@@ -1,5 +1,5 @@
 import type { MilestoneDefinition } from "@/lib/tauri";
-import type { MilestoneFilter as MilestoneFilterValue } from "../../hooks/useMilestoneFilter";
+import type { MilestoneFilter as MilestoneFilterValue } from "../../lib/applyTaskFilter";
 
 type MilestoneFilterProps = {
   /** 選択肢として並べるマイルストーン定義（registry 由来） */
@@ -51,7 +51,7 @@ const toValue = (filter: MilestoneFilterValue): string => {
 
 /**
  * ボードのマイルストーンフィルタ UI（全件 / 未割当 / 各マイルストーン）。
- * 選択状態は呼び出し側（useMilestoneFilter）が保持する。
+ * 選択状態は呼び出し側が保持する。
  * @param props - {@link MilestoneFilterProps}
  * @returns フィルタ select 要素
  */

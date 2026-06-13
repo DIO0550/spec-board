@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { MilestoneFilter as MilestoneFilterValue } from "../../../hooks/useMilestoneFilter";
+import type { MilestoneFilter as MilestoneFilterValue } from "../../../lib/applyTaskFilter";
 import { MilestoneFilter } from "..";
 
 let container: HTMLDivElement | null = null;
