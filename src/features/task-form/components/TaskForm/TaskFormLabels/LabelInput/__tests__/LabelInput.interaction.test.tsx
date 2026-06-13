@@ -204,3 +204,57 @@ test("リスト非表示の Esc は伝播を遮断しない（document のリス
   expect(documentListener).toHaveBeenCalledTimes(1);
   document.removeEventListener("keydown", documentListener);
 });
+
+test("ArrowUp でハイライトが後退し、先頭からさらに ArrowUp でハイライト解除に戻る", () => {
+  render(baseProps());
+  focusInput();
+  keydown("ArrowDown");
+  keydown("ArrowDown");
+  const selected = () =>
+    Array.from(document.querySelectorAll("[role='option']")).map((o) =>
+      o.getAttribute("aria-selected"),
+    );
+  expect(selected()).toEqual(["false", "true"]);
+  keydown("ArrowUp");
+  expect(selected()).toEqual(["true", "false"]);
+  keydown("ArrowUp");
+  expect(selected()).toEqual(["false", "false"]);
+});
+
+test("Esc で閉じた後の ArrowDown でリストが再オープンする", () => {
+  render(baseProps());
+  focusInput();
+  keydown("Escape");
+  expect(listbox()).toBeNull();
+  keydown("ArrowDown");
+  expect(listbox()).toBeTruthy();
+});
+
+test("末尾候補で ArrowDown してもハイライトは末尾に留まる（クランプ）", () => {
+  render(baseProps());
+  focusInput();
+  keydown("ArrowDown");
+  keydown("ArrowDown");
+  keydown("ArrowDown");
+  const selected = Array.from(document.querySelectorAll("[role='option']")).map(
+    (o) => o.getAttribute("aria-selected"),
+  );
+  expect(selected).toEqual(["false", "true"]);
+});
+
+test("Esc で閉じた後も入力変更でリストが再表示される", () => {
+  const onChange = vi.fn();
+  render(baseProps({ onChange }));
+  focusInput();
+  keydown("Escape");
+  expect(listbox()).toBeNull();
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(input(), "b");
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(listbox()).toBeTruthy();
+});
