@@ -83,7 +83,7 @@ export const MilestoneSettingsTab = ({
   resource,
 }: MilestoneSettingsTabProps) => {
   const { milestones, usageCounts, status, reload } = resource;
-  const { create, update, remove } = useMilestoneMutations(reload);
+  const { isPending, create, update, remove } = useMilestoneMutations(reload);
   // 編集対象の name（null は新規作成モード）。
   const [editingName, setEditingName] = useState<string | null>(null);
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
@@ -192,7 +192,8 @@ export const MilestoneSettingsTab = ({
               </button>
               <button
                 type="button"
-                className="text-red-600"
+                className="text-red-600 disabled:opacity-50"
+                disabled={isPending}
                 onClick={() => {
                   void handleDelete(def.name);
                 }}
@@ -253,7 +254,7 @@ export const MilestoneSettingsTab = ({
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={form.name === ""}
+            disabled={form.name === "" || isPending}
             className="rounded bg-accent px-3 py-1 text-sm text-accent-foreground disabled:opacity-50"
           >
             {editingName === null ? "作成" : "更新"}
