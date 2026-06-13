@@ -1,3 +1,5 @@
+import { LabelAddRule } from "@/domains/label-add-rule";
+
 /** LabelsField が保持する値の型 */
 export type LabelsField = {
   /** 確定済みラベル一覧 */
@@ -10,19 +12,21 @@ export type LabelsField = {
  * 指定の生文字列を labels に取り込む共通規則。
  * trim 後空なら field 不変、重複なら labelInput だけクリア、新規なら追加 + クリア。
  * `commit`（labelInput の取り込み）と `commitValue`（サジェスト確定値の取り込み）で共有する。
+ * 追加可否の判定は共有ルール {@link LabelAddRule.classify} に委譲し、field 形状への
+ * 反映だけをこの関数で行う。
  * @param field - 現在の field
  * @param raw - 取り込む生文字列
  * @returns 新しい field
  */
 const takeIn = (field: LabelsField, raw: string): LabelsField => {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) {
+  const decision = LabelAddRule.classify(field.labels, raw);
+  if (decision.kind === "empty") {
     return field;
   }
-  if (field.labels.includes(trimmed)) {
+  if (decision.kind === "duplicate") {
     return { ...field, labelInput: "" };
   }
-  return { labels: [...field.labels, trimmed], labelInput: "" };
+  return { labels: [...field.labels, decision.value], labelInput: "" };
 };
 
 /**

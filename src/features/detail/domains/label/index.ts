@@ -1,3 +1,5 @@
+import { LabelAddRule } from "@/domains/label-add-rule";
+
 /** ラベル一覧（不変） */
 export type Labels = readonly string[];
 
@@ -8,19 +10,17 @@ export type Labels = readonly string[];
 export const Labels = {
   /**
    * 入力をトリムして追加可能なら新しい配列を返す。空文字・空白のみ・重複は null。
+   * 追加可否の判定は共有ルール {@link LabelAddRule.classify} に委譲する。
    * @param current - 現在のラベル一覧
    * @param input - 追加候補の文字列（trim 前）
    * @returns 追加成功時は新しい配列、追加不可なら null
    */
   tryAdd: (current: Labels, input: string): Labels | null => {
-    const trimmed = input.trim();
-    if (trimmed.length === 0) {
+    const decision = LabelAddRule.classify(current, input);
+    if (decision.kind !== "added") {
       return null;
     }
-    if (current.includes(trimmed)) {
-      return null;
-    }
-    return [...current, trimmed];
+    return [...current, decision.value];
   },
 
   /**
