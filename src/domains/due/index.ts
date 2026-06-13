@@ -38,6 +38,20 @@ const toUtcEpoch = (date: string): number | undefined => {
 /** Due の companion API。 */
 export const Due = {
   /**
+   * クライアントのローカルタイムゾーンでの今日の日付を `YYYY-MM-DD` で返す。
+   * 各セグメントはゼロ詰めする（例: 2026 年 6 月 1 日 → "2026-06-01"）。
+   *
+   * @returns ローカル日付の `YYYY-MM-DD` 文字列
+   */
+  todayLocal: (): string => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  },
+
+  /**
    * 任意の文字列を検証済み Due | undefined に正規化する。
    * 空文字・未設定・不正フォーマットはすべて undefined。
    * 成功時のみ branded Due を返す（cast はこの 1 箇所に閉じる）。

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { Due } from "..";
 
 const TODAY = "2026-06-01";
@@ -57,4 +57,18 @@ test.each([
   { due: "2026/6/30", expected: false, label: "不正値" },
 ])("isOverdue $label は $expected", ({ due, expected }) => {
   expect(Due.isOverdue(due, TODAY)).toBe(expected);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+test.each([
+  { now: new Date(2026, 5, 1, 9, 30), expected: "2026-06-01" },
+  { now: new Date(2026, 0, 5, 0, 0), expected: "2026-01-05" },
+  { now: new Date(2026, 11, 31, 23, 59), expected: "2026-12-31" },
+])("todayLocal はローカル日付を $expected で返す", ({ now, expected }) => {
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  expect(Due.todayLocal()).toBe(expected);
 });

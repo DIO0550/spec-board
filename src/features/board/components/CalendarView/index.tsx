@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Due } from "@/domains/due";
 import type { Task } from "@/types/task";
 import {
   addMonth,
@@ -31,17 +32,6 @@ const currentYearMonth = (): YearMonth => {
 };
 
 /**
- * クライアントのローカル日付を `YYYY-MM-DD` で返す。
- * @returns 今日の日付文字列
- */
-const todayLocal = (): string => {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-};
-
-/**
  * 期限日でタスクを配置する月間カレンダービュー。前後の月へ移動でき、
  * 期限なし / 不正な期限のタスクは下部にまとめて表示する。
  * @param props - {@link CalendarViewProps}
@@ -50,7 +40,7 @@ const todayLocal = (): string => {
 export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
   const [visibleMonth, setVisibleMonth] = useState<YearMonth>(currentYearMonth);
   // 「今日」ハイライトが深夜 0 時跨ぎでも当日に追従するよう、軽量なので都度計算する。
-  const today = todayLocal();
+  const today = Due.todayLocal();
 
   const weeks = useMemo(
     () => buildMonthGrid(visibleMonth.year, visibleMonth.month),
