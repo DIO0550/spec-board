@@ -64,4 +64,32 @@ export const Milestone = {
     milestones: readonly MilestoneDefinition[],
   ): Map<string, MilestoneDefinition> =>
     new Map(milestones.map((m) => [m.name, m])),
+
+  /**
+   * マイルストーンを表示順に並べ替える。
+   * order 昇順を基本とし、order 未指定は末尾へ送る。order 同値・両方未指定の場合は
+   * 元の定義順を保つ（安定ソート）。
+   * @param milestones - マイルストーン定義の配列（定義順）
+   * @returns 並べ替え済みの新しい配列
+   */
+  sortByOrder: (
+    milestones: readonly MilestoneDefinition[],
+  ): MilestoneDefinition[] =>
+    milestones
+      .map((m, index) => ({ m, index }))
+      .sort((a, b) => {
+        const ao = a.m.order;
+        const bo = b.m.order;
+        if (ao === undefined && bo === undefined) {
+          return a.index - b.index;
+        }
+        if (ao === undefined) {
+          return 1;
+        }
+        if (bo === undefined) {
+          return -1;
+        }
+        return ao === bo ? a.index - b.index : ao - bo;
+      })
+      .map((entry) => entry.m),
 } as const;

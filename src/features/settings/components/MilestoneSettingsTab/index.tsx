@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Milestone } from "@/domains/milestone";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs, MilestoneDefinition } from "@/lib/tauri";
 import { useMilestoneMutations } from "../../hooks/useMilestoneMutations";
@@ -175,7 +176,9 @@ export const MilestoneSettingsTab = ({
               className="flex items-center gap-2 text-sm"
               data-testid="milestone-row"
             >
-              <span className="font-medium">{def.title ?? def.name}</span>
+              <span className="font-medium">
+                {Milestone.badgeLabel(def.name, def)}
+              </span>
               <span className="text-muted">{def.name}</span>
               {def.due !== undefined ? (
                 <span className="text-muted">{def.due}</span>

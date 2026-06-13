@@ -76,3 +76,51 @@ test("usageCounts は未設定（undefined / 空文字）のタスクを数え�
 test("usageCounts はタスク 0 件で空オブジェクトを返す", () => {
   expect(Milestone.usageCounts([])).toEqual({});
 });
+
+test("sortByOrder は order 昇順に並べ替える", () => {
+  const milestones: MilestoneDefinition[] = [
+    { name: "b", order: 2 },
+    { name: "a", order: 1 },
+    { name: "c", order: 3 },
+  ];
+  expect(Milestone.sortByOrder(milestones).map((m) => m.name)).toEqual([
+    "a",
+    "b",
+    "c",
+  ]);
+});
+
+test("sortByOrder は order 未指定を末尾に置く", () => {
+  const milestones: MilestoneDefinition[] = [
+    { name: "noOrder" },
+    { name: "ordered", order: 1 },
+  ];
+  expect(Milestone.sortByOrder(milestones).map((m) => m.name)).toEqual([
+    "ordered",
+    "noOrder",
+  ]);
+});
+
+test("sortByOrder は order 同値のとき定義順を保つ（安定）", () => {
+  const milestones: MilestoneDefinition[] = [
+    { name: "x", order: 1 },
+    { name: "y", order: 1 },
+  ];
+  expect(Milestone.sortByOrder(milestones).map((m) => m.name)).toEqual([
+    "x",
+    "y",
+  ]);
+});
+
+test("sortByOrder は order 全件未指定のとき定義順を保つ（安定）", () => {
+  const milestones: MilestoneDefinition[] = [
+    { name: "p" },
+    { name: "q" },
+    { name: "r" },
+  ];
+  expect(Milestone.sortByOrder(milestones).map((m) => m.name)).toEqual([
+    "p",
+    "q",
+    "r",
+  ]);
+});

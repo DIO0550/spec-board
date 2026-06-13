@@ -1,3 +1,4 @@
+import { Milestone } from "@/domains/milestone";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { MilestoneFilter as MilestoneFilterValue } from "../../lib/applyTaskFilter";
 
@@ -71,7 +72,7 @@ export const MilestoneFilter = ({
       <option value={UNASSIGNED_VALUE}>未割当</option>
       {milestones.map((m) => (
         <option key={m.name} value={`${MILESTONE_PREFIX}${m.name}`}>
-          {m.title ?? m.name}
+          {Milestone.badgeLabel(m.name, m)}
         </option>
       ))}
     </select>
