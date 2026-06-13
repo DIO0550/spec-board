@@ -308,6 +308,94 @@ test("openProject dialog cancel (null) → state 不変", async () => {
   expect(onError).not.toHaveBeenCalled();
 });
 
+test("openProject 成功 → onLoaded が path / data 付きで 1 回だけ発火する", async () => {
+  const onLoaded = vi.fn();
+  const probe = renderHook({ onLoaded });
+  await openLoaded(probe);
+  expect(onLoaded).toHaveBeenCalledTimes(1);
+  expect(onLoaded).toHaveBeenCalledWith({
+    path: "/p",
+    data: {
+      tasks: [taskA],
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      doneColumn: "Done",
+    },
+  });
+});
+
+test("openProject invoke 失敗 → onLoaded は発火しない", async () => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.err(new TauriError("NOT_FOUND", "no")),
+  );
+  const onLoaded = vi.fn();
+  const probe = renderHook({ onLoaded });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await pending;
+  });
+  expect(onLoaded).not.toHaveBeenCalled();
+});
+
+test("openProject invoke 中 unmount → onLoaded は発火しない", async () => {
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  let resolveInvoke!: (r: ResultT<OpenProjectPayload, TauriError>) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<ResultT<OpenProjectPayload, TauriError>>((res) => {
+      resolveInvoke = res;
+    }),
+  );
+  const onLoaded = vi.fn();
+  const probe = renderHook({ onLoaded });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProject();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  act(() => {
+    root?.unmount();
+    root = null;
+  });
+  await act(async () => {
+    resolveInvoke(Result.ok(payload));
+    await pending;
+  });
+  expect(onLoaded).not.toHaveBeenCalled();
+});
+
+test("openProjectByPath 成功 → onLoaded が path / data 付きで発火する", async () => {
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  const onLoaded = vi.fn();
+  const probe = renderHook({ onLoaded });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = probe.latest.openProjectByPath("/p");
+  });
+  await act(async () => {
+    await pending;
+  });
+  expect(onLoaded).toHaveBeenCalledTimes(1);
+  expect(onLoaded).toHaveBeenCalledWith({
+    path: "/p",
+    data: {
+      tasks: [taskA],
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      doneColumn: "Done",
+    },
+  });
+});
+
 test("openProject dialog 例外 → state 不変、onError 発火", async () => {
   const dialogErr = new TauriError("UNKNOWN", "dialog boom");
   openDirectoryDialogMock.mockResolvedValueOnce(Result.err(dialogErr));
