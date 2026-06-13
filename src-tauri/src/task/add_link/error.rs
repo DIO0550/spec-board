@@ -4,8 +4,6 @@
 //! 自体は Serialize を実装しない。`add_link_impl(...).map_err(|e| e.to_string())` で
 //! 文字列化する（既存 `update_task` と同型）。
 
-use std::path::PathBuf;
-
 use thiserror::Error;
 
 use crate::state::AppStateError;
@@ -36,11 +34,6 @@ pub enum AddLinkError {
     /// `frontmatter::serialize` 後の本文が scanner eligible でない場合。
     #[error("content not scanner eligible: {reason}")]
     ContentRejected { reason: ContentRejectReason },
-    /// IPC args が読み込んだ既存ファイルにアクセスする際の I/O 失敗系で、
-    /// effect 層側で具体的な NotFound 等を `SourceNotFound` に詰め直す途中で
-    /// 使う path 形式の error。aggregate 内では使わない。
-    #[error("file not found: {}", .0.display())]
-    FileNotFound(PathBuf),
 }
 
 #[derive(Debug, Error)]
