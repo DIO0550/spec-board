@@ -12,10 +12,10 @@
 ///
 /// # Panic
 ///
-/// 一般に `stop()` の panic safety は呼び出し側の責務だが、tauri 側の状態管理
-/// (AppState) が内部 Mutex の guard を保持したまま `stop()` を呼び出すケース
-/// では、panic は guard 経由で伝播し Mutex が poison 状態に遷移する。
-/// 次回アクセサ呼び出しで lock poison エラーが返る運用を前提とする。
+/// 一般に `stop()` の panic safety は呼び出し側の責務である。呼び出し側が
+/// 内部 Mutex の guard を保持したまま `stop()` を呼び出すケースでは、panic は
+/// guard 経由で伝播し Mutex が poison 状態に遷移し得る。その場合は次回の
+/// アクセサ呼び出しで lock poison エラーが返る運用を前提とする。
 /// 一方、ハンドルを取り出して guard 外から呼び出す場合（例: take 経由）は
 /// この限りではなく、呼び出し側で適宜 `catch_unwind` 等を行うこと。
 pub trait WatcherHandle: Send {
@@ -25,10 +25,9 @@ pub trait WatcherHandle: Send {
 
 /// 何もしない [`WatcherHandle`] 実装。
 ///
-/// 具象 watcher を install する前の初期値や、テストでのスタブとして
-/// `AppState::install_watcher_handle` に渡せる最小実装として用いる。
-/// `stop()` は冪等で副作用を持たないため、同一インスタンスに対して
-/// 複数回呼び出しても安全。
+/// notify 等の具象 watcher が未導入の段階で、ハンドルを保持する呼び出し側に
+/// 渡せる最小実装として用いる。`stop()` は冪等で副作用を持たないため、
+/// 同一インスタンスに対して複数回呼び出しても安全。
 #[derive(Debug, Default)]
 pub struct NoopWatcherHandle;
 
