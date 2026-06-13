@@ -267,11 +267,11 @@ fn keeps_path_when_metadata_returns_non_notfound_error() {
     let dir = tempdir();
 
     // NUL バイトを含む相対パスは fs::metadata で ErrorKind::InvalidInput を返す
-    // （非 NotFound）。保守的に保持されることを確認する。
+    // （非 NotFound）。保守的に保持対象集合へ含まれることを確認する。
     let nul_path = "tasks/with\0nul.md".to_string();
     let input = vec![nul_path.clone()];
 
-    let result = super::cleanup_missing_paths(dir.path(), input);
+    let result = super::collect_existing_paths(dir.path(), &input);
 
-    assert_eq!(result, vec![nul_path]);
+    assert!(result.contains(&nul_path));
 }
