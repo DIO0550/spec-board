@@ -263,8 +263,7 @@ fn watcher_error_pathnotfound_displays_the_path() {
 /// テスト用に poll バックエンドを 1 つ構築し、[`Backend`] と監視
 /// ルートを所有する [`TempDir`] ガードを返す。呼び出し側で両方をロー
 /// カルにバインドすれば、テストスコープ終了時に一時ディレクトリが
-/// 削除される。これにより、以前の `Box::leak` 方式（メモリと一時
-/// ディレクトリを永続的にリーク）を撤廃できる。
+/// 削除され、メモリと一時ディレクトリのリークを避けられる。
 fn make_dummy_backend() -> (Backend, TempDir) {
     let dir = TempDir::new().unwrap();
     let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();

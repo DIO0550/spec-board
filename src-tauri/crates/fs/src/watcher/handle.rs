@@ -25,9 +25,10 @@ pub trait WatcherHandle: Send {
 
 /// 何もしない [`WatcherHandle`] 実装。
 ///
-/// notify 等の具象 watcher が未導入の段階で `AppState::install_watcher_handle`
-/// に渡せる最小実装として用いる。`stop()` は冪等で副作用を持たないため、
-/// 同一インスタンスに対して複数回呼び出しても安全。
+/// 具象 watcher を install する前の初期値や、テストでのスタブとして
+/// `AppState::install_watcher_handle` に渡せる最小実装として用いる。
+/// `stop()` は冪等で副作用を持たないため、同一インスタンスに対して
+/// 複数回呼び出しても安全。
 #[derive(Debug, Default)]
 pub struct NoopWatcherHandle;
 
