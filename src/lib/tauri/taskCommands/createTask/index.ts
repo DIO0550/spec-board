@@ -13,6 +13,6 @@ import type { CreateTaskParams } from "../types";
 export const createTask = (
   params: CreateTaskParams,
 ): Promise<Result<Task, TauriError>> =>
-  invokeWrapped<TaskPayload>("create_task", params).then((result) =>
+  invokeWrapped<TaskPayload>("create_task", { args: params }).then((result) =>
     ResultDomain.map(result, Task.fromPayload),
   );
