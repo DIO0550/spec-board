@@ -24,12 +24,25 @@ use notify::{
 };
 use thiserror::Error;
 
+/// `PollWatcher` フォールバック時にファイルシステムを走査する間隔。
+///
+/// ネイティブ監視が使えない環境では一定間隔でディレクトリを総当たり走査する
+/// ため、間隔を短くすると変更の検知は速くなるが走査回数が増えて CPU / I/O
+/// 負荷が上がり、長くすると負荷は下がるが検知が遅れる。2 秒はこのトレードオフ
+/// の中で、ユーザが体感する反映遅延を許容範囲に保ちつつ常駐コストを抑える
+/// 妥協点として選んでいる。
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// 同一パスの連続イベントを集約するスライディングウィンドウ幅。
 ///
 /// 新しいイベントが到来するたびに deadline は `now + DEBOUNCE_DURATION`
 /// まで延長され、`DEBOUNCE_DURATION` 静止して初めて発火する。
+///
+/// 100ms は、エディタが保存時に行う「一時ファイル書き込み → rename →
+/// メタデータ更新」のような短時間に連続して飛んでくる write を 1 イベントに
+/// まとめて吸収できる程度の幅でありつつ、人間が「変更したのに反映されない」
+/// と感じない短さに収まる値として選んでいる。短すぎると 1 回の保存が複数
+/// イベントに割れ、長すぎると反映遅延として体感される。
 const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
 
 /// 呼び出し側に渡すファイルシステムイベント。
@@ -76,8 +89,20 @@ pub enum WatcherError {
 /// ることはない — drop されたタイミングで OS レベルの監視を解放するため
 /// に保持しているだけである。
 pub(crate) enum Backend {
-    Recommended(#[allow(dead_code)] RecommendedWatcher),
-    Poll(#[allow(dead_code)] PollWatcher),
+    Recommended(
+        #[expect(
+            dead_code,
+            reason = "値は読まないが、drop されるまで OS レベルの監視を存続させるために所有だけする"
+        )]
+        RecommendedWatcher,
+    ),
+    Poll(
+        #[expect(
+            dead_code,
+            reason = "値は読まないが、drop されるまで OS レベルの監視を存続させるために所有だけする"
+        )]
+        PollWatcher,
+    ),
 }
 
 /// 再帰ファイルシステムウォッチャ。値を drop すると同期的に監視を停止す

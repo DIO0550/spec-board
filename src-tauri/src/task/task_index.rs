@@ -36,6 +36,14 @@ use crate::task::warning::{
     ensure_parent_cycle_warning, has_parent_cycle_warning, TaskWarning, TaskWarningCode,
 };
 
+/// 親チェーンを辿る際に許容する最大深さ。
+///
+/// 値 20 は実運用で現れる正当なタスク階層（要件 → 機能 → サブタスク程度）を
+/// 十分に上回る一方、設定ミスや循環参照を実用上の上限として早期に打ち切る
+/// ための保険として置いている。厳密な仕様上の限界ではなく、無限ループや
+/// 異常に深いネストの検証コストを抑えるための値。引き上げると 1 タスクあたり
+/// の親チェーン検証で辿るノード数が増えるため、深い階層を許容したい場合は
+/// 検証コストへの影響を確認してから変更すること。
 const MAX_PARENT_DEPTH: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
