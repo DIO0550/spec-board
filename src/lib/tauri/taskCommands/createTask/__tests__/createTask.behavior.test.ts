@@ -36,8 +36,7 @@ test("必須フィールドのみ指定時は invoke 引数に title / status �
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await createTask({ title: "T", status: "Todo" });
   const args = vi.mocked(invoke).mock.calls[0]?.[1];
-  expect(args).toEqual({ title: "T", status: "Todo" });
-  expect(Object.keys(args ?? {})).toEqual(["title", "status"]);
+  expect(args).toEqual({ args: { title: "T", status: "Todo" } });
 });
 
 test("任意フィールドが全指定された場合 camelCase のまま invoke 引数に反映される", async () => {
@@ -51,12 +50,14 @@ test("任意フィールドが全指定された場合 camelCase のまま invok
     body: "本文",
   });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("create_task", {
-    title: "T",
-    status: "Todo",
-    priority: "High",
-    labels: ["a"],
-    parent: "tasks/p.md",
-    body: "本文",
+    args: {
+      title: "T",
+      status: "Todo",
+      priority: "High",
+      labels: ["a"],
+      parent: "tasks/p.md",
+      body: "本文",
+    },
   });
 });
 
@@ -67,15 +68,19 @@ test("links 配列を指定すると camelCase のまま invoke 引数に反映�
     status: "Todo",
     links: ["tasks/a.md", "tasks/b.md"],
   });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect(args.links).toEqual(["tasks/a.md", "tasks/b.md"]);
+  const args = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect(args.args.links).toEqual(["tasks/a.md", "tasks/b.md"]);
 });
 
 test("links 未指定時は invoke 引数に links キーが含まれない", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await createTask({ title: "T", status: "Todo" });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect("links" in args).toBe(false);
+  const args = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect("links" in args.args).toBe(false);
 });
 
 test("optional に undefined を明示指定した場合 undefined のまま渡る（ラッパで加工しない）", async () => {
@@ -85,9 +90,11 @@ test("optional に undefined を明示指定した場合 undefined のまま渡�
     status: "Todo",
     priority: undefined,
   });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect("priority" in args).toBe(true);
-  expect(args.priority).toBeUndefined();
+  const args = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect("priority" in args.args).toBe(true);
+  expect(args.args.priority).toBeUndefined();
 });
 
 test("成功時は Result.ok(Task) を返す", async () => {
