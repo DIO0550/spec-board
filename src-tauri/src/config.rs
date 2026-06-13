@@ -369,6 +369,43 @@ impl Config {
             is_noop: false,
         })
     }
+
+    /// `cardOrder[column_name]` を `file_paths` で上書きした新しい `Config` を返す
+    /// （副作用なし）。
+    ///
+    /// `column_name` が [`Self::columns`] に存在しなければ
+    /// [`UpdateCardOrderPlanError::UnknownColumn`] を返し、`self` は変更しない。
+    /// `file_paths` のうち `existing_paths` に含まれないエントリは
+    /// 「実体が消えたタスク」として除外する。入力順は保持する。
+    ///
+    /// 実在判定の走査（fs アクセス）は呼び出し側の責務で、本メソッドは
+    /// `existing_paths` を真値として扱う純粋関数。これにより
+    /// 「未知カラムの拒否」「除去ルール」という cardOrder のドメイン不変条件を
+    /// aggregate 側に集約する。
+    ///
+    /// # Errors
+    ///
+    /// - [`UpdateCardOrderPlanError::UnknownColumn`] — `column_name` が
+    ///   [`Self::columns`] のいずれにも一致しない
+    pub fn plan_update_card_order(
+        &self,
+        column_name: String,
+        file_paths: Vec<String>,
+        existing_paths: &HashSet<String>,
+    ) -> Result<Config, UpdateCardOrderPlanError> {
+        if !self.has_column(&column_name) {
+            return Err(UpdateCardOrderPlanError::UnknownColumn { column_name });
+        }
+
+        let retained: Vec<String> = file_paths
+            .into_iter()
+            .filter(|rel| existing_paths.contains(rel.as_str()))
+            .collect();
+
+        let mut next = self.clone();
+        next.card_order.insert(column_name, retained);
+        Ok(next)
+    }
 }
 
 /// `Config::plan_update_columns` の戻り値。
@@ -380,6 +417,17 @@ pub struct UpdateColumnsPlan {
     pub rename_targets: Vec<RenameTarget>,
     /// 何も変更しない no-op フラグ（args 全 None 時 true）
     pub is_noop: bool,
+}
+
+/// [`Config::plan_update_card_order`] の検証失敗。
+///
+/// 指定カラムが [`Config::columns`] に存在しない場合のみ発生する。effect 層は
+/// このバリアントを IPC エラー（`UnknownColumn`）へ詰め替える。
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum UpdateCardOrderPlanError {
+    /// 指定された `column_name` が [`Config::columns`] に存在しない。
+    #[error("unknown column: `{column_name}`")]
+    UnknownColumn { column_name: String },
 }
 
 /// rename 対象 1 件分。`rel_path` はプロジェクトルートからの相対パス。
