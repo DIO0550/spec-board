@@ -75,7 +75,7 @@ watcher が install されているとき、`io.write_existing` で source フ�
 書き換えると、自前 write が watcher event として戻ってきて FE に通知される
 おそれがある。それを抑止するために、書き込み前に `write_ignore.register`
 で source path を予約し、write が成功したらそのまま entry を残す
-（watcher event の handler 側で consume される）。write が失敗した場合は
+（watcher event の handler 側が `unregister` で取り除いて消費する）。write が失敗した場合は
 即 `unregister` で entry を回収して、放置しないようにする。これは
 `update_task_impl` と同型で、既存パターンを踏襲している。
 

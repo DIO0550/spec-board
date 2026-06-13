@@ -345,8 +345,8 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 
 - 書き込みパスセットは `HashSet<PathBuf>` で管理し、`Mutex` で排他制御
 - セット登録後に対応するイベントが来なかった場合の解除は呼び出し側が明示的に行う
-- **パス表現は絶対パス**で揃える。`FsEvent` から渡される `PathBuf` をそのまま key として比較するため、書き込み側も `register` 時に絶対パスを使うこと。相対表記や区切り違い（`./tasks/x.md` と `tasks/x.md` 等）は別キーとして扱われ、`consume` がヒットせずに自己書き込みが二重通知される
-- **stale entry の TTL cleanup は行わない**。書き込み後に対応するイベントが届かなかった場合の登録は、`open_project` で別プロジェクトを開いたタイミングの `WriteIgnoreRegistry::clear()` でのみ解消される。プロジェクトを開き直さずに長時間動作させても自己書き込み判定が壊れない仕様にしたい場合は、呼び出し側で `unregister` または `consume` を明示する
+- **パス表現は絶対パス**で揃える。`FsEvent` から渡される `PathBuf` をそのまま key として比較するため、書き込み側も `register` 時に絶対パスを使うこと。相対表記や区切り違い（`./tasks/x.md` と `tasks/x.md` 等）は別キーとして扱われ、`unregister` がヒットせずに自己書き込みが二重通知される
+- **stale entry の TTL cleanup は行わない**。書き込み後に対応するイベントが届かなかった場合の登録は、`open_project` で別プロジェクトを開いたタイミングの `WriteIgnoreRegistry::clear()` でのみ解消される。プロジェクトを開き直さずに長時間動作させても自己書き込み判定が壊れない仕様にしたい場合は、呼び出し側で `unregister` を明示する
 
 ## エラーハンドリング
 
@@ -408,8 +408,8 @@ pub struct WriteIgnoreRegistry;
 impl WriteIgnoreRegistry {
     pub fn new() -> Self;
     pub fn register(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
+    pub fn register_bulk(&self, paths: &[PathBuf]) -> Result<(), WriteIgnoreError>;
     pub fn should_ignore(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
-    pub fn consume(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
     pub fn unregister(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError>;
     pub fn len(&self) -> Result<usize, WriteIgnoreError>;
     pub fn is_empty(&self) -> Result<bool, WriteIgnoreError>;
@@ -428,19 +428,19 @@ pub enum WriteIgnoreError {
 | 配置 | `src-tauri/crates/fs/src/watcher/write_ignore.rs`（サブクレート `spec-board-fs`）。呼び出しは `spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry` |
 | 内部状態 | `Mutex<HashSet<PathBuf>>` で登録済みパスを保持する |
 | `register` | パスを登録し、新規追加なら `Ok(true)`、重複なら `Ok(false)` を返す |
+| `register_bulk` | 複数パスを 1 回の lock 内でまとめて登録する。空スライスは何もせず `Ok(())`。重複は `HashSet` により 1 件に丸まる |
 | `should_ignore` | パスが登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。状態は変更しない |
-| `consume` | 1回の lock 内でパスを確認して解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。ファイル監視イベントの one-shot 消費に使う |
-| `unregister` | パスを解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す |
+| `unregister` | 1回の lock 内でパスを確認して解除し、登録済みなら `Ok(true)`、未登録なら `Ok(false)` を返す。ファイル監視イベントの one-shot 消費（自己書き込み判定）と、登録のロールバックの両方に使う |
 | `clear` | 登録済みパスを全て消去する。Mutex poison 時のみ `Err(WriteIgnoreError::LockPoisoned)` を返す。プロジェクト再オープン等のライフサイクル境界で呼ぶ |
-| 解除責務 | `consume` / `unregister` による明示的な解除を呼び出し側が行う |
+| 解除責務 | `unregister` による明示的な解除を呼び出し側が行う |
 | タイムアウト | registry 自体は timeout cleanup を行わない。イベント未到達時の stale entry 防止が必要な場合は呼び出し側で解除タイミングを管理する |
 | 重複登録 | 同一 path の重複 `register` は `Ok(false)` を返し、状態を変更しない |
-| 再登録 | `consume` / `unregister` 後に同一 path が再登録された場合は、新規登録として `Ok(true)` を返す |
+| 再登録 | `unregister` 後に同一 path が再登録された場合は、新規登録として `Ok(true)` を返す |
 | パス比較 | canonicalize / normalize は行わず、渡された `PathBuf` 表現の完全一致で扱う |
 | エラー | public API では Mutex が poison された場合に `Err(WriteIgnoreError::LockPoisoned)` を返す。`CleanupWorkerSpawnFailed` は互換性維持のため enum variant として残すが、現在の `HashSet` registry 実装では返さない |
 | Tauri 依存 | なし。Tauri state やファイル監視コンポーネントへの保持・統合は呼び出し側で行う |
 
-`WriteIgnoreRegistry` は自己書き込み抑制用の registry を担当する。ファイル監視イベントを無視する判定では race-free な `consume` を使う。対応する監視イベントが届かない場合の解除は呼び出し側の責務とする。
+`WriteIgnoreRegistry` は自己書き込み抑制用の registry を担当する。ファイル監視イベントを無視する判定では race-free な `unregister`（確認と解除を 1 lock で行う）を使う。対応する監視イベントが届かない場合の解除は呼び出し側の責務とする。
 
 ### `Watcher` / `FsEvent` / `WatcherError`
 
@@ -507,7 +507,7 @@ pub enum WatcherError {
 
 - 拡張子フィルタ（`.md` 等）— `watcher_event::handler::rel_md_path` で root 配下の `.md` のみを処理
 - Tauri IPC 経由のフロントエンド emit（`task-created` / `task-updated` / `task-deleted` への変換）— `watcher_event::handler::handle_event` + `EmittingWatcherHandle`
-- `WriteIgnoreRegistry` との統合（自己書き込み抑制）— `watcher_event::handler` 内で `consume(abs_path)` を呼ぶ
+- `WriteIgnoreRegistry` との統合（自己書き込み抑制）— `watcher_event::handler` 内で `unregister(abs_path)` を呼ぶ
 
 引き続き後続 Issue で扱うもの:
 

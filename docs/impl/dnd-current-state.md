@@ -233,7 +233,7 @@ update_task IPC (command.rs:24-83)
   │
   ├─ FileIO::write_existing(&abs, file_content)
   │    └─ 書き込み失敗時のみ write_ignore.unregister(&abs) して early return
-  │       （success path では unregister せず、watcher 側で write_ignore.consume される設計）
+  │       （success path では呼び出し側では解除せず、watcher 側が write_ignore.unregister で消費する設計）
   │
   └─ commit_cache (needs_full_rebuild=true のときだけ TaskIndex を rebuild)
 ```
@@ -258,7 +258,7 @@ flowchart TD
     CC --> OK([Result.ok updated_task])
 
     WATCHER([fs watcher]) -.write event 検知.-> CONSUME{"write_ignore に<br/>登録あり?"}
-    CONSUME -->|あり| SKIP["consume してイベント抑止<br/>(自己発火回避)"]
+    CONSUME -->|あり| SKIP["unregister で取り除いてイベント抑止<br/>(自己発火回避)"]
     CONSUME -->|なし| EMIT["IPC で FE に通知"]
 
     style REG fill:#efe,stroke:#0a0
@@ -293,7 +293,7 @@ flowchart TD
 | 5 | `moveTask.ts:313-460` MoveExecution | crossColumn (90 行) / sameColumn (45 行) で 2 IPC を逐次実行 + 3 種 rollback パス | 成功 / updateTask 失敗 / updateCardOrder 失敗 (partial) の 3 終端 |
 | 6 | `LiveRegion/index.tsx:35-40` | 同文言再 announce のために id 奇数で zero-width-space を付け外し | SR 実装差吸収の hack |
 | 7 | `App.tsx:401-441` | onOptimisticApplied / onRollback を組んで moveTask に注入 | UI 通知と reducer dispatch を疎結合にした副作用。callback 例外は moveTask 内 safeCallback で握り潰し |
-| 8 | `update/command.rs` + `write_ignore` | 自前 write を watcher に無視させる register。success path では unregister せず watcher 側で `consume`、write 失敗時のみ unregister | 自前 write → watcher → IPC → reducer の自己発火ループを切る必要があるが、register / consume / 失敗時 unregister の責務が両側に分散して読み解きにくい |
+| 8 | `update/command.rs` + `write_ignore` | 自前 write を watcher に無視させる register。success path では呼び出し側で解除せず watcher 側が `unregister` で消費、write 失敗時のみ呼び出し側で `unregister` | 自前 write → watcher → IPC → reducer の自己発火ループを切る必要があるが、register / 消費 / 失敗時 unregister の責務が両側に分散して読み解きにくい |
 | 9 | `task_index.rs:341-451` plan_update | parent_changed 判定 (3 分岐) + lookup-normalized + 全体 hierarchy 再検証 + needs_full_rebuild (parent_changed のみで true) | move では status しか変えないが、共通 update 経路に乗っているため parent 関連の重いロジックも通る（move 経由なら needs_full_rebuild は常に false） |
 | 10 | docs と実装の乖離 | `docs/impl/dnd-board.md` は「楽観 UI 採用しない / 2 IPC」と書いてあるが現状は「楽観 UI 採用 + 2 IPC + 3 段 rollback」 | 設計判断の history が更新されておらず、現状の根拠が読めない |
 
