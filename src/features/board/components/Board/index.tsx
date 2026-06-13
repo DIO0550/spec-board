@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer, useRef } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
@@ -8,10 +8,6 @@ import {
   type ColumnTaskDropParams,
 } from "../Column";
 import type { MilestonesByName } from "../TaskCard";
-import {
-  ColumnDragState,
-  type ColumnDragState as ColumnDragStateT,
-} from "./columnDragState";
 import { DragAction, dragReducer } from "./dragState";
 
 /** ボードの Props */
@@ -143,31 +139,6 @@ export const Board = ({
   }, [hierarchyTasks]);
 
   const [dragState, dispatch] = useReducer(dragReducer, null);
-  // hover state は初期実装では UI に未配線のため、Board の再レンダーを避けるべく
-  // useRef に保持する。reducer は維持しつつ ref を mutate する形にし、将来
-  // hover プレースホルダ表示を導入する際に useState / useReducer に差し戻す。
-  const columnDragStateRef = useRef<ColumnDragStateT>(ColumnDragState.initial);
-
-  const handleColumnDragStart = useCallback((columnName: string) => {
-    columnDragStateRef.current = ColumnDragState.reducer(
-      columnDragStateRef.current,
-      { type: "start", fromColumnName: columnName },
-    );
-  }, []);
-
-  const handleColumnDragEnd = useCallback(() => {
-    columnDragStateRef.current = ColumnDragState.reducer(
-      columnDragStateRef.current,
-      { type: "end" },
-    );
-  }, []);
-
-  const handleColumnHover = useCallback((columnName: string) => {
-    columnDragStateRef.current = ColumnDragState.reducer(
-      columnDragStateRef.current,
-      { type: "hover", hoverColumnName: columnName },
-    );
-  }, []);
 
   const handleColumnDrop = useCallback(
     async (params: ColumnDropParams) => {
@@ -175,11 +146,6 @@ export const Board = ({
         await onColumnReorder?.(params);
       } catch {
         // unhandled rejection を防ぐため明示的に握る。エラー表示は App 側の責務。
-      } finally {
-        columnDragStateRef.current = ColumnDragState.reducer(
-          columnDragStateRef.current,
-          { type: "end" },
-        );
       }
     },
     [onColumnReorder],
@@ -253,9 +219,6 @@ export const Board = ({
             onTaskDragStart={handleDragStart}
             onTaskDragEnd={handleDragEnd}
             columnDraggable={sorted.length > 1}
-            onColumnDragStart={handleColumnDragStart}
-            onColumnDragEnd={handleColumnDragEnd}
-            onColumnHover={handleColumnHover}
             onColumnDrop={handleColumnDrop}
           />
         ))}

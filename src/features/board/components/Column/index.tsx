@@ -169,7 +169,6 @@ export const Column = ({
   // 走るのを避ける。lookup Map を共有して 1 root あたりの DFS は O(子孫数)
   // 相当に抑えられるが、最悪ケース（diamond / 深い chain）では allTasks
   // 全体でみると O(N * 平均子孫数) になる点に留意。
-  // Board レベルで Column 間共有まで持ち上げる最適化は別 Issue で扱う。
   const descendantsByFilePath = useMemo(() => {
     const map = new Map<string, readonly Task[]>();
     for (const t of allTasks) {

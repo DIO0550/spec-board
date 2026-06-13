@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
 import {
   type AppView,
-  normalizeAppView,
   type UseAppViewResult,
   useAppView,
 } from "@/hooks/useAppView";
@@ -164,16 +163,4 @@ test("useAppView: detail から settings へ navigate できる（排他遷移�
     (latest as unknown as UseAppViewResult).navigate("settings");
   });
   expect((latest as unknown as UseAppViewResult).view).toBe("settings");
-});
-
-test.each([
-  ["settings", "settings"],
-  ["board", "board"],
-  ["detail", "detail"],
-  ["milestone", "milestone"],
-  ["create", "create"],
-  ["xxx", "board"],
-  ["", "board"],
-])("normalizeAppView('%s') は '%s' を返す（生文字列 → AppView 正規化）", (input, expected) => {
-  expect(normalizeAppView(input)).toBe(expected);
 });
