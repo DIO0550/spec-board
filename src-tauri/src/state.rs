@@ -133,6 +133,9 @@ impl AppState {
     ///
     /// 初期化エントリーポイントは `new()` のみとし、`Default` 実装は意図的に
     /// 提供しない。
+    // `Default` を生やすと AppState の生成経路が `new()` と `default()` に分かれ、
+    // どちらで初期化されたかが呼び出し側で曖昧になる。アプリ状態の生成は 1 本に
+    // 限定したいので、Default を伴わない `new()` への clippy の指摘は意図的に抑止する。
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
