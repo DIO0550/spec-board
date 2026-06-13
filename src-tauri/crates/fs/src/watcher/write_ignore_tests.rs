@@ -86,7 +86,7 @@ fn unregister_missing_path_returns_false() {
 }
 
 #[test]
-fn consume_returns_true_once_and_removes_path() {
+fn unregister_returns_true_once_and_removes_path() {
     let registry = WriteIgnoreRegistry::new();
 
     registry
@@ -94,10 +94,10 @@ fn consume_returns_true_once_and_removes_path() {
         .expect("registry should be writable");
 
     assert!(registry
-        .consume("tasks/example.md")
+        .unregister("tasks/example.md")
         .expect("registry should be writable"));
     assert!(!registry
-        .consume("tasks/example.md")
+        .unregister("tasks/example.md")
         .expect("registry should be writable"));
     assert!(!registry
         .should_ignore("tasks/example.md")
@@ -106,7 +106,7 @@ fn consume_returns_true_once_and_removes_path() {
 }
 
 #[test]
-fn concurrent_consume_allows_only_one_success() {
+fn concurrent_unregister_allows_only_one_success() {
     const THREAD_COUNT: usize = 8;
 
     let registry = Arc::new(WriteIgnoreRegistry::new());
@@ -125,8 +125,8 @@ fn concurrent_consume_allows_only_one_success() {
                 barrier.wait();
 
                 registry
-                    .consume("tasks/example.md")
-                    .expect("consume should work")
+                    .unregister("tasks/example.md")
+                    .expect("unregister should work")
             })
         })
         .collect::<Vec<_>>();
