@@ -93,12 +93,7 @@ const renderHook = (args: UseDeleteFlowArgs) => {
   };
 };
 
-test("初期 state は { kind: 'idle' }", () => {
-  const probe = renderHook({ onDelete: vi.fn() });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
-});
-
-test("idle では isOpen=false / isBusy=false", () => {
+test("初期状態は閉じている（isOpen=false / isBusy=false）", () => {
   const probe = renderHook({ onDelete: vi.fn() });
   expect(probe.latest.isOpen).toBe(false);
   expect(probe.latest.isBusy).toBe(false);
@@ -150,15 +145,16 @@ test("error では isOpen=true / isBusy=false", async () => {
   expect(probe.latest.isBusy).toBe(false);
 });
 
-test("requestDelete() で confirming に遷移", () => {
+test("requestDelete() で確認ダイアログが開く（isOpen=true）", () => {
   const probe = renderHook({ onDelete: vi.fn() });
   act(() => {
     probe.latest.requestDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "confirming" });
+  expect(probe.latest.isOpen).toBe(true);
+  expect(probe.latest.isBusy).toBe(false);
 });
 
-test("cancelDelete() で idle に戻る", () => {
+test("cancelDelete() で閉じる（isOpen=false）", () => {
   const probe = renderHook({ onDelete: vi.fn() });
   act(() => {
     probe.latest.requestDelete();
@@ -166,10 +162,10 @@ test("cancelDelete() で idle に戻る", () => {
   act(() => {
     probe.latest.cancelDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isOpen).toBe(false);
 });
 
-test("confirmDelete() 成功で deleting → idle、onDelete が呼ばれる", async () => {
+test("confirmDelete() 成功で閉じる（isOpen=false）、onDelete が呼ばれる", async () => {
   const onDelete = vi.fn().mockResolvedValue(undefined);
   const probe = renderHook({ onDelete });
   act(() => {
@@ -179,12 +175,11 @@ test("confirmDelete() 成功で deleting → idle、onDelete が呼ばれる", a
     await probe.latest.confirmDelete();
   });
   expect(onDelete).toHaveBeenCalledTimes(1);
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isOpen).toBe(false);
 });
 
-test("confirmDelete() 失敗で error 状態へ遷移（reason 保持）", async () => {
-  const reason = new Error("boom");
-  const onDelete = vi.fn().mockRejectedValue(reason);
+test("confirmDelete() 失敗でダイアログは開いたまま（isOpen=true / isBusy=false）", async () => {
+  const onDelete = vi.fn().mockRejectedValue(new Error("boom"));
   const probe = renderHook({ onDelete });
   act(() => {
     probe.latest.requestDelete();
@@ -192,7 +187,8 @@ test("confirmDelete() 失敗で error 状態へ遷移（reason 保持）", async
   await act(async () => {
     await probe.latest.confirmDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "error", reason });
+  expect(probe.latest.isOpen).toBe(true);
+  expect(probe.latest.isBusy).toBe(false);
 });
 
 test("削除失敗時に console.error / warn / log が呼ばれない", async () => {
@@ -212,7 +208,7 @@ test("削除失敗時に console.error / warn / log が呼ばれない", async (
   expect(logSpy).not.toHaveBeenCalled();
 });
 
-test("deleting 中の cancelDelete は machine no-op で吸収（state そのまま）", async () => {
+test("deleting 中の cancelDelete は machine no-op で吸収（busy のまま）", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   let resolve!: () => void;
   const onDelete = vi.fn(
@@ -229,16 +225,16 @@ test("deleting 中の cancelDelete は machine no-op で吸収（state そのま
   act(() => {
     pending = probe.latest.confirmDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "deleting" });
+  expect(probe.latest.isBusy).toBe(true);
   act(() => {
     probe.latest.cancelDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "deleting" });
+  expect(probe.latest.isBusy).toBe(true);
   await act(async () => {
     resolve();
     await pending;
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isOpen).toBe(false);
 });
 
 test("deleting 中の confirmDelete 再呼び出しは machine no-op で吸収", async () => {
@@ -258,12 +254,12 @@ test("deleting 中の confirmDelete 再呼び出しは machine no-op で吸収",
   act(() => {
     pending = probe.latest.confirmDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "deleting" });
+  expect(probe.latest.isBusy).toBe(true);
   let pending2: Promise<void> | undefined;
   act(() => {
     pending2 = probe.latest.confirmDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "deleting" });
+  expect(probe.latest.isBusy).toBe(true);
   await act(async () => {
     for (const r of resolvers) {
       r();
@@ -273,14 +269,14 @@ test("deleting 中の confirmDelete 再呼び出しは machine no-op で吸収",
   });
 });
 
-test("idle 中の confirmDelete 再呼び出しは machine no-op で吸収", async () => {
+test("閉じている状態での confirmDelete 再呼び出しは machine no-op で吸収", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const onDelete = vi.fn().mockResolvedValue(undefined);
   const probe = renderHook({ onDelete });
   await act(async () => {
     await probe.latest.confirmDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isOpen).toBe(false);
 });
 
 test("同期的な onDelete でも動作する", async () => {
@@ -293,10 +289,10 @@ test("同期的な onDelete でも動作する", async () => {
     await probe.latest.confirmDelete();
   });
   expect(onDelete).toHaveBeenCalledTimes(1);
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isOpen).toBe(false);
 });
 
-test("error 状態から cancelDelete で idle に戻る", async () => {
+test("error 状態から cancelDelete で閉じる（isOpen=false）", async () => {
   const onDelete = vi.fn().mockRejectedValue(new Error("x"));
   const probe = renderHook({ onDelete });
   act(() => {
@@ -305,9 +301,9 @@ test("error 状態から cancelDelete で idle に戻る", async () => {
   await act(async () => {
     await probe.latest.confirmDelete();
   });
-  expect(probe.latest.state.kind).toBe("error");
+  expect(probe.latest.isOpen).toBe(true);
   act(() => {
     probe.latest.cancelDelete();
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isOpen).toBe(false);
 });
