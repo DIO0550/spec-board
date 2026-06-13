@@ -15,6 +15,7 @@ import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
 import type { OrphanStrategy } from "@/lib/tauri";
 import { registerToastSink } from "@/lib/tauri/toastSink";
+import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,
   EmptyState,
@@ -345,12 +346,7 @@ export const App = () => {
   // / / \ どちらにも対応する (Windows / POSIX 双方)。
   const displayedPath = state.kind === "loaded" ? state.path : null;
   const projectName =
-    displayedPath !== null
-      ? (displayedPath
-          .split(/[\\/]/)
-          .filter((seg) => seg.length > 0)
-          .pop() ?? displayedPath)
-      : undefined;
+    displayedPath !== null ? basenameOf(displayedPath) : undefined;
   const selectedTask = resolveSelectedTask(
     selectedTaskId,
     tasks,
