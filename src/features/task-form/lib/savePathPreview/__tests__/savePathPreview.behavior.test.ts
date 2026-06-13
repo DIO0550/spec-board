@@ -152,15 +152,14 @@ test("compute: title が記号のみで kebab base が空なら pending を返�
 });
 
 test.each([
-  ["a/b"],
-  ["a\\b"],
-] as const)("compute: セパレータ含み fileName %s は invalid + 該当文字を返す（BE from_explicit の拒否と整合）", (fileName) => {
+  ["a/b", "/"],
+  ["a\\b", "\\"],
+] as const)("compute: セパレータ含み fileName %s は invalid + 該当文字を返す（BE from_explicit の拒否と整合）", (fileName, char) => {
   const result = SavePathPreview.compute(computeInput({ fileName }));
-  expect(result.kind).toBe("invalid");
-  if (result.kind === "invalid") {
-    expect(result.error.code).toBe("FORBIDDEN_CHAR");
-    expect(result.error.chars.length).toBeGreaterThan(0);
-  }
+  expect(result).toMatchObject({
+    kind: "invalid",
+    error: { code: "FORBIDDEN_CHAR", chars: expect.arrayContaining([char]) },
+  });
 });
 
 test.each([
