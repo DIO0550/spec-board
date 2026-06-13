@@ -166,6 +166,10 @@ export const LabelInput = ({
               key={name}
               type="button"
               role="option"
+              // combobox+listbox では候補を Tab 順から外し、実フォーカスは input に
+              // 残したままハイライトを aria-activedescendant（input 側）で表現する。
+              id={`${listboxId}-option-${index}`}
+              tabIndex={-1}
               aria-selected={index === activeIndex}
               className={`block w-full truncate px-2 py-1 text-left text-sm text-foreground ${
                 index === activeIndex
