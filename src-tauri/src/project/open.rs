@@ -168,17 +168,10 @@ impl From<AppStateError> for OpenProjectError {
 impl From<WriteIgnoreError> for OpenProjectError {
     /// `WriteIgnoreError` を意味別に詰め直す。
     ///
-    /// - `LockPoisoned` のみ `StateLockPoisoned` として「内部状態のロック破損」
-    ///   と扱う
-    /// - `CleanupWorkerSpawnFailed` 等の非 poison 系（現実装では返らないが将来
-    ///   返り得る variant）は `ScanFailed` として io 系の致命扱いにし、
-    ///   利用者へ「ロック破損」と誤通知しない
+    /// - `LockPoisoned` を `StateLockPoisoned` として「内部状態のロック破損」と扱う
     fn from(err: WriteIgnoreError) -> Self {
         match err {
             WriteIgnoreError::LockPoisoned => OpenProjectError::StateLockPoisoned,
-            other => OpenProjectError::ScanFailed {
-                message: other.to_string(),
-            },
         }
     }
 }

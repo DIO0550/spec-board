@@ -122,9 +122,6 @@ pub enum UpdateColumnsError {
         #[source]
         source: std::io::Error,
     },
-
-    #[error("watcher の補助スレッド起動に失敗しました")]
-    WriteIgnoreWorkerSpawnFailed,
 }
 
 impl From<AppStateError> for UpdateColumnsError {
@@ -135,13 +132,8 @@ impl From<AppStateError> for UpdateColumnsError {
 
 impl From<WriteIgnoreError> for UpdateColumnsError {
     fn from(err: WriteIgnoreError) -> Self {
-        // 将来 `WriteIgnoreError` に variant が追加されても誤って StateLockPoisoned に
-        // 潰さないよう、variant ごとに明示マッピングする。
         match err {
             WriteIgnoreError::LockPoisoned => UpdateColumnsError::StateLockPoisoned,
-            WriteIgnoreError::CleanupWorkerSpawnFailed => {
-                UpdateColumnsError::WriteIgnoreWorkerSpawnFailed
-            }
         }
     }
 }
