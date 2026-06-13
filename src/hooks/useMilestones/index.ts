@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Milestone } from "@/domains/milestone";
 import { getMilestones, type MilestoneDefinition } from "@/lib/tauri";
 
@@ -53,15 +53,12 @@ export const useMilestones = (
   projectKey: string | undefined,
 ): MilestonesResource => {
   const [state, setState] = useState<ResourceState>(IDLE_STATE);
-  // reload() が現在の projectKey で再取得するために最新 key を保持する。
-  const latestKeyRef = useRef<string | undefined>(undefined);
   // 各 load 呼び出しに採番する世代 id。最新世代の応答だけが state を確定する。
   // key 比較だけでは同一 projectKey の重複ロード（初回 + reload）で古い応答が
   // 後勝ちしてしまうため、key ではなく世代 id で stale 応答を破棄する。
   const requestIdRef = useRef(0);
 
   const load = useCallback(async (key: string | undefined): Promise<void> => {
-    latestKeyRef.current = key;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     if (key === undefined) {
@@ -93,18 +90,42 @@ export const useMilestones = (
 
   useEffect(() => {
     void load(projectKey);
+    // unmount / 依存変更時に世代 id を進め、解決済みでない in-flight 応答を
+    // stale として破棄する（unmount 後の setState を防ぐ）。
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [load, projectKey]);
 
   const reload = useCallback((): Promise<void> => {
-    return load(latestKeyRef.current);
-  }, [load]);
+    return load(projectKey);
+  }, [load, projectKey]);
 
-  return {
-    milestones: state.milestones,
-    usageCounts: state.usageCounts,
-    byName: Milestone.byName(state.milestones),
-    status: state.status,
-    error: state.error,
-    reload,
-  };
+  // name → 定義の Map は milestones が変わらない限り同一参照を保ち、
+  // 消費側（memo 化された子コンポーネント）の不要再レンダーを抑える。
+  const byName = useMemo(
+    () => Milestone.byName(state.milestones),
+    [state.milestones],
+  );
+
+  // 戻り値オブジェクトも依存が変わらない限り同一参照を返し、
+  // App 側の useMemo 連鎖が意図どおり効くようにする。
+  return useMemo(
+    () => ({
+      milestones: state.milestones,
+      usageCounts: state.usageCounts,
+      byName,
+      status: state.status,
+      error: state.error,
+      reload,
+    }),
+    [
+      state.milestones,
+      state.usageCounts,
+      byName,
+      state.status,
+      state.error,
+      reload,
+    ],
+  );
 };
