@@ -83,9 +83,13 @@ pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
 /// 1. root 自身ではない（`depth() > 0`）
 /// 2. 通常ファイル
 /// 3. 拡張子 `.md`（大文字小文字非区別）
-/// 4. ファイル名がドットで始まらない
-/// 5. サイズが [`MAX_FILE_SIZE`] byte 以下
-/// 6. 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
+/// 4. サイズが [`MAX_FILE_SIZE`] byte 以下
+/// 5. 先頭 [`BINARY_PROBE_LEN`] byte に NUL byte を含まない
+///
+/// ドット始まり名（`.hidden.md` 等）の除外はここでは行わない。`scan_md_files`
+/// は walker に [`should_descend`] を `filter_entry` として渡しており、ドット始まり
+/// エントリはファイル・ディレクトリを問わず descend 段階で枝刈りされ、本関数には
+/// 到達しないため。
 ///
 /// I/O 失敗（metadata 取得失敗 / open 失敗 / read 失敗）は `false`（除外側）として扱う。
 ///
@@ -101,14 +105,6 @@ fn should_include(entry: &walkdir::DirEntry) -> bool {
     }
     let path = entry.path();
     if !is_md_extension(path) {
-        return false;
-    }
-    let starts_with_dot = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|name| name.starts_with('.'))
-        .unwrap_or(true);
-    if starts_with_dot {
         return false;
     }
     if !is_size_within_limit(entry) {

@@ -79,8 +79,8 @@ tasks_cache → watcher_handle → write_ignore` に従い、`remove_link_impl` 
 同じ順番で各 accessor を呼ぶ。
 
 watcher install 済みの場合は書き込み前に `write_ignore.register` で source path
-を予約し、write 成功後はそのまま entry を残す（watcher event の handler 側で
-consume される）。`io.write_existing` が失敗した場合は即 `unregister` で entry を
+を予約し、write 成功後はそのまま entry を残す（watcher event の handler 側が
+`unregister` で取り除いて消費する）。`io.write_existing` が失敗した場合は即 `unregister` で entry を
 回収する。`commit_cache` が `SourceVanished` で失敗した場合も同様に
 `unregister` してから返す（disk への write は完了しているため、watcher event を
 通常経路で処理して cache を disk に追従させる必要がある）。`add_link_impl` /

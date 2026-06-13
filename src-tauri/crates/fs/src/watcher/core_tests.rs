@@ -930,13 +930,14 @@ fn spawn_adapter_slides_deadline_when_same_path_arrives_within_window() {
     let (fs_rx, handle) = spawn_adapter(notify_rx);
     let path = PathBuf::from("/tmp/test_slide");
 
-    // 同一 path に 2 回連続投入。間に短い sleep を挟むのは「2 回目を
-    // 1 回目の debounce window 内に入れる」ためだが、CI 負荷で sleep
-    // が 100ms+ にブレた場合でも sliding 集約の最終結果（投入 N 回 →
-    // 発火 1 件）は変わらないため、sleep + try_recv による「まだ届い
-    // ていない」アサーションは行わず、件数のみで検証する。
+    // 同一 path に 2 回連続投入。間の sleep は「2 回目を 1 回目の
+    // debounce window (DEBOUNCE_DURATION = 100ms) 内に入れる」ため
+    // に挟む。2 回目が window を跨ぐと別イベントとして 2 件発火し
+    // 件数アサーションが崩れるため、sleep は window に対して十分
+    // 小さく（10ms）し、低速 CI でのスケジューリング遅延に対する
+    // 余裕（約 90ms）を確保する。
     notify_tx.send(Ok(modify_event(&path))).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(10));
     notify_tx.send(Ok(modify_event(&path))).unwrap();
 
     let ev = fs_rx
@@ -964,8 +965,10 @@ fn spawn_adapter_flushes_pending_on_notify_tx_drop() {
     let path = PathBuf::from("/tmp/test_flush");
 
     notify_tx.send(Ok(modify_event(&path))).unwrap();
-    // ウィンドウ満了前に上流を drop する。
-    std::thread::sleep(Duration::from_millis(30));
+    // ウィンドウ満了 (DEBOUNCE_DURATION = 100ms) より十分前に上流を
+    // drop する。drop が遅れて満了を跨ぐと先に通常発火してしまうため、
+    // sleep は短く（10ms）して低速 CI での遅延余裕を確保する。
+    std::thread::sleep(Duration::from_millis(10));
     drop(notify_tx);
 
     // flush で保留イベントが届く。
@@ -990,10 +993,12 @@ fn spawn_adapter_forwards_rescan_immediately_bypassing_pending_events() {
     let (fs_rx, handle) = spawn_adapter(notify_rx);
     let path = PathBuf::from("/tmp/test_rescan_bypass");
 
-    // Modified を投入して pending 入りさせ、20ms 後に Rescan を投入する。
-    // 保留 Modified は DEBOUNCE_DURATION (100ms) 経過後に発火する仕様。
+    // Modified を投入して pending 入りさせ、短い間隔を空けて Rescan を
+    // 投入する。保留 Modified は DEBOUNCE_DURATION (100ms) 経過後に発火
+    // する仕様のため、sleep は window より十分小さく（5ms）して、
+    // Rescan 投入前に保留が満了してしまう余地を最小化する。
     notify_tx.send(Ok(modify_event(&path))).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(5));
     notify_tx.send(Ok(ev_rescan())).unwrap();
 
     // 絶対時間ではなく **順序** で bypass 仕様を検証する。CI 負荷時の
@@ -1025,8 +1030,11 @@ fn spawn_adapter_overwrites_renamed_entry_when_modified_arrives_for_same_to_path
     let from = PathBuf::from("/tmp/test_rename_from");
     let to = PathBuf::from("/tmp/test_rename_to");
 
+    // Modify を Renamed の debounce window (DEBOUNCE_DURATION = 100ms)
+    // 内に入れるための sleep。window を跨ぐと 2 件に分かれて上書き検証
+    // が崩れるため、sleep は window より十分小さく（10ms）する。
     notify_tx.send(Ok(rename_both_event(&from, &to))).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(10));
     notify_tx.send(Ok(modify_event(&to))).unwrap();
 
     // 2 回目から 100ms 以上待って 1 件のみ届く。
@@ -1139,8 +1147,12 @@ fn watcher_emits_separate_events_when_writes_are_spaced_beyond_window() {
     let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
     drain_events(&rx, Duration::from_millis(300));
 
+    // 2 回の書き込みを別イベントとして発火させるには、間隔が debounce
+    // window (DEBOUNCE_DURATION = 100ms) を確実に超える必要がある。
+    // 実 FS / inotify の配信遅延が CI 負荷でブレても 1 件に collapse
+    // しないよう、window の数倍 (400ms) の間隔を空ける。
     std::fs::write(&target, b"v1").unwrap();
-    std::thread::sleep(Duration::from_millis(250));
+    std::thread::sleep(Duration::from_millis(400));
     std::fs::write(&target, b"v2").unwrap();
 
     let events = collect_events_for(

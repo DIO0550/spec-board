@@ -1,4 +1,8 @@
-//! Registry for write-originated paths that the file watcher can ignore.
+//! Registry of write-originated paths that the file watcher should ignore.
+//!
+//! 自前の書き込みで生じた path を一時的に登録しておき、watcher 由来の
+//! イベントを処理する側がその path を取り除いて（既登録なら自己書き込みと
+//! 判定して）二重処理を抑止するために使う。
 //!
 //! Paths are stored exactly as provided. The registry does not canonicalize,
 //! normalize, or otherwise resolve path representations.
@@ -72,17 +76,8 @@ impl WriteIgnoreRegistry {
 
     /// Atomically removes a path and returns whether it was present.
     ///
-    /// This is kept as a compatibility alias for callers that consume ignored
-    /// write events exactly once.
-    ///
-    /// # Errors
-    ///
-    /// - 内部の Mutex が poison 状態になっている場合 → [`WriteIgnoreError::LockPoisoned`]
-    pub fn consume(&self, path: impl AsRef<Path>) -> Result<bool, WriteIgnoreError> {
-        self.unregister(path)
-    }
-
-    /// Removes a path and returns whether it was present.
+    /// 自己書き込みイベントを 1 度だけ消費する用途（既登録なら `true` を返して
+    /// 取り除く）と、登録のロールバック用途の両方で使う単一の取り除き API。
     ///
     /// # Errors
     ///
@@ -128,8 +123,9 @@ impl WriteIgnoreRegistry {
 
     /// Test 用に内部 Mutex を poison させる。
     ///
-    /// `update_columns_impl` の preflight / register 経路で `WriteIgnoreError::LockPoisoned`
-    /// → `StateLockPoisoned` 変換を effect 層レベルで再現するために公開する。
+    /// 呼び出し側の preflight / register 経路で `WriteIgnoreError::LockPoisoned`
+    /// が返り、それを呼び出し側のエラー型へ変換する挙動を effect 層レベルで
+    /// 再現するために公開する。
     /// `cfg(test)` 内または `test-utils` feature 有効時のみコンパイルされ、本番 build では存在しない。
     #[cfg(any(test, feature = "test-utils"))]
     pub fn poison_lock_for_testing(&self) {

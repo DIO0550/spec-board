@@ -129,10 +129,10 @@ fn rel_md_path_lenient(abs_path: &Path, root: &Path) -> Option<TaskFilePath> {
     Some(normalized_task_file_path(rel))
 }
 
-/// write_ignore registry を consume し、自己書き込みなら `true` を返して
-/// 呼び出し側に skip させる。
+/// write_ignore registry から該当 path を取り除き、自己書き込みなら `true` を
+/// 返して呼び出し側に skip させる。
 fn try_consume_write_ignore(ctx: &AdapterContext, abs_path: &Path) -> Result<bool, HandleError> {
-    Ok(ctx.state.write_ignore().consume(abs_path)?)
+    Ok(ctx.state.write_ignore().unregister(abs_path)?)
 }
 
 fn handle_upsert(
