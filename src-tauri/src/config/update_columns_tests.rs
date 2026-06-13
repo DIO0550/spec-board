@@ -486,12 +486,9 @@ fn plan_card_order_swap_a_to_b_and_b_to_a_preserves_both_entries() {
         renames: Some(vec![rename("A", "B"), rename("B", "A")]),
         ..Default::default()
     };
-    // Both columns "A" → "B" and "B" → "A" yields renamed columns [B, A]; but
-    // this creates DuplicateColumnName because two columns share a name after
-    // applying renames. Actually wait: rename A→B and B→A means we keep two
-    // distinct names. Let's compute:
-    //   columns ["A", "B"] applies rename_map {"A":"B","B":"A"} → ["B","A"]
-    // No duplicates. The card_order keys are translated to {"B":[a.md], "A":[b.md]}.
+    // A→B と B→A の相互 rename は重複を生まず、columns ["A", "B"] は
+    // rename_map {"A":"B","B":"A"} の適用で [B, A] になる。
+    // card_order のキーも入れ替わり {"B":[a.md], "A":[b.md]} になる。
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
     assert_eq!(
         plan.new_config.card_order.get("B").unwrap(),
