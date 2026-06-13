@@ -12,10 +12,7 @@ use crate::task::add_link::args::AddLinkArgs;
 use crate::task::add_link::error::{AddLinkCommandError, AddLinkError};
 use crate::task::frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
-use crate::task::task_index::{
-    find_task_by_normalized, find_task_mut_by_normalized, AddLinkOutcome, Task, TaskIndex,
-};
-use crate::task::warning::has_parent_cycle_warning;
+use crate::task::task_index::{AddLinkOutcome, Task, TaskIndex};
 
 /// `add_link` Tauri command 薄層。
 #[tauri::command]
@@ -113,73 +110,26 @@ pub(crate) fn add_link_impl(
     }
 }
 
-/// snapshot 取得から本関数呼出までの間に他コマンドが cache を変更すると、
-/// ディスクは更新済みなのに source / target のいずれかが cache から消えている
-/// ケースが起こり得る。source / target 両方の存在を **先に確認** してから
-/// mutate に入り、`TargetVanished` 時に source だけ書き換わる部分更新を防ぐ。
+/// cache lock を取得し、cache 差分更新を `TaskIndex` の aggregate メソッドに委譲する。
+///
+/// source / target の存在確認・派生フィールドの保持マージ・cycle member の
+/// `parent=None` 維持・target `reverse_links` への append といったドメインロジックは
+/// すべて `TaskIndex::commit_add_link_into_cache` に閉じる。effect 層はロック取得と
+/// エラーの詰め替えのみを担う。
 fn commit_cache(
     state: &AppState,
     source_rel: &Path,
     target_normalized: &str,
     updated_task: &Task,
 ) -> Result<Task, AddLinkCommandError> {
-    let source_key = source_rel.to_path_buf();
-    let target_norm = target_normalized.to_string();
-    let updated = updated_task.clone();
-
     let returned: Result<Task, AddLinkError> =
         state.with_tasks_cache_mut(|cache: &mut HashMap<_, Task>| {
-            if !cache.contains_key(&source_key) {
-                return Err(AddLinkError::SourceVanished {
-                    path: source_key.to_string_lossy().into_owned(),
-                });
-            }
-            if find_task_by_normalized(cache, &target_norm).is_none() {
-                return Err(AddLinkError::TargetVanished {
-                    path: target_norm.clone(),
-                });
-            }
-
-            // 派生フィールド (children / reverse_links / warnings) を保持しつつ
-            // parse 由来フィールドのみ上書きする。`task_from_parsed` は children /
-            // reverse_links を空で返し、`ParentNotFound` のような downstream の
-            // 派生 warning も再生成しない。add_link は parent / title / status /
-            // labels / extras を一切変更せず links のみ追加するため、warnings は
-            // 既存値をそのまま保持すれば正しい状態が維持される。
-            //
-            // parent は通常は `updated_task` 側（disk と一致した値）を採用するが、
-            // 既存 cache が ParentCycle warning を持つ場合に限り cache 側の
-            // `parent=None` を維持する。これは scan で循環判定されたノードの
-            // cycle 状態を link 追加程度の操作で崩さないため。ファイル本体が
-            // 外部編集で変わった場合は watcher 再 scan で再判定される。
-            let source_entry = cache
-                .get_mut(&source_key)
-                .expect("source presence verified above");
-            let was_cycle_member = has_parent_cycle_warning(&source_entry.warnings);
-            let preserved_children = std::mem::take(&mut source_entry.children);
-            let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
-            let preserved_warnings = std::mem::take(&mut source_entry.warnings);
-            *source_entry = Task {
-                children: preserved_children,
-                reverse_links: preserved_reverse,
-                warnings: preserved_warnings,
-                ..updated.clone()
-            };
-            source_entry.preserve_parent_cycle_state(was_cycle_member, false);
-            let returned_task = source_entry.clone();
-
-            // target の reverse_links に source を append。既に push 済みなら冪等に skip。
-            let target_task = find_task_mut_by_normalized(cache, &target_norm)
-                .expect("target presence verified above");
-            if !target_task
-                .reverse_links
-                .iter()
-                .any(|p| p == &updated.file_path)
-            {
-                target_task.reverse_links.push(updated.file_path.clone());
-            }
-
-            Ok(returned_task)
+            TaskIndex::commit_add_link_into_cache(
+                cache,
+                source_rel,
+                target_normalized,
+                updated_task,
+            )
         })?;
 
     Ok(returned?)

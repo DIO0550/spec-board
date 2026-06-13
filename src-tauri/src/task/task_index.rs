@@ -32,7 +32,9 @@ use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_title::TaskTitle;
 use crate::task::update::error::UpdateTaskError;
-use crate::task::warning::{ensure_parent_cycle_warning, TaskWarning, TaskWarningCode};
+use crate::task::warning::{
+    ensure_parent_cycle_warning, has_parent_cycle_warning, TaskWarning, TaskWarningCode,
+};
 
 const MAX_PARENT_DEPTH: usize = 20;
 
@@ -436,6 +438,121 @@ impl TaskIndex {
 
         cache.insert(key, new_task.clone());
         new_task
+    }
+
+    /// `add_link` の cache commit を行う差分更新 aggregate メソッド。
+    ///
+    /// snapshot 取得から本メソッド呼出までの間に他コマンドが cache を変更すると、
+    /// ディスクは更新済みなのに source / target のいずれかが cache から消えている
+    /// ケースが起こり得る。source / target 両方の存在を **先に確認** してから
+    /// mutate に入り、`TargetVanished` 時に source だけ書き換わる部分更新を防ぐ。
+    ///
+    /// 派生フィールド（children / reverse_links / warnings）の保持マージ、cycle
+    /// member の `parent=None` 維持判定、target の `reverse_links` への append は
+    /// aggregate の不変条件であり、この内部に閉じ込める。
+    ///
+    /// 振る舞い:
+    ///
+    /// 1. source が cache に無ければ `SourceVanished`、target が無ければ
+    ///    `TargetVanished` を返す（どちらも mutate 前に確認）。
+    /// 2. source エントリの派生フィールド（children / reverse_links / warnings）は
+    ///    既存値を保持しつつ、parse 由来フィールドのみ `updated_task` で上書きする。
+    ///    `task_from_parsed` は children / reverse_links を空で返し downstream の
+    ///    派生 warning も再生成しないが、add_link は parent / title / status /
+    ///    labels / extras を一切変更せず links のみ追加するため、warnings は既存値の
+    ///    保持で正しい状態が維持される。
+    /// 3. parent は通常 `updated_task` 側（disk と一致した値）を採用するが、既存
+    ///    cache が ParentCycle warning を持つ場合に限り cache 側の `parent=None` を
+    ///    維持する。scan で循環判定されたノードの cycle 状態を link 追加程度の操作で
+    ///    崩さないため。ファイル本体が外部編集で変わった場合は watcher 再 scan で
+    ///    再判定される。
+    /// 4. target の `reverse_links` に source を append する（既に push 済みなら
+    ///    冪等に skip）。
+    pub(crate) fn commit_add_link_into_cache(
+        cache: &mut HashMap<PathBuf, Task>,
+        source_key: &Path,
+        target_normalized: &str,
+        updated_task: &Task,
+    ) -> Result<Task, AddLinkError> {
+        let key = source_key.to_path_buf();
+        if !cache.contains_key(&key) {
+            return Err(AddLinkError::SourceVanished {
+                path: source_key.to_string_lossy().into_owned(),
+            });
+        }
+        if find_task_by_normalized(cache, target_normalized).is_none() {
+            return Err(AddLinkError::TargetVanished {
+                path: target_normalized.to_string(),
+            });
+        }
+
+        let returned_task = overwrite_preserving_derived(cache, &key, updated_task);
+
+        // target の reverse_links に source を append。既に push 済みなら冪等に skip。
+        let target_task =
+            find_task_mut(cache, target_normalized).expect("target presence verified above");
+        if !target_task
+            .reverse_links
+            .iter()
+            .any(|p| p == &updated_task.file_path)
+        {
+            target_task
+                .reverse_links
+                .push(updated_task.file_path.clone());
+        }
+
+        Ok(returned_task)
+    }
+
+    /// `remove_link` の cache commit を行う差分更新 aggregate メソッド。
+    ///
+    /// snapshot 取得から本メソッド呼出までの間に他コマンドが cache を変更すると、
+    /// source が cache から消えていることがある。先に source の存在確認をしてから
+    /// mutate に入る。target は cache に存在しなくても fail にしない（dangling link
+    /// 掃除を許容するため、`commit_add_link_into_cache` と異なる）。
+    ///
+    /// 振る舞い:
+    ///
+    /// 1. source が cache に無ければ `SourceVanished` を返す。
+    /// 2. source エントリの派生フィールド（children / reverse_links / warnings）を
+    ///    保持しつつ parse 由来フィールドのみ `updated_task` で上書きする。remove_link
+    ///    は parent / title / status / labels / extras を変更せず links を縮めるだけの
+    ///    ため、warnings は既存値の保持で正しい状態が維持される。cycle member の
+    ///    `parent=None` 維持判定は add_link と同様。
+    /// 3. target が cache に存在すれば、その `reverse_links` から source を除去する。
+    ///    存在しない場合は orphan link 掃除のユースケースを許容して skip する。
+    ///    self-link（source == target）のケースでは source 自身の reverse_links が
+    ///    retain されるため、戻り値は target update 後に cache から再取得する。
+    pub(crate) fn commit_remove_link_into_cache(
+        cache: &mut HashMap<PathBuf, Task>,
+        source_key: &Path,
+        target_normalized: &str,
+        updated_task: &Task,
+    ) -> Result<Task, RemoveLinkError> {
+        let key = source_key.to_path_buf();
+        if !cache.contains_key(&key) {
+            return Err(RemoveLinkError::SourceVanished {
+                path: source_key.to_string_lossy().into_owned(),
+            });
+        }
+
+        overwrite_preserving_derived(cache, &key, updated_task);
+
+        // target の reverse_links から source を除去。cache に target が存在しない
+        // 場合は orphan link 掃除のユースケースを許容するため fail にせず skip する。
+        if let Some(target_task) = find_task_mut(cache, target_normalized) {
+            target_task
+                .reverse_links
+                .retain(|p| p != &updated_task.file_path);
+        }
+
+        // self-link では上の retain が source 自身の reverse_links を縮めるため、
+        // 戻り値は target update 後の最新値を cache から再取得する。
+        let returned_task = cache
+            .get(&key)
+            .expect("source presence verified above")
+            .clone();
+        Ok(returned_task)
     }
 
     /// 新規 task 作成の **planning** を行う aggregate メソッド。
@@ -1427,6 +1544,39 @@ fn push_parent_not_found(task: &mut Task) {
     });
 }
 
+/// link commit 共通の source エントリ上書きロジック。
+///
+/// cache 上の既存 source エントリから派生フィールド（children / reverse_links /
+/// warnings）を退避し、parse 由来フィールドのみ `updated_task` で上書きする。
+/// parent は通常 `updated_task` 側を採用するが、既存 cache が ParentCycle warning を
+/// 持つ場合に限り cache 側の `parent=None`（cycle 状態）を維持する。cycle 状態の
+/// 引き継ぎ判定・preserve は `Task::preserve_parent_cycle_state` に一元化されており、
+/// ここではその呼び出しに委譲する。
+///
+/// 呼び出し側は `key` が cache に存在することを事前に検証している前提。上書き後の
+/// source エントリの clone を返す。
+fn overwrite_preserving_derived(
+    cache: &mut HashMap<PathBuf, Task>,
+    key: &PathBuf,
+    updated_task: &Task,
+) -> Task {
+    let source_entry = cache
+        .get_mut(key)
+        .expect("source presence verified by caller");
+    let was_cycle_member = has_parent_cycle_warning(&source_entry.warnings);
+    let preserved_children = std::mem::take(&mut source_entry.children);
+    let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
+    let preserved_warnings = std::mem::take(&mut source_entry.warnings);
+    *source_entry = Task {
+        children: preserved_children,
+        reverse_links: preserved_reverse,
+        warnings: preserved_warnings,
+        ..updated_task.clone()
+    };
+    source_entry.preserve_parent_cycle_state(was_cycle_member, false);
+    source_entry.clone()
+}
+
 fn find_task_mut<'a>(
     cache: &'a mut HashMap<PathBuf, Task>,
     normalized: &str,
@@ -1436,25 +1586,14 @@ fn find_task_mut<'a>(
 
 /// cache から `normalized` 一致の `Task` を immutable で引き当てる helper。
 ///
-/// `find_task_mut_by_normalized` の immutable 版。effect 層の cache commit で
-/// mutate 前の事前検証（target 存在確認）に使う想定。複数 `&mut` を同時に取れない
-/// `HashMap` の制約下で「検証 → mutate」の 2 段構成を可能にする。
-pub(crate) fn find_task_by_normalized<'a>(
+/// `find_task_mut` の immutable 版。link commit で mutate 前の事前検証（target 存在
+/// 確認）に使う。複数 `&mut` を同時に取れない `HashMap` の制約下で「検証 → mutate」の
+/// 2 段構成を可能にする。
+fn find_task_by_normalized<'a>(
     cache: &'a HashMap<PathBuf, Task>,
     normalized: &str,
 ) -> Option<&'a Task> {
     cache.get(&PathBuf::from(normalized))
-}
-
-/// cache から `normalized` 一致の `Task` を mutable で引き当てる helper。
-///
-/// `find_task_mut` を task ドメイン外（add_link effect 層など）から呼べるよう
-/// `pub(crate)` で再公開する。
-pub(crate) fn find_task_mut_by_normalized<'a>(
-    cache: &'a mut HashMap<PathBuf, Task>,
-    normalized: &str,
-) -> Option<&'a mut Task> {
-    find_task_mut(cache, normalized)
 }
 
 #[cfg(test)]
