@@ -76,6 +76,37 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
+impl Task {
+    /// scan で cycle member と判定された task の正規化状態（parent=None +
+    /// parentCycle warning）を、disk 由来の生の値で再構築したこの task に引き継ぐ。
+    ///
+    /// effect 層（update / add_link / remove_link / watcher_event）が cache を
+    /// 差分更新する際、非 parent 変更や link 操作で循環判定が崩れないよう、直前の
+    /// cache 値が cycle member だったかどうか（`was_cycle_member`）を踏まえて
+    /// parent と warning を上書きする。判定→preserve の規則を 1 箇所に集約し、
+    /// 経路ごとの挙動差分を防ぐ。
+    ///
+    /// `drop_when_parent_absent` が true のとき、この task の parent が None なら
+    /// 外部編集で親参照が消えて循環が解消されたとみなし、引き継がない。watcher
+    /// 経由の disk 反映だけがこの解消判定を行い、新規循環の検出はフル再 scan に
+    /// 委ねる。それ以外の経路は disk と一致した parent を握り潰してでも cycle
+    /// 状態を維持する（false を渡す）。
+    pub fn preserve_parent_cycle_state(
+        &mut self,
+        was_cycle_member: bool,
+        drop_when_parent_absent: bool,
+    ) {
+        if !was_cycle_member {
+            return;
+        }
+        if drop_when_parent_absent && self.parent.is_none() {
+            return;
+        }
+        self.parent = None;
+        ensure_parent_cycle_warning(&mut self.warnings);
+    }
+}
+
 /// 親チェーン違反の理由（循環 / 深さ超過）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParentHierarchyErrorReason {
@@ -1457,6 +1488,10 @@ mod task_index_clear_children_tests;
 #[cfg(test)]
 #[path = "task_index_plan_delete_abort_tests.rs"]
 mod task_index_plan_delete_abort_tests;
+
+#[cfg(test)]
+#[path = "task_index_cycle_preservation_tests.rs"]
+mod task_index_cycle_preservation_tests;
 
 #[cfg(test)]
 #[path = "task_index_plan_add_link_tests.rs"]
