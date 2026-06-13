@@ -1,5 +1,25 @@
-import type { MilestoneDefinition, MilestoneState } from "@/lib/tauri";
 import type { Task } from "@/types/task";
+
+/** マイルストーンの開閉状態。`open` / `closed` 以外の未知値も保持する。 */
+export type MilestoneState = "open" | "closed" | (string & {});
+
+/** マイルストーンマスタ定義 1 件。`name` のみ必須、他は任意。 */
+export type MilestoneDefinition = {
+  /** マイルストーン識別子（完全一致・未正規化）。frontmatter `milestone` から参照される */
+  name: string;
+  /** 人間可読な表示名。未指定時は表示層が name をフォールバックする */
+  title?: string;
+  /** マイルストーンの説明文 */
+  description?: string;
+  /** 期日（ISO 8601 推奨・文字列のまま保持） */
+  due?: string;
+  /** 表示順序（昇順・非負整数） */
+  order?: number;
+  /** 開閉状態（open / closed 等。未知値も保持） */
+  state?: MilestoneState;
+  /** 最終更新日時（ISO 8601 推奨・文字列のまま保持） */
+  updated?: string;
+};
 
 /** マイルストーンの表示・参照に使う共有ドメイン companion。 */
 export const Milestone = {
