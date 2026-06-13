@@ -1,19 +1,19 @@
 use super::*;
 
 // ─────────────────────────────────────────────────────────
-// Ok(None) 系（フロントマター不在）：BL-003 / Cycle 1, 5, 12-1
+// Ok(None) 系（フロントマター不在）
 // ─────────────────────────────────────────────────────────
 #[test]
 fn returns_none_when_no_frontmatter() {
     let cases: Vec<(&str, &str)> = vec![
-        ("# heading\nbody", "Cycle 1: 先頭が --- でない"),
+        ("# heading\nbody", "先頭が --- でない"),
         (
             "---\ntitle: A\n本文に --- が含まれない\n",
-            "Cycle 5: 2 つ目の --- が欠落",
+            "2 つ目の --- が欠落",
         ),
         (
             "---\ntitle: A\n...\nbody\n",
-            "Cycle 12-1: ... は closing delimiter として扱わず、---が無い",
+            "... は closing delimiter として扱わず、--- が無い",
         ),
         ("", "空入力"),
     ];
@@ -31,7 +31,7 @@ fn returns_none_when_no_frontmatter() {
 // Ok(Some) 系（正常パース）
 // ─────────────────────────────────────────────────────────
 #[test]
-fn cycle2_minimum_title_and_status() {
+fn minimum_title_and_status() {
     let input = "---\ntitle: A\nstatus: TODO\n---\nbody text\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(parsed.frontmatter.extras.len(), 2);
@@ -47,7 +47,7 @@ fn cycle2_minimum_title_and_status() {
 }
 
 #[test]
-fn cycle3_unknown_fields_preserved_in_extras() {
+fn unknown_fields_preserved_in_extras() {
     let input = "---\nfoo: 1\nbar: [a, b]\n---\n";
     let parsed = parse(input).unwrap().unwrap();
     assert!(parsed.frontmatter.extras.contains_key("foo"));
@@ -56,7 +56,7 @@ fn cycle3_unknown_fields_preserved_in_extras() {
 }
 
 #[test]
-fn cycle6_empty_frontmatter_returns_default_frontmatter() {
+fn empty_frontmatter_returns_default_frontmatter() {
     let input = "---\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
     assert!(parsed.frontmatter.extras.is_empty());
@@ -64,7 +64,7 @@ fn cycle6_empty_frontmatter_returns_default_frontmatter() {
 }
 
 #[test]
-fn cycle7_empty_body() {
+fn empty_body() {
     let input = "---\ntitle: A\n---\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(
@@ -75,7 +75,7 @@ fn cycle7_empty_body() {
 }
 
 #[test]
-fn cycle8_strips_leading_bom() {
+fn strips_leading_bom() {
     let input = "\u{FEFF}---\ntitle: A\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(
@@ -86,7 +86,7 @@ fn cycle8_strips_leading_bom() {
 }
 
 #[test]
-fn cycle9_normalizes_crlf_to_lf() {
+fn normalizes_crlf_to_lf() {
     let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(
@@ -101,7 +101,7 @@ fn cycle9_normalizes_crlf_to_lf() {
 }
 
 #[test]
-fn cycle10_allows_trailing_whitespace_on_fence() {
+fn allows_trailing_whitespace_on_fence() {
     let input = "--- \ntitle: A\n--- \nbody\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(
@@ -112,7 +112,7 @@ fn cycle10_allows_trailing_whitespace_on_fence() {
 }
 
 #[test]
-fn cycle12_2_dot_dot_dot_is_not_treated_as_fence() {
+fn dot_dot_dot_is_not_treated_as_fence() {
     // ... は区切りとして扱わず、続く --- を closing とみなす。
     let input = "---\ntitle: A\n...\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
@@ -124,7 +124,7 @@ fn cycle12_2_dot_dot_dot_is_not_treated_as_fence() {
 }
 
 // ─────────────────────────────────────────────────────────
-// Priority 系（PL-005）：Cycle 13〜20
+// Priority 系
 // ─────────────────────────────────────────────────────────
 #[test]
 fn priority_normalizes_case_insensitively() {
@@ -161,7 +161,7 @@ fn priority_falls_back_to_none_for_unknown_string() {
         ("---\npriority: \"\"\n---\n", "空文字列"),
         (
             "---\npriority: None\n---\n",
-            "\"None\" 文字列（task-format-spec.md 行 68 と整合）",
+            "\"None\" 文字列は優先度未指定として扱う",
         ),
     ];
 
@@ -231,7 +231,7 @@ fn priority_duplicate_key_returns_invalid_yaml() {
 }
 
 // ─────────────────────────────────────────────────────────
-// labels 系（PL-006）：Cycle 21〜26 + 35
+// labels 系
 // ─────────────────────────────────────────────────────────
 #[test]
 fn labels_normalize_single_string_to_one_element_vec() {
@@ -345,7 +345,7 @@ fn labels_duplicate_key_returns_invalid_yaml() {
 }
 
 // ─────────────────────────────────────────────────────────
-// links 系（PL-009 前段）：Cycle 27〜32 + 36
+// links 系
 // ─────────────────────────────────────────────────────────
 #[test]
 fn links_normalize_single_string_to_one_element_vec() {
@@ -455,7 +455,7 @@ fn links_duplicate_key_returns_invalid_yaml() {
 }
 
 // ─────────────────────────────────────────────────────────
-// 共存 / 補助 系：Cycle 33〜34
+// 共存 / 補助 系
 // ─────────────────────────────────────────────────────────
 #[test]
 fn labels_and_links_coexist_independently() {
@@ -484,18 +484,15 @@ fn labels_and_links_work_with_bom_and_crlf() {
 }
 
 // ─────────────────────────────────────────────────────────
-// Err 系（PL-002）：Cycle 4, 11
+// Err 系（不正 YAML / mapping 以外のルート）
 // ─────────────────────────────────────────────────────────
 #[test]
 fn returns_invalid_yaml_for_malformed_or_non_mapping_root() {
     let cases: Vec<(&str, &str)> = vec![
-        (
-            "---\nkey: : invalid\n---\nbody\n",
-            "Cycle 4: 不正 YAML 構文",
-        ),
-        ("---\n[a, b]\n---\nbody\n", "Cycle 11-1: ルートが sequence"),
-        ("---\n42\n---\nbody\n", "Cycle 11-2: ルートが scalar"),
-        ("---\nnull\n---\nbody\n", "Cycle 11-3: ルートが null"),
+        ("---\nkey: : invalid\n---\nbody\n", "不正 YAML 構文"),
+        ("---\n[a, b]\n---\nbody\n", "ルートが sequence"),
+        ("---\n42\n---\nbody\n", "ルートが scalar"),
+        ("---\nnull\n---\nbody\n", "ルートが null"),
     ];
 
     for (input, label) in cases {
@@ -508,10 +505,10 @@ fn returns_invalid_yaml_for_malformed_or_non_mapping_root() {
 }
 
 // ─────────────────────────────────────────────────────────
-// parse_bytes 系（BOM / UTF-8 検証）：Cycle 38〜45
+// parse_bytes 系（BOM / UTF-8 検証）
 // ─────────────────────────────────────────────────────────
 
-/// Cycle 38: BOM あり / BOM なし いずれの UTF-8 入力も正常パースされること。
+/// BOM あり / BOM なし いずれの UTF-8 入力も正常パースされること。
 /// BOM 付き入力は 1 個剥がされ、内部の `parse(&str)` と同じ結果を返す。
 #[test]
 fn parse_bytes_strips_utf8_bom_and_parses() {
@@ -531,7 +528,7 @@ fn parse_bytes_strips_utf8_bom_and_parses() {
     }
 }
 
-/// Cycle 39: Shift-JIS 日本語入力（UTF-8 として invalid）は
+/// Shift-JIS 日本語入力（UTF-8 として invalid）は
 /// `Err(FrontmatterError::InvalidEncoding(_))` を返すこと。
 /// 入力中の `\x83^\x83C\x83g\x83\x8B` は「タイトル」を Shift-JIS で表現したバイト列。
 #[test]
@@ -544,7 +541,7 @@ fn parse_bytes_rejects_shift_jis() {
     );
 }
 
-/// Cycle 40 (characterization): UTF-16 LE BOM (FF FE) / UTF-16 BE BOM (FE FF) で
+/// UTF-16 LE BOM (FF FE) / UTF-16 BE BOM (FE FF) で
 /// 始まる入力は `Err(InvalidEncoding)` を返すこと。
 #[test]
 fn parse_bytes_rejects_utf16_bom() {
@@ -562,7 +559,7 @@ fn parse_bytes_rejects_utf16_bom() {
     }
 }
 
-/// Cycle 41 (characterization): 空バイト列 / BOM のみ / 部分 BOM の境界挙動。
+/// 空バイト列 / BOM のみ / 部分 BOM の境界挙動。
 #[test]
 fn parse_bytes_handles_short_inputs() {
     // 空入力: frontmatter なし扱い
@@ -587,7 +584,7 @@ fn parse_bytes_handles_short_inputs() {
     );
 }
 
-/// Cycle 42 (characterization): BOM が 2 個連続する入力でも正常パースできること。
+/// BOM が 2 個連続する入力でも正常パースできること。
 /// バイト段階で 1 個 + 文字列段階の `normalize` で U+FEFF 1 個 = 合計 2 個剥がれる仕様を固定する。
 #[test]
 fn parse_bytes_with_repeated_bom_is_parsed() {
@@ -610,7 +607,7 @@ fn parse_bytes_with_repeated_bom_is_parsed() {
     assert_eq!(parsed.body, "body\n");
 }
 
-/// Cycle 43 (characterization): 純 ASCII / BOM なし UTF-8 マルチバイト入力が正常パースされること。
+/// 純 ASCII / BOM なし UTF-8 マルチバイト入力が正常パースされること。
 #[test]
 fn parse_bytes_accepts_utf8_without_bom() {
     let multibyte = "---\ntitle: \u{3042}\n---\nbody\n";
@@ -631,7 +628,7 @@ fn parse_bytes_accepts_utf8_without_bom() {
     }
 }
 
-/// Cycle 44 (characterization): BOM なし or 単一 BOM までの valid UTF-8 入力で
+/// BOM なし or 単一 BOM までの valid UTF-8 入力で
 /// `parse_bytes(s.as_bytes())` の結果が `parse(s)` の結果と一致すること。
 /// `FrontmatterError` は `PartialEq` 未導出のため `unwrap()` 後の `Option<Parsed>` を比較する。
 #[test]
@@ -640,7 +637,7 @@ fn parse_bytes_is_equivalent_to_parse_for_valid_utf8() {
     assert_eq!(parse_bytes(s.as_bytes()).unwrap(), parse(s).unwrap());
 }
 
-/// Cycle 45 (characterization): BOM 付きバイト列入力 `parse_bytes(b"\xEF\xBB\xBF...")` と
+/// BOM 付きバイト列入力 `parse_bytes(b"\xEF\xBB\xBF...")` と
 /// U+FEFF 付き文字列入力 `parse("\u{FEFF}...")` の結果が一致すること（境界の冪等性）。
 #[test]
 fn parse_bytes_with_bom_yields_same_result_as_parse_with_bom_str() {
@@ -654,9 +651,7 @@ fn parse_bytes_with_bom_yields_same_result_as_parse_with_bom_str() {
 }
 
 // ─────────────────────────────────────────────────────────
-// serialize 系（フィールド順序 / 空値省略 / ラウンドトリップ）：Cycle 47〜55
-//   ※ Cycle 46 は extras を `serde_yaml_ng::Mapping` へ置換するための独立リファクタリング
-//     Cycle で、serialize 関数自体はまだ存在しないため新規テストは追加しない。
+// serialize 系（フィールド順序 / 空値省略 / ラウンドトリップ）
 // ─────────────────────────────────────────────────────────
 
 /// 出力中に複数キーが期待順序で現れることを assert するヘルパー。
@@ -680,7 +675,7 @@ fn assert_keys_in_order(output: &str, keys: &[&str]) {
     }
 }
 
-/// Cycle 47: title + status のみの最小入力でラウンドトリップが成立する。
+/// title + status のみの最小入力でラウンドトリップが成立する。
 #[test]
 fn serialize_minimum_title_status_round_trips() {
     let original = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
@@ -690,7 +685,7 @@ fn serialize_minimum_title_status_round_trips() {
     assert_eq!(parsed, reparsed);
 }
 
-/// Cycle 48: priority Some の場合は先頭大文字（High / Medium / Low）で出力される。
+/// priority Some の場合は先頭大文字（High / Medium / Low）で出力される。
 #[test]
 fn serialize_emits_priority_with_leading_capital_when_some() {
     let cases: Vec<(&str, &str, &str)> = vec![
@@ -721,7 +716,7 @@ fn serialize_emits_priority_with_leading_capital_when_some() {
     }
 }
 
-/// Cycle 48: priority キーが存在しない場合は priority 行を出力しない。
+/// priority キーが存在しない場合は priority 行を出力しない。
 #[test]
 fn serialize_omits_priority_line_when_none() {
     let input = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
@@ -733,7 +728,7 @@ fn serialize_omits_priority_line_when_none() {
     );
 }
 
-/// Cycle 48: parse 時点で `None` 化された不正値（例: `urgent`）は再 serialize で消失する。
+/// parse 時点で `None` 化された不正値（例: `urgent`）は再 serialize で消失する。
 /// 元 YAML の不正値は復元されない仕様。
 #[test]
 fn serialize_drops_invalid_priority_value_due_to_parse_normalization() {
@@ -747,7 +742,7 @@ fn serialize_drops_invalid_priority_value_due_to_parse_normalization() {
     );
 }
 
-/// Cycle 49: labels 非空配列は `Value::Sequence` として出力される。
+/// labels 非空配列は `Value::Sequence` として出力される。
 #[test]
 fn serialize_emits_labels_as_sequence_when_non_empty() {
     let input = "---\ntitle: A\nlabels: [bug, fix]\n---\nbody\n";
@@ -764,7 +759,7 @@ fn serialize_emits_labels_as_sequence_when_non_empty() {
     );
 }
 
-/// Cycle 49: labels 空配列の場合は `labels:` 行を出力しない。
+/// labels 空配列の場合は `labels:` 行を出力しない。
 #[test]
 fn serialize_omits_labels_line_when_empty() {
     let cases: Vec<(&str, &str)> = vec![
@@ -782,7 +777,7 @@ fn serialize_omits_labels_line_when_empty() {
     }
 }
 
-/// Cycle 50: parent は labels と links の間（typed 位置）に出力される。
+/// parent は labels と links の間（typed 位置）に出力される。
 #[test]
 fn serialize_places_parent_between_labels_and_links() {
     let input = "---\ntitle: A\nstatus: TODO\nlabels: [bug]\nparent: tasks/p.md\nlinks: [a.md]\n---\nbody\n";
@@ -791,7 +786,7 @@ fn serialize_places_parent_between_labels_and_links() {
     assert_keys_in_order(&output, &["title", "status", "labels", "parent", "links"]);
 }
 
-/// Cycle 51: links 非空配列は `Value::Sequence` として出力される。
+/// links 非空配列は `Value::Sequence` として出力される。
 #[test]
 fn serialize_emits_links_as_sequence_when_non_empty() {
     let input = "---\ntitle: A\nlinks: [a.md, b.md]\n---\nbody\n";
@@ -808,7 +803,7 @@ fn serialize_emits_links_as_sequence_when_non_empty() {
     );
 }
 
-/// Cycle 51: links 空配列の場合は `links:` 行を出力しない。
+/// links 空配列の場合は `links:` 行を出力しない。
 #[test]
 fn serialize_omits_links_line_when_empty() {
     let cases: Vec<(&str, &str)> = vec![
@@ -826,7 +821,7 @@ fn serialize_omits_links_line_when_empty() {
     }
 }
 
-/// Cycle 52: 既知 6 キー以外の extras は parse 時の出現順を保ったまま末尾に並ぶ。
+/// 既知 6 キー以外の extras は parse 時の出現順を保ったまま末尾に並ぶ。
 #[test]
 fn serialize_preserves_extras_insertion_order() {
     let input = "---\nfoo: 1\nbar: 2\nbaz: 3\n---\nbody\n";
@@ -835,7 +830,7 @@ fn serialize_preserves_extras_insertion_order() {
     assert_keys_in_order(&output, &["foo", "bar", "baz"]);
 }
 
-/// Cycle 53: 本文部分は `Parsed::body` と一致して付加される（変換しない）。
+/// 本文部分は `Parsed::body` と一致して付加される（変換しない）。
 #[test]
 fn serialize_preserves_body_byte_for_byte() {
     let input = "---\ntitle: A\n---\n## 概要\n\n本文\n";
@@ -849,7 +844,7 @@ fn serialize_preserves_body_byte_for_byte() {
     assert_eq!(body_in_output, parsed.body);
 }
 
-/// Cycle 53: body の末尾改行有無に関わらず、出力末尾には必ず `\n` が付与される。
+/// body の末尾改行有無に関わらず、出力末尾には必ず `\n` が付与される。
 #[test]
 fn serialize_ensures_trailing_newline() {
     let cases: Vec<(&str, &str)> = vec![
@@ -868,7 +863,7 @@ fn serialize_ensures_trailing_newline() {
     }
 }
 
-/// Cycle 53: parse 経由の `Parsed` を serialize した結果には CR が含まれない。
+/// parse 経由の `Parsed` を serialize した結果には CR が含まれない。
 #[test]
 fn serialize_uses_lf_line_endings_only_for_parse_origin_input() {
     let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
@@ -880,7 +875,7 @@ fn serialize_uses_lf_line_endings_only_for_parse_origin_input() {
     );
 }
 
-/// Cycle 53: 空フロントマター入力でも区切り行を残し、再 parse で同値となる。
+/// 空フロントマター入力でも区切り行を残し、再 parse で同値となる。
 #[test]
 fn serialize_keeps_empty_frontmatter_fences_with_body() {
     let input = "---\n---\nbody\n";
@@ -891,7 +886,7 @@ fn serialize_keeps_empty_frontmatter_fences_with_body() {
     assert_eq!(parsed, reparsed);
 }
 
-/// Cycle 54: 全 typed フィールド + 未知フィールドのフルケースで
+/// 全 typed フィールド + 未知フィールドのフルケースで
 /// `parse(serialize(p1)) == p1` かつ出力フィールド順が固定順序（title → status →
 /// priority → labels → parent → links → その他）を満たす。
 #[test]
@@ -921,7 +916,7 @@ fn serialize_full_case_round_trips_through_parse() {
     assert_eq!(parsed, reparsed);
 }
 
-/// Cycle 54: body 末尾改行なし入力では再 parse 時に `\n` 1 byte 増えるが、
+/// body 末尾改行なし入力では再 parse 時に `\n` 1 byte 増えるが、
 /// fixed-point 性 `serialize(parse(serialize(p1))) == serialize(p1)` は成立する。
 #[test]
 fn serialize_round_trips_for_body_without_trailing_newline_via_fixed_point() {
@@ -934,7 +929,7 @@ fn serialize_round_trips_for_body_without_trailing_newline_via_fixed_point() {
     assert_eq!(serialize(&p2), s1);
 }
 
-/// Cycle 54: 空 body 入力でラウンドトリップが成立する（`Parsed` 直比較）。
+/// 空 body 入力でラウンドトリップが成立する（`Parsed` 直比較）。
 #[test]
 fn serialize_round_trips_for_empty_body() {
     let input = "---\ntitle: A\n---\n";
@@ -945,7 +940,7 @@ fn serialize_round_trips_for_empty_body() {
     assert_eq!(parsed, reparsed);
 }
 
-/// Cycle 54: 空フロントマター + 空 body の最小区切り入力でラウンドトリップが成立する。
+/// 空フロントマター + 空 body の最小区切り入力でラウンドトリップが成立する。
 #[test]
 fn serialize_round_trips_for_empty_frontmatter_and_empty_body() {
     let cases: Vec<(&str, &str)> =
@@ -959,7 +954,7 @@ fn serialize_round_trips_for_empty_frontmatter_and_empty_body() {
     }
 }
 
-/// Cycle 54: CRLF 入力（parse 経由で LF 正規化済み）でラウンドトリップが成立する。
+/// CRLF 入力（parse 経由で LF 正規化済み）でラウンドトリップが成立する。
 #[test]
 fn serialize_round_trips_for_crlf_input_via_parse() {
     let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
@@ -969,7 +964,7 @@ fn serialize_round_trips_for_crlf_input_via_parse() {
     assert_eq!(parsed, reparsed);
 }
 
-/// Cycle 54: BOM 付きバイト列入力（parse_bytes 経由）でラウンドトリップが成立する。
+/// BOM 付きバイト列入力（parse_bytes 経由）でラウンドトリップが成立する。
 #[test]
 fn serialize_round_trips_for_bom_prefixed_input_via_parse_bytes() {
     let input: &[u8] = b"\xEF\xBB\xBF---\ntitle: A\nstatus: TODO\n---\nbody\n";
@@ -979,7 +974,7 @@ fn serialize_round_trips_for_bom_prefixed_input_via_parse_bytes() {
     assert_eq!(parsed, reparsed);
 }
 
-/// Cycle 55: extras 内の title / status / parent が型不一致でも typed 位置に dump される。
+/// extras 内の title / status / parent が型不一致でも typed 位置に dump される。
 /// 各ケースで fixed-point 性を確認する。
 #[test]
 fn serialize_dumps_extras_title_status_parent_at_typed_position_for_non_string() {
@@ -1043,7 +1038,7 @@ fn parse_milestone_non_string_or_empty_is_none() {
     }
 }
 
-/// milestone は labels の後・parent の前（SL-002 順序）で出力される。
+/// milestone は labels の後・parent の前の順序で出力される。
 #[test]
 fn serialize_places_milestone_between_labels_and_parent() {
     let input = "---\ntitle: A\nstatus: TODO\npriority: High\nlabels: [bug]\nmilestone: v0.3\nparent: tasks/p.md\nlinks: [a.md]\n---\nbody\n";
