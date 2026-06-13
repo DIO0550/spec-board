@@ -84,9 +84,8 @@ const CardContent = ({
   hasBrokenLink?: boolean;
   hasParseError?: boolean;
 }) => {
-  // descendantTasks 未指定の呼出元では childTasks にフォールバック（直下子のみで集計）。
-  // 本 PR 以前の振る舞いと同等になり、新規呼出元（Column）が descendantTasks を渡したときだけ
-  // 全子孫ベースのカウントに切替わる。
+  // descendantTasks を渡せば全子孫ベースで進捗を集計する。未指定なら childTasks に
+  // フォールバックし、直下子のみで集計する。
   const effectiveDescendants = descendantTasks ?? childTasks;
   const displayTitle = task.title || task.filePath;
   const linkCount = task.links.linkedFilePaths.length;

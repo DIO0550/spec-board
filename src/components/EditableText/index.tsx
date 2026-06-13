@@ -82,7 +82,6 @@ export const EditableText = ({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     // Display 中の Enter / Space はキーボードのみでの編集起動経路。
-    // 旧 <button> ベース DOM 構造での Enter/Space アクティベーションと等価。
     if (mode === Mode.Display) {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
