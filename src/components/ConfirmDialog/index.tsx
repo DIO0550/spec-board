@@ -59,6 +59,7 @@ export const ConfirmDialog = ({
 
   return (
     <>
+      {/* z-[60]=overlay（暗幕）/ z-[70]=dialog 本体。z 階層全体の取り決めは src/index.css を参照。 */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: overlay dismisses dialog on click, Escape key handled separately */}
       <div
         role="presentation"

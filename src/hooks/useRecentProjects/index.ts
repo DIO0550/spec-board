@@ -11,7 +11,10 @@ export type RecentProject = {
 /** 履歴を保存する localStorage キー。 */
 export const RECENT_PROJECTS_STORAGE_KEY = "spec-board:recentProjects";
 
-/** 履歴の最大保持件数。 */
+/**
+ * 履歴の最大保持件数。
+ * 起動時の選択肢として一覧に収まり、かつ古いプロジェクトで埋もれない程度の件数として 8 件に抑える。
+ */
 const MAX_RECENT_PROJECTS = 8;
 
 /**

@@ -97,6 +97,9 @@ export const TaskSelect = ({
         onClose();
       }
     };
+    // capture フェーズ（第 3 引数 true）で Escape を親より先に捕捉し、stopPropagation で
+    // 親の Escape ハンドラ（詳細画面を閉じる処理など）への伝播を止める。これにより Escape は
+    // まず popover だけを閉じ、「Esc で詳細画面ごと閉じてしまう」挙動を防ぐ。
     document.addEventListener("keydown", handleKeyDown, true);
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
@@ -211,6 +214,10 @@ export const TaskSelect = ({
             }}
             onFocus={() => setIsOpen(true)}
             onBlur={() => {
+              // 候補ボタンの mousedown→click は input の blur より後に処理されるため、
+              // blur 即時に popover を閉じると候補クリックが選択前に消えてしまう。
+              // 閉じる処理を少し遅延させ、候補クリックの確定を待ってから閉じる。
+              // 100ms は click 確定に十分かつ、ユーザーに閉じ遅れを感じさせない値。
               if (blurTimeoutRef.current !== null) {
                 window.clearTimeout(blurTimeoutRef.current);
               }
@@ -225,6 +232,8 @@ export const TaskSelect = ({
             data-testid={`${prefix}-input`}
           />
           {isOpen && candidates.length > 0 && (
+            // z-10=候補 popover。通常コンテンツの直上に出すだけの最下層。
+            // z 階層全体の取り決めは src/index.css を参照。
             <div
               className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded border border-border bg-surface shadow-lg"
               data-testid={`${prefix}-list`}

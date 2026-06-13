@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import type { ToastItem, ToastType } from "@/types/toast";
 
+/**
+ * トーストの既定表示時間（ms）。
+ * 短い通知文を読み切れる程度に長く、かつ次の操作を妨げない程度に短い値として 3 秒を採る。
+ */
 export const TOAST_DEFAULT_DURATION_MS = 3000;
 
 const typeStyles: Record<ToastType, string> = {

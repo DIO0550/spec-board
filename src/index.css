@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* z-index 階層契約（Tailwind の z-[NN] 任意値ユーティリティで各所に散在するため、
+   重なり順の取り決めをここに 1 箇所だけ明文化する）:
+     - 候補 popover（TaskSelect の list/empty）: z-10  … 通常コンテンツの直上に出すだけ
+     - ダイアログ overlay（ConfirmDialog の暗幕）: z-[60]
+     - ダイアログ本体（ConfirmDialog）:          z-[70]  … overlay より前面
+     - トースト（ToastContainer）:               z-[80]  … 常に最前面（ダイアログ表示中でも通知を隠さない）
+   値を変える際はこの順序関係（popover < overlay < dialog < toast）を必ず保つこと。 */
+
 @theme {
 	--animate-slide-in: slide-in 0.2s ease-out;
 
