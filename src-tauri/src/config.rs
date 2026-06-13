@@ -33,7 +33,8 @@
 //!   空 columns 拒否（[`LoadConfigError::EmptyColumns`]）
 //!
 //! 古い `version` のマイグレーション結果はメモリ上の [`Config`] として返り、
-//! `config.json` への書き戻しは行わない（書き出し経路は別 Issue の責務）。
+//! load 経路では `config.json` への書き戻しを行わない（書き出しは
+//! `update_card_order` / `update_columns` 等の更新コマンド側の責務）。
 //!
 //! # GUIDE.md 生成 / 書き込み境界
 //! 本モジュールは [`Config::columns`] から GUIDE.md の Markdown 本文を組み立て、
@@ -43,7 +44,7 @@
 //! # スコープ
 //! - `update_card_order` Tauri command（`cardOrder` の上書き保存）
 //!
-//! # スコープ外（別 Issue で実装）
+//! # 本モジュールが扱わない範囲
 //! - `.bak` 退避の永続化 / 並行書き込みの厳密な整合性制御
 //! - `doneColumn` の整合性検証 / カラム名空間の正規化
 //! - 実フィールド変換を伴う実マイグレーション（本モジュールはフックのみ提供）
@@ -168,8 +169,8 @@ pub struct Column {
     pub color: Option<ColumnColor>,
 }
 
-/// spec L85 の初回オープン時デフォルト / spec L223 の読み込み失敗時フォールバックで
-/// 用いるベースラインカラム名。
+/// プロジェクト初回オープン時のデフォルト、および config 読み込み失敗時の
+/// フォールバックで用いるベースラインカラム名。
 const DEFAULT_COLUMN_NAMES: [&str; 3] = ["Todo", "In Progress", "Done"];
 
 /// GUIDE.md 文字列生成において、入力 columns が空の場合に `status:` 例へ使う値。
@@ -721,7 +722,7 @@ pub fn validate_unique_column_names(columns: &[Column]) -> Result<(), String> {
 
 /// [`migrate_config`] で発生し得るエラー。
 ///
-/// 本Issue（骨格段階）では `from_version` が [`DEFAULT_VERSION`] を超える場合のみ報告する。
+/// 現状は `from_version` が [`DEFAULT_VERSION`] を超える場合のみ報告する。
 /// 将来 `DEFAULT_VERSION` を引き上げるタイミングで variant を追加する。
 #[derive(Debug, PartialEq, Error)]
 pub enum MigrationError {
@@ -851,7 +852,7 @@ pub enum LoadConfigError {
 ///    fetch_add するため同一プロセス内 / 粗い時計分解能下でも一意性が保証され、
 ///    同じ project_root に対する並行 `load_or_default` 呼び出しが同一の tmp ファイルを
 ///    奪い合って干渉する race を回避できる（ベストエフォート — lockfile 自体は
-///    本Issue 範囲外）。
+///    本関数の範囲外）。
 /// 2. **tmp パスの sterilization**: 上記 tmp パスを一旦 `unlink` してから
 ///    `OpenOptions::create_new(true)`（`O_CREAT|O_EXCL` 相当）で開く。
 ///    これにより:
@@ -875,8 +876,8 @@ pub enum LoadConfigError {
 /// 上記の sterilized tmp + rename 戦略と併せ、symlink 経由・hard link 経由いずれの
 /// 方法でも外部ファイルが上書きされないようにするベストエフォート防御。
 ///
-/// 以下は **本関数の範囲外**であり、別Issue（lockfile / project-root 内
-/// 制限）の責務とする:
+/// 以下は **本関数の範囲外**であり、lockfile / project-root 内制限など
+/// 別レイヤの責務とする:
 /// - `<project_root>` 自身およびそれより外側 ancestor の symlink / hard link
 /// - 本関数のチェックと write / rename の間に発生する TOCTOU race
 ///   （leaf / `.spec-board/` / `<dst>.tmp` の親方向が swap された場合）
@@ -916,7 +917,7 @@ fn backup_config_json(project_root: &Path, content: &str) -> Result<(), LoadConf
     // PID + nanos だけでは同一プロセス内 / 粗い時計分解能の環境で collision しうるため、
     // process-local AtomicU64 counter も組み合わせて in-process での一意性を担保する
     // （プロセス境界をまたぐケースは PID で分離）。lockfile による完全な並行制御は
-    // 本Issue 範囲外。
+    // 本関数の範囲外。
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -1033,6 +1034,9 @@ pub(crate) fn unique_atomic_tmp_path(dst: &Path) -> PathBuf {
     }
 }
 
+/// orphan tmp を削除対象とみなす経過時間の閾値（ナノ秒, 1 時間）。
+const STALE_TMP_THRESHOLD_NANOS: u128 = 60 * 60 * 1_000_000_000;
+
 /// `<project_root>/.spec-board/` 配下に残っている orphan `config.json.bak.tmp.*`
 /// を best-effort で削除する。
 ///
@@ -1055,8 +1059,6 @@ pub(crate) fn unique_atomic_tmp_path(dst: &Path) -> PathBuf {
 ///
 /// I/O エラー（読み取り権限なし等）は無視する — orphan が残っても機能上の支障は
 /// 発生せず、次回成功した load で再試行されるため。
-const STALE_TMP_THRESHOLD_NANOS: u128 = 60 * 60 * 1_000_000_000;
-
 fn cleanup_stale_backup_tmps(project_root: &Path) {
     let spec_board_dir = config_io::config_path(project_root)
         .parent()
@@ -1156,7 +1158,7 @@ struct VersionOnly {
 /// - `columns` が空 → [`LoadConfigError::EmptyColumns`]
 /// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
 ///
-/// [`LoadConfigError::MigrationFailed`] は **本Issue 時点では `load_or_default` から
+/// [`LoadConfigError::MigrationFailed`] は **現状では `load_or_default` から
 /// 返されない**（`from_version > DEFAULT_VERSION` は事前に
 /// [`LoadConfigError::UnknownFutureVersion`] で弾かれ、`from_version < DEFAULT_VERSION`
 /// および `from_version == DEFAULT_VERSION` の経路では現行 [`migrate_config`] は常に
@@ -1594,7 +1596,7 @@ pub enum SaveLabelsError {
 pub trait LabelRegistryStore {
     /// マスタを読み込む。不在 / 空相当は Default（空レジストリ）。
     fn load(&self) -> Result<LabelRegistry, LoadLabelsError>;
-    /// マスタを保存する（編集機能向け。本 Issue では read 経路が主だが対称性のため定義）。
+    /// マスタを保存する（ラベル編集機能で使用する書き込み経路）。
     fn save(&self, registry: &LabelRegistry) -> Result<(), SaveLabelsError>;
 }
 
