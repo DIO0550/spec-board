@@ -258,3 +258,31 @@ test("Esc で閉じた後も入力変更でリストが再表示される", () =
   });
   expect(listbox()).toBeTruthy();
 });
+
+test("ArrowDown のハイライトに応じて input の aria-activedescendant が該当 option の id を指す", () => {
+  render(baseProps());
+  focusInput();
+  // 未ハイライト時は属性を出さない。
+  expect(input().getAttribute("aria-activedescendant")).toBeNull();
+  keydown("ArrowDown");
+  const activeId = input().getAttribute("aria-activedescendant");
+  expect(activeId).toBeTruthy();
+  const highlighted = document.querySelector(
+    "[role='option'][aria-selected='true']",
+  );
+  expect(highlighted?.id).toBe(activeId);
+});
+
+test("候補 option は tabIndex=-1 で Tab 順から外れている", () => {
+  render(baseProps());
+  focusInput();
+  const options = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[role='option']"),
+  );
+  expect(options.every((o) => o.tabIndex === -1)).toBe(true);
+});
+
+test("input が combobox の aria-autocomplete=list を持つ", () => {
+  render(baseProps());
+  expect(input().getAttribute("aria-autocomplete")).toBe("list");
+});

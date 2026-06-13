@@ -140,6 +140,13 @@ export const LabelInput = ({
         role="combobox"
         aria-expanded={showList}
         aria-controls={listboxId}
+        aria-autocomplete="list"
+        // ハイライト中の候補を SR に伝える。未ハイライト時は属性自体を出さない。
+        aria-activedescendant={
+          showList && activeIndex !== NO_HIGHLIGHT
+            ? `${listboxId}-option-${activeIndex}`
+            : undefined
+        }
         value={value}
         onChange={(e) => {
           onChange(e.target.value);
