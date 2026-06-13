@@ -35,6 +35,7 @@
 //! `ConfigIo` を `IO_ERROR` 系（内側メッセージ次第で `NOT_FOUND` /
 //! `PERMISSION_DENIED` に転ぶ）として扱う想定。
 
+use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
@@ -43,6 +44,7 @@ use spec_board_fs::config::config_io::{write_config_json, ConfigIoError};
 use tauri::State;
 use thiserror::Error;
 
+use crate::config::UpdateCardOrderPlanError;
 use crate::state::{AppState, AppStateError};
 
 /// `update_card_order` コマンドのエラー。
@@ -78,6 +80,16 @@ impl From<AppStateError> for UpdateCardOrderError {
     }
 }
 
+impl From<UpdateCardOrderPlanError> for UpdateCardOrderError {
+    fn from(err: UpdateCardOrderPlanError) -> Self {
+        match err {
+            UpdateCardOrderPlanError::UnknownColumn { column_name } => {
+                UpdateCardOrderError::UnknownColumn { column_name }
+            }
+        }
+    }
+}
+
 /// Tauri command 薄層。`update_card_order_impl` を呼び、エラーを文字列化して返す。
 ///
 /// 戻り値の `Result<_, String>` の Err 文字列は `UpdateCardOrderError` の
@@ -95,8 +107,9 @@ pub fn update_card_order(
 ///
 /// 1. `snapshot_project_and_config` で `project_path` と `config` を
 ///    両 lock 同時保持下で atomic に取得（どちらかが `None` → `NoProjectOpen`）
-/// 2. `column_name` が `Config.columns` に存在するか検証
-/// 3. snapshot の `card_order[column_name]` を `file_paths` で上書き
+/// 2. `file_paths` のうち実在するパス集合を fs 走査で求める（effect 層責務）
+/// 3. `Config::plan_update_card_order` でカラム検証 + `cardOrder` 上書きを行い、
+///    書き出し対象の新しい `Config` を得る（未知カラムは `UnknownColumn`）
 /// 4. `serde_json::to_string_pretty` でシリアライズ
 /// 5. `write_config_json` で disk に書き込み
 /// 6. `replace_config_if_project_matches` で `project_path` が snapshot 時と
@@ -115,14 +128,11 @@ pub(crate) fn update_card_order_impl(
     // （単独の `project_path()? → config()?` 連続呼びでは race window が生じる）。
     let (project_root, config) = state.snapshot_project_and_config()?;
     let project_root = project_root.ok_or(UpdateCardOrderError::NoProjectOpen)?;
-    let mut config = config.ok_or(UpdateCardOrderError::NoProjectOpen)?;
+    let config = config.ok_or(UpdateCardOrderError::NoProjectOpen)?;
 
-    if !config.has_column(&column_name) {
-        return Err(UpdateCardOrderError::UnknownColumn { column_name });
-    }
-
-    let cleaned = cleanup_missing_paths(&project_root, file_paths);
-    config.card_order.insert(column_name, cleaned);
+    // 実在判定（fs 走査）は effect 層の責務。除去ルール自体は aggregate に寄せる。
+    let existing_paths = collect_existing_paths(&project_root, &file_paths);
+    let config = config.plan_update_card_order(column_name, file_paths, &existing_paths)?;
 
     let json = serde_json::to_string_pretty(&config)?;
     write_config_json(&project_root, &json)?;
@@ -138,19 +148,21 @@ pub(crate) fn update_card_order_impl(
     Ok(())
 }
 
-/// `file_paths` のうち `project_root` 配下に実在しないエントリを除外して返す。
+/// `file_paths` のうち `project_root` 配下で「保持すべき」パスの集合を返す。
 ///
 /// 各パスを `project_root.join(rel)` で解決し `std::fs::metadata` で判定する。
-/// `Err(NotFound)` のみ除外し、`permission denied` など他の I/O エラーは
-/// ユーザーのカード並びを誤って失わないために保守的に保持する。
-/// 入力順は保持する。
-fn cleanup_missing_paths(project_root: &Path, file_paths: Vec<String>) -> Vec<String> {
+/// `Err(NotFound)` のみ除外対象（集合に入れない）とし、`permission denied` など
+/// 他の I/O エラーは、ユーザーのカード並びを誤って失わないために保守的に集合へ含める。
+/// この集合は `Config::plan_update_card_order` の `existing_paths` 引数として渡し、
+/// 実際の除去（および入力順の保持）は aggregate 側で行う。
+fn collect_existing_paths(project_root: &Path, file_paths: &[String]) -> HashSet<String> {
     file_paths
-        .into_iter()
+        .iter()
         .filter(|rel| match std::fs::metadata(project_root.join(rel)) {
             Ok(_) => true,
             Err(e) => e.kind() != ErrorKind::NotFound,
         })
+        .cloned()
         .collect()
 }
 

@@ -1781,3 +1781,117 @@ fn rename_preserves_column_color() {
         Some("#1a2b3c")
     );
 }
+
+// ───────── Config::plan_update_card_order ─────────
+
+fn card_order_base_config() -> Config {
+    Config {
+        version: 1,
+        columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+        card_order: BTreeMap::new(),
+        done_column: Some("Done".into()),
+    }
+}
+
+#[test]
+fn plan_update_card_order_overwrites_existing_entry() {
+    let mut config = card_order_base_config();
+    config
+        .card_order
+        .insert("Todo".to_string(), vec!["old.md".to_string()]);
+    let existing: HashSet<String> = ["a.md".to_string(), "b.md".to_string()]
+        .into_iter()
+        .collect();
+
+    let next = config
+        .plan_update_card_order(
+            "Todo".to_string(),
+            vec!["a.md".to_string(), "b.md".to_string()],
+            &existing,
+        )
+        .expect("known column should succeed");
+
+    assert_eq!(
+        next.card_order.get("Todo"),
+        Some(&vec!["a.md".to_string(), "b.md".to_string()])
+    );
+}
+
+#[test]
+fn plan_update_card_order_inserts_new_entry_for_known_column() {
+    let config = card_order_base_config();
+    let existing: HashSet<String> = ["x.md".to_string()].into_iter().collect();
+
+    let next = config
+        .plan_update_card_order(
+            "In Progress".to_string(),
+            vec!["x.md".to_string()],
+            &existing,
+        )
+        .expect("known column should succeed");
+
+    assert_eq!(
+        next.card_order.get("In Progress"),
+        Some(&vec!["x.md".to_string()])
+    );
+}
+
+#[test]
+fn plan_update_card_order_rejects_unknown_column_without_mutation() {
+    let config = card_order_base_config();
+    let existing: HashSet<String> = HashSet::new();
+
+    let err = config
+        .plan_update_card_order("Ghost".to_string(), vec!["a.md".to_string()], &existing)
+        .expect_err("unknown column should fail");
+
+    assert_eq!(
+        err,
+        UpdateCardOrderPlanError::UnknownColumn {
+            column_name: "Ghost".to_string()
+        }
+    );
+    assert!(config.card_order.is_empty(), "self は変更されない");
+}
+
+#[test]
+fn plan_update_card_order_drops_paths_absent_from_existing_set() {
+    let config = card_order_base_config();
+    let existing: HashSet<String> = ["exists-1.md".to_string(), "exists-2.md".to_string()]
+        .into_iter()
+        .collect();
+
+    let next = config
+        .plan_update_card_order(
+            "Todo".to_string(),
+            vec![
+                "exists-1.md".to_string(),
+                "missing.md".to_string(),
+                "exists-2.md".to_string(),
+            ],
+            &existing,
+        )
+        .expect("known column should succeed");
+
+    assert_eq!(
+        next.card_order.get("Todo"),
+        Some(&vec!["exists-1.md".to_string(), "exists-2.md".to_string()]),
+        "存在しないパスを除外しつつ入力順を保持する"
+    );
+}
+
+#[test]
+fn plan_update_card_order_keeps_empty_vec_when_all_paths_missing() {
+    let config = card_order_base_config();
+    let existing: HashSet<String> = HashSet::new();
+
+    let next = config
+        .plan_update_card_order(
+            "Todo".to_string(),
+            vec!["missing-1.md".to_string(), "missing-2.md".to_string()],
+            &existing,
+        )
+        .expect("known column should succeed");
+
+    assert_eq!(next.card_order.get("Todo"), Some(&Vec::<String>::new()));
+}
