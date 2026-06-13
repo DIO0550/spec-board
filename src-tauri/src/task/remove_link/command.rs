@@ -12,8 +12,7 @@ use crate::task::frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::remove_link::args::RemoveLinkArgs;
 use crate::task::remove_link::error::{RemoveLinkCommandError, RemoveLinkError};
-use crate::task::task_index::{find_task_mut_by_normalized, RemoveLinkOutcome, Task, TaskIndex};
-use crate::task::warning::has_parent_cycle_warning;
+use crate::task::task_index::{RemoveLinkOutcome, Task, TaskIndex};
 
 /// `remove_link` Tauri command 薄層。
 #[tauri::command]
@@ -112,70 +111,26 @@ pub(crate) fn remove_link_impl(
     }
 }
 
-/// snapshot 取得から本関数呼出までの間に他コマンドが cache を変更すると、source
-/// が cache から消えていることがある。先に source の存在確認をしてから mutate に
-/// 入る。target は cache に存在しなくても fail にしない（dangling link 掃除を
-/// 許容するため、add_link と異なる）。
+/// cache lock を取得し、cache 差分更新を `TaskIndex` の aggregate メソッドに委譲する。
+///
+/// source の存在確認・派生フィールドの保持マージ・cycle member の `parent=None`
+/// 維持・target `reverse_links` からの除去（self-link 時の戻り値再取得含む）といった
+/// ドメインロジックはすべて `TaskIndex::commit_remove_link_into_cache` に閉じる。
+/// effect 層はロック取得とエラーの詰め替えのみを担う。
 fn commit_cache(
     state: &AppState,
     source_rel: &Path,
     target_normalized: &str,
     updated_task: &Task,
 ) -> Result<Task, RemoveLinkCommandError> {
-    let source_key = source_rel.to_path_buf();
-    let target_norm = target_normalized.to_string();
-    let updated = updated_task.clone();
-
     let returned: Result<Task, RemoveLinkError> =
         state.with_tasks_cache_mut(|cache: &mut HashMap<_, Task>| {
-            if !cache.contains_key(&source_key) {
-                return Err(RemoveLinkError::SourceVanished {
-                    path: source_key.to_string_lossy().into_owned(),
-                });
-            }
-
-            // 派生フィールド (children / reverse_links / warnings) を保持しつつ
-            // parse 由来フィールドのみ上書きする。remove_link は parent / title /
-            // status / labels / extras を一切変更せず links を縮めるだけのため、
-            // warnings は既存値の保持で正しい状態が維持される。
-            //
-            // parent は通常は `updated_task` 側（disk と一致した値）を採用するが、
-            // 既存 cache が ParentCycle warning を持つ場合に限り cache 側の
-            // `parent=None` を維持する。これは scan で循環判定されたノードの
-            // cycle 状態を link 削除程度の操作で崩さないため。ファイル本体が
-            // 外部編集で変わった場合は watcher 再 scan で再判定される。
-            let source_entry = cache
-                .get_mut(&source_key)
-                .expect("source presence verified above");
-            let was_cycle_member = has_parent_cycle_warning(&source_entry.warnings);
-            let preserved_children = std::mem::take(&mut source_entry.children);
-            let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
-            let preserved_warnings = std::mem::take(&mut source_entry.warnings);
-            *source_entry = Task {
-                children: preserved_children,
-                reverse_links: preserved_reverse,
-                warnings: preserved_warnings,
-                ..updated.clone()
-            };
-            source_entry.preserve_parent_cycle_state(was_cycle_member, false);
-
-            // target の reverse_links から source を除去。cache に target が存在
-            // しない場合は orphan link 掃除のユースケースを許容するため fail にせず
-            // skip する。self-link（source == target）のケースでは source 自身の
-            // reverse_links が retain されるため、戻り値は target update 後に
-            // cache から再取得する必要がある。
-            if let Some(target_task) = find_task_mut_by_normalized(cache, &target_norm) {
-                target_task
-                    .reverse_links
-                    .retain(|p| p != &updated.file_path);
-            }
-
-            let returned_task = cache
-                .get(&source_key)
-                .expect("source presence verified above")
-                .clone();
-
-            Ok(returned_task)
+            TaskIndex::commit_remove_link_into_cache(
+                cache,
+                source_rel,
+                target_normalized,
+                updated_task,
+            )
         })?;
 
     Ok(returned?)
