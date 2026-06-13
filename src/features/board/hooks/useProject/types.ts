@@ -16,6 +16,7 @@ import type {
   ReorderColumnsResult,
 } from "./actions/reorderColumns";
 import type { ProjectError } from "./errors";
+import type { ProjectData } from "./reducer";
 import type { ProjectSessionState } from "./state/projectSessionState";
 
 export type {
@@ -32,8 +33,29 @@ export type {
 
 export type UpdateColumnsInput = ColumnsCommand | ColumnsCommandBuilder;
 
+/**
+ * project の load 成功イベントの payload。
+ * 開いた path と読み込んだ ProjectData を併せて渡す。
+ */
+export type ProjectLoadedEvent = {
+  /** 開いたプロジェクトの絶対パス。 */
+  path: string;
+  /** 読み込んだ ProjectData（tasks / columns / doneColumn）。 */
+  data: ProjectData;
+};
+
 export type UseProjectOptions = {
+  /**
+   * openProject / openProjectByPath 系の失敗時に呼ばれる callback。
+   * @param error 通知する ProjectError
+   */
   onError?: (error: ProjectError) => void;
+  /**
+   * project の load が成功し state が loaded へ遷移した直後に 1 回だけ呼ばれる callback。
+   * close → reopen / 別 project 切替のたびに、その都度 1 回ずつ発火する。
+   * @param event 開いた path と読み込んだ ProjectData
+   */
+  onLoaded?: (event: ProjectLoadedEvent) => void;
 };
 
 export type UseProjectResult = {
