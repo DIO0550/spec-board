@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { renderBlock } from "@/components/MarkdownContent/renderBlock";
 import { Markdown } from "@/domains/markdown";
 import {
@@ -37,6 +38,18 @@ const PLACEHOLDER_CLASS_NAME = "text-sm text-muted";
 export const MarkdownBody = ({ body, onConfirm }: MarkdownBodyProps) => {
   const edit = useMarkdownBodyEdit({ body, onConfirm });
 
+  // textarea mount 時に focus + 末尾カーソル設定を行う callback ref。DOM 操作は
+  // コンポーネント側の責務とし、hook の公開 API には DOM 参照を含めない。
+  const focusTextareaAtEnd = useCallback((el: HTMLTextAreaElement | null) => {
+    if (el === null) {
+      return;
+    }
+    el.focus();
+    const end = el.value.length;
+    el.selectionStart = end;
+    el.selectionEnd = end;
+  }, []);
+
   const handleToggle = (sourceLine: number) => {
     if (onConfirm === undefined) {
       return;
@@ -54,11 +67,11 @@ export const MarkdownBody = ({ body, onConfirm }: MarkdownBodyProps) => {
   if (edit.mode === MarkdownBodyEditMode.Edit) {
     return (
       <textarea
-        ref={edit.textareaRef}
+        ref={focusTextareaAtEnd}
         className={TEXTAREA_CLASS_NAME}
         value={edit.editValue}
         onChange={(e) => edit.setEditValue(e.target.value)}
-        onKeyDown={edit.handleTextareaKeyDown}
+        onKeyDown={edit.submitOrCancelOnKey}
         data-testid="markdown-body-textarea"
         aria-label="本文を編集"
       />
@@ -87,8 +100,8 @@ export const MarkdownBody = ({ body, onConfirm }: MarkdownBodyProps) => {
       role="button"
       tabIndex={0}
       className={DISPLAY_EDITABLE_WRAPPER_CLASS_NAME}
-      onClick={edit.handleDisplayClick}
-      onKeyDown={edit.handleDisplayKeyDown}
+      onClick={edit.enterEditOnClick}
+      onKeyDown={edit.enterEditOnKey}
       data-testid="markdown-body"
       aria-label="本文を編集する"
     >

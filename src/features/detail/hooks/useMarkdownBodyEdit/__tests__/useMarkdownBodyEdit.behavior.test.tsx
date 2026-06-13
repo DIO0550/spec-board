@@ -92,82 +92,59 @@ test("onConfirm 指定なら isEditable=true", () => {
   expect(captured?.isEditable).toBe(true);
 });
 
-test("handleDisplayClick で mode が edit に切り替わり editValue が body にリセットされる", () => {
+test("enterEditOnClick で mode が edit に切り替わり editValue が body にリセットされる", () => {
   mount({ body: "abc", onConfirm: vi.fn() });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
   expect(captured?.editValue).toBe("abc");
 });
 
-test("handleDisplayClick は isEditable=false のとき no-op", () => {
+test("enterEditOnClick は isEditable=false のとき no-op", () => {
   mount({ body: "abc" });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Display);
 });
 
-test("handleDisplayKeyDown(Enter) で edit モードに入る", () => {
+test("enterEditOnKey(Enter) で edit モードに入る", () => {
   mount({ body: "abc", onConfirm: vi.fn() });
   const e = makeFakeKey({ key: "Enter" });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleDisplayKeyDown(e as any);
+    captured?.enterEditOnKey(e as any);
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
   expect(e.preventDefault).toHaveBeenCalled();
 });
 
-test("handleDisplayKeyDown(Space) で edit モードに入る", () => {
+test("enterEditOnKey(Space) で edit モードに入る", () => {
   mount({ body: "abc", onConfirm: vi.fn() });
   const e = makeFakeKey({ key: " " });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleDisplayKeyDown(e as any);
+    captured?.enterEditOnKey(e as any);
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
 });
 
-test("handleDisplayKeyDown(他キー) では mode が変わらない", () => {
+test("enterEditOnKey(他キー) では mode が変わらない", () => {
   mount({ body: "abc", onConfirm: vi.fn() });
   const e = makeFakeKey({ key: "a" });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleDisplayKeyDown(e as any);
+    captured?.enterEditOnKey(e as any);
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Display);
-});
-
-test("textareaRef(element) で focus + 末尾カーソル設定が行われる", () => {
-  mount({ body: "abcdef", onConfirm: vi.fn() });
-  const textarea = document.createElement("textarea");
-  textarea.value = "abcdef";
-  document.body.appendChild(textarea);
-  act(() => {
-    captured?.textareaRef(textarea);
-  });
-  expect(document.activeElement).toBe(textarea);
-  expect(textarea.selectionStart).toBe(6);
-  expect(textarea.selectionEnd).toBe(6);
-  textarea.remove();
-});
-
-test("textareaRef(null) は no-op", () => {
-  mount({ body: "abc", onConfirm: vi.fn() });
-  expect(() => {
-    act(() => {
-      captured?.textareaRef(null);
-    });
-  }).not.toThrow();
 });
 
 test("Cmd+Enter で変更ありなら onConfirm(editValue) 発火 + display に戻る", () => {
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("xyz");
@@ -175,7 +152,7 @@ test("Cmd+Enter で変更ありなら onConfirm(editValue) 発火 + display に�
   const e = makeFakeKey({ key: "Enter", metaKey: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).toHaveBeenCalledWith("xyz");
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Display);
@@ -187,7 +164,7 @@ test("Ctrl+Enter でも同様に commit する", () => {
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("xyz");
@@ -195,7 +172,7 @@ test("Ctrl+Enter でも同様に commit する", () => {
   const e = makeFakeKey({ key: "Enter", ctrlKey: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).toHaveBeenCalledWith("xyz");
 });
@@ -204,12 +181,12 @@ test("Cmd+Enter で editValue===body の場合 onConfirm 未発火 + display へ
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   const e = makeFakeKey({ key: "Enter", metaKey: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).not.toHaveBeenCalled();
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Display);
@@ -219,7 +196,7 @@ test("先頭/末尾の空白だけ追加した編集の Cmd+Enter は onConfirm 
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("abc\n  ");
@@ -227,7 +204,7 @@ test("先頭/末尾の空白だけ追加した編集の Cmd+Enter は onConfirm 
   const e = makeFakeKey({ key: "Enter", metaKey: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).toHaveBeenCalledWith("abc\n  ");
 });
@@ -236,7 +213,7 @@ test("空文字に編集した Cmd+Enter は onConfirm('') を呼ぶ", () => {
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("");
@@ -244,7 +221,7 @@ test("空文字に編集した Cmd+Enter は onConfirm('') を呼ぶ", () => {
   const e = makeFakeKey({ key: "Enter", metaKey: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).toHaveBeenCalledWith("");
 });
@@ -253,7 +230,7 @@ test("IME 変換中(isComposing=true)の Cmd+Enter は onConfirm 未発火、pre
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("xyz");
@@ -261,7 +238,7 @@ test("IME 変換中(isComposing=true)の Cmd+Enter は onConfirm 未発火、pre
   const e = makeFakeKey({ key: "Enter", metaKey: true, isComposing: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).not.toHaveBeenCalled();
   expect(e.preventDefault).toHaveBeenCalled();
@@ -273,7 +250,7 @@ test("IME 変換中(isComposing=true)の Esc は cancel を呼ばず mode/editVa
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("draft");
@@ -281,7 +258,7 @@ test("IME 変換中(isComposing=true)の Esc は cancel を呼ばず mode/editVa
   const e = makeFakeKey({ key: "Escape", isComposing: true });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
   expect(captured?.editValue).toBe("draft");
@@ -293,7 +270,7 @@ test("Esc で onConfirm 未発火 + editValue が body に戻り display へ遷�
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("draft");
@@ -301,7 +278,7 @@ test("Esc で onConfirm 未発火 + editValue が body に戻り display へ遷�
   const e = makeFakeKey({ key: "Escape" });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).not.toHaveBeenCalled();
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Display);
@@ -314,12 +291,12 @@ test("Enter (修飾なし) は textarea ハンドラで何もしない（改行�
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   const e = makeFakeKey({ key: "Enter" });
   act(() => {
     // biome-ignore lint/suspicious/noExplicitAny: harness 用の最小限の型整合
-    captured?.handleTextareaKeyDown(e as any);
+    captured?.submitOrCancelOnKey(e as any);
   });
   expect(onConfirm).not.toHaveBeenCalled();
   expect(captured?.mode).toBe(MarkdownBodyEditMode.Edit);
@@ -330,7 +307,7 @@ test("body が rerender で変わっても hook 内 state は維持される（�
   const onConfirm = vi.fn();
   mount({ body: "abc", onConfirm });
   act(() => {
-    captured?.handleDisplayClick();
+    captured?.enterEditOnClick();
   });
   act(() => {
     captured?.setEditValue("draft");

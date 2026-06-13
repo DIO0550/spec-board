@@ -34,27 +34,22 @@ export type UseMarkdownBodyEditResult = {
   setEditValue: (value: string) => void;
   /** `onConfirm` が指定されているか */
   isEditable: boolean;
-  /**
-   * textarea mount 時に focus + 末尾カーソル設定を行う callback ref
-   * @param el - mount された textarea 要素（unmount 時は null）
-   */
-  textareaRef: (el: HTMLTextAreaElement | null) => void;
-  /** display エリアの click ハンドラ */
-  handleDisplayClick: () => void;
+  /** display エリアの click で edit モードへ入る */
+  enterEditOnClick: () => void;
   /**
    * display エリアの keydown ハンドラ（Enter / Space で edit 起動）
    * @param e - React の keyboard イベント
    */
-  handleDisplayKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void;
+  enterEditOnKey: (e: KeyboardEvent<HTMLDivElement>) => void;
   /**
-   * textarea の keydown ハンドラ（Cmd/Ctrl+Enter / Esc / IME 抑止）
+   * textarea の keydown ハンドラ（Cmd/Ctrl+Enter で確定 / Esc でキャンセル / IME 抑止）
    * @param e - React の keyboard イベント
    */
-  handleTextareaKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+  submitOrCancelOnKey: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
 };
 
 /**
- * MarkdownBody の display↔edit モード切替・キーバインド・focus 制御をまとめたフック。
+ * MarkdownBody の display↔edit モード切替・キーバインドをまとめたフック。
  *
  * - body が変わっても hook 内 state は自動リセットしない。呼び出し側で
  *   `<MarkdownBody key={task.id} ... />` のように key で再マウントする契約。
@@ -63,6 +58,8 @@ export type UseMarkdownBodyEditResult = {
  * - IME 変換中（`nativeEvent.isComposing`）の Cmd/Ctrl+Enter は commit を
  *   呼ばないが、preventDefault + stopPropagation は先行して実行する
  *   （親に Esc-like なキー経路を漏らさない）。
+ * - textarea mount 時の focus + 末尾カーソル設定は DOM 操作のため呼び出し側
+ *   （MarkdownBody）に閉じ込め、hook は DOM 参照を公開 API に含めない。
  *
  * @param args - body / onConfirm
  * @returns mode / editValue / handlers
@@ -78,16 +75,6 @@ export const useMarkdownBodyEdit = (
   const [editValue, setEditValue] = useState(body);
 
   const isEditable = onConfirm !== undefined;
-
-  const textareaRef = useCallback((el: HTMLTextAreaElement | null) => {
-    if (el === null) {
-      return;
-    }
-    el.focus();
-    const end = el.value.length;
-    el.selectionStart = end;
-    el.selectionEnd = end;
-  }, []);
 
   const enterEditMode = useCallback(() => {
     setEditValue(body);
@@ -111,14 +98,14 @@ export const useMarkdownBodyEdit = (
     setMode(MarkdownBodyEditMode.Display);
   }, [body]);
 
-  const handleDisplayClick = useCallback(() => {
+  const enterEditOnClick = useCallback(() => {
     if (!isEditable) {
       return;
     }
     enterEditMode();
   }, [isEditable, enterEditMode]);
 
-  const handleDisplayKeyDown = useCallback(
+  const enterEditOnKey = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
       if (!isEditable) {
         return;
@@ -131,7 +118,7 @@ export const useMarkdownBodyEdit = (
     [isEditable, enterEditMode],
   );
 
-  const handleTextareaKeyDown = useCallback(
+  const submitOrCancelOnKey = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -161,9 +148,8 @@ export const useMarkdownBodyEdit = (
     editValue,
     setEditValue,
     isEditable,
-    textareaRef,
-    handleDisplayClick,
-    handleDisplayKeyDown,
-    handleTextareaKeyDown,
+    enterEditOnClick,
+    enterEditOnKey,
+    submitOrCancelOnKey,
   };
 };
