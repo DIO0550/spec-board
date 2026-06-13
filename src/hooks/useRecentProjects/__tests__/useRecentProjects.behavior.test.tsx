@@ -5,7 +5,7 @@ import {
   RECENT_PROJECTS_STORAGE_KEY,
   type UseRecentProjectsResult,
   useRecentProjects,
-} from "../index";
+} from "..";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

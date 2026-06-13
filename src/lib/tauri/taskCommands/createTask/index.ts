@@ -1,8 +1,7 @@
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
-import type { Result } from "@/utils/result";
-import { Result as ResultDomain } from "@/utils/result";
+import { Result, type Result as ResultT } from "@/utils/result";
 import type { CreateTaskParams } from "../types";
 
 /**
@@ -12,7 +11,7 @@ import type { CreateTaskParams } from "../types";
  */
 export const createTask = (
   params: CreateTaskParams,
-): Promise<Result<Task, TauriError>> =>
+): Promise<ResultT<Task, TauriError>> =>
   invokeWrapped<TaskPayload>("create_task", { args: params }).then((result) =>
-    ResultDomain.map(result, Task.fromPayload),
+    Result.map(result, Task.fromPayload),
   );

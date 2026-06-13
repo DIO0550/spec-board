@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Markdown } from "../index";
+import { Markdown } from "..";
 
 test("parse: blockquote 単行", () => {
   expect(Markdown.parse("> quote")).toEqual([

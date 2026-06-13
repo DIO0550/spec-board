@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
-import { SubIssue } from "../index";
+import { SubIssue } from "..";
 
 /**
  * テスト用の Task を生成するファクトリ。

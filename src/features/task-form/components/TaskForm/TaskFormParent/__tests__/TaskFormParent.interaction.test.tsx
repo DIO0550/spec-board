@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { Task } from "@/types/task";
 
 const parentTaskSelectSpy = vi.fn();
-vi.mock("../../../ParentTaskSelect", () => ({
+vi.mock("@/features/task-form/components/ParentTaskSelect", () => ({
   ParentTaskSelect: (props: unknown) => {
     parentTaskSelectSpy(props);
     return null;

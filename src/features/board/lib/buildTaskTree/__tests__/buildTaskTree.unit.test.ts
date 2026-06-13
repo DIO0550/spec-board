@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
-import { buildTaskTree } from "../index";
+import { buildTaskTree } from "..";
 
 const buildTask = (overrides: Partial<TaskPayload>): Task => {
   return Task.fromPayload({

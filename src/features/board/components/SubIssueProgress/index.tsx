@@ -11,11 +11,16 @@ type SubIssueProgressProps = {
   doneColumn: string;
 };
 
+type StatusIconProps = {
+  /** 完了かどうか */
+  isDone: boolean;
+};
+
 /**
  * @param props - isDone: 完了かどうか
  * @returns ステータスアイコン要素
  */
-const StatusIcon = ({ isDone }: { isDone: boolean }) => {
+const StatusIcon = ({ isDone }: StatusIconProps) => {
   const label = isDone ? "完了" : "未完了";
 
   if (isDone) {

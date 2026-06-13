@@ -63,6 +63,16 @@ type TaskCardProps = {
   onDragEnd?: () => void;
 };
 
+type CardContentProps = {
+  task: Task;
+  childTasks?: readonly Task[];
+  descendantTasks?: readonly Task[];
+  doneColumn?: string;
+  milestonesByName?: MilestonesByName;
+  hasBrokenLink?: boolean;
+  hasParseError?: boolean;
+};
+
 /**
  * タスクカード本体の表示。
  * @param props 表示用のタスク情報
@@ -76,15 +86,7 @@ const CardContent = ({
   milestonesByName,
   hasBrokenLink = false,
   hasParseError = false,
-}: {
-  task: Task;
-  childTasks?: readonly Task[];
-  descendantTasks?: readonly Task[];
-  doneColumn?: string;
-  milestonesByName?: MilestonesByName;
-  hasBrokenLink?: boolean;
-  hasParseError?: boolean;
-}) => {
+}: CardContentProps) => {
   // descendantTasks を渡せば全子孫ベースで進捗を集計する。未指定なら childTasks に
   // フォールバックし、直下子のみで集計する。
   const effectiveDescendants = descendantTasks ?? childTasks;

@@ -1,4 +1,4 @@
-import { KebabCase } from "@/domains/KebabCase";
+import { KebabCase } from "@/domains/kebab-case";
 import { normalizeTaskPathForLookup } from "@/domains/task-path";
 import type { FileNameValidationError } from "@/features/task-form/lib/fields/fileName";
 import { FileNameField } from "@/features/task-form/lib/fields/fileName";

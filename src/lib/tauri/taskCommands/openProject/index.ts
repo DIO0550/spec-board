@@ -1,8 +1,7 @@
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
 import { Task } from "@/types/task";
-import type { Result } from "@/utils/result";
-import { Result as ResultDomain } from "@/utils/result";
+import { Result, type Result as ResultT } from "@/utils/result";
 import type {
   OpenProjectParams,
   OpenProjectPayload,
@@ -28,7 +27,7 @@ const toOpenProjectPayload = (
  */
 export const openProject = (
   params: OpenProjectParams,
-): Promise<Result<OpenProjectPayload, TauriError>> =>
+): Promise<ResultT<OpenProjectPayload, TauriError>> =>
   invokeWrapped<OpenProjectRawPayload>("open_project", params).then((result) =>
-    ResultDomain.map(result, toOpenProjectPayload),
+    Result.map(result, toOpenProjectPayload),
   );

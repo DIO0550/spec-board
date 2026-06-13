@@ -1,4 +1,4 @@
-import { KebabCase } from "@/domains/KebabCase";
+import { KebabCase } from "@/domains/kebab-case";
 import { Result } from "@/utils/result";
 
 /** TitleField が保持する値の型（生の入力文字列） */

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { type ColorTokens, LabelRegistry } from "../index";
+import { type ColorTokens, LabelRegistry } from "..";
 
 const OKLCH_PATTERN = /^oklch\(/;
 

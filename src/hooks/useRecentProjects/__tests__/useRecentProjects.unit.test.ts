@@ -3,7 +3,7 @@ import {
   addRecentProject,
   normalizeRecentProjects,
   type RecentProject,
-} from "../index";
+} from "..";
 
 test("addRecentProject は新規パスを先頭に name 付きで追加する", () => {
   const result = addRecentProject([], "/home/user/proj");

@@ -5,7 +5,7 @@ import {
   type UseLabelInputArgs,
   type UseLabelInputResult,
   useLabelInput,
-} from "../index";
+} from "..";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

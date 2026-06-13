@@ -8,7 +8,7 @@ import {
   matchesTaskFilter,
   pruneTaskFilter,
   type TaskFilterCriteria,
-} from "../index";
+} from "..";
 
 const buildTask = (overrides: Partial<TaskPayload>): Task => {
   return Task.fromPayload({
