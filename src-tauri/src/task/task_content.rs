@@ -24,6 +24,11 @@ pub enum TaskContentError {
 }
 
 impl TaskContent {
+    // この 2 つの上限は `spec_board_fs::task::file_scanner` の同名定数と同じ値で
+    // なければならない。scanner が「eligible」と判定して取り込んだ content は、
+    // ここで再構築・書き出しする際にも同じ閾値で拒否されないことが前提のため、
+    // 一方だけ変更すると scanner が通したファイルを VO 生成時に弾く（または逆）と
+    // いう不整合が生じる。値を変える場合は scanner 側の定数も必ず同時に更新すること。
     const MAX_FILE_SIZE: usize = 1024 * 1024;
     const BINARY_PROBE_LEN: usize = 8 * 1024;
 
