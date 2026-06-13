@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 
 type SubIssueProgressProps = {
   /** 直下子（<details> 内の名前一覧用） */
@@ -64,7 +64,7 @@ export const SubIssueProgress = ({
         <ul className="mt-1 ml-4 space-y-0.5 text-xs text-foreground">
           {childTasks.map((child) => (
             <li key={child.id} className="flex items-center gap-1.5">
-              <StatusIcon isDone={child.status === doneColumn} />
+              <StatusIcon isDone={Task.isDone(child, doneColumn)} />
               <span>{child.title || child.filePath}</span>
             </li>
           ))}
