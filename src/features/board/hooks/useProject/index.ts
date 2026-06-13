@@ -86,10 +86,6 @@ export const useProject = (
   const dialogOpeningRef = useRef(false);
 
   useEffect(() => {
-    latestStateRef.current = state;
-  }, [state]);
-
-  useEffect(() => {
     return () => {
       deactivateProject(projectVersionRef.current);
     };
@@ -97,6 +93,9 @@ export const useProject = (
 
   const getState = useCallback((): ProjectState => latestStateRef.current, []);
 
+  // 全 dispatch 経路がこの dispatchSync を通り、reducer 適用と同時に
+  // latestStateRef を即時更新する。これにより effect での state ミラーは不要になり、
+  // commit〜effect 実行の間に Tauri イベントが ref を古い state へ巻き戻す窓も生じない。
   const dispatchSync = useCallback((action: ProjectAction): void => {
     latestStateRef.current = reducer(latestStateRef.current, action);
     dispatch(action);
