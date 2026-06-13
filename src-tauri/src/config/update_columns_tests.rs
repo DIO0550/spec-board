@@ -271,23 +271,6 @@ fn write_ignore_lock_poisoned_converts_to_state_lock_poisoned() {
 }
 
 #[test]
-fn write_ignore_cleanup_worker_spawn_failed_maps_to_dedicated_variant() {
-    let err: UpdateColumnsError = WriteIgnoreError::CleanupWorkerSpawnFailed.into();
-    assert!(matches!(
-        err,
-        UpdateColumnsError::WriteIgnoreWorkerSpawnFailed
-    ));
-}
-
-#[test]
-fn write_ignore_worker_spawn_failed_display() {
-    assert_eq!(
-        UpdateColumnsError::WriteIgnoreWorkerSpawnFailed.to_string(),
-        "watcher の補助スレッド起動に失敗しました"
-    );
-}
-
-#[test]
 fn column_rename_deserializes_camel_case() {
     let json = r#"{ "from": "A", "to": "B" }"#;
     let r: ColumnRename = serde_json::from_str(json).expect("should deserialize");

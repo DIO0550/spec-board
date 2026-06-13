@@ -5,8 +5,6 @@
 //! `remove_link_impl(...).map_err(|e| e.to_string())` で文字列化する
 //! （既存 `add_link` / `update_task` と同型）。
 
-use std::path::PathBuf;
-
 use thiserror::Error;
 
 use crate::state::AppStateError;
@@ -34,9 +32,6 @@ pub enum RemoveLinkError {
     /// `frontmatter::serialize` 後の本文が scanner eligible でない場合。
     #[error("content not scanner eligible: {reason}")]
     ContentRejected { reason: ContentRejectReason },
-    /// 効果層側で具体的な NotFound 等を `SourceNotFound` に詰め直す途中で使う path 形式。
-    #[error("file not found: {}", .0.display())]
-    FileNotFound(PathBuf),
 }
 
 #[derive(Debug, Error)]

@@ -17,8 +17,6 @@ use thiserror::Error;
 pub enum WriteIgnoreError {
     #[error("write_ignore registry lock poisoned")]
     LockPoisoned,
-    #[error("failed to start write_ignore cleanup worker")]
-    CleanupWorkerSpawnFailed,
 }
 
 #[derive(Debug, Default)]

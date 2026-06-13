@@ -741,18 +741,6 @@ fn write_ignore_error_lock_poisoned_maps_to_state_lock_poisoned() {
 }
 
 #[test]
-fn write_ignore_error_non_poison_maps_to_scan_failed() {
-    use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
-    let err: OpenProjectError = WriteIgnoreError::CleanupWorkerSpawnFailed.into();
-    match err {
-        OpenProjectError::ScanFailed { ref message } => {
-            assert!(!message.is_empty());
-        }
-        other => panic!("expected ScanFailed, got {other:?}"),
-    }
-}
-
-#[test]
 fn payload_serialization_uses_camel_case() {
     let payload = OpenProjectPayload {
         tasks: Vec::new(),
