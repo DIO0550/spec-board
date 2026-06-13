@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { LabelRegistry } from "@/domains/label-registry";
+import { useLabelList } from "@/hooks/useLabelList";
 import type { LabelDefinition } from "@/lib/tauri";
-import { useLabelList } from "../../hooks/useLabelList";
 
 /**
  * ラベル 1 件のスワッチに適用する色スタイルを解決する。

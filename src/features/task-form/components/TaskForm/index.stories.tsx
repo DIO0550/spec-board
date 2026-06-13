@@ -26,3 +26,10 @@ export const Submitting: Story = {
 export const WithParentCandidates: Story = {
   args: { parentCandidates: initialTasks },
 };
+
+export const WithPathPreview: Story = {
+  args: {
+    projectPath: "/Users/dev/projects/spec-board",
+    existingTasks: initialTasks,
+  },
+};

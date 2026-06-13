@@ -1,5 +1,6 @@
-import { useId } from "react";
+import { ColumnColor } from "@/domains/column-color";
 import type { Column } from "@/types/column";
+import { ChipRadioGroup } from "../ChipRadioGroup";
 
 type TaskFormStatusProps = {
   /** 選択肢となるカラム一覧 */
@@ -17,7 +18,8 @@ type TaskFormStatusProps = {
 
 /**
  * タスクステータス選択フィールド。
- * columns から option を生成する pure な子コンポーネント。
+ * columns からチップを生成する pure な子コンポーネント。
+ * チップ色はボードのカラム色帯と同一ロジック（ColumnColor.resolveAccent）で解決する。
  * @param props - {@link TaskFormStatusProps}
  * @returns ステータス選択 UI
  */
@@ -27,30 +29,19 @@ export const TaskFormStatus = ({
   onChange,
   disabled,
 }: TaskFormStatusProps) => {
-  const id = useId();
-  const statusId = `${id}-status`;
   return (
-    <div>
-      <label
-        htmlFor={statusId}
-        className="mb-1 block text-xs font-medium text-foreground"
-      >
-        ステータス <span className="text-red-600">*</span>
-      </label>
-      <select
-        id={statusId}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
-        data-testid="task-form-status"
-      >
-        {columns.map((col) => (
-          <option key={col.name} value={col.name}>
-            {col.name}
-          </option>
-        ))}
-      </select>
-    </div>
+    <ChipRadioGroup
+      label="ステータス"
+      required
+      options={columns.map((col, index) => ({
+        value: col.name,
+        label: col.name,
+        accentColor: ColumnColor.resolveAccent(col.color, index),
+      }))}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      data-testid="task-form-status"
+    />
   );
 };

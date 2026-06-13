@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { useEffect, useId, useMemo } from "react";
 import { Button } from "@/components/Button";
 import { TaskLinks } from "@/domains/task-links";
@@ -6,9 +7,13 @@ import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
+import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
+import { SavePathPreview } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
+import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormDraft } from "./TaskFormDraft";
@@ -41,6 +46,8 @@ type TaskFormProps = {
   parentReadOnly?: boolean;
   /** links ピッカー候補・選択済み chip の逆引きに使う既存タスク一覧 */
   existingTasks?: readonly Task[];
+  /** プロジェクト絶対パス（保存先フルパスプレビュー用。未指定なら相対パス表示） */
+  projectPath?: string;
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
   /** 送信ボタンのラベル（デフォルト: "作成"） */
@@ -61,6 +68,15 @@ type TaskFormProps = {
    * @param values - 集約したフォーム現在値（priority は string、未コミット label も含む）
    */
   onValuesChange?: (values: PreviewFrontmatterInput & { body: string }) => void;
+  /** form 要素への ref（キーボードショートカットからの requestSubmit 用） */
+  formRef?: RefObject<HTMLFormElement | null>;
+  /**
+   * dirty（破棄確認が必要な入力があるか）の変化通知。
+   * mount 直後に初期状態で一度発火し、以降は boolean が反転した時のみ呼ばれる
+   * （毎キーストロークでは呼ばれない）。
+   * @param dirty - 入力済み内容の有無
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 /**
@@ -77,15 +93,27 @@ export const TaskForm = ({
   initialParent,
   parentReadOnly,
   existingTasks,
+  projectPath,
   isSubmitting = false,
   submitLabel = "作成",
   cancelLabel = "キャンセル",
   onSubmit,
   onCancel,
   onValuesChange,
+  formRef,
+  onDirtyChange,
 }: TaskFormProps) => {
   const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
+  // ラベルマスタ由来のサジェスト候補。loading / error 時は候補なし（従来の自由入力のみ）。
+  const labelList = useLabelList();
+  const labelSuggestions = useMemo(() => {
+    if (labelList.kind !== "loaded") {
+      return [];
+    }
+    const names = labelList.labels.map((label) => label.name);
+    return LabelsField.suggestionsFor(labels.state, names);
+  }, [labelList, labels.state]);
   // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
   const links = useLinksInput();
   const fields = useTaskFormFields({
@@ -141,6 +169,47 @@ export const TaskForm = ({
     labels.state,
     links.links,
   ]);
+  // 保存先パスプレビュー。文字列結合のみで Markdown 再パースを伴わないため、
+  // 毎キーストローク再計算でも onValuesChange の fileName 除外最適化と矛盾しない。
+  const pathPreview = useMemo(
+    () =>
+      SavePathPreview.compute({
+        title: fields.state.values.title,
+        fileName: fields.state.values.fileName,
+        parentFilePath:
+          parentValue === "" || parentValue === undefined
+            ? undefined
+            : parentValue,
+        existingTaskFilePaths: (existingTasks ?? []).map(
+          (task) => task.filePath,
+        ),
+        projectPath,
+      }),
+    [
+      fields.state.values.title,
+      fields.state.values.fileName,
+      parentValue,
+      existingTasks,
+      projectPath,
+    ],
+  );
+  // dirty 判定はフル値（fileName / subIssues 含む）から毎レンダー計算するが、
+  // 親への通知は boolean 反転時のみ（useEffect の deps が boolean）のため、
+  // onValuesChange の fileName 除外最適化（毎キーストロークの Markdown 再パース回避）を壊さない。
+  const dirty = isFormDirty({
+    values: fields.state.values,
+    labels: labels.state.labels,
+    labelInput: labels.state.labelInput,
+    links: links.links,
+    initialStatus,
+    initialParent,
+  });
+  useEffect(() => {
+    if (onDirtyChange === undefined) {
+      return;
+    }
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
   // parent 確定後に候補算出（parent + 選択済みを除外）。一方向依存で循環なし。
   const linkCandidates = useMemo(
     () =>
@@ -159,6 +228,7 @@ export const TaskForm = ({
     .filter((task): task is Task => task !== undefined);
   return (
     <form
+      ref={formRef}
       className="flex flex-col gap-4"
       data-testid="task-form"
       noValidate
@@ -175,6 +245,12 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "fileName", value })}
         error={fields.state.errors.fileName}
         disabled={isSubmitting}
+      />
+      <SavePathPreviewView
+        preview={pathPreview}
+        // submit 失敗で fileName 欄エラーが表示されている間は同文のライブ警告を抑止する
+        //（エラーは次の入力でクリアされるため、入力再開後はライブ警告へ引き継がれる）。
+        suppressWarning={fields.state.errors.fileName !== undefined}
       />
       <TaskFormStatus
         columns={columns}
@@ -208,6 +284,10 @@ export const TaskForm = ({
           onKeyDown={labels.handleKeyDown}
           onBlur={() => labels.dispatch({ type: "commit" })}
           disabled={isSubmitting}
+          candidates={labelSuggestions}
+          onSelect={(label) =>
+            labels.dispatch({ type: "commitValue", value: label })
+          }
         />
       </TaskFormLabels>
       {parentCandidates !== undefined && (

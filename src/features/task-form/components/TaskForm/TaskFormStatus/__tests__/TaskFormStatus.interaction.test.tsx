@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { ColumnColor } from "@/domains/column-color";
 import type { Column } from "@/types/column";
 import { TaskFormStatus } from "..";
 
@@ -27,40 +28,67 @@ const render = (props: Parameters<typeof TaskFormStatus>[0]) => {
 
 const columns: Column[] = [
   { name: "Todo", order: 0 },
-  { name: "Done", order: 1 },
+  { name: "Doing", order: 1, color: "#ff0000" },
+  { name: "Done", order: 2 },
 ];
 
-test("select と columns 分の option が描画され value が反映される", () => {
+test("columns 全件がチップとして描画され radiogroup でグループ化される", () => {
   render({ columns, value: "Todo", onChange: vi.fn(), disabled: false });
-  const select = container?.querySelector(
-    "[data-testid='task-form-status']",
-  ) as HTMLSelectElement;
-  expect(select).toBeTruthy();
-  expect(select.value).toBe("Todo");
-  expect(select.querySelectorAll("option").length).toBe(2);
+  const group = document.querySelector(
+    "[data-testid='task-form-status'][role='radiogroup']",
+  );
+  expect(group).toBeTruthy();
+  const chips = Array.from(group?.querySelectorAll("[role='radio']") ?? []).map(
+    (c) => c.textContent,
+  );
+  expect(chips).toEqual(["Todo", "Doing", "Done"]);
 });
 
-test("select 変更で onChange が呼ばれる", () => {
+test("value のチップだけが aria-checked=true になる", () => {
+  render({ columns, value: "Doing", onChange: vi.fn(), disabled: false });
+  const checked = Array.from(document.querySelectorAll("[role='radio']")).map(
+    (c) => c.getAttribute("aria-checked"),
+  );
+  expect(checked).toEqual(["false", "true", "false"]);
+});
+
+test("チップのクリックで onChange がその column 名で呼ばれる", () => {
   const onChange = vi.fn();
   render({ columns, value: "Todo", onChange, disabled: false });
-  const select = container?.querySelector(
-    "[data-testid='task-form-status']",
-  ) as HTMLSelectElement;
+  const done = document.querySelector(
+    "[data-testid='task-form-status-chip-Done']",
+  ) as HTMLButtonElement;
   act(() => {
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      "value",
-    )?.set;
-    setter?.call(select, "Done");
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    done.click();
   });
   expect(onChange).toHaveBeenCalledWith("Done");
 });
 
-test("disabled=true で select が disabled", () => {
-  render({ columns, value: "Todo", onChange: vi.fn(), disabled: true });
-  const select = container?.querySelector(
-    "[data-testid='task-form-status']",
-  ) as HTMLSelectElement;
-  expect(select.disabled).toBe(true);
+test("color 指定ありの選択中チップに resolveAccent の色が反映される", () => {
+  render({ columns, value: "Doing", onChange: vi.fn(), disabled: false });
+  const chip = document.querySelector(
+    "[data-testid='task-form-status-chip-Doing']",
+  ) as HTMLButtonElement;
+  expect(chip.style.borderColor).toBe(ColumnColor.resolveAccent("#ff0000", 1));
+});
+
+test("color 未設定の選択中チップは order フォールバックの accent が使われる", () => {
+  render({ columns, value: "Todo", onChange: vi.fn(), disabled: false });
+  const chip = document.querySelector(
+    "[data-testid='task-form-status-chip-Todo']",
+  ) as HTMLButtonElement;
+  expect(chip.style.borderColor).toBe(ColumnColor.resolveAccent(undefined, 0));
+});
+
+test("disabled=true で全チップが disabled になり onChange が呼ばれない", () => {
+  const onChange = vi.fn();
+  render({ columns, value: "Todo", onChange, disabled: true });
+  const chips = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[role='radio']"),
+  );
+  expect(chips.every((c) => c.disabled)).toBe(true);
+  act(() => {
+    chips[2]?.click();
+  });
+  expect(onChange).not.toHaveBeenCalled();
 });

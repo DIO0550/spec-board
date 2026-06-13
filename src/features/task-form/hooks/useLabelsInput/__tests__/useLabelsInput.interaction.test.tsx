@@ -203,3 +203,25 @@ test("finalizeLabels: 非空かつ新規は pending を取り込んだ配列を�
   expect(result).toEqual(["a", "b"]);
   expect(get().state).toEqual({ labels: ["a", "b"], labelInput: "" });
 });
+
+test("commitValue dispatch で labels に追加され labelInput がクリアされる", () => {
+  const get = render();
+  act(() => {
+    get().dispatch({ type: "setInput", value: "bu" });
+  });
+  act(() => {
+    get().dispatch({ type: "commitValue", value: "bug" });
+  });
+  expect(get().state).toEqual({ labels: ["bug"], labelInput: "" });
+});
+
+test("確定済みラベルの commitValue dispatch では labels 不変で labelInput だけクリアされる", () => {
+  const get = render(["bug"]);
+  act(() => {
+    get().dispatch({ type: "setInput", value: "bu" });
+  });
+  act(() => {
+    get().dispatch({ type: "commitValue", value: "bug" });
+  });
+  expect(get().state).toEqual({ labels: ["bug"], labelInput: "" });
+});

@@ -1,12 +1,31 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { getLabels, TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 import { TaskForm } from "..";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    getLabels: vi.fn(),
+  };
+});
+
+const getLabelsMock = vi.mocked(getLabels);
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
+
+beforeEach(() => {
+  getLabelsMock.mockReset();
+  // 既定はラベルマスタ 0 件（従来挙動 = 候補なし）。
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+});
 
 afterEach(() => {
   act(() => {
@@ -192,9 +211,9 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  const status = document.querySelector(
-    '[data-testid="task-form-status"]',
-  ) as HTMLSelectElement;
+  const statusChip = document.querySelector(
+    '[data-testid="task-form-status"] [role="radio"]',
+  ) as HTMLButtonElement;
   const submit = document.querySelector(
     '[data-testid="task-form-submit"]',
   ) as HTMLButtonElement;
@@ -208,7 +227,7 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
     '[data-testid="task-form-body"]',
   ) as HTMLTextAreaElement;
   expect(title.disabled).toBe(true);
-  expect(status.disabled).toBe(true);
+  expect(statusChip.disabled).toBe(true);
   expect(submit.disabled).toBe(true);
   expect(cancel.disabled).toBe(true);
   expect(labelInput.disabled).toBe(true);
@@ -566,4 +585,246 @@ test("isSubmitting=true で下書きチェックボックスも無効化され�
     '[data-testid="task-form-draft"]',
   ) as HTMLInputElement;
   expect(checkbox.disabled).toBe(true);
+});
+
+test("getLabels の候補がラベル入力のサジェストへ配線される（結合）", async () => {
+  getLabelsMock.mockResolvedValue(
+    Result.ok({ labels: [{ name: "bug" }, { name: "feature" }] }),
+  );
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    labelInput.focus();
+    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
+  });
+  const options = Array.from(
+    document.querySelectorAll(
+      '[data-testid="task-form-label-suggest"] [role="option"]',
+    ),
+  );
+  expect(options.map((o) => o.textContent)).toEqual(["bug", "feature"]);
+});
+
+test("getLabels が失敗しても候補なしの従来挙動になる（結合）", async () => {
+  getLabelsMock.mockResolvedValue(Result.err(TauriError.from("読み込み失敗")));
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    labelInput.focus();
+    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-label-suggest"]'),
+  ).toBeNull();
+});
+
+test("候補のクリック確定でラベルチップが追加され入力がクリアされる（結合）", async () => {
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [{ name: "bug" }] }));
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const labelInput = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  act(() => {
+    labelInput.focus();
+    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
+  });
+  const option = document.querySelector(
+    '[data-testid="task-form-label-suggest-option-bug"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    option.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(
+    document.querySelector('[aria-label="ラベル「bug」を削除"]'),
+  ).toBeTruthy();
+  expect(labelInput.value).toBe("");
+});
+
+test("onDirtyChange は boolean 反転時のみ呼ばれる（title 3 文字連続入力で true 通知は 1 回）", () => {
+  const onDirtyChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onDirtyChange,
+  });
+  // mount 直後に初期状態（false）が一度通知される。
+  expect(onDirtyChange).toHaveBeenCalledTimes(1);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "a");
+  });
+  act(() => {
+    changeInputValue(title, "ab");
+  });
+  act(() => {
+    changeInputValue(title, "abc");
+  });
+  expect(onDirtyChange).toHaveBeenCalledTimes(2);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  act(() => {
+    changeInputValue(title, "");
+  });
+  expect(onDirtyChange).toHaveBeenCalledTimes(3);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+});
+
+test("formRef に form 要素が配線される", () => {
+  const formRef = { current: null as HTMLFormElement | null };
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    formRef,
+  });
+  expect(formRef.current).toBe(
+    document.querySelector('[data-testid="task-form"]'),
+  );
+});
+
+test("fileName 欄直下に保存先パスプレビューが表示され fileName 入力で追従する", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    projectPath: "/tmp/project",
+  });
+  // 未入力時は案内文（pending）。
+  expect(
+    document.querySelector('[data-testid="task-form-path-preview"]'),
+  ).toBeNull();
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "My Task");
+  });
+  const preview = () =>
+    document.querySelector('[data-testid="task-form-path-preview"]');
+  expect(preview()?.textContent).toBe("/tmp/project/tasks/my-task.md");
+  // fileName 欄は title 追従後も手入力で上書きでき、プレビューが追従する。
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(fileName, "custom");
+  });
+  expect(preview()?.textContent).toBe("/tmp/project/tasks/custom.md");
+});
+
+test("無効な fileName 入力でプレビューが警告表示に切り替わる", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(fileName, "a/b");
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-path-warning"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-form-path-preview"]'),
+  ).toBeNull();
+});
+
+test("submit 失敗で fileName 欄エラー表示中はプレビュー警告を抑止し、次の入力でライブ警告へ引き継ぐ", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(title, "T");
+  });
+  act(() => {
+    changeInputValue(fileName, "a/b");
+  });
+  act(() => {
+    submitForm();
+  });
+  // fileName 欄エラーが表示されている間は同文のライブ警告を出さない。
+  expect(
+    document.querySelector('[data-testid="task-form-file-name-error"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-form-path-warning"]'),
+  ).toBeNull();
+  // 次の入力で欄エラーがクリアされ、ライブ警告へ引き継がれる。
+  act(() => {
+    changeInputValue(fileName, "a/bc");
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-file-name-error"]'),
+  ).toBeNull();
+  expect(
+    document.querySelector('[data-testid="task-form-path-warning"]'),
+  ).toBeTruthy();
+});
+
+test("fileName のみの入力では onValuesChange が追加発火しない（既存最適化のリグレッション防止）", () => {
+  const onValuesChange = vi.fn();
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onValuesChange,
+  });
+  const callsAfterMount = onValuesChange.mock.calls.length;
+  const fileName = document.querySelector(
+    '[data-testid="task-form-file-name"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(fileName, "custom");
+  });
+  expect(onValuesChange.mock.calls.length).toBe(callsAfterMount);
 });

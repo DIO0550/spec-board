@@ -24,55 +24,71 @@ const render = (props: Parameters<typeof TaskFormPriority>[0]) => {
   });
 };
 
-const changeValue = (select: HTMLSelectElement, value: string) => {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-};
-
-test("value='' で「なし」が選択状態、High/Medium/Low option も存在", () => {
+test("なし / High / Medium / Low の 4 チップが radiogroup で描画される", () => {
   render({ value: "", onChange: vi.fn(), disabled: false });
-  const select = container?.querySelector(
-    "[data-testid='task-form-priority']",
-  ) as HTMLSelectElement;
-  expect(select.value).toBe("");
-  const options = Array.from(select.querySelectorAll("option")).map(
-    (o) => o.value,
+  const group = document.querySelector(
+    "[data-testid='task-form-priority'][role='radiogroup']",
   );
-  expect(options).toEqual(["", "High", "Medium", "Low"]);
+  expect(group).toBeTruthy();
+  const chips = Array.from(group?.querySelectorAll("[role='radio']") ?? []).map(
+    (c) => c.textContent,
+  );
+  expect(chips).toEqual(["なし", "High", "Medium", "Low"]);
 });
 
-test("High を選択で onChange('High') が呼ばれる", () => {
+test("value='' で「なし」チップが選択状態になる", () => {
+  render({ value: "", onChange: vi.fn(), disabled: false });
+  const none = document.querySelector(
+    "[data-testid='task-form-priority-chip-']",
+  ) as HTMLButtonElement;
+  expect(none.getAttribute("aria-checked")).toBe("true");
+});
+
+test("High チップのクリックで onChange('High') が呼ばれる", () => {
   const onChange = vi.fn();
   render({ value: "", onChange, disabled: false });
-  const select = container?.querySelector(
-    "[data-testid='task-form-priority']",
-  ) as HTMLSelectElement;
+  const high = document.querySelector(
+    "[data-testid='task-form-priority-chip-High']",
+  ) as HTMLButtonElement;
   act(() => {
-    changeValue(select, "High");
+    high.click();
   });
   expect(onChange).toHaveBeenCalledWith("High");
 });
 
-test("空文字を選択で onChange('') が呼ばれる", () => {
+test("value='High' で「なし」チップのクリックで onChange('') が呼ばれる", () => {
   const onChange = vi.fn();
   render({ value: "High", onChange, disabled: false });
-  const select = container?.querySelector(
-    "[data-testid='task-form-priority']",
-  ) as HTMLSelectElement;
+  const none = document.querySelector(
+    "[data-testid='task-form-priority-chip-']",
+  ) as HTMLButtonElement;
   act(() => {
-    changeValue(select, "");
+    none.click();
   });
   expect(onChange).toHaveBeenCalledWith("");
 });
 
-test("disabled=true で select が disabled", () => {
-  render({ value: "", onChange: vi.fn(), disabled: true });
-  const select = container?.querySelector(
-    "[data-testid='task-form-priority']",
-  ) as HTMLSelectElement;
-  expect(select.disabled).toBe(true);
+test.each([
+  ["High", "bg-red-100"],
+  ["Medium", "bg-yellow-100"],
+  ["Low", "bg-blue-100"],
+])("%s チップに %s 系の配色クラスが付与される", (priority, expectedClass) => {
+  render({ value: "", onChange: vi.fn(), disabled: false });
+  const chip = document.querySelector(
+    `[data-testid='task-form-priority-chip-${priority}']`,
+  ) as HTMLButtonElement;
+  expect(chip.className).toContain(expectedClass);
+});
+
+test("disabled=true で全チップが disabled になり onChange が呼ばれない", () => {
+  const onChange = vi.fn();
+  render({ value: "", onChange, disabled: true });
+  const chips = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("[role='radio']"),
+  );
+  expect(chips.every((c) => c.disabled)).toBe(true);
+  act(() => {
+    chips[1]?.click();
+  });
+  expect(onChange).not.toHaveBeenCalled();
 });

@@ -1,7 +1,12 @@
-import { useId } from "react";
-import type { Priority } from "@/domains/priority";
+import { Priority } from "@/domains/priority";
+import { ChipRadioGroup } from "../ChipRadioGroup";
 
-const PRIORITY_OPTIONS: readonly Priority[] = ["High", "Medium", "Low"];
+// board の PriorityBadge と同じ配色。変更時は両者を揃えること。
+const PRIORITY_CHIP_CLASSES: Record<Priority, string> = {
+  High: "bg-red-100 text-red-800",
+  Medium: "bg-yellow-100 text-yellow-800",
+  Low: "bg-blue-100 text-blue-800",
+};
 
 type TaskFormPriorityProps = {
   /** 現在値（未選択は空文字） */
@@ -17,7 +22,7 @@ type TaskFormPriorityProps = {
 
 /**
  * タスク優先度選択フィールド。
- * 固定 4 択（なし / High / Medium / Low）を提供する pure な子コンポーネント。
+ * なし + Priority.OPTIONS の 4 チップを提供する pure な子コンポーネント。
  * @param props - {@link TaskFormPriorityProps}
  * @returns 優先度選択 UI
  */
@@ -26,31 +31,21 @@ export const TaskFormPriority = ({
   onChange,
   disabled,
 }: TaskFormPriorityProps) => {
-  const id = useId();
-  const priorityId = `${id}-priority`;
   return (
-    <div>
-      <label
-        htmlFor={priorityId}
-        className="mb-1 block text-xs font-medium text-foreground"
-      >
-        優先度
-      </label>
-      <select
-        id={priorityId}
-        value={value}
-        onChange={(e) => onChange(e.target.value as Priority | "")}
-        disabled={disabled}
-        className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
-        data-testid="task-form-priority"
-      >
-        <option value="">なし</option>
-        {PRIORITY_OPTIONS.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
-    </div>
+    <ChipRadioGroup
+      label="優先度"
+      options={[
+        { value: "", label: "なし" },
+        ...Priority.OPTIONS.map((p) => ({
+          value: p,
+          label: p,
+          className: PRIORITY_CHIP_CLASSES[p],
+        })),
+      ]}
+      value={value}
+      onChange={(v) => onChange(v as Priority | "")}
+      disabled={disabled}
+      data-testid="task-form-priority"
+    />
   );
 };

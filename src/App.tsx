@@ -1052,6 +1052,7 @@ export const App = () => {
             {view === "create" && createModalStatus !== null && (
               <TaskCreateScreen
                 columns={columns}
+                projectPath={loadedPath ?? undefined}
                 initialStatus={createModalStatus}
                 parentCandidates={parentCandidates}
                 existingTasks={tasks}

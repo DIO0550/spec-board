@@ -124,3 +124,55 @@ test("キャンセルボタン click で onClose が呼ばれる", () => {
   });
   expect(onClose).toHaveBeenCalledOnce();
 });
+
+test("ステータス/優先度の radiogroup が 2 つあり、それぞれラベルと関連付く", () => {
+  render(baseProps());
+  const groups = Array.from(document.querySelectorAll('[role="radiogroup"]'));
+  expect(groups.length).toBe(2);
+  const labels = groups.map((group) => {
+    const labelId = group.getAttribute("aria-labelledby");
+    return document.getElementById(labelId ?? "")?.textContent ?? "";
+  });
+  expect(labels[0]).toContain("ステータス");
+  expect(labels[1]).toContain("優先度");
+});
+
+test("ラベル入力が combobox として aria-expanded を持つ", () => {
+  render(baseProps());
+  const input = document.querySelector(
+    '[data-testid="task-form-label-input"]',
+  ) as HTMLInputElement;
+  expect(input.getAttribute("role")).toBe("combobox");
+  expect(input.getAttribute("aria-expanded")).toBe("false");
+});
+
+test("Markdown ツールバーが role=toolbar と各ボタンの aria-label を持つ", () => {
+  render(baseProps());
+  const toolbar = document.querySelector('[role="toolbar"]');
+  expect(toolbar?.getAttribute("aria-label")).toBe("Markdown 編集");
+  const buttons = Array.from(toolbar?.querySelectorAll("button") ?? []);
+  expect(buttons.length).toBe(5);
+  expect(buttons.every((b) => b.getAttribute("aria-label"))).toBeTruthy();
+});
+
+test("入力ありの Esc で表示される破棄確認が alertdialog + aria-modal を持つ", () => {
+  render(baseProps());
+  act(() => {
+    setTitle("入力中");
+  });
+  pressEscape();
+  const dialog = document.querySelector('[role="alertdialog"]');
+  expect(dialog).toBeTruthy();
+  expect(dialog?.getAttribute("aria-modal")).toBe("true");
+});
+
+test("パスプレビュー領域に aria-live=polite が付与される", () => {
+  render(baseProps());
+  const form = document.querySelector('[data-testid="task-form"]');
+  const live = form?.querySelector('[aria-live="polite"]');
+  expect(live).toBeTruthy();
+  // 未入力時は pending の案内文がライブリージョン内に表示される。
+  expect(live?.textContent).toContain(
+    "タイトルまたはファイル名を入力すると保存先パスを表示します",
+  );
+});

@@ -9,6 +9,7 @@ import { LabelsField } from "@/features/task-form/lib/fields/labels";
 export type LabelsAction =
   | { type: "setInput"; value: string }
   | { type: "commit" }
+  | { type: "commitValue"; value: string }
   | { type: "remove"; label: string };
 
 /**
@@ -23,6 +24,8 @@ const reducer = (state: LabelsField, action: LabelsAction): LabelsField => {
       return LabelsField.withInput(state, action.value);
     case "commit":
       return LabelsField.commit(state);
+    case "commitValue":
+      return LabelsField.commitValue(state, action.value);
     case "remove":
       return LabelsField.remove(state, action.label);
     default: {

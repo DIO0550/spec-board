@@ -91,8 +91,27 @@ test("parentReadOnly=true で親フィールドが readOnly（解除ボタンな
 
 test("initialStatus が status フィールドに反映される", () => {
   render(baseProps({ initialStatus: "Done" }));
-  const status = document.querySelector(
-    '[data-testid="task-form-status"]',
-  ) as HTMLSelectElement;
-  expect(status.value).toBe("Done");
+  const checkedChip = document.querySelector(
+    '[data-testid="task-form-status"] [role="radio"][aria-checked="true"]',
+  );
+  expect(checkedChip?.textContent).toBe("Done");
+});
+
+test("projectPath が TaskForm のパスプレビューへ pass-through される", () => {
+  render(baseProps({ projectPath: "/tmp/project" }));
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(title, "My Task");
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-path-preview"]')
+      ?.textContent,
+  ).toBe("/tmp/project/tasks/my-task.md");
 });
