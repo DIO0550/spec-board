@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::task::parse::{normalized_task_file_path, task_from_markdown, TaskParseContext};
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::warning::{ensure_parent_cycle_warning, has_parent_cycle_warning};
+use crate::task::warning::has_parent_cycle_warning;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::FsEvent;
 
@@ -197,10 +197,7 @@ fn handle_upsert(
             .map(|prev| has_parent_cycle_warning(&prev.warnings))
             .unwrap_or(false);
         let mut next = task;
-        if was_cycle_member && next.parent.is_some() {
-            next.parent = None;
-            ensure_parent_cycle_warning(&mut next.warnings);
-        }
+        next.preserve_parent_cycle_state(was_cycle_member, true);
         cache.insert(cache_key, next.clone());
         (event, next)
     })?;

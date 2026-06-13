@@ -13,7 +13,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
-use crate::task::warning::{ensure_parent_cycle_warning, has_parent_cycle_warning};
+use crate::task::warning::has_parent_cycle_warning;
 
 /// `update_task` Tauri command 薄層。
 #[tauri::command]
@@ -129,10 +129,7 @@ fn commit_cache(
                     .map(|prev| has_parent_cycle_warning(&prev.warnings))
                     .unwrap_or(false);
                 let mut next = outcome.updated_task.clone();
-                if was_cycle_member {
-                    next.parent = None;
-                    ensure_parent_cycle_warning(&mut next.warnings);
-                }
+                next.preserve_parent_cycle_state(was_cycle_member, false);
                 cache.insert(cache_key.clone(), next.clone());
                 Ok(Some(next))
             }
