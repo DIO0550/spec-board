@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { basenameOf } from "@/utils/path";
 
 /** 最近開いたプロジェクト 1 件。 */
 export type RecentProject = {
@@ -13,16 +14,6 @@ export const RECENT_PROJECTS_STORAGE_KEY = "spec-board:recentProjects";
 
 /** 履歴の最大保持件数。 */
 const MAX_RECENT_PROJECTS = 8;
-
-/**
- * パスの末尾セグメント（フォルダ名）を取り出す。区切りは `/` と `\` の両方を許容する。
- * @param path - プロジェクトの絶対パス
- * @returns 末尾セグメント。取り出せなければパス全体
- */
-export const basenameOf = (path: string): string => {
-  const segments = path.split(/[\\/]+/).filter((segment) => segment !== "");
-  return segments[segments.length - 1] ?? path;
-};
 
 /**
  * 履歴へパスを追加する。既存の同一パスは先頭へ繰り上げ、上限件数で切り詰める。
