@@ -5,6 +5,7 @@ pub mod delete;
 pub mod due;
 pub mod frontmatter;
 pub mod get;
+pub mod input_task_path;
 pub mod io;
 pub mod label;
 pub mod parse;
