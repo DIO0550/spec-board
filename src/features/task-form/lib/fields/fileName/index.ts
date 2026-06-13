@@ -1,4 +1,4 @@
-import { KebabCase } from "@/domains/KebabCase";
+import { KebabCase } from "@/domains/kebab-case";
 import { Result } from "@/utils/result";
 // 予約文字集合は title field の export 済み定数を再利用する（再定義しない）。
 import { FORBIDDEN_TITLE_CHARS } from "../title";
