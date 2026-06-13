@@ -9,7 +9,7 @@ use crate::task::frontmatter::{parse as parse_frontmatter, Parsed};
 use crate::task::parse::{task_from_markdown, TaskParseContext};
 
 // ---------------------------------------------------------------------------
-// fixture helpers（`children_tests.rs:9-29` を踏襲）
+// fixture helpers（`children_tests.rs` の helper を踏襲）
 // ---------------------------------------------------------------------------
 
 fn context(path: &str) -> TaskParseContext {
