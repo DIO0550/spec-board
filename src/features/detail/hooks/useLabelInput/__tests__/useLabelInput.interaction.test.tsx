@@ -77,22 +77,24 @@ const renderHook = (args: UseLabelInputArgs) => {
   };
 };
 
-test("初期 state は { kind: 'idle' }", () => {
+test("初期状態は非追加（isAdding=false / inputValue=''）", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: [], onCommit });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
+  expect(probe.latest.inputValue).toBe("");
 });
 
-test("startAdding() で adding に遷移", () => {
+test("startAdding() で追加中（isAdding=true / inputValue=''）に遷移", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: [], onCommit });
   act(() => {
     probe.latest.startAdding();
   });
-  expect(probe.latest.state).toEqual({ kind: "adding", input: "" });
+  expect(probe.latest.isAdding).toBe(true);
+  expect(probe.latest.inputValue).toBe("");
 });
 
-test("setInput で input が更新される（連続）", () => {
+test("setInput で inputValue が更新される（連続）", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: [], onCommit });
   act(() => {
@@ -101,14 +103,14 @@ test("setInput で input が更新される（連続）", () => {
   act(() => {
     probe.latest.setInput("foo");
   });
-  expect(probe.latest.state).toEqual({ kind: "adding", input: "foo" });
+  expect(probe.latest.inputValue).toBe("foo");
   act(() => {
     probe.latest.setInput("bar");
   });
-  expect(probe.latest.state).toEqual({ kind: "adding", input: "bar" });
+  expect(probe.latest.inputValue).toBe("bar");
 });
 
-test("cancelAdding() で idle に戻る", () => {
+test("cancelAdding() で非追加（isAdding=false）に戻る", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: [], onCommit });
   act(() => {
@@ -120,10 +122,10 @@ test("cancelAdding() で idle に戻る", () => {
   act(() => {
     probe.latest.cancelAdding();
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
-test("confirmAdding() 成功で onCommit が trim 値で 1 回呼ばれて idle に戻る", () => {
+test("confirmAdding() 成功で onCommit が trim 値で 1 回呼ばれて非追加に戻る", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: ["a"], onCommit });
   act(() => {
@@ -137,10 +139,10 @@ test("confirmAdding() 成功で onCommit が trim 値で 1 回呼ばれて idle 
   });
   expect(onCommit).toHaveBeenCalledTimes(1);
   expect(onCommit).toHaveBeenCalledWith("foo");
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
-test("confirmAdding() 重複時は onCommit 呼ばれず idle に戻る", () => {
+test("confirmAdding() 重複時は onCommit 呼ばれず非追加に戻る", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: ["a"], onCommit });
   act(() => {
@@ -153,10 +155,10 @@ test("confirmAdding() 重複時は onCommit 呼ばれず idle に戻る", () => 
     probe.latest.confirmAdding();
   });
   expect(onCommit).not.toHaveBeenCalled();
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
-test("confirmAdding() 空文字時は onCommit 呼ばれず idle に戻る", () => {
+test("confirmAdding() 空文字時は onCommit 呼ばれず非追加に戻る", () => {
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: [], onCommit });
   act(() => {
@@ -169,7 +171,7 @@ test("confirmAdding() 空文字時は onCommit 呼ばれず idle に戻る", () 
     probe.latest.confirmAdding();
   });
   expect(onCommit).not.toHaveBeenCalled();
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
 test("Enter キーで confirmAdding が走る", () => {
@@ -184,7 +186,7 @@ test("Enter キーで confirmAdding が走る", () => {
   const preventDefault = vi.fn();
   const stopPropagation = vi.fn();
   act(() => {
-    probe.latest.handleKeyDown({
+    probe.latest.commitOrCancelOnKey({
       key: "Enter",
       preventDefault,
       stopPropagation,
@@ -192,7 +194,7 @@ test("Enter キーで confirmAdding が走る", () => {
   });
   expect(preventDefault).toHaveBeenCalled();
   expect(onCommit).toHaveBeenCalledWith("x");
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
 test("Enter 後の confirmAdding 再呼び出しは早期 return（onCommit 1 回のみ）", () => {
@@ -205,7 +207,7 @@ test("Enter 後の confirmAdding 再呼び出しは早期 return（onCommit 1 �
     probe.latest.setInput("x");
   });
   act(() => {
-    probe.latest.handleKeyDown({
+    probe.latest.commitOrCancelOnKey({
       key: "Enter",
       preventDefault: () => {},
       stopPropagation: () => {},
@@ -228,7 +230,7 @@ test("Enter 後の cancelAdding は machine no-op で副作用なし", () => {
     probe.latest.setInput("x");
   });
   act(() => {
-    probe.latest.handleKeyDown({
+    probe.latest.commitOrCancelOnKey({
       key: "Enter",
       preventDefault: () => {},
       stopPropagation: () => {},
@@ -238,7 +240,7 @@ test("Enter 後の cancelAdding は machine no-op で副作用なし", () => {
     probe.latest.cancelAdding();
   });
   expect(onCommit).toHaveBeenCalledTimes(1);
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
 test("Escape キーで cancelAdding が走る（onCommit 呼ばれない）", () => {
@@ -252,7 +254,7 @@ test("Escape キーで cancelAdding が走る（onCommit 呼ばれない）", ()
   });
   const preventDefault = vi.fn();
   act(() => {
-    probe.latest.handleKeyDown({
+    probe.latest.commitOrCancelOnKey({
       key: "Escape",
       preventDefault,
       stopPropagation: () => {},
@@ -260,24 +262,24 @@ test("Escape キーで cancelAdding が走る（onCommit 呼ばれない）", ()
   });
   expect(preventDefault).toHaveBeenCalled();
   expect(onCommit).not.toHaveBeenCalled();
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });
 
-test("idle 中の setInput / confirmAdding / cancelAdding は hook を壊さない", () => {
+test("非追加中の setInput / confirmAdding / cancelAdding は hook を壊さない", () => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const onCommit = vi.fn();
   const probe = renderHook({ existingLabels: [], onCommit });
   act(() => {
     probe.latest.setInput("foo");
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
   act(() => {
     probe.latest.confirmAdding();
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
   expect(onCommit).not.toHaveBeenCalled();
   act(() => {
     probe.latest.cancelAdding();
   });
-  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(probe.latest.isAdding).toBe(false);
 });

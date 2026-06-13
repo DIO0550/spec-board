@@ -19,8 +19,6 @@ export type UseLabelInputArgs = {
 
 /** useLabelInput の戻り値 */
 export type UseLabelInputResult = {
-  /** 現在の state（テスト等で参照する。UI は isAdding / inputValue を使う） */
-  state: LabelInputState;
   /** 入力 input 要素を表示すべきか（adding なら true） */
   isAdding: boolean;
   /** 入力中の値（adding 以外は ""） */
@@ -37,10 +35,10 @@ export type UseLabelInputResult = {
   /** adding 中の入力を確定する（成功時 onCommit + idle 復帰） */
   confirmAdding: () => void;
   /**
-   * input 要素に渡す Enter/Escape ハンドラ。
+   * input 要素の onKeyDown に渡すハンドラ。Enter で確定、Escape でキャンセルする。
    * @param e - keydown イベント
    */
-  handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
+  commitOrCancelOnKey: (e: KeyboardEvent<HTMLInputElement>) => void;
 };
 
 /**
@@ -80,7 +78,7 @@ export const useLabelInput = (args: UseLabelInputArgs): UseLabelInputResult => {
     setState((s) => LabelInput.confirm(s));
   }, [state, existingLabels, onCommit]);
 
-  const handleKeyDown = useCallback(
+  const commitOrCancelOnKey = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -96,13 +94,12 @@ export const useLabelInput = (args: UseLabelInputArgs): UseLabelInputResult => {
   );
 
   return {
-    state,
     isAdding: LabelInput.isAdding(state),
     inputValue: LabelInput.inputOf(state) ?? "",
     startAdding,
     setInput,
     cancelAdding,
     confirmAdding,
-    handleKeyDown,
+    commitOrCancelOnKey,
   };
 };
