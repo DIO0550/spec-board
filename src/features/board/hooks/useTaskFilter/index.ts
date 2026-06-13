@@ -4,12 +4,16 @@ import {
   applyTaskFilter,
   EMPTY_TASK_FILTER,
   isTaskFilterActive,
+  pruneTaskFilter,
   type TaskFilterCriteria,
+  type TaskFilterOptions,
 } from "../../lib/applyTaskFilter";
 
 /** useTaskFilter の返り値。 */
 export type UseTaskFilterResult = {
-  /** 現在の絞り込み条件 */
+  /**
+   * 現在の絞り込み条件。利用可能な選択肢から外れた条件は間引き済み（隠れフィルタを含まない）。
+   */
   criteria: TaskFilterCriteria;
   /**
    * 絞り込み条件を更新する。
@@ -27,16 +31,29 @@ export type UseTaskFilterResult = {
 /**
  * ボード上のタスクを検索キーワード / ラベル / 優先度 / ステータス / マイルストーンで
  * 横断的に絞り込むフィルタ state。board の全ビュー（board / list / tree / calendar）で共有する。
+ *
+ * カラムのリネーム/削除やマイルストーン削除で選択肢が消えると、UI に出ない条件が
+ * 「隠れフィルタ」として残り続ける。raw な条件を state に保持したまま、render 中に
+ * 利用可能な選択肢で間引いた条件を導出してフィルタ結果へ反映する（effect で書き戻さない）。
  * @param tasks - 絞り込み対象のタスク一覧
+ * @param options - 現在利用可能な選択肢（間引きの基準）
  * @returns 絞り込み state と結果
  */
-export const useTaskFilter = (tasks: Task[]): UseTaskFilterResult => {
-  const [criteria, setCriteria] =
+export const useTaskFilter = (
+  tasks: Task[],
+  options: TaskFilterOptions,
+): UseTaskFilterResult => {
+  const [rawCriteria, setCriteria] =
     useState<TaskFilterCriteria>(EMPTY_TASK_FILTER);
 
   const clear = useCallback(() => {
     setCriteria(EMPTY_TASK_FILTER);
   }, []);
+
+  const criteria = useMemo(
+    () => pruneTaskFilter(rawCriteria, options),
+    [rawCriteria, options],
+  );
 
   const filtered = useMemo(
     () => applyTaskFilter(tasks, criteria),
