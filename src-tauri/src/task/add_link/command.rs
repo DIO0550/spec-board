@@ -43,9 +43,9 @@ pub(crate) fn add_link_impl(
     let source_abs = project_root.join(&source_rel);
 
     let snapshot = state.tasks_snapshot()?;
-    let existing_source = snapshot
-        .iter()
-        .find(|t| Path::new(t.file_path.as_str()) == source_rel.as_path())
+    let index = TaskIndex::new(snapshot);
+    let existing_source = index
+        .find_by_path(source_rel.as_path())
         .cloned()
         .ok_or_else(|| AddLinkError::SourceNotFound {
             path: source_rel.to_string_lossy().into_owned(),
@@ -66,7 +66,6 @@ pub(crate) fn add_link_impl(
         .map_err(|e| AddLinkError::ParseFailed(e.to_string()))?
         .ok_or_else(|| AddLinkError::ParseFailed("no frontmatter delimiter found".to_string()))?;
 
-    let index = TaskIndex::new(snapshot);
     let outcome = index
         .plan_add_link(
             project_root.as_path(),

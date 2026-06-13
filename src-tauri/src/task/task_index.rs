@@ -875,7 +875,7 @@ impl TaskIndex {
             })?;
 
             let default_status = self
-                .find_task_by_path(&path)
+                .find_by_path(&path)
                 .map(|t| t.status.clone())
                 .unwrap_or_else(|| ColumnName::from_lenient(""));
             let context = TaskParseContext {
@@ -894,8 +894,13 @@ impl TaskIndex {
         Ok(ClearChildrenOutcome { entries })
     }
 
-    /// 内部 helper: snapshot 上で `path` と一致する task を返す（正規化済み比較）。
-    fn find_task_by_path(&self, path: &Path) -> Option<&Task> {
+    /// snapshot 上で `path` と一致する task を返す aggregate query（正規化済み比較）。
+    ///
+    /// 引き当ては `normalize_task_path_for_lookup` を介して行うため、`./tasks/x.md` /
+    /// `tasks\x.md` のような表記揺れがあっても aggregate が一貫して使う lookup 基準で
+    /// 同一 task を引き当てる。command 層が `Path::new(t.file_path.as_str()) == rel_path`
+    /// の raw 比較を各自で行うのを避け、引き当て規則を aggregate に集約するために公開する。
+    pub(crate) fn find_by_path(&self, path: &Path) -> Option<&Task> {
         let target = normalize_task_path_for_lookup(&path.to_string_lossy());
         self.tasks
             .iter()

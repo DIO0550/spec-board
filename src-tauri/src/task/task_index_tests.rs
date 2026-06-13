@@ -136,6 +136,38 @@ fn task_index_resolve_parent_for_new_task_via_aggregate() {
 }
 
 #[test]
+fn find_by_path_returns_matching_task() {
+    let tasks = vec![
+        task_without_parent("tasks/a.md"),
+        task_without_parent("tasks/b.md"),
+    ];
+    let index = TaskIndex::new(tasks);
+
+    let found = index.find_by_path(&PathBuf::from("tasks/b.md")).unwrap();
+    assert_eq!(found.file_path, TaskFilePath::from("tasks/b.md"));
+}
+
+#[test]
+fn find_by_path_normalizes_notation_variants() {
+    // 表記揺れ（`./tasks/a.md` / `tasks\a.md`）でも lookup 正規化で同一 task を引き当てる。
+    let tasks = vec![task_without_parent("tasks/a.md")];
+    let index = TaskIndex::new(tasks);
+
+    assert!(index.find_by_path(&PathBuf::from("./tasks/a.md")).is_some());
+    assert!(index.find_by_path(&PathBuf::from("tasks\\a.md")).is_some());
+}
+
+#[test]
+fn find_by_path_returns_none_for_missing() {
+    let tasks = vec![task_without_parent("tasks/a.md")];
+    let index = TaskIndex::new(tasks);
+
+    assert!(index
+        .find_by_path(&PathBuf::from("tasks/missing.md"))
+        .is_none());
+}
+
+#[test]
 fn task_json_byte_level_round_trip() {
     let json = r#"{"id":"tasks/foo.md","filePath":"tasks/foo.md","title":"Fix bug","status":"Doing","priority":"High","labels":["bug","api"],"parent":"tasks/parent.md","links":["tasks/related.md"],"children":["tasks/child.md"],"reverseLinks":["tasks/source.md"],"body":"description","extras":{},"warnings":[]}"#;
     let parsed: Task = serde_json::from_str(json).unwrap();

@@ -41,9 +41,9 @@ pub(crate) fn update_task_impl(
     let abs = project_root.join(&rel_path);
 
     let snapshot = state.tasks_snapshot()?;
-    let existing_task = snapshot
-        .iter()
-        .find(|t| Path::new(t.file_path.as_str()) == rel_path.as_path())
+    let index = TaskIndex::new(snapshot);
+    let existing_task = index
+        .find_by_path(rel_path.as_path())
         .cloned()
         .ok_or_else(|| UpdateTaskError::FileNotFound(abs.clone()))?;
 
@@ -61,7 +61,6 @@ pub(crate) fn update_task_impl(
             UpdateTaskError::ParseFailed("no frontmatter delimiter found".to_string())
         })?;
 
-    let index = TaskIndex::new(snapshot);
     let outcome: UpdateTaskOutcome = index
         .plan_update(project_root.as_path(), intent, &existing_task, parsed)
         .map_err(UpdateTaskCommandError::Validation)?;
