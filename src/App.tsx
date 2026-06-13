@@ -13,8 +13,7 @@ import { resolveCloseTarget } from "@/hooks/useAppView/resolveCloseTarget";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
-import type { OrphanStrategy } from "@/lib/tauri";
-import { registerToastSink } from "@/lib/tauri/toastSink";
+import { type OrphanStrategy, registerToastSink } from "@/lib/tauri";
 import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,

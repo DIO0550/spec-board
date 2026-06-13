@@ -1,5 +1,3 @@
-// dialog
-
 // cardOrderCommands
 export type { UpdateCardOrderParams } from "./cardOrderCommands/updateCardOrder";
 export { updateCardOrder } from "./cardOrderCommands/updateCardOrder";
@@ -11,8 +9,8 @@ export type {
   UpdateColumnsParams,
 } from "./columnCommands/types";
 export { updateColumns } from "./columnCommands/updateColumns";
+// dialog
 export { openDirectoryDialog } from "./dialog/openDirectoryDialog";
-
 // labelCommands
 export { getLabels } from "./labelCommands/getLabels";
 export type {
@@ -55,3 +53,6 @@ export { updateTask } from "./taskCommands/updateTask";
 // tauriError
 export type { TauriErrorCode } from "./tauriError";
 export { TauriError } from "./tauriError";
+// toastSink
+export type { ToastSink } from "./toastSink";
+export { registerToastSink, unregisterToastSink } from "./toastSink";
