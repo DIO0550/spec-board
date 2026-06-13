@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** 最近開いたプロジェクト 1 件。 */
 export type RecentProject = {
@@ -112,18 +112,29 @@ export type UseRecentProjectsResult = {
  */
 export const useRecentProjects = (): UseRecentProjectsResult => {
   const [projects, setProjects] = useState<RecentProject[]>(loadRecentProjects);
+  // 初回マウントは localStorage から復元した値そのものなので、書き戻しを抑止する。
+  const isHydratedRef = useRef(false);
 
+  // updater は純粋に保ち、localStorage への永続化（副作用）は projects の
+  // 変化に追従する外部システム同期として effect 側に分離する。
   const add = useCallback((path: string) => {
-    setProjects((prev) => {
-      const next = addRecentProject(prev, path);
-      try {
-        localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // 永続化失敗は履歴を揮発させるだけなので黙殺する
-      }
-      return next;
-    });
+    setProjects((prev) => addRecentProject(prev, path));
   }, []);
+
+  useEffect(() => {
+    if (!isHydratedRef.current) {
+      isHydratedRef.current = true;
+      return;
+    }
+    try {
+      localStorage.setItem(
+        RECENT_PROJECTS_STORAGE_KEY,
+        JSON.stringify(projects),
+      );
+    } catch {
+      // 永続化失敗は履歴を揮発させるだけなので黙殺する
+    }
+  }, [projects]);
 
   return { projects, add };
 };
