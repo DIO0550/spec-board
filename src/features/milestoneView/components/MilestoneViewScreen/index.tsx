@@ -1,34 +1,7 @@
 import { Milestone } from "@/domains/milestone";
 import type { MilestonesResource } from "@/hooks/useMilestones";
-import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { useMilestoneProgress } from "../../hooks/useMilestoneProgress";
-
-/**
- * マイルストーンを表示順（order 昇順・未指定は末尾・定義順安定）に並べ替える。
- * @param milestones - マイルストーン定義の配列（定義順）
- * @returns 並べ替え済み配列
- */
-const sortByOrder = (
-  milestones: readonly MilestoneDefinition[],
-): MilestoneDefinition[] =>
-  milestones
-    .map((m, index) => ({ m, index }))
-    .sort((a, b) => {
-      const ao = a.m.order;
-      const bo = b.m.order;
-      if (ao === undefined && bo === undefined) {
-        return a.index - b.index;
-      }
-      if (ao === undefined) {
-        return 1;
-      }
-      if (bo === undefined) {
-        return -1;
-      }
-      return ao === bo ? a.index - b.index : ao - bo;
-    })
-    .map((entry) => entry.m);
 
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */
@@ -50,7 +23,7 @@ export const MilestoneViewScreen = ({
   tasks,
   doneColumn,
 }: MilestoneViewScreenProps) => {
-  const sorted = sortByOrder(resource.milestones);
+  const sorted = Milestone.sortByOrder(resource.milestones);
   const names = sorted.map((m) => m.name);
   const progress = useMilestoneProgress(names, tasks, doneColumn);
 
@@ -78,7 +51,9 @@ export const MilestoneViewScreen = ({
             className="flex flex-col gap-1 rounded border border-border p-3"
           >
             <div className="flex items-center gap-2">
-              <span className="font-medium">{def.title ?? def.name}</span>
+              <span className="font-medium">
+                {Milestone.badgeLabel(def.name, def)}
+              </span>
               {def.due !== undefined ? (
                 <span className="text-sm text-muted">{def.due}</span>
               ) : null}
