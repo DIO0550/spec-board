@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
-import { unregisterToastSink } from "@/lib/tauri/toastSink";
+import { unregisterToastSink } from "@/lib/tauri";
 import type { TaskPayload } from "@/types/task";
 
 // サブIssue 同時作成の部分失敗分岐（handleCreateTask）の App レベル統合テスト。
