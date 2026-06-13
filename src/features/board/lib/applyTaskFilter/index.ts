@@ -1,6 +1,14 @@
 import type { Priority } from "@/domains/priority";
 import type { Task } from "@/types/task";
-import type { MilestoneFilter } from "../../hooks/useMilestoneFilter";
+
+/**
+ * マイルストーンフィルタの選択状態。
+ * 「未割当」を `string | null` では表現できないため判別可能 union にする。
+ */
+export type MilestoneFilter =
+  | { kind: "all" }
+  | { kind: "unassigned" }
+  | { kind: "milestone"; name: string };
 
 /** タスク絞り込みの条件一式。 */
 export type TaskFilterCriteria = {
