@@ -1,8 +1,7 @@
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
-import type { Result } from "@/utils/result";
-import { Result as ResultDomain } from "@/utils/result";
+import { Result, type Result as ResultT } from "@/utils/result";
 import type { LinkParams } from "../types";
 
 /**
@@ -13,7 +12,7 @@ import type { LinkParams } from "../types";
  */
 export const removeLink = (
   params: LinkParams,
-): Promise<Result<Task, TauriError>> =>
+): Promise<ResultT<Task, TauriError>> =>
   invokeWrapped<TaskPayload>("remove_link", params).then((result) =>
-    ResultDomain.map(result, Task.fromPayload),
+    Result.map(result, Task.fromPayload),
   );
