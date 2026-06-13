@@ -49,6 +49,25 @@ type DisplayableData = {
 };
 
 /**
+ * 作成画面（全画面 create）の開閉状態と親コンテキストを表す判別可能 union。
+ * 旧来の status / parent / subIssueParentPath の 3 state を 1 つに統合し、
+ * 「親だけ残った作成画面」のような不正な組み合わせを表現不能にする。
+ *
+ * - `null`: 作成画面を閉じている。
+ * - `{ kind: "normal" }`: board の「+」起点の通常作成。親は未指定で候補は tasks 全件。
+ * - `{ kind: "subIssue", parentPath }`: detail のサブIssue 追加起点。親が自動セットされ、
+ *   候補は親 1 件に絞られ UI 上 read-only になる。
+ */
+type CreateModalState =
+  | { readonly kind: "normal"; readonly status: string }
+  | {
+      readonly kind: "subIssue";
+      readonly status: string;
+      readonly parentPath: string;
+    }
+  | null;
+
+/**
  * 表示可能な ProjectData を返す。
  * - loaded: state.data
  * - それ以外: null
@@ -216,18 +235,11 @@ export const App = () => {
   // 存在する間は selectedTask 計算の fallback として参照され、DetailScreen が
   // pending 中も描画継続できる。rollback で tasks に戻れば自然と fallback は不要になる。
   const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
-  const [createModalStatus, setCreateModalStatus] = useState<string | null>(
-    null,
-  );
-  const [createModalParent, setCreateModalParent] = useState<
-    string | undefined
-  >(undefined);
-  // サブIssue 追加経路で親が自動セットされたことを示す state。
-  // 値が入っているとき parentCandidates は親 1 件に絞られ、UI 上 read-only になる。
-  // 親が tasks から消えても本 state は残るため、ParentTaskSelect の filePath fallback が起動する。
-  const [subIssueParentPath, setSubIssueParentPath] = useState<
-    string | undefined
-  >(undefined);
+  // 作成画面（全画面 create）の開閉と親コンテキストを 1 つの判別可能 union で表す。
+  // 旧来は status / parent / subIssueParentPath の 3 つの useState を毎回セットで遷移させて
+  // いたが、1 つでも更新を漏らすと「親だけ残った作成画面」等の曖昧状態が成立しうるため、
+  // 不正な組み合わせを表現不能にするよう単一 state へ統合している（詳細は CreateModalState）。
+  const [createModal, setCreateModal] = useState<CreateModalState>(null);
   // create（全画面作成画面）を閉じたときの戻り先。create 起動時に直前の view と
   // 選択タスクを退避し、キャンセル/成功後に元の画面（board / 元の detail）へ戻す。
   const [returnView, setReturnView] = useState<AppView>("board");
@@ -258,9 +270,7 @@ export const App = () => {
     // 旧 project の task が fallback として表示されてしまう。
     setPrevLoadedPath(loadedPath);
     setSelectedTaskId(null);
-    setCreateModalStatus(null);
-    setCreateModalParent(undefined);
-    setSubIssueParentPath(undefined);
+    setCreateModal(null);
     setReturnView("board");
     setReturnTaskId(null);
     setPendingDeleteTask(null);
@@ -276,10 +286,8 @@ export const App = () => {
     if (pendingDeleteTask !== null) {
       setPendingDeleteTask(null);
     }
-    if (createModalStatus !== null) {
-      setCreateModalStatus(null);
-      setCreateModalParent(undefined);
-      setSubIssueParentPath(undefined);
+    if (createModal !== null) {
+      setCreateModal(null);
       setReturnView("board");
       setReturnTaskId(null);
     }
@@ -314,6 +322,9 @@ export const App = () => {
   // リンク切れ / パースエラーの警告トーストは load 成功イベント（useProject の
   // onLoaded callback = handleProjectLoaded）で 1 回だけ発火する。tasks 変更のたびに
   // 走る effect + ref の発火済み管理は廃止した。
+  // サブIssue モードのときだけ自動セットされた親 path を取り出す（通常作成 / 閉時は undefined）。
+  const subIssueParentPath =
+    createModal?.kind === "subIssue" ? createModal.parentPath : undefined;
   // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
   // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
   const parentCandidates = useMemo(() => {
@@ -435,9 +446,7 @@ export const App = () => {
 
   const handleAddTask = useCallback(
     (columnName: string) => {
-      setCreateModalStatus(columnName);
-      setCreateModalParent(undefined);
-      setSubIssueParentPath(undefined);
+      setCreateModal({ kind: "normal", status: columnName });
       // board の「+」起点: 戻り先は board。
       setReturnView("board");
       setReturnTaskId(null);
@@ -632,9 +641,7 @@ export const App = () => {
   );
 
   const handleCloseCreateModal = useCallback(() => {
-    setCreateModalStatus(null);
-    setCreateModalParent(undefined);
-    setSubIssueParentPath(undefined);
+    setCreateModal(null);
     // 戻り先（board / 元の detail）を純関数で解決し、detail 復帰時は選択タスクを復元する。
     const target = resolveCloseTarget(returnView, returnTaskId);
     if (target.selectedTaskId !== null) {
@@ -655,15 +662,17 @@ export const App = () => {
   const handleAddSubIssue = useCallback(
     (parentFilePath: string) => {
       // 利用可能なステータスがなければ toast して中断（create へ遷移しない）。
-      // これを消すと createModalStatus=null のまま navigate("create") され、
+      // これを消すと createModal=null のまま navigate("create") され、
       // create ビューだが TaskCreateScreen も board も描画されず空画面になる。
       if (defaultCreateStatus === null) {
         showToast("利用可能なステータスがありません", "error");
         return;
       }
-      setCreateModalStatus(defaultCreateStatus);
-      setCreateModalParent(parentFilePath);
-      setSubIssueParentPath(parentFilePath);
+      setCreateModal({
+        kind: "subIssue",
+        status: defaultCreateStatus,
+        parentPath: parentFilePath,
+      });
       // detail サブIssue 起点: 戻り先は元の detail（親タスク）。
       setReturnView("detail");
       setReturnTaskId(selectedTaskId);
@@ -1012,8 +1021,8 @@ export const App = () => {
                 tasksByNormalizedPath={tasksByNormalizedPath}
                 doneColumn={doneColumn}
                 // 作成は全画面 create ビューへ分離され detail と共存しないため、
-                // detail に重なる上位モーダルは存在しない（旧 createModalStatus 派生を廃止）。
-                // createModalStatus が stale でも detail の Esc 戻るが抑止されない。
+                // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
+                // createModal が stale でも detail の Esc 戻るが抑止されない。
                 isUpperModalOpen={false}
                 onBack={handleBackToBoard}
                 onTaskUpdate={handleTaskUpdate}
@@ -1026,14 +1035,14 @@ export const App = () => {
             )}
             {/* 全画面2ペインのタスク作成画面。board の「+」/ detail のサブIssue 追加の */}
             {/* 両導線から navigate("create") で <main> を占有する。 */}
-            {view === "create" && createModalStatus !== null && (
+            {view === "create" && createModal !== null && (
               <TaskCreateScreen
                 columns={columns}
                 projectPath={loadedPath ?? undefined}
-                initialStatus={createModalStatus}
+                initialStatus={createModal.status}
                 parentCandidates={parentCandidates}
                 existingTasks={tasks}
-                initialParent={createModalParent}
+                initialParent={subIssueParentPath}
                 parentReadOnly={parentReadOnly}
                 onSubmit={handleCreateTask}
                 onClose={handleCloseCreateModal}
