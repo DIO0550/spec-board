@@ -28,7 +28,7 @@ fn task_with_labels(id: &str, labels: &[&str]) -> Task {
 
 #[test]
 fn empty_for_no_tasks() {
-    let counts = TaskIndex::label_usage_counts(&[]);
+    let counts = TaskIndex::new(Vec::new()).label_usage_counts();
     assert!(counts.is_empty());
 }
 
@@ -39,7 +39,7 @@ fn counts_tasks_using_each_label() {
         task_with_labels("b", &["bug", "feat"]),
         task_with_labels("c", &["bug"]),
     ];
-    let counts = TaskIndex::label_usage_counts(&tasks);
+    let counts = TaskIndex::new(tasks).label_usage_counts();
     assert_eq!(counts.get("bug"), Some(&3));
     assert_eq!(counts.get("feat"), Some(&1));
 }
@@ -48,7 +48,7 @@ fn counts_tasks_using_each_label() {
 fn dedupes_duplicate_label_within_a_task() {
     // 1 タスク内で同じラベルが 2 回出現しても 1 件（タスク単位で数える）。
     let tasks = vec![task_with_labels("a", &["bug", "bug"])];
-    let counts = TaskIndex::label_usage_counts(&tasks);
+    let counts = TaskIndex::new(tasks).label_usage_counts();
     assert_eq!(counts.get("bug"), Some(&1));
 }
 
@@ -58,7 +58,7 @@ fn exact_match_is_case_sensitive_and_not_normalized() {
         task_with_labels("a", &["Bug"]),
         task_with_labels("b", &["bug"]),
     ];
-    let counts = TaskIndex::label_usage_counts(&tasks);
+    let counts = TaskIndex::new(tasks).label_usage_counts();
     assert_eq!(counts.get("Bug"), Some(&1));
     assert_eq!(counts.get("bug"), Some(&1));
 }

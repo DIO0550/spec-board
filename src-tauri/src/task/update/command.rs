@@ -41,9 +41,9 @@ pub(crate) fn update_task_impl(
     let abs = project_root.join(&rel_path);
 
     let snapshot = state.tasks_snapshot()?;
-    let existing_task = snapshot
-        .iter()
-        .find(|t| Path::new(t.file_path.as_str()) == rel_path.as_path())
+    let index = TaskIndex::new(snapshot);
+    let existing_task = index
+        .find_by_path(rel_path.as_path())
         .cloned()
         .ok_or_else(|| UpdateTaskError::FileNotFound(abs.clone()))?;
 
@@ -61,7 +61,6 @@ pub(crate) fn update_task_impl(
             UpdateTaskError::ParseFailed("no frontmatter delimiter found".to_string())
         })?;
 
-    let index = TaskIndex::new(snapshot);
     let outcome: UpdateTaskOutcome = index
         .plan_update(project_root.as_path(), intent, &existing_task, parsed)
         .map_err(UpdateTaskCommandError::Validation)?;
@@ -98,22 +97,10 @@ fn commit_cache(
     let returned: Result<Option<Task>, UpdateTaskError> =
         state.with_tasks_cache_mut(|cache: &mut HashMap<PathBuf, Task>| {
             if outcome.needs_full_rebuild {
-                let mut values: Vec<Task> = cache.values().cloned().collect();
-                let target_str = rel_path.to_string_lossy();
-                if let Some(slot) = values
-                    .iter_mut()
-                    .find(|t| t.file_path.as_str() == target_str.as_ref())
-                {
-                    *slot = outcome.updated_task.clone();
-                } else {
-                    values.push(outcome.updated_task.clone());
-                }
+                let values: Vec<Task> = cache.values().cloned().collect();
                 let index = TaskIndex::new(values)
-                    .validate_parent_hierarchy()
-                    .map_err(UpdateTaskError::from)?
-                    .build_children()
-                    .map_err(UpdateTaskError::from)?
-                    .build_reverse_links();
+                    .rebuild_with_replaced(outcome.updated_task.clone())
+                    .map_err(UpdateTaskError::from)?;
                 cache.clear();
                 for task in index.into_tasks() {
                     cache.insert(PathBuf::from(task.file_path.as_str()), task);

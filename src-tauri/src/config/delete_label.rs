@@ -96,7 +96,8 @@ pub(crate) fn delete_label_impl(
     let registry = ctx.labels.ok_or(DeleteLabelError::NoProjectOpen)?;
 
     // 削除前の使用数（タスク単位・完全一致）。task 集約へ委譲する。
-    let usage_count = TaskIndex::label_usage_counts(&ctx.tasks)
+    let usage_count = TaskIndex::new(ctx.tasks)
+        .label_usage_counts()
         .get(&args.name)
         .copied()
         .unwrap_or(0);

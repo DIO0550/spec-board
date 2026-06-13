@@ -164,9 +164,10 @@ impl TaskIndex {
     /// 未正規化（trim / case 変換なし）。キーは所有 `String` で返し、呼び出し側
     /// （`get_labels` / `delete_label`）が借用ライフタイムに縛られないようにする。
     /// 使用数集計は label/config ドメインではなく task 集約に置くことで、依存方向を
-    /// label/config → task の一方向に保つ（task は label を知らない）。
-    pub fn label_usage_counts(tasks: &[Task]) -> HashMap<String, usize> {
-        tasks
+    /// label/config → task の一方向に保つ（task は label を知らない）。aggregate が
+    /// 保持する task 集合を集計対象とするため `&self` メソッドとして公開する。
+    pub fn label_usage_counts(&self) -> HashMap<String, usize> {
+        self.tasks
             .iter()
             // 各タスクを「そのタスクが持つ distinct なラベル集合」へ変換（タスク内重複排除）。
             .flat_map(|task| {
@@ -186,9 +187,10 @@ impl TaskIndex {
     ///
     /// labels（複数）と異なり milestone は単数 string のため、`Option` を 0/1 件に
     /// 展開して畳み込む（タスク内重複は構造的に発生しない）。マスタ未定義の値も
-    /// 出現名で計上する（完全一致・未正規化）。未割当（`None`）は計上しない。
-    pub fn milestone_usage_counts(tasks: &[Task]) -> HashMap<String, usize> {
-        tasks
+    /// 出現名で計上する（完全一致・未正規化）。未割当（`None`）は計上しない。aggregate が
+    /// 保持する task 集合を集計対象とするため `&self` メソッドとして公開する。
+    pub fn milestone_usage_counts(&self) -> HashMap<String, usize> {
+        self.tasks
             .iter()
             .filter_map(|task| task.milestone.as_deref())
             .fold(HashMap::new(), |mut counts, name| {
@@ -308,6 +310,30 @@ impl TaskIndex {
         Self {
             tasks: build_reverse_links(self.tasks),
         }
+    }
+
+    /// `replaced` で同一 path の slot を差し替え（無ければ末尾に追加）たうえで、
+    /// parent hierarchy 検証 → `children` 再構築 → `reverse_links` 再構築までを
+    /// 一括で行う aggregate メソッド。
+    ///
+    /// parent 変更を伴う `update_task` の cache full-rebuild 手順を aggregate に
+    /// 集約することが目的。slot 差し替えの引き当ては `find_by_path` と同じ
+    /// `normalize_task_path_for_lookup` 基準で行い、表記揺れがあっても同一 task を
+    /// 差し替える（raw string 比較で重複 slot を作らない）。
+    pub(crate) fn rebuild_with_replaced(self, replaced: Task) -> Result<Self, TaskParseError> {
+        let mut values = self.tasks;
+        let target = normalize_task_path_for_lookup(replaced.file_path.as_str());
+        match values
+            .iter_mut()
+            .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
+        {
+            Some(slot) => *slot = replaced,
+            None => values.push(replaced),
+        }
+        Self::new(values)
+            .validate_parent_hierarchy()?
+            .build_children()
+            .map(Self::build_reverse_links)
     }
 
     /// 新規 task が指す parent 文字列を既存 task 集合に対して解決する。
@@ -1023,7 +1049,7 @@ impl TaskIndex {
             })?;
 
             let default_status = self
-                .find_task_by_path(&path)
+                .find_by_path(&path)
                 .map(|t| t.status.clone())
                 .unwrap_or_else(|| ColumnName::from_lenient(""));
             let context = TaskParseContext {
@@ -1042,8 +1068,13 @@ impl TaskIndex {
         Ok(ClearChildrenOutcome { entries })
     }
 
-    /// 内部 helper: snapshot 上で `path` と一致する task を返す（正規化済み比較）。
-    fn find_task_by_path(&self, path: &Path) -> Option<&Task> {
+    /// snapshot 上で `path` と一致する task を返す aggregate query（正規化済み比較）。
+    ///
+    /// 引き当ては `normalize_task_path_for_lookup` を介して行うため、`./tasks/x.md` /
+    /// `tasks\x.md` のような表記揺れがあっても aggregate が一貫して使う lookup 基準で
+    /// 同一 task を引き当てる。command 層が `Path::new(t.file_path.as_str()) == rel_path`
+    /// の raw 比較を各自で行うのを避け、引き当て規則を aggregate に集約するために公開する。
+    pub(crate) fn find_by_path(&self, path: &Path) -> Option<&Task> {
         let target = normalize_task_path_for_lookup(&path.to_string_lossy());
         self.tasks
             .iter()

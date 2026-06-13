@@ -113,6 +113,51 @@ fn task_index_build_children_via_aggregate() {
 }
 
 #[test]
+fn rebuild_with_replaced_replaces_slot_and_rebuilds_derived_fields() {
+    // 既存 child は parent 未指定。replaced で parent を付けると children 逆引きが再構築される。
+    let tasks = vec![
+        task_without_parent("tasks/child.md"),
+        task_without_parent("tasks/parent.md"),
+    ];
+    let replaced = task_with_parent("tasks/child.md", "tasks/parent.md");
+
+    let rebuilt = TaskIndex::new(tasks)
+        .rebuild_with_replaced(replaced)
+        .unwrap();
+    let result = rebuilt.into_tasks();
+
+    let parent = result
+        .iter()
+        .find(|t| t.file_path == "tasks/parent.md")
+        .unwrap();
+    assert_eq!(parent.children, vec![TaskFilePath::from("tasks/child.md")]);
+}
+
+#[test]
+fn rebuild_with_replaced_appends_when_no_matching_slot() {
+    let tasks = vec![task_without_parent("tasks/a.md")];
+    let replaced = task_without_parent("tasks/b.md");
+
+    let rebuilt = TaskIndex::new(tasks)
+        .rebuild_with_replaced(replaced)
+        .unwrap();
+    let result = rebuilt.into_tasks();
+
+    assert_eq!(result.len(), 2);
+    assert!(result.iter().any(|t| t.file_path == "tasks/b.md"));
+}
+
+#[test]
+fn rebuild_with_replaced_propagates_hierarchy_error() {
+    let tasks = vec![task_with_parent("tasks/a.md", "tasks/b.md")];
+    // replaced で b → a の親を張ると a ↔ b の循環になる。
+    let replaced = task_with_parent("tasks/b.md", "tasks/a.md");
+
+    let result = TaskIndex::new(tasks).rebuild_with_replaced(replaced);
+    assert!(matches!(result, Err(TaskParseError::CycleOrTooDeep { .. })));
+}
+
+#[test]
 fn task_index_validate_parent_hierarchy_via_aggregate() {
     let tasks = vec![
         task_with_parent("tasks/a.md", "tasks/b.md"),
@@ -133,6 +178,38 @@ fn task_index_resolve_parent_for_new_task_via_aggregate() {
         Some(0)
     );
     assert_eq!(index.resolve_parent_for_new_task("tasks/missing.md"), None);
+}
+
+#[test]
+fn find_by_path_returns_matching_task() {
+    let tasks = vec![
+        task_without_parent("tasks/a.md"),
+        task_without_parent("tasks/b.md"),
+    ];
+    let index = TaskIndex::new(tasks);
+
+    let found = index.find_by_path(&PathBuf::from("tasks/b.md")).unwrap();
+    assert_eq!(found.file_path, TaskFilePath::from("tasks/b.md"));
+}
+
+#[test]
+fn find_by_path_normalizes_notation_variants() {
+    // 表記揺れ（`./tasks/a.md` / `tasks\a.md`）でも lookup 正規化で同一 task を引き当てる。
+    let tasks = vec![task_without_parent("tasks/a.md")];
+    let index = TaskIndex::new(tasks);
+
+    assert!(index.find_by_path(&PathBuf::from("./tasks/a.md")).is_some());
+    assert!(index.find_by_path(&PathBuf::from("tasks\\a.md")).is_some());
+}
+
+#[test]
+fn find_by_path_returns_none_for_missing() {
+    let tasks = vec![task_without_parent("tasks/a.md")];
+    let index = TaskIndex::new(tasks);
+
+    assert!(index
+        .find_by_path(&PathBuf::from("tasks/missing.md"))
+        .is_none());
 }
 
 #[test]
