@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
-import type { MilestoneDefinition } from "@/lib/tauri";
 import { Task } from "@/types/task";
-import { Milestone } from "../index";
+import { Milestone, type MilestoneDefinition } from "../index";
 
 test.each([
   ["closed", "closed"],
