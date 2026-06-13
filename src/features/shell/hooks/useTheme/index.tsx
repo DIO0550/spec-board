@@ -109,11 +109,16 @@ export const ThemeProvider = ({ children }: ThemeProviderProps) => {
   // OS 配色変更で context 値が変わり、実効配色に依存する consumer も再描画される。
   const [systemDark, setSystemDark] = useState<boolean>(prefersDark);
 
-  // 外観設定 / OS 配色が変わるたびに永続化と documentElement への反映を行う。
-  // 初回ペイント前に dataset を適用して FOUC（一瞬ライト表示）を抑えるため
-  // useLayoutEffect を使う（保存は副作用として同居させる）。
-  useLayoutEffect(() => {
+  // 外観設定の永続化は appearance のみに依存する。OS 配色（systemDark）が変化しても
+  // 保存内容は変わらないため、同期対象を分離して無駄な書き込みを避ける。
+  useEffect(() => {
     saveAppearance(appearance);
+  }, [appearance]);
+
+  // documentElement への dataset 反映は appearance と OS 配色の両方に追従する。
+  // 初回ペイント前に dataset を適用して FOUC（一瞬ライト表示）を抑えるため
+  // useLayoutEffect を使う。
+  useLayoutEffect(() => {
     applyAppearanceDataset(resolveAppearanceDataset(appearance, systemDark));
   }, [appearance, systemDark]);
 
