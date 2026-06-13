@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
+import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { normalizeRefPathForLookup } from "@/domains/task-path";
-import { SubIssue } from "@/features/detail/domains/sub-issue";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 
 type SubIssueSectionProps = {
   /** 親タスク */
@@ -98,7 +98,7 @@ export const SubIssueSection = ({
   onChildClick,
   brokenChildPaths,
 }: SubIssueSectionProps) => {
-  const { total, doneCount, percentage } = SubIssue.progress(
+  const { total, done, percentage } = TaskHierarchy.countSubIssueProgress(
     descendantTasks,
     doneColumn,
   );
@@ -120,7 +120,7 @@ export const SubIssueSection = ({
     <div data-testid="sub-issue-section">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium text-muted">
-          サブIssue {showProgress ? `(${doneCount}/${total})` : ""}
+          サブIssue {showProgress ? `(${done}/${total})` : ""}
         </span>
       </div>
       {showProgress && (
@@ -131,7 +131,7 @@ export const SubIssueSection = ({
             aria-valuenow={percentage}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`進捗 ${doneCount}/${total}`}
+            aria-label={`進捗 ${done}/${total}`}
           >
             <div
               className="h-full rounded-full bg-green-500 transition-all"
@@ -139,7 +139,7 @@ export const SubIssueSection = ({
             />
           </div>
           <span className="text-xs text-muted">
-            {doneCount}/{total}
+            {done}/{total}
           </span>
         </div>
       )}
@@ -160,7 +160,7 @@ export const SubIssueSection = ({
               );
             }
             const child = row.task;
-            const isDone = child.status === doneColumn;
+            const isDone = Task.isDone(child, doneColumn);
             const label = child.title || child.filePath;
             return (
               <li key={child.id}>

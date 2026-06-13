@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 
 /** マイルストーン 1 件分の進捗。 */
 export type MilestoneProgress = {
@@ -46,7 +46,7 @@ export const computeMilestoneProgress = (
       continue;
     }
     entry.total += 1;
-    if (task.status === doneColumn) {
+    if (Task.isDone(task, doneColumn)) {
       entry.done += 1;
     }
   }

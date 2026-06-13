@@ -17,6 +17,9 @@ export type ProjectColumnsValidationError = {
   message: string;
 };
 
+/** doneColumn が解決できないときに使う既定の完了カラム名。 */
+export const DEFAULT_DONE_COLUMN = "Done";
+
 /**
  * change 適用後に既存 column が削除されるか判定する。
  *
@@ -28,6 +31,20 @@ const isColumnRemoved = (
   column: Column,
   change: ProjectColumnsChange,
 ): boolean => !change.columns.some((next) => next.name === column.name);
+
+/**
+ * order が最大の column を返す（同 order は先勝ち）。空配列なら undefined。
+ *
+ * @param columns 対象 column 一覧
+ * @returns order 最大の column。空なら undefined
+ */
+const maxOrderColumn = (columns: readonly Column[]): Column | undefined =>
+  columns.reduce<Column | undefined>((currentMax, column) => {
+    if (currentMax === undefined || column.order > currentMax.order) {
+      return column;
+    }
+    return currentMax;
+  }, undefined);
 
 export const ProjectColumns = {
   /**
@@ -81,5 +98,26 @@ export const ProjectColumns = {
     }
 
     return Result.ok(undefined);
+  },
+
+  /**
+   * 完了として扱うカラム名を解決する。
+   *
+   * 明示指定（`override`）があればそれを最優先で返し、なければ order が最大の
+   * カラムを完了カラムとみなす。columns が空など解決できないときは既定値 "Done" を返す。
+   * ビューをまたいだ「完了カラムの解決ルール」の単一の真実源。
+   *
+   * @param columns カラム一覧
+   * @param override 明示的な完了カラム名（任意）
+   * @returns 完了カラム名
+   */
+  resolveDoneColumn: (
+    columns: readonly Column[],
+    override: string | undefined,
+  ): string => {
+    if (override !== undefined) {
+      return override;
+    }
+    return maxOrderColumn(columns)?.name ?? DEFAULT_DONE_COLUMN;
   },
 } as const;

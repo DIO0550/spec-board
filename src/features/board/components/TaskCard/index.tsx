@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { DueBadge } from "@/components/DueBadge";
 import { ParseErrorIcon } from "@/components/ParseErrorIcon";
 import { WarningIcon } from "@/components/WarningIcon";
+import { DEFAULT_DONE_COLUMN } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
@@ -71,7 +72,7 @@ const CardContent = ({
   task,
   childTasks = [],
   descendantTasks,
-  doneColumn = "Done",
+  doneColumn = DEFAULT_DONE_COLUMN,
   milestonesByName,
   hasBrokenLink = false,
   hasParseError = false,

@@ -81,3 +81,22 @@ test("validateDoneColumn は doneColumn が columns に存在すれば ok を返
 
   expect(result.ok).toBe(true);
 });
+
+test("resolveDoneColumn は override 指定があればそれを返す", () => {
+  expect(
+    ProjectColumns.resolveDoneColumn(columns("Todo", "Done"), "Custom"),
+  ).toBe("Custom");
+});
+
+test('resolveDoneColumn は空 columns かつ override 未指定なら "Done"', () => {
+  expect(ProjectColumns.resolveDoneColumn([], undefined)).toBe("Done");
+});
+
+test("resolveDoneColumn は override 未指定なら order 最大のカラム名を返す", () => {
+  const cols: Column[] = [
+    { name: "A", order: 0 },
+    { name: "B", order: 5 },
+    { name: "C", order: 3 },
+  ];
+  expect(ProjectColumns.resolveDoneColumn(cols, undefined)).toBe("B");
+});

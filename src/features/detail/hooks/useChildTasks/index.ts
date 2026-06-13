@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { ProjectColumns } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { SubIssue } from "@/features/detail/domains/sub-issue";
 import type { Column } from "@/types/column";
@@ -51,7 +52,7 @@ export const useChildTasks = (args: UseChildTasksArgs): UseChildTasksResult => {
     return TaskHierarchy.collectDescendants(allTasks, parentFilePath);
   }, [allTasks, parentFilePath]);
   const effectiveDoneColumn = useMemo(
-    () => SubIssue.resolveDoneColumn(columns, doneColumn),
+    () => ProjectColumns.resolveDoneColumn(columns, doneColumn),
     [columns, doneColumn],
   );
   return { childTasks, descendantTasks, effectiveDoneColumn };

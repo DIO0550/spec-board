@@ -1,5 +1,5 @@
 import { parentReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 
 /** Task の親子階層情報 */
 export type TaskHierarchy = {
@@ -7,6 +7,16 @@ export type TaskHierarchy = {
   parentFilePath?: string;
   /** 子タスクのファイルパスの配列（parent から逆引き） */
   childFilePaths: string[];
+};
+
+/** サブ Issue 進捗の集計結果。X/Y サマリと進捗バーが共有する単一の真実源。 */
+export type SubIssueProgress = {
+  /** 完了している件数 */
+  done: number;
+  /** 集計対象の総数 */
+  total: number;
+  /** 進捗率（0-100、Math.round。総数 0 のときは 0） */
+  percentage: number;
 };
 
 /**
@@ -176,19 +186,23 @@ export const TaskHierarchy = {
   },
 
   /**
-   * 子孫タスクの完了数 / 総数を集計する。
-   * カードフッターと進捗バーが同じ値を表示するための X/Y サマリの単一の真実源。
+   * 子孫タスクの完了数 / 総数 / 進捗率を集計する。
+   * カードフッター・進捗バー・サブIssue セクションが同じ値を表示するための
+   * サブIssue 進捗の単一の真実源。完了判定は `Task.isDone` に委譲する。
    *
    * @param descendantTasks 集計対象の子孫タスク（`collectDescendants` の結果を想定）
    * @param doneColumn 完了として扱うカラム名
-   * @returns 完了数 `done` と総数 `total`
+   * @returns 完了数 `done` / 総数 `total` / 進捗率 `percentage`（総数 0 のときは 0）
    */
   countSubIssueProgress: (
     descendantTasks: readonly Task[],
     doneColumn: string,
-  ): { done: number; total: number } => {
+  ): SubIssueProgress => {
     const total = descendantTasks.length;
-    const done = descendantTasks.filter((t) => t.status === doneColumn).length;
-    return { done, total };
+    const done = descendantTasks.filter((task) =>
+      Task.isDone(task, doneColumn),
+    ).length;
+    const percentage = total === 0 ? 0 : Math.round((done / total) * 100);
+    return { done, total, percentage };
   },
 } as const;

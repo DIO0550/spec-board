@@ -144,4 +144,15 @@ export const Task = {
       childFilePaths: payload.children,
     },
   }),
+
+  /**
+   * タスクが完了しているか判定する。
+   * 「完了」の唯一の真実源として、`status` が完了カラム名と一致するかだけで判定する。
+   *
+   * @param task 判定対象のタスク
+   * @param doneColumn 完了として扱うカラム名（未解決のときは undefined）
+   * @returns `status` が `doneColumn` と一致すれば true。`doneColumn` が undefined のときは常に false
+   */
+  isDone: (task: Task, doneColumn: string | undefined): boolean =>
+    doneColumn !== undefined && task.status === doneColumn,
 } as const;
