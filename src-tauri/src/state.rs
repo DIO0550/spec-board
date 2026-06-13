@@ -1,8 +1,7 @@
 //! アプリケーション全体で共有するグローバル状態 `AppState`。
 //!
-//! Tauri command（`open_project` / `get_tasks` 等、後続 Issue で実装予定）が
-//! 共有するアプリ状態を集約する。各フィールドは独立した `Mutex` で保護され、
-//! フィールド単位で lock 競合を最小化する。
+//! `open_project` / `get_tasks` 等の Tauri command が共有するアプリ状態を集約する。
+//! 各フィールドは独立した `Mutex` で保護され、フィールド単位で lock 競合を最小化する。
 //!
 //! # Lock 取得順序
 //!
@@ -24,7 +23,7 @@
 //! 公開アクセサを通すことで以下を保証する。
 //!
 //! - `AppState` 自身が保持する `Mutex`（`project_path` / `config` /
-//!   `labels` / `tasks_cache` / `watcher_handle`）の `PoisonError` を
+//!   `labels` / `milestones` / `tasks_cache` / `watcher_handle`）の `PoisonError` を
 //!   `AppStateError::LockPoisoned` へ統一変換する。
 //!   ただし `write_ignore` は `WriteIgnoreRegistry` 内部で独自の `Mutex` を
 //!   持つため例外で、forwarder 経由の操作は `WriteIgnoreError::LockPoisoned`

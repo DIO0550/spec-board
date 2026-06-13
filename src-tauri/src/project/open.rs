@@ -58,7 +58,7 @@
 //!
 //! `NotADirectory` / `StateLockPoisoned` を FE で個別分類したい場合は、
 //! FE 側 `PATTERNS` に「ディレクトリではありません」「内部状態のロック」等を
-//! 追加すること。本 Issue 範囲ではこれら 2 variant は `UNKNOWN` 扱いとなる前提で
+//! 追加すること。現状はこれら 2 variant は `UNKNOWN` 扱いとなる前提で
 //! BE 側エラー Display を生成している。
 
 use std::collections::HashMap;
@@ -264,7 +264,7 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     Ok(build_payload(tasks, &config))
 }
 
-/// AppState 5 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
+/// AppState 6 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
 ///
 /// scan / parse / GUIDE 副作用を実行する前に呼び出すことで、lock poison が
 /// 確定している場合に `.spec-board/GUIDE.md` の不要な書き出しや scan の無駄を
@@ -454,6 +454,16 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
     }
 }
 
+/// `commit_app_state_with_prepared` に渡す確定済みマスタ群（config + 2 レジストリ）。
+///
+/// commit 関数の引数肥大を避けるため、atomic swap 対象のマスタ群を 1 つの借用
+/// 構造体にまとめて運ぶ。`tasks` / `prepared` / `watcher` は性質が異なるため含めない。
+pub(crate) struct CommittedMasters<'a> {
+    pub config: &'a Config,
+    pub labels: &'a LabelRegistry,
+    pub milestones: &'a MilestoneRegistry,
+}
+
 /// `AppState` に新値を確定させる。
 ///
 /// # ロック健全性の早期検出（pre-flight の限界）
@@ -467,7 +477,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///
 /// 真に atomic な commit が必要になった時点で、AppState 側に lock 取得順序に従って
 /// 全フィールドを単一クリティカルセクションで更新する API を追加し、
-/// ここから呼び替える設計に切り替える前提とする。本 Issue 範囲では Tauri command
+/// ここから呼び替える設計に切り替える前提とする。現状は Tauri command
 /// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
 /// に留める。
 ///
@@ -476,8 +486,8 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
 /// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
 ///
-/// 1. **pre-flight**: `project_path` / `config` / `labels` / `tasks_cache` /
-///    `watcher_handle` / `write_ignore` の各 lock を順に probe し、
+/// 1. **pre-flight**: `project_path` / `config` / `labels` / `milestones` /
+///    `tasks_cache` / `watcher_handle` / `write_ignore` の各 lock を順に probe し、
 ///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
 ///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
 ///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
@@ -507,16 +517,6 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 最後に `watcher.spawn(prepared, state, root, config)` で adapter スレッドを
 /// 起動し、返り値を `install_watcher_handle` で AppState に格納する。spawn は
 /// panic 以外で失敗しない契約。
-/// `commit_app_state_with_prepared` に渡す確定済みマスタ群（config + 2 レジストリ）。
-///
-/// commit 関数の引数肥大を避けるため、atomic swap 対象のマスタ群を 1 つの借用
-/// 構造体にまとめて運ぶ。`tasks` / `prepared` / `watcher` は性質が異なるため含めない。
-pub(crate) struct CommittedMasters<'a> {
-    pub config: &'a Config,
-    pub labels: &'a LabelRegistry,
-    pub milestones: &'a MilestoneRegistry,
-}
-
 pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     state: &Arc<AppState>,
     root: &Path,

@@ -30,7 +30,7 @@ pub fn create_task(state: State<'_, Arc<AppState>>, args: CreateTaskArgs) -> Res
 /// `create_task` の effect 層本体（テスト境界）。
 ///
 /// I/O は `TaskIo` port 経由で実行し、標準 fs API の直接呼び出しは行わない。
-/// AppState lock 取得順序契約 (`state.rs:8-19`) を維持し、aggregate の
+/// `state.rs` モジュール doc が定める AppState lock 取得順序契約を維持し、aggregate の
 /// `plan_create`（副作用なしの planning）を副作用前に呼び出すことで
 /// validation 失敗時の副作用ゼロを保証する。
 pub(crate) fn create_task_impl(

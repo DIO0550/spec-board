@@ -1666,11 +1666,10 @@ fn load_or_default_returns_backup_failed_when_bak_path_is_symlink() {
 
 #[test]
 fn config_json_byte_level_round_trip() {
-    // Config の JSON 形状が VO 化前後で変わらないことを保証する。
-    // 本テスト時点での `CardOrder` は `BTreeMap<String, Vec<String>>` のまま
-    // （VO 化は別 PR で実施予定）。`cardOrder` のキー昇順 / `Column.name` /
-    // `doneColumn` が `ColumnName` newtype 化された後でも JSON 形状が
-    // バイト列レベルで不変であることを確認する。
+    // Config の JSON 形状が安定していることを保証する。
+    // `CardOrder` は `BTreeMap<String, Vec<String>>`、`Column.name` /
+    // `doneColumn` は `ColumnName` newtype で表現するが、`cardOrder` の
+    // キー昇順を含め JSON 形状がバイト列レベルで不変であることを確認する。
     let json = r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1}],"cardOrder":{"Done":[],"Todo":["tasks/foo.md"]},"doneColumn":"Done"}"#;
     let parsed: Config = serde_json::from_str(json).unwrap();
     let serialized = serde_json::to_string(&parsed).unwrap();

@@ -20,7 +20,7 @@ pub struct UpdateTaskArgs {
     pub title: Option<String>,
     pub status: Option<String>,
     /// `"High" | "Medium" | "Low"` 想定。不正値は `None` に倒す lenient 変換。
-    /// `None` = 未指定（不変）。priority クリアは本 Issue ではサポートしない。
+    /// `None` = 未指定（不変）。priority のクリアはサポートしない。
     pub priority: Option<String>,
     /// マイルストーンの更新意図（既存 parent と同型の 3 値）:
     /// `None` = 不変 / `Some("")` = クリア / `Some(name)` = 設定。

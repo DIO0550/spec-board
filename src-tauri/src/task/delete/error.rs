@@ -1,7 +1,7 @@
 //! `delete_task` aggregate validation のエラー型。
 //!
 //! `TaskIndex::plan_delete_abort` が返す失敗値のみを保持する。effect 層
-//! （I/O / cache / watcher 連携）の失敗を表す型は後続 Issue で別途追加する。
+//! （I/O / cache / watcher 連携）の失敗を表す型は未実装。
 //!
 //! Display 文字列は FE 側 `TauriError.PATTERNS` で文字列マッチされるため、
 //! create_task / update_task と同じ自然文パターンを採用する。

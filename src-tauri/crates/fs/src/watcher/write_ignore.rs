@@ -1,4 +1,4 @@
-//! Registry for write-originated paths that a future file watcher can ignore.
+//! Registry for write-originated paths that the file watcher can ignore.
 //!
 //! Paths are stored exactly as provided. The registry does not canonicalize,
 //! normalize, or otherwise resolve path representations.

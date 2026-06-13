@@ -16,7 +16,7 @@ use crate::task::task_title::TaskTitle;
 pub struct CreateTaskArgs {
     /// タスクタイトル（必須）。空文字列は [`super::error::CreateTaskError::InvalidTitle`] となる。
     pub title: String,
-    /// ステータス文字列（必須）。値域検証は本Issue では行わない。
+    /// ステータス文字列（必須）。値域検証は行わない。
     pub status: String,
     /// 優先度文字列。`"High" | "Medium" | "Low"` 想定。値域は frontmatter 側で検証。
     pub priority: Option<String>,

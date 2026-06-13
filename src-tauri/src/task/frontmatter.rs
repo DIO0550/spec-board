@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use thiserror::Error;
 
-/// タスクの優先度。`docs/spec-board/task-format-spec.md` PL-005 に従い、
-/// YAML フロントマターの `priority` 値を ASCII 大小文字非区別で正規化したもの。
+/// タスクの優先度。YAML フロントマターの `priority` 値を
+/// ASCII 大小文字非区別で正規化したもの。
 ///
 /// 未定義文字列（例: `urgent`）や型不一致（数値・配列・mapping・null・bool）は
 /// `Frontmatter::priority` 上で `None` として表現される（バッジ非表示扱い）。
@@ -77,7 +77,7 @@ pub struct Frontmatter {
 /// `Value::String(s)` のみを `Priority::from_ascii_ci` で正規化する。
 /// 数値・配列・mapping・null・bool など型不一致はすべて `Ok(None)` に落とす。
 ///
-/// `priority` 値の型不一致や未定義文字列で `FrontmatterError::InvalidYaml` 化することはない (PL-005)。
+/// `priority` 値の型不一致や未定義文字列で `FrontmatterError::InvalidYaml` 化することはない。
 fn deserialize_priority_lenient<'de, D>(deserializer: D) -> Result<Option<Priority>, D::Error>
 where
     D: Deserializer<'de>,
@@ -172,7 +172,7 @@ pub struct Parsed {
 /// フロントマター解析時のエラー。
 #[derive(Debug, Error)]
 pub enum FrontmatterError {
-    /// YAML 構文エラー、または YAML ルートが mapping でない場合 (PL-002)。
+    /// YAML 構文エラー、または YAML ルートが mapping でない場合。
     #[error("invalid YAML in frontmatter: {0}")]
     InvalidYaml(#[from] serde_yaml_ng::Error),
 
@@ -215,16 +215,16 @@ pub fn parse_bytes(input: &[u8]) -> Result<Option<Parsed>, FrontmatterError> {
 
 /// 入力文字列から frontmatter を抽出してパースする。
 ///
-/// # 区切り検出 (PL-001)
+/// # 区切り検出
 /// frontmatter は **「先頭行が `---`（末尾空白許容）から、続く最初の単独行 `---` まで」**
 /// と定義する。先頭 `---` 以降に現れる最初の単独行 `---` は常に closing delimiter とみなす
 /// （本文中に偶発的に `---` が含まれる場合も区切りとして解釈される）。
 /// YAML document end marker `...` は区切りとして扱わない。
 ///
 /// # 戻り値
-/// - フロントマターが存在しない場合: `Ok(None)` (BL-003)
+/// - フロントマターが存在しない場合: `Ok(None)`
 ///   - 先頭行が `---` でない / 2 つ目の単独行 `---` が見つからない 場合を含む
-/// - YAML パース失敗時: `Err(FrontmatterError::InvalidYaml)` (PL-002)
+/// - YAML パース失敗時: `Err(FrontmatterError::InvalidYaml)`
 ///   - YAML 構文エラー / ルートが mapping でない (sequence / scalar / null) を含む
 /// - 成功時: typed `priority` / `labels` / `links` を含む `Ok(Some(Parsed))`
 ///   - `priority` は ASCII 大小文字非区別で正規化される
