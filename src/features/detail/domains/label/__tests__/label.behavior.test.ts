@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Labels } from "../index";
+import { Labels } from "..";
 
 test('Labels.tryAdd([], "x") は ["x"]', () => {
   expect(Labels.tryAdd([], "x")).toEqual(["x"]);

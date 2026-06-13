@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { TauriError } from "@/lib/tauri";
-import { projectErrorMessage } from "../index";
+import { projectErrorMessage } from "..";
 
 test("kind=tauri / HAS_CHILDREN は専用文言に翻訳される", () => {
   const tauriError = new TauriError(

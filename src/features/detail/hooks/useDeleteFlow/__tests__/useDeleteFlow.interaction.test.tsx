@@ -33,7 +33,7 @@ import {
   type UseDeleteFlowArgs,
   type UseDeleteFlowResult,
   useDeleteFlow,
-} from "../index";
+} from "..";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

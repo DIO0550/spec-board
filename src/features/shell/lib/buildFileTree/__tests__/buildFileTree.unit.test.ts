@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Task } from "@/types/task";
-import { buildFileTree, type FileTreeNode } from "../index";
+import { buildFileTree, type FileTreeNode } from "..";
 
 const buildTask = (filePath: string, id: string): Task => {
   return Task.fromPayload({

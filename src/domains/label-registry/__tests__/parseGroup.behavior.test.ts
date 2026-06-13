@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { LabelRegistry } from "../index";
+import { LabelRegistry } from "..";
 
 test('parseGroup("type:feature") は "type" を返す', () => {
   expect(LabelRegistry.parseGroup("type:feature")).toBe("type");

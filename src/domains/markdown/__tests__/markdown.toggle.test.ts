@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Markdown } from "../index";
+import { Markdown } from "..";
 
 test("toggleTaskAt: off→on", () => {
   expect(Markdown.toggleTaskAt("- [ ] a", 0)).toBe("- [x] a");

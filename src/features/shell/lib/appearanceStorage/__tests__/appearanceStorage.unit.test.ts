@@ -5,7 +5,7 @@ import {
   loadAppearance,
   normalizeAppearance,
   saveAppearance,
-} from "../index";
+} from "..";
 
 beforeEach(() => {
   localStorage.clear();

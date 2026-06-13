@@ -6,7 +6,7 @@ import type {
   TaskFilterOptions,
 } from "@/features/board/lib/applyTaskFilter";
 import { Task, type TaskPayload } from "@/types/task";
-import { type UseTaskFilterResult, useTaskFilter } from "../index";
+import { type UseTaskFilterResult, useTaskFilter } from "..";
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;

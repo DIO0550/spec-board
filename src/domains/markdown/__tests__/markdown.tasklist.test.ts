@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Markdown, type TaskListItem } from "../index";
+import { Markdown, type TaskListItem } from "..";
 
 test("parse: task-list を判別 union で分解する", () => {
   expect(Markdown.parse("- [ ] a\n- [x] b")).toEqual([

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Priority } from "../index";
+import { Priority } from "..";
 
 test("Priority.OPTIONS は High / Medium / Low の順で固定", () => {
   expect(Priority.OPTIONS).toEqual(["High", "Medium", "Low"]);

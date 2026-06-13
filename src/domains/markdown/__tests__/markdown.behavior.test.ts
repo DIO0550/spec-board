@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Markdown } from "../index";
+import { Markdown } from "..";
 
 test("tokenizeInline: 装飾なし → text のみ", () => {
   expect(Markdown.tokenizeInline("abc")).toEqual([

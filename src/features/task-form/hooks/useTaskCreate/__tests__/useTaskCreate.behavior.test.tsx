@@ -36,7 +36,7 @@ import {
   type UseTaskCreateOptions,
   type UseTaskCreateResult,
   useTaskCreate,
-} from "../index";
+} from "..";
 
 const taskFixture = Task.fromPayload({
   id: "task-1",

@@ -6,7 +6,7 @@ import {
   type UseParentTaskArgs,
   type UseParentTaskResult,
   useParentTask,
-} from "../index";
+} from "..";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

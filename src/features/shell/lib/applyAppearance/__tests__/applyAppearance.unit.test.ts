@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { resolveAppearanceDataset, resolveThemeMode } from "../index";
+import { resolveAppearanceDataset, resolveThemeMode } from "..";
 
 test.each([
   ["light 固定はシステム設定に関わらず light", "light", true, "light"],
