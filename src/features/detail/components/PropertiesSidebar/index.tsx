@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { BrokenLinkSet } from "@/domains/broken-link";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
-import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
+import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
@@ -28,6 +27,18 @@ export type PropertiesSidebarProps = {
   brokenLinks: BrokenLinkSet;
   /** ステータス/優先度/ラベルの編集ハンドラ */
   handlers: DetailFieldHandlers;
+  /**
+   * 削除フロー（DetailScreen が所有する useDeleteFlow の戻り値）。
+   * 削除ボタン押下 / ConfirmDialog の開閉・確定・キャンセルに利用する。
+   */
+  deleteFlow: UseDeleteFlowResult;
+  /** 子タスクがある場合の削除方針（clear / abort）。子なし時は無視される */
+  orphanStrategy: OrphanStrategy;
+  /**
+   * 削除方針の変更ハンドラ。
+   * @param strategy - 選択された削除方針
+   */
+  onOrphanStrategyChange: (strategy: OrphanStrategy) => void;
   /**
    * サブIssue 追加ハンドラ。
    * @param parentFilePath - 親タスクのファイルパス
@@ -58,30 +69,14 @@ export type PropertiesSidebarProps = {
     sourceFilePath: string,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
-  /**
-   * タスク削除ハンドラ。
-   * @param id - 削除対象のタスク ID
-   * @param orphanStrategy - 子タスクがある場合の処理方針（子なし時は未指定）
-   */
-  onDelete: (
-    id: string,
-    orphanStrategy?: OrphanStrategy,
-  ) => void | Promise<void>;
-  /**
-   * 削除 ConfirmDialog の開閉が変化したらコンテナへ通知する。
-   * DetailScreen はこれを useEscToClose の disabled に渡し、
-   * ダイアログ表示中の Esc が「戻る」を誤発火しないようにする。
-   * @param open - ダイアログが開いているか
-   */
-  onDeleteFlowOpenChange?: (open: boolean) => void;
 };
 
 /**
  * 詳細のプロパティペイン。DetailScreen の右サイドバー専用。
  * 最上部に ParentLink / BrokenParentRow（Parent はサイドバー集約）、続いて
  * DetailFields（Compound: Status/Priority・Labels・SubIssue・Links）、最下部に削除ボタンを置く。
- * 削除フロー（useDeleteFlow + orphanStrategy + ConfirmDialog）を内包し、
- * 開閉を onDeleteFlowOpenChange でコンテナへ通知する。
+ * 削除フロー（useDeleteFlow + orphanStrategy）の所有権は DetailScreen にあり、本コンポーネントは
+ * props で受け取った state を描画するだけの presentational コンポーネントとして振る舞う。
  * @param props - {@link PropertiesSidebarProps}
  * @returns プロパティペイン要素
  */
@@ -94,39 +89,14 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
     parentTask,
     brokenLinks,
     handlers,
+    deleteFlow,
+    orphanStrategy,
+    onOrphanStrategyChange,
     onAddSubIssue,
     onSelectTask,
     onAddLink,
     onRemoveLink,
-    onDelete,
-    onDeleteFlowOpenChange,
   } = props;
-
-  const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
-
-  const handleDelete = useCallback(() => {
-    if (task.hierarchy.childFilePaths.length > 0) {
-      return onDelete(task.id, orphanStrategy);
-    }
-    return onDelete(task.id);
-  }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
-  const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
-
-  useEffect(() => {
-    if (deleteFlow.isOpen) {
-      setOrphanStrategy("clear");
-    }
-  }, [deleteFlow.isOpen]);
-
-  // ダイアログ開閉が「変化したときのみ」通知する。初回 false の誤通知を避けるため
-  // prevOpenRef で前回値と比較する（StrictMode 二重 effect でも重複しない）。
-  const prevOpenRef = useRef(deleteFlow.isOpen);
-  useEffect(() => {
-    if (prevOpenRef.current !== deleteFlow.isOpen) {
-      prevOpenRef.current = deleteFlow.isOpen;
-      onDeleteFlowOpenChange?.(deleteFlow.isOpen);
-    }
-  }, [deleteFlow.isOpen, onDeleteFlowOpenChange]);
 
   const hasChildren = task.hierarchy.childFilePaths.length > 0;
 
@@ -203,7 +173,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
                   name="orphan-strategy"
                   value="clear"
                   checked={orphanStrategy === "clear"}
-                  onChange={() => setOrphanStrategy("clear")}
+                  onChange={() => onOrphanStrategyChange("clear")}
                   data-testid="delete-orphan-strategy-clear"
                 />
                 子タスクの親リンクを解除して削除（clear）
@@ -214,7 +184,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
                   name="orphan-strategy"
                   value="abort"
                   checked={orphanStrategy === "abort"}
-                  onChange={() => setOrphanStrategy("abort")}
+                  onChange={() => onOrphanStrategyChange("abort")}
                   data-testid="delete-orphan-strategy-abort"
                 />
                 削除を中止（abort）

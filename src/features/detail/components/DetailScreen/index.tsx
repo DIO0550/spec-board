@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBrokenLinks } from "@/domains/broken-link";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
+import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
 import { useParentTask } from "@/features/detail/hooks/useParentTask";
@@ -85,7 +86,9 @@ export type DetailScreenProps = {
  * 全画面2ペイン詳細ビュー。左=本文（DetailBody）/ 右=プロパティサイドバー（PropertiesSidebar）。
  * `<main>` を占有する feature コンポーネント（SettingsScreen 同様の全画面区分）。
  * Esc / 「← 戻る」で board へ戻る。useChildTasks / useParentTask / getBrokenLinks /
- * useDetailFieldHandlers をコンテナとして呼び、計算済みの値・ハンドラを共通部品へ渡す。
+ * useDetailFieldHandlers / useDeleteFlow をコンテナとして呼び、計算済みの値・ハンドラを
+ * 共通部品へ渡す。削除フロー（useDeleteFlow + orphanStrategy）の所有権はここにあり、
+ * PropertiesSidebar には props で渡す。
  * @param props - {@link DetailScreenProps}
  * @returns 全画面詳細ビュー要素
  */
@@ -119,13 +122,30 @@ export const DetailScreen = (props: DetailScreenProps) => {
     [task, tasksByNormalizedPath],
   );
 
-  // 削除 ConfirmDialog 表示中は Esc を「戻る」に使わない。PropertiesSidebar から
-  // 開閉通知を受けて disabled に反映する。
-  const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // 削除フローの所有権はコンテナ（DetailScreen）が持つ。PropertiesSidebar は
+  // この state を props で受け取って描画するだけ。これにより子側で必要だった
+  // 「開閉のミラー通知 effect」「orphanStrategy リセット effect」が不要になる。
+  const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
+  const handleDelete = useCallback(() => {
+    if (task.hierarchy.childFilePaths.length > 0) {
+      return onDelete(task.id, orphanStrategy);
+    }
+    return onDelete(task.id);
+  }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
+  const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
+
+  // 削除ダイアログを開く操作の起点（event handler）で orphanStrategy を初期値へ戻す。
+  // state 変化に反応する effect ではなくクリック時に同期実行するため、ダイアログが開いた
+  // 最初の render から常に "clear" が選択された状態で描画される。
+  const requestDelete = useCallback(() => {
+    setOrphanStrategy("clear");
+    deleteFlow.requestDelete();
+  }, [deleteFlow.requestDelete]);
 
   // 削除ダイアログ または 上位モーダル（作成モーダル等）表示中は Esc（戻る）を停止し、
-  // モーダル自身の Esc と競合（戻る誤発火）しないようにする。
-  const escSuspended = isDeleteDialogOpen || isUpperModalOpen;
+  // モーダル自身の Esc と競合（戻る誤発火）しないようにする。削除ダイアログの開閉は
+  // deleteFlow.isOpen を直接参照するため、render 1 周遅れの窓が生じない。
+  const escSuspended = deleteFlow.isOpen || isUpperModalOpen;
 
   // 全画面ビュー展開時に section 自身へフォーカスを移す（ビュー先頭へ移動）。
   // DetailScreen は modal ではなく、HeaderBar / AppSidebar が detail 区分でも常時
@@ -173,8 +193,9 @@ export const DetailScreen = (props: DetailScreenProps) => {
           onSelectTask={onSelectTask}
           onAddLink={onAddLink}
           onRemoveLink={onRemoveLink}
-          onDelete={onDelete}
-          onDeleteFlowOpenChange={setDeleteDialogOpen}
+          deleteFlow={{ ...deleteFlow, requestDelete }}
+          orphanStrategy={orphanStrategy}
+          onOrphanStrategyChange={setOrphanStrategy}
         />
       </div>
     </section>
