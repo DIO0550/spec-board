@@ -1,14 +1,14 @@
 //! `update_task` Tauri command の引数 DTO。
 //!
-//! filePath は既存の path-normalization helper を再利用して
-//! `UpdateTaskIntent` に詰め直す。canonicalize は使わない。
+//! filePath は共通の入力パス VO で正規化して `UpdateTaskIntent` に詰め直す。
+//! canonicalize は使わない。
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use crate::task::frontmatter::Priority;
-use crate::task::path_lookup::normalize_relative_path_for_input;
+use crate::task::input_task_path::InputTaskPath;
 use crate::task::task_index::UpdateTaskIntent;
 use crate::task::update::error::UpdateTaskError;
 
@@ -36,7 +36,7 @@ pub struct UpdateTaskArgs {
 impl UpdateTaskArgs {
     /// project_root を起点に filePath を lexical 正規化し、`UpdateTaskIntent` に詰め直す。
     pub fn into_intent(self, project_root: &Path) -> Result<UpdateTaskIntent, UpdateTaskError> {
-        let rel_path = normalize_input_file_path(&self.file_path, project_root)?;
+        let rel_path = resolve_input_file_path(&self.file_path, project_root)?;
 
         let priority = self.priority.as_deref().and_then(Priority::from_ascii_ci);
 
@@ -54,39 +54,18 @@ impl UpdateTaskArgs {
     }
 }
 
-fn normalize_input_file_path(raw: &str, project_root: &Path) -> Result<PathBuf, UpdateTaskError> {
+/// 入力 filePath を VO で `.md` 必須として正規化し、reject を `InvalidPath` へ詰め替える。
+///
+/// 空文字 / 空白のみの入力は、既存の FE 文字列マッチ契約を維持するため
+/// raw ではなく `"empty"` を持つ `InvalidPath` にする。
+fn resolve_input_file_path(raw: &str, project_root: &Path) -> Result<PathBuf, UpdateTaskError> {
     if raw.trim().is_empty() {
         return Err(UpdateTaskError::InvalidPath("empty".into()));
     }
 
-    let candidate_text = if Path::new(raw).is_absolute() {
-        Path::new(raw)
-            .strip_prefix(project_root)
-            .map_err(|_| UpdateTaskError::InvalidPath(raw.into()))?
-            .to_string_lossy()
-            .into_owned()
-    } else {
-        raw.to_string()
-    };
-
-    let normalized = normalize_relative_path_for_input(&candidate_text)
-        .ok_or_else(|| UpdateTaskError::InvalidPath(raw.into()))?;
-
-    let rel = Path::new(&normalized);
-
-    if rel.components().any(|c| matches!(c, Component::ParentDir)) {
-        return Err(UpdateTaskError::InvalidPath(raw.into()));
-    }
-
-    if rel.extension().and_then(|e| e.to_str()) != Some("md") {
-        return Err(UpdateTaskError::InvalidPath(raw.into()));
-    }
-
-    if rel.as_os_str().is_empty() {
-        return Err(UpdateTaskError::InvalidPath(raw.into()));
-    }
-
-    Ok(rel.to_path_buf())
+    InputTaskPath::resolve(raw, project_root, true)
+        .map(InputTaskPath::into_path_buf)
+        .map_err(|_| UpdateTaskError::InvalidPath(raw.into()))
 }
 
 #[cfg(test)]
