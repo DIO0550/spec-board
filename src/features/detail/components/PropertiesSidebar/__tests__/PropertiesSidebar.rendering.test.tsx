@@ -23,7 +23,6 @@ function buildDeleteFlow(
   overrides: Partial<UseDeleteFlowResult> = {},
 ): UseDeleteFlowResult {
   return {
-    state: { kind: "idle" },
     isOpen: false,
     isBusy: false,
     requestDelete: vi.fn(),
