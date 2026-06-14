@@ -184,6 +184,11 @@ Task.md
 .pr_number
 session-logs/
 tasks*
+# `tasks*` は task-loop 成果物向けだが、core.ignorecase 環境では src の
+# `TaskSubbar`（TaskS... が "tasks*" に大文字小文字無視で誤マッチ）まで除外して
+# しまうため、当該コンポーネントを明示的に除外解除する。
+!src/features/task-form/components/TaskCreateScreen/TaskSubbar/
+!src/features/task-form/components/TaskCreateScreen/TaskSubbar/**
 .specs
 plugin-workspace/
 *.local.*
