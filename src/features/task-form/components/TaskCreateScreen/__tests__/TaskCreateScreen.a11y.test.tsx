@@ -24,6 +24,7 @@ const baseProps = (
   columns: COLUMNS,
   initialStatus: "Todo",
   existingTasks: [],
+  watchedFileCount: 0,
   onSubmit: vi.fn().mockResolvedValue(undefined),
   onClose: vi.fn(),
   ...overrides,
@@ -125,16 +126,20 @@ test("キャンセルボタン click で onClose が呼ばれる", () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-test("ステータス/優先度の radiogroup が 2 つあり、それぞれラベルと関連付く", () => {
+test("ステータス/優先度が listbox 開閉ボタン（aria-haspopup=listbox）として描画され、それぞれラベルと関連付く", () => {
   render(baseProps());
-  const groups = Array.from(document.querySelectorAll('[role="radiogroup"]'));
-  expect(groups.length).toBe(2);
-  const labels = groups.map((group) => {
-    const labelId = group.getAttribute("aria-labelledby");
-    return document.getElementById(labelId ?? "")?.textContent ?? "";
-  });
-  expect(labels[0]).toContain("ステータス");
-  expect(labels[1]).toContain("優先度");
+  const status = document.querySelector('[data-testid="task-form-status"]');
+  const priority = document.querySelector('[data-testid="task-form-priority"]');
+  expect(status?.getAttribute("aria-haspopup")).toBe("listbox");
+  expect(priority?.getAttribute("aria-haspopup")).toBe("listbox");
+  const statusLabelId = status?.getAttribute("aria-labelledby");
+  const priorityLabelId = priority?.getAttribute("aria-labelledby");
+  expect(document.getElementById(statusLabelId ?? "")?.textContent).toContain(
+    "ステータス",
+  );
+  expect(document.getElementById(priorityLabelId ?? "")?.textContent).toContain(
+    "優先度",
+  );
 });
 
 test("ラベル入力が combobox として aria-expanded を持つ", () => {
@@ -151,7 +156,7 @@ test("Markdown ツールバーが role=toolbar と各ボタンの aria-label を
   const toolbar = document.querySelector('[role="toolbar"]');
   expect(toolbar?.getAttribute("aria-label")).toBe("Markdown 編集");
   const buttons = Array.from(toolbar?.querySelectorAll("button") ?? []);
-  expect(buttons.length).toBe(5);
+  expect(buttons.length).toBe(9);
   expect(buttons.every((b) => b.getAttribute("aria-label"))).toBeTruthy();
 });
 

@@ -8,7 +8,10 @@ import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields"
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
-import { SavePathPreview } from "@/features/task-form/lib/savePathPreview";
+import {
+  SavePathPreview,
+  type SavePathPreviewResult,
+} from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
@@ -77,6 +80,19 @@ type TaskFormProps = {
    * @param dirty - 入力済み内容の有無
    */
   onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * 保存先パスプレビュー（{@link SavePathPreviewResult}）の変化通知。
+   * subbar / pv-foot / footer のファイル名表示を親へ持ち上げるための軽量コールバック。
+   * 文字列結合のみで Markdown 再パースを伴わないため onValuesChange の最適化を崩さない。
+   * @param preview - 保存先パスプレビュー結果（kind で分岐する union）
+   */
+  onPathPreviewChange?: (preview: SavePathPreviewResult) => void;
+  /**
+   * inline の submit / cancel アクション（{@link TaskFormActions}）を描画するか。
+   * 既定 true（従来どおり）。false のとき（TaskCreateScreen の footer 利用時）は
+   * inline actions を描画せず、送信は formRef 経由（footer 作成ボタン → requestSubmit）に委ねる。
+   */
+  renderActionsInline?: boolean;
 };
 
 /**
@@ -102,6 +118,8 @@ export const TaskForm = ({
   onValuesChange,
   formRef,
   onDirtyChange,
+  onPathPreviewChange,
+  renderActionsInline = true,
 }: TaskFormProps) => {
   const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
@@ -193,6 +211,15 @@ export const TaskForm = ({
       projectPath,
     ],
   );
+  // 保存先パスプレビューを親へ持ち上げる（subbar / pv-foot / footer のファイル名表示用）。
+  // pathPreview は文字列結合のみで Markdown 再パースを伴わないため、この通知は
+  // onValuesChange の fileName/subIssues 除外最適化を崩さない。
+  useEffect(() => {
+    if (onPathPreviewChange === undefined) {
+      return;
+    }
+    onPathPreviewChange(pathPreview);
+  }, [pathPreview, onPathPreviewChange]);
   // dirty 判定はフル値（fileName / subIssues 含む）から毎レンダー計算するが、
   // 親への通知は boolean 反転時のみ（useEffect の deps が boolean）のため、
   // onValuesChange の fileName 除外最適化（毎キーストロークの Markdown 再パース回避）を壊さない。
@@ -290,6 +317,10 @@ export const TaskForm = ({
           }
         />
       </TaskFormLabels>
+      <div className="mt-3 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <span>関連</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
       {parentCandidates !== undefined && (
         <TaskFormParent
           tasks={parentCandidates}
@@ -307,6 +338,13 @@ export const TaskForm = ({
         onRemove={links.removeLink}
         disabled={isSubmitting}
       />
+      <div className="mt-3 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <span>本文</span>
+        <span className="h-px flex-1 bg-border" />
+        <span className="font-mono text-[10.5px] normal-case tracking-normal text-text-dim">
+          Markdown
+        </span>
+      </div>
       <TaskFormBody
         value={fields.state.values.body}
         onChange={(value) => fields.dispatch({ type: "body", value })}
@@ -323,24 +361,26 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "draft", value })}
         disabled={isSubmitting}
       />
-      <TaskFormActions>
-        <Button
-          variant="secondary"
-          onClick={onCancel}
-          disabled={isSubmitting}
-          data-testid="task-form-cancel"
-        >
-          {cancelLabel}
-        </Button>
-        <Button
-          variant="primary"
-          type="submit"
-          disabled={isSubmitting}
-          data-testid="task-form-submit"
-        >
-          {submitLabel}
-        </Button>
-      </TaskFormActions>
+      {renderActionsInline && (
+        <TaskFormActions>
+          <Button
+            variant="secondary"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            data-testid="task-form-cancel"
+          >
+            {cancelLabel}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={isSubmitting}
+            data-testid="task-form-submit"
+          >
+            {submitLabel}
+          </Button>
+        </TaskFormActions>
+      )}
     </form>
   );
 };

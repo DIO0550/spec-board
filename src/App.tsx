@@ -980,81 +980,89 @@ export const App = () => {
     );
   };
 
+  // 作成ビューは独自の全画面 chrome（topbar/subbar/footer）を持つ standalone レイアウトのため、
+  // 共通の HeaderBar / AppSidebar を外して viewport 全体に描画する。
+  // ToastContainer / LiveRegion は全ビュー共通の縦断 UI のため create でも温存する。
+  const isCreateView = view === "create" && createModal !== null;
+
   return (
     <ThemeProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden">
-        <HeaderBar
-          view={view}
-          onSettingsClick={handleSettingsClick}
-          onMilestoneClick={
-            state.kind === "loaded" ? handleMilestoneClick : undefined
-          }
-          onOpenClick={handleOpenClick}
-        />
-        <div className="flex flex-1 overflow-hidden">
-          <AppSidebar
+        {isCreateView && createModal !== null ? (
+          <TaskCreateScreen
+            columns={columns}
+            projectPath={loadedPath ?? undefined}
             projectName={projectName}
-            currentPath={displayedPath ?? undefined}
-            recentProjects={recentProjects}
-            tasks={tasks}
-            selectedTaskId={selectedTaskId}
-            onOpenProject={handleOpenClick}
-            onOpenProjectPath={handleOpenProjectPath}
-            onSelectTask={handleSidebarSelectTask}
+            watchedFileCount={tasks.length}
+            initialStatus={createModal.status}
+            parentCandidates={parentCandidates}
+            existingTasks={tasks}
+            initialParent={subIssueParentPath}
+            parentReadOnly={parentReadOnly}
+            onSubmit={handleCreateTask}
+            onClose={handleCloseCreateModal}
           />
-          <main className="flex flex-1 overflow-hidden">
-            {view === "settings" && (
-              <SettingsScreen milestones={settingsMilestonesResource} />
-            )}
-            {view === "milestone" && (
-              <MilestoneViewScreen
-                resource={milestonesResource}
+        ) : (
+          <>
+            <HeaderBar
+              view={view}
+              onSettingsClick={handleSettingsClick}
+              onMilestoneClick={
+                state.kind === "loaded" ? handleMilestoneClick : undefined
+              }
+              onOpenClick={handleOpenClick}
+            />
+            <div className="flex flex-1 overflow-hidden">
+              <AppSidebar
+                projectName={projectName}
+                currentPath={displayedPath ?? undefined}
+                recentProjects={recentProjects}
                 tasks={tasks}
-                doneColumn={doneColumn}
+                selectedTaskId={selectedTaskId}
+                onOpenProject={handleOpenClick}
+                onOpenProjectPath={handleOpenProjectPath}
+                onSelectTask={handleSidebarSelectTask}
               />
-            )}
-            {view === "detail" && selectedTask && (
-              <DetailScreen
-                task={selectedTask}
-                columns={columns}
-                allTasks={tasks}
-                tasksByNormalizedPath={tasksByNormalizedPath}
-                doneColumn={doneColumn}
-                // 作成は全画面 create ビューへ分離され detail と共存しないため、
-                // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
-                // createModal が stale でも detail の Esc 戻るが抑止されない。
-                isUpperModalOpen={false}
-                onBack={handleBackToBoard}
-                onTaskUpdate={handleTaskUpdate}
-                onDelete={handleTaskDelete}
-                onAddSubIssue={handleAddSubIssue}
-                onSelectTask={handleSelectTask}
-                onAddLink={handleAddLink}
-                onRemoveLink={handleRemoveLink}
-              />
-            )}
-            {/* 全画面2ペインのタスク作成画面。board の「+」/ detail のサブIssue 追加の */}
-            {/* 両導線から navigate("create") で <main> を占有する。 */}
-            {view === "create" && createModal !== null && (
-              <TaskCreateScreen
-                columns={columns}
-                projectPath={loadedPath ?? undefined}
-                initialStatus={createModal.status}
-                parentCandidates={parentCandidates}
-                existingTasks={tasks}
-                initialParent={subIssueParentPath}
-                parentReadOnly={parentReadOnly}
-                onSubmit={handleCreateTask}
-                onClose={handleCloseCreateModal}
-              />
-            )}
-            {view !== "settings" &&
-              view !== "detail" &&
-              view !== "milestone" &&
-              view !== "create" &&
-              renderMain()}
-          </main>
-        </div>
+              <main className="flex flex-1 overflow-hidden">
+                {view === "settings" && (
+                  <SettingsScreen milestones={settingsMilestonesResource} />
+                )}
+                {view === "milestone" && (
+                  <MilestoneViewScreen
+                    resource={milestonesResource}
+                    tasks={tasks}
+                    doneColumn={doneColumn}
+                  />
+                )}
+                {view === "detail" && selectedTask && (
+                  <DetailScreen
+                    task={selectedTask}
+                    columns={columns}
+                    allTasks={tasks}
+                    tasksByNormalizedPath={tasksByNormalizedPath}
+                    doneColumn={doneColumn}
+                    // 作成は全画面 create ビューへ分離され detail と共存しないため、
+                    // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
+                    // createModal が stale でも detail の Esc 戻るが抑止されない。
+                    isUpperModalOpen={false}
+                    onBack={handleBackToBoard}
+                    onTaskUpdate={handleTaskUpdate}
+                    onDelete={handleTaskDelete}
+                    onAddSubIssue={handleAddSubIssue}
+                    onSelectTask={handleSelectTask}
+                    onAddLink={handleAddLink}
+                    onRemoveLink={handleRemoveLink}
+                  />
+                )}
+                {view !== "settings" &&
+                  view !== "detail" &&
+                  view !== "milestone" &&
+                  view !== "create" &&
+                  renderMain()}
+              </main>
+            </div>
+          </>
+        )}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         <LiveRegion announcement={announcement} />
       </div>
