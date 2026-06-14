@@ -12,7 +12,8 @@
       "package.json",
       "tsconfig*.json",
       "biome.json",
-      ".devcontainer/**/*.json"
+      ".devcontainer/**/*.json",
+      "!**/.claude"
     ]
   },
   "formatter": {

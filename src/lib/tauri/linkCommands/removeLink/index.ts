@@ -13,6 +13,6 @@ import type { LinkParams } from "../types";
 export const removeLink = (
   params: LinkParams,
 ): Promise<ResultT<Task, TauriError>> =>
-  invokeWrapped<TaskPayload>("remove_link", params).then((result) =>
+  invokeWrapped<TaskPayload>("remove_link", { args: params }).then((result) =>
     Result.map(result, Task.fromPayload),
   );
