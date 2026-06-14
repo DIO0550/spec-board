@@ -3,8 +3,12 @@ export type MarkdownInsertKind =
   | "heading"
   | "bold"
   | "italic"
+  | "code"
+  | "quote"
   | "bulletList"
-  | "taskList";
+  | "orderedList"
+  | "taskList"
+  | "link";
 
 /** textarea の選択範囲（selectionStart / selectionEnd 相当）。 */
 export type TextSelection = {
@@ -53,6 +57,15 @@ type LineRule = {
  */
 const HEADING_PREFIX = "## ";
 
+/** quote 行規則のプレフィックス。 */
+const QUOTE_PREFIX = "> ";
+
+/** orderedList 付与時の正規形プレフィックス（番号は常に 1 で付与する）。 */
+const ORDERED_PREFIX = "1. ";
+
+/** orderedList の strip 用パターン（`12.  ` のような任意桁数 + 空白を剥がす）。 */
+const ORDERED_LINE_PATTERN = /^\d+\.\s+/;
+
 /** bulletList 行規則のプレフィックス。 */
 const BULLET_PREFIX = "- ";
 
@@ -96,9 +109,33 @@ const prefixRule = (prefix: string): LineRule => ({
 });
 
 /** 記法種別ごとの行規則（各メンバの契約は {@link LineRule} を参照）。 */
-const LINE_RULES: Record<"heading" | "bulletList" | "taskList", LineRule> = {
+const LINE_RULES: Record<
+  "heading" | "quote" | "bulletList" | "orderedList" | "taskList",
+  LineRule
+> = {
   heading: prefixRule(HEADING_PREFIX),
+  quote: prefixRule(QUOTE_PREFIX),
   bulletList: prefixRule(BULLET_PREFIX),
+  orderedList: {
+    /**
+     * 行が番号付きリスト（`N. `）か。
+     * @param line - 対象行
+     * @returns 番号付き行なら true
+     */
+    isApplied: (line) => ORDERED_LINE_PATTERN.test(line),
+    /**
+     * 正規形 `1. ` を付与する。
+     * @param line - 対象行
+     * @returns 付与後の行
+     */
+    add: (line) => `${ORDERED_PREFIX}${line}`,
+    /**
+     * 番号プレフィックスを剥がす。
+     * @param line - 対象行（isApplied が true の行）
+     * @returns 剥がし後の行
+     */
+    strip: (line) => line.replace(ORDERED_LINE_PATTERN, ""),
+  },
   taskList: {
     /**
      * 行が task 行か（受理集合は {@link TASK_LINE_PATTERN}）。
@@ -117,9 +154,10 @@ const LINE_RULES: Record<"heading" | "bulletList" | "taskList", LineRule> = {
 };
 
 /** インライン系記法の囲みマーカー。 */
-const INLINE_MARKERS: Record<"bold" | "italic", string> = {
+const INLINE_MARKERS: Record<"bold" | "italic" | "code", string> = {
   bold: "**",
   italic: "*",
+  code: "`",
 };
 
 /**
@@ -149,7 +187,8 @@ const normalizeSelection = (
 };
 
 /**
- * 選択文字列をマーカー対で囲む（bold / italic）。
+ * 選択文字列をマーカー対で囲む（bold / italic / code）。
+ * 選択が既にマーカー対で囲まれている場合は剥がす（トグル）。
  * @param marker - 囲みマーカー
  * @param text - 現在の全文
  * @param selection - 正規化済み選択範囲
@@ -163,12 +202,45 @@ const applyInline = (
   const before = text.slice(0, selection.start);
   const selected = text.slice(selection.start, selection.end);
   const after = text.slice(selection.end);
+  // 選択の直前直後が既にマーカーなら剥がす（再適用でトグル解除になる）。
+  if (before.endsWith(marker) && after.startsWith(marker)) {
+    return {
+      text: `${before.slice(0, before.length - marker.length)}${selected}${after.slice(marker.length)}`,
+      selection: {
+        start: selection.start - marker.length,
+        end: selection.end - marker.length,
+      },
+    };
+  }
   return {
     text: `${before}${marker}${selected}${marker}${after}`,
     selection: {
       start: selection.start + marker.length,
       end: selection.end + marker.length,
     },
+  };
+};
+
+/**
+ * 選択文字列をリンク記法 `[text](url)` に変換し、URL 入力位置へカーソルを移す。
+ * @param text - 現在の全文
+ * @param selection - 正規化済み選択範囲
+ * @returns 適用結果（selection は `()` の内側へ折りたたむ）
+ */
+const applyLink = (
+  text: string,
+  selection: TextSelection,
+): MarkdownInsertResult => {
+  const before = text.slice(0, selection.start);
+  const selected = text.slice(selection.start, selection.end);
+  const after = text.slice(selection.end);
+  const nextText = `${before}[${selected}]()${after}`;
+  // カーソルは URL を入力する `()` の内側へ畳む。
+  // 位置 = before.length + "[".length(1) + selected.length + "](".length(2)
+  const urlCaret = before.length + selected.length + 3;
+  return {
+    text: nextText,
+    selection: { start: urlCaret, end: urlCaret },
   };
 };
 
@@ -283,8 +355,11 @@ export const MarkdownInsert = {
     selection: TextSelection,
   ): MarkdownInsertResult => {
     const normalized = normalizeSelection(text, selection);
-    if (kind === "bold" || kind === "italic") {
+    if (kind === "bold" || kind === "italic" || kind === "code") {
       return applyInline(INLINE_MARKERS[kind], text, normalized);
+    }
+    if (kind === "link") {
+      return applyLink(text, normalized);
     }
     return applyLinePrefix(LINE_RULES[kind], text, normalized);
   },
