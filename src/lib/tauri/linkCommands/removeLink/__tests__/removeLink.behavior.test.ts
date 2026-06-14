@@ -35,15 +35,17 @@ test("invoke が 'remove_link' という command 名で呼ばれる", async () =
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("remove_link");
 });
 
-test("引数 { sourceFilePath, targetFilePath } が camelCase のまま invoke に渡る", async () => {
+test("引数 { sourceFilePath, targetFilePath } が args キー配下に camelCase のまま invoke に渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await removeLink({
     sourceFilePath: "tasks/a.md",
     targetFilePath: "tasks/b.md",
   });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("remove_link", {
-    sourceFilePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    args: {
+      sourceFilePath: "tasks/a.md",
+      targetFilePath: "tasks/b.md",
+    },
   });
 });
 
