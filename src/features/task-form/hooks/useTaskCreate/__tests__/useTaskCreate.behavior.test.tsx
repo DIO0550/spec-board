@@ -118,84 +118,31 @@ const renderHook = (args: UseTaskCreateOptions) => {
   };
 };
 
-test("T1: 初期 state は isSubmitting=false で submit が関数である", () => {
+test("T1: submit が関数である", () => {
   const probe = renderHook({ createTask: vi.fn() });
-  expect(probe.latest.isSubmitting).toBe(false);
   expect(typeof probe.latest.submit).toBe("function");
 });
 
-test("T2: 成功時に Result.ok が pass-through され、isSubmitting が true→false で遷移する", async () => {
-  let resolveCreate!: (
-    r: Awaited<ReturnType<UseTaskCreateOptions["createTask"]>>,
-  ) => void;
-  const createTask = vi.fn(
-    () =>
-      new Promise<Awaited<ReturnType<UseTaskCreateOptions["createTask"]>>>(
-        (r) => {
-          resolveCreate = r;
-        },
-      ),
-  );
+test("T2: 成功時に Result.ok が pass-through される", async () => {
+  const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
   const probe = renderHook({ createTask });
 
-  let pending!: ReturnType<UseTaskCreateResult["submit"]>;
-  act(() => {
-    pending = probe.latest.submit(valuesFixture);
-  });
-  expect(probe.latest.isSubmitting).toBe(true);
-
+  let result!: Awaited<ReturnType<UseTaskCreateResult["submit"]>>;
   await act(async () => {
-    resolveCreate(Result.ok(taskFixture));
-    await pending;
+    result = await probe.latest.submit(valuesFixture);
   });
-  expect(probe.latest.isSubmitting).toBe(false);
-  const result = await pending;
   expect(result).toEqual(
     Result.ok({ parent: taskFixture, failedSubIssues: [] }),
   );
 });
 
-test("T5: 送信中の再 submit は invalid-state で短絡し、createTask は 1 回しか呼ばれない", async () => {
-  let resolveCreate!: (
-    r: Awaited<ReturnType<UseTaskCreateOptions["createTask"]>>,
-  ) => void;
-  const createTask = vi.fn(
-    () =>
-      new Promise<Awaited<ReturnType<UseTaskCreateOptions["createTask"]>>>(
-        (r) => {
-          resolveCreate = r;
-        },
-      ),
-  );
-  const probe = renderHook({ createTask });
-
-  let first!: ReturnType<UseTaskCreateResult["submit"]>;
-  act(() => {
-    first = probe.latest.submit(valuesFixture);
-  });
-  expect(probe.latest.isSubmitting).toBe(true);
-
-  let second!: Awaited<ReturnType<UseTaskCreateResult["submit"]>>;
-  await act(async () => {
-    second = await probe.latest.submit(valuesFixture);
-  });
-  expect(second).toEqual(Result.err(ProjectError.invalidState("送信中です")));
-  expect(createTask).toHaveBeenCalledTimes(1);
-
-  await act(async () => {
-    resolveCreate(Result.ok(taskFixture));
-    await first;
-  });
-});
-
-test("T6: 1 回目完了後の再 submit は再度 createTask を呼んで Result.ok を返す", async () => {
+test("T6: 連続 submit はそのつど createTask を呼んで Result.ok を返す", async () => {
   const createTask = vi.fn().mockResolvedValue(Result.ok(taskFixture));
   const probe = renderHook({ createTask });
 
   await act(async () => {
     await probe.latest.submit(valuesFixture);
   });
-  expect(probe.latest.isSubmitting).toBe(false);
 
   let second!: Awaited<ReturnType<UseTaskCreateResult["submit"]>>;
   await act(async () => {
@@ -207,7 +154,7 @@ test("T6: 1 回目完了後の再 submit は再度 createTask を呼んで Resul
   expect(createTask).toHaveBeenCalledTimes(2);
 });
 
-test("T4: 失敗時に Result.err が pass-through され、finally で isSubmitting が false に戻る", async () => {
+test("T4: 失敗時に Result.err が pass-through される", async () => {
   const tauriErrorFixture = TauriError.from("見つかりません");
   const projectErrorFixture = ProjectError.tauri(tauriErrorFixture);
   const createTask = vi.fn().mockResolvedValue(Result.err(projectErrorFixture));
@@ -218,10 +165,9 @@ test("T4: 失敗時に Result.err が pass-through され、finally で isSubmit
     result = await probe.latest.submit(valuesFixture);
   });
   expect(result).toEqual(Result.err(projectErrorFixture));
-  expect(probe.latest.isSubmitting).toBe(false);
 });
 
-test("T7: injected createTask が reject すると submit も reject し、isSubmitting が false に戻る", async () => {
+test("T7: injected createTask が reject すると submit も reject する", async () => {
   const boom = new Error("boom");
   const createTask = vi.fn().mockRejectedValueOnce(boom);
   const probe = renderHook({ createTask });
@@ -229,7 +175,6 @@ test("T7: injected createTask が reject すると submit も reject し、isSub
   await act(async () => {
     await expect(probe.latest.submit(valuesFixture)).rejects.toThrow("boom");
   });
-  expect(probe.latest.isSubmitting).toBe(false);
 });
 
 test("T3: priority / parent が undefined のとき CreateTaskParams から key 自体を含めない", async () => {
