@@ -95,6 +95,11 @@ export type OpenProjectActionDeps = {
    * @param error 通知する ProjectError
    */
   onError?: (error: ProjectError) => void;
+  /**
+   * load 成功で state を loaded へ遷移させた直後に呼ばれる任意のコールバック。
+   * @param event 開いた path と読み込んだ ProjectData
+   */
+  onLoaded?: (event: { path: string; data: ProjectData }) => void;
 };
 
 /**
@@ -110,6 +115,7 @@ export const openProjectAction = async ({
   path: explicitPath,
   dispatchSync,
   onError,
+  onLoaded,
 }: OpenProjectActionDeps): Promise<void> => {
   const path = await resolveProjectPath({
     explicitPath,
@@ -173,5 +179,8 @@ export const openProjectAction = async ({
     };
     invalidateProject(projectVersion);
     dispatchSync({ type: "open-succeed", path, data });
+    // load 成功イベントの場所。警告トースト発火 / 最近一覧記録など「開けた帰結」の
+    // 副作用を呼び出し側へ 1 回だけ通知する（effect + ref 管理の代替）。
+    onLoaded?.({ path, data });
   });
 };

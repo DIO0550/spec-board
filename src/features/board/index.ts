@@ -8,6 +8,7 @@ export type {
   MoveTaskCallbacks,
   MoveTaskParams,
   ProjectData,
+  ProjectLoadedEvent,
   ProjectState,
   ReorderColumnsCallbacks,
   ReorderColumnsEvent,

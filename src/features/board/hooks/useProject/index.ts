@@ -57,6 +57,7 @@ export type {
   ColumnsCommandBuilder,
   MoveTaskCallbacks,
   MoveTaskParams,
+  ProjectLoadedEvent,
   ReorderColumnsCallbacks,
   ReorderColumnsEvent,
   ReorderColumnsParams,
@@ -75,7 +76,7 @@ export type {
 export const useProject = (
   options: UseProjectOptions = {},
 ): UseProjectResult => {
-  const { onError } = options;
+  const { onError, onLoaded } = options;
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const latestStateRef = useRef<ProjectState>(state);
@@ -230,8 +231,9 @@ export const useProject = (
         dialogOpening: dialogOpeningRef,
         dispatchSync,
         onError,
+        onLoaded,
       }),
-    [dispatchSync, onError],
+    [dispatchSync, onError, onLoaded],
   );
 
   const openProjectByPath = useCallback(
@@ -243,8 +245,9 @@ export const useProject = (
         path,
         dispatchSync,
         onError,
+        onLoaded,
       }),
-    [dispatchSync, onError],
+    [dispatchSync, onError, onLoaded],
   );
 
   const actionDeps = useCallback(

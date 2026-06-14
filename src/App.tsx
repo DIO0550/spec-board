@@ -22,6 +22,7 @@ import {
   type MoveTaskParams,
   PROJECT_SWITCHED_MESSAGE,
   type ProjectError,
+  type ProjectLoadedEvent,
   type ProjectState,
   projectErrorMessage,
   type ReorderColumnsEvent,
@@ -122,6 +123,33 @@ const resolveSelectedTask = (
 export const App = () => {
   const { toasts, showToast, dismissToast } = useToasts();
   const { view, navigate } = useAppView();
+  const { projects: recentProjects, add: addRecentProject } =
+    useRecentProjects();
+
+  // project の load 成功イベントで実行する副作用。useProject の onLoaded callback に
+  // 注入することで、effect + ref による「発火済み管理」を排し、load 完了という
+  // 1 回のイベントで「最近一覧記録」と「警告トースト発火」をまとめて実行する。
+  // close → reopen / 別 project 切替のたびに改めて 1 回ずつ呼ばれる。
+  const handleProjectLoaded = useCallback(
+    ({ path, data }: ProjectLoadedEvent): void => {
+      // 最近開いた一覧へ記録する（サイドバーからの再オープン用）。
+      addRecentProject(path);
+      // リンク切れ / パースエラーは判定ドメイン・文言が別なので個別に集計して通知する。
+      const brokenLinkCount = countTasksWithBrokenLink(
+        data.tasks,
+        buildTasksByNormalizedPath(data.tasks),
+      );
+      if (brokenLinkCount >= 1) {
+        showToast(`リンク切れが ${brokenLinkCount} 件あります`, "warning");
+      }
+      const parseErrorCount = countTasksWithParseError(data.tasks);
+      if (parseErrorCount >= 1) {
+        showToast(`パースエラーが ${parseErrorCount} 件あります`, "warning");
+      }
+    },
+    [addRecentProject, showToast],
+  );
+
   const {
     state,
     openProject,
@@ -144,6 +172,7 @@ export const App = () => {
       }
       showToast(projectErrorMessage(err), "error");
     },
+    onLoaded: handleProjectLoaded,
   });
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
 
@@ -172,9 +201,6 @@ export const App = () => {
     navigate("board");
     openProject();
   }, [navigate, openProject]);
-
-  const { projects: recentProjects, add: addRecentProject } =
-    useRecentProjects();
 
   // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
   const handleOpenProjectPath = useCallback(
@@ -264,13 +290,6 @@ export const App = () => {
     }
   }
 
-  // プロジェクトを読み込めたら最近開いた一覧へ記録する（サイドバーからの再オープン用）。
-  useEffect(() => {
-    if (loadedPath !== null) {
-      addRecentProject(loadedPath);
-    }
-  }, [loadedPath, addRecentProject]);
-
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
@@ -292,46 +311,9 @@ export const App = () => {
     }),
     [milestonesResource, tasks],
   );
-  // Toast 発火管理用 ref。`prevLoadedPath` (UI リセット用、render-phase 更新) と
-  // 役割を分離するため別 ref を持つ。
-  // 「loaded セッション内で 1 回だけ発火」をルールとし、state.kind が "loaded" から
-  // 離れた時点で ref をクリアすることで、close → reopen 同一 path のような再ロードでも
-  // 改めて発火するようにする。
-  const toastFiredForLoadedPathRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (state.kind !== "loaded") {
-      toastFiredForLoadedPathRef.current = null;
-      return;
-    }
-    if (toastFiredForLoadedPathRef.current === loadedPath) {
-      return;
-    }
-    toastFiredForLoadedPathRef.current = loadedPath;
-    const n = countTasksWithBrokenLink(tasks, tasksByNormalizedPath);
-    if (n >= 1) {
-      showToast(`リンク切れが ${n} 件あります`, "warning");
-    }
-  }, [state.kind, loadedPath, tasks, tasksByNormalizedPath, showToast]);
-
-  // パースエラー Toast 発火管理用 ref。リンク切れ Toast (toastFiredForLoadedPathRef) とは
-  // 判定ドメイン・文言が別なので発火管理を分離する。ルールは同じく「loaded セッション内
-  // 1 回発火」。state.kind が "loaded" を離れた時点で ref をクリアし、close → reopen /
-  // 別 project 切替後 N >= 1 なら改めて 1 回発火する。
-  const parseErrorToastFiredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (state.kind !== "loaded") {
-      parseErrorToastFiredRef.current = null;
-      return;
-    }
-    if (parseErrorToastFiredRef.current === loadedPath) {
-      return;
-    }
-    parseErrorToastFiredRef.current = loadedPath;
-    const n = countTasksWithParseError(tasks);
-    if (n >= 1) {
-      showToast(`パースエラーが ${n} 件あります`, "warning");
-    }
-  }, [state.kind, loadedPath, tasks, showToast]);
+  // リンク切れ / パースエラーの警告トーストは load 成功イベント（useProject の
+  // onLoaded callback = handleProjectLoaded）で 1 回だけ発火する。tasks 変更のたびに
+  // 走る effect + ref の発火済み管理は廃止した。
   // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
   // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
   const parentCandidates = useMemo(() => {
