@@ -64,19 +64,27 @@ export const computeMilestoneProgress = (
   return progress;
 };
 
+/** useMilestoneProgress の引数 */
+export type UseMilestoneProgressArgs = {
+  /** 進捗を出すマイルストーン名一覧（registry 由来） */
+  milestoneNames: readonly string[];
+  /** 全タスク */
+  tasks: Task[];
+  /** done とみなすカラム名（既存 ProjectData.doneColumn 由来・未解決は undefined） */
+  doneColumn: string | undefined;
+};
+
 /**
  * マイルストーン名ごとの進捗（done 件数 / 所属件数 / 進捗率）を算出するフック。
- * @param milestoneNames - 進捗を出すマイルストーン名一覧（registry 由来）
- * @param tasks - 全タスク
- * @param doneColumn - done とみなすカラム名（既存 ProjectData.doneColumn 由来・未解決は undefined）
+ * @param args - {@link UseMilestoneProgressArgs}
  * @returns マイルストーン名 → 進捗 の Map
  */
 export const useMilestoneProgress = (
-  milestoneNames: readonly string[],
-  tasks: Task[],
-  doneColumn: string | undefined,
-): Map<string, MilestoneProgress> =>
-  useMemo(
+  args: UseMilestoneProgressArgs,
+): Map<string, MilestoneProgress> => {
+  const { milestoneNames, tasks, doneColumn } = args;
+  return useMemo(
     () => computeMilestoneProgress(milestoneNames, tasks, doneColumn),
     [milestoneNames, tasks, doneColumn],
   );
+};

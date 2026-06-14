@@ -19,6 +19,10 @@ export type UseParentTaskResult = {
 /**
  * 現在のタスクの親タスクを allTasks から lookup する hook。
  * path 比較は parentReferencesTaskPath に委譲し、表記揺れを吸収する。
+ *
+ * hook 化を維持する理由: 親解決には allTasks の線形探索 + path 表記揺れの吸収が
+ * 絡むため、戻り値 `UseParentTaskResult` として component から切り離し、
+ * useChildTasks と並ぶ「詳細パネルの派生 ViewModel 取得」の一貫した形を保つ。
  * @param args - 現在タスクと全タスク
  * @returns 親タスク（無ければ null）
  */

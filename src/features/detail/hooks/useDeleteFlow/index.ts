@@ -15,8 +15,6 @@ export type UseDeleteFlowArgs = {
 
 /** useDeleteFlow の戻り値 */
 export type UseDeleteFlowResult = {
-  /** 現在の state（kind で UI 表示分岐する） */
-  state: DeleteFlowState;
   /** 確認ダイアログを表示すべきか（idle 以外なら true） */
   isOpen: boolean;
   /** 削除実行中か（deleting なら true、UI の disabled / ラベル切替に使う） */
@@ -66,7 +64,6 @@ export const useDeleteFlow = (args: UseDeleteFlowArgs): UseDeleteFlowResult => {
   }, [state, onDelete]);
 
   return {
-    state,
     isOpen: !DeleteFlow.canRequest(state),
     isBusy: state.kind === "deleting",
     requestDelete,

@@ -232,7 +232,7 @@ export const TaskForm = ({
       className="flex flex-col gap-4"
       data-testid="task-form"
       noValidate
-      onSubmit={fields.handleSubmit}
+      onSubmit={fields.submit}
     >
       <TaskFormTitle
         value={fields.state.values.title}
@@ -281,7 +281,7 @@ export const TaskForm = ({
           id={labelsInputId}
           value={labels.state.labelInput}
           onChange={(value) => labels.dispatch({ type: "setInput", value })}
-          onKeyDown={labels.handleKeyDown}
+          onKeyDown={labels.commitOnEnter}
           onBlur={() => labels.dispatch({ type: "commit" })}
           disabled={isSubmitting}
           candidates={labelSuggestions}

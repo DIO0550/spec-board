@@ -109,7 +109,7 @@ test("dispatch title: 入力時は errors.title をクリアするのみ（再 v
 test("dispatch title: エラー表示中に値を変えると errors.title が undefined になる", () => {
   const { get } = render(defaultArgs());
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(get().state.errors.title?.code).toBe("EMPTY");
   act(() => {
@@ -166,7 +166,7 @@ test("dispatch fileName: 入力値は生のまま保持される（スペース�
   expect(get().state.values.fileName).toBe("my task.md ");
 });
 
-test("handleSubmit: trim + 末尾 .md 剥がしは submit 時に適用される", () => {
+test("submit: trim + 末尾 .md 剥がしは submit 時に適用される", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -176,36 +176,36 @@ test("handleSubmit: trim + 末尾 .md 剥がしは submit 時に適用される"
     get().dispatch({ type: "fileName", value: "  custom.MD  " });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.fileName).toBe("custom.md");
 });
 
-test("handleSubmit: 空タイトルでは onSubmit を呼ばず errors.title.code = EMPTY", () => {
+test("submit: 空タイトルでは onSubmit を呼ばず errors.title.code = EMPTY", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(get().state.errors.title?.code).toBe("EMPTY");
 });
 
-test("handleSubmit: 空白のみタイトルでも EMPTY エラー", () => {
+test("submit: 空白のみタイトルでも EMPTY エラー", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "   " });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(get().state.errors.title?.code).toBe("EMPTY");
 });
 
-test("handleSubmit: TOO_LONG（TITLE_MAX_LENGTH + 1 文字）", () => {
+test("submit: TOO_LONG（TITLE_MAX_LENGTH + 1 文字）", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -215,52 +215,52 @@ test("handleSubmit: TOO_LONG（TITLE_MAX_LENGTH + 1 文字）", () => {
     });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(get().state.errors.title?.code).toBe("TOO_LONG");
 });
 
-test("handleSubmit: FORBIDDEN_CHAR", () => {
+test("submit: FORBIDDEN_CHAR", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "a<b" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(get().state.errors.title?.code).toBe("FORBIDDEN_CHAR");
 });
 
-test("handleSubmit: 既存タスクと重複しうるタイトルでも onSubmit が呼ばれる（DUPLICATE 撤廃）", () => {
+test("submit: 既存タスクと重複しうるタイトルでも onSubmit が呼ばれる（DUPLICATE 撤廃）", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "Fix Login Bug" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).toHaveBeenCalledTimes(1);
   expect(get().state.errors.title).toBeUndefined();
 });
 
-test("handleSubmit: 自動追従中（手動未編集）は submit 値に fileName キーが含まれない", () => {
+test("submit: 自動追従中（手動未編集）は submit 値に fileName キーが含まれない", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "Fix Bug" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect("fileName" in values).toBe(false);
 });
 
-test("handleSubmit: 手動編集後は base に .md を付与した完全名が fileName として送信される", () => {
+test("submit: 手動編集後は base に .md を付与した完全名が fileName として送信される", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -270,13 +270,13 @@ test("handleSubmit: 手動編集後は base に .md を付与した完全名が 
     get().dispatch({ type: "fileName", value: "custom-name" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.fileName).toBe("custom-name.md");
 });
 
-test("handleSubmit: fileName 予約文字では onSubmit を呼ばず errors.fileName が設定される", () => {
+test("submit: fileName 予約文字では onSubmit を呼ばず errors.fileName が設定される", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -286,7 +286,7 @@ test("handleSubmit: fileName 予約文字では onSubmit を呼ばず errors.fil
     get().dispatch({ type: "fileName", value: "a:b" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(get().state.errors.fileName).toEqual({
@@ -305,7 +305,7 @@ test("dispatch fileName: エラー表示中に再入力すると errors.fileName
     get().dispatch({ type: "fileName", value: "a:b" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(get().state.errors.fileName?.code).toBe("FORBIDDEN_CHAR");
   act(() => {
@@ -314,7 +314,7 @@ test("dispatch fileName: エラー表示中に再入力すると errors.fileName
   expect(get().state.errors.fileName).toBeUndefined();
 });
 
-test("handleSubmit: fileName エラー解消後の再 submit でエラーがクリアされ送信される", () => {
+test("submit: fileName エラー解消後の再 submit でエラーがクリアされ送信される", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -324,32 +324,32 @@ test("handleSubmit: fileName エラー解消後の再 submit でエラーがク�
     get().dispatch({ type: "fileName", value: "a:b" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   act(() => {
     get().dispatch({ type: "fileName", value: "fixed-name" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).toHaveBeenCalledTimes(1);
   expect(get().state.errors.fileName).toBeUndefined();
 });
 
-test("handleSubmit: isSubmitting=true では何もしない", () => {
+test("submit: isSubmitting=true では何もしない", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), isSubmitting: true, onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "abc" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
 });
 
-test("handleSubmit 正常系: 正規化された値が onSubmit に渡る（自動追従中は fileName なし）", () => {
+test("submit 正常系: 正規化された値が onSubmit に渡る（自動追従中は fileName なし）", () => {
   const onSubmit = vi.fn();
   const commit = vi.fn(() => [] as string[]);
   const { get } = render({
@@ -370,7 +370,7 @@ test("handleSubmit 正常系: 正規化された値が onSubmit に渡る（自�
     get().dispatch({ type: "body", value: "b" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).toHaveBeenCalledTimes(1);
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
@@ -387,20 +387,20 @@ test("handleSubmit 正常系: 正規化された値が onSubmit に渡る（自�
   });
 });
 
-test('handleSubmit: priority="" は undefined に正規化される', () => {
+test('submit: priority="" は undefined に正規化される', () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "t" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.priority).toBeUndefined();
 });
 
-test("handleSubmit: labels は finalizeLabels の戻り値が使われる", () => {
+test("submit: labels は finalizeLabels の戻り値が使われる", () => {
   const onSubmit = vi.fn();
   const commit = vi.fn(() => ["a", "b"]);
   const { get } = render({
@@ -412,14 +412,14 @@ test("handleSubmit: labels は finalizeLabels の戻り値が使われる", () =
     get().dispatch({ type: "title", value: "t" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(commit).toHaveBeenCalledTimes(1);
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.labels).toEqual(["a", "b"]);
 });
 
-test("handleSubmit: links は finalizeLinks の戻り値が使われる", () => {
+test("submit: links は finalizeLinks の戻り値が使われる", () => {
   const onSubmit = vi.fn();
   const finalize = vi.fn(() => ["tasks/a.md", "tasks/b.md"]);
   const { get } = render({
@@ -431,7 +431,7 @@ test("handleSubmit: links は finalizeLinks の戻り値が使われる", () => 
     get().dispatch({ type: "title", value: "t" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(finalize).toHaveBeenCalledTimes(1);
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
@@ -451,7 +451,7 @@ test("dispatch due: 値が更新され他 field に影響しない", () => {
   expect(get().state.values.fileName).toBe("t");
 });
 
-test("handleSubmit: due 入力ありのとき submit 値に due が入る", () => {
+test("submit: due 入力ありのとき submit 値に due が入る", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -461,20 +461,20 @@ test("handleSubmit: due 入力ありのとき submit 値に due が入る", () =
     get().dispatch({ type: "due", value: "2026-07-01" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.due).toBe("2026-07-01");
 });
 
-test("handleSubmit: due 未入力（空文字）のとき submit 値に due キーが含まれない", () => {
+test("submit: due 未入力（空文字）のとき submit 値に due キーが含まれない", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
     get().dispatch({ type: "title", value: "T" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect("due" in values).toBe(false);
@@ -489,7 +489,7 @@ test("dispatch subIssues: 値が更新され他 field に影響しない", () =>
   expect(get().state.values.title).toBe("");
 });
 
-test("handleSubmit: submit 値に正規化済み subIssueTitles が入る（空行無視・trim）", () => {
+test("submit: submit 値に正規化済み subIssueTitles が入る（空行無視・trim）", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -499,13 +499,13 @@ test("handleSubmit: submit 値に正規化済み subIssueTitles が入る（空�
     get().dispatch({ type: "subIssues", value: "子1\n\n 子2 " });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.subIssueTitles).toEqual(["子1", "子2"]);
 });
 
-test("handleSubmit: サブIssue 違反行では onSubmit を呼ばず errors.subIssues に行番号が入る", () => {
+test("submit: サブIssue 違反行では onSubmit を呼ばず errors.subIssues に行番号が入る", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -515,7 +515,7 @@ test("handleSubmit: サブIssue 違反行では onSubmit を呼ばず errors.sub
     get().dispatch({ type: "subIssues", value: "ok\nbad:title" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(get().state.errors.subIssues).toEqual({
@@ -534,7 +534,7 @@ test("dispatch subIssues: エラー表示中に再入力すると errors.subIssu
     get().dispatch({ type: "subIssues", value: "bad:title" });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   expect(get().state.errors.subIssues?.line).toBe(1);
   act(() => {
@@ -552,7 +552,7 @@ test("dispatch draft: 値が更新され他 field に影響しない", () => {
   expect(get().state.values.title).toBe("");
 });
 
-test("handleSubmit: draft の現在値が submit 値に入る", () => {
+test("submit: draft の現在値が submit 値に入る", () => {
   const onSubmit = vi.fn();
   const { get } = render({ ...defaultArgs(), onSubmit });
   act(() => {
@@ -562,7 +562,7 @@ test("handleSubmit: draft の現在値が submit 値に入る", () => {
     get().dispatch({ type: "draft", value: true });
   });
   act(() => {
-    get().handleSubmit(makeFormEvent());
+    get().submit(makeFormEvent());
   });
   const values = onSubmit.mock.calls[0][0] as TaskFormValues;
   expect(values.draft).toBe(true);

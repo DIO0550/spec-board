@@ -45,7 +45,7 @@ export type UseLabelsInputResult = {
    * input の onKeyDown に渡すハンドラ。Enter で commit を dispatch する。
    * @param e - キーボードイベント
    */
-  handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
+  commitOnEnter: (e: KeyboardEvent<HTMLInputElement>) => void;
   /**
    * submit 用に pending labelInput を取り込んだ最終 labels を同期で返す。
    * 併せて UI 整合のために `commit` を dispatch するが、返り値は dispatch の
@@ -58,7 +58,7 @@ export type UseLabelsInputResult = {
 /**
  * ラベル入力用の state を `useReducer` で管理するカスタムフック。
  * 状態遷移のドメインロジックは `LabelsField` の pure ops に委譲し、ここでは
- * React の reducer 配線と handleKeyDown / finalizeLabels のユーティリティだけを担う。
+ * React の reducer 配線と commitOnEnter / finalizeLabels のユーティリティだけを担う。
  * @param initialLabels - 初期ラベル配列
  * @returns ラベル入力フック結果
  */
@@ -71,7 +71,7 @@ export const useLabelsInput = (
     LabelsField.initial,
   );
 
-  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+  const commitOnEnter = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       // Enter では常に preventDefault する。`<form>` 内の input のため、
       // IME 変換確定の Enter であっても抑止しないとフォーム submit が発火する。
@@ -92,5 +92,5 @@ export const useLabelsInput = (
     return labels;
   }, [state]);
 
-  return { state, dispatch, handleKeyDown, finalizeLabels };
+  return { state, dispatch, commitOnEnter, finalizeLabels };
 };

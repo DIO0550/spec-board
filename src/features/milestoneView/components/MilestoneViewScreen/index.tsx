@@ -25,7 +25,11 @@ export const MilestoneViewScreen = ({
 }: MilestoneViewScreenProps) => {
   const sorted = Milestone.sortByOrder(resource.milestones);
   const names = sorted.map((m) => m.name);
-  const progress = useMilestoneProgress(names, tasks, doneColumn);
+  const progress = useMilestoneProgress({
+    milestoneNames: names,
+    tasks,
+    doneColumn,
+  });
 
   if (resource.status === "loading" || resource.status === "idle") {
     return <p className="text-sm text-muted">読み込み中…</p>;

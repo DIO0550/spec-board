@@ -44,7 +44,7 @@ export const LabelEditor = ({ labels, onAdd, onRemove }: LabelEditorProps) => {
    */
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     justClosedByKeyRef.current = e.key === "Enter" || e.key === "Escape";
-    input.handleKeyDown(e);
+    input.commitOrCancelOnKey(e);
   };
 
   /**

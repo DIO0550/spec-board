@@ -101,15 +101,15 @@ export type UseTaskFormFieldsResult = {
   /** state 変更用 dispatch */
   dispatch: Dispatch<FieldsAction>;
   /**
-   * form の onSubmit に渡すハンドラ。
+   * form の onSubmit に渡すハンドラ。バリデーション通過時に onSubmit を呼ぶ。
    * @param e - FormEvent
    */
-  handleSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  submit: (e: FormEvent<HTMLFormElement>) => void;
 };
 
 /**
  * TaskForm の field 値・エラー遷移を計算する pure reducer。
- * title / fileName 入力時はエラーをクリアするだけにし、再 validate は handleSubmit 側で行う。
+ * title / fileName 入力時はエラーをクリアするだけにし、再 validate は submit 側で行う。
  * @param state - 現在の state
  * @param action - アクション
  * @returns 新しい state
@@ -215,7 +215,7 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
 /**
  * TaskForm の全 field 値・エラー・送信処理をまとめて管理するカスタムフック。
  * バリデーション / 初期値 / 正規化は各 Field モジュール（TitleField / FileNameField /
- * PriorityField / ParentField）に委譲し、ここでは reducer の配線と handleSubmit のみを担う。
+ * PriorityField / ParentField）に委譲し、ここでは reducer の配線と submit のみを担う。
  *
  * **前提**: `parentFieldVisible` / `initialParent` は mount 後に変化しないこと。これらの値は
  * useReducer の初期化関数でのみ参照され、mount 後の変化に追従する useEffect は持たない。
@@ -225,7 +225,7 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
  * 長寿命な親コンポーネントから props を動的に変える用途で再利用する場合は、
  * 呼び出し側で `key` を切り替えて remount するか、本 hook に sync ロジックを再追加すること。
  * @param args - フックの引数
- * @returns state / dispatch / handleSubmit
+ * @returns state / dispatch / submit
  */
 export const useTaskFormFields = (
   args: UseTaskFormFieldsArgs,
@@ -251,7 +251,7 @@ export const useTaskFormFields = (
   );
 
   const { isSubmitting, onSubmit, finalizeLabels, finalizeLinks } = args;
-  const handleSubmit = useCallback(
+  const submit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (isSubmitting) {
@@ -319,5 +319,5 @@ export const useTaskFormFields = (
     ],
   );
 
-  return { state, dispatch, handleSubmit };
+  return { state, dispatch, submit };
 };
