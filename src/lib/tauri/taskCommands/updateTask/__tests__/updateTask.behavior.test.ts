@@ -32,35 +32,43 @@ test("invoke が 'update_task' という command 名で呼ばれる", async () =
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("update_task");
 });
 
-test("filePath を含む引数が camelCase のまま渡る", async () => {
+test("filePath を含む引数が args キー配下に camelCase のまま渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await updateTask({ filePath: "tasks/x.md", title: "new" });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("update_task", {
-    filePath: "tasks/x.md",
-    title: "new",
+    args: {
+      filePath: "tasks/x.md",
+      title: "new",
+    },
   });
 });
 
 test("optional 未指定（キー省略）の場合、そのキーは invoke 引数に含まれない", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await updateTask({ filePath: "tasks/x.md" });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect(Object.keys(args)).toEqual(["filePath"]);
+  const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect(Object.keys(payload.args)).toEqual(["filePath"]);
 });
 
 test("optional に undefined を明示指定した場合 undefined のまま渡る（ラッパで削らない）", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await updateTask({ filePath: "tasks/x.md", title: undefined });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect("title" in args).toBe(true);
-  expect(args.title).toBeUndefined();
+  const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect("title" in payload.args).toBe(true);
+  expect(payload.args.title).toBeUndefined();
 });
 
 test("parent: '' （親解除）はそのまま空文字で渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await updateTask({ filePath: "tasks/x.md", parent: "" });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect(args.parent).toBe("");
+  const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect(payload.args.parent).toBe("");
 });
 
 test("成功時は Result.ok(Task) を返す", async () => {

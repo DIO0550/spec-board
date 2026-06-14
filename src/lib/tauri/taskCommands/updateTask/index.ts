@@ -12,6 +12,6 @@ import type { UpdateTaskParams } from "../types";
 export const updateTask = (
   params: UpdateTaskParams,
 ): Promise<ResultT<Task, TauriError>> =>
-  invokeWrapped<TaskPayload>("update_task", params).then((result) =>
+  invokeWrapped<TaskPayload>("update_task", { args: params }).then((result) =>
     Result.map(result, Task.fromPayload),
   );
