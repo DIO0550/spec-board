@@ -32,31 +32,41 @@ const columns: Column[] = [
   { name: "Done", order: 2 },
 ];
 
-test("columns 全件がチップとして描画され radiogroup でグループ化される", () => {
-  render({ columns, value: "Todo", onChange: vi.fn(), disabled: false });
-  const group = document.querySelector(
-    "[data-testid='task-form-status'][role='radiogroup']",
-  );
-  expect(group).toBeTruthy();
-  const chips = Array.from(group?.querySelectorAll("[role='radio']") ?? []).map(
-    (c) => c.textContent,
-  );
-  expect(chips).toEqual(["Todo", "Doing", "Done"]);
-});
+const openStatus = () => {
+  const trigger = document.querySelector(
+    "[data-testid='task-form-status']",
+  ) as HTMLButtonElement;
+  act(() => {
+    trigger.click();
+  });
+};
 
-test("value のチップだけが aria-checked=true になる", () => {
+test("現在値が status trigger（listbox 開閉ボタン）に表示される", () => {
   render({ columns, value: "Doing", onChange: vi.fn(), disabled: false });
-  const checked = Array.from(document.querySelectorAll("[role='radio']")).map(
-    (c) => c.getAttribute("aria-checked"),
+  const trigger = document.querySelector(
+    "[data-testid='task-form-status'][aria-haspopup='listbox']",
   );
-  expect(checked).toEqual(["false", "true", "false"]);
+  expect(trigger?.textContent).toContain("Doing");
 });
 
-test("チップのクリックで onChange がその column 名で呼ばれる", () => {
+test("開くと columns 全件が option として描画され value が aria-selected になる", () => {
+  render({ columns, value: "Doing", onChange: vi.fn(), disabled: false });
+  openStatus();
+  const options = Array.from(document.querySelectorAll("[role='option']"));
+  expect(options.map((o) => o.textContent)).toEqual(["Todo", "Doing", "Done"]);
+  expect(options.map((o) => o.getAttribute("aria-selected"))).toEqual([
+    "false",
+    "true",
+    "false",
+  ]);
+});
+
+test("option のクリックで onChange がその column 名で呼ばれる", () => {
   const onChange = vi.fn();
   render({ columns, value: "Todo", onChange, disabled: false });
+  openStatus();
   const done = document.querySelector(
-    "[data-testid='task-form-status-chip-Done']",
+    "[data-testid='task-form-status-option-Done']",
   ) as HTMLButtonElement;
   act(() => {
     done.click();
@@ -64,31 +74,39 @@ test("チップのクリックで onChange がその column 名で呼ばれる",
   expect(onChange).toHaveBeenCalledWith("Done");
 });
 
-test("color 指定ありの選択中チップに resolveAccent の色が反映される", () => {
-  render({ columns, value: "Doing", onChange: vi.fn(), disabled: false });
-  const chip = document.querySelector(
-    "[data-testid='task-form-status-chip-Doing']",
-  ) as HTMLButtonElement;
-  expect(chip.style.borderColor).toBe(ColumnColor.resolveAccent("#ff0000", 1));
-});
-
-test("color 未設定の選択中チップは order フォールバックの accent が使われる", () => {
+test("color 指定ありの option の swatch に resolveAccent の色が反映される", () => {
   render({ columns, value: "Todo", onChange: vi.fn(), disabled: false });
-  const chip = document.querySelector(
-    "[data-testid='task-form-status-chip-Todo']",
+  openStatus();
+  const option = document.querySelector(
+    "[data-testid='task-form-status-option-Doing']",
   ) as HTMLButtonElement;
-  expect(chip.style.borderColor).toBe(ColumnColor.resolveAccent(undefined, 0));
+  const swatch = option.querySelector("span[style]") as HTMLElement;
+  expect(swatch.style.backgroundColor).toBe(
+    ColumnColor.resolveAccent("#ff0000", 1),
+  );
 });
 
-test("disabled=true で全チップが disabled になり onChange が呼ばれない", () => {
+test("color 未設定の option は order フォールバックの accent が swatch に使われる", () => {
+  render({ columns, value: "Todo", onChange: vi.fn(), disabled: false });
+  openStatus();
+  const option = document.querySelector(
+    "[data-testid='task-form-status-option-Todo']",
+  ) as HTMLButtonElement;
+  const swatch = option.querySelector("span[style]") as HTMLElement;
+  expect(swatch.style.backgroundColor).toBe(
+    ColumnColor.resolveAccent(undefined, 0),
+  );
+});
+
+test("disabled=true では trigger が無効化され popover が開かない", () => {
   const onChange = vi.fn();
   render({ columns, value: "Todo", onChange, disabled: true });
-  const chips = Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[role='radio']"),
-  );
-  expect(chips.every((c) => c.disabled)).toBe(true);
-  act(() => {
-    chips[2]?.click();
-  });
-  expect(onChange).not.toHaveBeenCalled();
+  const trigger = document.querySelector(
+    "[data-testid='task-form-status']",
+  ) as HTMLButtonElement;
+  expect(trigger.disabled).toBe(true);
+  openStatus();
+  expect(
+    document.querySelector("[data-testid='task-form-status-listbox']"),
+  ).toBeNull();
 });

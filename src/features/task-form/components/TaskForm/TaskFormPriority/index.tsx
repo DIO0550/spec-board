@@ -1,8 +1,8 @@
 import { Priority } from "@/domains/priority";
-import { ChipRadioGroup } from "../ChipRadioGroup";
+import { PopoverSelect } from "../PopoverSelect";
 
 // board の PriorityBadge と同じ配色。変更時は両者を揃えること。
-const PRIORITY_CHIP_CLASSES: Record<Priority, string> = {
+const PRIORITY_BADGE_CLASSES: Record<Priority, string> = {
   High: "bg-red-100 text-red-800",
   Medium: "bg-yellow-100 text-yellow-800",
   Low: "bg-blue-100 text-blue-800",
@@ -32,14 +32,14 @@ export const TaskFormPriority = ({
   disabled,
 }: TaskFormPriorityProps) => {
   return (
-    <ChipRadioGroup
+    <PopoverSelect
       label="優先度"
       options={[
         { value: "", label: "なし" },
         ...Priority.OPTIONS.map((p) => ({
           value: p,
           label: p,
-          className: PRIORITY_CHIP_CLASSES[p],
+          badgeClassName: PRIORITY_BADGE_CLASSES[p],
         })),
       ]}
       value={value}
