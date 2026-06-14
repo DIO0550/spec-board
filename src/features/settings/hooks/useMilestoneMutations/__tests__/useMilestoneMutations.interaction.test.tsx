@@ -77,7 +77,7 @@ const Probe = ({
 
 const mount = async (
   reload: () => Promise<void>,
-): Promise<UseMilestoneMutationsResult | null> => {
+): Promise<{ get latest(): UseMilestoneMutationsResult }> => {
   let latest: UseMilestoneMutationsResult | null = null;
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -92,15 +92,19 @@ const mount = async (
       }),
     );
   });
-  return latest;
+  return {
+    get latest(): UseMilestoneMutationsResult {
+      return latest as UseMilestoneMutationsResult;
+    },
+  };
 };
 
 test("create 成功時に reload を呼ぶ", async () => {
   createMock.mockResolvedValue(Result.ok(undefined));
   const reload = vi.fn(async () => {});
-  const mutations = await mount(reload);
+  const probe = await mount(reload);
   await act(async () => {
-    await mutations?.create({ name: "v0.3" });
+    await probe.latest.create({ name: "v0.3" });
   });
   expect(reload).toHaveBeenCalledTimes(1);
 });
@@ -108,9 +112,9 @@ test("create 成功時に reload を呼ぶ", async () => {
 test("create 失敗時は reload を呼ばない", async () => {
   createMock.mockResolvedValue(Result.err(TauriError.from("失敗")));
   const reload = vi.fn(async () => {});
-  const mutations = await mount(reload);
+  const probe = await mount(reload);
   await act(async () => {
-    const ok = await mutations?.create({ name: "v0.3" });
+    const ok = await probe.latest.create({ name: "v0.3" });
     expect(ok).toBe(false);
   });
   expect(reload).not.toHaveBeenCalled();
@@ -119,10 +123,106 @@ test("create 失敗時は reload を呼ばない", async () => {
 test("remove 成功時に reload を呼び usageCount payload を返す", async () => {
   deleteMock.mockResolvedValue(Result.ok({ usageCount: 2 }));
   const reload = vi.fn(async () => {});
-  const mutations = await mount(reload);
+  const probe = await mount(reload);
   await act(async () => {
-    const payload = await mutations?.remove("v0.3");
+    const payload = await probe.latest.remove("v0.3");
     expect(payload).toEqual({ usageCount: 2 });
   });
   expect(reload).toHaveBeenCalledTimes(1);
+});
+
+test("create 実行中は isPending=true、完了で false に戻る", async () => {
+  let resolveCb: ((r: Result<undefined, TauriError>) => void) | null = null;
+  createMock.mockReturnValue(
+    new Promise<Result<undefined, TauriError>>((resolve) => {
+      resolveCb = resolve;
+    }),
+  );
+  const reload = vi.fn(async () => {});
+  const probe = await mount(reload);
+
+  let createPromise: Promise<boolean> = Promise.resolve(false);
+  act(() => {
+    createPromise = probe.latest.create({ name: "v0.3" });
+  });
+  expect(probe.latest.isPending).toBe(true);
+
+  await act(async () => {
+    resolveCb?.(Result.ok(undefined));
+    await createPromise;
+  });
+  expect(probe.latest.isPending).toBe(false);
+});
+
+test("実行中の create 連打は 2 回目を短絡し IPC を二重発行しない", async () => {
+  let resolveCb: ((r: Result<undefined, TauriError>) => void) | null = null;
+  createMock.mockReturnValue(
+    new Promise<Result<undefined, TauriError>>((resolve) => {
+      resolveCb = resolve;
+    }),
+  );
+  const reload = vi.fn(async () => {});
+  const probe = await mount(reload);
+
+  let firstPromise: Promise<boolean> = Promise.resolve(false);
+  act(() => {
+    firstPromise = probe.latest.create({ name: "v0.3" });
+  });
+  let secondResult: boolean | undefined;
+  await act(async () => {
+    secondResult = await probe.latest.create({ name: "v0.3" });
+  });
+
+  expect(createMock).toHaveBeenCalledTimes(1);
+  expect(secondResult).toBe(false);
+
+  await act(async () => {
+    resolveCb?.(Result.ok(undefined));
+    await firstPromise;
+  });
+  expect(probe.latest.isPending).toBe(false);
+});
+
+test("実行中は他種別の mutation も短絡する（create 中の remove）", async () => {
+  let resolveCb: ((r: Result<undefined, TauriError>) => void) | null = null;
+  createMock.mockReturnValue(
+    new Promise<Result<undefined, TauriError>>((resolve) => {
+      resolveCb = resolve;
+    }),
+  );
+  const reload = vi.fn(async () => {});
+  const probe = await mount(reload);
+
+  let firstPromise: Promise<boolean> = Promise.resolve(false);
+  act(() => {
+    firstPromise = probe.latest.create({ name: "v0.3" });
+  });
+  let removeResult: unknown;
+  await act(async () => {
+    removeResult = await probe.latest.remove("v0.3");
+  });
+
+  expect(deleteMock).not.toHaveBeenCalled();
+  expect(removeResult).toBeNull();
+
+  await act(async () => {
+    resolveCb?.(Result.ok(undefined));
+    await firstPromise;
+  });
+});
+
+test("create 完了後は再度 create を発行できる", async () => {
+  createMock.mockResolvedValue(Result.ok(undefined));
+  const reload = vi.fn(async () => {});
+  const probe = await mount(reload);
+
+  await act(async () => {
+    await probe.latest.create({ name: "v0.3" });
+  });
+  await act(async () => {
+    await probe.latest.create({ name: "v0.4" });
+  });
+
+  expect(createMock).toHaveBeenCalledTimes(2);
+  expect(probe.latest.isPending).toBe(false);
 });
