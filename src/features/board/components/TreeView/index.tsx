@@ -3,7 +3,11 @@ import { DueBadge } from "@/components/DueBadge";
 import type { Task } from "@/types/task";
 import { buildTaskTree, type TaskTreeNode } from "../../lib/buildTaskTree";
 
-/** 1 段あたりのインデント幅（px）。 */
+/**
+ * 1 段あたりのインデント幅（px）。
+ * タスク階層ツリーは各行にバッジやタイトルなど情報量が多く、親子関係を一目で
+ * 追えるよう FileTree（12px）より広い 16px を採る。
+ */
 const INDENT_PER_DEPTH = 16;
 
 type TreeNodeItemProps = {

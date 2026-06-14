@@ -173,6 +173,9 @@ export const TaskCard = ({
   onDragStart,
   onDragEnd,
 }: TaskCardProps) => {
+  // ドラッグ終了直後にブラウザが発火する synthetic click を抑止するためのガード。
+  // dragstart で true にし、onClick はこのフラグが立っている間は無視する。
+  // click は dragend より後に届くため、dragend では即解除せず下記 setTimeout で遅延解除する。
   const dragGuardRef = useRef(false);
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
@@ -187,6 +190,8 @@ export const TaskCard = ({
 
   const handleDragEnd = () => {
     onDragEnd?.();
+    // dragend 直後の synthetic click はこのマクロタスクの後に届く。0ms 遅延で解除を
+    // 次のマクロタスクに回すことで、その click を確実にガードしてから false に戻す。
     setTimeout(() => {
       dragGuardRef.current = false;
     }, 0);

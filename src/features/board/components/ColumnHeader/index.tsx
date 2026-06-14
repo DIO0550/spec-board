@@ -74,6 +74,9 @@ export const ColumnHeader = ({
   const [isBusy, setIsBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
+  // カラム dragend 直後の synthetic click を抑止するためのガード。
+  // dragstart で true にし、root の onClick / 名前クリックの編集開始はこのフラグ中は無視する。
+  // click は dragend より後に届くため、handleDragEnd では即解除せず setTimeout で遅延解除する。
   const dragGuardRef = useRef(false);
   const reactId = useId();
   const errorId = `${reactId}-error`;
@@ -163,6 +166,8 @@ export const ColumnHeader = ({
 
   const handleDragEnd = () => {
     onColumnDragEnd?.();
+    // dragend 直後の synthetic click はこのマクロタスクの後に届く。0ms 遅延で解除を
+    // 次のマクロタスクに回し、その click をガードしてから false に戻す。
     setTimeout(() => {
       dragGuardRef.current = false;
     }, 0);

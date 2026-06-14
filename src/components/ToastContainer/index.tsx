@@ -28,6 +28,8 @@ export const ToastContainer = ({
     return null;
   }
   return (
+    // z-[80]=トースト。z 階層全体で最前面に置き、ダイアログ（z-[70]）表示中でも通知を隠さない。
+    // 取り決めは src/index.css を参照。
     <div
       className="pointer-events-none fixed top-4 right-4 z-[80] flex flex-col gap-2"
       data-testid="toast-container"

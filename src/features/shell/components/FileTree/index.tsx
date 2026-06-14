@@ -2,7 +2,11 @@ import { memo, useCallback, useMemo, useState } from "react";
 import type { Task } from "@/types/task";
 import { buildFileTree, type FileTreeNode } from "../../lib/buildFileTree";
 
-/** 1 段あたりのインデント幅（px）。 */
+/**
+ * 1 段あたりのインデント幅（px）。
+ * ファイルツリーは深い階層になりやすく横幅が限られるため、TreeView（16px）より
+ * 狭い 12px に抑えて深いネストでも横スクロールしにくくする。
+ */
 const INDENT_PER_DEPTH = 12;
 
 type FileNodeItemProps = {
