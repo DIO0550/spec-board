@@ -1,10 +1,8 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { TaskSelect } from "@/components/TaskSelect";
 import { TaskLinks } from "@/domains/task-links";
 import { linkReferencesTaskPath } from "@/domains/task-path";
-import { useAddLink } from "@/features/detail/hooks/useAddLink";
-import { useRemoveLink } from "@/features/detail/hooks/useRemoveLink";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 
@@ -67,6 +65,13 @@ export type LinksSectionProps = {
  */
 export const LinksSection = (props: LinksSectionProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  // 追加 / 削除いずれの invoke 中も UI を一括 disable するための単一フラグ。
+  // 両操作とも完了まで他操作を抑止する点で挙動が等価なため、操作ごとに分けず合成する。
+  const [isBusy, setIsBusy] = useState(false);
+  // state 反映を待たずに同期判定するための in-flight フラグ。
+  // `isBusy`（state）は描画に追従するが反映が非同期なため、同一 tick の連打では
+  // `isBusy` を見ても二重発行を防げない。同期判定できる ref を真の競合制御として併用する。
+  const inFlightRef = useRef(false);
 
   const candidates = useMemo(
     () =>
@@ -80,17 +85,34 @@ export const LinksSection = (props: LinksSectionProps) => {
   );
 
   const sourceFilePath = props.task.filePath;
-  const { isBusy: isBusyAdd, addLink } = useAddLink({
-    onAddLink: (target) => props.onAddLink(sourceFilePath, target),
-  });
-
-  // forward link 用: source=表示中タスク、target=相手
-  const { isBusy: isBusyRemoveForward, removeLink: removeForward } =
-    useRemoveLink({
-      onRemoveLink: (target) => props.onRemoveLink(sourceFilePath, target),
-    });
-  const isBusyAny = isBusyAdd || isBusyRemoveForward;
   const isLinkClickDisabled = props.onLinkClick === undefined;
+
+  // 追加 / 削除の invoke を `isBusy` と in-flight ガードで囲う共通ランナー。
+  // 完了まで `isBusy=true` にし、resolve / reject / throw いずれでも finally で false へ戻す。
+  //
+  // 実行中の再呼び出しは `inFlightRef` で同期的に短絡する。これが連打競合制御の最後の砦:
+  // - 候補選択で popover を unmount し候補ボタンが消える
+  // - `+ リンク追加` ボタンと × ボタンは `disabled={isBusy}` で再操作を抑止する
+  // - `isBusy` は反映が非同期なため同一 tick の連打を防げないが、`inFlightRef` が
+  //   実行中の 2 回目以降を action 発行前に即 return して二重発行を確実に止める
+  // - 万一同時呼出が起きても downstream の addLink/removeLink action は
+  //   `enqueueProjectCommand` で直列化され整合性は保たれる
+  const runBusy = useCallback(
+    async (action: () => Promise<Result<Task, unknown>>): Promise<void> => {
+      if (inFlightRef.current) {
+        return;
+      }
+      inFlightRef.current = true;
+      setIsBusy(true);
+      try {
+        await action();
+      } finally {
+        inFlightRef.current = false;
+        setIsBusy(false);
+      }
+    },
+    [],
+  );
 
   // linkedFilePaths は frontmatter 由来で `./tasks/b.md` / `tasks\\b.md` 等の表記揺れを
   // 保持する。`selectTaskOutcome` は `Task.id`（canonical）一致でのみ解決するため、
@@ -105,23 +127,28 @@ export const LinksSection = (props: LinksSectionProps) => {
 
   // TaskSelect.onChange は同期戻り値型のため、ここで async 関数を渡すと
   // 戻り Promise が await されず unhandled rejection の原因になる。
-  // 同期関数として宣言し、addLink の Promise は void + catch で明示的に握る。
-  // （useAddLink 側で try/finally による isBusy 復帰は済んでいるため、ここでの catch は
+  // 同期関数として宣言し、runBusy の Promise は void + catch で明示的に握る。
+  // （runBusy 側で try/finally による isBusy 復帰は済んでいるため、ここでの catch は
   // 防御的ガード。エラー通知は App.handleAddLink の toast/announce 経路で行う）
   const handleSelect = (targetFilePath: string | null): void => {
     if (targetFilePath === null) {
       return;
     }
     setIsOpen(false);
-    void addLink(targetFilePath).catch(() => undefined);
+    void runBusy(() => props.onAddLink(sourceFilePath, targetFilePath)).catch(
+      () => undefined,
+    );
   };
 
   /**
    * forward link 行の × クリックハンドラ。
+   * source=表示中タスク、target=相手の forward link を削除する。
    * @param target 削除対象の link 先 filePath
    */
   const handleRemoveForward = (target: string): void => {
-    void removeForward(target).catch(() => undefined);
+    void runBusy(() => props.onRemoveLink(sourceFilePath, target)).catch(
+      () => undefined,
+    );
   };
 
   return (
@@ -157,7 +184,7 @@ export const LinksSection = (props: LinksSectionProps) => {
                 <button
                   type="button"
                   onClick={() => handleRemoveForward(p)}
-                  disabled={isBusyAny}
+                  disabled={isBusy}
                   aria-label="リンクを削除"
                   data-testid={`links-section-linked-remove-${i}`}
                   className="shrink-0 rounded px-1 text-xs text-muted hover:bg-surface-muted hover:text-foreground disabled:opacity-50"
@@ -188,7 +215,7 @@ export const LinksSection = (props: LinksSectionProps) => {
               <button
                 type="button"
                 onClick={() => handleRemoveForward(p)}
-                disabled={isBusyAny}
+                disabled={isBusy}
                 aria-label="リンクを削除"
                 data-testid={`links-section-linked-remove-${i}`}
                 data-path={p}
@@ -256,14 +283,14 @@ export const LinksSection = (props: LinksSectionProps) => {
           onClose={() => setIsOpen(false)}
           placeholder="タスクを検索..."
           autoFocus
-          disabled={isBusyAny}
+          disabled={isBusy}
           testIdPrefix="links-section"
         />
       ) : (
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          disabled={isBusyAny}
+          disabled={isBusy}
           data-testid="links-section-add-button"
           className="self-start rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-muted disabled:opacity-50"
         >

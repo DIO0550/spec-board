@@ -189,7 +189,7 @@ const selectCandidate = async (taskId: string): Promise<void> => {
       new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
     );
   });
-  // 長い Promise チェーン（LinksSection → useAddLink → handleAddLink → useProject.addLink
+  // 長い Promise チェーン（LinksSection → handleAddLink → useProject.addLink
   // → addLinkAction → enqueueProjectCommand → addLink IPC）を解決するため複数 tick 流す。
   await act(async () => {
     for (let i = 0; i < 10; i += 1) {
