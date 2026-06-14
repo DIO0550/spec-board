@@ -23,6 +23,18 @@
 	--color-accent-foreground: #ffffff;
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
 
+	/* 作成画面（新規タスク）デザイン由来の追加トークン（design-source.txt :root を写経）。
+	   既存 surface / foreground / border / accent とは別語彙で追加し、他画面の配色へ影響させない。
+	   作成画面はライト固定デザインのためダーク上書きは設けない。 */
+	--color-panel: #ffffff;
+	--color-panel-2: #fbfbfd;
+	--color-bg: #f7f8fa;
+	--color-border-strong: #d4d7df;
+	--color-text-dim: #8a94a2;
+	--color-create-accent: oklch(0.54 0.14 265);
+	--color-create-accent-soft: oklch(0.96 0.03 265);
+	--color-create-accent-border: oklch(0.86 0.06 265);
+
 	/* カラムヘッダー上端のアクセント帯フォールバック色（color 未設定/不正時）。
 	   order index → 色を決定的に写像する。ライト既定値。
 	   domains/column-color の FALLBACK_PALETTE と 1:1 対応する。 */
