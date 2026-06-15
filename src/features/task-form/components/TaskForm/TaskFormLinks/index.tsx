@@ -1,5 +1,5 @@
 import { TaskSelect } from "@/components/TaskSelect";
-import { LabelChip } from "@/features/task-form/components/TaskForm/TaskFormLabels/LabelChip";
+import { LabelChip } from "@/features/task-form/components/TaskForm/LabelChip";
 import type { Task } from "@/types/task";
 
 /** TaskFormLinks の Props */

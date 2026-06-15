@@ -273,15 +273,24 @@ const querySelectorRequired = <T extends Element>(selector: string): T => {
   return el as T;
 };
 
-const submitTaskCreateForm = (title: string): void => {
+const submitTaskCreateForm = async (title: string): Promise<void> => {
   const titleInput = querySelectorRequired<HTMLInputElement>(
     '[data-testid="task-form-title"]',
   );
-  setInputValue(titleInput, title);
+  // タイトル入力 → onValuesChange の effect を flush（footer の作成ボタンが活性化する）。
+  await act(async () => {
+    setInputValue(titleInput, title);
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // 作成ボタンは form の外（footer）にあり、formRef 経由の requestSubmit で送信する。
   const submitBtn = querySelectorRequired<HTMLButtonElement>(
     '[data-testid="task-form-submit"]',
   );
-  submitBtn.click();
+  await act(async () => {
+    submitBtn.click();
+  });
 };
 
 test("Board の '+追加' → Modal 送信 → createTask invoke が呼ばれ tasks に反映 + 成功 toast", async () => {
@@ -306,9 +315,7 @@ test("Board の '+追加' → Modal 送信 → createTask invoke が呼ばれ ta
   });
   expect(container?.querySelector('[data-testid="task-form"]')).not.toBeNull();
 
-  await act(async () => {
-    submitTaskCreateForm("新規タスク");
-  });
+  await submitTaskCreateForm("新規タスク");
   await act(async () => {
     await Promise.resolve();
   });
@@ -333,9 +340,7 @@ test("createTask 失敗時に作成画面が閉じない（onSubmit reject）", 
   });
   expect(container?.querySelector('[data-testid="task-form"]')).not.toBeNull();
 
-  await act(async () => {
-    submitTaskCreateForm("失敗するタスク");
-  });
+  await submitTaskCreateForm("失敗するタスク");
   await act(async () => {
     await Promise.resolve();
   });

@@ -1,6 +1,6 @@
 import { ColumnColor } from "@/domains/column-color";
 import type { Column } from "@/types/column";
-import { ChipRadioGroup } from "../ChipRadioGroup";
+import { PopoverSelect } from "../PopoverSelect";
 
 type TaskFormStatusProps = {
   /** 選択肢となるカラム一覧 */
@@ -30,13 +30,13 @@ export const TaskFormStatus = ({
   disabled,
 }: TaskFormStatusProps) => {
   return (
-    <ChipRadioGroup
+    <PopoverSelect
       label="ステータス"
       required
       options={columns.map((col, index) => ({
         value: col.name,
         label: col.name,
-        accentColor: ColumnColor.resolveAccent(col.color, index),
+        swatchColor: ColumnColor.resolveAccent(col.color, index),
       }))}
       value={value}
       onChange={onChange}

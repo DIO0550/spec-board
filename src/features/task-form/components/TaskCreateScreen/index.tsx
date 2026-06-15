@@ -3,12 +3,24 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
 import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
+import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import { fileNameErrorMessage } from "../TaskForm/TaskFormFileName/fileNameErrorMessage";
+import { PreviewResizer } from "./PreviewResizer";
+import { TaskFormFooter } from "./TaskFormFooter";
+import { TaskSubbar } from "./TaskSubbar";
+import { TaskTopbar } from "./TaskTopbar";
 
 /** プレビューへ渡すフォーム現在値（frontmatter フィールド + 本文）。 */
 type PreviewValues = PreviewFrontmatterInput & { body: string };
+
+/** プレビュー幅の既定値（px）。 */
+const DEFAULT_PREVIEW_WIDTH = 480;
+
+/** パス未確定時に subbar / pv-foot に出すフォールバックファイル名。 */
+const FALLBACK_FILE_NAME = "new-issue.md";
 
 export type TaskCreateScreenProps = {
   /** status フィールド用のカラム一覧（必須） */
@@ -25,6 +37,10 @@ export type TaskCreateScreenProps = {
   existingTasks: readonly Task[];
   /** プロジェクト絶対パス（保存先フルパスプレビュー用。未指定なら相対パス表示） */
   projectPath?: string;
+  /** プロジェクト名（topbar の crumbs 表示用）。 */
+  projectName?: string;
+  /** 同期バッジに出す監視ファイル数（読み込み済みタスク総数を流用）。 */
+  watchedFileCount: number;
   /**
    * 送信時のコールバック。reject した場合は画面を閉じない。
    * 親側でトースト通知などのエラーハンドリングを行う想定。
@@ -51,7 +67,41 @@ const buildInitialPreview = (initialStatus: string): PreviewValues => ({
 });
 
 /**
- * form を送信する（キーボードショートカット用）。
+ * 保存先パスプレビューから表示用ファイル名を導出する。
+ * @param preview - 保存先パスプレビュー結果（kind で分岐）
+ * @returns subbar / pv-foot に出すファイル名
+ */
+const previewFileNameLabel = (preview: SavePathPreviewResult): string => {
+  if (preview.kind === "path") {
+    return preview.fileName;
+  }
+  return FALLBACK_FILE_NAME;
+};
+
+/**
+ * footer の save-meta に出す validation ヒントを導出する。
+ * @param title - タイトル現在値
+ * @param preview - 保存先パスプレビュー結果
+ * @returns ヒント文言
+ */
+const footerSaveHint = (
+  title: string,
+  preview: SavePathPreviewResult,
+): string => {
+  if (title.trim() === "") {
+    return "タイトルを入力してください";
+  }
+  if (preview.kind === "path") {
+    return `保存先: ${preview.relPath}`;
+  }
+  if (preview.kind === "invalid") {
+    return fileNameErrorMessage(preview.error);
+  }
+  return "保存先を計算しています…";
+};
+
+/**
+ * form を送信する（キーボードショートカット / footer ボタン共用）。
  * `requestSubmit()` を標準経路とし、未対応環境（happy-dom の旧版等）では
  * cancelable な submit イベントの dispatch にフォールバックする。
  * @param form - 対象 form 要素（null なら何もしない）
@@ -68,10 +118,11 @@ const submitFormElement = (form: HTMLFormElement | null): void => {
 };
 
 /**
- * 全画面2ペインのタスク作成画面。左=入力フォーム / 右=ライブプレビュー。
- * 送信契約（二重送信防止・成功で自動クローズ・reject 非クローズ）は旧作成モーダルから踏襲する。
- * ⌘（mac）/ Ctrl（Windows/Linux）+Enter で保存し、Esc / キャンセルは入力ありなら
- * 破棄確認ダイアログを経由する（未入力なら即閉じる）。
+ * 全画面2ペインのタスク作成画面。上部 chrome（topbar / subbar）・下部固定フッター・
+ * 左=入力フォーム / 右=ライブプレビュー（折りたたみ + リサイズ可）で構成する。
+ * 送信契約（二重送信防止・成功で自動クローズ・reject 非クローズ）・IME ガード付き
+ * Esc/⌘Enter・破棄確認は旧作成画面から温存する。footer の作成ボタンは `<form>` の外に
+ * 置かれるため `formRef` 経由の requestSubmit（= ⌘Enter と同一経路）で送信する。
  * @param props - {@link TaskCreateScreenProps}
  * @returns 2ペイン作成画面要素
  */
@@ -87,6 +138,16 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const [previewValues, setPreviewValues] = useState<PreviewValues>(() =>
     buildInitialPreview(initialStatus),
   );
+  // 保存先パスプレビューは TaskForm から onPathPreviewChange で受ける。
+  // previewValues.fileName は onValuesChange の fileName 除外最適化で最新化されないため使わない。
+  const [pathPreview, setPathPreview] = useState<SavePathPreviewResult>({
+    kind: "pending",
+  });
+  // プレビューの表示/折りたたみと幅（既定 480、clamp は PreviewResizer の computePreviewWidth）。
+  const [previewVisible, setPreviewVisible] = useState(true);
+  const [previewWidth, setPreviewWidth] = useState(DEFAULT_PREVIEW_WIDTH);
+
+  const previewFileName = previewFileNameLabel(pathPreview);
 
   const handleSubmit = useCallback(
     async (values: TaskFormValues) => {
@@ -155,31 +216,70 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
       ref={sectionRef}
       aria-label="タスク作成"
       tabIndex={-1}
-      className="flex h-full min-h-0 gap-6 p-6"
+      className="grid h-full min-h-0 grid-rows-[48px_44px_1fr] bg-surface"
       data-testid="task-create-screen"
     >
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        <h2 className="mb-4 text-lg font-semibold text-foreground">
-          新規タスクを作成
-        </h2>
-        <TaskForm
-          columns={props.columns}
-          initialStatus={props.initialStatus}
-          initialParent={props.initialParent}
-          parentCandidates={props.parentCandidates}
-          parentReadOnly={props.parentReadOnly}
-          existingTasks={props.existingTasks}
-          projectPath={props.projectPath}
-          isSubmitting={isSubmitting}
-          onSubmit={handleSubmit}
-          onValuesChange={setPreviewValues}
-          onCancel={requestClose}
-          formRef={formRef}
-          onDirtyChange={setIsDirty}
-        />
-      </div>
-      <div className="min-w-0 flex-1 overflow-y-auto border-l border-surface-muted pl-6">
-        <PreviewPane values={previewValues} />
+      <TaskTopbar
+        projectName={props.projectName}
+        projectPath={props.projectPath}
+        watchedFileCount={props.watchedFileCount}
+        previewVisible={previewVisible}
+        onTogglePreview={() => setPreviewVisible((v) => !v)}
+      />
+      <TaskSubbar fileName={previewFileName} onBack={requestClose} />
+      <div
+        className={`grid min-h-0 overflow-hidden ${
+          previewVisible
+            ? "grid-cols-[minmax(0,1fr)_7px_var(--preview-w)]"
+            : "grid-cols-[minmax(0,1fr)_0_0]"
+        }`}
+        style={{ "--preview-w": `${previewWidth}px` } as React.CSSProperties}
+      >
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-8 py-6">
+            <div className="mx-auto max-w-[600px]">
+              <h1 className="mb-1 text-lg font-semibold text-foreground">
+                新規タスクを作成
+              </h1>
+              <p className="mb-5 text-xs leading-relaxed text-muted">
+                入力した内容は Markdown
+                ファイルとして保存されます。フロントマターにメタ情報が書き込まれます。
+              </p>
+              <TaskForm
+                columns={props.columns}
+                initialStatus={props.initialStatus}
+                initialParent={props.initialParent}
+                parentCandidates={props.parentCandidates}
+                parentReadOnly={props.parentReadOnly}
+                existingTasks={props.existingTasks}
+                projectPath={props.projectPath}
+                isSubmitting={isSubmitting}
+                onSubmit={handleSubmit}
+                onValuesChange={setPreviewValues}
+                onCancel={requestClose}
+                formRef={formRef}
+                onDirtyChange={setIsDirty}
+                onPathPreviewChange={setPathPreview}
+                renderActionsInline={false}
+              />
+            </div>
+          </div>
+          <TaskFormFooter
+            saveHint={footerSaveHint(previewValues.title, pathPreview)}
+            canSubmit={previewValues.title.trim() !== ""}
+            isSubmitting={isSubmitting}
+            onCancel={requestClose}
+            onSubmit={() => submitFormElement(formRef.current)}
+          />
+        </div>
+        {previewVisible && <PreviewResizer onWidthChange={setPreviewWidth} />}
+        {previewVisible && (
+          <PreviewPane
+            values={previewValues}
+            fileName={previewFileName}
+            onCollapse={() => setPreviewVisible(false)}
+          />
+        )}
       </div>
       {isDiscardDialogOpen && (
         <ConfirmDialog

@@ -67,10 +67,7 @@ export const TaskFormBody = ({
 
   return (
     <div>
-      <label
-        htmlFor={bodyId}
-        className="mb-1 block text-xs font-medium text-foreground"
-      >
+      <label htmlFor={bodyId} className="sr-only">
         説明
       </label>
       <MarkdownToolbar onApply={handleApply} disabled={disabled} />
@@ -80,8 +77,9 @@ export const TaskFormBody = ({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        rows={4}
-        className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
+        rows={8}
+        placeholder="説明を入力… Markdown が使えます。右側にプレビューが表示されます。"
+        className="block min-h-[200px] w-full resize-y rounded-b-lg border border-border bg-panel px-3.5 py-3 font-mono text-sm leading-relaxed text-foreground outline-none placeholder:text-text-dim focus:border-accent disabled:bg-surface-muted"
         data-testid="task-form-body"
       />
     </div>

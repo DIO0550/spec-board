@@ -40,6 +40,7 @@ const baseProps = (
   columns: COLUMNS,
   initialStatus: "Todo",
   existingTasks: [],
+  watchedFileCount: 0,
   onSubmit: vi.fn().mockResolvedValue(undefined),
   onClose: vi.fn(),
   ...overrides,
@@ -360,4 +361,52 @@ test("ダイアログ表示中の ⌘+Enter では保存が発動せずダイア
   dispatchDocumentKey("Enter", { metaKey: true });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(confirmDialog()).toBeTruthy();
+});
+
+const previewPane = () =>
+  document.querySelector('aside[aria-label="プレビュー"]');
+
+test("topbar の pvToggle でプレビューが非表示/再表示される", () => {
+  render(baseProps());
+  expect(previewPane()).toBeTruthy();
+  const toggle = document.querySelector(
+    '[data-testid="task-topbar-preview-toggle"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    toggle.click();
+  });
+  expect(previewPane()).toBeNull();
+  act(() => {
+    toggle.click();
+  });
+  expect(previewPane()).toBeTruthy();
+});
+
+test("プレビューの pv-collapse でプレビューが非表示になる", () => {
+  render(baseProps());
+  const collapse = document.querySelector(
+    '[data-testid="preview-collapse"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    collapse.click();
+  });
+  expect(previewPane()).toBeNull();
+});
+
+test("footer の作成ボタン click で formRef 経由の送信（⌘Enter と同一経路）になる", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(baseProps({ onSubmit }));
+  act(() => {
+    setInput("task-form-title", "新タスク");
+  });
+  await flush();
+  const submit = document.querySelector(
+    '[data-testid="task-form-submit"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    submit.click();
+  });
+  await flush();
+  expect(onSubmit).toHaveBeenCalledOnce();
+  expect(onSubmit.mock.calls[0][0].title).toBe("新タスク");
 });

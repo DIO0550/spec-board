@@ -1,6 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { PreviewPane } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -25,12 +25,21 @@ const baseValues: Values = {
   body: "",
 };
 
-const render = (values: Values) => {
+const render = (
+  values: Values,
+  options: { fileName?: string; onCollapse?: () => void } = {},
+) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(PreviewPane, { values }));
+    root?.render(
+      createElement(PreviewPane, {
+        values,
+        fileName: options.fileName ?? "new-issue.md",
+        onCollapse: options.onCollapse ?? vi.fn(),
+      }),
+    );
   });
 };
 
@@ -88,4 +97,41 @@ test("空本文でもエラーにならず最小 frontmatter を表示する", (
   expect(rendered?.querySelector("pre")?.textContent).toBe(
     "---\ntitle: タスク\nstatus: Todo\n---",
   );
+});
+
+test("pv-meta に最終 markdown の UTF-8 バイト長 + B が表示される", () => {
+  render({ ...baseValues, body: "本文テキスト" });
+  const finalMarkdown = "---\ntitle: タスク\nstatus: Todo\n---\n本文テキスト";
+  const expectedBytes = new TextEncoder().encode(finalMarkdown).length;
+  const meta = container?.querySelector('[data-testid="preview-meta"]');
+  expect(meta?.textContent).toContain(`${expectedBytes}B`);
+});
+
+test("空本文では Raw に出る最終 markdown と同じバイト長が表示される", () => {
+  render({ ...baseValues, body: "" });
+  clickRawTab();
+  const finalMarkdown =
+    container?.querySelector('[data-testid="preview-raw"]')?.textContent ?? "";
+  const expectedBytes = new TextEncoder().encode(finalMarkdown).length;
+  const meta = container?.querySelector('[data-testid="preview-meta"]');
+  expect(meta?.textContent).toContain(`${expectedBytes}B`);
+});
+
+test("pv-collapse クリックで onCollapse が 1 回呼ばれる", () => {
+  const onCollapse = vi.fn();
+  render({ ...baseValues, body: "" }, { onCollapse });
+  const collapse = container?.querySelector(
+    '[data-testid="preview-collapse"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    collapse.click();
+  });
+  expect(onCollapse).toHaveBeenCalledTimes(1);
+});
+
+test("pv-foot に保存先ファイル名が表示される", () => {
+  render({ ...baseValues, body: "" }, { fileName: "my-task.md" });
+  const foot = container?.querySelector('[data-testid="preview-foot"]');
+  expect(foot?.textContent).toContain("my-task.md");
+  expect(foot?.textContent).toContain("新規作成されます");
 });

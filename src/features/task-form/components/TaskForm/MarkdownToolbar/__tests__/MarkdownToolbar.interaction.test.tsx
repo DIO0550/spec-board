@@ -24,7 +24,7 @@ const render = (props: Parameters<typeof MarkdownToolbar>[0]) => {
   });
 };
 
-test("role=toolbar 配下に 5 ボタンが aria-label 付きで描画される", () => {
+test("role=toolbar 配下に 9 ボタンが aria-label 付きでデザイン順に描画される", () => {
   render({ onApply: vi.fn(), disabled: false });
   const toolbar = document.querySelector(
     "[data-testid='task-form-md-toolbar'][role='toolbar']",
@@ -37,7 +37,11 @@ test("role=toolbar 配下に 5 ボタンが aria-label 付きで描画される"
     "見出し",
     "太字",
     "斜体",
+    "引用",
+    "コード",
+    "リンク",
     "箇条書きリスト",
+    "番号付きリスト",
     "タスクリスト",
   ]);
 });
@@ -46,7 +50,11 @@ test.each([
   ["heading"],
   ["bold"],
   ["italic"],
+  ["code"],
+  ["quote"],
+  ["link"],
   ["bulletList"],
+  ["orderedList"],
   ["taskList"],
 ] as const)("%s ボタンのクリックで onApply が 1 回呼ばれる", (kind) => {
   const onApply = vi.fn();

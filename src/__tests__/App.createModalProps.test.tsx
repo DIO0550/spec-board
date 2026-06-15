@@ -249,6 +249,25 @@ test("経路2: handleAddTask（通常作成）→ parentCandidates は tasks 全
   ]);
   expect(props.parentReadOnly).toBe(false);
   expect(props.initialParent).toBeUndefined();
+  // 同期バッジ用の watchedFileCount は読み込み済みタスク総数、projectName は path 末尾。
+  expect(props.watchedFileCount).toBe(fixtureTasks.length);
+  expect(props.projectName).toBe("p");
+});
+
+test("create ビューでは共通の HeaderBar / AppSidebar が描画されない（全画面 standalone）", async () => {
+  mountApp();
+  await openProjectWithTasks();
+  // board では HeaderBar（header 要素）が存在する。
+  expect(container?.querySelector("header")).not.toBeNull();
+  await clickColumnAddButton("Todo");
+  // create では全画面 chrome へ切り替わり、共通 HeaderBar / 「開く」ボタンは消える。
+  expect(container?.querySelector("header")).toBeNull();
+  const buttons = Array.from(container?.querySelectorAll("button") ?? []);
+  expect(buttons.some((b) => b.textContent === "開く")).toBe(false);
+  // ToastContainer / LiveRegion 等の縦断 UI は温存しつつ作成画面（mock）は描画される。
+  expect(
+    container?.querySelector('[data-testid="mock-task-create-screen-close"]'),
+  ).not.toBeNull();
 });
 
 test("経路3a: subIssue → close で作成画面が unmount され元の detail へ戻る", async () => {

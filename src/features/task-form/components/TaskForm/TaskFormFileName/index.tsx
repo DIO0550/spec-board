@@ -40,25 +40,28 @@ export const TaskFormFileName = ({
     <div>
       <label
         htmlFor={fileNameId}
-        className="mb-1 block text-xs font-medium text-foreground"
+        className="mb-1.5 block text-[11.5px] font-semibold uppercase tracking-wide text-muted"
       >
         ファイル名
       </label>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center overflow-hidden rounded-lg border border-border bg-panel font-mono focus-within:border-accent">
         <input
           id={fileNameId}
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          placeholder="new-issue"
           aria-invalid={hasError}
           aria-describedby={hasError ? fileNameErrorId : undefined}
-          className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
+          className="min-w-0 flex-1 bg-transparent px-2.5 py-2.5 font-mono text-sm text-foreground outline-none placeholder:text-text-dim disabled:bg-surface-muted"
           data-testid="task-form-file-name"
         />
-        <span className="shrink-0 text-sm text-muted">.md</span>
+        <span className="shrink-0 border-l border-border bg-panel-2 px-2.5 py-2.5 text-xs text-text-dim">
+          .md
+        </span>
       </div>
-      <p className="mt-1 text-xs text-muted">
+      <p className="mt-1.5 text-[11px] text-text-dim">
         未編集の場合はタイトルから自動生成。既存と重複する場合は保存時に連番が付きます
       </p>
       {hasError && (

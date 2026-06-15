@@ -81,6 +81,35 @@ const submitForm = () => {
   form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 };
 
+const openLabels = () => {
+  const trigger = document.querySelector(
+    '[data-testid="task-form-labels"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    trigger.click();
+  });
+};
+
+const typeLabelSearch = (value: string) => {
+  const search = document.querySelector(
+    '[data-testid="task-form-labels-search"]',
+  ) as HTMLInputElement;
+  act(() => {
+    changeInputValue(search, value);
+  });
+};
+
+const pressEnterOnLabelSearch = () => {
+  const search = document.querySelector(
+    '[data-testid="task-form-labels-search"]',
+  ) as HTMLInputElement;
+  act(() => {
+    search.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+};
+
 test("タイトル未入力で submit すると onSubmit は呼ばれず、エラーが表示される（結合）", () => {
   const onSubmit = vi.fn();
   render({
@@ -129,7 +158,7 @@ test("タイトル入力して送信すると onSubmit が正規化値で呼ば�
   });
 });
 
-test("ラベル入力中に submit すると未コミット文字が送信値に含まれる", () => {
+test("popover で作成したラベルが送信値に含まれる", () => {
   const onSubmit = vi.fn();
   render({
     columns: COLUMNS,
@@ -140,21 +169,16 @@ test("ラベル入力中に submit すると未コミット文字が送信値に
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
   act(() => {
     changeInputValue(title, "T");
   });
-  act(() => {
-    changeInputValue(labelInput, "pending");
-  });
+  openLabels();
+  typeLabelSearch("bug");
+  pressEnterOnLabelSearch();
   act(() => {
     submitForm();
   });
-  expect(onSubmit.mock.calls[0][0].labels).toEqual(["pending"]);
-  // finalizeLabels は UI 整合のため commit を dispatch する
-  expect(labelInput.value).toBe("");
+  expect(onSubmit.mock.calls[0][0].labels).toEqual(["bug"]);
 });
 
 test("initialParent 指定で送信値に parent が含まれる", () => {
@@ -211,8 +235,8 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  const statusChip = document.querySelector(
-    '[data-testid="task-form-status"] [role="radio"]',
+  const statusTrigger = document.querySelector(
+    '[data-testid="task-form-status"]',
   ) as HTMLButtonElement;
   const submit = document.querySelector(
     '[data-testid="task-form-submit"]',
@@ -220,17 +244,17 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
   const cancel = document.querySelector(
     '[data-testid="task-form-cancel"]',
   ) as HTMLButtonElement;
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
+  const labelsTrigger = document.querySelector(
+    '[data-testid="task-form-labels"]',
+  ) as HTMLButtonElement;
   const body = document.querySelector(
     '[data-testid="task-form-body"]',
   ) as HTMLTextAreaElement;
   expect(title.disabled).toBe(true);
-  expect(statusChip.disabled).toBe(true);
+  expect(statusTrigger.disabled).toBe(true);
   expect(submit.disabled).toBe(true);
   expect(cancel.disabled).toBe(true);
-  expect(labelInput.disabled).toBe(true);
+  expect(labelsTrigger.disabled).toBe(true);
   expect(body.disabled).toBe(true);
 });
 
@@ -295,7 +319,7 @@ test("title 入力で onValuesChange に最新 title が通知される", () => 
   expect(lastValues(onValuesChange).title).toBe("新タイトル");
 });
 
-test("ラベル確定（Enter）で onValuesChange の labels に反映される", () => {
+test("popover でラベルを作成すると onValuesChange の labels に反映される", () => {
   const onValuesChange = vi.fn();
   render({
     columns: COLUMNS,
@@ -304,36 +328,10 @@ test("ラベル確定（Enter）で onValuesChange の labels に反映される
     onCancel: vi.fn(),
     onValuesChange,
   });
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
-  act(() => {
-    changeInputValue(labelInput, "bug");
-  });
-  act(() => {
-    labelInput.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-  });
+  openLabels();
+  typeLabelSearch("bug");
+  pressEnterOnLabelSearch();
   expect(lastValues(onValuesChange).labels).toEqual(["bug"]);
-});
-
-test("未コミットの labelInput も onValuesChange の labels に含まれる（送信時 finalize と一致）", () => {
-  const onValuesChange = vi.fn();
-  render({
-    columns: COLUMNS,
-    initialStatus: "Todo",
-    onSubmit: vi.fn(),
-    onCancel: vi.fn(),
-    onValuesChange,
-  });
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
-  act(() => {
-    changeInputValue(labelInput, "pending");
-  });
-  expect(lastValues(onValuesChange).labels).toEqual(["pending"]);
 });
 
 test("links 追加で onValuesChange の links に反映される", () => {
@@ -384,21 +382,21 @@ test("値変化時にフィールド state が保持される（key 再 mount �
     onCancel: vi.fn(),
     onValuesChange,
   });
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  // 未コミットの labelInput を入れた状態で別フィールド（title）を変える。
-  // key 再 mount されると labelInput が初期化されてしまう。
-  act(() => {
-    changeInputValue(labelInput, "draft");
-  });
+  // ラベルを選択した状態で別フィールド（title）を変える。
+  // key 再 mount されると選択済みラベルが初期化されてしまう。
+  openLabels();
+  typeLabelSearch("draft");
+  pressEnterOnLabelSearch();
   act(() => {
     changeInputValue(title, "X");
   });
-  expect(labelInput.value).toBe("draft");
+  const trigger = document.querySelector(
+    '[data-testid="task-form-labels"]',
+  ) as HTMLButtonElement;
+  expect(trigger.textContent).toContain("draft");
 });
 
 test("title 入力でファイル名欄に kebab-case 値が表示される（自動追従）", () => {
@@ -587,7 +585,7 @@ test("isSubmitting=true で下書きチェックボックスも無効化され�
   expect(checkbox.disabled).toBe(true);
 });
 
-test("getLabels の候補がラベル入力のサジェストへ配線される（結合）", async () => {
+test("getLabels の候補が popover の option へ配線される（結合）", async () => {
   getLabelsMock.mockResolvedValue(
     Result.ok({ labels: [{ name: "bug" }, { name: "feature" }] }),
   );
@@ -600,22 +598,16 @@ test("getLabels の候補がラベル入力のサジェストへ配線される�
   await act(async () => {
     await Promise.resolve();
   });
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
-  act(() => {
-    labelInput.focus();
-    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
-  });
+  openLabels();
   const options = Array.from(
     document.querySelectorAll(
-      '[data-testid="task-form-label-suggest"] [role="option"]',
+      '[data-testid="task-form-labels-popover"] [data-testid^="task-form-labels-option-"]',
     ),
   );
   expect(options.map((o) => o.textContent)).toEqual(["bug", "feature"]);
 });
 
-test("getLabels が失敗しても候補なしの従来挙動になる（結合）", async () => {
+test("getLabels が失敗しても popover は開き、新規作成のみ可能になる（結合）", async () => {
   getLabelsMock.mockResolvedValue(Result.err(TauriError.from("読み込み失敗")));
   render({
     columns: COLUMNS,
@@ -626,19 +618,21 @@ test("getLabels が失敗しても候補なしの従来挙動になる（結合�
   await act(async () => {
     await Promise.resolve();
   });
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
-  act(() => {
-    labelInput.focus();
-    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
-  });
+  openLabels();
+  // 候補（既存ラベル option）は無いが popover 自体は開き、検索 + 新規作成は使える。
   expect(
-    document.querySelector('[data-testid="task-form-label-suggest"]'),
+    document.querySelector('[data-testid="task-form-labels-popover"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid^="task-form-labels-option-"]'),
   ).toBeNull();
+  typeLabelSearch("brand-new");
+  expect(
+    document.querySelector('[data-testid="task-form-labels-create"]'),
+  ).toBeTruthy();
 });
 
-test("候補のクリック確定でラベルチップが追加され入力がクリアされる（結合）", async () => {
+test("popover の option クリックでラベルが選択され trigger に表示される（結合）", async () => {
   getLabelsMock.mockResolvedValue(Result.ok({ labels: [{ name: "bug" }] }));
   render({
     columns: COLUMNS,
@@ -649,25 +643,23 @@ test("候補のクリック確定でラベルチップが追加され入力が�
   await act(async () => {
     await Promise.resolve();
   });
-  const labelInput = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
-  act(() => {
-    labelInput.focus();
-    labelInput.dispatchEvent(new Event("focus", { bubbles: true }));
-  });
+  openLabels();
   const option = document.querySelector(
-    '[data-testid="task-form-label-suggest-option-bug"]',
+    '[data-testid="task-form-labels-option-bug"]',
   ) as HTMLButtonElement;
+  expect(option.getAttribute("aria-pressed")).toBe("false");
   act(() => {
-    option.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
-    );
+    option.click();
   });
   expect(
-    document.querySelector('[aria-label="ラベル「bug」を削除"]'),
-  ).toBeTruthy();
-  expect(labelInput.value).toBe("");
+    document
+      .querySelector('[data-testid="task-form-labels-option-bug"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("true");
+  const trigger = document.querySelector(
+    '[data-testid="task-form-labels"]',
+  ) as HTMLButtonElement;
+  expect(trigger.textContent).toContain("bug");
 });
 
 test("onDirtyChange は boolean 反転時のみ呼ばれる（title 3 文字連続入力で true 通知は 1 回）", () => {

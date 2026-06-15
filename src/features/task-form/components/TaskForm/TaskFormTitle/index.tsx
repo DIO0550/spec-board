@@ -36,7 +36,7 @@ export const TaskFormTitle = ({
     <div>
       <label
         htmlFor={titleId}
-        className="mb-1 block text-xs font-medium text-foreground"
+        className="mb-1.5 block text-[11.5px] font-semibold uppercase tracking-wide text-muted"
       >
         タイトル <span className="text-red-600">*</span>
       </label>
@@ -46,9 +46,10 @@ export const TaskFormTitle = ({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        placeholder="例: 検索結果ページのページネーション"
         aria-invalid={hasError}
         aria-describedby={hasError ? titleErrorId : undefined}
-        className="w-full rounded border border-border px-2 py-1 text-sm outline-none focus:border-accent disabled:bg-surface-muted"
+        className="w-full rounded-lg border border-border bg-panel px-3 py-2.5 text-base font-medium text-foreground outline-none placeholder:text-text-dim focus:border-accent disabled:bg-surface-muted"
         data-testid="task-form-title"
       />
       {hasError && (

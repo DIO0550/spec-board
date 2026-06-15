@@ -40,6 +40,7 @@ const baseProps = (
   columns: COLUMNS,
   initialStatus: "Todo",
   existingTasks: [],
+  watchedFileCount: 0,
   onSubmit: vi.fn().mockResolvedValue(undefined),
   onClose: vi.fn(),
   ...overrides,
@@ -54,13 +55,62 @@ const render = (props: Parameters<typeof TaskCreateScreen>[0]) => {
   });
 };
 
-test("左フォームと右プレビューの2ペインが描画される", () => {
+test("左フォームと右プレビューの2ペインが chrome（topbar/subbar/footer）付きで描画される", () => {
   render(baseProps());
   expect(
     document.querySelector('section[aria-label="タスク作成"]'),
   ).toBeTruthy();
   expect(document.querySelector('[data-testid="task-form"]')).toBeTruthy();
   expect(document.querySelector('aside[aria-label="プレビュー"]')).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-topbar-sync"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-subbar-back"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-form-save-meta"]'),
+  ).toBeTruthy();
+});
+
+test("同期バッジに watchedFileCount が「監視 N files」として表示される", () => {
+  render(baseProps({ watchedFileCount: 3 }));
+  expect(
+    document.querySelector('[data-testid="task-topbar-sync"]')?.textContent,
+  ).toContain("監視 3 files");
+});
+
+test("title 未入力では footer に「タイトルを入力してください」が出て作成ボタンが disabled", () => {
+  render(baseProps());
+  expect(
+    document.querySelector('[data-testid="task-form-save-meta"]')?.textContent,
+  ).toContain("タイトルを入力してください");
+  const submit = document.querySelector(
+    '[data-testid="task-form-submit"]',
+  ) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+});
+
+test("title 入力後は footer の save-meta が保存先へ変わり作成ボタンが活性化する", () => {
+  render(baseProps({ projectPath: "/tmp/project" }));
+  const title = document.querySelector(
+    '[data-testid="task-form-title"]',
+  ) as HTMLInputElement;
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(title, "My Task");
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    document.querySelector('[data-testid="task-form-save-meta"]')?.textContent,
+  ).toContain("保存先:");
+  const submit = document.querySelector(
+    '[data-testid="task-form-submit"]',
+  ) as HTMLButtonElement;
+  expect(submit.disabled).toBe(false);
 });
 
 test("parentCandidates 未指定で親フィールドが描画されない", () => {
@@ -89,12 +139,10 @@ test("parentReadOnly=true で親フィールドが readOnly（解除ボタンな
   ).toBeNull();
 });
 
-test("initialStatus が status フィールドに反映される", () => {
+test("initialStatus が status フィールド（select trigger）に反映される", () => {
   render(baseProps({ initialStatus: "Done" }));
-  const checkedChip = document.querySelector(
-    '[data-testid="task-form-status"] [role="radio"][aria-checked="true"]',
-  );
-  expect(checkedChip?.textContent).toBe("Done");
+  const trigger = document.querySelector('[data-testid="task-form-status"]');
+  expect(trigger?.textContent).toContain("Done");
 });
 
 test("projectPath が TaskForm のパスプレビューへ pass-through される", () => {
