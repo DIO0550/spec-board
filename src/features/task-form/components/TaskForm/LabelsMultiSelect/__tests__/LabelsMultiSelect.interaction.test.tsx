@@ -81,6 +81,16 @@ test("未選択時は trigger にプレースホルダ、選択時は chips を�
   expect(trigger().textContent).toContain("docs");
 });
 
+test("trigger の aria-labelledby はラベルと選択済みラベルの両方を参照する", () => {
+  render(baseProps({ selected: ["bug", "docs"] }));
+  const ids = trigger().getAttribute("aria-labelledby")?.split(" ") ?? [];
+  expect(ids.length).toBe(2);
+  const texts = ids.map((id) => document.getElementById(id)?.textContent ?? "");
+  expect(texts.join(" ")).toContain("ラベル");
+  expect(texts.join(" ")).toContain("bug");
+  expect(texts.join(" ")).toContain("docs");
+});
+
 test("trigger は aria-haspopup を持ち、開くと候補 option が並ぶ", () => {
   render(baseProps());
   expect(trigger().getAttribute("aria-haspopup")).toBe("true");

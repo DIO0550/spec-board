@@ -73,6 +73,7 @@ const badgeStyleOf = (
 export const LabelsMultiSelect = (props: LabelsMultiSelectProps) => {
   const baseId = useId();
   const labelId = `${baseId}-label`;
+  const valueId = `${baseId}-value`;
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -179,7 +180,9 @@ export const LabelsMultiSelect = (props: LabelsMultiSelectProps) => {
         type="button"
         aria-haspopup="true"
         aria-expanded={isOpen}
-        aria-labelledby={labelId}
+        // ラベル文言 + 選択済みラベル（または「ラベルを選択…」）の両方をアクセシブルネームに
+        // 含め、現在の選択が SR で読み上げられるようにする。
+        aria-labelledby={`${labelId} ${valueId}`}
         disabled={props.disabled}
         onClick={() => (isOpen ? close() : open())}
         className={`flex min-h-10 w-full max-w-[340px] items-center gap-2 rounded-md border bg-panel px-3 py-2 text-left text-sm hover:border-border-strong disabled:opacity-50 ${
@@ -187,7 +190,10 @@ export const LabelsMultiSelect = (props: LabelsMultiSelectProps) => {
         }`}
         data-testid={props["data-testid"]}
       >
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <span
+          id={valueId}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"
+        >
           {props.selected.length === 0 ? (
             <span className="text-text-dim">ラベルを選択…</span>
           ) : (
