@@ -187,6 +187,34 @@ const normalizeSelection = (
 };
 
 /**
+ * 選択が marker 対でちょうど囲まれているか（トグル解除対象か）を判定する。
+ * 単一文字マーカー（italic `*` / code `` ` ``）は、外側にさらに同じ文字が続く場合
+ * （`**` = bold など別マーカーの一部）を除外する。これにより `**word**` の `word` へ
+ * italic を適用しても bold を剥がさず `***word***` になる。
+ * @param before - 選択より前の全文
+ * @param after - 選択より後の全文
+ * @param marker - 囲みマーカー
+ * @returns ちょうど marker で囲まれていれば true
+ */
+const isInlineWrapped = (
+  before: string,
+  after: string,
+  marker: string,
+): boolean => {
+  if (!before.endsWith(marker) || !after.startsWith(marker)) {
+    return false;
+  }
+  if (marker.length === 1) {
+    const beforeInner = before.slice(0, before.length - marker.length);
+    const afterInner = after.slice(marker.length);
+    if (beforeInner.endsWith(marker) || afterInner.startsWith(marker)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
  * 選択文字列をマーカー対で囲む（bold / italic / code）。
  * 選択が既にマーカー対で囲まれている場合は剥がす（トグル）。
  * @param marker - 囲みマーカー
@@ -203,7 +231,9 @@ const applyInline = (
   const selected = text.slice(selection.start, selection.end);
   const after = text.slice(selection.end);
   // 選択の直前直後が既にマーカーなら剥がす（再適用でトグル解除になる）。
-  if (before.endsWith(marker) && after.startsWith(marker)) {
+  // ただし単一文字マーカー（italic `*` / code `` ` ``）は、外側にさらに同じ文字が続く
+  // 場合（`**`= bold 等）を別マーカーとみなし剥がさない（italic 適用で bold を壊さない）。
+  if (isInlineWrapped(before, after, marker)) {
     return {
       text: `${before.slice(0, before.length - marker.length)}${selected}${after.slice(marker.length)}`,
       selection: {

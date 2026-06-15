@@ -229,6 +229,25 @@ test("code: 既に ` で囲まれた選択で再適用すると剥がれる（�
   expect(result.selection).toEqual({ start: 2, end: 3 });
 });
 
+test("italic: bold(**) で囲まれた選択への italic は bold を剥がさず ***word*** になる", () => {
+  // "**word**" の "word"（start:2, end:6）に italic 適用。
+  const result = MarkdownInsert.apply("italic", "**word**", {
+    start: 2,
+    end: 6,
+  });
+  expect(result.text).toBe("***word***");
+});
+
+test("italic: 素の italic(*word*) への再適用はトグルで剥がれる", () => {
+  const result = MarkdownInsert.apply("italic", "*word*", { start: 1, end: 5 });
+  expect(result.text).toBe("word");
+});
+
+test("bold: **word** への bold 再適用はトグルで剥がれる", () => {
+  const result = MarkdownInsert.apply("bold", "**word**", { start: 2, end: 6 });
+  expect(result.text).toBe("word");
+});
+
 test("link: 選択文字列を [選択]() に変換し、カーソルを () の内側へ移す", () => {
   const result = MarkdownInsert.apply("link", "see docs here", {
     start: 4,
