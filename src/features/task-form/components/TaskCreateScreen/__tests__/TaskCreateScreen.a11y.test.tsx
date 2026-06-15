@@ -132,8 +132,11 @@ test("ステータス/優先度が listbox 開閉ボタン（aria-haspopup=listb
   const priority = document.querySelector('[data-testid="task-form-priority"]');
   expect(status?.getAttribute("aria-haspopup")).toBe("listbox");
   expect(priority?.getAttribute("aria-haspopup")).toBe("listbox");
-  const statusLabelId = status?.getAttribute("aria-labelledby");
-  const priorityLabelId = priority?.getAttribute("aria-labelledby");
+  // aria-labelledby は「ラベル id + 選択値 id」の 2 トークン。先頭がラベル要素。
+  const statusLabelId = status?.getAttribute("aria-labelledby")?.split(" ")[0];
+  const priorityLabelId = priority
+    ?.getAttribute("aria-labelledby")
+    ?.split(" ")[0];
   expect(document.getElementById(statusLabelId ?? "")?.textContent).toContain(
     "ステータス",
   );
@@ -142,13 +145,13 @@ test("ステータス/優先度が listbox 開閉ボタン（aria-haspopup=listb
   );
 });
 
-test("ラベル入力が combobox として aria-expanded を持つ", () => {
+test("ラベルの popover trigger が aria-haspopup / aria-expanded を持つ", () => {
   render(baseProps());
-  const input = document.querySelector(
-    '[data-testid="task-form-label-input"]',
-  ) as HTMLInputElement;
-  expect(input.getAttribute("role")).toBe("combobox");
-  expect(input.getAttribute("aria-expanded")).toBe("false");
+  const trigger = document.querySelector(
+    '[data-testid="task-form-labels"]',
+  ) as HTMLButtonElement;
+  expect(trigger.getAttribute("aria-haspopup")).toBe("true");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
 
 test("Markdown ツールバーが role=toolbar と各ボタンの aria-label を持つ", () => {

@@ -63,7 +63,7 @@ test("全フィールドが表示される", () => {
     document.querySelector('[data-testid="task-form-priority"]'),
   ).toBeTruthy();
   expect(
-    document.querySelector('[data-testid="task-form-label-input"]'),
+    document.querySelector('[data-testid="task-form-labels"]'),
   ).toBeTruthy();
   expect(document.querySelector('[data-testid="task-form-body"]')).toBeTruthy();
   expect(

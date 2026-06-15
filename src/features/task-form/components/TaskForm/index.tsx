@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { useEffect, useId, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Button } from "@/components/Button";
 import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
@@ -16,15 +16,13 @@ import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import { LabelsMultiSelect } from "./LabelsMultiSelect";
 import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
 import { TaskFormDraft } from "./TaskFormDraft";
 import { TaskFormDue } from "./TaskFormDue";
 import { TaskFormFileName } from "./TaskFormFileName";
-import { TaskFormLabels } from "./TaskFormLabels";
-import { LabelChip } from "./TaskFormLabels/LabelChip";
-import { LabelInput } from "./TaskFormLabels/LabelInput";
 import { TaskFormLinks } from "./TaskFormLinks";
 import { TaskFormParent } from "./TaskFormParent";
 import { TaskFormPriority } from "./TaskFormPriority";
@@ -121,17 +119,22 @@ export const TaskForm = ({
   onPathPreviewChange,
   renderActionsInline = true,
 }: TaskFormProps) => {
-  const labelsInputId = `${useId()}-labels`;
   const labels = useLabelsInput();
-  // ラベルマスタ由来のサジェスト候補。loading / error 時は候補なし（従来の自由入力のみ）。
+  // ラベルマスタ由来のサジェスト候補（name + 色）。loading / error 時は候補なし
+  //（その場合は popover 内での新規作成のみ可能）。
   const labelList = useLabelList();
-  const labelSuggestions = useMemo(() => {
-    if (labelList.kind !== "loaded") {
-      return [];
+  const labelDefinitions = useMemo(
+    () => (labelList.kind === "loaded" ? labelList.labels : []),
+    [labelList],
+  );
+  // 選択トグル: 未選択なら commitValue で追加、選択済みなら remove で解除する。
+  const toggleLabel = (label: string) => {
+    if (labels.state.labels.includes(label)) {
+      labels.dispatch({ type: "remove", label });
+      return;
     }
-    const names = labelList.labels.map((label) => label.name);
-    return LabelsField.suggestionsFor(labels.state, names);
-  }, [labelList, labels.state]);
+    labels.dispatch({ type: "commitValue", value: label });
+  };
   // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
   const links = useLinksInput();
   const fields = useTaskFormFields({
@@ -295,28 +298,14 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "priority", value })}
         disabled={isSubmitting}
       />
-      <TaskFormLabels htmlFor={labelsInputId}>
-        {labels.state.labels.map((label) => (
-          <LabelChip
-            key={label}
-            label={label}
-            onRemove={() => labels.dispatch({ type: "remove", label })}
-            disabled={isSubmitting}
-          />
-        ))}
-        <LabelInput
-          id={labelsInputId}
-          value={labels.state.labelInput}
-          onChange={(value) => labels.dispatch({ type: "setInput", value })}
-          onKeyDown={labels.commitOnEnter}
-          onBlur={() => labels.dispatch({ type: "commit" })}
-          disabled={isSubmitting}
-          candidates={labelSuggestions}
-          onSelect={(label) =>
-            labels.dispatch({ type: "commitValue", value: label })
-          }
-        />
-      </TaskFormLabels>
+      <LabelsMultiSelect
+        label="ラベル"
+        selected={labels.state.labels}
+        suggestions={labelDefinitions}
+        onToggle={toggleLabel}
+        disabled={isSubmitting}
+        data-testid="task-form-labels"
+      />
       <div className="mt-3 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
         <span>関連</span>
         <span className="h-px flex-1 bg-border" />
