@@ -61,6 +61,15 @@ test("初期値が trigger に label + swatch で表示される", () => {
   expect(trigger().querySelector("span[style]")).toBeTruthy();
 });
 
+test("trigger の aria-labelledby はラベルと現在の選択値の両方を参照する", () => {
+  render(baseProps({ value: "Doing" }));
+  const ids = trigger().getAttribute("aria-labelledby")?.split(" ") ?? [];
+  expect(ids.length).toBe(2);
+  const texts = ids.map((id) => document.getElementById(id)?.textContent ?? "");
+  expect(texts.join(" ")).toContain("ステータス");
+  expect(texts.join(" ")).toContain("Doing");
+});
+
 test("trigger は aria-haspopup=listbox を持ち、開くと listbox / option の role 構造になる", () => {
   render(baseProps());
   expect(trigger().getAttribute("aria-haspopup")).toBe("listbox");

@@ -91,3 +91,15 @@ test("drag していない状態の pointermove では onWidthChange が呼ば�
   dispatchPointer(handle(), "pointermove", 700);
   expect(onWidthChange).not.toHaveBeenCalled();
 });
+
+test("drag 中に unmount されても body の resizing-x が残らない", () => {
+  const onWidthChange = vi.fn();
+  render(onWidthChange);
+  dispatchPointer(handle(), "pointerdown", 600);
+  expect(document.body.classList.contains("resizing-x")).toBe(true);
+  act(() => {
+    root?.unmount();
+  });
+  root = null;
+  expect(document.body.classList.contains("resizing-x")).toBe(false);
+});

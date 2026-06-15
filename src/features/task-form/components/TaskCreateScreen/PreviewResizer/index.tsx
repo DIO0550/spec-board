@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { computePreviewWidth } from "@/features/task-form/lib/computePreviewWidth";
 
 type PreviewResizerProps = {
@@ -28,6 +28,15 @@ const RESIZING_CLASS = "resizing-x";
  */
 export const PreviewResizer = (props: PreviewResizerProps) => {
   const draggingRef = useRef(false);
+
+  // ドラッグ中に unmount された場合（画面遷移など）に pointerup が来ず resizing-x が
+  // body へ残留するのを防ぐため、unmount 時に必ず drag 状態とクラスを解除する。
+  useEffect(() => {
+    return () => {
+      draggingRef.current = false;
+      document.body.classList.remove(RESIZING_CLASS);
+    };
+  }, []);
 
   const endDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (!draggingRef.current) {

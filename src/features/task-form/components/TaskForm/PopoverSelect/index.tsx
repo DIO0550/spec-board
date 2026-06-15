@@ -89,6 +89,7 @@ const SelectedDisplay = ({
 export const PopoverSelect = (props: PopoverSelectProps) => {
   const baseId = useId();
   const labelId = `${baseId}-label`;
+  const valueId = `${baseId}-value`;
   const listboxId = `${baseId}-listbox`;
   const containerRef = useRef<HTMLDivElement>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
@@ -126,6 +127,18 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
       listboxRef.current?.focus();
     }
   }, [isOpen]);
+
+  // active option をビューポート内へスクロールする（選択肢が多いとき highlight が
+  // 見えない位置に移動しないように）。block:"nearest" で最小限のスクロールに留める。
+  useEffect(() => {
+    if (!isOpen || activeIndex === NO_ACTIVE) {
+      return;
+    }
+    const active = document.getElementById(
+      `${listboxId}-option-${activeIndex}`,
+    );
+    active?.scrollIntoView({ block: "nearest" });
+  }, [isOpen, activeIndex, listboxId]);
 
   // 開いている間だけ capture フェーズで Escape を捕捉し、親画面の Esc 破棄確認へ
   // 伝播させない（閉じている間はリスナーを張らないため親の Esc は通常どおり動く）。
@@ -215,7 +228,9 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
         type="button"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        aria-labelledby={labelId}
+        // ラベル文言 + 現在の選択値の両方をアクセシブルネームに含める
+        // （選択値が SR に読み上げられるようにする）。
+        aria-labelledby={`${labelId} ${valueId}`}
         disabled={props.disabled}
         onClick={() => (isOpen ? close() : open())}
         onKeyDown={handleTriggerKeyDown}
@@ -224,7 +239,9 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
         }`}
         data-testid={props["data-testid"]}
       >
-        <SelectedDisplay option={selectedOption} />
+        <span id={valueId} className="inline-flex min-w-0 items-center">
+          <SelectedDisplay option={selectedOption} />
+        </span>
         <span aria-hidden="true" className="ml-auto shrink-0 text-text-dim">
           ▾
         </span>

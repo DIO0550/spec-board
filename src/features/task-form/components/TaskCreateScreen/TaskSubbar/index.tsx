@@ -34,7 +34,7 @@ export const TaskSubbar = (props: TaskSubbarProps) => {
       </span>
       <span className="ml-auto text-[11.5px] text-text-dim">
         <span className="rounded border border-border bg-bg px-1.5 py-px font-mono text-[10.5px] text-muted">
-          ⌘
+          ⌘ / Ctrl
         </span>{" "}
         +{" "}
         <span className="rounded border border-border bg-bg px-1.5 py-px font-mono text-[10.5px] text-muted">

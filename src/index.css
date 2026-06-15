@@ -100,6 +100,16 @@
 	}
 }
 
+/* プレビュー幅リサイザのドラッグ中、カーソルを col-resize に固定しテキスト選択を抑止する
+   （PreviewResizer が drag 中に body へ付与する）。 */
+body.resizing-x {
+	cursor: col-resize;
+}
+body.resizing-x * {
+	-webkit-user-select: none;
+	user-select: none;
+}
+
 @keyframes slide-in {
 	from {
 		transform: translateX(100%);
