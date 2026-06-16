@@ -229,8 +229,12 @@ export const LabelRegistry = {
 
   /**
    * 現在のタスク集合からラベル名ごとの使用数を算出する（`Milestone.usageCounts` と対称）。
-   * BE `TaskIndex::label_usage_counts` と同セマンティクス: タスク内の重複ラベルは 1 件に排除し、
-   * 空文字ラベルは数えない。BE のスナップショットと異なり live なタスク集合から毎回計算する。
+   *
+   * BE `TaskIndex::label_usage_counts` と概ね対応するが、空文字ラベルの扱いは異なる:
+   * BE は frontmatter 由来の空文字ラベルも 1 件として計上する一方、本実装は UI で
+   * 意味を持たない空文字をフィルタする。タスク内の重複ラベルは双方とも 1 件に排除する。
+   * BE のスナップショットと異なり live なタスク集合から毎回計算する。
+   *
    * @param tasks - 現在のタスク一覧（各 task は `labels: string[]` を持つ）
    * @returns ラベル名 → 使用タスク件数
    */
