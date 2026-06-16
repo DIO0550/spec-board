@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { getLabels } from "@/lib/tauri";
 import { Result } from "@/utils/result";
@@ -26,12 +27,23 @@ const milestonesResource: MilestonesResource = {
   reload: vi.fn(async () => {}),
 };
 
+// ラベルリソースも App から共有される前提（settings → labels タブへ配る）。
+const labelsResource: LabelsResource = {
+  labels: [],
+  usageCounts: {},
+  byName: new Map(),
+  status: "loaded",
+  reload: vi.fn(async () => {}),
+};
+
+const noopUsageClick = (_name: string): void => {};
+
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
 
 beforeEach(() => {
   getLabelsMock.mockReset();
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
 });
 
 afterEach(() => {
@@ -52,7 +64,11 @@ const mountSettingsScreen = async () => {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      createElement(SettingsScreen, { milestones: milestonesResource }),
+      createElement(SettingsScreen, {
+        labels: labelsResource,
+        milestones: milestonesResource,
+        onLabelUsageClick: noopUsageClick,
+      }),
     );
   });
   await act(async () => {

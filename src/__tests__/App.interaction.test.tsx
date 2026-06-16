@@ -105,7 +105,7 @@ beforeEach(() => {
   });
   getLabelsMock.mockReset();
   // 設定画面のラベルタブが getLabels を読むため、既定で空一覧を返す。
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
   createTaskMock.mockReset();
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
