@@ -451,6 +451,33 @@ test("group / color / description の空白のみ入力は undefined に正規�
   });
 });
 
+test("HEX 入力欄に # 付き 7 文字をペーストしても末尾欠落なく 6 桁全てが取り込まれる", async () => {
+  noopReload.mockClear();
+  createMock.mockResolvedValue(Result.ok(undefined));
+  render(baseResource({ labels: [] }));
+  const nameInput = container?.querySelector(
+    'input[placeholder="needs-design"]',
+  ) as HTMLInputElement;
+  typeInto(nameInput, "with-color");
+  const hexInput = container?.querySelector(
+    'input[placeholder="7860b5"]',
+  ) as HTMLInputElement;
+  // ブラウザの maxLength 切り詰めを通過した最終文字列を typeInto で再現する。
+  // maxLength=7 なら "#7860b5"（7 文字）全てが onChange に届く前提。
+  typeInto(hexInput, "#7860b5");
+  const form = container?.querySelector("form") as HTMLFormElement;
+  await act(async () => {
+    submitForm(form);
+    await Promise.resolve();
+  });
+  expect(createMock).toHaveBeenCalledWith({
+    name: "with-color",
+    description: undefined,
+    group: undefined,
+    color: "#7860b5",
+  });
+});
+
 test("名前が空白のみのときは送信ボタンが disabled になる（trim ベース判定）", () => {
   render(baseResource({ labels: [] }));
   const nameInput = container?.querySelector(

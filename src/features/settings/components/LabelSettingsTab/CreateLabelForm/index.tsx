@@ -193,11 +193,13 @@ export const CreateLabelForm = ({
               id={hexId}
               value={values.color.replace(/^#/, "")}
               onChange={(e) => {
-                const body = e.target.value.replace(/^#/, "");
+                // # 付き 7 文字のペーストを許容するため maxLength=7。
+                // onChange で先頭 # を strip し、本体 6 桁を `#${body}` で保存する。
                 // 空入力は color クリア（PUT で undefined 化）を残すため "" を保持する。
+                const body = e.target.value.replace(/^#/, "");
                 onChange("color", body === "" ? "" : `#${body}`);
               }}
-              maxLength={6}
+              maxLength={7}
               spellCheck={false}
               autoComplete="off"
               className="w-[78px] border-none bg-transparent p-0 font-mono text-sm tracking-wide outline-none"
