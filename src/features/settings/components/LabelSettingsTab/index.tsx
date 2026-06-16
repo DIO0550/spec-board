@@ -1,64 +1,265 @@
-import type { CSSProperties } from "react";
-import { LabelRegistry } from "@/domains/label-registry";
-import { useLabelList } from "@/hooks/useLabelList";
-import type { LabelDefinition } from "@/lib/tauri";
+import { useMemo, useState } from "react";
+import {
+  filterLabels,
+  type LabelGroupFilter,
+  type LabelSort,
+  labelColorTally,
+  labelGroupCounts,
+  labelStats,
+  sortLabels,
+} from "@/features/settings/lib/labelSettings/derive";
+import type { LabelsResource } from "@/hooks/useLabels";
+import {
+  type CreateLabelArgs,
+  exportLabels,
+  type LabelDefinition,
+  saveFileDialog,
+} from "@/lib/tauri";
+import { getToastSink } from "@/lib/tauri/toastSink";
+import { useLabelMutations } from "../../hooks/useLabelMutations";
+import {
+  CreateLabelForm,
+  EMPTY_LABEL_FORM,
+  type LabelFormValues,
+} from "./CreateLabelForm";
+import { LabelFilterBar } from "./LabelFilterBar";
+import { LabelFooterTally } from "./LabelFooterTally";
+import { LabelStatsHeader } from "./LabelStatsHeader";
+import { LabelTable } from "./LabelTable";
 
 /**
- * ラベル 1 件のスワッチに適用する色スタイルを解決する。
- * 優先順位は color（マスタ定義色） → group（明示グループ） → name（prefix 由来）。
- * color がある場合はその単色を背景に使い、無い場合は LabelRegistry の
- * グループトークン（fg/bg/bd）を適用する。CSS 変数は作らずインライン style に束ねる。
- * group は「定義されているか」で判定する（空文字も定義済みとして tokensForGroup に渡し、
- * 既定色へ正規化させる）。未定義のときだけ name prefix からグループを導出する。
- * @param label - ラベルマスタ定義 1 件
- * @returns スワッチ要素へ束ねるインライン style
+ * ラベル定義 → フォーム初期値。
+ * @param def - ラベル定義
+ * @returns フォーム値
  */
-const resolveSwatchStyle = (label: LabelDefinition): CSSProperties => {
-  if (label.color) {
-    return { backgroundColor: label.color };
-  }
-  const tokens =
-    label.group !== undefined
-      ? LabelRegistry.tokensForGroup(label.group)
-      : LabelRegistry.tokensForLabel(label.name);
-  return {
-    color: tokens.fg,
-    backgroundColor: tokens.bg,
-    borderColor: tokens.bd,
-  };
+const toForm = (def: LabelDefinition): LabelFormValues => ({
+  name: def.name,
+  description: def.description ?? "",
+  group: def.group ?? "",
+  color: def.color ?? "",
+});
+
+/**
+ * フォーム入力値を CreateLabelArgs に正規化する。空文字は undefined に倒し、
+ * BE が group/color を skip_serializing_if で省略 / lenient 既定色化できるようにする。
+ * @param values - フォーム入力値
+ * @returns 送信用 args
+ */
+const toArgs = (values: LabelFormValues): CreateLabelArgs => ({
+  name: values.name.trim(),
+  description: values.description === "" ? undefined : values.description,
+  group: values.group === "" ? undefined : values.group,
+  color: values.color === "" ? undefined : values.color,
+});
+
+type LabelSettingsTabProps = {
+  /** App / SettingsScreen から配られるラベルリソース（唯一の取得点・live usageCounts 上書き済み） */
+  resource: LabelsResource;
+  /**
+   * 使用数クリックで board へ遷移しラベル絞り込みを適用するためのコールバック。
+   * @param labelName - クリックされたラベル名
+   */
+  onLabelUsageClick: (labelName: string) => void;
 };
 
 /**
- * ラベルレジストリの読み取り専用一覧タブ。
- * 取得は useLabelList に委譲し、本体は取得状態に応じた描画のみ行う。
- * 各ラベルは color → group → name の優先順位で色を解決し、
- * CSS 変数を作らずインライン style にバインドしてプレビューする。
- * @returns ラベル一覧パネル
+ * ラベル管理タブ（CRUD + フィルタ + ソート + 統計 + エクスポート + 使用数リンク）。
+ * 一覧は楽観更新せず、mutation 成功後に `resource.reload` で確定する。取得は
+ * `useLabels`（resource）に委譲し、本コンポーネントは独自に getLabels を呼ばない。
+ * 削除確認は `globalThis.confirm` を使い、使用数 0 / >0 で文言を分岐させる。
+ * @param props - {@link LabelSettingsTabProps}
+ * @returns ラベル管理パネル
  */
-export const LabelSettingsTab = () => {
-  const state = useLabelList();
+export const LabelSettingsTab = ({
+  resource,
+  onLabelUsageClick,
+}: LabelSettingsTabProps) => {
+  const { labels, usageCounts, status, reload } = resource;
+  const { isPending, create, update, remove } = useLabelMutations(reload);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [form, setForm] = useState<LabelFormValues>(EMPTY_LABEL_FORM);
+  const [keyword, setKeyword] = useState("");
+  const [groupFilter, setGroupFilter] = useState<LabelGroupFilter>({
+    kind: "all",
+  });
+  const [sort, setSort] = useState<LabelSort>("name");
 
-  if (state.kind === "loading") {
+  const filtered = useMemo(
+    () => filterLabels(labels, keyword, groupFilter),
+    [labels, keyword, groupFilter],
+  );
+  const sorted = useMemo(
+    () => sortLabels(filtered, sort, usageCounts),
+    [filtered, sort, usageCounts],
+  );
+  const stats = useMemo(
+    () => labelStats(labels, usageCounts),
+    [labels, usageCounts],
+  );
+  const groupCounts = useMemo(() => labelGroupCounts(labels), [labels]);
+  const colorTally = useMemo(
+    () => labelColorTally(labels, usageCounts),
+    [labels, usageCounts],
+  );
+  // 相対時刻表示の基準時刻を 1 回だけ生成し、全行へ流す。`labels` が入れ替わった
+  // タイミングで作り直して「数秒〜分単位で古い相対時刻」が残るのを避ける。labels が
+  // 同一参照を保つ限り基準は固定で、フォーム入力の度に再生成しない（labels への参照は
+  // 「labels が変わった時だけ再生成する」意図を biome へ伝えるためのもの）。
+  const now = useMemo(() => {
+    void labels;
+    return new Date();
+  }, [labels]);
+
+  /**
+   * フォームのフィールドを更新する。
+   * @param key - 更新するフィールド名
+   * @param value - 新しい値
+   */
+  const setField = (key: keyof LabelFormValues, value: string): void => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  /** フォームを新規モードへリセットする。 */
+  const resetForm = (): void => {
+    setEditingName(null);
+    setForm(EMPTY_LABEL_FORM);
+  };
+
+  /**
+   * 編集モードへ切り替える。
+   * @param def - 編集対象のラベル定義
+   */
+  const startEdit = (def: LabelDefinition): void => {
+    setEditingName(def.name);
+    setForm(toForm(def));
+  };
+
+  /** フォーム送信（新規作成 or 更新）。成功時はフォームをリセットする。 */
+  const handleSubmit = async (): Promise<void> => {
+    const args = toArgs(form);
+    if (args.name === "") {
+      return;
+    }
+    if (editingName === null) {
+      const created = await create(args);
+      if (created) {
+        resetForm();
+      }
+      return;
+    }
+    // 更新は PUT セマンティクスで「未指定フィールドはクリア」される。`toArgs` が空文字を
+    // undefined に倒すため、ユーザーがフォームを空欄にしたまま送信すると、そのフィールドの
+    // 既存値（description / group / color）はクリアされる挙動になる（UI で削除を表現する経路）。
+    // UI で全フィールド編集可なため、form 値をそのまま送って良い（name は固定）。
+    const updated = await update({ ...args, name: editingName });
+    if (updated) {
+      resetForm();
+    }
+  };
+
+  /**
+   * 削除確認 → mutation 実行。編集中対象なら resetForm へ戻す。
+   * @param name - 削除対象 name
+   */
+  const handleDelete = async (name: string): Promise<void> => {
+    const count = usageCounts[name] ?? 0;
+    const message =
+      count > 0
+        ? `「${name}」は ${count} 件のタスクで使用中です。削除しますか？（タスクの値は残ります）`
+        : `「${name}」を削除しますか？`;
+    if (!globalThis.confirm(message)) {
+      return;
+    }
+    await remove(name);
+    if (editingName === name) {
+      resetForm();
+    }
+  };
+
+  /**
+   * エクスポート（save ダイアログ → exportLabels invoke）。
+   * 失敗 3 系統: (1) save() 例外は invoke allowlist 外で共通トーストが拾わないため、
+   * ここで明示的に sink へトーストを上げて中断する（サイレント失敗を防ぐ）。
+   * (2) ユーザーキャンセル(null) は no-op。
+   * (3) BE export_labels 失敗は invoke allowlist 内で共通トーストが発火するため
+   * 本関数では別途処理しない。
+   */
+  const handleExport = async (): Promise<void> => {
+    const picked = await saveFileDialog({
+      defaultPath: "labels.yml",
+      filters: [{ name: "YAML", extensions: ["yml", "yaml"] }],
+    });
+    if (!picked.ok) {
+      const sink = getToastSink();
+      if (sink !== null) {
+        sink(
+          `ラベルのエクスポートに失敗しました: ${picked.error.message}`,
+          "error",
+        );
+      }
+      return;
+    }
+    if (picked.value === null) {
+      return;
+    }
+    await exportLabels({ path: picked.value });
+  };
+
+  if (status === "loading" || status === "idle") {
     return <p className="text-sm text-muted">読み込み中…</p>;
   }
-  if (state.kind === "error") {
+  if (status === "error") {
     return <p className="text-sm text-muted">ラベルを読み込めませんでした</p>;
   }
-  if (state.labels.length === 0) {
-    return <p className="text-sm text-muted">ラベルなし</p>;
-  }
+
   return (
-    <ul className="flex flex-wrap gap-2">
-      {state.labels.map((label) => (
-        <li key={label.name}>
-          <span
-            className="inline-flex items-center rounded border px-1.5 py-0.5 text-xs"
-            style={resolveSwatchStyle(label)}
-          >
-            {label.name}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-4">
+      <LabelStatsHeader
+        total={stats.total}
+        used={stats.used}
+        unused={stats.unused}
+        isExportDisabled={isPending}
+        onExport={() => {
+          void handleExport();
+        }}
+      />
+      <CreateLabelForm
+        values={form}
+        editingName={editingName}
+        isPending={isPending}
+        groupOptions={groupCounts.groups.map((g) => g.group)}
+        onChange={setField}
+        onReset={resetForm}
+        onSubmit={() => {
+          void handleSubmit();
+        }}
+      />
+      <LabelFilterBar
+        totalCount={groupCounts.all}
+        groupOptions={groupCounts.groups}
+        groupFilter={groupFilter}
+        keyword={keyword}
+        sort={sort}
+        onGroupChange={setGroupFilter}
+        onKeywordChange={setKeyword}
+        onSortChange={setSort}
+      />
+      <LabelTable
+        labels={sorted}
+        usageCounts={usageCounts}
+        isPending={isPending}
+        now={now}
+        onUsageClick={onLabelUsageClick}
+        onEdit={startEdit}
+        onDelete={(name) => {
+          void handleDelete(name);
+        }}
+      />
+      <LabelFooterTally
+        shown={sorted.length}
+        total={labels.length}
+        colorTally={colorTally}
+      />
+    </div>
   );
 };
