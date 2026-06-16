@@ -35,7 +35,11 @@ export const formatRelativeTime = (
     return iso;
   }
   const diff = now.getTime() - target.getTime();
-  // 未来の時刻 / ごく直近は「たった今」に丸める（小さな時計ずれを吸収）。
+  // 1 分以上先の未来は時計ずれでは説明できない異常値として扱い、日付表記で
+  // 隠さず提示する。許容範囲（過去 1 分以内 + 同程度の時計ずれ）は「たった今」に丸める。
+  if (diff < -MS_PER_MINUTE) {
+    return toYmd(target);
+  }
   if (diff < MS_PER_MINUTE) {
     return "たった今";
   }

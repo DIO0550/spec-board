@@ -51,3 +51,18 @@ test("未来の時刻も『たった今』として扱う（小さな時計ず�
   const iso = new Date(NOW.getTime() + 10_000).toISOString();
   expect(formatRelativeTime(iso, NOW)).toBe("たった今");
 });
+
+test("許容時計ずれ（1 分）を超える未来は YYYY/MM/DD 表記へフォールバック", () => {
+  // 2 分先の未来 → 時計ずれの範囲を超えているので「たった今」では隠さない
+  const minutesAhead = new Date(NOW.getTime() + 2 * 60_000).toISOString();
+  expect(formatRelativeTime(minutesAhead, NOW)).not.toBe("たった今");
+  // 数日先 / 数年先も日付表記で返ること
+  const daysAhead = new Date(NOW.getTime() + 5 * 24 * 60 * 60 * 1000);
+  expect(formatRelativeTime(daysAhead.toISOString(), NOW)).toMatch(
+    /^\d{4}\/\d{2}\/\d{2}$/,
+  );
+  const yearsAhead = new Date(NOW.getTime() + 365 * 24 * 60 * 60 * 1000 * 3);
+  expect(formatRelativeTime(yearsAhead.toISOString(), NOW)).toMatch(
+    /^\d{4}\/\d{2}\/\d{2}$/,
+  );
+});
