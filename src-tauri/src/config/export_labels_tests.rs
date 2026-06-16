@@ -101,3 +101,23 @@ fn empty_path_check_runs_before_state_lookup() {
     let err = export_labels_impl(&state, &args("")).expect_err("empty rejected");
     assert!(matches!(err, ExportLabelsError::EmptyPath));
 }
+
+#[test]
+fn whitespace_only_path_is_rejected() {
+    // 空白のみの path は trim 後に空文字となるため EmptyPath で弾かれる。
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), LabelRegistry::default());
+    let err = export_labels_impl(&state, &args("   \t  ")).expect_err("whitespace rejected");
+    assert!(matches!(err, ExportLabelsError::EmptyPath));
+}
+
+#[test]
+fn path_with_surrounding_whitespace_is_trimmed_before_write() {
+    // 前後に空白を含むパスは trim 済みのパスへ書き込まれる。
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), LabelRegistry::default());
+    let target = tmp.path().join("trimmed.yml");
+    let padded = format!("  {}  ", target.to_str().unwrap());
+    export_labels_impl(&state, &args(&padded)).expect("export ok");
+    assert!(target.exists(), "trim 済みパスにファイルが作られる");
+}

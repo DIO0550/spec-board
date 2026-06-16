@@ -104,14 +104,18 @@ pub(crate) fn export_labels_impl(
     state: &AppState,
     args: &ExportLabelsArgs,
 ) -> Result<(), ExportLabelsError> {
-    if args.path.is_empty() {
+    // 防御的に trim ベースで空判定する（FE は通常 save ダイアログ経由だが、
+    // 不正な空白のみパスが直接 invoke された場合に意図しないパスへ write しない）。
+    // write も trim 済みパスで行うため、前後空白を含んだまま OS へ渡らない。
+    let path = args.path.trim();
+    if path.is_empty() {
         return Err(ExportLabelsError::EmptyPath);
     }
     // read-only 取得（get_labels_impl と同形）。export は書込でないため
     // delete のような snapshot / lock preflight は不要。
     let registry = state.labels()?.ok_or(ExportLabelsError::NoProjectOpen)?;
     let yaml = serde_yaml_ng::to_string(&registry).map_err(ExportLabelsError::Serialize)?;
-    std::fs::write(&args.path, yaml).map_err(ExportLabelsError::Write)?;
+    std::fs::write(path, yaml).map_err(ExportLabelsError::Write)?;
     Ok(())
 }
 
