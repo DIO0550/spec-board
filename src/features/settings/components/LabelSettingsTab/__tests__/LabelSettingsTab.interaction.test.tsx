@@ -323,6 +323,42 @@ test("エクスポート: save() 例外時は exportLabels 非呼び出し", asy
   expect(exportMock).not.toHaveBeenCalled();
 });
 
+test("エクスポート: in-flight 中の連打は無視され save / exportLabels は 1 回ずつしか呼ばれない", async () => {
+  let resolveSave: ((value: Result<string | null, TauriError>) => void) | null =
+    null;
+  saveMock.mockReturnValue(
+    new Promise<Result<string | null, TauriError>>((resolve) => {
+      resolveSave = resolve;
+    }),
+  );
+  exportMock.mockResolvedValue(Result.ok(undefined));
+  render(baseResource());
+  const allButtons = Array.from(
+    container?.querySelectorAll("button[type=button]") ?? [],
+  ) as HTMLButtonElement[];
+  const target = allButtons.find((b) =>
+    b.textContent?.includes("エクスポート"),
+  ) as HTMLButtonElement;
+  // 1 回目クリック → save は pending のまま
+  await act(async () => {
+    click(target);
+    await Promise.resolve();
+  });
+  // 2 回目クリック（連打）→ ref ガードで即時に弾かれる
+  await act(async () => {
+    click(target);
+    await Promise.resolve();
+  });
+  expect(saveMock).toHaveBeenCalledTimes(1);
+  // 1 回目の save を解決させて invoke まで進める
+  await act(async () => {
+    resolveSave?.(Result.ok("/tmp/labels.yml"));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(exportMock).toHaveBeenCalledTimes(1);
+});
+
 test("プリセット選択で color 入力欄が更新される", () => {
   render(baseResource({ labels: [] }));
   const presetBtn = container?.querySelector(

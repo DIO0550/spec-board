@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   filterLabels,
   type LabelGroupFilter,
@@ -85,6 +85,10 @@ export const LabelSettingsTab = ({
   const { isPending, create, update, remove } = useLabelMutations(reload);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [form, setForm] = useState<LabelFormValues>(EMPTY_LABEL_FORM);
+  // export 専用の in-flight ガード。state は disabled 表示用、ref は連打レース防止用
+  // （state 反映前の click でも ref で即時ガードされる）。
+  const [isExporting, setIsExporting] = useState(false);
+  const isExportingRef = useRef(false);
   const [keyword, setKeyword] = useState("");
   const [groupFilter, setGroupFilter] = useState<LabelGroupFilter>({
     kind: "all",
@@ -192,24 +196,36 @@ export const LabelSettingsTab = ({
    * 本関数では別途処理しない。
    */
   const handleExport = async (): Promise<void> => {
-    const picked = await saveFileDialog({
-      defaultPath: "labels.yml",
-      filters: [{ name: "YAML", extensions: ["yml", "yaml"] }],
-    });
-    if (!picked.ok) {
-      const sink = getToastSink();
-      if (sink !== null) {
-        sink(
-          `ラベルのエクスポートに失敗しました: ${picked.error.message}`,
-          "error",
-        );
+    // 連打ガード: state 反映前の click でも ref で即時に弾く。
+    if (isExportingRef.current) {
+      return;
+    }
+    isExportingRef.current = true;
+    setIsExporting(true);
+    try {
+      const picked = await saveFileDialog({
+        defaultPath: "labels.yml",
+        filters: [{ name: "YAML", extensions: ["yml", "yaml"] }],
+      });
+      if (!picked.ok) {
+        const sink = getToastSink();
+        if (sink !== null) {
+          sink(
+            `ラベルのエクスポートに失敗しました: ${picked.error.message}`,
+            "error",
+          );
+        }
+        return;
       }
-      return;
+      if (picked.value === null) {
+        return;
+      }
+      await exportLabels({ path: picked.value });
+    } finally {
+      // ガード解除は ref と state の両方を必ず戻す。
+      isExportingRef.current = false;
+      setIsExporting(false);
     }
-    if (picked.value === null) {
-      return;
-    }
-    await exportLabels({ path: picked.value });
   };
 
   if (status === "idle") {
@@ -232,7 +248,7 @@ export const LabelSettingsTab = ({
         total={stats.total}
         used={stats.used}
         unused={stats.unused}
-        isExportDisabled={isPending}
+        isExportDisabled={isPending || isExporting}
         onExport={() => {
           void handleExport();
         }}
