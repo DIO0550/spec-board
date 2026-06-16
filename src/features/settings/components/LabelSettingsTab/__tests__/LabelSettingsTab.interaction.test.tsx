@@ -450,3 +450,15 @@ test("group / color / description の空白のみ入力は undefined に正規�
     color: undefined,
   });
 });
+
+test("名前が空白のみのときは送信ボタンが disabled になる（trim ベース判定）", () => {
+  render(baseResource({ labels: [] }));
+  const nameInput = container?.querySelector(
+    'input[placeholder="needs-design"]',
+  ) as HTMLInputElement;
+  typeInto(nameInput, "   ");
+  const submit = Array.from(
+    container?.querySelectorAll('button[type="submit"]') ?? [],
+  )[0] as HTMLButtonElement | undefined;
+  expect(submit?.disabled).toBe(true);
+});

@@ -234,7 +234,9 @@ export const CreateLabelForm = ({
           </button>
           <button
             type="submit"
-            disabled={values.name === "" || isPending}
+            // 親側 toArgs が name を trim して空判定するため、disabled も trim ベースに
+            // 揃える。空白のみ入力でボタンが有効化され、送信しても no-op になるのを防ぐ。
+            disabled={values.name.trim() === "" || isPending}
             className="rounded bg-accent px-3 py-1 text-sm text-accent-foreground disabled:opacity-50"
           >
             {isEditing ? "更新" : "ラベルを作成"}
