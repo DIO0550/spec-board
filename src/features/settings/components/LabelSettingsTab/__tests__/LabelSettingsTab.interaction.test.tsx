@@ -359,3 +359,29 @@ test("FE は HEX 形式バリデーションを行わず、入力文字列をそ
     color: "#not-a-hex",
   });
 });
+
+test("HEX 入力を全削除すると color は undefined として createLabel に渡る（PUT クリア相当）", async () => {
+  noopReload.mockClear();
+  createMock.mockResolvedValue(Result.ok(undefined));
+  render(baseResource({ labels: [] }));
+  const nameInput = container?.querySelector(
+    'input[placeholder="needs-design"]',
+  ) as HTMLInputElement;
+  typeInto(nameInput, "blank");
+  const hexInput = container?.querySelector(
+    'input[placeholder="7860b5"]',
+  ) as HTMLInputElement;
+  typeInto(hexInput, "abc123");
+  typeInto(hexInput, "");
+  const form = container?.querySelector("form") as HTMLFormElement;
+  await act(async () => {
+    submitForm(form);
+    await Promise.resolve();
+  });
+  expect(createMock).toHaveBeenCalledWith({
+    name: "blank",
+    description: undefined,
+    group: undefined,
+    color: undefined,
+  });
+});

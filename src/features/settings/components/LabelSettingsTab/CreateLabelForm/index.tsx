@@ -180,9 +180,11 @@ export const CreateLabelForm = ({
             <input
               id={hexId}
               value={values.color.replace(/^#/, "")}
-              onChange={(e) =>
-                onChange("color", `#${e.target.value.replace(/^#/, "")}`)
-              }
+              onChange={(e) => {
+                const body = e.target.value.replace(/^#/, "");
+                // 空入力は color クリア（PUT で undefined 化）を残すため "" を保持する。
+                onChange("color", body === "" ? "" : `#${body}`);
+              }}
               maxLength={6}
               spellCheck={false}
               autoComplete="off"
