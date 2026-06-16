@@ -52,6 +52,18 @@ const previewDef = (values: LabelFormValues): LabelDefinition => ({
   color: values.color === "" ? undefined : values.color,
 });
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const DEFAULT_PICKER_COLOR = "#7860b5";
+
+/**
+ * `<input type="color">` 用に妥当な #RRGGBB のみ反映し、それ以外は既定色へ落とす。
+ * テキスト欄の lenient 挙動（任意文字列保持）と分離するための正規化。
+ * @param raw - フォーム保持中の color 文字列
+ * @returns 8 桁未満や不正値の場合は既定色、妥当な HEX ならそのまま
+ */
+const toPickerValue = (raw: string): string =>
+  HEX_COLOR_RE.test(raw) ? raw : DEFAULT_PICKER_COLOR;
+
 /**
  * ラベル作成 / 編集フォーム。名前 / 説明 / グループ / カラー（HEX textbox + color picker +
  * プリセット 10 色）/ ライブプレビュー / クリア・作成（編集時は更新 + キャンセル）。
@@ -159,12 +171,12 @@ export const CreateLabelForm = ({
             <span
               aria-hidden="true"
               className="absolute inset-0"
-              style={{ backgroundColor: values.color || "#7860b5" }}
+              style={{ backgroundColor: toPickerValue(values.color) }}
             />
             <input
               id={pickerId}
               type="color"
-              value={values.color || "#7860b5"}
+              value={toPickerValue(values.color)}
               onChange={(e) => onChange("color", e.target.value)}
               className="absolute -inset-1 h-[calc(100%+8px)] w-[calc(100%+8px)] cursor-pointer opacity-0"
               aria-label="カラーピッカー"
