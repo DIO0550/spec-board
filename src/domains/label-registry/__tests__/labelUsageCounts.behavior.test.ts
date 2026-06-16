@@ -46,3 +46,17 @@ test("ラベル無しのタスクのみのとき空オブジェクトを返す",
   const tasks = [task("a", []), task("b", [])];
   expect(LabelRegistry.labelUsageCounts(tasks)).toEqual({});
 });
+
+test("__proto__ / constructor のようなプロトタイプキー名でも own property として正しく数える", () => {
+  const tasks = [
+    task("a", ["__proto__"]),
+    task("b", ["__proto__", "constructor"]),
+    task("c", ["constructor"]),
+  ];
+  const result = LabelRegistry.labelUsageCounts(tasks);
+  expect(Object.hasOwn(result, "__proto__")).toBe(true);
+  expect(Object.hasOwn(result, "constructor")).toBe(true);
+  // own property としての値を直接取り出す（プロトタイプチェーンを経由しない）。
+  expect(Object.getOwnPropertyDescriptor(result, "__proto__")?.value).toBe(2);
+  expect(Object.getOwnPropertyDescriptor(result, "constructor")?.value).toBe(2);
+});

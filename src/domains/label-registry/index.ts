@@ -235,7 +235,11 @@ export const LabelRegistry = {
    * @returns ラベル名 → 使用タスク件数
    */
   labelUsageCounts: (tasks: readonly Task[]): Record<string, number> => {
-    const counts: Record<string, number> = {};
+    // accumulator は Map にする。frontmatter のラベルは任意文字列のため、
+    // `__proto__` / `constructor` のような prototype キーが来ても継承プロパティと
+    // 衝突せず正しく数えるため。最終的に Object.fromEntries で公開形へ変換する
+    // （`Object.fromEntries` は __proto__ も own property として設定する）。
+    const counts = new Map<string, number>();
     for (const task of tasks) {
       // タスク内重複を排除（同名ラベル複数記載でも 1 件として数える）。
       const seen = new Set<string>();
@@ -244,9 +248,9 @@ export const LabelRegistry = {
           continue;
         }
         seen.add(label);
-        counts[label] = (counts[label] ?? 0) + 1;
+        counts.set(label, (counts.get(label) ?? 0) + 1);
       }
     }
-    return counts;
+    return Object.fromEntries(counts);
   },
 } as const;
