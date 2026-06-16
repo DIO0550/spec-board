@@ -1,10 +1,10 @@
-const SECONDS = 1000;
-const MINUTES = 60 * SECONDS;
-const HOURS = 60 * MINUTES;
-const DAYS = 24 * HOURS;
-const WEEKS = 7 * DAYS;
-const MONTHS = 30 * DAYS;
-const YEARS = 365 * DAYS;
+const MS_PER_SECOND = 1000;
+const MS_PER_MINUTE = 60 * MS_PER_SECOND;
+const MS_PER_HOUR = 60 * MS_PER_MINUTE;
+const MS_PER_DAY = 24 * MS_PER_HOUR;
+const MS_PER_WEEK = 7 * MS_PER_DAY;
+const MS_PER_MONTH = 30 * MS_PER_DAY;
+const MS_PER_YEAR = 365 * MS_PER_DAY;
 
 /**
  * Date を YYYY/MM/DD 表記へ整形する（タイムゾーンは ISO の UTC 起点）。
@@ -36,26 +36,26 @@ export const formatRelativeTime = (
   }
   const diff = now.getTime() - target.getTime();
   // 未来の時刻 / ごく直近は「たった今」に丸める（小さな時計ずれを吸収）。
-  if (diff < MINUTES) {
+  if (diff < MS_PER_MINUTE) {
     return "たった今";
   }
-  if (diff < HOURS) {
-    return `${Math.floor(diff / MINUTES)}分前`;
+  if (diff < MS_PER_HOUR) {
+    return `${Math.floor(diff / MS_PER_MINUTE)}分前`;
   }
-  if (diff < DAYS) {
-    return `${Math.floor(diff / HOURS)}時間前`;
+  if (diff < MS_PER_DAY) {
+    return `${Math.floor(diff / MS_PER_HOUR)}時間前`;
   }
-  if (diff < 2 * DAYS) {
+  if (diff < 2 * MS_PER_DAY) {
     return "昨日";
   }
-  if (diff < WEEKS) {
-    return `${Math.floor(diff / DAYS)}日前`;
+  if (diff < MS_PER_WEEK) {
+    return `${Math.floor(diff / MS_PER_DAY)}日前`;
   }
-  if (diff < MONTHS) {
-    return `${Math.floor(diff / WEEKS)}週間前`;
+  if (diff < MS_PER_MONTH) {
+    return `${Math.floor(diff / MS_PER_WEEK)}週間前`;
   }
-  if (diff < YEARS) {
-    return `${Math.floor(diff / MONTHS)}ヶ月前`;
+  if (diff < MS_PER_YEAR) {
+    return `${Math.floor(diff / MS_PER_MONTH)}ヶ月前`;
   }
   return toYmd(target);
 };
