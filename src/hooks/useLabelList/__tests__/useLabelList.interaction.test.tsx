@@ -104,7 +104,9 @@ const sampleLabels: LabelDefinition[] = [
 ];
 
 test("getLabels が ok(labels) を返すと最終 state が loaded(labels) になる", async () => {
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: sampleLabels }));
+  getLabelsMock.mockResolvedValue(
+    Result.ok({ labels: sampleLabels, usageCounts: {} }),
+  );
   let latest: LabelListState | null = null;
   await mountProbe((r) => {
     latest = r;
@@ -113,7 +115,7 @@ test("getLabels が ok(labels) を返すと最終 state が loaded(labels) に�
 });
 
 test("getLabels が ok(labels:[]) を返すと loaded の空一覧になる（error ではない）", async () => {
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
   let latest: LabelListState | null = null;
   await mountProbe((r) => {
     latest = r;
@@ -153,7 +155,7 @@ test("取得 resolve 前にアンマウントしても setState 警告/例外が
   });
   root = null;
   await act(async () => {
-    resolveGetLabels?.(Result.ok({ labels: sampleLabels }));
+    resolveGetLabels?.(Result.ok({ labels: sampleLabels, usageCounts: {} }));
     await Promise.resolve();
   });
 
