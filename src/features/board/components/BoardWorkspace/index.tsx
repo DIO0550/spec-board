@@ -233,9 +233,20 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
   onLabelFilterAppliedRef.current = onLabelFilterApplied;
   initialLabelFilterRef.current = initialLabelFilter;
   useEffect(() => {
-    if (initialLabelFilterRef.current) {
-      onLabelFilterAppliedRef.current?.();
+    if (!initialLabelFilterRef.current) {
+      return;
     }
+    // React.StrictMode 下では mount→cleanup→再 mount が同サイクル内で走るため、
+    // 同期で onLabelFilterApplied を呼ぶと 1 回目の cleanup 前に親 state が null になり、
+    // 2 回目 mount の useTaskFilter init が seed を取りこぼす可能性がある。
+    // setTimeout(0) で遅延し、StrictMode の 1 回目 cleanup で clearTimeout して
+    // 2 回目 mount 側だけが最終的に通知を発火する形にする。
+    const id = window.setTimeout(() => {
+      onLabelFilterAppliedRef.current?.();
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+    };
   }, []);
 
   return (
