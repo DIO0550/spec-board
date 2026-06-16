@@ -205,7 +205,14 @@ export const LabelSettingsTab = ({
     await exportLabels({ path: picked.value });
   };
 
-  if (status === "loading" || status === "idle") {
+  if (status === "idle") {
+    return (
+      <p className="text-sm text-muted">
+        プロジェクトを開くとラベルを表示します
+      </p>
+    );
+  }
+  if (status === "loading") {
     return <p className="text-sm text-muted">読み込み中…</p>;
   }
   if (status === "error") {

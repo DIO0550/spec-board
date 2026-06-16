@@ -141,6 +141,12 @@ test("loading のとき読み込み中表示になる", () => {
   expect(container?.textContent).toContain("読み込み中");
 });
 
+test("idle（プロジェクト未オープン）のとき専用文言を表示する", () => {
+  render(buildResource({ status: "idle" }));
+  expect(container?.textContent).toContain("プロジェクトを開く");
+  expect(container?.textContent).not.toContain("読み込み中");
+});
+
 test("usageCount=0 は非リンク、>0 は『N 件』リンク", () => {
   render(
     buildResource({
