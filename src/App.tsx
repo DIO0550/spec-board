@@ -5,11 +5,13 @@ import {
   buildTasksByNormalizedPath,
   countTasksWithBrokenLink,
 } from "@/domains/broken-link";
+import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { type AppView, useAppView } from "@/hooks/useAppView";
 import { resolveCloseTarget } from "@/hooks/useAppView/resolveCloseTarget";
+import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
@@ -319,6 +321,37 @@ export const App = () => {
     }),
     [milestonesResource, tasks],
   );
+  // ラベルリソース（settings 向けの唯一の取得点）。TaskForm は別途 useLabelList を使う。
+  const labelsResource = useLabels(loadedPath ?? undefined);
+  // settings の使用数は milestone と対称に live な tasks から算出した値で上書きする。
+  // ただし「プロジェクトが loaded」のときだけ。未ロードの間は BE 由来の usageCounts を
+  // 維持し、ロード前の瞬間に「0 件 / 未使用」と誤表示しないようにする（loaded で 0 件は
+  // live の 0 が正解）。
+  const isProjectLoaded = state.kind === "loaded";
+  const settingsLabelsResource = useMemo(
+    () => ({
+      ...labelsResource,
+      usageCounts: isProjectLoaded
+        ? LabelRegistry.labelUsageCounts(tasks)
+        : labelsResource.usageCounts,
+    }),
+    [labelsResource, tasks, isProjectLoaded],
+  );
+  // settings → board へラベル絞り込みを 1 回だけ持ち込むための pending state。
+  // 適用後は BoardWorkspace の onLabelFilterApplied コールバックで null へ戻す。
+  const [pendingLabelFilter, setPendingLabelFilter] = useState<string | null>(
+    null,
+  );
+  const handleLabelUsageClick = useCallback(
+    (name: string) => {
+      setPendingLabelFilter(name);
+      navigate("board");
+    },
+    [navigate],
+  );
+  const handleLabelFilterApplied = useCallback(() => {
+    setPendingLabelFilter(null);
+  }, []);
   // リンク切れ / パースエラーの警告トーストは load 成功イベント（useProject の
   // onLoaded callback = handleProjectLoaded）で 1 回だけ発火する。tasks 変更のたびに
   // 走る effect + ref の発火済み管理は廃止した。
@@ -955,6 +988,10 @@ export const App = () => {
     return (
       <div className="relative flex flex-1 overflow-hidden">
         <BoardWorkspace
+          // settings 表示中は BoardWorkspace が unmount されるため、settings→board 遷移で
+          // 必ず remount される。これにより useTaskFilter の useState 初期 seed が遷移ごとに
+          // 1 回適用される（key の追加はかえって seed→クリア→再 remount で seed 消失を招く
+          // ので付けない）。
           columns={columns}
           tasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
@@ -968,6 +1005,8 @@ export const App = () => {
           onTaskClick={handleTaskClick}
           onTaskDrop={handleTaskDrop}
           onColumnReorder={handleColumnReorder}
+          initialLabelFilter={pendingLabelFilter}
+          onLabelFilterApplied={handleLabelFilterApplied}
         />
         {tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
@@ -1025,7 +1064,11 @@ export const App = () => {
               />
               <main className="flex flex-1 overflow-hidden">
                 {view === "settings" && (
-                  <SettingsScreen milestones={settingsMilestonesResource} />
+                  <SettingsScreen
+                    labels={settingsLabelsResource}
+                    milestones={settingsMilestonesResource}
+                    onLabelUsageClick={handleLabelUsageClick}
+                  />
                 )}
                 {view === "milestone" && (
                   <MilestoneViewScreen

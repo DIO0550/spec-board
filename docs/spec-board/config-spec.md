@@ -171,6 +171,36 @@ type GetLabelsPayload = {
 
 > **スコープ境界**: 本仕様は labels.yml のスキーマ確定・読み込み・`get_labels`（使用数集計含む）・`create_label` / `update_label` / `delete_label`・invoke ラッパまでを対象とする（Rust バックエンド）。FE 連携（`usageCounts` の TS 型追従・ラベル編集 UI）と実際のラベル色の UI 反映（既定色の具体値 / design token 定義）は別 Issue で扱う。
 
+### ラベル設定画面（FE）
+
+設定 → ラベルタブ（`LabelSettingsTab`）は labels.yml の CRUD と表示集計を備えるフル機能の管理画面として動作する。マイルストーン設定画面のパターン（楽観更新せず成功時 reload で確定）を踏襲する。
+
+- **作成 / 編集フォーム**: 名前 / 説明 / グループ / カラー（HEX 直接入力 + `<input type="color">` + プリセット10色のスウォッチ）を 1 フォームで扱う。プレビューチップはフォーム値から即時反映する（color → group → name の優先順位で色を解決）。プリセット色は `{ red, orange, yellow, green, teal, blue, indigo, purple, pink, gray }` の `#RRGGBB`。
+- **編集モード**: 一覧の「編集」ボタンで `name` を固定（disabled）したフォームへ既存値を流し込む。送信時は全フィールド送信（PUT セマンティクス）。「キャンセル」で新規モードへ戻る。
+- **削除確認**: `globalThis.confirm` で確認文言を分岐する。使用数 `> 0` のとき「『name』は N 件のタスクで使用中です。削除しますか？（タスクの値は残ります）」、使用数 `= 0` のとき「『name』を削除しますか？」。キャンセルで `delete_label` は呼ばない。
+- **フィルタバー**: グループチップ（件数つき / 「すべて」+ 各グループ）+ 検索ボックス（name / description 部分一致・大小無視）+ ソート select（`name` 昇順 / `usage` 降順 / `updated` 新しい順）。グループ選択は判別 union `{ kind: "all" } | { kind: "group"; value }` で表現し、実グループ名 `"all"` との衝突を回避する。
+- **テーブル**: 列は「ラベルチップ / 説明 / 使用数 / グループ badge / 更新 / 行アクション」。`updated` 未設定は「新規」を表示。相対時刻は「たった今 / N 分前 / N 時間前 / 昨日 / N 日前 / N週間前 / Nヶ月前 / YYYY/MM/DD」。
+- **使用数リンク**: テーブルの使用数セルは `count > 0` のときリンク（ボタン）として描画し、クリックすると board へ遷移して当該ラベルでフィルタを適用する。`count = 0` は「0 件」のプレーンテキスト（クリック不可）。
+- **使用数 live 上書き**: settings 画面に渡す `usageCounts` は、プロジェクトが loaded のときだけ FE 側で live なタスク集合から算出した値（`LabelRegistry.labelUsageCounts(tasks)`）で上書きする。loaded 未到達の間は BE 由来の `get_labels.usageCounts` をフォールバックとして維持する（瞬間的な「0 件 / 未使用」誤表示を防ぐ）。
+- **統計ヘッダー / フッター集計**: 上部に「N 件 / M 使用中 / K 未使用」、フッターに「表示中件数 / 総数」と使用中ラベルのカラー集計（`color` 指定優先・無ければ group キー）を表示する。
+- **エクスポート**: 「⬇ エクスポート」ボタンで `@tauri-apps/plugin-dialog` の `save()` を呼び、ユーザーが選んだパスへ `export_labels` コマンドが `labels.yml` を書き出す。BE は既存 store と同じ `serde_yaml_ng::to_string` 経路で直列化するため、ディスクの labels.yml と同じ camelCase / `skip_serializing_if` 規則が適用される。ダイアログのキャンセルは no-op。空 path（`""`）は BE が `EmptyPath` で拒否し、`save()` 例外 / BE write 失敗は共通トースト経路で通知する。
+
+### `export_labels` コマンド
+
+`labels.yml` を任意パスへ書き出す書き込み専用 Tauri コマンド。
+
+| コマンド | 引数 | 戻り値 | 説明 |
+|:---------|:-----|:-------|:-----|
+| `export_labels` | `{ path: string }` | `Unit` | `AppState.labels` の `LabelRegistry` を `serde_yaml_ng::to_string` で直列化し、`std::fs::write(path)` で書き出す |
+
+- 保存先パスはユーザーが FE の save ダイアログで明示的に選んだもの。アプリ権限の範囲でユーザー指定パスへ書き込むのは仕様。
+- エラー文字列契約（FE のパターンマッチ整合のため `get_labels` / `delete_label` と一致）:
+  - 空 path → `"保存先のパスが空です"`
+  - プロジェクト未オープン → `"プロジェクトが開かれていません"`
+  - 内部状態の lock 破損 → `"内部状態のロックが破損しました"`
+- 親ディレクトリ不存在・書込権限なし等は `std::fs::write` の失敗として OS のエラー文字列を透過する。
+- write は project 外への単発書込のため、`delete_label` のような snapshot / lock preflight は不要（read-only に `state.labels()` を取得するだけ）。
+
 ## milestones.yml スキーマ
 
 タスク frontmatter の `milestone`（単数の自由文字列・参照キー）に対し、表示名・期日・並び順・状態などのメタ情報を一元管理する「マイルストーンマスタ定義ファイル」を `.spec-board/milestones.yml` に置く。`config.json` とは別ファイルで管理し、トップレベルの `milestones:` キー配下に定義の配列を並べる。labels.yml と同じハイブリッド構成（frontmatter 自由文字列 + yml マスタ・非破壊・暗黙許容）を踏襲する。

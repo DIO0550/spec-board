@@ -24,7 +24,7 @@ let root: ReturnType<typeof createRoot> | null = null;
 beforeEach(() => {
   getLabelsMock.mockReset();
   // 既定はラベルマスタ 0 件（従来挙動 = 候補なし）。
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
 });
 
 afterEach(() => {
@@ -587,7 +587,10 @@ test("isSubmitting=true で下書きチェックボックスも無効化され�
 
 test("getLabels の候補が popover の option へ配線される（結合）", async () => {
   getLabelsMock.mockResolvedValue(
-    Result.ok({ labels: [{ name: "bug" }, { name: "feature" }] }),
+    Result.ok({
+      labels: [{ name: "bug" }, { name: "feature" }],
+      usageCounts: {},
+    }),
   );
   render({
     columns: COLUMNS,
@@ -633,7 +636,9 @@ test("getLabels が失敗しても popover は開き、新規作成のみ可能�
 });
 
 test("popover の option クリックでラベルが選択され trigger に表示される（結合）", async () => {
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [{ name: "bug" }] }));
+  getLabelsMock.mockResolvedValue(
+    Result.ok({ labels: [{ name: "bug" }], usageCounts: {} }),
+  );
   render({
     columns: COLUMNS,
     initialStatus: "Todo",

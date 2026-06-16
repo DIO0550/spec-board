@@ -10,7 +10,7 @@ use crate::state::AppState;
 
 /// Builds and runs the Tauri application with the configured plugins and commands.
 ///
-/// @returns 戻り値なし。Tauri runtime が終了するまでアプリケーションを実行する。
+/// Tauri runtime が終了するまでアプリケーションを実行する（戻り値なし）。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -31,6 +31,7 @@ pub fn run() {
             config::create_label::create_label,
             config::update_label::update_label,
             config::delete_label::delete_label,
+            config::export_labels::export_labels,
             config::get_milestones::get_milestones,
             config::create_milestone::create_milestone,
             config::update_milestone::update_milestone,

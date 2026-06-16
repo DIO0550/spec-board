@@ -24,6 +24,10 @@ const MUTATION_COMMAND_LABELS = {
   create_milestone: "マイルストーンの作成",
   update_milestone: "マイルストーンの更新",
   delete_milestone: "マイルストーンの削除",
+  create_label: "ラベルの作成",
+  update_label: "ラベルの更新",
+  delete_label: "ラベルの削除",
+  export_labels: "ラベルのエクスポート",
 } as const satisfies Record<string, string>;
 
 /** 書き込み allowlist に含まれるコマンド名の union 型（テーブルのキーが source of truth）。 */

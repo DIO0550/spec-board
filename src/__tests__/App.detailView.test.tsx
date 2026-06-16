@@ -94,7 +94,7 @@ beforeEach(() => {
     },
   });
   getLabelsMock.mockReset();
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [] }));
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
 });

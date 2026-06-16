@@ -1,3 +1,5 @@
+import type { Task } from "@/types/task";
+
 /**
  * ラベルのグループ。標準 4 種 + その他 prefix（任意文字列）+ prefix 無し用 "default"。
  * 標準グループは型で固定し、その他は string として受ける。
@@ -203,5 +205,56 @@ export const LabelRegistry = {
    */
   tokensForLabel: (label: string): ColorTokens => {
     return LabelRegistry.tokensForGroup(LabelRegistry.parseGroup(label));
+  },
+
+  /**
+   * ラベル定義 1 件から「表示・集計・スワッチ解決で使うグループ名」を 1 つに決める。
+   * `group` が定義済みかつ非空文字ならそれを採用、未定義 / 空文字 / 空白のみは
+   * `parseGroup(label.name)` で name の prefix から導出する。
+   *
+   * この関数はラベル UI 全体（テーブルのグループ badge、フッター/ヘッダーの集計、
+   * フォームのスワッチ、フィルタの絞り込み）が「同じ LabelDefinition を渡したら同じ
+   * グループ名が返る」契約を保証するため、複数モジュールから参照する単一の真実源として
+   * 使う（`displayGroup` / `groupOf` の重複実装を避ける）。
+   * @param label - ラベル定義
+   * @returns 表示・集計に使うグループ名
+   */
+  effectiveGroup: (label: { name: string; group?: string }): string => {
+    const group = label.group?.trim() ?? "";
+    if (group !== "") {
+      return group;
+    }
+    return LabelRegistry.parseGroup(label.name);
+  },
+
+  /**
+   * 現在のタスク集合からラベル名ごとの使用数を算出する（`Milestone.usageCounts` と対称）。
+   *
+   * BE `TaskIndex::label_usage_counts` と概ね対応するが、空文字ラベルの扱いは異なる:
+   * BE は frontmatter 由来の空文字ラベルも 1 件として計上する一方、本実装は UI で
+   * 意味を持たない空文字をフィルタする。タスク内の重複ラベルは双方とも 1 件に排除する。
+   * BE のスナップショットと異なり live なタスク集合から毎回計算する。
+   *
+   * @param tasks - 現在のタスク一覧（各 task は `labels: string[]` を持つ）
+   * @returns ラベル名 → 使用タスク件数
+   */
+  labelUsageCounts: (tasks: readonly Task[]): Record<string, number> => {
+    // accumulator は Map にする。frontmatter のラベルは任意文字列のため、
+    // `__proto__` / `constructor` のような prototype キーが来ても継承プロパティと
+    // 衝突せず正しく数えるため。最終的に Object.fromEntries で公開形へ変換する
+    // （`Object.fromEntries` は __proto__ も own property として設定する）。
+    const counts = new Map<string, number>();
+    for (const task of tasks) {
+      // タスク内重複を排除（同名ラベル複数記載でも 1 件として数える）。
+      const seen = new Set<string>();
+      for (const label of task.labels) {
+        if (label === "" || seen.has(label)) {
+          continue;
+        }
+        seen.add(label);
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      }
+    }
+    return Object.fromEntries(counts);
   },
 } as const;

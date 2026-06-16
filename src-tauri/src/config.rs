@@ -21,6 +21,7 @@ pub mod create_label;
 pub mod create_milestone;
 pub mod delete_label;
 pub mod delete_milestone;
+pub mod export_labels;
 pub mod get_columns;
 pub mod get_labels;
 pub mod get_milestones;

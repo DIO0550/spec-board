@@ -11,12 +11,21 @@ export type {
 export { updateColumns } from "./columnCommands/updateColumns";
 // dialog
 export { openDirectoryDialog } from "./dialog/openDirectoryDialog";
+export { saveFileDialog } from "./dialog/saveFileDialog";
 // labelCommands
+export { createLabel } from "./labelCommands/createLabel";
+export { deleteLabel } from "./labelCommands/deleteLabel";
+export { exportLabels } from "./labelCommands/exportLabels";
 export { getLabels } from "./labelCommands/getLabels";
 export type {
+  CreateLabelArgs,
+  DeleteLabelPayload,
+  ExportLabelsArgs,
   GetLabelsPayload,
   LabelDefinition,
+  UpdateLabelArgs,
 } from "./labelCommands/types";
+export { updateLabel } from "./labelCommands/updateLabel";
 // linkCommands
 export { addLink } from "./linkCommands/addLink";
 export { removeLink } from "./linkCommands/removeLink";

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   type TabItem,
   TabNav,
@@ -85,6 +85,18 @@ type BoardWorkspaceProps = {
    */
   // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
   onColumnReorder?: (params: ColumnDropParams) => Promise<unknown> | void;
+  /**
+   * settings → board ナビゲートでラベル絞り込みを 1 回だけ seed する初期ラベル名。
+   * `useTaskFilter` の `useState` 初期値関数にだけ反映され、effect での setCriteria
+   * 二重適用は行わない。BoardWorkspace は settings からの遷移時に必ず remount される
+   * ため、この seed は遷移ごとに 1 回適用される。
+   */
+  initialLabelFilter?: string | null;
+  /**
+   * 初期ラベルフィルタが BoardWorkspace の mount 後に 1 回だけ通知される。
+   * 親（App）はこのコールバックで `pendingLabelFilter` を null へ戻し、残留を防ぐ。
+   */
+  onLabelFilterApplied?: () => void;
 };
 
 /**
@@ -166,7 +178,13 @@ const ActiveBoardView = ({
  * @returns ワークスペース要素
  */
 export const BoardWorkspace = (props: BoardWorkspaceProps) => {
-  const { tasks, columns, milestones } = props;
+  const {
+    tasks,
+    columns,
+    milestones,
+    initialLabelFilter,
+    onLabelFilterApplied,
+  } = props;
   const { viewMode, setViewMode } = useBoardViewMode();
 
   const availableLabels = useMemo(() => collectLabels(tasks), [tasks]);
@@ -185,10 +203,51 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
     () => ({ statuses, labels: availableLabels, milestoneNames }),
     [statuses, availableLabels, milestoneNames],
   );
+  const initialLabels = useMemo(
+    () =>
+      initialLabelFilter !== null && initialLabelFilter !== undefined
+        ? [initialLabelFilter]
+        : undefined,
+    [initialLabelFilter],
+  );
   const { criteria, setCriteria, clear, filtered, isActive } = useTaskFilter(
     tasks,
     filterOptions,
+    { initialLabels },
   );
+
+  // mount 時に initialLabelFilter があれば 1 回だけ親へ「適用済み」を通知し、
+  // App 側の pendingLabelFilter を null へ戻して残留を防ぐ。
+  //
+  // 依存配列を空にする理由（remount 前提）: 本コンポーネントは App.tsx の条件付き
+  // レンダリングで settings 表示中は unmount され、settings→board 遷移で必ず remount
+  // されるため、mount-once 通知だけで pendingLabelFilter のクリア責務を満たせる。
+  // mount 後に initialLabelFilter / onLabelFilterApplied が props として変化することは
+  // 設計上想定しない（mount 時の値だけが正解）。
+  //
+  // stale closure 対策: onLabelFilterApplied / initialLabelFilter は ref に同期させ、
+  // mount-once effect の中から ref 経由で最新参照を読む。これにより親が
+  // useCallback の依存を増やしたり、毎 render 新関数を渡しても安全に動作する。
+  const onLabelFilterAppliedRef = useRef(onLabelFilterApplied);
+  const initialLabelFilterRef = useRef(initialLabelFilter);
+  onLabelFilterAppliedRef.current = onLabelFilterApplied;
+  initialLabelFilterRef.current = initialLabelFilter;
+  useEffect(() => {
+    if (!initialLabelFilterRef.current) {
+      return;
+    }
+    // React.StrictMode 下では mount→cleanup→再 mount が同サイクル内で走るため、
+    // 同期で onLabelFilterApplied を呼ぶと 1 回目の cleanup 前に親 state が null になり、
+    // 2 回目 mount の useTaskFilter init が seed を取りこぼす可能性がある。
+    // setTimeout(0) で遅延し、StrictMode の 1 回目 cleanup で clearTimeout して
+    // 2 回目 mount 側だけが最終的に通知を発火する形にする。
+    const id = window.setTimeout(() => {
+      onLabelFilterAppliedRef.current?.();
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+    };
+  }, []);
 
   return (
     <div className="flex h-full flex-col">

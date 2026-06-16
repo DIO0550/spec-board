@@ -273,6 +273,8 @@ const makeInvoke =
       // App が loaded 時に useMilestones から呼ぶ読み取り系。空レジストリを返す。
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),
+      // 同じく useLabels から呼ぶ読み取り系。空レジストリ + 空 usageCounts。
+      get_labels: () => Promise.resolve({ labels: [], usageCounts: {} }),
       ...overrides,
     };
     return (responders[cmd] ?? resolveUndefined)();
