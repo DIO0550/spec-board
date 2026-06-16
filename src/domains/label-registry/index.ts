@@ -1,3 +1,5 @@
+import type { Task } from "@/types/task";
+
 /**
  * ラベルのグループ。標準 4 種 + その他 prefix（任意文字列）+ prefix 無し用 "default"。
  * 標準グループは型で固定し、その他は string として受ける。
@@ -203,5 +205,48 @@ export const LabelRegistry = {
    */
   tokensForLabel: (label: string): ColorTokens => {
     return LabelRegistry.tokensForGroup(LabelRegistry.parseGroup(label));
+  },
+
+  /**
+   * ラベル定義 1 件から「表示・集計・スワッチ解決で使うグループ名」を 1 つに決める。
+   * `group` が定義済みかつ非空文字ならそれを採用、未定義 / 空文字 / 空白のみは
+   * `parseGroup(label.name)` で name の prefix から導出する。
+   *
+   * この関数はラベル UI 全体（テーブルのグループ badge、フッター/ヘッダーの集計、
+   * フォームのスワッチ、フィルタの絞り込み）が「同じ LabelDefinition を渡したら同じ
+   * グループ名が返る」契約を保証するため、複数モジュールから参照する単一の真実源として
+   * 使う（`displayGroup` / `groupOf` の重複実装を避ける）。
+   * @param label - ラベル定義
+   * @returns 表示・集計に使うグループ名
+   */
+  effectiveGroup: (label: { name: string; group?: string }): string => {
+    const group = label.group?.trim() ?? "";
+    if (group !== "") {
+      return group;
+    }
+    return LabelRegistry.parseGroup(label.name);
+  },
+
+  /**
+   * 現在のタスク集合からラベル名ごとの使用数を算出する（`Milestone.usageCounts` と対称）。
+   * BE `TaskIndex::label_usage_counts` と同セマンティクス: タスク内の重複ラベルは 1 件に排除し、
+   * 空文字ラベルは数えない。BE のスナップショットと異なり live なタスク集合から毎回計算する。
+   * @param tasks - 現在のタスク一覧（各 task は `labels: string[]` を持つ）
+   * @returns ラベル名 → 使用タスク件数
+   */
+  labelUsageCounts: (tasks: readonly Task[]): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const task of tasks) {
+      // タスク内重複を排除（同名ラベル複数記載でも 1 件として数える）。
+      const seen = new Set<string>();
+      for (const label of task.labels) {
+        if (label === "" || seen.has(label)) {
+          continue;
+        }
+        seen.add(label);
+        counts[label] = (counts[label] ?? 0) + 1;
+      }
+    }
+    return counts;
   },
 } as const;
