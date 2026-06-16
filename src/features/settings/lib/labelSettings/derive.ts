@@ -133,18 +133,21 @@ export const labelGroupCounts = (
   labels: readonly LabelDefinition[],
 ): { all: number; groups: { group: string; count: number }[] } => {
   const order: string[] = [];
-  const counts: Record<string, number> = {};
+  // accumulator は Map にする。group は frontmatter / name 由来で任意文字列のため、
+  // `__proto__` / `constructor` 等のプロトタイプキーが入っても継承プロパティと
+  // 衝突せず正しく数えるため。
+  const counts = new Map<string, number>();
   for (const label of labels) {
     const g = groupOf(label);
-    if (!(g in counts)) {
+    if (!counts.has(g)) {
       order.push(g);
-      counts[g] = 0;
+      counts.set(g, 0);
     }
-    counts[g] += 1;
+    counts.set(g, (counts.get(g) ?? 0) + 1);
   }
   return {
     all: labels.length,
-    groups: order.map((group) => ({ group, count: counts[group] })),
+    groups: order.map((group) => ({ group, count: counts.get(group) ?? 0 })),
   };
 };
 
@@ -161,17 +164,19 @@ export const labelColorTally = (
   usageCounts: Record<string, number>,
 ): { color: string; count: number }[] => {
   const order: string[] = [];
-  const counts: Record<string, number> = {};
+  // group fallback 経由でプロトタイプキー名が key になりうるため Map で集計する
+  // （labelGroupCounts と同じ理由）。
+  const counts = new Map<string, number>();
   for (const label of labels) {
     if ((usageCounts[label.name] ?? 0) <= 0) {
       continue;
     }
     const key = label.color ?? groupOf(label);
-    if (!(key in counts)) {
+    if (!counts.has(key)) {
       order.push(key);
-      counts[key] = 0;
+      counts.set(key, 0);
     }
-    counts[key] += 1;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return order.map((color) => ({ color, count: counts[color] }));
+  return order.map((color) => ({ color, count: counts.get(color) ?? 0 }));
 };

@@ -156,3 +156,27 @@ test("labelColorTally: 使用中ラベルのみ・色キー（color or group）�
   expect(map.area).toBe(2);
   expect(tally.find((e) => e.color === "wontfix")).toBeUndefined();
 });
+
+test("labelGroupCounts: __proto__ / constructor のような group 名でも継承プロパティと衝突せず数える", () => {
+  const labels: LabelDefinition[] = [
+    { name: "a", group: "__proto__" },
+    { name: "b", group: "__proto__" },
+    { name: "c", group: "constructor" },
+  ];
+  const result = labelGroupCounts(labels);
+  expect(result.all).toBe(3);
+  expect(result.groups).toContainEqual({ group: "__proto__", count: 2 });
+  expect(result.groups).toContainEqual({ group: "constructor", count: 1 });
+});
+
+test("labelColorTally: __proto__ / constructor の group fallback でも継承プロパティと衝突せず数える", () => {
+  const labels: LabelDefinition[] = [
+    { name: "a", group: "__proto__" },
+    { name: "b", group: "__proto__" },
+    { name: "c", group: "constructor" },
+  ];
+  const usageCounts: Record<string, number> = { a: 1, b: 1, c: 1 };
+  const tally = labelColorTally(labels, usageCounts);
+  expect(tally).toContainEqual({ color: "__proto__", count: 2 });
+  expect(tally).toContainEqual({ color: "constructor", count: 1 });
+});
