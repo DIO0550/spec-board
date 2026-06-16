@@ -45,12 +45,19 @@ const toForm = (def: LabelDefinition): LabelFormValues => ({
  * @param values - フォーム入力値
  * @returns 送信用 args
  */
-const toArgs = (values: LabelFormValues): CreateLabelArgs => ({
-  name: values.name.trim(),
-  description: values.description === "" ? undefined : values.description,
-  group: values.group === "" ? undefined : values.group,
-  color: values.color === "" ? undefined : values.color,
-});
+const toArgs = (values: LabelFormValues): CreateLabelArgs => {
+  // 各フィールドは送信前に trim する。空白のみの入力 ("   ") は
+  // LabelRegistry.effectiveGroup（trim 比較）と整合するよう undefined に正規化する。
+  const trimmedDescription = values.description.trim();
+  const trimmedGroup = values.group.trim();
+  const trimmedColor = values.color.trim();
+  return {
+    name: values.name.trim(),
+    description: trimmedDescription === "" ? undefined : trimmedDescription,
+    group: trimmedGroup === "" ? undefined : trimmedGroup,
+    color: trimmedColor === "" ? undefined : trimmedColor,
+  };
+};
 
 type LabelSettingsTabProps = {
   /** App / SettingsScreen から配られるラベルリソース（唯一の取得点・live usageCounts 上書き済み） */

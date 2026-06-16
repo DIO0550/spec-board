@@ -385,3 +385,32 @@ test("HEX 入力を全削除すると color は undefined として createLabel 
     color: undefined,
   });
 });
+
+test("group / color / description の空白のみ入力は undefined に正規化されて createLabel に渡る", async () => {
+  noopReload.mockClear();
+  createMock.mockResolvedValue(Result.ok(undefined));
+  render(baseResource({ labels: [] }));
+  const nameInput = container?.querySelector(
+    'input[placeholder="needs-design"]',
+  ) as HTMLInputElement;
+  typeInto(nameInput, "blanky");
+  const descInput = container?.querySelector(
+    'input[placeholder="デザイン待ちのタスク"]',
+  ) as HTMLInputElement;
+  typeInto(descInput, "   ");
+  const groupInput = container?.querySelector(
+    'input[placeholder="status"]',
+  ) as HTMLInputElement;
+  typeInto(groupInput, "   ");
+  const form = container?.querySelector("form") as HTMLFormElement;
+  await act(async () => {
+    submitForm(form);
+    await Promise.resolve();
+  });
+  expect(createMock).toHaveBeenCalledWith({
+    name: "blanky",
+    description: undefined,
+    group: undefined,
+    color: undefined,
+  });
+});
