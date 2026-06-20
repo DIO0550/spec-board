@@ -1,5 +1,9 @@
-// @lint-suppress-ok
-// 本ファイルの biome-ignore は HTML5 ネイティブ DnD のための a11y 制約に由来する。
+// @lint-suppress-ok — typescript-rules-plugin の block-lint-suppress.sh hook が
+// このマーカーを検出すると、本ファイル内の biome-ignore 行を許可する。
+// 本ファイルで biome-ignore が必要な理由: HTML5 ネイティブ DnD のため
+// draggable ハンドラを <div> に付ける必要があり、`noStaticElementInteractions`
+// が trigger される。子に details/summary 等の interactive descendants が
+// 混ざるため <button> 等のセマンティック要素に置換できず、抑制が必須。
 // 旧 TaskCard/index.tsx から踏襲しており、互換性維持のため削除しない。
 import {
   type DragEvent,
