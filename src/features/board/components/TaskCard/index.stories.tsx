@@ -100,3 +100,90 @@ export const Minimal: Story = {
     descendantTasks: [],
   },
 };
+
+// --- Compound 経路（新 API）: render 上書きで TaskCard.Root + 子サブ部品を組み立てる ---
+
+export const HeaderOnly: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Header />
+    </TaskCard.Root>
+  ),
+};
+
+export const MilestoneOnly: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Milestone />
+    </TaskCard.Root>
+  ),
+  args: { task: { ...baseTask, milestone: "v1.0" } },
+};
+
+export const LabelsOnly: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Labels />
+    </TaskCard.Root>
+  ),
+  args: { task: { ...baseTask, labels: ["bug", "urgent"] } },
+};
+
+export const ProgressOnly: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Progress />
+    </TaskCard.Root>
+  ),
+  args: {
+    task: baseTask,
+    childTasks,
+    descendantTasks: childTasks,
+  },
+};
+
+export const FooterOnly: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Footer />
+    </TaskCard.Root>
+  ),
+};
+
+export const CompoundFull: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Header />
+      <TaskCard.Milestone />
+      <TaskCard.Labels />
+      <TaskCard.Progress />
+      <TaskCard.Footer />
+    </TaskCard.Root>
+  ),
+  args: {
+    task: { ...baseTask, milestone: "v1.0", labels: ["bug", "urgent"] },
+    childTasks,
+    descendantTasks: childTasks,
+  },
+};
+
+export const ReorderedFooterFirst: Story = {
+  render: (args) => (
+    <TaskCard.Root {...args}>
+      <TaskCard.Footer />
+      <TaskCard.Header />
+      <TaskCard.Labels />
+    </TaskCard.Root>
+  ),
+  args: { task: { ...baseTask, labels: ["bug", "frontend"] } },
+};
+
+export const WithMilestoneAndLabels: Story = {
+  args: {
+    task: {
+      ...baseTask,
+      milestone: "v1.0",
+      labels: ["bug", "urgent"],
+    },
+  },
+};
