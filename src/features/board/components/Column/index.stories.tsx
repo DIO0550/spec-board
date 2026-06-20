@@ -1,8 +1,9 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
 import { initialTasks } from "@/test-fixtures";
 import { Task } from "@/types/task";
+import { withBoardCardProvider } from "../BoardCardProvider/decorator";
+import { withBoardColumnProvider } from "../BoardColumnProvider/decorator";
 import { Column } from ".";
 
 const todoTasks = initialTasks.filter((t) => t.status === "Todo");
@@ -12,6 +13,24 @@ const meta: Meta<typeof Column> = {
   parameters: {
     layout: "centered",
   },
+  decorators: [
+    withBoardColumnProvider({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "In Progress", order: 1 },
+        { name: "Done", order: 2 },
+      ],
+      tasks: todoTasks,
+      allTasks: initialTasks,
+    }),
+    withBoardCardProvider({
+      tasks: todoTasks,
+      allTasks: initialTasks,
+      tasksByNormalizedPath: new Map(),
+      milestonesByName: new Map(),
+      doneColumn: "Done",
+    }),
+  ],
   args: {
     name: "Todo",
     tasks: todoTasks,
@@ -23,11 +42,6 @@ const meta: Meta<typeof Column> = {
     onTaskClick: () => {},
     onRename: () => {},
     onDelete: () => {},
-    dragState: null,
-    onDragHover: fn(),
-    onTaskDrop: fn(),
-    onTaskDragStart: fn(),
-    onTaskDragEnd: fn(),
   },
 };
 
@@ -63,35 +77,4 @@ export const ManyTasks: Story = {
 
 export const WithoutMenu: Story = {
   args: { onDelete: undefined, onRename: undefined },
-};
-
-const draggingFromOther = {
-  draggingTaskFilePath: "tasks/external.md",
-  draggingFromColumn: "Done",
-};
-
-export const HoverTop: Story = {
-  args: {
-    dragState: { ...draggingFromOther, hoverColumn: "Todo", hoverIndex: 0 },
-  },
-};
-
-export const HoverMiddle: Story = {
-  args: {
-    dragState: {
-      ...draggingFromOther,
-      hoverColumn: "Todo",
-      hoverIndex: Math.max(1, Math.floor(todoTasks.length / 2)),
-    },
-  },
-};
-
-export const HoverBottom: Story = {
-  args: {
-    dragState: {
-      ...draggingFromOther,
-      hoverColumn: "Todo",
-      hoverIndex: todoTasks.length,
-    },
-  },
 };

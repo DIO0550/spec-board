@@ -1,7 +1,9 @@
-import { act, createElement } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload, type TaskWarning } from "@/types/task";
+import { BoardCardProvider } from "../../BoardCardProvider";
+import { BoardColumnProvider } from "../../BoardColumnProvider";
 import { Column } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -27,6 +29,11 @@ const cycleWarning: TaskWarning = {
   message: "parent chain forms a cycle",
 };
 
+/**
+ * テスト用に最小限の Task を構築する。
+ * @param overrides 上書きしたい一部フィールド
+ * @returns Task
+ */
 function createTask(overrides: Partial<TaskPayload> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
@@ -42,14 +49,33 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
+/**
+ * BoardCardProvider / BoardColumnProvider 配下に Column を mount する。
+ * @param props Column の props（order はデフォルト 0）
+ */
 function render(
   props: Omit<Parameters<typeof Column>[0], "order"> & { order?: number },
 ) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  const tasks = props.tasks;
+  const allTasks = props.allTasks ?? tasks;
+  const columns = [{ name: props.name, order: 0 }];
+  const tree: ReactNode = (
+    <BoardCardProvider
+      tasks={tasks}
+      allTasks={allTasks}
+      tasksByNormalizedPath={props.tasksByNormalizedPath ?? new Map()}
+      doneColumn={props.doneColumn}
+    >
+      <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
+        <Column order={0} {...props} />
+      </BoardColumnProvider>
+    </BoardCardProvider>
+  );
   act(() => {
-    root?.render(createElement(Column, { order: 0, ...props }));
+    root?.render(tree);
   });
 }
 

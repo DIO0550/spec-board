@@ -1,16 +1,14 @@
-import { useCallback, useMemo, useReducer } from "react";
+import { useMemo } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
-import { BoardCardProvider } from "../BoardCardProvider";
-import { BoardColumnProvider } from "../BoardColumnProvider";
+import { BoardCardProvider, type TaskDropHandler } from "../BoardCardProvider";
 import {
-  Column,
-  type ColumnDropParams,
-  type ColumnTaskDropParams,
-} from "../Column";
+  BoardColumnProvider,
+  type ColumnReorderHandler,
+} from "../BoardColumnProvider";
+import { Column } from "../Column";
 import type { MilestonesByName } from "../TaskCard";
-import { DragAction, dragReducer } from "./dragState";
 
 /** ボードの Props */
 type BoardProps = {
@@ -73,18 +71,14 @@ type BoardProps = {
   onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
   /**
    * Board が drop を受けたら呼ぶ。App.tsx で useProject.moveTask に配線する。
-   * 同期 / 非同期どちらのハンドラも受け付ける。
-   * @param params 移動パラメータ
+   * Provider が sync / async どちらも await し、throw は内部で握る。
    */
-  // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
-  onTaskDrop?: (params: ColumnTaskDropParams) => Promise<unknown> | void;
+  onTaskDrop?: TaskDropHandler;
   /**
    * Board が column の drop を受けたら呼ぶ。App.tsx で useProject.reorderColumns に配線する。
-   * 同期 / 非同期どちらのハンドラも受け付ける。
-   * @param params 並び替えパラメータ
+   * Provider が sync / async どちらも await し、throw は内部で握る。
    */
-  // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
-  onColumnReorder?: (params: ColumnDropParams) => Promise<unknown> | void;
+  onColumnReorder?: ColumnReorderHandler;
 };
 
 /**
@@ -140,51 +134,6 @@ export const Board = ({
     return counts;
   }, [hierarchyTasks]);
 
-  const [dragState, dispatch] = useReducer(dragReducer, null);
-
-  const handleColumnDrop = useCallback(
-    async (params: ColumnDropParams) => {
-      try {
-        await onColumnReorder?.(params);
-      } catch {
-        // unhandled rejection を防ぐため明示的に握る。エラー表示は App 側の責務。
-      }
-    },
-    [onColumnReorder],
-  );
-
-  const handleDragStart = useCallback(
-    (taskFilePath: string, fromColumn: string) => {
-      dispatch(DragAction.start(taskFilePath, fromColumn));
-    },
-    [],
-  );
-
-  const handleDragHover = useCallback(
-    (column: string | null, index: number | null) => {
-      dispatch(DragAction.hover(column, index));
-    },
-    [],
-  );
-
-  const handleDragEnd = useCallback(() => {
-    dispatch(DragAction.end());
-  }, []);
-
-  const handleTaskDrop = useCallback(
-    async (params: ColumnTaskDropParams) => {
-      try {
-        await onTaskDrop?.(params);
-      } catch {
-        // unhandled rejection を防ぐため明示的に握る。
-        // エラー表示は App 側 onTaskDrop の責務。
-      } finally {
-        dispatch(DragAction.end());
-      }
-    },
-    [onTaskDrop],
-  );
-
   return (
     <BoardCardProvider
       tasks={tasks}
@@ -231,13 +180,7 @@ export const Board = ({
                     : undefined
                 }
                 canDelete={columns.length > 1}
-                dragState={dragState}
-                onDragHover={handleDragHover}
-                onTaskDrop={handleTaskDrop}
-                onTaskDragStart={handleDragStart}
-                onTaskDragEnd={handleDragEnd}
                 columnDraggable={sorted.length > 1}
-                onColumnDrop={handleColumnDrop}
               />
             ))}
             {onAddColumn && (

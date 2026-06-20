@@ -1,7 +1,9 @@
-import { act, createElement } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
+import { BoardCardProvider } from "../../BoardCardProvider";
+import { BoardColumnProvider } from "../../BoardColumnProvider";
 import { Column } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -16,6 +18,11 @@ afterEach(() => {
   container = null;
 });
 
+/**
+ * テスト用に最小限の Task を構築する。
+ * @param overrides 上書きしたい一部フィールド
+ * @returns Task
+ */
 function createTask(overrides: Partial<TaskPayload> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
@@ -31,14 +38,35 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
+/**
+ * BoardCardProvider / BoardColumnProvider 配下に Column を mount する。
+ * Provider に渡す tasks / allTasks は Column と同じものを使い、status 別 grouping や
+ * 子孫 lookup が Provider 経由で動くようにする。
+ * @param props Column の props（order はデフォルト 0）
+ */
 function render(
   props: Omit<Parameters<typeof Column>[0], "order"> & { order?: number },
 ) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  const tasks = props.tasks;
+  const allTasks = props.allTasks ?? tasks;
+  const columns = [{ name: props.name, order: 0 }];
+  const tree: ReactNode = (
+    <BoardCardProvider
+      tasks={tasks}
+      allTasks={allTasks}
+      tasksByNormalizedPath={props.tasksByNormalizedPath ?? new Map()}
+      doneColumn={props.doneColumn}
+    >
+      <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
+        <Column order={0} {...props} />
+      </BoardColumnProvider>
+    </BoardCardProvider>
+  );
   act(() => {
-    root?.render(createElement(Column, { order: 0, ...props }));
+    root?.render(tree);
   });
 }
 
@@ -106,18 +134,18 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
     filePath: "tasks/c1.md",
     children: ["tasks/g1.md", "tasks/g2.md"],
   });
-  const root = createTask({
+  const rootTask = createTask({
     id: "root",
     title: "親",
     status: "Todo",
     filePath: "tasks/root.md",
     children: ["tasks/c1.md"],
   });
-  const allTasks = [root, child, grand1, grand2];
+  const allTasks = [rootTask, child, grand1, grand2];
 
   render({
     name: "Todo",
-    tasks: [root],
+    tasks: [rootTask],
     allTasks,
     doneColumn: "Done",
     onAddClick: vi.fn(),
