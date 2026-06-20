@@ -2,6 +2,8 @@ import { useCallback, useMemo, useReducer } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
+import { BoardCardProvider } from "../BoardCardProvider";
+import { BoardColumnProvider } from "../BoardColumnProvider";
 import {
   Column,
   type ColumnDropParams,
@@ -184,51 +186,69 @@ export const Board = ({
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-        {sorted.map((col, index) => (
-          <Column
-            key={col.name}
-            name={col.name}
-            color={col.color}
-            order={index}
-            tasks={tasksByStatus[col.name] ?? []}
-            allTasks={hierarchyTasks}
-            tasksByNormalizedPath={tasksByNormalizedPath}
-            doneColumn={doneColumn}
-            milestonesByName={milestonesByName}
-            dndDisabled={dndDisabled}
-            onAddClick={() => onAddTask(col.name)}
-            onTaskClick={onTaskClick}
-            onRename={
-              onRenameColumn
-                ? (newName) => onRenameColumn(col.name, newName)
-                : undefined
-            }
-            existingColumnNames={columnNames.filter((n) => n !== col.name)}
-            deletionTaskCount={deletionCountByStatus[col.name] ?? 0}
-            onDelete={
-              onDeleteColumn
-                ? (destColumn) => onDeleteColumn(col.name, destColumn)
-                : undefined
-            }
-            canDelete={columns.length > 1}
-            dragState={dragState}
-            onDragHover={handleDragHover}
-            onTaskDrop={handleTaskDrop}
-            onTaskDragStart={handleDragStart}
-            onTaskDragEnd={handleDragEnd}
-            columnDraggable={sorted.length > 1}
-            onColumnDrop={handleColumnDrop}
-          />
-        ))}
-        {onAddColumn && (
-          <AddColumnButton
-            existingColumnNames={columnNames}
-            onAdd={onAddColumn}
-          />
-        )}
-      </div>
-    </div>
+    <BoardCardProvider
+      tasks={tasks}
+      allTasks={hierarchyTasks}
+      tasksByNormalizedPath={tasksByNormalizedPath ?? new Map()}
+      milestonesByName={milestonesByName}
+      doneColumn={doneColumn}
+      dndDisabled={dndDisabled}
+      onTaskDrop={onTaskDrop}
+    >
+      <BoardColumnProvider
+        columns={columns}
+        tasks={tasks}
+        allTasks={hierarchyTasks}
+        dndDisabled={dndDisabled}
+        onColumnReorder={onColumnReorder}
+      >
+        <div className="flex h-full flex-col">
+          <div className="flex flex-1 gap-4 overflow-x-auto p-4">
+            {sorted.map((col, index) => (
+              <Column
+                key={col.name}
+                name={col.name}
+                color={col.color}
+                order={index}
+                tasks={tasksByStatus[col.name] ?? []}
+                allTasks={hierarchyTasks}
+                tasksByNormalizedPath={tasksByNormalizedPath}
+                doneColumn={doneColumn}
+                milestonesByName={milestonesByName}
+                dndDisabled={dndDisabled}
+                onAddClick={() => onAddTask(col.name)}
+                onTaskClick={onTaskClick}
+                onRename={
+                  onRenameColumn
+                    ? (newName) => onRenameColumn(col.name, newName)
+                    : undefined
+                }
+                existingColumnNames={columnNames.filter((n) => n !== col.name)}
+                deletionTaskCount={deletionCountByStatus[col.name] ?? 0}
+                onDelete={
+                  onDeleteColumn
+                    ? (destColumn) => onDeleteColumn(col.name, destColumn)
+                    : undefined
+                }
+                canDelete={columns.length > 1}
+                dragState={dragState}
+                onDragHover={handleDragHover}
+                onTaskDrop={handleTaskDrop}
+                onTaskDragStart={handleDragStart}
+                onTaskDragEnd={handleDragEnd}
+                columnDraggable={sorted.length > 1}
+                onColumnDrop={handleColumnDrop}
+              />
+            ))}
+            {onAddColumn && (
+              <AddColumnButton
+                existingColumnNames={columnNames}
+                onAdd={onAddColumn}
+              />
+            )}
+          </div>
+        </div>
+      </BoardColumnProvider>
+    </BoardCardProvider>
   );
 };
