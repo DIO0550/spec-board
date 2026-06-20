@@ -82,8 +82,8 @@ test("Context Value は依存不変なら同一参照（useMemo）", () => {
 });
 
 test("childTasks 未指定でも 2 回連続レンダーで Context Value 参照が安定する", () => {
-  // childTasks ?? [] のリテラル再生成で memo が壊れないか（実コーラ Column が必ず
-  // childTasks を渡すケースとは別に、Compound 直接利用での識別性を担保する）
+  // childTasks ?? [] のリテラル再生成で memo が壊れないか（実呼び出し元 Column が
+  // 必ず childTasks を渡すケースとは別に、Compound 直接利用での識別性を担保する）
   const refs: (TaskCardContextValue | null)[] = [];
   const Probe = () => {
     const ctx = useContext(TaskCardContext);
