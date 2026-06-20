@@ -39,7 +39,9 @@ export const TaskCardContext = createContext<TaskCardContextValue | null>(null);
 export const useTaskCardContext = (): TaskCardContextValue => {
   const ctx = useContext(TaskCardContext);
   if (ctx === null) {
-    throw new Error("TaskCard.* は <TaskCard> の子としてのみ使用できます");
+    throw new Error(
+      "TaskCard.* は <TaskCard.Root>（旧 API 経路では <TaskCard>）の子としてのみ使用できます",
+    );
   }
   return ctx;
 };

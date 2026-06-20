@@ -54,7 +54,7 @@ test("useTaskCardContext を Provider 外で呼ぶと throw する", () => {
     act(() => {
       root?.render(createElement(Probe));
     });
-  }).toThrow(/TaskCard\.\* は <TaskCard> の子としてのみ使用できます/);
+  }).toThrow(/TaskCard\.\* は <TaskCard\.Root>/);
 });
 
 test("Provider 内で useTaskCardContext は Value を返す", () => {
