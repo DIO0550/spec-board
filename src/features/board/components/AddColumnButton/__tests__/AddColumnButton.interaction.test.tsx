@@ -20,7 +20,7 @@ type RenderOptions = {
   /** AddColumnButton に渡す props */
   props: Parameters<typeof AddColumnButton>[0];
   /** BoardColumnProvider に渡す既存カラム名（重複チェック用） */
-  existingColumnNames?: readonly string[];
+  columnNames?: readonly string[];
 };
 
 /**
@@ -32,7 +32,7 @@ function render(options: RenderOptions) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  const columns = (options.existingColumnNames ?? []).map((name, order) => ({
+  const columns = (options.columnNames ?? []).map((name, order) => ({
     name,
     order,
   }));
@@ -84,7 +84,7 @@ test("ボタンクリックで入力フィールドが表示される", () => {
 
 test("名前を入力して Enter で onAdd が呼ばれる", () => {
   const onAdd = vi.fn();
-  render({ props: { onAdd }, existingColumnNames: ["Todo"] });
+  render({ props: { onAdd }, columnNames: ["Todo"] });
   act(() => {
     (
       document.querySelector(
@@ -272,7 +272,7 @@ test("空文字で Enter しても onAdd は呼ばれない", () => {
 
 test("既存と同名の場合 onAdd は呼ばれず入力状態が維持される", () => {
   const onAdd = vi.fn();
-  render({ props: { onAdd }, existingColumnNames: ["Todo", "Done"] });
+  render({ props: { onAdd }, columnNames: ["Todo", "Done"] });
   act(() => {
     (
       document.querySelector(

@@ -5,7 +5,7 @@ import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { Board } from "..";
-import { DRAG_MIME_TYPE } from "../dragState";
+import { DRAG_MIME_TYPE } from "../mime";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

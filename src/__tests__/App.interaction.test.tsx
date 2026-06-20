@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
-import { DRAG_MIME_TYPE } from "@/features/board/components/Board/dragState";
+import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import {
   createTask as createTaskInvoke,
   deleteTask as deleteTaskInvoke,

@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import type { Column as ColumnType } from "@/types/column";
 import { Board } from "..";
-import { COLUMN_DRAG_MIME_TYPE } from "../columnDragState";
+import { COLUMN_DRAG_MIME_TYPE } from "../mime";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
