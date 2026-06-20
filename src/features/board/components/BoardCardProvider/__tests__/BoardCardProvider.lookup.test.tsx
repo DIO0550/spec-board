@@ -103,19 +103,18 @@ test("byPath は allTasks から該当 task を返し、不在時は undefined �
 });
 
 test("milestoneByName は Map.get と同じ挙動で undefined/該当を返す", () => {
-  const def = {
+  const def: MilestoneDefinition = {
     name: "v1",
-    state: "active",
-    description: undefined,
-    due: undefined,
-  } as unknown as MilestoneDefinition;
+    title: "v1 リリース",
+    state: "open",
+  };
   const milestonesByName = new Map([["v1", def]]);
   const probe = mountProbe({ milestonesByName });
   expect(probe.latest.milestoneByName("v1")).toBe(def);
   expect(probe.latest.milestoneByName("missing")).toBeUndefined();
 });
 
-test("milestonesByName 未指定時は空 Map を公開し、指定時は同一参照を返す", () => {
+test("milestonesByName 未指定時は空 Map を公開する", () => {
   const empty = mountProbe();
   expect(empty.latest.milestonesByName.size).toBe(0);
 });
