@@ -24,25 +24,19 @@ type TaskCardProps = Omit<TaskCardRootProps, "children">;
  */
 const TaskCardLegacy = ({
   task,
-  childTasks,
-  descendantTasks,
-  doneColumn,
-  milestonesByName,
   fromColumn,
   hasBrokenLink,
   hasParseError,
   onClick,
+  childTasks,
 }: TaskCardProps) => (
   <TaskCardRoot
     task={task}
-    childTasks={childTasks}
-    descendantTasks={descendantTasks}
-    doneColumn={doneColumn}
-    milestonesByName={milestonesByName}
     fromColumn={fromColumn}
     hasBrokenLink={hasBrokenLink}
     hasParseError={hasParseError}
     onClick={onClick}
+    childTasks={childTasks}
   >
     <TaskCardHeader />
     <TaskCardMilestone />

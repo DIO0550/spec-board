@@ -43,8 +43,16 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
   });
 
 type RenderOptions = {
-  /** Column props（order はデフォルト 0） */
+  /** Column メタ props（order はデフォルト 0） */
   column: Omit<Parameters<typeof Column>[0], "order"> & { order?: number };
+  /** BoardCardProvider に渡す表示用 tasks */
+  tasks?: readonly Task[];
+  /** BoardCardProvider に渡す全 tasks（未指定なら tasks を使う） */
+  allTasks?: readonly Task[];
+  /** BoardCardProvider に渡す tasksByNormalizedPath */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** BoardCardProvider に渡す doneColumn */
+  doneColumn?: string;
   /** BoardCardProvider に渡す onTaskDrop */
   onTaskDrop?: TaskDropHandler;
   /** BoardColumnProvider に渡す onColumnReorder */
@@ -79,15 +87,15 @@ const renderWithProviders = (options: RenderOptions) => {
   const handleResult = (api: BoardCardApi) => {
     latestCard = api;
   };
-  const tasks = options.column.tasks;
-  const allTasks = options.column.allTasks ?? tasks;
+  const tasks = options.tasks ?? [];
+  const allTasks = options.allTasks ?? tasks;
   const columns = options.columns ?? [{ name: options.column.name, order: 0 }];
   const tree: ReactNode = (
     <BoardCardProvider
       tasks={tasks}
       allTasks={allTasks}
-      tasksByNormalizedPath={options.column.tasksByNormalizedPath ?? new Map()}
-      doneColumn={options.column.doneColumn}
+      tasksByNormalizedPath={options.tasksByNormalizedPath ?? new Map()}
+      doneColumn={options.doneColumn}
       onTaskDrop={options.onTaskDrop}
     >
       <BoardColumnProvider
@@ -119,7 +127,7 @@ const querySection = (): HTMLElement => {
 
 test("独自 MIME を持つ dragover で preventDefault される", () => {
   renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
   });
   const section = querySection();
   const event = createDragEvent("dragover");
@@ -132,7 +140,7 @@ test("独自 MIME を持つ dragover で preventDefault される", () => {
 
 test("他 MIME (text/plain) の dragover では preventDefault されない", () => {
   renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
   });
   const section = querySection();
   const event = createDragEvent("dragover");
@@ -145,7 +153,7 @@ test("他 MIME (text/plain) の dragover では preventDefault されない", ()
 
 test("dragover で hover ターゲット (name, index) が Provider に通知される", async () => {
   const probe = renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
   });
   act(() => {
     probe.cardApi.startDrag("tasks/a.md", "Done");
@@ -163,7 +171,7 @@ test("dragover で hover ターゲット (name, index) が Provider に通知さ
 
 test("currentTarget 外への dragleave で hover ターゲットが (null, null) にリセットされる", () => {
   const probe = renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
   });
   act(() => {
     probe.cardApi.startDrag("tasks/a.md", "Done");
@@ -181,7 +189,8 @@ test("drop で onTaskDrop が期待引数で呼ばれる", async () => {
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", tasks: [], allTasks: [taskA], onAddClick: vi.fn() },
+    column: { name: "Done", onAddClick: vi.fn() },
+    allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
@@ -207,7 +216,8 @@ test("dataTransfer 空の drop（外部 D&D）では onTaskDrop が呼ばれな�
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", tasks: [], allTasks: [taskA], onAddClick: vi.fn() },
+    column: { name: "Done", onAddClick: vi.fn() },
+    allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
@@ -225,7 +235,8 @@ test("dataTransfer の filePath が dragState と不一致なら onTaskDrop が�
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", tasks: [], allTasks: [taskA], onAddClick: vi.fn() },
+    column: { name: "Done", onAddClick: vi.fn() },
+    allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
@@ -244,7 +255,8 @@ test("空カラムでの drop は toIndex=0 で呼ばれる", async () => {
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", tasks: [], allTasks: [taskA], onAddClick: vi.fn() },
+    column: { name: "Done", onAddClick: vi.fn() },
+    allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
@@ -275,12 +287,9 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const onTaskDrop = vi.fn();
   const probe = renderWithProviders({
-    column: {
-      name: "Done",
-      tasks,
-      allTasks: [...tasks, taskA],
-      onAddClick: vi.fn(),
-    },
+    column: { name: "Done", onAddClick: vi.fn() },
+    tasks,
+    allTasks: [...tasks, taskA],
     onTaskDrop,
   });
   act(() => {
@@ -329,7 +338,8 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
 test("hoverTarget.column === name の時のみ drop-placeholder が出る", () => {
   const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
   const probe = renderWithProviders({
-    column: { name: "Todo", tasks, onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
+    tasks,
   });
   act(() => {
     probe.cardApi.startDrag("tasks/x.md", "Todo");
@@ -343,7 +353,8 @@ test("hoverTarget.column === name の時のみ drop-placeholder が出る", () =
 test("hoverTarget.column が他カラムの時は placeholder が出ない", () => {
   const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
   const probe = renderWithProviders({
-    column: { name: "Todo", tasks, onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
+    tasks,
   });
   act(() => {
     probe.cardApi.startDrag("tasks/x.md", "Done");
@@ -356,7 +367,7 @@ test("hoverTarget.column が他カラムの時は placeholder が出ない", () 
 
 test("column MIME の dragover で preventDefault される", () => {
   renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
   });
   const section = querySection();
   const event = createDragEvent("dragover");
@@ -370,7 +381,7 @@ test("column MIME の dragover で preventDefault される", () => {
 test("column MIME の drop で onColumnReorder({fromColumnName, toColumnName})", async () => {
   const onColumnReorder = vi.fn();
   renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
     onColumnReorder,
   });
   const section = querySection();
@@ -391,7 +402,7 @@ test("column MIME の drop で onColumnReorder({fromColumnName, toColumnName})",
 test("column MIME の drop で fromColumnName が空文字列なら onColumnReorder は呼ばれないが preventDefault は実行される", () => {
   const onColumnReorder = vi.fn();
   renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
     onColumnReorder,
   });
   const section = querySection();
@@ -408,7 +419,6 @@ test("columnDraggable=true を渡すと内部 ColumnHeader に draggable=true �
   renderWithProviders({
     column: {
       name: "Todo",
-      tasks: [],
       onAddClick: vi.fn(),
       columnDraggable: true,
     },
@@ -421,7 +431,7 @@ test("columnDraggable=true を渡すと内部 ColumnHeader に draggable=true �
 
 test("columnDraggable=false / 未指定なら ColumnHeader の draggable は false", () => {
   renderWithProviders({
-    column: { name: "Todo", tasks: [], onAddClick: vi.fn() },
+    column: { name: "Todo", onAddClick: vi.fn() },
   });
   const header = container?.querySelector<HTMLElement>(
     "[data-testid='column-header']",

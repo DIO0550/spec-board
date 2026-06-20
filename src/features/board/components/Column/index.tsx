@@ -3,36 +3,19 @@ import {
   Fragment,
   type MouseEvent,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { hasAnyBrokenLink } from "@/domains/broken-link";
 import { hasParseError } from "@/domains/parse-error";
-import { TaskHierarchy } from "@/domains/task-hierarchy";
-import type { Task } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../Board/mime";
 import { useBoardCard } from "../BoardCardProvider";
 import { useBoardColumn } from "../BoardColumnProvider";
 import { ColumnContextMenu } from "../ColumnContextMenu";
 import { ColumnHeader } from "../ColumnHeader";
-import { type MilestonesByName, TaskCard } from "../TaskCard";
+import { TaskCard } from "../TaskCard";
 import { computeHoverIndex } from "./dragHover";
-
-/** カラム drop 確定時に呼ばれる引数（Column 経由の onColumnReorder 互換用）。 */
-export type ColumnDropParams = {
-  readonly fromColumnName: string;
-  readonly toColumnName: string;
-};
-
-/** カラム内タスク drop 確定時に呼ばれる引数（Column 経由の onTaskDrop 互換用）。 */
-export type ColumnTaskDropParams = {
-  readonly taskFilePath: string;
-  readonly fromColumn: string;
-  readonly toColumn: string;
-  readonly toIndex: number;
-};
 
 /** 個別カラムの Props */
 type ColumnProps = {
@@ -45,22 +28,6 @@ type ColumnProps = {
    * フォールバック色決定に必須のため、呼び出し側（Board）は表示順インデックスを渡す。
    */
   order: number;
-  /** カラムに属するタスクの配列 */
-  tasks: Task[];
-  /** 全タスクの配列（子タスク解決用） */
-  allTasks?: Task[];
-  /**
-   * 「正規化済み Task.filePath → Task」の lookup Map。broken link 判定に使用する。
-   * 未指定時は判定をスキップし、TaskCard に `hasBrokenLink={false}` を渡す。
-   */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
-  /** 完了カラム名 */
-  doneColumn?: string;
-  /**
-   * name → マイルストーン定義の Map。各 TaskCard のバッジ（title / due 解決）へ
-   * pass-through する。未指定時は name 表示にフォールバックする。
-   */
-  milestonesByName?: MilestonesByName;
   /** 「+ 追加」ボタンクリック時のコールバック */
   onAddClick: () => void;
   /**
@@ -74,8 +41,6 @@ type ColumnProps = {
    * @param newName - 新しいカラム名（trim 済み、既存と非重複）
    */
   onRename?: (newName: string) => void;
-  /** 他カラム名の一覧（重複チェック用。自身は含まない） */
-  existingColumnNames?: string[];
   /**
    * カラム削除確定時のコールバック。
    * 未指定の場合は削除 UI を無効化する。
@@ -83,21 +48,8 @@ type ColumnProps = {
    * @param destColumn - タスクの移動先カラム名。タスクが 0 件の場合は undefined
    */
   onDelete?: (destColumn: string | undefined) => void | Promise<void>;
-  /** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
-  canDelete?: boolean;
-  /**
-   * 削除判定に使うフィルタ前の列内タスク件数。フィルタで表示カードが減っても
-   * 削除は全件（隠れタスク含む）に作用するため、移動先セレクタ要否・確認文言は
-   * この件数で判断する。未指定時は表示中の tasks.length にフォールバックする。
-   */
-  deletionTaskCount?: number;
   /** 自カラムヘッダーを DnD ハンドルにするか。1 カラム時は false で渡す。 */
   columnDraggable?: boolean;
-  /**
-   * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合が全タスクと
-   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。
-   */
-  dndDisabled?: boolean;
 };
 
 /**
@@ -109,45 +61,20 @@ export const Column = ({
   name,
   color,
   order,
-  tasks,
-  allTasks = [],
-  tasksByNormalizedPath,
-  doneColumn,
-  milestonesByName,
   onAddClick,
   onTaskClick,
   onRename,
-  existingColumnNames,
   onDelete,
-  canDelete = true,
-  deletionTaskCount,
   columnDraggable = false,
-  dndDisabled = false,
 }: ColumnProps) => {
   const card = useBoardCard();
   const col = useBoardColumn();
 
-  const tasksByFilePath = useMemo(
-    () => new Map(allTasks.map((t) => [t.filePath, t])),
-    [allTasks],
-  );
-  // 各 TaskCard の進捗バーは「全子孫」基準で算出するため、Column 単位で
-  // allTasks 全件分の子孫 list を 1 度だけ構築し、tasks.map 内で都度 DFS が
-  // 走るのを避ける。lookup Map を共有して 1 root あたりの DFS は O(子孫数)
-  // 相当に抑えられるが、最悪ケース（diamond / 深い chain）では allTasks
-  // 全体でみると O(N * 平均子孫数) になる点に留意。
-  const descendantsByFilePath = useMemo(() => {
-    const map = new Map<string, readonly Task[]>();
-    for (const t of allTasks) {
-      map.set(
-        t.filePath,
-        TaskHierarchy.collectDescendants(allTasks, t.filePath, {
-          lookup: tasksByFilePath,
-        }),
-      );
-    }
-    return map;
-  }, [allTasks, tasksByFilePath]);
+  const tasks = card.tasksInColumn(name);
+  const otherColumnNames = col.existingNamesExcluding(name);
+  const deletionCount = col.taskCountInColumn(name);
+  const dndDisabled = card.dndDisabled;
+
   const listRef = useRef<HTMLUListElement>(null);
   // dragover は高頻度発火するため、rAF 同フレーム内では rect 再計算を 1 回に
   // 抑制する。pendingFrameRef が null でない間は新規 rAF を予約せず、最後の
@@ -256,7 +183,6 @@ export const Column = ({
   const placeholderIndex =
     card.hoverTarget.column === name ? card.hoverTarget.index : null;
 
-  const otherColumnNames = existingColumnNames ?? [];
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -290,9 +216,6 @@ export const Column = ({
     setDestColumn(otherColumnNames[0] ?? "");
     setIsConfirming(true);
   };
-
-  // 削除はフィルタで隠れたタスクも含む全件に作用するため、フィルタ前の件数で判定する。
-  const deletionCount = deletionTaskCount ?? tasks.length;
 
   /**
    * 削除確認ダイアログの「削除」確定ハンドラ。
@@ -334,7 +257,7 @@ export const Column = ({
   // タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
   // メニュー側で削除操作そのものを封じる。
   const canDeleteEffective =
-    canDelete && !(hasTasks && otherColumnNames.length === 0);
+    col.canDelete(name) && !(hasTasks && otherColumnNames.length === 0);
 
   /**
    * ColumnHeader 経由のカラム dragstart を Provider へ流す。
@@ -365,7 +288,7 @@ export const Column = ({
         order={order}
         onAddClick={onAddClick}
         onRename={onRename}
-        existingColumnNames={existingColumnNames}
+        existingColumnNames={[...otherColumnNames]}
         onContextMenu={handleContextMenu}
         draggable={columnDraggable && !dndDisabled}
         onColumnDragStart={handleColumnDragStart}
@@ -373,11 +296,6 @@ export const Column = ({
       />
       <ul ref={listRef} className="flex-1 overflow-y-auto px-2 pb-2">
         {tasks.map((task, i) => {
-          const childTasks = task.hierarchy.childFilePaths
-            .map((fp) => tasksByFilePath.get(fp))
-            .filter((t): t is Task => t !== undefined);
-          const descendantTasks =
-            descendantsByFilePath.get(task.filePath) ?? [];
           return (
             <Fragment key={task.id}>
               {placeholderIndex === i && (
@@ -390,15 +308,11 @@ export const Column = ({
               <li data-task-card className="mb-2">
                 <TaskCard
                   task={task}
-                  childTasks={childTasks}
-                  descendantTasks={descendantTasks}
-                  doneColumn={doneColumn}
-                  milestonesByName={milestonesByName}
                   fromColumn={name}
-                  hasBrokenLink={
-                    tasksByNormalizedPath !== undefined &&
-                    hasAnyBrokenLink(task, tasksByNormalizedPath)
-                  }
+                  hasBrokenLink={hasAnyBrokenLink(
+                    task,
+                    card.tasksByNormalizedPath,
+                  )}
                   hasParseError={hasParseError(task)}
                   onClick={onTaskClick}
                 />

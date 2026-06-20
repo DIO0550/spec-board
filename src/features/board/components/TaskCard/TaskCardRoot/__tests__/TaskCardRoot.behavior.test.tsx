@@ -149,8 +149,8 @@ test("childTasks に都度新規の空配列を渡しても Context Value 参照
     return null;
   };
   const task = createTask();
-  renderRoot({ task, childTasks: [], descendantTasks: [] }, <Probe />);
-  renderRoot({ task, childTasks: [], descendantTasks: [] }, <Probe />);
+  renderRoot({ task, childTasks: [] }, <Probe />);
+  renderRoot({ task, childTasks: [] }, <Probe />);
   expect(refs.length).toBeGreaterThanOrEqual(2);
   expect(refs[0]).not.toBeNull();
   expect(refs[0]).toBe(refs[1]);

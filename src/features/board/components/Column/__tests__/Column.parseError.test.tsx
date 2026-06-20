@@ -49,28 +49,31 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
+type RenderOptions = {
+  column: Omit<Parameters<typeof Column>[0], "order"> & { order?: number };
+  tasks?: readonly Task[];
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+};
+
 /**
  * BoardCardProvider / BoardColumnProvider 配下に Column を mount する。
- * @param props Column の props（order はデフォルト 0）
+ * @param options - レンダリングオプション
  */
-function render(
-  props: Omit<Parameters<typeof Column>[0], "order"> & { order?: number },
-) {
+function render(options: RenderOptions) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  const tasks = props.tasks;
-  const allTasks = props.allTasks ?? tasks;
-  const columns = [{ name: props.name, order: 0 }];
+  const tasks = options.tasks ?? [];
+  const allTasks = tasks;
+  const columns = [{ name: options.column.name, order: 0 }];
   const tree: ReactNode = (
     <BoardCardProvider
       tasks={tasks}
       allTasks={allTasks}
-      tasksByNormalizedPath={props.tasksByNormalizedPath ?? new Map()}
-      doneColumn={props.doneColumn}
+      tasksByNormalizedPath={options.tasksByNormalizedPath ?? new Map()}
     >
       <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
-        <Column order={0} {...props} />
+        <Column order={0} {...options.column} />
       </BoardColumnProvider>
     </BoardCardProvider>
   );
@@ -81,7 +84,10 @@ function render(
 
 test("invalid warning を持つ task を渡すとカードに parse-error-icon が表示される", () => {
   const task = createTask({ warnings: [invalidWarning] });
-  render({ name: "Todo", tasks: [task], onAddClick: vi.fn() });
+  render({
+    column: { name: "Todo", onAddClick: vi.fn() },
+    tasks: [task],
+  });
   expect(
     document.querySelector('[data-testid="parse-error-icon"]'),
   ).not.toBeNull();
@@ -89,12 +95,18 @@ test("invalid warning を持つ task を渡すとカードに parse-error-icon �
 
 test("除外コード（parentCycle）のみの task では parse-error-icon は描画されない", () => {
   const task = createTask({ warnings: [cycleWarning] });
-  render({ name: "Todo", tasks: [task], onAddClick: vi.fn() });
+  render({
+    column: { name: "Todo", onAddClick: vi.fn() },
+    tasks: [task],
+  });
   expect(document.querySelector('[data-testid="parse-error-icon"]')).toBeNull();
 });
 
 test("warnings 空の task では parse-error-icon は描画されない", () => {
   const task = createTask({ warnings: [] });
-  render({ name: "Todo", tasks: [task], onAddClick: vi.fn() });
+  render({
+    column: { name: "Todo", onAddClick: vi.fn() },
+    tasks: [task],
+  });
   expect(document.querySelector('[data-testid="parse-error-icon"]')).toBeNull();
 });

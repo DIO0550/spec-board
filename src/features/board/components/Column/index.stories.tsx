@@ -33,11 +33,6 @@ const meta: Meta<typeof Column> = {
   ],
   args: {
     name: "Todo",
-    tasks: todoTasks,
-    allTasks: initialTasks,
-    doneColumn: "Done",
-    existingColumnNames: ["In Progress", "Done"],
-    canDelete: true,
     onAddClick: () => {},
     onTaskClick: () => {},
     onRename: () => {},
@@ -51,8 +46,27 @@ type Story = StoryObj<typeof Column>;
 
 export const Default: Story = {};
 
+const emptyDecorators = [
+  withBoardColumnProvider({
+    columns: [
+      { name: "Todo", order: 0 },
+      { name: "In Progress", order: 1 },
+      { name: "Done", order: 2 },
+    ],
+    tasks: [],
+    allTasks: [],
+  }),
+  withBoardCardProvider({
+    tasks: [],
+    allTasks: [],
+    tasksByNormalizedPath: new Map(),
+    milestonesByName: new Map(),
+    doneColumn: "Done",
+  }),
+];
+
 export const Empty: Story = {
-  args: { tasks: [] },
+  decorators: emptyDecorators,
 };
 
 const manyTasks = Array.from({ length: 12 }, (_, i) =>
@@ -72,7 +86,24 @@ const manyTasks = Array.from({ length: 12 }, (_, i) =>
 );
 
 export const ManyTasks: Story = {
-  args: { tasks: manyTasks },
+  decorators: [
+    withBoardColumnProvider({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "In Progress", order: 1 },
+        { name: "Done", order: 2 },
+      ],
+      tasks: manyTasks,
+      allTasks: manyTasks,
+    }),
+    withBoardCardProvider({
+      tasks: manyTasks,
+      allTasks: manyTasks,
+      tasksByNormalizedPath: new Map(),
+      milestonesByName: new Map(),
+      doneColumn: "Done",
+    }),
+  ],
 };
 
 export const WithoutMenu: Story = {

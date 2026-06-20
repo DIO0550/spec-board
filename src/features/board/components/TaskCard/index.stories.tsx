@@ -21,8 +21,6 @@ const meta: Meta<typeof TaskCard> = {
   args: {
     task: baseTask,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
     fromColumn: "Todo",
   },
 };
@@ -64,7 +62,6 @@ export const WithChildren: Story = {
   args: {
     task: { ...baseTask },
     childTasks,
-    descendantTasks: childTasks,
   },
 };
 
@@ -72,14 +69,6 @@ export const WithDescendantsBeyondDirectChildren: Story = {
   args: {
     task: { ...baseTask },
     childTasks,
-    descendantTasks: [
-      ...childTasks,
-      ...initialTasks.slice(0, 3).map((t) => ({
-        ...t,
-        id: `extra-${t.id}`,
-        status: "Done",
-      })),
-    ],
   },
 };
 
@@ -93,7 +82,6 @@ export const Minimal: Story = {
       title: "最小構成のタスク",
     },
     childTasks: [],
-    descendantTasks: [],
   },
 };
 
@@ -134,7 +122,6 @@ export const ProgressOnly: Story = {
   args: {
     task: baseTask,
     childTasks,
-    descendantTasks: childTasks,
   },
 };
 
@@ -159,7 +146,6 @@ export const CompoundFull: Story = {
   args: {
     task: { ...baseTask, milestone: "v1.0", labels: ["bug", "urgent"] },
     childTasks,
-    descendantTasks: childTasks,
   },
 };
 

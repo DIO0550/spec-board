@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { AddColumnButton } from "../AddColumnButton";
@@ -21,21 +20,15 @@ type BoardProps = {
    * 子孫カウントを正確に保つため、未絞り込みの全タスクを渡す。未指定なら tasks を使う。
    */
   allTasks?: Task[];
-  /**
-   * 「正規化済み Task.filePath → Task」の lookup Map。各 TaskCard の broken link 判定に使用する。
-   * Board 自身では使用せず、Column へ pass-through する。
-   */
+  /** 正規化済み Task.filePath → Task の lookup Map。Provider 経由で配布する。 */
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
-  /**
-   * name → マイルストーン定義の Map。Board 自身では使用せず、Column 経由で各 TaskCard の
-   * バッジ（title / due 解決）へ pass-through する。
-   */
+  /** name → マイルストーン定義の Map（カードバッジ用） */
   milestonesByName?: MilestonesByName;
   /**
    * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合（tasks）が全タスクと
-   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。Column へ pass-through する。
+   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。
    */
   dndDisabled?: boolean;
   /** カラムの「+ 追加」ボタンクリック時のコールバック
@@ -82,7 +75,11 @@ type BoardProps = {
 };
 
 /**
- * カラム一覧を横並びで表示するボードコンテナ
+ * カラム一覧を横並びで表示するボードコンテナ。
+ * 派生計算（tasksByStatus / columnNames / hierarchyTasks など）は
+ * すべて {@link BoardCardProvider} / {@link BoardColumnProvider} に閉じ込め、
+ * Board 本体は Provider マウントとカラム配置のみを担う宣言的なコンポジション。
+ *
  * @param props - {@link BoardProps}
  * @returns ボード要素
  */
@@ -102,42 +99,10 @@ export const Board = ({
   onTaskDrop,
   onColumnReorder,
 }: BoardProps) => {
-  const sorted = useMemo(
-    () => [...columns].sort((a, b) => a.order - b.order),
-    [columns],
-  );
-
-  // 階層カウントの解決には全タスク集合を使う。絞り込みで tasks が減っても子孫数を
-  // 正確に保つため、未指定時のみ表示用 tasks にフォールバックする。
-  const hierarchyTasks = allTasks ?? tasks;
-
-  const tasksByStatus = useMemo(() => {
-    const grouped: Record<string, Task[]> = {};
-    for (const task of tasks) {
-      if (!grouped[task.status]) {
-        grouped[task.status] = [];
-      }
-      grouped[task.status].push(task);
-    }
-    return grouped;
-  }, [tasks]);
-
-  const columnNames = useMemo(() => columns.map((c) => c.name), [columns]);
-
-  // 列削除はフィルタで隠れたタスクも含む全件に作用するため、削除判定用の件数は
-  // 絞り込み前の全タスク（hierarchyTasks）から status 別に数える。
-  const deletionCountByStatus = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const task of hierarchyTasks) {
-      counts[task.status] = (counts[task.status] ?? 0) + 1;
-    }
-    return counts;
-  }, [hierarchyTasks]);
-
   return (
     <BoardCardProvider
       tasks={tasks}
-      allTasks={hierarchyTasks}
+      allTasks={allTasks ?? tasks}
       tasksByNormalizedPath={tasksByNormalizedPath ?? new Map()}
       milestonesByName={milestonesByName}
       doneColumn={doneColumn}
@@ -147,48 +112,36 @@ export const Board = ({
       <BoardColumnProvider
         columns={columns}
         tasks={tasks}
-        allTasks={hierarchyTasks}
+        allTasks={allTasks}
         dndDisabled={dndDisabled}
         onColumnReorder={onColumnReorder}
       >
         <div className="flex h-full flex-col">
           <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-            {sorted.map((col, index) => (
-              <Column
-                key={col.name}
-                name={col.name}
-                color={col.color}
-                order={index}
-                tasks={tasksByStatus[col.name] ?? []}
-                allTasks={hierarchyTasks}
-                tasksByNormalizedPath={tasksByNormalizedPath}
-                doneColumn={doneColumn}
-                milestonesByName={milestonesByName}
-                dndDisabled={dndDisabled}
-                onAddClick={() => onAddTask(col.name)}
-                onTaskClick={onTaskClick}
-                onRename={
-                  onRenameColumn
-                    ? (newName) => onRenameColumn(col.name, newName)
-                    : undefined
-                }
-                existingColumnNames={columnNames.filter((n) => n !== col.name)}
-                deletionTaskCount={deletionCountByStatus[col.name] ?? 0}
-                onDelete={
-                  onDeleteColumn
-                    ? (destColumn) => onDeleteColumn(col.name, destColumn)
-                    : undefined
-                }
-                canDelete={columns.length > 1}
-                columnDraggable={sorted.length > 1}
-              />
-            ))}
-            {onAddColumn && (
-              <AddColumnButton
-                existingColumnNames={columnNames}
-                onAdd={onAddColumn}
-              />
-            )}
+            {[...columns]
+              .sort((a, b) => a.order - b.order)
+              .map((col, index) => (
+                <Column
+                  key={col.name}
+                  name={col.name}
+                  color={col.color}
+                  order={index}
+                  onAddClick={() => onAddTask(col.name)}
+                  onTaskClick={onTaskClick}
+                  onRename={
+                    onRenameColumn
+                      ? (newName) => onRenameColumn(col.name, newName)
+                      : undefined
+                  }
+                  onDelete={
+                    onDeleteColumn
+                      ? (destColumn) => onDeleteColumn(col.name, destColumn)
+                      : undefined
+                  }
+                  columnDraggable={columns.length > 1}
+                />
+              ))}
+            {onAddColumn && <AddColumnButton onAdd={onAddColumn} />}
           </div>
         </div>
       </BoardColumnProvider>

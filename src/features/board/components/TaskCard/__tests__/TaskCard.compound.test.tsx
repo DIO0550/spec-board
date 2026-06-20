@@ -84,32 +84,22 @@ test("旧 API（Legacy）と新 API（Compound）が同じ data-testid と同じ
   act(() => {
     rootA?.render(
       wrapWithCardProvider(
-        <TaskCard
-          task={task}
-          fromColumn="Todo"
-          doneColumn="Done"
-          onClick={onClick}
-        />,
-        { task },
+        <TaskCard task={task} fromColumn="Todo" onClick={onClick} />,
+        { task, doneColumn: "Done" },
       ),
     );
   });
   act(() => {
     rootB?.render(
       wrapWithCardProvider(
-        <TaskCard.Root
-          task={task}
-          fromColumn="Todo"
-          doneColumn="Done"
-          onClick={onClick}
-        >
+        <TaskCard.Root task={task} fromColumn="Todo" onClick={onClick}>
           <TaskCard.Header />
           <TaskCard.Milestone />
           <TaskCard.Labels />
           <TaskCard.Progress />
           <TaskCard.Footer />
         </TaskCard.Root>,
-        { task },
+        { task, doneColumn: "Done" },
       ),
     );
   });
@@ -145,21 +135,28 @@ test("旧 API（Legacy）と新 API（Compound）が同じ data-testid と同じ
 test("doneColumn 省略時に default 'Done' が適用された結果が観察可能な DOM に出る", () => {
   // doneColumn が context に伝わるか直接観察せず、default が効いた結果として
   // 「status='Done' の子タスクが done としてカウントされる」ことで間接観察する。
-  const parent = createTask({ id: "parent" });
-  const childDone = createTask({ id: "c1", status: "Done" });
-  const childTodo = createTask({ id: "c2", status: "Todo" });
+  const parent = createTask({
+    id: "parent",
+    filePath: "tasks/parent.md",
+    children: ["tasks/c1.md", "tasks/c2.md"],
+  });
+  const childDone = createTask({
+    id: "c1",
+    status: "Done",
+    filePath: "tasks/c1.md",
+  });
+  const childTodo = createTask({
+    id: "c2",
+    status: "Todo",
+    filePath: "tasks/c2.md",
+  });
   act(() => {
     rootA?.render(
       wrapWithCardProvider(
-        <TaskCard.Root
-          task={parent}
-          fromColumn="Todo"
-          childTasks={[childDone, childTodo]}
-          descendantTasks={[childDone, childTodo]}
-        >
+        <TaskCard.Root task={parent} fromColumn="Todo">
           <TaskCard.Footer />
         </TaskCard.Root>,
-        { task: parent },
+        { allTasks: [parent, childDone, childTodo] },
       ),
     );
   });

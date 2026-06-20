@@ -14,8 +14,9 @@ import {
 } from "../../hooks/useBoardViewMode";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
 import { Board } from "../Board";
+import type { TaskDropHandler } from "../BoardCardProvider";
+import type { ColumnReorderHandler } from "../BoardColumnProvider";
 import { CalendarView } from "../CalendarView";
-import type { ColumnDropParams, ColumnTaskDropParams } from "../Column";
 import { ListView } from "../ListView";
 import type { MilestonesByName } from "../TaskCard";
 import { TaskFilterBar } from "../TaskFilterBar";
@@ -74,17 +75,13 @@ type BoardWorkspaceProps = {
    */
   onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
   /**
-   * タスク drop 時のコールバック。
-   * @param params - 移動パラメータ
+   * タスク drop 時のコールバック。Provider 側で sync / async を吸収する。
    */
-  // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
-  onTaskDrop?: (params: ColumnTaskDropParams) => Promise<unknown> | void;
+  onTaskDrop?: TaskDropHandler;
   /**
-   * カラム並び替え drop 時のコールバック。
-   * @param params - 並び替えパラメータ
+   * カラム並び替え drop 時のコールバック。Provider 側で sync / async を吸収する。
    */
-  // biome-ignore lint/suspicious/noConfusingVoidType: void union allows synchronous handlers without forcing consumers to wrap them in Promises
-  onColumnReorder?: (params: ColumnDropParams) => Promise<unknown> | void;
+  onColumnReorder?: ColumnReorderHandler;
   /**
    * settings → board ナビゲートでラベル絞り込みを 1 回だけ seed する初期ラベル名。
    * `useTaskFilter` の `useState` 初期値関数にだけ反映され、effect での setCriteria

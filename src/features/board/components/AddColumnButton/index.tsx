@@ -1,10 +1,9 @@
 import type { KeyboardEvent } from "react";
 import { useEffect, useId, useRef, useState } from "react";
+import { useBoardColumn } from "../BoardColumnProvider";
 
 /** AddColumnButton の Props */
 type AddColumnButtonProps = {
-  /** 既存のカラム名一覧（重複チェック用） */
-  existingColumnNames: string[];
   /**
    * 新規カラム追加時のコールバック。
    * 入力値の trim 後に空文字や既存と同名の場合は呼び出されない。
@@ -18,14 +17,13 @@ type AddColumnButtonProps = {
  * ボード右端に表示される「+ カラムを追加」ボタン。
  * クリックでカラム名入力フィールドに切り替わり、
  * Enter で確定（onAdd 呼び出し）、Esc でキャンセルする。
+ * 既存カラム名は BoardColumnProvider 経由で取得する。
  *
  * @param props - {@link AddColumnButtonProps}
  * @returns カラム追加ボタン要素
  */
-export const AddColumnButton = ({
-  existingColumnNames,
-  onAdd,
-}: AddColumnButtonProps) => {
+export const AddColumnButton = ({ onAdd }: AddColumnButtonProps) => {
+  const { existingNames } = useBoardColumn();
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -64,7 +62,7 @@ export const AddColumnButton = ({
       setIsEditing(false);
       return true;
     }
-    if (existingColumnNames.includes(trimmed)) {
+    if (existingNames().includes(trimmed)) {
       return false;
     }
     setIsBusy(true);
@@ -100,7 +98,7 @@ export const AddColumnButton = ({
 
   const trimmedInput = inputValue.trim();
   const isDuplicate =
-    trimmedInput.length > 0 && existingColumnNames.includes(trimmedInput);
+    trimmedInput.length > 0 && existingNames().includes(trimmedInput);
 
   if (isEditing) {
     return (

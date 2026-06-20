@@ -38,30 +38,42 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
+type RenderOptions = {
+  /** Column のメタ props（name / color / order / callbacks） */
+  column: Omit<Parameters<typeof Column>[0], "order"> & { order?: number };
+  /** Provider に渡す表示用 tasks（指定なしなら []） */
+  tasks?: readonly Task[];
+  /** Provider に渡す全 tasks（指定なしなら tasks を使う） */
+  allTasks?: readonly Task[];
+  /** Provider に渡す doneColumn */
+  doneColumn?: string;
+  /** Provider に渡す tasksByNormalizedPath */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+};
+
 /**
  * BoardCardProvider / BoardColumnProvider 配下に Column を mount する。
- * Provider に渡す tasks / allTasks は Column と同じものを使い、status 別 grouping や
- * 子孫 lookup が Provider 経由で動くようにする。
- * @param props Column の props（order はデフォルト 0）
+ * tasks や allTasks 等の lookup data は Provider 側に渡し、Column 自身には
+ * メタ props だけ渡す（commit 5 で Column の lookup props が削除されたため）。
+ *
+ * @param options - レンダリングオプション
  */
-function render(
-  props: Omit<Parameters<typeof Column>[0], "order"> & { order?: number },
-) {
+function render(options: RenderOptions) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  const tasks = props.tasks;
-  const allTasks = props.allTasks ?? tasks;
-  const columns = [{ name: props.name, order: 0 }];
+  const tasks = options.tasks ?? [];
+  const allTasks = options.allTasks ?? tasks;
+  const columns = [{ name: options.column.name, order: 0 }];
   const tree: ReactNode = (
     <BoardCardProvider
       tasks={tasks}
       allTasks={allTasks}
-      tasksByNormalizedPath={props.tasksByNormalizedPath ?? new Map()}
-      doneColumn={props.doneColumn}
+      tasksByNormalizedPath={options.tasksByNormalizedPath ?? new Map()}
+      doneColumn={options.doneColumn}
     >
       <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
-        <Column order={0} {...props} />
+        <Column order={0} {...options.column} />
       </BoardColumnProvider>
     </BoardCardProvider>
   );
@@ -71,7 +83,7 @@ function render(
 }
 
 test("カラム名がヘッダーに表示される", async () => {
-  render({ name: "In Progress", tasks: [], onAddClick: vi.fn() });
+  render({ column: { name: "In Progress", onAddClick: vi.fn() } });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("In Progress");
   });
@@ -82,7 +94,7 @@ test("タスク件数がヘッダーに表示される", async () => {
     createTask({ id: "task-1", title: "タスク1" }),
     createTask({ id: "task-2", title: "タスク2" }),
   ];
-  render({ name: "Todo", tasks, onAddClick: vi.fn() });
+  render({ column: { name: "Todo", onAddClick: vi.fn() }, tasks });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("2");
   });
@@ -90,14 +102,14 @@ test("タスク件数がヘッダーに表示される", async () => {
 
 test("タスクのタイトルが表示される", async () => {
   const tasks = [createTask({ title: "ログイン修正" })];
-  render({ name: "Todo", tasks, onAddClick: vi.fn() });
+  render({ column: { name: "Todo", onAddClick: vi.fn() }, tasks });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("ログイン修正");
   });
 });
 
 test("「+ 追加」ボタンが表示される", async () => {
-  render({ name: "Todo", tasks: [], onAddClick: vi.fn() });
+  render({ column: { name: "Todo", onAddClick: vi.fn() } });
   await vi.waitFor(() => {
     const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
       (b): b is HTMLButtonElement => b.textContent === "+ 追加",
@@ -107,7 +119,7 @@ test("「+ 追加」ボタンが表示される", async () => {
 });
 
 test("aria-label にカラム名が設定される", async () => {
-  render({ name: "Done", tasks: [], onAddClick: vi.fn() });
+  render({ column: { name: "Done", onAddClick: vi.fn() } });
   await vi.waitFor(() => {
     const section = container?.querySelector("section");
     expect(section?.getAttribute("aria-label")).toBe("Done");
@@ -144,11 +156,10 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
   const allTasks = [rootTask, child, grand1, grand2];
 
   render({
-    name: "Todo",
+    column: { name: "Todo", onAddClick: vi.fn() },
     tasks: [rootTask],
     allTasks,
     doneColumn: "Done",
-    onAddClick: vi.fn(),
   });
 
   await vi.waitFor(() => {
