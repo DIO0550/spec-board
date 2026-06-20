@@ -60,6 +60,14 @@ export type BoardCardApi = {
     readonly column: string | null;
     readonly index: number | null;
   };
+  /**
+   * 現在のドラッグ起点（filePath / fromColumn）。idle のときは null。
+   * drop 確定時に Column が「ドラッグ開始時の fromColumn」を復元するために参照する。
+   */
+  dragSource: {
+    readonly filePath: string;
+    readonly fromColumn: string;
+  } | null;
   /** DnD 無効フラグ */
   dndDisabled: boolean;
 
@@ -255,6 +263,17 @@ export const BoardCardProvider = ({
     [dragState],
   );
 
+  const dragSource = useMemo(
+    () =>
+      dragState === null
+        ? null
+        : {
+            filePath: dragState.draggingTaskFilePath,
+            fromColumn: dragState.draggingFromColumn,
+          },
+    [dragState],
+  );
+
   const isDragging = useCallback(
     (filePath: string): boolean =>
       dragState !== null && dragState.draggingTaskFilePath === filePath,
@@ -318,6 +337,7 @@ export const BoardCardProvider = ({
     () => ({
       isDragging,
       hoverTarget,
+      dragSource,
       dndDisabled,
       startDrag,
       hover,
@@ -335,6 +355,7 @@ export const BoardCardProvider = ({
     [
       isDragging,
       hoverTarget,
+      dragSource,
       dndDisabled,
       startDrag,
       hover,

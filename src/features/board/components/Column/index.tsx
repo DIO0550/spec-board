@@ -171,7 +171,10 @@ export const Column = ({
       return { top: r.top, bottom: r.bottom };
     });
     const toIndex = computeHoverIndex(rects, e.clientY);
-    const fromColumn = card.byPath(taskFilePath)?.status ?? name;
+    // ドラッグ開始時点の fromColumn を Provider state から復元する。
+    // task.status 経由だと drag 中の楽観更新等で stale になり、moveTask の
+    // preflight が「fromColumn !== task.status」を異常検知する経路を破る可能性がある。
+    const fromColumn = card.dragSource?.fromColumn ?? name;
     void card.dropTask({
       taskFilePath,
       fromColumn,
