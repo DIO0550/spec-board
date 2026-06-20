@@ -168,5 +168,4 @@ export const dragReducer: Reducer<DragState, DragAction> = (state, action) => {
   }
 };
 
-/** DnD で使用する独自 MIME 型。外部 D&D を弾くための固定 string。 */
-export const DRAG_MIME_TYPE = "application/x-spec-board-task";
+export { DRAG_MIME_TYPE } from "./mime";
