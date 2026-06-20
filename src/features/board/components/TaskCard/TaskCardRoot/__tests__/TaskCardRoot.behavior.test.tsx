@@ -98,6 +98,29 @@ test("childTasks 未指定でも 2 回連続レンダーで Context Value 参照
   expect(refs[0]).toBe(refs[1]);
 });
 
+test("childTasks に都度新規の空配列を渡しても Context Value 参照が安定する", () => {
+  // Column 側が `descendantsByFilePath.get(...) ?? []` のように渡す現実ケース。
+  // length === 0 の正規化が無いと、毎レンダー新しい [] で useMemo が miss する。
+  const refs: (TaskCardContextValue | null)[] = [];
+  const Probe = () => {
+    const ctx = useContext(TaskCardContext);
+    refs.push(ctx);
+    return null;
+  };
+  const task = createTask();
+  renderRoot(
+    { task, childTasks: [], descendantTasks: [] },
+    createElement(Probe),
+  );
+  renderRoot(
+    { task, childTasks: [], descendantTasks: [] },
+    createElement(Probe),
+  );
+  expect(refs.length).toBeGreaterThanOrEqual(2);
+  expect(refs[0]).not.toBeNull();
+  expect(refs[0]).toBe(refs[1]);
+});
+
 test("dragstart で setData / effectAllowed / onDragStart が呼ばれる", () => {
   const onDragStart = vi.fn();
   renderRoot({

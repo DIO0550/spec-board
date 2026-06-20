@@ -93,8 +93,17 @@ export const TaskCardRoot = ({
   const dragGuardRef = useRef(false);
 
   const effectiveDoneColumn = doneColumn ?? DEFAULT_DONE_COLUMN;
-  const effectiveChildTasks = childTasks ?? EMPTY_TASKS;
-  const effectiveDescendants = descendantTasks ?? effectiveChildTasks;
+  // childTasks が undefined のときはもちろん、Column 側が `?? []` で都度生成した
+  // 空配列を渡しても useMemo が miss しないよう、length === 0 も EMPTY_TASKS に
+  // 正規化する。子なしタスクが大量に並ぶケース（典型的な Column 描画）で効く。
+  const effectiveChildTasks =
+    childTasks === undefined || childTasks.length === 0
+      ? EMPTY_TASKS
+      : childTasks;
+  const effectiveDescendants =
+    descendantTasks === undefined || descendantTasks.length === 0
+      ? effectiveChildTasks
+      : descendantTasks;
 
   const subIssueCounts = useMemo(
     () =>
