@@ -1,22 +1,29 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
 import { initialTasks } from "@/test-fixtures";
 import type { Task } from "@/types/task";
+import { withBoardCardProvider } from "../BoardCardProvider/decorator";
 import { TaskCard } from ".";
 
 const baseTask: Task = initialTasks[0];
 
 const meta: Meta<typeof TaskCard> = {
   component: TaskCard,
+  decorators: [
+    withBoardCardProvider({
+      tasks: initialTasks,
+      allTasks: initialTasks,
+      tasksByNormalizedPath: new Map(),
+      milestonesByName: new Map(),
+      doneColumn: "Done",
+    }),
+  ],
   args: {
     task: baseTask,
     childTasks: [],
     descendantTasks: [],
     doneColumn: "Done",
     fromColumn: "Todo",
-    onDragStart: fn(),
-    onDragEnd: fn(),
   },
 };
 
@@ -30,19 +37,8 @@ export const Clickable: Story = {
   args: { onClick: () => {} },
 };
 
-export const Dragging: Story = {
-  args: { isDragging: true },
-};
-
 export const WithBrokenLink: Story = {
   args: { hasBrokenLink: true },
-};
-
-export const Draggable: Story = {
-  args: {
-    onDragStart: fn(),
-    onDragEnd: fn(),
-  },
 };
 
 export const HighPriority: Story = {

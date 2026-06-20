@@ -1,9 +1,15 @@
-import { act, createElement, type ReactNode, useContext } from "react";
+import { act, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
-import { DRAG_MIME_TYPE } from "../../../Board/dragState";
+import { DRAG_MIME_TYPE } from "../../../Board/mime";
+import {
+  type BoardCardApi,
+  BoardCardProvider,
+  type BoardCardProviderProps,
+  useBoardCard,
+} from "../../../BoardCardProvider";
 import {
   TaskCardContext,
   type TaskCardContextValue,
@@ -43,9 +49,30 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
     ...overrides,
   });
 
+/**
+ * BoardCardProvider から最新の API を取得する Probe。
+ * @param props 最新値を受け取るコールバック
+ * @returns null
+ */
+const CardProbe = (props: { onResult: (api: BoardCardApi) => void }) => {
+  const api = useBoardCard();
+  useEffect(() => {
+    props.onResult(api);
+  });
+  return null;
+};
+
+/**
+ * BoardCardProvider 配下に TaskCardRoot を mount する。
+ * @param props TaskCardRoot に渡す props 上書き（task / fromColumn は default あり）
+ * @param children TaskCardRoot 配下に描画する React 要素
+ * @param providerOverrides BoardCardProvider に追加で渡す props
+ * @returns latest cardApi accessor
+ */
 const renderRoot = (
   props: Partial<TaskCardRootProps> = {},
   children: ReactNode = null,
+  providerOverrides: Partial<Omit<BoardCardProviderProps, "children">> = {},
 ) => {
   const merged: TaskCardRootProps = {
     task: createTask(),
@@ -53,9 +80,28 @@ const renderRoot = (
     ...props,
     children,
   };
+  let latest: BoardCardApi | null = null;
+  const handleResult = (api: BoardCardApi) => {
+    latest = api;
+  };
   act(() => {
-    root?.render(createElement(TaskCardRoot, merged));
+    root?.render(
+      <BoardCardProvider
+        tasks={[merged.task]}
+        allTasks={[merged.task]}
+        tasksByNormalizedPath={new Map()}
+        {...providerOverrides}
+      >
+        <TaskCardRoot {...merged} />
+        <CardProbe onResult={handleResult} />
+      </BoardCardProvider>,
+    );
   });
+  return {
+    get cardApi(): BoardCardApi {
+      return latest as BoardCardApi;
+    },
+  };
 };
 
 const queryCard = (): HTMLElement => {
@@ -73,17 +119,14 @@ test("Context Value は依存不変なら同一参照（useMemo）", () => {
   };
   const task = createTask();
   const childTasks: readonly Task[] = [];
-  renderRoot({ task, childTasks }, createElement(Probe));
-  // 同一 props で再 render（同一 root に再 render するため renderRoot 内の act が走る）
-  renderRoot({ task, childTasks }, createElement(Probe));
+  renderRoot({ task, childTasks }, <Probe />);
+  renderRoot({ task, childTasks }, <Probe />);
   expect(refs.length).toBeGreaterThanOrEqual(2);
   expect(refs[0]).not.toBeNull();
   expect(refs[0]).toBe(refs[1]);
 });
 
 test("childTasks 未指定でも 2 回連続レンダーで Context Value 参照が安定する", () => {
-  // childTasks ?? [] のリテラル再生成で memo が壊れないか（実呼び出し元 Column が
-  // 必ず childTasks を渡すケースとは別に、Compound 直接利用での識別性を担保する）
   const refs: (TaskCardContextValue | null)[] = [];
   const Probe = () => {
     const ctx = useContext(TaskCardContext);
@@ -91,16 +134,14 @@ test("childTasks 未指定でも 2 回連続レンダーで Context Value 参照
     return null;
   };
   const task = createTask();
-  renderRoot({ task }, createElement(Probe));
-  renderRoot({ task }, createElement(Probe));
+  renderRoot({ task }, <Probe />);
+  renderRoot({ task }, <Probe />);
   expect(refs.length).toBeGreaterThanOrEqual(2);
   expect(refs[0]).not.toBeNull();
   expect(refs[0]).toBe(refs[1]);
 });
 
 test("childTasks に都度新規の空配列を渡しても Context Value 参照が安定する", () => {
-  // Column 側が `descendantsByFilePath.get(...) ?? []` のように渡す現実ケース。
-  // length === 0 の正規化が無いと、毎レンダー新しい [] で useMemo が miss する。
   const refs: (TaskCardContextValue | null)[] = [];
   const Probe = () => {
     const ctx = useContext(TaskCardContext);
@@ -108,25 +149,17 @@ test("childTasks に都度新規の空配列を渡しても Context Value 参照
     return null;
   };
   const task = createTask();
-  renderRoot(
-    { task, childTasks: [], descendantTasks: [] },
-    createElement(Probe),
-  );
-  renderRoot(
-    { task, childTasks: [], descendantTasks: [] },
-    createElement(Probe),
-  );
+  renderRoot({ task, childTasks: [], descendantTasks: [] }, <Probe />);
+  renderRoot({ task, childTasks: [], descendantTasks: [] }, <Probe />);
   expect(refs.length).toBeGreaterThanOrEqual(2);
   expect(refs[0]).not.toBeNull();
   expect(refs[0]).toBe(refs[1]);
 });
 
-test("dragstart で setData / effectAllowed / onDragStart が呼ばれる", () => {
-  const onDragStart = vi.fn();
-  renderRoot({
+test("dragstart で setData / effectAllowed / Provider の isDragging が true", () => {
+  const probe = renderRoot({
     task: createTask({ filePath: "tasks/a.md" }),
     fromColumn: "Todo",
-    onDragStart,
   });
   const card = queryCard();
   const event = createDragEvent("dragstart");
@@ -135,32 +168,33 @@ test("dragstart で setData / effectAllowed / onDragStart が呼ばれる", () =
   });
   expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe("tasks/a.md");
   expect(event.dataTransfer.effectAllowed).toBe("move");
-  expect(onDragStart).toHaveBeenCalledWith("tasks/a.md", "Todo");
+  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(true);
 });
 
-test("disableDrag=true で onDragStart は呼ばれず draggable=false 属性", () => {
-  const onDragStart = vi.fn();
-  renderRoot({
-    task: createTask({ filePath: "tasks/a.md" }),
-    fromColumn: "Todo",
-    disableDrag: true,
-    onDragStart,
-  });
+test("Provider の dndDisabled=true で dragstart が no-op になり draggable=false 属性", () => {
+  const probe = renderRoot(
+    {
+      task: createTask({ filePath: "tasks/a.md" }),
+      fromColumn: "Todo",
+    },
+    null,
+    { dndDisabled: true },
+  );
   const card = queryCard();
   expect(card.getAttribute("draggable")).toBe("false");
   const event = createDragEvent("dragstart");
   act(() => {
     card.dispatchEvent(event);
   });
-  expect(onDragStart).not.toHaveBeenCalled();
+  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(false);
 });
 
-test("dragend で onDragEnd + setTimeout(0) 経過後の click は onClick を呼ぶ", () => {
+test("dragend で Provider の isDragging が false に戻り setTimeout(0) 経過後の click は onClick を呼ぶ", () => {
   vi.useFakeTimers();
   try {
     const onClick = vi.fn();
-    const onDragEnd = vi.fn();
-    renderRoot({ task: createTask({ id: "x" }), onClick, onDragEnd });
+    const task = createTask({ id: "x" });
+    const probe = renderRoot({ task, onClick });
     const card = queryCard();
     act(() => {
       card.dispatchEvent(createDragEvent("dragstart"));
@@ -168,7 +202,7 @@ test("dragend で onDragEnd + setTimeout(0) 経過後の click は onClick を�
     act(() => {
       card.dispatchEvent(createDragEvent("dragend"));
     });
-    expect(onDragEnd).toHaveBeenCalled();
+    expect(probe.cardApi.isDragging(task.filePath)).toBe(false);
     act(() => {
       vi.advanceTimersByTime(1);
     });
@@ -229,8 +263,12 @@ test("onClick 指定で role=button + tabIndex=0、Enter / Space で onClick(tas
   expect(onClick).toHaveBeenCalledTimes(2);
 });
 
-test("isDragging=true で opacity-40 / data-dragging='true' / aria-grabbed", () => {
-  renderRoot({ isDragging: true, onClick: vi.fn() });
+test("startDrag 後は opacity-40 / data-dragging='true' / aria-grabbed", () => {
+  const task = createTask({ filePath: "tasks/a.md" });
+  const probe = renderRoot({ task, onClick: vi.fn() });
+  act(() => {
+    probe.cardApi.startDrag(task.filePath, "Todo");
+  });
   const card = queryCard();
   expect(card.className).toContain("opacity-40");
   expect(card.getAttribute("data-dragging")).toBe("true");
@@ -243,11 +281,11 @@ test("draft=true で opacity-60", () => {
   expect(card.className).toContain("opacity-60");
 });
 
-test("isDragging=true は draft より優先（opacity-40 のみ、opacity-60 なし）", () => {
-  renderRoot({
-    task: createTask({ draft: true }),
-    isDragging: true,
-    onClick: vi.fn(),
+test("startDrag 中の draft は dragging の opacity-40 を優先し opacity-60 は付かない", () => {
+  const task = createTask({ filePath: "tasks/a.md", draft: true });
+  const probe = renderRoot({ task, onClick: vi.fn() });
+  act(() => {
+    probe.cardApi.startDrag(task.filePath, "Todo");
   });
   const card = queryCard();
   expect(card.className).toContain("opacity-40");

@@ -1,8 +1,9 @@
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskCard } from "..";
+import { wrapWithCardProvider } from "./_testHelpers";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -31,12 +32,20 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
+/**
+ * BoardCardProvider 配下に TaskCard を mount する。
+ * @param props TaskCard に渡す props（fromColumn はデフォルト "Todo"）
+ */
 function render(props: Omit<Parameters<typeof TaskCard>[0], "fromColumn">) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskCard, { fromColumn: "Todo", ...props }));
+    root?.render(
+      wrapWithCardProvider(<TaskCard fromColumn="Todo" {...props} />, {
+        task: props.task,
+      }),
+    );
   });
 }
 

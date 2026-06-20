@@ -1,8 +1,9 @@
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskCard } from "..";
+import { wrapWithCardProvider } from "./_testHelpers";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -30,12 +31,18 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
     ...overrides,
   });
 
+/**
+ * BoardCardProvider 配下に TaskCard を mount する。
+ * @param props TaskCard props
+ */
 const render = (props: Parameters<typeof TaskCard>[0]) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskCard, props));
+    root?.render(
+      wrapWithCardProvider(<TaskCard {...props} />, { task: props.task }),
+    );
   });
 };
 

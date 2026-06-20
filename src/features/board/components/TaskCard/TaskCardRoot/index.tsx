@@ -1,10 +1,7 @@
-// @lint-suppress-ok — typescript-rules-plugin の block-lint-suppress.sh hook が
-// このマーカーを検出すると、本ファイル内の biome-ignore 行を許可する。
-// 本ファイルで biome-ignore が必要な理由: HTML5 ネイティブ DnD のため
-// draggable ハンドラを <div> に付ける必要があり、`noStaticElementInteractions`
-// が trigger される。子に details/summary 等の interactive descendants が
-// 混ざるため <button> 等のセマンティック要素に置換できず、抑制が必須。
-// 旧 TaskCard/index.tsx から踏襲しており、互換性維持のため削除しない。
+// @lint-suppress-ok — HTML5 ネイティブ DnD のため draggable ハンドラを <div> に
+// 付ける必要があり、`noStaticElementInteractions` が trigger される。子に
+// details/summary 等の interactive descendants が混ざるため <button> 等の
+// セマンティック要素に置換できず、抑制が必須。旧 TaskCard/index.tsx から踏襲。
 import {
   type DragEvent,
   type KeyboardEvent,
@@ -14,8 +11,9 @@ import {
 } from "react";
 import { DEFAULT_DONE_COLUMN } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
+import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
+import { useBoardCard } from "@/features/board/components/BoardCardProvider";
 import type { Task } from "@/types/task";
-import { DRAG_MIME_TYPE } from "../../Board/dragState";
 import {
   type MilestonesByName,
   TaskCardContext,
@@ -39,12 +37,8 @@ export type TaskCardRootProps = {
   doneColumn?: string;
   /** name → マイルストーン定義の Map。未指定は name 表示にフォールバック */
   milestonesByName?: MilestonesByName;
-  /** 所属カラム名。onDragStart の引数に使う */
+  /** 所属カラム名。startDrag の引数に使う */
   fromColumn: string;
-  /** ドラッグ中フラグ（Board の DragState から配布） */
-  isDragging?: boolean;
-  /** ドラッグを無効化するか */
-  disableDrag?: boolean;
   /** 1 件でもリンク切れ参照を持つかどうか */
   hasBrokenLink?: boolean;
   /** 1 件でもパースエラー警告を持つかどうか */
@@ -54,14 +48,6 @@ export type TaskCardRootProps = {
    * @param taskId クリックされたタスクの id
    */
   onClick?: (taskId: string) => void;
-  /**
-   * ドラッグ開始時のコールバック
-   * @param taskFilePath 対象タスクの filePath
-   * @param fromColumn 元カラム名
-   */
-  onDragStart?: (taskFilePath: string, fromColumn: string) => void;
-  /** ドラッグ終了時のコールバック */
-  onDragEnd?: () => void;
   /** 並べるサブ部品（TaskCard.Header 等） */
   children: ReactNode;
 };
@@ -79,15 +65,12 @@ export const TaskCardRoot = ({
   doneColumn,
   milestonesByName,
   fromColumn,
-  isDragging = false,
-  disableDrag = false,
   hasBrokenLink = false,
   hasParseError = false,
   onClick,
-  onDragStart,
-  onDragEnd,
   children,
 }: TaskCardRootProps) => {
+  const card = useBoardCard();
   // ドラッグ終了直後にブラウザが発火する synthetic click を抑止するためのガード。
   // dragstart で true にし、onClick はこのフラグが立っている間は無視する。
   const dragGuardRef = useRef(false);
@@ -137,18 +120,21 @@ export const TaskCardRoot = ({
     ],
   );
 
+  const isDragging = card.isDragging(task.filePath);
+  const dndDisabled = card.dndDisabled;
+
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
-    if (disableDrag) {
+    if (dndDisabled) {
       return;
     }
     e.dataTransfer.setData(DRAG_MIME_TYPE, task.filePath);
     e.dataTransfer.effectAllowed = "move";
     dragGuardRef.current = true;
-    onDragStart?.(task.filePath, fromColumn);
+    card.startDrag(task.filePath, fromColumn);
   };
 
   const handleDragEnd = () => {
-    onDragEnd?.();
+    card.end();
     // dragend 内 setTimeout(0) で解除を次のマクロタスクに回し、synthetic click を確実にガードする。
     setTimeout(() => {
       dragGuardRef.current = false;
@@ -188,7 +174,7 @@ export const TaskCardRoot = ({
     <TaskCardContext.Provider value={contextValue}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: HTML5 native DnD requires draggable handlers on the card container; children may include interactive descendants (e.g. details/summary) so a semantic <button> cannot be used here */}
       <div
-        draggable={!disableDrag}
+        draggable={!dndDisabled}
         data-dragging={dataDragging}
         data-testid="task-card"
         aria-grabbed={isDragging}

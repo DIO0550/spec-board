@@ -16,7 +16,7 @@ export type { MilestonesByName } from "./TaskCardContext";
 type TaskCardProps = Omit<TaskCardRootProps, "children">;
 
 /**
- * 旧 API 互換のタスクカード。13 props を {@link TaskCardRoot} に転送し、
+ * 旧 API 互換のタスクカード。{@link TaskCardRoot} に props を転送し、
  * 5 つの子サブ部品（Header / Milestone / Labels / Progress / Footer）を
  * 既定の順序で並べる。新 API は {@link TaskCard} の `.Root` / `.Header` 等を直接使う。
  * @param props - {@link TaskCardProps}
@@ -29,13 +29,9 @@ const TaskCardLegacy = ({
   doneColumn,
   milestonesByName,
   fromColumn,
-  isDragging,
-  disableDrag,
   hasBrokenLink,
   hasParseError,
   onClick,
-  onDragStart,
-  onDragEnd,
 }: TaskCardProps) => (
   <TaskCardRoot
     task={task}
@@ -44,13 +40,9 @@ const TaskCardLegacy = ({
     doneColumn={doneColumn}
     milestonesByName={milestonesByName}
     fromColumn={fromColumn}
-    isDragging={isDragging}
-    disableDrag={disableDrag}
     hasBrokenLink={hasBrokenLink}
     hasParseError={hasParseError}
     onClick={onClick}
-    onDragStart={onDragStart}
-    onDragEnd={onDragEnd}
   >
     <TaskCardHeader />
     <TaskCardMilestone />

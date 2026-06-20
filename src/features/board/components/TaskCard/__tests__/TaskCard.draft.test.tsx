@@ -1,8 +1,10 @@
-import { act, createElement } from "react";
+import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
+import { type BoardCardApi, useBoardCard } from "../../BoardCardProvider";
 import { TaskCard } from "..";
+import { wrapWithCardProvider } from "./_testHelpers";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -30,13 +32,48 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
     ...overrides,
   });
 
+/**
+ * BoardCardProvider から最新の API を取得する Probe。
+ * @param props 最新値を受け取るコールバック
+ * @returns null
+ */
+const CardProbe = (props: { onResult: (api: BoardCardApi) => void }) => {
+  const api = useBoardCard();
+  useEffect(() => {
+    props.onResult(api);
+  });
+  return null;
+};
+
+/**
+ * BoardCardProvider 配下に TaskCard を mount する。
+ * @param props TaskCard props（fromColumn はデフォルト "Todo"）
+ * @returns latest cardApi accessor
+ */
 const render = (props: Omit<Parameters<typeof TaskCard>[0], "fromColumn">) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  let latest: BoardCardApi | null = null;
+  const handleResult = (api: BoardCardApi) => {
+    latest = api;
+  };
   act(() => {
-    root?.render(createElement(TaskCard, { fromColumn: "Todo", ...props }));
+    root?.render(
+      wrapWithCardProvider(
+        <>
+          <TaskCard fromColumn="Todo" {...props} />
+          <CardProbe onResult={handleResult} />
+        </>,
+        { task: props.task },
+      ),
+    );
   });
+  return {
+    get cardApi(): BoardCardApi {
+      return latest as BoardCardApi;
+    },
+  };
 };
 
 const card = (): HTMLElement | null =>
@@ -64,10 +101,10 @@ test("draft タスクでもカード自体は描画される（非表示にし�
 });
 
 test("ドラッグ中の draft タスクは dragging の減光を優先し opacity を重複適用しない", () => {
-  render({
-    task: createTask({ draft: true }),
-    isDragging: true,
-    onClick: vi.fn(),
+  const task = createTask({ draft: true });
+  const probe = render({ task, onClick: vi.fn() });
+  act(() => {
+    probe.cardApi.startDrag(task.filePath, "Todo");
   });
   const className = card()?.className ?? "";
   expect(className).toContain("opacity-40");

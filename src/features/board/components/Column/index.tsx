@@ -395,16 +395,12 @@ export const Column = ({
                   doneColumn={doneColumn}
                   milestonesByName={milestonesByName}
                   fromColumn={name}
-                  isDragging={card.isDragging(task.filePath)}
-                  disableDrag={dndDisabled}
                   hasBrokenLink={
                     tasksByNormalizedPath !== undefined &&
                     hasAnyBrokenLink(task, tasksByNormalizedPath)
                   }
                   hasParseError={hasParseError(task)}
                   onClick={onTaskClick}
-                  onDragStart={card.startDrag}
-                  onDragEnd={card.end}
                 />
               </li>
             </Fragment>
