@@ -89,7 +89,6 @@ const renderRoot = (
       <BoardCardProvider
         tasks={[merged.task]}
         allTasks={[merged.task]}
-        tasksByNormalizedPath={new Map()}
         {...providerOverrides}
       >
         <TaskCardRoot {...merged} />
