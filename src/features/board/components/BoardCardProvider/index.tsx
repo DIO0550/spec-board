@@ -258,7 +258,10 @@ export const BoardCardProvider = ({
   }, [allTasks, byPathMap, effectiveDoneColumn]);
 
   const tasksByStatus = useMemo(() => {
-    const grouped: Record<string, Task[]> = {};
+    // カラム名 (= task.status) はユーザー入力で任意文字列になり得る。
+    // `{}` を辞書として使うと `__proto__` / `constructor` 等の特殊キーで
+    // grouping が壊れる（プロトタイプ汚染）ため、prototype を持たない辞書で作る。
+    const grouped: Record<string, Task[]> = Object.create(null);
     for (const task of tasks) {
       if (!grouped[task.status]) {
         grouped[task.status] = [];
