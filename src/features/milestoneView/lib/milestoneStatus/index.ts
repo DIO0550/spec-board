@@ -77,15 +77,13 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   ) {
     return undefined;
   }
-  // YYYY-MM-DD 完全一致（10 文字）はローカル 0 時として返す
-  // （タイムゾーン解釈による暗黙の UTC 扱いを避ける）。
-  if (due.length === 10) {
-    return validation;
-  }
-  // ISO datetime ("YYYY-MM-DDTHH:MM:SS...") はネイティブパース
-  // （年月日部分は上で検証済みなので時刻部分のみネイティブに任せる）。
-  const dt = new Date(due);
-  return Number.isNaN(dt.getTime()) ? undefined : dt;
+  // milestone due は calendar date として提示される (期日表示・カウントダウン・
+  // ロードマップ位置はすべて日単位)。ISO datetime ("2026-06-21T00:00:00Z") を
+  // ネイティブパースで Date 化すると UTC オフセットによってローカル日付が前日へ
+  // ずれ (西側 TZ で 6/20 になる等)、daysUntil や resolveDisplayStatus が誤判定
+  // することがあるため、ISO datetime も先頭 YYYY-MM-DD 部分のみを採用して
+  // ローカル 0 時として返す（時刻部分は捨てる）。
+  return validation;
 };
 
 /**
