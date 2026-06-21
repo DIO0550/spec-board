@@ -47,6 +47,7 @@ const FILTERS: readonly { value: StateFilter; label: string }[] = [
 
 /** ソート選択肢。 */
 const SORTS: readonly { value: SortKey; label: string }[] = [
+  { value: "order", label: "既定順" },
   { value: "due", label: "期日順" },
   { value: "progress", label: "進捗順" },
   { value: "name", label: "名前順" },

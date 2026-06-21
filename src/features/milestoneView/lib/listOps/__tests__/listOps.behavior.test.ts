@@ -94,6 +94,17 @@ test("sortMilestones: by-progress で ratio 未定義が複数あっても元の
   expect(res.map((m) => m.name)).toEqual(["a", "b", "c"]);
 });
 
+test("sortMilestones: by-order は入力順を保持する（既定順序を尊重）", () => {
+  const list = [
+    def("c", "open", "2026-12-31"),
+    def("a", "open", "2026-01-01"),
+    def("b", "open", "2026-06-01"),
+  ];
+  // due が古い順に並べ替えるのが普通だが、order なら入力順を保つ
+  const res = sortMilestones(list, "order", new Map());
+  expect(res.map((m) => m.name)).toEqual(["c", "a", "b"]);
+});
+
 test("sortMilestones: by-name は name 昇順", () => {
   const list = [def("c", "open"), def("a", "open"), def("b", "open")];
   const res = sortMilestones(list, "name", new Map());

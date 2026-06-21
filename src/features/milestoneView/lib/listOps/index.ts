@@ -8,8 +8,14 @@ import {
 /** 状態フィルタ。`overdue` は open かつ期日超過のみを抽出する派生フィルタ。 */
 export type StateFilter = "all" | "open" | "closed" | "overdue";
 
-/** ソートキー。 */
-export type SortKey = "due" | "progress" | "name";
+/**
+ * ソートキー。
+ * - order: milestones.yml で設定された order を尊重した既定順序（入力順を保持）
+ * - due: 期日昇順
+ * - progress: 進捗 ratio 降順
+ * - name: name 昇順
+ */
+export type SortKey = "order" | "due" | "progress" | "name";
 
 /** filterMilestones に渡す条件。 */
 export type FilterCondition = {
@@ -95,6 +101,12 @@ const compareByKey = (
   key: SortKey,
   progress: ReadonlyMap<string, MilestoneProgress>,
 ): number => {
+  if (key === "order") {
+    // order キーは入力順序を保つ。compareByKey はすべて 0 を返し、上位の
+    // sortMilestones が安定ソートの tie-break (元 index) で順序を維持する。
+    // 入力は MilestoneViewScreen 側で既に Milestone.sortByOrder() 済み。
+    return 0;
+  }
   if (key === "due") {
     // due 未設定同士は +Infinity 同士の減算で NaN になり安定ソートが崩れるため、
     // 大小比較で 0/-1/1 を返す形にしておく。
