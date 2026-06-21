@@ -100,7 +100,9 @@ const monthsBetween = (from: Date, to: Date): number => {
 };
 
 /**
- * 0001-01 起点の年月インデックス（year * 12 + month）。
+ * 年月インデックス。`year * 12 + month`（month は 0..11）として算出する。
+ * monthsBetween 内で 2 つの Date 間の差分を取るために使うので絶対値は
+ * 重要でなく、年月の比較が単調に進めばよい。
  * @param date - 対象日時
  * @returns 年月インデックス（整数）
  */
