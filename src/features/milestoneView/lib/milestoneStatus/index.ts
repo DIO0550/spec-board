@@ -61,9 +61,10 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   // (2026-02-31 → 2026-03-03) してしまうため、ここで弾かないと
   // 不正日付のままソート/カウントダウン/overdue 判定に使われる。
   // 末尾までマッチさせて「YYYY-MM-DD 単独」または「YYYY-MM-DDT... の ISO datetime」
-  // のみを受理する。"2026-06-21 foo" のように日付の後ろに任意文字列が続く形式は
-  // ロールオーバーの温床になるため弾く。
-  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(due);
+  // のみを受理する。datetime 部分も `\S*` で空白禁止にし、
+  // "2026-06-21 foo" / "2026-06-21T00:00:00Z foo" のように後ろに余り文字列が
+  // 続く形式はロールオーバーの温床になるため弾く。
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:T\S*)?$/.exec(due);
   if (isoMatch === null) {
     return undefined;
   }

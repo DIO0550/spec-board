@@ -124,6 +124,15 @@ test("日付の後ろに任意文字列が続く ('2026-06-21 foo') は undefine
   expect(resolveCountdown(def, NOW).kind).toBe("none");
 });
 
+test("ISO datetime の後ろに余り文字列 ('2026-06-21T00:00:00Z foo') が続く形式も undefined 扱い", () => {
+  const def = {
+    name: "v0.1",
+    state: "open",
+    due: "2026-06-21T00:00:00Z foo",
+  } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });
