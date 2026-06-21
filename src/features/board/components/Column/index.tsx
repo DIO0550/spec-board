@@ -9,6 +9,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { hasAnyBrokenLink } from "@/domains/broken-link";
 import { hasParseError } from "@/domains/parse-error";
+import type { Task } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../Board/mime";
 import { useBoardCard } from "../BoardCardProvider";
 import { useBoardColumn } from "../BoardColumnProvider";
@@ -299,6 +300,12 @@ export const Column = ({
       />
       <ul ref={listRef} className="flex-1 overflow-y-auto px-2 pb-2">
         {tasks.map((task, i) => {
+          // 直下子のみのリスト。TaskCard 配下の "サブIssue" details が
+          // childTasks を展開して表示するため、Provider の byPath で実体を引き当てる。
+          // 解決できなかった child は broken なので結果からは除外する。
+          const childTasks = task.hierarchy.childFilePaths
+            .map((fp) => card.byPath(fp))
+            .filter((t): t is Task => t !== undefined);
           return (
             <Fragment key={task.id}>
               {placeholderIndex === i && (
@@ -311,6 +318,7 @@ export const Column = ({
               <li data-task-card className="mb-2">
                 <TaskCard
                   task={task}
+                  childTasks={childTasks}
                   fromColumn={name}
                   hasBrokenLink={hasAnyBrokenLink(
                     task,
