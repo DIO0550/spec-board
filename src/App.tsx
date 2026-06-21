@@ -33,7 +33,7 @@ import {
 } from "./features/board";
 import { DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
-import { SettingsScreen } from "./features/settings";
+import { SettingsScreen, useMilestoneMutations } from "./features/settings";
 import { AppSidebar, ThemeProvider } from "./features/shell";
 import {
   TaskCreateScreen,
@@ -311,6 +311,10 @@ export const App = () => {
   // loaded path を projectKey にすることで、プロジェクト切替時に再取得され、
   // 未オープン時は idle（空）になる。
   const milestonesResource = useMilestones(loadedPath ?? undefined);
+  // マイルストーン CRUD（マイルストーンビュー画面のヘッダー追加導線で使う）。
+  // 設定タブの MilestoneSettingsTab は内部で独自に同フックを呼んでおり、
+  // どちらから操作されても reload で取得側が同期する。
+  const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
   // 設定画面の使用数はバックエンドのスナップショット（resource.usageCounts）だと
   // タスク変更後に stale になり、削除確認が「未使用」と誤判定しうる。live な tasks から
   // 毎回算出した usageCounts で上書きして渡し、常に現在の参照状況を反映させる。
@@ -1075,6 +1079,8 @@ export const App = () => {
                     resource={milestonesResource}
                     tasks={tasks}
                     doneColumn={doneColumn}
+                    onCreateMilestone={milestoneMutations.create}
+                    isCreating={milestoneMutations.isPending}
                   />
                 )}
                 {view === "detail" && selectedTask && (

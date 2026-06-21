@@ -1,20 +1,53 @@
+import { useMemo, useState } from "react";
 import { Milestone } from "@/domains/milestone";
+import { MilestoneCreateModal } from "@/features/milestoneView/components/MilestoneCreateModal";
+import { MilestoneDetailSidebar } from "@/features/milestoneView/components/MilestoneDetailSidebar";
+import { MilestoneList } from "@/features/milestoneView/components/MilestoneList";
+import { MilestoneRoadmap } from "@/features/milestoneView/components/MilestoneRoadmap";
+import {
+  MilestoneToolbar,
+  type ViewMode,
+} from "@/features/milestoneView/components/MilestoneToolbar";
+import { useMilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
+import {
+  filterMilestones,
+  groupByDisplayStatus,
+  type SortKey,
+  type StateFilter,
+  sortMilestones,
+} from "@/features/milestoneView/lib/listOps";
+import { resolveDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
 import type { MilestonesResource } from "@/hooks/useMilestones";
+import type { CreateMilestoneArgs } from "@/lib/tauri";
 import type { Task } from "@/types/task";
-import { useMilestoneProgress } from "../../hooks/useMilestoneProgress";
 
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */
   resource: MilestonesResource;
-  /** 全タスク（進捗算出用） */
+  /** 全タスク（進捗算出・サイドバー task list 用） */
   tasks: Task[];
-  /** done とみなすカラム名（既存 ProjectData.doneColumn 由来・未解決は undefined） */
+  /** done とみなすカラム名（未解決は undefined） */
   doneColumn: string | undefined;
+  /**
+   * マイルストーンを作成する。成功なら true、失敗 / pending 中なら false。
+   * 未指定なら追加ボタン自体を表示しない（プレビュー / 閲覧専用モード）。
+   * @param args - 作成内容
+   * @returns 成功なら true
+   */
+  onCreateMilestone?: (args: CreateMilestoneArgs) => Promise<boolean>;
+  /** create が pending 中かどうか（送信ボタン disabled に使う） */
+  isCreating?: boolean;
 };
 
 /**
- * マイルストーン別ビュー（専用画面）。一覧 × 期日 × 進捗率を表示する。
- * 進捗率は done カラム所属割合。done カラム未解決時は進捗バーを出さない。
+ * マイルストーン別ビュー（専用画面）。design-source:
+ * docs/design/spec-milestones-static-{list,roadmap,modal}.html。
+ *
+ * 上部にツールバー（状態フィルタ / 検索 / ソート / 一覧⇄ロードマップ切替）、
+ * 左にメイン（list or roadmap）、右にサイドバー（選択中マイルストーンの詳細）。
+ * 一覧では `data-testid="milestone-view-row"` + `data-testid="milestone-progress-bar"`
+ * を維持し、既存のスナップショット/挙動テストとの後方互換を保つ。
+ *
  * @param props - {@link MilestoneViewScreenProps}
  * @returns マイルストーンビュー要素
  */
@@ -22,62 +55,179 @@ export const MilestoneViewScreen = ({
   resource,
   tasks,
   doneColumn,
+  onCreateMilestone,
+  isCreating = false,
 }: MilestoneViewScreenProps) => {
-  const sorted = Milestone.sortByOrder(resource.milestones);
-  const names = sorted.map((m) => m.name);
+  const sorted = useMemo(
+    () => Milestone.sortByOrder(resource.milestones),
+    [resource.milestones],
+  );
+  const names = useMemo(() => sorted.map((m) => m.name), [sorted]);
   const progress = useMilestoneProgress({
     milestoneNames: names,
     tasks,
     doneColumn,
   });
 
+  const [filter, setFilter] = useState<StateFilter>("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortKey>("due");
+  const [view, setView] = useState<ViewMode>("list");
+  const [selectedName, setSelectedName] = useState<string | undefined>(
+    undefined,
+  );
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  const visible = useMemo(() => {
+    const filtered = filterMilestones(sorted, { state: filter, query });
+    return sortMilestones(filtered, sort, progress);
+  }, [sorted, filter, query, sort, progress]);
+
+  const stats = useMemo(() => groupByDisplayStatus(sorted), [sorted]);
+  const taskCounts = useMemo(() => {
+    let total = 0;
+    let done = 0;
+    for (const t of tasks) {
+      if (t.milestone === undefined) {
+        continue;
+      }
+      total += 1;
+      if (doneColumn !== undefined && t.status === doneColumn) {
+        done += 1;
+      }
+    }
+    return { total, done };
+  }, [tasks, doneColumn]);
+
+  const selectedDef = useMemo(
+    () =>
+      selectedName === undefined
+        ? undefined
+        : sorted.find((m) => m.name === selectedName),
+    [sorted, selectedName],
+  );
+  const selectedStatus =
+    selectedDef === undefined ? undefined : resolveDisplayStatus(selectedDef);
+  const selectedTasks = useMemo(
+    () =>
+      selectedName === undefined
+        ? []
+        : tasks.filter((t) => t.milestone === selectedName),
+    [tasks, selectedName],
+  );
+
   if (resource.status === "loading" || resource.status === "idle") {
-    return <p className="text-sm text-muted">読み込み中…</p>;
+    return <p className="p-4 text-sm text-muted">読み込み中…</p>;
   }
   if (resource.status === "error") {
     return (
-      <p className="text-sm text-muted">マイルストーンを読み込めませんでした</p>
+      <p className="p-4 text-sm text-muted">
+        マイルストーンを読み込めませんでした
+      </p>
     );
   }
   if (sorted.length === 0) {
-    return <p className="text-sm text-muted">マイルストーンなし</p>;
+    return <p className="p-4 text-sm text-muted">マイルストーンなし</p>;
   }
 
   return (
-    <ul className="flex flex-col gap-3 p-4">
-      {sorted.map((def) => {
-        const p = progress.get(def.name);
-        const state = Milestone.parseState(def.state);
-        return (
-          <li
-            key={def.name}
-            data-testid="milestone-view-row"
-            className="flex flex-col gap-1 rounded border border-border p-3"
+    <div className="flex w-full flex-1 flex-col overflow-y-auto bg-bg p-6">
+      <header className="mb-4 flex items-baseline gap-4">
+        <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
+          マイルストーン
+        </h2>
+        <p
+          className="flex items-baseline gap-3 text-xs text-muted"
+          data-testid="milestone-view-stats"
+        >
+          <span>
+            <span className="font-mono font-semibold text-foreground">
+              {stats.open.length}
+            </span>{" "}
+            オープン
+          </span>
+          <span>
+            <span className="font-mono font-semibold text-foreground">
+              {stats.closed.length}
+            </span>{" "}
+            クローズ
+          </span>
+          <span className="text-[var(--color-ms-danger-fg)]">
+            <span className="font-mono font-semibold">
+              {stats.overdue.length}
+            </span>{" "}
+            期限超過
+          </span>
+          <span>
+            <span className="font-mono font-semibold text-foreground">
+              {taskCounts.done}/{taskCounts.total}
+            </span>{" "}
+            タスク完了
+          </span>
+        </p>
+        {onCreateMilestone !== undefined ? (
+          <button
+            type="button"
+            data-testid="milestone-create-open"
+            onClick={() => setIsCreateOpen(true)}
+            className="ml-auto rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:opacity-90"
           >
-            <div className="flex items-center gap-2">
-              <span className="font-medium">
-                {Milestone.badgeLabel(def.name, def)}
-              </span>
-              {def.due !== undefined ? (
-                <span className="text-sm text-muted">{def.due}</span>
-              ) : null}
-              <span className="text-xs text-muted">{state}</span>
-              <span className="ml-auto text-sm text-muted">
-                {p?.done ?? 0} / {p?.total ?? 0}
-              </span>
-            </div>
-            {p?.ratio !== undefined ? (
-              <div className="h-2 w-full rounded bg-surface-muted">
-                <div
-                  data-testid="milestone-progress-bar"
-                  className="h-2 rounded bg-indigo-500"
-                  style={{ width: `${Math.round(p.ratio * 100)}%` }}
-                />
-              </div>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+            + マイルストーンを追加
+          </button>
+        ) : null}
+      </header>
+
+      <div className="mb-4">
+        <MilestoneToolbar
+          filter={filter}
+          onFilterChange={setFilter}
+          query={query}
+          onQueryChange={setQuery}
+          sort={sort}
+          onSortChange={setSort}
+          view={view}
+          onViewChange={setView}
+        />
+      </div>
+
+      <div className="flex flex-1 gap-4">
+        <div className="min-w-0 flex-1">
+          {view === "list" ? (
+            <MilestoneList
+              milestones={visible}
+              statusOf={(d) => resolveDisplayStatus(d)}
+              progressOf={(d) => progress.get(d.name)}
+              selectedName={selectedName}
+              onSelect={(d) => setSelectedName(d.name)}
+            />
+          ) : (
+            <MilestoneRoadmap
+              milestones={visible}
+              selectedName={selectedName}
+              onSelect={(d) => setSelectedName(d.name)}
+            />
+          )}
+        </div>
+        <MilestoneDetailSidebar
+          def={selectedDef}
+          status={selectedStatus}
+          progress={
+            selectedDef === undefined
+              ? undefined
+              : progress.get(selectedDef.name)
+          }
+          tasks={selectedTasks}
+          doneColumn={doneColumn}
+        />
+      </div>
+
+      {isCreateOpen && onCreateMilestone !== undefined ? (
+        <MilestoneCreateModal
+          onCreate={onCreateMilestone}
+          isPending={isCreating}
+          onClose={() => setIsCreateOpen(false)}
+        />
+      ) : null}
+    </div>
   );
 };
