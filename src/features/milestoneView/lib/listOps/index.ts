@@ -15,7 +15,7 @@ export type SortKey = "due" | "progress" | "name";
 export type FilterCondition = {
   /** 状態フィルタ */
   state: StateFilter;
-  /** 部分一致クエリ（前後の空白は呼び出し側でトリム） */
+  /** 部分一致クエリ（filterMilestones 内で前後の空白をトリムし、空なら全件通過） */
   query: string;
 };
 
