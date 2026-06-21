@@ -39,9 +39,6 @@ const MIN_BAR_MONTHS = 1;
 /** バーの「想定スパン」月数（due だけが与えられたとき、その何か月前から伸ばすか）。 */
 const DEFAULT_SPAN_MONTHS = 2;
 
-const MS_PER_DAY = 1000 * 60 * 60 * 24;
-const DAYS_PER_MONTH = 30.4375;
-
 /**
  * Date を「YYYY-MM」文字列に整形する（ローカル基準）。
  * @param date - 元の日時
@@ -72,12 +69,50 @@ const parseDate = (raw: string | undefined): Date | undefined => {
 
 /**
  * 2 つの Date の差を月単位（小数）で返す。負値は from の方が後ろの場合。
+ *
+ * 平均日数（30.4375）を使う近似ではなく、`年月インデックス + 月内割合` の
+ * 差分として計算する。これにより各月の境界（次月 1 日）がちょうど整数 N か月
+ * となり、ロードマップグリッドの列境界と完全に整合する。
+ *
  * @param from - 起点
  * @param to - 終点
  * @returns 月数差（小数）
  */
 const monthsBetween = (from: Date, to: Date): number => {
-  return (to.getTime() - from.getTime()) / (MS_PER_DAY * DAYS_PER_MONTH);
+  const fromIndex = monthIndex(from) + monthFraction(from);
+  const toIndex = monthIndex(to) + monthFraction(to);
+  return toIndex - fromIndex;
+};
+
+/**
+ * 0001-01 起点の年月インデックス（year * 12 + month）。
+ * @param date - 対象日時
+ * @returns 年月インデックス（整数）
+ */
+const monthIndex = (date: Date): number =>
+  date.getFullYear() * 12 + date.getMonth();
+
+/**
+ * 当該月内での経過割合 (0..1 未満)。
+ * 日付 + 時分秒を月の総日数で正規化する。
+ * @param date - 対象日時
+ * @returns 月内の経過割合（0 以上 1 未満）
+ */
+const monthFraction = (date: Date): number => {
+  const daysInMonth = new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    0,
+  ).getDate();
+  const dayWithTime =
+    date.getDate() -
+    1 +
+    (date.getHours() * 3600 +
+      date.getMinutes() * 60 +
+      date.getSeconds() +
+      date.getMilliseconds() / 1000) /
+      86400;
+  return dayWithTime / daysInMonth;
 };
 
 /**

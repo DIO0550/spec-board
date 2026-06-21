@@ -58,3 +58,24 @@ test("バー幅は常に最小幅 (1 か月分) 以上ある", () => {
   const minWidth = (1 / 8) * 100;
   expect(row.widthPercent).toBeGreaterThanOrEqual(minWidth);
 });
+
+test("月境界の due はパーセント上も整数 N か月境界に整合する（年月インデックス基準）", () => {
+  // 起点 2026-06 から見て 2026-08-01 はちょうど 2 か月後 = 25% の境界
+  // dueOffset=2 / startOffset=0 / endOffset=3 → left=0% / right=37.5%
+  const layout = computeRoadmapLayout([def("aug-1st", "2026-08-01")], NOW);
+  const row = layout.rows[0];
+  expect(row.leftPercent).toBeCloseTo(0, 5);
+  expect(row.widthPercent).toBeCloseTo(37.5, 5);
+});
+
+test("月末と次月初は連続して並ぶ（旧 30.4375 近似ではズレていた）", () => {
+  const layout = computeRoadmapLayout(
+    [def("end-jul", "2026-07-31"), def("aug-1st", "2026-08-01")],
+    NOW,
+  );
+  const [endJul, aug1] = layout.rows;
+  // 旧実装 (DAYS_PER_MONTH=30.4375) では 1 か月分以上ズレていたケース。
+  // 新実装では 1/31 か月 / 8 * 100 ≈ 0.4% 程度に収まる。安全側に 1% 未満を確認。
+  const diff = Math.abs(aug1.leftPercent - endJul.leftPercent);
+  expect(diff).toBeLessThan(1);
+});
