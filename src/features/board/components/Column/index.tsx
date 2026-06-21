@@ -84,12 +84,24 @@ export const Column = ({
   const pendingClientYRef = useRef(0);
 
   const handleDragOver = (e: DragEvent<HTMLElement>) => {
-    if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
+    // dndDisabled 中は DnD UI を無効化する意図なので、独自 MIME であっても
+    // hover state を更新しない。ただし「独自 MIME を持つ drop はアプリ側で
+    // ハンドルする意図」なので、ブラウザ既定動作（ナビゲーション等）を抑止する
+    // ため preventDefault だけは独自 MIME のときに実行する。
+    const isColumnMime = e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE);
+    const isTaskMime = e.dataTransfer.types.includes(DRAG_MIME_TYPE);
+    if (dndDisabled) {
+      if (isColumnMime || isTaskMime) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (isColumnMime) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       return;
     }
-    if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
+    if (!isTaskMime) {
       return;
     }
     e.preventDefault();
