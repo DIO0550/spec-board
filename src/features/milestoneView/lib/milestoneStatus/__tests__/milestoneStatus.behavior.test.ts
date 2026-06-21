@@ -119,6 +119,11 @@ test("先頭空白付き (' 2026-02-31') は undefined 扱い（厳密 ISO 8601 
   expect(resolveCountdown(def, NOW).kind).toBe("none");
 });
 
+test("日付の後ろに任意文字列が続く ('2026-06-21 foo') は undefined 扱い", () => {
+  const def = { name: "v0.1", state: "open", due: "2026-06-21 foo" } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });

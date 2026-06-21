@@ -60,7 +60,10 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   // "March 3 2026" 等の自由形式はネイティブパースで日付ロールオーバー
   // (2026-02-31 → 2026-03-03) してしまうため、ここで弾かないと
   // 不正日付のままソート/カウントダウン/overdue 判定に使われる。
-  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]|$)/.exec(due);
+  // 末尾までマッチさせて「YYYY-MM-DD 単独」または「YYYY-MM-DDT... の ISO datetime」
+  // のみを受理する。"2026-06-21 foo" のように日付の後ろに任意文字列が続く形式は
+  // ロールオーバーの温床になるため弾く。
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(due);
   if (isoMatch === null) {
     return undefined;
   }
