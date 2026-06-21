@@ -148,7 +148,8 @@ export const MilestoneRoadmap = ({
               />
               {/* ヘッダ (text-[11px] ≈ 16px) + mb-5 (20px) の領域内、
                   ヘッダ末端と最初のバー行の境目あたりに浮かせる。
-                  ピル背景 = danger 色なので、月軸ラベルと多少重なっても可読性は確保される。 */}
+                  surface 背景 + danger 色の枠線/文字でカードから浮き上がり、
+                  月軸ラベルと多少重なっても可読性を確保する。 */}
               <span
                 className="absolute -translate-x-1/2 rounded bg-surface px-1.5 text-[9px] font-mono leading-none whitespace-nowrap text-[var(--color-ms-danger-fg)] border border-[var(--color-ms-danger-border)] py-0.5"
                 style={{
