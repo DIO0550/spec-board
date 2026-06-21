@@ -36,8 +36,10 @@
 	--color-create-accent-border: oklch(0.86 0.06 265);
 
 	/* マイルストーン画面用の状態色（design-source: docs/design/spec-milestones-static-*.html）。
-	   open / closed / overdue / soon の 4 系統を bg / fg / border の 3 段で持つ。
-	   進捗バー・ロードマップの内訳色（done / review / inprog / todo）も同じ語彙で揃える。 */
+	   - success / danger (= open / overdue 用): base + bg + fg + border の 4 段
+	   - warn (= soon 用): bg + fg の 2 段
+	   - info / inprog / todo: 単色（進捗バー内訳・ロードマップバー色用）
+	   closed 系は専用トークンを設けず、汎用の panel-2 / text-dim / border-strong を流用する。 */
 	--color-ms-success: oklch(0.6 0.13 155);
 	--color-ms-success-bg: oklch(0.94 0.05 155);
 	--color-ms-success-fg: oklch(0.35 0.12 155);
