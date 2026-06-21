@@ -65,7 +65,7 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   // 「2026-06-21Tnot-a-date」「2026-06-21T25:99」のような不正な suffix を弾く。
   // ISO time: HH:MM(:SS(.sss)?)? + 任意の TZ 指定 (Z / ±HH:MM / ±HHMM / ±HH)。
   const isoMatch =
-    /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?)?$/.exec(
+    /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|([+-])(\d{2})(?::?(\d{2}))?)?)?$/.exec(
       due,
     );
   if (isoMatch === null) {
@@ -91,6 +91,16 @@ export const parseDue = (due: string | undefined): Date | undefined => {
     const mm = Number(isoMatch[5]);
     const ss = isoMatch[6] === undefined ? 0 : Number(isoMatch[6]);
     if (hh > 23 || mm > 59 || ss > 59) {
+      return undefined;
+    }
+  }
+  // TZ オフセット (±HH:MM / ±HHMM / ±HH) も HH=0..23 / MM=0..59 で範囲検証する。
+  // ISO 8601 上は実用的な最大が ±14:00 程度だが、ここでは時刻と同じ HH/MM 範囲で許容する
+  // （実用上 14 超のオフセットを持つ TZ は存在しないが過剰な厳密化はしない）。
+  if (isoMatch[8] !== undefined) {
+    const tzHh = Number(isoMatch[8]);
+    const tzMm = isoMatch[9] === undefined ? 0 : Number(isoMatch[9]);
+    if (tzHh > 23 || tzMm > 59) {
       return undefined;
     }
   }
