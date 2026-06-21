@@ -74,7 +74,12 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   const y = Number(isoMatch[1]);
   const m = Number(isoMatch[2]);
   const d = Number(isoMatch[3]);
-  const validation = new Date(y, m - 1, d);
+  // `new Date(y, m-1, d)` は y=0..99 を 1900..1999 へ丸めるため、
+  // `0001-01-01` のような 4 桁年が表現できない。setFullYear で明示的に渡し、
+  // src/domains/due の 4 桁年方針と揃える。
+  const validation = new Date(0);
+  validation.setFullYear(y, m - 1, d);
+  validation.setHours(0, 0, 0, 0);
   // JS Date は 2026-02-31 を 2026-03-03 へ、2026-13-01 を 2027-01-01 へ
   // 黙ってロールオーバーするため、年月日のフィールド一致で検証する。
   if (
@@ -149,11 +154,40 @@ export const daysUntil = (due: Date, now: Date): number => {
   // ローカル midnight 同士の ms 差を 24h で割ると DST のある地域で 23h/25h
   // となる日があり日数差が ±1 にブレてしまうため、src/domains/due と同じく
   // UTC エポック差分方式に揃えてタイムゾーン/DST 非依存にする。
-  const dueEpoch = Date.UTC(due.getFullYear(), due.getMonth(), due.getDate());
-  const todayEpoch = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  // また `Date.UTC(y, ...)` は y=0..99 を 1900..1999 へ丸めるため、4 桁年を
+  // 保持するために setUTCFullYear 経由で組み立てる。
+  const dueEpoch = toUtcDayEpoch(
+    due.getFullYear(),
+    due.getMonth(),
+    due.getDate(),
+  );
+  const todayEpoch = toUtcDayEpoch(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
   // 暦日差を Math.floor で返す。due が日時形式（例: 同日 23:00）でも UTC エポックは
   // 年月日のみで構築するので時刻部分は影響しない（同日内 → 0）。
   return Math.floor((dueEpoch - todayEpoch) / MS_PER_DAY);
+};
+
+/**
+ * 年月日を UTC 0 時のエポック (ms) へ変換する。
+ * `Date.UTC` の 0..99 → 1900..1999 丸めを回避するため `setUTCFullYear` を使う。
+ * @param year - 西暦 (4 桁)
+ * @param monthIndex - 月 (0..11)
+ * @param day - 日 (1..31)
+ * @returns UTC エポック (ms)
+ */
+const toUtcDayEpoch = (
+  year: number,
+  monthIndex: number,
+  day: number,
+): number => {
+  const dt = new Date(0);
+  dt.setUTCFullYear(year, monthIndex, day);
+  dt.setUTCHours(0, 0, 0, 0);
+  return dt.getTime();
 };
 
 /**

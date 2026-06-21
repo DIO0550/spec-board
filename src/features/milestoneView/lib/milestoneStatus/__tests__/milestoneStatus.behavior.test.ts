@@ -179,6 +179,26 @@ test("妥当な TZ オフセット ('2026-06-22T03:00:00+09:00') は受理され
   expect(resolveCountdown(def, NOW).kind).toBe("soon");
 });
 
+test("4 桁年の小さい値 ('0001-01-01') も 1900..1999 へ丸められず正しくパースされる", () => {
+  // parseDue 内で new Date(y, m-1, d) を使うと y=1 が 1901 に丸められる仕様。
+  // setFullYear 経由で 4 桁年を保持する実装に変更したことを担保する。
+  const def = { name: "v0.1", state: "open", due: "0001-01-01" } as const;
+  // 0001-01-01 → 2026-06-21 より遥か昔 → overdue 扱い
+  expect(resolveDisplayStatus(def, NOW)).toBe("overdue");
+});
+
+test("daysUntil: 年 0..99 でも正しくエポック化される（setUTCFullYear 経由）", () => {
+  // 0050-06-21 と 0050-06-22 の間は 1 日。Date.UTC(50, ...) では 1950 に
+  // 丸められるが、setUTCFullYear なら 0050 として扱う。
+  const now = new Date(0);
+  now.setFullYear(50, 5, 21); // 0050-06-21 ローカル
+  now.setHours(0, 0, 0, 0);
+  const due = new Date(0);
+  due.setFullYear(50, 5, 22); // 0050-06-22 ローカル
+  due.setHours(0, 0, 0, 0);
+  expect(daysUntil(due, now)).toBe(1);
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });
