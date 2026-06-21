@@ -87,6 +87,14 @@
 	--color-column-accent-4: #a78bfa;
 	--color-column-accent-5: #fb7185;
 	--color-column-accent-6: #22d3ee;
+
+	/* マイルストーン状態色の前景値はライト既定だと暗色寄り（薄い badge bg 上で読ませる
+	   想定）で、bg-surface / bg-surface-muted 上に直接乗せたとき (overdue stat / 今日 ピル)
+	   ダーク背景でコントラスト ~1.6:1 まで落ちる。ダーク用に lightness を上げて
+	   WCAG AA を満たす値へ上書きする。 */
+	--color-ms-success-fg: oklch(0.78 0.12 155);
+	--color-ms-danger-fg: oklch(0.78 0.16 25);
+	--color-ms-warn-fg: oklch(0.82 0.13 55);
 }
 
 /* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。
