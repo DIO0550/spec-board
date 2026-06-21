@@ -109,6 +109,16 @@ test("ISO datetime 形式の存在しない日付 (2026-02-31T00:00:00Z) も und
   expect(dueSortKey(def)).toBe(Number.POSITIVE_INFINITY);
 });
 
+test("ISO 8601 以外の形式 (スラッシュ区切り '2026/02/31') は undefined 扱い", () => {
+  const def = { name: "v0.1", state: "open", due: "2026/02/31" } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+});
+
+test("先頭空白付き (' 2026-02-31') は undefined 扱い（厳密 ISO 8601 のみ受理）", () => {
+  const def = { name: "v0.1", state: "open", due: " 2026-02-31" } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });

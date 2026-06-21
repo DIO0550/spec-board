@@ -55,30 +55,35 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   if (due === undefined) {
     return undefined;
   }
-  // 先頭の YYYY-MM-DD 部分を抽出し、ロールオーバー検証する（YYYY-MM-DD 単体・
-  // ISO datetime 両方に共通の前段ガード）。JS Date は 2026-02-31 を 2026-03-03 へ、
-  // 2026-13-01 を 2027-01-01 へ黙ってロールオーバーするため、ここで弾かないと
-  // 不正日付がそのままソート/カウントダウン/overdue 判定に使われてしまう。
-  const ymdHead = /^(\d{4})-(\d{2})-(\d{2})/.exec(due);
-  if (ymdHead !== null) {
-    const y = Number(ymdHead[1]);
-    const m = Number(ymdHead[2]);
-    const d = Number(ymdHead[3]);
-    const validation = new Date(y, m - 1, d);
-    if (
-      validation.getFullYear() !== y ||
-      validation.getMonth() !== m - 1 ||
-      validation.getDate() !== d
-    ) {
-      return undefined;
-    }
-    // YYYY-MM-DD 完全一致（10 文字）はローカル 0 時として返す
-    // （タイムゾーン解釈による暗黙の UTC 扱いを避ける）。
-    if (due.length === 10) {
-      return validation;
-    }
+  // 厳密な ISO 8601 (YYYY-MM-DD または YYYY-MM-DDT...) のみ受理する。
+  // 先頭空白を含む " 2026-02-31" や "2026/02/31" のような区切り違い、
+  // "March 3 2026" 等の自由形式はネイティブパースで日付ロールオーバー
+  // (2026-02-31 → 2026-03-03) してしまうため、ここで弾かないと
+  // 不正日付のままソート/カウントダウン/overdue 判定に使われる。
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]|$)/.exec(due);
+  if (isoMatch === null) {
+    return undefined;
   }
-  // ISO datetime（"YYYY-MM-DDTHH:MM:SS..." 形式）や他形式はネイティブパースに委ねる。
+  const y = Number(isoMatch[1]);
+  const m = Number(isoMatch[2]);
+  const d = Number(isoMatch[3]);
+  const validation = new Date(y, m - 1, d);
+  // JS Date は 2026-02-31 を 2026-03-03 へ、2026-13-01 を 2027-01-01 へ
+  // 黙ってロールオーバーするため、年月日のフィールド一致で検証する。
+  if (
+    validation.getFullYear() !== y ||
+    validation.getMonth() !== m - 1 ||
+    validation.getDate() !== d
+  ) {
+    return undefined;
+  }
+  // YYYY-MM-DD 完全一致（10 文字）はローカル 0 時として返す
+  // （タイムゾーン解釈による暗黙の UTC 扱いを避ける）。
+  if (due.length === 10) {
+    return validation;
+  }
+  // ISO datetime ("YYYY-MM-DDTHH:MM:SS...") はネイティブパース
+  // （年月日部分は上で検証済みなので時刻部分のみネイティブに任せる）。
   const dt = new Date(due);
   return Number.isNaN(dt.getTime()) ? undefined : dt;
 };
