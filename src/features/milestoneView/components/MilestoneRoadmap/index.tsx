@@ -121,9 +121,11 @@ export const MilestoneRoadmap = ({
                           selected ? "ring-[3px] ring-accent-soft" : "",
                         ].join(" ")}
                       >
-                        <span className="truncate">{title}</span>
+                        {/* flex 親内で truncate を効かせるには min-w-0 + flex-1 が必要
+                            （子要素の min-width: auto を解除しないと省略表示が効かない） */}
+                        <span className="min-w-0 flex-1 truncate">{title}</span>
                         {row.def.due !== undefined ? (
-                          <span className="font-mono text-[10px] opacity-80">
+                          <span className="shrink-0 font-mono text-[10px] opacity-80">
                             {row.def.due}
                           </span>
                         ) : null}
