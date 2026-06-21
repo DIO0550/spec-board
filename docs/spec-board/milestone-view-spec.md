@@ -108,12 +108,12 @@ overlay は ConfirmDialog と同じく `<div role="presentation">` で a11y ツ�
 
 `milestones.yml` の `due` は信頼できないユーザー入力文字列として扱う:
 
-- 受理する形式: 厳密 ISO 8601 のみ
-  - `YYYY-MM-DD`（10 文字）→ ローカル 0 時として解釈
-  - `YYYY-MM-DDTHH:MM:SS...`（ISO datetime）→ ネイティブパース
-- それ以外（スラッシュ区切り `2026/02/31` / 先頭空白 `" 2026-02-31"` / 自由形式 `March 3 2026` 等）はすべて `undefined`。
+- 受理する形式: 厳密 ISO 8601 のみ（正規表現 `^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$`）
+  - `YYYY-MM-DD`（10 文字）
+  - `YYYY-MM-DDTHH:MM:SS...`（ISO datetime）
+- それ以外（スラッシュ区切り `2026/02/31` / 先頭空白 `" 2026-02-31"` / 末尾余り `"2026-06-21 foo"` / 自由形式 `March 3 2026` 等）はすべて `undefined`。
 - 受理形式でも年月日のフィールド検証で実在しない日付（`2026-02-31`、`2026-13-01`）は `undefined`。
-- ISO datetime も先頭 `YYYY-MM-DD` 部分で同じ検証を行う。
+- **due は calendar date として扱う**: ISO datetime であっても先頭 `YYYY-MM-DD` 部分のみを採用して**ローカル 0 時として返す**（時刻部分・タイムゾーンオフセットは破棄）。これにより `"2026-06-21T00:00:00Z"` を西側 TZ で開いてもローカル日付が前日にシフトせず、calendar date ベースの daysUntil / overdue / ロードマップ位置が安定する。
 
 ## 日付変更の追従
 
