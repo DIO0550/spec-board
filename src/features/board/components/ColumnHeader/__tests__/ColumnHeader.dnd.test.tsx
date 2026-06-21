@@ -2,7 +2,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
-import { COLUMN_DRAG_MIME_TYPE } from "../../Board/columnDragState";
+import { COLUMN_DRAG_MIME_TYPE } from "../../Board/mime";
 import { ColumnHeader } from "..";
 
 let container: HTMLDivElement | null = null;

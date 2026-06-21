@@ -3,35 +3,20 @@ import {
   Fragment,
   type MouseEvent,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { hasAnyBrokenLink } from "@/domains/broken-link";
 import { hasParseError } from "@/domains/parse-error";
-import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { Task } from "@/types/task";
-import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
-import { DRAG_MIME_TYPE, DragState } from "../Board/dragState";
+import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../Board/mime";
+import { useBoardCard } from "../BoardCardProvider";
+import { useBoardColumn } from "../BoardColumnProvider";
 import { ColumnContextMenu } from "../ColumnContextMenu";
 import { ColumnHeader } from "../ColumnHeader";
-import { type MilestonesByName, TaskCard } from "../TaskCard";
+import { TaskCard } from "../TaskCard";
 import { computeHoverIndex } from "./dragHover";
-
-/** Drop 確定時に呼ばれる引数。 */
-export type ColumnTaskDropParams = {
-  readonly taskFilePath: string;
-  readonly fromColumn: string;
-  readonly toColumn: string;
-  readonly toIndex: number;
-};
-
-/** カラム drop 確定時に呼ばれる引数。 */
-export type ColumnDropParams = {
-  readonly fromColumnName: string;
-  readonly toColumnName: string;
-};
 
 /** 個別カラムの Props */
 type ColumnProps = {
@@ -44,22 +29,6 @@ type ColumnProps = {
    * フォールバック色決定に必須のため、呼び出し側（Board）は表示順インデックスを渡す。
    */
   order: number;
-  /** カラムに属するタスクの配列 */
-  tasks: Task[];
-  /** 全タスクの配列（子タスク解決用） */
-  allTasks?: Task[];
-  /**
-   * 「正規化済み Task.filePath → Task」の lookup Map。broken link 判定に使用する。
-   * 未指定時は判定をスキップし、TaskCard に `hasBrokenLink={false}` を渡す。
-   */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
-  /** 完了カラム名 */
-  doneColumn?: string;
-  /**
-   * name → マイルストーン定義の Map。各 TaskCard のバッジ（title / due 解決）へ
-   * pass-through する。未指定時は name 表示にフォールバックする。
-   */
-  milestonesByName?: MilestonesByName;
   /** 「+ 追加」ボタンクリック時のコールバック */
   onAddClick: () => void;
   /**
@@ -73,8 +42,6 @@ type ColumnProps = {
    * @param newName - 新しいカラム名（trim 済み、既存と非重複）
    */
   onRename?: (newName: string) => void;
-  /** 他カラム名の一覧（重複チェック用。自身は含まない） */
-  existingColumnNames?: string[];
   /**
    * カラム削除確定時のコールバック。
    * 未指定の場合は削除 UI を無効化する。
@@ -82,49 +49,8 @@ type ColumnProps = {
    * @param destColumn - タスクの移動先カラム名。タスクが 0 件の場合は undefined
    */
   onDelete?: (destColumn: string | undefined) => void | Promise<void>;
-  /** 削除操作を許可するか（false の場合は右クリックメニューの削除が無効化） */
-  canDelete?: boolean;
-  /**
-   * 削除判定に使うフィルタ前の列内タスク件数。フィルタで表示カードが減っても
-   * 削除は全件（隠れタスク含む）に作用するため、移動先セレクタ要否・確認文言は
-   * この件数で判断する。未指定時は表示中の tasks.length にフォールバックする。
-   */
-  deletionTaskCount?: number;
-  /** Board から渡される DragState（自カラムが drop ターゲットか判断）。 */
-  dragState?: DragState;
-  /** dragover 時の hoverIndex 通知。 */
-  onDragHover?: (column: string | null, index: number | null) => void;
-  /** drop 確定時の通知。 */
-  onTaskDrop?: (params: ColumnTaskDropParams) => void;
-  /**
-   * 子 TaskCard の dragstart を Board に伝える。
-   * @param taskFilePath 対象 task の filePath
-   * @param fromColumn 元カラム名
-   */
-  onTaskDragStart?: (taskFilePath: string, fromColumn: string) => void;
-  /** 子 TaskCard の dragend を Board に伝える。 */
-  onTaskDragEnd?: () => void;
   /** 自カラムヘッダーを DnD ハンドルにするか。1 カラム時は false で渡す。 */
   columnDraggable?: boolean;
-  /**
-   * カード / カラムの DnD を無効化するか。フィルタ有効時など、表示集合が全タスクと
-   * 異なり並べ替えが cardOrder を壊しうる状況で true にする。
-   */
-  dndDisabled?: boolean;
-  /**
-   * カラム DnD の dragstart 通知（ColumnHeader からそのまま透過）。
-   * @param columnName 自カラム名
-   */
-  onColumnDragStart?: (columnName: string) => void;
-  /** カラム DnD の dragend 通知。 */
-  onColumnDragEnd?: () => void;
-  /**
-   * dragover 中に hover ターゲットとなったカラム名通知。
-   * @param columnName 自カラム名
-   */
-  onColumnHover?: (columnName: string) => void;
-  /** カラム drop 確定通知。 */
-  onColumnDrop?: (params: ColumnDropParams) => void;
 };
 
 /**
@@ -136,51 +62,20 @@ export const Column = ({
   name,
   color,
   order,
-  tasks,
-  allTasks = [],
-  tasksByNormalizedPath,
-  doneColumn,
-  milestonesByName,
   onAddClick,
   onTaskClick,
   onRename,
-  existingColumnNames,
   onDelete,
-  canDelete = true,
-  deletionTaskCount,
-  dragState,
-  onDragHover,
-  onTaskDrop,
-  onTaskDragStart,
-  onTaskDragEnd,
   columnDraggable = false,
-  dndDisabled = false,
-  onColumnDragStart,
-  onColumnDragEnd,
-  onColumnHover,
-  onColumnDrop,
 }: ColumnProps) => {
-  const tasksByFilePath = useMemo(
-    () => new Map(allTasks.map((t) => [t.filePath, t])),
-    [allTasks],
-  );
-  // 各 TaskCard の進捗バーは「全子孫」基準で算出するため、Column 単位で
-  // allTasks 全件分の子孫 list を 1 度だけ構築し、tasks.map 内で都度 DFS が
-  // 走るのを避ける。lookup Map を共有して 1 root あたりの DFS は O(子孫数)
-  // 相当に抑えられるが、最悪ケース（diamond / 深い chain）では allTasks
-  // 全体でみると O(N * 平均子孫数) になる点に留意。
-  const descendantsByFilePath = useMemo(() => {
-    const map = new Map<string, readonly Task[]>();
-    for (const t of allTasks) {
-      map.set(
-        t.filePath,
-        TaskHierarchy.collectDescendants(allTasks, t.filePath, {
-          lookup: tasksByFilePath,
-        }),
-      );
-    }
-    return map;
-  }, [allTasks, tasksByFilePath]);
+  const card = useBoardCard();
+  const col = useBoardColumn();
+
+  const tasks = card.tasksInColumn(name);
+  const otherColumnNames = col.existingNamesExcluding(name);
+  const deletionCount = col.taskCountInColumn(name);
+  const dndDisabled = card.dndDisabled;
+
   const listRef = useRef<HTMLUListElement>(null);
   // dragover は高頻度発火するため、rAF 同フレーム内では rect 再計算を 1 回に
   // 抑制する。pendingFrameRef が null でない間は新規 rAF を予約せず、最後の
@@ -189,20 +84,28 @@ export const Column = ({
   const pendingClientYRef = useRef(0);
 
   const handleDragOver = (e: DragEvent<HTMLElement>) => {
-    if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      onColumnHover?.(name);
+    // dndDisabled 中は DnD UI を無効化する意図なので、独自 MIME であっても
+    // hover state を更新しない。ただし「独自 MIME を持つ drop はアプリ側で
+    // ハンドルする意図」なので、ブラウザ既定動作（ナビゲーション等）を抑止する
+    // ため preventDefault だけは独自 MIME のときに実行する。
+    const isColumnMime = e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE);
+    const isTaskMime = e.dataTransfer.types.includes(DRAG_MIME_TYPE);
+    if (dndDisabled) {
+      if (isColumnMime || isTaskMime) {
+        e.preventDefault();
+      }
       return;
     }
-    if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
+    if (isColumnMime) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      return;
+    }
+    if (!isTaskMime) {
       return;
     }
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    if (!onDragHover) {
-      return;
-    }
     pendingClientYRef.current = e.clientY;
     if (pendingFrameRef.current !== null) {
       return;
@@ -219,7 +122,7 @@ export const Column = ({
         return { top: r.top, bottom: r.bottom };
       });
       const index = computeHoverIndex(rects, pendingClientYRef.current);
-      onDragHover(name, index);
+      card.hover(name, index);
     });
   };
 
@@ -246,35 +149,52 @@ export const Column = ({
       return;
     }
     cancelPendingHover();
-    onDragHover?.(null, null);
+    card.hover(null, null);
   };
 
   const handleDrop = (e: DragEvent<HTMLElement>) => {
-    if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
+    const isColumnMime = e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE);
+    const isTaskMime = e.dataTransfer.types.includes(DRAG_MIME_TYPE);
+    // dndDisabled 中は drop を no-op にする（drag 開始後に dndDisabled が true に
+    // 切り替わったケースや外部から同一 MIME を注入されたケースを防ぐ）。
+    // 独自 MIME の drop はアプリ側でハンドルする意図なので、ブラウザ既定動作
+    // （ナビゲーション等）抑止のため preventDefault だけは実行する。
+    if (dndDisabled) {
+      if (isColumnMime || isTaskMime) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (isColumnMime) {
       // column MIME を持つ drop はアプリ側でハンドルする意図なので、payload が
       // 空でも preventDefault してブラウザ既定動作（リンクナビゲーション等）を抑止する。
       e.preventDefault();
       const fromColumnName = e.dataTransfer.getData(COLUMN_DRAG_MIME_TYPE);
       if (fromColumnName) {
-        onColumnDrop?.({ fromColumnName, toColumnName: name });
+        void col.dropColumn({ fromColumnName, toColumnName: name });
       }
       return;
     }
-    if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
+    if (!isTaskMime) {
       return;
     }
     const taskFilePath = e.dataTransfer.getData(DRAG_MIME_TYPE);
-    if (!taskFilePath || !dragState) {
+    if (!taskFilePath || !card.isDragging(taskFilePath)) {
       return;
     }
-    if (taskFilePath !== dragState.draggingTaskFilePath) {
+    // card.isDragging が true なら Provider state は dragging なので dragSource は
+    // 必ず存在する。万一 null だった場合は state を不正に進められないため安全に
+    // 早期 return する（`?? name` で fromColumn === toColumn の誤った dispatch に
+    // しないため）。
+    const dragSource = card.dragSource;
+    if (dragSource === null) {
       return;
     }
     e.preventDefault();
     cancelPendingHover();
-    // rAF throttle により dragState.hoverIndex は他カラムの drop で stale な
-    // 可能性がある。drop event の clientY から this カラムの DOM rect を使って
-    // toIndex を同期計算する。
+    // rAF throttle により hoverTarget.index は他カラムの drop で stale な可能性が
+    // ある。drop event の clientY から this カラムの DOM rect を使って toIndex を
+    // 同期計算する。
     const liElements = Array.from(
       listRef.current?.querySelectorAll<HTMLLIElement>("li[data-task-card]") ??
         [],
@@ -284,17 +204,20 @@ export const Column = ({
       return { top: r.top, bottom: r.bottom };
     });
     const toIndex = computeHoverIndex(rects, e.clientY);
-    onTaskDrop?.({
+    void card.dropTask({
       taskFilePath,
-      fromColumn: dragState.draggingFromColumn,
+      // ドラッグ開始時点の fromColumn を Provider state から復元する。
+      // task.status 経由だと drag 中の楽観更新等で stale になり、moveTask の
+      // preflight が「fromColumn !== task.status」を異常検知する経路を破る可能性がある。
+      fromColumn: dragSource.fromColumn,
       toColumn: name,
       toIndex,
     });
   };
 
-  const placeholderIndex = DragState.hoverIndexFor(dragState ?? null, name);
+  const placeholderIndex =
+    card.hoverTarget.column === name ? card.hoverTarget.index : null;
 
-  const otherColumnNames = existingColumnNames ?? [];
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -328,9 +251,6 @@ export const Column = ({
     setDestColumn(otherColumnNames[0] ?? "");
     setIsConfirming(true);
   };
-
-  // 削除はフィルタで隠れたタスクも含む全件に作用するため、フィルタ前の件数で判定する。
-  const deletionCount = deletionTaskCount ?? tasks.length;
 
   /**
    * 削除確認ダイアログの「削除」確定ハンドラ。
@@ -372,7 +292,20 @@ export const Column = ({
   // タスクが残っているのに移動先が無いとダイアログが「確定不能」になるため、
   // メニュー側で削除操作そのものを封じる。
   const canDeleteEffective =
-    canDelete && !(hasTasks && otherColumnNames.length === 0);
+    col.canDelete(name) && !(hasTasks && otherColumnNames.length === 0);
+
+  /**
+   * ColumnHeader 経由のカラム dragstart を Provider へ流す。
+   * @param columnName 自カラム名
+   */
+  const handleColumnDragStart = (columnName: string) => {
+    col.startDrag(columnName);
+  };
+
+  /** ColumnHeader 経由のカラム dragend を Provider へ流す。 */
+  const handleColumnDragEnd = () => {
+    col.end();
+  };
 
   return (
     <section
@@ -390,19 +323,20 @@ export const Column = ({
         order={order}
         onAddClick={onAddClick}
         onRename={onRename}
-        existingColumnNames={existingColumnNames}
+        existingColumnNames={[...otherColumnNames]}
         onContextMenu={handleContextMenu}
         draggable={columnDraggable && !dndDisabled}
-        onColumnDragStart={onColumnDragStart}
-        onColumnDragEnd={onColumnDragEnd}
+        onColumnDragStart={handleColumnDragStart}
+        onColumnDragEnd={handleColumnDragEnd}
       />
       <ul ref={listRef} className="flex-1 overflow-y-auto px-2 pb-2">
         {tasks.map((task, i) => {
+          // 直下子のみのリスト。TaskCard 配下の "サブIssue" details が
+          // childTasks を展開して表示するため、Provider の byPath で実体を引き当てる。
+          // 解決できなかった child は broken なので結果からは除外する。
           const childTasks = task.hierarchy.childFilePaths
-            .map((fp) => tasksByFilePath.get(fp))
+            .map((fp) => card.byPath(fp))
             .filter((t): t is Task => t !== undefined);
-          const descendantTasks =
-            descendantsByFilePath.get(task.filePath) ?? [];
           return (
             <Fragment key={task.id}>
               {placeholderIndex === i && (
@@ -416,23 +350,13 @@ export const Column = ({
                 <TaskCard
                   task={task}
                   childTasks={childTasks}
-                  descendantTasks={descendantTasks}
-                  doneColumn={doneColumn}
-                  milestonesByName={milestonesByName}
                   fromColumn={name}
-                  isDragging={DragState.isDraggingTask(
-                    dragState ?? null,
-                    task.filePath,
+                  hasBrokenLink={hasAnyBrokenLink(
+                    task,
+                    card.tasksByNormalizedPath,
                   )}
-                  disableDrag={dndDisabled}
-                  hasBrokenLink={
-                    tasksByNormalizedPath !== undefined &&
-                    hasAnyBrokenLink(task, tasksByNormalizedPath)
-                  }
                   hasParseError={hasParseError(task)}
                   onClick={onTaskClick}
-                  onDragStart={onTaskDragStart}
-                  onDragEnd={onTaskDragEnd}
                 />
               </li>
             </Fragment>

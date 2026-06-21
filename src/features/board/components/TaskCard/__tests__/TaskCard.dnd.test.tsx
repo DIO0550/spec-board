@@ -1,10 +1,12 @@
-import { act, createElement } from "react";
+import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
-import { DRAG_MIME_TYPE } from "../../Board/dragState";
+import { DRAG_MIME_TYPE } from "../../Board/mime";
+import { type BoardCardApi, useBoardCard } from "../../BoardCardProvider";
 import { TaskCard } from "..";
+import { wrapWithCardProvider } from "./_testHelpers";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -32,13 +34,52 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
     ...overrides,
   });
 
-const render = (props: Parameters<typeof TaskCard>[0]) => {
+/**
+ * BoardCardProvider から最新の API を取得する Probe。
+ * @param props 最新値を受け取るコールバック
+ * @returns null
+ */
+const CardProbe = (props: { onResult: (api: BoardCardApi) => void }) => {
+  const api = useBoardCard();
+  useEffect(() => {
+    props.onResult(api);
+  });
+  return null;
+};
+
+/**
+ * BoardCardProvider 配下に TaskCard を mount し、card API を観測する。
+ * @param props TaskCard props
+ * @param providerArgs Provider に上書きで渡す props（dndDisabled 等）
+ * @returns latest cardApi accessor
+ */
+const render = (
+  props: Parameters<typeof TaskCard>[0],
+  providerArgs: Parameters<typeof wrapWithCardProvider>[1] = {},
+) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  let latest: BoardCardApi | null = null;
+  const handleResult = (api: BoardCardApi) => {
+    latest = api;
+  };
   act(() => {
-    root?.render(createElement(TaskCard, props));
+    root?.render(
+      wrapWithCardProvider(
+        <>
+          <TaskCard {...props} />
+          <CardProbe onResult={handleResult} />
+        </>,
+        { task: props.task, ...providerArgs },
+      ),
+    );
   });
+  return {
+    get cardApi(): BoardCardApi {
+      return latest as BoardCardApi;
+    },
+  };
 };
 
 const queryCard = (): HTMLElement => {
@@ -56,32 +97,26 @@ test.each([
   expect(card.getAttribute("draggable")).toBe("true");
 });
 
-test("disableDrag=true では draggable=false 属性になる", () => {
-  render({
-    task: makeTask(),
-    fromColumn: "Todo",
-    disableDrag: true,
-    onClick: vi.fn(),
-  });
+test("Provider の dndDisabled=true では draggable=false 属性になる", () => {
+  render(
+    { task: makeTask(), fromColumn: "Todo", onClick: vi.fn() },
+    { dndDisabled: true },
+  );
   const card = queryCard();
   expect(card.getAttribute("draggable")).toBe("false");
 });
 
-test("disableDrag=true では dragstart しても onDragStart / setData が呼ばれない", () => {
-  const onDragStart = vi.fn();
-  render({
-    task: makeTask({ filePath: "tasks/a.md" }),
-    fromColumn: "Todo",
-    disableDrag: true,
-    onDragStart,
-    onClick: vi.fn(),
-  });
+test("Provider の dndDisabled=true では dragstart しても startDrag / setData が呼ばれない", () => {
+  const probe = render(
+    { task: makeTask({ filePath: "tasks/a.md" }), fromColumn: "Todo" },
+    { dndDisabled: true },
+  );
   const card = queryCard();
   const event = createDragEvent("dragstart");
   act(() => {
     card.dispatchEvent(event);
   });
-  expect(onDragStart).not.toHaveBeenCalled();
+  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(false);
   expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe("");
 });
 
@@ -99,53 +134,50 @@ test("dragstart で dataTransfer.setData(DRAG_MIME_TYPE, filePath) が呼ばれ�
   expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe("tasks/a.md");
 });
 
-test("dragstart で onDragStart(filePath, fromColumn) が呼ばれる", () => {
-  const onDragStart = vi.fn();
-  render({
+test("dragstart で Provider の isDragging(filePath) が true になる", () => {
+  const probe = render({
     task: makeTask({ filePath: "tasks/a.md" }),
     fromColumn: "Todo",
-    onDragStart,
     onClick: vi.fn(),
   });
   const card = queryCard();
   act(() => {
     card.dispatchEvent(createDragEvent("dragstart"));
   });
-  expect(onDragStart).toHaveBeenCalledWith("tasks/a.md", "Todo");
+  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(true);
 });
 
-test("dragend で onDragEnd が呼ばれる", () => {
-  const onDragEnd = vi.fn();
-  render({
-    task: makeTask(),
+test("dragend で Provider の isDragging が false に戻る", () => {
+  const probe = render({
+    task: makeTask({ filePath: "tasks/a.md" }),
     fromColumn: "Todo",
-    onDragEnd,
     onClick: vi.fn(),
   });
   const card = queryCard();
   act(() => {
+    card.dispatchEvent(createDragEvent("dragstart"));
+  });
+  act(() => {
     card.dispatchEvent(createDragEvent("dragend"));
   });
-  expect(onDragEnd).toHaveBeenCalled();
+  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(false);
 });
 
-test("isDragging=true で data-dragging='true' + opacity-40 class が付く", () => {
-  render({
-    task: makeTask(),
-    fromColumn: "Todo",
-    isDragging: true,
-    onClick: vi.fn(),
+test("startDrag 後は data-dragging='true' + opacity-40 class が付く", () => {
+  const task = makeTask({ filePath: "tasks/a.md" });
+  const probe = render({ task, fromColumn: "Todo", onClick: vi.fn() });
+  act(() => {
+    probe.cardApi.startDrag(task.filePath, "Todo");
   });
   const card = queryCard();
   expect(card.getAttribute("data-dragging")).toBe("true");
   expect(card.className).toContain("opacity-40");
 });
 
-test("isDragging=false で data-dragging 属性が存在しない", () => {
+test("idle 状態では data-dragging 属性が存在しない", () => {
   render({
     task: makeTask(),
     fromColumn: "Todo",
-    isDragging: false,
     onClick: vi.fn(),
   });
   const card = queryCard();

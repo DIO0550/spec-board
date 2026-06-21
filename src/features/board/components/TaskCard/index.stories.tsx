@@ -1,22 +1,27 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
 import { initialTasks } from "@/test-fixtures";
 import type { Task } from "@/types/task";
+import { withBoardCardProvider } from "../BoardCardProvider/decorator";
 import { TaskCard } from ".";
 
 const baseTask: Task = initialTasks[0];
 
 const meta: Meta<typeof TaskCard> = {
   component: TaskCard,
+  decorators: [
+    // tasksByNormalizedPath は省略し Provider 側の allTasks フォールバックに任せる
+    withBoardCardProvider({
+      tasks: initialTasks,
+      allTasks: initialTasks,
+      milestonesByName: new Map(),
+      doneColumn: "Done",
+    }),
+  ],
   args: {
     task: baseTask,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
     fromColumn: "Todo",
-    onDragStart: fn(),
-    onDragEnd: fn(),
   },
 };
 
@@ -30,19 +35,8 @@ export const Clickable: Story = {
   args: { onClick: () => {} },
 };
 
-export const Dragging: Story = {
-  args: { isDragging: true },
-};
-
 export const WithBrokenLink: Story = {
   args: { hasBrokenLink: true },
-};
-
-export const Draggable: Story = {
-  args: {
-    onDragStart: fn(),
-    onDragEnd: fn(),
-  },
 };
 
 export const HighPriority: Story = {
@@ -68,7 +62,6 @@ export const WithChildren: Story = {
   args: {
     task: { ...baseTask },
     childTasks,
-    descendantTasks: childTasks,
   },
 };
 
@@ -76,14 +69,6 @@ export const WithDescendantsBeyondDirectChildren: Story = {
   args: {
     task: { ...baseTask },
     childTasks,
-    descendantTasks: [
-      ...childTasks,
-      ...initialTasks.slice(0, 3).map((t) => ({
-        ...t,
-        id: `extra-${t.id}`,
-        status: "Done",
-      })),
-    ],
   },
 };
 
@@ -97,7 +82,6 @@ export const Minimal: Story = {
       title: "最小構成のタスク",
     },
     childTasks: [],
-    descendantTasks: [],
   },
 };
 
@@ -138,7 +122,6 @@ export const ProgressOnly: Story = {
   args: {
     task: baseTask,
     childTasks,
-    descendantTasks: childTasks,
   },
 };
 
@@ -163,7 +146,6 @@ export const CompoundFull: Story = {
   args: {
     task: { ...baseTask, milestone: "v1.0", labels: ["bug", "urgent"] },
     childTasks,
-    descendantTasks: childTasks,
   },
 };
 

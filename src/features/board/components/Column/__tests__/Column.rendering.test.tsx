@@ -1,7 +1,9 @@
-import { act, createElement } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
+import { BoardCardProvider } from "../../BoardCardProvider";
+import { BoardColumnProvider } from "../../BoardColumnProvider";
 import { Column } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -16,6 +18,11 @@ afterEach(() => {
   container = null;
 });
 
+/**
+ * テスト用に最小限の Task を構築する。
+ * @param overrides 上書きしたい一部フィールド
+ * @returns Task
+ */
 function createTask(overrides: Partial<TaskPayload> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
@@ -31,19 +38,52 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
-function render(
-  props: Omit<Parameters<typeof Column>[0], "order"> & { order?: number },
-) {
+type RenderOptions = {
+  /** Column のメタ props（name / color / order / callbacks） */
+  column: Omit<Parameters<typeof Column>[0], "order"> & { order?: number };
+  /** Provider に渡す表示用 tasks（指定なしなら []） */
+  tasks?: readonly Task[];
+  /** Provider に渡す全 tasks（指定なしなら tasks を使う） */
+  allTasks?: readonly Task[];
+  /** Provider に渡す doneColumn */
+  doneColumn?: string;
+  /** Provider に渡す tasksByNormalizedPath */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+};
+
+/**
+ * BoardCardProvider / BoardColumnProvider 配下に Column を mount する。
+ * tasks や allTasks 等の lookup data は Provider 側に渡し、Column 自身には
+ * メタ props だけ渡す（commit 5 で Column の lookup props が削除されたため）。
+ *
+ * @param options - レンダリングオプション
+ */
+function render(options: RenderOptions) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  const tasks = options.tasks ?? [];
+  const allTasks = options.allTasks ?? tasks;
+  const columns = [{ name: options.column.name, order: 0 }];
+  const tree: ReactNode = (
+    <BoardCardProvider
+      tasks={tasks}
+      allTasks={allTasks}
+      tasksByNormalizedPath={options.tasksByNormalizedPath}
+      doneColumn={options.doneColumn}
+    >
+      <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
+        <Column order={0} {...options.column} />
+      </BoardColumnProvider>
+    </BoardCardProvider>
+  );
   act(() => {
-    root?.render(createElement(Column, { order: 0, ...props }));
+    root?.render(tree);
   });
 }
 
 test("カラム名がヘッダーに表示される", async () => {
-  render({ name: "In Progress", tasks: [], onAddClick: vi.fn() });
+  render({ column: { name: "In Progress", onAddClick: vi.fn() } });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("In Progress");
   });
@@ -54,7 +94,7 @@ test("タスク件数がヘッダーに表示される", async () => {
     createTask({ id: "task-1", title: "タスク1" }),
     createTask({ id: "task-2", title: "タスク2" }),
   ];
-  render({ name: "Todo", tasks, onAddClick: vi.fn() });
+  render({ column: { name: "Todo", onAddClick: vi.fn() }, tasks });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("2");
   });
@@ -62,14 +102,14 @@ test("タスク件数がヘッダーに表示される", async () => {
 
 test("タスクのタイトルが表示される", async () => {
   const tasks = [createTask({ title: "ログイン修正" })];
-  render({ name: "Todo", tasks, onAddClick: vi.fn() });
+  render({ column: { name: "Todo", onAddClick: vi.fn() }, tasks });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("ログイン修正");
   });
 });
 
 test("「+ 追加」ボタンが表示される", async () => {
-  render({ name: "Todo", tasks: [], onAddClick: vi.fn() });
+  render({ column: { name: "Todo", onAddClick: vi.fn() } });
   await vi.waitFor(() => {
     const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
       (b): b is HTMLButtonElement => b.textContent === "+ 追加",
@@ -79,7 +119,7 @@ test("「+ 追加」ボタンが表示される", async () => {
 });
 
 test("aria-label にカラム名が設定される", async () => {
-  render({ name: "Done", tasks: [], onAddClick: vi.fn() });
+  render({ column: { name: "Done", onAddClick: vi.fn() } });
   await vi.waitFor(() => {
     const section = container?.querySelector("section");
     expect(section?.getAttribute("aria-label")).toBe("Done");
@@ -106,21 +146,20 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
     filePath: "tasks/c1.md",
     children: ["tasks/g1.md", "tasks/g2.md"],
   });
-  const root = createTask({
+  const rootTask = createTask({
     id: "root",
     title: "親",
     status: "Todo",
     filePath: "tasks/root.md",
     children: ["tasks/c1.md"],
   });
-  const allTasks = [root, child, grand1, grand2];
+  const allTasks = [rootTask, child, grand1, grand2];
 
   render({
-    name: "Todo",
-    tasks: [root],
+    column: { name: "Todo", onAddClick: vi.fn() },
+    tasks: [rootTask],
     allTasks,
     doneColumn: "Done",
-    onAddClick: vi.fn(),
   });
 
   await vi.waitFor(() => {

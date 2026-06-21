@@ -1,10 +1,7 @@
-// @lint-suppress-ok — typescript-rules-plugin の block-lint-suppress.sh hook が
-// このマーカーを検出すると、本ファイル内の biome-ignore 行を許可する。
-// 本ファイルで biome-ignore が必要な理由: HTML5 ネイティブ DnD のため
-// draggable ハンドラを <div> に付ける必要があり、`noStaticElementInteractions`
-// が trigger される。子に details/summary 等の interactive descendants が
-// 混ざるため <button> 等のセマンティック要素に置換できず、抑制が必須。
-// 旧 TaskCard/index.tsx から踏襲しており、互換性維持のため削除しない。
+// @lint-suppress-ok — HTML5 ネイティブ DnD のため draggable ハンドラを <div> に
+// 付ける必要があり、`noStaticElementInteractions` が trigger される。子に
+// details/summary 等の interactive descendants が混ざるため <button> 等の
+// セマンティック要素に置換できず、抑制が必須。旧 TaskCard/index.tsx から踏襲。
 import {
   type DragEvent,
   type KeyboardEvent,
@@ -12,39 +9,20 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { DEFAULT_DONE_COLUMN } from "@/domains/project-columns";
-import { TaskHierarchy } from "@/domains/task-hierarchy";
+import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
+import { useBoardCard } from "@/features/board/components/BoardCardProvider";
 import type { Task } from "@/types/task";
-import { DRAG_MIME_TYPE } from "../../Board/dragState";
-import {
-  type MilestonesByName,
-  TaskCardContext,
-  type TaskCardContextValue,
-} from "../TaskCardContext";
+import { TaskCardContext, type TaskCardContextValue } from "../TaskCardContext";
 
-// childTasks / descendantTasks 未指定時のフォールバック用に参照を固定する。
-// 毎レンダー `[]` リテラルを生成すると useMemo の依存比較が常に miss し、
-// Context Value の memo 化（Column の tasks.map での再描画抑制）が壊れる。
+/** 子なしタスク用に固定参照を返す空配列。 */
 const EMPTY_TASKS: readonly Task[] = [];
 
 /** TaskCardRoot の Props */
 export type TaskCardRootProps = {
   /** 表示するタスク */
   task: Task;
-  /** 子タスクの配列（直下子のみ。<details> 内一覧用） */
-  childTasks?: readonly Task[];
-  /** 全子孫タスク（X/Y サマリ + 進捗バー用、再帰展開済） */
-  descendantTasks?: readonly Task[];
-  /** 完了カラム名 */
-  doneColumn?: string;
-  /** name → マイルストーン定義の Map。未指定は name 表示にフォールバック */
-  milestonesByName?: MilestonesByName;
-  /** 所属カラム名。onDragStart の引数に使う */
+  /** 所属カラム名。startDrag の引数に使う */
   fromColumn: string;
-  /** ドラッグ中フラグ（Board の DragState から配布） */
-  isDragging?: boolean;
-  /** ドラッグを無効化するか */
-  disableDrag?: boolean;
   /** 1 件でもリンク切れ参照を持つかどうか */
   hasBrokenLink?: boolean;
   /** 1 件でもパースエラー警告を持つかどうか */
@@ -55,13 +33,10 @@ export type TaskCardRootProps = {
    */
   onClick?: (taskId: string) => void;
   /**
-   * ドラッグ開始時のコールバック
-   * @param taskFilePath 対象タスクの filePath
-   * @param fromColumn 元カラム名
+   * 直下子タスクの配列（<details> 内の一覧表示用）。Provider 経由で descendantCount は
+   * 取得するため再帰展開は不要だが、サブ部品が直下子のみを参照するケースで必要なら渡す。
    */
-  onDragStart?: (taskFilePath: string, fromColumn: string) => void;
-  /** ドラッグ終了時のコールバック */
-  onDragEnd?: () => void;
+  childTasks?: readonly Task[];
   /** 並べるサブ部品（TaskCard.Header 等） */
   children: ReactNode;
 };
@@ -69,86 +44,68 @@ export type TaskCardRootProps = {
 /**
  * TaskCard の Container + Context Provider。draggable コンテナとして DnD を司り、
  * 子サブ部品が利用する横断データを Provider 経由で配布する。
+ * doneColumn / milestonesByName / subIssueCounts は BoardCardProvider から取得する。
+ *
  * @param props - {@link TaskCardRootProps}
  * @returns カード要素
  */
 export const TaskCardRoot = ({
   task,
-  childTasks,
-  descendantTasks,
-  doneColumn,
-  milestonesByName,
   fromColumn,
-  isDragging = false,
-  disableDrag = false,
   hasBrokenLink = false,
   hasParseError = false,
   onClick,
-  onDragStart,
-  onDragEnd,
+  childTasks,
   children,
 }: TaskCardRootProps) => {
+  const card = useBoardCard();
   // ドラッグ終了直後にブラウザが発火する synthetic click を抑止するためのガード。
   // dragstart で true にし、onClick はこのフラグが立っている間は無視する。
   const dragGuardRef = useRef(false);
 
-  const effectiveDoneColumn = doneColumn ?? DEFAULT_DONE_COLUMN;
-  // childTasks が undefined のときはもちろん、Column 側が `?? []` で都度生成した
-  // 空配列を渡しても useMemo が miss しないよう、length === 0 も EMPTY_TASKS に
-  // 正規化する。子なしタスクが大量に並ぶケース（典型的な Column 描画）で効く。
   const effectiveChildTasks =
     childTasks === undefined || childTasks.length === 0
       ? EMPTY_TASKS
       : childTasks;
-  const effectiveDescendants =
-    descendantTasks === undefined || descendantTasks.length === 0
-      ? effectiveChildTasks
-      : descendantTasks;
 
-  const subIssueCounts = useMemo(
-    () =>
-      TaskHierarchy.countSubIssueProgress(
-        effectiveDescendants,
-        effectiveDoneColumn,
-      ),
-    [effectiveDescendants, effectiveDoneColumn],
-  );
+  const subIssueCounts = card.descendantCount(task.filePath);
 
   const contextValue = useMemo<TaskCardContextValue>(
     () => ({
       task,
-      doneColumn: effectiveDoneColumn,
-      milestonesByName,
+      doneColumn: card.doneColumn,
+      milestonesByName: card.milestonesByName,
       hasBrokenLink,
       hasParseError,
       subIssueCounts,
       childTasks: effectiveChildTasks,
-      descendantTasks: effectiveDescendants,
     }),
     [
       task,
-      effectiveDoneColumn,
-      milestonesByName,
+      card.doneColumn,
+      card.milestonesByName,
       hasBrokenLink,
       hasParseError,
       subIssueCounts,
       effectiveChildTasks,
-      effectiveDescendants,
     ],
   );
 
+  const isDragging = card.isDragging(task.filePath);
+  const dndDisabled = card.dndDisabled;
+
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
-    if (disableDrag) {
+    if (dndDisabled) {
       return;
     }
     e.dataTransfer.setData(DRAG_MIME_TYPE, task.filePath);
     e.dataTransfer.effectAllowed = "move";
     dragGuardRef.current = true;
-    onDragStart?.(task.filePath, fromColumn);
+    card.startDrag(task.filePath, fromColumn);
   };
 
   const handleDragEnd = () => {
-    onDragEnd?.();
+    card.end();
     // dragend 内 setTimeout(0) で解除を次のマクロタスクに回し、synthetic click を確実にガードする。
     setTimeout(() => {
       dragGuardRef.current = false;
@@ -188,7 +145,7 @@ export const TaskCardRoot = ({
     <TaskCardContext.Provider value={contextValue}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: HTML5 native DnD requires draggable handlers on the card container; children may include interactive descendants (e.g. details/summary) so a semantic <button> cannot be used here */}
       <div
-        draggable={!disableDrag}
+        draggable={!dndDisabled}
         data-dragging={dataDragging}
         data-testid="task-card"
         aria-grabbed={isDragging}

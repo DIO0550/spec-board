@@ -20,12 +20,10 @@ export type TaskCardContextValue = {
   hasBrokenLink: boolean;
   /** 1 件でもパースエラー警告を持つかどうか */
   hasParseError: boolean;
-  /** SubIssue 進捗（Root の useMemo で 1 度だけ計算済み） */
+  /** SubIssue 進捗（Provider の descendantCount 由来。全子孫ベースで集計済み） */
   subIssueCounts: { done: number; total: number };
   /** 直下子タスクの配列（Root で [] フォールバック適用済み） */
   childTasks: readonly Task[];
-  /** 全子孫タスクの配列（Root で childTasks フォールバック適用済み） */
-  descendantTasks: readonly Task[];
 };
 
 export const TaskCardContext = createContext<TaskCardContextValue | null>(null);

@@ -1,6 +1,7 @@
-import { act, createElement } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { BoardColumnProvider } from "../../BoardColumnProvider";
 import { AddColumnButton } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -15,16 +16,33 @@ afterEach(() => {
   container = null;
 });
 
+type RenderOptions = {
+  /** AddColumnButton に渡す props */
+  props: Parameters<typeof AddColumnButton>[0];
+  /** BoardColumnProvider に渡す既存カラム名（重複チェック用） */
+  columnNames?: readonly string[];
+};
+
 /**
- * AddColumnButton をレンダリングするヘルパー
- * @param props - AddColumnButton に渡す props
+ * BoardColumnProvider 配下に AddColumnButton をレンダリングするヘルパー。
+ * 既存カラム名は Provider 経由で取得されるため、columns に渡す。
+ * @param options - レンダリングオプション
  */
-function render(props: Parameters<typeof AddColumnButton>[0]) {
+function render(options: RenderOptions) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  const columns = (options.columnNames ?? []).map((name, order) => ({
+    name,
+    order,
+  }));
+  const tree: ReactNode = (
+    <BoardColumnProvider columns={columns} tasks={[]}>
+      <AddColumnButton {...options.props} />
+    </BoardColumnProvider>
+  );
   act(() => {
-    root?.render(createElement(AddColumnButton, props));
+    root?.render(tree);
   });
 }
 
@@ -43,7 +61,7 @@ function setInputValue(input: HTMLInputElement, value: string) {
 }
 
 test("初期表示で「+ カラムを追加」ボタンが表示される", () => {
-  render({ existingColumnNames: [], onAdd: vi.fn() });
+  render({ props: { onAdd: vi.fn() } });
   const button = document.querySelector(
     '[data-testid="add-column-button"]',
   ) as HTMLButtonElement | null;
@@ -51,7 +69,7 @@ test("初期表示で「+ カラムを追加」ボタンが表示される", () 
 });
 
 test("ボタンクリックで入力フィールドが表示される", () => {
-  render({ existingColumnNames: [], onAdd: vi.fn() });
+  render({ props: { onAdd: vi.fn() } });
   const button = document.querySelector(
     '[data-testid="add-column-button"]',
   ) as HTMLButtonElement;
@@ -66,7 +84,7 @@ test("ボタンクリックで入力フィールドが表示される", () => {
 
 test("名前を入力して Enter で onAdd が呼ばれる", () => {
   const onAdd = vi.fn();
-  render({ existingColumnNames: ["Todo"], onAdd });
+  render({ props: { onAdd }, columnNames: ["Todo"] });
   act(() => {
     (
       document.querySelector(
@@ -91,7 +109,7 @@ test("名前を入力して Enter で onAdd が呼ばれる", () => {
 
 test("入力前後の空白は trim されて onAdd に渡される", () => {
   const onAdd = vi.fn();
-  render({ existingColumnNames: [], onAdd });
+  render({ props: { onAdd } });
   act(() => {
     (
       document.querySelector(
@@ -115,7 +133,7 @@ test("入力前後の空白は trim されて onAdd に渡される", () => {
 
 test("確定後はボタン表示に戻る", async () => {
   const onAdd = vi.fn();
-  render({ existingColumnNames: [], onAdd });
+  render({ props: { onAdd } });
   act(() => {
     (
       document.querySelector(
@@ -144,7 +162,7 @@ test("確定後はボタン表示に戻る", async () => {
 
 test("onAdd が reject した場合、editor は開いたままで入力値も保持される", async () => {
   const onAdd = vi.fn().mockRejectedValue(new Error("backend reject"));
-  render({ existingColumnNames: [], onAdd });
+  render({ props: { onAdd } });
   act(() => {
     (
       document.querySelector(
@@ -188,7 +206,7 @@ test("onAdd 実行中の Enter 連打は二重実行されない (re-entrant gua
         resolveAdd = res;
       }),
   );
-  render({ existingColumnNames: [], onAdd });
+  render({ props: { onAdd } });
   act(() => {
     (
       document.querySelector(
@@ -230,7 +248,7 @@ test("onAdd 実行中の Enter 連打は二重実行されない (re-entrant gua
 
 test("空文字で Enter しても onAdd は呼ばれない", () => {
   const onAdd = vi.fn();
-  render({ existingColumnNames: [], onAdd });
+  render({ props: { onAdd } });
   act(() => {
     (
       document.querySelector(
@@ -254,7 +272,7 @@ test("空文字で Enter しても onAdd は呼ばれない", () => {
 
 test("既存と同名の場合 onAdd は呼ばれず入力状態が維持される", () => {
   const onAdd = vi.fn();
-  render({ existingColumnNames: ["Todo", "Done"], onAdd });
+  render({ props: { onAdd }, columnNames: ["Todo", "Done"] });
   act(() => {
     (
       document.querySelector(
@@ -282,7 +300,7 @@ test("既存と同名の場合 onAdd は呼ばれず入力状態が維持され�
 
 test("Esc でキャンセルされボタン表示に戻る", () => {
   const onAdd = vi.fn();
-  render({ existingColumnNames: [], onAdd });
+  render({ props: { onAdd } });
   act(() => {
     (
       document.querySelector(

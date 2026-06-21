@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskCard } from "..";
+import { wrapWithCardProvider } from "./_testHelpers";
 
 let containerA: HTMLDivElement | null = null;
 let rootA: ReturnType<typeof createRoot> | null = null;
@@ -46,15 +47,19 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
   });
 
 test("Compound: 5 パーツの実コンテンツ（title / id / label / footer）がすべて描画される", () => {
+  const task = createTask();
   act(() => {
     rootA?.render(
-      <TaskCard.Root task={createTask()} fromColumn="Todo">
-        <TaskCard.Header />
-        <TaskCard.Milestone />
-        <TaskCard.Labels />
-        <TaskCard.Progress />
-        <TaskCard.Footer />
-      </TaskCard.Root>,
+      wrapWithCardProvider(
+        <TaskCard.Root task={task} fromColumn="Todo">
+          <TaskCard.Header />
+          <TaskCard.Milestone />
+          <TaskCard.Labels />
+          <TaskCard.Progress />
+          <TaskCard.Footer />
+        </TaskCard.Root>,
+        { task },
+      ),
     );
   });
   expect(
@@ -78,28 +83,24 @@ test("旧 API（Legacy）と新 API（Compound）が同じ data-testid と同じ
   const onClick = vi.fn();
   act(() => {
     rootA?.render(
-      <TaskCard
-        task={task}
-        fromColumn="Todo"
-        doneColumn="Done"
-        onClick={onClick}
-      />,
+      wrapWithCardProvider(
+        <TaskCard task={task} fromColumn="Todo" onClick={onClick} />,
+        { task, doneColumn: "Done" },
+      ),
     );
   });
   act(() => {
     rootB?.render(
-      <TaskCard.Root
-        task={task}
-        fromColumn="Todo"
-        doneColumn="Done"
-        onClick={onClick}
-      >
-        <TaskCard.Header />
-        <TaskCard.Milestone />
-        <TaskCard.Labels />
-        <TaskCard.Progress />
-        <TaskCard.Footer />
-      </TaskCard.Root>,
+      wrapWithCardProvider(
+        <TaskCard.Root task={task} fromColumn="Todo" onClick={onClick}>
+          <TaskCard.Header />
+          <TaskCard.Milestone />
+          <TaskCard.Labels />
+          <TaskCard.Progress />
+          <TaskCard.Footer />
+        </TaskCard.Root>,
+        { task, doneColumn: "Done" },
+      ),
     );
   });
   // 観察可能な振る舞いの同値性: テキスト・ラベル・role / aria 属性が一致すれば、
@@ -134,19 +135,29 @@ test("旧 API（Legacy）と新 API（Compound）が同じ data-testid と同じ
 test("doneColumn 省略時に default 'Done' が適用された結果が観察可能な DOM に出る", () => {
   // doneColumn が context に伝わるか直接観察せず、default が効いた結果として
   // 「status='Done' の子タスクが done としてカウントされる」ことで間接観察する。
-  const parent = createTask({ id: "parent" });
-  const childDone = createTask({ id: "c1", status: "Done" });
-  const childTodo = createTask({ id: "c2", status: "Todo" });
+  const parent = createTask({
+    id: "parent",
+    filePath: "tasks/parent.md",
+    children: ["tasks/c1.md", "tasks/c2.md"],
+  });
+  const childDone = createTask({
+    id: "c1",
+    status: "Done",
+    filePath: "tasks/c1.md",
+  });
+  const childTodo = createTask({
+    id: "c2",
+    status: "Todo",
+    filePath: "tasks/c2.md",
+  });
   act(() => {
     rootA?.render(
-      <TaskCard.Root
-        task={parent}
-        fromColumn="Todo"
-        childTasks={[childDone, childTodo]}
-        descendantTasks={[childDone, childTodo]}
-      >
-        <TaskCard.Footer />
-      </TaskCard.Root>,
+      wrapWithCardProvider(
+        <TaskCard.Root task={parent} fromColumn="Todo">
+          <TaskCard.Footer />
+        </TaskCard.Root>,
+        { allTasks: [parent, childDone, childTodo] },
+      ),
     );
   });
   // default "Done" が効いていれば 1/2、効かなければ 0/2。
@@ -157,13 +168,17 @@ test("doneColumn 省略時に default 'Done' が適用された結果が観察�
 });
 
 test("Compound 並べ替え（Footer → Header → Labels）で順序とコンテンツが反映される", () => {
+  const task = createTask();
   act(() => {
     rootA?.render(
-      <TaskCard.Root task={createTask()} fromColumn="Todo">
-        <TaskCard.Footer />
-        <TaskCard.Header />
-        <TaskCard.Labels />
-      </TaskCard.Root>,
+      wrapWithCardProvider(
+        <TaskCard.Root task={task} fromColumn="Todo">
+          <TaskCard.Footer />
+          <TaskCard.Header />
+          <TaskCard.Labels />
+        </TaskCard.Root>,
+        { task },
+      ),
     );
   });
   const children = Array.from(

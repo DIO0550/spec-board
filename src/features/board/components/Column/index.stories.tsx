@@ -1,8 +1,9 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
 import { initialTasks } from "@/test-fixtures";
 import { Task } from "@/types/task";
+import { withBoardCardProvider } from "../BoardCardProvider/decorator";
+import { withBoardColumnProvider } from "../BoardColumnProvider/decorator";
 import { Column } from ".";
 
 const todoTasks = initialTasks.filter((t) => t.status === "Todo");
@@ -12,22 +13,29 @@ const meta: Meta<typeof Column> = {
   parameters: {
     layout: "centered",
   },
+  decorators: [
+    withBoardColumnProvider({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "In Progress", order: 1 },
+        { name: "Done", order: 2 },
+      ],
+      tasks: todoTasks,
+      allTasks: initialTasks,
+    }),
+    withBoardCardProvider({
+      tasks: todoTasks,
+      allTasks: initialTasks,
+      milestonesByName: new Map(),
+      doneColumn: "Done",
+    }),
+  ],
   args: {
     name: "Todo",
-    tasks: todoTasks,
-    allTasks: initialTasks,
-    doneColumn: "Done",
-    existingColumnNames: ["In Progress", "Done"],
-    canDelete: true,
     onAddClick: () => {},
     onTaskClick: () => {},
     onRename: () => {},
     onDelete: () => {},
-    dragState: null,
-    onDragHover: fn(),
-    onTaskDrop: fn(),
-    onTaskDragStart: fn(),
-    onTaskDragEnd: fn(),
   },
 };
 
@@ -37,8 +45,26 @@ type Story = StoryObj<typeof Column>;
 
 export const Default: Story = {};
 
+const emptyDecorators = [
+  withBoardColumnProvider({
+    columns: [
+      { name: "Todo", order: 0 },
+      { name: "In Progress", order: 1 },
+      { name: "Done", order: 2 },
+    ],
+    tasks: [],
+    allTasks: [],
+  }),
+  withBoardCardProvider({
+    tasks: [],
+    allTasks: [],
+    milestonesByName: new Map(),
+    doneColumn: "Done",
+  }),
+];
+
 export const Empty: Story = {
-  args: { tasks: [] },
+  decorators: emptyDecorators,
 };
 
 const manyTasks = Array.from({ length: 12 }, (_, i) =>
@@ -58,40 +84,25 @@ const manyTasks = Array.from({ length: 12 }, (_, i) =>
 );
 
 export const ManyTasks: Story = {
-  args: { tasks: manyTasks },
+  decorators: [
+    withBoardColumnProvider({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "In Progress", order: 1 },
+        { name: "Done", order: 2 },
+      ],
+      tasks: manyTasks,
+      allTasks: manyTasks,
+    }),
+    withBoardCardProvider({
+      tasks: manyTasks,
+      allTasks: manyTasks,
+      milestonesByName: new Map(),
+      doneColumn: "Done",
+    }),
+  ],
 };
 
 export const WithoutMenu: Story = {
   args: { onDelete: undefined, onRename: undefined },
-};
-
-const draggingFromOther = {
-  draggingTaskFilePath: "tasks/external.md",
-  draggingFromColumn: "Done",
-};
-
-export const HoverTop: Story = {
-  args: {
-    dragState: { ...draggingFromOther, hoverColumn: "Todo", hoverIndex: 0 },
-  },
-};
-
-export const HoverMiddle: Story = {
-  args: {
-    dragState: {
-      ...draggingFromOther,
-      hoverColumn: "Todo",
-      hoverIndex: Math.max(1, Math.floor(todoTasks.length / 2)),
-    },
-  },
-};
-
-export const HoverBottom: Story = {
-  args: {
-    dragState: {
-      ...draggingFromOther,
-      hoverColumn: "Todo",
-      hoverIndex: todoTasks.length,
-    },
-  },
 };

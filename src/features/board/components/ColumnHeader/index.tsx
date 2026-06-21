@@ -1,7 +1,7 @@
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import { ColumnColor } from "@/domains/column-color";
-import { COLUMN_DRAG_MIME_TYPE } from "../Board/columnDragState";
+import { COLUMN_DRAG_MIME_TYPE } from "../Board/mime";
 
 /** カラムヘッダーの Props */
 type ColumnHeaderProps = {
