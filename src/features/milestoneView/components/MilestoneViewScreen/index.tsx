@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Due } from "@/domains/due";
 import { Milestone } from "@/domains/milestone";
 import { MilestoneCreateModal } from "@/features/milestoneView/components/MilestoneCreateModal";
 import { MilestoneDetailSidebar } from "@/features/milestoneView/components/MilestoneDetailSidebar";
@@ -20,19 +21,6 @@ import { resolveDisplayStatus } from "@/features/milestoneView/lib/milestoneStat
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 import type { Task } from "@/types/task";
-
-/**
- * 今日の日付キーを YYYY-MM-DD 形式（ローカル）で返す。
- * useState 初期化と setTimeout コールバックの両方で同じ計算を使うため切り出す。
- * @returns 今日の日付キー
- */
-const makeTodayKey = (): string => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
 
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */
@@ -99,7 +87,7 @@ export const MilestoneViewScreen = ({
   // 画面を開きっぱなしで他に state 変更が無いケース (バックグラウンドタブ等) では
   // 再 render が起きないため、setTimeout で次のローカル midnight にスケジュールして
   // setTodayKey を呼ぶことで自動的に再 render を起こす。
-  const [todayKey, setTodayKey] = useState(makeTodayKey);
+  const [todayKey, setTodayKey] = useState(Due.todayLocal);
   // biome-ignore lint/correctness/useExhaustiveDependencies: todayKey 変更後に次の midnight を再スケジュールするため依存に含める（body 内で参照しないが意図的）
   useEffect(() => {
     const nowDate = new Date();
@@ -114,7 +102,7 @@ export const MilestoneViewScreen = ({
     );
     const msUntilMidnight = nextMidnight.getTime() - nowDate.getTime();
     const timer = setTimeout(() => {
-      setTodayKey(makeTodayKey());
+      setTodayKey(Due.todayLocal());
     }, msUntilMidnight);
     return () => clearTimeout(timer);
   }, [todayKey]);
