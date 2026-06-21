@@ -96,15 +96,15 @@ export const parseDue = (due: string | undefined): Date | undefined => {
  * @returns 残日数（整数）
  */
 export const daysUntil = (due: Date, now: Date): number => {
-  const todayMidnight = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-  const diff = due.getTime() - todayMidnight.getTime();
-  // 今日 0 時起点の暦日差を返す。Math.round だと due が日時形式 (例: 23:00) のとき
-  // 同日内でも 0/1 にブレるため、Math.floor で「経過した完全な日数」として扱う。
-  return Math.floor(diff / MS_PER_DAY);
+  // ローカル日付（年月日）を UTC エポックに正規化してから差分を取る。
+  // ローカル midnight 同士の ms 差を 24h で割ると DST のある地域で 23h/25h
+  // となる日があり日数差が ±1 にブレてしまうため、src/domains/due と同じく
+  // UTC エポック差分方式に揃えてタイムゾーン/DST 非依存にする。
+  const dueEpoch = Date.UTC(due.getFullYear(), due.getMonth(), due.getDate());
+  const todayEpoch = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  // 暦日差を Math.floor で返す。due が日時形式（例: 同日 23:00）でも UTC エポックは
+  // 年月日のみで構築するので時刻部分は影響しない（同日内 → 0）。
+  return Math.floor((dueEpoch - todayEpoch) / MS_PER_DAY);
 };
 
 /**
