@@ -7,6 +7,7 @@ import {
   useMemo,
   useReducer,
 } from "react";
+import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { DEFAULT_DONE_COLUMN } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { MilestoneDefinition } from "@/lib/tauri";
@@ -33,8 +34,12 @@ export type BoardCardProviderProps = {
   tasks: readonly Task[];
   /** 階層カウント用 全タスク（絞り込み前）。lookup / descendantCount の source */
   allTasks: readonly Task[];
-  /** 正規化済み Task.filePath → Task の lookup Map。broken link 判定で参照 */
-  tasksByNormalizedPath: ReadonlyMap<string, Task>;
+  /**
+   * 正規化済み Task.filePath → Task の lookup Map。broken link 判定で参照する。
+   * 未指定時は `allTasks` から `buildTasksByNormalizedPath` で派生させる
+   * （空 Map を渡すと全参照を broken 扱いしてしまうため optional + fallback とする）。
+   */
+  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** name → マイルストーン定義 Map。未指定時は空 Map */
   milestonesByName?: MilestonesByName;
   /** 完了カラム名 */
@@ -209,7 +214,7 @@ const BoardCardContext = createContext<BoardCardApi | null>(null);
 export const BoardCardProvider = ({
   tasks,
   allTasks,
-  tasksByNormalizedPath,
+  tasksByNormalizedPath: tasksByNormalizedPathProp,
   milestonesByName,
   doneColumn,
   dndDisabled = false,
@@ -220,6 +225,14 @@ export const BoardCardProvider = ({
 
   const effectiveDoneColumn = doneColumn ?? DEFAULT_DONE_COLUMN;
   const safeMilestonesByName = milestonesByName ?? EMPTY_MILESTONES;
+
+  // tasksByNormalizedPath が未指定なら allTasks から派生する。空 Map で代用すると
+  // hasAnyBrokenLink が全 ref を broken 扱いにしてしまうため、Provider 側で
+  // 必ず「allTasks 由来の正しい lookup」にフォールバックさせる。
+  const tasksByNormalizedPath = useMemo(
+    () => tasksByNormalizedPathProp ?? buildTasksByNormalizedPath(allTasks),
+    [tasksByNormalizedPathProp, allTasks],
+  );
 
   const byPathMap = useMemo(
     () => new Map(allTasks.map((t) => [t.filePath, t])),

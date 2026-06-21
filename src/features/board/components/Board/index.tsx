@@ -9,13 +9,6 @@ import {
 import { Column } from "../Column";
 import type { MilestonesByName } from "../TaskCard";
 
-/**
- * `tasksByNormalizedPath` 未指定時のフォールバック。Provider に渡す Map 参照が
- * 毎レンダー新規生成されると BoardCardProvider の api memo が破れて consumer の
- * 不要な再描画が走るため、module-level の固定参照を使う。
- */
-const EMPTY_TASKS_BY_NORMALIZED_PATH: ReadonlyMap<string, Task> = new Map();
-
 /** ボードの Props */
 type BoardProps = {
   /** カラム定義の配列 */
@@ -110,9 +103,7 @@ export const Board = ({
     <BoardCardProvider
       tasks={tasks}
       allTasks={allTasks ?? tasks}
-      tasksByNormalizedPath={
-        tasksByNormalizedPath ?? EMPTY_TASKS_BY_NORMALIZED_PATH
-      }
+      tasksByNormalizedPath={tasksByNormalizedPath}
       milestonesByName={milestonesByName}
       doneColumn={doneColumn}
       dndDisabled={dndDisabled}
