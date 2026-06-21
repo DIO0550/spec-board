@@ -59,22 +59,24 @@ const parseDate = (raw: string | undefined): Date | undefined => {
   if (raw === undefined) {
     return undefined;
   }
-  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-  if (ymd !== null) {
-    const y = Number(ymd[1]);
-    const m = Number(ymd[2]);
-    const d = Number(ymd[3]);
-    const dt = new Date(y, m - 1, d);
-    // 2026-02-31 のような存在しない日付は JS Date が黙ってロールオーバーする
-    // (→ 2026-03-03)。入力フィールドと一致しなければパース不能扱いにする。
+  // YYYY-MM-DD 単体・ISO datetime 両方に共通の前段ロールオーバーガード。
+  // 2026-02-31 → 2026-03-03 のような JS Date の暗黙ロールオーバーを弾く。
+  const ymdHead = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (ymdHead !== null) {
+    const y = Number(ymdHead[1]);
+    const m = Number(ymdHead[2]);
+    const d = Number(ymdHead[3]);
+    const validation = new Date(y, m - 1, d);
     if (
-      dt.getFullYear() !== y ||
-      dt.getMonth() !== m - 1 ||
-      dt.getDate() !== d
+      validation.getFullYear() !== y ||
+      validation.getMonth() !== m - 1 ||
+      validation.getDate() !== d
     ) {
       return undefined;
     }
-    return dt;
+    if (raw.length === 10) {
+      return validation;
+    }
   }
   const dt = new Date(raw);
   return Number.isNaN(dt.getTime()) ? undefined : dt;

@@ -99,6 +99,16 @@ test("存在しない月 (2026-13-01) も undefined 扱いになる", () => {
   expect(dueSortKey(def)).toBe(Number.POSITIVE_INFINITY);
 });
 
+test("ISO datetime 形式の存在しない日付 (2026-02-31T00:00:00Z) も undefined 扱い", () => {
+  const def = {
+    name: "v0.1",
+    state: "open",
+    due: "2026-02-31T00:00:00Z",
+  } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+  expect(dueSortKey(def)).toBe(Number.POSITIVE_INFINITY);
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });

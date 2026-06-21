@@ -54,23 +54,30 @@ const parseDue = (due: string | undefined): Date | undefined => {
   if (due === undefined) {
     return undefined;
   }
-  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(due);
-  if (ymd !== null) {
-    const y = Number(ymd[1]);
-    const m = Number(ymd[2]);
-    const d = Number(ymd[3]);
-    const dt = new Date(y, m - 1, d);
-    // JS Date は 2026-02-31 のような存在しない日付を 2026-03-03 等へ
-    // 黙ってロールオーバーする。入力フィールドと一致しなければパース不能扱い。
+  // 先頭の YYYY-MM-DD 部分を抽出し、ロールオーバー検証する（YYYY-MM-DD 単体・
+  // ISO datetime 両方に共通の前段ガード）。JS Date は 2026-02-31 を 2026-03-03 へ、
+  // 2026-13-01 を 2027-01-01 へ黙ってロールオーバーするため、ここで弾かないと
+  // 不正日付がそのままソート/カウントダウン/overdue 判定に使われてしまう。
+  const ymdHead = /^(\d{4})-(\d{2})-(\d{2})/.exec(due);
+  if (ymdHead !== null) {
+    const y = Number(ymdHead[1]);
+    const m = Number(ymdHead[2]);
+    const d = Number(ymdHead[3]);
+    const validation = new Date(y, m - 1, d);
     if (
-      dt.getFullYear() !== y ||
-      dt.getMonth() !== m - 1 ||
-      dt.getDate() !== d
+      validation.getFullYear() !== y ||
+      validation.getMonth() !== m - 1 ||
+      validation.getDate() !== d
     ) {
       return undefined;
     }
-    return dt;
+    // YYYY-MM-DD 完全一致（10 文字）はローカル 0 時として返す
+    // （タイムゾーン解釈による暗黙の UTC 扱いを避ける）。
+    if (due.length === 10) {
+      return validation;
+    }
   }
+  // ISO datetime（"YYYY-MM-DDTHH:MM:SS..." 形式）や他形式はネイティブパースに委ねる。
   const dt = new Date(due);
   return Number.isNaN(dt.getTime()) ? undefined : dt;
 };
