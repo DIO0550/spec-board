@@ -61,7 +61,7 @@ const toArgs = (values: FormValues): CreateMilestoneArgs => {
 };
 
 /**
- * マイルストーン作成モーダル。design-source: docs/design/spec-milestones-static-modal.html。
+ * マイルストーン作成モーダル。仕様: docs/spec-board/milestone-view-spec.md（作成モーダル節）。
  * 名前 / 表示名 / 期日 / 説明 の 4 入力。`name` のみ必須でそれ以外は任意。
  * Esc / overlay クリック / キャンセルで閉じる。送信成功で `onClose` を呼ぶ。
  *

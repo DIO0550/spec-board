@@ -6,7 +6,7 @@
 
 ## 概要
 
-マイルストーン専用ビュー（画面区分 `milestone`）の UI 仕様を定義する。ヘッダーの「マイルストーン」ボタン (`onMilestoneClick`) 起点で開かれ、フィルタ・検索・ソート・一覧⇔ロードマップ切替・追加モーダルを提供する。design-source は `docs/design/spec-milestones-static-{list,roadmap,modal}.html`。
+マイルストーン専用ビュー（画面区分 `milestone`）の UI 仕様を定義する。ヘッダーの「マイルストーン」ボタン (`onMilestoneClick`) 起点で開かれ、フィルタ・検索・ソート・一覧⇔ロードマップ切替・追加モーダルを提供する。
 
 ボードビューおよびマイルストーン設定タブ（`MilestoneSettingsTab`）との関係:
 - マイルストーン一覧の取得は唯一の取得点 `useMilestones` リソースに委譲する（ボードビュー / マイルストーン設定タブと共有）。
@@ -69,8 +69,6 @@
 未選択時は「マイルストーンを選択すると詳細を表示します」のプレースホルダ。
 
 ## 作成モーダル（`MilestoneCreateModal`）
-
-design-source: `docs/design/spec-milestones-static-modal.html`。
 
 入力フィールド（4 つ）:
 | フィールド | 必須 | 正規化 |

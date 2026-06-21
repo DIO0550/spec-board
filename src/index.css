@@ -35,7 +35,7 @@
 	--color-create-accent-soft: oklch(0.96 0.03 265);
 	--color-create-accent-border: oklch(0.86 0.06 265);
 
-	/* マイルストーン画面用の状態色（design-source: docs/design/spec-milestones-static-*.html）。
+	/* マイルストーン画面用の状態色（spec: docs/spec-board/milestone-view-spec.md）。
 	   - success / danger (= open / overdue 用): base + bg + fg + border の 4 段
 	   - warn (= soon 用): bg + fg の 2 段
 	   - info / inprog / todo: 単色（進捗バー内訳・ロードマップバー色用）

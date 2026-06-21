@@ -41,8 +41,8 @@ type MilestoneViewScreenProps = {
 };
 
 /**
- * マイルストーン別ビュー（専用画面）。design-source:
- * docs/design/spec-milestones-static-{list,roadmap,modal}.html。
+ * マイルストーン別ビュー（専用画面）。
+ * 仕様: docs/spec-board/milestone-view-spec.md
  *
  * 上部にツールバー（状態フィルタ / 検索 / ソート / 一覧⇄ロードマップ切替）、
  * 左にメイン（list or roadmap）、右にサイドバー（選択中マイルストーンの詳細）。

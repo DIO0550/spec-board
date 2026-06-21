@@ -35,7 +35,7 @@ const STYLE_BY_STATUS: Record<
 
 /**
  * マイルストーンの表示ステータスを示す円形バッジ。
- * design-source: docs/design/spec-milestones-static-list.html `.ms-state`（28px 円）。
+ * 仕様: docs/spec-board/milestone-view-spec.md（28px 円形バッジ）。
  * @param props - {@link MilestoneStateBadgeProps}
  * @returns ステータスバッジ要素
  */
