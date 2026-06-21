@@ -78,12 +78,23 @@ export const MilestoneViewScreen = ({
   );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const visible = useMemo(() => {
-    const filtered = filterMilestones(sorted, { state: filter, query });
-    return sortMilestones(filtered, sort, progress);
-  }, [sorted, filter, query, sort, progress]);
+  // 今日の日付キー (YYYY-MM-DD)。日付がまたぐと変わり、それを依存配列に入れることで
+  // overdue 判定を含む派生値 (visible / stats) を当日内ではメモ化したまま日付変更時に
+  // 強制再計算する。filterMilestones / groupByDisplayStatus へ now を明示的に渡し、
+  // useMemo の入力と派生関数が同じ now を見るようにする。
+  const todayKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  })();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付キーが変わった時に新しい Date を再生成するため todayKey を依存に含める（body 内で参照しないが意図的）
+  const now = useMemo(() => new Date(), [todayKey]);
 
-  const stats = useMemo(() => groupByDisplayStatus(sorted), [sorted]);
+  const visible = useMemo(() => {
+    const filtered = filterMilestones(sorted, { state: filter, query }, now);
+    return sortMilestones(filtered, sort, progress);
+  }, [sorted, filter, query, sort, progress, now]);
+
+  const stats = useMemo(() => groupByDisplayStatus(sorted, now), [sorted, now]);
   const taskCounts = useMemo(() => {
     let total = 0;
     let done = 0;
