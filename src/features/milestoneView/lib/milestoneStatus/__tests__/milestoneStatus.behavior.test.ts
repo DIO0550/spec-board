@@ -133,6 +133,34 @@ test("ISO datetime の後ろに余り文字列 ('2026-06-21T00:00:00Z foo') が�
   expect(resolveCountdown(def, NOW).kind).toBe("none");
 });
 
+test("不正な ISO time suffix ('2026-06-21Tnot-a-date') は undefined 扱い", () => {
+  const def = {
+    name: "v0.1",
+    state: "open",
+    due: "2026-06-21Tnot-a-date",
+  } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+});
+
+test("範囲外の時刻 ('2026-06-21T25:99') は undefined 扱い", () => {
+  const def = {
+    name: "v0.1",
+    state: "open",
+    due: "2026-06-21T25:99",
+  } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("none");
+});
+
+test("妥当な ISO datetime ('2026-06-22T03:00:00Z') は受理される", () => {
+  // 範囲内の HH:MM:SS と Z 付き TZ を受理し、calendar date として扱う
+  const def = {
+    name: "v0.1",
+    state: "open",
+    due: "2026-06-22T03:00:00Z",
+  } as const;
+  expect(resolveCountdown(def, NOW).kind).toBe("soon");
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });

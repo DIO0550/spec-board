@@ -60,11 +60,14 @@ export const parseDue = (due: string | undefined): Date | undefined => {
   // "March 3 2026" 等の自由形式はネイティブパースで日付ロールオーバー
   // (2026-02-31 → 2026-03-03) してしまうため、ここで弾かないと
   // 不正日付のままソート/カウントダウン/overdue 判定に使われる。
-  // 末尾までマッチさせて「YYYY-MM-DD 単独」または「YYYY-MM-DDT... の ISO datetime」
-  // のみを受理する。datetime 部分も `\S*` で空白禁止にし、
-  // "2026-06-21 foo" / "2026-06-21T00:00:00Z foo" のように後ろに余り文字列が
-  // 続く形式はロールオーバーの温床になるため弾く。
-  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:T\S*)?$/.exec(due);
+  // 末尾までマッチさせて「YYYY-MM-DD 単独」または「YYYY-MM-DDT<ISO time> の
+  // ISO datetime」のみを受理する。datetime 部分は厳密な ISO time 形式に限定し、
+  // 「2026-06-21Tnot-a-date」「2026-06-21T25:99」のような不正な suffix を弾く。
+  // ISO time: HH:MM(:SS(.sss)?)? + 任意の TZ 指定 (Z / ±HH:MM / ±HHMM / ±HH)。
+  const isoMatch =
+    /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?)?$/.exec(
+      due,
+    );
   if (isoMatch === null) {
     return undefined;
   }
@@ -80,6 +83,16 @@ export const parseDue = (due: string | undefined): Date | undefined => {
     validation.getDate() !== d
   ) {
     return undefined;
+  }
+  // 時刻部分 (HH/MM/SS) が含まれる場合は範囲検証 (HH=0..23 / MM=0..59 / SS=0..59)。
+  // 60 (うるう秒) は milestone 用途では考慮不要なので 0..59 で弾く。
+  if (isoMatch[4] !== undefined) {
+    const hh = Number(isoMatch[4]);
+    const mm = Number(isoMatch[5]);
+    const ss = isoMatch[6] === undefined ? 0 : Number(isoMatch[6]);
+    if (hh > 23 || mm > 59 || ss > 59) {
+      return undefined;
+    }
   }
   // milestone due は calendar date として提示される (期日表示・カウントダウン・
   // ロードマップ位置はすべて日単位)。ISO datetime ("2026-06-21T00:00:00Z") を
