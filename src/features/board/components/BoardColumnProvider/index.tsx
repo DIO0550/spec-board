@@ -169,7 +169,10 @@ export const BoardColumnProvider = ({
   const columnNamesArr = useMemo(() => columns.map((c) => c.name), [columns]);
 
   const taskCountByStatus = useMemo(() => {
-    const counts: Record<string, number> = {};
+    // カラム名 (= task.status) はユーザー入力で任意文字列になり得る。
+    // `{}` を辞書として使うと `__proto__` / `constructor` 等のキーで集計が
+    // 壊れる（プロトタイプ汚染）ため、prototype を持たない辞書で作る。
+    const counts: Record<string, number> = Object.create(null);
     for (const t of hierarchyTasks) {
       counts[t.status] = (counts[t.status] ?? 0) + 1;
     }
