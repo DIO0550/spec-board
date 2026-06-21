@@ -69,7 +69,6 @@ export const TaskCardRoot = ({
       : childTasks;
 
   const subIssueCounts = card.descendantCount(task.filePath);
-  const descendantTasksForContext = effectiveChildTasks;
 
   const contextValue = useMemo<TaskCardContextValue>(
     () => ({
@@ -80,7 +79,6 @@ export const TaskCardRoot = ({
       hasParseError,
       subIssueCounts,
       childTasks: effectiveChildTasks,
-      descendantTasks: descendantTasksForContext,
     }),
     [
       task,
@@ -90,7 +88,6 @@ export const TaskCardRoot = ({
       hasParseError,
       subIssueCounts,
       effectiveChildTasks,
-      descendantTasksForContext,
     ],
   );
 

@@ -50,7 +50,6 @@ const baseValue = (
   hasParseError: false,
   subIssueCounts: { done: 0, total: 0 },
   childTasks: [],
-  descendantTasks: [],
   ...overrides,
 });
 
