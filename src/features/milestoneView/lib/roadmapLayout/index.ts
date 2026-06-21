@@ -119,7 +119,16 @@ export const computeRoadmapLayout = (
     monthLabels.push(formatYearMonth(dt));
   }
 
-  const todayMonthsFromBase = monthsBetween(baseMonth, now);
+  // todayPercent を日単位 UI として扱うため now を「ローカル midnight」に正規化する。
+  // 生の now (時分秒含む) を渡すとマーカーがその瞬間の時刻で % が変動し、
+  // 開きっぱなしの画面で実時間に追従しないのに「開いた時点の時刻」で
+  // 固定されてしまうため、まず日単位へ落とす。
+  const todayMidnight = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const todayMonthsFromBase = monthsBetween(baseMonth, todayMidnight);
   const todayPercent = clampPercent((todayMonthsFromBase / COLUMN_COUNT) * 100);
 
   const minWidthPercent = toPercentOfColumns(MIN_BAR_MONTHS);
