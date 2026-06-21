@@ -95,6 +95,16 @@
 	--color-ms-success-fg: oklch(0.78 0.12 155);
 	--color-ms-danger-fg: oklch(0.78 0.16 25);
 	--color-ms-warn-fg: oklch(0.82 0.13 55);
+
+	/* badge 系（StateBadge / CountdownBadge）は fg と bg を組で使う。
+	   fg だけダーク化すると bg がライト固定のままで「明色 fg × 明色 bg」となり
+	   badge アイコン/文字が低コントラストになる。bg を暗色側へ寄せて両者の
+	   コントラスト関係を維持する。border も同様。 */
+	--color-ms-success-bg: oklch(0.25 0.05 155);
+	--color-ms-success-border: oklch(0.4 0.08 155);
+	--color-ms-danger-bg: oklch(0.25 0.07 25);
+	--color-ms-danger-border: oklch(0.42 0.1 25);
+	--color-ms-warn-bg: oklch(0.27 0.07 55);
 }
 
 /* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。
