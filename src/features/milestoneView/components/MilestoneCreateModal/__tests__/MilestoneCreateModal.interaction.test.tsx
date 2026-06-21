@@ -183,16 +183,20 @@ test("pending 中は送信・閉じる操作が無効化される", () => {
   const submit = requireByTestId(
     "milestone-create-submit",
   ) as HTMLButtonElement;
-  const overlay = requireByTestId(
-    "milestone-create-overlay",
-  ) as HTMLButtonElement;
   const closeBtn = requireByTestId(
     "milestone-create-close",
   ) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
-  expect(overlay.disabled).toBe(true);
   expect(closeBtn.disabled).toBe(true);
   expect(submit.textContent).toBe("作成中…");
+
+  // overlay は div role="presentation" でクリック可能だが、pending 中は
+  // onClick が外れるため onClose を呼ばないことで無効化を担保する。
+  const overlay = requireByTestId("milestone-create-overlay");
+  act(() => {
+    overlay.click();
+  });
+  expect(onClose).not.toHaveBeenCalled();
 });
 
 test("Escape キーで onClose を呼ぶ", () => {

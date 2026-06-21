@@ -1,3 +1,6 @@
+// @lint-suppress-ok overlay は ConfirmDialog と同じく div role="presentation"
+// で実装する。a11y ツリーへインタラクティブ要素を露出させないためで、Escape /
+// 閉じる × ボタンでキーボード経路は別途確保している。
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 
@@ -106,17 +109,14 @@ export const MilestoneCreateModal = ({
 
   return (
     <>
-      {/* tabIndex={-1} で tab order から除外する。overlay クリックで閉じる UX は維持するが、
-          キーボード操作時はダイアログ内の閉じる × / フォームへ自然にフォーカスが向くようにする
-          （ヘッダーの閉じる × ボタンと役割が重複するため、overlay にフォーカスを取らせる必要は無い）。 */}
-      <button
-        type="button"
-        aria-label="モーダルを閉じる"
+      {/* ConfirmDialog と同じく overlay は a11y ツリーへ露出させない静的要素。
+          キーボード閉じは Escape / 閉じる × ボタン側で担保。 */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: overlay dismisses dialog on click; Escape handled separately */}
+      <div
+        role="presentation"
         data-testid="milestone-create-overlay"
-        tabIndex={-1}
-        className="fixed inset-0 z-[60] cursor-default bg-black/40 backdrop-blur-[2px]"
+        className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[2px]"
         onClick={isPending ? undefined : onClose}
-        disabled={isPending}
       />
       <div
         ref={dialogRef}
