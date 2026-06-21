@@ -5,7 +5,7 @@ type MilestoneStateBadgeProps = {
   status: MilestoneDisplayStatus;
 };
 
-/** open: 緑チェック / closed: グレーチェック / overdue: 赤! のクラス対応表。 */
+/** open: 緑● / closed: グレー✓ / overdue: 赤! のクラス対応表。 */
 const STYLE_BY_STATUS: Record<
   MilestoneDisplayStatus,
   { bg: string; fg: string; border: string; icon: string }
