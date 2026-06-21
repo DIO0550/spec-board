@@ -28,7 +28,7 @@
 |:--|:--|:--|
 | 状態フィルタ pills | `all` / `open` / `overdue` / `closed` | 単一選択。`open` は overdue を含まず純粋 open のみ（overdue は専用 pill で分離） |
 | 検索 | 任意文字列 | `title` / `name` に対する部分一致（大小文字無視）。前後空白は内部でトリム |
-| ソート | `due` / `progress` / `name` | 単一選択。due 未設定や ratio 未定義は末尾送り |
+| ソート | `order` / `due` / `progress` / `name` | 単一選択。初期値は `order`（milestones.yml の `order` 設定を尊重した既定順序を保持）。`due` 未設定や `progress` ratio 未定義は末尾送り |
 | ビュー切替 | `list` / `roadmap` | 切替時に選択中マイルストーンは保持 |
 
 フィルタ / 検索 / ソートの選択状態は画面内一時状態とし、ローカル永続化は行わない。
