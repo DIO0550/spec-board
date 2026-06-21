@@ -58,7 +58,9 @@ const daysUntil = (due: Date, now: Date): number => {
     now.getDate(),
   );
   const diff = due.getTime() - todayMidnight.getTime();
-  return Math.round(diff / MS_PER_DAY);
+  // 今日 0 時起点の暦日差を返す。Math.round だと due が日時形式 (例: 23:00) のとき
+  // 同日内でも 0/1 にブレるため、Math.floor で「経過した完全な日数」として扱う。
+  return Math.floor(diff / MS_PER_DAY);
 };
 
 /**
