@@ -66,11 +66,7 @@ function render(options: RenderOptions) {
   }));
   const columns = [self, ...others];
   const tree: ReactNode = (
-    <BoardCardProvider
-      tasks={tasks}
-      allTasks={allTasks}
-      tasksByNormalizedPath={new Map()}
-    >
+    <BoardCardProvider tasks={tasks} allTasks={allTasks}>
       <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
         <Column order={0} {...options.column} />
       </BoardColumnProvider>

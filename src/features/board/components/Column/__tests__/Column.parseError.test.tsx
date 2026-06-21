@@ -70,7 +70,7 @@ function render(options: RenderOptions) {
     <BoardCardProvider
       tasks={tasks}
       allTasks={allTasks}
-      tasksByNormalizedPath={options.tasksByNormalizedPath ?? new Map()}
+      tasksByNormalizedPath={options.tasksByNormalizedPath}
     >
       <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
         <Column order={0} {...options.column} />
