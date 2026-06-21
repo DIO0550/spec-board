@@ -97,6 +97,8 @@ export const computeRoadmapLayout = (
   const todayMonthsFromBase = monthsBetween(baseMonth, now);
   const todayPercent = clampPercent((todayMonthsFromBase / COLUMN_COUNT) * 100);
 
+  const minWidthPercent = toPercentOfColumns(MIN_BAR_MONTHS);
+
   const rows: RoadmapRow[] = [];
   for (const def of milestones) {
     const due = parseDate(def.due);
@@ -105,21 +107,36 @@ export const computeRoadmapLayout = (
     }
     const dueOffset = monthsBetween(baseMonth, due);
     const startOffset = dueOffset - DEFAULT_SPAN_MONTHS;
-    const left = clampPercent((startOffset / COLUMN_COUNT) * 100);
-    const right = clampPercent(
-      ((dueOffset + MIN_BAR_MONTHS) / COLUMN_COUNT) * 100,
-    );
-    const width = Math.max(right - left, (MIN_BAR_MONTHS / COLUMN_COUNT) * 100);
+    const endOffset = dueOffset + MIN_BAR_MONTHS;
+    const rawLeft = toPercentOfColumns(startOffset);
+    const rawRight = toPercentOfColumns(endOffset);
+    const left = clampPercent(rawLeft);
+    const right = clampPercent(rawRight);
+    // クランプ後の生幅を最小幅で底上げしつつ、left + width が 100 を超えないように
+    // left を後ろへずらす（バーがトラックからはみ出さないことを保証する）。
+    const widthPercent = Math.max(right - left, minWidthPercent);
+    const leftPercent = Math.max(0, Math.min(left, 100 - widthPercent));
     rows.push({
       def,
       status: resolveDisplayStatus(def, now),
-      leftPercent: left,
-      widthPercent: width,
-      clipped: startOffset < 0 || dueOffset > COLUMN_COUNT,
+      leftPercent,
+      widthPercent,
+      // バーの想定スパン（startOffset .. endOffset）の一部でも 0..COLUMN_COUNT
+      // の範囲外なら clipped。境界ちょうど（endOffset == COLUMN_COUNT）は範囲内とみなす。
+      clipped: rawLeft < 0 || rawRight > 100,
     });
   }
   return { monthLabels, rows, todayPercent };
 };
+
+/**
+ * 月数値 (0..COLUMN_COUNT) を COLUMN_COUNT を基準にしたパーセント値へ変換する。
+ * 範囲外 (負値 / COLUMN_COUNT 超) はそのまま返し、クランプは呼び出し側で行う。
+ * @param months - 月数値（小数可・範囲外可）
+ * @returns COLUMN_COUNT 基準のパーセント値
+ */
+const toPercentOfColumns = (months: number): number =>
+  (months / COLUMN_COUNT) * 100;
 
 /**
  * 0..100 にクランプする。負値は 0、100 超は 100。
