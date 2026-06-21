@@ -53,6 +53,7 @@ export const MilestoneCard = ({
       data-testid="milestone-view-row"
       data-status={status}
       data-selected={selected ? "true" : "false"}
+      aria-pressed={selected}
       onClick={onSelect}
       className={[
         "flex w-full flex-col gap-3 rounded-[10px] border bg-surface p-4 text-left transition shadow-sm",

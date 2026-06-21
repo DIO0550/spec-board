@@ -109,6 +109,7 @@ export const MilestoneRoadmap = ({
                         data-testid="milestone-roadmap-bar"
                         data-name={row.def.name}
                         data-status={row.status}
+                        aria-pressed={selected}
                         onClick={() => onSelect(row.def)}
                         style={{
                           left: `${row.leftPercent}%`,
