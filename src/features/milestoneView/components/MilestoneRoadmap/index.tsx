@@ -37,7 +37,9 @@ export const MilestoneRoadmap = ({
   onSelect,
   now,
 }: MilestoneRoadmapProps) => {
-  const layout = computeRoadmapLayout(milestones, now);
+  // computeRoadmapLayout の引数 now は Date 必須。props 側は now?: Date で
+  // 未指定許容 (プレビュー/閲覧専用モード) のため、ここで new Date() にフォールバックする。
+  const layout = computeRoadmapLayout(milestones, now ?? new Date());
 
   if (layout.rows.length === 0) {
     return (
