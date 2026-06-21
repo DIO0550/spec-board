@@ -33,6 +33,15 @@ test("filterMilestones: state=open は open のみ", () => {
   expect(res.map((m) => m.name)).toEqual(["a"]);
 });
 
+test("filterMilestones: state=open は期限超過 (overdue) を含まない（期限超過は専用フィルタで分離）", () => {
+  const list = [
+    def("active", "open", "2026-12-31"),
+    def("past", "open", "2026-06-20"),
+  ];
+  const res = filterMilestones(list, { state: "open", query: "" }, NOW);
+  expect(res.map((m) => m.name)).toEqual(["active"]);
+});
+
 test("filterMilestones: state=closed は closed のみ", () => {
   const list = [def("a", "open"), def("b", "closed")];
   const res = filterMilestones(list, { state: "closed", query: "" }, NOW);

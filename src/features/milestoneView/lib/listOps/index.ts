@@ -45,7 +45,8 @@ export const filterMilestones = (
     }
     const status = resolveDisplayStatus(m, now);
     if (condition.state === "open") {
-      return status === "open" || status === "overdue";
+      // overdue は別途「期限超過」フィルタで分離表示するため、open フィルタには含めない。
+      return status === "open";
     }
     if (condition.state === "closed") {
       return status === "closed";
