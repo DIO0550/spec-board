@@ -47,11 +47,17 @@ const parseDue = (due: string | undefined): Date | undefined => {
 
 /**
  * 残日数を算出する。今日 0 時を起点に整数日で返す。負値は超過日数。
+ * Math.floor を使うことで due が日時形式（例: 同日 23:00）でも「経過した
+ * 完全な日数」として扱い、時刻部分による 0/1 のブレを防ぐ。
+ *
+ * テスト用に export する（parseDue を経由せず Date を直接渡せるようにし
+ * タイムゾーン依存テストになるのを防ぐ）。
+ *
  * @param due - 期日 Date
  * @param now - 現在時刻
  * @returns 残日数（整数）
  */
-const daysUntil = (due: Date, now: Date): number => {
+export const daysUntil = (due: Date, now: Date): number => {
   const todayMidnight = new Date(
     now.getFullYear(),
     now.getMonth(),
