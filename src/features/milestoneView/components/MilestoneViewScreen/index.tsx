@@ -291,12 +291,14 @@ export const MilestoneViewScreen = ({
               progressOf={(d) => progress.get(d.name)}
               selectedName={selectedName}
               onSelect={(d) => setSelectedName(d.name)}
+              now={now}
             />
           ) : (
             <MilestoneRoadmap
               milestones={visible}
               selectedName={selectedName}
               onSelect={(d) => setSelectedName(d.name)}
+              now={now}
             />
           )}
         </div>
@@ -310,6 +312,7 @@ export const MilestoneViewScreen = ({
           }
           tasks={selectedTasks}
           doneColumn={doneColumn}
+          now={now}
         />
       </div>
 
