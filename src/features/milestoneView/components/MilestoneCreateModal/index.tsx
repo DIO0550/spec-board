@@ -95,8 +95,10 @@ export const MilestoneCreateModal = ({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose, isPending]);
 
-  // name は spec 上「unnormalized 完全一致キー」のためトリムせず、完全空文字のみ拒否する。
-  const canSubmit = form.name !== "" && !isPending;
+  // 送信値は spec 上「unnormalized 完全一致キー」のためトリムせずそのまま渡すが、
+  // バリデーションは trim 後の空判定で「空白のみの name」も拒否する（実質的に空のまま
+  // マスタが作られるのを防ぐ）。
+  const canSubmit = form.name.trim() !== "" && !isPending;
 
   /**
    * 作成ボタン押下時のサブミットハンドラ。
