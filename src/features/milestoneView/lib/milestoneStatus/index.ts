@@ -38,8 +38,20 @@ const parseDue = (due: string | undefined): Date | undefined => {
   }
   const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(due);
   if (ymd !== null) {
-    const [, y, m, d] = ymd;
-    return new Date(Number(y), Number(m) - 1, Number(d));
+    const y = Number(ymd[1]);
+    const m = Number(ymd[2]);
+    const d = Number(ymd[3]);
+    const dt = new Date(y, m - 1, d);
+    // JS Date は 2026-02-31 のような存在しない日付を 2026-03-03 等へ
+    // 黙ってロールオーバーする。入力フィールドと一致しなければパース不能扱い。
+    if (
+      dt.getFullYear() !== y ||
+      dt.getMonth() !== m - 1 ||
+      dt.getDate() !== d
+    ) {
+      return undefined;
+    }
+    return dt;
   }
   const dt = new Date(due);
   return Number.isNaN(dt.getTime()) ? undefined : dt;

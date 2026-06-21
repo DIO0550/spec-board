@@ -61,7 +61,20 @@ const parseDate = (raw: string | undefined): Date | undefined => {
   }
   const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
   if (ymd !== null) {
-    return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+    const y = Number(ymd[1]);
+    const m = Number(ymd[2]);
+    const d = Number(ymd[3]);
+    const dt = new Date(y, m - 1, d);
+    // 2026-02-31 のような存在しない日付は JS Date が黙ってロールオーバーする
+    // (→ 2026-03-03)。入力フィールドと一致しなければパース不能扱いにする。
+    if (
+      dt.getFullYear() !== y ||
+      dt.getMonth() !== m - 1 ||
+      dt.getDate() !== d
+    ) {
+      return undefined;
+    }
+    return dt;
   }
   const dt = new Date(raw);
   return Number.isNaN(dt.getTime()) ? undefined : dt;

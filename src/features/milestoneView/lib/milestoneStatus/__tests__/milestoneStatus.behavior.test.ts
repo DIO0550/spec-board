@@ -86,6 +86,19 @@ test("daysUntil: 翌日 03:00 の due は 1 日（時刻部分でブレない）
   expect(daysUntil(due, now)).toBe(1);
 });
 
+test("存在しない日付 (2026-02-31 等) は parseDue で undefined 扱いになり countdown=none", () => {
+  const def = { name: "v0.1", state: "open", due: "2026-02-31" } as const;
+  const res = resolveCountdown(def, NOW);
+  expect(res.kind).toBe("none");
+  expect(res.label).toBe("期日未設定");
+});
+
+test("存在しない月 (2026-13-01) も undefined 扱いになる", () => {
+  const def = { name: "v0.1", state: "open", due: "2026-13-01" } as const;
+  expect(resolveDisplayStatus(def, NOW)).toBe("open");
+  expect(dueSortKey(def)).toBe(Number.POSITIVE_INFINITY);
+});
+
 test("dueSortKey: due 未設定は +Infinity（末尾送り）", () => {
   expect(dueSortKey({ name: "v0.1" })).toBe(Number.POSITIVE_INFINITY);
 });

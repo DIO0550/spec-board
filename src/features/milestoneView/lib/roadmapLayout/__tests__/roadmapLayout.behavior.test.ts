@@ -59,6 +59,11 @@ test("バー幅は常に最小幅 (1 か月分) 以上ある", () => {
   expect(row.widthPercent).toBeGreaterThanOrEqual(minWidth);
 });
 
+test("存在しない日付 (2026-02-31) のマイルストーンは rows から除外される（ロールオーバー防止）", () => {
+  const layout = computeRoadmapLayout([def("invalid", "2026-02-31")], NOW);
+  expect(layout.rows).toHaveLength(0);
+});
+
 test("月境界の due はパーセント上も整数 N か月境界に整合する（年月インデックス基準）", () => {
   // 起点 2026-06 から見て 2026-08-01 はちょうど 2 か月後 = 25% の境界
   // dueOffset=2 / startOffset=0 / endOffset=3 → left=0% / right=37.5%
