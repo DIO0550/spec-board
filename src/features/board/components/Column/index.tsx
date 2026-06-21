@@ -158,6 +158,14 @@ export const Column = ({
     if (!taskFilePath || !card.isDragging(taskFilePath)) {
       return;
     }
+    // card.isDragging が true なら Provider state は dragging なので dragSource は
+    // 必ず存在する。万一 null だった場合は state を不正に進められないため安全に
+    // 早期 return する（`?? name` で fromColumn === toColumn の誤った dispatch に
+    // しないため）。
+    const dragSource = card.dragSource;
+    if (dragSource === null) {
+      return;
+    }
     e.preventDefault();
     cancelPendingHover();
     // rAF throttle により hoverTarget.index は他カラムの drop で stale な可能性が
@@ -172,13 +180,12 @@ export const Column = ({
       return { top: r.top, bottom: r.bottom };
     });
     const toIndex = computeHoverIndex(rects, e.clientY);
-    // ドラッグ開始時点の fromColumn を Provider state から復元する。
-    // task.status 経由だと drag 中の楽観更新等で stale になり、moveTask の
-    // preflight が「fromColumn !== task.status」を異常検知する経路を破る可能性がある。
-    const fromColumn = card.dragSource?.fromColumn ?? name;
     void card.dropTask({
       taskFilePath,
-      fromColumn,
+      // ドラッグ開始時点の fromColumn を Provider state から復元する。
+      // task.status 経由だと drag 中の楽観更新等で stale になり、moveTask の
+      // preflight が「fromColumn !== task.status」を異常検知する経路を破る可能性がある。
+      fromColumn: dragSource.fromColumn,
       toColumn: name,
       toIndex,
     });
