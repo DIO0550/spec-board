@@ -131,7 +131,10 @@ export const formatDue = (due: string | undefined): string | undefined => {
   if (dt === undefined) {
     return undefined;
   }
-  const y = dt.getFullYear();
+  // parseDue は 0..99 年も保持するので、formatDue 側も padStart(4, "0") で
+  // 4 桁年に揃える。これにより "0001-01-01" のような ISO 8601 日付がそのまま
+  // 表示でも再現される。
+  const y = String(dt.getFullYear()).padStart(4, "0");
   const m = String(dt.getMonth() + 1).padStart(2, "0");
   const d = String(dt.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
