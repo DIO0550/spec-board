@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { MilestoneDefinition } from "@/domains/milestone";
 import { Milestone } from "@/domains/milestone";
 import {
@@ -40,9 +41,14 @@ export const MilestoneRoadmap = ({
   onSelect,
   now,
 }: MilestoneRoadmapProps) => {
-  // computeRoadmapLayout の引数 now は Date 必須。props 側は now?: Date で
-  // 未指定許容 (プレビュー/閲覧専用モード) のため、ここで new Date() にフォールバックする。
-  const layout = computeRoadmapLayout(milestones, now ?? new Date());
+  // computeRoadmapLayout は O(n) の date math を含むため、selectedName 変更等の
+  // 不要な再 render で再計算されないよう useMemo で囲む。
+  // props 側 now は undefined 許容なのでフォールバックは内部で行う（依存配列には
+  // 生 now を入れることで undefined→new Date() を毎 render で生成しない）。
+  const layout = useMemo(
+    () => computeRoadmapLayout(milestones, now ?? new Date()),
+    [milestones, now],
+  );
 
   if (layout.rows.length === 0) {
     return (
