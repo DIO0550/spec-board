@@ -95,14 +95,35 @@ const compareByKey = (
   progress: ReadonlyMap<string, MilestoneProgress>,
 ): number => {
   if (key === "due") {
-    return dueSortKey(a) - dueSortKey(b);
+    // due 未設定同士は +Infinity 同士の減算で NaN になり安定ソートが崩れるため、
+    // 大小比較で 0/-1/1 を返す形にしておく。
+    return compareNumbers(dueSortKey(a), dueSortKey(b));
   }
   if (key === "name") {
     return a.name.localeCompare(b.name);
   }
-  return (
-    progressSortValue(b.name, progress) - progressSortValue(a.name, progress)
+  // progress は降順なので b - a 相当を compareNumbers の引数順で表現する。
+  return compareNumbers(
+    progressSortValue(b.name, progress),
+    progressSortValue(a.name, progress),
   );
+};
+
+/**
+ * 数値 2 つを 3 値 (-1 / 0 / +1) で比較する。
+ * 減算を避けることで Infinity - Infinity = NaN を発生させない。
+ * @param x - 比較対象 1
+ * @param y - 比較対象 2
+ * @returns x < y で -1、x === y で 0、x > y で +1
+ */
+const compareNumbers = (x: number, y: number): number => {
+  if (x < y) {
+    return -1;
+  }
+  if (x > y) {
+    return 1;
+  }
+  return 0;
 };
 
 /** ratio を降順ソート用の数値へ。未定義は -Infinity（末尾送り）。 */

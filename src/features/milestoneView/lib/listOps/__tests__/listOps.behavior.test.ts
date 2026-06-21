@@ -69,6 +69,22 @@ test("sortMilestones: by-due は早い順、due 未設定は末尾", () => {
   expect(res.map((m) => m.name)).toEqual(["a", "b", "c"]);
 });
 
+test("sortMilestones: by-due で due 未設定が複数あっても元の順序を保つ（NaN 比較によるソート崩れ回避）", () => {
+  const list = [
+    def("first", "open"),
+    def("second", "open"),
+    def("third", "open"),
+  ];
+  const res = sortMilestones(list, "due", new Map());
+  expect(res.map((m) => m.name)).toEqual(["first", "second", "third"]);
+});
+
+test("sortMilestones: by-progress で ratio 未定義が複数あっても元の順序を保つ（NaN 比較によるソート崩れ回避）", () => {
+  const list = [def("a", "open"), def("b", "open"), def("c", "open")];
+  const res = sortMilestones(list, "progress", new Map());
+  expect(res.map((m) => m.name)).toEqual(["a", "b", "c"]);
+});
+
 test("sortMilestones: by-name は name 昇順", () => {
   const list = [def("c", "open"), def("a", "open"), def("b", "open")];
   const res = sortMilestones(list, "name", new Map());
