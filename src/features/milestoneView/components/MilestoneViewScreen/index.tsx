@@ -88,7 +88,9 @@ export const MilestoneViewScreen = ({
     let total = 0;
     let done = 0;
     for (const t of tasks) {
-      if (t.milestone === undefined) {
+      // 空文字 milestone は既存 API（updateTask 等）でクリアの意味で使われるため
+      // 未割当として扱う。undefined と "" の両方を除外する。
+      if (t.milestone === undefined || t.milestone === "") {
         continue;
       }
       total += 1;
