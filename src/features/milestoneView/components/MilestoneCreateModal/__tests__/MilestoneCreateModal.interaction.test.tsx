@@ -75,15 +75,17 @@ test("名前を入力すると送信ボタンが有効化される", () => {
   expect(submit.disabled).toBe(false);
 });
 
-test("送信時に正規化された CreateMilestoneArgs で onCreate を呼ぶ", async () => {
+test("送信時の CreateMilestoneArgs は name をトリムせず、任意項目は空文字を undefined に倒す", async () => {
   const onCreate = vi.fn(async () => true);
   const onClose = vi.fn();
   renderModal({ onCreate, onClose });
 
+  // name は spec 上 unnormalized 完全一致キーのため両端空白を保つ。
   setInputValue(
     requireByTestId("milestone-create-name") as HTMLInputElement,
     "  v1.7  ",
   );
+  // 任意項目はトリムして空なら undefined。
   setInputValue(
     requireByTestId("milestone-create-title") as HTMLInputElement,
     "通知センター",
@@ -102,7 +104,7 @@ test("送信時に正規化された CreateMilestoneArgs で onCreate を呼ぶ"
   });
 
   expect(onCreate).toHaveBeenCalledWith({
-    name: "v1.7",
+    name: "  v1.7  ",
     title: "通知センター",
     due: "2026-08-25",
     description: "メンション通知",

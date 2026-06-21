@@ -36,7 +36,14 @@ type MilestoneCreateModalProps = {
 
 /**
  * フォーム入力値を CreateMilestoneArgs に正規化する。
- * 空文字は undefined（未設定）に倒し、`name` だけ非空をバリデーション側に委ねる。
+ *
+ * `name` は config-spec で「unnormalized 完全一致キー」と定義されているため、
+ * 既存タスクの frontmatter `milestone:` 値と合わせるためにトリムせずそのまま送る
+ * （MilestoneSettingsTab の toArgs と同じ扱い）。空文字のみ呼び出し側でバリデーションする。
+ *
+ * `title` / `due` / `description` は任意項目。空文字は undefined に倒し
+ * 「未設定」を表す（前後空白の保持は意味が薄いためトリムする）。
+ *
  * @param values - フォーム入力値
  * @returns 送信用 args
  */
@@ -46,7 +53,7 @@ const toArgs = (values: FormValues): CreateMilestoneArgs => {
     return trimmed === "" ? undefined : trimmed;
   };
   return {
-    name: values.name.trim(),
+    name: values.name,
     title: opt(values.title),
     due: opt(values.due),
     description: opt(values.description),
@@ -88,8 +95,8 @@ export const MilestoneCreateModal = ({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose, isPending]);
 
-  const trimmedName = form.name.trim();
-  const canSubmit = trimmedName.length > 0 && !isPending;
+  // name は spec 上「unnormalized 完全一致キー」のためトリムせず、完全空文字のみ拒否する。
+  const canSubmit = form.name !== "" && !isPending;
 
   /**
    * 作成ボタン押下時のサブミットハンドラ。
