@@ -91,6 +91,25 @@ export const parseDue = (due: string | undefined): Date | undefined => {
 };
 
 /**
+ * due 文字列を表示用 YYYY-MM-DD に正規化する（parseDue と同じ受理判定を使う）。
+ * - 受理形式: YYYY-MM-DD / YYYY-MM-DDT...
+ * - パース不能・実在しない日付は undefined（UI 側で「未設定」表示に倒す）
+ * - ISO datetime であっても先頭 YYYY-MM-DD のみを返す（時刻部分は破棄）
+ * @param due - 任意の入力文字列、または undefined
+ * @returns 表示用の YYYY-MM-DD、または undefined
+ */
+export const formatDue = (due: string | undefined): string | undefined => {
+  const dt = parseDue(due);
+  if (dt === undefined) {
+    return undefined;
+  }
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+/**
  * 残日数を算出する。今日 0 時を起点に整数日で返す。負値は超過日数。
  * Math.floor を使うことで due が日時形式（例: 同日 23:00）でも「経過した
  * 完全な日数」として扱い、時刻部分による 0/1 のブレを防ぐ。

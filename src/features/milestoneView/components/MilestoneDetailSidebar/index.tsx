@@ -5,6 +5,7 @@ import { MilestoneStateBadge } from "@/features/milestoneView/components/Milesto
 import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import {
   displayStatusLabel,
+  formatDue,
   type MilestoneDisplayStatus,
   resolveCountdown,
 } from "@/features/milestoneView/lib/milestoneStatus";
@@ -67,13 +68,18 @@ export const MilestoneDetailSidebar = ({
           <dd className="text-foreground">{displayStatusLabel(status)}</dd>
           <dt className="text-muted">期日</dt>
           <dd className="flex items-center gap-2">
-            {def.due !== undefined ? (
-              <code className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[11px]">
-                {def.due}
-              </code>
-            ) : (
-              <span className="text-muted">未設定</span>
-            )}
+            {(() => {
+              // parseDue 検証通過のみ YYYY-MM-DD で表示。不正値は「未設定」へ倒し
+              // CountdownBadge の "期日未設定" 表示と整合させる。
+              const dueLabel = formatDue(def.due);
+              return dueLabel !== undefined ? (
+                <code className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[11px]">
+                  {dueLabel}
+                </code>
+              ) : (
+                <span className="text-muted">未設定</span>
+              );
+            })()}
             <MilestoneCountdownBadge countdown={countdown} />
           </dd>
           {progress !== undefined ? (

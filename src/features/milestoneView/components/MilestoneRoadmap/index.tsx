@@ -1,6 +1,9 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
 import { Milestone } from "@/domains/milestone";
-import type { MilestoneDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
+import {
+  formatDue,
+  type MilestoneDisplayStatus,
+} from "@/features/milestoneView/lib/milestoneStatus";
 import { computeRoadmapLayout } from "@/features/milestoneView/lib/roadmapLayout";
 
 type MilestoneRoadmapProps = {
@@ -90,6 +93,10 @@ export const MilestoneRoadmap = ({
               {layout.rows.map((row) => {
                 const title = Milestone.badgeLabel(row.def.name, row.def);
                 const selected = selectedName === row.def.name;
+                // parseDue 検証通過のみ YYYY-MM-DD で表示し、不正値は出さない。
+                // computeRoadmapLayout 側で due 不正なら除外済みのため通常 undefined
+                // にはならないが、防衛的に formatDue を経由する。
+                const dueLabel = formatDue(row.def.due);
                 return (
                   <li
                     key={row.def.name}
@@ -99,9 +106,9 @@ export const MilestoneRoadmap = ({
                       <span className="truncate text-xs font-semibold text-foreground">
                         {title}
                       </span>
-                      {row.def.due !== undefined ? (
+                      {dueLabel !== undefined ? (
                         <span className="font-mono text-[10.5px] text-muted">
-                          {row.def.due}
+                          {dueLabel}
                         </span>
                       ) : null}
                     </div>
@@ -126,9 +133,9 @@ export const MilestoneRoadmap = ({
                         {/* flex 親内で truncate を効かせるには min-w-0 + flex-1 が必要
                             （子要素の min-width: auto を解除しないと省略表示が効かない） */}
                         <span className="min-w-0 flex-1 truncate">{title}</span>
-                        {row.def.due !== undefined ? (
+                        {dueLabel !== undefined ? (
                           <span className="shrink-0 font-mono text-[10px] opacity-80">
-                            {row.def.due}
+                            {dueLabel}
                           </span>
                         ) : null}
                       </button>

@@ -5,6 +5,7 @@ import { MilestoneProgressBar } from "@/features/milestoneView/components/Milest
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
 import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import {
+  formatDue,
   type MilestoneDisplayStatus,
   resolveCountdown,
 } from "@/features/milestoneView/lib/milestoneStatus";
@@ -86,9 +87,14 @@ export const MilestoneCard = ({
           ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          {def.due !== undefined ? (
-            <span className="font-mono text-xs text-muted">{def.due}</span>
-          ) : null}
+          {(() => {
+            // parseDue 検証を通った日付のみ YYYY-MM-DD で表示。
+            // ISO datetime や不正値はカウントダウン側の "期日未設定" に整合させ表示しない。
+            const dueLabel = formatDue(def.due);
+            return dueLabel !== undefined ? (
+              <span className="font-mono text-xs text-muted">{dueLabel}</span>
+            ) : null;
+          })()}
           <MilestoneCountdownBadge countdown={countdown} />
         </div>
       </div>
