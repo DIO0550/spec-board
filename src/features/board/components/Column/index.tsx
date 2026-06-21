@@ -153,7 +153,19 @@ export const Column = ({
   };
 
   const handleDrop = (e: DragEvent<HTMLElement>) => {
-    if (e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE)) {
+    const isColumnMime = e.dataTransfer.types.includes(COLUMN_DRAG_MIME_TYPE);
+    const isTaskMime = e.dataTransfer.types.includes(DRAG_MIME_TYPE);
+    // dndDisabled 中は drop を no-op にする（drag 開始後に dndDisabled が true に
+    // 切り替わったケースや外部から同一 MIME を注入されたケースを防ぐ）。
+    // 独自 MIME の drop はアプリ側でハンドルする意図なので、ブラウザ既定動作
+    // （ナビゲーション等）抑止のため preventDefault だけは実行する。
+    if (dndDisabled) {
+      if (isColumnMime || isTaskMime) {
+        e.preventDefault();
+      }
+      return;
+    }
+    if (isColumnMime) {
       // column MIME を持つ drop はアプリ側でハンドルする意図なので、payload が
       // 空でも preventDefault してブラウザ既定動作（リンクナビゲーション等）を抑止する。
       e.preventDefault();
@@ -163,7 +175,7 @@ export const Column = ({
       }
       return;
     }
-    if (!e.dataTransfer.types.includes(DRAG_MIME_TYPE)) {
+    if (!isTaskMime) {
       return;
     }
     const taskFilePath = e.dataTransfer.getData(DRAG_MIME_TYPE);
