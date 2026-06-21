@@ -87,6 +87,11 @@ export const MilestoneCreateModal = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // IME 変換中の Escape は候補キャンセル用なのでモーダル閉じへ消費しない。
+      // TaskCreateScreen 等の他画面と同じ isComposing ガードを適用する。
+      if (e.isComposing) {
+        return;
+      }
       if (e.key === "Escape" && !isPending) {
         onClose();
       }
