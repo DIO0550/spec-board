@@ -148,7 +148,7 @@ test("ラベルが5個以上で折り返し表示", async () => {
   });
 });
 
-test("descendantTasks ベースで進捗サマリが表示される（直下子 2 + 孫 3 で 3/5）", async () => {
+test("BoardCardProvider.descendantCount 経由で全子孫ベースの進捗サマリが表示される（直下子 2 + 孫 3 で 3/5）", async () => {
   const c1 = createTask({
     id: "c1",
     status: "Todo",
