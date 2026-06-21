@@ -47,10 +47,11 @@ const SOON_DAY_THRESHOLD = 7;
 /**
  * due 文字列を Date に変換する。"YYYY-MM-DD" はローカル 0 時として解釈し、
  * Date 直接渡しで UTC 扱いになる暗黙挙動を避ける。
+ * milestoneView feature 内で共通の date パーサとして使う（roadmapLayout も参照）。
  * @param due - ISO 8601 日付文字列、または undefined
  * @returns 解釈済み Date、または undefined（パース不能/未指定）
  */
-const parseDue = (due: string | undefined): Date | undefined => {
+export const parseDue = (due: string | undefined): Date | undefined => {
   if (due === undefined) {
     return undefined;
   }

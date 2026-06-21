@@ -1,6 +1,7 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
 import {
   type MilestoneDisplayStatus,
+  parseDue,
   resolveDisplayStatus,
 } from "@/features/milestoneView/lib/milestoneStatus";
 
@@ -48,38 +49,6 @@ const formatYearMonth = (date: Date): string => {
   const y = date.getFullYear();
   const m = `${date.getMonth() + 1}`.padStart(2, "0");
   return `${y}-${m}`;
-};
-
-/**
- * "YYYY-MM-DD" / Date 文字列を Date に変換する。失敗時 undefined。
- * @param raw - 日付文字列、または undefined
- * @returns 解釈済み Date、または undefined
- */
-const parseDate = (raw: string | undefined): Date | undefined => {
-  if (raw === undefined) {
-    return undefined;
-  }
-  // YYYY-MM-DD 単体・ISO datetime 両方に共通の前段ロールオーバーガード。
-  // 2026-02-31 → 2026-03-03 のような JS Date の暗黙ロールオーバーを弾く。
-  const ymdHead = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  if (ymdHead !== null) {
-    const y = Number(ymdHead[1]);
-    const m = Number(ymdHead[2]);
-    const d = Number(ymdHead[3]);
-    const validation = new Date(y, m - 1, d);
-    if (
-      validation.getFullYear() !== y ||
-      validation.getMonth() !== m - 1 ||
-      validation.getDate() !== d
-    ) {
-      return undefined;
-    }
-    if (raw.length === 10) {
-      return validation;
-    }
-  }
-  const dt = new Date(raw);
-  return Number.isNaN(dt.getTime()) ? undefined : dt;
 };
 
 /**
@@ -157,7 +126,7 @@ export const computeRoadmapLayout = (
 
   const rows: RoadmapRow[] = [];
   for (const def of milestones) {
-    const due = parseDate(def.due);
+    const due = parseDue(def.due);
     if (due === undefined) {
       continue;
     }
