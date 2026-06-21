@@ -126,8 +126,51 @@ export const MilestoneViewScreen = ({
       </p>
     );
   }
+  // 空状態でも作成導線がある場合はヘッダ + プレースホルダを描画し、
+  // 「空 = どこからも作成できない」を解消する（App.tsx は常に作成 mutation を渡す）。
   if (sorted.length === 0) {
-    return <p className="p-4 text-sm text-muted">マイルストーンなし</p>;
+    if (onCreateMilestone === undefined) {
+      return <p className="p-4 text-sm text-muted">マイルストーンなし</p>;
+    }
+    return (
+      <div className="flex w-full flex-1 flex-col bg-bg p-6">
+        <header className="mb-6 flex items-baseline gap-4">
+          <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
+            マイルストーン
+          </h2>
+          <button
+            type="button"
+            data-testid="milestone-create-open"
+            onClick={() => setIsCreateOpen(true)}
+            className="ml-auto rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:opacity-90"
+          >
+            + マイルストーンを追加
+          </button>
+        </header>
+        <div className="flex flex-1 items-center justify-center rounded-[10px] border border-dashed border-border bg-panel-2 p-12 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted">
+              マイルストーンがまだ登録されていません
+            </p>
+            <button
+              type="button"
+              data-testid="milestone-create-open-empty"
+              onClick={() => setIsCreateOpen(true)}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:opacity-90"
+            >
+              + 最初のマイルストーンを作成
+            </button>
+          </div>
+        </div>
+        {isCreateOpen ? (
+          <MilestoneCreateModal
+            onCreate={onCreateMilestone}
+            isPending={isCreating}
+            onClose={() => setIsCreateOpen(false)}
+          />
+        ) : null}
+      </div>
+    );
   }
 
   return (
