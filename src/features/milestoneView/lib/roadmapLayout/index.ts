@@ -14,7 +14,11 @@ export type RoadmapRow = {
   leftPercent: number;
   /** バー幅の％ (>0)。最小幅は 1 か月分（100/columns） */
   widthPercent: number;
-  /** 期日が範囲外で切り詰めたかどうか */
+  /**
+   * バーの想定スパン（DEFAULT_SPAN_MONTHS 前から MIN_BAR_MONTHS 後まで）の
+   * 一部でも表示範囲 0..COLUMN_COUNT を外れたかどうか。due 自体が範囲内でも
+   * 想定スパンが先頭/末尾で切れる場合は true になる。
+   */
   clipped: boolean;
 };
 
