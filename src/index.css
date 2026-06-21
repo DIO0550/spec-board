@@ -40,19 +40,23 @@
 	   - warn (= soon 用): bg + fg の 2 段
 	   - info / inprog / todo: 単色（進捗バー内訳・ロードマップバー色用）
 	   closed 系は専用トークンを設けず、汎用の panel-2 / text-dim / border-strong を流用する。 */
-	--color-ms-success: oklch(0.6 0.13 155);
+	/* ベース色 (success/danger/inprog/todo/info) は roadmap バーの塗りつぶしに使われ、
+	   バー上の text-white (10-11px) との WCAG AA (4.5:1) を満たすよう lightness を
+	   0.45-0.5 程度まで下げている。明るめの design HTML 値 (~0.6) より暗いが
+	   可読性を優先する。 */
+	--color-ms-success: oklch(0.5 0.14 155);
 	--color-ms-success-bg: oklch(0.94 0.05 155);
 	--color-ms-success-fg: oklch(0.35 0.12 155);
 	--color-ms-success-border: oklch(0.83 0.07 155);
-	--color-ms-danger: oklch(0.58 0.18 25);
+	--color-ms-danger: oklch(0.5 0.18 25);
 	--color-ms-danger-bg: oklch(0.94 0.04 25);
 	--color-ms-danger-fg: oklch(0.42 0.14 25);
 	--color-ms-danger-border: oklch(0.85 0.06 25);
 	--color-ms-warn-bg: oklch(0.94 0.05 55);
 	--color-ms-warn-fg: oklch(0.42 0.14 55);
-	--color-ms-info: oklch(0.62 0.12 235);
-	--color-ms-inprog: oklch(0.62 0.14 65);
-	--color-ms-todo: oklch(0.62 0.02 260);
+	--color-ms-info: oklch(0.5 0.13 235);
+	--color-ms-inprog: oklch(0.5 0.15 65);
+	--color-ms-todo: oklch(0.45 0.02 260);
 
 	/* カラムヘッダー上端のアクセント帯フォールバック色（color 未設定/不正時）。
 	   order index → 色を決定的に写像する。ライト既定値。
