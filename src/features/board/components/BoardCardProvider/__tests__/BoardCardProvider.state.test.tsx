@@ -144,7 +144,7 @@ test("dropTask は onTaskDrop を呼び、その後 end() が走って idle に�
   expect(probe.latest.isDragging("tasks/a.md")).toBe(false);
 });
 
-test("dropTask は onTaskDrop が throw しても reject せず、finally で end() が走る", async () => {
+test("dropTask は onTaskDrop が reject / throw しても外には伝搬せず、finally で end() が走る", async () => {
   const onTaskDrop = vi.fn().mockRejectedValue(new Error("boom"));
   const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   const params: TaskDrop = {
