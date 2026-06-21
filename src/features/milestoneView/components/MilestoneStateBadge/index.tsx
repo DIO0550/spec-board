@@ -1,4 +1,7 @@
-import type { MilestoneDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
+import {
+  displayStatusLabel,
+  type MilestoneDisplayStatus,
+} from "@/features/milestoneView/lib/milestoneStatus";
 
 type MilestoneStateBadgeProps = {
   /** 表示ステータス（open/closed/overdue） */
@@ -44,7 +47,7 @@ export const MilestoneStateBadge = ({ status }: MilestoneStateBadgeProps) => {
       data-testid="milestone-state-badge"
       data-status={status}
       className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${s.bg} ${s.fg} ${s.border}`}
-      aria-label={status}
+      aria-label={displayStatusLabel(status)}
     >
       {s.icon}
     </span>

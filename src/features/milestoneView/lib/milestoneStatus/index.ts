@@ -7,6 +7,24 @@ import type { MilestoneDefinition } from "@/domains/milestone";
 export type MilestoneDisplayStatus = "open" | "closed" | "overdue";
 
 /**
+ * UI 内の他ラベル (Toolbar pill / stats) と整合させるための日本語表示名。
+ * 支援技術 (aria-label) ・サイドバーの状態欄など、ユーザーに見える箇所で使う。
+ */
+const DISPLAY_STATUS_LABEL: Record<MilestoneDisplayStatus, string> = {
+  open: "オープン",
+  closed: "クローズ",
+  overdue: "期限超過",
+};
+
+/**
+ * 表示用ステータスを日本語ラベルに変換する。
+ * @param status - 表示用ステータス
+ * @returns 日本語ラベル（例: "オープン" / "クローズ" / "期限超過"）
+ */
+export const displayStatusLabel = (status: MilestoneDisplayStatus): string =>
+  DISPLAY_STATUS_LABEL[status];
+
+/**
  * 期日との距離をカテゴライズしたカウントダウン状態。
  * - overdue: 期日超過（open のみ）
  * - soon:    7 日以内（今日含む）

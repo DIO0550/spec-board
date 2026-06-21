@@ -4,6 +4,7 @@ import { MilestoneCountdownBadge } from "@/features/milestoneView/components/Mil
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
 import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import {
+  displayStatusLabel,
   type MilestoneDisplayStatus,
   resolveCountdown,
 } from "@/features/milestoneView/lib/milestoneStatus";
@@ -63,7 +64,7 @@ export const MilestoneDetailSidebar = ({
         </header>
         <dl className="grid grid-cols-[80px_1fr] items-center gap-x-3 gap-y-2 text-xs">
           <dt className="text-muted">状態</dt>
-          <dd className="text-foreground">{status}</dd>
+          <dd className="text-foreground">{displayStatusLabel(status)}</dd>
           <dt className="text-muted">期日</dt>
           <dd className="flex items-center gap-2">
             {def.due !== undefined ? (
