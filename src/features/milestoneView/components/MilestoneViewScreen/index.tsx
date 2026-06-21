@@ -84,7 +84,13 @@ export const MilestoneViewScreen = ({
   // useMemo の入力と派生関数が同じ now を見るようにする。
   const todayKey = (() => {
     const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const year = d.getFullYear();
+    // getMonth() は 0 始まりなので +1。日付と合わせて 2 桁ゼロ詰めし、
+    // コメント通りの YYYY-MM-DD フォーマットに揃える（依存配列キー以外の
+    // 用途で再利用しても誤解されないように）。
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   })();
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付キーが変わった時に新しい Date を再生成するため todayKey を依存に含める（body 内で参照しないが意図的）
   const now = useMemo(() => new Date(), [todayKey]);
