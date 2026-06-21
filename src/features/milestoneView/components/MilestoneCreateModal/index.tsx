@@ -106,10 +106,14 @@ export const MilestoneCreateModal = ({
 
   return (
     <>
+      {/* tabIndex={-1} で tab order から除外する。overlay クリックで閉じる UX は維持するが、
+          キーボード操作時はダイアログ内の閉じる × / フォームへ自然にフォーカスが向くようにする
+          （ヘッダーの閉じる × ボタンと役割が重複するため、overlay にフォーカスを取らせる必要は無い）。 */}
       <button
         type="button"
         aria-label="モーダルを閉じる"
         data-testid="milestone-create-overlay"
+        tabIndex={-1}
         className="fixed inset-0 z-[60] cursor-default bg-black/40 backdrop-blur-[2px]"
         onClick={isPending ? undefined : onClose}
         disabled={isPending}
