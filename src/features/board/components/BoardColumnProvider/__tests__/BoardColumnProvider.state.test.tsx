@@ -120,7 +120,7 @@ test("end を呼ぶと isDragging が false に戻り hoverIndex も null に戻
   expect(probe.latest.hoverIndex).toBeNull();
 });
 
-test("dropColumn は onColumnReorder が throw しても reject せず finally で end() が走る", async () => {
+test("dropColumn は onColumnReorder が reject / throw しても外には伝搬せず finally で end() が走る", async () => {
   const onColumnReorder = vi.fn().mockRejectedValue(new Error("boom"));
   const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   const params: ColumnReorder = {
