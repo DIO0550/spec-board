@@ -149,8 +149,12 @@ export const MilestoneViewScreen = ({
         : sorted.find((m) => m.name === selectedName),
     [sorted, selectedName],
   );
+  // 上の filterMilestones / groupByDisplayStatus と同じ now を渡して overdue
+  // 基準を揃える（midnight setTimeout が遅延した場合の判定ズレを防ぐ）。
   const selectedStatus =
-    selectedDef === undefined ? undefined : resolveDisplayStatus(selectedDef);
+    selectedDef === undefined
+      ? undefined
+      : resolveDisplayStatus(selectedDef, now);
   const selectedTasks = useMemo(
     () =>
       selectedName === undefined
@@ -281,7 +285,7 @@ export const MilestoneViewScreen = ({
           {view === "list" ? (
             <MilestoneList
               milestones={visible}
-              statusOf={(d) => resolveDisplayStatus(d)}
+              statusOf={(d) => resolveDisplayStatus(d, now)}
               progressOf={(d) => progress.get(d.name)}
               selectedName={selectedName}
               onSelect={(d) => setSelectedName(d.name)}
