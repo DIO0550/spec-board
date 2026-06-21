@@ -94,7 +94,7 @@ const renderWithProviders = (options: RenderOptions) => {
     <BoardCardProvider
       tasks={tasks}
       allTasks={allTasks}
-      tasksByNormalizedPath={options.tasksByNormalizedPath ?? new Map()}
+      tasksByNormalizedPath={options.tasksByNormalizedPath}
       doneColumn={options.doneColumn}
       onTaskDrop={options.onTaskDrop}
     >

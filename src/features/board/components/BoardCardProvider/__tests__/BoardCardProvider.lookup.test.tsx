@@ -77,7 +77,7 @@ const mountProbe = (
       <BoardCardProvider
         tasks={overrides.tasks ?? []}
         allTasks={overrides.allTasks ?? []}
-        tasksByNormalizedPath={overrides.tasksByNormalizedPath ?? new Map()}
+        tasksByNormalizedPath={overrides.tasksByNormalizedPath}
         milestonesByName={overrides.milestonesByName}
         doneColumn={overrides.doneColumn}
       >

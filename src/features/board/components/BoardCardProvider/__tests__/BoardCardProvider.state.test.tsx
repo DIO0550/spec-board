@@ -54,12 +54,7 @@ const mountProbe = (
   };
   const tree: ReactNode = (
     <StrictMode>
-      <BoardCardProvider
-        tasks={[]}
-        allTasks={[]}
-        tasksByNormalizedPath={new Map()}
-        {...overrides}
-      >
+      <BoardCardProvider tasks={[]} allTasks={[]} {...overrides}>
         <Probe onResult={handleResult} />
       </BoardCardProvider>
     </StrictMode>
