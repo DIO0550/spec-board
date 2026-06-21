@@ -26,7 +26,6 @@ const meta: Meta<typeof Column> = {
     withBoardCardProvider({
       tasks: todoTasks,
       allTasks: initialTasks,
-      tasksByNormalizedPath: new Map(),
       milestonesByName: new Map(),
       doneColumn: "Done",
     }),
@@ -59,7 +58,6 @@ const emptyDecorators = [
   withBoardCardProvider({
     tasks: [],
     allTasks: [],
-    tasksByNormalizedPath: new Map(),
     milestonesByName: new Map(),
     doneColumn: "Done",
   }),
@@ -99,7 +97,6 @@ export const ManyTasks: Story = {
     withBoardCardProvider({
       tasks: manyTasks,
       allTasks: manyTasks,
-      tasksByNormalizedPath: new Map(),
       milestonesByName: new Map(),
       doneColumn: "Done",
     }),

@@ -27,11 +27,13 @@ export const wrapWithCardProvider = (
 ) => {
   const allTasks =
     args.allTasks ?? (args.task !== undefined ? [args.task] : []);
+  // tasksByNormalizedPath は明示時のみ渡す。未指定なら Provider が allTasks から
+  // フォールバック構築するので、空 Map で潰さない。
   return (
     <BoardCardProvider
       tasks={args.tasks ?? allTasks}
       allTasks={allTasks}
-      tasksByNormalizedPath={args.tasksByNormalizedPath ?? new Map()}
+      tasksByNormalizedPath={args.tasksByNormalizedPath}
       milestonesByName={args.milestonesByName}
       doneColumn={args.doneColumn}
       dndDisabled={args.dndDisabled}

@@ -10,10 +10,10 @@ const baseTask: Task = initialTasks[0];
 const meta: Meta<typeof TaskCard> = {
   component: TaskCard,
   decorators: [
+    // tasksByNormalizedPath は省略し Provider 側の allTasks フォールバックに任せる
     withBoardCardProvider({
       tasks: initialTasks,
       allTasks: initialTasks,
-      tasksByNormalizedPath: new Map(),
       milestonesByName: new Map(),
       doneColumn: "Done",
     }),
