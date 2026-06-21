@@ -17,9 +17,9 @@ const STYLE_BY_STATUS: Record<
     icon: "●",
   },
   closed: {
-    bg: "bg-panel-2",
-    fg: "text-text-dim",
-    border: "border-border-strong",
+    bg: "bg-surface-muted",
+    fg: "text-muted",
+    border: "border-border",
     icon: "✓",
   },
   overdue: {

@@ -13,9 +13,9 @@ const STYLE_BY_KIND: Record<MilestoneCountdownKind, string> = {
   overdue:
     "bg-[var(--color-ms-danger-bg)] text-[var(--color-ms-danger-fg)] border-[var(--color-ms-danger-border)]",
   soon: "bg-[var(--color-ms-warn-bg)] text-[var(--color-ms-warn-fg)] border-transparent",
-  future: "bg-panel-2 text-text-dim border-border",
+  future: "bg-surface-muted text-muted border-border",
   done: "bg-[var(--color-ms-success-bg)] text-[var(--color-ms-success-fg)] border-[var(--color-ms-success-border)]",
-  none: "bg-panel-2 text-text-dim border-border",
+  none: "bg-surface-muted text-muted border-border",
 };
 
 /**

@@ -132,7 +132,7 @@ export const MilestoneCreateModal = ({
         aria-labelledby={titleId}
         tabIndex={-1}
         data-testid="milestone-create-modal"
-        className="fixed top-1/2 left-1/2 z-[70] w-[560px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-border-strong bg-panel shadow-2xl"
+        className="fixed top-1/2 left-1/2 z-[70] w-[560px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
       >
         <header className="flex items-center gap-3 border-b border-border px-5 py-3">
           <span
@@ -162,7 +162,7 @@ export const MilestoneCreateModal = ({
               マイルストーンを追加
             </h2>
             {subtitle !== undefined ? (
-              <span className="truncate font-mono text-[11px] text-text-dim">
+              <span className="truncate font-mono text-[11px] text-muted">
                 {subtitle}
               </span>
             ) : null}
@@ -172,7 +172,7 @@ export const MilestoneCreateModal = ({
             data-testid="milestone-create-close"
             onClick={onClose}
             disabled={isPending}
-            className="rounded p-1 text-muted hover:bg-panel-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             aria-label="閉じる"
           >
             <svg
@@ -194,7 +194,7 @@ export const MilestoneCreateModal = ({
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-5 py-4">
           <label className="flex flex-col gap-1 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
               名前
             </span>
             <input
@@ -205,13 +205,13 @@ export const MilestoneCreateModal = ({
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="v1.7"
-              className="rounded-md border border-border bg-panel-2 px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+              className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             />
           </label>
 
           <div className="grid grid-cols-[1fr_150px] gap-3">
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 表示名
               </span>
               <input
@@ -221,11 +221,11 @@ export const MilestoneCreateModal = ({
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 placeholder="通知センター"
-                className="rounded-md border border-border bg-panel-2 px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 期日
               </span>
               <input
@@ -233,13 +233,13 @@ export const MilestoneCreateModal = ({
                 data-testid="milestone-create-due"
                 value={form.due}
                 onChange={(e) => setForm({ ...form, due: e.target.value })}
-                className="rounded-md border border-border bg-panel-2 px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+                className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
               />
             </label>
           </div>
 
           <label className="flex flex-col gap-1 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
               説明 — 任意
             </span>
             <textarea
@@ -250,12 +250,12 @@ export const MilestoneCreateModal = ({
                 setForm({ ...form, description: e.target.value })
               }
               placeholder="このマイルストーンで達成したいこと"
-              className="rounded-md border border-border bg-panel-2 px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
+              className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             />
           </label>
 
-          <footer className="-mx-5 -mb-4 mt-2 flex items-center justify-between gap-2 border-t border-border bg-panel-2 px-5 py-3">
-            <span className="font-mono text-[11px] text-text-dim">
+          <footer className="-mx-5 -mb-4 mt-2 flex items-center justify-between gap-2 border-t border-border bg-surface-muted px-5 py-3">
+            <span className="font-mono text-[11px] text-muted">
               作成時に <code>milestones.yml</code> へ追記
             </span>
             <div className="flex items-center gap-2">
@@ -263,7 +263,7 @@ export const MilestoneCreateModal = ({
                 type="button"
                 onClick={onClose}
                 disabled={isPending}
-                className="rounded-md border border-border bg-panel px-3 py-1.5 text-xs text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-foreground hover:border-border disabled:cursor-not-allowed disabled:opacity-60"
               >
                 キャンセル
               </button>

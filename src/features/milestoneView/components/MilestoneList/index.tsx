@@ -48,7 +48,7 @@ export const MilestoneList = ({
 }: MilestoneListProps) => {
   if (milestones.length === 0) {
     return (
-      <p className="rounded border border-dashed border-border bg-panel-2 p-6 text-center text-sm text-muted">
+      <p className="rounded border border-dashed border-border bg-surface-muted p-6 text-center text-sm text-muted">
         条件に一致するマイルストーンがありません
       </p>
     );

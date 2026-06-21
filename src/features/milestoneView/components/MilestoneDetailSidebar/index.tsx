@@ -40,7 +40,7 @@ export const MilestoneDetailSidebar = ({
 }: MilestoneDetailSidebarProps) => {
   if (def === undefined || status === undefined) {
     return (
-      <aside className="hidden w-[320px] shrink-0 rounded-[10px] border border-dashed border-border bg-panel-2 p-6 text-center text-sm text-muted lg:flex lg:items-center lg:justify-center">
+      <aside className="hidden w-[320px] shrink-0 rounded-[10px] border border-dashed border-border bg-surface-muted p-6 text-center text-sm text-muted lg:flex lg:items-center lg:justify-center">
         マイルストーンを選択すると詳細を表示します
       </aside>
     );
@@ -49,35 +49,35 @@ export const MilestoneDetailSidebar = ({
   const countdown = resolveCountdown(def, now);
   return (
     <aside className="hidden w-[320px] shrink-0 flex-col gap-3 lg:flex">
-      <section className="flex flex-col gap-3 rounded-[10px] border border-border bg-panel p-4">
+      <section className="flex flex-col gap-3 rounded-[10px] border border-border bg-surface p-4">
         <header className="flex items-start gap-3">
           <MilestoneStateBadge status={status} />
           <div className="flex min-w-0 flex-col gap-1">
             <span className="truncate text-sm font-semibold text-foreground">
               {title}
             </span>
-            <span className="font-mono text-[10.5px] text-text-dim">
+            <span className="font-mono text-[10.5px] text-muted">
               {def.name}
             </span>
           </div>
         </header>
         <dl className="grid grid-cols-[80px_1fr] items-center gap-x-3 gap-y-2 text-xs">
-          <dt className="text-text-dim">状態</dt>
+          <dt className="text-muted">状態</dt>
           <dd className="text-foreground">{status}</dd>
-          <dt className="text-text-dim">期日</dt>
+          <dt className="text-muted">期日</dt>
           <dd className="flex items-center gap-2">
             {def.due !== undefined ? (
-              <code className="rounded bg-panel-2 px-1 py-0.5 font-mono text-[11px]">
+              <code className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[11px]">
                 {def.due}
               </code>
             ) : (
-              <span className="text-text-dim">未設定</span>
+              <span className="text-muted">未設定</span>
             )}
             <MilestoneCountdownBadge countdown={countdown} />
           </dd>
           {progress !== undefined ? (
             <>
-              <dt className="text-text-dim">タスク</dt>
+              <dt className="text-muted">タスク</dt>
               <dd className="font-mono text-foreground">
                 {progress.done} / {progress.total}
                 {progress.ratio !== undefined
@@ -94,12 +94,12 @@ export const MilestoneDetailSidebar = ({
         ) : null}
       </section>
 
-      <section className="flex flex-col gap-2 rounded-[10px] border border-border bg-panel p-4">
-        <header className="text-[10.5px] font-semibold uppercase tracking-wider text-text-dim">
+      <section className="flex flex-col gap-2 rounded-[10px] border border-border bg-surface p-4">
+        <header className="text-[10.5px] font-semibold uppercase tracking-wider text-muted">
           所属タスク（{tasks.length}）
         </header>
         {tasks.length === 0 ? (
-          <p className="text-xs text-text-dim">タスクなし</p>
+          <p className="text-xs text-muted">タスクなし</p>
         ) : (
           <ul className="flex flex-col">
             {tasks.map((t) => {
@@ -119,12 +119,12 @@ export const MilestoneDetailSidebar = ({
                         : "bg-[var(--color-ms-todo)]"
                     }`}
                   />
-                  <span className="font-mono text-[11px] text-text-dim">
+                  <span className="font-mono text-[11px] text-muted">
                     {t.id}
                   </span>
                   <span
                     className={`min-w-0 flex-1 truncate text-xs ${
-                      isDone ? "text-text-dim line-through" : "text-foreground"
+                      isDone ? "text-muted line-through" : "text-foreground"
                     }`}
                   >
                     {t.title}

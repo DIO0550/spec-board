@@ -135,7 +135,7 @@ export const MilestoneViewScreen = ({
       return <p className="p-4 text-sm text-muted">マイルストーンなし</p>;
     }
     return (
-      <div className="flex w-full flex-1 flex-col bg-bg p-6">
+      <div className="flex w-full flex-1 flex-col bg-surface-muted p-6">
         <header className="mb-6 flex items-baseline gap-4">
           <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
             マイルストーン
@@ -149,7 +149,7 @@ export const MilestoneViewScreen = ({
             + マイルストーンを追加
           </button>
         </header>
-        <div className="flex flex-1 items-center justify-center rounded-[10px] border border-dashed border-border bg-panel-2 p-12 text-center">
+        <div className="flex flex-1 items-center justify-center rounded-[10px] border border-dashed border-border bg-surface-muted p-12 text-center">
           <div className="flex flex-col items-center gap-4">
             <p className="text-sm text-muted">
               マイルストーンがまだ登録されていません
@@ -176,7 +176,7 @@ export const MilestoneViewScreen = ({
   }
 
   return (
-    <div className="flex w-full flex-1 flex-col overflow-y-auto bg-bg p-6">
+    <div className="flex w-full flex-1 flex-col overflow-y-auto bg-surface-muted p-6">
       <header className="mb-4 flex items-baseline gap-4">
         <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
           マイルストーン

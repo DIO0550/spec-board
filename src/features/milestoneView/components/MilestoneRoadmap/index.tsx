@@ -41,19 +41,19 @@ export const MilestoneRoadmap = ({
 
   if (layout.rows.length === 0) {
     return (
-      <p className="rounded border border-dashed border-border bg-panel-2 p-6 text-center text-sm text-muted">
+      <p className="rounded border border-dashed border-border bg-surface-muted p-6 text-center text-sm text-muted">
         期日が設定されたマイルストーンがありません
       </p>
     );
   }
 
   return (
-    <div className="rounded-[10px] border border-border bg-panel p-4">
+    <div className="rounded-[10px] border border-border bg-surface p-4">
       <div className="mb-3 flex items-baseline gap-3">
         <h3 className="text-sm font-semibold text-foreground">
           今月から {layout.monthLabels.length} か月のロードマップ
         </h3>
-        <span className="font-mono text-[11px] text-text-dim">
+        <span className="font-mono text-[11px] text-muted">
           basis: milestones.yml
         </span>
       </div>
@@ -64,7 +64,7 @@ export const MilestoneRoadmap = ({
               （label 列の右側）に「今日」の縦線を全行をまたいでオーバーレイ表示する。 */}
           <div className="relative">
             <div className="mb-5 grid grid-cols-[180px_1fr] items-center gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-text-dim">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 マイルストーン
               </div>
               <div
@@ -76,7 +76,7 @@ export const MilestoneRoadmap = ({
                 {layout.monthLabels.map((m) => (
                   <div
                     key={m}
-                    className="border-l border-border px-2 font-mono text-[11px] text-text-dim"
+                    className="border-l border-border px-2 font-mono text-[11px] text-muted"
                   >
                     {m}
                   </div>
@@ -98,12 +98,12 @@ export const MilestoneRoadmap = ({
                         {title}
                       </span>
                       {row.def.due !== undefined ? (
-                        <span className="font-mono text-[10.5px] text-text-dim">
+                        <span className="font-mono text-[10.5px] text-muted">
                           {row.def.due}
                         </span>
                       ) : null}
                     </div>
-                    <div className="relative h-11 rounded border border-border bg-panel-2">
+                    <div className="relative h-11 rounded border border-border bg-surface-muted">
                       <button
                         type="button"
                         data-testid="milestone-roadmap-bar"
@@ -150,7 +150,7 @@ export const MilestoneRoadmap = ({
                   ヘッダ末端と最初のバー行の境目あたりに浮かせる。
                   ピル背景 = danger 色なので、月軸ラベルと多少重なっても可読性は確保される。 */}
               <span
-                className="absolute -translate-x-1/2 rounded bg-panel px-1.5 text-[9px] font-mono leading-none whitespace-nowrap text-[var(--color-ms-danger-fg)] border border-[var(--color-ms-danger-border)] py-0.5"
+                className="absolute -translate-x-1/2 rounded bg-surface px-1.5 text-[9px] font-mono leading-none whitespace-nowrap text-[var(--color-ms-danger-fg)] border border-[var(--color-ms-danger-border)] py-0.5"
                 style={{
                   top: "20px",
                   left: `${layout.todayPercent}%`,

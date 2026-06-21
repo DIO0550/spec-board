@@ -75,7 +75,7 @@ export const MilestoneToolbar = ({
   onViewChange,
 }: MilestoneToolbarProps) => {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panel px-3 py-2">
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
       <div className="flex items-center gap-1">
         {FILTERS.map((f) => {
           const active = filter === f.value;
@@ -99,7 +99,7 @@ export const MilestoneToolbar = ({
         })}
       </div>
 
-      <label className="ml-auto flex items-center gap-2 rounded-md border border-border bg-panel-2 px-2 py-1 text-xs text-muted focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft">
+      <label className="ml-auto flex items-center gap-2 rounded-md border border-border bg-surface-muted px-2 py-1 text-xs text-muted focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft">
         <span aria-hidden="true">🔍</span>
         <input
           type="search"
@@ -108,11 +108,11 @@ export const MilestoneToolbar = ({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="マイルストーンを検索"
-          className="w-44 bg-transparent text-foreground outline-none placeholder:text-text-dim"
+          className="w-44 bg-transparent text-foreground outline-none placeholder:text-muted"
         />
       </label>
 
-      <div className="flex items-center gap-1 rounded-md border border-border bg-panel-2 p-0.5">
+      <div className="flex items-center gap-1 rounded-md border border-border bg-surface-muted p-0.5">
         {SORTS.map((s) => {
           const active = sort === s.value;
           return (
@@ -125,7 +125,7 @@ export const MilestoneToolbar = ({
               className={[
                 "rounded px-2 py-1 text-xs transition",
                 active
-                  ? "bg-panel text-foreground shadow-sm"
+                  ? "bg-surface text-foreground shadow-sm"
                   : "text-muted hover:text-foreground",
               ].join(" ")}
             >
@@ -135,7 +135,7 @@ export const MilestoneToolbar = ({
         })}
       </div>
 
-      <div className="flex items-center gap-1 rounded-md border border-border bg-panel-2 p-0.5">
+      <div className="flex items-center gap-1 rounded-md border border-border bg-surface-muted p-0.5">
         {VIEWS.map((v) => {
           const active = view === v.value;
           return (
@@ -149,7 +149,7 @@ export const MilestoneToolbar = ({
               className={[
                 "rounded px-2 py-1 text-sm transition",
                 active
-                  ? "bg-panel text-foreground shadow-sm"
+                  ? "bg-surface text-foreground shadow-sm"
                   : "text-muted hover:text-foreground",
               ].join(" ")}
             >

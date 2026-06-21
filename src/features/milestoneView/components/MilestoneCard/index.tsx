@@ -55,12 +55,12 @@ export const MilestoneCard = ({
       data-selected={selected ? "true" : "false"}
       onClick={onSelect}
       className={[
-        "flex w-full flex-col gap-3 rounded-[10px] border bg-panel p-4 text-left transition shadow-sm",
-        "hover:border-border-strong",
+        "flex w-full flex-col gap-3 rounded-[10px] border bg-surface p-4 text-left transition shadow-sm",
+        "hover:border-border",
         selected
           ? "border-accent ring-[3px] ring-accent-soft"
           : "border-border",
-        isClosed ? "bg-panel-2" : "",
+        isClosed ? "bg-surface-muted" : "",
       ].join(" ")}
     >
       <div className="flex items-start gap-3">
@@ -69,13 +69,13 @@ export const MilestoneCard = ({
           <div className="flex items-baseline gap-2">
             <span
               className={`truncate text-[15px] font-semibold ${
-                isClosed ? "text-text-dim" : "text-foreground"
+                isClosed ? "text-muted" : "text-foreground"
               }`}
             >
               {title}
             </span>
             {def.name !== title ? (
-              <span className="shrink-0 font-mono text-[10.5px] text-text-dim">
+              <span className="shrink-0 font-mono text-[10.5px] text-muted">
                 {def.name}
               </span>
             ) : null}
@@ -86,7 +86,7 @@ export const MilestoneCard = ({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {def.due !== undefined ? (
-            <span className="font-mono text-xs text-text-dim">{def.due}</span>
+            <span className="font-mono text-xs text-muted">{def.due}</span>
           ) : null}
           <MilestoneCountdownBadge countdown={countdown} />
         </div>
