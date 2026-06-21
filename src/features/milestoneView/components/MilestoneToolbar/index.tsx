@@ -104,6 +104,7 @@ export const MilestoneToolbar = ({
         <input
           type="search"
           data-testid="milestone-search-input"
+          aria-label="マイルストーンを検索"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="マイルストーンを検索"
