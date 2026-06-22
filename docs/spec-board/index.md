@@ -68,6 +68,7 @@ flowchart TD
 | 仕様書 | 説明 |
 |:-------|:-----|
 | [board-view-spec.md](./board-view-spec.md) | [FE] カンバンボードUI・カラム管理・ドラッグ&ドロップ |
+| [milestone-view-spec.md](./milestone-view-spec.md) | [FE] マイルストーン専用ビュー（フィルタ・検索・ソート・list⇔roadmap 切替・作成モーダル） |
 | [task-card-spec.md](./task-card-spec.md) | [FE] タスクカード表示・詳細（全画面 2 ペイン）・作成/編集フォーム |
 | [file-system-spec.md](./file-system-spec.md) | [BE] mdファイルのパース・ファイル監視・CRUD操作 |
 | [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット定義・フロントマター仕様（priority / labels / milestone / parent / links） |
@@ -103,3 +104,4 @@ flowchart TD
 | 1.0 | 2026-04-12 | 初版作成 | - |
 | 1.1 | 2026-05-31 | 画面区分（ボード / 設定）と設定画面のサブナビ基盤・ラベル読み取りタブを追加 | - |
 | 1.2 | 2026-06-07 | IDEシェル（サイドバー / ビュー切替サブバー / 横断フィルタ / 外観テーマ）を追加。検索・フィルタを MVP 採用へ昇格 | - |
+| 1.3 | 2026-06-21 | マイルストーン専用ビューの仕様書 ([milestone-view-spec.md](./milestone-view-spec.md)) を追加 | - |

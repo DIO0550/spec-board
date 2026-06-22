@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Milestone } from "@/domains/milestone";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs, MilestoneDefinition } from "@/lib/tauri";
-import { useMilestoneMutations } from "../../hooks/useMilestoneMutations";
+import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
 
 /** 編集フォームの入力値（すべて文字列で保持し、送信時に正規化する）。 */
 type FormValues = {
@@ -71,6 +71,12 @@ const toForm = (def: MilestoneDefinition): FormValues => ({
 type MilestoneSettingsTabProps = {
   /** App / SettingsScreen から配られるマイルストーンリソース（唯一の取得点） */
   resource: MilestonesResource;
+  /**
+   * App が hoist して保持するマイルストーン CRUD ハンドル。
+   * 設定タブとマイルストーンビューで同一インスタンスを共有することで、
+   * 画面遷移を跨いだ並行書き込みを直列化する（in-flight ガードを共有）。
+   */
+  mutations: UseMilestoneMutationsResult;
 };
 
 /**
@@ -82,9 +88,10 @@ type MilestoneSettingsTabProps = {
  */
 export const MilestoneSettingsTab = ({
   resource,
+  mutations,
 }: MilestoneSettingsTabProps) => {
-  const { milestones, usageCounts, status, reload } = resource;
-  const { isPending, create, update, remove } = useMilestoneMutations(reload);
+  const { milestones, usageCounts, status } = resource;
+  const { isPending, create, update, remove } = mutations;
   // 編集対象の name（null は新規作成モード）。
   const [editingName, setEditingName] = useState<string | null>(null);
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);

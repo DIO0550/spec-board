@@ -5,6 +5,7 @@ import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import { createMilestone, updateMilestone } from "@/lib/tauri";
 import { Result } from "@/utils/result";
+import { useMilestoneMutations } from "../../../hooks/useMilestoneMutations";
 import { MilestoneSettingsTab } from "..";
 
 vi.mock("@/lib/tauri", async () => {
@@ -62,12 +63,20 @@ const resource: MilestonesResource = {
   reload: vi.fn(async () => {}),
 };
 
+// mutations は App から hoist された CRUD ハンドルを受け取る prop になったため、
+// テスト側ではフックを呼ぶ薄い Harness を挟んで本物のインスタンスを注入する
+// （並行書き込み serialize の挙動はフック側の単体テストでカバー済み）。
+const Harness = ({ resource }: { resource: MilestonesResource }) => {
+  const mutations = useMilestoneMutations(resource.reload);
+  return createElement(MilestoneSettingsTab, { resource, mutations });
+};
+
 const mount = async (): Promise<void> => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(createElement(MilestoneSettingsTab, { resource }));
+    root?.render(createElement(Harness, { resource }));
   });
 };
 

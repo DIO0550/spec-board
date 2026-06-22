@@ -35,6 +35,29 @@
 	--color-create-accent-soft: oklch(0.96 0.03 265);
 	--color-create-accent-border: oklch(0.86 0.06 265);
 
+	/* マイルストーン画面用の状態色（spec: docs/spec-board/milestone-view-spec.md）。
+	   - success / danger (= open / overdue 用): base + bg + fg + border の 4 段
+	   - warn (= soon 用): bg + fg の 2 段
+	   - info / inprog / todo: 単色（進捗バー内訳・ロードマップバー色用）
+	   closed 系は専用トークンを設けず、汎用の surface-muted / muted / border を流用する。 */
+	/* ベース色 (success/danger/inprog/todo/info) は roadmap バーの塗りつぶしに使われ、
+	   バー上の text-white (10-11px) との WCAG AA (4.5:1) を満たすよう lightness を
+	   0.45-0.5 程度まで下げている。明るめの design HTML 値 (~0.6) より暗いが
+	   可読性を優先する。 */
+	--color-ms-success: oklch(0.5 0.14 155);
+	--color-ms-success-bg: oklch(0.94 0.05 155);
+	--color-ms-success-fg: oklch(0.35 0.12 155);
+	--color-ms-success-border: oklch(0.83 0.07 155);
+	--color-ms-danger: oklch(0.5 0.18 25);
+	--color-ms-danger-bg: oklch(0.94 0.04 25);
+	--color-ms-danger-fg: oklch(0.42 0.14 25);
+	--color-ms-danger-border: oklch(0.85 0.06 25);
+	--color-ms-warn-bg: oklch(0.94 0.05 55);
+	--color-ms-warn-fg: oklch(0.42 0.14 55);
+	--color-ms-info: oklch(0.5 0.13 235);
+	--color-ms-inprog: oklch(0.5 0.15 65);
+	--color-ms-todo: oklch(0.45 0.02 260);
+
 	/* カラムヘッダー上端のアクセント帯フォールバック色（color 未設定/不正時）。
 	   order index → 色を決定的に写像する。ライト既定値。
 	   domains/column-color の FALLBACK_PALETTE と 1:1 対応する。 */
@@ -68,6 +91,24 @@
 	--color-column-accent-4: #a78bfa;
 	--color-column-accent-5: #fb7185;
 	--color-column-accent-6: #22d3ee;
+
+	/* マイルストーン状態色の前景値はライト既定だと暗色寄り（薄い badge bg 上で読ませる
+	   想定）で、bg-surface / bg-surface-muted 上に直接乗せたとき (overdue stat / 今日 ピル)
+	   ダーク背景でコントラスト ~1.6:1 まで落ちる。ダーク用に lightness を上げて
+	   WCAG AA を満たす値へ上書きする。 */
+	--color-ms-success-fg: oklch(0.78 0.12 155);
+	--color-ms-danger-fg: oklch(0.78 0.16 25);
+	--color-ms-warn-fg: oklch(0.82 0.13 55);
+
+	/* badge 系（StateBadge / CountdownBadge）は fg と bg を組で使う。
+	   fg だけダーク化すると bg がライト固定のままで「明色 fg × 明色 bg」となり
+	   badge アイコン/文字が低コントラストになる。bg を暗色側へ寄せて両者の
+	   コントラスト関係を維持する。border も同様。 */
+	--color-ms-success-bg: oklch(0.25 0.05 155);
+	--color-ms-success-border: oklch(0.4 0.08 155);
+	--color-ms-danger-bg: oklch(0.25 0.07 25);
+	--color-ms-danger-border: oklch(0.42 0.1 25);
+	--color-ms-warn-bg: oklch(0.27 0.07 55);
 }
 
 /* アクセントカラーの上書き（blue は既定値）。accent-soft は accent から自動算出。

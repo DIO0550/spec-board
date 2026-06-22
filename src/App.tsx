@@ -33,7 +33,7 @@ import {
 } from "./features/board";
 import { DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
-import { SettingsScreen } from "./features/settings";
+import { SettingsScreen, useMilestoneMutations } from "./features/settings";
 import { AppSidebar, ThemeProvider } from "./features/shell";
 import {
   TaskCreateScreen,
@@ -311,6 +311,12 @@ export const App = () => {
   // loaded path を projectKey にすることで、プロジェクト切替時に再取得され、
   // 未オープン時は idle（空）になる。
   const milestonesResource = useMilestones(loadedPath ?? undefined);
+  // マイルストーン CRUD ハンドルを App で 1 インスタンスだけ生成し、
+  // SettingsScreen → MilestoneSettingsTab / MilestoneViewScreen → MilestoneCreateModal
+  // の 3 画面で同一インスタンスを共有する。フック内部の in-flight ガード（inFlightRef）
+  // を画面間で共有することで、片方の mutation 実行中に画面遷移して別画面から送信しても
+  // 同じガードで短絡され、並行書き込みが直列化される。
+  const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
   // 設定画面の使用数はバックエンドのスナップショット（resource.usageCounts）だと
   // タスク変更後に stale になり、削除確認が「未使用」と誤判定しうる。live な tasks から
   // 毎回算出した usageCounts で上書きして渡し、常に現在の参照状況を反映させる。
@@ -1067,6 +1073,7 @@ export const App = () => {
                   <SettingsScreen
                     labels={settingsLabelsResource}
                     milestones={settingsMilestonesResource}
+                    milestoneMutations={milestoneMutations}
                     onLabelUsageClick={handleLabelUsageClick}
                   />
                 )}
@@ -1075,6 +1082,8 @@ export const App = () => {
                     resource={milestonesResource}
                     tasks={tasks}
                     doneColumn={doneColumn}
+                    onCreateMilestone={milestoneMutations.create}
+                    isCreating={milestoneMutations.isPending}
                   />
                 )}
                 {view === "detail" && selectedTask && (
