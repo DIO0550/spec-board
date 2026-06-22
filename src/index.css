@@ -39,7 +39,7 @@
 	   - success / danger (= open / overdue 用): base + bg + fg + border の 4 段
 	   - warn (= soon 用): bg + fg の 2 段
 	   - info / inprog / todo: 単色（進捗バー内訳・ロードマップバー色用）
-	   closed 系は専用トークンを設けず、汎用の panel-2 / text-dim / border-strong を流用する。 */
+	   closed 系は専用トークンを設けず、汎用の surface-muted / muted / border を流用する。 */
 	/* ベース色 (success/danger/inprog/todo/info) は roadmap バーの塗りつぶしに使われ、
 	   バー上の text-white (10-11px) との WCAG AA (4.5:1) を満たすよう lightness を
 	   0.45-0.5 程度まで下げている。明るめの design HTML 値 (~0.6) より暗いが
