@@ -1071,6 +1071,7 @@ export const App = () => {
                   <SettingsScreen
                     labels={settingsLabelsResource}
                     milestones={settingsMilestonesResource}
+                    milestoneMutations={milestoneMutations}
                     onLabelUsageClick={handleLabelUsageClick}
                   />
                 )}

@@ -5,6 +5,7 @@ import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { getLabels } from "@/lib/tauri";
 import { Result } from "@/utils/result";
+import { useMilestoneMutations } from "../../../hooks/useMilestoneMutations";
 import { SettingsScreen } from "..";
 
 vi.mock("@/lib/tauri", async () => {
@@ -55,6 +56,18 @@ afterEach(() => {
   container = null;
 });
 
+// milestoneMutations は App が hoist 保持する prop になったため、テストでも
+// フックを呼ぶ薄い Harness を挟んで本物のインスタンスを注入する。
+const Harness = () => {
+  const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
+  return createElement(SettingsScreen, {
+    labels: labelsResource,
+    milestones: milestonesResource,
+    milestoneMutations,
+    onLabelUsageClick: noopUsageClick,
+  });
+};
+
 /**
  * SettingsScreen をマウントするヘルパー
  */
@@ -63,13 +76,7 @@ const mountSettingsScreen = async () => {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(
-      createElement(SettingsScreen, {
-        labels: labelsResource,
-        milestones: milestonesResource,
-        onLabelUsageClick: noopUsageClick,
-      }),
-    );
+    root?.render(createElement(Harness));
   });
   await act(async () => {
     await Promise.resolve();

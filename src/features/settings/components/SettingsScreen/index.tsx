@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
+import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
 import { AppearanceSettingsTab } from "../AppearanceSettingsTab";
 import { LabelSettingsTab } from "../LabelSettingsTab";
@@ -21,6 +22,8 @@ type ActivePanelProps = {
   labels: LabelsResource;
   /** マイルストーンリソース（milestones タブへ配る） */
   milestones: MilestonesResource;
+  /** App が hoist 保持するマイルストーン CRUD ハンドル（milestones タブへ配る） */
+  milestoneMutations: UseMilestoneMutationsResult;
   /**
    * ラベル設定タブから board へ遷移して指定ラベルでフィルタを掛けるコールバック。
    * @param labelName - クリックされたラベル名
@@ -39,6 +42,7 @@ const ActivePanel = ({
   tabId,
   labels,
   milestones,
+  milestoneMutations,
   onLabelUsageClick,
 }: ActivePanelProps): ReactNode => {
   switch (tabId) {
@@ -50,7 +54,12 @@ const ActivePanel = ({
         />
       );
     case "milestones":
-      return <MilestoneSettingsTab resource={milestones} />;
+      return (
+        <MilestoneSettingsTab
+          resource={milestones}
+          mutations={milestoneMutations}
+        />
+      );
     case "appearance":
       return <AppearanceSettingsTab />;
     default:
@@ -71,6 +80,12 @@ type SettingsScreenProps = {
    */
   milestones: MilestonesResource;
   /**
+   * マイルストーン CRUD ハンドル。App で hoist 保持し、本タブとマイルストーンビュー
+   * （MilestoneCreateModal）で同一インスタンスを共有することで、画面遷移を跨いだ
+   * 並行書き込みを単一の in-flight ガードで直列化する。
+   */
+  milestoneMutations: UseMilestoneMutationsResult;
+  /**
    * 使用数クリックで board へ遷移しそのラベルで絞り込むコールバック。
    * @param labelName - クリックされたラベル名
    */
@@ -87,6 +102,7 @@ type SettingsScreenProps = {
 export const SettingsScreen = ({
   labels,
   milestones,
+  milestoneMutations,
   onLabelUsageClick,
 }: SettingsScreenProps) => {
   const [activeTabId, setActiveTabId] = useState<string>(SETTINGS_TABS[0].id);
@@ -109,6 +125,7 @@ export const SettingsScreen = ({
           tabId={activeTab.id}
           labels={labels}
           milestones={milestones}
+          milestoneMutations={milestoneMutations}
           onLabelUsageClick={onLabelUsageClick}
         />
       </div>
