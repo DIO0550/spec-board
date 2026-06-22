@@ -1,4 +1,4 @@
-import { KebabCase } from "@/domains/kebab-case";
+import { TaskFileName } from "@/domains/task-file-name";
 import { normalizeTaskPathForLookup } from "@/domains/task-path";
 import type { FileNameValidationError } from "@/features/task-form/lib/fields/fileName";
 import { FileNameField } from "@/features/task-form/lib/fields/fileName";
@@ -87,7 +87,7 @@ const resolveBase = (title: string, fileName: string): string => {
     // toParam は `${base}.md` を返すため末尾拡張子を剥がして base に戻す。
     return explicit.slice(0, explicit.length - ".md".length);
   }
-  return KebabCase.from(title.trim()) as string;
+  return TaskFileName.from(title.trim()) as string;
 };
 
 /** 保存先パスプレビューの companion object（pure function のみ）。 */
