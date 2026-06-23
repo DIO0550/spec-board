@@ -30,7 +30,7 @@ test("FooId は BarId に代入できない（順方向）", () => {
   expectTypeOf(bar).toEqualTypeOf<BarId>();
 });
 
-test('Brand<string, "B"> は Brand<string, "A"> に代入できない（逆方向）', () => {
+test("BarId は FooId に代入できない（逆方向）", () => {
   const bar = "xyz" as BarId;
   // @ts-expect-error BarId と FooId は Name が異なるため非互換
   const foo: FooId = bar;
