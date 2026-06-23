@@ -1,13 +1,13 @@
-declare const kebabCaseBrand: unique symbol;
+declare const taskFileNameBrand: unique symbol;
 
 /**
  * タスクタイトルから生成された kebab-case ファイル名 base 文字列。
- * `KebabCase.from` 経由でのみ生成される branded string。
+ * `TaskFileName.from` 経由でのみ生成される branded string。
  */
-export type KebabCase = string & { readonly [kebabCaseBrand]: true };
+export type TaskFileName = string & { readonly [taskFileNameBrand]: true };
 
-/** KebabCase の companion API。 */
-export const KebabCase = {
+/** TaskFileName の companion API。 */
+export const TaskFileName = {
   /**
    * 任意の文字列を kebab-case のファイル名 base 文字列に変換する。
    * BE 側 `to_kebab_case` と挙動を一致させる。
@@ -19,10 +19,10 @@ export const KebabCase = {
    * @param raw 任意の入力文字列
    * @returns kebab-case 化した branded 文字列
    */
-  from: (raw: string): KebabCase => {
+  from: (raw: string): TaskFileName => {
     const hasAscii = [...raw].some((c) => c.charCodeAt(0) < 128);
     if (!hasAscii) {
-      return raw as KebabCase;
+      return raw as TaskFileName;
     }
     let out = "";
     let lastWasSeparator = true;
@@ -55,6 +55,6 @@ export const KebabCase = {
     if (out.endsWith("-")) {
       out = out.slice(0, -1);
     }
-    return out as KebabCase;
+    return out as TaskFileName;
   },
 } as const;

@@ -1,4 +1,4 @@
-import { KebabCase } from "@/domains/kebab-case";
+import { TaskFileName } from "@/domains/task-file-name";
 import { Result } from "@/utils/result";
 // 予約文字集合は title field の export 済み定数を再利用する（再定義しない）。
 import { FORBIDDEN_TITLE_CHARS } from "../title";
@@ -7,7 +7,7 @@ declare const fileNameFieldBrand: unique symbol;
 
 /**
  * FileNameField が保持する値（ファイル名欄の入力値）。
- * `KebabCase` / `Due` と同じ branded string パターンを踏襲し、
+ * `TaskFileName` / `Due` と同じ branded string パターンを踏襲し、
  * `initial` / `fromTitle` / `fromInput` の companion 経由でのみ生成される。
  *
  * 入力中の値は**生のまま**保持し（controlled input への正規化書き戻しは
@@ -45,12 +45,12 @@ export const FileNameField = {
 
   /**
    * タイトルから kebab-case base を導出する（自動追従用）。
-   * KebabCase brand から FileNameField brand へは companion 内でのみ詰め替える。
+   * TaskFileName brand から FileNameField brand へは companion 内でのみ詰め替える。
    * @param title - タイトルの生文字列
    * @returns kebab-case 化した base
    */
   fromTitle: (title: string): FileNameField =>
-    KebabCase.from(title.trim()) as string as FileNameField,
+    TaskFileName.from(title.trim()) as string as FileNameField,
 
   /**
    * UI の onChange から渡る生文字列を branded 値へ変換する唯一の入口。

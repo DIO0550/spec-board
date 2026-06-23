@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { KebabCase } from "..";
+import { TaskFileName } from "..";
 
 test("ASCII 基本ケース", () => {
   const cases: Array<[string, string, string]> = [
@@ -10,7 +10,7 @@ test("ASCII 基本ケース", () => {
     ["Hello_World.md", "hello-world-md", "underscore and dot are separators"],
   ];
   for (const [input, expected, label] of cases) {
-    expect(KebabCase.from(input), label).toBe(expected);
+    expect(TaskFileName.from(input), label).toBe(expected);
   }
 });
 
@@ -22,7 +22,7 @@ test("非 ASCII / mixed ケース", () => {
     ["バグ修正", "バグ修正", "all non-ascii passthrough"],
   ];
   for (const [input, expected, label] of cases) {
-    expect(KebabCase.from(input), label).toBe(expected);
+    expect(TaskFileName.from(input), label).toBe(expected);
   }
 });
 
@@ -32,6 +32,6 @@ test("空 / 記号のみ", () => {
     ["!!!", "", "all symbols collapse to empty"],
   ];
   for (const [input, expected, label] of cases) {
-    expect(KebabCase.from(input), label).toBe(expected);
+    expect(TaskFileName.from(input), label).toBe(expected);
   }
 });
