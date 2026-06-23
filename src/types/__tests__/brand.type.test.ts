@@ -23,7 +23,7 @@ test("プリミティブ string は Brand 型に直接代入できない（narro
   expectTypeOf(foo).toEqualTypeOf<FooId>();
 });
 
-test('Brand<string, "A"> は Brand<string, "B"> に代入できない（順方向）', () => {
+test("FooId は BarId に代入できない（順方向）", () => {
   const foo = "abc" as FooId;
   // @ts-expect-error FooId と BarId は Name が異なるため非互換
   const bar: BarId = foo;
