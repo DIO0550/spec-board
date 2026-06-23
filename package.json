@@ -9,7 +9,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "test": "vitest",
-    "test:run": "vitest run --passWithNoTests",
+    "test:run": "vitest run --passWithNoTests --exclude \"**/.claude/**\"",
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview",
     "tauri": "tauri",
