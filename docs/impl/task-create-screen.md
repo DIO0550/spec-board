@@ -65,10 +65,10 @@ src/
 プレビューへ渡す値は `TaskFormValues`（branded `Priority` を含む）ではなく
 `{ frontmatter: PreviewFrontmatter; body: string }`（`PreviewFrontmatter` は `Brand<_, "PreviewFrontmatter">` ブランド型、frontmatter と body を分離した payload）に統一した。
 `fields.state.values.priority` は `PriorityField = Priority | ""` で、未選択時の `""` を
-許容する `string` 型でないと型が通らないため。`buildPreviewFrontmatter` も `priority` を
+許容する `string` 型でないと型が通らないため。`PreviewFrontmatter.toYaml` も `priority` を
 `string` として受け、空文字/未指定は行を省略する。
 
-`buildPreviewFrontmatter` は Rust `task::frontmatter::serialize` に**見た目を寄せる軽量実装**で、
+`PreviewFrontmatter.toYaml` は Rust `task::frontmatter::serialize` に**見た目を寄せる軽量実装**で、
 フィールド順（title→status→priority→labels→parent→links）と空値省略のみ寄せ、
 YAML エスケープ（`serde_yaml_ng` 完全一致）は追わない。プレビュー目的のため値にコロン・改行・
 先頭 `#` を含むと表示は崩れるが実害はなく、「崩れ方を固定する」回帰テストで将来のエスケープ

@@ -30,21 +30,6 @@ export type PreviewFrontmatter = Brand<
   "PreviewFrontmatter"
 >;
 
-/**
- * `PreviewFrontmatter` の companion factory。
- * フォーム値（素のオブジェクト）から brand 付きの `PreviewFrontmatter` を生成する。
- * 検証ロジックは行わない（フォーム側でフィールド単位に validate 済みのため）。
- */
-export const PreviewFrontmatter = {
-  /**
-   * 素のオブジェクトを `PreviewFrontmatter` ブランドに包んで返す factory。
-   * @param values - フォーム現在値由来の shape オブジェクト
-   * @returns ブランド付き `PreviewFrontmatter` 値
-   */
-  from: (values: PreviewFrontmatterShape): PreviewFrontmatter =>
-    values as PreviewFrontmatter,
-};
-
 /** YAML list item のインデント接頭辞。 */
 const LIST_ITEM_PREFIX = "  - ";
 
@@ -71,40 +56,59 @@ const isOmitted = (value: string | undefined): value is undefined | "" =>
   value === undefined || value === "";
 
 /**
- * プレビュー用 frontmatter YAML を組み立てる。
- * フィールド順: title → status → priority → labels → parent → links → draft → due
- * （BE の serialize 出力順に一致させる。draft は typed 固定順で links の後、
- *  due は extras のため最後）。
- * 空値省略: priority 未指定/空文字は行なし / labels・links 空配列は行なし /
- * parent・due 同様 / draft は true のときのみ行を出力。
- * `serde_yaml_ng` の完全一致（エスケープ）までは追わない軽量実装で、
- * 値にコロン・改行・先頭 `#` 等を含むと YAML として崩れ得る（プレビュー目的のため許容）。
- * @param input - companion `PreviewFrontmatter.from(...)` で構築したブランド付き値（素のフォーム値は直接渡せない）
- * @returns `---\n...\n---` 形式の frontmatter ブロック
+ * `PreviewFrontmatter` の companion オブジェクト。
+ * 生成（`from`）と YAML シリアライズ（`toYaml`）を 1 箇所に集約することで、
+ * branded 値のライフサイクルを本ファイル内に閉じる。
  */
-export const buildPreviewFrontmatter = (input: PreviewFrontmatter): string => {
-  const lines: string[] = [`title: ${input.title}`, `status: ${input.status}`];
-  if (!isOmitted(input.priority)) {
-    lines.push(`priority: ${input.priority}`);
-  }
-  lines.push(...buildListBlock("labels", input.labels));
-  if (!isOmitted(input.parent)) {
-    lines.push(`parent: ${input.parent}`);
-  }
-  lines.push(...buildListBlock("links", input.links));
-  if (input.draft === true) {
-    lines.push("draft: true");
-  }
-  if (!isOmitted(input.due)) {
-    lines.push(`due: ${input.due}`);
-  }
-  return `---\n${lines.join("\n")}\n---`;
+export const PreviewFrontmatter = {
+  /**
+   * 素のオブジェクトを `PreviewFrontmatter` ブランドに包んで返す factory。
+   * 検証ロジックは行わない（フォーム側でフィールド単位に validate 済みのため）。
+   * @param values - フォーム現在値由来の shape オブジェクト
+   * @returns ブランド付き `PreviewFrontmatter` 値
+   */
+  from: (values: PreviewFrontmatterShape): PreviewFrontmatter =>
+    values as PreviewFrontmatter,
+
+  /**
+   * プレビュー用 frontmatter YAML を組み立てる。
+   * フィールド順: title → status → priority → labels → parent → links → draft → due
+   * （BE の serialize 出力順に一致させる。draft は typed 固定順で links の後、
+   *  due は extras のため最後）。
+   * 空値省略: priority 未指定/空文字は行なし / labels・links 空配列は行なし /
+   * parent・due 同様 / draft は true のときのみ行を出力。
+   * `serde_yaml_ng` の完全一致（エスケープ）までは追わない軽量実装で、
+   * 値にコロン・改行・先頭 `#` 等を含むと YAML として崩れ得る（プレビュー目的のため許容）。
+   * @param input - companion `PreviewFrontmatter.from(...)` で構築したブランド付き値
+   * @returns `---\n...\n---` 形式の frontmatter ブロック
+   */
+  toYaml: (input: PreviewFrontmatter): string => {
+    const lines: string[] = [
+      `title: ${input.title}`,
+      `status: ${input.status}`,
+    ];
+    if (!isOmitted(input.priority)) {
+      lines.push(`priority: ${input.priority}`);
+    }
+    lines.push(...buildListBlock("labels", input.labels));
+    if (!isOmitted(input.parent)) {
+      lines.push(`parent: ${input.parent}`);
+    }
+    lines.push(...buildListBlock("links", input.links));
+    if (input.draft === true) {
+      lines.push("draft: true");
+    }
+    if (!isOmitted(input.due)) {
+      lines.push(`due: ${input.due}`);
+    }
+    return `---\n${lines.join("\n")}\n---`;
+  },
 };
 
 /**
  * frontmatter ブロックと本文を結合し、プレビュー用の最終 markdown を返す。
  * 空本文のときは frontmatter のみ（末尾改行付き）を返す。
- * @param frontmatter - {@link buildPreviewFrontmatter} の出力
+ * @param frontmatter - {@link PreviewFrontmatter.toYaml} の出力
  * @param body - 本文 markdown
  * @returns 結合した最終 markdown
  */

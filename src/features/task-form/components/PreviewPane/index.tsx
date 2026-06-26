@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import {
-  buildPreviewFrontmatter,
   combineMarkdown,
-  type PreviewFrontmatter,
+  PreviewFrontmatter,
 } from "@/features/task-form/lib/previewFrontmatter";
 
 export type PreviewPaneProps = {
@@ -35,7 +34,7 @@ export const PreviewPane = (props: PreviewPaneProps) => {
   const [mode, setMode] = useState<PreviewMode>("rendered");
 
   const frontmatterYaml = useMemo(
-    () => buildPreviewFrontmatter(props.frontmatter),
+    () => PreviewFrontmatter.toYaml(props.frontmatter),
     [props.frontmatter],
   );
   const finalMarkdown = useMemo(
