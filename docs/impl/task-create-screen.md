@@ -17,7 +17,7 @@ src/
       index.tsx                      ← MarkdownContent（編集不可）
       renderBlock.tsx                ← Block→JSX 描画（MarkdownBody と共有）
   features/task-form/
-    lib/buildPreviewFrontmatter/     ← frontmatter 組み立て純関数 + PreviewFrontmatterInput 型
+    lib/previewFrontmatter/        ← branded 型 PreviewFrontmatter + factory + 組み立て関数
     components/
       TaskForm/                      ← onValuesChange（値伝搬）を追加
       PreviewPane/                   ← Raw/Rendered トグルのプレビュー
@@ -63,7 +63,7 @@ src/
 ## プレビュー値の型（branded `Priority` を避ける）
 
 プレビューへ渡す値は `TaskFormValues`（branded `Priority` を含む）ではなく
-`PreviewFrontmatterInput & { body: string }`（`priority?: string`）に統一した。
+`{ frontmatter: PreviewFrontmatter; body: string }`（`PreviewFrontmatter` は `Brand<_, "PreviewFrontmatter">` ブランド型、frontmatter と body を分離した payload）に統一した。
 `fields.state.values.priority` は `PriorityField = Priority | ""` で、未選択時の `""` を
 許容する `string` 型でないと型が通らないため。`buildPreviewFrontmatter` も `priority` を
 `string` として受け、空文字/未指定は行を省略する。

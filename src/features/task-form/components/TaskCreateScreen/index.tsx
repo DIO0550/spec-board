@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
-import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
+import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { Column } from "@/types/column";
@@ -13,8 +13,8 @@ import { TaskFormFooter } from "./TaskFormFooter";
 import { TaskSubbar } from "./TaskSubbar";
 import { TaskTopbar } from "./TaskTopbar";
 
-/** プレビューへ渡すフォーム現在値（frontmatter フィールド + 本文）。 */
-type PreviewValues = PreviewFrontmatterInput & { body: string };
+/** プレビューへ渡すフォーム現在値（branded frontmatter + 本文）。 */
+type PreviewValues = { frontmatter: PreviewFrontmatter; body: string };
 
 /** プレビュー幅の既定値（px）。 */
 const DEFAULT_PREVIEW_WIDTH = 480;
@@ -57,12 +57,14 @@ export type TaskCreateScreenProps = {
  * @returns 空フォーム相当のプレビュー値
  */
 const buildInitialPreview = (initialStatus: string): PreviewValues => ({
-  title: "",
-  status: initialStatus,
-  priority: "",
-  labels: [],
-  parent: "",
-  links: [],
+  frontmatter: PreviewFrontmatter.from({
+    title: "",
+    status: initialStatus,
+    priority: "",
+    labels: [],
+    parent: "",
+    links: [],
+  }),
   body: "",
 });
 
@@ -265,8 +267,11 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
             </div>
           </div>
           <TaskFormFooter
-            saveHint={footerSaveHint(previewValues.title, pathPreview)}
-            canSubmit={previewValues.title.trim() !== ""}
+            saveHint={footerSaveHint(
+              previewValues.frontmatter.title,
+              pathPreview,
+            )}
+            canSubmit={previewValues.frontmatter.title.trim() !== ""}
             isSubmitting={isSubmitting}
             onCancel={requestClose}
             onSubmit={() => submitFormElement(formRef.current)}
@@ -275,7 +280,8 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
         {previewVisible && <PreviewResizer onWidthChange={setPreviewWidth} />}
         {previewVisible && (
           <PreviewPane
-            values={previewValues}
+            frontmatter={previewValues.frontmatter}
+            body={previewValues.body}
             fileName={previewFileName}
             onCollapse={() => setPreviewVisible(false)}
           />

@@ -1,8 +1,12 @@
+import type { Brand } from "@/types/brand";
+
 /**
- * プレビュー伝搬の値の型。`fields.state.values.priority`（`Priority | ""`）を
- * `string` として受けるため、branded `Priority` ではなく素の `string?` で定義する。
+ * プレビュー表示用 frontmatter の形（shape 型）。
+ * `fields.state.values.priority`（`Priority | ""`）を `string` として受けるため、
+ * branded `Priority` ではなく素の `string?` で定義する。
+ * 本ファイル外には export しない（factory `PreviewFrontmatter.from` の引数型として内部参照）。
  */
-export type PreviewFrontmatterInput = {
+type PreviewFrontmatterShape = {
   title: string;
   status: string;
   /** PriorityField（`Priority | ""`）を string として受ける。未指定/空文字は省略。 */
@@ -14,6 +18,31 @@ export type PreviewFrontmatterInput = {
   due?: string;
   /** 下書きフラグ。true のときのみ `draft: true` 行を出力。 */
   draft?: boolean;
+};
+
+/**
+ * プレビュー画面に表示される frontmatter ブロックの構造データ。
+ * `Brand<_, "PreviewFrontmatter">` で nominal に保護されており、生成は本ファイル内
+ * companion `PreviewFrontmatter.from` に閉じる（`src/types/brand.ts` の規約に従う）。
+ */
+export type PreviewFrontmatter = Brand<
+  PreviewFrontmatterShape,
+  "PreviewFrontmatter"
+>;
+
+/**
+ * `PreviewFrontmatter` の companion factory。
+ * フォーム値（素のオブジェクト）から brand 付きの `PreviewFrontmatter` を生成する。
+ * 検証ロジックは行わない（フォーム側でフィールド単位に validate 済みのため）。
+ */
+export const PreviewFrontmatter = {
+  /**
+   * 素のオブジェクトを `PreviewFrontmatter` ブランドに包んで返す factory。
+   * @param values - フォーム現在値由来の shape オブジェクト
+   * @returns ブランド付き `PreviewFrontmatter` 値
+   */
+  from: (values: PreviewFrontmatterShape): PreviewFrontmatter =>
+    values as PreviewFrontmatter,
 };
 
 /** YAML list item のインデント接頭辞。 */
@@ -50,12 +79,10 @@ const isOmitted = (value: string | undefined): value is undefined | "" =>
  * parent・due 同様 / draft は true のときのみ行を出力。
  * `serde_yaml_ng` の完全一致（エスケープ）までは追わない軽量実装で、
  * 値にコロン・改行・先頭 `#` 等を含むと YAML として崩れ得る（プレビュー目的のため許容）。
- * @param input - フォーム現在値
+ * @param input - companion `PreviewFrontmatter.from(...)` で構築したブランド付き値（素のフォーム値は直接渡せない）
  * @returns `---\n...\n---` 形式の frontmatter ブロック
  */
-export const buildPreviewFrontmatter = (
-  input: PreviewFrontmatterInput,
-): string => {
+export const buildPreviewFrontmatter = (input: PreviewFrontmatter): string => {
   const lines: string[] = [`title: ${input.title}`, `status: ${input.status}`];
   if (!isOmitted(input.priority)) {
     lines.push(`priority: ${input.priority}`);
