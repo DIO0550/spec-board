@@ -5,9 +5,9 @@ import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
-import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
-import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
+import { PreviewFields } from "@/features/task-form/lib/previewFields";
+import type { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import {
   SavePathPreview,
   type SavePathPreviewResult,
@@ -171,12 +171,12 @@ export const TaskForm = ({
       return;
     }
     onValuesChange({
-      frontmatter: PreviewFrontmatter.from({
+      frontmatter: PreviewFields.toPreviewFrontmatter({
         title: previewTitle,
         status: previewStatus,
         priority: previewPriority,
-        parent: parentValue ?? "",
-        labels: LabelsField.finalize(labels.state),
+        parent: parentValue,
+        labels: labels.state,
         links: links.links,
         due: previewDue,
         draft: previewDraft,

@@ -1,12 +1,12 @@
 import type { Brand } from "@/types/brand";
 
 /**
- * プレビュー表示用 frontmatter の形（shape 型）。
+ * プレビュー表示用 frontmatter のフィールド集合。
  * `fields.state.values.priority`（`Priority | ""`）を `string` として受けるため、
  * branded `Priority` ではなく素の `string?` で定義する。
  * 本ファイル外には export しない（factory `PreviewFrontmatter.from` の引数型として内部参照）。
  */
-type PreviewFrontmatterShape = {
+type PreviewFrontmatterFields = {
   title: string;
   status: string;
   /** PriorityField（`Priority | ""`）を string として受ける。未指定/空文字は省略。 */
@@ -26,7 +26,7 @@ type PreviewFrontmatterShape = {
  * companion `PreviewFrontmatter.from` に閉じる（`src/types/brand.ts` の規約に従う）。
  */
 export type PreviewFrontmatter = Brand<
-  PreviewFrontmatterShape,
+  PreviewFrontmatterFields,
   "PreviewFrontmatter"
 >;
 
@@ -64,10 +64,10 @@ export const PreviewFrontmatter = {
   /**
    * 素のオブジェクトを `PreviewFrontmatter` ブランドに包んで返す factory。
    * 検証ロジックは行わない（フォーム側でフィールド単位に validate 済みのため）。
-   * @param values - フォーム現在値由来の shape オブジェクト
+   * @param values - フォーム現在値由来のフィールド集合
    * @returns ブランド付き `PreviewFrontmatter` 値
    */
-  from: (values: PreviewFrontmatterShape): PreviewFrontmatter =>
+  from: (values: PreviewFrontmatterFields): PreviewFrontmatter =>
     values as PreviewFrontmatter,
 
   /**
