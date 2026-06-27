@@ -49,10 +49,13 @@ const Probe = (props: {
 }) => {
   const card = useBoardCard();
   const column = useBoardColumn();
+  // Context 値が変化したときだけ通知する。依存配列を省略すると毎レンダー発火し、
+  // 将来コールバック側で state 更新が入った場合に無限ループの原因になり得る。
+  // onCard / onColumn は mountProbe 内で固定参照のため依存に含めない。
   useEffect(() => {
     props.onCard(card);
     props.onColumn(column);
-  });
+  }, [card, column, props.onCard, props.onColumn]);
   return null;
 };
 
