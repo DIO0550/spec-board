@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
@@ -61,9 +62,11 @@ const buildInitialPreview = (initialStatus: string): PreviewValues => ({
     title: "",
     status: initialStatus,
     priority: "",
-    labels: [],
-    parent: "",
+    parent: undefined,
+    labels: LabelsField.initial([]),
     links: [],
+    due: "",
+    draft: false,
   }),
   body: "",
 });

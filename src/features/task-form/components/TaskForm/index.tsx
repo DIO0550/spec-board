@@ -6,8 +6,7 @@ import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
-import { PreviewFields } from "@/features/task-form/lib/previewFields";
-import type { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
+import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import {
   SavePathPreview,
   type SavePathPreviewResult,
@@ -171,7 +170,7 @@ export const TaskForm = ({
       return;
     }
     onValuesChange({
-      frontmatter: PreviewFields.toPreviewFrontmatter({
+      frontmatter: PreviewFrontmatter.from({
         title: previewTitle,
         status: previewStatus,
         priority: previewPriority,

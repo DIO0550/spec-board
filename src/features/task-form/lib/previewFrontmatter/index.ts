@@ -1,10 +1,10 @@
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import type { Brand } from "@/types/brand";
 
 /**
- * プレビュー表示用 frontmatter のフィールド集合。
- * `fields.state.values.priority`（`Priority | ""`）を `string` として受けるため、
- * branded `Priority` ではなく素の `string?` で定義する。
- * 本ファイル外には export しない（factory `PreviewFrontmatter.from` の引数型として内部参照）。
+ * `PreviewFrontmatter` ブランドの中身（正規化済みフィールド集合）。
+ * `priority` / `parent` / `due` は省略可（行を出力しない）、`labels` / `links` は確定済み配列。
+ * 本ファイル外には export しない（ブランド経由でのみ参照される）。
  */
 type PreviewFrontmatterFields = {
   title: string;
@@ -17,6 +17,25 @@ type PreviewFrontmatterFields = {
   /** 期限（`YYYY-MM-DD`）。未指定/空文字は行なし。 */
   due?: string;
   /** 下書きフラグ。true のときのみ `draft: true` 行を出力。 */
+  draft?: boolean;
+};
+
+/**
+ * フォーム各 hook から集約した生の入力値。
+ * `parent` は親フィールド非表示時 undefined、`labels` は未コミット入力を含む `LabelsField` state。
+ * `PreviewFrontmatter.from` 内で正規化される（`parent ?? ""` / `LabelsField.finalize`）。
+ */
+export type PreviewFrontmatterInput = {
+  title: string;
+  status: string;
+  /** PriorityField（`Priority | ""`）。未指定/空文字は frontmatter から省略。 */
+  priority?: string;
+  parent: string | undefined;
+  labels: LabelsField;
+  links: string[];
+  /** 期限。未指定/空文字は frontmatter から省略。 */
+  due?: string;
+  /** 下書きフラグ。未指定/false は frontmatter から省略。 */
   draft?: boolean;
 };
 
@@ -62,13 +81,23 @@ const isOmitted = (value: string | undefined): value is undefined | "" =>
  */
 export const PreviewFrontmatter = {
   /**
-   * 素のオブジェクトを `PreviewFrontmatter` ブランドに包んで返す factory。
-   * 検証ロジックは行わない（フォーム側でフィールド単位に validate 済みのため）。
-   * @param values - フォーム現在値由来のフィールド集合
+   * フォーム各 hook 由来の生入力からブランド付き `PreviewFrontmatter` を生成する factory。
+   * 内部で `parent` の undefined → `""` 正規化と `LabelsField.finalize`（未コミット
+   * labelInput の取り込み）を行う。cast は本関数 1 箇所に閉じる。
+   * @param input - フォーム各 hook の集約値
    * @returns ブランド付き `PreviewFrontmatter` 値
    */
-  from: (values: PreviewFrontmatterFields): PreviewFrontmatter =>
-    values as PreviewFrontmatter,
+  from: (input: PreviewFrontmatterInput): PreviewFrontmatter =>
+    ({
+      title: input.title,
+      status: input.status,
+      priority: input.priority,
+      parent: input.parent ?? "",
+      labels: LabelsField.finalize(input.labels),
+      links: input.links,
+      due: input.due,
+      draft: input.draft,
+    }) as PreviewFrontmatter,
 
   /**
    * プレビュー用 frontmatter YAML を組み立てる。

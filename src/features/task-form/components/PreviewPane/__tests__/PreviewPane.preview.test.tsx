@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import { PreviewPane } from "..";
 
@@ -21,7 +22,8 @@ type Payload = { frontmatter: PreviewFrontmatter; body: string };
 const baseFrontmatter = {
   title: "タスク",
   status: "Todo",
-  labels: [],
+  parent: undefined,
+  labels: LabelsField.initial([]),
   links: [],
 };
 
@@ -83,7 +85,7 @@ test("priority/labels が Raw プレビューの frontmatter に反映される"
     frontmatter: PreviewFrontmatter.from({
       ...baseFrontmatter,
       priority: "High",
-      labels: ["bug"],
+      labels: LabelsField.initial(["bug"]),
     }),
     body: "",
   });

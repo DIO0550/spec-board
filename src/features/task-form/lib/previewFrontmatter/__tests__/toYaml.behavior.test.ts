@@ -1,10 +1,12 @@
 import { expect, test } from "vitest";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { PreviewFrontmatter } from "..";
 
 const baseInput = {
   title: "タスク",
   status: "todo",
-  labels: [],
+  parent: undefined,
+  labels: LabelsField.initial([]),
   links: [],
 };
 
@@ -25,7 +27,10 @@ test("priority 指定時は status の次行に出力する", () => {
 test("labels は labels: 見出し + インデント付き list item で出力する", () => {
   expect(
     PreviewFrontmatter.toYaml(
-      PreviewFrontmatter.from({ ...baseInput, labels: ["bug", "ui"] }),
+      PreviewFrontmatter.from({
+        ...baseInput,
+        labels: LabelsField.initial(["bug", "ui"]),
+      }),
     ),
   ).toBe("---\ntitle: タスク\nstatus: todo\nlabels:\n  - bug\n  - ui\n---");
 });
@@ -35,7 +40,7 @@ test("parent は labels の次に出力する", () => {
     PreviewFrontmatter.toYaml(
       PreviewFrontmatter.from({
         ...baseInput,
-        labels: ["bug"],
+        labels: LabelsField.initial(["bug"]),
         parent: "tasks/parent.md",
       }),
     ),
@@ -59,7 +64,7 @@ test("全項目ありで title→status→priority→labels→parent→links の
         title: "タスク",
         status: "todo",
         priority: "high",
-        labels: ["bug", "ui"],
+        labels: LabelsField.initial(["bug", "ui"]),
         parent: "tasks/parent.md",
         links: ["tasks/a.md", "tasks/b.md"],
       }),
@@ -96,7 +101,11 @@ test.each([
 test("labels・links が空配列のとき当該ブロックを省略する", () => {
   expect(
     PreviewFrontmatter.toYaml(
-      PreviewFrontmatter.from({ ...baseInput, labels: [], links: [] }),
+      PreviewFrontmatter.from({
+        ...baseInput,
+        labels: LabelsField.initial([]),
+        links: [],
+      }),
     ),
   ).toBe("---\ntitle: タスク\nstatus: todo\n---");
 });
@@ -136,7 +145,10 @@ test("scalar 値の先頭が # / 先頭スペースでも生値がそのまま�
 test("list item にコロン・先頭 # を含むとき - <生値> がそのまま出る", () => {
   expect(
     PreviewFrontmatter.toYaml(
-      PreviewFrontmatter.from({ ...baseInput, labels: ["a: b", "#tag"] }),
+      PreviewFrontmatter.from({
+        ...baseInput,
+        labels: LabelsField.initial(["a: b", "#tag"]),
+      }),
     ),
   ).toBe("---\ntitle: タスク\nstatus: todo\nlabels:\n  - a: b\n  - #tag\n---");
 });
