@@ -81,11 +81,15 @@ const mountProbe = (overrides: MountOverrides = {}) => {
   const handleColumn = (api: BoardColumnApi) => {
     latestColumn = api;
   };
+  // allTasks 省略時は tasks を流用する（Column.dnd.test.tsx の renderWithProviders と同型）。
+  // 別々に [] へフォールバックすると tasks のみ渡したケースで byPath / 集計系が空になる。
+  const tasks = overrides.tasks ?? [];
+  const allTasks = overrides.allTasks ?? tasks;
   const tree: ReactNode = (
     <BoardProviders
       columns={overrides.columns ?? [{ name: "Todo", order: 0 }]}
-      tasks={overrides.tasks ?? []}
-      allTasks={overrides.allTasks ?? []}
+      tasks={tasks}
+      allTasks={allTasks}
       dndDisabled={overrides.dndDisabled}
     >
       <Probe onCard={handleCard} onColumn={handleColumn} />
