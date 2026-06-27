@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { withBoardColumnProvider } from "../BoardColumnProvider/decorator";
+import { withBoardColumnProvider } from "../BoardColumnProvider/storybook/decorator";
 import { AddColumnButton } from ".";
 
 const meta: Meta<typeof AddColumnButton> = {

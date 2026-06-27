@@ -1,5 +1,5 @@
 import type { Decorator } from "@storybook/react-vite";
-import { BoardCardProvider, type BoardCardProviderProps } from "./index";
+import { BoardCardProvider, type BoardCardProviderProps } from "../index";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */
 type BoardCardDecoratorArgs = Partial<Omit<BoardCardProviderProps, "children">>;

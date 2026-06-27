@@ -16,6 +16,7 @@ import { useTaskFilter } from "../../hooks/useTaskFilter";
 import { Board } from "../Board";
 import type { TaskDropHandler } from "../BoardCardProvider";
 import type { ColumnReorderHandler } from "../BoardColumnProvider";
+import { BoardProviders } from "../BoardProviders";
 import { CalendarView } from "../CalendarView";
 import { ListView } from "../ListView";
 import type { MilestonesByName } from "../TaskCard";
@@ -149,22 +150,26 @@ const ActiveBoardView = ({
     );
   }
   return (
-    <Board
+    <BoardProviders
       columns={workspace.columns}
       tasks={filtered}
       allTasks={workspace.tasks}
       tasksByNormalizedPath={workspace.tasksByNormalizedPath}
-      doneColumn={workspace.doneColumn}
       milestonesByName={workspace.milestonesByName}
-      onAddTask={workspace.onAddTask}
-      onTaskClick={workspace.onTaskClick}
-      onAddColumn={workspace.onAddColumn}
-      onRenameColumn={workspace.onRenameColumn}
-      onDeleteColumn={workspace.onDeleteColumn}
+      doneColumn={workspace.doneColumn}
       dndDisabled={filterActive}
       onTaskDrop={workspace.onTaskDrop}
       onColumnReorder={workspace.onColumnReorder}
-    />
+    >
+      <Board
+        columns={workspace.columns}
+        onAddTask={workspace.onAddTask}
+        onTaskClick={workspace.onTaskClick}
+        onAddColumn={workspace.onAddColumn}
+        onRenameColumn={workspace.onRenameColumn}
+        onDeleteColumn={workspace.onDeleteColumn}
+      />
+    </BoardProviders>
   );
 };
 

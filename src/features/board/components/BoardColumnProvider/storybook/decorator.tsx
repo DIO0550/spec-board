@@ -1,5 +1,5 @@
 import type { Decorator } from "@storybook/react-vite";
-import { BoardColumnProvider, type BoardColumnProviderProps } from "./index";
+import { BoardColumnProvider, type BoardColumnProviderProps } from "../index";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */
 type BoardColumnDecoratorArgs = Partial<
