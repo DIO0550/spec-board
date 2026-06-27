@@ -2,7 +2,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { initialTasks } from "@/test-fixtures";
 import type { Task } from "@/types/task";
-import { withBoardCardProvider } from "../BoardCardProvider/decorator";
+import { withBoardCardProvider } from "../BoardCardProvider/storybook/decorator";
 import { TaskCard } from ".";
 
 const baseTask: Task = initialTasks[0];

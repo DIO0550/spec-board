@@ -2,8 +2,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { initialTasks } from "@/test-fixtures";
 import { Task } from "@/types/task";
-import { withBoardCardProvider } from "../BoardCardProvider/decorator";
-import { withBoardColumnProvider } from "../BoardColumnProvider/decorator";
+import { withBoardCardProvider } from "../BoardCardProvider/storybook/decorator";
+import { withBoardColumnProvider } from "../BoardColumnProvider/storybook/decorator";
 import { Column } from ".";
 
 const todoTasks = initialTasks.filter((t) => t.status === "Todo");

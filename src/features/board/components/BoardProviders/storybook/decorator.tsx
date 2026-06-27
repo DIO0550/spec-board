@@ -1,6 +1,6 @@
 import type { Decorator } from "@storybook/react-vite";
 import type { ComponentProps } from "react";
-import { BoardProviders } from ".";
+import { BoardProviders } from "..";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */
 type BoardProvidersDecoratorArgs = Partial<

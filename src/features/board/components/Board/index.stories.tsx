@@ -1,7 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { initialColumns, initialTasks } from "@/test-fixtures";
-import { withBoardProviders } from "../BoardProviders/decorator";
+import { withBoardProviders } from "../BoardProviders/storybook/decorator";
 import { Board } from ".";
 
 const meta: Meta<typeof Board> = {
