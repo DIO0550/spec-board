@@ -4,8 +4,8 @@ import { Column } from "../Column";
 
 /** ボードの Props */
 type BoardProps = {
-  /** カラム定義の配列 */
-  columns: ColumnType[];
+  /** カラム定義の配列。Board は内部で sort コピーのみ行い元配列を mutate しない */
+  columns: readonly ColumnType[];
   /** カラムの「+ 追加」ボタンクリック時のコールバック
    * @param columnName - 追加対象のカラム名
    */
