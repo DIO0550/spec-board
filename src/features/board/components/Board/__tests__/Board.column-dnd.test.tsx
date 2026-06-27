@@ -1,8 +1,10 @@
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import type { Column as ColumnType } from "@/types/column";
+import type { ColumnReorderHandler } from "../../BoardColumnProvider";
+import { BoardProviders } from "../../BoardProviders";
 import { Board } from "..";
 import { COLUMN_DRAG_MIME_TYPE } from "../mime";
 
@@ -18,12 +20,33 @@ afterEach(() => {
   container = null;
 });
 
-const render = (props: Parameters<typeof Board>[0]) => {
+type RenderOptions = {
+  /** Board に渡す presentational props */
+  boardProps: Parameters<typeof Board>[0];
+  /** カラム並び替え確定時のコールバック */
+  onColumnReorder?: ColumnReorderHandler;
+};
+
+/**
+ * BoardProviders で 1 段ラップして Board を mount するローカルヘルパー。
+ * 表示用 tasks / allTasks は空配列固定（カラム DnD は task 側を参照しない）。
+ * @param options - render に使う props 群
+ */
+const renderWithProviders = (options: RenderOptions) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(Board, props));
+    root?.render(
+      <BoardProviders
+        columns={options.boardProps.columns}
+        tasks={[]}
+        allTasks={[]}
+        onColumnReorder={options.onColumnReorder}
+      >
+        <Board {...options.boardProps} />
+      </BoardProviders>,
+    );
   });
 };
 
@@ -52,7 +75,9 @@ test("columns が逆順でも表示順 (order 昇順) で render される", () 
     { name: "B", order: 1 },
     { name: "A", order: 0 },
   ];
-  render({ columns: reversed, tasks: [], onAddTask: vi.fn() });
+  renderWithProviders({
+    boardProps: { columns: reversed, onAddTask: vi.fn() },
+  });
   expect(columnSections().map((s) => s.getAttribute("aria-label"))).toEqual([
     "A",
     "B",
@@ -61,17 +86,20 @@ test("columns が逆順でも表示順 (order 昇順) で render される", () 
 });
 
 test("カラムが 2 件以上のとき、ColumnHeader は draggable=true で render される", () => {
-  render({ columns: columns3, tasks: [], onAddTask: vi.fn() });
+  renderWithProviders({
+    boardProps: { columns: columns3, onAddTask: vi.fn() },
+  });
   for (const header of headers()) {
     expect(header.getAttribute("draggable")).toBe("true");
   }
 });
 
 test("カラムが 1 件のとき、ColumnHeader は draggable=false で render される", () => {
-  render({
-    columns: [{ name: "Only", order: 0 }],
-    tasks: [],
-    onAddTask: vi.fn(),
+  renderWithProviders({
+    boardProps: {
+      columns: [{ name: "Only", order: 0 }],
+      onAddTask: vi.fn(),
+    },
   });
   const header = headers()[0];
   expect(header?.getAttribute("draggable")).toBe("false");
@@ -79,10 +107,8 @@ test("カラムが 1 件のとき、ColumnHeader は draggable=false で render 
 
 test("カラムヘッダーで dragstart → 別カラムで drop すると onColumnReorder({fromColumnName, toColumnName})", () => {
   const onColumnReorder = vi.fn();
-  render({
-    columns: columns3,
-    tasks: [],
-    onAddTask: vi.fn(),
+  renderWithProviders({
+    boardProps: { columns: columns3, onAddTask: vi.fn() },
     onColumnReorder,
   });
   const [headerA, , headerC] = headers();

@@ -1,9 +1,11 @@
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
+import type { TaskDropHandler } from "../../BoardCardProvider";
+import { BoardProviders } from "../../BoardProviders";
 import { Board } from "..";
 import { DRAG_MIME_TYPE } from "../mime";
 
@@ -38,12 +40,38 @@ const columns: ColumnType[] = [
   { name: "Done", order: 1 },
 ];
 
-const render = (props: Parameters<typeof Board>[0]) => {
+type RenderOptions = {
+  /** Board に渡す presentational props */
+  boardProps: Parameters<typeof Board>[0];
+  /** Provider にも渡す表示用タスク */
+  tasks?: readonly Task[];
+  /** Provider にも渡す全タスク（省略時は tasks を流用） */
+  allTasks?: readonly Task[];
+  /** drop ハンドラ */
+  onTaskDrop?: TaskDropHandler;
+};
+
+/**
+ * BoardProviders で 1 段ラップして Board を mount するローカルヘルパー。
+ * @param options - render に使う props 群
+ */
+const renderWithProviders = (options: RenderOptions) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  const tasks = options.tasks ?? [];
+  const allTasks = options.allTasks ?? tasks;
   act(() => {
-    root?.render(createElement(Board, props));
+    root?.render(
+      <BoardProviders
+        columns={options.boardProps.columns}
+        tasks={tasks}
+        allTasks={allTasks}
+        onTaskDrop={options.onTaskDrop}
+      >
+        <Board {...options.boardProps} />
+      </BoardProviders>,
+    );
   });
 };
 
@@ -68,7 +96,10 @@ const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
 const taskB = makeTask({ id: "b", filePath: "tasks/b.md", status: "Done" });
 
 test("dragstart 後、対象カードに data-dragging='true' が付く", () => {
-  render({ columns, tasks: [taskA, taskB], onAddTask: vi.fn() });
+  renderWithProviders({
+    boardProps: { columns, onAddTask: vi.fn() },
+    tasks: [taskA, taskB],
+  });
   const cards =
     container?.querySelectorAll<HTMLElement>("[data-testid='task-card']") ?? [];
   const cardA = cards[0];
@@ -84,10 +115,9 @@ test("dragstart 後、対象カードに data-dragging='true' が付く", () => 
 
 test("drop で onTaskDrop prop が期待引数で呼ばれる", async () => {
   const onTaskDrop = vi.fn().mockResolvedValue(undefined);
-  render({
-    columns,
+  renderWithProviders({
+    boardProps: { columns, onAddTask: vi.fn() },
     tasks: [taskA, taskB],
-    onAddTask: vi.fn(),
     onTaskDrop,
   });
   const cardA = queryCardInColumn("Todo", 0);
@@ -122,10 +152,9 @@ test("drop で onTaskDrop prop が期待引数で呼ばれる", async () => {
 
 test("drop 完了後に dragState がリセットされる（プレースホルダ消失）", async () => {
   const onTaskDrop = vi.fn().mockResolvedValue(undefined);
-  render({
-    columns,
+  renderWithProviders({
+    boardProps: { columns, onAddTask: vi.fn() },
     tasks: [taskA, taskB],
-    onAddTask: vi.fn(),
     onTaskDrop,
   });
   const cardA = queryCardInColumn("Todo", 0);
@@ -160,10 +189,9 @@ test("drop 完了後に dragState がリセットされる（プレースホル�
 
 test("onTaskDrop が reject しても finally で dragState が null になる", async () => {
   const onTaskDrop = vi.fn().mockRejectedValue(new Error("boom"));
-  render({
-    columns,
+  renderWithProviders({
+    boardProps: { columns, onAddTask: vi.fn() },
     tasks: [taskA, taskB],
-    onAddTask: vi.fn(),
     onTaskDrop,
   });
   const cardA = queryCardInColumn("Todo", 0);
@@ -189,7 +217,10 @@ test("onTaskDrop が reject しても finally で dragState が null になる",
 });
 
 test("dragend 単独（drop なし）で dragState が null になる", () => {
-  render({ columns, tasks: [taskA, taskB], onAddTask: vi.fn() });
+  renderWithProviders({
+    boardProps: { columns, onAddTask: vi.fn() },
+    tasks: [taskA, taskB],
+  });
   const cardA = queryCardInColumn("Todo", 0);
   act(() => {
     cardA.dispatchEvent(createDragEvent("dragstart"));
