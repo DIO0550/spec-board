@@ -1,6 +1,7 @@
 import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { type BoardCardApi, useBoardCard } from "../../BoardCardProvider";
 import { type BoardColumnApi, useBoardColumn } from "../../BoardColumnProvider";
@@ -61,7 +62,7 @@ const Probe = (props: {
 };
 
 type MountOverrides = {
-  columns?: readonly { name: string; order: number }[];
+  columns?: readonly ColumnType[];
   tasks?: readonly Task[];
   allTasks?: readonly Task[];
   dndDisabled?: boolean;
