@@ -13,13 +13,21 @@ type BoardProvidersDecoratorArgs = Partial<
  * 未指定の prop は空配列 / no-op で埋まる（required な columns / tasks / allTasks も
  * Story 側で省略可能にすることで、追加 Story でのボイラープレートと渡し忘れを防ぐ）。
  *
+ * `allTasks` 省略時は `tasks` を流用する（`BoardProviders.state.test.tsx` の
+ * `mountProbe` と同型）。tasks だけ渡して allTasks 空のままだと
+ * `BoardCardProvider.byPath` や階層集計が壊れた状態の Story が作れてしまうため。
+ *
  * @param args 上書きしたい props（任意）
  * @returns Storybook の Decorator
  */
 export const withBoardProviders =
   (args: BoardProvidersDecoratorArgs = {}): Decorator =>
-  (Story) => (
-    <BoardProviders columns={[]} tasks={[]} allTasks={[]} {...args}>
-      <Story />
-    </BoardProviders>
-  );
+  (Story) => {
+    const tasks = args.tasks ?? [];
+    const allTasks = args.allTasks ?? tasks;
+    return (
+      <BoardProviders columns={[]} {...args} tasks={tasks} allTasks={allTasks}>
+        <Story />
+      </BoardProviders>
+    );
+  };
