@@ -5,9 +5,8 @@ import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
-import type { PreviewFrontmatterInput } from "@/features/task-form/lib/buildPreviewFrontmatter";
-import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
+import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import {
   SavePathPreview,
   type SavePathPreviewResult,
@@ -66,9 +65,12 @@ type TaskFormProps = {
    * フォーム現在値の変化を親へ通知するコールバック（ライブプレビュー用）。
    * mount 直後にも初期値で一度発火する。
    * 値変化時の `useEffect` 依存に含めるため、参照安定なコールバックを渡すこと。
-   * @param values - 集約したフォーム現在値（priority は string、未コミット label も含む）
+   * @param payload - branded `PreviewFrontmatter`（`PreviewFrontmatter.from` で構築）と本文 `body` を分離した構造化 payload。priority は string、未コミット label も含む
    */
-  onValuesChange?: (values: PreviewFrontmatterInput & { body: string }) => void;
+  onValuesChange?: (payload: {
+    frontmatter: PreviewFrontmatter;
+    body: string;
+  }) => void;
   /** form 要素への ref（キーボードショートカットからの requestSubmit 用） */
   formRef?: RefObject<HTMLFormElement | null>;
   /**
@@ -168,15 +170,17 @@ export const TaskForm = ({
       return;
     }
     onValuesChange({
-      title: previewTitle,
-      status: previewStatus,
-      priority: previewPriority,
-      parent: parentValue ?? "",
+      frontmatter: PreviewFrontmatter.from({
+        title: previewTitle,
+        status: previewStatus,
+        priority: previewPriority,
+        parent: parentValue,
+        labels: labels.state,
+        links: links.links,
+        due: previewDue,
+        draft: previewDraft,
+      }),
       body: previewBody,
-      labels: LabelsField.finalize(labels.state),
-      links: links.links,
-      due: previewDue,
-      draft: previewDraft,
     });
   }, [
     onValuesChange,

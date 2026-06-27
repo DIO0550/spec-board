@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
 import { MarkdownContent } from "@/components/MarkdownContent";
 import {
-  buildPreviewFrontmatter,
   combineMarkdown,
-  type PreviewFrontmatterInput,
-} from "@/features/task-form/lib/buildPreviewFrontmatter";
+  PreviewFrontmatter,
+} from "@/features/task-form/lib/previewFrontmatter";
 
 export type PreviewPaneProps = {
-  /** フォーム現在値（プレビュー対象）。frontmatter 用フィールド + 本文。 */
-  values: PreviewFrontmatterInput & { body: string };
+  /** プレビュー対象 frontmatter（branded）。 */
+  frontmatter: PreviewFrontmatter;
+  /** プレビュー対象本文。 */
+  body: string;
   /** 保存先ファイル名（pv-foot 表示用）。 */
   fileName: string;
   /** プレビュー折りたたみ要求（pv-collapse ボタン）。 */
@@ -32,13 +33,13 @@ const TAB_BASE_CLASS_NAME =
 export const PreviewPane = (props: PreviewPaneProps) => {
   const [mode, setMode] = useState<PreviewMode>("rendered");
 
-  const frontmatter = useMemo(
-    () => buildPreviewFrontmatter(props.values),
-    [props.values],
+  const frontmatterYaml = useMemo(
+    () => PreviewFrontmatter.toYaml(props.frontmatter),
+    [props.frontmatter],
   );
   const finalMarkdown = useMemo(
-    () => combineMarkdown(frontmatter, props.values.body),
-    [frontmatter, props.values.body],
+    () => combineMarkdown(frontmatterYaml, props.body),
+    [frontmatterYaml, props.body],
   );
   // 最終 markdown の UTF-8 バイト長。finalMarkdown と同じ依存で計算し effect を増やさない。
   const byteLength = useMemo(
@@ -102,10 +103,10 @@ export const PreviewPane = (props: PreviewPaneProps) => {
           className="overflow-hidden rounded-lg border border-border bg-panel"
         >
           <pre className="overflow-x-auto whitespace-pre-wrap border-b border-border bg-surface-muted p-3.5 font-mono text-xs leading-relaxed text-muted">
-            {frontmatter}
+            {frontmatterYaml}
           </pre>
           <div className="p-4">
-            <MarkdownContent body={props.values.body} />
+            <MarkdownContent body={props.body} />
           </div>
         </div>
       )}

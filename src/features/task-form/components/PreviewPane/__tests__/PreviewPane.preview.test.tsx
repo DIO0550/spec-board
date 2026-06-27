@@ -1,6 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
+import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import { PreviewPane } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -15,18 +17,18 @@ afterEach(() => {
   container = null;
 });
 
-type Values = Parameters<typeof PreviewPane>[0]["values"];
+type Payload = { frontmatter: PreviewFrontmatter; body: string };
 
-const baseValues: Values = {
+const baseFrontmatter = {
   title: "タスク",
   status: "Todo",
-  labels: [],
+  parent: undefined,
+  labels: LabelsField.initial([]),
   links: [],
-  body: "",
 };
 
 const render = (
-  values: Values,
+  payload: Payload,
   options: { fileName?: string; onCollapse?: () => void } = {},
 ) => {
   container = document.createElement("div");
@@ -35,7 +37,8 @@ const render = (
   act(() => {
     root?.render(
       createElement(PreviewPane, {
-        values,
+        frontmatter: payload.frontmatter,
+        body: payload.body,
         fileName: options.fileName ?? "new-issue.md",
         onCollapse: options.onCollapse ?? vi.fn(),
       }),
@@ -54,7 +57,10 @@ const clickRawTab = () => {
 };
 
 test("既定は Rendered 表示", () => {
-  render({ ...baseValues, body: "# 見出し" });
+  render({
+    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+    body: "# 見出し",
+  });
   expect(
     container?.querySelector('[data-testid="preview-rendered"]'),
   ).not.toBeNull();
@@ -62,7 +68,10 @@ test("既定は Rendered 表示", () => {
 });
 
 test("Raw タブ click で最終 markdown が <pre> に出る", () => {
-  render({ ...baseValues, body: "本文テキスト" });
+  render({
+    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+    body: "本文テキスト",
+  });
   clickRawTab();
   const raw = container?.querySelector('[data-testid="preview-raw"]');
   expect(raw?.tagName).toBe("PRE");
@@ -73,9 +82,11 @@ test("Raw タブ click で最終 markdown が <pre> に出る", () => {
 
 test("priority/labels が Raw プレビューの frontmatter に反映される", () => {
   render({
-    ...baseValues,
-    priority: "High",
-    labels: ["bug"],
+    frontmatter: PreviewFrontmatter.from({
+      ...baseFrontmatter,
+      priority: "High",
+      labels: LabelsField.initial(["bug"]),
+    }),
     body: "",
   });
   clickRawTab();
@@ -85,14 +96,20 @@ test("priority/labels が Raw プレビューの frontmatter に反映される"
 });
 
 test("本文のタスクリストが Rendered で MarkdownContent によりレンダリングされる", () => {
-  render({ ...baseValues, body: "- [ ] やること\n- [x] 完了" });
+  render({
+    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+    body: "- [ ] やること\n- [x] 完了",
+  });
   const content = container?.querySelector('[data-testid="markdown-content"]');
   expect(content).not.toBeNull();
   expect(content?.querySelectorAll('input[type="checkbox"]').length).toBe(2);
 });
 
 test("空本文でもエラーにならず最小 frontmatter を表示する", () => {
-  render({ ...baseValues, body: "" });
+  render({
+    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+    body: "",
+  });
   const rendered = container?.querySelector('[data-testid="preview-rendered"]');
   expect(rendered?.querySelector("pre")?.textContent).toBe(
     "---\ntitle: タスク\nstatus: Todo\n---",
@@ -100,7 +117,10 @@ test("空本文でもエラーにならず最小 frontmatter を表示する", (
 });
 
 test("pv-meta に最終 markdown の UTF-8 バイト長 + B が表示される", () => {
-  render({ ...baseValues, body: "本文テキスト" });
+  render({
+    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+    body: "本文テキスト",
+  });
   const finalMarkdown = "---\ntitle: タスク\nstatus: Todo\n---\n本文テキスト";
   const expectedBytes = new TextEncoder().encode(finalMarkdown).length;
   const meta = container?.querySelector('[data-testid="preview-meta"]');
@@ -108,7 +128,10 @@ test("pv-meta に最終 markdown の UTF-8 バイト長 + B が表示される",
 });
 
 test("空本文では Raw に出る最終 markdown と同じバイト長が表示される", () => {
-  render({ ...baseValues, body: "" });
+  render({
+    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+    body: "",
+  });
   clickRawTab();
   const finalMarkdown =
     container?.querySelector('[data-testid="preview-raw"]')?.textContent ?? "";
@@ -119,7 +142,13 @@ test("空本文では Raw に出る最終 markdown と同じバイト長が表�
 
 test("pv-collapse クリックで onCollapse が 1 回呼ばれる", () => {
   const onCollapse = vi.fn();
-  render({ ...baseValues, body: "" }, { onCollapse });
+  render(
+    {
+      frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+      body: "",
+    },
+    { onCollapse },
+  );
   const collapse = container?.querySelector(
     '[data-testid="preview-collapse"]',
   ) as HTMLButtonElement;
@@ -130,7 +159,13 @@ test("pv-collapse クリックで onCollapse が 1 回呼ばれる", () => {
 });
 
 test("pv-foot に保存先ファイル名が表示される", () => {
-  render({ ...baseValues, body: "" }, { fileName: "my-task.md" });
+  render(
+    {
+      frontmatter: PreviewFrontmatter.from(baseFrontmatter),
+      body: "",
+    },
+    { fileName: "my-task.md" },
+  );
   const foot = container?.querySelector('[data-testid="preview-foot"]');
   expect(foot?.textContent).toContain("my-task.md");
   expect(foot?.textContent).toContain("新規作成されます");
