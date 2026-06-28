@@ -9,13 +9,17 @@ import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
-import { type AppView, useAppView } from "@/hooks/useAppView";
 import { resolveCloseTarget } from "@/hooks/useAppView/resolveCloseTarget";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
 import { type OrphanStrategy, registerToastSink } from "@/lib/tauri";
+import {
+  type AppView,
+  AppViewProvider,
+  type UseAppViewResult,
+} from "@/providers/AppViewProvider";
 import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,
@@ -139,11 +143,32 @@ const resolveSelectedTask = (
 };
 
 /**
- * @returns アプリケーションのルートレイアウトシェル
+ * App 本体（旧 App の処理一式）。view state を `useState<AppView>` で自前所有し、
+ * `AppViewProvider value={...}` で children に Context として配る。
+ *
+ * state 所有を `AppViewProvider` ではなく本コンポーネントに残しているのは、
+ * 後段の render-phase reset（プロジェクト切替時 / detail で選択タスク消失時）で
+ * `navigate("board")` を render 中に呼ぶため。setState を呼ぶ場所と
+ * state 所有元を同一に保たないと React の「Adjusting state when a prop changes」
+ * パターンとして合法に保てない。詳細は `useAppView` の Provider 側 JSDoc を参照。
+ *
+ * @returns アプリケーションのルートレイアウト要素
  */
-export const App = () => {
+const AppShell = () => {
   const { toasts, showToast, dismissToast } = useToasts();
-  const { view, navigate } = useAppView();
+
+  // 旧 useAppView() の中身を自前展開する。Provider を内側で被せるが、
+  // navigate の setState は本コンポーネント自身の useState を呼ぶため、
+  // 下段の render-phase 内 navigate("board") も合法に保たれる。
+  const [view, setView] = useState<AppView>("board");
+  const navigate = useCallback((next: AppView) => {
+    setView(next);
+  }, []);
+  const appViewValue = useMemo<UseAppViewResult>(
+    () => ({ view, navigate }),
+    [view, navigate],
+  );
+
   const { projects: recentProjects, add: addRecentProject } =
     useRecentProjects();
 
@@ -1031,7 +1056,7 @@ export const App = () => {
   const isCreateView = view === "create" && createModal !== null;
 
   return (
-    <ThemeProvider>
+    <AppViewProvider value={appViewValue}>
       <div className="flex h-screen w-screen flex-col overflow-hidden">
         {isCreateView && createModal !== null ? (
           <TaskCreateScreen
@@ -1118,6 +1143,19 @@ export const App = () => {
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         <LiveRegion announcement={announcement} />
       </div>
+    </AppViewProvider>
+  );
+};
+
+/**
+ * アプリケーションのルートコンポーネント。配線のみを担当し、
+ * 実体は private な {@link AppShell} に委譲する。
+ * @returns ルート要素
+ */
+export const App = () => {
+  return (
+    <ThemeProvider>
+      <AppShell />
     </ThemeProvider>
   );
 };
