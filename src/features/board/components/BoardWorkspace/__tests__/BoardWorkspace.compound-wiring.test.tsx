@@ -49,8 +49,8 @@ type RenderOptions = {
   tasks?: Task[];
   /** 「+ 追加」クリック時のコールバック（省略時は no-op） */
   onAddTask?: (columnName: string) => void;
-  /** 新規カラム追加コールバック（明示的に undefined を渡すと AddColumnButton 非表示） */
-  onAddColumn?: ((columnName: string) => void) | undefined;
+  /** 新規カラム追加コールバック（省略時は AddColumnButton 非表示） */
+  onAddColumn?: (columnName: string) => void;
 };
 
 const renderWorkspace = (options: RenderOptions) => {
