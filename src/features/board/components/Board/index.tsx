@@ -4,8 +4,11 @@ import { Column } from "../Column";
 
 /** Board の Props（compound 形）。中身は children として呼び出し側が組み立てる。 */
 type BoardProps = {
-  /** {@link Column}（= `Board.Column`）と {@link AddColumnButton}（= `Board.AddColumn`）を中心にした任意の ReactNode */
-  children: ReactNode;
+  /**
+   * {@link Column}（= `Board.Column`）と {@link AddColumnButton}（= `Board.AddColumn`）を
+   * 中心にした任意の ReactNode。`<Board />` の形（空ボード）も許容するため optional。
+   */
+  children?: ReactNode;
 };
 
 /**
