@@ -149,6 +149,15 @@ const ActiveBoardView = ({
       <CalendarView tasks={filtered} onTaskClick={workspace.onTaskClick} />
     );
   }
+  const ordered = [...workspace.columns].sort((a, b) => a.order - b.order);
+  const columnDraggable = ordered.length > 1;
+  const {
+    onAddTask,
+    onTaskClick,
+    onAddColumn,
+    onRenameColumn,
+    onDeleteColumn,
+  } = workspace;
   return (
     <BoardProviders
       columns={workspace.columns}
@@ -161,14 +170,30 @@ const ActiveBoardView = ({
       onTaskDrop={workspace.onTaskDrop}
       onColumnReorder={workspace.onColumnReorder}
     >
-      <Board
-        columns={workspace.columns}
-        onAddTask={workspace.onAddTask}
-        onTaskClick={workspace.onTaskClick}
-        onAddColumn={workspace.onAddColumn}
-        onRenameColumn={workspace.onRenameColumn}
-        onDeleteColumn={workspace.onDeleteColumn}
-      />
+      <Board>
+        {ordered.map((col, index) => (
+          <Board.Column
+            key={col.name}
+            name={col.name}
+            color={col.color}
+            order={index}
+            onAddClick={() => onAddTask(col.name)}
+            onTaskClick={onTaskClick}
+            onRename={
+              onRenameColumn
+                ? (newName) => onRenameColumn(col.name, newName)
+                : undefined
+            }
+            onDelete={
+              onDeleteColumn
+                ? (destColumn) => onDeleteColumn(col.name, destColumn)
+                : undefined
+            }
+            columnDraggable={columnDraggable}
+          />
+        ))}
+        {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}
+      </Board>
     </BoardProviders>
   );
 };
