@@ -1,8 +1,33 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { ReactElement } from "react";
 import { initialColumns, initialTasks } from "@/test-fixtures";
+import type { Column as ColumnType } from "@/types/column";
 import { withBoardProviders } from "../BoardProviders/storybook/decorator";
 import { Board } from ".";
+
+const renderBoard = (columns: readonly ColumnType[]): ReactElement => {
+  const ordered = [...columns].sort((a, b) => a.order - b.order);
+  const columnDraggable = ordered.length > 1;
+  return (
+    <Board>
+      {ordered.map((col, index) => (
+        <Board.Column
+          key={col.name}
+          name={col.name}
+          color={col.color}
+          order={index}
+          onAddClick={() => {}}
+          onTaskClick={() => {}}
+          onRename={() => {}}
+          onDelete={() => {}}
+          columnDraggable={columnDraggable}
+        />
+      ))}
+      <Board.AddColumn onAdd={() => {}} />
+    </Board>
+  );
+};
 
 const meta: Meta<typeof Board> = {
   component: Board,
@@ -17,21 +42,15 @@ const meta: Meta<typeof Board> = {
       doneColumn: "Done",
     }),
   ],
-  args: {
-    columns: initialColumns,
-    onAddTask: () => {},
-    onTaskClick: () => {},
-    onAddColumn: () => {},
-    onRenameColumn: () => {},
-    onDeleteColumn: () => {},
-  },
 };
 
 export default meta;
 
 type Story = StoryObj<typeof Board>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  render: () => renderBoard(initialColumns),
+};
 
 export const Empty: Story = {
   decorators: [
@@ -42,10 +61,10 @@ export const Empty: Story = {
       doneColumn: "Done",
     }),
   ],
-  args: { columns: initialColumns },
+  render: () => renderBoard(initialColumns),
 };
 
-const singleTodoColumn = [{ name: "Todo", order: 0 }];
+const singleTodoColumn: ColumnType[] = [{ name: "Todo", order: 0 }];
 const singleColumnTasks = initialTasks.filter((t) => t.status === "Todo");
 
 export const SingleColumn: Story = {
@@ -57,5 +76,5 @@ export const SingleColumn: Story = {
       doneColumn: "Done",
     }),
   ],
-  args: { columns: singleTodoColumn },
+  render: () => renderBoard(singleTodoColumn),
 };

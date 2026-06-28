@@ -1,87 +1,43 @@
-import type { Column as ColumnType } from "@/types/column";
+import type { ReactNode } from "react";
 import { AddColumnButton } from "../AddColumnButton";
 import { Column } from "../Column";
 
-/** ボードの Props */
+/** Board の Props（compound 形）。中身は children として呼び出し側が組み立てる。 */
 type BoardProps = {
-  /** カラム定義の配列。Board は内部で sort コピーのみ行い元配列を mutate しない */
-  columns: readonly ColumnType[];
-  /** カラムの「+ 追加」ボタンクリック時のコールバック
-   * @param columnName - 追加対象のカラム名
-   */
-  onAddTask: (columnName: string) => void;
   /**
-   * タスクカードクリック時のコールバック
-   * @param taskId - クリックされたタスクのID
+   * {@link Column}（= `Board.Column`）と {@link AddColumnButton}（= `Board.AddColumn`）を
+   * 中心にした任意の ReactNode。`<Board />` の形（空ボード）も許容するため optional。
    */
-  onTaskClick?: (taskId: string) => void;
-  /**
-   * 新規カラム追加時のコールバック。
-   * ボード右端の AddColumnButton から呼び出される。
-   * 未指定の場合はカラム追加 UI を非表示にする。
-   * @param columnName - 追加するカラム名（trim 済み、既存と非重複）
-   */
-  onAddColumn?: (columnName: string) => void;
-  /**
-   * カラム名リネーム確定時のコールバック。
-   * 未指定の場合はカラム名編集 UI を無効化する。
-   * @param oldName - 元のカラム名
-   * @param newName - 新しいカラム名（trim 済み、既存と非重複）
-   */
-  onRenameColumn?: (oldName: string, newName: string) => void;
-  /**
-   * カラム削除確定時のコールバック。
-   * 未指定の場合はカラム削除 UI を無効化する。
-   * カラムが 1 つの場合は内部で削除操作を禁止する。
-   * @param columnName - 削除するカラム名
-   * @param destColumn - タスクの移動先カラム名。削除対象カラムにタスクが 0 件の場合は undefined
-   */
-  onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
+  children?: ReactNode;
 };
 
 /**
  * カラム一覧を横並びで表示するボードコンテナ。
- * カラムの order ソートと Column / AddColumnButton への配線のみを担う presentational。
- * Card / Column 用の Context Provider 2 段は呼び出し側の `BoardProviders` が配線する。
+ * sort / `columnDraggable` 判定 / handler bind は呼び出し側責務とし、
+ * 本コンポーネントは外側 flex-col + 内側 flex-row を提供する薄いレイアウトだけを担う。
  *
  * @param props - {@link BoardProps}
  * @returns ボード要素
  */
-export const Board = ({
-  columns,
-  onAddTask,
-  onTaskClick,
-  onAddColumn,
-  onRenameColumn,
-  onDeleteColumn,
-}: BoardProps) => {
-  const ordered = [...columns].sort((a, b) => a.order - b.order);
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-1 gap-4 overflow-x-auto p-4">
-        {ordered.map((col, index) => (
-          <Column
-            key={col.name}
-            name={col.name}
-            color={col.color}
-            order={index}
-            onAddClick={() => onAddTask(col.name)}
-            onTaskClick={onTaskClick}
-            onRename={
-              onRenameColumn
-                ? (newName) => onRenameColumn(col.name, newName)
-                : undefined
-            }
-            onDelete={
-              onDeleteColumn
-                ? (destColumn) => onDeleteColumn(col.name, destColumn)
-                : undefined
-            }
-            columnDraggable={columns.length > 1}
-          />
-        ))}
-        {onAddColumn && <AddColumnButton onAdd={onAddColumn} />}
-      </div>
-    </div>
-  );
+const BoardRoot = ({ children }: BoardProps) => (
+  <div className="flex h-full flex-col">
+    <div className="flex flex-1 gap-4 overflow-x-auto p-4">{children}</div>
+  </div>
+);
+
+/** Compound コンポーネント本体（Root + 2 サブ部品の名前空間） */
+type BoardComponent = ((props: BoardProps) => ReactNode) & {
+  Column: typeof Column;
+  AddColumn: typeof AddColumnButton;
 };
+
+/**
+ * ボード（Compound コンポーネント）。
+ * `<Board><Board.Column .../><Board.AddColumn .../></Board>` の形で利用する。
+ * `Board.Column` は {@link Column}、`Board.AddColumn` は {@link AddColumnButton} の alias で、
+ * 参照同一性を保ったまま名前空間として公開する。
+ */
+export const Board: BoardComponent = Object.assign(BoardRoot, {
+  Column,
+  AddColumn: AddColumnButton,
+});
