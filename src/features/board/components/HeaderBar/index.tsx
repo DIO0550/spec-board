@@ -1,5 +1,5 @@
 import { ThemeToggleButton } from "@/features/shell";
-import type { AppView } from "@/hooks/useAppView";
+import type { AppView } from "@/providers/AppViewProvider";
 
 /** ヘッダーバーの Props */
 type HeaderBarProps = {

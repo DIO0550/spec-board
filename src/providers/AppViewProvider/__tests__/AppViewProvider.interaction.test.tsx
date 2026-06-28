@@ -14,7 +14,7 @@ import {
   AppViewProvider,
   type UseAppViewResult,
   useAppView,
-} from "@/hooks/useAppView";
+} from "@/providers/AppViewProvider";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

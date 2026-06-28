@@ -1,4 +1,4 @@
-import type { AppView } from "@/hooks/useAppView";
+import type { AppView } from "@/providers/AppViewProvider";
 
 /** create 画面を閉じたときの戻り先。 */
 export type CloseTarget = {
