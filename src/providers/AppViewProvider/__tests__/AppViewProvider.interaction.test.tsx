@@ -245,13 +245,21 @@ test("useAppView: navigate を連発しても React 警告が console.error に�
     // 文字列化するとプレースホルダが解決されず assertion をすり抜けることがある。
     // 全引数を String 化して連結し、メッセージと追加引数のどちらに含まれていても
     // マッチするよう中間任意文字を許容する正規表現で検査する。
-    const messages = errorSpy.mock.calls
-      .map((call) => call.map((arg) => String(arg ?? "")).join(" "))
-      .join("\n");
+    const callTexts = errorSpy.mock.calls.map((call) =>
+      call.map((arg) => String(arg ?? "")).join(" "),
+    );
+    const messages = callTexts.join("\n");
     expect(messages).not.toMatch(
       /Cannot update a component[\s\S]*while rendering/,
     );
     expect(messages).not.toMatch(/Maximum update depth exceeded/);
+    // `console.error` を mock している間は React の他 Warning や予期しない例外ログも
+    // 黙殺されるため、既知の良性ログ（happy-dom 環境の act 警告）を除いて出力ゼロを凍結する。
+    // 既知良性パターンを増やす場合はここに追加すること。
+    const unexpectedCalls = callTexts.filter(
+      (text) => !text.includes("not configured to support act"),
+    );
+    expect(unexpectedCalls).toEqual([]);
   } finally {
     errorSpy.mockRestore();
   }
