@@ -160,8 +160,8 @@ const resolveSelectedTask = (
  * 側に持つと Provider remount で巻き込まれる）。
  */
 type AppShellBodyProps = {
-  /** トースト state と操作 API */
-  toasts: UseToastsResult;
+  /** トースト表示関数（成功 / 警告 / 失敗の通知用） */
+  showToast: UseToastsResult["showToast"];
   /** 最近開いたプロジェクト一覧 */
   recentProjects: UseRecentProjectsResult;
   /** project lifecycle / CRUD ハンドル一式 */
@@ -220,8 +220,6 @@ type AppShellBodyProps = {
    * @param id 復元する task ID（不要なら null）
    */
   setReturnTaskId: (id: string | null) => void;
-  /** LiveRegion へ流すアナウンス（未発火なら null） */
-  announcement: LiveAnnouncement | null;
   /** settings → board へ持ち込む 1 回限りのラベル絞り込み（未指定は null） */
   pendingLabelFilter: string | null;
   /**
@@ -323,7 +321,7 @@ type AppShellBodyProps = {
  * @returns アプリケーションのレイアウト要素
  */
 const AppShellBody = ({
-  toasts: { toasts, showToast, dismissToast },
+  showToast,
   recentProjects: { projects: recentProjects },
   project: { state, openProject, openProjectByPath },
   submitCreateTask,
@@ -347,7 +345,6 @@ const AppShellBody = ({
   setReturnTaskId,
   returnView,
   returnTaskId,
-  announcement,
   pendingLabelFilter,
   setPendingLabelFilter,
   showErrorUnlessNotified,
@@ -629,96 +626,94 @@ const AppShellBody = ({
 
   // 作成ビューは独自の全画面 chrome（topbar/subbar/footer）を持つ standalone レイアウトのため、
   // 共通の HeaderBar / AppSidebar を外して viewport 全体に描画する。
-  // ToastContainer / LiveRegion は全ビュー共通の縦断 UI のため create でも温存する。
+  // ToastContainer / LiveRegion は全ビュー共通の縦断 UI かつ Provider key remount で
+  // 巻き込まれないよう AppShell 側に hoist 済（in-flight announcement / toast の保全のため）。
   const isCreateView = view === "create" && createModal !== null;
 
+  if (isCreateView && createModal !== null) {
+    return (
+      <TaskCreateScreen
+        columns={columns}
+        projectPath={loadedPath ?? undefined}
+        projectName={projectName}
+        watchedFileCount={tasks.length}
+        initialStatus={createModal.status}
+        parentCandidates={parentCandidates}
+        existingTasks={tasks}
+        initialParent={subIssueParentPath}
+        parentReadOnly={parentReadOnly}
+        onSubmit={handleCreateTask}
+        onClose={handleCloseCreateModal}
+      />
+    );
+  }
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      {isCreateView && createModal !== null ? (
-        <TaskCreateScreen
-          columns={columns}
-          projectPath={loadedPath ?? undefined}
+    <>
+      <HeaderBar
+        view={view}
+        onSettingsClick={handleSettingsClick}
+        onMilestoneClick={
+          state.kind === "loaded" ? handleMilestoneClick : undefined
+        }
+        onOpenClick={handleOpenClick}
+      />
+      <div className="flex flex-1 overflow-hidden">
+        <AppSidebar
           projectName={projectName}
-          watchedFileCount={tasks.length}
-          initialStatus={createModal.status}
-          parentCandidates={parentCandidates}
-          existingTasks={tasks}
-          initialParent={subIssueParentPath}
-          parentReadOnly={parentReadOnly}
-          onSubmit={handleCreateTask}
-          onClose={handleCloseCreateModal}
+          currentPath={displayedPath ?? undefined}
+          recentProjects={recentProjects}
+          tasks={tasks}
+          selectedTaskId={selectedTaskId}
+          onOpenProject={handleOpenClick}
+          onOpenProjectPath={handleOpenProjectPath}
+          onSelectTask={handleSidebarSelectTask}
         />
-      ) : (
-        <>
-          <HeaderBar
-            view={view}
-            onSettingsClick={handleSettingsClick}
-            onMilestoneClick={
-              state.kind === "loaded" ? handleMilestoneClick : undefined
-            }
-            onOpenClick={handleOpenClick}
-          />
-          <div className="flex flex-1 overflow-hidden">
-            <AppSidebar
-              projectName={projectName}
-              currentPath={displayedPath ?? undefined}
-              recentProjects={recentProjects}
-              tasks={tasks}
-              selectedTaskId={selectedTaskId}
-              onOpenProject={handleOpenClick}
-              onOpenProjectPath={handleOpenProjectPath}
-              onSelectTask={handleSidebarSelectTask}
+        <main className="flex flex-1 overflow-hidden">
+          {view === "settings" && (
+            <SettingsScreen
+              labels={settingsLabelsResource}
+              milestones={settingsMilestonesResource}
+              milestoneMutations={milestoneMutations}
+              onLabelUsageClick={handleLabelUsageClick}
             />
-            <main className="flex flex-1 overflow-hidden">
-              {view === "settings" && (
-                <SettingsScreen
-                  labels={settingsLabelsResource}
-                  milestones={settingsMilestonesResource}
-                  milestoneMutations={milestoneMutations}
-                  onLabelUsageClick={handleLabelUsageClick}
-                />
-              )}
-              {view === "milestone" && (
-                <MilestoneViewScreen
-                  resource={milestonesResource}
-                  tasks={tasks}
-                  doneColumn={doneColumn}
-                  onCreateMilestone={milestoneMutations.create}
-                  isCreating={milestoneMutations.isPending}
-                />
-              )}
-              {view === "detail" && selectedTask && (
-                <DetailScreen
-                  task={selectedTask}
-                  columns={columns}
-                  allTasks={tasks}
-                  tasksByNormalizedPath={tasksByNormalizedPath}
-                  doneColumn={doneColumn}
-                  // 作成は全画面 create ビューへ分離され detail と共存しないため、
-                  // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
-                  // createModal が stale でも detail の Esc 戻るが抑止されない。
-                  isUpperModalOpen={false}
-                  onBack={handleBackToBoard}
-                  onTaskUpdate={handleTaskUpdate}
-                  onDelete={handleTaskDelete}
-                  onAddSubIssue={handleAddSubIssue}
-                  onSelectTask={handleSelectTask}
-                  onAddLink={handleAddLink}
-                  onRemoveLink={handleRemoveLink}
-                />
-              )}
-              {view !== "settings" &&
-                view !== "detail" &&
-                view !== "milestone" &&
-                view !== "create" &&
-                renderMain()}
-            </main>
-          </div>
-        </>
-      )}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      <LiveRegion announcement={announcement} />
-    </div>
+          )}
+          {view === "milestone" && (
+            <MilestoneViewScreen
+              resource={milestonesResource}
+              tasks={tasks}
+              doneColumn={doneColumn}
+              onCreateMilestone={milestoneMutations.create}
+              isCreating={milestoneMutations.isPending}
+            />
+          )}
+          {view === "detail" && selectedTask && (
+            <DetailScreen
+              task={selectedTask}
+              columns={columns}
+              allTasks={tasks}
+              tasksByNormalizedPath={tasksByNormalizedPath}
+              doneColumn={doneColumn}
+              // 作成は全画面 create ビューへ分離され detail と共存しないため、
+              // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
+              // createModal が stale でも detail の Esc 戻るが抑止されない。
+              isUpperModalOpen={false}
+              onBack={handleBackToBoard}
+              onTaskUpdate={handleTaskUpdate}
+              onDelete={handleTaskDelete}
+              onAddSubIssue={handleAddSubIssue}
+              onSelectTask={handleSelectTask}
+              onAddLink={handleAddLink}
+              onRemoveLink={handleRemoveLink}
+            />
+          )}
+          {view !== "settings" &&
+            view !== "detail" &&
+            view !== "milestone" &&
+            view !== "create" &&
+            renderMain()}
+        </main>
+      </div>
+    </>
   );
 };
 
@@ -1366,50 +1361,58 @@ const AppShell = () => {
     [tasks, deleteTask, showToast, announce, showErrorUnlessNotified],
   );
 
+  // ToastContainer / LiveRegion は AppViewProvider の外に置く。Provider が
+  // <AppViewProvider key={loadedPath ?? "idle"}> で project 切替時に remount される際、
+  // 配下の DOM もまとめて remount されるため、in-flight な toast / aria-live announcement
+  // を巻き込まずに保つにはこのレイヤで描画する必要がある。useToasts / announcement state は
+  // AppShell が所有しているので、Provider の外から参照しても整合は崩れない。
   return (
-    <AppViewProvider key={loadedPath ?? "idle"}>
-      <AppShellBody
-        toasts={toasts}
-        recentProjects={recentProjects}
-        project={project}
-        submitCreateTask={submitCreateTask}
-        loadedPath={loadedPath}
-        tasks={tasks}
-        columns={columns}
-        doneColumn={doneColumn}
-        tasksByNormalizedPath={tasksByNormalizedPath}
-        projectName={projectName}
-        displayedPath={displayedPath}
-        milestonesResource={milestonesResource}
-        settingsMilestonesResource={settingsMilestonesResource}
-        milestoneMutations={milestoneMutations}
-        settingsLabelsResource={settingsLabelsResource}
-        selectedTaskId={selectedTaskId}
-        setSelectedTaskId={setSelectedTaskId}
-        pendingDeleteTask={pendingDeleteTask}
-        createModal={createModal}
-        setCreateModal={setCreateModal}
-        returnView={returnView}
-        setReturnView={setReturnView}
-        returnTaskId={returnTaskId}
-        setReturnTaskId={setReturnTaskId}
-        announcement={announcement}
-        pendingLabelFilter={pendingLabelFilter}
-        setPendingLabelFilter={setPendingLabelFilter}
-        showErrorUnlessNotified={showErrorUnlessNotified}
-        handleTaskUpdate={handleTaskUpdate}
-        handleAddColumn={handleAddColumn}
-        handleRenameColumn={handleRenameColumn}
-        handleDeleteColumn={handleDeleteColumn}
-        handleTaskDrop={handleTaskDrop}
-        handleColumnReorder={handleColumnReorder}
-        handleAddLink={handleAddLink}
-        handleRemoveLink={handleRemoveLink}
-        handleTaskDelete={handleTaskDelete}
-        handleSelectTask={handleSelectTask}
-        handleLabelFilterApplied={handleLabelFilterApplied}
-      />
-    </AppViewProvider>
+    <div className="flex h-screen w-screen flex-col overflow-hidden">
+      <AppViewProvider key={loadedPath ?? "idle"}>
+        <AppShellBody
+          showToast={toasts.showToast}
+          recentProjects={recentProjects}
+          project={project}
+          submitCreateTask={submitCreateTask}
+          loadedPath={loadedPath}
+          tasks={tasks}
+          columns={columns}
+          doneColumn={doneColumn}
+          tasksByNormalizedPath={tasksByNormalizedPath}
+          projectName={projectName}
+          displayedPath={displayedPath}
+          milestonesResource={milestonesResource}
+          settingsMilestonesResource={settingsMilestonesResource}
+          milestoneMutations={milestoneMutations}
+          settingsLabelsResource={settingsLabelsResource}
+          selectedTaskId={selectedTaskId}
+          setSelectedTaskId={setSelectedTaskId}
+          pendingDeleteTask={pendingDeleteTask}
+          createModal={createModal}
+          setCreateModal={setCreateModal}
+          returnView={returnView}
+          setReturnView={setReturnView}
+          returnTaskId={returnTaskId}
+          setReturnTaskId={setReturnTaskId}
+          pendingLabelFilter={pendingLabelFilter}
+          setPendingLabelFilter={setPendingLabelFilter}
+          showErrorUnlessNotified={showErrorUnlessNotified}
+          handleTaskUpdate={handleTaskUpdate}
+          handleAddColumn={handleAddColumn}
+          handleRenameColumn={handleRenameColumn}
+          handleDeleteColumn={handleDeleteColumn}
+          handleTaskDrop={handleTaskDrop}
+          handleColumnReorder={handleColumnReorder}
+          handleAddLink={handleAddLink}
+          handleRemoveLink={handleRemoveLink}
+          handleTaskDelete={handleTaskDelete}
+          handleSelectTask={handleSelectTask}
+          handleLabelFilterApplied={handleLabelFilterApplied}
+        />
+      </AppViewProvider>
+      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismissToast} />
+      <LiveRegion announcement={announcement} />
+    </div>
   );
 };
 
