@@ -480,11 +480,11 @@ const AppShellBody = ({
 
   const handleCloseCreateModal = useCallback(() => {
     setCreateModal(null);
-    // 戻り先（board / 元の detail）を純関数で解決し、detail 復帰時は選択タスクを復元する。
+    // 戻り先（board / 元の detail）を純関数で解決し、resolveCloseTarget の契約どおり
+    // selectedTaskId は常に target の値で上書きする。null 戻りのケースでは選択を
+    // 確実にクリアし、stale な detail 選択が board に残らないようにする。
     const target = resolveCloseTarget(returnView, returnTaskId);
-    if (target.selectedTaskId !== null) {
-      setSelectedTaskId(target.selectedTaskId);
-    }
+    setSelectedTaskId(target.selectedTaskId);
     setReturnView("board");
     setReturnTaskId(null);
     navigate(target.view);
