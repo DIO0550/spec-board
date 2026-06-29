@@ -832,8 +832,8 @@ const AppShell = () => {
   // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
   // に従い、render-phase で同期的に reset する。AppShell は Provider remount に
   // 巻き込まれないため、本ブロックは project 切替の都度確実に走る。view の
-  // リセットは <AppViewProvider key={loadedPath}> の remount が担当するため
-  // navigate を呼ぶ必要はない。
+  // リセットは <AppViewProvider key={loadedPath ?? "idle"}> の remount（loaded path
+  // → "idle" / 別 path への切替を含む）が担当するため navigate を呼ぶ必要はない。
   const loadedPath = state.kind === "loaded" ? state.path : null;
   const [prevLoadedPath, setPrevLoadedPath] = useState<string | null>(null);
   if (loadedPath !== null && loadedPath !== prevLoadedPath) {
