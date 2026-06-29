@@ -395,11 +395,11 @@ const AppShellBody = ({
 
   // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す保険。
   // 削除確定後・外部更新でのタスク消失等、same project 内で task が消える経路を
-  // 拾う。project 切替時の view リセットは <AppViewProvider key={loadedPath}> の
-  // remount に委譲済のため、本 effect は同 project 内のみ走り、stale な task ID
-  // で新 project のタスクを誤参照する race は構造的に起きない（task ID は同
-  // project 内で一意）。selectedTaskId も同時にクリアし、同一 ID 再出現時の
-  // DetailScreen 意図せぬ復活を防ぐ。
+  // 拾う。project 切替時の view リセットは <AppViewProvider key={loadedPath ?? "idle"}>
+  // の remount（loaded path → "idle" / 別 path への切替を含む）に委譲済のため、
+  // 本 effect は同 project 内のみ走り、stale な task ID で新 project のタスクを誤参照
+  // する race は構造的に起きない（task ID は同 project 内で一意）。selectedTaskId も
+  // 同時にクリアし、同一 ID 再出現時の DetailScreen 意図せぬ復活を防ぐ。
   useEffect(() => {
     if (view === "detail" && selectedTask === null) {
       navigate("board");
