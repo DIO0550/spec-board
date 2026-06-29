@@ -9,12 +9,9 @@ import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
-import { type LabelsResource, useLabels } from "@/hooks/useLabels";
-import { type MilestonesResource, useMilestones } from "@/hooks/useMilestones";
-import {
-  type UseRecentProjectsResult,
-  useRecentProjects,
-} from "@/hooks/useRecentProjects";
+import { useLabels } from "@/hooks/useLabels";
+import { useMilestones } from "@/hooks/useMilestones";
+import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { useToasts } from "@/hooks/useToasts";
 import { type OrphanStrategy, registerToastSink } from "@/lib/tauri";
 import {
@@ -23,7 +20,6 @@ import {
   useAppView,
 } from "@/providers/AppViewProvider";
 import { resolveCloseTarget } from "@/providers/AppViewProvider/resolveCloseTarget";
-import type { UseToastsResult } from "@/types/toast";
 import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,
@@ -36,22 +32,16 @@ import {
   type ProjectState,
   projectErrorMessage,
   type ReorderColumnsEvent,
-  type UseProjectResult,
   useProject,
   wasNotifiedByInvokeWrapped,
 } from "./features/board";
 import { DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
-import {
-  SettingsScreen,
-  type UseMilestoneMutationsResult,
-  useMilestoneMutations,
-} from "./features/settings";
+import { SettingsScreen, useMilestoneMutations } from "./features/settings";
 import { AppSidebar, ThemeProvider } from "./features/shell";
 import {
   TaskCreateScreen,
   type TaskFormValues,
-  type UseTaskCreateResult,
   useTaskCreate,
 } from "./features/task-form";
 import type { Column } from "./types/column";
@@ -153,584 +143,16 @@ const resolveSelectedTask = (
 };
 
 /**
- * `AppShellBody` に渡す依存。AppShell が所有する state / setters / 派生値 /
- * 非 navigate ハンドラをまとめて渡し、AppShellBody は navigate を使う合成ハンドラ
- * と JSX のみを担当する。Provider key remount による view リセットの責務を
- * view 単独に閉じるため、ここで列挙する state は AppShell に残す（AppShellBody
- * 側に持つと Provider remount で巻き込まれる）。
- */
-type AppShellBodyProps = {
-  /** トースト表示関数（成功 / 警告 / 失敗の通知用） */
-  showToast: UseToastsResult["showToast"];
-  /** 最近開いたプロジェクト一覧 */
-  recentProjects: UseRecentProjectsResult;
-  /** project lifecycle / CRUD ハンドル一式 */
-  project: UseProjectResult;
-  /** タスク作成サブミット（useTaskCreate の submit） */
-  submitCreateTask: UseTaskCreateResult["submit"];
-  /** loaded 時のみ非 null になる project path */
-  loadedPath: string | null;
-  /** 現在表示中の派生 task 配列 */
-  tasks: Task[];
-  /** 現在表示中の派生 column 配列 */
-  columns: Column[];
-  /** 現在の doneColumn 名（未設定なら undefined） */
-  doneColumn: string | undefined;
-  /** filePath 正規化済 key → task の lookup */
-  tasksByNormalizedPath: ReadonlyMap<string, Task>;
-  /** path 末尾セグメント（sidebar / header 表示用） */
-  projectName: string | undefined;
-  /** state 由来の loaded path（loaded 以外は null） */
-  displayedPath: string | null;
-  /** ボード / マイルストーン画面で使う milestone リソース */
-  milestonesResource: MilestonesResource;
-  /** 設定画面の milestone タブ向け（live usageCounts で上書き済） */
-  settingsMilestonesResource: MilestonesResource;
-  /** milestone CRUD ハンドル（in-flight ガード共有用に App 直下で 1 つ） */
-  milestoneMutations: UseMilestoneMutationsResult;
-  /** 設定画面の label タブ向け（live usageCounts で上書き済） */
-  settingsLabelsResource: LabelsResource;
-  /** 選択中タスクの ID（未選択は null） */
-  selectedTaskId: string | null;
-  /**
-   * selectedTaskId の setter。
-   * @param id 設定する task ID（解除は null）
-   */
-  setSelectedTaskId: (id: string | null) => void;
-  /** 削除楽観中の task snapshot（rollback / fallback 用） */
-  pendingDeleteTask: Task | null;
-  /** 作成画面の開閉と親コンテキストを表す判別 union */
-  createModal: CreateModalState;
-  /**
-   * createModal の setter。
-   * @param m 新しい作成画面 state（閉時は null）
-   */
-  setCreateModal: (m: CreateModalState) => void;
-  /** create 画面を閉じたときの戻り先 view */
-  returnView: AppView;
-  /**
-   * returnView の setter。
-   * @param v 戻り先 view
-   */
-  setReturnView: (v: AppView) => void;
-  /** create 画面を閉じたときに復元する task ID（不要なら null） */
-  returnTaskId: string | null;
-  /**
-   * returnTaskId の setter。
-   * @param id 復元する task ID（不要なら null）
-   */
-  setReturnTaskId: (id: string | null) => void;
-  /** settings → board へ持ち込む 1 回限りのラベル絞り込み（未指定は null） */
-  pendingLabelFilter: string | null;
-  /**
-   * pendingLabelFilter の setter。
-   * @param filter 適用するラベル名（解除は null）
-   */
-  setPendingLabelFilter: (filter: string | null) => void;
-  /**
-   * allowlist 由来失敗（invokeWrapped が通知済）以外で error toast を出す共通ガード。
-   * @param error ProjectError
-   * @param message ユーザ向けメッセージ
-   */
-  showErrorUnlessNotified: (error: ProjectError, message: string) => void;
-  /**
-   * タスクの部分更新ハンドラ。成功時に success トースト、失敗時はガード越しの error トースト。
-   * @param id 対象タスク ID
-   * @param updates 部分更新する task 属性
-   */
-  handleTaskUpdate: (
-    id: string,
-    updates: Partial<Omit<Task, "id">>,
-  ) => Promise<void>;
-  /**
-   * カラム追加ハンドラ。失敗時は AddColumnButton の editor を維持するため reject する。
-   * @param columnName 追加するカラム名
-   */
-  handleAddColumn: (columnName: string) => Promise<void>;
-  /**
-   * カラム名変更ハンドラ。失敗時は ColumnHeader の edit mode を維持するため reject する。
-   * @param oldName 旧カラム名
-   * @param newName 新カラム名
-   */
-  handleRenameColumn: (oldName: string, newName: string) => Promise<void>;
-  /**
-   * カラム削除ハンドラ。残タスクは destColumn に移送（指定なしで残タスク 0 件のときのみ削除可）。
-   * @param columnName 削除するカラム名
-   * @param destColumn 残タスクの移送先カラム名（残 0 件なら undefined）
-   */
-  handleDeleteColumn: (
-    columnName: string,
-    destColumn: string | undefined,
-  ) => Promise<void>;
-  /**
-   * タスクのカラム間移動 / 並び替えハンドラ。楽観 dispatch + rollback の announce 込み。
-   * @param params 移動パラメータ
-   */
-  handleTaskDrop: (params: MoveTaskParams) => Promise<void>;
-  /**
-   * カラム並び替えハンドラ。楽観 dispatch + rollback の announce 込み。
-   * @param params from / to のカラム名
-   */
-  handleColumnReorder: (params: {
-    fromColumnName: string;
-    toColumnName: string;
-  }) => Promise<void>;
-  /**
-   * タスク間リンク追加ハンドラ（announce 込み）。
-   * @param sourceFilePath リンク元 filePath
-   * @param targetFilePath リンク先 filePath
-   */
-  handleAddLink: (
-    sourceFilePath: string,
-    targetFilePath: string,
-  ) => ReturnType<UseProjectResult["addLink"]>;
-  /**
-   * タスク間リンク削除ハンドラ（announce 込み）。
-   * @param sourceFilePath リンク元 filePath
-   * @param targetFilePath リンク先 filePath
-   */
-  handleRemoveLink: (
-    sourceFilePath: string,
-    targetFilePath: string,
-  ) => ReturnType<UseProjectResult["removeLink"]>;
-  /**
-   * タスク削除ハンドラ。楽観 snapshot 保持 / rollback / announce を含む。
-   * @param id 削除対象 task ID
-   * @param orphanStrategy 親孤児化処理戦略（指定なしなら default）
-   */
-  handleTaskDelete: (
-    id: string,
-    orphanStrategy?: OrphanStrategy,
-  ) => Promise<void>;
-  /**
-   * Sidebar / DetailScreen からの選択タスク変更（navigate しない）。
-   * @param taskId 選択する task ID
-   */
-  handleSelectTask: (taskId: string) => void;
-  /** BoardWorkspace 側で pendingLabelFilter を消費し終わった通知 */
-  handleLabelFilterApplied: () => void;
-};
-
-/**
- * AppShell の return 内部、`<AppViewProvider>` 配下に位置する body。
- * `useAppView()` で view / navigate を取得し、navigate と既存 state を組み合わせる
- * ハンドラ群と JSX を担当する。state / 非 navigate ハンドラは {@link AppShell}
- * 側で所有し props で受け取る（Provider key remount の影響を view 単独に閉じるため）。
+ * App 本体。`<AppViewProvider>` の配下に位置するため `useAppView()` を直接呼べる。
+ * state / hook / handler / JSX を 1 コンポーネントに集約する。
  *
- * @param props - {@link AppShellBodyProps}
  * @returns アプリケーションのレイアウト要素
  */
-const AppShellBody = ({
-  showToast,
-  recentProjects: { projects: recentProjects },
-  project: { state, openProject, openProjectByPath },
-  submitCreateTask,
-  loadedPath,
-  tasks,
-  columns,
-  doneColumn,
-  tasksByNormalizedPath,
-  projectName,
-  displayedPath,
-  milestonesResource,
-  settingsMilestonesResource,
-  milestoneMutations,
-  settingsLabelsResource,
-  selectedTaskId,
-  setSelectedTaskId,
-  pendingDeleteTask,
-  createModal,
-  setCreateModal,
-  setReturnView,
-  setReturnTaskId,
-  returnView,
-  returnTaskId,
-  pendingLabelFilter,
-  setPendingLabelFilter,
-  showErrorUnlessNotified,
-  handleTaskUpdate,
-  handleAddColumn,
-  handleRenameColumn,
-  handleDeleteColumn,
-  handleTaskDrop,
-  handleColumnReorder,
-  handleAddLink,
-  handleRemoveLink,
-  handleTaskDelete,
-  handleSelectTask,
-  handleLabelFilterApplied,
-}: AppShellBodyProps) => {
-  const { view, navigate } = useAppView();
-
-  // settings 表示中に「開く」を押した場合も board に戻してから開く。
-  // openProject は成功/失敗/キャンセルを区別しない Promise<void> のため、
-  // 押下時点で board へ戻す（board は EmptyState を含め常に有効な画面）。
-  const handleOpenClick = useCallback(() => {
-    navigate("board");
-    openProject();
-  }, [navigate, openProject]);
-
-  // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
-  const handleOpenProjectPath = useCallback(
-    (path: string) => {
-      navigate("board");
-      openProjectByPath(path);
-    },
-    [navigate, openProjectByPath],
-  );
-
-  const handleLabelUsageClick = useCallback(
-    (name: string) => {
-      setPendingLabelFilter(name);
-      navigate("board");
-    },
-    [navigate, setPendingLabelFilter],
-  );
-
-  const selectedTask = resolveSelectedTask(
-    selectedTaskId,
-    tasks,
-    pendingDeleteTask,
-  );
-
-  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す保険。
-  // 削除確定後・外部更新でのタスク消失等、same project 内で task が消える経路を
-  // 拾う。project 切替時の view リセットは <AppViewProvider key={loadedPath ?? "idle"}>
-  // の remount（loaded path → "idle" / 別 path への切替を含む）に委譲済のため、
-  // 本 effect は同 project 内のみ走り、stale な task ID で新 project のタスクを誤参照
-  // する race は構造的に起きない（task ID は同 project 内で一意）。selectedTaskId も
-  // 同時にクリアし、同一 ID 再出現時の DetailScreen 意図せぬ復活を防ぐ。
-  useEffect(() => {
-    if (view === "detail" && selectedTask === null) {
-      navigate("board");
-      if (selectedTaskId !== null) {
-        setSelectedTaskId(null);
-      }
-    }
-  }, [view, selectedTask, selectedTaskId, navigate, setSelectedTaskId]);
-
-  // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
-  // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
-  const handleTaskClick = useCallback(
-    (taskId: string) => {
-      setSelectedTaskId(taskId);
-      navigate("detail");
-    },
-    [navigate, setSelectedTaskId],
-  );
-
-  // サイドバーは全画面区分で常時表示される。詳細は detail 区分へ一本化したため、
-  // どの区分から選んでも選択 + navigate("detail") で全画面詳細(DetailScreen)を開く。
-  const handleSidebarSelectTask = useCallback(
-    (taskId: string) => {
-      setSelectedTaskId(taskId);
-      navigate("detail");
-    },
-    [navigate, setSelectedTaskId],
-  );
-
-  // detail（全画面ビュー）からの「← 戻る」/ Esc。board へ戻すと同時に選択を解除し、
-  // board をクリーン表示にする。
-  const handleBackToBoard = useCallback(() => {
-    navigate("board");
-    setSelectedTaskId(null);
-  }, [navigate, setSelectedTaskId]);
-
-  // HeaderBar 設定トグル。settings 中なら board へ戻す。board / detail からは settings へ。
-  // detail から来た場合は選択を解除し、settings → board 復帰後に DetailScreen が
-  // 再表示されないようにする（detail と settings は排他）。
-  const handleSettingsClick = useCallback(() => {
-    if (view === "settings") {
-      navigate("board");
-      return;
-    }
-    if (view === "detail") {
-      setSelectedTaskId(null);
-    }
-    navigate("settings");
-  }, [view, navigate, setSelectedTaskId]);
-
-  // HeaderBar マイルストーン切替。milestone 中なら board へ戻す。detail から来た場合は
-  // 選択を解除する（detail と milestone は排他）。プロジェクト未オープン時は
-  // HeaderBar 側でボタン自体を非表示にするため、本ハンドラは loaded 前提で配線する。
-  const handleMilestoneClick = useCallback(() => {
-    if (view === "milestone") {
-      navigate("board");
-      return;
-    }
-    if (view === "detail") {
-      setSelectedTaskId(null);
-    }
-    navigate("milestone");
-  }, [view, navigate, setSelectedTaskId]);
-
-  const handleAddTask = useCallback(
-    (columnName: string) => {
-      setCreateModal({ kind: "normal", status: columnName });
-      // board の「+」起点: 戻り先は board。
-      setReturnView("board");
-      setReturnTaskId(null);
-      navigate("create");
-    },
-    [navigate, setCreateModal, setReturnView, setReturnTaskId],
-  );
-
-  const handleCloseCreateModal = useCallback(() => {
-    setCreateModal(null);
-    // 戻り先（board / 元の detail）を純関数で解決し、resolveCloseTarget の契約どおり
-    // selectedTaskId は常に target の値で上書きする。null 戻りのケースでは選択を
-    // 確実にクリアし、stale な detail 選択が board に残らないようにする。
-    const target = resolveCloseTarget(returnView, returnTaskId);
-    setSelectedTaskId(target.selectedTaskId);
-    setReturnView("board");
-    setReturnTaskId(null);
-    navigate(target.view);
-  }, [
-    returnView,
-    returnTaskId,
-    navigate,
-    setCreateModal,
-    setReturnView,
-    setReturnTaskId,
-    setSelectedTaskId,
-  ]);
-
-  const defaultCreateStatus =
-    columns.length > 0
-      ? columns.reduce((lowest, column) =>
-          column.order < lowest.order ? column : lowest,
-        ).name
-      : null;
-
-  const handleAddSubIssue = useCallback(
-    (parentFilePath: string) => {
-      // 利用可能なステータスがなければ toast して中断（create へ遷移しない）。
-      // これを消すと createModal=null のまま navigate("create") され、
-      // create ビューだが TaskCreateScreen も board も描画されず空画面になる。
-      if (defaultCreateStatus === null) {
-        showToast("利用可能なステータスがありません", "error");
-        return;
-      }
-      setCreateModal({
-        kind: "subIssue",
-        status: defaultCreateStatus,
-        parentPath: parentFilePath,
-      });
-      // detail サブIssue 起点: 戻り先は元の detail（親タスク）。
-      setReturnView("detail");
-      setReturnTaskId(selectedTaskId);
-      navigate("create");
-    },
-    [
-      defaultCreateStatus,
-      selectedTaskId,
-      showToast,
-      navigate,
-      setCreateModal,
-      setReturnView,
-      setReturnTaskId,
-    ],
-  );
-
-  const handleCreateTask = useCallback(
-    async (values: TaskFormValues): Promise<void> => {
-      const result = await submitCreateTask(values);
-      if (!result.ok) {
-        // 画面を閉じない: TaskCreateScreen は onSubmit reject で開いたままになる
-        const message = projectErrorMessage(result.error);
-        showErrorUnlessNotified(
-          result.error,
-          `タスクの作成に失敗しました: ${message}`,
-        );
-        throw new Error(message);
-      }
-      const { failedSubIssues } = result.value;
-      if (failedSubIssues.length > 0) {
-        // 親と成功した子は残す。失敗した子のみ警告（ロールバックしない）。
-        showToast(
-          `サブIssue ${failedSubIssues.length} 件の作成に失敗しました`,
-          "warning",
-        );
-        return;
-      }
-      showToast("タスクを作成しました", "success");
-    },
-    [submitCreateTask, showToast, showErrorUnlessNotified],
-  );
-
-  // サブIssue モードのときだけ自動セットされた親 path を取り出す（通常作成 / 閉時は undefined）。
-  const subIssueParentPath =
-    createModal?.kind === "subIssue" ? createModal.parentPath : undefined;
-  // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
-  // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
-  const parentCandidates = useMemo(() => {
-    if (subIssueParentPath === undefined) {
-      return tasks;
-    }
-    return tasks.filter((t) => t.filePath === subIssueParentPath);
-  }, [tasks, subIssueParentPath]);
-  const parentReadOnly = subIssueParentPath !== undefined;
-
-  /**
-   * state.kind に応じて main 領域を描画する。
-   *
-   * @returns Loading / EmptyState / Board のいずれか
-   */
-  const renderMain = (): React.ReactNode => {
-    if (state.kind === "loading") {
-      return (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-muted">読み込み中…</p>
-        </div>
-      );
-    }
-    if (state.kind !== "loaded") {
-      return <EmptyState type="no-project" onOpenProject={openProject} />;
-    }
-    // tasks 0 件でも Board は描画する (column UI / +追加 ボタンを残すため、
-    // board-view spec に従う)。空プロジェクト時のガイダンスは Board 上に
-    // 重ねて表示する。
-    return (
-      <div className="relative flex flex-1 overflow-hidden">
-        <BoardWorkspace
-          // settings 表示中は BoardWorkspace が unmount されるため、settings→board 遷移で
-          // 必ず remount される。これにより useTaskFilter の useState 初期 seed が遷移ごとに
-          // 1 回適用される（key の追加はかえって seed→クリア→再 remount で seed 消失を招く
-          // ので付けない）。
-          columns={columns}
-          tasks={tasks}
-          tasksByNormalizedPath={tasksByNormalizedPath}
-          doneColumn={doneColumn}
-          milestonesByName={milestonesResource.byName}
-          milestones={milestonesResource.milestones}
-          onAddTask={handleAddTask}
-          onAddColumn={handleAddColumn}
-          onRenameColumn={handleRenameColumn}
-          onDeleteColumn={handleDeleteColumn}
-          onTaskClick={handleTaskClick}
-          onTaskDrop={handleTaskDrop}
-          onColumnReorder={handleColumnReorder}
-          initialLabelFilter={pendingLabelFilter}
-          onLabelFilterApplied={handleLabelFilterApplied}
-        />
-        {tasks.length === 0 && (
-          <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
-            <p className="rounded bg-surface/90 px-4 py-2 text-sm text-muted shadow">
-              タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 作成ビューは独自の全画面 chrome（topbar/subbar/footer）を持つ standalone レイアウトのため、
-  // 共通の HeaderBar / AppSidebar を外して viewport 全体に描画する。
-  // ToastContainer / LiveRegion は全ビュー共通の縦断 UI かつ Provider key remount で
-  // 巻き込まれないよう AppShell 側に hoist 済（in-flight announcement / toast の保全のため）。
-  const isCreateView = view === "create" && createModal !== null;
-
-  if (isCreateView && createModal !== null) {
-    return (
-      <TaskCreateScreen
-        columns={columns}
-        projectPath={loadedPath ?? undefined}
-        projectName={projectName}
-        watchedFileCount={tasks.length}
-        initialStatus={createModal.status}
-        parentCandidates={parentCandidates}
-        existingTasks={tasks}
-        initialParent={subIssueParentPath}
-        parentReadOnly={parentReadOnly}
-        onSubmit={handleCreateTask}
-        onClose={handleCloseCreateModal}
-      />
-    );
-  }
-  return (
-    <>
-      <HeaderBar
-        view={view}
-        onSettingsClick={handleSettingsClick}
-        onMilestoneClick={
-          state.kind === "loaded" ? handleMilestoneClick : undefined
-        }
-        onOpenClick={handleOpenClick}
-      />
-      <div className="flex flex-1 overflow-hidden">
-        <AppSidebar
-          projectName={projectName}
-          currentPath={displayedPath ?? undefined}
-          recentProjects={recentProjects}
-          tasks={tasks}
-          selectedTaskId={selectedTaskId}
-          onOpenProject={handleOpenClick}
-          onOpenProjectPath={handleOpenProjectPath}
-          onSelectTask={handleSidebarSelectTask}
-        />
-        <main className="flex flex-1 overflow-hidden">
-          {view === "settings" && (
-            <SettingsScreen
-              labels={settingsLabelsResource}
-              milestones={settingsMilestonesResource}
-              milestoneMutations={milestoneMutations}
-              onLabelUsageClick={handleLabelUsageClick}
-            />
-          )}
-          {view === "milestone" && (
-            <MilestoneViewScreen
-              resource={milestonesResource}
-              tasks={tasks}
-              doneColumn={doneColumn}
-              onCreateMilestone={milestoneMutations.create}
-              isCreating={milestoneMutations.isPending}
-            />
-          )}
-          {view === "detail" && selectedTask && (
-            <DetailScreen
-              task={selectedTask}
-              columns={columns}
-              allTasks={tasks}
-              tasksByNormalizedPath={tasksByNormalizedPath}
-              doneColumn={doneColumn}
-              // 作成は全画面 create ビューへ分離され detail と共存しないため、
-              // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
-              // createModal が stale でも detail の Esc 戻るが抑止されない。
-              isUpperModalOpen={false}
-              onBack={handleBackToBoard}
-              onTaskUpdate={handleTaskUpdate}
-              onDelete={handleTaskDelete}
-              onAddSubIssue={handleAddSubIssue}
-              onSelectTask={handleSelectTask}
-              onAddLink={handleAddLink}
-              onRemoveLink={handleRemoveLink}
-            />
-          )}
-          {view !== "settings" &&
-            view !== "detail" &&
-            view !== "milestone" &&
-            view !== "create" &&
-            renderMain()}
-        </main>
-      </div>
-    </>
-  );
-};
-
-/**
- * App 本体（旧 App の処理一式）。state / 非 navigate ハンドラ / 派生値の取得を
- * ここに集約し、`<AppViewProvider key={loadedPath ?? "idle"}>` で
- * {@link AppShellBody} を包む。AppShell は Provider key remount に巻き込まれないため、
- * view 以外の state（selectedTaskId / pendingDeleteTask / createModal 等）は
- * project 切替を跨いでも自前の render-phase reset で必要に応じてリセットされる。
- *
- * @returns アプリケーションのルートレイアウト要素
- */
 const AppShell = () => {
-  const toasts = useToasts();
-  const { showToast } = toasts;
-  const recentProjects = useRecentProjects();
-  const { add: addRecentProject } = recentProjects;
+  const { view, navigate } = useAppView();
+  const { toasts, showToast, dismissToast } = useToasts();
+  const { projects: recentProjects, add: addRecentProject } =
+    useRecentProjects();
 
   // project の load 成功イベントで実行する副作用。useProject の onLoaded callback に
   // 注入することで、effect + ref による「発火済み管理」を排し、load 完了という
@@ -738,7 +160,6 @@ const AppShell = () => {
   // close → reopen / 別 project 切替のたびに改めて 1 回ずつ呼ばれる。
   const handleProjectLoaded = useCallback(
     ({ path, data }: ProjectLoadedEvent): void => {
-      // 最近開いた一覧へ記録する（サイドバーからの再オープン用）。
       addRecentProject(path);
       // リンク切れ / パースエラーは判定ドメイン・文言が別なので個別に集計して通知する。
       const brokenLinkCount = countTasksWithBrokenLink(
@@ -756,7 +177,19 @@ const AppShell = () => {
     [addRecentProject, showToast],
   );
 
-  const project = useProject({
+  const {
+    state,
+    openProject,
+    openProjectByPath,
+    createTask,
+    updateTask,
+    deleteTask,
+    updateColumns,
+    moveTask,
+    reorderColumns,
+    addLink,
+    removeLink,
+  } = useProject({
     onError: (err) => {
       // invokeWrapped が既に通知済み（allowlist 由来 tauri）なら二重通知を避ける。
       // allowlist 外 tauri（open_project / get_columns refresh / update_card_order 同一カラム）
@@ -768,17 +201,6 @@ const AppShell = () => {
     },
     onLoaded: handleProjectLoaded,
   });
-  const {
-    state,
-    createTask,
-    updateTask,
-    deleteTask,
-    updateColumns,
-    moveTask,
-    reorderColumns,
-    addLink,
-    removeLink,
-  } = project;
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
 
   // invokeWrapped 層の失敗トーストを App の showToast へ橋渡しする。
@@ -830,10 +252,7 @@ const AppShell = () => {
   // 最初の render が stale UI state で新プロジェクトのデータを参照する race が
   // 発生する。React 公式の "Adjusting state when a prop changes" パターン
   // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
-  // に従い、render-phase で同期的に reset する。AppShell は Provider remount に
-  // 巻き込まれないため、本ブロックは project 切替の都度確実に走る。view の
-  // リセットは <AppViewProvider key={loadedPath ?? "idle"}> の remount（loaded path
-  // → "idle" / 別 path への切替を含む）が担当するため navigate を呼ぶ必要はない。
+  // に従い、render-phase で同期的に reset する。
   const loadedPath = state.kind === "loaded" ? state.path : null;
   const [prevLoadedPath, setPrevLoadedPath] = useState<string | null>(null);
   if (loadedPath !== null && loadedPath !== prevLoadedPath) {
@@ -908,15 +327,88 @@ const AppShell = () => {
   const [pendingLabelFilter, setPendingLabelFilter] = useState<string | null>(
     null,
   );
+  const handleLabelUsageClick = useCallback(
+    (name: string) => {
+      setPendingLabelFilter(name);
+      navigate("board");
+    },
+    [navigate],
+  );
   const handleLabelFilterApplied = useCallback(() => {
     setPendingLabelFilter(null);
   }, []);
 
+  // サブIssue モードのときだけ自動セットされた親 path を取り出す（通常作成 / 閉時は undefined）。
+  const subIssueParentPath =
+    createModal?.kind === "subIssue" ? createModal.parentPath : undefined;
+  // サブIssue モード中は親候補を 1 件に絞り、ユーザに「親が自動セットされた」ことを示す。
+  // tasks から親が消えると filter 結果が [] になり、ParentTaskSelect の filePath fallback が起動する。
+  const parentCandidates = useMemo(() => {
+    if (subIssueParentPath === undefined) {
+      return tasks;
+    }
+    return tasks.filter((t) => t.filePath === subIssueParentPath);
+  }, [tasks, subIssueParentPath]);
+  const parentReadOnly = subIssueParentPath !== undefined;
   // path 末尾セグメントを project 名として表示する。OS の path separator は
   // / / \ どちらにも対応する (Windows / POSIX 双方)。
   const displayedPath = state.kind === "loaded" ? state.path : null;
   const projectName =
     displayedPath !== null ? basenameOf(displayedPath) : undefined;
+  const selectedTask = resolveSelectedTask(
+    selectedTaskId,
+    tasks,
+    pendingDeleteTask,
+  );
+
+  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す保険。
+  // 削除確定後・外部更新・project 切替で selectedTaskId が null になったとき等を拾う。
+  // 同一 ID 再出現時の DetailScreen 意図せぬ復活を防ぐため selectedTaskId も同時にクリア。
+  useEffect(() => {
+    if (view === "detail" && selectedTask === null) {
+      navigate("board");
+      if (selectedTaskId !== null) {
+        setSelectedTaskId(null);
+      }
+    }
+  }, [view, selectedTask, selectedTaskId, navigate]);
+
+  // settings 表示中に「開く」を押した場合も board に戻してから開く。
+  // openProject は成功/失敗/キャンセルを区別しない Promise<void> のため、
+  // 押下時点で board へ戻す（board は EmptyState を含め常に有効な画面）。
+  const handleOpenClick = useCallback(() => {
+    navigate("board");
+    openProject();
+  }, [navigate, openProject]);
+
+  // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
+  const handleOpenProjectPath = useCallback(
+    (path: string) => {
+      navigate("board");
+      openProjectByPath(path);
+    },
+    [navigate, openProjectByPath],
+  );
+
+  // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
+  // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
+  const handleTaskClick = useCallback(
+    (taskId: string) => {
+      setSelectedTaskId(taskId);
+      navigate("detail");
+    },
+    [navigate],
+  );
+
+  // サイドバーは全画面区分で常時表示される。詳細は detail 区分へ一本化したため、
+  // どの区分から選んでも選択 + navigate("detail") で全画面詳細(DetailScreen)を開く。
+  const handleSidebarSelectTask = useCallback(
+    (taskId: string) => {
+      setSelectedTaskId(taskId);
+      navigate("detail");
+    },
+    [navigate],
+  );
 
   const handleSelectTask = useCallback(
     (taskId: string) => {
@@ -929,6 +421,41 @@ const AppShell = () => {
     },
     [tasks, announce],
   );
+
+  // detail（全画面ビュー）からの「← 戻る」/ Esc。board へ戻すと同時に選択を解除し、
+  // board をクリーン表示にする。
+  const handleBackToBoard = useCallback(() => {
+    navigate("board");
+    setSelectedTaskId(null);
+  }, [navigate]);
+
+  // HeaderBar 設定トグル。settings 中なら board へ戻す。board / detail からは settings へ。
+  // detail から来た場合は選択を解除し、settings → board 復帰後に DetailScreen が
+  // 再表示されないようにする（detail と settings は排他）。
+  const handleSettingsClick = useCallback(() => {
+    if (view === "settings") {
+      navigate("board");
+      return;
+    }
+    if (view === "detail") {
+      setSelectedTaskId(null);
+    }
+    navigate("settings");
+  }, [view, navigate]);
+
+  // HeaderBar マイルストーン切替。milestone 中なら board へ戻す。detail から来た場合は
+  // 選択を解除する（detail と milestone は排他）。プロジェクト未オープン時は
+  // HeaderBar 側でボタン自体を非表示にするため、本ハンドラは loaded 前提で配線する。
+  const handleMilestoneClick = useCallback(() => {
+    if (view === "milestone") {
+      navigate("board");
+      return;
+    }
+    if (view === "detail") {
+      setSelectedTaskId(null);
+    }
+    navigate("milestone");
+  }, [view, navigate]);
 
   const handleTaskUpdate = useCallback(
     async (id: string, updates: Partial<Omit<Task, "id">>) => {
@@ -948,6 +475,17 @@ const AppShell = () => {
       showToast("タスクを更新しました", "success");
     },
     [tasks, updateTask, showToast, showErrorUnlessNotified],
+  );
+
+  const handleAddTask = useCallback(
+    (columnName: string) => {
+      setCreateModal({ kind: "normal", status: columnName });
+      // board の「+」起点: 戻り先は board。
+      setReturnView("board");
+      setReturnTaskId(null);
+      navigate("create");
+    },
+    [navigate],
   );
 
   const handleAddColumn = useCallback(
@@ -1133,6 +671,73 @@ const AppShell = () => {
       showToast("カラムを削除しました", "success");
     },
     [columns, tasks, updateColumns, showToast, showErrorUnlessNotified],
+  );
+
+  const handleCloseCreateModal = useCallback(() => {
+    setCreateModal(null);
+    // 戻り先（board / 元の detail）を純関数で解決し、resolveCloseTarget の契約どおり
+    // selectedTaskId は常に target の値で上書きする。null 戻りのケースでは選択を
+    // 確実にクリアし、stale な detail 選択が board に残らないようにする。
+    const target = resolveCloseTarget(returnView, returnTaskId);
+    setSelectedTaskId(target.selectedTaskId);
+    setReturnView("board");
+    setReturnTaskId(null);
+    navigate(target.view);
+  }, [returnView, returnTaskId, navigate]);
+
+  const defaultCreateStatus =
+    columns.length > 0
+      ? columns.reduce((lowest, column) =>
+          column.order < lowest.order ? column : lowest,
+        ).name
+      : null;
+
+  const handleAddSubIssue = useCallback(
+    (parentFilePath: string) => {
+      // 利用可能なステータスがなければ toast して中断（create へ遷移しない）。
+      // これを消すと createModal=null のまま navigate("create") され、
+      // create ビューだが TaskCreateScreen も board も描画されず空画面になる。
+      if (defaultCreateStatus === null) {
+        showToast("利用可能なステータスがありません", "error");
+        return;
+      }
+      setCreateModal({
+        kind: "subIssue",
+        status: defaultCreateStatus,
+        parentPath: parentFilePath,
+      });
+      // detail サブIssue 起点: 戻り先は元の detail（親タスク）。
+      setReturnView("detail");
+      setReturnTaskId(selectedTaskId);
+      navigate("create");
+    },
+    [defaultCreateStatus, selectedTaskId, showToast, navigate],
+  );
+
+  const handleCreateTask = useCallback(
+    async (values: TaskFormValues): Promise<void> => {
+      const result = await submitCreateTask(values);
+      if (!result.ok) {
+        // 画面を閉じない: TaskCreateScreen は onSubmit reject で開いたままになる
+        const message = projectErrorMessage(result.error);
+        showErrorUnlessNotified(
+          result.error,
+          `タスクの作成に失敗しました: ${message}`,
+        );
+        throw new Error(message);
+      }
+      const { failedSubIssues } = result.value;
+      if (failedSubIssues.length > 0) {
+        // 親と成功した子は残す。失敗した子のみ警告（ロールバックしない）。
+        showToast(
+          `サブIssue ${failedSubIssues.length} 件の作成に失敗しました`,
+          "warning",
+        );
+        return;
+      }
+      showToast("タスクを作成しました", "success");
+    },
+    [submitCreateTask, showToast, showErrorUnlessNotified],
   );
 
   const handleTaskDrop = useCallback(
@@ -1361,70 +966,166 @@ const AppShell = () => {
     [tasks, deleteTask, showToast, announce, showErrorUnlessNotified],
   );
 
-  // ToastContainer / LiveRegion は AppViewProvider の外に置く。Provider が
-  // <AppViewProvider key={loadedPath ?? "idle"}> で project 切替時に remount される際、
-  // 配下の DOM もまとめて remount されるため、in-flight な toast / aria-live announcement
-  // を巻き込まずに保つにはこのレイヤで描画する必要がある。useToasts / announcement state は
-  // AppShell が所有しているので、Provider の外から参照しても整合は崩れない。
+  /**
+   * state.kind に応じて main 領域を描画する。
+   *
+   * @returns Loading / EmptyState / Board のいずれか
+   */
+  const renderMain = (): React.ReactNode => {
+    if (state.kind === "loading") {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-muted">読み込み中…</p>
+        </div>
+      );
+    }
+    if (state.kind !== "loaded") {
+      return <EmptyState type="no-project" onOpenProject={openProject} />;
+    }
+    // tasks 0 件でも Board は描画する (column UI / +追加 ボタンを残すため、
+    // board-view spec に従う)。空プロジェクト時のガイダンスは Board 上に
+    // 重ねて表示する。
+    return (
+      <div className="relative flex flex-1 overflow-hidden">
+        <BoardWorkspace
+          // settings 表示中は BoardWorkspace が unmount されるため、settings→board 遷移で
+          // 必ず remount される。これにより useTaskFilter の useState 初期 seed が遷移ごとに
+          // 1 回適用される（key の追加はかえって seed→クリア→再 remount で seed 消失を招く
+          // ので付けない）。
+          columns={columns}
+          tasks={tasks}
+          tasksByNormalizedPath={tasksByNormalizedPath}
+          doneColumn={doneColumn}
+          milestonesByName={milestonesResource.byName}
+          milestones={milestonesResource.milestones}
+          onAddTask={handleAddTask}
+          onAddColumn={handleAddColumn}
+          onRenameColumn={handleRenameColumn}
+          onDeleteColumn={handleDeleteColumn}
+          onTaskClick={handleTaskClick}
+          onTaskDrop={handleTaskDrop}
+          onColumnReorder={handleColumnReorder}
+          initialLabelFilter={pendingLabelFilter}
+          onLabelFilterApplied={handleLabelFilterApplied}
+        />
+        {tasks.length === 0 && (
+          <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
+            <p className="rounded bg-surface/90 px-4 py-2 text-sm text-muted shadow">
+              タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 作成ビューは独自の全画面 chrome（topbar/subbar/footer）を持つ standalone レイアウトのため、
+  // 共通の HeaderBar / AppSidebar を外して viewport 全体に描画する。
+  // ToastContainer / LiveRegion は全ビュー共通の縦断 UI のため create でも温存する。
+  const isCreateView = view === "create" && createModal !== null;
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <AppViewProvider key={loadedPath ?? "idle"}>
-        <AppShellBody
-          showToast={toasts.showToast}
-          recentProjects={recentProjects}
-          project={project}
-          submitCreateTask={submitCreateTask}
-          loadedPath={loadedPath}
-          tasks={tasks}
+      {isCreateView && createModal !== null ? (
+        <TaskCreateScreen
           columns={columns}
-          doneColumn={doneColumn}
-          tasksByNormalizedPath={tasksByNormalizedPath}
+          projectPath={loadedPath ?? undefined}
           projectName={projectName}
-          displayedPath={displayedPath}
-          milestonesResource={milestonesResource}
-          settingsMilestonesResource={settingsMilestonesResource}
-          milestoneMutations={milestoneMutations}
-          settingsLabelsResource={settingsLabelsResource}
-          selectedTaskId={selectedTaskId}
-          setSelectedTaskId={setSelectedTaskId}
-          pendingDeleteTask={pendingDeleteTask}
-          createModal={createModal}
-          setCreateModal={setCreateModal}
-          returnView={returnView}
-          setReturnView={setReturnView}
-          returnTaskId={returnTaskId}
-          setReturnTaskId={setReturnTaskId}
-          pendingLabelFilter={pendingLabelFilter}
-          setPendingLabelFilter={setPendingLabelFilter}
-          showErrorUnlessNotified={showErrorUnlessNotified}
-          handleTaskUpdate={handleTaskUpdate}
-          handleAddColumn={handleAddColumn}
-          handleRenameColumn={handleRenameColumn}
-          handleDeleteColumn={handleDeleteColumn}
-          handleTaskDrop={handleTaskDrop}
-          handleColumnReorder={handleColumnReorder}
-          handleAddLink={handleAddLink}
-          handleRemoveLink={handleRemoveLink}
-          handleTaskDelete={handleTaskDelete}
-          handleSelectTask={handleSelectTask}
-          handleLabelFilterApplied={handleLabelFilterApplied}
+          watchedFileCount={tasks.length}
+          initialStatus={createModal.status}
+          parentCandidates={parentCandidates}
+          existingTasks={tasks}
+          initialParent={subIssueParentPath}
+          parentReadOnly={parentReadOnly}
+          onSubmit={handleCreateTask}
+          onClose={handleCloseCreateModal}
         />
-      </AppViewProvider>
-      <ToastContainer toasts={toasts.toasts} onDismiss={toasts.dismissToast} />
+      ) : (
+        <>
+          <HeaderBar
+            view={view}
+            onSettingsClick={handleSettingsClick}
+            onMilestoneClick={
+              state.kind === "loaded" ? handleMilestoneClick : undefined
+            }
+            onOpenClick={handleOpenClick}
+          />
+          <div className="flex flex-1 overflow-hidden">
+            <AppSidebar
+              projectName={projectName}
+              currentPath={displayedPath ?? undefined}
+              recentProjects={recentProjects}
+              tasks={tasks}
+              selectedTaskId={selectedTaskId}
+              onOpenProject={handleOpenClick}
+              onOpenProjectPath={handleOpenProjectPath}
+              onSelectTask={handleSidebarSelectTask}
+            />
+            <main className="flex flex-1 overflow-hidden">
+              {view === "settings" && (
+                <SettingsScreen
+                  labels={settingsLabelsResource}
+                  milestones={settingsMilestonesResource}
+                  milestoneMutations={milestoneMutations}
+                  onLabelUsageClick={handleLabelUsageClick}
+                />
+              )}
+              {view === "milestone" && (
+                <MilestoneViewScreen
+                  resource={milestonesResource}
+                  tasks={tasks}
+                  doneColumn={doneColumn}
+                  onCreateMilestone={milestoneMutations.create}
+                  isCreating={milestoneMutations.isPending}
+                />
+              )}
+              {view === "detail" && selectedTask && (
+                <DetailScreen
+                  task={selectedTask}
+                  columns={columns}
+                  allTasks={tasks}
+                  tasksByNormalizedPath={tasksByNormalizedPath}
+                  doneColumn={doneColumn}
+                  // 作成は全画面 create ビューへ分離され detail と共存しないため、
+                  // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
+                  // createModal が stale でも detail の Esc 戻るが抑止されない。
+                  isUpperModalOpen={false}
+                  onBack={handleBackToBoard}
+                  onTaskUpdate={handleTaskUpdate}
+                  onDelete={handleTaskDelete}
+                  onAddSubIssue={handleAddSubIssue}
+                  onSelectTask={handleSelectTask}
+                  onAddLink={handleAddLink}
+                  onRemoveLink={handleRemoveLink}
+                />
+              )}
+              {view !== "settings" &&
+                view !== "detail" &&
+                view !== "milestone" &&
+                view !== "create" &&
+                renderMain()}
+            </main>
+          </div>
+        </>
+      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <LiveRegion announcement={announcement} />
     </div>
   );
 };
 
 /**
- * アプリケーションのルートコンポーネント。配線のみを担当し、
- * 実体は private な {@link AppShell} に委譲する。
+ * アプリケーションのルートコンポーネント。`<AppViewProvider>` を AppShell より外側に
+ * 置くことで AppShell から `useAppView()` を直接呼べるようにする。
+ *
  * @returns ルート要素
  */
 export const App = () => {
   return (
     <ThemeProvider>
-      <AppShell />
+      <AppViewProvider>
+        <AppShell />
+      </AppViewProvider>
     </ThemeProvider>
   );
 };
