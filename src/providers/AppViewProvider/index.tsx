@@ -39,9 +39,10 @@ type AppViewProviderProps = {
  * 内部の `useState<AppView>("board")` で view state を所有し、`navigate` は
  * `useCallback` で stable に提供する完全 uncontrolled 形。
  *
- * プロジェクト切替時の view リセットは `<AppViewProvider key={loadedPath}>`
- * で本 Provider を remount することで、内部 useState の初期値 "board" に
- * 自動的に戻る。これにより上位で render-phase setState を行う必要がなくなる。
+ * プロジェクト切替時の view リセットは `<AppViewProvider key={loadedPath ?? "idle"}>`
+ * のように、loaded path (非 loaded は "idle" 等のセンチネル) を key にして本 Provider
+ * を remount することで、内部 useState の初期値 "board" に自動的に戻る。
+ * これにより上位で render-phase setState を行う必要がなくなる。
  *
  * @param props - {@link AppViewProviderProps}
  * @returns Provider 要素
