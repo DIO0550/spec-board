@@ -396,17 +396,21 @@ const AppShellBody = ({
     pendingDeleteTask,
   );
 
-  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す。
-  // 削除確定後・外部更新でのタスク消失等、render-phase reset で拾えない経路の保険。
-  // selectedTaskId も同 render pass でクリアし、同一 ID 再出現時の DetailScreen 意図せぬ
-  // 復活を防ぐ。同条件は次 render で成立しなくなるため無限ループしない（navigate は安定参照、
-  // setSelectedTaskId(null) は冪等）。
-  if (view === "detail" && selectedTask === null) {
-    navigate("board");
-    if (selectedTaskId !== null) {
-      setSelectedTaskId(null);
+  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す保険。
+  // 削除確定後・外部更新でのタスク消失等、same project 内で task が消える経路を
+  // 拾う。project 切替時の view リセットは <AppViewProvider key={loadedPath}> の
+  // remount に委譲済のため、本 effect は同 project 内のみ走り、stale な task ID
+  // で新 project のタスクを誤参照する race は構造的に起きない（task ID は同
+  // project 内で一意）。selectedTaskId も同時にクリアし、同一 ID 再出現時の
+  // DetailScreen 意図せぬ復活を防ぐ。
+  useEffect(() => {
+    if (view === "detail" && selectedTask === null) {
+      navigate("board");
+      if (selectedTaskId !== null) {
+        setSelectedTaskId(null);
+      }
     }
-  }
+  }, [view, selectedTask, selectedTaskId, navigate, setSelectedTaskId]);
 
   // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
   // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
