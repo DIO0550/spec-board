@@ -1,12 +1,4 @@
-import {
-  act,
-  createElement,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import {
@@ -42,25 +34,6 @@ const render = (element: ReturnType<typeof createElement>) => {
 };
 
 /**
- * AppViewProvider が controlled な薄いラッパに変わったため、本番の AppShell と
- * 同じ shape（useState + useCallback + useMemo）を内側で組み立てる小さな
- * テスト用ホスト。Provider 外 throw 検証のとき以外はこのホスト経由でマウントする。
- * @param props - 配下に置く React 要素
- * @returns AppViewProvider でラップした children
- */
-const TestAppViewHost = ({ children }: { children: ReactNode }) => {
-  const [view, setView] = useState<AppView>("board");
-  const navigate = useCallback((next: AppView) => {
-    setView(next);
-  }, []);
-  const value = useMemo<UseAppViewResult>(
-    () => ({ view, navigate }),
-    [view, navigate],
-  );
-  return createElement(AppViewProvider, { value, children });
-};
-
-/**
  * useAppView の戻り値を外部に公開するテスト用コンポーネント。
  * @param props - フック値を受け取るコールバック
  * @returns null（描画は行わない）
@@ -78,13 +51,14 @@ const UseAppViewProbe = ({
 };
 
 /**
- * TestAppViewHost で UseAppViewProbe をラップして render する糖衣。
+ * `<AppViewProvider>` で UseAppViewProbe をラップして render する糖衣。
+ * AppViewProvider は完全 uncontrolled なので `value` prop を渡さない。
  * @param onResult - 各 render で useAppView の戻り値を受け取るコールバック
  */
 const renderWithProvider = (onResult: (result: UseAppViewResult) => void) => {
   render(
     createElement(
-      TestAppViewHost,
+      AppViewProvider,
       null,
       createElement(UseAppViewProbe, { onResult }),
     ),
@@ -165,7 +139,7 @@ test("useAppView: detail から board へ navigate できる（戻る動線）",
   expect((latest as unknown as UseAppViewResult).view).toBe("board");
 });
 
-test("useAppView: detail から settings へ navigate できる（排他遷移）", () => {
+test("useAppView: detail から settings へ navigate できる(排他遷移)", () => {
   let latest: UseAppViewResult | null = null;
   renderWithProvider((r) => {
     latest = r;
@@ -240,4 +214,39 @@ test("useAppView: navigate('create') で create へ遷移する", () => {
     (latest as unknown as UseAppViewResult).navigate("create");
   });
   expect((latest as unknown as UseAppViewResult).view).toBe("create");
+});
+
+test("useAppView: navigate を連発しても React 警告が console.error に出ない", () => {
+  // 完全 uncontrolled 化により Provider 内部 setState で navigate が解決され、
+  // 「別コンポーネントの state を render 中に更新」警告 / 無限更新警告のいずれも
+  // 出ないことを凍結する（R-10）。
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  let latest: UseAppViewResult | null = null;
+  try {
+    renderWithProvider((r) => {
+      latest = r;
+    });
+    act(() => {
+      (latest as unknown as UseAppViewResult).navigate("settings");
+    });
+    act(() => {
+      (latest as unknown as UseAppViewResult).navigate("detail");
+    });
+    act(() => {
+      (latest as unknown as UseAppViewResult).navigate("milestone");
+    });
+    act(() => {
+      (latest as unknown as UseAppViewResult).navigate("create");
+    });
+    act(() => {
+      (latest as unknown as UseAppViewResult).navigate("board");
+    });
+    const messages = errorSpy.mock.calls
+      .map((c) => String(c[0] ?? ""))
+      .join("\n");
+    expect(messages).not.toMatch(/Cannot update a component while rendering/);
+    expect(messages).not.toMatch(/Maximum update depth exceeded/);
+  } finally {
+    errorSpy.mockRestore();
+  }
 });

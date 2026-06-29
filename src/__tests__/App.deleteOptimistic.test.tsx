@@ -375,7 +375,8 @@ test("削除 pending 中に open-start (project switch) が走ると pendingDele
   );
   await clickHeaderOpenButton();
 
-  // render-phase reset で pendingDeleteTask が null になり DetailScreen が unmount される
+  // AppShellBody の render-phase reset (他 state) と AppViewProvider key remount (view)
+  // の組み合わせで pendingDeleteTask が null になり DetailScreen が unmount される
   await vi.waitFor(() => {
     expect(queryDetailScreen()).toBeNull();
   });

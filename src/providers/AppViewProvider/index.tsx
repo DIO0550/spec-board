@@ -1,4 +1,11 @@
-import { createContext, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 
 /**
  * アプリの画面区分。board（既定）/ settings / detail（全画面詳細）/ milestone
@@ -23,29 +30,31 @@ const AppViewContext = createContext<UseAppViewResult | null>(null);
 
 /** AppViewProvider の Props。 */
 type AppViewProviderProps = {
-  /**
-   * 配下に供給する view state と navigate ハンドラ。
-   * 上位コンポーネント（AppShell 等）が useState で所有し、value として渡す前提。
-   */
-  value: UseAppViewResult;
   /** Context を供給する子要素 */
   children: ReactNode;
 };
 
 /**
  * アプリの画面区分（view）の Context を配下に供給する Provider。
- * 自身は state を所有せず、上位コンポーネントから渡された value を
- * AppViewContext に流すだけの薄いラッパとして振る舞う。
+ * 内部の `useState<AppView>("board")` で view state を所有し、`navigate` は
+ * `useCallback` で stable に提供する完全 uncontrolled 形。
  *
- * state 所有を呼び出し側に残すのは、render-phase での `navigate("board")` を
- * React 公式の「Adjusting state when a prop changes」パターンとして合法に保つため。
- * navigate を呼ぶコンポーネントと state 所有元を同一に保たないと
- * 「別コンポーネントの state を render 中に更新する」警告に抵触する。
+ * プロジェクト切替時の view リセットは `<AppViewProvider key={loadedPath}>`
+ * で本 Provider を remount することで、内部 useState の初期値 "board" に
+ * 自動的に戻る。これにより上位で render-phase setState を行う必要がなくなる。
  *
  * @param props - {@link AppViewProviderProps}
  * @returns Provider 要素
  */
-export const AppViewProvider = ({ value, children }: AppViewProviderProps) => {
+export const AppViewProvider = ({ children }: AppViewProviderProps) => {
+  const [view, setView] = useState<AppView>("board");
+  const navigate = useCallback((next: AppView) => {
+    setView(next);
+  }, []);
+  const value = useMemo<UseAppViewResult>(
+    () => ({ view, navigate }),
+    [view, navigate],
+  );
   return (
     <AppViewContext.Provider value={value}>{children}</AppViewContext.Provider>
   );
