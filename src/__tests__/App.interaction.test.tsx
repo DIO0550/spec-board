@@ -659,8 +659,8 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   });
 
   // B のレンダー時点で DetailScreen が閉じていることを確認
-  // (render-phase reset により selectedTaskId が null になっているため、
-  //  B の task A が誤って開かれない)
+  // (AppShell の render-phase reset (他 state) と AppViewProvider key remount (view)
+  //  の組み合わせで selectedTaskId が null になっているため、B の task A が誤って開かれない)
   expect(container?.querySelector('[data-testid="status-select"]')).toBeNull();
   // Board は B の task を表示している
   expect(container?.textContent).toContain("B プロジェクトの A");

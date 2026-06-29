@@ -9,7 +9,6 @@ import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
-import { resolveCloseTarget } from "@/hooks/useAppView/resolveCloseTarget";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
@@ -18,8 +17,9 @@ import { type OrphanStrategy, registerToastSink } from "@/lib/tauri";
 import {
   type AppView,
   AppViewProvider,
-  type UseAppViewResult,
+  useAppView,
 } from "@/providers/AppViewProvider";
+import { resolveCloseTarget } from "@/providers/AppViewProvider/resolveCloseTarget";
 import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,
@@ -143,32 +143,14 @@ const resolveSelectedTask = (
 };
 
 /**
- * App 本体（旧 App の処理一式）。view state を `useState<AppView>` で自前所有し、
- * `AppViewProvider value={...}` で children に Context として配る。
+ * App 本体。`<AppViewProvider>` の配下に位置するため `useAppView()` を直接呼べる。
+ * state / hook / handler / JSX を 1 コンポーネントに集約する。
  *
- * state 所有を `AppViewProvider` ではなく本コンポーネントに残しているのは、
- * 後段の render-phase reset（プロジェクト切替時 / detail で選択タスク消失時）で
- * `navigate("board")` を render 中に呼ぶため。setState を呼ぶ場所と
- * state 所有元を同一に保たないと React の「Adjusting state when a prop changes」
- * パターンとして合法に保てない。詳細は `useAppView` の Provider 側 JSDoc を参照。
- *
- * @returns アプリケーションのルートレイアウト要素
+ * @returns アプリケーションのレイアウト要素
  */
 const AppShell = () => {
+  const { view, navigate } = useAppView();
   const { toasts, showToast, dismissToast } = useToasts();
-
-  // 旧 useAppView() の中身を自前展開する。Provider を内側で被せるが、
-  // navigate の setState は本コンポーネント自身の useState を呼ぶため、
-  // 下段の render-phase 内 navigate("board") も合法に保たれる。
-  const [view, setView] = useState<AppView>("board");
-  const navigate = useCallback((next: AppView) => {
-    setView(next);
-  }, []);
-  const appViewValue = useMemo<UseAppViewResult>(
-    () => ({ view, navigate }),
-    [view, navigate],
-  );
-
   const { projects: recentProjects, add: addRecentProject } =
     useRecentProjects();
 
@@ -178,7 +160,6 @@ const AppShell = () => {
   // close → reopen / 別 project 切替のたびに改めて 1 回ずつ呼ばれる。
   const handleProjectLoaded = useCallback(
     ({ path, data }: ProjectLoadedEvent): void => {
-      // 最近開いた一覧へ記録する（サイドバーからの再オープン用）。
       addRecentProject(path);
       // リンク切れ / パースエラーは判定ドメイン・文言が別なので個別に集計して通知する。
       const brokenLinkCount = countTasksWithBrokenLink(
@@ -240,23 +221,6 @@ const AppShell = () => {
     [showToast],
   );
 
-  // settings 表示中に「開く」を押した場合も board に戻してから開く。
-  // openProject は成功/失敗/キャンセルを区別しない Promise<void> のため、
-  // 押下時点で board へ戻す（board は EmptyState を含め常に有効な画面）。
-  const handleOpenClick = useCallback(() => {
-    navigate("board");
-    openProject();
-  }, [navigate, openProject]);
-
-  // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
-  const handleOpenProjectPath = useCallback(
-    (path: string) => {
-      navigate("board");
-      openProjectByPath(path);
-    },
-    [navigate, openProjectByPath],
-  );
-
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
   // 存在する間は selectedTask 計算の fallback として参照され、DetailScreen が
@@ -301,11 +265,6 @@ const AppShell = () => {
     setReturnView("board");
     setReturnTaskId(null);
     setPendingDeleteTask(null);
-    // detail / create（全画面ビュー）表示中にプロジェクトが切り替わったら、選択タスク消失で
-    // 「選択タスクなしの全画面ビュー」が残らないよう同 render pass で board へ戻す。
-    if (view === "detail" || view === "create") {
-      navigate("board");
-    }
   } else if (state.kind !== "loaded") {
     // loaded から非 loaded (loading / error / idle) に抜けた: project を
     // 閉じた / 再 open 中 / 失敗状態。pending 中の snapshot と create modal は
@@ -317,11 +276,6 @@ const AppShell = () => {
       setCreateModal(null);
       setReturnView("board");
       setReturnTaskId(null);
-    }
-    // 非 loaded（プロジェクトを閉じた等）に抜けた場合は detail / milestone / create に
-    // 取り残さない（milestone は HeaderBar の戻るボタンも非表示になるため）。
-    if (view === "detail" || view === "milestone" || view === "create") {
-      navigate("board");
     }
   }
 
@@ -383,9 +337,7 @@ const AppShell = () => {
   const handleLabelFilterApplied = useCallback(() => {
     setPendingLabelFilter(null);
   }, []);
-  // リンク切れ / パースエラーの警告トーストは load 成功イベント（useProject の
-  // onLoaded callback = handleProjectLoaded）で 1 回だけ発火する。tasks 変更のたびに
-  // 走る effect + ref の発火済み管理は廃止した。
+
   // サブIssue モードのときだけ自動セットされた親 path を取り出す（通常作成 / 閉時は undefined）。
   const subIssueParentPath =
     createModal?.kind === "subIssue" ? createModal.parentPath : undefined;
@@ -409,17 +361,34 @@ const AppShell = () => {
     pendingDeleteTask,
   );
 
-  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す。
-  // 削除確定後・外部更新でのタスク消失等、render-phase reset で拾えない経路の保険。
-  // selectedTaskId も同 render pass でクリアし、同一 ID 再出現時の DetailScreen 意図せぬ
-  // 復活を防ぐ。同条件は次 render で成立しなくなるため無限ループしない（navigate は安定参照、
-  // setSelectedTaskId(null) は冪等）。
-  if (view === "detail" && selectedTask === null) {
-    navigate("board");
-    if (selectedTaskId !== null) {
-      setSelectedTaskId(null);
+  // detail（全画面ビュー）表示中に選択タスクが消失したら board へ戻す保険。
+  // 削除確定後・外部更新・project 切替で selectedTaskId が null になったとき等を拾う。
+  // 同一 ID 再出現時の DetailScreen 意図せぬ復活を防ぐため selectedTaskId も同時にクリア。
+  useEffect(() => {
+    if (view === "detail" && selectedTask === null) {
+      navigate("board");
+      if (selectedTaskId !== null) {
+        setSelectedTaskId(null);
+      }
     }
-  }
+  }, [view, selectedTask, selectedTaskId, navigate]);
+
+  // settings 表示中に「開く」を押した場合も board に戻してから開く。
+  // openProject は成功/失敗/キャンセルを区別しない Promise<void> のため、
+  // 押下時点で board へ戻す（board は EmptyState を含め常に有効な画面）。
+  const handleOpenClick = useCallback(() => {
+    navigate("board");
+    openProject();
+  }, [navigate, openProject]);
+
+  // サイドバーの最近一覧から指定パスを直接開く（ダイアログを経由しない）。
+  const handleOpenProjectPath = useCallback(
+    (path: string) => {
+      navigate("board");
+      openProjectByPath(path);
+    },
+    [navigate, openProjectByPath],
+  );
 
   // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
   // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
@@ -706,11 +675,11 @@ const AppShell = () => {
 
   const handleCloseCreateModal = useCallback(() => {
     setCreateModal(null);
-    // 戻り先（board / 元の detail）を純関数で解決し、detail 復帰時は選択タスクを復元する。
+    // 戻り先（board / 元の detail）を純関数で解決し、resolveCloseTarget の契約どおり
+    // selectedTaskId は常に target の値で上書きする。null 戻りのケースでは選択を
+    // 確実にクリアし、stale な detail 選択が board に残らないようにする。
     const target = resolveCloseTarget(returnView, returnTaskId);
-    if (target.selectedTaskId !== null) {
-      setSelectedTaskId(target.selectedTaskId);
-    }
+    setSelectedTaskId(target.selectedTaskId);
     setReturnView("board");
     setReturnTaskId(null);
     navigate(target.view);
@@ -1056,106 +1025,107 @@ const AppShell = () => {
   const isCreateView = view === "create" && createModal !== null;
 
   return (
-    <AppViewProvider value={appViewValue}>
-      <div className="flex h-screen w-screen flex-col overflow-hidden">
-        {isCreateView && createModal !== null ? (
-          <TaskCreateScreen
-            columns={columns}
-            projectPath={loadedPath ?? undefined}
-            projectName={projectName}
-            watchedFileCount={tasks.length}
-            initialStatus={createModal.status}
-            parentCandidates={parentCandidates}
-            existingTasks={tasks}
-            initialParent={subIssueParentPath}
-            parentReadOnly={parentReadOnly}
-            onSubmit={handleCreateTask}
-            onClose={handleCloseCreateModal}
+    <div className="flex h-screen w-screen flex-col overflow-hidden">
+      {isCreateView && createModal !== null ? (
+        <TaskCreateScreen
+          columns={columns}
+          projectPath={loadedPath ?? undefined}
+          projectName={projectName}
+          watchedFileCount={tasks.length}
+          initialStatus={createModal.status}
+          parentCandidates={parentCandidates}
+          existingTasks={tasks}
+          initialParent={subIssueParentPath}
+          parentReadOnly={parentReadOnly}
+          onSubmit={handleCreateTask}
+          onClose={handleCloseCreateModal}
+        />
+      ) : (
+        <>
+          <HeaderBar
+            view={view}
+            onSettingsClick={handleSettingsClick}
+            onMilestoneClick={
+              state.kind === "loaded" ? handleMilestoneClick : undefined
+            }
+            onOpenClick={handleOpenClick}
           />
-        ) : (
-          <>
-            <HeaderBar
-              view={view}
-              onSettingsClick={handleSettingsClick}
-              onMilestoneClick={
-                state.kind === "loaded" ? handleMilestoneClick : undefined
-              }
-              onOpenClick={handleOpenClick}
+          <div className="flex flex-1 overflow-hidden">
+            <AppSidebar
+              projectName={projectName}
+              currentPath={displayedPath ?? undefined}
+              recentProjects={recentProjects}
+              tasks={tasks}
+              selectedTaskId={selectedTaskId}
+              onOpenProject={handleOpenClick}
+              onOpenProjectPath={handleOpenProjectPath}
+              onSelectTask={handleSidebarSelectTask}
             />
-            <div className="flex flex-1 overflow-hidden">
-              <AppSidebar
-                projectName={projectName}
-                currentPath={displayedPath ?? undefined}
-                recentProjects={recentProjects}
-                tasks={tasks}
-                selectedTaskId={selectedTaskId}
-                onOpenProject={handleOpenClick}
-                onOpenProjectPath={handleOpenProjectPath}
-                onSelectTask={handleSidebarSelectTask}
-              />
-              <main className="flex flex-1 overflow-hidden">
-                {view === "settings" && (
-                  <SettingsScreen
-                    labels={settingsLabelsResource}
-                    milestones={settingsMilestonesResource}
-                    milestoneMutations={milestoneMutations}
-                    onLabelUsageClick={handleLabelUsageClick}
-                  />
-                )}
-                {view === "milestone" && (
-                  <MilestoneViewScreen
-                    resource={milestonesResource}
-                    tasks={tasks}
-                    doneColumn={doneColumn}
-                    onCreateMilestone={milestoneMutations.create}
-                    isCreating={milestoneMutations.isPending}
-                  />
-                )}
-                {view === "detail" && selectedTask && (
-                  <DetailScreen
-                    task={selectedTask}
-                    columns={columns}
-                    allTasks={tasks}
-                    tasksByNormalizedPath={tasksByNormalizedPath}
-                    doneColumn={doneColumn}
-                    // 作成は全画面 create ビューへ分離され detail と共存しないため、
-                    // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
-                    // createModal が stale でも detail の Esc 戻るが抑止されない。
-                    isUpperModalOpen={false}
-                    onBack={handleBackToBoard}
-                    onTaskUpdate={handleTaskUpdate}
-                    onDelete={handleTaskDelete}
-                    onAddSubIssue={handleAddSubIssue}
-                    onSelectTask={handleSelectTask}
-                    onAddLink={handleAddLink}
-                    onRemoveLink={handleRemoveLink}
-                  />
-                )}
-                {view !== "settings" &&
-                  view !== "detail" &&
-                  view !== "milestone" &&
-                  view !== "create" &&
-                  renderMain()}
-              </main>
-            </div>
-          </>
-        )}
-        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-        <LiveRegion announcement={announcement} />
-      </div>
-    </AppViewProvider>
+            <main className="flex flex-1 overflow-hidden">
+              {view === "settings" && (
+                <SettingsScreen
+                  labels={settingsLabelsResource}
+                  milestones={settingsMilestonesResource}
+                  milestoneMutations={milestoneMutations}
+                  onLabelUsageClick={handleLabelUsageClick}
+                />
+              )}
+              {view === "milestone" && (
+                <MilestoneViewScreen
+                  resource={milestonesResource}
+                  tasks={tasks}
+                  doneColumn={doneColumn}
+                  onCreateMilestone={milestoneMutations.create}
+                  isCreating={milestoneMutations.isPending}
+                />
+              )}
+              {view === "detail" && selectedTask && (
+                <DetailScreen
+                  task={selectedTask}
+                  columns={columns}
+                  allTasks={tasks}
+                  tasksByNormalizedPath={tasksByNormalizedPath}
+                  doneColumn={doneColumn}
+                  // 作成は全画面 create ビューへ分離され detail と共存しないため、
+                  // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
+                  // createModal が stale でも detail の Esc 戻るが抑止されない。
+                  isUpperModalOpen={false}
+                  onBack={handleBackToBoard}
+                  onTaskUpdate={handleTaskUpdate}
+                  onDelete={handleTaskDelete}
+                  onAddSubIssue={handleAddSubIssue}
+                  onSelectTask={handleSelectTask}
+                  onAddLink={handleAddLink}
+                  onRemoveLink={handleRemoveLink}
+                />
+              )}
+              {view !== "settings" &&
+                view !== "detail" &&
+                view !== "milestone" &&
+                view !== "create" &&
+                renderMain()}
+            </main>
+          </div>
+        </>
+      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <LiveRegion announcement={announcement} />
+    </div>
   );
 };
 
 /**
- * アプリケーションのルートコンポーネント。配線のみを担当し、
- * 実体は private な {@link AppShell} に委譲する。
+ * アプリケーションのルートコンポーネント。`<AppViewProvider>` を AppShell より外側に
+ * 置くことで AppShell から `useAppView()` を直接呼べるようにする。
+ *
  * @returns ルート要素
  */
 export const App = () => {
   return (
     <ThemeProvider>
-      <AppShell />
+      <AppViewProvider>
+        <AppShell />
+      </AppViewProvider>
     </ThemeProvider>
   );
 };
