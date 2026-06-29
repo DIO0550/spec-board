@@ -9,7 +9,6 @@ import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
-import { resolveCloseTarget } from "@/hooks/useAppView/resolveCloseTarget";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
@@ -20,6 +19,7 @@ import {
   AppViewProvider,
   type UseAppViewResult,
 } from "@/providers/AppViewProvider";
+import { resolveCloseTarget } from "@/providers/AppViewProvider/resolveCloseTarget";
 import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,
