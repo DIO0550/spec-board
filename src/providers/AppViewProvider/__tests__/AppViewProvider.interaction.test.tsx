@@ -241,10 +241,16 @@ test("useAppView: navigate を連発しても React 警告が console.error に�
     act(() => {
       (latest as unknown as UseAppViewResult).navigate("board");
     });
+    // React の警告は `"... %s ..."` フォーマット + 追加引数で来るため、第1引数だけ
+    // 文字列化するとプレースホルダが解決されず assertion をすり抜けることがある。
+    // 全引数を String 化して連結し、メッセージと追加引数のどちらに含まれていても
+    // マッチするよう中間任意文字を許容する正規表現で検査する。
     const messages = errorSpy.mock.calls
-      .map((c) => String(c[0] ?? ""))
+      .map((call) => call.map((arg) => String(arg ?? "")).join(" "))
       .join("\n");
-    expect(messages).not.toMatch(/Cannot update a component while rendering/);
+    expect(messages).not.toMatch(
+      /Cannot update a component[\s\S]*while rendering/,
+    );
     expect(messages).not.toMatch(/Maximum update depth exceeded/);
   } finally {
     errorSpy.mockRestore();
