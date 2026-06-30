@@ -30,6 +30,12 @@ const generateToastId = (): string => crypto.randomUUID();
 type ToastProviderProps = {
   /** Context を供給する子要素。`<ToastContainer />` は children の外側で内蔵描画する */
   children: ReactNode;
+  /**
+   * 内蔵 `<ToastContainer />` に渡す duration（自動 dismiss までの ms）。
+   * 通常は未指定で十分（Toast 側の既定 3000ms が使われる）。Storybook で長時間表示したい
+   * story でのみ大きな値を指定する。
+   */
+  defaultDurationMs?: number;
 };
 
 /**
@@ -43,7 +49,10 @@ type ToastProviderProps = {
  * @param props - {@link ToastProviderProps}
  * @returns Provider 要素
  */
-export const ToastProvider = ({ children }: ToastProviderProps) => {
+export const ToastProvider = ({
+  children,
+  defaultDurationMs,
+}: ToastProviderProps) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const showToast = useCallback((message: string, type: ToastType) => {
@@ -73,7 +82,7 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     <ToastDispatchContext.Provider value={dispatch}>
       <ToastStateContext.Provider value={state}>
         {children}
-        <ToastContainer />
+        <ToastContainer duration={defaultDurationMs} />
       </ToastStateContext.Provider>
     </ToastDispatchContext.Provider>
   );

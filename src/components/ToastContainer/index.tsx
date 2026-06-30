@@ -4,6 +4,16 @@ import { Toast } from "@/components/Toast";
 // Container は Provider と同じパッケージ内のため deeper path で直接参照して循環を切る。
 import { useToasts } from "@/providers/ToastProvider/context";
 
+type ToastContainerProps = {
+  /**
+   * 各トーストの自動 dismiss までの時間（ミリ秒）。
+   * 未指定なら Toast 側の既定値（{@link TOAST_DEFAULT_DURATION_MS}）が使われる。
+   * 本番では `ToastProvider` の `defaultDurationMs` がそのまま渡される。
+   * 通常は未指定で十分で、Storybook で長時間表示したい場合のみ Provider 経由で上書きする。
+   */
+  duration?: number;
+};
+
 /**
  * 複数のトーストを画面右上に縦スタックで描画するコンテナ。
  * toasts / dismiss は `useToasts()` (Context) から取得する。toasts が空なら何も描画しない。
@@ -12,9 +22,10 @@ import { useToasts } from "@/providers/ToastProvider/context";
  * 呼び出し側が直接マウントする必要はない。Storybook の story も ToastProvider decorator
  * 配下に Story を置けば Provider が内蔵 Container を描画する。
  *
+ * @param props - {@link ToastContainerProps}
  * @returns コンテナ要素、または null
  */
-export const ToastContainer = () => {
+export const ToastContainer = ({ duration }: ToastContainerProps) => {
   const { toasts, dismissToast } = useToasts();
   if (toasts.length === 0) {
     return null;
@@ -28,7 +39,7 @@ export const ToastContainer = () => {
     >
       {toasts.map((toast) => (
         <div key={toast.id} className="pointer-events-auto">
-          <Toast toast={toast} onDismiss={dismissToast} />
+          <Toast toast={toast} onDismiss={dismissToast} duration={duration} />
         </div>
       ))}
     </div>

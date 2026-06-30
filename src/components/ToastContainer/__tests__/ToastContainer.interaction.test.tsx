@@ -126,3 +126,30 @@ test("Context なしで render すると useToasts が throw する", () => {
     errorSpy.mockRestore();
   }
 });
+
+test("duration prop が Toast に伝播し fake timer で dismissToast が呼ばれる", () => {
+  const dismissToast = vi.fn();
+  const toasts: ToastItem[] = [{ id: "d", message: "long", type: "success" }];
+  render(
+    createElement(
+      ToastDispatchContext.Provider,
+      {
+        value: { showToast: noopShowToast, dismissToast },
+      },
+      createElement(
+        ToastStateContext.Provider,
+        { value: { toasts } },
+        createElement(ToastContainer, { duration: 1000 }),
+      ),
+    ),
+  );
+  act(() => {
+    vi.advanceTimersByTime(900);
+  });
+  expect(dismissToast).not.toHaveBeenCalled();
+  act(() => {
+    vi.advanceTimersByTime(200);
+  });
+  expect(dismissToast).toHaveBeenCalledTimes(1);
+  expect(dismissToast.mock.calls[0][0]).toBe("d");
+});

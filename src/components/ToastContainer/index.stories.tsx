@@ -5,8 +5,12 @@ import { ToastProvider, useToastDispatch } from "@/providers/ToastProvider";
 import type { ToastItem } from "@/types/toast";
 import { ToastContainer } from ".";
 
+// Storybook では auto-dismiss で消えると視認できないため、Provider 経由で十分に長い
+// duration を渡して story 表示中は実質固定表示にする。
+const STORY_DURATION_MS = 1000 * 60 * 60;
+
 const withToastProvider: Decorator = (Story) => (
-  <ToastProvider>
+  <ToastProvider defaultDurationMs={STORY_DURATION_MS}>
     <Story />
   </ToastProvider>
 );
