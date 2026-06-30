@@ -515,8 +515,9 @@ test("内蔵 Container: Provider unmount で Container も unmount される", (
 });
 
 test("内蔵 Container: children=null でも内蔵 Container は生存する", () => {
-  // children なしで Provider をマウントし、sink 経由で push しても内蔵 Container が描画する。
-  render(createElement(ToastProvider, null));
+  // children に明示的に null を渡し、Provider が children なしでも内蔵 Container を
+  // 描画することを検証する（createElement の第 3 引数で children を渡す canonical 形式）。
+  render(createElement(ToastProvider, null, null));
   const sink = getToastSink();
   expect(sink).not.toBeNull();
   act(() => {
