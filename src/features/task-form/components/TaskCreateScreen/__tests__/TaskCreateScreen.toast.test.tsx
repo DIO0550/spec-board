@@ -221,6 +221,25 @@ test("wasNotifiedByInvokeWrapped が false の error は error toast を出し�
   expect(onClose).not.toHaveBeenCalled();
 });
 
+test("onSubmit が契約違反で reject しても画面はクラッシュせず error toast が出て onClose は呼ばれない", async () => {
+  // useTaskCreate / App.handleCreateTask は Result を返す契約だが、契約違反で reject されても
+  // 画面ごとクラッシュさせない安全弁（catch）を検証する。
+  const onSubmit = vi.fn().mockRejectedValue(new Error("contract violation"));
+  const onClose = vi.fn();
+  render(baseProps({ onSubmit, onClose }));
+  act(() => {
+    setTitle("新タスク");
+  });
+  act(() => {
+    submitForm();
+  });
+  await flush();
+  const errorToast = document.querySelector('[data-testid="toast-error"]');
+  expect(errorToast).toBeTruthy();
+  expect(errorToast?.textContent ?? "").toContain("想定外のエラー");
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 test("送信中の二重 submit でも success toast は 1 件だけ", async () => {
   let resolveSubmit:
     | ((v: Result<CreateTaskSubmitOutcome, ProjectError>) => void)

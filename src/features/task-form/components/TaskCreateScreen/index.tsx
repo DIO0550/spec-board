@@ -137,10 +137,11 @@ const submitFormElement = (form: HTMLFormElement | null): void => {
 /**
  * 全画面2ペインのタスク作成画面。上部 chrome（topbar / subbar）・下部固定フッター・
  * 左=入力フォーム / 右=ライブプレビュー（折りたたみ + リサイズ可）で構成する。
- * 送信契約（二重送信防止・成功で自動クローズ・reject 非クローズ）・IME ガード付き
+ * 送信契約（二重送信防止・成功で自動クローズ・Result.err 非クローズ）・IME ガード付き
  * Esc/⌘Enter・破棄確認は旧作成画面から温存する。footer の作成ボタンは `<form>` の外に
  * 置かれるため `formRef` 経由の requestSubmit（= ⌘Enter と同一経路）で送信する。
  * @param props - {@link TaskCreateScreenProps}
+ * @throws ToastProvider の外でレンダリングされた場合
  * @returns 2ペイン作成画面要素
  */
 export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
@@ -197,6 +198,14 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
           showToast("タスクを作成しました", "success");
         }
         onClose();
+      } catch {
+        // 契約違反の安全弁: onSubmit / useTaskCreate は Result を返す契約だが、
+        // injected createTask が契約に反して throw / reject した場合に画面ごとクラッシュ
+        // させないため、汎用 error toast を出し画面は閉じない（成功扱いにしない）。
+        showToast(
+          "タスクの作成に失敗しました: 想定外のエラーが発生しました",
+          "error",
+        );
       } finally {
         submittingRef.current = false;
         setIsSubmitting(false);
