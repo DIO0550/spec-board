@@ -20,11 +20,21 @@ export { useToastDispatch, useToastState, useToasts } from "./context";
 /**
  * トースト ID を生成する。
  * happy-dom / Tauri WebView ともに crypto.randomUUID を提供するためフォールバックは
- * 持たず、衰退環境では throw して fail-fast する。
- * @throws crypto.randomUUID 未提供環境
+ * 持たず、未提供環境では明示的な Error を throw して fail-fast する。
+ * 直接 `crypto.randomUUID()` を呼ぶと `crypto` 自体が未定義の環境では `ReferenceError`
+ * になり原因が分かりにくいため、`globalThis.crypto?.randomUUID` 経由で参照する。
+ * @throws crypto.randomUUID が提供されていない環境
  * @returns トースト 1 件分のユニーク ID
  */
-const generateToastId = (): string => crypto.randomUUID();
+const generateToastId = (): string => {
+  const fn = globalThis.crypto?.randomUUID;
+  if (fn === undefined) {
+    throw new Error(
+      "ToastProvider: crypto.randomUUID が利用できない環境です（happy-dom / Tauri WebView 等で対応必須）",
+    );
+  }
+  return fn.call(globalThis.crypto);
+};
 
 /** ToastProvider の Props。 */
 type ToastProviderProps = {
