@@ -1,29 +1,21 @@
 import { Toast } from "@/components/Toast";
-import type { ToastItem } from "@/types/toast";
-
-type ToastContainerProps = {
-  /** 表示中のトースト一覧（配列順＝上から下に積まれる） */
-  toasts: ToastItem[];
-  /**
-   * トーストを閉じるコールバック
-   * @param id - 閉じるトーストの ID
-   */
-  onDismiss: (id: string) => void;
-  /** 各トーストを閉じるまでの時間（ミリ秒） */
-  duration?: number;
-};
+// 循環参照を避けるため、index.tsx ではなく context.ts から直接 import する。
+// 公開 import path (`@/providers/ToastProvider`) は index.tsx の re-export 経由で機能するが、
+// Container は Provider と同じパッケージ内のため deeper path で直接参照して循環を切る。
+import { useToasts } from "@/providers/ToastProvider/context";
 
 /**
  * 複数のトーストを画面右上に縦スタックで描画するコンテナ。
- * toasts が空の場合は何も描画しない。
- * @param props - {@link ToastContainerProps}
+ * toasts / dismiss は `useToasts()` (Context) から取得する。toasts が空なら何も描画しない。
+ *
+ * `<ToastProvider>` が children の外側で本コンポーネントを内蔵描画するため、
+ * 呼び出し側が直接マウントする必要はない。Storybook の story も ToastProvider decorator
+ * 配下に Story を置けば Provider が内蔵 Container を描画する。
+ *
  * @returns コンテナ要素、または null
  */
-export const ToastContainer = ({
-  toasts,
-  onDismiss,
-  duration,
-}: ToastContainerProps) => {
+export const ToastContainer = () => {
+  const { toasts, dismissToast } = useToasts();
   if (toasts.length === 0) {
     return null;
   }
@@ -36,7 +28,7 @@ export const ToastContainer = ({
     >
       {toasts.map((toast) => (
         <div key={toast.id} className="pointer-events-auto">
-          <Toast toast={toast} onDismiss={onDismiss} duration={duration} />
+          <Toast toast={toast} onDismiss={dismissToast} />
         </div>
       ))}
     </div>

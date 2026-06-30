@@ -1,8 +1,13 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { ProjectError } from "@/features/board";
+import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
+import { unregisterToastSink } from "@/lib/tauri";
+import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 import { TaskCreateScreen } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -15,6 +20,7 @@ afterEach(() => {
   root = null;
   container?.remove();
   container = null;
+  unregisterToastSink();
 });
 
 const COLUMNS: Column[] = [
@@ -34,6 +40,23 @@ const DUPLICATE = Task.fromPayload({
   filePath: "tasks/dup-task.md",
 });
 
+const STUB_PARENT = Task.fromPayload({
+  id: "p-stub",
+  title: "親",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/stub-parent.md",
+});
+
+const SUCCESS_OUTCOME: CreateTaskSubmitOutcome = {
+  parent: STUB_PARENT,
+  failedSubIssues: [],
+};
+
 const baseProps = (
   overrides: Partial<Parameters<typeof TaskCreateScreen>[0]> = {},
 ): Parameters<typeof TaskCreateScreen>[0] => ({
@@ -41,7 +64,7 @@ const baseProps = (
   initialStatus: "Todo",
   existingTasks: [],
   watchedFileCount: 0,
-  onSubmit: vi.fn().mockResolvedValue(undefined),
+  onSubmit: vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME)),
   onClose: vi.fn(),
   ...overrides,
 });
@@ -51,7 +74,13 @@ const render = (props: Parameters<typeof TaskCreateScreen>[0]) => {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskCreateScreen, props));
+    root?.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(TaskCreateScreen, props),
+      ),
+    );
   });
 };
 
@@ -83,7 +112,7 @@ const flush = async () => {
 };
 
 test("送信成功で onClose が1回呼ばれる", async () => {
-  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const onSubmit = vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME));
   const onClose = vi.fn();
   render(baseProps({ onSubmit, onClose }));
   act(() => {
@@ -97,8 +126,10 @@ test("送信成功で onClose が1回呼ばれる", async () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-test("onSubmit が reject すると onClose は呼ばれない", async () => {
-  const onSubmit = vi.fn().mockRejectedValue(new Error("fail"));
+test("Result.err を返すと onClose は呼ばれない（旧 reject 経路の置き換え）", async () => {
+  const onSubmit = vi
+    .fn()
+    .mockResolvedValue(Result.err(ProjectError.invalidState("fail")));
   const onClose = vi.fn();
   render(baseProps({ onSubmit, onClose }));
   act(() => {
@@ -113,10 +144,12 @@ test("onSubmit が reject すると onClose は呼ばれない", async () => {
 });
 
 test("送信中に再送信しても onSubmit は1回のみ（二重送信ガード）", async () => {
-  let resolveSubmit: (() => void) | undefined;
+  let resolveSubmit:
+    | ((v: Result<CreateTaskSubmitOutcome, ProjectError>) => void)
+    | undefined;
   const onSubmit = vi.fn(
     () =>
-      new Promise<void>((resolve) => {
+      new Promise<Result<CreateTaskSubmitOutcome, ProjectError>>((resolve) => {
         resolveSubmit = resolve;
       }),
   );
@@ -132,13 +165,15 @@ test("送信中に再送信しても onSubmit は1回のみ（二重送信ガー
   });
   expect(onSubmit).toHaveBeenCalledOnce();
   await act(async () => {
-    resolveSubmit?.();
+    resolveSubmit?.(Result.ok(SUCCESS_OUTCOME));
     await Promise.resolve();
   });
 });
 
 test("送信中はフィールド・送信ボタンが無効化される", async () => {
-  const onSubmit = vi.fn(() => new Promise<void>(() => {}));
+  const onSubmit = vi.fn(
+    () => new Promise<Result<CreateTaskSubmitOutcome, ProjectError>>(() => {}),
+  );
   render(baseProps({ onSubmit }));
   act(() => {
     setInput("task-form-title", "新タスク");
@@ -158,7 +193,7 @@ test("送信中はフィールド・送信ボタンが無効化される", async
 });
 
 test("既存タスクと重複するタイトルでも送信される（重複は BE の連番付与で回避）", () => {
-  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const onSubmit = vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME));
   render(baseProps({ existingTasks: [DUPLICATE], onSubmit }));
   act(() => {
     setInput("task-form-title", "Dup Task");
@@ -202,7 +237,7 @@ test.each([
   ["metaKey（mac の ⌘+Enter）", { metaKey: true }],
   ["ctrlKey（Windows/Linux の Ctrl+Enter）", { ctrlKey: true }],
 ])("%s + Enter で保存（バリデーション経由で onSubmit 到達）", async (_label, init) => {
-  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const onSubmit = vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME));
   render(baseProps({ onSubmit }));
   act(() => {
     setInput("task-form-title", "新タスク");
@@ -224,7 +259,7 @@ test("タイトル未入力の ⌘+Enter はバリデーションで止まり on
 });
 
 test("requestSubmit 未対応環境では submit イベント dispatch にフォールバックして onSubmit に到達する", async () => {
-  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const onSubmit = vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME));
   render(baseProps({ onSubmit }));
   const form = document.querySelector(
     '[data-testid="task-form"]',
@@ -321,7 +356,9 @@ test("IME 変換中（isComposing）の ⌘+Enter では保存が発動しない
 });
 
 test("送信中の ⌘+Enter / Esc は無視される（二重送信・クローズなし）", async () => {
-  const onSubmit = vi.fn(() => new Promise<void>(() => {}));
+  const onSubmit = vi.fn(
+    () => new Promise<Result<CreateTaskSubmitOutcome, ProjectError>>(() => {}),
+  );
   const onClose = vi.fn();
   render(baseProps({ onSubmit, onClose }));
   act(() => {
@@ -394,7 +431,7 @@ test("プレビューの pv-collapse でプレビューが非表示になる", (
 });
 
 test("footer の作成ボタン click で formRef 経由の送信（⌘Enter と同一経路）になる", async () => {
-  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const onSubmit = vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME));
   render(baseProps({ onSubmit }));
   act(() => {
     setInput("task-form-title", "新タスク");

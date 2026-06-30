@@ -1,8 +1,12 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
+import { unregisterToastSink } from "@/lib/tauri";
+import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 import { TaskCreateScreen } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -15,7 +19,23 @@ afterEach(() => {
   root = null;
   container?.remove();
   container = null;
+  unregisterToastSink();
 });
+
+const STUB_PARENT_OUTCOME: CreateTaskSubmitOutcome = {
+  parent: Task.fromPayload({
+    id: "p-stub",
+    title: "親",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/stub-parent.md",
+  }),
+  failedSubIssues: [],
+};
 
 const COLUMNS: Column[] = [
   { name: "Todo", order: 0 },
@@ -41,7 +61,7 @@ const baseProps = (
   initialStatus: "Todo",
   existingTasks: [],
   watchedFileCount: 0,
-  onSubmit: vi.fn().mockResolvedValue(undefined),
+  onSubmit: vi.fn().mockResolvedValue(Result.ok(STUB_PARENT_OUTCOME)),
   onClose: vi.fn(),
   ...overrides,
 });
@@ -51,7 +71,13 @@ const render = (props: Parameters<typeof TaskCreateScreen>[0]) => {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskCreateScreen, props));
+    root?.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(TaskCreateScreen, props),
+      ),
+    );
   });
 };
 

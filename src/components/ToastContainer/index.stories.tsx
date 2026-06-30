@@ -1,20 +1,41 @@
 // @jsdoc-rules-disable
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
+import { useEffect, useRef } from "react";
+import { ToastProvider, useToastDispatch } from "@/providers/ToastProvider";
 import type { ToastItem } from "@/types/toast";
 import { ToastContainer } from ".";
 
-const longDuration = 1000 * 60 * 60;
+const withToastProvider: Decorator = (Story) => (
+  <ToastProvider>
+    <Story />
+  </ToastProvider>
+);
+
+const SeedToasts = ({
+  items,
+}: {
+  items: Pick<ToastItem, "message" | "type">[];
+}) => {
+  const { showToast } = useToastDispatch();
+  // ref ガードで 1 回だけ seed する。items / showToast を依存に入れても、
+  // この ref により再 push されないため Storybook で重複表示されない。
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) {
+      return;
+    }
+    seededRef.current = true;
+    for (const t of items) {
+      showToast(t.message, t.type);
+    }
+  }, [items, showToast]);
+  return null;
+};
 
 const meta: Meta<typeof ToastContainer> = {
   component: ToastContainer,
-  parameters: {
-    layout: "fullscreen",
-  },
-  args: {
-    toasts: [],
-    onDismiss: () => {},
-    duration: longDuration,
-  },
+  parameters: { layout: "fullscreen" },
+  decorators: [withToastProvider],
 };
 
 export default meta;
@@ -22,27 +43,23 @@ export default meta;
 type Story = StoryObj<typeof ToastContainer>;
 
 export const Empty: Story = {
-  args: { toasts: [] },
+  render: () => <SeedToasts items={[]} />,
 };
 
 export const Single: Story = {
-  args: {
-    toasts: [
-      {
-        id: "t-1",
-        message: "保存しました",
-        type: "success",
-      } satisfies ToastItem,
-    ],
-  },
+  render: () => (
+    <SeedToasts items={[{ message: "保存しました", type: "success" }]} />
+  ),
 };
 
 export const Multiple: Story = {
-  args: {
-    toasts: [
-      { id: "t-1", message: "保存しました", type: "success" },
-      { id: "t-2", message: "通信に失敗しました", type: "error" },
-      { id: "t-3", message: "下書きが残っています", type: "warning" },
-    ] satisfies ToastItem[],
-  },
+  render: () => (
+    <SeedToasts
+      items={[
+        { message: "保存しました", type: "success" },
+        { message: "通信に失敗しました", type: "error" },
+        { message: "下書きが残っています", type: "warning" },
+      ]}
+    />
+  ),
 };
