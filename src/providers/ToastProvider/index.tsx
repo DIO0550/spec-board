@@ -1,0 +1,99 @@
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { ToastContainer } from "@/components/ToastContainer";
+import { registerToastSink } from "@/lib/tauri";
+import type { ToastItem, ToastType } from "@/types/toast";
+import {
+  type ToastDispatch,
+  ToastDispatchContext,
+  type ToastState,
+  ToastStateContext,
+} from "./context";
+
+export { useToastDispatch, useToastState, useToasts } from "./context";
+
+/**
+ * トースト ID を生成する。
+ * happy-dom / Tauri WebView ともに crypto.randomUUID を提供するためフォールバックは
+ * 持たず、未提供環境では明示的な Error を throw して fail-fast する。
+ * 直接 `crypto.randomUUID()` を呼ぶと `crypto` 自体が未定義の環境では `ReferenceError`
+ * になり原因が分かりにくいため、`globalThis.crypto?.randomUUID` 経由で参照する。
+ * @throws crypto.randomUUID が提供されていない環境
+ * @returns トースト 1 件分のユニーク ID
+ */
+const generateToastId = (): string => {
+  const fn = globalThis.crypto?.randomUUID;
+  if (fn === undefined) {
+    throw new Error(
+      "ToastProvider: crypto.randomUUID が利用できない環境です（happy-dom / Tauri WebView 等で対応必須）",
+    );
+  }
+  return fn.call(globalThis.crypto);
+};
+
+/** ToastProvider の Props。 */
+type ToastProviderProps = {
+  /** Context を供給する子要素。`<ToastContainer />` は children の外側で内蔵描画する */
+  children: ReactNode;
+  /**
+   * 内蔵 `<ToastContainer />` に渡す duration（自動 dismiss までの ms）。
+   * 通常は未指定で十分（Toast 側の既定 3000ms が使われる）。Storybook で長時間表示したい
+   * story でのみ大きな値を指定する。
+   */
+  defaultDurationMs?: number;
+};
+
+/**
+ * Toast 状態（toasts / showToast / dismissToast）+ React tree 外からの注入経路
+ * (`registerToastSink`) + `<ToastContainer />` の描画を Context 配下に集約する Provider。
+ *
+ * state と dispatch を別 Context に分離することで、`showToast` だけを使う consumer は
+ * toasts 変化で再 render されない。利用側は `useToastDispatch()`（dispatch のみ）か
+ * `useToastState()`（toasts のみ）、両方欲しい場合は `useToasts()` を呼ぶ。
+ *
+ * @param props - {@link ToastProviderProps}
+ * @returns Provider 要素
+ */
+export const ToastProvider = ({
+  children,
+  defaultDurationMs,
+}: ToastProviderProps) => {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const showToast = useCallback((message: string, type: ToastType) => {
+    const id = generateToastId();
+    setToasts((prev) => [...prev, { id, message, type }]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // invokeWrapped 層の失敗トーストを Provider の showToast に橋渡しする。
+  // register が返す guarded cleanup を return することで、StrictMode 二重マウントや
+  // 再生成時の stale cleanup（他 sink を誤って消す）を防ぐ。
+  useEffect(() => registerToastSink(showToast), [showToast]);
+
+  // dispatch は showToast / dismissToast がどちらも useCallback([]) で stable なため、
+  // useMemo の依存配列も安定して Provider lifetime 内で完全に不変になる。
+  const dispatch = useMemo<ToastDispatch>(
+    () => ({ showToast, dismissToast }),
+    [showToast, dismissToast],
+  );
+  // state は toasts の参照そのものを value に詰めるだけで十分（追加 wrapper 不要）。
+  const state = useMemo<ToastState>(() => ({ toasts }), [toasts]);
+
+  return (
+    <ToastDispatchContext.Provider value={dispatch}>
+      <ToastStateContext.Provider value={state}>
+        {children}
+        <ToastContainer duration={defaultDurationMs} />
+      </ToastStateContext.Provider>
+    </ToastDispatchContext.Provider>
+  );
+};

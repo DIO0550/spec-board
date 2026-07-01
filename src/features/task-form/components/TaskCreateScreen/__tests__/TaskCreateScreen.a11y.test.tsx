@@ -1,7 +1,13 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import type { ProjectError } from "@/features/board";
+import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
+import { unregisterToastSink } from "@/lib/tauri";
+import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
+import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 import { TaskCreateScreen } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -14,9 +20,27 @@ afterEach(() => {
   root = null;
   container?.remove();
   container = null;
+  unregisterToastSink();
 });
 
 const COLUMNS: Column[] = [{ name: "Todo", order: 0 }];
+
+const STUB_PARENT = Task.fromPayload({
+  id: "p-stub",
+  title: "親",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/stub-parent.md",
+});
+
+const SUCCESS_OUTCOME: CreateTaskSubmitOutcome = {
+  parent: STUB_PARENT,
+  failedSubIssues: [],
+};
 
 const baseProps = (
   overrides: Partial<Parameters<typeof TaskCreateScreen>[0]> = {},
@@ -25,7 +49,7 @@ const baseProps = (
   initialStatus: "Todo",
   existingTasks: [],
   watchedFileCount: 0,
-  onSubmit: vi.fn().mockResolvedValue(undefined),
+  onSubmit: vi.fn().mockResolvedValue(Result.ok(SUCCESS_OUTCOME)),
   onClose: vi.fn(),
   ...overrides,
 });
@@ -35,7 +59,13 @@ const render = (props: Parameters<typeof TaskCreateScreen>[0]) => {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(TaskCreateScreen, props));
+    root?.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(TaskCreateScreen, props),
+      ),
+    );
   });
 };
 
@@ -99,7 +129,9 @@ test("Esc キーで onClose が呼ばれる", () => {
 
 test("送信中は Esc が無効（onClose 非発火）", async () => {
   const onClose = vi.fn();
-  const onSubmit = vi.fn(() => new Promise<void>(() => {}));
+  const onSubmit = vi.fn(
+    () => new Promise<Result<CreateTaskSubmitOutcome, ProjectError>>(() => {}),
+  );
   render(baseProps({ onSubmit, onClose }));
   act(() => {
     setTitle("新タスク");

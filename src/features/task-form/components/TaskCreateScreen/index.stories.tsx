@@ -2,8 +2,27 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ThemeProvider } from "@/features/shell";
+import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
+import { ToastProvider } from "@/providers/ToastProvider";
 import { initialColumns, initialTasks } from "@/test-fixtures";
+import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 import { TaskCreateScreen } from ".";
+
+const STUB_PARENT_OUTCOME: CreateTaskSubmitOutcome = {
+  parent: Task.fromPayload({
+    id: "p-stub",
+    title: "stub parent",
+    status: initialColumns[0]?.name ?? "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/stub-parent.md",
+  }),
+  failedSubIssues: [],
+};
 
 const meta: Meta<typeof TaskCreateScreen> = {
   component: TaskCreateScreen,
@@ -12,9 +31,11 @@ const meta: Meta<typeof TaskCreateScreen> = {
   decorators: [
     (Story) => (
       <ThemeProvider>
-        <div style={{ height: "100vh", width: "100vw" }}>
-          <Story />
-        </div>
+        <ToastProvider>
+          <div style={{ height: "100vh", width: "100vw" }}>
+            <Story />
+          </div>
+        </ToastProvider>
       </ThemeProvider>
     ),
   ],
@@ -26,7 +47,7 @@ const meta: Meta<typeof TaskCreateScreen> = {
     projectName: "payments-service",
     projectPath: "~/work/payments-service",
     watchedFileCount: 127,
-    onSubmit: fn(async () => {}),
+    onSubmit: fn(async () => Result.ok(STUB_PARENT_OUTCOME)),
     onClose: fn(),
   },
 };

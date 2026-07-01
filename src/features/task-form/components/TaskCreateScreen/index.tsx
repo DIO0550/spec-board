@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import {
+  type ProjectError,
+  projectErrorMessage,
+  wasNotifiedByInvokeWrapped,
+} from "@/features/board";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
+import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
+import { useToastDispatch } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
+import type { Result } from "@/utils/result";
 import { fileNameErrorMessage } from "../TaskForm/TaskFormFileName/fileNameErrorMessage";
 import { PreviewResizer } from "./PreviewResizer";
 import { TaskFormFooter } from "./TaskFormFooter";
@@ -43,11 +51,15 @@ export type TaskCreateScreenProps = {
   /** 同期バッジに出す監視ファイル数（読み込み済みタスク総数を流用）。 */
   watchedFileCount: number;
   /**
-   * 送信時のコールバック。reject した場合は画面を閉じない。
-   * 親側でトースト通知などのエラーハンドリングを行う想定。
+   * 送信時のコールバック。Result を返す薄い callback で、TaskCreateScreen 内部で
+   * success / warning(partial-failure) / error(wasNotifiedByInvokeWrapped ガード付き)
+   * の toast を出す。Result.err なら画面を閉じない（旧 reject 契約と等価）。
    * @param values - フォームの入力値
+   * @returns 親作成の結果 + 失敗したサブIssue 一覧（partial）または ProjectError
    */
-  onSubmit: (values: TaskFormValues) => Promise<void>;
+  onSubmit: (
+    values: TaskFormValues,
+  ) => Promise<Result<CreateTaskSubmitOutcome, ProjectError>>;
   /** 画面を閉じるコールバック（成功・キャンセル・Esc）。戻り先は呼び出し側が解決する。 */
   onClose: () => void;
 };
@@ -125,14 +137,17 @@ const submitFormElement = (form: HTMLFormElement | null): void => {
 /**
  * 全画面2ペインのタスク作成画面。上部 chrome（topbar / subbar）・下部固定フッター・
  * 左=入力フォーム / 右=ライブプレビュー（折りたたみ + リサイズ可）で構成する。
- * 送信契約（二重送信防止・成功で自動クローズ・reject 非クローズ）・IME ガード付き
+ * 送信契約（二重送信防止・成功で自動クローズ・Result.err 非クローズ）・IME ガード付き
  * Esc/⌘Enter・破棄確認は旧作成画面から温存する。footer の作成ボタンは `<form>` の外に
  * 置かれるため `formRef` 経由の requestSubmit（= ⌘Enter と同一経路）で送信する。
  * @param props - {@link TaskCreateScreenProps}
+ * @throws ToastProvider の外でレンダリングされた場合
  * @returns 2ペイン作成画面要素
  */
 export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const { onSubmit, onClose, initialStatus } = props;
+  // 全画面コンポーネントのため、toasts state 変化での再 render を避けるため dispatch のみ subscribe。
+  const { showToast } = useToastDispatch();
   const sectionRef = useRef<HTMLElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -162,16 +177,41 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
       submittingRef.current = true;
       setIsSubmitting(true);
       try {
-        await onSubmit(values);
+        const result = await onSubmit(values);
+        if (!result.ok) {
+          // wasNotifiedByInvokeWrapped が true のときは invokeWrapped 層が既に
+          // error toast を出している（二重通知防止）。
+          if (!wasNotifiedByInvokeWrapped(result.error)) {
+            const message = projectErrorMessage(result.error);
+            showToast(`タスクの作成に失敗しました: ${message}`, "error");
+          }
+          // 失敗時は画面を閉じない（旧 reject 契約と等価）。
+          return;
+        }
+        if (result.value.failedSubIssues.length > 0) {
+          // 親と成功した子は残す。失敗した子のみ警告（ロールバックしない）。
+          showToast(
+            `サブIssue ${result.value.failedSubIssues.length} 件の作成に失敗しました`,
+            "warning",
+          );
+        } else {
+          showToast("タスクを作成しました", "success");
+        }
         onClose();
       } catch {
-        // 親側でトースト通知済み。画面は閉じない。
+        // 契約違反の安全弁: onSubmit / useTaskCreate は Result を返す契約だが、
+        // injected createTask が契約に反して throw / reject した場合に画面ごとクラッシュ
+        // させないため、汎用 error toast を出し画面は閉じない（成功扱いにしない）。
+        showToast(
+          "タスクの作成に失敗しました: 想定外のエラーが発生しました",
+          "error",
+        );
       } finally {
         submittingRef.current = false;
         setIsSubmitting(false);
       }
     },
-    [onSubmit, onClose],
+    [onSubmit, onClose, showToast],
   );
 
   // Esc/キャンセル: 入力済みなら破棄確認、未入力なら即閉じる。送信中は無効。

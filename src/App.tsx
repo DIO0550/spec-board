@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
-import { ToastContainer } from "@/components/ToastContainer";
 import {
   buildTasksByNormalizedPath,
   countTasksWithBrokenLink,
@@ -12,14 +11,14 @@ import { selectTaskOutcome } from "@/domains/task-selection";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
-import { useToasts } from "@/hooks/useToasts";
-import { type OrphanStrategy, registerToastSink } from "@/lib/tauri";
+import type { OrphanStrategy } from "@/lib/tauri";
 import {
   type AppView,
   AppViewProvider,
   useAppView,
 } from "@/providers/AppViewProvider";
 import { resolveCloseTarget } from "@/providers/AppViewProvider/resolveCloseTarget";
+import { ToastProvider, useToastDispatch } from "@/providers/ToastProvider";
 import { basenameOf } from "@/utils/path";
 import {
   BoardWorkspace,
@@ -150,7 +149,8 @@ const resolveSelectedTask = (
  */
 const AppShell = () => {
   const { view, navigate } = useAppView();
-  const { toasts, showToast, dismissToast } = useToasts();
+  // 配下サブツリーが toasts 配列の差し替えで再 render されないよう dispatch 専用フックを使う。
+  const { showToast } = useToastDispatch();
   const { projects: recentProjects, add: addRecentProject } =
     useRecentProjects();
 
@@ -202,12 +202,6 @@ const AppShell = () => {
     onLoaded: handleProjectLoaded,
   });
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
-
-  // invokeWrapped 層の失敗トーストを App の showToast へ橋渡しする。
-  // React 19 strict-mode の二重マウント / showToast 再生成に追従するため依存配列に
-  // showToast を入れ、register が返す cleanup で必ず解除する。cleanup は「自分が登録した
-  // sink のときだけ」解除するため、再マウント順序の入れ替わりで新しい sink を誤って消さない。
-  useEffect(() => registerToastSink(showToast), [showToast]);
 
   // 書き込み失敗の error トーストを出す共通ガード。allowlist 由来失敗は invokeWrapped が
   // 既に通知済みのため抑止し、allowlist 外 tauri / 非 tauri 失敗だけ App 側で出す
@@ -714,30 +708,11 @@ const AppShell = () => {
     [defaultCreateStatus, selectedTaskId, showToast, navigate],
   );
 
+  // Result をそのまま透過する薄い callback。toast 発火は TaskCreateScreen 内部で行う
+  // （成功/部分失敗/エラー時の toast は self-contained）。
   const handleCreateTask = useCallback(
-    async (values: TaskFormValues): Promise<void> => {
-      const result = await submitCreateTask(values);
-      if (!result.ok) {
-        // 画面を閉じない: TaskCreateScreen は onSubmit reject で開いたままになる
-        const message = projectErrorMessage(result.error);
-        showErrorUnlessNotified(
-          result.error,
-          `タスクの作成に失敗しました: ${message}`,
-        );
-        throw new Error(message);
-      }
-      const { failedSubIssues } = result.value;
-      if (failedSubIssues.length > 0) {
-        // 親と成功した子は残す。失敗した子のみ警告（ロールバックしない）。
-        showToast(
-          `サブIssue ${failedSubIssues.length} 件の作成に失敗しました`,
-          "warning",
-        );
-        return;
-      }
-      showToast("タスクを作成しました", "success");
-    },
-    [submitCreateTask, showToast, showErrorUnlessNotified],
+    (values: TaskFormValues) => submitCreateTask(values),
+    [submitCreateTask],
   );
 
   const handleTaskDrop = useCallback(
@@ -1021,7 +996,8 @@ const AppShell = () => {
 
   // 作成ビューは独自の全画面 chrome（topbar/subbar/footer）を持つ standalone レイアウトのため、
   // 共通の HeaderBar / AppSidebar を外して viewport 全体に描画する。
-  // ToastContainer / LiveRegion は全ビュー共通の縦断 UI のため create でも温存する。
+  // LiveRegion は全ビュー共通の縦断 UI のため create でも温存する（ToastContainer は
+  // ToastProvider 内蔵となり Provider マウントだけで全 view に描画される）。
   const isCreateView = view === "create" && createModal !== null;
 
   return (
@@ -1108,7 +1084,6 @@ const AppShell = () => {
           </div>
         </>
       )}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <LiveRegion announcement={announcement} />
     </div>
   );
@@ -1124,7 +1099,9 @@ export const App = () => {
   return (
     <ThemeProvider>
       <AppViewProvider>
-        <AppShell />
+        <ToastProvider>
+          <AppShell />
+        </ToastProvider>
       </AppViewProvider>
     </ThemeProvider>
   );
