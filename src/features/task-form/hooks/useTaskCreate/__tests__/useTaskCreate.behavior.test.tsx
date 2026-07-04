@@ -27,9 +27,9 @@ afterAll(() => {
   }
 });
 
-import { ProjectError } from "@/features/board";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { TauriError } from "@/lib/tauri";
+import { ProjectError } from "@/providers/ProjectProvider";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import {

@@ -1,4 +1,4 @@
-import type { RecentProject } from "@/hooks/useRecentProjects";
+import type { RecentProject } from "@/providers/RecentProjectsProvider";
 
 /** ProjectSwitcher の Props。 */
 type ProjectSwitcherProps = {

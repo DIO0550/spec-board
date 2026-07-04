@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import {
-  type ProjectError,
-  projectErrorMessage,
-  wasNotifiedByInvokeWrapped,
-} from "@/features/board";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
@@ -12,6 +7,11 @@ import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
+import {
+  type ProjectError,
+  projectErrorMessage,
+  wasNotifiedByInvokeWrapped,
+} from "@/providers/ProjectProvider";
 import { useToastDispatch } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";

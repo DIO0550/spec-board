@@ -1,4 +1,4 @@
-import type { RecentProject } from "@/hooks/useRecentProjects";
+import type { RecentProject } from "@/providers/RecentProjectsProvider";
 import type { Task } from "@/types/task";
 import { useSidebar } from "../../hooks/useSidebar";
 import { FileTree } from "../FileTree";
