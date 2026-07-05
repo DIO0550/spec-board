@@ -355,6 +355,27 @@ test("openProject dialog cancel (null) → state 不変", async () => {
   expect(onError).not.toHaveBeenCalled();
 });
 
+test("openProjectByPath の resolve 中に unmount されたら open_project を呼ばない", async () => {
+  openProjectMock.mockResolvedValue(Result.ok(payload));
+  const onLoaded = vi.fn();
+  const probe = renderHook({ onLoaded });
+  const openByPath = probe.latest.openProjectByPath;
+  let pending!: Promise<void>;
+  // openProjectByPath 呼び出し直後（resolve 継続の microtask 前）に同期 unmount する。
+  // cleanup が invalidateProject で project 世代を進めるため、continuation は
+  // projectSnapshot 不一致で open-start に進まず open_project を呼ばない。
+  act(() => {
+    pending = openByPath("/p");
+    root?.unmount();
+    root = null;
+  });
+  await act(async () => {
+    await pending;
+  });
+  expect(openProjectMock).not.toHaveBeenCalled();
+  expect(onLoaded).not.toHaveBeenCalled();
+});
+
 test("openProject 成功 → onLoaded が path / data 付きで 1 回だけ発火する", async () => {
   const onLoaded = vi.fn();
   const probe = renderHook({ onLoaded });

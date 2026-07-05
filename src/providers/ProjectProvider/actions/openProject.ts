@@ -93,6 +93,11 @@ export const openProjectAction = async ({
   // 進んでいれば（unmount / reset 由来）open を破棄する。連打ガード / 後勝ちの
   // 世代 bump は path 解決後の beginOpenRequest が担うため位置は変えない。
   const openRequestSnapshot = projectVersion.openRequest;
+  // project 世代 current も snapshot する。unmount cleanup / reset は invalidateProject で
+  // current を進めるが、concurrent な openProjectByPath 連打は beginOpenRequest（openRequest
+  // のみ）で current を進めない。resolve 後に current 一致を確認することで、後勝ちを維持しつつ
+  // explicit-path の「resolve 中に world が破棄された」ケースを in-flight 破棄する。
+  const projectSnapshot = projectVersion.current;
   const path = await resolveProjectPath({
     explicitPath,
     dialogOpening,
@@ -101,6 +106,10 @@ export const openProjectAction = async ({
     onError,
   });
   if (path === null) {
+    return;
+  }
+  // resolve 中に unmount / reset で project 世代が進んでいたら open-start に進ませない。
+  if (!isProjectCurrent(projectVersion, projectSnapshot)) {
     return;
   }
 
