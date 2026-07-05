@@ -1,9 +1,9 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { ProjectError } from "@/features/board";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { unregisterToastSink } from "@/lib/tauri";
+import type { ProjectError } from "@/providers/ProjectProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";

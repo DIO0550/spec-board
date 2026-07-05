@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
-import {
-  buildTasksByNormalizedPath,
-  countTasksWithBrokenLink,
-} from "@/domains/broken-link";
+import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
-import { countTasksWithParseError } from "@/domains/parse-error";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
-import { useRecentProjects } from "@/hooks/useRecentProjects";
 import type { OrphanStrategy } from "@/lib/tauri";
 import {
   type AppView,
@@ -18,22 +13,28 @@ import {
   useAppView,
 } from "@/providers/AppViewProvider";
 import { resolveCloseTarget } from "@/providers/AppViewProvider/resolveCloseTarget";
-import { ToastProvider, useToastDispatch } from "@/providers/ToastProvider";
-import { basenameOf } from "@/utils/path";
+import { ProjectNotificationsProvider } from "@/providers/ProjectNotificationsProvider";
 import {
-  BoardWorkspace,
-  EmptyState,
-  HeaderBar,
   type MoveTaskParams,
   PROJECT_SWITCHED_MESSAGE,
   type ProjectError,
-  type ProjectLoadedEvent,
+  ProjectProvider,
   type ProjectState,
   projectErrorMessage,
   type ReorderColumnsEvent,
-  useProject,
+  useProjectColumnActions,
+  useProjectSessionActions,
+  useProjectState,
+  useProjectTaskActions,
   wasNotifiedByInvokeWrapped,
-} from "./features/board";
+} from "@/providers/ProjectProvider";
+import {
+  RecentProjectsProvider,
+  useRecentProjects,
+} from "@/providers/RecentProjectsProvider";
+import { ToastProvider, useToastDispatch } from "@/providers/ToastProvider";
+import { basenameOf } from "@/utils/path";
+import { BoardWorkspace, EmptyState, HeaderBar } from "./features/board";
 import { DetailScreen } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen, useMilestoneMutations } from "./features/settings";
@@ -151,56 +152,14 @@ const AppShell = () => {
   const { view, navigate } = useAppView();
   // 配下サブツリーが toasts 配列の差し替えで再 render されないよう dispatch 専用フックを使う。
   const { showToast } = useToastDispatch();
-  const { projects: recentProjects, add: addRecentProject } =
-    useRecentProjects();
+  // sidebar 表示用の最近一覧。add と通知副作用は ProjectNotificationsProvider が担う。
+  const { projects: recentProjects } = useRecentProjects();
 
-  // project の load 成功イベントで実行する副作用。useProject の onLoaded callback に
-  // 注入することで、effect + ref による「発火済み管理」を排し、load 完了という
-  // 1 回のイベントで「最近一覧記録」と「警告トースト発火」をまとめて実行する。
-  // close → reopen / 別 project 切替のたびに改めて 1 回ずつ呼ばれる。
-  const handleProjectLoaded = useCallback(
-    ({ path, data }: ProjectLoadedEvent): void => {
-      addRecentProject(path);
-      // リンク切れ / パースエラーは判定ドメイン・文言が別なので個別に集計して通知する。
-      const brokenLinkCount = countTasksWithBrokenLink(
-        data.tasks,
-        buildTasksByNormalizedPath(data.tasks),
-      );
-      if (brokenLinkCount >= 1) {
-        showToast(`リンク切れが ${brokenLinkCount} 件あります`, "warning");
-      }
-      const parseErrorCount = countTasksWithParseError(data.tasks);
-      if (parseErrorCount >= 1) {
-        showToast(`パースエラーが ${parseErrorCount} 件あります`, "warning");
-      }
-    },
-    [addRecentProject, showToast],
-  );
-
-  const {
-    state,
-    openProject,
-    openProjectByPath,
-    createTask,
-    updateTask,
-    deleteTask,
-    updateColumns,
-    moveTask,
-    reorderColumns,
-    addLink,
-    removeLink,
-  } = useProject({
-    onError: (err) => {
-      // invokeWrapped が既に通知済み（allowlist 由来 tauri）なら二重通知を避ける。
-      // allowlist 外 tauri（open_project / get_columns refresh / update_card_order 同一カラム）
-      // と非 tauri（invalid-state / validation）は invokeWrapped が出さないのでここで通知する。
-      if (wasNotifiedByInvokeWrapped(err)) {
-        return;
-      }
-      showToast(projectErrorMessage(err), "error");
-    },
-    onLoaded: handleProjectLoaded,
-  });
+  const { state } = useProjectState();
+  const { openProject, openProjectByPath } = useProjectSessionActions();
+  const { createTask, updateTask, deleteTask, moveTask, addLink, removeLink } =
+    useProjectTaskActions();
+  const { updateColumns, reorderColumns } = useProjectColumnActions();
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
 
   // 書き込み失敗の error トーストを出す共通ガード。allowlist 由来失敗は invokeWrapped が
@@ -1100,7 +1059,13 @@ export const App = () => {
     <ThemeProvider>
       <AppViewProvider>
         <ToastProvider>
-          <AppShell />
+          <RecentProjectsProvider>
+            <ProjectProvider>
+              <ProjectNotificationsProvider>
+                <AppShell />
+              </ProjectNotificationsProvider>
+            </ProjectProvider>
+          </RecentProjectsProvider>
         </ToastProvider>
       </AppViewProvider>
     </ThemeProvider>

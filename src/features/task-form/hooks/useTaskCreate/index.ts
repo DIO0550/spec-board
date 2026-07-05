@@ -1,7 +1,7 @@
 import { useCallback } from "react";
-import type { ProjectError } from "@/features/board";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type { CreateTaskParams } from "@/lib/tauri";
+import type { ProjectError } from "@/providers/ProjectProvider";
 import type { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 

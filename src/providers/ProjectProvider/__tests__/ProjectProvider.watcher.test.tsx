@@ -1,0 +1,230 @@
+import { listen as listenInvoke } from "@tauri-apps/api/event";
+import { act, createElement, StrictMode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import {
+  getColumns as getColumnsInvoke,
+  type OpenProjectPayload,
+  openProject as openProjectInvoke,
+} from "@/lib/tauri";
+import { Task, type TaskPayload } from "@/types/task";
+import { Result } from "@/utils/result";
+import { ProjectProvider, type ProjectState } from "..";
+import { useProjectSessionActions, useProjectState } from "../context";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    openDirectoryDialog: vi.fn(),
+    openProject: vi.fn(),
+    getColumns: vi.fn(),
+  };
+});
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(),
+}));
+
+const openProjectMock = vi.mocked(openProjectInvoke);
+const getColumnsMock = vi.mocked(getColumnsInvoke);
+const listenMock = vi.mocked(listenInvoke);
+
+type Handler = (event: { payload: unknown }) => void;
+
+/** listen をイベント名ごとに handler / unlisten でキャプチャする。 */
+const installCaptureListen = () => {
+  const handlers: Record<string, Handler[]> = {};
+  const unlistens: Record<string, ReturnType<typeof vi.fn>[]> = {};
+  listenMock.mockImplementation(((name: string, handler: Handler) => {
+    const unlisten = vi.fn();
+    const handlerBucket = handlers[name] ?? [];
+    handlers[name] = handlerBucket;
+    handlerBucket.push(handler);
+    const unlistenBucket = unlistens[name] ?? [];
+    unlistens[name] = unlistenBucket;
+    unlistenBucket.push(unlisten);
+    return Promise.resolve(unlisten);
+  }) as unknown as typeof listenInvoke);
+  return { handlers, unlistens };
+};
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+const taskA: Task = Task.fromPayload({
+  id: "a",
+  title: "A",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/a.md",
+});
+
+const payload: OpenProjectPayload = { tasks: [taskA], columns: ["Todo"] };
+
+const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
+  id: filePath,
+  title,
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath,
+  extras: {},
+  warnings: [],
+});
+
+beforeEach(() => {
+  openProjectMock.mockReset();
+  getColumnsMock.mockReset();
+  getColumnsMock.mockResolvedValue({
+    ok: true,
+    value: { columns: [{ name: "Todo", order: 0 }], doneColumn: "Todo" },
+  });
+  listenMock.mockReset();
+});
+
+afterEach(() => {
+  act(() => {
+    root?.unmount();
+  });
+  container?.remove();
+  container = null;
+  root = null;
+});
+
+type Captured = {
+  state: ProjectState;
+  openProjectByPath: (path: string) => Promise<void>;
+};
+let latest: Captured | null = null;
+
+const Probe = () => {
+  const { state } = useProjectState();
+  const { openProjectByPath } = useProjectSessionActions();
+  latest = { state, openProjectByPath };
+  return null;
+};
+
+/** Provider を mount し、path("/p") を loaded まで進める。 */
+const mountLoaded = async (strict = false) => {
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  const tree = createElement(ProjectProvider, null, createElement(Probe));
+  act(() => {
+    root?.render(strict ? createElement(StrictMode, null, tree) : tree);
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await pending;
+  });
+};
+
+const currentTasks = (): Task[] => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.tasks : [];
+};
+
+const fire = (
+  handlers: Record<string, Handler[]>,
+  name: string,
+  payloadValue: unknown,
+) => {
+  act(() => {
+    for (const handler of handlers[name] ?? []) {
+      handler({ payload: payloadValue });
+    }
+  });
+};
+
+test("loaded 後 task-created で新 task が state に追加される", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+  fire(handlers, "task-created", { task: makeTaskPayload("tasks/b.md", "B") });
+  expect(currentTasks().map((t) => t.filePath)).toEqual([
+    "tasks/a.md",
+    "tasks/b.md",
+  ]);
+});
+
+test("loaded 後 task-updated で該当 task が置換される", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload("tasks/a.md", "A2"),
+  });
+  expect(currentTasks().map((t) => t.title)).toEqual(["A2"]);
+});
+
+test("loaded 後 task-deleted で該当 task が削除される", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+  fire(handlers, "task-deleted", { filePath: "tasks/a.md" });
+  expect(currentTasks()).toEqual([]);
+});
+
+test("loadedPath と異なる path の stale handler の event は無視される", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+  // /p の loaded 時点で登録された handler（capturedPath="/p"）を控える。
+  const staleHandler = handlers["task-created"][0];
+  // 別 project /other へ切替える。/p 用 handler は古い path を掴んだままになる。
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ tasks: [], columns: ["Todo"] }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/other") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await pending;
+  });
+  // stale な /p handler を発火しても、現在 path は /other なので capturedPath ガードで無視。
+  act(() => {
+    staleHandler({ payload: { task: makeTaskPayload("tasks/z.md", "Z") } });
+  });
+  expect(currentTasks()).toEqual([]);
+});
+
+test("StrictMode 下でも task-created 由来の追加は 1 回だけ反映される（CTR-011）", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded(true);
+  // StrictMode で effect が二重登録されても、stale unlisten が解除され有効 handler は
+  // 実質 1 セッション分。現在有効な handler を発火して二重追加が起きないことを確認する。
+  const created = makeTaskPayload("tasks/b.md", "B");
+  fire(handlers, "task-created", { task: created });
+  expect(
+    currentTasks().filter((t) => t.filePath === "tasks/b.md"),
+  ).toHaveLength(1);
+});
+
+test("unmount で全 unlisten が呼ばれる", async () => {
+  const { unlistens } = installCaptureListen();
+  await mountLoaded();
+  const allUnlistens = [
+    ...(unlistens["task-created"] ?? []),
+    ...(unlistens["task-updated"] ?? []),
+    ...(unlistens["task-deleted"] ?? []),
+  ];
+  expect(allUnlistens.length).toBeGreaterThanOrEqual(3);
+  act(() => {
+    root?.unmount();
+  });
+  root = null;
+  for (const unlisten of allUnlistens) {
+    expect(unlisten).toHaveBeenCalled();
+  }
+});

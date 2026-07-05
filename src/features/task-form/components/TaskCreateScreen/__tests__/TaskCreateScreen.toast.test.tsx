@@ -1,10 +1,10 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { ProjectError } from "@/features/board";
 import { TaskCreateScreen } from "@/features/task-form/components/TaskCreateScreen";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { TauriError, unregisterToastSink } from "@/lib/tauri";
+import { ProjectError } from "@/providers/ProjectProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
