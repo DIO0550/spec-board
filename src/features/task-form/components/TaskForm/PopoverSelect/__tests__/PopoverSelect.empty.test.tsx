@@ -76,6 +76,13 @@ test.each([
   expect(onChange).not.toHaveBeenCalled();
 });
 
+test("空配列で開いても aria-activedescendant は存在しない id を指さない", () => {
+  render(baseProps());
+  openPopover();
+  // 空配列時 activeIndex は範囲外になるため、実在しない option を参照しない。
+  expect(listbox()?.getAttribute("aria-activedescendant")).toBeNull();
+});
+
 test("空配列で ArrowDown を押しても aria-activedescendant は変化しない", () => {
   render(baseProps());
   openPopover();

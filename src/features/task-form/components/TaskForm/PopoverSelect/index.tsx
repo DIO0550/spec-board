@@ -209,7 +209,7 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
           role="listbox"
           aria-labelledby={labelId}
           aria-activedescendant={
-            activeIndex === NO_ACTIVE
+            activeIndex === NO_ACTIVE || activeIndex >= props.options.length
               ? undefined
               : `${listboxId}-option-${activeIndex}`
           }
