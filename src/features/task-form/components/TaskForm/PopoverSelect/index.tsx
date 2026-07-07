@@ -1,17 +1,8 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-
-/** popover select の選択肢 1 件。 */
-export type PopoverSelectOption = {
-  /** onChange に渡す値 */
-  value: string;
-  /** trigger / option に表示するテキスト */
-  label: string;
-  /** swatch（status の色付きドット）の CSS color 値。 */
-  swatchColor?: string;
-  /** option / trigger を badge 表示にする場合の追加クラス（優先度の配色など）。 */
-  badgeClassName?: string;
-};
+import { PopoverOption } from "./PopoverOption";
+import { SelectedDisplay } from "./SelectedDisplay";
+import type { PopoverSelectOption } from "./types";
 
 type PopoverSelectProps = {
   /** フィールドのラベルテキスト */
@@ -38,41 +29,6 @@ type PopoverSelectProps = {
 
 /** ハイライトなしを表す activeIndex 値。 */
 const NO_ACTIVE = -1;
-
-/**
- * 選択中 option を trigger 内に描画する（swatch + label、または badge）。
- * @param props - 選択中 option（未選択時は undefined）
- * @returns trigger 内の表示要素
- */
-const SelectedDisplay = ({
-  option,
-}: {
-  option: PopoverSelectOption | undefined;
-}) => {
-  if (option === undefined) {
-    return null;
-  }
-  if (option.badgeClassName !== undefined) {
-    return (
-      <span
-        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${option.badgeClassName}`}
-      >
-        {option.label}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      {option.swatchColor !== undefined && (
-        <span
-          className="size-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: option.swatchColor }}
-        />
-      )}
-      <span className="truncate">{option.label}</span>
-    </span>
-  );
-};
 
 /**
  * status / priority 共用の popover select。
@@ -253,7 +209,7 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
           role="listbox"
           aria-labelledby={labelId}
           aria-activedescendant={
-            activeIndex === NO_ACTIVE
+            activeIndex === NO_ACTIVE || activeIndex >= props.options.length
               ? undefined
               : `${listboxId}-option-${activeIndex}`
           }
@@ -261,43 +217,18 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
           className="absolute left-0 right-0 z-10 mt-1 max-h-72 max-w-[340px] overflow-y-auto rounded-lg border border-border-strong bg-panel p-1.5 shadow-lg outline-none"
           data-testid={`${props["data-testid"]}-listbox`}
         >
-          {props.options.map((option, index) => {
-            const isSelected = option.value === props.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                id={`${listboxId}-option-${index}`}
-                role="option"
-                aria-selected={isSelected}
-                tabIndex={-1}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => selectAt(index)}
-                className={`flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm ${
-                  index === activeIndex ? "bg-panel-2" : "hover:bg-panel-2"
-                } ${isSelected ? "font-medium" : ""}`}
-                data-testid={`${props["data-testid"]}-option-${option.value}`}
-              >
-                {option.swatchColor !== undefined && (
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: option.swatchColor }}
-                  />
-                )}
-                {option.badgeClassName !== undefined ? (
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${option.badgeClassName}`}
-                  >
-                    {option.label}
-                  </span>
-                ) : (
-                  <span className="min-w-0 flex-1 truncate">
-                    {option.label}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {props.options.map((option, index) => (
+            <PopoverOption
+              key={option.value}
+              option={option}
+              optionId={`${listboxId}-option-${index}`}
+              testId={`${props["data-testid"]}-option-${option.value}`}
+              selected={option.value === props.value}
+              active={index === activeIndex}
+              onMouseEnter={() => setActiveIndex(index)}
+              onSelect={() => selectAt(index)}
+            />
+          ))}
         </div>
       )}
     </div>
