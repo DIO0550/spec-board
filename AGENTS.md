@@ -77,7 +77,7 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
 
 - 宣言はアロー関数 + named export を基本とする。`export default` は禁止。
   - 例外: `src/App.tsx`（ルートコンポーネント）は named export だがフォルダ化対象外。
-- Props は `type XxxProps = {...}` を定義し、`const Xxx = (props: XxxProps) => {...}` で受ける。
+- Props は `type XxxProps = {...}` を定義し、`const Xxx = ({ ... }: XxxProps) => {...}` で分割代入して受けることを基本とする（引数を `props` でまとめて受けてもよい）。
 - `React.FC` / `FunctionComponent` は使用しない。
 
 ### フォルダ構造
