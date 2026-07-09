@@ -5,6 +5,7 @@ import {
   tabNavPanelId,
   tabNavTabId,
 } from "@/components/TabNav";
+import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -13,15 +14,11 @@ import {
   useBoardViewMode,
 } from "../../hooks/useBoardViewMode";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
-import { Board } from "../Board";
+// 型 import は export 化した BoardWorkspaceProps が参照するため残す（削除すると build が落ちる）。
 import type { TaskDropHandler } from "../BoardCardProvider";
 import type { ColumnReorderHandler } from "../BoardColumnProvider";
-import { BoardProviders } from "../BoardProviders";
-import { CalendarView } from "../CalendarView";
-import { ListView } from "../ListView";
 import type { MilestonesByName } from "../TaskCard";
 import { TaskFilterBar } from "../TaskFilterBar";
-import { TreeView } from "../TreeView";
 
 /** ビュー切替タブの定義（表示形態 ID と表示名）。 */
 const VIEW_TABS: readonly TabItem[] = [
@@ -35,7 +32,7 @@ const VIEW_TABS: readonly TabItem[] = [
 const VIEW_TAB_PREFIX = "board-view";
 
 /** BoardWorkspace の Props。 */
-type BoardWorkspaceProps = {
+export type BoardWorkspaceProps = {
   /** カラム定義の配列 */
   columns: ColumnType[];
   /** 全タスク（絞り込み前） */
@@ -110,92 +107,6 @@ const collectLabels = (tasks: Task[]): string[] => {
     }
   }
   return Array.from(labels).sort();
-};
-
-type ActiveBoardViewProps = {
-  /** 現在の表示形態 */
-  viewMode: BoardViewMode;
-  /** 絞り込み後のタスク */
-  filtered: Task[];
-  /**
-   * 絞り込みが有効か。board 表示時に Board の DnD を無効化し、隠れたカードを跨ぐ
-   * 並べ替えで cardOrder が壊れるのを防ぐ。
-   */
-  filterActive: boolean;
-  /** BoardWorkspace が受け取った全 props（board 表示時に Board へ委譲する） */
-  workspace: BoardWorkspaceProps;
-};
-
-/**
- * 選択中の表示形態に対応するビューを描画する。board のみ既存 Board へ委譲し、
- * 階層カウント用に絞り込み前の全タスクを allTasks として渡す。
- * @param props - {@link ActiveBoardViewProps}
- * @returns 表示形態に応じたビュー要素
- */
-const ActiveBoardView = ({
-  viewMode,
-  filtered,
-  filterActive,
-  workspace,
-}: ActiveBoardViewProps) => {
-  if (viewMode === "list") {
-    return <ListView tasks={filtered} onTaskClick={workspace.onTaskClick} />;
-  }
-  if (viewMode === "tree") {
-    return <TreeView tasks={filtered} onTaskClick={workspace.onTaskClick} />;
-  }
-  if (viewMode === "calendar") {
-    return (
-      <CalendarView tasks={filtered} onTaskClick={workspace.onTaskClick} />
-    );
-  }
-  const ordered = [...workspace.columns].sort((a, b) => a.order - b.order);
-  const columnDraggable = ordered.length > 1;
-  const {
-    onAddTask,
-    onTaskClick,
-    onAddColumn,
-    onRenameColumn,
-    onDeleteColumn,
-  } = workspace;
-  return (
-    <BoardProviders
-      columns={workspace.columns}
-      tasks={filtered}
-      allTasks={workspace.tasks}
-      tasksByNormalizedPath={workspace.tasksByNormalizedPath}
-      milestonesByName={workspace.milestonesByName}
-      doneColumn={workspace.doneColumn}
-      dndDisabled={filterActive}
-      onTaskDrop={workspace.onTaskDrop}
-      onColumnReorder={workspace.onColumnReorder}
-    >
-      <Board>
-        {ordered.map((col, index) => (
-          <Board.Column
-            key={col.name}
-            name={col.name}
-            color={col.color}
-            order={index}
-            onAddClick={() => onAddTask(col.name)}
-            onTaskClick={onTaskClick}
-            onRename={
-              onRenameColumn
-                ? (newName) => onRenameColumn(col.name, newName)
-                : undefined
-            }
-            onDelete={
-              onDeleteColumn
-                ? (destColumn) => onDeleteColumn(col.name, destColumn)
-                : undefined
-            }
-            columnDraggable={columnDraggable}
-          />
-        ))}
-        {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}
-      </Board>
-    </BoardProviders>
-  );
 };
 
 /**
