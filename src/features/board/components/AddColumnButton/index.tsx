@@ -1,6 +1,6 @@
-import type { KeyboardEvent } from "react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useInlineColumnNameInput } from "@/features/board/hooks/useInlineColumnNameInput";
 import { useBoardColumn } from "../BoardColumnProvider";
+import { ColumnNameInput } from "../ColumnNameInput";
 
 /** AddColumnButton の Props */
 type AddColumnButtonProps = {
@@ -24,115 +24,22 @@ type AddColumnButtonProps = {
  */
 export const AddColumnButton = ({ onAdd }: AddColumnButtonProps) => {
   const { existingNames } = useBoardColumn();
-  const [isEditing, setIsEditing] = useState(false);
-  const [inputValue, setInputValue] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const isCancelledRef = useRef(false);
-  const id = useId();
-  const errorId = `${id}-error`;
+  const field = useInlineColumnNameInput({
+    initialValue: "",
+    existingNames,
+    selectOnFocus: false,
+    onCommit: (trimmed) => onAdd(trimmed),
+  });
 
-  useEffect(() => {
-    if (isEditing) {
-      inputRef.current?.focus();
-    }
-  }, [isEditing]);
-
-  const startEditing = () => {
-    isCancelledRef.current = false;
-    setInputValue("");
-    setIsEditing(true);
-  };
-
-  const cancel = () => {
-    isCancelledRef.current = true;
-    setInputValue("");
-    setIsEditing(false);
-  };
-
-  const confirm = async (): Promise<boolean> => {
-    // re-entrant guard: pending 中の連打 (Enter 連打) を抑止する
-    if (isBusy) {
-      return false;
-    }
-    const trimmed = inputValue.trim();
-    if (trimmed.length === 0) {
-      isCancelledRef.current = true;
-      setInputValue("");
-      setIsEditing(false);
-      return true;
-    }
-    if (existingNames().includes(trimmed)) {
-      return false;
-    }
-    setIsBusy(true);
-    try {
-      await onAdd(trimmed);
-    } catch {
-      // 失敗時は editor を開いたままにし、ユーザの入力を保持する
-      // (caller 側で error toast 等の通知が出ている前提)
-      setIsBusy(false);
-      return false;
-    }
-    setIsBusy(false);
-    isCancelledRef.current = true;
-    setInputValue("");
-    setIsEditing(false);
-    return true;
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      if (e.nativeEvent.isComposing) {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      void confirm();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      cancel();
-    }
-  };
-
-  const trimmedInput = inputValue.trim();
-  const isDuplicate =
-    trimmedInput.length > 0 && existingNames().includes(trimmedInput);
-
-  if (isEditing) {
+  if (field.isEditing) {
     return (
       <div className="flex h-fit w-72 min-w-72 flex-col gap-1 rounded-lg bg-surface-muted p-2">
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={() => {
-            // isBusy 中は input が disabled になり browser が blur を発火するが、
-            // pending 中の cancel は editor を閉じてユーザの入力を失わせるため無視する
-            if (isBusy) {
-              return;
-            }
-            if (!isCancelledRef.current) {
-              cancel();
-            }
-            isCancelledRef.current = false;
-          }}
-          disabled={isBusy}
-          placeholder="カラム名"
-          aria-label="カラム名"
-          aria-invalid={isDuplicate}
-          aria-describedby={isDuplicate ? errorId : undefined}
+        <ColumnNameInput
+          field={field}
           className="w-full rounded border border-accent px-2 py-1 text-sm text-foreground outline-none disabled:bg-surface-muted"
-          data-testid="add-column-input"
+          dataTestId="add-column-input"
+          placeholder="カラム名"
         />
-        {isDuplicate && (
-          <p id={errorId} className="text-xs text-red-500" role="alert">
-            同じ名前のカラムが既に存在します
-          </p>
-        )}
       </div>
     );
   }
@@ -140,7 +47,7 @@ export const AddColumnButton = ({ onAdd }: AddColumnButtonProps) => {
   return (
     <button
       type="button"
-      onClick={startEditing}
+      onClick={field.startEditing}
       aria-label="カラムを追加"
       className="h-fit w-72 min-w-72 rounded-lg border-2 border-dashed border-border px-4 py-2 text-sm text-muted hover:border-border hover:text-foreground"
       data-testid="add-column-button"
