@@ -1,7 +1,9 @@
-import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
-import { useEffect, useId, useRef, useState } from "react";
+import type { DragEvent, MouseEvent } from "react";
+import { useRef } from "react";
 import { ColumnColor } from "@/domains/column-color";
+import { useInlineColumnNameInput } from "@/features/board/hooks/useInlineColumnNameInput";
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/mime";
+import { ColumnNameInput } from "../ColumnNameInput";
 
 /** カラムヘッダーの Props */
 type ColumnHeaderProps = {
@@ -69,87 +71,26 @@ export const ColumnHeader = ({
   onColumnDragStart,
   onColumnDragEnd,
 }: ColumnHeaderProps) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [inputValue, setInputValue] = useState(name);
-  const [isBusy, setIsBusy] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const isCancelledRef = useRef(false);
   // カラム dragend 直後の synthetic click を抑止するためのガード。
   // dragstart で true にし、root の onClick / 名前クリックの編集開始はこのフラグ中は無視する。
   // click は dragend より後に届くため、handleDragEnd では即解除せず setTimeout で遅延解除する。
   const dragGuardRef = useRef(false);
-  const reactId = useId();
-  const errorId = `${reactId}-error`;
 
-  useEffect(() => {
-    if (isEditing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [isEditing]);
+  const field = useInlineColumnNameInput({
+    initialValue: name,
+    currentName: name,
+    existingNames: existingColumnNames,
+    selectOnFocus: true,
+    onCommit: (trimmed) => onRename?.(trimmed),
+  });
 
-  const startEditing = () => {
-    if (!onRename) {
-      return;
-    }
+  // dragGuard を噛ませた編集開始（dragend 直後の synthetic click では編集に入らない）。
+  const handleNameClick = () => {
     if (dragGuardRef.current) {
       dragGuardRef.current = false;
       return;
     }
-    isCancelledRef.current = false;
-    setInputValue(name);
-    setIsEditing(true);
-  };
-
-  const cancel = () => {
-    isCancelledRef.current = true;
-    setInputValue(name);
-    setIsEditing(false);
-  };
-
-  const confirm = async (): Promise<boolean> => {
-    // re-entrant guard: pending 中の連打 (Enter 連打) を抑止
-    if (isBusy) {
-      return false;
-    }
-    const trimmed = inputValue.trim();
-    if (trimmed.length === 0 || trimmed === name) {
-      isCancelledRef.current = true;
-      setInputValue(name);
-      setIsEditing(false);
-      return true;
-    }
-    if (existingColumnNames.includes(trimmed)) {
-      return false;
-    }
-    setIsBusy(true);
-    try {
-      await onRename?.(trimmed);
-    } catch {
-      // 失敗時は edit mode を維持し、ユーザの入力を保持する
-      // (caller 側で error toast 等の通知が出ている前提)
-      setIsBusy(false);
-      return false;
-    }
-    setIsBusy(false);
-    isCancelledRef.current = true;
-    setIsEditing(false);
-    return true;
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      if (e.nativeEvent.isComposing) {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      void confirm();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      cancel();
-    }
+    field.startEditing();
   };
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
@@ -179,12 +120,6 @@ export const ColumnHeader = ({
     }
   };
 
-  const trimmedInput = inputValue.trim();
-  const isDuplicate =
-    trimmedInput.length > 0 &&
-    trimmedInput !== name &&
-    existingColumnNames.includes(trimmedInput);
-
   const accentColor = ColumnColor.resolveAccent(color, order);
 
   return (
@@ -201,45 +136,20 @@ export const ColumnHeader = ({
       onContextMenu={onContextMenu}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {isEditing ? (
+        {field.isEditing ? (
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={() => {
-                // isBusy 中は input が disabled 化により blur が発火するが、
-                // pending 中の cancel は edit mode を閉じてユーザの入力を失わせる
-                // ため無視する
-                if (isBusy) {
-                  return;
-                }
-                if (!isCancelledRef.current) {
-                  cancel();
-                }
-                isCancelledRef.current = false;
-              }}
-              disabled={isBusy}
-              aria-label="カラム名"
-              aria-invalid={isDuplicate}
-              aria-describedby={isDuplicate ? errorId : undefined}
+            <ColumnNameInput
+              field={field}
               className="w-full min-w-32 rounded border border-accent px-1 py-0.5 text-sm font-semibold text-foreground outline-none disabled:bg-surface-muted"
-              data-column-dnd-disabled
-              data-testid="column-rename-input"
+              dataTestId="column-rename-input"
+              dndDisabled
             />
-            {isDuplicate && (
-              <p id={errorId} className="text-xs text-red-500" role="alert">
-                同じ名前のカラムが既に存在します
-              </p>
-            )}
           </div>
         ) : onRename ? (
           <h2 className="text-sm font-semibold text-foreground">
             <button
               type="button"
-              onClick={startEditing}
+              onClick={handleNameClick}
               aria-label={`${name}の名前を変更`}
               className="rounded px-1 py-0.5 hover:bg-surface-muted"
               data-column-dnd-disabled
