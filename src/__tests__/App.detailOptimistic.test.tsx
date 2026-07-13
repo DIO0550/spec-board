@@ -166,27 +166,28 @@ const openDetailScreen = (): void => {
  * @param testId data-testid 値
  * @returns 該当要素
  */
-const getSelect = (testId: string): HTMLSelectElement =>
-  document.querySelector(`[data-testid="${testId}"]`) as HTMLSelectElement;
+/** ステータス popover の trigger 表示テキストを返す。 */
+const statusFieldText = (): string =>
+  document.querySelector('[data-testid="status-field"]')?.textContent ?? "";
 
 /**
- * select 要素に change イベントを発火し、queue 内 microtask を 1 度だけ flush する。
+ * ステータス popover を開いて指定カラムの option を選び、queue 内 microtask を 1 度だけ flush する。
  * 楽観 dispatch は `enqueueProjectCommand` の microtask で走るため、ここで await が必要。
  *
- * @param select 対象 select
- * @param value 設定する value
+ * @param value 選択するカラム名
  */
-const changeSelectValue = async (
-  select: HTMLSelectElement,
-  value: string,
-): Promise<void> => {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
+const changeStatus = async (value: string): Promise<void> => {
   await act(async () => {
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    (
+      document.querySelector('[data-testid="status-field"]') as HTMLElement
+    ).click();
+  });
+  await act(async () => {
+    (
+      document.querySelector(
+        `[data-testid="status-field-option-${value}"]`,
+      ) as HTMLElement
+    ).click();
     // 楽観 dispatch (queue の microtask) を 1 度だけ流す
     await Promise.resolve();
   });
@@ -196,7 +197,7 @@ test("StatusSelect 操作 → updateTask resolve 前に DetailScreen の StatusS
   mountApp();
   await openSuccessfully();
   openDetailScreen();
-  expect(getSelect("status-select").value).toBe("Todo");
+  expect(statusFieldText()).toContain("Todo");
 
   type UpdateTaskResult = Awaited<ReturnType<typeof updateTaskMock>>;
   let resolveUpdate: (value: UpdateTaskResult) => void = () => {};
@@ -206,29 +207,29 @@ test("StatusSelect 操作 → updateTask resolve 前に DetailScreen の StatusS
     }),
   );
 
-  await changeSelectValue(getSelect("status-select"), "Doing");
-  // IPC resolve 前に楽観反映で Select 表示が Doing になっている
-  expect(getSelect("status-select").value).toBe("Doing");
+  await changeStatus("Doing");
+  // IPC resolve 前に楽観反映で trigger 表示が Doing になっている
+  expect(statusFieldText()).toContain("Doing");
 
   await act(async () => {
     resolveUpdate(Result.ok({ ...taskA, status: "Doing" }));
     await Promise.resolve();
   });
   // 確定後も Doing のまま
-  expect(getSelect("status-select").value).toBe("Doing");
+  expect(statusFieldText()).toContain("Doing");
 });
 
 test("IPC 失敗時 → DetailScreen Select 表示が元値に戻り、エラートーストが出る", async () => {
   mountApp();
   await openSuccessfully();
   openDetailScreen();
-  expect(getSelect("status-select").value).toBe("Todo");
+  expect(statusFieldText()).toContain("Todo");
 
   updateTaskMock.mockResolvedValueOnce(
     Result.err(new TauriError("IO_ERROR", "io fail")),
   );
 
-  await changeSelectValue(getSelect("status-select"), "Doing");
+  await changeStatus("Doing");
   await act(async () => {
     await Promise.resolve();
   });
@@ -236,8 +237,8 @@ test("IPC 失敗時 → DetailScreen Select 表示が元値に戻り、エラー
     await Promise.resolve();
   });
 
-  // rollback で Select 表示が Todo に戻る
-  expect(getSelect("status-select").value).toBe("Todo");
+  // rollback で trigger 表示が Todo に戻る
+  expect(statusFieldText()).toContain("Todo");
   // エラートーストが出る
   const errorToast = document.querySelector('[data-testid="toast-error"]');
   expect(errorToast).not.toBeNull();

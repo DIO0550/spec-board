@@ -210,27 +210,24 @@ const openDetailScreen = (): void => {
   });
 };
 
-const getSelect = (testId: string): HTMLSelectElement =>
-  document.querySelector(`[data-testid="${testId}"]`) as HTMLSelectElement;
-
 /**
- * select 要素に change イベントを発火し、楽観 dispatch の microtask を 1 度 flush する。
+ * ステータス popover を開いて指定カラムの option を選び、楽観 dispatch の microtask を 1 度 flush する。
  * 同一 loadedPath を保ったまま tasks state を更新するための操作。
  *
- * @param select 対象 select
- * @param value 設定する value
+ * @param value 選択するカラム名
  */
-const changeSelectValue = async (
-  select: HTMLSelectElement,
-  value: string,
-): Promise<void> => {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
+const changeStatus = async (value: string): Promise<void> => {
   await act(async () => {
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    (
+      document.querySelector('[data-testid="status-field"]') as HTMLElement
+    ).click();
+  });
+  await act(async () => {
+    (
+      document.querySelector(
+        `[data-testid="status-field-option-${value}"]`,
+      ) as HTMLElement
+    ).click();
     await Promise.resolve();
   });
 };
@@ -285,7 +282,7 @@ test("同一 loadedPath を保ったまま tasks を更新してもパースエ�
   updateTaskMock.mockResolvedValueOnce(
     Result.ok({ ...taskWithParseError, status: "Done" }),
   );
-  await changeSelectValue(getSelect("status-select"), "Done");
+  await changeStatus("Done");
   await act(async () => {
     await Promise.resolve();
   });

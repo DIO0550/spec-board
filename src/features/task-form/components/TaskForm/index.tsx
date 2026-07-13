@@ -1,6 +1,10 @@
 import type { RefObject } from "react";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/Button";
+import { LabelsField } from "@/components/fields/LabelsField";
+import { PriorityField } from "@/components/fields/PriorityField";
+import { StatusField } from "@/components/fields/StatusField";
+import { Priority } from "@/domains/priority";
 import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
@@ -15,7 +19,6 @@ import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
-import { LabelsMultiSelect } from "./LabelsMultiSelect";
 import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";
@@ -24,8 +27,6 @@ import { TaskFormDue } from "./TaskFormDue";
 import { TaskFormFileName } from "./TaskFormFileName";
 import { TaskFormLinks } from "./TaskFormLinks";
 import { TaskFormParent } from "./TaskFormParent";
-import { TaskFormPriority } from "./TaskFormPriority";
-import { TaskFormStatus } from "./TaskFormStatus";
 import { TaskFormSubIssues } from "./TaskFormSubIssues";
 import { TaskFormTitle } from "./TaskFormTitle";
 
@@ -129,14 +130,6 @@ export const TaskForm = ({
     () => (labelList.kind === "loaded" ? labelList.labels : []),
     [labelList],
   );
-  // 選択トグル: 未選択なら commitValue で追加、選択済みなら remove で解除する。
-  const toggleLabel = (label: string) => {
-    if (labels.state.labels.includes(label)) {
-      labels.dispatch({ type: "remove", label });
-      return;
-    }
-    labels.dispatch({ type: "commitValue", value: label });
-  };
   // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
   const links = useLinksInput();
   const fields = useTaskFormFields({
@@ -286,7 +279,7 @@ export const TaskForm = ({
         //（エラーは次の入力でクリアされるため、入力再開後はライブ警告へ引き継がれる）。
         suppressWarning={fields.state.errors.fileName !== undefined}
       />
-      <TaskFormStatus
+      <StatusField
         columns={columns}
         value={fields.state.values.status}
         onChange={(value) => fields.dispatch({ type: "status", value })}
@@ -297,16 +290,16 @@ export const TaskForm = ({
         onChange={(value) => fields.dispatch({ type: "due", value })}
         disabled={isSubmitting}
       />
-      <TaskFormPriority
-        value={fields.state.values.priority}
-        onChange={(value) => fields.dispatch({ type: "priority", value })}
+      <PriorityField
+        value={Priority.parse(fields.state.values.priority)}
+        onChange={(p) => fields.dispatch({ type: "priority", value: p ?? "" })}
         disabled={isSubmitting}
       />
-      <LabelsMultiSelect
+      <LabelsField
         label="ラベル"
-        selected={labels.state.labels}
+        value={labels.state.labels}
         suggestions={labelDefinitions}
-        onToggle={toggleLabel}
+        onChange={(next) => labels.dispatch({ type: "set", labels: next })}
         disabled={isSubmitting}
         data-testid="task-form-labels"
       />

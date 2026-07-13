@@ -160,8 +160,8 @@ test("キャンセルボタン click で onClose が呼ばれる", () => {
 
 test("ステータス/優先度が listbox 開閉ボタン（aria-haspopup=listbox）として描画され、それぞれラベルと関連付く", () => {
   render(baseProps());
-  const status = document.querySelector('[data-testid="task-form-status"]');
-  const priority = document.querySelector('[data-testid="task-form-priority"]');
+  const status = document.querySelector('[data-testid="status-field"]');
+  const priority = document.querySelector('[data-testid="priority-field"]');
   expect(status?.getAttribute("aria-haspopup")).toBe("listbox");
   expect(priority?.getAttribute("aria-haspopup")).toBe("listbox");
   // aria-labelledby は「ラベル id + 選択値 id」の 2 トークン。先頭がラベル要素。

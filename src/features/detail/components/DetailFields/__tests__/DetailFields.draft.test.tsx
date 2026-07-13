@@ -49,8 +49,7 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 const createHandlers = (): DetailFieldHandlers => ({
   onStatusChange: vi.fn(),
   onPriorityChange: vi.fn(),
-  onLabelAdd: vi.fn(),
-  onLabelRemove: vi.fn(),
+  onLabelsChange: vi.fn(),
   onChangeDraft: vi.fn(),
 });
 

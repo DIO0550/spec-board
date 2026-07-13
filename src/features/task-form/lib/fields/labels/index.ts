@@ -1,5 +1,3 @@
-import { LabelAddRule } from "@/domains/label-add-rule";
-
 /** LabelsField が保持する値の型 */
 export type LabelsField = {
   /** 確定済みラベル一覧 */
@@ -10,23 +8,22 @@ export type LabelsField = {
 
 /**
  * 指定の生文字列を labels に取り込む共通規則。
- * trim 後空なら field 不変、重複なら labelInput だけクリア、新規なら追加 + クリア。
- * `commit`（labelInput の取り込み）と `commitValue`（サジェスト確定値の取り込み）で共有する。
- * 追加可否の判定は共有ルール {@link LabelAddRule.classify} に委譲し、field 形状への
- * 反映だけをこの関数で行う。
+ * trim 後空なら field 不変、既存に完全一致する重複なら labelInput だけクリア、
+ * 新規なら trim 済み値を追加して labelInput をクリアする。
+ * `commit`（labelInput の取り込み）で使う。
  * @param field - 現在の field
  * @param raw - 取り込む生文字列
  * @returns 新しい field
  */
 const takeIn = (field: LabelsField, raw: string): LabelsField => {
-  const decision = LabelAddRule.classify(field.labels, raw);
-  if (decision.kind === "empty") {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
     return field;
   }
-  if (decision.kind === "duplicate") {
+  if (field.labels.includes(trimmed)) {
     return { ...field, labelInput: "" };
   }
-  return { labels: [...field.labels, decision.value], labelInput: "" };
+  return { labels: [...field.labels, trimmed], labelInput: "" };
 };
 
 /**
@@ -57,6 +54,18 @@ export const LabelsField = {
   }),
 
   /**
+   * labels を丸ごと差し替えた新しい field を返す（popover の onChange 用）。
+   * 現在の field は参照しない（labels を全置換し labelInput はクリアする）。
+   * @param _field - 現在の field（reducer 呼び出しとの対称性のため受けるが未使用）
+   * @param labels - 新しいラベル一覧
+   * @returns 新しい field（labelInput はクリア）
+   */
+  withLabels: (_field: LabelsField, labels: string[]): LabelsField => ({
+    labels: [...labels],
+    labelInput: "",
+  }),
+
+  /**
    * 入力中文字列を labels に取り込む。trim 後空または重複なら labels は不変。
    * @param field - 現在の field
    * @returns 新しい field
@@ -80,37 +89,4 @@ export const LabelsField = {
    * @returns 最終 labels 配列
    */
   finalize: (field: LabelsField): string[] => LabelsField.commit(field).labels,
-
-  /**
-   * サジェスト候補を返す。確定済みラベルを除外し、入力中文字列で
-   * 大文字小文字を無視した部分一致絞り込みを行う（入力が空なら全件）。
-   * @param field - 現在の field
-   * @param candidates - ラベルマスタ由来の候補名一覧
-   * @returns サジェストに表示する候補
-   */
-  suggestionsFor: (
-    field: LabelsField,
-    candidates: readonly string[],
-  ): string[] => {
-    const query = field.labelInput.trim().toLowerCase();
-    return candidates.filter((name) => {
-      if (field.labels.includes(name)) {
-        return false;
-      }
-      if (query === "") {
-        return true;
-      }
-      return name.toLowerCase().includes(query);
-    });
-  },
-
-  /**
-   * サジェスト選択値を labels に取り込む。trim 後空・重複は commit と
-   * 同じ規則でスキップし、labelInput はクリアする。
-   * @param field - 現在の field
-   * @param value - 確定するラベル名
-   * @returns 新しい field
-   */
-  commitValue: (field: LabelsField, value: string): LabelsField =>
-    takeIn(field, value),
 };

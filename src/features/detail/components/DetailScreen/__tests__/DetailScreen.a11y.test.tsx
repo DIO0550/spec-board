@@ -175,7 +175,7 @@ test("既存の data-testid が維持される（回帰）", () => {
     document.querySelector('[data-testid="editable-text-display"]'),
   ).toBeTruthy();
   expect(document.querySelector('[data-testid="markdown-body"]')).toBeTruthy();
-  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
   expect(
     document.querySelector('[data-testid="detail-delete-button"]'),
   ).toBeTruthy();

@@ -1,9 +1,22 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
+import { Result } from "@/utils/result";
 import { DetailFields } from "..";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return { ...actual, getLabels: vi.fn() };
+});
+const getLabelsMock = vi.mocked(getLabels);
+
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -13,6 +26,12 @@ const testColumns = [
   { name: "In Progress", order: 1 },
   { name: "Done", order: 2 },
 ];
+
+beforeEach(() => {
+  getLabelsMock.mockResolvedValue(
+    Result.ok({ labels: [{ name: "bug" }, { name: "feat" }], usageCounts: {} }),
+  );
+});
 
 afterEach(() => {
   act(() => {
@@ -53,8 +72,7 @@ const createHandlers = (
 ): DetailFieldHandlers => ({
   onStatusChange: vi.fn(),
   onPriorityChange: vi.fn(),
-  onLabelAdd: vi.fn(),
-  onLabelRemove: vi.fn(),
+  onLabelsChange: vi.fn(),
   onChangeDraft: vi.fn(),
   ...overrides,
 });
@@ -72,19 +90,22 @@ function render(node: ReactNode) {
   });
 }
 
+/** getLabels（useLabelList）の非同期解決をフラッシュする。 */
+const flush = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
 /**
- * select 要素の value を変更し change を発火する。
- * @param select - 対象 select
- * @param value - 設定する value
+ * data-testid の要素をクリックする。
+ * @param testId - 対象 testid
  */
-const changeSelect = (select: HTMLSelectElement, value: string): void => {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
+const clickTestId = (testId: string) => {
   act(() => {
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    (
+      document.querySelector(`[data-testid="${testId}"]`) as HTMLElement
+    ).click();
   });
 };
 
@@ -100,76 +121,46 @@ test("StatusPriority の変更で onStatusChange / onPriorityChange が呼ばれ
       <DetailFields.StatusPriority />
     </DetailFields>,
   );
-  changeSelect(
-    document.querySelector(
-      '[data-testid="status-select"]',
-    ) as HTMLSelectElement,
-    "Done",
-  );
+  clickTestId("status-field");
+  clickTestId("status-field-option-Done");
   expect(onStatusChange).toHaveBeenCalledWith("Done");
-  changeSelect(
-    document.querySelector(
-      '[data-testid="priority-select"]',
-    ) as HTMLSelectElement,
-    "High",
-  );
+  clickTestId("priority-field");
+  clickTestId("priority-field-option-High");
   expect(onPriorityChange).toHaveBeenCalledWith("High");
 });
 
-test("Labels の追加で onLabelAdd が呼ばれる", () => {
-  const onLabelAdd = vi.fn();
+test("Labels の候補トグルで onLabelsChange が呼ばれる", async () => {
+  const onLabelsChange = vi.fn();
   render(
     <DetailFields
-      task={createTask()}
+      task={createTask({ labels: [] })}
       columns={testColumns}
-      handlers={createHandlers({ onLabelAdd })}
+      handlers={createHandlers({ onLabelsChange })}
     >
       <DetailFields.Labels />
     </DetailFields>,
   );
-  act(() => {
-    (
-      document.querySelector('[data-testid="label-add-button"]') as HTMLElement
-    ).click();
-  });
-  const input = document.querySelector(
-    '[data-testid="label-input"]',
-  ) as HTMLInputElement;
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  act(() => {
-    setter?.call(input, "bug");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  act(() => {
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-  });
-  expect(onLabelAdd).toHaveBeenCalledWith("bug");
+  await flush();
+  clickTestId("detail-labels");
+  clickTestId("detail-labels-option-bug");
+  expect(onLabelsChange).toHaveBeenCalledWith(["bug"]);
 });
 
-test("Labels の削除で onLabelRemove が呼ばれる", () => {
-  const onLabelRemove = vi.fn();
+test("Labels の選択済みトグル解除で onLabelsChange が除外後配列で呼ばれる", async () => {
+  const onLabelsChange = vi.fn();
   render(
     <DetailFields
       task={createTask({ labels: ["bug"] })}
       columns={testColumns}
-      handlers={createHandlers({ onLabelRemove })}
+      handlers={createHandlers({ onLabelsChange })}
     >
       <DetailFields.Labels />
     </DetailFields>,
   );
-  act(() => {
-    (
-      document.querySelector(
-        '[aria-label="ラベル「bug」を削除"]',
-      ) as HTMLElement
-    ).click();
-  });
-  expect(onLabelRemove).toHaveBeenCalledWith("bug");
+  await flush();
+  clickTestId("detail-labels");
+  clickTestId("detail-labels-option-bug");
+  expect(onLabelsChange).toHaveBeenCalledWith([]);
 });
 
 test("Root の外で部品を使うと例外を投げる（誤用検知）", () => {

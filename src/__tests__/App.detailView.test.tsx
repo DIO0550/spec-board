@@ -305,26 +305,23 @@ test("detail のサイドバーから update_task（楽観反映）が呼ばれ�
   updateTaskMock.mockResolvedValueOnce(
     Result.ok({ ...taskA, status: "Doing" }),
   );
-  const select = document.querySelector(
-    '[data-testid="status-select"]',
-  ) as HTMLSelectElement;
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
   await act(async () => {
-    setter?.call(select, "Doing");
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    await Promise.resolve();
+    (
+      document.querySelector('[data-testid="status-field"]') as HTMLElement
+    ).click();
   });
-  // IPC resolve 前に楽観反映で Select 表示が Doing になる
-  expect(
+  await act(async () => {
     (
       document.querySelector(
-        '[data-testid="status-select"]',
-      ) as HTMLSelectElement
-    ).value,
-  ).toBe("Doing");
+        '[data-testid="status-field-option-Doing"]',
+      ) as HTMLElement
+    ).click();
+    await Promise.resolve();
+  });
+  // IPC resolve 前に楽観反映で trigger 表示が Doing になる
+  expect(
+    document.querySelector('[data-testid="status-field"]')?.textContent,
+  ).toContain("Doing");
   expect(updateTaskMock).toHaveBeenCalled();
 });
 

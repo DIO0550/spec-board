@@ -236,7 +236,7 @@ test("isSubmitting=true で代表的な入力欄・送信ボタンが一括で�
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
   const statusTrigger = document.querySelector(
-    '[data-testid="task-form-status"]',
+    '[data-testid="status-field"]',
   ) as HTMLButtonElement;
   const submit = document.querySelector(
     '[data-testid="task-form-submit"]',

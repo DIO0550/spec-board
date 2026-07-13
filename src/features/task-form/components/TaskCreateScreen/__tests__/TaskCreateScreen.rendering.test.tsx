@@ -167,7 +167,7 @@ test("parentReadOnly=true で親フィールドが readOnly（解除ボタンな
 
 test("initialStatus が status フィールド（select trigger）に反映される", () => {
   render(baseProps({ initialStatus: "Done" }));
-  const trigger = document.querySelector('[data-testid="task-form-status"]');
+  const trigger = document.querySelector('[data-testid="status-field"]');
   expect(trigger?.textContent).toContain("Done");
 });
 
