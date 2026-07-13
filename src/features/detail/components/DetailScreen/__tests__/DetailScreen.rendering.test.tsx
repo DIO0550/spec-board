@@ -86,7 +86,7 @@ test("左ペインに本文（タイトル + Markdown）が描画される", () 
 
 test("右ペインにプロパティ（Status 等）と削除ボタンが描画される", () => {
   render(buildProps());
-  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
   expect(
     document.querySelector('[data-testid="detail-delete-button"]'),
   ).toBeTruthy();
@@ -121,13 +121,9 @@ const createTaskWithWarnings = (warnings: TaskWarning[]): Task =>
 
 test("サイドバーに status/priority/labels セクションが揃って表示される", () => {
   render(buildProps());
-  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
-  expect(
-    document.querySelector('[data-testid="priority-select"]'),
-  ).toBeTruthy();
-  expect(
-    document.querySelector('[data-testid="label-add-button"]'),
-  ).toBeTruthy();
+  expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="priority-field"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="detail-labels"]')).toBeTruthy();
 });
 
 test("onAddSubIssue + allTasks 指定時に sub-issue セクションが表示される", () => {

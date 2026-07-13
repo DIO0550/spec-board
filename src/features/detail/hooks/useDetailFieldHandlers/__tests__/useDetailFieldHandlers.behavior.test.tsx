@@ -106,23 +106,23 @@ test("onPriorityChange で onTaskUpdate(task.id, { priority }) が呼ばれる",
   expect(onTaskUpdate).toHaveBeenCalledWith("t-2", { priority: "High" });
 });
 
-test("onLabelAdd で useDetailLabels 経由のラベル追加が onTaskUpdate に反映される", () => {
+test("onLabelsChange で受け取った配列がそのまま onTaskUpdate に反映される", () => {
   const onTaskUpdate = vi.fn();
   const get = renderHook(createTask({ id: "t-3", labels: [] }), onTaskUpdate);
   act(() => {
-    get().onLabelAdd("bug");
+    get().onLabelsChange(["bug"]);
   });
   expect(onTaskUpdate).toHaveBeenCalledWith("t-3", { labels: ["bug"] });
 });
 
-test("onLabelRemove で useDetailLabels 経由のラベル削除が onTaskUpdate に反映される", () => {
+test("onLabelsChange で除外後の配列を渡すと onTaskUpdate に反映される", () => {
   const onTaskUpdate = vi.fn();
   const get = renderHook(
     createTask({ id: "t-4", labels: ["bug", "feat"] }),
     onTaskUpdate,
   );
   act(() => {
-    get().onLabelRemove("bug");
+    get().onLabelsChange(["feat"]);
   });
   expect(onTaskUpdate).toHaveBeenCalledWith("t-4", { labels: ["feat"] });
 });

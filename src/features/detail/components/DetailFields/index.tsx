@@ -1,15 +1,16 @@
 import { createContext, type ReactNode, useContext } from "react";
 import { DueBadge } from "@/components/DueBadge";
+import { LabelsField } from "@/components/fields/LabelsField";
+import { PriorityField } from "@/components/fields/PriorityField";
+import { StatusField } from "@/components/fields/StatusField";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { Result as ResultDomain } from "@/utils/result";
-import { LabelEditor } from "../LabelEditor";
 import { LinksSection } from "../LinksSection";
-import { PrioritySelect } from "../PrioritySelect";
-import { StatusSelect } from "../StatusSelect";
 import { SubIssueSection } from "../SubIssueSection";
 
 /**
@@ -98,12 +99,12 @@ const DetailFieldsStatusPriority = () => {
   const { task, columns, handlers } = useDetailFieldsContext();
   return (
     <div className="flex gap-4">
-      <StatusSelect
+      <StatusField
         value={task.status}
         columns={columns}
         onChange={handlers.onStatusChange}
       />
-      <PrioritySelect
+      <PriorityField
         value={task.priority}
         onChange={handlers.onPriorityChange}
       />
@@ -114,15 +115,21 @@ const DetailFieldsStatusPriority = () => {
 
 /**
  * ラベルフィールド。横断 context から task / handlers を読む。
- * @returns ラベルエディタ
+ * 編集側にも候補取得（{@link useLabelList}）を配線し、作成側と同等の検索・既存選択を可能にする。
+ * loading / error 時は候補空でフォールバックし、新規作成のみ可能とする。
+ * @returns ラベル選択フィールド
  */
 const DetailFieldsLabels = () => {
   const { task, handlers } = useDetailFieldsContext();
+  const labelList = useLabelList();
+  const suggestions = labelList.kind === "loaded" ? labelList.labels : [];
   return (
-    <LabelEditor
-      labels={task.labels}
-      onAdd={handlers.onLabelAdd}
-      onRemove={handlers.onLabelRemove}
+    <LabelsField
+      label="ラベル"
+      value={task.labels}
+      suggestions={suggestions}
+      onChange={handlers.onLabelsChange}
+      data-testid="detail-labels"
     />
   );
 };

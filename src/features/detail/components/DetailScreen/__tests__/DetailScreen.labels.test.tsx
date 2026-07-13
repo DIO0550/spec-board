@@ -1,8 +1,21 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
+import { Result } from "@/utils/result";
 import { DetailScreen } from "..";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return { ...actual, getLabels: vi.fn() };
+});
+const getLabelsMock = vi.mocked(getLabels);
+
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -12,6 +25,15 @@ const testColumns = [
   { name: "In Progress", order: 1 },
   { name: "Done", order: 2 },
 ];
+
+beforeEach(() => {
+  getLabelsMock.mockResolvedValue(
+    Result.ok({
+      labels: [{ name: "existing" }, { name: "bug" }, { name: "frontend" }],
+      usageCounts: {},
+    }),
+  );
+});
 
 afterEach(() => {
   act(() => {
@@ -70,19 +92,29 @@ const render = (props: Parameters<typeof DetailScreen>[0]) => {
   });
 };
 
-/**
- * label 入力欄に値を入れて Enter で確定する。
- * @param value - 入力するラベル文字列
- */
-const typeLabelAndConfirm = (value: string): void => {
-  const addButton = document.querySelector(
-    '[data-testid="label-add-button"]',
-  ) as HTMLElement;
-  act(() => {
-    addButton.click();
+/** getLabels（useLabelList）の非同期解決をフラッシュする。 */
+const flush = async () => {
+  await act(async () => {
+    await Promise.resolve();
   });
+};
+
+/** ラベル popover を開く。 */
+const openLabels = () => {
+  act(() => {
+    (
+      document.querySelector('[data-testid="detail-labels"]') as HTMLElement
+    ).click();
+  });
+};
+
+/**
+ * ラベル検索欄に値を入れる。
+ * @param value - 入力する文字列
+ */
+const typeLabelSearch = (value: string): void => {
   const input = document.querySelector(
-    '[data-testid="label-input"]',
+    '[data-testid="detail-labels-search"]',
   ) as HTMLInputElement;
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(
@@ -92,14 +124,9 @@ const typeLabelAndConfirm = (value: string): void => {
     setter?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  act(() => {
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-  });
 };
 
-test("ラベル追加で onTaskUpdate({ labels: [..., new] }) が呼ばれる", () => {
+test("popover から新規作成で onTaskUpdate({ labels: [..., new] }) が呼ばれる", async () => {
   const onTaskUpdate = vi.fn();
   render(
     buildProps({
@@ -107,13 +134,22 @@ test("ラベル追加で onTaskUpdate({ labels: [..., new] }) が呼ばれる", 
       onTaskUpdate,
     }),
   );
-  typeLabelAndConfirm("new-label");
+  await flush();
+  openLabels();
+  typeLabelSearch("new-label");
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-labels-create"]',
+      ) as HTMLElement
+    ).click();
+  });
   expect(onTaskUpdate).toHaveBeenCalledWith("t1", {
     labels: ["existing", "new-label"],
   });
 });
 
-test("ラベル削除で onTaskUpdate({ labels: [除外結果] }) が呼ばれる", () => {
+test("選択済み候補のトグル解除で onTaskUpdate({ labels: [除外結果] }) が呼ばれる", async () => {
   const onTaskUpdate = vi.fn();
   render(
     buildProps({
@@ -121,16 +157,19 @@ test("ラベル削除で onTaskUpdate({ labels: [除外結果] }) が呼ばれ�
       onTaskUpdate,
     }),
   );
-  const removeButton = document.querySelector(
-    '[aria-label="ラベル「bug」を削除"]',
-  ) as HTMLElement;
+  await flush();
+  openLabels();
   act(() => {
-    removeButton.click();
+    (
+      document.querySelector(
+        '[data-testid="detail-labels-option-bug"]',
+      ) as HTMLElement
+    ).click();
   });
   expect(onTaskUpdate).toHaveBeenCalledWith("t1", { labels: ["frontend"] });
 });
 
-test("既存ラベルと同じ文字列を追加しても onTaskUpdate は呼ばれない", () => {
+test("既存ラベルと同じ文字列は作成候補を出さない（重複作成不可）", async () => {
   const onTaskUpdate = vi.fn();
   render(
     buildProps({
@@ -138,6 +177,10 @@ test("既存ラベルと同じ文字列を追加しても onTaskUpdate は呼ば
       onTaskUpdate,
     }),
   );
-  typeLabelAndConfirm("existing");
-  expect(onTaskUpdate).not.toHaveBeenCalled();
+  await flush();
+  openLabels();
+  typeLabelSearch("existing");
+  expect(
+    document.querySelector('[data-testid="detail-labels-create"]'),
+  ).toBeNull();
 });

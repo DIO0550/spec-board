@@ -92,8 +92,7 @@ function buildProps(
     handlers: {
       onStatusChange: vi.fn(),
       onPriorityChange: vi.fn(),
-      onLabelAdd: vi.fn(),
-      onLabelRemove: vi.fn(),
+      onLabelsChange: vi.fn(),
       onChangeDraft: vi.fn(),
     },
     deleteFlow: buildDeleteFlow(),

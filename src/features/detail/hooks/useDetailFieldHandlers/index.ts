@@ -1,6 +1,5 @@
 import { useCallback } from "react";
 import type { Priority } from "@/domains/priority";
-import { useDetailLabels } from "@/features/detail/hooks/useDetailLabels";
 import type { Task } from "@/types/task";
 
 /**
@@ -26,15 +25,10 @@ export type DetailFieldHandlers = {
    */
   onPriorityChange: (priority: Priority | undefined) => void;
   /**
-   * ラベル追加ハンドラ。
-   * @param label - 追加するラベル名
+   * ラベル変更ハンドラ。選択集合を丸ごと受け取り差し替える（popover の onChange 用）。
+   * @param labels - 変更後のラベル一覧
    */
-  onLabelAdd: (label: string) => void;
-  /**
-   * ラベル削除ハンドラ。
-   * @param label - 削除するラベル名
-   */
-  onLabelRemove: (label: string) => void;
+  onLabelsChange: (labels: string[]) => void;
   /**
    * 下書きフラグ変更ハンドラ。false で下書き解除（frontmatter から draft キーを除去）。
    * @param draft - 新しい下書きフラグ
@@ -44,10 +38,8 @@ export type DetailFieldHandlers = {
 
 /**
  * 詳細フィールド編集ハンドラを束ねる共有 hook。
- * `onTaskUpdate` を status/priority の細粒度ハンドラへ、`useDetailLabels` を
- * label 追加/削除ハンドラへ変換し、DetailScreen で共有する。
- * これにより「onTaskUpdate → 細粒度ハンドラ + ラベル合算」の変換を両コンテナで
- * 重複実装しない。
+ * `onTaskUpdate` を status/priority/labels/draft の細粒度ハンドラへ変換し、DetailScreen で
+ * 共有する。ラベルは popover が選択集合を丸ごと通知するため、配列をそのまま更新に渡す。
  *
  * @param task - 対象タスク
  * @param onTaskUpdate - タスク更新コールバック
@@ -57,8 +49,6 @@ export const useDetailFieldHandlers = (
   task: Task,
   onTaskUpdate: TaskUpdateHandler,
 ): DetailFieldHandlers => {
-  const labels = useDetailLabels({ task, onTaskUpdate });
-
   const onStatusChange = useCallback(
     (status: string) => {
       onTaskUpdate(task.id, { status });
@@ -73,6 +63,13 @@ export const useDetailFieldHandlers = (
     [task.id, onTaskUpdate],
   );
 
+  const onLabelsChange = useCallback(
+    (labels: string[]) => {
+      onTaskUpdate(task.id, { labels });
+    },
+    [task.id, onTaskUpdate],
+  );
+
   const onChangeDraft = useCallback(
     (draft: boolean) => {
       onTaskUpdate(task.id, { draft });
@@ -83,8 +80,7 @@ export const useDetailFieldHandlers = (
   return {
     onStatusChange,
     onPriorityChange,
-    onLabelAdd: labels.add,
-    onLabelRemove: labels.remove,
+    onLabelsChange,
     onChangeDraft,
   };
 };

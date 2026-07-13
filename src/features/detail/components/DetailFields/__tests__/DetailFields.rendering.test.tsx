@@ -1,11 +1,23 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { DetailFields } from "..";
+
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return { ...actual, getLabels: vi.fn() };
+});
+const getLabelsMock = vi.mocked(getLabels);
+
+beforeEach(() => {
+  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
+});
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -52,8 +64,7 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 const createHandlers = (): DetailFieldHandlers => ({
   onStatusChange: vi.fn(),
   onPriorityChange: vi.fn(),
-  onLabelAdd: vi.fn(),
-  onLabelRemove: vi.fn(),
+  onLabelsChange: vi.fn(),
   onChangeDraft: vi.fn(),
 });
 
@@ -87,13 +98,11 @@ test("StatusPriority で Status/Priority が描画される", () => {
       <DetailFields.StatusPriority />
     </DetailFields>,
   );
-  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
-  expect(
-    document.querySelector('[data-testid="priority-select"]'),
-  ).toBeTruthy();
+  expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="priority-field"]')).toBeTruthy();
 });
 
-test("Labels で LabelEditor が描画される", () => {
+test("Labels で ラベル選択フィールドが描画される", () => {
   render(
     <DetailFields
       task={createTask()}
@@ -103,7 +112,7 @@ test("Labels で LabelEditor が描画される", () => {
       <DetailFields.Labels />
     </DetailFields>,
   );
-  expect(document.querySelector('[data-testid="label-editor"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="detail-labels"]')).toBeTruthy();
 });
 
 test("SubIssue で SubIssueSection が描画される", () => {
@@ -150,7 +159,7 @@ test("呼び出し側が並べた部品のみが描画される（Links を並�
       <DetailFields.Labels />
     </DetailFields>,
   );
-  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
   expect(document.querySelector('[data-testid="links-section"]')).toBeNull();
   expect(
     document.querySelector('[data-testid="sub-issue-section"]'),

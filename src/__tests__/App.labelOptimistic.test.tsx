@@ -12,6 +12,7 @@ import {
 import { App } from "@/App";
 import {
   getColumns as getColumnsInvoke,
+  getLabels as getLabelsInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
@@ -29,6 +30,7 @@ vi.mock("@/lib/tauri", async () => {
     openDirectoryDialog: vi.fn(),
     openProject: vi.fn(),
     getColumns: vi.fn(),
+    getLabels: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
+const getLabelsMock = vi.mocked(getLabelsInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
@@ -111,6 +114,14 @@ beforeEach(() => {
       doneColumn: "Done",
     },
   });
+  getLabelsMock.mockReset();
+  // 編集画面ラベル popover の候補。既存ラベルはここに含め、トグル解除できるようにする。
+  getLabelsMock.mockResolvedValue(
+    Result.ok({
+      labels: [{ name: "existing" }, { name: "bug" }, { name: "frontend" }],
+      usageCounts: {},
+    }),
+  );
   updateTaskMock.mockReset();
 });
 
@@ -149,13 +160,16 @@ const openSuccessfully = async (seedTask: Task): Promise<void> => {
   });
 };
 
-/** TaskCard を click して DetailScreen を開く。 */
-const openDetailScreen = (): void => {
+/** TaskCard を click して DetailScreen を開き、ラベル候補取得（useLabelList）をフラッシュする。 */
+const openDetailScreen = async (): Promise<void> => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",
   );
-  act(() => {
+  await act(async () => {
     card?.click();
+  });
+  await act(async () => {
+    await Promise.resolve();
   });
 };
 
@@ -173,26 +187,32 @@ const makeDeferredUpdate = (): {
   return { pending, resolveUpdate };
 };
 
-/** 現在表示中の label タグ文字列の集合を取得する。 */
+/**
+ * 現在の選択済みラベル文字列の集合を取得する（trigger バッジのみ・popover option は除外）。
+ * popover はトリガーボタンの兄弟要素のため、trigger 配下のバッジだけが対象になる。
+ */
 const queryLabelTexts = (): string[] => {
-  const editor = document.querySelector(
-    '[data-testid="label-editor"]',
-  ) as HTMLElement;
-  return Array.from(editor.querySelectorAll("span")).map(
-    (el) => el.firstChild?.textContent?.trim() ?? "",
+  const trigger = document.querySelector('[data-testid="detail-labels"]');
+  return Array.from(trigger?.querySelectorAll(".rounded-full") ?? []).map(
+    (el) => el.textContent?.trim() ?? "",
   );
 };
 
-/** LabelEditor の「＋追加」を押して入力欄を開き、value を流して Enter で確定する。 */
-const addLabelViaUI = async (value: string): Promise<void> => {
-  const addButton = document.querySelector(
-    '[data-testid="label-add-button"]',
+/** ラベル popover を開く（各テストで 1 回だけ呼ぶ前提）。 */
+const openLabelsPopover = async (): Promise<void> => {
+  const trigger = document.querySelector(
+    '[data-testid="detail-labels"]',
   ) as HTMLButtonElement;
   await act(async () => {
-    addButton.click();
+    trigger.click();
   });
+};
+
+/** ラベル popover の検索欄に value を入れて「作成」ボタンで新規追加する。 */
+const addLabelViaUI = async (value: string): Promise<void> => {
+  await openLabelsPopover();
   const input = document.querySelector(
-    '[data-testid="label-input"]',
+    '[data-testid="detail-labels-search"]',
   ) as HTMLInputElement;
   const setter = Object.getOwnPropertyDescriptor(
     HTMLInputElement.prototype,
@@ -203,21 +223,25 @@ const addLabelViaUI = async (value: string): Promise<void> => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => {
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
+    (
+      document.querySelector(
+        '[data-testid="detail-labels-create"]',
+      ) as HTMLButtonElement
+    ).click();
     // 楽観 dispatch（queue の microtask）を 1 度だけ流す
     await Promise.resolve();
   });
 };
 
-/** LabelEditor の × ボタンで指定 label を削除する。 */
+/** ラベル popover で指定 label の候補をトグルして削除する。 */
 const removeLabelViaUI = async (label: string): Promise<void> => {
-  const removeButton = document.querySelector(
-    `[aria-label="ラベル「${label}」を削除"]`,
-  ) as HTMLButtonElement;
+  await openLabelsPopover();
   await act(async () => {
-    removeButton.click();
+    (
+      document.querySelector(
+        `[data-testid="detail-labels-option-${label}"]`,
+      ) as HTMLButtonElement
+    ).click();
     // 楽観 dispatch（queue の microtask）を 1 度だけ流す
     await Promise.resolve();
   });
@@ -230,7 +254,7 @@ test("ラベル追加 → 楽観反映 → IPC resolve で確定し、成功 toa
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailScreen();
+  await openDetailScreen();
 
   await addLabelViaUI("new-label");
 
@@ -274,7 +298,7 @@ test("ラベル追加で invoke が失敗した場合、labels が元に戻り�
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailScreen();
+  await openDetailScreen();
 
   await addLabelViaUI("new-label");
 
@@ -306,7 +330,7 @@ test("× 削除 → 楽観反映 → IPC resolve で確定し、成功 toast と
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailScreen();
+  await openDetailScreen();
 
   await removeLabelViaUI("bug");
 
@@ -344,7 +368,7 @@ test("× 削除で invoke が失敗した場合、labels が元に戻りエラ�
 
   mountApp();
   await openSuccessfully(seedTask);
-  openDetailScreen();
+  await openDetailScreen();
 
   await removeLabelViaUI("bug");
 

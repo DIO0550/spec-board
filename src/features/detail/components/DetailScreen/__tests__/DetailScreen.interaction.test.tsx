@@ -111,36 +111,19 @@ test("削除 ConfirmDialog 表示中の Esc は onBack を発火しない（Esc 
   expect(onBack).not.toHaveBeenCalled();
 });
 
-/**
- * select 要素の値を変更し change イベントを発火する。
- * @param testId - data-testid
- * @param value - 設定する値
- */
-const changeSelect = (testId: string, value: string): void => {
-  const select = document.querySelector(
-    `[data-testid="${testId}"]`,
-  ) as HTMLSelectElement;
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  act(() => {
-    setter?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-};
-
 test("サイドバー操作（Status 変更）で onTaskUpdate（共有ハンドラ）が呼ばれる", () => {
   const onTaskUpdate = vi.fn();
   render(buildProps({ task: createTask({ id: "t-up" }), onTaskUpdate }));
-  changeSelect("status-select", "Done");
+  click("status-field");
+  click("status-field-option-Done");
   expect(onTaskUpdate).toHaveBeenCalledWith("t-up", { status: "Done" });
 });
 
 test("サイドバー操作（Priority 変更）で onTaskUpdate が呼ばれる", () => {
   const onTaskUpdate = vi.fn();
   render(buildProps({ task: createTask({ id: "t-pri" }), onTaskUpdate }));
-  changeSelect("priority-select", "High");
+  click("priority-field");
+  click("priority-field-option-High");
   expect(onTaskUpdate).toHaveBeenCalledWith("t-pri", { priority: "High" });
 });
 

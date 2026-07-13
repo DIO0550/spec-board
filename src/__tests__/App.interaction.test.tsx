@@ -457,15 +457,6 @@ const openDetailScreenForFirstTask = async (): Promise<void> => {
   });
 };
 
-const setSelectValue = (select: HTMLSelectElement, value: string): void => {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-};
-
 test("DetailScreen の status 変更 → updateTask invoke が呼ばれ + 成功 toast", async () => {
   mountApp();
   await openSuccessfully();
@@ -473,17 +464,19 @@ test("DetailScreen の status 変更 → updateTask invoke が呼ばれ + 成功
   await openDetailScreenForFirstTask();
   // 詳細（DetailScreen）が開いている
   expect(
-    container?.querySelector('[data-testid="status-select"]'),
+    container?.querySelector('[data-testid="status-field"]'),
   ).not.toBeNull();
 
   const updated: Task = { ...taskA, status: "Done" };
   updateTaskMock.mockResolvedValueOnce(Result.ok(updated));
 
-  const statusSelect = querySelectorRequired<HTMLSelectElement>(
-    '[data-testid="status-select"]',
-  );
   await act(async () => {
-    setSelectValue(statusSelect, "Done");
+    querySelectorRequired<HTMLElement>('[data-testid="status-field"]').click();
+  });
+  await act(async () => {
+    querySelectorRequired<HTMLElement>(
+      '[data-testid="status-field-option-Done"]',
+    ).click();
   });
   await act(async () => {
     await Promise.resolve();
@@ -541,11 +534,13 @@ test("DetailScreen の status 変更失敗時 → updateTask invoke + エラー 
   updateTaskMock.mockResolvedValueOnce(
     Result.err(new TauriError("IO_ERROR", "io fail")),
   );
-  const statusSelect = querySelectorRequired<HTMLSelectElement>(
-    '[data-testid="status-select"]',
-  );
   await act(async () => {
-    setSelectValue(statusSelect, "Done");
+    querySelectorRequired<HTMLElement>('[data-testid="status-field"]').click();
+  });
+  await act(async () => {
+    querySelectorRequired<HTMLElement>(
+      '[data-testid="status-field-option-Done"]',
+    ).click();
   });
   await act(async () => {
     await Promise.resolve();
@@ -583,8 +578,8 @@ test("DetailScreen 削除 → deleteTask invoke が呼ばれ Board から消え�
   expect(deleteTaskMock).toHaveBeenCalledTimes(1);
   expect(deleteTaskMock).toHaveBeenCalledWith({ filePath: "tasks/a.md" });
   expect(container?.textContent).toContain("タスクを削除しました");
-  // DetailScreen が閉じる: status-select が DOM から消える
-  expect(container?.querySelector('[data-testid="status-select"]')).toBeNull();
+  // DetailScreen が閉じる: status-field が DOM から消える
+  expect(container?.querySelector('[data-testid="status-field"]')).toBeNull();
 });
 
 test("DetailScreen 削除失敗時 → deleteTask invoke + ConfirmDialog が閉じない (DeleteFlow が error 状態)", async () => {
@@ -616,7 +611,7 @@ test("DetailScreen 削除失敗時 → deleteTask invoke + ConfirmDialog が閉�
   expect(container?.textContent).toContain("タスクの削除に失敗しました");
   // DetailScreen は閉じていない
   expect(
-    container?.querySelector('[data-testid="status-select"]'),
+    container?.querySelector('[data-testid="status-field"]'),
   ).not.toBeNull();
   // ConfirmDialog も維持されている (DeleteFlow が error 状態 → isOpen=true)
   expect(
@@ -631,7 +626,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   // A の最初の task をクリックして DetailScreen を開く
   await openDetailScreenForFirstTask();
   expect(
-    container?.querySelector('[data-testid="status-select"]'),
+    container?.querySelector('[data-testid="status-field"]'),
   ).not.toBeNull();
 
   // 同じ filePath (tasks/a.md) を持つ別 project B を開く
@@ -661,7 +656,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   // B のレンダー時点で DetailScreen が閉じていることを確認
   // (AppShell の render-phase reset (他 state) と AppViewProvider key remount (view)
   //  の組み合わせで selectedTaskId が null になっているため、B の task A が誤って開かれない)
-  expect(container?.querySelector('[data-testid="status-select"]')).toBeNull();
+  expect(container?.querySelector('[data-testid="status-field"]')).toBeNull();
   // Board は B の task を表示している
   expect(container?.textContent).toContain("B プロジェクトの A");
 });

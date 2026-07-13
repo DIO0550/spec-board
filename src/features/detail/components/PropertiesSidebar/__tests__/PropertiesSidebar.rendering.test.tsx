@@ -92,8 +92,7 @@ function buildProps(
     handlers: {
       onStatusChange: vi.fn(),
       onPriorityChange: vi.fn(),
-      onLabelAdd: vi.fn(),
-      onLabelRemove: vi.fn(),
+      onLabelsChange: vi.fn(),
       onChangeDraft: vi.fn(),
     },
     deleteFlow: buildDeleteFlow(),
@@ -118,7 +117,7 @@ function render(props: Parameters<typeof PropertiesSidebar>[0]) {
 
 test("DetailFields（Status 等）が描画される", () => {
   render(buildProps());
-  expect(document.querySelector('[data-testid="status-select"]')).toBeTruthy();
+  expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
 });
 
 test("parentTask あり + onSelectTask で ParentLink が描画される（サイドバー集約）", () => {
