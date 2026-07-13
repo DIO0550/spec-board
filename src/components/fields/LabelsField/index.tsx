@@ -65,7 +65,14 @@ const badgeStyleOf = (
  * @param props - {@link LabelsFieldProps}
  * @returns ラベル複数選択 UI
  */
-export const LabelsField = (props: LabelsFieldProps) => {
+export const LabelsField = ({
+  label,
+  value,
+  suggestions,
+  onChange,
+  disabled = false,
+  "data-testid": dataTestId,
+}: LabelsFieldProps) => {
   const baseId = useId();
   const labelId = `${baseId}-label`;
   const valueId = `${baseId}-value`;
@@ -74,18 +81,14 @@ export const LabelsField = (props: LabelsFieldProps) => {
   const { isOpen, toggleOpen, containerRef } = usePopoverDismiss();
 
   const candidateNames = useMemo(
-    () => props.suggestions.map((s) => s.name),
-    [props.suggestions],
+    () => suggestions.map((s) => s.name),
+    [suggestions],
   );
   const filtered = useMemo(
     () => LabelSelection.search(candidateNames, query),
     [candidateNames, query],
   );
-  const canCreate = LabelSelection.canCreate(
-    props.value,
-    candidateNames,
-    query,
-  );
+  const canCreate = LabelSelection.canCreate(value, candidateNames, query);
 
   // close（Esc / 外側クリック / trigger 再クリック）で検索クエリを消す。
   useEffect(() => {
@@ -107,20 +110,20 @@ export const LabelsField = (props: LabelsFieldProps) => {
    * @returns 選択済みなら true
    */
   const isSelected = (name: string): boolean =>
-    LabelSelection.isSelected(props.value, name);
+    LabelSelection.isSelected(value, name);
 
   /**
    * 候補名をトグルして次の選択を通知する。
    * @param name - トグル対象の候補名
    */
   const toggle = (name: string) => {
-    props.onChange([...LabelSelection.toggle(props.value, name)]);
+    onChange([...LabelSelection.toggle(value, name)]);
   };
 
   /** 検索クエリを新規ラベルとして作成する（canCreate ガード後にのみ追加）。 */
   const create = () => {
     if (canCreate) {
-      props.onChange([...props.value, query.trim()]);
+      onChange([...value, query.trim()]);
     }
     setQuery("");
   };
@@ -153,32 +156,32 @@ export const LabelsField = (props: LabelsFieldProps) => {
         id={labelId}
         className="mb-1.5 block text-[11.5px] font-semibold uppercase tracking-wide text-muted"
       >
-        {props.label}
+        {label}
       </span>
       <button
         type="button"
         aria-haspopup="true"
         aria-expanded={isOpen}
         aria-labelledby={`${labelId} ${valueId}`}
-        disabled={props.disabled ?? false}
+        disabled={disabled}
         onClick={toggleOpen}
         className={`flex min-h-10 w-full max-w-[340px] items-center gap-2 rounded-md border bg-panel px-3 py-2 text-left text-sm hover:border-border-strong disabled:opacity-50 ${
           isOpen ? "border-accent" : "border-border"
         }`}
-        data-testid={props["data-testid"]}
+        data-testid={dataTestId}
       >
         <span
           id={valueId}
           className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5"
         >
-          {props.value.length === 0 ? (
+          {value.length === 0 ? (
             <span className="text-text-dim">ラベルを選択…</span>
           ) : (
-            props.value.map((name) => (
+            value.map((name) => (
               <span
                 key={name}
                 className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium"
-                style={badgeStyleOf(name, props.suggestions)}
+                style={badgeStyleOf(name, suggestions)}
               >
                 {name}
               </span>
@@ -192,7 +195,7 @@ export const LabelsField = (props: LabelsFieldProps) => {
       {isOpen && (
         <div
           className="absolute left-0 right-0 z-10 mt-1 max-w-[340px] overflow-hidden rounded-lg border border-border-strong bg-panel shadow-lg"
-          data-testid={`${props["data-testid"]}-popover`}
+          data-testid={`${dataTestId}-popover`}
         >
           <div className="border-b border-border p-2">
             <input
@@ -203,7 +206,7 @@ export const LabelsField = (props: LabelsFieldProps) => {
               onKeyDown={handleSearchKeyDown}
               placeholder="ラベルを検索または作成…"
               className="w-full rounded-md border border-border bg-panel-2 px-2.5 py-1.5 text-sm outline-none focus:border-accent"
-              data-testid={`${props["data-testid"]}-search`}
+              data-testid={`${dataTestId}-search`}
             />
           </div>
           <div className="max-h-64 overflow-y-auto p-1.5">
@@ -214,7 +217,7 @@ export const LabelsField = (props: LabelsFieldProps) => {
                 aria-pressed={isSelected(name)}
                 onClick={() => toggle(name)}
                 className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-panel-2 aria-pressed:font-medium"
-                data-testid={`${props["data-testid"]}-option-${name}`}
+                data-testid={`${dataTestId}-option-${name}`}
               >
                 <span
                   aria-hidden="true"
@@ -224,7 +227,7 @@ export const LabelsField = (props: LabelsFieldProps) => {
                 </span>
                 <span
                   className="inline-flex min-w-0 items-center truncate rounded-full border px-2 py-0.5 text-xs font-medium"
-                  style={badgeStyleOf(name, props.suggestions)}
+                  style={badgeStyleOf(name, suggestions)}
                 >
                   {name}
                 </span>
@@ -235,7 +238,7 @@ export const LabelsField = (props: LabelsFieldProps) => {
                 type="button"
                 onClick={create}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm font-medium text-accent hover:bg-panel-2"
-                data-testid={`${props["data-testid"]}-create`}
+                data-testid={`${dataTestId}-create`}
               >
                 <span aria-hidden="true">＋</span>
                 <span className="min-w-0 flex-1 truncate">
