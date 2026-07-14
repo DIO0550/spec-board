@@ -56,9 +56,10 @@ type BoardViewProps = {
 };
 
 /**
- * board 表示形態の描画を担う。カラムを order 昇順にソートし、
- * ドラッグ可否（columnDraggable = ordered.length > 1）を導出して
- * Board.Column を生成する。onAddColumn があるときだけ Board.AddColumn を出す。
+ * board 表示形態の描画を担う。カラムを order 昇順にソートして
+ * Board.Column を生成する（ドラッグ可否は BoardColumnProvider が
+ * columnDraggable として導出し Context で各 Column へ届く）。
+ * onAddColumn があるときだけ Board.AddColumn を出す。
  * @param props - {@link BoardViewProps}
  * @returns board 描画要素
  */
@@ -79,7 +80,6 @@ export const BoardView = ({
   onDeleteColumn,
 }: BoardViewProps) => {
   const ordered = [...columns].sort((a, b) => a.order - b.order);
-  const columnDraggable = ordered.length > 1;
   return (
     <BoardProviders
       columns={columns}
@@ -111,7 +111,6 @@ export const BoardView = ({
                 ? (destColumn) => onDeleteColumn(col.name, destColumn)
                 : undefined
             }
-            columnDraggable={columnDraggable}
           />
         ))}
         {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}

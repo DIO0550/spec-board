@@ -66,7 +66,6 @@ const renderWithProviders = (options: RenderOptions) => {
   const tasks = options.tasks ?? [];
   const allTasks = options.allTasks ?? tasks;
   const ordered = [...options.columns].sort((a, b) => a.order - b.order);
-  const columnDraggable = ordered.length > 1;
   const onAddTask = options.onAddTask ?? (() => {});
   const { onTaskClick, onAddColumn, onRenameColumn, onDeleteColumn } = options;
   act(() => {
@@ -95,7 +94,6 @@ const renderWithProviders = (options: RenderOptions) => {
                   ? (destColumn) => onDeleteColumn(col.name, destColumn)
                   : undefined
               }
-              columnDraggable={columnDraggable}
             />
           ))}
           {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}
@@ -344,27 +342,12 @@ test("任意 ReactNode の children を素通しで描画する（型制約な�
           <div data-testid="pass-foo" />
           {null}
           <Fragment key="frag-wrap">
-            <Board.Column
-              name="Frag"
-              order={1}
-              onAddClick={() => {}}
-              columnDraggable={false}
-            />
+            <Board.Column name="Frag" order={1} onAddClick={() => {}} />
           </Fragment>
           {showHidden && (
-            <Board.Column
-              name="Hidden"
-              order={0}
-              onAddClick={() => {}}
-              columnDraggable={false}
-            />
+            <Board.Column name="Hidden" order={0} onAddClick={() => {}} />
           )}
-          <Board.Column
-            name="Todo"
-            order={0}
-            onAddClick={() => {}}
-            columnDraggable={false}
-          />
+          <Board.Column name="Todo" order={0} onAddClick={() => {}} />
         </Board>
       </BoardProviders>,
     );

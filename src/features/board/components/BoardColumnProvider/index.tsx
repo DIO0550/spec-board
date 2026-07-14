@@ -90,6 +90,12 @@ export type BoardColumnApi = {
    */
   canDelete: (columnName: string) => boolean;
   /**
+   * カラムヘッダーを DnD ハンドルにできるか。columns.length > 1 なら true。
+   * canDelete と同値の件数導出だが、削除可否ではなくドラッグ可否を表すため
+   * 引数なしの値プロパティとして別に公開する。
+   */
+  columnDraggable: boolean;
+  /**
    * 指定カラムのタスク件数を返す（hierarchyTasks ベース）。
    * @param columnName 対象カラム名
    * @returns 件数（該当なしは 0）
@@ -249,6 +255,7 @@ export const BoardColumnProvider = ({
       existingNames,
       existingNamesExcluding,
       canDelete,
+      columnDraggable: columnNamesArr.length > 1,
       taskCountInColumn,
       orderOf,
     }),
@@ -263,6 +270,7 @@ export const BoardColumnProvider = ({
       existingNames,
       existingNamesExcluding,
       canDelete,
+      columnNamesArr,
       taskCountInColumn,
       orderOf,
     ],

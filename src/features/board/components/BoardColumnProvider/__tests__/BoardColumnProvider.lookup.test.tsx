@@ -131,6 +131,23 @@ test("canDelete は columns.length >= 2 で true を返す", () => {
   expect(probe.latest.canDelete("Todo")).toBe(true);
 });
 
+test("columnDraggable は columns.length === 1 で false", () => {
+  const probe = mountProbe({ columns: [COLUMNS[0]] });
+  expect(probe.latest.columnDraggable).toBe(false);
+});
+
+test("columnDraggable は columns.length >= 2 で true", () => {
+  const probe = mountProbe({ columns: COLUMNS });
+  expect(probe.latest.columnDraggable).toBe(true);
+});
+
+test("columnDraggable と canDelete は同値だが別プロパティ（値 vs 関数）", () => {
+  const probe = mountProbe({ columns: COLUMNS });
+  expect(probe.latest.columnDraggable).toBe(probe.latest.canDelete("Todo"));
+  expect(typeof probe.latest.columnDraggable).toBe("boolean");
+  expect(typeof probe.latest.canDelete).toBe("function");
+});
+
 test("taskCountInColumn は hierarchyTasks (allTasks ?? tasks) を status 別に集計する", () => {
   const a = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const b = makeTask({ id: "b", filePath: "tasks/b.md", status: "Todo" });

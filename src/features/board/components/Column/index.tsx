@@ -49,8 +49,6 @@ type ColumnProps = {
    * @param destColumn - タスクの移動先カラム名。タスクが 0 件の場合は undefined
    */
   onDelete?: (destColumn: string | undefined) => void | Promise<void>;
-  /** 自カラムヘッダーを DnD ハンドルにするか。1 カラム時は false で渡す。 */
-  columnDraggable?: boolean;
 };
 
 /**
@@ -66,7 +64,6 @@ export const Column = ({
   onTaskClick,
   onRename,
   onDelete,
-  columnDraggable = false,
 }: ColumnProps) => {
   const card = useBoardCard();
   const col = useBoardColumn();
@@ -325,7 +322,7 @@ export const Column = ({
         onRename={onRename}
         existingColumnNames={[...otherColumnNames]}
         onContextMenu={handleContextMenu}
-        draggable={columnDraggable && !dndDisabled}
+        draggable={col.columnDraggable && !dndDisabled}
         onColumnDragStart={handleColumnDragStart}
         onColumnDragEnd={handleColumnDragEnd}
       />
