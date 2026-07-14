@@ -13,7 +13,8 @@ type BoardProps = {
 
 /**
  * カラム一覧を横並びで表示するボードコンテナ。
- * sort / `columnDraggable` 判定 / handler bind は呼び出し側責務とし、
+ * sort / handler bind は呼び出し側責務（ドラッグ可否は BoardColumnProvider が
+ * columnDraggable として導出し Context で配布）とし、
  * 本コンポーネントは外側 flex-col + 内側 flex-row を提供する薄いレイアウトだけを担う。
  *
  * @param props - {@link BoardProps}

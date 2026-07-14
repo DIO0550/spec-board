@@ -59,6 +59,8 @@ type RenderOptions = {
   onColumnReorder?: ColumnReorderHandler;
   /** Provider に渡す columns（未指定なら column.name 1 列） */
   columns?: readonly { name: string; order: number }[];
+  /** BoardCardProvider に渡す dndDisabled（Column は card.dndDisabled を参照する） */
+  dndDisabled?: boolean;
 };
 
 /**
@@ -97,6 +99,7 @@ const renderWithProviders = (options: RenderOptions) => {
       tasksByNormalizedPath={options.tasksByNormalizedPath}
       doneColumn={options.doneColumn}
       onTaskDrop={options.onTaskDrop}
+      dndDisabled={options.dndDisabled}
     >
       <BoardColumnProvider
         columns={columns}
@@ -415,13 +418,13 @@ test("column MIME の drop で fromColumnName が空文字列なら onColumnReor
   expect(event.defaultPrevented).toBe(true);
 });
 
-test("columnDraggable=true を渡すと内部 ColumnHeader に draggable=true が配線される", () => {
+test("columns 2 件以上なら内部 ColumnHeader に draggable=true が配線される", () => {
   renderWithProviders({
-    column: {
-      name: "Todo",
-      onAddClick: vi.fn(),
-      columnDraggable: true,
-    },
+    column: { name: "Todo", onAddClick: vi.fn() },
+    columns: [
+      { name: "Todo", order: 0 },
+      { name: "Done", order: 1 },
+    ],
   });
   const header = container?.querySelector<HTMLElement>(
     "[data-testid='column-header']",
@@ -429,9 +432,25 @@ test("columnDraggable=true を渡すと内部 ColumnHeader に draggable=true �
   expect(header?.getAttribute("draggable")).toBe("true");
 });
 
-test("columnDraggable=false / 未指定なら ColumnHeader の draggable は false", () => {
+test("columns 1 件なら ColumnHeader の draggable は false", () => {
   renderWithProviders({
     column: { name: "Todo", onAddClick: vi.fn() },
+    columns: [{ name: "Todo", order: 0 }],
+  });
+  const header = container?.querySelector<HTMLElement>(
+    "[data-testid='column-header']",
+  );
+  expect(header?.getAttribute("draggable")).toBe("false");
+});
+
+test("dndDisabled=true なら columns 2 件以上でも draggable は false", () => {
+  renderWithProviders({
+    column: { name: "Todo", onAddClick: vi.fn() },
+    columns: [
+      { name: "Todo", order: 0 },
+      { name: "Done", order: 1 },
+    ],
+    dndDisabled: true,
   });
   const header = container?.querySelector<HTMLElement>(
     "[data-testid='column-header']",

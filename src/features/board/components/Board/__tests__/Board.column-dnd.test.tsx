@@ -40,7 +40,6 @@ const renderWithProviders = (options: RenderOptions) => {
   document.body.appendChild(container);
   root = createRoot(container);
   const ordered = [...options.columns].sort((a, b) => a.order - b.order);
-  const columnDraggable = ordered.length > 1;
   const onAddTask = options.onAddTask ?? (() => {});
   act(() => {
     root?.render(
@@ -58,7 +57,6 @@ const renderWithProviders = (options: RenderOptions) => {
               color={col.color}
               order={index}
               onAddClick={() => onAddTask(col.name)}
-              columnDraggable={columnDraggable}
             />
           ))}
         </Board>

@@ -8,7 +8,6 @@ import { Board } from ".";
 
 const renderBoard = (columns: readonly ColumnType[]): ReactElement => {
   const ordered = [...columns].sort((a, b) => a.order - b.order);
-  const columnDraggable = ordered.length > 1;
   return (
     <Board>
       {ordered.map((col, index) => (
@@ -21,7 +20,6 @@ const renderBoard = (columns: readonly ColumnType[]): ReactElement => {
           onTaskClick={() => {}}
           onRename={() => {}}
           onDelete={() => {}}
-          columnDraggable={columnDraggable}
         />
       ))}
       <Board.AddColumn onAdd={() => {}} />
