@@ -82,18 +82,10 @@ const renderWithProviders = (options: RenderOptions) => {
               name={col.name}
               color={col.color}
               order={index}
-              onAddClick={() => onAddTask(col.name)}
+              onAddTask={onAddTask}
               onTaskClick={onTaskClick}
-              onRename={
-                onRenameColumn
-                  ? (newName) => onRenameColumn(col.name, newName)
-                  : undefined
-              }
-              onDelete={
-                onDeleteColumn
-                  ? (destColumn) => onDeleteColumn(col.name, destColumn)
-                  : undefined
-              }
+              onRenameColumn={onRenameColumn}
+              onDeleteColumn={onDeleteColumn}
             />
           ))}
           {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}
@@ -342,12 +334,12 @@ test("任意 ReactNode の children を素通しで描画する（型制約な�
           <div data-testid="pass-foo" />
           {null}
           <Fragment key="frag-wrap">
-            <Board.Column name="Frag" order={1} onAddClick={() => {}} />
+            <Board.Column name="Frag" order={1} onAddTask={() => {}} />
           </Fragment>
           {showHidden && (
-            <Board.Column name="Hidden" order={0} onAddClick={() => {}} />
+            <Board.Column name="Hidden" order={0} onAddTask={() => {}} />
           )}
-          <Board.Column name="Todo" order={0} onAddClick={() => {}} />
+          <Board.Column name="Todo" order={0} onAddTask={() => {}} />
         </Board>
       </BoardProviders>,
     );

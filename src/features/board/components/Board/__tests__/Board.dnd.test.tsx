@@ -81,7 +81,7 @@ const renderWithProviders = (options: RenderOptions) => {
               name={col.name}
               color={col.color}
               order={index}
-              onAddClick={() => onAddTask(col.name)}
+              onAddTask={onAddTask}
             />
           ))}
         </Board>
