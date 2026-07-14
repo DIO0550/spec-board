@@ -92,7 +92,7 @@ function dispatchContextMenu(target: Element) {
 
 test("ヘッダー右クリックでコンテキストメニューが表示される", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -101,9 +101,9 @@ test("ヘッダー右クリックでコンテキストメニューが表示さ�
   expect(menu).toBeTruthy();
 });
 
-test("onDelete 未指定時は右クリックしてもメニューが表示されない", () => {
+test("onDeleteColumn 未指定時は右クリックしてもメニューが表示されない", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
   });
   const header = container?.querySelector("section > div") as HTMLElement;
   dispatchContextMenu(header);
@@ -111,9 +111,69 @@ test("onDelete 未指定時は右クリックしてもメニューが表示さ�
   expect(menu).toBeFalsy();
 });
 
+test("onRenameColumn 未指定時は column-name-button が描画されず名前編集不能", () => {
+  render({
+    column: { name: "Todo", onAddTask: vi.fn() },
+  });
+  const renameButton = container?.querySelector(
+    '[data-testid="column-name-button"]',
+  );
+  expect(renameButton).toBeFalsy();
+  const heading = container?.querySelector("h2");
+  expect(heading?.textContent).toBe("Todo");
+});
+
+test("Add ボタンクリックで onAddTask が自 name で呼ばれる", () => {
+  const onAddTask = vi.fn();
+  render({
+    column: { name: "Todo", onAddTask },
+  });
+  const addButton = container?.querySelector(
+    'button[aria-label="Todoに追加"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    addButton.click();
+  });
+  expect(onAddTask).toHaveBeenCalledWith("Todo");
+});
+
+test("Rename 確定で onRenameColumn が (name, newName) で呼ばれる", () => {
+  const onRenameColumn = vi.fn();
+  render({
+    column: { name: "Todo", onAddTask: vi.fn(), onRenameColumn },
+  });
+  const nameButton = container?.querySelector(
+    '[data-testid="column-name-button"]',
+  ) as HTMLButtonElement;
+  act(() => {
+    nameButton.click();
+  });
+  const input = container?.querySelector(
+    '[data-testid="column-rename-input"]',
+  ) as HTMLInputElement;
+  const nativeSetter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  act(() => {
+    nativeSetter?.call(input, "Todo v2");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(onRenameColumn).toHaveBeenCalledWith("Todo", "Todo v2");
+});
+
 test("メニューの「削除」クリックで ConfirmDialog が表示される", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -130,7 +190,7 @@ test("メニューの「削除」クリックで ConfirmDialog が表示され�
 
 test("タスクありの場合、移動先ドロップダウンが表示される", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
     tasks: [createTask({ status: "Todo" }), createTask({ id: "task-2" })],
     otherColumnNames: ["In Progress", "Done"],
   });
@@ -152,7 +212,7 @@ test("タスクありの場合、移動先ドロップダウンが表示され�
 
 test("タスクなしの場合、移動先ドロップダウンは表示されない", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -175,7 +235,7 @@ test("表示カードが空でも allTasks にフィルタで隠れている分�
     createTask({ id: "h2", status: "Todo", filePath: "tasks/h2.md" }),
   ];
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
     tasks: [],
     allTasks: hiddenTasks,
     otherColumnNames: ["Done"],
@@ -195,10 +255,10 @@ test("表示カードが空でも allTasks にフィルタで隠れている分�
   expect(dropdown).toBeTruthy();
 });
 
-test("タスクありで確定すると onDelete が移動先と共に呼ばれる", () => {
-  const onDelete = vi.fn();
+test("タスクありで確定すると onDeleteColumn が (name, dest) で呼ばれる", () => {
+  const onDeleteColumn = vi.fn();
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn },
     tasks: [createTask({ status: "Todo" })],
     otherColumnNames: ["In Progress", "Done"],
   });
@@ -229,13 +289,13 @@ test("タスクありで確定すると onDelete が移動先と共に呼ばれ�
       ) as HTMLButtonElement
     ).click();
   });
-  expect(onDelete).toHaveBeenCalledWith("Done");
+  expect(onDeleteColumn).toHaveBeenCalledWith("Todo", "Done");
 });
 
-test("タスクなしで確定すると onDelete が undefined で呼ばれる", () => {
-  const onDelete = vi.fn();
+test("タスクなしで確定すると onDeleteColumn が (name, undefined) で呼ばれる", () => {
+  const onDeleteColumn = vi.fn();
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -254,12 +314,12 @@ test("タスクなしで確定すると onDelete が undefined で呼ばれる",
       ) as HTMLButtonElement
     ).click();
   });
-  expect(onDelete).toHaveBeenCalledWith(undefined);
+  expect(onDeleteColumn).toHaveBeenCalledWith("Todo", undefined);
 });
 
 test("タスクがあるのに移動先カラムが無い場合、メニューの削除項目が無効化される", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
     tasks: [createTask({ status: "Todo" })],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -272,7 +332,7 @@ test("タスクがあるのに移動先カラムが無い場合、メニュー�
 
 test("columns.length === 1 の場合、メニューの削除項目が無効化される (Provider 経由の canDelete)", () => {
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn: vi.fn() },
   });
   const header = container?.querySelector("section > div") as HTMLElement;
   dispatchContextMenu(header);
@@ -282,10 +342,10 @@ test("columns.length === 1 の場合、メニューの削除項目が無効化�
   expect(deleteItem?.disabled).toBe(true);
 });
 
-test("onDelete が reject した場合、ConfirmDialog は閉じずに開いたまま", async () => {
-  const onDelete = vi.fn().mockRejectedValue(new Error("backend reject"));
+test("onDeleteColumn が reject した場合、ConfirmDialog は閉じずに開いたまま", async () => {
+  const onDeleteColumn = vi.fn().mockRejectedValue(new Error("backend reject"));
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -307,22 +367,22 @@ test("onDelete が reject した場合、ConfirmDialog は閉じずに開いた�
   await act(async () => {
     await Promise.resolve();
   });
-  expect(onDelete).toHaveBeenCalledTimes(1);
+  expect(onDeleteColumn).toHaveBeenCalledTimes(1);
   // ConfirmDialog は維持される
   const dialog = document.querySelector('[data-testid="confirm-dialog"]');
   expect(dialog).toBeTruthy();
 });
 
-test("onDelete pending 中の confirm ボタン連打は二重実行されない (re-entrant guard)", async () => {
+test("onDeleteColumn pending 中の confirm ボタン連打は二重実行されない (re-entrant guard)", async () => {
   let resolveDelete!: () => void;
-  const onDelete = vi.fn().mockImplementation(
+  const onDeleteColumn = vi.fn().mockImplementation(
     () =>
       new Promise<void>((res) => {
         resolveDelete = res;
       }),
   );
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -356,17 +416,17 @@ test("onDelete pending 中の confirm ボタン連打は二重実行されない
   await act(async () => {
     await Promise.resolve();
   });
-  expect(onDelete).toHaveBeenCalledTimes(1);
+  expect(onDeleteColumn).toHaveBeenCalledTimes(1);
   await act(async () => {
     resolveDelete();
     await Promise.resolve();
   });
 });
 
-test("キャンセルで ConfirmDialog が閉じ、onDelete は呼ばれない", () => {
-  const onDelete = vi.fn();
+test("キャンセルで ConfirmDialog が閉じ、onDeleteColumn は呼ばれない", () => {
+  const onDeleteColumn = vi.fn();
   render({
-    column: { name: "Todo", onAddClick: vi.fn(), onDelete },
+    column: { name: "Todo", onAddTask: vi.fn(), onDeleteColumn },
     otherColumnNames: ["Done"],
   });
   const header = container?.querySelector("section > div") as HTMLElement;
@@ -385,7 +445,7 @@ test("キャンセルで ConfirmDialog が閉じ、onDelete は呼ばれない",
       ) as HTMLButtonElement
     ).click();
   });
-  expect(onDelete).not.toHaveBeenCalled();
+  expect(onDeleteColumn).not.toHaveBeenCalled();
   const dialog = document.querySelector('[data-testid="confirm-dialog"]');
   expect(dialog).toBeFalsy();
 });

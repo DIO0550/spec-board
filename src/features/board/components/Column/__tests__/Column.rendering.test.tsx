@@ -83,7 +83,7 @@ function render(options: RenderOptions) {
 }
 
 test("カラム名がヘッダーに表示される", async () => {
-  render({ column: { name: "In Progress", onAddClick: vi.fn() } });
+  render({ column: { name: "In Progress", onAddTask: vi.fn() } });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("In Progress");
   });
@@ -94,7 +94,7 @@ test("タスク件数がヘッダーに表示される", async () => {
     createTask({ id: "task-1", title: "タスク1" }),
     createTask({ id: "task-2", title: "タスク2" }),
   ];
-  render({ column: { name: "Todo", onAddClick: vi.fn() }, tasks });
+  render({ column: { name: "Todo", onAddTask: vi.fn() }, tasks });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("2");
   });
@@ -102,14 +102,14 @@ test("タスク件数がヘッダーに表示される", async () => {
 
 test("タスクのタイトルが表示される", async () => {
   const tasks = [createTask({ title: "ログイン修正" })];
-  render({ column: { name: "Todo", onAddClick: vi.fn() }, tasks });
+  render({ column: { name: "Todo", onAddTask: vi.fn() }, tasks });
   await vi.waitFor(() => {
     expect(container?.textContent).toContain("ログイン修正");
   });
 });
 
 test("「+ 追加」ボタンが表示される", async () => {
-  render({ column: { name: "Todo", onAddClick: vi.fn() } });
+  render({ column: { name: "Todo", onAddTask: vi.fn() } });
   await vi.waitFor(() => {
     const btn = Array.from(container?.querySelectorAll("button") ?? []).find(
       (b): b is HTMLButtonElement => b.textContent === "+ 追加",
@@ -119,7 +119,7 @@ test("「+ 追加」ボタンが表示される", async () => {
 });
 
 test("aria-label にカラム名が設定される", async () => {
-  render({ column: { name: "Done", onAddClick: vi.fn() } });
+  render({ column: { name: "Done", onAddTask: vi.fn() } });
   await vi.waitFor(() => {
     const section = container?.querySelector("section");
     expect(section?.getAttribute("aria-label")).toBe("Done");
@@ -156,7 +156,7 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
   const allTasks = [rootTask, child, grand1, grand2];
 
   render({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     tasks: [rootTask],
     allTasks,
     doneColumn: "Done",

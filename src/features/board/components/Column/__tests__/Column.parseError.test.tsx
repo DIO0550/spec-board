@@ -85,7 +85,7 @@ function render(options: RenderOptions) {
 test("invalid warning を持つ task を渡すとカードに parse-error-icon が表示される", () => {
   const task = createTask({ warnings: [invalidWarning] });
   render({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     tasks: [task],
   });
   expect(
@@ -96,7 +96,7 @@ test("invalid warning を持つ task を渡すとカードに parse-error-icon �
 test("除外コード（parentCycle）のみの task では parse-error-icon は描画されない", () => {
   const task = createTask({ warnings: [cycleWarning] });
   render({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     tasks: [task],
   });
   expect(document.querySelector('[data-testid="parse-error-icon"]')).toBeNull();
@@ -105,7 +105,7 @@ test("除外コード（parentCycle）のみの task では parse-error-icon は
 test("warnings 空の task では parse-error-icon は描画されない", () => {
   const task = createTask({ warnings: [] });
   render({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     tasks: [task],
   });
   expect(document.querySelector('[data-testid="parse-error-icon"]')).toBeNull();
