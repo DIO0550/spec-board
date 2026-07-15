@@ -99,18 +99,10 @@ export const BoardView = ({
             name={col.name}
             color={col.color}
             order={index}
-            onAddClick={() => onAddTask(col.name)}
+            onAddTask={onAddTask}
             onTaskClick={onTaskClick}
-            onRename={
-              onRenameColumn
-                ? (newName) => onRenameColumn(col.name, newName)
-                : undefined
-            }
-            onDelete={
-              onDeleteColumn
-                ? (destColumn) => onDeleteColumn(col.name, destColumn)
-                : undefined
-            }
+            onRenameColumn={onRenameColumn}
+            onDeleteColumn={onDeleteColumn}
           />
         ))}
         {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}

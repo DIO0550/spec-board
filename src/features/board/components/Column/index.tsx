@@ -29,8 +29,12 @@ type ColumnProps = {
    * フォールバック色決定に必須のため、呼び出し側（Board）は表示順インデックスを渡す。
    */
   order: number;
-  /** 「+ 追加」ボタンクリック時のコールバック */
-  onAddClick: () => void;
+  /**
+   * 「+ 追加」ボタンクリック時のコールバック。
+   * 第 1 引数として自カラム名を素通しで渡す。
+   * @param columnName - 自カラム名
+   */
+  onAddTask: (columnName: string) => void;
   /**
    * タスクカードクリック時のコールバック
    * @param taskId - クリックされたタスクのID
@@ -39,16 +43,23 @@ type ColumnProps = {
   /**
    * カラム名リネーム確定時のコールバック。
    * 未指定の場合はヘッダー名編集 UI を無効化する。
+   * 第 1 引数として自カラム名を素通しで渡す。
+   * @param columnName - 自カラム名（rename 前）
    * @param newName - 新しいカラム名（trim 済み、既存と非重複）
    */
-  onRename?: (newName: string) => void;
+  onRenameColumn?: (columnName: string, newName: string) => void;
   /**
    * カラム削除確定時のコールバック。
    * 未指定の場合は削除 UI を無効化する。
    * Promise を返した場合は await し、reject した場合は ConfirmDialog を維持する。
+   * 第 1 引数として自カラム名を素通しで渡す。
+   * @param columnName - 削除対象カラム名
    * @param destColumn - タスクの移動先カラム名。タスクが 0 件の場合は undefined
    */
-  onDelete?: (destColumn: string | undefined) => void | Promise<void>;
+  onDeleteColumn?: (
+    columnName: string,
+    destColumn: string | undefined,
+  ) => void | Promise<void>;
 };
 
 /**
@@ -60,10 +71,10 @@ export const Column = ({
   name,
   color,
   order,
-  onAddClick,
+  onAddTask,
   onTaskClick,
-  onRename,
-  onDelete,
+  onRenameColumn,
+  onDeleteColumn,
 }: ColumnProps) => {
   const card = useBoardCard();
   const col = useBoardColumn();
@@ -221,7 +232,7 @@ export const Column = ({
   const [destColumn, setDestColumn] = useState<string>("");
   const triggerRef = useRef<HTMLElement | null>(null);
 
-  const handleContextMenu = onDelete
+  const handleContextMenu = onDeleteColumn
     ? (e: MouseEvent<HTMLElement>) => {
         e.preventDefault();
         triggerRef.current = e.currentTarget;
@@ -260,7 +271,7 @@ export const Column = ({
     const hasTasksInside = deletionCount > 0;
     setIsDeleting(true);
     try {
-      await onDelete?.(hasTasksInside ? destColumn : undefined);
+      await onDeleteColumn?.(name, hasTasksInside ? destColumn : undefined);
     } catch {
       // 失敗時は ConfirmDialog を開いたままにし、ユーザの destColumn 選択も保持する
       // (caller 側で error toast 等の通知が出ている前提)
@@ -318,8 +329,12 @@ export const Column = ({
         taskCount={tasks.length}
         color={color}
         order={order}
-        onAddClick={onAddClick}
-        onRename={onRename}
+        onAddClick={() => onAddTask(name)}
+        onRename={
+          onRenameColumn
+            ? (newName) => onRenameColumn(name, newName)
+            : undefined
+        }
         existingColumnNames={[...otherColumnNames]}
         onContextMenu={handleContextMenu}
         draggable={col.columnDraggable && !dndDisabled}

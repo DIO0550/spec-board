@@ -16,10 +16,10 @@ const renderBoard = (columns: readonly ColumnType[]): ReactElement => {
           name={col.name}
           color={col.color}
           order={index}
-          onAddClick={() => {}}
+          onAddTask={() => {}}
           onTaskClick={() => {}}
-          onRename={() => {}}
-          onDelete={() => {}}
+          onRenameColumn={() => {}}
+          onDeleteColumn={() => {}}
         />
       ))}
       <Board.AddColumn onAdd={() => {}} />

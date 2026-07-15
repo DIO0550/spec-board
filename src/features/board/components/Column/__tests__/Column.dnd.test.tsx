@@ -130,7 +130,7 @@ const querySection = (): HTMLElement => {
 
 test("独自 MIME を持つ dragover で preventDefault される", () => {
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
   });
   const section = querySection();
   const event = createDragEvent("dragover");
@@ -143,7 +143,7 @@ test("独自 MIME を持つ dragover で preventDefault される", () => {
 
 test("他 MIME (text/plain) の dragover では preventDefault されない", () => {
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
   });
   const section = querySection();
   const event = createDragEvent("dragover");
@@ -156,7 +156,7 @@ test("他 MIME (text/plain) の dragover では preventDefault されない", ()
 
 test("dragover で hover ターゲット (name, index) が Provider に通知される", async () => {
   const probe = renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
   });
   act(() => {
     probe.cardApi.startDrag("tasks/a.md", "Done");
@@ -174,7 +174,7 @@ test("dragover で hover ターゲット (name, index) が Provider に通知さ
 
 test("currentTarget 外への dragleave で hover ターゲットが (null, null) にリセットされる", () => {
   const probe = renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
   });
   act(() => {
     probe.cardApi.startDrag("tasks/a.md", "Done");
@@ -192,7 +192,7 @@ test("drop で onTaskDrop が期待引数で呼ばれる", async () => {
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", onAddClick: vi.fn() },
+    column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
@@ -219,7 +219,7 @@ test("dataTransfer 空の drop（外部 D&D）では onTaskDrop が呼ばれな�
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", onAddClick: vi.fn() },
+    column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
@@ -238,7 +238,7 @@ test("dataTransfer の filePath が dragState と不一致なら onTaskDrop が�
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", onAddClick: vi.fn() },
+    column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
@@ -258,7 +258,7 @@ test("空カラムでの drop は toIndex=0 で呼ばれる", async () => {
   const onTaskDrop = vi.fn();
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const probe = renderWithProviders({
-    column: { name: "Done", onAddClick: vi.fn() },
+    column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
@@ -290,7 +290,7 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
   const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
   const onTaskDrop = vi.fn();
   const probe = renderWithProviders({
-    column: { name: "Done", onAddClick: vi.fn() },
+    column: { name: "Done", onAddTask: vi.fn() },
     tasks,
     allTasks: [...tasks, taskA],
     onTaskDrop,
@@ -341,7 +341,7 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
 test("hoverTarget.column === name の時のみ drop-placeholder が出る", () => {
   const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
   const probe = renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     tasks,
   });
   act(() => {
@@ -356,7 +356,7 @@ test("hoverTarget.column === name の時のみ drop-placeholder が出る", () =
 test("hoverTarget.column が他カラムの時は placeholder が出ない", () => {
   const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
   const probe = renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     tasks,
   });
   act(() => {
@@ -370,7 +370,7 @@ test("hoverTarget.column が他カラムの時は placeholder が出ない", () 
 
 test("column MIME の dragover で preventDefault される", () => {
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
   });
   const section = querySection();
   const event = createDragEvent("dragover");
@@ -384,7 +384,7 @@ test("column MIME の dragover で preventDefault される", () => {
 test("column MIME の drop で onColumnReorder({fromColumnName, toColumnName})", async () => {
   const onColumnReorder = vi.fn();
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     onColumnReorder,
   });
   const section = querySection();
@@ -405,7 +405,7 @@ test("column MIME の drop で onColumnReorder({fromColumnName, toColumnName})",
 test("column MIME の drop で fromColumnName が空文字列なら onColumnReorder は呼ばれないが preventDefault は実行される", () => {
   const onColumnReorder = vi.fn();
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     onColumnReorder,
   });
   const section = querySection();
@@ -420,7 +420,7 @@ test("column MIME の drop で fromColumnName が空文字列なら onColumnReor
 
 test("columns 2 件以上なら内部 ColumnHeader に draggable=true が配線される", () => {
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     columns: [
       { name: "Todo", order: 0 },
       { name: "Done", order: 1 },
@@ -434,7 +434,7 @@ test("columns 2 件以上なら内部 ColumnHeader に draggable=true が配線�
 
 test("columns 1 件なら ColumnHeader の draggable は false", () => {
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     columns: [{ name: "Todo", order: 0 }],
   });
   const header = container?.querySelector<HTMLElement>(
@@ -445,7 +445,7 @@ test("columns 1 件なら ColumnHeader の draggable は false", () => {
 
 test("dndDisabled=true なら columns 2 件以上でも draggable は false", () => {
   renderWithProviders({
-    column: { name: "Todo", onAddClick: vi.fn() },
+    column: { name: "Todo", onAddTask: vi.fn() },
     columns: [
       { name: "Todo", order: 0 },
       { name: "Done", order: 1 },

@@ -32,10 +32,10 @@ const meta: Meta<typeof Column> = {
   ],
   args: {
     name: "Todo",
-    onAddClick: () => {},
+    onAddTask: () => {},
     onTaskClick: () => {},
-    onRename: () => {},
-    onDelete: () => {},
+    onRenameColumn: () => {},
+    onDeleteColumn: () => {},
   },
 };
 
@@ -104,5 +104,5 @@ export const ManyTasks: Story = {
 };
 
 export const WithoutMenu: Story = {
-  args: { onDelete: undefined, onRename: undefined },
+  args: { onDeleteColumn: undefined, onRenameColumn: undefined },
 };
