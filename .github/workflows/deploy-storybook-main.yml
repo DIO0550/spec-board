@@ -86,8 +86,24 @@ jobs:
           [ "$success" = "true" ]
 
           # GITHUB_TOKEN による push では Pages のブランチビルドが
-          # トリガーされないため、明示的にビルドをリクエストする
+          # トリガーされないため、明示的にビルドをリクエストする。
+          # Pages 未設定(404)のみ警告に留め、それ以外の失敗は
+          # リトライの上ジョブを失敗させる
           if [ "$pushed" = "true" ]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" \
-              || echo "Pages build request failed (Settings → Pages が未設定の可能性)"
+            build_ok=false
+            for attempt in 1 2 3; do
+              if out=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" 2>&1); then
+                build_ok=true
+                break
+              fi
+              echo "$out"
+              if echo "$out" | grep -q "HTTP 404"; then
+                echo "Pages 未設定のためビルドリクエストをスキップ (Settings → Pages を確認)"
+                build_ok=true
+                break
+              fi
+              echo "Pages build request failed (attempt $attempt), retrying..."
+              sleep $((attempt * 2))
+            done
+            [ "$build_ok" = "true" ]
           fi
