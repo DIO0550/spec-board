@@ -1,0 +1,99 @@
+# PR ごとの Storybook プレビューを gh-pages/pr-preview/pr-{番号}/ へ配置
+# 前提: deploy-storybook-main.yml で gh-pages ブランチが作成済み
+name: Storybook PR Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: gh-pages # main デプロイ側と同じグループ名にすること(競合防止)
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        if: github.event.action != 'closed'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        if: github.event.action != 'closed'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+
+      - name: Build Storybook
+        if: github.event.action != 'closed'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build-storybook
+
+      - name: Update gh-pages
+        env:
+          PR: ${{ github.event.number }}
+          CLOSED: ${{ github.event.action == 'closed' }}
+          OUTPUT_DIR: storybook-static
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin gh-pages
+          git worktree add /tmp/gh-pages gh-pages
+          cd /tmp/gh-pages
+
+          rm -rf "pr-preview/pr-$PR"
+          if [ "$CLOSED" != "true" ]; then
+            mkdir -p "pr-preview/pr-$PR"
+            cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." "pr-preview/pr-$PR/"
+          fi
+
+          if [ "$CLOSED" = "true" ]; then ACTION=removed; else ACTION=updated; fi
+          git add -A
+          git commit -m "PR preview #$PR ($ACTION)" || echo "no changes"
+          git push origin gh-pages
+
+      - name: Comment preview URL
+        if: github.event.action != 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_MARKER: "<!-- storybook-preview -->"
+          PR: ${{ github.event.number }}
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          URL="https://${OWNER}.github.io/${REPO_NAME}/pr-preview/pr-${PR}/"
+
+          BODY_FILE=preview-comment.md
+          {
+            echo "$COMMENT_MARKER"
+            echo "📖 Storybook preview: ${URL}"
+          } > "$BODY_FILE"
+
+          # 既存のプレビューコメントがあれば編集、なければ新規作成
+          COMMENT_ID="$(
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+              --jq ".[] | select(.body | contains(\"${COMMENT_MARKER}\")) | .id" \
+              | head -n 1
+          )"
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+              --field body=@"$BODY_FILE"
+          else
+            gh api \
+              --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+              --field body=@"$BODY_FILE"
+          fi

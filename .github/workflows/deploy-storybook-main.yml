@@ -1,0 +1,63 @@
+# main ブランチの Storybook を gh-pages ルートへデプロイ
+name: Deploy Storybook (main)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages # PR プレビュー側と同じグループ名にすること(競合防止)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Storybook
+        run: pnpm build-storybook
+
+      - name: Deploy to gh-pages (root)
+        env:
+          OUTPUT_DIR: storybook-static
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # gh-pages ブランチが無ければ空の orphan として作成
+          if git fetch origin gh-pages 2>/dev/null; then
+            git worktree add /tmp/gh-pages gh-pages
+          else
+            git worktree add --detach /tmp/gh-pages
+            cd /tmp/gh-pages
+            git checkout --orphan gh-pages
+            git rm -rf --quiet . || true
+            cd "$GITHUB_WORKSPACE"
+          fi
+
+          cd /tmp/gh-pages
+
+          # pr-preview/ 以外を全削除してから main の成果物を配置
+          find . -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+          cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." .
+          touch .nojekyll
+
+          git add -A
+          git commit -m "Deploy main @ ${GITHUB_SHA::7}" || echo "no changes to deploy"
+          git push origin gh-pages
