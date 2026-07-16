@@ -1,5 +1,5 @@
 # PR ごとの Storybook プレビューを gh-pages/pr-preview/pr-{番号}/ へ配置
-# 前提: deploy-storybook-main.yml で gh-pages ブランチが作成済み
+# (gh-pages ブランチが無ければ空の orphan として自動作成する)
 name: Storybook PR Preview
 
 on:
@@ -59,8 +59,17 @@ jobs:
           success=false
           for attempt in 1 2 3 4 5; do
             git worktree remove --force /tmp/gh-pages 2>/dev/null || true
-            git fetch origin +gh-pages:refs/remotes/origin/gh-pages
-            git worktree add --detach /tmp/gh-pages origin/gh-pages
+            git branch -D gh-pages 2>/dev/null || true
+
+            # gh-pages ブランチが無ければ空の orphan として作成
+            if git fetch origin +gh-pages:refs/remotes/origin/gh-pages 2>/dev/null; then
+              git worktree add --detach /tmp/gh-pages origin/gh-pages
+            else
+              git worktree add --detach /tmp/gh-pages
+              git -C /tmp/gh-pages checkout --orphan gh-pages
+              git -C /tmp/gh-pages rm -rf --quiet . || true
+            fi
+
             cd /tmp/gh-pages
 
             rm -rf "pr-preview/pr-$PR"
@@ -68,6 +77,7 @@ jobs:
               mkdir -p "pr-preview/pr-$PR"
               cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." "pr-preview/pr-$PR/"
             fi
+            touch .nojekyll
 
             git add -A
             if ! git commit -m "PR preview #$PR ($ACTION)"; then
