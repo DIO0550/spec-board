@@ -11,11 +11,18 @@ permissions:
   issues: write
   pull-requests: write
 
+# PR ごとに独立したグループにする(共有グループだと待機中の run が
+# 別 PR の run に置き換えられ、closed 時の削除が消失することがある)。
+# gh-pages への push 競合は更新ステップ内のリトライで吸収する
 concurrency:
-  group: gh-pages # main デプロイ側と同じグループ名にすること(競合防止)
+  group: storybook-pr-preview-${{ github.event.number }}
+  cancel-in-progress: true
 
 jobs:
   preview:
+    # フォークからの PR では GITHUB_TOKEN が read-only になり
+    # gh-pages へ push できないためスキップする
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -47,20 +54,38 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin gh-pages
-          git worktree add /tmp/gh-pages gh-pages
-          cd /tmp/gh-pages
-
-          rm -rf "pr-preview/pr-$PR"
-          if [ "$CLOSED" != "true" ]; then
-            mkdir -p "pr-preview/pr-$PR"
-            cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." "pr-preview/pr-$PR/"
-          fi
-
           if [ "$CLOSED" = "true" ]; then ACTION=removed; else ACTION=updated; fi
-          git add -A
-          git commit -m "PR preview #$PR ($ACTION)" || echo "no changes"
-          git push origin gh-pages
+
+          success=false
+          for attempt in 1 2 3 4 5; do
+            git worktree remove --force /tmp/gh-pages 2>/dev/null || true
+            git fetch origin +gh-pages:refs/remotes/origin/gh-pages
+            git worktree add --detach /tmp/gh-pages origin/gh-pages
+            cd /tmp/gh-pages
+
+            rm -rf "pr-preview/pr-$PR"
+            if [ "$CLOSED" != "true" ]; then
+              mkdir -p "pr-preview/pr-$PR"
+              cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." "pr-preview/pr-$PR/"
+            fi
+
+            git add -A
+            if ! git commit -m "PR preview #$PR ($ACTION)"; then
+              echo "no changes"
+              success=true
+              break
+            fi
+
+            # 他ワークフローの push と競合したら fetch からやり直す
+            if git push origin HEAD:gh-pages; then
+              success=true
+              break
+            fi
+            echo "push failed (attempt $attempt), retrying..."
+            cd "$GITHUB_WORKSPACE"
+            sleep $((attempt * 2))
+          done
+          [ "$success" = "true" ]
 
       - name: Comment preview URL
         if: github.event.action != 'closed'
