@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 # gh-pages への push 競合はデプロイステップ内のリトライで吸収する
 concurrency:
@@ -37,12 +38,14 @@ jobs:
 
       - name: Deploy to gh-pages (root)
         env:
+          GH_TOKEN: ${{ github.token }}
           OUTPUT_DIR: storybook-static
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           success=false
+          pushed=false
           for attempt in 1 2 3 4 5; do
             git worktree remove --force /tmp/gh-pages 2>/dev/null || true
             git branch -D gh-pages 2>/dev/null || true
@@ -73,6 +76,7 @@ jobs:
             # 他ワークフローの push と競合したら fetch からやり直す
             if git push origin HEAD:gh-pages; then
               success=true
+              pushed=true
               break
             fi
             echo "push failed (attempt $attempt), retrying..."
@@ -80,3 +84,10 @@ jobs:
             sleep $((attempt * 2))
           done
           [ "$success" = "true" ]
+
+          # GITHUB_TOKEN による push では Pages のブランチビルドが
+          # トリガーされないため、明示的にビルドをリクエストする
+          if [ "$pushed" = "true" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" \
+              || echo "Pages build request failed (Settings → Pages が未設定の可能性)"
+          fi

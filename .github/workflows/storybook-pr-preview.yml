@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   issues: write
+  pages: write
   pull-requests: write
 
 # PR ごとに独立したグループにする(共有グループだと待機中の run が
@@ -47,6 +48,7 @@ jobs:
 
       - name: Update gh-pages
         env:
+          GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.number }}
           CLOSED: ${{ github.event.action == 'closed' }}
           OUTPUT_DIR: storybook-static
@@ -57,6 +59,7 @@ jobs:
           if [ "$CLOSED" = "true" ]; then ACTION=removed; else ACTION=updated; fi
 
           success=false
+          pushed=false
           for attempt in 1 2 3 4 5; do
             git worktree remove --force /tmp/gh-pages 2>/dev/null || true
             git branch -D gh-pages 2>/dev/null || true
@@ -89,6 +92,7 @@ jobs:
             # 他ワークフローの push と競合したら fetch からやり直す
             if git push origin HEAD:gh-pages; then
               success=true
+              pushed=true
               break
             fi
             echo "push failed (attempt $attempt), retrying..."
@@ -96,6 +100,13 @@ jobs:
             sleep $((attempt * 2))
           done
           [ "$success" = "true" ]
+
+          # GITHUB_TOKEN による push では Pages のブランチビルドが
+          # トリガーされないため、明示的にビルドをリクエストする
+          if [ "$pushed" = "true" ]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" \
+              || echo "Pages build request failed (Settings → Pages が未設定の可能性)"
+          fi
 
       - name: Comment preview URL
         if: github.event.action != 'closed'
