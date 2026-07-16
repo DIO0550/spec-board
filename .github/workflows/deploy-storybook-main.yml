@@ -1,0 +1,109 @@
+# main ブランチの Storybook を gh-pages ルートへデプロイ
+name: Deploy Storybook (main)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+
+# gh-pages への push 競合はデプロイステップ内のリトライで吸収する
+concurrency:
+  group: deploy-storybook-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Storybook
+        run: pnpm build-storybook
+
+      - name: Deploy to gh-pages (root)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT_DIR: storybook-static
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          success=false
+          pushed=false
+          for attempt in 1 2 3 4 5; do
+            git worktree remove --force /tmp/gh-pages 2>/dev/null || true
+            git branch -D gh-pages 2>/dev/null || true
+
+            # gh-pages ブランチが無ければ空の orphan として作成
+            if git fetch origin +gh-pages:refs/remotes/origin/gh-pages 2>/dev/null; then
+              git worktree add --detach /tmp/gh-pages origin/gh-pages
+            else
+              git worktree add --detach /tmp/gh-pages
+              git -C /tmp/gh-pages checkout --orphan gh-pages
+              git -C /tmp/gh-pages rm -rf --quiet . || true
+            fi
+
+            cd /tmp/gh-pages
+
+            # pr-preview/ 以外を全削除してから main の成果物を配置
+            find . -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+            cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." .
+            touch .nojekyll
+
+            git add -A
+            if ! git commit -m "Deploy main @ ${GITHUB_SHA::7}"; then
+              echo "no changes to deploy"
+              success=true
+              break
+            fi
+
+            # 他ワークフローの push と競合したら fetch からやり直す
+            if git push origin HEAD:gh-pages; then
+              success=true
+              pushed=true
+              break
+            fi
+            echo "push failed (attempt $attempt), retrying..."
+            cd "$GITHUB_WORKSPACE"
+            sleep $((attempt * 2))
+          done
+          [ "$success" = "true" ]
+
+          # GITHUB_TOKEN による push では Pages のブランチビルドが
+          # トリガーされないため、明示的にビルドをリクエストする。
+          # Pages 未設定(404)のみ警告に留め、それ以外の失敗は
+          # リトライの上ジョブを失敗させる
+          if [ "$pushed" = "true" ]; then
+            build_ok=false
+            for attempt in 1 2 3; do
+              if out=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" 2>&1); then
+                build_ok=true
+                break
+              fi
+              echo "$out"
+              if echo "$out" | grep -q "HTTP 404"; then
+                echo "Pages 未設定のためビルドリクエストをスキップ (Settings → Pages を確認)"
+                build_ok=true
+                break
+              fi
+              echo "Pages build request failed (attempt $attempt), retrying..."
+              sleep $((attempt * 2))
+            done
+            [ "$build_ok" = "true" ]
+          fi
