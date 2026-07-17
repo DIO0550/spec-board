@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 const parentTaskSelectSpy = vi.fn();
 vi.mock("@/features/task-form/components/ParentTaskSelect", () => ({

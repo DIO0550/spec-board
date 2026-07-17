@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { addLink as addLinkInvoke, TauriError } from "@/lib/tauri";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import {
   createProjectVersion,
@@ -42,7 +42,7 @@ const expectErr = <T, E>(result: ResultT<T, E>): E => {
   return (result as { ok: false; error: E }).error;
 };
 
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: overrides.filePath ?? "id",
     title: overrides.title ?? "t",
@@ -92,7 +92,7 @@ const setupLoaded = (data: ProjectData): Harness => {
   };
 };
 
-const okTask = (overrides: Partial<TaskPayload>): Task =>
+const okTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: "id",
     title: "t",

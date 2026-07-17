@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { makeTask, warn } from "@/domains/__tests__/taskFixtures";
-import type { TaskWarningCode } from "@/types/task";
+import type { TaskWarningCode } from "@/domains/task";
 import { hasParseError } from "..";
 
 test.each<{ code: TaskWarningCode }>([

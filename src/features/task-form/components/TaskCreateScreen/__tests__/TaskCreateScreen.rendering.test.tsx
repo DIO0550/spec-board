@@ -1,11 +1,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { Task } from "@/domains/task";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { unregisterToastSink } from "@/lib/tauri";
 import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import { TaskCreateScreen } from "..";
 

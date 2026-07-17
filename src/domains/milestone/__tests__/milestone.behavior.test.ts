@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 import { Milestone, type MilestoneDefinition } from "..";
 
 test.each([

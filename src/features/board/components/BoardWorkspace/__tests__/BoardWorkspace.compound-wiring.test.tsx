@@ -1,8 +1,8 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import type { Column as ColumnType } from "@/types/column";
-import { Task, type TaskPayload } from "@/types/task";
 import { BoardWorkspace } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -28,7 +28,7 @@ const unmountWorkspace = () => {
   container = null;
 };
 
-const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "id",
     title: "t",

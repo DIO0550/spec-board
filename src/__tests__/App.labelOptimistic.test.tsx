@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { Task } from "@/domains/task";
 import {
   getColumns as getColumnsInvoke,
   getLabels as getLabelsInvoke,
@@ -19,7 +20,6 @@ import {
   TauriError,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
 vi.mock("@/lib/tauri", async () => {

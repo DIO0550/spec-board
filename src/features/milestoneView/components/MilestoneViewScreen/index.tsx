@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Due } from "@/domains/due";
 import { Milestone } from "@/domains/milestone";
+import type { Task } from "@/domains/task";
 import { MilestoneCreateModal } from "@/features/milestoneView/components/MilestoneCreateModal";
 import { MilestoneDetailSidebar } from "@/features/milestoneView/components/MilestoneDetailSidebar";
 import { MilestoneList } from "@/features/milestoneView/components/MilestoneList";
@@ -20,7 +21,6 @@ import {
 import { resolveDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
-import type { Task } from "@/types/task";
 
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */

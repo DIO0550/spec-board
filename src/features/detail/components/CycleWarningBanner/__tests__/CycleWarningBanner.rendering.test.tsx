@@ -1,7 +1,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import { Task, type TaskPayload, type TaskWarning } from "@/types/task";
+import {
+  Task,
+  type TaskFromPayloadInput,
+  type TaskWarning,
+} from "@/domains/task";
 import { CycleWarningBanner } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -22,7 +26,7 @@ afterEach(() => {
  * @returns Task
  */
 const makeTask = (warnings: TaskWarning[]): Task => {
-  const payload: TaskPayload = {
+  const payload: TaskFromPayloadInput = {
     id: "task-1",
     title: "サンプル",
     status: "Todo",

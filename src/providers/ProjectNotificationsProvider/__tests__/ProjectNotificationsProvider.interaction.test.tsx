@@ -1,6 +1,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { TauriError } from "@/lib/tauri";
 import type { ProjectData } from "@/providers/ProjectProvider";
 import {
@@ -12,7 +13,6 @@ import {
   useRecentProjects,
 } from "@/providers/RecentProjectsProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
-import { Task, type TaskPayload } from "@/types/task";
 import { ProjectNotificationsProvider } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 /** テスト用の Task を生成する。 */
-const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "1",
     title: "T",

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 /** TaskSelect の Props */
 export type TaskSelectProps = {
@@ -138,7 +138,7 @@ export const TaskSelect = ({
       return filtered;
     }
     return filtered.filter((t) => {
-      const title = (t.title || t.filePath).toLowerCase();
+      const title = Task.displayTitle(t).toLowerCase();
       return title.includes(q) || t.filePath.toLowerCase().includes(q);
     });
   }, [tasks, excludeFilePaths, query]);
@@ -155,7 +155,7 @@ export const TaskSelect = ({
   };
 
   const selectedLabel = selected
-    ? selected.title || selected.filePath
+    ? Task.displayTitle(selected)
     : value !== null
       ? value
       : undefined;
@@ -253,7 +253,7 @@ export const TaskSelect = ({
                     }}
                     data-testid={`${prefix}-option-${task.id}`}
                   >
-                    {task.title || task.filePath}
+                    {Task.displayTitle(task)}
                   </button>
                 );
               })}

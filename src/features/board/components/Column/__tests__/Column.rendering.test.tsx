@@ -1,7 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { BoardCardProvider } from "../../BoardCardProvider";
 import { BoardColumnProvider } from "../../BoardColumnProvider";
 import { Column } from "..";
@@ -23,7 +23,7 @@ afterEach(() => {
  * @param overrides 上書きしたい一部フィールド
  * @returns Task
  */
-function createTask(overrides: Partial<TaskPayload> = {}): Task {
+function createTask(overrides: Partial<TaskFromPayloadInput> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
     title: "テストタスク",

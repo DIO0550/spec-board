@@ -1,6 +1,6 @@
 import { TaskSelect } from "@/components/TaskSelect";
+import { Task } from "@/domains/task";
 import { LabelChip } from "@/features/task-form/components/TaskForm/LabelChip";
-import type { Task } from "@/types/task";
 
 /** TaskFormLinks の Props */
 export type TaskFormLinksProps = {
@@ -34,13 +34,17 @@ export const TaskFormLinks = (props: TaskFormLinksProps) => {
   const disabled = props.disabled ?? false;
 
   /**
-   * filePath を Task.title に逆引きする。逆引き失敗時は filePath を fallback 表示する。
+   * filePath を Task.displayTitle に逆引きする。逆引き失敗時は filePath を fallback 表示する。
    * @param filePath - 解決対象の filePath
-   * @returns title または filePath
+   * @returns displayTitle または filePath
    */
-  const titleOf = (filePath: string): string =>
-    props.selectedTasks.find((task) => task.filePath === filePath)?.title ??
-    filePath;
+  const titleOf = (filePath: string): string => {
+    const task = props.selectedTasks.find((t) => t.filePath === filePath);
+    if (task === undefined) {
+      return filePath;
+    }
+    return Task.displayTitle(task);
+  };
 
   return (
     <div>

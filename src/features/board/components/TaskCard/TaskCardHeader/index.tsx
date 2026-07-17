@@ -1,6 +1,7 @@
 import { DueBadge } from "@/components/DueBadge";
 import { ParseErrorIcon } from "@/components/ParseErrorIcon";
 import { WarningIcon } from "@/components/WarningIcon";
+import { Task } from "@/domains/task";
 import { DraftBadge } from "../../DraftBadge";
 import { PriorityBadge } from "../../PriorityBadge";
 import { useTaskCardContext } from "../TaskCardContext";
@@ -12,7 +13,7 @@ import { useTaskCardContext } from "../TaskCardContext";
  */
 export const TaskCardHeader = () => {
   const { task, hasBrokenLink, hasParseError } = useTaskCardContext();
-  const displayTitle = task.title || task.filePath;
+  const displayTitle = Task.displayTitle(task);
   return (
     <div className="flex items-center gap-1.5">
       <DraftBadge draft={task.draft} />

@@ -1,5 +1,5 @@
+import type { Task } from "@/domains/task";
 import { updateCardOrder, updateTask } from "@/lib/tauri";
-import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { ProjectError } from "../errors";

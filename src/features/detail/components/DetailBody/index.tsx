@@ -1,5 +1,5 @@
 import { EditableText } from "@/components/EditableText";
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 import { CycleWarningBanner } from "../CycleWarningBanner";
 import { MarkdownBody } from "../MarkdownBody";
 import { ParseErrorBanner } from "../ParseErrorBanner";
@@ -40,7 +40,7 @@ export const DetailBody = (props: DetailBodyProps) => {
       {/* 旧要素が残留する）を避けて要素ごとに名前空間を付与する。 */}
       <EditableText
         key={`title-${task.id}`}
-        value={task.title || task.filePath}
+        value={Task.displayTitle(task)}
         onConfirm={onTitleConfirm}
         ariaLabel="タスクタイトル"
       />

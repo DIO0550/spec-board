@@ -1,5 +1,4 @@
-import { hasParseError } from "@/domains/parse-error";
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 /** ParseErrorBanner の Props */
 export type ParseErrorBannerProps = {
@@ -17,7 +16,7 @@ export type ParseErrorBannerProps = {
  */
 export const ParseErrorBanner = (props: ParseErrorBannerProps) => {
   const { task } = props;
-  if (!hasParseError(task)) {
+  if (!Task.hasParseIssues(task)) {
     return null;
   }
   return (

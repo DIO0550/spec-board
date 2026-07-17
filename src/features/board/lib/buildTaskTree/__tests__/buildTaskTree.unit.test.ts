@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { buildTaskTree } from "..";
 
-const buildTask = (overrides: Partial<TaskPayload>): Task => {
+const buildTask = (overrides: Partial<TaskFromPayloadInput>): Task => {
   return Task.fromPayload({
     id: overrides.id ?? "id",
     title: overrides.title ?? "タイトル",

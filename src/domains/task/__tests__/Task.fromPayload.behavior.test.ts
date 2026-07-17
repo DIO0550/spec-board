@@ -1,8 +1,22 @@
 import { expect, test } from "vitest";
-import { Task, type TaskPayload } from "../task";
+import { Task, type TaskFromPayloadInput } from "..";
 
-test("fromPayload は flat payload の関連情報を nested domain property に変換する", () => {
-  const payload: TaskPayload = {
+const basePayload: TaskFromPayloadInput = {
+  id: "task-1",
+  title: "Task",
+  status: "Todo",
+  labels: [],
+  links: [],
+  children: [],
+  reverseLinks: [],
+  body: "",
+  filePath: "tasks/task-1.md",
+  extras: {},
+  warnings: [],
+};
+
+test("fromPayload は flat payload の関連情報を nested domain property に変換する（round-trip）", () => {
+  const payload: TaskFromPayloadInput = {
     id: "task-1",
     title: "Task",
     status: "Todo",
@@ -54,20 +68,6 @@ test("fromPayload は flat payload の関連情報を nested domain property に
   });
 });
 
-const basePayload: TaskPayload = {
-  id: "task-1",
-  title: "Task",
-  status: "Todo",
-  labels: [],
-  links: [],
-  children: [],
-  reverseLinks: [],
-  body: "",
-  filePath: "tasks/task-1.md",
-  extras: {},
-  warnings: [],
-};
-
 test.each([
   { due: "2026-06-30", label: "妥当な日付" },
   { due: "2026/6/30", label: "不正フォーマットも素通し" },
@@ -79,4 +79,40 @@ test.each([
 test("fromPayload は due 未設定を undefined にする", () => {
   const task = Task.fromPayload(basePayload);
   expect(task.due).toBeUndefined();
+});
+
+test("fromPayload は draft: true を透過する", () => {
+  const task = Task.fromPayload({ ...basePayload, draft: true });
+  expect(task.draft).toBe(true);
+});
+
+test("fromPayload は draft 省略時 false になる（旧 BE 互換）", () => {
+  const task = Task.fromPayload(basePayload);
+  expect(task.draft).toBe(false);
+});
+
+test("fromPayload は milestone を透過する", () => {
+  const task = Task.fromPayload({ ...basePayload, milestone: "v0.3" });
+  expect(task.milestone).toBe("v0.3");
+});
+
+test("fromPayload は milestone 省略時 undefined になる", () => {
+  const task = Task.fromPayload(basePayload);
+  expect(task.milestone).toBeUndefined();
+});
+
+test("fromPayload は extras / warnings 省略時に空オブジェクト / 空配列で埋める", () => {
+  const task = Task.fromPayload({
+    id: "id",
+    title: "title",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "/p",
+  });
+  expect(task.extras).toEqual({});
+  expect(task.warnings).toEqual([]);
 });

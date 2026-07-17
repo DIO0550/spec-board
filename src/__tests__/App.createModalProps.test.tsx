@@ -54,6 +54,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import { App } from "@/App";
+import { Task } from "@/domains/task";
 import {
   createTask as createTaskInvoke,
   deleteTask as deleteTaskInvoke,
@@ -61,7 +62,6 @@ import {
   openDirectoryDialog,
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);

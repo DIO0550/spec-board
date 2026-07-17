@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 import { arrayShallowEq } from "@/utils/array";
 
 /** Task の関連リンク情報 */

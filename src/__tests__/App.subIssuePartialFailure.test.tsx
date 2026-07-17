@@ -10,8 +10,8 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import type { TaskFromPayloadInput } from "@/domains/task";
 import { unregisterToastSink } from "@/lib/tauri";
-import type { TaskPayload } from "@/types/task";
 
 // サブIssue 同時作成の部分失敗分岐（handleCreateTask）の App レベル統合テスト。
 // `@tauri-apps/api/core` の invoke だけを制御し、実経路（useTaskCreate の直列ループ →
@@ -56,7 +56,7 @@ afterAll(() => {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-const parentPayload: TaskPayload = {
+const parentPayload: TaskFromPayloadInput = {
   id: "parent",
   title: "親タスク",
   status: "Todo",
@@ -70,7 +70,7 @@ const parentPayload: TaskPayload = {
   warnings: [],
 };
 
-const childPayload = (n: number): TaskPayload => ({
+const childPayload = (n: number): TaskFromPayloadInput => ({
   id: `child-${n}`,
   title: `子${n}`,
   status: "Todo",

@@ -27,10 +27,10 @@ afterAll(() => {
   }
 });
 
+import { Task } from "@/domains/task";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { TauriError } from "@/lib/tauri";
 import { ProjectError } from "@/providers/ProjectProvider";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import {
   type UseTaskCreateOptions,

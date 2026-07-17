@@ -7,9 +7,7 @@ import {
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { hasAnyBrokenLink } from "@/domains/broken-link";
-import { hasParseError } from "@/domains/parse-error";
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../Board/mime";
 import { useBoardCard } from "../BoardCardProvider";
 import { useBoardColumn } from "../BoardColumnProvider";
@@ -363,11 +361,10 @@ export const Column = ({
                   task={task}
                   childTasks={childTasks}
                   fromColumn={name}
-                  hasBrokenLink={hasAnyBrokenLink(
-                    task,
-                    card.tasksByNormalizedPath,
-                  )}
-                  hasParseError={hasParseError(task)}
+                  hasBrokenLink={Task.hasBrokenLinks(task, {
+                    tasksByPath: card.tasksByNormalizedPath,
+                  })}
+                  hasParseError={Task.hasParseIssues(task)}
                   onClick={onTaskClick}
                 />
               </li>

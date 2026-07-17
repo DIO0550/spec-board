@@ -1,6 +1,6 @@
+import type { Task } from "@/domains/task";
 import { TaskLinks } from "@/domains/task-links";
 import { addLink as addLinkInvoke } from "@/lib/tauri";
-import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { PROJECT_SWITCHED_MESSAGE } from "../constants";

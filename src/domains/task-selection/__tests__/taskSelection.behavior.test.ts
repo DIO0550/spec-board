@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { selectTaskOutcome } from "..";
 
-const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "t1",
     title: "タイトル",
@@ -43,7 +43,7 @@ test("target.title が空のときは filePath を fallback として announceTe
   const task = makeTask({ id: "t1", title: "", filePath: "tasks/parent.md" });
   const outcome = selectTaskOutcome([task], "t1");
 
-  expect(outcome?.announceText).toBe("「tasks/parent.md」を表示中");
+  expect(outcome?.announceText).toBe("「parent」を表示中");
 });
 
 test("同一 id が複数ある場合は最初の一致を採用する（task.id == filePath なので実質発生しないが防御挙動を固定）", () => {

@@ -1,4 +1,4 @@
-import type { Task, TaskWarningCode } from "@/types/task";
+import type { Task, TaskWarningCode } from "@/domains/task";
 
 /**
  * 「パースエラー」とみなす invalid 系 warning code の集合。

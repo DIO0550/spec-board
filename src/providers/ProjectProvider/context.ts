@@ -1,10 +1,10 @@
 import { createContext, useContext } from "react";
+import type { Task } from "@/domains/task";
 import type {
   CreateTaskParams,
   DeleteTaskParams,
   UpdateTaskParams,
 } from "@/lib/tauri";
-import type { Task } from "@/types/task";
 import type { Result as ResultT } from "@/utils/result";
 import type {
   ColumnsCommand,

@@ -1,5 +1,5 @@
 import { Due } from "@/domains/due";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /** 年月（month は 1-12）。 */
 export type YearMonth = {

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { LabelRegistry } from "@/domains/label-registry";
-import { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 const task = (id: string, labels: string[]): Task =>
   Task.fromPayload({

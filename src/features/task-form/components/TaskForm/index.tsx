@@ -5,6 +5,7 @@ import { LabelsField } from "@/components/fields/LabelsField";
 import { PriorityField } from "@/components/fields/PriorityField";
 import { StatusField } from "@/components/fields/StatusField";
 import { Priority } from "@/domains/priority";
+import type { Task } from "@/domains/task";
 import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
@@ -18,7 +19,6 @@ import {
 import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
 import { TaskFormActions } from "./TaskFormActions";
 import { TaskFormBody } from "./TaskFormBody";

@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { addLink as addLinkInvoke, TauriError } from "@/lib/tauri";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import {
   createProjectVersion,
@@ -31,7 +31,7 @@ const asTaskUpdated = (
   return action as TaskUpdatedAction;
 };
 
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: overrides.filePath ?? "id",
     title: "t",

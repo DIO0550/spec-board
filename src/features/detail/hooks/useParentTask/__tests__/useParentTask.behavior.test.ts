@@ -1,7 +1,7 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import {
   type UseParentTaskArgs,
   type UseParentTaskResult,
@@ -25,7 +25,7 @@ afterEach(() => {
  * @param overrides - 上書きフィールド
  * @returns Task
  */
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: "t1",
     title: "title",

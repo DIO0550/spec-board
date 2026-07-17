@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
+import type { Task } from "@/domains/task";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
-import type { Task } from "@/types/task";
 
 const fp = (id: string) => `tasks/${id}.md`;
 

@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { ParentTaskSelect } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -21,7 +21,7 @@ afterEach(() => {
  * @param overrides - 上書きするフィールド
  * @returns テスト用タスク
  */
-function makeTask(overrides: Partial<TaskPayload> = {}): Task {
+function makeTask(overrides: Partial<TaskFromPayloadInput> = {}): Task {
   return Task.fromPayload({
     id: "t-1",
     title: "親候補",
@@ -165,12 +165,12 @@ test("解除ボタンで onChange が undefined で呼ばれる", () => {
   expect(onChange).toHaveBeenCalledWith(undefined);
 });
 
-test("タイトル未設定のタスクはファイルパスで表示される", () => {
+test("タイトル未設定のタスクはファイル basename (拡張子除去) で表示される", () => {
   render({ tasks: TASKS, value: "tasks/empty-title.md", onChange: vi.fn() });
   const selected = document.querySelector(
     '[data-testid="parent-task-selected"]',
   );
-  expect(selected?.textContent).toBe("tasks/empty-title.md");
+  expect(selected?.textContent).toBe("empty-title");
 });
 
 test("検索結果が 0 件の場合は空メッセージが表示される", () => {

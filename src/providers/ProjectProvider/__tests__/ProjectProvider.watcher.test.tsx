@@ -2,12 +2,12 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { ProjectProvider, type ProjectState } from "..";
 import { useProjectSessionActions, useProjectState } from "../context";
@@ -67,7 +67,10 @@ const taskA: Task = Task.fromPayload({
 
 const payload: OpenProjectPayload = { tasks: [taskA], columns: ["Todo"] };
 
-const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
+const makeTaskPayload = (
+  filePath: string,
+  title: string,
+): TaskFromPayloadInput => ({
   id: filePath,
   title,
   status: "Todo",

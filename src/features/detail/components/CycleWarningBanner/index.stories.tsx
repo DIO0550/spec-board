@@ -1,9 +1,9 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { CycleWarningBanner } from ".";
 
-const basePayload: TaskPayload = {
+const basePayload: TaskFromPayloadInput = {
   id: "task-1",
   title: "サンプル",
   status: "Todo",

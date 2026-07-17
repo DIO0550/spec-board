@@ -1,5 +1,5 @@
+import type { Task } from "@/domains/task";
 import { parentReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
 
 /**
  * サブ Issue ドメインの companion。

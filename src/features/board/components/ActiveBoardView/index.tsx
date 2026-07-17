@@ -1,10 +1,10 @@
+import type { Task } from "@/domains/task";
 import { BoardView } from "@/features/board/components/BoardView";
 import type { BoardWorkspaceProps } from "@/features/board/components/BoardWorkspace";
 import { CalendarView } from "@/features/board/components/CalendarView";
 import { ListView } from "@/features/board/components/ListView";
 import { TreeView } from "@/features/board/components/TreeView";
 import type { BoardViewMode } from "@/features/board/hooks/useBoardViewMode";
-import type { Task } from "@/types/task";
 
 /** ActiveBoardView の Props。 */
 type ActiveBoardViewProps = {

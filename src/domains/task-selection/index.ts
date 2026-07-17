@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 /**
  * `handleSelectTask` の本体ロジック。
@@ -24,6 +24,6 @@ export const selectTaskOutcome = (
   }
   return {
     selectedTaskId: taskId,
-    announceText: `「${target.title || target.filePath}」を表示中`,
+    announceText: `「${Task.displayTitle(target)}」を表示中`,
   };
 };

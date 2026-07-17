@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 import { buildFileTree, type FileTreeNode } from "..";
 
 const buildTask = (filePath: string, id: string): Task => {

@@ -1,11 +1,11 @@
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { BrokenLinkSet } from "@/domains/broken-link";
+import { Task } from "@/domains/task";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { BrokenParentRow } from "../BrokenParentRow";
 import { DetailFields } from "../DetailFields";
@@ -148,8 +148,8 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
           title="タスクの削除"
           message={
             hasChildren
-              ? `「${task.title || task.filePath}」を削除しますか？子タスクが ${task.hierarchy.childFilePaths.length} 件あります。`
-              : `「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`
+              ? `「${Task.displayTitle(task)}」を削除しますか？子タスクが ${task.hierarchy.childFilePaths.length} 件あります。`
+              : `「${Task.displayTitle(task)}」を削除しますか？この操作は取り消せません。`
           }
           confirmLabel={deleteFlow.isBusy ? "削除中…" : "削除"}
           confirmDisabled={deleteFlow.isBusy}

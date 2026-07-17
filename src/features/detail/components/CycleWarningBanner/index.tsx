@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 /** CycleWarningBanner の Props */
 export type CycleWarningBannerProps = {
@@ -16,8 +16,7 @@ export type CycleWarningBannerProps = {
  */
 export const CycleWarningBanner = (props: CycleWarningBannerProps) => {
   const { task } = props;
-  const hasCycle = task.warnings.some((w) => w.code === "parentCycle");
-  if (!hasCycle) {
+  if (!Task.hasCycle(task)) {
     return null;
   }
   return (

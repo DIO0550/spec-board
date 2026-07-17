@@ -379,6 +379,38 @@ title / status / priority / labels / body 単独の更新では再構築しな�
 - 日本語など非ASCII文字を含むタイトルのファイル名生成: ASCII文字のみkebab-case変換し、非ASCII文字はそのまま保持する（例: 「ログイン修正」→ `ログイン修正.md`）。全てASCII変換不可の場合もタイトルをそのままファイル名に使用する
 - 親子ネストの深さは最大20階層。超過した場合はパースエラーとして通知
 
+## FE displayTitle
+
+FE の Task 表示名は `Task.displayTitle(task)` companion API（`src/domains/task/index.ts`）を通じて統一的に取得する。UI/hook/domain のすべての表示 callsite（TaskCard / DetailScreen / DetailBody / ParentLink / PropertiesSidebar 削除確認ダイアログ / TaskSelect / SubIssueSection / SubIssueProgress / TaskFormLinks / App.tsx の live-region announce / task-selection の announce など）は本 API を経由する。
+
+fallback チェーンは次の順に評価する:
+
+1. `task.title` が `trim` 後 length > 0 なら `task.title` を返す
+2. 空の場合、`task.filePath` から basename を抽出し、末尾 `.md`（case-insensitive）1 段のみ除去した文字列が空でなければそれを返す
+   - `.md` 以外の拡張子（`.txt` 等）は除去しない
+   - 先頭ドットの dotfile（`.foo`）は除去対象外（先頭 `.` を残す）
+   - 区切りは `/` と `\` の両方を許容する（POSIX / Windows）
+3. basename も空なら `task.id` を返す
+4. id も空文字なら空文字を返す（防御的）
+
+BE 側 `title` フォールバック（PL-003 相当: ファイル名の拡張子除去 + ハイフン→スペース変換）は parse 段階で `task.title` に非空文字列を入れるため、通常はチェーンの (1) で確定する。FE の displayTitle は BE を経由しない防御パスとして最小限で維持し、FE 側ではハイフン→スペース変換は行わない（BE 済み前提）。
+
+## FE warning predicate
+
+FE の warning 判定は `Task` companion に集約される。UI / reducer / hook は Task 経由で以下 4 種の API を利用する:
+
+- `Task.hasBrokenLinks(task, ctx: { tasksByPath: ReadonlyMap<string, Task> }): boolean` — parent / children / links / reverseLinks の raw ref を canonical key に正規化して `tasksByPath` に存在しないものがあれば true。実装は `src/domains/broken-link/hasAnyBrokenLink` を委譲。
+- `Task.hasParseIssues(task): boolean` — `task.warnings` に以下 5 コードのいずれかを含めば true: `invalidTitleUsedFileName` / `invalidStatusUsedDefault` / `invalidParentIgnored` / `nonStringExtraKeyIgnored` / `extraValueNotJsonCompatible`。実装は `src/domains/parse-error/hasParseError` を委譲。
+- `Task.hasCycle(task): boolean` — `task.warnings` に `parentCycle` コードを含めば true。
+- `Task.warnings(task): readonly TaskWarning[]` — `task.warnings` を `readonly` として返す純粋 getter。将来 FE 側で追加 warning を合流させる際のフック点。
+
+三者一致（parse-issue / cycle / warnings）: 常に以下が成立する:
+
+- `Task.hasParseIssues(task) === Task.warnings(task).some(w => PARSE_ERROR_CODES.has(w.code))`
+- `Task.hasCycle(task) === Task.warnings(task).some(w => w.code === "parentCycle")`
+
+`Task.hasBrokenLinks` は `ctx.tasksByPath` に依存するため三者一致対象外（独立に検証する）。集計 API（`countTasksWithParseError` / `countTasksWithBrokenLink`）は Task companion 側に載せず、`@/domains/parse-error` / `@/domains/broken-link` を直接呼ぶ現状の位置付けを維持する。
+
 ## 関連仕様
 
 - [config-spec.md](./config-spec.md) - 設定ファイルのスキーマ・labels.yml / milestones.yml マスタ・AIエージェント向けGUIDE.md仕様

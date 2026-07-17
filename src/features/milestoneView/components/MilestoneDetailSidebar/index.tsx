@@ -1,5 +1,6 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
 import { Milestone } from "@/domains/milestone";
+import type { Task } from "@/domains/task";
 import { MilestoneCountdownBadge } from "@/features/milestoneView/components/MilestoneCountdownBadge";
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
 import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
@@ -9,7 +10,6 @@ import {
   type MilestoneDisplayStatus,
   resolveCountdown,
 } from "@/features/milestoneView/lib/milestoneStatus";
-import type { Task } from "@/types/task";
 
 type MilestoneDetailSidebarProps = {
   /** 表示対象のマイルストーン定義（未選択 = undefined） */

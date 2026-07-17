@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 /** マイルストーン 1 件分の進捗。 */
 export type MilestoneProgress = {

@@ -1,5 +1,5 @@
+import { Task } from "@/domains/task";
 import { parentReferencesTaskPath } from "@/domains/task-path";
-import { Task } from "@/types/task";
 
 /** Task の親子階層情報 */
 export type TaskHierarchy = {

@@ -1,8 +1,8 @@
 import { act, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
-import { Task, type TaskPayload } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../../../Board/mime";
 import {
   type BoardCardApi,
@@ -35,7 +35,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const createTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "task-1",
     title: "テスト",

@@ -1,8 +1,8 @@
+import { Task } from "@/domains/task";
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
-import type { CreateTaskParams } from "../types";
+import type { CreateTaskParams, TaskPayload } from "../types";
 
 /**
  * 新規タスクの md ファイルを作成する。

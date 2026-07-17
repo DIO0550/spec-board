@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
+import type { Task } from "@/domains/task";
 import type { Column as ColumnType } from "@/types/column";
-import type { Task } from "@/types/task";
 import { BoardCardProvider, type TaskDropHandler } from "../BoardCardProvider";
 import {
   BoardColumnProvider,

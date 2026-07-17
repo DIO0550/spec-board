@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { Task } from "@/domains/task";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import {
   createTask as createTaskInvoke,
@@ -25,7 +26,6 @@ import {
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
 vi.mock("@/lib/tauri", async () => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import type { Task } from "@/domains/task";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
@@ -14,7 +15,6 @@ import {
 } from "@/providers/ProjectProvider";
 import { useToastDispatch } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { fileNameErrorMessage } from "../TaskForm/TaskFormFileName/fileNameErrorMessage";
 import { PreviewResizer } from "./PreviewResizer";

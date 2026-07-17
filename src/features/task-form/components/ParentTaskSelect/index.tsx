@@ -1,5 +1,5 @@
 import { TaskSelect } from "@/components/TaskSelect";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 type ParentTaskSelectProps = {
   /** 選択候補となるタスク一覧 */

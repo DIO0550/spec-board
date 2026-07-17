@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 import { SubIssueProgress } from ".";
 
 const makeChild = (id: string, status: string, title: string) =>

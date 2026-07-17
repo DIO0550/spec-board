@@ -7,8 +7,8 @@ import {
   useMemo,
   useReducer,
 } from "react";
+import type { Task } from "@/domains/task";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 
 /** drop 確定時に呼ばれる引数（カラム並び替え用）。 */
 export type ColumnReorder = {

@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { ProjectColumns } from "@/domains/project-columns";
+import type { Task } from "@/domains/task";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { SubIssue } from "@/features/detail/domains/sub-issue";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 
 /** useChildTasks の引数 */
 export type UseChildTasksArgs = {

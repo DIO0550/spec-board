@@ -1,4 +1,4 @@
-import type { Task, TaskWarning, TaskWarningCode } from "@/types/task";
+import type { Task, TaskWarning, TaskWarningCode } from "@/domains/task";
 
 type TaskFixtureOverrides = Partial<Omit<Task, "links" | "hierarchy">> &
   Pick<Task, "id"> & {

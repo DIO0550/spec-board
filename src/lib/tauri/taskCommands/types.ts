@@ -1,5 +1,12 @@
 import type { Priority } from "@/domains/priority";
-import type { Task, TaskPayload } from "@/types/task";
+import type { Task, TaskInput } from "@/domains/task";
+
+/**
+ * Tauri IPC から返る flat なタスク payload（wire 型）。
+ * Task domain の `TaskInput` と同 shape のため type alias で結合し、
+ * wire → domain の一方向 import を保つ。
+ */
+export type TaskPayload = TaskInput;
 
 /** open_project 引数。 */
 export type OpenProjectParams = {

@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { TaskCard } from "..";
 import { type CardWrapperArgs, wrapWithCardProvider } from "./_testHelpers";
 
@@ -17,7 +17,7 @@ afterEach(() => {
   container = null;
 });
 
-function createTask(overrides: Partial<TaskPayload> = {}): Task {
+function createTask(overrides: Partial<TaskFromPayloadInput> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
     title: "テストタスク",
@@ -89,7 +89,7 @@ test("titleが未設定の場合、filePathが表示される", async () => {
     onClick: vi.fn(),
   });
   await vi.waitFor(() => {
-    expect(container?.textContent).toContain("tasks/my-task.md");
+    expect(container?.textContent).toContain("my-task");
   });
 });
 

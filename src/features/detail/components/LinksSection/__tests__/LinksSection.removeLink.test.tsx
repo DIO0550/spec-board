@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { Result } from "@/utils/result";
 import { LinksSection } from "..";
 
@@ -19,10 +19,10 @@ afterEach(() => {
 
 /**
  * Task fixture を生成する。
- * @param overrides TaskPayload の上書き値
+ * @param overrides TaskFromPayloadInput の上書き値
  * @returns Task
  */
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: overrides.filePath ?? "id",
     title: overrides.title ?? "t",

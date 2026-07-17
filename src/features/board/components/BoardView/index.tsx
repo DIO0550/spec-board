@@ -1,10 +1,10 @@
+import type { Task } from "@/domains/task";
 import { Board } from "@/features/board/components/Board";
 import type { TaskDropHandler } from "@/features/board/components/BoardCardProvider";
 import type { ColumnReorderHandler } from "@/features/board/components/BoardColumnProvider";
 import { BoardProviders } from "@/features/board/components/BoardProviders";
 import type { MilestonesByName } from "@/features/board/components/TaskCard";
 import type { Column as ColumnType } from "@/types/column";
-import type { Task } from "@/types/task";
 
 /** BoardView の Props。board 描画に必要な最小集合を明示的に受ける。 */
 type BoardViewProps = {

@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { DetailScreen } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -27,7 +27,7 @@ afterEach(() => {
  * @param overrides - 上書きするフィールド
  * @returns テスト用タスク
  */
-function createTask(overrides: Partial<TaskPayload> = {}): Task {
+function createTask(overrides: Partial<TaskFromPayloadInput> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
     title: "テストタスク",

@@ -9,9 +9,9 @@ import {
   useMemo,
   useRef,
 } from "react";
+import type { Task } from "@/domains/task";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import { useBoardCard } from "@/features/board/components/BoardCardProvider";
-import type { Task } from "@/types/task";
 import { TaskCardContext, type TaskCardContextValue } from "../TaskCardContext";
 
 /** 子なしタスク用に固定参照を返す空配列。 */

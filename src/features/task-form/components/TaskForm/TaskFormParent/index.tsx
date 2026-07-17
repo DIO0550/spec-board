@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 import { ParentTaskSelect } from "../../ParentTaskSelect";
 
 type TaskFormParentProps = {

@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect } from "react";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task } from "@/domains/task";
+import type { TaskPayload } from "@/lib/tauri";
 import type { ProjectAction } from "./reducer";
 import type { ProjectState } from "./state/projectState";
 

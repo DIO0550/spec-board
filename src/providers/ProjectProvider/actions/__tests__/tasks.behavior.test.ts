@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import { TauriError, updateTask as updateTaskInvoke } from "@/lib/tauri";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { Result } from "@/utils/result";
 import {
   createProjectVersion,
@@ -25,10 +25,10 @@ const updateTaskMock = vi.mocked(updateTaskInvoke);
 
 /**
  * Task payload を最小限の overrides で生成するテストヘルパ。
- * @param overrides 上書きする TaskPayload フィールド
+ * @param overrides 上書きする TaskFromPayloadInput フィールド
  * @returns 楽観テストで扱う Task
  */
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: overrides.filePath ?? "id",
     title: "t",

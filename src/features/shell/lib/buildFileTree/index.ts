@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /** ファイルツリーのノード（ディレクトリ or タスクファイル）。 */
 export type FileTreeNode =

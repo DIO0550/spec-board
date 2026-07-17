@@ -5,10 +5,10 @@ import {
   tabNavPanelId,
   tabNavTabId,
 } from "@/components/TabNav";
+import type { Task } from "@/domains/task";
 import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
-import type { Task } from "@/types/task";
 import {
   type BoardViewMode,
   useBoardViewMode,

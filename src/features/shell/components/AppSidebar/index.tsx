@@ -1,5 +1,5 @@
+import type { Task } from "@/domains/task";
 import type { RecentProject } from "@/providers/RecentProjectsProvider";
-import type { Task } from "@/types/task";
 import { useSidebar } from "../../hooks/useSidebar";
 import { FileTree } from "../FileTree";
 import { ProjectSwitcher } from "../ProjectSwitcher";

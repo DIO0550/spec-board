@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { ParentLink } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -21,7 +21,7 @@ afterEach(() => {
  * @param overrides - 上書きフィールド
  * @returns Task
  */
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: "p1",
     title: "親タスク",
@@ -80,14 +80,12 @@ test("button は type='button' で data-testid='detail-parent-link' を持つ", 
   expect(button?.getAttribute("type")).toBe("button");
 });
 
-test("parentTask.title が空文字のとき、表示テキスト・aria-label が filePath にフォールバックする", () => {
+test("parentTask.title が空文字のとき、表示テキスト・aria-label は filePath basename (拡張子除去) にフォールバックする", () => {
   const parent = makeTask({ title: "", filePath: "tasks/parent.md" });
   render({ parentTask: parent, onSelect: noop });
   const button = container?.querySelector<HTMLButtonElement>(
     '[data-testid="detail-parent-link"]',
   );
-  expect(button?.textContent).toBe("親: tasks/parent.md");
-  expect(button?.getAttribute("aria-label")).toBe(
-    "親タスクに遷移: tasks/parent.md",
-  );
+  expect(button?.textContent).toBe("親: parent");
+  expect(button?.getAttribute("aria-label")).toBe("親タスクに遷移: parent");
 });

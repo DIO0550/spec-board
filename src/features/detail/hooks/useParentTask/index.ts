@@ -1,6 +1,6 @@
 import { useMemo } from "react";
+import type { Task } from "@/domains/task";
 import { parentReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
 
 /** useParentTask の引数 */
 export type UseParentTaskArgs = {

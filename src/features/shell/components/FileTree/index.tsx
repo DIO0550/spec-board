@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 import { buildFileTree } from "../../lib/buildFileTree";
 import { FileNodeItem } from "./FileNodeItem";
 

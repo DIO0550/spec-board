@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 import {
   applyTaskFilter,
   EMPTY_TASK_FILTER,

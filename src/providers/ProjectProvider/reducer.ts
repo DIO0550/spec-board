@@ -3,9 +3,9 @@ import {
   ProjectData as ProjectDataDomain,
   type ProjectData as ProjectDataT,
 } from "@/domains/project-data";
+import type { Task } from "@/domains/task";
 import type { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 import { ProjectState } from "./state/projectState";
 
 export type ProjectData = ProjectDataT;

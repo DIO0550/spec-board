@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
+import type { Task } from "@/domains/task";
 import type { MilestoneDefinition } from "@/lib/tauri";
-import type { Task } from "@/types/task";
 
 /** name → マイルストーン定義の Map（バッジ表示用）。 */
 export type MilestonesByName = Map<string, MilestoneDefinition>;

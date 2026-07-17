@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { Priority } from "@/domains/priority";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import {
   applyTaskFilter,
   EMPTY_TASK_FILTER,
@@ -10,7 +10,7 @@ import {
   type TaskFilterCriteria,
 } from "..";
 
-const buildTask = (overrides: Partial<TaskPayload>): Task => {
+const buildTask = (overrides: Partial<TaskFromPayloadInput>): Task => {
   return Task.fromPayload({
     id: overrides.id ?? "id",
     title: overrides.title ?? "タイトル",

@@ -1,6 +1,7 @@
+import { Task } from "@/domains/task";
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
+import type { TaskPayload } from "@/lib/tauri/taskCommands/types";
 import type { TauriError } from "@/lib/tauri/tauriError";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import type { LinkParams } from "../types";
 

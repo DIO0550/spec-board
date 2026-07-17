@@ -1,11 +1,11 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import { Task } from "@/domains/task";
 import { ThemeProvider } from "@/features/shell";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { ToastProvider } from "@/providers/ToastProvider";
 import { initialColumns, initialTasks } from "@/test-fixtures";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import { TaskCreateScreen } from ".";
 

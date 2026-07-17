@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /**
  * ラベルのグループ。標準 4 種 + その他 prefix（任意文字列）+ prefix 無し用 "default"。

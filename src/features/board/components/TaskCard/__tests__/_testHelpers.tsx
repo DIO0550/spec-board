@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 import {
   BoardCardProvider,
   type BoardCardProviderProps,

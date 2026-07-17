@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import { Task } from "@/domains/task";
 
 /** ParentLink の Props */
 export type ParentLinkProps = {
@@ -19,7 +19,7 @@ export type ParentLinkProps = {
 export const ParentLink = (props: ParentLinkProps) => {
   const { parentTask, onSelect } = props;
 
-  const displayTitle = parentTask.title || parentTask.filePath;
+  const displayTitle = Task.displayTitle(parentTask);
 
   /**
    * クリック時に親タスク id を渡して onSelect を呼ぶ。

@@ -2,8 +2,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import type { MilestoneDefinition } from "@/domains/milestone";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import type { MilestonesResource } from "@/hooks/useMilestones";
-import { Task, type TaskPayload } from "@/types/task";
 import { MilestoneViewScreen } from ".";
 
 /** デザインモック準拠のサンプルマイルストーン群（open / closed / overdue を網羅）。 */
@@ -72,7 +72,7 @@ const makeTask = (
   milestone: string,
   status: string,
 ): Task => {
-  const payload: TaskPayload = {
+  const payload: TaskFromPayloadInput = {
     id,
     title,
     status,

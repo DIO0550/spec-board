@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Due } from "@/domains/due";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 import {
   addMonth,
   bucketTasksByDue,

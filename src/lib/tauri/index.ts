@@ -55,6 +55,7 @@ export type {
   OpenProjectParams,
   OpenProjectPayload,
   OrphanStrategy,
+  TaskPayload,
   UpdateTaskParams,
 } from "./taskCommands/types";
 export { updateTask } from "./taskCommands/updateTask";

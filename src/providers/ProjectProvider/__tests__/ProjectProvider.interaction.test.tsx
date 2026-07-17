@@ -13,6 +13,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import {
   type CreateTaskParams,
   createTask as createTaskInvoke,
@@ -27,7 +28,6 @@ import {
   updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import {
   type ProjectData,
@@ -86,7 +86,9 @@ const deleteTaskMock = vi.mocked(deleteTaskInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 const listenMock = vi.mocked(listenInvoke);
 
-type ListenHandler<P = { task: TaskPayload }> = (event: { payload: P }) => void;
+type ListenHandler<P = { task: TaskFromPayloadInput }> = (event: {
+  payload: P;
+}) => void;
 
 type CaptureListenResult<P> = {
   handlers: ListenHandler<P>[];
@@ -120,7 +122,7 @@ const installCaptureListen = <P,>(
   return { handlersByEvent, unlistenByEvent };
 };
 
-const captureListen = <P = { task: TaskPayload }>(
+const captureListen = <P = { task: TaskFromPayloadInput }>(
   eventName: string,
 ): CaptureListenResult<P> => {
   const { handlersByEvent, unlistenByEvent } = installCaptureListen<P>([
@@ -1567,7 +1569,7 @@ test("task-created の listen Promise pending 中の unmount でも解決後 Unl
 
 // === task-updated IPC listener ===
 
-const taskAUpdatedPayload: TaskPayload = {
+const taskAUpdatedPayload: TaskFromPayloadInput = {
   id: "a",
   title: "A2",
   status: "Todo",
@@ -1808,7 +1810,7 @@ test("payload.task が undefined の task-updated は dispatch しない", async
   const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
   act(() => {
     handlers[0]({
-      payload: {} as unknown as { task: TaskPayload },
+      payload: {} as unknown as { task: TaskFromPayloadInput },
     });
   });
   const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
@@ -2009,7 +2011,7 @@ test("payload.filePath が string でない (number 等) の task-deleted は di
 
 test("parent あり task の filePath 削除で子の parent も未設定になる", async () => {
   const { handlers } = captureListen<{ filePath: string }>("task-deleted");
-  const childPayload: TaskPayload = {
+  const childPayload: TaskFromPayloadInput = {
     id: "c",
     title: "C",
     status: "Todo",
@@ -2049,14 +2051,14 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
 
 test("rename シーケンス: task-deleted handler → task-created handler 連続発火で最終的にカードが入れ替わる", async () => {
   const { handlersByEvent } = captureListenAll<
-    { task: TaskPayload } | { filePath: string }
+    { task: TaskFromPayloadInput } | { filePath: string }
   >(["task-deleted", "task-created"]);
   const probe = renderHook();
   await openLoaded(probe);
   expect(handlersByEvent["task-deleted"]).toHaveLength(1);
   expect(handlersByEvent["task-created"]).toHaveLength(1);
 
-  const newTaskPayload: TaskPayload = {
+  const newTaskPayload: TaskFromPayloadInput = {
     id: "a",
     title: "A",
     status: "Todo",
@@ -2078,7 +2080,7 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
   });
   act(() => {
     const createHandler = handlersByEvent["task-created"][0] as (event: {
-      payload: { task: TaskPayload };
+      payload: { task: TaskFromPayloadInput };
     }) => void;
     createHandler({ payload: { task: newTaskPayload } });
   });

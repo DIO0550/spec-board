@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /**
  * 移動先カラムの新しい filePaths を生成する純粋関数。

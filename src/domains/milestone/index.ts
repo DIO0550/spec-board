@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /** マイルストーンの開閉状態。`open` / `closed` 以外の未知値も保持する。 */
 export type MilestoneState = "open" | "closed" | (string & {});

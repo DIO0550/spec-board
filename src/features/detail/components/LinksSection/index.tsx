@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { TaskSelect } from "@/components/TaskSelect";
+import type { Task } from "@/domains/task";
 import { TaskLinks } from "@/domains/task-links";
 import { linkReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 
 /** LinksSection Props */

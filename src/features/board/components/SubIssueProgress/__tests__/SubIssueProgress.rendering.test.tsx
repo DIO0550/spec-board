@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { SubIssueProgress } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -16,7 +16,7 @@ afterEach(() => {
   container = null;
 });
 
-function createTask(overrides: Partial<TaskPayload> = {}): Task {
+function createTask(overrides: Partial<TaskFromPayloadInput> = {}): Task {
   return Task.fromPayload({
     id: "child-1",
     title: "子タスク",

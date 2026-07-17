@@ -1,8 +1,8 @@
 import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import type { Column as ColumnType } from "@/types/column";
-import { Task, type TaskPayload } from "@/types/task";
 import { type BoardCardApi, useBoardCard } from "../../BoardCardProvider";
 import { type BoardColumnApi, useBoardColumn } from "../../BoardColumnProvider";
 import { BoardProviders } from "..";
@@ -25,7 +25,7 @@ afterEach(() => {
   container = null;
 });
 
-const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "id",
     title: "t",

@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { computeMilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
-import { Task, type TaskPayload } from "@/types/task";
 
 const taskWith = (id: string, milestone: string, status: string): Task => {
-  const payload: TaskPayload = {
+  const payload: TaskFromPayloadInput = {
     id,
     title: id,
     status,

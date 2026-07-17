@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { Task } from "@/domains/task";
 import {
   addLink as addLinkInvoke,
   getColumns as getColumnsInvoke,
@@ -18,7 +19,6 @@ import {
   openProject as openProjectInvoke,
   TauriError,
 } from "@/lib/tauri";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
 vi.mock("@/lib/tauri", async () => {

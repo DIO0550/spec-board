@@ -1,6 +1,6 @@
 import { useMemo } from "react";
+import type { Task } from "@/domains/task";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
-import type { Task } from "@/types/task";
 import { SubIssueProgress } from "../../SubIssueProgress";
 import { useTaskCardContext } from "../TaskCardContext";
 

@@ -1,9 +1,9 @@
 import type { ProjectColumnsChange } from "@/domains/project-columns";
+import type { Task } from "@/domains/task";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { TaskLinks } from "@/domains/task-links";
 import { parentReferencesTaskPath } from "@/domains/task-path";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 
 export type ProjectData = {
   tasks: Task[];

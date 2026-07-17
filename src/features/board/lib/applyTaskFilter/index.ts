@@ -1,5 +1,5 @@
 import type { Priority } from "@/domains/priority";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /**
  * マイルストーンフィルタの選択状態。

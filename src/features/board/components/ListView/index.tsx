@@ -1,5 +1,5 @@
 import { DueBadge } from "@/components/DueBadge";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /** ListView の Props。 */
 type ListViewProps = {

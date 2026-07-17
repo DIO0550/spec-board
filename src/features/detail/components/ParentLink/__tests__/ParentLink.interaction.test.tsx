@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { ParentLink } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -21,7 +21,7 @@ afterEach(() => {
  * @param overrides - 上書きフィールド
  * @returns Task
  */
-const makeTask = (overrides: Partial<TaskPayload>): Task =>
+const makeTask = (overrides: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: "parent",
     title: "親タスク",

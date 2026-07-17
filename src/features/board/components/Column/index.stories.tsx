@@ -1,7 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Task } from "@/domains/task";
 import { initialTasks } from "@/test-fixtures";
-import { Task } from "@/types/task";
 import { withBoardCardProvider } from "../BoardCardProvider/storybook/decorator";
 import { withBoardColumnProvider } from "../BoardColumnProvider/storybook/decorator";
 import { Column } from ".";

@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
+import { Task } from "@/domains/task";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { normalizeRefPathForLookup } from "@/domains/task-path";
-import { Task } from "@/types/task";
 
 type SubIssueSectionProps = {
   /** 親タスク */
@@ -161,7 +161,7 @@ export const SubIssueSection = ({
             }
             const child = row.task;
             const isDone = Task.isDone(child, doneColumn);
-            const label = child.title || child.filePath;
+            const label = Task.displayTitle(child);
             return (
               <li key={child.id}>
                 <button

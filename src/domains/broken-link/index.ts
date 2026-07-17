@@ -1,8 +1,8 @@
+import type { Task } from "@/domains/task";
 import {
   normalizeRefPathForLookup,
   normalizeTaskPathForLookup,
 } from "@/domains/task-path";
-import type { Task } from "@/types/task";
 
 /**
  * 1 タスクの 4 種参照（parent / links / children / reverseLinks）について

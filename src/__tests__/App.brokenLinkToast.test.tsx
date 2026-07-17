@@ -10,13 +10,13 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { Task } from "@/domains/task";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
 vi.mock("@/lib/tauri", async () => {

@@ -9,9 +9,9 @@ import {
 } from "react";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { DEFAULT_DONE_COLUMN } from "@/domains/project-columns";
+import type { Task } from "@/domains/task";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { MilestoneDefinition } from "@/lib/tauri";
-import type { Task } from "@/types/task";
 import type { MilestonesByName } from "../TaskCard";
 
 /** drop 確定時に呼ばれる引数（Card 用）。 */

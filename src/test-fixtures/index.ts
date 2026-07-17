@@ -1,5 +1,5 @@
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import type { Column } from "@/types/column";
-import { Task, type TaskPayload } from "@/types/task";
 
 /** Storybook 用の固定カラム配列。 */
 export const initialColumns: Column[] = [
@@ -8,7 +8,7 @@ export const initialColumns: Column[] = [
   { name: "Done", order: 2 },
 ];
 
-const initialTaskPayloads: TaskPayload[] = [
+const initialTaskPayloads: TaskFromPayloadInput[] = [
   {
     id: "task-1",
     title: "ログイン画面のバグ修正",

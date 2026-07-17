@@ -1,8 +1,8 @@
 import { act, type ReactNode, StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import type { Column } from "@/types/column";
-import { Task, type TaskPayload } from "@/types/task";
 import {
   type BoardColumnApi,
   BoardColumnProvider,
@@ -33,7 +33,7 @@ afterEach(() => {
  * @param patch 上書きしたい一部フィールド
  * @returns Task
  */
-const makeTask = (patch: Partial<TaskPayload>): Task =>
+const makeTask = (patch: Partial<TaskFromPayloadInput>): Task =>
   Task.fromPayload({
     id: patch.id ?? "id",
     title: patch.title ?? "title",

@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { DetailScreen } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -27,7 +27,7 @@ afterEach(() => {
  * @param overrides - 上書きするフィールド
  * @returns テスト用タスク
  */
-function createTask(overrides: Partial<TaskPayload> = {}): Task {
+function createTask(overrides: Partial<TaskFromPayloadInput> = {}): Task {
   return Task.fromPayload({
     id: "task-1",
     title: "テストタスク",
@@ -87,15 +87,13 @@ test("タスクタイトルを表す h1 が 1 つ存在する", () => {
   expect(headings[0].textContent).toBe("見出しタスク");
 });
 
-test("タイトルが空のとき h1 は filePath を表示する", () => {
+test("タイトルが空のとき h1 は filePath basename (拡張子除去) を表示する", () => {
   render(
     buildProps({
       task: createTask({ title: "", filePath: "tasks/empty-title.md" }),
     }),
   );
-  expect(document.querySelector("h1")?.textContent).toBe(
-    "tasks/empty-title.md",
-  );
+  expect(document.querySelector("h1")?.textContent).toBe("empty-title");
 });
 
 test("ルート section が aria-label と tabIndex=-1 を持つランドマークである", () => {

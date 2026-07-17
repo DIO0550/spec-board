@@ -3,6 +3,7 @@ import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
+import { Task } from "@/domains/task";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
@@ -45,7 +46,6 @@ import {
   useTaskCreate,
 } from "./features/task-form";
 import type { Column } from "./types/column";
-import type { Task } from "./types/task";
 
 /** State の表示用 ProjectData を返すための内部型。 */
 type DisplayableData = {
@@ -676,9 +676,11 @@ const AppShell = () => {
 
   const handleTaskDrop = useCallback(
     async (params: MoveTaskParams): Promise<void> => {
+      const targetTask = tasks.find((t) => t.filePath === params.taskFilePath);
       const targetTitle =
-        tasks.find((t) => t.filePath === params.taskFilePath)?.title ??
-        params.taskFilePath;
+        targetTask === undefined
+          ? params.taskFilePath
+          : Task.displayTitle(targetTask);
       /**
        * カラム間 status 変更の楽観 dispatch 直後に呼ばれる callback。
        * 同一カラム並び替え（fromColumn === toColumn）では LiveRegion を更新しない。
@@ -775,8 +777,10 @@ const AppShell = () => {
     async (sourceFilePath: string, targetFilePath: string) => {
       const source = tasks.find((t) => t.filePath === sourceFilePath);
       const target = tasks.find((t) => t.filePath === targetFilePath);
-      const sourceTitle = source?.title || sourceFilePath;
-      const targetTitle = target?.title || targetFilePath;
+      const sourceTitle =
+        source === undefined ? sourceFilePath : Task.displayTitle(source);
+      const targetTitle =
+        target === undefined ? targetFilePath : Task.displayTitle(target);
 
       const result = await addLink({
         filePath: sourceFilePath,
@@ -815,8 +819,10 @@ const AppShell = () => {
     async (sourceFilePath: string, targetFilePath: string) => {
       const source = tasks.find((t) => t.filePath === sourceFilePath);
       const target = tasks.find((t) => t.filePath === targetFilePath);
-      const sourceTitle = source?.title || sourceFilePath;
-      const targetTitle = target?.title || targetFilePath;
+      const sourceTitle =
+        source === undefined ? sourceFilePath : Task.displayTitle(source);
+      const targetTitle =
+        target === undefined ? targetFilePath : Task.displayTitle(target);
 
       const result = await removeLink({
         filePath: sourceFilePath,

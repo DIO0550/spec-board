@@ -1,13 +1,13 @@
 import { act, createElement, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Task } from "@/domains/task";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
-import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import { ProjectProvider, type ProjectState } from "..";
 import {

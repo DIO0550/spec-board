@@ -1,8 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { getLabels } from "@/lib/tauri";
-import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { DetailScreen } from "..";
 
@@ -49,7 +49,7 @@ afterEach(() => {
  * @param overrides - 上書きするフィールド
  * @returns テスト用タスク
  */
-const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const createTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "task-1",
     title: "テストタスク",

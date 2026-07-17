@@ -1,11 +1,11 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import type {
   TaskFilterCriteria,
   TaskFilterOptions,
 } from "@/features/board/lib/applyTaskFilter";
-import { Task, type TaskPayload } from "@/types/task";
 import { type UseTaskFilterResult, useTaskFilter } from "..";
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
@@ -40,7 +40,7 @@ const taskWith = (
   labels: string[],
   milestone: string | undefined,
 ): Task => {
-  const payload: TaskPayload = {
+  const payload: TaskFromPayloadInput = {
     id,
     title: id,
     status,

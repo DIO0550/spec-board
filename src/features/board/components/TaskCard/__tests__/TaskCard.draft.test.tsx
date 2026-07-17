@@ -1,7 +1,7 @@
 import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFromPayloadInput } from "@/domains/task";
 import { type BoardCardApi, useBoardCard } from "../../BoardCardProvider";
 import { TaskCard } from "..";
 import { wrapWithCardProvider } from "./_testHelpers";
@@ -18,7 +18,7 @@ afterEach(() => {
   container = null;
 });
 
-const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
+const createTask = (overrides: Partial<TaskFromPayloadInput> = {}): Task =>
   Task.fromPayload({
     id: "task-1",
     title: "テストタスク",

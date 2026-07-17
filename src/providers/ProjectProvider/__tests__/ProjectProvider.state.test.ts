@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
+import type { Task } from "@/domains/task";
 import { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 import {
   initialState,
   type ProjectAction,

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { Priority } from "@/domains/priority";
-import type { Task } from "@/types/task";
+import type { Task } from "@/domains/task";
 
 /**
  * タスク更新コールバックの型。id と更新フィールドを受け取る。

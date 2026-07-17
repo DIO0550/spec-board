@@ -1,8 +1,8 @@
+import type { Task } from "@/domains/task";
 import {
   normalizeRefPathForLookup,
   normalizeTaskPathForLookup,
 } from "@/domains/task-path";
-import type { Task } from "@/types/task";
 
 /** タスク階層ツリーの 1 ノード。 */
 export type TaskTreeNode = {

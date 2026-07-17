@@ -10,10 +10,10 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import type { TaskFromPayloadInput } from "@/domains/task";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import { unregisterToastSink } from "@/lib/tauri";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
-import type { TaskPayload } from "@/types/task";
 
 // (b) 実発火版 / (c) 撤去回帰版 / 非サイレント系の統合テスト。
 // root barrel `@/lib/tauri` は丸ごとモックせず、`@tauri-apps/api/core` の invoke だけを
@@ -60,7 +60,7 @@ let root: Root | null = null;
 
 const seedFilePath = "tasks/a.md";
 
-const seedTaskPayload: TaskPayload = {
+const seedTaskPayload: TaskFromPayloadInput = {
   id: "a",
   title: "A タスク",
   status: "Todo",
@@ -74,7 +74,7 @@ const seedTaskPayload: TaskPayload = {
   warnings: [],
 };
 
-const seedTaskPayloadB: TaskPayload = {
+const seedTaskPayloadB: TaskFromPayloadInput = {
   id: "b",
   title: "B タスク",
   status: "Todo",
