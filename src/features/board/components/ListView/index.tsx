@@ -1,5 +1,5 @@
 import { DueBadge } from "@/components/DueBadge";
-import type { Task } from "@/domains/task";
+import { Task } from "@/domains/task";
 
 /** ListView の Props。 */
 type ListViewProps = {
@@ -33,7 +33,7 @@ export const ListView = ({ tasks, onTaskClick }: ListViewProps) => {
             className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-muted"
           >
             <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-              {task.title}
+              {Task.displayTitle(task)}
             </span>
             <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-xs text-muted">
               {task.status}

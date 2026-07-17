@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Due } from "@/domains/due";
-import type { Task } from "@/domains/task";
+import { Task } from "@/domains/task";
 import {
   addMonth,
   bucketTasksByDue,
@@ -122,7 +122,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                       onClick={() => onTaskClick?.(task.id)}
                       className="w-full truncate rounded bg-accent-soft px-1 py-0.5 text-left text-xs text-foreground hover:brightness-95"
                     >
-                      {task.title}
+                      {Task.displayTitle(task)}
                     </button>
                   </li>
                 ))}
@@ -143,7 +143,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                   onClick={() => onTaskClick?.(task.id)}
                   className="rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-surface-muted"
                 >
-                  {task.title}
+                  {Task.displayTitle(task)}
                 </button>
               </li>
             ))}

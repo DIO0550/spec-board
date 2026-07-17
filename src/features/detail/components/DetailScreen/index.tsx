@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBrokenLinks } from "@/domains/broken-link";
-import type { Task } from "@/domains/task";
-import { Task as TaskDomain } from "@/domains/task";
+import { Task } from "@/domains/task";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
@@ -165,7 +164,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
       aria-label="タスク詳細"
       className="flex flex-1 flex-col overflow-hidden focus:outline-none md:flex-row"
     >
-      <h1 className="sr-only">{TaskDomain.displayTitle(task)}</h1>
+      <h1 className="sr-only">{Task.displayTitle(task)}</h1>
       <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
         <button
           type="button"

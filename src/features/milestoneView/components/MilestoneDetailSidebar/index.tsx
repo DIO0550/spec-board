@@ -1,6 +1,6 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
 import { Milestone } from "@/domains/milestone";
-import type { Task } from "@/domains/task";
+import { Task } from "@/domains/task";
 import { MilestoneCountdownBadge } from "@/features/milestoneView/components/MilestoneCountdownBadge";
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
 import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
@@ -134,7 +134,7 @@ export const MilestoneDetailSidebar = ({
                       isDone ? "text-muted line-through" : "text-foreground"
                     }`}
                   >
-                    {t.title}
+                    {Task.displayTitle(t)}
                   </span>
                 </li>
               );

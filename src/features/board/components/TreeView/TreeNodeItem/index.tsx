@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { DueBadge } from "@/components/DueBadge";
+import { Task } from "@/domains/task";
 import type { TaskTreeNode } from "@/features/board/lib/buildTaskTree";
 
 /**
@@ -54,7 +55,7 @@ export const TreeNodeItem = memo(({ node, onSelect }: TreeNodeItemProps) => {
           className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-4 text-left"
         >
           <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-            {node.task.title}
+            {Task.displayTitle(node.task)}
           </span>
           <span className="shrink-0 text-xs text-muted">
             {node.task.status}
