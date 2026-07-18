@@ -3,6 +3,7 @@ services:
     build:
       context: ./node
       dockerfile: Dockerfile
+    container_name: spec-board
     volumes:
       - ..:/workspace:cached
     ports:
