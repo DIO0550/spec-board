@@ -289,6 +289,13 @@ const invertLinkOperations = (
 
   // filePath → field → 「value → 実効復元 index」（field 配列 1 パスの前計算を lazy に共有）
   const restoreIndexByFilePath = new Map<string, PerFieldRestoreIndex>();
+  /**
+   * remove operation の inverse append が使う実効復元 index を返す。
+   * filePath / field 単位で `buildRestoreIndexMap` の結果をキャッシュし、
+   * 同じ field への複数 operation でも snapshot 走査を 1 回に抑える。
+   * @param operation 反転対象の remove operation
+   * @returns 実効復元 index（snapshot に該当 task / value が無ければ undefined）
+   */
   const restoreIndexFor = (operation: LinkOperation): number | undefined => {
     const fieldValues = snapshotFieldValues(snapshot, operation);
     if (fieldValues === undefined) {
