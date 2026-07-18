@@ -371,6 +371,112 @@ test("self-link 削除では source 側 1 回の dispatch で linkedFilePaths �
   expect(optimistic.task.links.reverseLinkedFilePaths).toEqual([]);
 });
 
+test("forward link が無ければ IPC を呼ばず現行 source で成功し stale な target reverse は残置される", async () => {
+  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/x.md"] });
+  const target = makeTask({
+    filePath: "tasks/b.md",
+    reverseLinks: ["tasks/a.md"],
+  });
+  const harness = setupLoaded(makeData([source, target]));
+
+  const result = await removeLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "tasks/b.md",
+  });
+
+  const value = expectOk<Task, ProjectError>(result);
+  expect(value.links.linkedFilePaths).toEqual(["tasks/x.md"]);
+  expect(removeLinkMock).not.toHaveBeenCalled();
+  // stale な target reverse は触らず残置（dispatch 0 件）
+  expect(harness.actions).toHaveLength(0);
+});
+
+test("dot-prefix raw の削除で forward（raw 一致）と target reverse（canonical）の両方が楽観除去される", async () => {
+  const source = makeTask({ filePath: "tasks/a.md", links: ["./tasks/b.md"] });
+  const target = makeTask({
+    filePath: "tasks/b.md",
+    reverseLinks: ["tasks/a.md"],
+  });
+  const harness = setupLoaded(makeData([source, target]));
+  removeLinkMock.mockResolvedValue(
+    Result.ok(okTask({ id: "tasks/a.md", filePath: "tasks/a.md", links: [] })),
+  );
+
+  await removeLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "./tasks/b.md",
+  });
+
+  const sourceOptimistic = asTaskUpdated(
+    harness.actions.find(
+      (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    ),
+  );
+  expect(sourceOptimistic.task.links.linkedFilePaths).toEqual([]);
+  const targetUpdate = asTaskUpdated(
+    harness.actions.find(
+      (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+    ),
+  );
+  expect(targetUpdate.task.links.reverseLinkedFilePaths).toEqual([]);
+});
+
+test("raw 表記の self-link 削除も 1 dispatch で forward / reverse の両方が消える", async () => {
+  const selfTask = makeTask({
+    filePath: "tasks/a.md",
+    links: ["./tasks/a.md"],
+    reverseLinks: ["tasks/a.md"],
+  });
+  const harness = setupLoaded(makeData([selfTask]));
+  removeLinkMock.mockResolvedValue(
+    Result.ok(
+      okTask({
+        id: "tasks/a.md",
+        filePath: "tasks/a.md",
+        links: [],
+        reverseLinks: [],
+      }),
+    ),
+  );
+
+  await removeLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "./tasks/a.md",
+  });
+
+  const sourceUpdates = harness.actions.filter(
+    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+  );
+  expect(sourceUpdates).toHaveLength(2);
+  const optimistic = asTaskUpdated(sourceUpdates[0]);
+  expect(optimistic.task.links.linkedFilePaths).toEqual([]);
+  expect(optimistic.task.links.reverseLinkedFilePaths).toEqual([]);
+});
+
+test("解決不能な raw（broken link）は source のみ楽観除去され IPC は呼ばれる", async () => {
+  const source = makeTask({
+    filePath: "tasks/a.md",
+    links: ["./tasks/gone.md"],
+  });
+  const harness = setupLoaded(makeData([source]));
+  removeLinkMock.mockResolvedValue(
+    Result.ok(okTask({ id: "tasks/a.md", filePath: "tasks/a.md", links: [] })),
+  );
+
+  await removeLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "./tasks/gone.md",
+  });
+
+  expect(removeLinkMock).toHaveBeenCalledTimes(1);
+  const sourceOptimistic = asTaskUpdated(
+    harness.actions.find(
+      (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    ),
+  );
+  expect(sourceOptimistic.task.links.linkedFilePaths).toEqual([]);
+});
+
 test("idle state では preflight invalid-state で IPC を呼ばない", async () => {
   const state = { current: { kind: "idle" } as ProjectState };
   const actions: ProjectAction[] = [];
