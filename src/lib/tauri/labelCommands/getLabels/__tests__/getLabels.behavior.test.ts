@@ -1,12 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { LabelDefinition } from "@/lib/tauri";
+import type { WireLabelDefinition } from "@/lib/tauri";
 import { getLabels } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-const labelsFixture: LabelDefinition[] = [
+const labelsFixture: WireLabelDefinition[] = [
   { name: "bug", description: "バグ報告", group: "type", color: "#D73A4A" },
   { name: "enhancement" },
 ];

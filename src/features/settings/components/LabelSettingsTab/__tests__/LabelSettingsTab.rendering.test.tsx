@@ -2,6 +2,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vitest";
+import { LabelDefinition } from "@/domains/label-definition";
 import { LabelRegistry } from "@/domains/label-registry";
 import type { LabelsResource } from "@/hooks/useLabels";
 import { LabelSettingsTab } from "..";
@@ -42,7 +43,7 @@ const buildResource = (
   return {
     labels,
     usageCounts: override.usageCounts ?? {},
-    byName: new Map(labels.map((l) => [l.name, l])),
+    byName: LabelDefinition.byName(labels),
     status: override.status ?? "loaded",
     error: override.error,
     reload: override.reload ?? noopReload,
@@ -66,7 +67,10 @@ const render = (resource: LabelsResource): void => {
 test("loaded で各ラベル名が描画される", () => {
   render(
     buildResource({
-      labels: [{ name: "type:feature" }, { name: "priority:high" }],
+      labels: LabelDefinition.listFromWire([
+        { name: "type:feature" },
+        { name: "priority:high" },
+      ]),
     }),
   );
   expect(container?.textContent).toContain("type:feature");
@@ -77,7 +81,9 @@ test("color が #RRGGBB のラベルはその色がインライン style に付�
   const html = renderToStaticMarkup(
     createElement(LabelSettingsTab, {
       resource: buildResource({
-        labels: [{ name: "custom", color: "#FF8800" }],
+        labels: LabelDefinition.listFromWire([
+          { name: "custom", color: "#FF8800" },
+        ]),
       }),
       onLabelUsageClick: () => {},
     }),
@@ -90,7 +96,9 @@ test("color 無し・group ありは tokensForGroup の oklch が付く", () => 
   const html = renderToStaticMarkup(
     createElement(LabelSettingsTab, {
       resource: buildResource({
-        labels: [{ name: "feature", group: "type" }],
+        labels: LabelDefinition.listFromWire([
+          { name: "feature", group: "type" },
+        ]),
       }),
       onLabelUsageClick: () => {},
     }),
@@ -102,7 +110,9 @@ test("color も group も無しは tokensForLabel(name) の oklch が付く", ()
   const { bg } = LabelRegistry.tokensForLabel("priority:high");
   const html = renderToStaticMarkup(
     createElement(LabelSettingsTab, {
-      resource: buildResource({ labels: [{ name: "priority:high" }] }),
+      resource: buildResource({
+        labels: LabelDefinition.listFromWire([{ name: "priority:high" }]),
+      }),
       onLabelUsageClick: () => {},
     }),
   );
@@ -114,7 +124,9 @@ test("group は name の prefix より優先される", () => {
   const html = renderToStaticMarkup(
     createElement(LabelSettingsTab, {
       resource: buildResource({
-        labels: [{ name: "priority:high", group: "type" }],
+        labels: LabelDefinition.listFromWire([
+          { name: "priority:high", group: "type" },
+        ]),
       }),
       onLabelUsageClick: () => {},
     }),
@@ -150,7 +162,10 @@ test("idle（プロジェクト未オープン）のとき専用文言を表示�
 test("usageCount=0 は非リンク、>0 は『N 件』リンク", () => {
   render(
     buildResource({
-      labels: [{ name: "bug" }, { name: "wontfix" }],
+      labels: LabelDefinition.listFromWire([
+        { name: "bug" },
+        { name: "wontfix" },
+      ]),
       usageCounts: { bug: 8 },
     }),
   );
@@ -161,6 +176,10 @@ test("usageCount=0 は非リンク、>0 は『N 件』リンク", () => {
 });
 
 test("updated 無しは『新規』表示", () => {
-  render(buildResource({ labels: [{ name: "needs-triage" }] }));
+  render(
+    buildResource({
+      labels: LabelDefinition.listFromWire([{ name: "needs-triage" }]),
+    }),
+  );
   expect(container?.textContent).toContain("新規");
 });

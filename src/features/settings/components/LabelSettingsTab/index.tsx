@@ -1,5 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import {
+  LabelDefinition,
+  type LabelDefinition as LabelDefinitionType,
+  LabelDraft,
+  type LabelDraft as LabelDraftType,
+  type LabelName,
+} from "@/domains/label-definition";
+import {
   filterLabels,
   type LabelGroupFilter,
   type LabelSort,
@@ -9,55 +16,14 @@ import {
   sortLabels,
 } from "@/features/settings/lib/labelSettings/derive";
 import type { LabelsResource } from "@/hooks/useLabels";
-import {
-  type CreateLabelArgs,
-  exportLabels,
-  type LabelDefinition,
-  saveFileDialog,
-} from "@/lib/tauri";
+import { exportLabels, saveFileDialog } from "@/lib/tauri";
 import { getToastSink } from "@/lib/tauri/toastSink";
 import { useLabelMutations } from "../../hooks/useLabelMutations";
-import {
-  CreateLabelForm,
-  EMPTY_LABEL_FORM,
-  type LabelFormValues,
-} from "./CreateLabelForm";
+import { CreateLabelForm } from "./CreateLabelForm";
 import { LabelFilterBar } from "./LabelFilterBar";
 import { LabelFooterTally } from "./LabelFooterTally";
 import { LabelStatsHeader } from "./LabelStatsHeader";
 import { LabelTable } from "./LabelTable";
-
-/**
- * ラベル定義 → フォーム初期値。
- * @param def - ラベル定義
- * @returns フォーム値
- */
-const toForm = (def: LabelDefinition): LabelFormValues => ({
-  name: def.name,
-  description: def.description ?? "",
-  group: def.group ?? "",
-  color: def.color ?? "",
-});
-
-/**
- * フォーム入力値を CreateLabelArgs に正規化する。空文字は undefined に倒し、
- * BE が group/color を skip_serializing_if で省略 / lenient 既定色化できるようにする。
- * @param values - フォーム入力値
- * @returns 送信用 args
- */
-const toArgs = (values: LabelFormValues): CreateLabelArgs => {
-  // 各フィールドは送信前に trim する。空白のみの入力 ("   ") は
-  // LabelRegistry.effectiveGroup（trim 比較）と整合するよう undefined に正規化する。
-  const trimmedDescription = values.description.trim();
-  const trimmedGroup = values.group.trim();
-  const trimmedColor = values.color.trim();
-  return {
-    name: values.name.trim(),
-    description: trimmedDescription === "" ? undefined : trimmedDescription,
-    group: trimmedGroup === "" ? undefined : trimmedGroup,
-    color: trimmedColor === "" ? undefined : trimmedColor,
-  };
-};
 
 type LabelSettingsTabProps = {
   /** App / SettingsScreen から配られるラベルリソース（唯一の取得点・live usageCounts 上書き済み） */
@@ -83,8 +49,8 @@ export const LabelSettingsTab = ({
 }: LabelSettingsTabProps) => {
   const { labels, usageCounts, status, reload } = resource;
   const { isPending, create, update, remove } = useLabelMutations(reload);
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [form, setForm] = useState<LabelFormValues>(EMPTY_LABEL_FORM);
+  const [editingName, setEditingName] = useState<LabelName | null>(null);
+  const [form, setForm] = useState<LabelDraftType>(LabelDraft.empty());
   // export 専用の in-flight ガード。state は disabled 表示用、ref は連打レース防止用
   // （state 反映前の click でも ref で即時ガードされる）。
   const [isExporting, setIsExporting] = useState(false);
@@ -94,6 +60,11 @@ export const LabelSettingsTab = ({
     kind: "all",
   });
   const [sort, setSort] = useState<LabelSort>("name");
+
+  const validation = useMemo(
+    () => LabelDraft.validate(form, labels, editingName),
+    [form, labels, editingName],
+  );
 
   const filtered = useMemo(
     () => filterLabels(labels, keyword, groupFilter),
@@ -126,54 +97,49 @@ export const LabelSettingsTab = ({
    * @param key - 更新するフィールド名
    * @param value - 新しい値
    */
-  const setField = (key: keyof LabelFormValues, value: string): void => {
+  const setField = (key: keyof LabelDraftType, value: string): void => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
   /** フォームを新規モードへリセットする。 */
   const resetForm = (): void => {
     setEditingName(null);
-    setForm(EMPTY_LABEL_FORM);
+    setForm(LabelDraft.empty());
   };
 
   /**
    * 編集モードへ切り替える。
    * @param def - 編集対象のラベル定義
    */
-  const startEdit = (def: LabelDefinition): void => {
+  const startEdit = (def: LabelDefinitionType): void => {
     setEditingName(def.name);
-    setForm(toForm(def));
+    setForm(LabelDraft.fromDefinition(def));
   };
 
   /** フォーム送信（新規作成 or 更新）。成功時はフォームをリセットする。 */
   const handleSubmit = async (): Promise<void> => {
-    const args = toArgs(form);
-    if (args.name === "") {
+    if (validation.errors.length > 0) {
       return;
     }
     if (editingName === null) {
-      const created = await create(args);
+      const created = await create(LabelDraft.toCreateArgs(form));
       if (created) {
         resetForm();
       }
       return;
     }
-    // 更新は PUT セマンティクスで「未指定フィールドはクリア」される。`toArgs` が空文字を
-    // undefined に倒すため、ユーザーがフォームを空欄にしたまま送信すると、そのフィールドの
-    // 既存値（description / group / color）はクリアされる挙動になる（UI で削除を表現する経路）。
-    // UI で全フィールド編集可なため、form 値をそのまま送って良い（name は固定）。
-    const updated = await update({ ...args, name: editingName });
+    const updated = await update(LabelDraft.toUpdateArgs(editingName, form));
     if (updated) {
       resetForm();
     }
   };
 
   /**
-   * 削除確認 → mutation 実行。編集中対象なら resetForm へ戻す。
+   * 削除確認 → mutation 実行。成功時のみ編集状態をリセットする。
    * @param name - 削除対象 name
    */
-  const handleDelete = async (name: string): Promise<void> => {
-    const count = usageCounts[name] ?? 0;
+  const handleDelete = async (name: LabelName): Promise<void> => {
+    const count = LabelDefinition.usageOf(usageCounts, name);
     const message =
       count > 0
         ? `「${name}」は ${count} 件のタスクで使用中です。削除しますか？（タスクの値は残ります）`
@@ -181,8 +147,8 @@ export const LabelSettingsTab = ({
     if (!globalThis.confirm(message)) {
       return;
     }
-    await remove(name);
-    if (editingName === name) {
+    const removed = await remove(name);
+    if (removed && editingName === name) {
       resetForm();
     }
   };
@@ -257,6 +223,7 @@ export const LabelSettingsTab = ({
         values={form}
         editingName={editingName}
         isPending={isPending}
+        validation={validation}
         groupOptions={groupCounts.groups.map((g) => g.group)}
         onChange={setField}
         onReset={resetForm}

@@ -142,7 +142,7 @@ labels:
 
 ```ts
 type GetLabelsPayload = {
-  labels: LabelDefinition[];          // 定義順を保持
+  labels: WireLabelDefinition[];      // 定義順を保持（FE は adapter で domain 型へ変換）
   usageCounts: { [name: string]: number }; // ラベル名 → 使用タスク件数
 };
 ```
@@ -176,7 +176,13 @@ type GetLabelsPayload = {
 設定 → ラベルタブ（`LabelSettingsTab`）は labels.yml の CRUD と表示集計を備えるフル機能の管理画面として動作する。マイルストーン設定画面のパターン（楽観更新せず成功時 reload で確定）を踏襲する。
 
 - **作成 / 編集フォーム**: 名前 / 説明 / グループ / カラー（HEX 直接入力 + `<input type="color">` + プリセット10色のスウォッチ）を 1 フォームで扱う。プレビューチップはフォーム値から即時反映する（color → group → name の優先順位で色を解決）。プリセット色は `{ red, orange, yellow, green, teal, blue, indigo, purple, pink, gray }` の `#RRGGBB`。
-- **編集モード**: 一覧の「編集」ボタンで `name` を固定（disabled）したフォームへ既存値を流し込む。送信時は全フィールド送信（PUT セマンティクス）。「キャンセル」で新規モードへ戻る。
+- **作成時の name 保存**: name は trim せず raw のまま保存する。前後空白を検知した場合は警告を表示するが送信は許容する。
+- **FE validation（フォーム送信前）**:
+  - **完全一致重複**: 既存と完全一致の name は form エラーで送信ブロック。
+  - **類似名警告**: case / 前後空白差のみの name は警告表示で送信許容。
+  - **空白のみ name の新規作成不可**: 空文字・空白のみの name は `name-required` エラーで送信不可（既存の空白のみ name ラベルの閲覧・編集は可能）。
+  - **color-invalid 警告**: 不正 HEX（`#RRGGBB` 以外）は警告のみ。BE が既定色へ倒す lenient 契約を尊重し送信は許容する。
+- **編集モード**: 一覧の「編集」ボタンで `name` を固定（disabled）したフォームへ既存値を流し込む。name 系 validation はスキップされ `color-invalid` のみ判定する。送信時は全フィールド送信（PUT セマンティクス）。description / group は raw 保持・空欄のみ undefined（クリア）。color のみ trim 済み実効値を送信する。「キャンセル」で新規モードへ戻る。
 - **削除確認**: `globalThis.confirm` で確認文言を分岐する。使用数 `> 0` のとき「『name』は N 件のタスクで使用中です。削除しますか？（タスクの値は残ります）」、使用数 `= 0` のとき「『name』を削除しますか？」。キャンセルで `delete_label` は呼ばない。
 - **フィルタバー**: グループチップ（件数つき / 「すべて」+ 各グループ）+ 検索ボックス（name / description 部分一致・大小無視）+ ソート select（`name` 昇順 / `usage` 降順 / `updated` 新しい順）。グループ選択は判別 union `{ kind: "all" } | { kind: "group"; value }` で表現し、実グループ名 `"all"` との衝突を回避する。
 - **テーブル**: 列は「ラベルチップ / 説明 / 使用数 / グループ badge / 更新 / 行アクション」。`updated` 未設定は「新規」を表示。相対時刻は「たった今 / N 分前 / N 時間前 / 昨日 / N 日前 / N週間前 / Nヶ月前 / YYYY/MM/DD」。

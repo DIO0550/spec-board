@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { LabelDefinition } from "@/domains/label-definition";
 import {
   filterLabels,
   type LabelGroupFilter,
@@ -8,9 +9,8 @@ import {
   labelStats,
   sortLabels,
 } from "@/features/settings/lib/labelSettings/derive";
-import type { LabelDefinition } from "@/lib/tauri";
 
-const labels: LabelDefinition[] = [
+const labels = LabelDefinition.listFromWire([
   {
     name: "bug",
     description: "バグ報告",
@@ -36,7 +36,7 @@ const labels: LabelDefinition[] = [
     group: "status",
     updated: "2026-05-16T12:00:00Z",
   },
-];
+]);
 
 const allFilter: LabelGroupFilter = { kind: "all" };
 
@@ -70,7 +70,9 @@ test("filterLabels: group + keyword の併用は AND", () => {
 });
 
 test("filterLabels: kind=group で 'all' を指定しても群名と衝突しない", () => {
-  const withAllGroup: LabelDefinition[] = [{ name: "anything", group: "all" }];
+  const withAllGroup = LabelDefinition.listFromWire([
+    { name: "anything", group: "all" },
+  ]);
   expect(
     filterLabels(withAllGroup, "", { kind: "group", value: "all" }).map(
       (l) => l.name,
@@ -103,11 +105,11 @@ test.each<[LabelSort, string[]]>([
 });
 
 test("sortLabels: updated 無しは末尾へ送る（安定）", () => {
-  const withMissing: LabelDefinition[] = [
+  const withMissing = LabelDefinition.listFromWire([
     { name: "noupdated" },
     { name: "newest", updated: "2026-06-16T11:58:00Z" },
     { name: "older", updated: "2026-06-15T11:58:00Z" },
-  ];
+  ]);
   expect(sortLabels(withMissing, "updated", {}).map((l) => l.name)).toEqual([
     "newest",
     "older",
@@ -132,12 +134,12 @@ test("labelStats: usageCounts に未定義キーは未使用扱い", () => {
 });
 
 test("labelGroupCounts: all + グループ別件数（group 無しは default）", () => {
-  const mixed: LabelDefinition[] = [
+  const mixed = LabelDefinition.listFromWire([
     { name: "x", group: "type" },
     { name: "y", group: "type" },
     { name: "z", group: "area" },
     { name: "n" },
-  ];
+  ]);
   expect(labelGroupCounts(mixed)).toEqual({
     all: 4,
     groups: [
@@ -158,11 +160,11 @@ test("labelColorTally: 使用中ラベルのみ・色キー（color or group）�
 });
 
 test("labelGroupCounts: __proto__ / constructor のような group 名でも継承プロパティと衝突せず数える", () => {
-  const labels: LabelDefinition[] = [
+  const labels = LabelDefinition.listFromWire([
     { name: "a", group: "__proto__" },
     { name: "b", group: "__proto__" },
     { name: "c", group: "constructor" },
-  ];
+  ]);
   const result = labelGroupCounts(labels);
   expect(result.all).toBe(3);
   expect(result.groups).toContainEqual({ group: "__proto__", count: 2 });
@@ -170,11 +172,11 @@ test("labelGroupCounts: __proto__ / constructor のような group 名でも継�
 });
 
 test("labelColorTally: __proto__ / constructor の group fallback でも継承プロパティと衝突せず数える", () => {
-  const labels: LabelDefinition[] = [
+  const labels = LabelDefinition.listFromWire([
     { name: "a", group: "__proto__" },
     { name: "b", group: "__proto__" },
     { name: "c", group: "constructor" },
-  ];
+  ]);
   const usageCounts: Record<string, number> = { a: 1, b: 1, c: 1 };
   const tally = labelColorTally(labels, usageCounts);
   expect(tally).toContainEqual({ color: "__proto__", count: 2 });

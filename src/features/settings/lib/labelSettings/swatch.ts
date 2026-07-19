@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
+import type { LabelDefinition, LabelPreview } from "@/domains/label-definition";
 import { LabelRegistry } from "@/domains/label-registry";
-import type { LabelDefinition } from "@/lib/tauri";
 
 /**
  * ラベル 1 件のスワッチに適用する色スタイルを解決する。
@@ -13,7 +13,7 @@ import type { LabelDefinition } from "@/lib/tauri";
  * @returns スワッチ要素へ束ねるインライン style
  */
 export const resolveLabelSwatchStyle = (
-  label: LabelDefinition,
+  label: LabelDefinition | LabelPreview,
 ): CSSProperties => {
   if (label.color) {
     return { backgroundColor: label.color };

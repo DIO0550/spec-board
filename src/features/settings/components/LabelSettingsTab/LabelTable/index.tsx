@@ -1,6 +1,6 @@
+import type { LabelDefinition, LabelName } from "@/domains/label-definition";
 import { LabelRegistry } from "@/domains/label-registry";
 import { resolveLabelSwatchStyle } from "@/features/settings/lib/labelSettings/swatch";
-import type { LabelDefinition } from "@/lib/tauri";
 import { formatRelativeTime } from "@/utils/relativeTime";
 
 type LabelTableProps = {
@@ -30,7 +30,7 @@ type LabelTableProps = {
    * 削除アイコンクリック。
    * @param name - 削除対象のラベル名
    */
-  onDelete: (name: string) => void;
+  onDelete: (name: LabelName) => void;
 };
 
 /**

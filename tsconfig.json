@@ -7,7 +7,8 @@
     "skipLibCheck": true,
     "baseUrl": "./",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@fixtures/*": ["fixtures/*"]
     },
 
     /* Bundler mode */
@@ -24,6 +25,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
+  "include": ["src", "fixtures"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

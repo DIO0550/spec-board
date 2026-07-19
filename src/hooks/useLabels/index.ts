@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getLabels, type LabelDefinition } from "@/lib/tauri";
+import {
+  LabelDefinition,
+  type LabelDefinition as LabelDefinitionType,
+} from "@/domains/label-definition";
+import { getLabels } from "@/lib/tauri";
 
 /** ラベル定義リソースの取得状態。 */
 export type LabelsStatus = "idle" | "loading" | "loaded" | "error";
@@ -10,11 +14,11 @@ export type LabelsStatus = "idle" | "loading" | "loaded" | "error";
  */
 export type LabelsResource = {
   /** ラベル定義の配列（定義順）。idle / loading 中は空配列 */
-  labels: LabelDefinition[];
+  labels: LabelDefinitionType[];
   /** ラベル名 → 使用タスク件数（BE 由来。settings では App 側で live 上書き可能） */
   usageCounts: Record<string, number>;
   /** name → 定義の Map（テーブル / プレビューが引く） */
-  byName: Map<string, LabelDefinition>;
+  byName: Map<string, LabelDefinitionType>;
   /** 取得状態 */
   status: LabelsStatus;
   /** error 状態時のメッセージ */
@@ -24,7 +28,7 @@ export type LabelsResource = {
 };
 
 type ResourceState = {
-  labels: LabelDefinition[];
+  labels: LabelDefinitionType[];
   usageCounts: Record<string, number>;
   status: LabelsStatus;
   error?: string;
@@ -35,16 +39,6 @@ const IDLE_STATE: ResourceState = {
   usageCounts: {},
   status: "idle",
 };
-
-/**
- * ラベル定義配列を name キーの Map に変換する。
- * @param labels - ラベル定義の配列
- * @returns name → LabelDefinition の Map
- */
-const buildByName = (
-  labels: readonly LabelDefinition[],
-): Map<string, LabelDefinition> =>
-  new Map(labels.map((label) => [label.name, label]));
 
 /**
  * プロジェクト単位のラベル定義リソースを取得する feature 横断の共有フック。
@@ -80,7 +74,7 @@ export const useLabels = (projectKey: string | undefined): LabelsResource => {
     }
     if (result.ok) {
       setState({
-        labels: result.value.labels,
+        labels: LabelDefinition.listFromWire(result.value.labels),
         usageCounts: result.value.usageCounts,
         status: "loaded",
       });
@@ -107,7 +101,10 @@ export const useLabels = (projectKey: string | undefined): LabelsResource => {
     return load(projectKey);
   }, [load, projectKey]);
 
-  const byName = useMemo(() => buildByName(state.labels), [state.labels]);
+  const byName = useMemo(
+    () => LabelDefinition.byName(state.labels),
+    [state.labels],
+  );
 
   return useMemo(
     () => ({

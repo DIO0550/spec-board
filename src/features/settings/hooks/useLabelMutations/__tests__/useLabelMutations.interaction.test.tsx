@@ -9,6 +9,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { LabelDefinition } from "@/domains/label-definition";
 import {
   type UseLabelMutationsResult,
   useLabelMutations,
@@ -125,7 +126,9 @@ test("remove 成功時に reload を呼び usageCount payload を返す", async 
   const reload = vi.fn(async () => {});
   const probe = await mount(reload);
   await act(async () => {
-    const payload = await probe.latest.remove("bug");
+    const payload = await probe.latest.remove(
+      LabelDefinition.fromWire({ name: "bug" }).name,
+    );
     expect(payload).toEqual({ usageCount: 5 });
   });
   expect(reload).toHaveBeenCalledTimes(1);
@@ -136,7 +139,9 @@ test("remove 失敗時は reload を呼ばず null を返す", async () => {
   const reload = vi.fn(async () => {});
   const probe = await mount(reload);
   await act(async () => {
-    const payload = await probe.latest.remove("bug");
+    const payload = await probe.latest.remove(
+      LabelDefinition.fromWire({ name: "bug" }).name,
+    );
     expect(payload).toBeNull();
   });
   expect(reload).not.toHaveBeenCalled();
@@ -209,7 +214,9 @@ test("実行中は他種別の mutation も短絡する（create 中の remove�
   });
   let removeResult: unknown;
   await act(async () => {
-    removeResult = await probe.latest.remove("y");
+    removeResult = await probe.latest.remove(
+      LabelDefinition.fromWire({ name: "y" }).name,
+    );
   });
 
   expect(deleteMock).not.toHaveBeenCalled();

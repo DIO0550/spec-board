@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from "react";
+import type { LabelName, LabelUpdateArgs } from "@/domains/label-definition";
 import {
   type CreateLabelArgs,
   createLabel,
   type DeleteLabelPayload,
   deleteLabel,
-  type UpdateLabelArgs,
   updateLabel,
 } from "@/lib/tauri";
 
@@ -29,13 +29,13 @@ export type UseLabelMutationsResult = {
    * @param args - 更新内容
    * @returns 成功なら true、失敗・pending 中なら false
    */
-  update: (args: UpdateLabelArgs) => Promise<boolean>;
+  update: (args: LabelUpdateArgs) => Promise<boolean>;
   /**
    * ラベルを削除する。成功時のみ reload を呼ぶ。
    * @param name - 削除対象の name
    * @returns 成功なら削除前 usageCount を含む payload、失敗・pending 中なら null
    */
-  remove: (name: string) => Promise<DeleteLabelPayload | null>;
+  remove: (name: LabelName) => Promise<DeleteLabelPayload | null>;
 };
 
 /**
@@ -107,7 +107,7 @@ export const useLabelMutations = (
    * @returns 成功なら true、失敗・pending 中なら false
    */
   const update = useCallback(
-    (args: UpdateLabelArgs): Promise<boolean> =>
+    (args: LabelUpdateArgs): Promise<boolean> =>
       guard(async () => {
         const result = await updateLabel(args);
         if (!result.ok) {
@@ -125,7 +125,7 @@ export const useLabelMutations = (
    * @returns 成功なら usageCount payload、失敗・pending 中なら null
    */
   const remove = useCallback(
-    (name: string): Promise<DeleteLabelPayload | null> =>
+    (name: LabelName): Promise<DeleteLabelPayload | null> =>
       guard<DeleteLabelPayload | null>(async () => {
         const result = await deleteLabel(name);
         if (!result.ok) {

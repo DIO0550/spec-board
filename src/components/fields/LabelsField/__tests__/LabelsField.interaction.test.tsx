@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { LabelDefinition } from "@/lib/tauri";
+import { LabelDefinition } from "@/domains/label-definition";
 import { LabelsField } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -16,9 +16,9 @@ afterEach(() => {
   container = null;
 });
 
-const SUGGESTIONS: LabelDefinition[] = [
-  { name: "Bug", color: "#e11d48" },
-  { name: "Feature", color: "#16a34a" },
+const SUGGESTIONS = [
+  LabelDefinition.fromWire({ name: "Bug", color: "#e11d48" }),
+  LabelDefinition.fromWire({ name: "Feature", color: "#16a34a" }),
 ];
 
 const baseProps = (

@@ -1,8 +1,8 @@
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { LabelDefinition } from "@/domains/label-definition";
 import { LabelSelection } from "@/domains/label-selection";
 import { usePopoverDismiss } from "@/hooks/usePopoverDismiss";
-import type { LabelDefinition } from "@/lib/tauri";
 
 /** LabelsField の Props */
 export type LabelsFieldProps = {
