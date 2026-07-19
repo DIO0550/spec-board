@@ -1,4 +1,4 @@
-import { TaskLinks } from "@/domains/task-links";
+import { LinkIntent, TaskLinks } from "@/domains/task-links";
 import { addLink as addLinkInvoke } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
@@ -59,12 +59,21 @@ export const addLinkAction = (
       return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
     }
 
-    const plan = TaskLinks.planAddLink({
-      sourceFilePath: params.filePath,
-      targetFilePath: params.targetFilePath,
-      source: findLinkTask(deps.getState(), params.filePath),
-      target: findLinkTask(deps.getState(), params.targetFilePath),
-    });
+    /**
+     * 現在 state から canonical 完全一致で Task を引き当てる lookup。
+     * @param filePath 引き当てる filePath
+     * @returns 該当 Task（不在なら undefined）
+     */
+    const findTaskInCurrentState = (filePath: string): Task | undefined =>
+      findLinkTask(deps.getState(), filePath);
+
+    const plan = TaskLinks.planAddLink(
+      LinkIntent.forAdd({
+        sourceFilePath: params.filePath,
+        targetFilePath: params.targetFilePath,
+        findTask: findTaskInCurrentState,
+      }),
+    );
     if (plan.kind === "rejected") {
       return Result.err(linkRejectReasonToError(plan.reason));
     }

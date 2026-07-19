@@ -1,4 +1,4 @@
-import { TaskLinks } from "@/domains/task-links";
+import { LinkIntent, TaskLinks } from "@/domains/task-links";
 import { removeLink as removeLinkInvoke } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
@@ -63,12 +63,30 @@ export const removeLinkAction = (
       return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
     }
 
-    const plan = TaskLinks.planRemoveLink({
-      sourceFilePath: params.filePath,
-      targetFilePath: params.targetFilePath,
-      source: findLinkTask(deps.getState(), params.filePath),
-      target: findLinkTaskByReference(deps.getState(), params.targetFilePath),
-    });
+    /**
+     * 現在 state から canonical 完全一致で Task を引き当てる lookup。
+     * @param filePath 引き当てる filePath
+     * @returns 該当 Task（不在なら undefined）
+     */
+    const findTaskInCurrentState = (filePath: string): Task | undefined =>
+      findLinkTask(deps.getState(), filePath);
+    /**
+     * 現在 state から raw 参照（表記揺れ込み）で Task を引き当てる lookup。
+     * @param reference frontmatter 由来の raw 参照
+     * @returns 該当 Task（解決不能 = broken link なら undefined）
+     */
+    const findTaskByReferenceInCurrentState = (
+      reference: string,
+    ): Task | undefined => findLinkTaskByReference(deps.getState(), reference);
+
+    const plan = TaskLinks.planRemoveLink(
+      LinkIntent.forRemove({
+        sourceFilePath: params.filePath,
+        targetFilePath: params.targetFilePath,
+        findTask: findTaskInCurrentState,
+        findTaskByReference: findTaskByReferenceInCurrentState,
+      }),
+    );
     if (plan.kind === "rejected") {
       return Result.err(linkRejectReasonToError(plan.reason));
     }
