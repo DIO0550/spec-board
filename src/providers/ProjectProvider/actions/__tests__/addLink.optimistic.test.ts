@@ -221,29 +221,98 @@ test("IPC 成功で target は再 dispatch されない（楽観値据え置き�
   expect(targetUpdates).toHaveLength(1);
 });
 
-test("target が cache 不在の場合 target 楽観 dispatch は呼ばれない", async () => {
+test("target 不在は IPC を呼ばず invalid-state で失敗し dispatch もされない", async () => {
   const source = makeTask({ filePath: "tasks/a.md" });
   const harness = setupLoaded(makeData([source]));
-  addLinkMock.mockResolvedValue(
-    Result.ok(
-      okTask({
-        id: "tasks/a.md",
-        filePath: "tasks/a.md",
-        links: ["tasks/missing.md"],
-      }),
-    ),
-  );
 
-  await addLinkAction(harness.deps, {
+  const result = await addLinkAction(harness.deps, {
     filePath: "tasks/a.md",
     targetFilePath: "tasks/missing.md",
   });
 
-  const targetUpdates = harness.actions.filter(
-    (a) =>
-      a.type === "task-updated" && a.originalFilePath === "tasks/missing.md",
-  );
-  expect(targetUpdates).toHaveLength(0);
+  const error = expectErr<Task, ProjectError>(result);
+  expect(error.kind).toBe("invalid-state");
+  expect(addLinkMock).not.toHaveBeenCalled();
+  expect(harness.actions).toHaveLength(0);
+});
+
+test("self-link は IPC を呼ばず invalid-state で失敗し dispatch もされない", async () => {
+  const source = makeTask({ filePath: "tasks/a.md" });
+  const harness = setupLoaded(makeData([source]));
+
+  const result = await addLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "tasks/a.md",
+  });
+
+  const error = expectErr<Task, ProjectError>(result);
+  expect(error.kind).toBe("invalid-state");
+  expect(addLinkMock).not.toHaveBeenCalled();
+  expect(harness.actions).toHaveLength(0);
+});
+
+test("既にリンク済みなら IPC を呼ばず現行 source で成功する", async () => {
+  const source = makeTask({
+    filePath: "tasks/a.md",
+    links: ["tasks/b.md"],
+  });
+  const target = makeTask({
+    filePath: "tasks/b.md",
+    reverseLinks: ["tasks/a.md"],
+  });
+  const harness = setupLoaded(makeData([source, target]));
+
+  const result = await addLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "tasks/b.md",
+  });
+
+  const value = expectOk<Task, ProjectError>(result);
+  expect(value.links.linkedFilePaths).toEqual(["tasks/b.md"]);
+  expect(addLinkMock).not.toHaveBeenCalled();
+  expect(harness.actions).toHaveLength(0);
+});
+
+test("既存 raw 表記 ./tasks/b.md への canonical add も noop として成功する", async () => {
+  const source = makeTask({
+    filePath: "tasks/a.md",
+    links: ["./tasks/b.md"],
+  });
+  const target = makeTask({
+    filePath: "tasks/b.md",
+    reverseLinks: ["tasks/a.md"],
+  });
+  const harness = setupLoaded(makeData([source, target]));
+
+  const result = await addLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "tasks/b.md",
+  });
+
+  expectOk<Task, ProjectError>(result);
+  expect(addLinkMock).not.toHaveBeenCalled();
+  expect(harness.actions).toHaveLength(0);
+});
+
+test("既リンク済みで target reverse が欠落していても noop で成功する（ドリフト残置）", async () => {
+  const source = makeTask({
+    filePath: "tasks/a.md",
+    links: ["tasks/b.md"],
+  });
+  const target = makeTask({
+    filePath: "tasks/b.md",
+    reverseLinks: [],
+  });
+  const harness = setupLoaded(makeData([source, target]));
+
+  const result = await addLinkAction(harness.deps, {
+    filePath: "tasks/a.md",
+    targetFilePath: "tasks/b.md",
+  });
+
+  expectOk<Task, ProjectError>(result);
+  expect(addLinkMock).not.toHaveBeenCalled();
+  expect(harness.actions).toHaveLength(0);
 });
 
 test("source 不在で invalid-state エラーが返り IPC は呼ばれない", async () => {

@@ -129,12 +129,17 @@ links:
 
 - DetailScreen に **関連タスクセクション** を持ち、`linkedFilePaths` と `reverseLinkedFilePaths` を区別して一覧表示する（`links` → `reverseLinks` の順）。各行は button としてフォーカス可能で、クリックで in-place に詳細の表示対象が切り替わる。`reverseLinks` 行は読み取り専用で削除 UI（× ボタン）を持たない（削除は forward 側で行う）
 - `+ リンク追加` ボタン → タスク候補ポップオーバから対象を選択することでリンクを追加する
-- 候補からは **自身 / 既に link 済みのタスク / 逆リンク済みのタスク / 親 / 子** をすべて除外する
+- 候補からは **自身 / 既に link 済みのタスク / 逆リンク済みのタスク / 親 / 子** をすべて除外する。既に link 済み / 逆リンク済みの除外は、表記揺れを正規化した同値判定で行う（`./tasks/b.md` が登録済みなら canonical `tasks/b.md` のタスクも候補に出ない）
 - 選択直後に **source / target 両方を楽観 dispatch** で更新する:
   - source: `linkedFilePaths` に target を append
   - target: `reverseLinkedFilePaths` に source を append（add_link の IPC 戻り値には target が含まれず、watcher event も target 側 disk 変更が無いため発火しない。FE 側で楽観 dispatch しないと target 反映が永続的に欠落する）
+- 既にリンク済みの add（表記揺れを正規化した同値判定）/ 対象リンクが無い remove は **no-op** として IPC を呼ばず成功する（書き込みもキャッシュ更新も行わない。片方向ドリフトがあっても修復せず残置し、canonical 更新〔watcher / 次回 open〕で解消される）
+- 自身へのリンク追加・存在しないタスクへのリンク追加は IPC を呼ばずエラーとして扱う（バックエンドの reject を待たない）
 - `add_link` invoke 成功時は source を IPC 戻り値の canonical Task で再 dispatch する。target は IPC が返さないため楽観値のまま据え置く
-- `add_link` invoke 失敗時は source / target 両方を **条件付き rollback** する。`current.links` と `optimistic.links` の配列等値判定（順序込みの浅い等値）が一致する場合のみ snapshot へ戻し、IPC 中に別経路で同 path の再追加や別 path の追加が入っていた場合は rollback dispatch 自体を skip する（外部更新を巻き戻して破壊しない）
+- `add_link` / `remove_link` invoke 失敗時は **inverse rollback** する。操作が触れた path のみを現在 state から除去 / 復元し、IPC 中に別経路で入った外部更新（別 path の追加や links 以外の field 変更）は保持する。remove の rollback（re-append）は操作前の配列位置へ **best-effort** で復元する（外部で要素が減っていた場合は末尾へ clamp。外部変更併存時の相対順の完全復元は保証しない）
+- rollback のうち**逆リンク（リンク先タスク側の表示）の復元**は、相手タスクが適用時点で存在しない場合に skip する（外部で削除されたタスクへの逆リンクを復活させない）。**自タスク側のリンク（frontmatter が保持している内容）の復元は無条件に行う**（リンク先が存在しない壊れたリンクの削除失敗でも表記が元に戻る = ファイル内容との整合を優先。壊れたリンクは既存の表示仕様で扱う）
+- リンク削除（× ボタン）は `linkedFilePaths` の raw 値（`./tasks/b.md` 等の表記揺れ）を対象とし、forward は削除対象を参照する**正規化同値な全表記**を除去する（表記揺れが併存していても一括で消える。バックエンドの除去挙動と一致）。リンク先タスクの逆リンク表示は表記揺れを正規化して解決したうえで更新する。リンク先が解決できない壊れたリンクは source 側のみ除去する
+- 競合時の保証範囲: 失敗 rollback とプロジェクト切替 guard のみを保証する。invoke 成功時は source を IPC 戻り値の canonical Task で再 dispatch する現行挙動のまま（IPC 中の source 外部更新との収束は対象外）。また失敗応答が disk 書き込み後の失敗（post-write failure）だった場合、rollback により表示と disk が一時乖離するが、canonical 更新（watcher / 次回 open）で再収束する
 - 同一 tick の連続選択は `useRef<boolean>` ベースの in-flight guard で 1 回のみ通す
 - task 切替（`task.id` 変化）時は DetailScreen が LinksSection に名前空間付き key を付与してリマウントし、ポップオーバの開閉 / 検索クエリ等の内部 state を確実にリセットする
 

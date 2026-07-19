@@ -134,6 +134,8 @@ test("rollback 前 version 不一致なら rollback dispatch も skip して inv
   );
   expect(sourceUpdates).toHaveLength(1);
   expect(targetUpdates).toHaveLength(1);
+  // confirm / rollback 由来の dispatch が一切なく、新 project state を変更しない
+  expect(harness.actions).toHaveLength(2);
 });
 
 test("IPC 直後 version 不一致なら commit dispatch されず invalid-state", async () => {
