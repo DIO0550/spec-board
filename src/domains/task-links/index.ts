@@ -16,12 +16,16 @@ export type {
 } from "./candidates";
 export type { LinkOperation } from "./linkOperation";
 export type {
+  AddLinkIntentArgs,
   AddLinkOutcome,
   AddLinkRejectReason,
-  LinkIntent,
+  LinkTaskLookup,
+  RemoveLinkIntentArgs,
   RemoveLinkOutcome,
   RemoveLinkRejectReason,
 } from "./plan";
+// LinkIntent は型 + companion（forAdd / forRemove）の同名公開のため値ごと re-export する
+export { LinkIntent } from "./plan";
 // 同名の companion 定数と型を 1 モジュールから公開するため、re-export でなく
 // ローカル型 alias として宣言する（re-export はローカルの const と名前空間 merge されない）
 export type TaskLinks = TaskLinksModel;

@@ -24,6 +24,66 @@ export type LinkIntent = {
   readonly target: Task | undefined;
 };
 
+/** filePath / 参照から Task を引き当てる lookup（state への依存は呼出側が閉じる）。 */
+export type LinkTaskLookup = (filePath: string) => Task | undefined;
+
+/** `LinkIntent.forAdd` の引数。 */
+export type AddLinkIntentArgs = {
+  /** リンク元タスクの filePath */
+  readonly sourceFilePath: string;
+  /** リンク先タスクの canonical filePath（`buildAddLinkCandidates` 由来） */
+  readonly targetFilePath: string;
+  /** canonical 完全一致 lookup */
+  readonly findTask: LinkTaskLookup;
+};
+
+/** `LinkIntent.forRemove` の引数。 */
+export type RemoveLinkIntentArgs = {
+  /** リンク元タスクの filePath */
+  readonly sourceFilePath: string;
+  /** 削除するリンクの raw 値（`linkedFilePaths` の要素。表記揺れ可） */
+  readonly targetFilePath: string;
+  /** canonical 完全一致 lookup（source の引き当て用） */
+  readonly findTask: LinkTaskLookup;
+  /** raw 参照の解決 lookup（target の引き当て用。解決不能なら undefined を返す） */
+  readonly findTaskByReference: LinkTaskLookup;
+};
+
+/**
+ * `LinkIntent` の companion API。plan 入力の構築時に使う lookup の使い分け契約
+ * （add = source / target とも canonical 完全一致、remove = source は canonical・
+ * target は raw 参照の正規化同値解決）をドメイン側に固定する。
+ */
+export const LinkIntent = {
+  /**
+   * add 用の intent を構築する。source / target とも canonical 完全一致 lookup で
+   * 引き当てる（targetFilePath は候補 UI 由来の `Task.filePath` 前提）。
+   *
+   * @param args filePath ペアと lookup
+   * @returns planAddLink へ渡す intent
+   */
+  forAdd: (args: AddLinkIntentArgs): LinkIntent => ({
+    sourceFilePath: args.sourceFilePath,
+    targetFilePath: args.targetFilePath,
+    source: args.findTask(args.sourceFilePath),
+    target: args.findTask(args.targetFilePath),
+  }),
+  /**
+   * remove 用の intent を構築する。source は canonical 完全一致、target は
+   * raw 参照（表記揺れ）の解決 lookup で引き当てる（解決不能 = broken link なら
+   * target は undefined のまま plan が forward のみの apply を返す）。
+   *
+   * @param args filePath ペアと lookup 2 種
+   * @returns planRemoveLink へ渡す intent
+   */
+  forRemove: (args: RemoveLinkIntentArgs): LinkIntent => ({
+    sourceFilePath: args.sourceFilePath,
+    targetFilePath: args.targetFilePath,
+    source: args.findTask(args.sourceFilePath),
+    target: args.findTaskByReference(args.targetFilePath),
+  }),
+} as const;
+
 /** `planAddLink` の reject 理由 */
 export type AddLinkRejectReason =
   | "source-not-found"
