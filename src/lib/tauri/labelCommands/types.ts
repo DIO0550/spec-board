@@ -1,5 +1,8 @@
-/** ラベルマスタ定義 1 件。`name` のみ必須、他は任意。 */
-export type LabelDefinition = {
+/**
+ * ラベルマスタ定義 1 件の wire 型。`name` のみ必須、他は任意。
+ * FE domain 型は `@/domains/label-definition` が所有し、fromWire で変換する。
+ */
+export type WireLabelDefinition = {
   /** ラベル識別子（完全一致・未正規化） */
   name: string;
   /** ラベルの説明文 */
@@ -18,7 +21,7 @@ export type LabelDefinition = {
  */
 export type GetLabelsPayload = {
   /** ラベル定義の配列（定義順） */
-  labels: LabelDefinition[];
+  labels: WireLabelDefinition[];
   /** ラベル名 → 使用タスク件数（タスク単位で重複排除） */
   usageCounts: Record<string, number>;
 };

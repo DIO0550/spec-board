@@ -1,0 +1,21 @@
+{
+  "description": "label name identity contract shared by TS adapter tests and Rust LabelRegistry tests",
+  "identityCases": [
+    { "id": "simple", "name": "bug" },
+    { "id": "outer-whitespace", "name": "  bug  " },
+    { "id": "inner-whitespace", "name": "needs design" },
+    { "id": "case-mixed", "name": "Bug" },
+    { "id": "group-prefix", "name": "type:bug" },
+    { "id": "whitespace-only", "name": "   " },
+    { "id": "unicode-nfc", "name": "café" },
+    { "id": "unicode-nfd", "name": "café" },
+    { "id": "unicode-ja", "name": "デザイン待ち" }
+  ],
+  "duplicatePairs": [
+    { "id": "exact", "existing": "bug", "candidate": "bug", "exactDuplicate": true, "similar": false },
+    { "id": "case-diff", "existing": "Bug", "candidate": "bug", "exactDuplicate": false, "similar": true },
+    { "id": "outer-space-diff", "existing": "bug", "candidate": "  bug  ", "exactDuplicate": false, "similar": true },
+    { "id": "nfc-vs-nfd", "existing": "café", "candidate": "café", "exactDuplicate": false, "similar": false },
+    { "id": "distinct", "existing": "bug", "candidate": "feature", "exactDuplicate": false, "similar": false }
+  ]
+}

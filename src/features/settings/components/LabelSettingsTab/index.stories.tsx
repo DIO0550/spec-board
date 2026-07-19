@@ -1,10 +1,10 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { LabelDefinition } from "@/domains/label-definition";
 import type { LabelsResource } from "@/hooks/useLabels";
-import type { LabelDefinition } from "@/lib/tauri";
 import { LabelSettingsTab } from ".";
 
-const FIXTURE_LABELS: LabelDefinition[] = [
+const FIXTURE_LABELS = LabelDefinition.listFromWire([
   {
     name: "a11y",
     description: "アクセシビリティ関連",
@@ -101,7 +101,7 @@ const FIXTURE_LABELS: LabelDefinition[] = [
     color: "#79818d",
     updated: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString(),
   },
-];
+]);
 
 const FIXTURE_USAGE_COUNTS: Record<string, number> = {
   a11y: 2,
@@ -123,7 +123,7 @@ const noopReload = async (): Promise<void> => {};
 const loadedResource: LabelsResource = {
   labels: FIXTURE_LABELS,
   usageCounts: FIXTURE_USAGE_COUNTS,
-  byName: new Map(FIXTURE_LABELS.map((label) => [label.name, label])),
+  byName: LabelDefinition.byName(FIXTURE_LABELS),
   status: "loaded",
   reload: noopReload,
 };

@@ -69,6 +69,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 #[cfg(test)]
+pub(crate) mod label_name_fixture;
+
+#[cfg(test)]
 mod config_tests;
 
 #[cfg(test)]

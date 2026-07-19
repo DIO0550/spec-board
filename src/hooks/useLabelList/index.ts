@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
-import { getLabels, type LabelDefinition } from "@/lib/tauri";
+import {
+  LabelDefinition,
+  type LabelDefinition as LabelDefinitionType,
+} from "@/domains/label-definition";
+import { getLabels } from "@/lib/tauri";
 
 /** ラベル一覧の取得状態（読み取り系のため失敗トーストは出さない）。 */
 export type LabelListState =
   | { kind: "loading" }
-  | { kind: "loaded"; labels: LabelDefinition[] }
+  | { kind: "loaded"; labels: LabelDefinitionType[] }
   | { kind: "error" };
 
 /**
@@ -24,7 +28,10 @@ export const useLabelList = (): LabelListState => {
         return;
       }
       if (result.ok) {
-        setState({ kind: "loaded", labels: result.value.labels });
+        setState({
+          kind: "loaded",
+          labels: LabelDefinition.listFromWire(result.value.labels),
+        });
         return;
       }
       setState({ kind: "error" });

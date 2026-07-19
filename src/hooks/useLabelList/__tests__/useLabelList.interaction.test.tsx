@@ -10,7 +10,7 @@ import {
   vi,
 } from "vitest";
 import { type LabelListState, useLabelList } from "@/hooks/useLabelList";
-import { getLabels, type LabelDefinition, TauriError } from "@/lib/tauri";
+import { getLabels, TauriError } from "@/lib/tauri";
 import { Result } from "@/utils/result";
 
 vi.mock("@/lib/tauri", async () => {
@@ -98,10 +98,7 @@ const mountProbe = async (onResult: (result: LabelListState) => void) => {
   });
 };
 
-const sampleLabels: LabelDefinition[] = [
-  { name: "type:feature" },
-  { name: "priority:high" },
-];
+const sampleLabels = [{ name: "type:feature" }, { name: "priority:high" }];
 
 test("getLabels が ok(labels) を返すと最終 state が loaded(labels) になる", async () => {
   getLabelsMock.mockResolvedValue(

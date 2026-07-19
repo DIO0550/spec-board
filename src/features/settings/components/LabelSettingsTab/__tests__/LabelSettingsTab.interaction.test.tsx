@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { LabelDefinition } from "@/domains/label-definition";
 import type { LabelsResource } from "@/hooks/useLabels";
 import {
   createLabel,
@@ -62,11 +63,13 @@ const noopReload = vi.fn(async () => {});
 const baseResource = (
   override: Partial<LabelsResource> = {},
 ): LabelsResource => {
-  const labels = override.labels ?? [{ name: "bug", group: "type" }];
+  const labels =
+    override.labels ??
+    LabelDefinition.listFromWire([{ name: "bug", group: "type" }]);
   return {
     labels,
     usageCounts: override.usageCounts ?? {},
-    byName: new Map(labels.map((l) => [l.name, l])),
+    byName: LabelDefinition.byName(labels),
     status: override.status ?? "loaded",
     reload: override.reload ?? noopReload,
   };
@@ -166,7 +169,7 @@ test("使用数リンクをクリックすると onLabelUsageClick が呼ばれ�
   const onUsage = vi.fn();
   render(
     baseResource({
-      labels: [{ name: "bug" }],
+      labels: LabelDefinition.listFromWire([{ name: "bug" }]),
       usageCounts: { bug: 3 },
     }),
     onUsage,
@@ -183,9 +186,9 @@ test("編集ボタン → name 固定でフォーム編集モードになり upd
   updateMock.mockResolvedValue(Result.ok(undefined));
   render(
     baseResource({
-      labels: [
+      labels: LabelDefinition.listFromWire([
         { name: "bug", description: "old", group: "type", color: "#aaaaaa" },
-      ],
+      ]),
     }),
   );
   const editBtn = container?.querySelector(
@@ -229,7 +232,7 @@ test("削除確認: usageCount>0 のとき件数を含む確認文言、キャ�
     .mockImplementation(() => false);
   render(
     baseResource({
-      labels: [{ name: "bug" }],
+      labels: LabelDefinition.listFromWire([{ name: "bug" }]),
       usageCounts: { bug: 8 },
     }),
   );
@@ -254,7 +257,11 @@ test("削除確認: usageCount=0 のときシンプル文言で OK ならば rem
     .spyOn(globalThis, "confirm")
     .mockImplementation(() => true);
   deleteMock.mockResolvedValue(Result.ok({ usageCount: 0 }));
-  render(baseResource({ labels: [{ name: "wontfix" }] }));
+  render(
+    baseResource({
+      labels: LabelDefinition.listFromWire([{ name: "wontfix" }]),
+    }),
+  );
   const delBtn = container?.querySelector(
     '[aria-label="wontfix を削除"]',
   ) as HTMLButtonElement;

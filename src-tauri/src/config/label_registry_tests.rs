@@ -5,6 +5,7 @@ use super::{
     label_registry_store, LabelColor, LabelDefinition, LabelGroup, LabelRegistry,
     LabelRegistryStore, LabelValidationError, LoadLabelsError, SaveLabelsError,
 };
+use crate::config::label_name_fixture::load_fixture;
 use tempfile::TempDir;
 
 fn write_labels_yml(root: &std::path::Path, content: &str) {
@@ -340,4 +341,59 @@ fn store_can_be_mocked_via_trait_object() {
     // &dyn LabelRegistryStore として trait 越しに使える（具象型を名指ししない）
     let dyn_store: &dyn LabelRegistryStore = &store;
     assert_eq!(dyn_store.load().expect("load ok"), registry);
+}
+
+#[test]
+fn fixture_schema_invariants_hold() {
+    let f = load_fixture();
+    assert!(
+        !f.identity_cases.is_empty(),
+        "identityCases must not be empty"
+    );
+    assert!(
+        !f.duplicate_pairs.is_empty(),
+        "duplicatePairs must not be empty"
+    );
+    let mut ids: Vec<&str> = f.identity_cases.iter().map(|c| c.id.as_str()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(
+        ids.len(),
+        f.identity_cases.len(),
+        "identityCases ids must be unique"
+    );
+    for pair in &f.duplicate_pairs {
+        assert!(
+            !(pair.exact_duplicate && pair.similar),
+            "pair '{}': exactDuplicate and similar must not both be true",
+            pair.id
+        );
+    }
+}
+
+#[test]
+fn fixture_identity_cases_survive_save_then_load() {
+    let tmp = TempDir::new().expect("tmp");
+    let store = label_registry_store(tmp.path());
+    let mut reg = LabelRegistry::default();
+    let f = load_fixture();
+    for case in &f.identity_cases {
+        let def = LabelDefinition {
+            name: case.name.clone(),
+            description: None,
+            group: None,
+            color: None,
+            updated: None,
+        };
+        reg.labels.push(def);
+    }
+    store.save(&reg).expect("save");
+    let loaded = store.load().expect("load");
+    for (i, case) in f.identity_cases.iter().enumerate() {
+        assert_eq!(
+            loaded.labels[i].name, case.name,
+            "round-trip failed for case '{}'",
+            case.id
+        );
+    }
 }

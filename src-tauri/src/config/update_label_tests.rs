@@ -204,3 +204,46 @@ fn state_lock_poisoned_display_matches_contract() {
         "内部状態のロックが破損しました"
     );
 }
+
+// ───────── fixture: identity round-trip (update path) ─────────
+
+#[test]
+fn fixture_identity_cases_survive_update_path() {
+    use crate::config::label_name_fixture::load_fixture;
+    let f = load_fixture();
+    for case in &f.identity_cases {
+        let mut reg = LabelRegistry::default();
+        reg.labels.push(LabelDefinition {
+            name: case.name.clone(),
+            description: None,
+            group: None,
+            color: None,
+            updated: None,
+        });
+        let intent = UpdateLabelIntent {
+            name: case.name.clone(),
+            description: Some("updated desc".to_string()),
+            group: None,
+            color: None,
+        };
+        let result = reg.plan_update_label(intent, &fixed_clock());
+        assert!(
+            result.is_ok(),
+            "update should succeed for case '{}': {:?}",
+            case.id,
+            result.err()
+        );
+        let updated_reg = result.unwrap();
+        let found = updated_reg
+            .labels
+            .iter()
+            .find(|l| l.name == case.name)
+            .expect("label should exist after update");
+        assert_eq!(
+            found.name, case.name,
+            "identity must be raw-preserved for case '{}'",
+            case.id
+        );
+        assert_eq!(found.description.as_deref(), Some("updated desc"));
+    }
+}

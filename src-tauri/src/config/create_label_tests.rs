@@ -220,3 +220,65 @@ fn no_project_open_display_matches_contract() {
         "プロジェクトが開かれていません"
     );
 }
+
+// ───────── fixture: identity round-trip ─────────
+
+#[test]
+fn fixture_identity_cases_round_trip_raw_names() {
+    use crate::config::label_name_fixture::load_fixture;
+    let f = load_fixture();
+    for case in &f.identity_cases {
+        let a = CreateLabelArgs {
+            name: case.name.clone(),
+            description: None,
+            group: None,
+            color: None,
+        };
+        let def: LabelDefinition = a.into();
+        assert_eq!(
+            def.name, case.name,
+            "create round-trip failed for case '{}'",
+            case.id
+        );
+    }
+}
+
+#[test]
+fn fixture_duplicate_pairs_reject_only_exact_matches() {
+    use crate::config::label_name_fixture::load_fixture;
+    let f = load_fixture();
+    for pair in &f.duplicate_pairs {
+        let mut reg = LabelRegistry::default();
+        reg.labels.push(LabelDefinition {
+            name: pair.existing.clone(),
+            description: None,
+            group: None,
+            color: None,
+            updated: None,
+        });
+        let result = reg.plan_create_label(
+            LabelDefinition {
+                name: pair.candidate.clone(),
+                description: None,
+                group: None,
+                color: None,
+                updated: None,
+            },
+            &fixed_clock(),
+        );
+        if pair.exact_duplicate {
+            assert!(
+                result.is_err(),
+                "pair '{}': exact duplicate should be rejected",
+                pair.id
+            );
+        } else {
+            assert!(
+                result.is_ok(),
+                "pair '{}': non-exact should be accepted, got {:?}",
+                pair.id,
+                result.err()
+            );
+        }
+    }
+}

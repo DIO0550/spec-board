@@ -22,8 +22,8 @@ export type {
   DeleteLabelPayload,
   ExportLabelsArgs,
   GetLabelsPayload,
-  LabelDefinition,
   UpdateLabelArgs,
+  WireLabelDefinition,
 } from "./labelCommands/types";
 export { updateLabel } from "./labelCommands/updateLabel";
 // linkCommands

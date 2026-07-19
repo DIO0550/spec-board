@@ -1,5 +1,5 @@
+import type { LabelDefinition } from "@/domains/label-definition";
 import { LabelRegistry } from "@/domains/label-registry";
-import type { LabelDefinition } from "@/lib/tauri";
 
 /** ソートキー。 */
 export type LabelSort = "name" | "usage" | "updated";
