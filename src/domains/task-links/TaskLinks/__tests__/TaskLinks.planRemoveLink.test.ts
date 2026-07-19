@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
+import { makeTask } from "@/domains/__tests__/taskFixtures";
 import { type RemoveLinkOutcome, TaskLinks } from "@/domains/task-links";
-import { makeTask } from "../../__tests__/taskFixtures";
 
 type ApplyPlan = Extract<RemoveLinkOutcome, { kind: "apply" }>;
 

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
+import { makeTask } from "@/domains/__tests__/taskFixtures";
 import { TaskLinks } from "@/domains/task-links";
-import { makeTask } from "../../__tests__/taskFixtures";
 
 test("未リンクの 2 タスク間では apply と forward/reverse の 2 operations を返す", () => {
   const source = makeTask({ id: "a", filePath: "tasks/a.md" });

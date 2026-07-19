@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
+import { makeTask } from "@/domains/__tests__/taskFixtures";
 import { TaskLinks } from "@/domains/task-links";
-import { makeTask } from "../../__tests__/taskFixtures";
 
 test("forward append が linkedFilePaths 末尾に反映される", () => {
   const task = makeTask({ id: "a", filePath: "tasks/a.md" });

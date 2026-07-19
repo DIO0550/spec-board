@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
+import { makeTask } from "@/domains/__tests__/taskFixtures";
 import { LinkIntent } from "@/domains/task-links";
+import { linkReferencesTaskPath } from "@/domains/task-path";
 import type { Task } from "@/types/task";
-import { makeTask } from "../../__tests__/taskFixtures";
-import { linkReferencesTaskPath } from "../../task-path";
 
 const source = makeTask({ id: "a", filePath: "tasks/a.md" });
 const target = makeTask({ id: "b", filePath: "tasks/b.md" });
