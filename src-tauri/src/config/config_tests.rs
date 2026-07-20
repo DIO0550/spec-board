@@ -1895,3 +1895,283 @@ fn plan_update_card_order_keeps_empty_vec_when_all_paths_missing() {
 
     assert_eq!(next.card_order.get("Todo"), Some(&Vec::<String>::new()));
 }
+
+// ───────── normalize_card_order ─────────
+
+#[test]
+fn normalize_card_order_parametrized() {
+    struct Case {
+        label: &'static str,
+        card_order: Vec<(&'static str, Vec<&'static str>)>,
+        columns: Vec<Column>,
+        expected: Vec<(&'static str, Vec<&'static str>)>,
+        expect_changed: bool,
+    }
+
+    let cases: Vec<Case> = vec![
+        // ── Phase 1: 同一列内重複除去 ──
+        Case {
+            label: "空の CardOrder はそのまま返る",
+            card_order: vec![],
+            columns: vec![col("Todo", 0)],
+            expected: vec![],
+            expect_changed: false,
+        },
+        Case {
+            label: "重複なし CardOrder はそのまま返る",
+            card_order: vec![("Todo", vec!["a.md", "b.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Todo", vec!["a.md", "b.md"])],
+            expect_changed: false,
+        },
+        Case {
+            label: "同一列内の重複が除去される (first occurrence wins)",
+            card_order: vec![("Todo", vec!["a.md", "b.md", "a.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Todo", vec!["a.md", "b.md"])],
+            expect_changed: true,
+        },
+        Case {
+            label: "1 件のみの CardOrder はそのまま返る",
+            card_order: vec![("Todo", vec!["a.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Todo", vec!["a.md"])],
+            expect_changed: false,
+        },
+        // ── Phase 2: 列跨ぎ重複解消 ──
+        Case {
+            label: "列跨ぎ重複: columns order 昇順で first occurrence wins",
+            card_order: vec![("Done", vec!["a.md"]), ("Todo", vec!["a.md", "b.md"])],
+            columns: vec![col("Todo", 0), col("Done", 1)],
+            expected: vec![("Done", vec![]), ("Todo", vec!["a.md", "b.md"])],
+            expect_changed: true,
+        },
+        Case {
+            label: "列跨ぎ重複: status 不一致時は first occurrence (column order 小) が勝つ",
+            card_order: vec![
+                ("In Progress", vec!["x.md"]),
+                ("Todo", vec!["x.md", "y.md"]),
+            ],
+            columns: vec![col("Todo", 0), col("In Progress", 1)],
+            expected: vec![("In Progress", vec![]), ("Todo", vec!["x.md", "y.md"])],
+            expect_changed: true,
+        },
+        Case {
+            label: "同一パスが全列に出現 → column order 最小の列のみに残る",
+            card_order: vec![
+                ("Done", vec!["x.md"]),
+                ("In Progress", vec!["x.md"]),
+                ("Todo", vec!["x.md"]),
+            ],
+            columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+            expected: vec![
+                ("Done", vec![]),
+                ("In Progress", vec![]),
+                ("Todo", vec!["x.md"]),
+            ],
+            expect_changed: true,
+        },
+        Case {
+            label: "columns が空 → cardOrder のキーはそのまま保持",
+            card_order: vec![("Todo", vec!["a.md"])],
+            columns: vec![],
+            expected: vec![("Todo", vec!["a.md"])],
+            expect_changed: false,
+        },
+        Case {
+            label: "column order 同値時は BTreeMap キー辞書順で決定論的",
+            card_order: vec![("B", vec!["x.md"]), ("A", vec!["x.md"])],
+            columns: vec![col("A", 1), col("B", 1)],
+            expected: vec![("A", vec!["x.md"]), ("B", vec![])],
+            expect_changed: true,
+        },
+        // ── Phase 2.5: 異常系・追加境界値 ──
+        Case {
+            label: "CardOrder のキーが columns に存在しない場合はそのまま保持",
+            card_order: vec![("Ghost", vec!["a.md"]), ("Todo", vec!["b.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Ghost", vec!["a.md"]), ("Todo", vec!["b.md"])],
+            expect_changed: false,
+        },
+        Case {
+            label: "paths に空文字列を含む場合もパスとして扱う",
+            card_order: vec![("Todo", vec!["", "a.md", ""])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Todo", vec!["", "a.md"])],
+            expect_changed: true,
+        },
+        Case {
+            label: "CardOrder のキーが空文字列でもそのまま保持",
+            card_order: vec![("", vec!["a.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("", vec!["a.md"])],
+            expect_changed: false,
+        },
+        Case {
+            label: "case sensitivity: tasks/A.md と tasks/a.md は別パス",
+            card_order: vec![("Todo", vec!["tasks/A.md", "tasks/a.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Todo", vec!["tasks/A.md", "tasks/a.md"])],
+            expect_changed: false,
+        },
+        Case {
+            label: "path separator 表記揺れは文字列完全一致",
+            card_order: vec![("Todo", vec!["tasks/a.md", "tasks\\a.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Todo", vec!["tasks/a.md", "tasks\\a.md"])],
+            expect_changed: false,
+        },
+        // ── 複合ケース ──
+        Case {
+            label: "同一列内重複 + 列跨ぎ重複の混在",
+            card_order: vec![
+                ("Done", vec!["a.md", "b.md", "a.md"]),
+                ("Todo", vec!["a.md", "c.md"]),
+            ],
+            columns: vec![col("Todo", 0), col("Done", 1)],
+            expected: vec![("Done", vec!["b.md"]), ("Todo", vec!["a.md", "c.md"])],
+            expect_changed: true,
+        },
+        // ── columns にないキー同士の列跨ぎ重複 ──
+        Case {
+            label: "columns にないキー同士の重複は BTreeMap キー辞書順で解消",
+            card_order: vec![("Zzz", vec!["x.md"]), ("Aaa", vec!["x.md"])],
+            columns: vec![col("Todo", 0)],
+            expected: vec![("Aaa", vec!["x.md"]), ("Zzz", vec![])],
+            expect_changed: true,
+        },
+    ];
+
+    for case in cases {
+        let card_order: CardOrder = case
+            .card_order
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect()))
+            .collect();
+        let expected: CardOrder = case
+            .expected
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect()))
+            .collect();
+
+        let config = Config {
+            card_order,
+            columns: case.columns,
+            ..Config::default()
+        };
+        let (normalized, changed) = config.normalize_card_order();
+        assert_eq!(normalized.card_order, expected, "case: {}", case.label);
+        assert_eq!(
+            changed, case.expect_changed,
+            "case (changed): {}",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn normalize_card_order_idempotent() {
+    struct Case {
+        label: &'static str,
+        card_order: Vec<(&'static str, Vec<&'static str>)>,
+        columns: Vec<Column>,
+    }
+
+    let cases: Vec<Case> = vec![
+        Case {
+            label: "重複なし",
+            card_order: vec![("Todo", vec!["a.md", "b.md"]), ("Done", vec!["c.md"])],
+            columns: vec![col("Todo", 0), col("Done", 1)],
+        },
+        Case {
+            label: "同一列内重複あり",
+            card_order: vec![("Todo", vec!["a.md", "b.md", "a.md"])],
+            columns: vec![col("Todo", 0)],
+        },
+        Case {
+            label: "列跨ぎ重複あり",
+            card_order: vec![("Done", vec!["a.md"]), ("Todo", vec!["a.md", "b.md"])],
+            columns: vec![col("Todo", 0), col("Done", 1)],
+        },
+        Case {
+            label: "混在",
+            card_order: vec![
+                ("Done", vec!["a.md", "b.md", "a.md"]),
+                ("Todo", vec!["a.md", "c.md"]),
+            ],
+            columns: vec![col("Todo", 0), col("Done", 1)],
+        },
+    ];
+
+    for case in cases {
+        let card_order: CardOrder = case
+            .card_order
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.into_iter().map(String::from).collect()))
+            .collect();
+        let config = Config {
+            card_order,
+            columns: case.columns,
+            ..Config::default()
+        };
+        let (first, _) = config.normalize_card_order();
+        let (second, changed_again) = first.normalize_card_order();
+        assert_eq!(
+            first.card_order, second.card_order,
+            "idempotent: {}",
+            case.label
+        );
+        assert!(
+            !changed_again,
+            "second normalize must report no change: {}",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn normalize_card_order_via_load_or_default_removes_duplicates() {
+    let tmp = TempDir::new().unwrap();
+    write_config(
+        &tmp,
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Done", "order": 1 }
+            ],
+            "cardOrder": {
+                "Todo": ["a.md", "b.md", "a.md"],
+                "Done": ["a.md"]
+            }
+        }"#,
+    );
+
+    let cfg = load_or_default(tmp.path()).unwrap();
+    assert_eq!(
+        cfg.card_order.get("Todo"),
+        Some(&vec!["a.md".to_string(), "b.md".to_string()]),
+        "同一列内重複 + 列跨ぎ重複の両方が解消される"
+    );
+    assert_eq!(
+        cfg.card_order.get("Done"),
+        Some(&Vec::<String>::new()),
+        "列跨ぎ重複で Todo が勝つため Done 側から除去"
+    );
+}
+
+#[test]
+fn normalize_card_order_large_entry() {
+    let paths: Vec<String> = (0..100)
+        .flat_map(|i| vec![format!("tasks/{i}.md"), format!("tasks/{i}.md")])
+        .collect();
+    let card_order: CardOrder = BTreeMap::from([("Todo".to_string(), paths)]);
+    let config = Config {
+        card_order,
+        columns: vec![col("Todo", 0)],
+        ..Config::default()
+    };
+    let (normalized, changed) = config.normalize_card_order();
+    assert!(changed);
+    assert_eq!(normalized.card_order.get("Todo").unwrap().len(), 100);
+}

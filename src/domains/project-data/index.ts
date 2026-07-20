@@ -325,16 +325,16 @@ export const ProjectData = {
     }
     const inColumnByFilePath = new Map(inColumn.map((t) => [t.filePath, t]));
     const ordered: Task[] = [];
-    const used = new Set<string>();
+    const seen = new Set<string>();
     for (const filePath of filePaths) {
       const task = inColumnByFilePath.get(filePath);
-      if (task !== undefined && !used.has(filePath)) {
+      if (task !== undefined) {
         ordered.push(task);
-        used.add(filePath);
+        seen.add(filePath);
       }
     }
     for (const task of inColumn) {
-      if (!used.has(task.filePath)) {
+      if (!seen.has(task.filePath)) {
         ordered.push(task);
       }
     }

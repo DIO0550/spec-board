@@ -313,6 +313,81 @@ impl Config {
         })
     }
 
+    /// cardOrder の canonical membership を保証する正規化メソッド。
+    ///
+    /// 2 段階で正規化する:
+    /// 1. 同一カラム内の重複パスを除去（first occurrence wins）
+    /// 2. 列跨ぎ重複を解消（columns の order 昇順走査で first occurrence が winner）
+    ///
+    /// `&self` を借用し、正規化済みの新しい `Config` を返す。
+    /// 第 2 返却値は「入力と出力が異なるか」を表す。
+    pub fn normalize_card_order(&self) -> (Config, bool) {
+        let mut changed = false;
+        let mut normalized: CardOrder = BTreeMap::new();
+
+        for (key, paths) in &self.card_order {
+            let mut seen = HashSet::new();
+            let deduped: Vec<String> = paths
+                .iter()
+                .filter(|p| seen.insert(p.as_str()))
+                .cloned()
+                .collect();
+            if deduped.len() != paths.len() {
+                changed = true;
+            }
+            normalized.insert(key.clone(), deduped);
+        }
+
+        // columns を order 昇順にソートし、その順で走査する。
+        // columns に存在しないキーは末尾に（BTreeMap キー辞書順で）走査する。
+        let column_order: Vec<&str> = {
+            let mut sorted: Vec<&Column> = self.columns.iter().collect();
+            sorted.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
+            sorted.iter().map(|c| c.name.as_str()).collect()
+        };
+        let all_keys: Vec<String> = normalized.keys().cloned().collect();
+        let ordered_keys: Vec<String> = column_order
+            .iter()
+            .filter(|k| all_keys.contains(&k.to_string()))
+            .map(|k| k.to_string())
+            .chain(
+                all_keys
+                    .iter()
+                    .filter(|k| !column_order.contains(&k.as_str()))
+                    .cloned(),
+            )
+            .collect();
+
+        let mut global_seen: HashSet<String> = HashSet::new();
+        let mut removals: HashMap<String, HashSet<String>> = HashMap::new();
+        for key in &ordered_keys {
+            let Some(paths) = normalized.get(key) else {
+                continue;
+            };
+            for path in paths {
+                if !global_seen.insert(path.clone()) {
+                    removals
+                        .entry(key.clone())
+                        .or_default()
+                        .insert(path.clone());
+                }
+            }
+        }
+
+        for (key, to_remove) in &removals {
+            if let Some(paths) = normalized.get_mut(key) {
+                paths.retain(|p| !to_remove.contains(p));
+                changed = true;
+            }
+        }
+
+        let result = Config {
+            card_order: normalized,
+            ..self.clone()
+        };
+        (result, changed)
+    }
+
     /// `cardOrder[column_name]` を `file_paths` で上書きした新しい `Config` を返す
     /// （副作用なし）。
     ///
@@ -654,8 +729,9 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
 /// # 決定論性
 /// 戻り値は `BTreeMap` のためキー順序はキー昇順で決定論的。値の `Vec` は元の順序を保持する。
 ///
-/// # スコープ外
-/// 値配列内の重複パス除去は本関数では行わない。重複の扱いは将来別関数で検討する。
+/// # 重複パスの扱い
+/// 値配列内の重複パス除去は [`Config::normalize_card_order`] が担当する。
+/// 本関数は「存在しないパスの除去」のみを担当し、重複除去は行わない。
 ///
 /// # 例
 /// ```ignore

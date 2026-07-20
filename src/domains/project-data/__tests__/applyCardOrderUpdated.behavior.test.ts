@@ -94,3 +94,33 @@ test("filePaths に含まれる未知の path は無視される", () => {
     "tasks/a.md",
   ]);
 });
+
+test("重複 filePaths が渡された場合の挙動を記録する (BE normalize 済みの前提)", () => {
+  const data = dataOf([
+    ["tasks/a.md", "Todo"],
+    ["tasks/b.md", "Todo"],
+  ]);
+  const next = ProjectData.applyCardOrderUpdated(data, "Todo", [
+    "tasks/b.md",
+    "tasks/b.md",
+    "tasks/a.md",
+  ]);
+  // ordered は [b, b, a] の 3 件だが data.tasks.map が 2 件に制限する。
+  // BE が重複を排除するため実運用では発生しない。挙動の記録目的。
+  expect(next.tasks.map((t) => t.filePath)).toEqual([
+    "tasks/b.md",
+    "tasks/b.md",
+  ]);
+});
+
+test("空の filePaths が渡された場合は全タスクが fallback 配置される", () => {
+  const data = dataOf([
+    ["tasks/a.md", "Todo"],
+    ["tasks/b.md", "Todo"],
+  ]);
+  const next = ProjectData.applyCardOrderUpdated(data, "Todo", []);
+  expect(next.tasks.map((t) => t.filePath)).toEqual([
+    "tasks/a.md",
+    "tasks/b.md",
+  ]);
+});
