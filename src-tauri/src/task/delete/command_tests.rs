@@ -217,7 +217,11 @@ fn delete_task_returns_has_children_and_preserves_file() {
 
     assert!(parent_abs.exists(), "parent file should be preserved");
     let snap_after = state.tasks_snapshot().expect("snapshot");
-    assert_eq!(snap_before.len(), snap_after.len(), "cache should be unchanged");
+    assert_eq!(
+        snap_before.len(),
+        snap_after.len(),
+        "cache should be unchanged"
+    );
 }
 
 // ---------------------------------------------------------------------------

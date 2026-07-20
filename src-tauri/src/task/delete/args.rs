@@ -20,9 +20,14 @@ pub(crate) struct DeleteTaskIntent {
 
 impl DeleteTaskArgs {
     /// `file_path` を `InputTaskPath` で正規化し、`DeleteTaskIntent` に変換する。
-    pub(crate) fn into_intent(self, project_root: &Path) -> Result<DeleteTaskIntent, DeleteTaskError> {
+    pub(crate) fn into_intent(
+        self,
+        project_root: &Path,
+    ) -> Result<DeleteTaskIntent, DeleteTaskError> {
         let rel_path = resolve_input_file_path(&self.file_path, project_root)?;
-        Ok(DeleteTaskIntent { file_path: rel_path })
+        Ok(DeleteTaskIntent {
+            file_path: rel_path,
+        })
     }
 }
 
