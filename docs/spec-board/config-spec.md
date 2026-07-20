@@ -79,7 +79,7 @@ project-root/
 - `columns` のいずれの `name` にも一致しないキーは、そのキーごと除去される
 - `columns` に存在するキーについては、パス除去の結果として値が空配列 `[]` になってもキー自体は保持される（カラムの初期状態を表すため。`columns` に無いキーの除去ルールとは独立）
 - 値配列内の重複パスはプロジェクト読み込み時に自動除去される（first occurrence wins）
-- 同一パスが複数カラムに出現する場合、columns の order 昇順走査で最初に見つかったカラムに残る（first occurrence wins）
+- 同一パスが複数カラムに出現する場合、columns の order 昇順走査で最初に見つかったカラムに残る（first occurrence wins）。order が同値のカラム間ではカラム名の辞書順（昇順）で tie-break する
 - 正規化は in-memory のみで実行し、config.json への即時書き戻しは行わない（次の write 操作で自然に永続化）
 - ドラッグ&ドロップによるカラム内並び替え時に更新
 
