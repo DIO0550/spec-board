@@ -482,5 +482,13 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
         }
     })?;
 
+    let (config, changed) = config.normalize_card_order();
+    if changed {
+        log::warn!(
+            "cardOrder normalized (duplicates removed): {}",
+            path.display()
+        );
+    }
+
     Ok(config)
 }
