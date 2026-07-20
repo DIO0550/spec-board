@@ -998,13 +998,6 @@ impl TaskIndex {
     ///
     /// `deleted_path` は呼び出し側（effect 層）で正規化済みのプロジェクトルート
     /// 相対パスを渡す前提（不正パスのエラー化は effect 層の責務）。
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "delete_task IPC (Issue #90) で本 method を呼び出す予定。caller 追加時に expect を外す。"
-        )
-    )]
     pub(crate) fn plan_delete_abort(&self, deleted_path: &str) -> Result<(), DeleteTaskError> {
         let children = self.children_paths_of(deleted_path);
         if children.is_empty() {

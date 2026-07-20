@@ -22,6 +22,7 @@ pub fn run() {
             task::get::get_tasks,
             task::create::create_task,
             task::update::update_task,
+            task::delete::delete_task,
             task::add_link::add_link,
             task::remove_link::remove_link,
             config::get_columns::get_columns,

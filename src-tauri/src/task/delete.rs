@@ -1,6 +1,11 @@
 //! `delete_task` Tauri command のファサード。
-//!
-//! 現状は aggregate validation のエラー型のみを公開する。IPC コマンド本体
-//! （`command.rs` / `args.rs`）は未実装。
 
+pub mod args;
+pub mod command;
 pub mod error;
+
+#[allow(unused_imports)]
+pub use command::{__cmd__delete_task, delete_task};
+
+#[allow(unused_imports)]
+pub(crate) use command::delete_task_impl;
