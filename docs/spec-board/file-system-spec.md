@@ -194,17 +194,28 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 | パラメータ | 型 | 必須 | 説明 |
 |:----------|:---|:-----|:-----|
-| filePath | `String` | はい | 対象ファイルのプロジェクトルートからの相対パス |
-| orphanStrategy | `String` | いいえ | 子タスクがある場合の処理方針。`clear`（子の `parent` をクリア）または `abort`（削除中止）。デフォルト: `clear` |
+| filePath | `String` | はい | 対象ファイルのプロジェクトルートからの相対パス（絶対パスも受付可。`InputTaskPath` で `.md` 必須として正規化） |
+| orphanStrategy | `String` | いいえ | 子タスクがある場合の処理方針。現在は `abort`（削除中止）のみ実装。`clear` strategy は将来対応 |
 
 **振る舞い**:
-1. 対象ファイルの存在を確認
-2. 子タスクが存在する場合、`orphanStrategy` に従い処理
-   - `clear`: 全ての子タスクの `parent` フィールドをクリア
-   - `abort`: エラーを返却し削除を中止
-3. 他タスクの `links` フロントマターに削除対象のパスが明示的に記載されている場合、該当エントリを削除（逆引きのみのリンクはフロントマター上に存在しないため処理不要）
-4. ファイルを削除
-5. 削除完了を返却
+1. `filePath` を `InputTaskPath` で正規化し、空文字・非 `.md`・`..` を含むパスは `InvalidPath` エラーを返す
+2. cache（`TaskIndex`）上で対象タスクの存在を確認し、見つからなければ `FileNotFound` エラーを返す
+3. 子タスクが存在する場合、`HasChildren` エラーを返却し削除を中止する（abort strategy）
+4. watcher 起動中は `WriteIgnoreRegistry` に削除対象パスを登録し、watcher 側の重複処理を抑止する
+5. `TaskIo::remove` でファイルを物理削除する
+6. `tasks_cache` から対象タスクを除去する
+7. `Ok(())` を返却する
+
+**エラー**:
+
+| エラー | Display 文字列パターン | 条件 |
+|:------|:---------------------|:-----|
+| `InvalidPath` | `invalid path: {raw}` | 空文字・非 `.md`・不正パス |
+| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない |
+| `HasChildren` | `task has children: {path} (children: ...)` | 子タスクが 1 件以上存在する |
+| `NoProjectOpen` | `project is not opened` | プロジェクト未オープン |
+
+> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder の cleanup は watcher の reconciliation に委ねる。
 
 ---
 
