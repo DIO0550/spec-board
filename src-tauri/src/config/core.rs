@@ -342,7 +342,7 @@ impl Config {
         // columns に存在しないキーは末尾に（BTreeMap キー辞書順で）走査する。
         let column_order: Vec<&str> = {
             let mut sorted: Vec<&Column> = self.columns.iter().collect();
-            sorted.sort_by_key(|c| c.order);
+            sorted.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
             sorted.iter().map(|c| c.name.as_str()).collect()
         };
         let all_keys: Vec<String> = normalized.keys().cloned().collect();
