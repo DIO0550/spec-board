@@ -55,6 +55,10 @@ pub(crate) fn delete_task_impl(
         if watcher_active {
             let _ = state.write_ignore().unregister(&abs);
         }
+        let crate::task::io::TaskIoError::Io(ref e) = err;
+        if e.kind() == std::io::ErrorKind::NotFound {
+            return Err(DeleteTaskError::FileNotFound(abs).into());
+        }
         return Err(err.into());
     }
 

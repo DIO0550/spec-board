@@ -26,6 +26,8 @@ pub enum DeleteTaskError {
     InvalidPath(String),
     #[error("file not found: {}", .0.display())]
     FileNotFound(PathBuf),
+    #[error("unsupported orphan strategy: {0}")]
+    UnsupportedOrphanStrategy(String),
 }
 
 /// IPC command の全エラー経路。

@@ -213,9 +213,10 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | `InvalidPath` | `invalid path: {raw}` | 空文字・非 `.md`・不正パス |
 | `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない |
 | `HasChildren` | `task has children: {path} (children: ...)` | 子タスクが 1 件以上存在する |
+| `UnsupportedOrphanStrategy` | `unsupported orphan strategy: {strategy}` | `abort` 以外の orphanStrategy が指定された |
 | `NoProjectOpen` | `project is not opened` | プロジェクト未オープン |
 
-> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder の cleanup は watcher の reconciliation に委ねる。
+> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder の cleanup は watcher の reconciliation に委ねる。現在は abort strategy のみ実装済みで、clear strategy（子の parent クリア）や reverse_links 再構築は将来 Issue で対応する。
 
 ---
 
