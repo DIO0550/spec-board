@@ -32,12 +32,12 @@ pub(crate) fn delete_task_impl(
     let project_root = state
         .project_path()?
         .ok_or(DeleteTaskCommandError::NoProjectOpen)?;
-    let snapshot = state.tasks_snapshot()?;
 
     let intent = args.into_intent(project_root.as_path())?;
     let rel_path = intent.file_path;
     let abs = project_root.join(&rel_path);
 
+    let snapshot = state.tasks_snapshot()?;
     let index = TaskIndex::from(snapshot);
     if index.find_by_path(&rel_path).is_none() {
         return Err(DeleteTaskError::FileNotFound(abs).into());

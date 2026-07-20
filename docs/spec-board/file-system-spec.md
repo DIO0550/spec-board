@@ -211,7 +211,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | エラー | Display 文字列パターン | 条件 |
 |:------|:---------------------|:-----|
 | `InvalidPath` | `invalid path: {raw}`（空文字時は `invalid path: empty`） | 空文字・非 `.md`・不正パス |
-| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない |
+| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない、またはファイル物理削除時に disk 上に存在しない |
 | `HasChildren` | `task has children: {path} (children: ...)` | 子タスクが 1 件以上存在する |
 | `UnsupportedOrphanStrategy` | `unsupported orphan strategy: {strategy}` | `abort` 以外の orphanStrategy が指定された |
 | `NoProjectOpen` | `project is not opened` | プロジェクト未オープン |
