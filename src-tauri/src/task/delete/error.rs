@@ -41,7 +41,7 @@ pub enum DeleteTaskCommandError {
     AppState(#[from] AppStateError),
     #[error(transparent)]
     WriteIgnore(#[from] WriteIgnoreError),
-    #[error("failed to delete task file: {0}")]
+    #[error("io: {0}")]
     Io(#[from] std::io::Error),
 }
 

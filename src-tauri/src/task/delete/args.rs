@@ -22,7 +22,7 @@ pub(crate) struct DeleteTaskIntent {
 impl DeleteTaskArgs {
     /// `file_path` を `InputTaskPath` で正規化し、`DeleteTaskIntent` に変換する。
     ///
-    /// `orphanStrategy` が `Some` かつ `"abort"` 以外の場合は `InvalidPath` で reject する。
+    /// `orphanStrategy` が `Some` かつ `"abort"` 以外の場合は `UnsupportedOrphanStrategy` で reject する。
     pub(crate) fn into_intent(
         self,
         project_root: &Path,
