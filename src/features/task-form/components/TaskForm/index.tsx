@@ -8,15 +8,14 @@ import { Priority } from "@/domains/priority";
 import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
 import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
+import { usePreviewTaskFilename } from "@/features/task-form/hooks/usePreviewTaskFilename";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
+import { FileNameField } from "@/features/task-form/lib/fields/fileName";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
 import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
-import {
-  SavePathPreview,
-  type SavePathPreviewResult,
-} from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
+import type { PreviewTaskFilenamePayload } from "@/lib/tauri/taskCommands/types";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
@@ -47,8 +46,6 @@ type TaskFormProps = {
   parentReadOnly?: boolean;
   /** links ピッカー候補・選択済み chip の逆引きに使う既存タスク一覧 */
   existingTasks?: readonly Task[];
-  /** プロジェクト絶対パス（保存先フルパスプレビュー用。未指定なら相対パス表示） */
-  projectPath?: string;
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
   /** 送信ボタンのラベル（デフォルト: "作成"） */
@@ -82,12 +79,12 @@ type TaskFormProps = {
    */
   onDirtyChange?: (dirty: boolean) => void;
   /**
-   * 保存先パスプレビュー（{@link SavePathPreviewResult}）の変化通知。
+   * 保存先パスプレビュー（{@link PreviewTaskFilenamePayload}）の変化通知。
    * subbar / pv-foot / footer のファイル名表示を親へ持ち上げるための軽量コールバック。
    * 文字列結合のみで Markdown 再パースを伴わないため onValuesChange の最適化を崩さない。
    * @param preview - 保存先パスプレビュー結果（kind で分岐する union）
    */
-  onPathPreviewChange?: (preview: SavePathPreviewResult) => void;
+  onPathPreviewChange?: (preview: PreviewTaskFilenamePayload) => void;
   /**
    * inline の submit / cancel アクション（{@link TaskFormActions}）を描画するか。
    * 既定 true（従来どおり）。false のとき（TaskCreateScreen の footer 利用時）は
@@ -110,7 +107,6 @@ export const TaskForm = ({
   initialParent,
   parentReadOnly,
   existingTasks,
-  projectPath,
   isSubmitting = false,
   submitLabel = "作成",
   cancelLabel = "キャンセル",
@@ -187,33 +183,12 @@ export const TaskForm = ({
     labels.state,
     links.links,
   ]);
-  // 保存先パスプレビュー。文字列結合のみで Markdown 再パースを伴わないため、
-  // 毎キーストローク再計算でも onValuesChange の fileName 除外最適化と矛盾しない。
-  const pathPreview = useMemo(
-    () =>
-      SavePathPreview.compute({
-        title: fields.state.values.title,
-        fileName: fields.state.values.fileName,
-        parentFilePath:
-          parentValue === "" || parentValue === undefined
-            ? undefined
-            : parentValue,
-        existingTaskFilePaths: (existingTasks ?? []).map(
-          (task) => task.filePath,
-        ),
-        projectPath,
-      }),
-    [
-      fields.state.values.title,
-      fields.state.values.fileName,
-      parentValue,
-      existingTasks,
-      projectPath,
-    ],
-  );
-  // 保存先パスプレビューを親へ持ち上げる（subbar / pv-foot / footer のファイル名表示用）。
-  // pathPreview は文字列結合のみで Markdown 再パースを伴わないため、この通知は
-  // onValuesChange の fileName/subIssues 除外最適化を崩さない。
+  const pathPreview = usePreviewTaskFilename({
+    title: fields.state.values.title,
+    explicitFilename: FileNameField.toParam(fields.state.values.fileName),
+    parentFilePath:
+      parentValue === "" || parentValue === undefined ? undefined : parentValue,
+  });
   useEffect(() => {
     if (onPathPreviewChange === undefined) {
       return;

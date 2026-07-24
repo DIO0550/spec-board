@@ -127,8 +127,8 @@ const makeInvoke =
       get_columns: () => Promise.resolve(getColumnsRawPayload),
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),
-      // 作成画面の TaskForm が useLabelList から呼ぶ読み取り系。空一覧を返す。
       get_labels: () => Promise.resolve({ labels: [] }),
+      preview_task_filename: () => Promise.resolve({ kind: "pending" }),
       ...overrides,
     };
     return (responders[cmd] ?? resolveUndefined)();

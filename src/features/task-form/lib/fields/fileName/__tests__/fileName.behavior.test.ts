@@ -2,14 +2,6 @@ import { expect, test } from "vitest";
 import { Result } from "@/utils/result";
 import { FileNameField } from "..";
 
-test("fromTitle はタイトルを kebab-case の base に変換する", () => {
-  expect(FileNameField.fromTitle("Fix Login Bug")).toBe("fix-login-bug");
-});
-
-test("fromTitle は前後空白を除去してから変換する", () => {
-  expect(FileNameField.fromTitle("  Fix Bug  ")).toBe("fix-bug");
-});
-
 test.each([
   ["my task"],
   ["fix.md-2"],

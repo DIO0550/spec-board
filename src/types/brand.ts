@@ -6,7 +6,7 @@ declare const brandSymbol: unique symbol;
  * 誤代入を型レベルで検出する。
  *
  * 値の生成は cast で行う運用（`brand()` / `unbrand()` 等のヘルパは提供しない）。
- * 生成は domain 層の companion 関数（例: `Due.parse`, `TaskFileName.from`）に閉じる。
+ * 生成は domain 層の companion 関数（例: `Due.parse`）に閉じる。
  *
  * **Name には必ず文字列リテラル型を渡すこと**。`Brand<string, string>` のように
  * `string` 自体を渡すと nominal 性が失われ、全ての Brand が相互代入可能になる。

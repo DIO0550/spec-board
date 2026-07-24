@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { getLabels, TauriError } from "@/lib/tauri";
+import { getLabels, previewTaskFilename, TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -13,18 +13,21 @@ vi.mock("@/lib/tauri", async () => {
   return {
     ...actual,
     getLabels: vi.fn(),
+    previewTaskFilename: vi.fn(),
   };
 });
 
 const getLabelsMock = vi.mocked(getLabels);
+const previewMock = vi.mocked(previewTaskFilename);
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
 
 beforeEach(() => {
   getLabelsMock.mockReset();
-  // 既定はラベルマスタ 0 件（従来挙動 = 候補なし）。
+  previewMock.mockReset();
   getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
+  previewMock.mockResolvedValue(Result.ok({ kind: "pending" }));
 });
 
 afterEach(() => {
@@ -403,7 +406,7 @@ test("値変化時にフィールド state が保持される（key 再 mount �
   expect(trigger.textContent).toContain("draft");
 });
 
-test("title 入力でファイル名欄に kebab-case 値が表示される（自動追従）", () => {
+test("title 入力でファイル名欄は空のまま（自動追従は BE IPC に移行）", () => {
   render({
     columns: COLUMNS,
     initialStatus: "Todo",
@@ -419,7 +422,7 @@ test("title 入力でファイル名欄に kebab-case 値が表示される（�
   const fileName = document.querySelector(
     '[data-testid="task-form-file-name"]',
   ) as HTMLInputElement;
-  expect(fileName.value).toBe("fix-login-bug");
+  expect(fileName.value).toBe("");
 });
 
 test("isSubmitting=true でファイル名欄も無効化される", () => {
@@ -718,59 +721,43 @@ test("formRef に form 要素が配線される", () => {
   );
 });
 
-test("fileName 欄直下に保存先パスプレビューが表示され fileName 入力で追従する", () => {
+test("IPC 成功で保存先パスプレビューが表示される", async () => {
+  previewMock.mockResolvedValue(
+    Result.ok({
+      kind: "path",
+      fileName: "my-task.md",
+      relPath: "tasks/my-task.md",
+      fullPath: "/tmp/project/tasks/my-task.md",
+    }),
+  );
   render({
     columns: COLUMNS,
     initialStatus: "Todo",
     onSubmit: vi.fn(),
     onCancel: vi.fn(),
-    projectPath: "/tmp/project",
   });
-  // 未入力時は案内文（pending）。
-  expect(
-    document.querySelector('[data-testid="task-form-path-preview"]'),
-  ).toBeNull();
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  act(() => {
+  await act(async () => {
     changeInputValue(title, "My Task");
   });
-  const preview = () =>
-    document.querySelector('[data-testid="task-form-path-preview"]');
-  expect(preview()?.textContent).toBe("/tmp/project/tasks/my-task.md");
-  // fileName 欄は title 追従後も手入力で上書きでき、プレビューが追従する。
-  const fileName = document.querySelector(
-    '[data-testid="task-form-file-name"]',
-  ) as HTMLInputElement;
-  act(() => {
-    changeInputValue(fileName, "custom");
+  await act(async () => {
+    await Promise.resolve();
   });
-  expect(preview()?.textContent).toBe("/tmp/project/tasks/custom.md");
+  const preview = document.querySelector(
+    '[data-testid="task-form-path-preview"]',
+  );
+  expect(preview?.textContent).toBe("/tmp/project/tasks/my-task.md");
 });
 
-test("無効な fileName 入力でプレビューが警告表示に切り替わる", () => {
-  render({
-    columns: COLUMNS,
-    initialStatus: "Todo",
-    onSubmit: vi.fn(),
-    onCancel: vi.fn(),
-  });
-  const fileName = document.querySelector(
-    '[data-testid="task-form-file-name"]',
-  ) as HTMLInputElement;
-  act(() => {
-    changeInputValue(fileName, "a/b");
-  });
-  expect(
-    document.querySelector('[data-testid="task-form-path-warning"]'),
-  ).toBeTruthy();
-  expect(
-    document.querySelector('[data-testid="task-form-path-preview"]'),
-  ).toBeNull();
-});
-
-test("submit 失敗で fileName 欄エラー表示中はプレビュー警告を抑止し、次の入力でライブ警告へ引き継ぐ", () => {
+test("IPC が invalid を返すとプレビューが警告表示に切り替わる", async () => {
+  previewMock.mockResolvedValue(
+    Result.ok({
+      kind: "invalid",
+      error: "title cannot be converted to filename",
+    }),
+  );
   render({
     columns: COLUMNS,
     initialStatus: "Todo",
@@ -780,35 +767,18 @@ test("submit 失敗で fileName 欄エラー表示中はプレビュー警告を
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  const fileName = document.querySelector(
-    '[data-testid="task-form-file-name"]',
-  ) as HTMLInputElement;
-  act(() => {
-    changeInputValue(title, "T");
+  await act(async () => {
+    changeInputValue(title, "!!!");
   });
-  act(() => {
-    changeInputValue(fileName, "a/b");
+  await act(async () => {
+    await Promise.resolve();
   });
-  act(() => {
-    submitForm();
-  });
-  // fileName 欄エラーが表示されている間は同文のライブ警告を出さない。
-  expect(
-    document.querySelector('[data-testid="task-form-file-name-error"]'),
-  ).toBeTruthy();
-  expect(
-    document.querySelector('[data-testid="task-form-path-warning"]'),
-  ).toBeNull();
-  // 次の入力で欄エラーがクリアされ、ライブ警告へ引き継がれる。
-  act(() => {
-    changeInputValue(fileName, "a/bc");
-  });
-  expect(
-    document.querySelector('[data-testid="task-form-file-name-error"]'),
-  ).toBeNull();
   expect(
     document.querySelector('[data-testid="task-form-path-warning"]'),
   ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid="task-form-path-preview"]'),
+  ).toBeNull();
 });
 
 test("fileName のみの入力では onValuesChange が追加発火しない（既存最適化のリグレッション防止）", () => {

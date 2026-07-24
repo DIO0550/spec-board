@@ -23,7 +23,7 @@ test("validate: 空白のみは EMPTY（trim 判定）", () => {
   expect(TitleField.validate("   ")).toEqual(Result.err({ code: "EMPTY" }));
 });
 
-test("validate: kebab 後空文字になる入力（記号/アンダースコアのみ）は EMPTY", () => {
+test("validate: 記号のみタイトルは Ok を返す（invalid 判定は BE に委譲）", () => {
   const cases: Array<[string, string]> = [
     ["!!!", "ASCII 記号のみ"],
     ["___", "アンダースコアのみ"],
@@ -31,9 +31,7 @@ test("validate: kebab 後空文字になる入力（記号/アンダースコア
     ["-_-", "ハイフン・アンダースコア混在"],
   ];
   for (const [input, label] of cases) {
-    expect(TitleField.validate(input), label).toEqual(
-      Result.err({ code: "EMPTY" }),
-    );
+    expect(TitleField.validate(input), label).toEqual(Result.ok(undefined));
   }
 });
 

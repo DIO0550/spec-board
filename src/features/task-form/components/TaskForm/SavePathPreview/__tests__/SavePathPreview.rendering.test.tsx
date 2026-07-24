@@ -1,7 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import { fileNameErrorMessage } from "../../TaskFormFileName/fileNameErrorMessage";
 import { SavePathPreview } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -16,7 +15,7 @@ afterEach(() => {
   container = null;
 });
 
-const render = (props: Parameters<typeof SavePathPreview>[0]) => {
+const render = (props: Parameters<typeof SavePathPreview>[0]): void => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -25,9 +24,9 @@ const render = (props: Parameters<typeof SavePathPreview>[0]) => {
   });
 };
 
-const pathPreview = () =>
+const pathPreview = (): Element | null =>
   document.querySelector('[data-testid="task-form-path-preview"]');
-const pathWarning = () =>
+const pathWarning = (): Element | null =>
   document.querySelector('[data-testid="task-form-path-warning"]');
 
 test("path 状態ではフルパスが表示され、警告は表示されない", () => {
@@ -43,10 +42,16 @@ test("path 状態ではフルパスが表示され、警告は表示されない
   expect(pathWarning()).toBeNull();
 });
 
-test("invalid 状態では fileNameErrorMessage と同文の警告が表示され、パスは表示されない", () => {
-  const error = { code: "FORBIDDEN_CHAR" as const, chars: ["/", "?"] };
-  render({ preview: { kind: "invalid", error } });
-  expect(pathWarning()?.textContent).toBe(fileNameErrorMessage(error));
+test("invalid 状態では BE のエラー文言が警告表示され、パスは表示されない", () => {
+  render({
+    preview: {
+      kind: "invalid",
+      error: "タイトルからファイル名を生成できません",
+    },
+  });
+  expect(pathWarning()?.textContent).toBe(
+    "タイトルからファイル名を生成できません",
+  );
   expect(pathPreview()).toBeNull();
 });
 
@@ -59,11 +64,11 @@ test("pending 状態では案内文が表示され、警告・パスは表示さ
   );
 });
 
-test("suppressWarning=true の invalid では警告もパスも表示しない（fileName 欄エラーとの二重表示防止）", () => {
+test("suppressWarning=true の invalid では警告もパスも表示しない", () => {
   render({
     preview: {
       kind: "invalid",
-      error: { code: "FORBIDDEN_CHAR", chars: ["/"] },
+      error: "タイトルからファイル名を生成できません",
     },
     suppressWarning: true,
   });

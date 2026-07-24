@@ -71,6 +71,22 @@ export type UpdateTaskParams = {
   draft?: boolean;
 };
 
+/** preview_task_filename 引数。 */
+export type PreviewTaskFilenameParams = {
+  /** タスクタイトル */
+  title: string;
+  /** 明示ファイル名（任意） */
+  explicitFilename?: string;
+  /** 親タスクのファイルパス（任意） */
+  parentFilePath?: string;
+};
+
+/** preview_task_filename の戻り値。tagged union (kind で分岐)。 */
+export type PreviewTaskFilenamePayload =
+  | { kind: "path"; fileName: string; relPath: string; fullPath: string }
+  | { kind: "invalid"; error: string }
+  | { kind: "pending" };
+
 /** 子タスクが存在する場合の処理方針。 */
 export type OrphanStrategy = "clear" | "abort";
 
