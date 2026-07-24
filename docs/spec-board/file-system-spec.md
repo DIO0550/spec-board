@@ -146,6 +146,15 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
    - 既存 cache 内で dangling parent / links が新規 Task を参照していた場合、新規 Task 側の `children` / `reverse_links` にも反映
 7. **戻り値**: 挿入後の Task（`children` / `reverseLinks` 解決済み）
 
+### preview_task_filename IPC
+
+タスク作成フォームで入力中のタイトル / 明示ファイル名 / 親タスクパスから、
+保存先パスのプレビュー（衝突回避済み）を返す読み取り専用 IPC。
+
+- **引数**: `{ title, explicitFilename?, parentFilePath? }`
+- **戻り値**: `{ kind: "path", fileName, relPath, fullPath }` | `{ kind: "invalid", error }` | `{ kind: "pending" }`
+- FE 側の kebab-case 変換・unique filename 生成は本 IPC に統一し、二重実装を排除する
+
 **Atomic 性 (部分 atomic)**:
 - 入力検証 / 配置先決定は副作用前に完了する。失敗時は FS / state を一切変更しない
 - FS write 中の失敗（`write_all` 途中失敗）は best-effort で `remove_file` を試み、`write_ignore` を解除して `Io` エラーを返す
