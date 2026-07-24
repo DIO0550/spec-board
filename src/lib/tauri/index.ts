@@ -49,6 +49,7 @@ export { createTask } from "./taskCommands/createTask";
 export { deleteTask } from "./taskCommands/deleteTask";
 export { getTasks } from "./taskCommands/getTasks";
 export { openProject } from "./taskCommands/openProject";
+export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
 export type {
   CreateTaskParams,
   DeleteTaskParams,
