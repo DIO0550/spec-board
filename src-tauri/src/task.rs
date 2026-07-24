@@ -10,6 +10,7 @@ pub mod io;
 pub mod label;
 pub mod parse;
 pub mod path_lookup;
+pub mod preview_filename;
 pub(crate) mod path_normalization;
 pub mod remove_link;
 pub mod reverse_links;

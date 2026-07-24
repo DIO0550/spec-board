@@ -646,6 +646,57 @@ impl TaskIndex {
         })
     }
 
+    /// ファイル名プレビューを計算する aggregate メソッド。
+    /// `plan_create` と同じ helper 群を使うが、副作用に依存しない読み取り専用計算。
+    pub(crate) fn plan_preview_filename(
+        &self,
+        _project_root: &Path,
+        args: &crate::task::preview_filename::PreviewTaskFilenameArgs,
+    ) -> PreviewFilenameOutcome {
+        let parent_index = match &args.parent_file_path {
+            Some(p) if !p.is_empty() => match self.resolve_parent_for_new_task(p) {
+                Some(i) => Some(i),
+                None => {
+                    return PreviewFilenameOutcome::Pending;
+                }
+            },
+            _ => None,
+        };
+
+        let snapshot = self.as_slice();
+        let target_dir = resolve_target_dir(parent_index, snapshot);
+        let existing = existing_filenames_in_dir(snapshot, &target_dir);
+
+        let filename = match &args.explicit_filename {
+            Some(name) if !name.trim().is_empty() => match TaskFileName::from_explicit(name, &existing) {
+                Ok(f) => f,
+                Err(e) => {
+                    return PreviewFilenameOutcome::Invalid {
+                        reason: e.to_string(),
+                    };
+                }
+            },
+            _ => {
+                let title = TaskTitle::from_lenient(args.title.clone());
+                match TaskFileName::from_title(&title, &existing) {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return PreviewFilenameOutcome::Invalid {
+                            reason: "title cannot be converted to filename".to_string(),
+                        };
+                    }
+                }
+            }
+        };
+
+        let rel_path = join_rel_path(&target_dir, &filename);
+
+        PreviewFilenameOutcome::Resolved {
+            file_name: filename,
+            rel_path,
+        }
+    }
+
     /// 既存 Task と raw `Parsed`（frontmatter + body）から、書き込むべき file_content
     /// と更新後 Task を計算する純粋関数。I/O / 時計 / 乱数に依存しない。
     ///
@@ -1265,6 +1316,44 @@ pub(crate) enum ClearChildrenError {
     ContentRejected { path: PathBuf, reason: String },
 }
 
+/// `TaskIndex::plan_preview_filename` の計算結果。
+/// command 層が `into_payload` で IPC 応答型に変換する。
+#[derive(Debug)]
+pub(crate) enum PreviewFilenameOutcome {
+    Resolved {
+        file_name: TaskFileName,
+        rel_path: PathBuf,
+    },
+    Invalid {
+        reason: String,
+    },
+    Pending,
+}
+
+impl PreviewFilenameOutcome {
+    pub(crate) fn into_payload(
+        self,
+        project_root: &Path,
+    ) -> crate::task::preview_filename::PreviewTaskFilenamePayload {
+        use crate::task::preview_filename::PreviewTaskFilenamePayload;
+        match self {
+            Self::Resolved {
+                file_name,
+                rel_path,
+            } => {
+                let full_path = project_root.join(&rel_path);
+                PreviewTaskFilenamePayload::Path {
+                    file_name: file_name.into_string(),
+                    rel_path: rel_path.to_string_lossy().into_owned(),
+                    full_path: full_path.to_string_lossy().into_owned(),
+                }
+            }
+            Self::Invalid { reason } => PreviewTaskFilenamePayload::Invalid { error: reason },
+            Self::Pending => PreviewTaskFilenamePayload::Pending,
+        }
+    }
+}
+
 /// 親 task の dirname を返す。親未指定なら `tasks/`。
 fn resolve_target_dir(parent_index: Option<usize>, snapshot: &[Task]) -> PathBuf {
     match parent_index {
@@ -1671,3 +1760,7 @@ mod task_index_plan_add_link_tests;
 #[cfg(test)]
 #[path = "task_index_plan_remove_link_tests.rs"]
 mod task_index_plan_remove_link_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_preview_filename_tests.rs"]
+mod task_index_plan_preview_filename_tests;
