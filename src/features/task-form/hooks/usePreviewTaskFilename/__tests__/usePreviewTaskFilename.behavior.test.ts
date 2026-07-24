@@ -184,9 +184,12 @@ test("IPC エラー時は直前の結果を維持する", async () => {
 });
 
 test("高速入力で stale 応答が破棄され最新のみ反映される", async () => {
-  let resolveFirst: ((v: ReturnType<typeof Result.ok>) => void) | null = null;
-  const firstPromise = new Promise<ReturnType<typeof Result.ok>>((resolve) => {
-    resolveFirst = resolve;
+  type OkPayload = ReturnType<typeof Result.ok<PreviewTaskFilenamePayload>>;
+  const deferred: { resolve: ((v: OkPayload) => void) | null } = {
+    resolve: null,
+  };
+  const firstPromise = new Promise<OkPayload>((resolve) => {
+    deferred.resolve = resolve;
   });
 
   mockPreview.mockReturnValueOnce(firstPromise as never);
@@ -195,7 +198,7 @@ test("高速入力で stale 応答が破棄され最新のみ反映される", a
   mockPreview.mockResolvedValueOnce(Result.ok(pathPayload("second.md")));
   await rerender({ ...defaultArgs, title: "Second" });
 
-  resolveFirst?.(Result.ok(pathPayload("first.md")) as never);
+  deferred.resolve?.(Result.ok(pathPayload("first.md")));
   await act(async () => {
     await Promise.resolve();
   });

@@ -29,7 +29,6 @@ export const WithParentCandidates: Story = {
 
 export const WithPathPreview: Story = {
   args: {
-    projectPath: "/Users/dev/projects/spec-board",
     existingTasks: initialTasks,
   },
 };

@@ -24,6 +24,7 @@ export const usePreviewTaskFilename = (
 
   useEffect(() => {
     const currentId = ++requestIdRef.current;
+    /** IPC を呼び出し、世代 ID が一致する場合のみ state を更新する。 */
     const fetch = async (): Promise<void> => {
       const res = await previewTaskFilename({
         title: args.title,
