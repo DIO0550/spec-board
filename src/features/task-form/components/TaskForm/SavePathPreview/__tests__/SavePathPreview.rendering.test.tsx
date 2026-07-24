@@ -46,11 +46,11 @@ test("invalid 状態では BE のエラー文言が警告表示され、パス�
   render({
     preview: {
       kind: "invalid",
-      error: "title cannot be converted to filename",
+      error: "タイトルからファイル名を生成できません",
     },
   });
   expect(pathWarning()?.textContent).toBe(
-    "title cannot be converted to filename",
+    "タイトルからファイル名を生成できません",
   );
   expect(pathPreview()).toBeNull();
 });
@@ -68,7 +68,7 @@ test("suppressWarning=true の invalid では警告もパスも表示しない",
   render({
     preview: {
       kind: "invalid",
-      error: "title cannot be converted to filename",
+      error: "タイトルからファイル名を生成できません",
     },
     suppressWarning: true,
   });

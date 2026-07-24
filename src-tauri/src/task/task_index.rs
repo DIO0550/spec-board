@@ -684,7 +684,7 @@ impl TaskIndex {
                     Ok(f) => f,
                     Err(_) => {
                         return PreviewFilenameOutcome::Invalid {
-                            reason: "title cannot be converted to filename".to_string(),
+                            reason: "タイトルからファイル名を生成できません".to_string(),
                         };
                     }
                 }
@@ -1344,10 +1344,13 @@ impl PreviewFilenameOutcome {
                 rel_path,
             } => {
                 let full_path = project_root.join(&rel_path);
+                // TaskFilePath と同じ forward-slash 正規化（Windows の backslash を統一）
+                let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+                let full_str = full_path.to_string_lossy().replace('\\', "/");
                 PreviewTaskFilenamePayload::Path {
                     file_name: file_name.into_string(),
-                    rel_path: rel_path.to_string_lossy().into_owned(),
-                    full_path: full_path.to_string_lossy().into_owned(),
+                    rel_path: rel_str,
+                    full_path: full_str,
                 }
             }
             Self::Invalid { reason } => PreviewTaskFilenamePayload::Invalid { error: reason },
