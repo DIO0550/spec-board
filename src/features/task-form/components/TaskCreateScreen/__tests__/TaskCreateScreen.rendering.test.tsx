@@ -1,16 +1,32 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
-import { unregisterToastSink } from "@/lib/tauri";
+import { previewTaskFilename, unregisterToastSink } from "@/lib/tauri";
 import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import { TaskCreateScreen } from "..";
 
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    previewTaskFilename: vi.fn(),
+  };
+});
+
+const previewMock = vi.mocked(previewTaskFilename);
+
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
+
+beforeEach(() => {
+  previewMock.mockReset();
+  previewMock.mockResolvedValue(Result.ok({ kind: "pending" }));
+});
 
 afterEach(() => {
   act(() => {
@@ -117,18 +133,29 @@ test("title 未入力では footer に「タイトルを入力してください
   expect(submit.disabled).toBe(true);
 });
 
-test("title 入力後は footer の save-meta が保存先へ変わり作成ボタンが活性化する", () => {
+test("title 入力後は footer の save-meta が保存先へ変わり作成ボタンが活性化する", async () => {
+  previewMock.mockResolvedValue(
+    Result.ok({
+      kind: "path",
+      fileName: "my-task.md",
+      relPath: "tasks/my-task.md",
+      fullPath: "/tmp/project/tasks/my-task.md",
+    }),
+  );
   render(baseProps({ projectPath: "/tmp/project" }));
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  act(() => {
+  await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
     )?.set;
     setter?.call(title, "My Task");
     title.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    await Promise.resolve();
   });
   expect(
     document.querySelector('[data-testid="task-form-save-meta"]')?.textContent,
@@ -171,18 +198,29 @@ test("initialStatus が status フィールド（select trigger）に反映さ�
   expect(trigger?.textContent).toContain("Done");
 });
 
-test("projectPath が TaskForm のパスプレビューへ pass-through される", () => {
+test("IPC 結果の fullPath がパスプレビューに表示される", async () => {
+  previewMock.mockResolvedValue(
+    Result.ok({
+      kind: "path",
+      fileName: "my-task.md",
+      relPath: "tasks/my-task.md",
+      fullPath: "/tmp/project/tasks/my-task.md",
+    }),
+  );
   render(baseProps({ projectPath: "/tmp/project" }));
   const title = document.querySelector(
     '[data-testid="task-form-title"]',
   ) as HTMLInputElement;
-  act(() => {
+  await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
     )?.set;
     setter?.call(title, "My Task");
     title.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    await Promise.resolve();
   });
   expect(
     document.querySelector('[data-testid="task-form-path-preview"]')

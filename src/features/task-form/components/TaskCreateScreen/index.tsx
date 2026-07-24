@@ -5,8 +5,8 @@ import { TaskForm } from "@/features/task-form/components/TaskForm";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
-import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
 import type { TaskFormValues } from "@/features/task-form/types";
+import type { PreviewTaskFilenamePayload } from "@/lib/tauri/taskCommands/types";
 import {
   type ProjectError,
   projectErrorMessage,
@@ -16,7 +16,6 @@ import { useToastDispatch } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
-import { fileNameErrorMessage } from "../TaskForm/TaskFormFileName/fileNameErrorMessage";
 import { PreviewResizer } from "./PreviewResizer";
 import { TaskFormFooter } from "./TaskFormFooter";
 import { TaskSubbar } from "./TaskSubbar";
@@ -88,7 +87,7 @@ const buildInitialPreview = (initialStatus: string): PreviewValues => ({
  * @param preview - 保存先パスプレビュー結果（kind で分岐）
  * @returns subbar / pv-foot に出すファイル名
  */
-const previewFileNameLabel = (preview: SavePathPreviewResult): string => {
+const previewFileNameLabel = (preview: PreviewTaskFilenamePayload): string => {
   if (preview.kind === "path") {
     return preview.fileName;
   }
@@ -103,7 +102,7 @@ const previewFileNameLabel = (preview: SavePathPreviewResult): string => {
  */
 const footerSaveHint = (
   title: string,
-  preview: SavePathPreviewResult,
+  preview: PreviewTaskFilenamePayload,
 ): string => {
   if (title.trim() === "") {
     return "タイトルを入力してください";
@@ -112,7 +111,7 @@ const footerSaveHint = (
     return `保存先: ${preview.relPath}`;
   }
   if (preview.kind === "invalid") {
-    return fileNameErrorMessage(preview.error);
+    return preview.error;
   }
   return "保存先を計算しています…";
 };
@@ -160,7 +159,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   );
   // 保存先パスプレビューは TaskForm から onPathPreviewChange で受ける。
   // previewValues.fileName は onValuesChange の fileName 除外最適化で最新化されないため使わない。
-  const [pathPreview, setPathPreview] = useState<SavePathPreviewResult>({
+  const [pathPreview, setPathPreview] = useState<PreviewTaskFilenamePayload>({
     kind: "pending",
   });
   // プレビューの表示/折りたたみと幅（既定 480、clamp は PreviewResizer の computePreviewWidth）。
@@ -297,7 +296,6 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
                 parentCandidates={props.parentCandidates}
                 parentReadOnly={props.parentReadOnly}
                 existingTasks={props.existingTasks}
-                projectPath={props.projectPath}
                 isSubmitting={isSubmitting}
                 onSubmit={handleSubmit}
                 onValuesChange={setPreviewValues}

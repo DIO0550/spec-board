@@ -118,12 +118,12 @@ test("dispatch title: エラー表示中に値を変えると errors.title が u
   expect(get().state.errors.title).toBeUndefined();
 });
 
-test("dispatch title: ファイル名が kebab-case で自動追従する", () => {
+test("dispatch title: ファイル名は変更されない（自動追従は BE IPC に移行）", () => {
   const { get } = render(defaultArgs());
   act(() => {
     get().dispatch({ type: "title", value: "Fix Bug" });
   });
-  expect(get().state.values.fileName).toBe("fix-bug");
+  expect(get().state.values.fileName).toBe("");
   expect(get().state.fileNameDirty).toBe(false);
 });
 
@@ -139,11 +139,8 @@ test("dispatch fileName: 手動編集後は title 入力に追従しない", () 
   expect(get().state.values.fileName).toBe("custom");
 });
 
-test("dispatch fileName: 空文字に戻すと追従を再開し現在の title から再同期する", () => {
+test("dispatch fileName: 空文字に戻すと追従を再開し初期値にリセットされる", () => {
   const { get } = render(defaultArgs());
-  act(() => {
-    get().dispatch({ type: "title", value: "First Title" });
-  });
   act(() => {
     get().dispatch({ type: "fileName", value: "custom" });
   });
@@ -151,11 +148,7 @@ test("dispatch fileName: 空文字に戻すと追従を再開し現在の title 
     get().dispatch({ type: "fileName", value: "" });
   });
   expect(get().state.fileNameDirty).toBe(false);
-  expect(get().state.values.fileName).toBe("first-title");
-  act(() => {
-    get().dispatch({ type: "title", value: "Second Title" });
-  });
-  expect(get().state.values.fileName).toBe("second-title");
+  expect(get().state.values.fileName).toBe("");
 });
 
 test("dispatch fileName: 入力値は生のまま保持される（スペース・.md 込みの入力を破壊しない）", () => {
@@ -448,7 +441,7 @@ test("dispatch due: 値が更新され他 field に影響しない", () => {
   });
   expect(get().state.values.due).toBe("2026-07-01");
   expect(get().state.values.title).toBe("T");
-  expect(get().state.values.fileName).toBe("t");
+  expect(get().state.values.fileName).toBe("");
 });
 
 test("submit: due 入力ありのとき submit 値に due が入る", () => {

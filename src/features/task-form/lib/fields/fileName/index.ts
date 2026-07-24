@@ -1,14 +1,12 @@
-import { TaskFileName } from "@/domains/task-file-name";
 import { Result } from "@/utils/result";
-// 予約文字集合は title field の export 済み定数を再利用する（再定義しない）。
 import { FORBIDDEN_TITLE_CHARS } from "../title";
 
 declare const fileNameFieldBrand: unique symbol;
 
 /**
  * FileNameField が保持する値（ファイル名欄の入力値）。
- * `TaskFileName` / `Due` と同じ branded string パターンを踏襲し、
- * `initial` / `fromTitle` / `fromInput` の companion 経由でのみ生成される。
+ * `Due` と同じ branded string パターンを踏襲し、
+ * `initial` / `fromInput` の companion 経由でのみ生成される。
  *
  * 入力中の値は**生のまま**保持し（controlled input への正規化書き戻しは
  * スペース入力や `.md` を含む base の入力過程を破壊するため行わない）、
@@ -42,15 +40,6 @@ export const FileNameField = {
    * @returns 空文字（タイトル追従中の未確定状態）
    */
   initial: (): FileNameField => "" as FileNameField,
-
-  /**
-   * タイトルから kebab-case base を導出する（自動追従用）。
-   * TaskFileName brand から FileNameField brand へは companion 内でのみ詰め替える。
-   * @param title - タイトルの生文字列
-   * @returns kebab-case 化した base
-   */
-  fromTitle: (title: string): FileNameField =>
-    TaskFileName.from(title.trim()) as string as FileNameField,
 
   /**
    * UI の onChange から渡る生文字列を branded 値へ変換する唯一の入口。

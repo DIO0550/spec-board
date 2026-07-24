@@ -1,10 +1,8 @@
-import type { SavePathPreviewResult } from "@/features/task-form/lib/savePathPreview";
-// 警告文言は fileName 欄エラーと同一ソースを共有する（再定義禁止）。
-import { fileNameErrorMessage } from "../TaskFormFileName/fileNameErrorMessage";
+import type { PreviewTaskFilenamePayload } from "@/lib/tauri/taskCommands/types";
 
 type SavePathPreviewProps = {
   /** 計算済みのプレビュー結果 */
-  preview: SavePathPreviewResult;
+  preview: PreviewTaskFilenamePayload;
   /** fileName 欄エラー表示中に同文警告の二重表示を防ぐための抑止フラグ */
   suppressWarning?: boolean;
 };
@@ -33,7 +31,7 @@ export const SavePathPreview = ({
       )}
       {preview.kind === "invalid" && !suppressWarning && (
         <p className="text-red-600" data-testid="task-form-path-warning">
-          {fileNameErrorMessage(preview.error)}
+          {preview.error}
         </p>
       )}
       {preview.kind === "pending" && (

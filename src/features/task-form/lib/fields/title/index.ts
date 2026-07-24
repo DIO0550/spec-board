@@ -1,4 +1,3 @@
-import { TaskFileName } from "@/domains/task-file-name";
 import { Result } from "@/utils/result";
 
 /** TitleField が保持する値の型（生の入力文字列） */
@@ -70,13 +69,6 @@ export const TitleField = {
         max: TITLE_MAX_LENGTH,
         actual: trimmed.length,
       });
-    }
-    const kebabBase = TaskFileName.from(trimmed);
-    if (kebabBase.length === 0) {
-      // 記号のみ・アンダースコアのみ等で kebab base が空になる入力は
-      // ファイル名 base が作れず、BE 側でも InvalidTitle となるため
-      // EMPTY 扱いで弾く。
-      return Result.err({ code: "EMPTY" });
     }
     return Result.ok(undefined);
   },

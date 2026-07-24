@@ -63,10 +63,8 @@ test("validate: 空行混じりでも行番号は raw 入力基準（詰めな�
   );
 });
 
-test("validate: kebab base が空になる記号のみの行は EMPTY エラー（空行 skip の対象外）", () => {
-  expect(SubIssuesField.validate("ok\n---")).toEqual(
-    Result.err({ line: 2, error: { code: "EMPTY" } }),
-  );
+test("validate: 記号のみの行は Ok を返す（invalid 判定は BE に委譲）", () => {
+  expect(SubIssuesField.validate("ok\n---")).toEqual(Result.ok(undefined));
 });
 
 test("validate: CRLF 改行でも行番号は raw 入力基準で数える", () => {

@@ -123,25 +123,20 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
       ) {
         return state;
       }
-      // 手動編集前はタイトルから kebab-case でファイル名を自動追従する。
-      const fileName = state.fileNameDirty
-        ? state.values.fileName
-        : FileNameField.fromTitle(action.value);
       return {
         ...state,
-        values: { ...state.values, title: action.value, fileName },
+        values: { ...state.values, title: action.value },
         errors: { ...state.errors, title: undefined },
       };
     }
     case "fileName": {
-      // 空に戻したらタイトル追従を再開する。
       if (action.value === "") {
         return {
           ...state,
           fileNameDirty: false,
           values: {
             ...state.values,
-            fileName: FileNameField.fromTitle(state.values.title),
+            fileName: FileNameField.initial(),
           },
           errors: { ...state.errors, fileName: undefined },
         };
