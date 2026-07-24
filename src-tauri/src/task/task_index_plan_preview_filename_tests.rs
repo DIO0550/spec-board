@@ -73,7 +73,8 @@ fn title_only_produces_kebab_path() {
 fn explicit_filename_overrides_title() {
     let root = Path::new("/project");
     let index = TaskIndex::new(Vec::new());
-    let outcome = index.plan_preview_filename(root, &args_with_explicit("My Title", "custom-name.md"));
+    let outcome =
+        index.plan_preview_filename(root, &args_with_explicit("My Title", "custom-name.md"));
     match outcome {
         PreviewFilenameOutcome::Resolved { file_name, .. } => {
             assert_eq!(file_name, "custom-name.md");
@@ -102,10 +103,8 @@ fn explicit_and_title_both_present() {
 fn parent_resolves_target_dir() {
     let root = Path::new("/project");
     let index = TaskIndex::new(vec![task_at("issues/82/parent.md", None)]);
-    let outcome = index.plan_preview_filename(
-        root,
-        &args_with_parent("Child Task", "issues/82/parent.md"),
-    );
+    let outcome =
+        index.plan_preview_filename(root, &args_with_parent("Child Task", "issues/82/parent.md"));
     match outcome {
         PreviewFilenameOutcome::Resolved { rel_path, .. } => {
             assert_eq!(rel_path, Path::new("issues/82/child-task.md"));

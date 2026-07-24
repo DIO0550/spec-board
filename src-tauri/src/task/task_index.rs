@@ -668,14 +668,16 @@ impl TaskIndex {
         let existing = existing_filenames_in_dir(snapshot, &target_dir);
 
         let filename = match &args.explicit_filename {
-            Some(name) if !name.trim().is_empty() => match TaskFileName::from_explicit(name, &existing) {
-                Ok(f) => f,
-                Err(e) => {
-                    return PreviewFilenameOutcome::Invalid {
-                        reason: e.to_string(),
-                    };
+            Some(name) if !name.trim().is_empty() => {
+                match TaskFileName::from_explicit(name, &existing) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        return PreviewFilenameOutcome::Invalid {
+                            reason: e.to_string(),
+                        };
+                    }
                 }
-            },
+            }
             _ => {
                 let title = TaskTitle::from_lenient(args.title.clone());
                 match TaskFileName::from_title(&title, &existing) {

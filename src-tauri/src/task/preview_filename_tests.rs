@@ -154,7 +154,8 @@ fn preview_with_parent_resolves_dir() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    let parent = create_task_impl(&state, &FsTaskIo, create_args("Parent Task")).expect("create parent");
+    let parent =
+        create_task_impl(&state, &FsTaskIo, create_args("Parent Task")).expect("create parent");
 
     let args = PreviewTaskFilenameArgs {
         title: "Child".to_string(),
