@@ -657,3 +657,102 @@ fn replace_project_config_labels_and_milestones_can_clear_all_to_none() {
     assert_eq!(None, state.labels().expect("readable"));
     assert_eq!(None, state.milestones().expect("readable"));
 }
+
+/// `sample_config` に cardOrder を 1 件足した「移動後」相当の Config。
+fn config_with_card_order(column: &str, paths: &[&str]) -> Config {
+    let mut config = sample_config();
+    config.card_order.insert(
+        column.to_string(),
+        paths.iter().map(|p| (*p).to_string()).collect(),
+    );
+    config
+}
+
+#[test]
+fn replace_config_and_tasks_applies_both_when_project_matches() {
+    let state = AppState::new();
+    let root = PathBuf::from("/project");
+    state
+        .set_project_path(Some(root.clone()))
+        .expect("set path");
+    state.replace_config(Some(sample_config())).expect("config");
+    let mut cache = HashMap::new();
+    cache.insert(PathBuf::from("tasks/a.md"), sample_task("a", "tasks/a.md"));
+    state.replace_tasks_cache(cache).expect("cache");
+
+    let result = state
+        .replace_config_and_tasks_if_project_matches(
+            &root,
+            config_with_card_order("Todo", &["tasks/a.md"]),
+            |cache| -> Result<usize, ()> {
+                cache.insert(PathBuf::from("tasks/b.md"), sample_task("b", "tasks/b.md"));
+                Ok(cache.len())
+            },
+        )
+        .expect("no poison");
+
+    assert_eq!(result, Some(Ok(2)));
+    let config = state.config().expect("readable").expect("some");
+    assert_eq!(
+        config.card_order.get("Todo"),
+        Some(&vec!["tasks/a.md".to_string()])
+    );
+    assert_eq!(state.tasks_snapshot().expect("readable").len(), 2);
+}
+
+#[test]
+fn replace_config_and_tasks_changes_nothing_when_project_differs() {
+    let state = AppState::new();
+    state
+        .set_project_path(Some(PathBuf::from("/other")))
+        .expect("set path");
+    state.replace_config(Some(sample_config())).expect("config");
+    state.replace_tasks_cache(HashMap::new()).expect("cache");
+
+    let result = state
+        .replace_config_and_tasks_if_project_matches(
+            &PathBuf::from("/project"),
+            config_with_card_order("Todo", &["tasks/a.md"]),
+            |cache| -> Result<(), ()> {
+                cache.insert(PathBuf::from("tasks/a.md"), sample_task("a", "tasks/a.md"));
+                Ok(())
+            },
+        )
+        .expect("no poison");
+
+    assert!(result.is_none());
+    let config = state.config().expect("readable").expect("some");
+    assert!(config.card_order.is_empty(), "config は変更されない");
+    assert!(
+        state.tasks_snapshot().expect("readable").is_empty(),
+        "tasks も変更されない"
+    );
+}
+
+#[test]
+fn replace_config_and_tasks_keeps_config_untouched_when_task_update_fails() {
+    // cache 更新が失敗した場合に config だけが移動後で確定すると、
+    // 「config は移動後・tasks は移動前」の部分適用が in-memory に残る。
+    let state = AppState::new();
+    let root = PathBuf::from("/project");
+    state
+        .set_project_path(Some(root.clone()))
+        .expect("set path");
+    state.replace_config(Some(sample_config())).expect("config");
+    state.replace_tasks_cache(HashMap::new()).expect("cache");
+
+    let result = state
+        .replace_config_and_tasks_if_project_matches(
+            &root,
+            config_with_card_order("Todo", &["tasks/a.md"]),
+            |_cache| -> Result<(), &'static str> { Err("vanished") },
+        )
+        .expect("no poison");
+
+    assert_eq!(result, Some(Err("vanished")));
+    let config = state.config().expect("readable").expect("some");
+    assert!(
+        config.card_order.is_empty(),
+        "cache 更新失敗時に config を確定してはならない"
+    );
+}
