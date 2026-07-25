@@ -413,6 +413,63 @@ impl AppState {
         Ok(guard.values().cloned().collect())
     }
 
+    /// `tasks_cache` を不変で借りて closure 内で読み取る。
+    ///
+    /// `tasks_snapshot` は全 task を clone するため、1 件だけ引き当てたい用途では
+    /// task 本文を含む無駄なコピーが発生する。本 API は lock 内で参照だけを渡し、
+    /// 必要な 1 件だけを呼び出し側が clone できるようにする。
+    ///
+    /// closure は guard を保持したまま呼ばれるため、内部で AppState の他アクセサを
+    /// 呼んではならない（自己 deadlock の原因）。
+    pub fn with_tasks_cache<F, R>(&self, f: F) -> Result<R, AppStateError>
+    where
+        F: FnOnce(&HashMap<PathBuf, Task>) -> R,
+    {
+        let guard = lock(&self.tasks_cache)?;
+        Ok(f(&guard))
+    }
+
+    /// 現在の `project_path` が `expected_path` と一致する場合のみ、`tasks_cache` の更新と
+    /// `config` の差し替えを**同一クリティカルセクション内で**行う。
+    ///
+    /// `replace_config_if_project_matches` → `with_tasks_cache_mut` と 2 回に分けると、
+    /// その間に `open_project` が完了して、旧プロジェクト由来の `Task` を新プロジェクトの
+    /// cache へ挿入してしまう。両方を 1 つの lock 保持区間に入れることでこれを防ぐ。
+    /// lock 取得順序は AppState の契約に従って `project_path → config → tasks_cache`
+    /// を遵守する。
+    ///
+    /// `update_tasks` は失敗し得る（並行削除で対象が cache から消えている等）。**`config` の
+    /// 差し替えは `update_tasks` が成功した場合のみ**行い、失敗時は cache も config も
+    /// 呼び出し前の状態に保つ。順序を逆にすると「config だけ移動後・tasks は移動前」という
+    /// 部分適用が in-memory に残る。
+    ///
+    /// - `expected_path` が一致 → `update_tasks` を適用し、成功時のみ `config` も更新して
+    ///   `Some(Ok(R))`。`update_tasks` 失敗時は何も変更せず `Some(Err(E))`
+    /// - 不一致（並行 `open_project` 等） → 何も変更せず `None`
+    pub fn replace_config_and_tasks_if_project_matches<F, R, E>(
+        &self,
+        expected_path: &std::path::Path,
+        config: crate::config::Config,
+        update_tasks: F,
+    ) -> Result<Option<Result<R, E>>, AppStateError>
+    where
+        F: FnOnce(&mut HashMap<PathBuf, Task>) -> Result<R, E>,
+    {
+        let path_guard = lock(&self.project_path)?;
+        let mut config_guard = lock(&self.config)?;
+        let mut tasks_guard = lock(&self.tasks_cache)?;
+        if path_guard.as_deref() != Some(expected_path) {
+            return Ok(None);
+        }
+        match update_tasks(&mut tasks_guard) {
+            Ok(value) => {
+                *config_guard = Some(config);
+                Ok(Some(Ok(value)))
+            }
+            Err(err) => Ok(Some(Err(err))),
+        }
+    }
+
     /// `tasks_cache` を可変で借りて closure 内で in-place 操作する。
     ///
     /// `tasks_snapshot` → 編集 → `replace_tasks_cache` のフローでは全 task を
