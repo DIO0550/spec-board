@@ -490,7 +490,7 @@ links:（任意）
 | filePath | `String` | はい | 移動対象タスクのファイルパス（絶対 or project_root 相対）。拡張子は scanner と同じく大文字小文字を区別せず `.md` を要求する |
 | fromColumn | `String` | はい | 移動元カラム名。移動前の `status` の期待値として検証に使う |
 | toColumn | `String` | はい | 移動先カラム名。`fromColumn` と同値なら同一カラム内の並び替え |
-| toColumnFilePaths | `Vec<String>` | はい | 移動先カラムの新しい並び順のファイルパス配列 |
+| toColumnFilePaths | `Vec<String>` | はい | 移動先カラムの新しい並び順のファイルパス配列。`filePath` と同じ規則で正規化・検証する |
 
 **戻り値**: 移動後の `Task`（同一カラム並び替えでは `status` 不変の既存 `Task`）。`cardOrder` は返さず、FE は楽観更新した並びをそのまま確定する。
 
@@ -504,13 +504,14 @@ links:（任意）
 5. `cardOrder` を更新する。`toColumn` は `toColumnFilePaths` で上書きし、`fromColumn` は既存エントリから移動対象パスのみを取り除く。`fromColumn` に既存エントリが無い、または移動対象パスを含まない場合は書き換えない（並びを持たないカラムに空配列を生やさないため）
 6. `toColumnFilePaths` に移動対象パスが含まれていない場合は末尾に追加する。FE の算出漏れや stale な並びをそのまま保存して、移動したタスクだけが移動先カラムの並びから抜け落ちることを防ぐ
 7. `toColumnFilePaths` 内の重複は初出のみを残して除去する（同じカードが並びに 2 回現れないようにする）
-8. `toColumnFilePaths` は **FE が正規化済みの project-relative path であることを前提**とし、BE 側では `canonicalize` や `project_root` 配下に収まっているかの containment 検証は行わない（`filePath` は入力パス VO で正規化・`..` 拒否されるが、並び順の配列要素は生の文字列として扱う）。各パスは `project_root.join(path)` で解決して `std::fs::metadata` を呼び、`Err` が `ErrorKind::NotFound` の場合のみ除外する。`permission denied` 等の `NotFound` 以外の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。順序は入力を保持し、削除対象のみ抜く
-9. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
-10. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、`config.json` の書き込みによって FE への変更通知（emit）は走らない
-11. `config.json` への書き込みが成功した場合、`project_path` が処理開始時の snapshot と一致するときに限り AppState の `Config` を更新する。disk 失敗時は in-memory の `Config` を変更しない（次回呼び出しで再試行可能）
-12. カラム間移動では、`project_path` の照合・tasks キャッシュの更新・`Config` の差し替えを**同一クリティカルセクション**で行う。`project_path` が処理開始時の snapshot と一致しない場合（処理中に別プロジェクトへ切り替わった場合）は in-memory を一切変更しない。2 段に分けると、その間に `open_project` が完了して旧プロジェクト由来の `Task` を新プロジェクトのキャッシュへ挿入し得るため。`Config` の差し替えは tasks キャッシュ更新が成功した場合のみ行う（順序を逆にすると「`Config` は移動後・tasks は移動前」の部分適用が in-memory に残る）
-13. tasks キャッシュへ反映する際、`children` / `reverse_links` は既存キャッシュの値を保持する。これらは scan で task 集合から導出される派生値で md の frontmatter には現れないため、frontmatter から再構築した `Task` で素朴に上書きすると、親タスクを移動した瞬間に子一覧や被リンクが消える
-14. `warnings` は逆に**書き込み後の内容で再判定した値**を採用する（`status` を書き込むため `status` 欠落の警告などは消える必要がある）。ただし task 集合から導出される `ParentNotFound` / `ParentCycle` は単一 md から再導出できないため既存キャッシュの値を引き継ぐ
+8. `toColumnFilePaths` の各要素も `filePath` と同じ入力パス VO で正規化・検証する（空文字拒否 / 絶対パスの project_root 相対化 / `..` 拒否 / `.md` 拡張子必須）。1 件でも解決できない場合は移動全体を拒否する（エラー文字列: `ファイルパスが不正です: {path}`）。素通しすると `..` や絶対パスが実在判定に使われ、そのまま `cardOrder` へ永続化されてしまうため。並び順には正規化後の表記を保存する
+9. 上記で正規化した各パスを `project_root.join(path)` で解決して `std::fs::metadata` を呼び、`Err` が `ErrorKind::NotFound` の場合のみ除外する。`permission denied` 等の `NotFound` 以外の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。順序は入力を保持し、削除対象のみ抜く
+10. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
+11. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、`config.json` の書き込みによって FE への変更通知（emit）は走らない
+12. `config.json` への書き込みが成功した場合、`project_path` が処理開始時の snapshot と一致するときに限り AppState の `Config` を更新する。disk 失敗時は in-memory の `Config` を変更しない（次回呼び出しで再試行可能）
+13. カラム間移動では、`project_path` の照合・tasks キャッシュの更新・`Config` の差し替えを**同一クリティカルセクション**で行う。`project_path` が処理開始時の snapshot と一致しない場合（処理中に別プロジェクトへ切り替わった場合）は in-memory を一切変更しない。2 段に分けると、その間に `open_project` が完了して旧プロジェクト由来の `Task` を新プロジェクトのキャッシュへ挿入し得るため。`Config` の差し替えは tasks キャッシュ更新が成功した場合のみ行う（順序を逆にすると「`Config` は移動後・tasks は移動前」の部分適用が in-memory に残る）
+14. tasks キャッシュへ反映する際、`children` / `reverse_links` は既存キャッシュの値を保持する。これらは scan で task 集合から導出される派生値で md の frontmatter には現れないため、frontmatter から再構築した `Task` で素朴に上書きすると、親タスクを移動した瞬間に子一覧や被リンクが消える
+15. `warnings` は逆に**書き込み後の内容で再判定した値**を採用する（`status` を書き込むため `status` 欠落の警告などは消える必要がある）。ただし task 集合から導出される `ParentNotFound` / `ParentCycle` は単一 md から再導出できないため既存キャッシュの値を引き継ぐ
 
 **書き込み失敗時の best-effort rollback**:
 
