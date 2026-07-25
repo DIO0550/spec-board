@@ -25,18 +25,32 @@ pub struct MoveTaskArgs {
 }
 
 impl MoveTaskArgs {
-    /// project_root を起点に filePath を lexical 正規化し、`MoveTaskIntent` に詰め直す。
+    /// project_root を起点に入力パスを lexical 正規化し、`MoveTaskIntent` に詰め直す。
+    ///
+    /// `to_column_file_paths` も 1 件ずつ同じ VO を通す。ここを素通しすると `..` や
+    /// 絶対パス（`Path::join` は絶対パスを渡されると project_root を捨てる）が
+    /// `std::fs::metadata` の実在判定に使われ、さらに `config.json` の cardOrder へ
+    /// そのまま永続化されてしまう。1 件でも解決できなければ移動全体を reject する
+    /// （並びの一部を黙って捨てると、カードが理由なく消えたように見えるため）。
     pub(crate) fn into_intent(
         self,
         project_root: &Path,
     ) -> Result<MoveTaskIntent, MoveTaskCommandError> {
         let file_path = resolve_input_file_path(&self.file_path, project_root)?;
+        let to_column_file_paths = self
+            .to_column_file_paths
+            .iter()
+            .map(|raw| {
+                resolve_input_file_path(raw, project_root)
+                    .map(|path| path.to_string_lossy().into_owned())
+            })
+            .collect::<Result<Vec<String>, MoveTaskCommandError>>()?;
 
         Ok(MoveTaskIntent {
             file_path,
             from_column: self.from_column,
             to_column: self.to_column,
-            to_column_file_paths: self.to_column_file_paths,
+            to_column_file_paths,
         })
     }
 }
