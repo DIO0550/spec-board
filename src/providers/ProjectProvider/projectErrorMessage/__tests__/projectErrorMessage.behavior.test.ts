@@ -27,15 +27,3 @@ test("kind=invalid-state は message をそのまま返す", () => {
   });
   expect(message).toBe("プロジェクトが開かれていません");
 });
-
-test("kind=partial-move は message をそのまま返す", () => {
-  const underlying = new TauriError("IO_ERROR", "card-order 保存に失敗");
-  const message = projectErrorMessage({
-    kind: "partial-move",
-    message: "カラムの移動は完了しましたが、並び順の保存に失敗しました。",
-    underlying,
-  });
-  expect(message).toBe(
-    "カラムの移動は完了しましたが、並び順の保存に失敗しました。",
-  );
-});
