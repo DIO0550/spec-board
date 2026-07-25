@@ -19,7 +19,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | `get_columns` | カラム設定を取得（[config-spec.md](./config-spec.md) 参照） |
 | `get_labels` | ラベルマスタ定義を取得（[config-spec.md](./config-spec.md) 「labels.yml スキーマ」参照） |
 | `update_columns` | カラム設定を更新（[config-spec.md](./config-spec.md) 参照） |
-| `update_card_order` | カラム内のカード並び順を更新（[config-spec.md](./config-spec.md) 参照） |
+| `move_task` | タスクのカラム間移動（status 変更 + cardOrder 更新）と同一カラム内並び替え（[config-spec.md](./config-spec.md) 参照） |
 | `create_label` | ラベルマスタに新規ラベルを追加（[config-spec.md](./config-spec.md) 「ラベル CRUD コマンド」参照） |
 | `update_label` | 既存ラベルの metadata を更新（PUT・[config-spec.md](./config-spec.md) 参照） |
 | `delete_label` | ラベルを削除し削除前の使用数を返す（[config-spec.md](./config-spec.md) 参照） |
@@ -539,7 +539,7 @@ pub enum WatcherError {
 
 カラム設定、カード並び順、AIエージェント向けガイドの仕様は [config-spec.md](./config-spec.md) を参照。
 
-`get_columns`、`update_columns`、`update_card_order` のコマンド詳細も [config-spec.md](./config-spec.md) に記載。
+`get_columns`、`update_columns`、`move_task` のコマンド詳細も [config-spec.md](./config-spec.md) に記載。
 
 ## 制限事項
 

@@ -45,8 +45,8 @@
 | 操作 | トリガー | 振る舞い | 遷移先 |
 |:-----|:--------|:---------|:-------|
 | プロジェクトを開く | 「開く」ボタンクリック | OSのディレクトリ選択ダイアログを表示。選択後にmdファイルを読み込んでボードに表示 | ボードビュー |
-| タスクのステータス変更 | カードをドラッグして別カラムにドロップ | `update_task` IPC で対象タスクの frontmatter `status` を更新したのち、移動先カラムに対して `update_card_order` を 1 回呼び出す。旧カラムの `cardOrder` は BE 側 watcher が `status` 変更を検知して自動除去する契約 | - |
-| カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | `update_card_order` IPC を 1 回呼び出してカード表示順を `.spec-board/config.json` の `cardOrder` に永続化（[config-spec.md](./config-spec.md) 参照）。並び順に変化が無い場合は IPC を呼ばない。**reopen 時の rehydration（`open_project` が `config.card_order` を読み込みカラム内の tasks を並び替える）は BE 側の対応が必要（別 issue 依存）** | - |
+| タスクのステータス変更 | カードをドラッグして別カラムにドロップ | `move_task` IPC を 1 回呼び出す。BE が frontmatter `status` の更新、移動元カラム `cardOrder` からの除去、移動先カラム `cardOrder` の設定を単一コマンド内でまとめて行う | - |
+| カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | カラム間移動と同じ `move_task` IPC を 1 回呼び出す（`fromColumn === toColumn` のため status は変更されず `cardOrder` のみ更新される）。カード表示順は `.spec-board/config.json` の `cardOrder` に永続化する（[config-spec.md](./config-spec.md) 参照）。並び順に変化が無い場合は IPC を呼ばない。永続化した並びは reopen 時に `open_project` の payload 順として復元される（rehydration） | - |
 | カラムの追加 | 「+ カラムを追加」ボタンクリック | カラム名入力フィールドを表示。入力確定で新カラムを追加 | - |
 | カラム名の編集 | カラムヘッダーのステータス名をクリック | インライン編集モードに切り替わり、ステータス名を変更可能。該当するタスクのmdファイルも一括更新 | - |
 | カラムの削除 | カラムヘッダーの右クリックメニュー | 確認ダイアログを表示。カラム内にタスクがある場合は移動先カラムをドロップダウンで選択させ、全タスクの `status` を一括更新してから削除。タスクがない場合はそのまま削除 | - |
@@ -178,17 +178,17 @@ stateDiagram-v2
 
 書き込み（ミューテーション）系コマンドの失敗トーストは、各ハンドラではなく IPC ラッパ層（`invokeWrapped`）に集約して発火する。これにより失敗通知の source of truth を一本化し、握り潰し・通知の不統一・二重通知を防ぐ。
 
-- **共通トースト対象（allowlist）**: `create_task` / `update_task` / `delete_task` / `add_link` / `remove_link` / `update_columns` の失敗。`invokeWrapped` が「&lt;操作&gt;に失敗しました: &lt;詳細&gt;」を 1 件発火する。操作ラベルはコマンド単位で決まる（例: `update_columns` 由来はカラムの追加 / 改名 / 削除 / 並び替えのいずれでも「カラムの更新に失敗しました」に統一される）。`HAS_CHILDREN` 詳細は「子タスクが存在するため削除できません」に翻訳する。
+- **共通トースト対象（allowlist）**: `create_task` / `update_task` / `delete_task` / `move_task` / `add_link` / `remove_link` / `update_columns` の失敗。`invokeWrapped` が「&lt;操作&gt;に失敗しました: &lt;詳細&gt;」を 1 件発火する。操作ラベルはコマンド単位で決まる（例: `update_columns` 由来はカラムの追加 / 改名 / 削除 / 並び替えのいずれでも「カラムの更新に失敗しました」に統一される）。`HAS_CHILDREN` 詳細は「子タスクが存在するため削除できません」に翻訳する。
 - **App 側の重複抑止**: App 各ハンドラは、失敗が allowlist 由来（= `invokeWrapped` が通知済み）のときだけ自前の失敗トーストを抑止する。判定は起点コマンド名を保持する `TauriError.command` に基づく。
-- **サイレント化させないもの（App 側が従来どおり通知）**: allowlist 外の tauri 失敗（`open_project` / 同一カラム `update_card_order` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
-- **成功トースト・partial-move 専用文・LiveRegion アナウンス**は本一元化の影響を受けず従来どおり表示する。`update_card_order` は意図的に allowlist 外とし、partial-move 区別を保つ。
+- **サイレント化させないもの（App 側が従来どおり通知）**: allowlist 外の tauri 失敗（`open_project` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
+- **成功トースト・LiveRegion アナウンス**は本一元化の影響を受けず従来どおり表示する。
 
 ## アクセシビリティ
 
 | 観点 | 対応方針 |
 |:-----|:---------|
 | キーボード操作 | Tab でカード間移動、Enter / Space で詳細（全画面 2 ペイン）へ遷移、矢印キーでカラム間移動 |
-| スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。カラム間移動の楽観 dispatch 直後に `aria-live="polite"` のライブリージョン（視覚非表示 / `role="status"` / `aria-atomic="true"`）で「移動しました」を通知。`updateTask` 失敗によるフル rollback 時はさらに「移動を取り消しました」を追加通知する。partial-move（status 確定 + cardOrder のみ rollback）および「楽観 dispatch 後の projectVersion 不一致」では追加の取消アナウンスは流さない（既に「移動しました」が発火済みで status は永続化済み、または state が新 project に切替済みのため）。同一カラム並び替え、および「楽観 dispatch 前 invalid-state（preflight 失敗）」ではライブリージョンを更新しない（エラー toast のみ） |
+| スクリーンリーダー | カラムに `role="list"`、カードに `role="listitem"` を付与。カラム間移動の楽観 dispatch 直後に `aria-live="polite"` のライブリージョン（視覚非表示 / `role="status"` / `aria-atomic="true"`）で「移動しました」を通知。`move_task` 失敗によるフル rollback 時はさらに「移動を取り消しました」を追加通知する。「楽観 dispatch 後の projectVersion 不一致」では追加の取消アナウンスは流さない（state が新 project に切替済みのため）。同一カラム並び替え、および「楽観 dispatch 前 invalid-state（preflight 失敗）」ではライブリージョンを更新しない（エラー toast のみ） |
 | フォーカス管理 | ドラッグ&ドロップ完了後、移動したカードにフォーカスを維持 |
 | 全画面詳細ビュー（DetailScreen）のフォーカス | `<section aria-label="タスク詳細" tabIndex="-1">` のランドマークと視覚非表示の `<h1>`（タスクタイトル）を持つ。マウント時に section へフォーカスを移し、ビュー先頭へキーボード/SR フォーカスを移動する。「← 戻る」/ Esc で board へ戻る（削除確認ダイアログ表示中は Esc を抑止して競合させない）。サブIssue 追加は全画面作成ビュー（`create`）へ遷移し detail を unmount するため、旧モーダル時代の上位モーダル調停は不要になった。**focus trap は適用しない**: DetailScreen は modal ではなく、HeaderBar と AppSidebar が `detail` 区分でも常時操作可能なため、Tab フォーカスを DetailScreen 内に閉じ込めるとそれらの操作系へキーボードで到達できなくなる。よって Tab は通常どおり画面全体を巡回させる |
 | 全画面作成ビュー（TaskCreateScreen）のフォーカス | `<section aria-label="タスク作成" tabIndex="-1">` のランドマークを持つ。左ペイン＝入力フォーム、右ペイン＝ライブプレビュー。⌘/Ctrl+Enter で保存、Esc / 「キャンセル」は入力ありなら破棄確認ダイアログ（`role="alertdialog"` + `aria-modal`）を経由して閉じ、戻り先（board / 元の detail）へ遷移する。ダイアログ表示中は画面側の Esc / ⌘+Enter リスナーを抑止して二重ハンドリングを防ぐ。送信中（`isSubmitting`）は Esc・閉じ操作・入力を抑止する。ステータス/優先度は popover select（trigger に `aria-haspopup="listbox"` / `aria-expanded`、popover は `role="listbox"`、各 option は `role="option"` / `aria-selected`。ArrowUp/Down・Home/End で highlight 移動、Enter で確定、open 中の Esc は capture フェーズで画面の破棄確認へ伝播させない）、ラベル入力は combobox + listbox、説明欄は `role="toolbar"` の Markdown ツールバー、パスプレビューは `aria-live="polite"` の可視ライブリージョンを持つ。作成ビューでは共通の HeaderBar / AppSidebar を非表示にした全画面 standalone レイアウトを採り、DetailScreen 同様 focus trap は適用しない |
@@ -201,16 +201,23 @@ stateDiagram-v2
 - HTML5 ネイティブ Drag and Drop API のみで実装する（外部 DnD ライブラリは導入しない）
 - カード要素に `draggable="true"` を付与し、独自 MIME `application/x-spec-board-task` で payload を運ぶ
 - 外部からの D&D（テキスト・ファイル等、独自 MIME を持たないもの）は `dragover` で `preventDefault` せず drop を受け付けない
-- BE 側コマンド `update_task` / `update_card_order` の実装、および `open_project` が `config.card_order` を読み込んでカラム内 tasks を rehydrate する処理は本仕様の依存先とする（別 issue で起票）。現状の `open_project` は tasks を id 順で返すため、保存した cardOrder が reopen 後に反映されないことを許容する
 
 ### IPC シーケンス
 
 | 種類 | IPC 呼び出し |
 |:-----|:------------|
-| カラム間移動 | (1) `update_task({ filePath, status: toColumn })`、(2) 成功後 `update_card_order({ columnName: toColumn, filePaths })`。旧カラムの cardOrder は BE 側 watcher が status 変更を検知して自動除去する契約 |
-| 同一カラム内並び替え | `update_card_order({ columnName, filePaths })` を 1 回。並び順に変化が無い場合は IPC を呼ばない |
+| カラム間移動 | `move_task({ filePath, fromColumn, toColumn, toColumnFilePaths })` を 1 回。status 変更・移動元 cardOrder からの除去・移動先 cardOrder の設定はすべて BE 側の単一コマンド内で完結する |
+| 同一カラム内並び替え | `move_task({ filePath, fromColumn, toColumn, toColumnFilePaths })` を 1 回（`fromColumn === toColumn`）。並び順に変化が無い場合は IPC を呼ばない |
 
-楽観的 UI 更新を採用する。drop 確定と同時に status / cardOrder を仮反映し、IPC 完了後に server 値で確定上書きする。`updateTask` 失敗時はスナップショットへフル rollback し、ライブリージョンで「移動を取り消しました」を通知する。partial-move（`updateTask` 成功 / `updateCardOrder` 失敗）の場合は status を `toColumn` に確定保持し、cardOrder のみ永続化済みの実態（`toColumn` は旧 order + 移動タスク末尾補完、`fromColumn` は移動タスク除外済み）に再収束させる。partial-move ではライブリージョンを更新せず、partial-move 専用エラー toast のみで通知する。projectVersion 不一致時は新 project state を破壊しないため rollback / 確定 dispatch をスキップし、`invalid-state` を返す。
+`cardOrder` の永続化は上記 IPC で完了し、reopen 時は `open_project` が payload の `tasks` を「カラムの表示順 → そのカラムの `cardOrder` の並び → `id` 昇順」で返すことで表示順を復元する（rehydration）。`cardOrder` に載っていないタスク（新規追加された md 等）はそのカラムの末尾へ `id` 昇順で並ぶ。
+
+楽観的 UI 更新を採用する。drop 確定と同時に status / cardOrder を仮反映し、IPC 完了後は成功か rollback かの 2 分岐に収束する。IPC が 1 回のため、status だけが永続化されて cardOrder が保存されない中間状態は発生しない。
+
+- **成功時**: カラム間移動では `task-updated` を 1 段だけ確定 dispatch する。cardOrder は楽観反映した並びがそのまま永続化されているため、確定用の `card-order-updated` は流さない（IPC 待機中に入った外部更新を巻き戻さないため）。確定値は、対象 task が**楽観 dispatch した Task のまま（誰も触っていない）**であれば BE 応答の Task をそのまま採用し（書き込み後の md を再解析した warning 等がここで反映される）、IPC 待機中に外部更新が入っていた場合は move が所有する `status` だけを載せ替えて title / body / labels 等の外部更新を保護する。対象が state から消えていた場合は確定 dispatch を行わない。同一カラム並び替えでは追加 dispatch を行わない
+- **失敗時**: カラム間移動はスナップショットへフル rollback し、ライブリージョンで「移動を取り消しました」を通知する。同一カラム並び替えは移動先 cardOrder のみ 1 段 rollback する
+- **projectVersion 不一致時**: 新 project state を破壊しないため rollback / 確定 dispatch をスキップし、`invalid-state` を返す
+
+BE 側は task md の書き込み成功後に `config.json` の書き込みが失敗した場合、task md を元の内容へ書き戻す best-effort rollback を行う。task md と config.json は別ファイルのため POSIX 上のトランザクション保証はなく、書き戻し自体が失敗した場合の再収束は watcher / 再スキャンに委ねる。
 
 ### UI 表現
 
@@ -224,19 +231,17 @@ stateDiagram-v2
 
 - ESC キー押下: ブラウザが `dragend` を発火し、自動で IDLE 状態へ復帰
 - Drag 直後の synthetic click: `dragGuardRef` で次の macrotask まで `onClick` を抑止し、誤って詳細へ遷移しないようにする
-- IPC 失敗（generic）: カラム間移動の `update_task` 失敗時は書き込み失敗通知の一元化により「タスクの更新に失敗しました: &lt;原因&gt;」トーストを表示する（`update_task` は共通トースト対象コマンドのため `invokeWrapped` 層が発火し、App 側の汎用「タスクの移動に失敗しました」は二重通知回避のため抑止される）。同一カラム内の `update_card_order` 失敗は共通トースト対象外のため、従来どおり App 側が「タスクの移動に失敗しました: &lt;原因&gt;」を表示する。dragState は finally で必ず null に戻す
-- IPC 部分失敗（partial-move）: カラム間移動で `update_task` 成功 + `update_card_order` 失敗のときは、カラム移動だけは完了しているため「カラムの移動は完了しましたが、並び順の保存に失敗しました。手動で並び替えてください。」と区別して表示する
+- IPC 失敗（generic）: カラム間移動 / 同一カラム並び替えのいずれも `move_task` 失敗として扱い、書き込み失敗通知の一元化により「タスクの移動に失敗しました: &lt;原因&gt;」トーストを 1 件表示する（`move_task` は共通トースト対象コマンドのため `invokeWrapped` 層が発火し、App 側の汎用トーストは二重通知回避のため抑止される）。dragState は finally で必ず null に戻す
 - stale state: queue 実行時に対象タスクが見つからない / `fromColumn` と `status` が乖離 / `toColumn` が消滅した場合は `invalid-state` で抜ける
 
 ### a11y アナウンス
 
-楽観成功アナウンスは IPC 完了を待たず、楽観 dispatch 直後に `onOptimisticApplied` callback を起点に発火する。partial-move / invalid-state のように IPC 後に判明する分岐では、既に「移動しました」アナウンスが出ている前提で扱う。下表は楽観 dispatch 時点と IPC 完了時点を合算したアナウンス結果である。
+楽観成功アナウンスは IPC 完了を待たず、楽観 dispatch 直後に `onOptimisticApplied` callback を起点に発火する。`invalid-state` のように IPC 後に判明する分岐では、既に「移動しました」アナウンスが出ている前提で扱う。下表は楽観 dispatch 時点と IPC 完了時点を合算したアナウンス結果である。
 
 | イベント | LiveRegion アナウンス | エラー toast |
 |:--|:--|:--|
 | カラム間移動成功 | 「『タイトル』を『toColumn』に移動しました」 | なし |
-| カラム間移動失敗（`updateTask` reject、フル rollback 後） | 「『タイトル』を『toColumn』に移動しました」→「『タイトル』の移動を取り消しました」 | 「タスクの更新に失敗しました: ...」（`update_task` 共通トーストを `invokeWrapped` 層が発火。App 汎用「移動に失敗」は抑止） |
-| partial-move（status 確定 + cardOrder のみ補正） | 「『タイトル』を『toColumn』に移動しました」のみ（status は永続化済みのため取消アナウンスは流さない） | partial-move 用エラー toast |
+| カラム間移動失敗（`move_task` reject、フル rollback 後） | 「『タイトル』を『toColumn』に移動しました」→「『タイトル』の移動を取り消しました」 | 「タスクの移動に失敗しました: ...」（`move_task` 共通トーストを `invokeWrapped` 層が発火。App 汎用トーストは抑止） |
 | 同一カラム並び替え（成功 / 失敗いずれも） | なし（`onOptimisticApplied` はカラム間 status 変更時のみ呼ぶ契約） | 失敗時のみ「タスクの移動に失敗しました: ...」 |
 | 楽観 dispatch 前 invalid-state（preflight 失敗: target 消失 / status 乖離 / toColumn 消失 / 開始前 version 切替） | なし（楽観 dispatch も `onOptimisticApplied` も発火しない） | `invalid-state` メッセージ |
 | 楽観 dispatch 後 invalid-state（IPC 中の projectVersion 切替） | 「『タイトル』を『toColumn』に移動しました」のみ（state は新 project に切替済みのため取消アナウンスは流さない） | 「プロジェクトが切り替わりました」 |

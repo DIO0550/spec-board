@@ -29,7 +29,6 @@ pub mod label_registry;
 pub mod load;
 pub mod migration;
 pub mod milestone_registry;
-pub mod update_card_order;
 pub mod update_columns;
 pub mod update_label;
 pub mod update_milestone;

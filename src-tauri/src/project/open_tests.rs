@@ -1140,3 +1140,78 @@ fn reopen_into_project_without_milestones_yml_resets_to_empty() {
         .milestones
         .is_empty());
 }
+
+#[test]
+fn payload_tasks_follow_saved_card_order_within_each_column() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    write_md(dir.path(), "tasks/c.md", &task_md("C", "Todo", None));
+    // 保存済みの並びは id 昇順とは逆。id 順で返してしまうと復元されない。
+    write_config_json(
+        dir.path(),
+        r#"{
+  "version": 1,
+  "columns": [
+    { "name": "Todo", "order": 0 },
+    { "name": "Done", "order": 1 }
+  ],
+  "cardOrder": { "Todo": ["tasks/c.md", "tasks/a.md", "tasks/b.md"] }
+}"#,
+    );
+
+    let payload = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("should succeed");
+
+    let paths: Vec<&str> = payload.tasks.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(paths, vec!["tasks/c.md", "tasks/a.md", "tasks/b.md"]);
+}
+
+#[test]
+fn payload_tasks_absent_from_card_order_come_after_listed_ones_by_id() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    write_md(dir.path(), "tasks/z.md", &task_md("Z", "Todo", None));
+    write_config_json(
+        dir.path(),
+        r#"{
+  "version": 1,
+  "columns": [{ "name": "Todo", "order": 0 }],
+  "cardOrder": { "Todo": ["tasks/z.md"] }
+}"#,
+    );
+
+    let payload = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("should succeed");
+
+    let paths: Vec<&str> = payload.tasks.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(paths, vec!["tasks/z.md", "tasks/a.md", "tasks/b.md"]);
+}
+
+#[test]
+fn payload_tasks_are_grouped_by_column_display_order() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Done", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    write_config_json(
+        dir.path(),
+        r#"{
+  "version": 1,
+  "columns": [
+    { "name": "Todo", "order": 0 },
+    { "name": "Done", "order": 1 }
+  ],
+  "cardOrder": {}
+}"#,
+    );
+
+    let payload = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("should succeed");
+
+    let paths: Vec<&str> = payload.tasks.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(paths, vec!["tasks/b.md", "tasks/a.md"]);
+}

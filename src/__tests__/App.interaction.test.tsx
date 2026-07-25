@@ -16,11 +16,11 @@ import {
   deleteTask as deleteTaskInvoke,
   getColumns as getColumnsInvoke,
   getLabels as getLabelsInvoke,
+  moveTask as moveTaskInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
   TauriError,
-  updateCardOrder as updateCardOrderInvoke,
   updateColumns as updateColumnsInvoke,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
@@ -41,7 +41,7 @@ vi.mock("@/lib/tauri", async () => {
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
     updateColumns: vi.fn(),
-    updateCardOrder: vi.fn(),
+    moveTask: vi.fn(),
   };
 });
 
@@ -57,7 +57,7 @@ const createTaskMock = vi.mocked(createTaskInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const deleteTaskMock = vi.mocked(deleteTaskInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
-const updateCardOrderMock = vi.mocked(updateCardOrderInvoke);
+const moveTaskMock = vi.mocked(moveTaskInvoke);
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -110,7 +110,7 @@ beforeEach(() => {
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
   updateColumnsMock.mockReset();
-  updateCardOrderMock.mockReset();
+  moveTaskMock.mockReset();
 });
 
 afterEach(() => {
@@ -728,33 +728,27 @@ test("moveTask 失敗（generic）→ 「タスクの移動に失敗しました
   mountApp();
   await openSuccessfully();
 
-  updateTaskMock.mockResolvedValueOnce(
+  moveTaskMock.mockResolvedValueOnce(
     Result.err(new TauriError("IO_ERROR", "io fail")),
   );
 
   await dropFirstCardToDone();
 
-  expect(updateTaskMock).toHaveBeenCalledTimes(1);
-  expect(updateCardOrderMock).not.toHaveBeenCalled();
+  expect(moveTaskMock).toHaveBeenCalledTimes(1);
+  expect(updateTaskMock).not.toHaveBeenCalled();
   expect(container?.textContent).toContain("タスクの移動に失敗しました");
-  expect(container?.textContent).not.toContain("並び順の保存に失敗");
 });
 
-test("moveTask 部分失敗（partial-move）→ 並び順保存失敗の専用 toast を表示", async () => {
+test("moveTask 成功 → カードが Done カラムに移り、エラー toast は出ない", async () => {
   mountApp();
   await openSuccessfully();
 
   const movedA: Task = { ...taskA, status: "Done" };
-  updateTaskMock.mockResolvedValueOnce(Result.ok(movedA));
-  updateCardOrderMock.mockResolvedValueOnce(
-    Result.err(new TauriError("IO_ERROR", "order fail")),
-  );
+  moveTaskMock.mockResolvedValueOnce(Result.ok(movedA));
 
   await dropFirstCardToDone();
 
-  expect(updateTaskMock).toHaveBeenCalledTimes(1);
-  expect(updateCardOrderMock).toHaveBeenCalledTimes(1);
-  expect(container?.textContent).toContain("並び順の保存に失敗しました");
+  expect(moveTaskMock).toHaveBeenCalledTimes(1);
   expect(container?.textContent).not.toContain("タスクの移動に失敗しました");
 });
 

@@ -160,7 +160,7 @@ const openDetailScreen = (): void => {
 
 /**
  * TaskCard を指定カラム section へ drop する。
- * 別カラムなら status 変更（update_task）、同一カラムなら並び替え（update_card_order）が走る。
+ * 別カラム / 同一カラムのいずれも move_task（status 変更 + 並び替え）が 1 回走る。
  * @param columnLabel drop 先カラム名（section の aria-label）
  */
 const dropFirstCardTo = async (columnLabel: string): Promise<void> => {
@@ -343,70 +343,44 @@ test("非サイレント: open_project 失敗（allowlist 外 tauri）は onErro
   );
 });
 
-test("cross-column 移動の update_task 失敗は invokeWrapped 通知のみ（計 1 件・重複なし）", async () => {
+test("cross-column 移動の move_task 失敗は invokeWrapped 通知のみ（計 1 件・重複なし）", async () => {
   openDialogMock.mockResolvedValueOnce("/p");
   invokeMock.mockImplementation(
     makeInvoke({
-      update_task: () => Promise.reject(new Error("書き込みに失敗しました")),
+      move_task: () => Promise.reject(new Error("書き込みに失敗しました")),
     }),
   );
 
   mountApp();
   await clickHeaderOpenButton();
-  // Todo → Done のカラム間移動。status 更新は update_task（allowlist）。
+  // Todo → Done のカラム間移動。status 更新も cardOrder も move_task（allowlist）1 本。
   await dropFirstCardTo("Done");
 
   await vi.waitFor(() => {
     expect(errorToasts().length).toBe(1);
   });
-  // invokeWrapped が「タスクの更新に失敗しました」を出し、App generic「移動に失敗」は抑止。
-  expect(errorToasts()[0].textContent).toContain("タスクの更新に失敗しました");
+  // invokeWrapped が「タスクの移動に失敗しました」を出し、App generic 側は抑止される。
+  expect(errorToasts()[0].textContent).toContain("タスクの移動に失敗しました");
 });
 
-test("非サイレント: 同一カラム並び替えの update_card_order 失敗は generic を 1 件出す", async () => {
+test("同一カラム並び替えの move_task 失敗も invokeWrapped 通知のみ（計 1 件・重複なし）", async () => {
   openDialogMock.mockResolvedValueOnce("/p");
   invokeMock.mockImplementation(
     makeInvoke({
       open_project: () => Promise.resolve(twoTaskRawPayload),
-      update_card_order: () => Promise.reject(new Error("並び順保存に失敗")),
+      move_task: () => Promise.reject(new Error("並び順保存に失敗")),
     }),
   );
 
   mountApp();
   await clickHeaderOpenButton();
-  // Todo に 2 件並んだ状態で先頭カードを末尾へ並び替え。update_card_order（allowlist 外）失敗。
+  // Todo に 2 件並んだ状態で先頭カードを末尾へ並び替え。経路は cross-column と同じ move_task。
   await dropFirstCardTo("Todo");
 
   await vi.waitFor(() => {
     expect(errorToasts().length).toBe(1);
   });
-  // invokeWrapped は発火しない → App の generic「タスクの移動に失敗しました」が残る。
   expect(errorToasts()[0].textContent).toContain("タスクの移動に失敗しました");
-});
-
-test("partial-move（status 成功・並び順保存失敗）は専用文のみ・generic も重複も出さない", async () => {
-  openDialogMock.mockResolvedValueOnce("/p");
-  invokeMock.mockImplementation(
-    makeInvoke({
-      // status 更新は成功し、その後の並び順保存（update_card_order）だけ失敗する。
-      update_task: () =>
-        Promise.resolve({ ...seedTaskPayload, status: "Done" }),
-      update_card_order: () => Promise.reject(new Error("並び順保存に失敗")),
-    }),
-  );
-
-  mountApp();
-  await clickHeaderOpenButton();
-  await dropFirstCardTo("Done");
-
-  await vi.waitFor(() => {
-    expect(errorToasts().length).toBe(1);
-  });
-  // partial-move 専用文が出る。汎用「タスクの移動に失敗しました」や invokeWrapped 重複は出ない。
-  expect(errorToasts()[0].textContent).toContain("並び順の保存に失敗しました");
-  expect(errorToasts()[0].textContent).not.toContain(
-    "タスクの移動に失敗しました",
-  );
 });
 
 test("カラム並び替えの update_columns 失敗は invokeWrapped 通知のみ（計 1 件・重複なし）", async () => {

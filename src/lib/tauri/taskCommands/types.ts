@@ -71,6 +71,18 @@ export type UpdateTaskParams = {
   draft?: boolean;
 };
 
+/** move_task 引数（カラム間移動と同一カラム並び替えの両方で使う）。 */
+export type MoveTaskParams = {
+  /** 移動対象タスクのファイルパス */
+  readonly filePath: string;
+  /** 移動元カラム名（BE 側で現在の status と一致するか検証される） */
+  readonly fromColumn: string;
+  /** 移動先カラム名（同一カラム並び替えでは fromColumn と同値） */
+  readonly toColumn: string;
+  /** 移動先カラムの新しい並び順（タスクファイルパスの配列。先頭が最上位） */
+  readonly toColumnFilePaths: readonly string[];
+};
+
 /** preview_task_filename 引数。 */
 export type PreviewTaskFilenameParams = {
   /** タスクタイトル */

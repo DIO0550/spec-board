@@ -1,4 +1,4 @@
-import { updateCardOrder, updateTask } from "@/lib/tauri";
+import { moveTask } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
@@ -34,9 +34,9 @@ export type MoveTaskCallbacks = {
     toColumn: string;
   }) => void;
   /**
-   * カラム間 status 変更の updateTask 失敗による rollback が完了した直後に
-   * 1 度だけ呼ばれる。同一カラム rollback / partial-move（status 確定保持）
-   * / projectVersion 不一致による invalid-state では呼ばれない。
+   * カラム間 status 変更の move_task 失敗による rollback が完了した直後に
+   * 1 度だけ呼ばれる。同一カラム rollback / projectVersion 不一致による
+   * invalid-state では呼ばれない。
    */
   readonly onRollback?: (params: {
     taskFilePath: string;
@@ -60,8 +60,8 @@ const ensureLoaded = (
 
 /**
  * drop 直前の Board 状態を保持する VO。companion object に振る舞いを集約し、
- * 楽観 dispatch 列 / rollback dispatch 列 / partial-move 補正列の組み立ては
- * ここに閉じる。effect 側からは pure メソッドとして呼び出す。
+ * 楽観 dispatch 列 / rollback dispatch 列の組み立てはここに閉じる。
+ * effect 側からは pure メソッドとして呼び出す。
  */
 export type MoveSnapshot = {
   readonly originalTask: Task;
@@ -131,20 +131,20 @@ export const MoveSnapshot = {
    * カラム間 楽観 dispatch 列（pure）。
    * 順序: ① task-updated(楽観) → ② card-order-updated(楽観 toOrder)。
    *
-   * @param snapshot drop 直前 snapshot
    * @param params 移動パラメータ
+   * @param optimisticTask 楽観反映する Task（確定段の同一性判定に同じ参照を使う）
    * @param optimisticToOrder 楽観反映後の toColumn filePath 列
    * @returns dispatch 順に並んだ ProjectAction の配列
    */
   optimisticCrossDispatches: (
-    snapshot: MoveSnapshot,
     params: MoveTaskParams,
+    optimisticTask: Task,
     optimisticToOrder: readonly string[],
   ): readonly ProjectAction[] => [
     {
       type: "task-updated",
       originalFilePath: params.taskFilePath,
-      task: MoveSnapshot.toOptimisticTask(snapshot, params.toColumn),
+      task: optimisticTask,
     },
     {
       type: "card-order-updated",
@@ -203,22 +203,54 @@ export const MoveSnapshot = {
     return [head, middle, tail];
   },
 
-  /** partial-move（status 確定保持 / cardOrder のみ補正）の dispatch 列（pure）。 */
-  partialRollbackDispatches: (
-    snapshot: MoveSnapshot,
+  /**
+   * カラム間 move_task 成功時の確定 dispatch 列（pure）。
+   *
+   * IPC 待機中に外部 listener（file watcher 由来の task-updated event 等）が同一 task を
+   * 更新している可能性があるため、`currentTask` を見て分岐する:
+   *
+   * - `currentTask` が**楽観 dispatch した Task そのもの**（参照が同一）なら、待機中に
+   *   誰も触っていないので BE 応答の Task をそのまま確定値として採用する。BE 応答には
+   *   書き込み後の md を再解析した結果（warning の解消など）が載っており、成功時は
+   *   自前書き込み由来の watcher イベントが抑止されるため、これが唯一の反映経路になる。
+   * - 参照が変わっている（外部更新が入った）場合は、move が所有する status のみを
+   *   toColumn に載せ替え、title / body / labels 等は currentTask の値を残す。BE 応答で
+   *   丸ごと上書きすると、待機中に入った外部更新を巻き戻してしまう。status だけの比較で
+   *   判定すると「status は移動先のまま title だけ外部更新された」ケースを取りこぼす。
+   * - `currentTask` が消えている（外部削除など）場合は dispatch しない。既に state から
+   *   消えた task を確定 dispatch で復活させない（rollback 側と同じ判断）。
+   *
+   * 参照同一性で判定できるのは、reducer が `task-updated` の Task を複製せずそのまま
+   * 保持する契約だから（`ProjectData.applyTaskUpdated`）。仮にこの契約が変わっても
+   * 「常に status のみマージ」へ倒れるだけで、外部更新を失う方向には壊れない。
+   *
+   * @param params 移動パラメータ
+   * @param serverTask move_task IPC が返した確定 Task
+   * @param optimisticTask 楽観 dispatch で流した Task（参照比較の基準）
+   * @param currentTask 確定 dispatch 直前の最新 state における target task
+   * @returns 確定用 ProjectAction 配列（0〜1 段）
+   */
+  confirmedCrossDispatches: (
     params: MoveTaskParams,
-  ): readonly ProjectAction[] => [
-    {
-      type: "card-order-updated",
-      columnName: params.toColumn,
-      filePaths: [...snapshot.toColumnOrderBefore],
-    },
-    {
-      type: "card-order-updated",
-      columnName: params.fromColumn,
-      filePaths: [...snapshot.fromColumnOrderBefore],
-    },
-  ],
+    serverTask: Task,
+    optimisticTask: Task,
+    currentTask: Task | undefined,
+  ): readonly ProjectAction[] => {
+    if (currentTask === undefined) {
+      return [];
+    }
+    const task =
+      currentTask === optimisticTask
+        ? serverTask
+        : { ...currentTask, status: params.toColumn };
+    return [
+      {
+        type: "task-updated",
+        originalFilePath: params.taskFilePath,
+        task,
+      },
+    ];
+  },
 
   /** 同一カラム rollback の dispatch（toColumnOrderBefore 1 段のみ）（pure）。 */
   rollbackSameDispatches: (
@@ -337,11 +369,17 @@ const MoveExecution = {
       params.toColumn,
       params.toIndex,
     );
+    // 確定段で「待機中に外部更新が入ったか」を参照比較で見分けるため、楽観 dispatch した
+    // Task の参照をここで保持しておく。
+    const optimisticTask = MoveSnapshot.toOptimisticTask(
+      snapshot,
+      params.toColumn,
+    );
     MoveExecution.dispatchAll(
       deps,
       MoveSnapshot.optimisticCrossDispatches(
-        snapshot,
         params,
+        optimisticTask,
         optimisticToOrder,
       ),
     );
@@ -351,15 +389,17 @@ const MoveExecution = {
       toColumn: params.toColumn,
     });
 
-    const updateResult = await updateTask({
+    const moveResult = await moveTask({
       filePath: params.taskFilePath,
-      status: params.toColumn,
+      fromColumn: params.fromColumn,
+      toColumn: params.toColumn,
+      toColumnFilePaths: optimisticToOrder,
     });
-    const guardAfterUpdate = versionGuard(deps, version);
-    if (guardAfterUpdate) {
-      return guardAfterUpdate;
+    const guard = versionGuard(deps, version);
+    if (guard) {
+      return guard;
     }
-    if (!updateResult.ok) {
+    if (!moveResult.ok) {
       const beforeRollback = ProjectState.visibleData(deps.getState());
       const currentTask = beforeRollback?.tasks.find(
         (t) => t.filePath === params.taskFilePath,
@@ -373,42 +413,25 @@ const MoveExecution = {
         fromColumn: params.fromColumn,
         toColumn: params.toColumn,
       });
-      return Result.err(ProjectError.tauri(updateResult.error));
+      return Result.err(ProjectError.tauri(moveResult.error));
     }
 
-    deps.dispatch({
-      type: "task-updated",
-      originalFilePath: params.taskFilePath,
-      task: updateResult.value,
-    });
-    const latest = ProjectState.visibleData(deps.getState());
-    const filePaths = buildMovedFilePaths(
-      latest?.tasks ?? [],
-      params.taskFilePath,
-      params.fromColumn,
-      params.toColumn,
-      params.toIndex,
+    // cardOrder は BE が楽観 dispatch と同じ並びを永続化済みのため、確定 dispatch は
+    // task-updated だけでよい（再計算した card-order-updated を流すと、IPC 待機中に
+    // 入った外部更新を巻き戻してしまう）。
+    const beforeConfirm = ProjectState.visibleData(deps.getState());
+    const currentTask = beforeConfirm?.tasks.find(
+      (t) => t.filePath === params.taskFilePath,
     );
-    const orderResult = await updateCardOrder({
-      columnName: params.toColumn,
-      filePaths,
-    });
-    const guardAfterOrder = versionGuard(deps, version);
-    if (guardAfterOrder) {
-      return guardAfterOrder;
-    }
-    if (!orderResult.ok) {
-      MoveExecution.dispatchAll(
-        deps,
-        MoveSnapshot.partialRollbackDispatches(snapshot, params),
-      );
-      return Result.err(ProjectError.partialMove(orderResult.error));
-    }
-    deps.dispatch({
-      type: "card-order-updated",
-      columnName: params.toColumn,
-      filePaths,
-    });
+    MoveExecution.dispatchAll(
+      deps,
+      MoveSnapshot.confirmedCrossDispatches(
+        params,
+        moveResult.value,
+        optimisticTask,
+        currentTask,
+      ),
+    );
     return Result.ok(undefined);
   },
 
@@ -435,26 +458,24 @@ const MoveExecution = {
       columnName: params.toColumn,
       filePaths,
     });
-    const orderResult = await updateCardOrder({
-      columnName: params.toColumn,
-      filePaths,
+    const moveResult = await moveTask({
+      filePath: params.taskFilePath,
+      fromColumn: params.fromColumn,
+      toColumn: params.toColumn,
+      toColumnFilePaths: filePaths,
     });
     const guard = versionGuard(deps, version);
     if (guard) {
       return guard;
     }
-    if (!orderResult.ok) {
+    if (!moveResult.ok) {
       MoveExecution.dispatchAll(
         deps,
         MoveSnapshot.rollbackSameDispatches(snapshot, params),
       );
-      return Result.err(ProjectError.tauri(orderResult.error));
+      return Result.err(ProjectError.tauri(moveResult.error));
     }
-    deps.dispatch({
-      type: "card-order-updated",
-      columnName: params.toColumn,
-      filePaths,
-    });
+    // 楽観 dispatch と同じ並びが永続化されたため、確定 dispatch は不要。
     return Result.ok(undefined);
   },
 } as const;
@@ -463,10 +484,13 @@ const MoveExecution = {
  * Drop 確定時に Board から呼ばれる単一 entry point。
  * preflight + queue + 分岐のみの薄い orchestrator。
  *
+ * status 変更と cardOrder 更新は BE 側で 1 つの command にまとまっているため、
+ * IPC は経路を問わず 1 回だけで、結果は確定か rollback の 2 分岐に収束する。
+ *
  * - fromColumn !== toColumn: 楽観 dispatch（task-updated + card-order-updated）→
- *   updateTask IPC → 成功なら確定 dispatch + updateCardOrder、失敗なら 3 段 rollback
- * - fromColumn === toColumn: 楽観 dispatch（card-order-updated）→ updateCardOrder IPC →
- *   成功なら確定 dispatch、失敗なら 1 段 rollback
+ *   move_task IPC → 成功なら task-updated で確定、失敗なら 3 段 rollback
+ * - fromColumn === toColumn: 楽観 dispatch（card-order-updated）→ move_task IPC →
+ *   成功なら追加 dispatch なし、失敗なら 1 段 rollback
  *
  * @param deps queue / version / state / dispatch 依存
  * @param params 移動パラメータ

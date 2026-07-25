@@ -45,7 +45,7 @@ vi.mock("@/lib/tauri", async () => {
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
     updateColumns: vi.fn(),
-    updateCardOrder: vi.fn(),
+    moveTask: vi.fn(),
   };
 });
 

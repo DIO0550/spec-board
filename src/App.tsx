@@ -164,7 +164,7 @@ const AppShell = () => {
 
   // 書き込み失敗の error トーストを出す共通ガード。allowlist 由来失敗は invokeWrapped が
   // 既に通知済みのため抑止し、allowlist 外 tauri / 非 tauri 失敗だけ App 側で出す
-  // （サイレント化防止）。成功トースト・partial-move 専用文・announce・throw は各ハンドラ側に残す。
+  // （サイレント化防止）。成功トースト・announce・throw は各ハンドラ側に残す。
   const showErrorUnlessNotified = useCallback(
     (error: ProjectError, message: string): void => {
       if (!wasNotifiedByInvokeWrapped(error)) {
@@ -705,20 +705,15 @@ const AppShell = () => {
         onRollback,
       });
       if (!result.ok) {
-        if (result.error.kind === "partial-move") {
-          showToast(result.error.message, "error");
-          return;
-        }
-        // cross-column の update_task 失敗（allowlist 由来）は invokeWrapped が通知済み → 抑止。
-        // 同一カラム並び替えの update_card_order 失敗（allowlist 外 tauri）はサイレント化を
-        // 避けるため従来どおり generic を出す。
+        // move_task 失敗（allowlist 由来）は invokeWrapped が通知済み → 抑止。
+        // ガード由来の invalid-state は非 tauri のため、ここで generic を出す。
         showErrorUnlessNotified(
           result.error,
           `タスクの移動に失敗しました: ${projectErrorMessage(result.error)}`,
         );
       }
     },
-    [tasks, moveTask, announce, showToast, showErrorUnlessNotified],
+    [tasks, moveTask, announce, showErrorUnlessNotified],
   );
 
   const handleColumnReorder = useCallback(
