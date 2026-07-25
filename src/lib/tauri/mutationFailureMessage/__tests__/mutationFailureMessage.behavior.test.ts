@@ -9,6 +9,7 @@ test.for([
   "create_task",
   "update_task",
   "delete_task",
+  "move_task",
   "add_link",
   "remove_link",
   "update_columns",
@@ -21,7 +22,6 @@ test.for([
   "get_columns",
   "get_labels",
   "open_project",
-  "update_card_order",
 ] as const)("allowlist 外の cmd '%s' で isMutationCommand が false", (cmd) => {
   expect(isMutationCommand(cmd)).toBe(false);
 });
@@ -39,6 +39,13 @@ test("buildMutationFailureMessage は操作別固定文 + TauriError 詳細を�
   const error = new TauriError("IO_ERROR", "書き込み失敗");
   expect(buildMutationFailureMessage("create_task", error)).toBe(
     "タスクの作成に失敗しました: 書き込み失敗",
+  );
+});
+
+test("move_task はカラム間移動 / 同一カラム並び替えを通じて「タスクの移動」文になる", () => {
+  const error = new TauriError("IO_ERROR", "書き込みに失敗しました");
+  expect(buildMutationFailureMessage("move_task", error)).toBe(
+    "タスクの移動に失敗しました: 書き込みに失敗しました",
   );
 });
 

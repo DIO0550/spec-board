@@ -68,10 +68,11 @@ test.for([
   expect(res.ok).toBe(false);
 });
 
-test("update_card_order の reject では sink が発火しない（allowlist 外）", async () => {
-  invokeMock.mockRejectedValueOnce(new Error("order boom"));
-  const res = await invokeWrapped("update_card_order");
-  expect(sink).not.toHaveBeenCalled();
+test("move_task の reject では sink が発火する（書き込み allowlist）", async () => {
+  invokeMock.mockRejectedValueOnce(new Error("move boom"));
+  const res = await invokeWrapped("move_task");
+  expect(sink).toHaveBeenCalledTimes(1);
+  expect(sink.mock.calls[0]?.[0]).toContain("タスクの移動に失敗しました");
   expect(res.ok).toBe(false);
 });
 
