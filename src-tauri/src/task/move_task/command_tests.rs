@@ -823,6 +823,78 @@ fn returns_unknown_column_when_destination_column_is_absent() {
 }
 
 #[test]
+fn destination_paths_are_normalized_before_being_persisted() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    move_task_impl(
+        &state,
+        &FsTaskIo,
+        make_args(
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["./tasks/x.md", "tasks/a.md"],
+        ),
+    )
+    .expect("move should succeed");
+
+    let on_disk = read_config_json(dir.path());
+    assert_eq!(
+        on_disk.card_order.get("Done"),
+        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()]),
+        "`./` 付きの表記は正規化してから永続化する"
+    );
+}
+
+#[test]
+fn destination_paths_escaping_the_project_root_are_rejected() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_config_with_card_order(dir.path(), &[("Todo", &["tasks/a.md"])]);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let before = read_config_json(dir.path());
+
+    let err = move_task_impl(
+        &state,
+        &FsTaskIo,
+        make_args(
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["../outside/secret.md", "tasks/a.md"],
+        ),
+    )
+    .expect_err("project_root の外を指す並びは拒否されるべき");
+
+    assert!(
+        matches!(err, MoveTaskCommandError::InvalidPath(_)),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        read_config_json(dir.path()).card_order,
+        before.card_order,
+        "拒否時は config.json を書き換えない"
+    );
+}
+
+#[test]
 fn returns_unknown_column_for_empty_column_names() {
     let dir = tempdir();
     seed_md(
