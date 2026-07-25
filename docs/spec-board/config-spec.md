@@ -479,30 +479,50 @@ links:（任意）
 
 ---
 
-### `update_card_order`
+### `move_task`
 
-**説明**: カラム内のカード並び順を更新する。
+**説明**: タスクのカラム間移動（`status` 変更 + `cardOrder` 更新）と同一カラム内の並び替えを、単一コマンドでまとめて処理する。`update_card_order` を置き換えるコマンドで、FE から `cardOrder` を更新する経路はこの 1 本のみ。
 
 **引数**:
 
 | パラメータ | 型 | 必須 | 説明 |
 |:----------|:---|:-----|:-----|
-| columnName | `String` | はい | 対象カラム名 |
-| filePaths | `Vec<String>` | はい | 新しい並び順のファイルパス配列 |
+| filePath | `String` | はい | 移動対象タスクのファイルパス（絶対 or project_root 相対）。拡張子は scanner と同じく大文字小文字を区別せず `.md` を要求する |
+| fromColumn | `String` | はい | 移動元カラム名。移動前の `status` の期待値として検証に使う |
+| toColumn | `String` | はい | 移動先カラム名。`fromColumn` と同値なら同一カラム内の並び替え |
+| toColumnFilePaths | `Vec<String>` | はい | 移動先カラムの新しい並び順のファイルパス配列 |
+
+**戻り値**: 移動後の `Task`（同一カラム並び替えでは `status` 不変の既存 `Task`）。`cardOrder` は返さず、FE は楽観更新した並びをそのまま確定する。
+
+本コマンドが保存した `cardOrder` は、次回の `open_project` が payload の `tasks` を「カラムの表示順 → そのカラムの `cardOrder` の並び → `id` 昇順」で返すことで表示順として復元される。
 
 **振る舞い**:
-1. `columnName` が `columns[]` に存在しない場合は更新を拒否し、`config.json` を変更しない（エラー文字列: `カラムが見つかりません: {columnName}`）
-2. `filePaths` は FE が正規化済みの project-relative path であることを前提とし、BE 側では `canonicalize` や `project_root` 配下に収まっているかの containment 検証は行わない。各パスを `project_root.join(path)` で解決した結果に対し `std::fs::metadata` を呼び、`Err` が `ErrorKind::NotFound` の場合のみ除外する。`permission denied` 等の `NotFound` 以外の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。クリーンアップ後の配列を `cardOrder[columnName]` に上書き保存する。順序は入力 `filePaths` を保持し、削除対象のみ抜く
-3. 既存キーがあれば**上書き**、無ければ**新規追加**として `cardOrder` に書き込む
-4. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
-5. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、本書き込みによって FE への変更通知（emit）は走らない
-6. disk への書き込みが成功した場合、`project_path` が処理開始時の snapshot と一致するときに限り AppState の `Config` を更新する。disk 失敗時は in-memory の `Config` を変更しない（次回呼び出しで再試行可能）
+1. `fromColumn` / `toColumn` のいずれかが `columns[]` に存在しない場合は何も書き込まず拒否する（エラー文字列: `カラムが見つかりません: {columnName}`）
+2. 対象タスクが tasks キャッシュに存在しない場合は拒否する（エラー文字列: `対象のタスクが見つかりません: {path}`）
+3. タスクの現在の `status` が `fromColumn` と一致しない場合は、別操作による stale な移動として拒否する（エラー文字列: `タスクの状態が変わっています: 期待={expected}, 実際={actual}`）。判定は tasks キャッシュ上の値と、直前に読み込んだ task md から解決した**実効 `status`** の両方に対して行う（キャッシュは watcher 反映待ちで古くなり得るため、片方だけを信じると外部エディタによる `status` 変更を握り潰して上書きしてしまう）。md の実効 `status` は、`status:` が文字列で読めればその値、欠落 / 非文字列ならスキャン時と同じ既定 `status`（`columns` の先頭）とする。同一カラム並び替えでも先に検証するため、stale な状態のまま `cardOrder` だけが書き換わることはない
+4. `fromColumn !== toColumn` の場合のみ frontmatter の `status` を `toColumn` に書き換えて task md へ atomic 書き込みし、watcher の自己 write 抑止レジストリに登録する。書き換え後の内容が scanner の受理条件（1 MiB 以下 / 先頭 8 KiB に NUL バイトなし）から外れる場合は書き込まずに拒否する（移動は成功したのに次の再スキャンで task が消えるのを防ぐ）
+5. `cardOrder` を更新する。`toColumn` は `toColumnFilePaths` で上書きし、`fromColumn` は既存エントリから移動対象パスのみを取り除く。`fromColumn` に既存エントリが無い、または移動対象パスを含まない場合は書き換えない（並びを持たないカラムに空配列を生やさないため）
+6. `toColumnFilePaths` に移動対象パスが含まれていない場合は末尾に追加する。FE の算出漏れや stale な並びをそのまま保存して、移動したタスクだけが移動先カラムの並びから抜け落ちることを防ぐ
+7. `toColumnFilePaths` 内の重複は初出のみを残して除去する（同じカードが並びに 2 回現れないようにする）
+8. `toColumnFilePaths` は **FE が正規化済みの project-relative path であることを前提**とし、BE 側では `canonicalize` や `project_root` 配下に収まっているかの containment 検証は行わない（`filePath` は入力パス VO で正規化・`..` 拒否されるが、並び順の配列要素は生の文字列として扱う）。各パスは `project_root.join(path)` で解決して `std::fs::metadata` を呼び、`Err` が `ErrorKind::NotFound` の場合のみ除外する。`permission denied` 等の `NotFound` 以外の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。順序は入力を保持し、削除対象のみ抜く
+9. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
+10. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、`config.json` の書き込みによって FE への変更通知（emit）は走らない
+11. `config.json` への書き込みが成功した場合、`project_path` が処理開始時の snapshot と一致するときに限り AppState の `Config` を更新する。disk 失敗時は in-memory の `Config` を変更しない（次回呼び出しで再試行可能）
+12. カラム間移動では、`project_path` の照合・tasks キャッシュの更新・`Config` の差し替えを**同一クリティカルセクション**で行う。`project_path` が処理開始時の snapshot と一致しない場合（処理中に別プロジェクトへ切り替わった場合）は in-memory を一切変更しない。2 段に分けると、その間に `open_project` が完了して旧プロジェクト由来の `Task` を新プロジェクトのキャッシュへ挿入し得るため。`Config` の差し替えは tasks キャッシュ更新が成功した場合のみ行う（順序を逆にすると「`Config` は移動後・tasks は移動前」の部分適用が in-memory に残る）
+13. tasks キャッシュへ反映する際、`children` / `reverse_links` は既存キャッシュの値を保持する。これらは scan で task 集合から導出される派生値で md の frontmatter には現れないため、frontmatter から再構築した `Task` で素朴に上書きすると、親タスクを移動した瞬間に子一覧や被リンクが消える
+14. `warnings` は逆に**書き込み後の内容で再判定した値**を採用する（`status` を書き込むため `status` 欠落の警告などは消える必要がある）。ただし task 集合から導出される `ParentNotFound` / `ParentCycle` は単一 md から再導出できないため既存キャッシュの値を引き継ぐ
+
+**書き込み失敗時の best-effort rollback**:
+
+task md と `config.json` は別ファイルのため、両者をまたぐトランザクション保証は無い。カラム間移動で task md の書き込みに成功した後に失敗した場合は、task md を元の内容へ書き戻し、watcher の自己 write 抑止登録も解除してからエラーを返す。書き戻し自体が失敗した場合の再収束は watcher / 再スキャンに委ねる。task md の書き込み時点で失敗した場合は `config.json` に触れないため、disk 上の状態は呼び出し前のまま保たれる。
+
+`config.json` を書き終えた後に in-memory の tasks キャッシュ更新が失敗した場合（並行削除などで対象タスクがキャッシュから消えていた場合。エラー文字列: `対象のタスクが見つかりません: {path}`）は、`config.json` も移動前の内容へ書き戻す。task md だけを戻して `config.json` を移動後のまま残すと、FE が全面 rollback するのに対して永続状態だけが移動後に進んでしまうため。
 
 **並行性**:
 
 - **逐次**呼び出し（前の呼び出しが完了してから次が始まる場合）は、最後の呼び出しの結果が最終的に保存される（後勝ち）。
 - **`open_project` との並行**: 処理開始時に `project_path` と `config` を**両 lock 同時保持下で atomic に snapshot** し、disk write 後の in-memory 更新も**両 lock 同時保持下で `project_path` の一致確認 + `config` 更新の atomic check-and-set** として行う。これにより `open_project` の commit と interleave しても「新 path + 旧 config」を観測する race や、旧プロジェクトの config を新プロジェクトの in-memory state に注入する race は発生しない。snapshot 取得後に project が swap された場合、disk write は旧プロジェクトの `.spec-board/config.json` に対して整合的に完了し、新プロジェクトの in-memory 更新は no-op となる。
-- **同一プロジェクト内での `update_card_order` 並行**呼び出し時の厳密な整合性は本機能では保証しない。`snapshot_project_and_config` から `replace_config_if_project_matches` までは 2 回の lock 取得に分かれているため、間に別の `update_card_order` 呼び出しが完了すると、後勝ちの disk 書き込みより前に取得した snapshot で disk が上書きされる race window が残る。本ケースは現状の DnD UX 上の問題が観測されていないため受容しており、将来 `AppState::with_config_mut` のような atomic update helper を導入した時点で改善する。
+- **同一プロジェクト内での `move_task` 並行**呼び出し時の厳密な整合性は本機能では保証しない。`snapshot_project_and_config` から `replace_config_if_project_matches` までは 2 回の lock 取得に分かれているため、間に別の `move_task` 呼び出しが完了すると、後勝ちの disk 書き込みより前に取得した snapshot で disk が上書きされる race window が残る。本ケースは現状の DnD UX 上の問題が観測されていないため受容しており、将来 `AppState::with_config_mut` のような atomic update helper を導入した時点で改善する。
 
 ## エラーハンドリング
 
