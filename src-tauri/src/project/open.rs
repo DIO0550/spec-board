@@ -550,17 +550,59 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
 
 /// FE へ返す `OpenProjectPayload` を組み立てる。
 ///
-/// `tasks` は `id` 昇順 sort、`columns` は `Config::columns` の `order` 昇順 sort 後に
-/// `name` を抽出する。
+/// `columns` は `Config::columns` の `order` 昇順 sort 後に `name` を抽出する。
+///
+/// `tasks` は「カラムの表示順 → そのカラムの保存済み `cardOrder` の並び → `id` 昇順」で
+/// sort する。FE はカラムごとに `tasks` を filter して表示順に使うため、この並べ替えが
+/// 「再オープンしても DnD で決めた並びが復元される」ための rehydration になる。
+/// `cardOrder` に載っていないタスク（新規追加された md 等）は、そのカラムの末尾へ
+/// `id` 昇順で並ぶ（`cardOrder` の「記載されていないタスクは末尾に追加」ルール）。
+/// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
 fn build_payload(mut tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
-    tasks.sort_by(|a, b| a.id.cmp(&b.id));
     let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
     sorted_columns.sort_by_key(|column| column.order);
+
+    let column_rank: HashMap<&str, usize> = sorted_columns
+        .iter()
+        .enumerate()
+        .map(|(rank, column)| (column.name.as_str(), rank))
+        .collect();
+    let unknown_column_rank = sorted_columns.len();
+
+    tasks.sort_by(|a, b| {
+        let rank_a = card_sort_key(a, config, &column_rank, unknown_column_rank);
+        let rank_b = card_sort_key(b, config, &column_rank, unknown_column_rank);
+        rank_a.cmp(&rank_b).then_with(|| a.id.cmp(&b.id))
+    });
+
     let columns = sorted_columns
         .into_iter()
         .map(|column| column.name.clone())
         .collect();
     OpenProjectPayload { tasks, columns }
+}
+
+/// `task` の (カラム表示順, カラム内 cardOrder 位置) を返す。
+///
+/// `cardOrder` に載っていない場合の位置は `usize::MAX` とし、同カラムの記載済み
+/// タスクより後ろに回す（同順内の tie-break は呼び出し側が `id` で行う）。
+fn card_sort_key(
+    task: &Task,
+    config: &Config,
+    column_rank: &HashMap<&str, usize>,
+    unknown_column_rank: usize,
+) -> (usize, usize) {
+    let status = task.status.as_str();
+    let rank = column_rank
+        .get(status)
+        .copied()
+        .unwrap_or(unknown_column_rank);
+    let position = config
+        .card_order
+        .get(status)
+        .and_then(|paths| paths.iter().position(|p| p == task.file_path.as_str()))
+        .unwrap_or(usize::MAX);
+    (rank, position)
 }
 
 #[cfg(test)]
