@@ -66,6 +66,20 @@ fn require_md_accepts_md_extension() {
 }
 
 #[test]
+fn require_md_accepts_uppercase_md_extension() {
+    // scanner は `.MD` を大文字小文字を区別せず取り込むため、ここで弾くと
+    // 「一覧には出るが移動も更新もできない」タスクが生まれる。
+    assert_eq!(
+        resolve("tasks/foo.MD", true),
+        Ok(PathBuf::from("tasks/foo.MD"))
+    );
+    assert_eq!(
+        resolve("tasks/foo.Md", true),
+        Ok(PathBuf::from("tasks/foo.Md"))
+    );
+}
+
+#[test]
 fn require_md_rejects_non_md_extension() {
     assert_eq!(resolve("tasks/foo.txt", true), Err(InputPathRejected));
 }
