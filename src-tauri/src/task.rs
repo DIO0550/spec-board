@@ -8,6 +8,7 @@ pub mod get;
 pub mod input_task_path;
 pub mod io;
 pub mod label;
+pub mod move_task;
 pub mod parse;
 pub mod path_lookup;
 pub(crate) mod path_normalization;

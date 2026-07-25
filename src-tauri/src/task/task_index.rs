@@ -19,6 +19,7 @@ use crate::task::delete::error::DeleteTaskError;
 use crate::task::due::Due;
 use crate::task::frontmatter::{self, Parsed, Priority};
 use crate::task::label::Label;
+use crate::task::move_task::error::MoveTaskError;
 use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
 use crate::task::path_lookup::{
     append_child_to_parent, clear_children, normalize_link_path_for_lookup,
@@ -538,6 +539,82 @@ impl TaskIndex {
         Ok(returned_task)
     }
 
+    /// 与えられた cache から `key` に対応する `Task` を正規化済み path で引き当てる。
+    ///
+    /// `tasks_snapshot`（全 clone）を経由せずに 1 件だけ取り出すための入口。表記揺れ
+    /// （`./tasks/a.md` / `tasks\a.md` 等）を吸収するため、`find_by_path` と同じ
+    /// 正規化比較を使う。
+    pub(crate) fn find_in_cache<'a>(
+        cache: &'a HashMap<PathBuf, Task>,
+        key: &Path,
+    ) -> Option<&'a Task> {
+        Self::find_entry_in_cache(cache, key).map(|(_, task)| task)
+    }
+
+    /// [`Self::find_in_cache`] と同じ引き当てで、**cache の実際の key** も返す。
+    ///
+    /// mutate する呼び出し側は必ずこちらを使う。`Task::file_path` から key を組み直すと、
+    /// cache の実 key が `./tasks/a.md` で `file_path` が `tasks/a.md` のように表記が
+    /// 異なる場合に「検索は当たったが `get_mut` は外れる」不整合になる。
+    fn find_entry_in_cache<'a>(
+        cache: &'a HashMap<PathBuf, Task>,
+        key: &Path,
+    ) -> Option<(&'a PathBuf, &'a Task)> {
+        let target = normalize_task_path_for_lookup(&key.to_string_lossy());
+        cache
+            .iter()
+            .find(|(_, task)| normalize_task_path_for_lookup(task.file_path.as_str()) == target)
+    }
+
+    /// 移動後の `updated_task` を cache に反映し、IPC 戻り値となる `Task` を返す。
+    ///
+    /// `updated_task` は disk の frontmatter から再構築されているため `children` /
+    /// `reverse_links` が空になっている。status 変更はこの 2 つの派生値に影響しないので、
+    /// `add_link` / `remove_link` と同じく既存 cache 側の値を保持する（保持しないと、
+    /// 親タスクを移動した瞬間に子一覧や被リンクが画面から消える）。
+    ///
+    /// `warnings` は逆に **`updated_task` 側を採用する**。move は frontmatter の
+    /// `status` を書き換えるため、`MissingStatusUsedDefault` などの parse 由来 warning は
+    /// 書き込み後の内容で再判定した値が正しい（cache 側を丸ごと保持すると、status を
+    /// 補ったのに「status 欠落」の警告が残り続ける）。ただし graph 由来の warning
+    /// （`ParentNotFound` / `ParentCycle`）は単一 task の md からは再導出できないため、
+    /// cache 側から引き継ぐ。
+    pub(crate) fn commit_move_into_cache(
+        cache: &mut HashMap<PathBuf, Task>,
+        moved_key: &Path,
+        updated_task: &Task,
+    ) -> Result<Task, MoveTaskError> {
+        // 引き当ては表記揺れを吸収する正規化比較で行い、cache が実際に持っている key を
+        // 使って mutate する（`Task::file_path` から key を組み直すと、表記が違うだけで
+        // 「検索は当たったのに get_mut は外れる」不整合になる）。
+        let Some((matched_key, previous)) = Self::find_entry_in_cache(cache, moved_key) else {
+            return Err(MoveTaskError::TaskVanished {
+                path: moved_key.to_string_lossy().into_owned(),
+            });
+        };
+        let key = matched_key.clone();
+        let graph_warnings: Vec<TaskWarning> = previous
+            .warnings
+            .iter()
+            .filter(|w| is_graph_derived_warning(w))
+            .cloned()
+            .collect();
+
+        let mut committed = overwrite_preserving_derived(cache, &key, updated_task);
+        committed.warnings = updated_task
+            .warnings
+            .iter()
+            .cloned()
+            .chain(graph_warnings)
+            .collect();
+        // `overwrite_preserving_derived` の cycle 引き継ぎは差し替え前の warnings を見て
+        // 行われるため、warnings を入れ替えた後に parent=None + cycle warning の整合を取り直す。
+        let was_cycle_member = has_parent_cycle_warning(&committed.warnings);
+        committed.preserve_parent_cycle_state(was_cycle_member, false);
+        cache.insert(key, committed.clone());
+        Ok(committed)
+    }
+
     /// `remove_link` の cache commit を行う差分更新 aggregate メソッド。
     ///
     /// snapshot 取得から本メソッド呼出までの間に他コマンドが cache を変更すると、
@@ -841,6 +918,82 @@ impl TaskIndex {
             updated_task,
             file_content: serialized,
             needs_full_rebuild: parent_changed,
+        })
+    }
+
+    /// タスク移動の計算を行う pure aggregate method。
+    ///
+    /// 呼び出し前提:
+    ///
+    /// - `existing` は effect 層が cache snapshot から `intent.file_path` で
+    ///   引き当て済みの `&Task`。
+    /// - `existing_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    ///
+    /// 振る舞い:
+    ///
+    /// 1. cache 上の `existing.status` と、md から解決した実効 status の**両方**が
+    ///    `intent.from_column` と一致することを要求し、外れていれば `StatusMismatch`
+    ///    で reject する。同一カラム並び替えでも先に検証するため、stale な状態の
+    ///    まま cardOrder だけが書き換わることはない。md の実効 status は `status:` が
+    ///    文字列で読めればその値、欠落 / 非文字列なら `scan_default_status`
+    ///    （scan 時に割り当てられる既定値。決定は Config のドメインなので effect 層が解決）。
+    /// 2. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
+    /// 3. それ以外は frontmatter の `status` を `to_column` に書き換え、
+    ///    serialize 済み `file_content` と再構築した `updated_task` を返す。
+    ///
+    /// cardOrder は Config 側のドメインのため本メソッドでは扱わない。effect 層が
+    /// `Config::plan_update_card_order` を呼んで別途計算する。
+    pub(crate) fn plan_move(
+        &self,
+        intent: &MoveTaskIntent,
+        existing: &Task,
+        existing_parsed: Parsed,
+        scan_default_status: &str,
+    ) -> Result<MoveTaskOutcome, MoveTaskError> {
+        ensure_status_matches(intent, existing.status.as_str())?;
+        // cache は watcher 反映待ちで古くなり得るため、直前に読んだ md の値でも検証する。
+        // 片方だけを信じると、外部エディタで status を変えられた直後の移動で
+        // その変更を握り潰して上書きしてしまう。`status:` が欠落 / 非文字列の md は
+        // scan と同じ既定 status が実効値になるため、そちらと突き合わせる。
+        let effective_on_disk =
+            status_in_frontmatter(&existing_parsed).unwrap_or(scan_default_status);
+        ensure_status_matches(intent, effective_on_disk)?;
+
+        if intent.from_column == intent.to_column {
+            return Ok(MoveTaskOutcome::SameColumn {
+                existing_task: existing.clone(),
+            });
+        }
+
+        let Parsed {
+            mut frontmatter,
+            body,
+        } = existing_parsed;
+
+        frontmatter.extras.insert(
+            serde_yaml_ng::Value::String("status".into()),
+            serde_yaml_ng::Value::String(intent.to_column.clone()),
+        );
+
+        let file_content = frontmatter::serialize(&Parsed {
+            frontmatter: frontmatter.clone(),
+            body: body.clone(),
+        });
+
+        // 書き込んだ結果が scanner の受理条件から外れると、移動は成功したのに
+        // 次の再スキャンで task が消える。plan_update / plan_add_link と同様に
+        // 書き込み前に aggregate 側で弾く。
+        TaskContent::try_new(file_content.clone()).map_err(MoveTaskError::from)?;
+
+        let context = TaskParseContext {
+            file_path: existing.file_path.as_path_buf(),
+            default_status: existing.status.clone(),
+        };
+        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+
+        Ok(MoveTaskOutcome::CrossColumn {
+            updated_task,
+            file_content,
         })
     }
 
@@ -1198,6 +1351,33 @@ pub struct UpdateTaskOutcome {
     pub needs_full_rebuild: bool,
 }
 
+/// `move_task` IPC 境界から domain に渡される移動意図。
+///
+/// `from_column` は「移動前にこうであるはず」という期待値で、実際の status と
+/// 一致しなければ `plan_move` が `StatusMismatch` で reject する。
+/// `to_column_file_paths` は cardOrder の再構築に使うため effect 層のみが参照する。
+#[derive(Debug, Clone)]
+pub(crate) struct MoveTaskIntent {
+    /// 対象タスクのプロジェクトルート相対パス（正規化済み）。
+    pub file_path: PathBuf,
+    pub from_column: String,
+    pub to_column: String,
+    /// 移動先カラムの新しい cardOrder（FE が算出済みの完全な並び）。
+    pub to_column_file_paths: Vec<String>,
+}
+
+/// `TaskIndex::plan_move` の計算結果。effect 層が消費する。
+#[derive(Debug)]
+pub(crate) enum MoveTaskOutcome {
+    /// カラム間移動: status 変更あり。task md の書き込みが必要。
+    CrossColumn {
+        updated_task: Task,
+        file_content: String,
+    },
+    /// 同一カラム並び替え: task 自体は変わらない。cardOrder のみ更新する。
+    SameColumn { existing_task: Task },
+}
+
 /// `add_link` IPC 境界から domain に渡される追加意図。
 ///
 /// `source` / `target` はいずれも project_root 相対の正規化済み path。
@@ -1400,6 +1580,41 @@ fn join_rel_path(target_dir: &Path, filename: &TaskFileName) -> PathBuf {
 ///
 /// 最終的に返却される Task は `task_from_parsed` 再走の結果に置き換わるため、
 /// ここでは循環/深さ検証に必要なフィールド（特に `parent`）だけ正しく埋まっていればよい。
+/// task 集合のグラフ構造から導出される warning かを判定する。
+///
+/// これらは単一 task の md だけからは再導出できないため、md 由来で再構築した `Task` に
+/// 引き継ぐ必要がある。それ以外（title / status / due / extras の parse 由来）は
+/// 書き込み後の内容で再判定した値が正しい。
+fn is_graph_derived_warning(warning: &TaskWarning) -> bool {
+    matches!(
+        warning.code,
+        TaskWarningCode::ParentNotFound | TaskWarningCode::ParentCycle
+    )
+}
+
+/// `actual` が移動元カラムとして期待した status と一致することを確かめる。
+fn ensure_status_matches(intent: &MoveTaskIntent, actual: &str) -> Result<(), MoveTaskError> {
+    if actual == intent.from_column {
+        return Ok(());
+    }
+    Err(MoveTaskError::StatusMismatch {
+        expected: intent.from_column.clone(),
+        actual: actual.to_string(),
+    })
+}
+
+/// frontmatter の `status:` を文字列として取り出す。キーが無い / 文字列でない場合は `None`。
+///
+/// `None` は「disk 側に比較対象が無い」ことを意味するだけなので、呼び出し側は
+/// cache の status だけで判定を続ける（scan 時に既定 status が割り当てられている）。
+fn status_in_frontmatter(parsed: &Parsed) -> Option<&str> {
+    parsed
+        .frontmatter
+        .extras
+        .get(serde_yaml_ng::Value::String("status".into()))
+        .and_then(serde_yaml_ng::Value::as_str)
+}
+
 fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {
     let mut task = existing.clone();
     if let Some(title) = &intent.title {
@@ -1745,6 +1960,10 @@ mod task_index_plan_create_tests;
 #[cfg(test)]
 #[path = "task_index_plan_update_tests.rs"]
 mod task_index_plan_update_tests;
+
+#[cfg(test)]
+#[path = "task_index_plan_move_tests.rs"]
+mod task_index_plan_move_tests;
 
 #[cfg(test)]
 #[path = "task_index_clear_children_tests.rs"]
