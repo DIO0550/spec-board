@@ -569,10 +569,11 @@ fn build_payload(mut tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
         .collect();
     let unknown_column_rank = sorted_columns.len();
 
-    tasks.sort_by(|a, b| {
-        let rank_a = card_sort_key(a, config, &column_rank, unknown_column_rank);
-        let rank_b = card_sort_key(b, config, &column_rank, unknown_column_rank);
-        rank_a.cmp(&rank_b).then_with(|| a.id.cmp(&b.id))
+    // `sort_by` で比較のたびに cardOrder を線形探索すると、比較回数ぶん走査が繰り返される。
+    // key は 1 task につき 1 回だけ計算する。
+    tasks.sort_by_cached_key(|task| {
+        let (rank, position) = card_sort_key(task, config, &column_rank, unknown_column_rank);
+        (rank, position, task.id.clone())
     });
 
     let columns = sorted_columns
