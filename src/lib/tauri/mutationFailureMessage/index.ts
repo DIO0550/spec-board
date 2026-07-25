@@ -8,7 +8,6 @@ const INVALID_FILE_NAME_MESSAGE =
 /**
  * 書き込み（ミューテーション）コマンド名 → 日本語操作ラベルの写像。
  * このテーブルに載っている cmd のみ失敗トースト対象（= allowlist）。
- * update_card_order は partial-move 専用文を ProjectProvider 側に残すため除外。
  * get_tasks / get_columns / get_labels / open_project は読み取り系のため除外。
  *
  * `as const satisfies` でリテラルキーを保ちつつ値型を検証する。
@@ -18,6 +17,7 @@ const MUTATION_COMMAND_LABELS = {
   create_task: "タスクの作成",
   update_task: "タスクの更新",
   delete_task: "タスクの削除",
+  move_task: "タスクの移動",
   add_link: "リンクの追加",
   remove_link: "リンクの削除",
   update_columns: "カラムの更新",

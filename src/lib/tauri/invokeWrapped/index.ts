@@ -12,7 +12,7 @@ import { TauriError } from "../tauriError";
  * 全 invoke ラッパでエラー正規化を一箇所に集約するための内部ヘルパ。
  *
  * 失敗時、書き込み系（allowlist）コマンドのみ登録済み sink へ失敗トーストを発火する。
- * 読み取り系 / update_card_order は allowlist 外なので発火しない。sink 未登録時は no-op
+ * 読み取り系は allowlist 外なので発火しない。sink 未登録時は no-op
  * （App マウント前など）で従来挙動を維持する。`Result.err` を返す契約は不変。
  *
  * `args` を省略した場合は `invoke(cmd, undefined)` 相当として呼ぶ（Tauri 側で無視される）。
