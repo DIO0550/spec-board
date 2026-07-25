@@ -14,13 +14,12 @@ import { App } from "@/App";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import {
   getColumns as getColumnsInvoke,
+  moveTask as moveTaskInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
   openProject as openProjectInvoke,
   TauriError,
-  updateCardOrder as updateCardOrderInvoke,
   updateColumns as updateColumnsInvoke,
-  updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task } from "@/types/task";
@@ -38,7 +37,7 @@ vi.mock("@/lib/tauri", async () => {
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
     updateColumns: vi.fn(),
-    updateCardOrder: vi.fn(),
+    moveTask: vi.fn(),
   };
 });
 
@@ -49,8 +48,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
-const updateTaskMock = vi.mocked(updateTaskInvoke);
-const updateCardOrderMock = vi.mocked(updateCardOrderInvoke);
+const moveTaskMock = vi.mocked(moveTaskInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
@@ -95,8 +93,7 @@ beforeEach(() => {
       doneColumn: "Done",
     },
   });
-  updateTaskMock.mockReset();
-  updateCardOrderMock.mockReset();
+  moveTaskMock.mockReset();
   updateColumnsMock.mockReset();
 });
 
@@ -244,41 +241,39 @@ test("drop 成功 → LiveRegion に「移動しました」が現れる", async
   await openSuccessfully();
 
   const movedA: Task = { ...taskA, status: "Done" };
-  updateTaskMock.mockResolvedValueOnce(Result.ok(movedA));
-  updateCardOrderMock.mockResolvedValueOnce(Result.ok(undefined));
+  moveTaskMock.mockResolvedValueOnce(Result.ok(movedA));
 
   await dropFirstCardToDone();
 
   expect(liveRegionText()).toBe("「A タスク」を「Done」に移動しました");
 });
 
-test("drop 楽観 announce は updateTask resolve 前に LiveRegion へ届いている", async () => {
+test("drop 楽観 announce は move_task resolve 前に LiveRegion へ届いている", async () => {
   mountApp();
   await openSuccessfully();
 
-  type UpdateTaskResult = Awaited<ReturnType<typeof updateTaskMock>>;
-  let resolveUpdate: (value: UpdateTaskResult) => void = () => {};
-  updateTaskMock.mockReturnValueOnce(
-    new Promise<UpdateTaskResult>((resolve) => {
-      resolveUpdate = resolve;
+  type MoveTaskResult = Awaited<ReturnType<typeof moveTaskMock>>;
+  let resolveMove: (value: MoveTaskResult) => void = () => {};
+  moveTaskMock.mockReturnValueOnce(
+    new Promise<MoveTaskResult>((resolve) => {
+      resolveMove = resolve;
     }),
   );
-  updateCardOrderMock.mockResolvedValueOnce(Result.ok(undefined));
 
   await dropFirstCardToDone();
   expect(liveRegionText()).toBe("「A タスク」を「Done」に移動しました");
 
   await act(async () => {
-    resolveUpdate(Result.ok({ ...taskA, status: "Done" }));
+    resolveMove(Result.ok({ ...taskA, status: "Done" }));
     await Promise.resolve();
   });
 });
 
-test("drop 失敗 (updateTask reject) → LiveRegion が「取り消しました」になる", async () => {
+test("drop 失敗 (move_task reject) → LiveRegion が「取り消しました」になる", async () => {
   mountApp();
   await openSuccessfully();
 
-  updateTaskMock.mockResolvedValueOnce(
+  moveTaskMock.mockResolvedValueOnce(
     Result.err(new TauriError("IO_ERROR", "io fail")),
   );
 
@@ -291,7 +286,7 @@ test("同一カラム並び替え → LiveRegion textContent は空のまま", a
   mountApp();
   await openSuccessfully();
 
-  updateCardOrderMock.mockResolvedValueOnce(Result.ok(undefined));
+  moveTaskMock.mockResolvedValueOnce(Result.ok(taskA));
 
   await dropFirstCardWithinTodo();
 
@@ -304,8 +299,7 @@ test("drop 後の LiveRegion は同一の安定 DOM ノードを維持しつつ 
 
   const before = liveRegion();
   const movedA: Task = { ...taskA, status: "Done" };
-  updateTaskMock.mockResolvedValue(Result.ok(movedA));
-  updateCardOrderMock.mockResolvedValue(Result.ok(undefined));
+  moveTaskMock.mockResolvedValue(Result.ok(movedA));
 
   await dropFirstCardToDone();
   const after = liveRegion();
