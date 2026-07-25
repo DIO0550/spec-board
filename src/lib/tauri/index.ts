@@ -1,6 +1,3 @@
-// cardOrderCommands
-export type { UpdateCardOrderParams } from "./cardOrderCommands/updateCardOrder";
-export { updateCardOrder } from "./cardOrderCommands/updateCardOrder";
 // columnCommands
 export { getColumns } from "./columnCommands/getColumns";
 export type {
@@ -48,11 +45,13 @@ export { updateMilestone } from "./milestoneCommands/updateMilestone";
 export { createTask } from "./taskCommands/createTask";
 export { deleteTask } from "./taskCommands/deleteTask";
 export { getTasks } from "./taskCommands/getTasks";
+export { moveTask } from "./taskCommands/moveTask";
 export { openProject } from "./taskCommands/openProject";
 export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
 export type {
   CreateTaskParams,
   DeleteTaskParams,
+  MoveTaskParams,
   OpenProjectParams,
   OpenProjectPayload,
   OrphanStrategy,
