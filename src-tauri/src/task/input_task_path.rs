@@ -30,6 +30,9 @@ impl InputTaskPath {
     /// - `..`（親ディレクトリ参照）を含む場合は reject する。
     /// - 正規化の結果が空になる場合は reject する。
     /// - `require_md_extension` が `true` の場合、拡張子が `.md` でなければ reject する。
+    ///   判定は scanner（`spec_board_fs::task::file_scanner`）と同じく大文字小文字を
+    ///   区別しない。区別すると `.MD` のファイルが「一覧には出るが操作できない」
+    ///   タスクになってしまう。
     pub fn resolve(
         raw: &str,
         project_root: &Path,
@@ -61,7 +64,7 @@ impl InputTaskPath {
             return Err(InputPathRejected);
         }
 
-        if require_md_extension && rel.extension().and_then(|e| e.to_str()) != Some("md") {
+        if require_md_extension && !has_md_extension(rel) {
             return Err(InputPathRejected);
         }
 
@@ -72,6 +75,13 @@ impl InputTaskPath {
     pub fn into_path_buf(self) -> PathBuf {
         self.0
     }
+}
+
+/// 拡張子が `.md` かどうかを大文字小文字を区別せず判定する。
+fn has_md_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
 }
 
 #[cfg(test)]
