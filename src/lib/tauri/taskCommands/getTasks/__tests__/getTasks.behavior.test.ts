@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { GetTasksPayload } from "@/lib/tauri";
-import { getTasks } from "@/lib/tauri";
+import { type GetTasksPayload, getTasks } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
 

@@ -6,8 +6,8 @@ import {
   type ProjectData as ProjectDataT,
 } from "@/domains/project-data";
 import type {
+  TaskProjection,
   TaskProjectionMap,
-  TaskProjection as TaskProjectionT,
 } from "@/domains/task-projection";
 import { Task, type TaskPayload } from "@/types/task";
 import { BoardCardProvider } from "../../../BoardCardProvider";
@@ -52,7 +52,7 @@ const projection = (
   done: number,
   total: number,
   childFilePaths: readonly string[] = [],
-): TaskProjectionT => ({
+): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone: false,
   childFilePaths,

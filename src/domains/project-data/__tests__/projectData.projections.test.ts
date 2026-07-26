@@ -1,13 +1,11 @@
 import { expect, test } from "vitest";
-import type { ProjectData as ProjectDataT } from "@/domains/project-data";
-import { ProjectData as ProjectDataDomain } from "@/domains/project-data";
-import type {
-  TaskProjectionMap,
-  TaskProjection as TaskProjectionT,
+import {
+  TaskProjection,
+  type TaskProjectionMap,
 } from "@/domains/task-projection";
-import { TaskProjection } from "@/domains/task-projection";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
+import { ProjectData, type ProjectData as ProjectDataT } from "..";
 
 const makeTask = (filePath: string): ReturnType<typeof Task.fromPayload> =>
   Task.fromPayload({
@@ -29,7 +27,7 @@ const columns: Column[] = [
   { name: "Done", order: 1 },
 ];
 
-const projectionOf = (done: number, total: number): TaskProjectionT => ({
+const projectionOf = (done: number, total: number): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone: false,
   childFilePaths: ["tasks/c.md"],
@@ -46,7 +44,7 @@ const dataWith = (projections: TaskProjectionMap): ProjectDataT => ({
 test("replaceProjections は projections だけを差し替える", () => {
   const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([["tasks/a.md", projectionOf(1, 2)]]),
   );
@@ -60,7 +58,7 @@ test("replaceProjections は projections だけを差し替える", () => {
 test("replaceProjections は tasks / columns / doneColumn / openRequestId を変えない", () => {
   const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([["tasks/a.md", projectionOf(1, 2)]]),
   );
@@ -74,7 +72,7 @@ test("replaceProjections は tasks / columns / doneColumn / openRequestId を変
 test("replaceProjections は空 Map への差し替えができる", () => {
   const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
 
-  const next = ProjectDataDomain.replaceProjections(data, new Map());
+  const next = ProjectData.replaceProjections(data, new Map());
 
   expect(next.projections.size).toBe(0);
 });
@@ -88,7 +86,7 @@ test("値が等価なエントリは旧オブジェクトの参照を引き継�
     ]),
   );
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([
       ["tasks/a.md", projectionOf(0, 2)],
@@ -103,7 +101,7 @@ test("値が変わったエントリは新しいオブジェクトになる", ()
   const changed = projectionOf(0, 1);
   const data = dataWith(new Map([["tasks/b.md", changed]]));
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([["tasks/b.md", projectionOf(1, 1)]]),
   );
@@ -115,7 +113,7 @@ test("値が変わったエントリは新しいオブジェクトになる", ()
 test("全エントリが等価なら Map インスタンスごと据え置く", () => {
   const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([["tasks/a.md", projectionOf(0, 2)]]),
   );
@@ -126,7 +124,7 @@ test("全エントリが等価なら Map インスタンスごと据え置く", 
 test("全エントリが等価なら ProjectData オブジェクトごと据え置く", () => {
   const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([["tasks/a.md", projectionOf(0, 2)]]),
   );
@@ -143,7 +141,7 @@ test("1 エントリだけ変われば Map も ProjectData も新インスタン
     ]),
   );
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([
       ["tasks/a.md", projectionOf(0, 2)],
@@ -165,7 +163,7 @@ test("エントリ数が減れば残存エントリが等価でも Map 参照が
     ]),
   );
 
-  const next = ProjectDataDomain.replaceProjections(
+  const next = ProjectData.replaceProjections(
     data,
     new Map([["tasks/a.md", projectionOf(0, 2)]]),
   );

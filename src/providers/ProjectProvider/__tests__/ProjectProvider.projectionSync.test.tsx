@@ -2,7 +2,7 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { TaskProjection as TaskProjectionT } from "@/domains/task-projection";
+import type { TaskProjection } from "@/domains/task-projection";
 import {
   getColumns as getColumnsInvoke,
   getTasks as getTasksInvoke,
@@ -100,13 +100,13 @@ const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
   warnings: [],
 });
 
-const projection = (done: number, total: number): TaskProjectionT => ({
+const projection = (done: number, total: number): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone: false,
   childFilePaths: ["tasks/b.md"],
 });
 
-const getTasksOk = (map: ReadonlyMap<string, TaskProjectionT>) =>
+const getTasksOk = (map: ReadonlyMap<string, TaskProjection>) =>
   Result.ok({ tasks: [], projections: map });
 
 beforeEach(() => {
@@ -191,7 +191,7 @@ const flush = async () => {
   });
 };
 
-const currentProjections = (): ReadonlyMap<string, TaskProjectionT> => {
+const currentProjections = (): ReadonlyMap<string, TaskProjection> => {
   const state = latest?.state;
   return state?.kind === "loaded" ? state.data.projections : new Map();
 };

@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
-import type { TaskProjectionPayloadInput } from "@/domains/task-projection";
-import { TaskProjection } from "@/domains/task-projection";
+import {
+  TaskProjection,
+  type TaskProjectionPayloadInput,
+} from "@/domains/task-projection";
 
 const payloadOf = (
   overrides: Partial<TaskProjectionPayloadInput> = {},

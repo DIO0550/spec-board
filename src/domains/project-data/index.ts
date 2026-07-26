@@ -2,8 +2,10 @@ import type { ProjectColumnsChange } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { TaskLinks } from "@/domains/task-links";
 import { parentReferencesTaskPath } from "@/domains/task-path";
-import type { TaskProjectionMap } from "@/domains/task-projection";
-import { TaskProjection } from "@/domains/task-projection";
+import {
+  TaskProjection,
+  type TaskProjectionMap,
+} from "@/domains/task-projection";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 

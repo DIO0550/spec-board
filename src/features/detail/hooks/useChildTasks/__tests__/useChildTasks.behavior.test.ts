@@ -2,11 +2,10 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
-import type {
-  TaskProjectionMap,
-  TaskProjection as TaskProjectionT,
+import {
+  TaskProjection,
+  type TaskProjectionMap,
 } from "@/domains/task-projection";
-import { TaskProjection } from "@/domains/task-projection";
 import {
   type UseChildTasksArgs,
   type UseChildTasksResult,
@@ -32,7 +31,7 @@ const projection = (
   total: number,
   childFilePaths: readonly string[] = [],
   isDone = false,
-): TaskProjectionT => ({
+): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone,
   childFilePaths,
