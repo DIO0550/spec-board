@@ -1,6 +1,8 @@
 import { createContext, useContext } from "react";
+import type { SubIssueCounts } from "@/domains/task-projection";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
+import type { SubIssueRow } from "../../SubIssueProgress";
 
 /** name → マイルストーン定義の Map（バッジ表示用）。 */
 export type MilestonesByName = Map<string, MilestoneDefinition>;
@@ -20,10 +22,18 @@ export type TaskCardContextValue = {
   hasBrokenLink: boolean;
   /** 1 件でもパースエラー警告を持つかどうか */
   hasParseError: boolean;
-  /** SubIssue 進捗（Provider の descendantCount 由来。全子孫ベースで集計済み） */
-  subIssueCounts: { done: number; total: number };
-  /** 直下子タスクの配列（Root で [] フォールバック適用済み） */
-  childTasks: readonly Task[];
+  /** SubIssue 進捗（BE projection 由来。全子孫ベースで集計済み） */
+  subIssueCounts: SubIssueCounts;
+  /**
+   * `<details>` 内に並べる直下子の表示行（Root が projection で解決済み）。
+   *
+   * 直下子の「実体（Task 配列）」も projection map を capture した関数
+   * （`card.isDone`）も context には載せない。前者は Column が毎 render 新配列を
+   * 作るため、後者は 1 エントリの変化で全カードの memo を落とすため。
+   * per-card に閉じた表示データだけを配ることで、「自カードの counts も子行も
+   * 変わっていない」カードの context 参照が保たれる。
+   */
+  childRows: readonly SubIssueRow[];
 };
 
 export const TaskCardContext = createContext<TaskCardContextValue | null>(null);

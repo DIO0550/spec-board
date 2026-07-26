@@ -137,6 +137,7 @@ const taskA: Task = Task.fromPayload({
 const payload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 const mountApp = () => {
@@ -205,7 +206,7 @@ test("loaded で tasks が 0 件のとき EmptyState type=empty-project が表�
   mountApp();
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [], columns: ["Todo", "Done"] }),
+    Result.ok({ tasks: [], columns: ["Todo", "Done"], projections: new Map() }),
   );
   await act(async () => {
     clickHeaderOpenButton();
@@ -644,7 +645,11 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   });
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/project-b"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskAInProjectB], columns: ["Todo", "Done"] }),
+    Result.ok({
+      tasks: [taskAInProjectB],
+      columns: ["Todo", "Done"],
+      projections: new Map(),
+    }),
   );
   await act(async () => {
     clickHeaderOpenButton();
@@ -780,6 +785,7 @@ const childTask: Task = Task.fromPayload({
 const parentChildPayload: OpenProjectPayload = {
   tasks: [parentTask, childTask],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 const openParentChildProject = async () => {

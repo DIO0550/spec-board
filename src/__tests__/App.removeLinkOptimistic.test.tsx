@@ -112,6 +112,7 @@ const makeTaskBReversed = (): Task =>
 const makePayload = (tasks: Task[]): OpenProjectPayload => ({
   tasks,
   columns: ["Todo", "Done"],
+  projections: new Map(),
 });
 
 beforeEach(() => {

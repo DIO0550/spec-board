@@ -1,36 +1,25 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Task } from "@/types/task";
-import { SubIssueProgress } from ".";
+import { SubIssueProgress, type SubIssueRow } from ".";
 
-const makeChild = (id: string, status: string, title: string) =>
-  Task.fromPayload({
-    id,
-    title,
-    status,
-    labels: [],
-    parent: "tasks/parent.md",
-    links: [],
-    children: [],
-    reverseLinks: [],
-    body: "",
-    filePath: `tasks/${id}.md`,
-  });
+const makeRow = (key: string, label: string, isDone: boolean): SubIssueRow => ({
+  key,
+  label,
+  isDone,
+});
 
-const directChildren = [
-  makeChild("c1", "Done", "完了済み 1"),
-  makeChild("c2", "Done", "完了済み 2"),
-  makeChild("c3", "Todo", "未完了 1"),
-  makeChild("c4", "Todo", "未完了 2"),
+const directChildRows: SubIssueRow[] = [
+  makeRow("c1", "完了済み 1", true),
+  makeRow("c2", "完了済み 2", true),
+  makeRow("c3", "未完了 1", false),
+  makeRow("c4", "未完了 2", false),
 ];
 
 const meta: Meta<typeof SubIssueProgress> = {
   component: SubIssueProgress,
   args: {
-    childTasks: [],
-    done: 0,
-    total: 0,
-    doneColumn: "Done",
+    childRows: [],
+    counts: { done: 0, total: 0 },
   },
 };
 
@@ -39,25 +28,24 @@ export default meta;
 type Story = StoryObj<typeof SubIssueProgress>;
 
 export const Empty: Story = {
-  args: { childTasks: [], done: 0, total: 0 },
+  args: { childRows: [], counts: { done: 0, total: 0 } },
 };
 
 export const InProgress: Story = {
-  args: { childTasks: directChildren, done: 2, total: 4 },
+  args: { childRows: directChildRows, counts: { done: 2, total: 4 } },
 };
 
 export const AllDone: Story = {
   args: {
-    childTasks: [
-      makeChild("c1", "Done", "完了 1"),
-      makeChild("c2", "Done", "完了 2"),
-      makeChild("c3", "Done", "完了 3"),
+    childRows: [
+      makeRow("c1", "完了 1", true),
+      makeRow("c2", "完了 2", true),
+      makeRow("c3", "完了 3", true),
     ],
-    done: 3,
-    total: 3,
+    counts: { done: 3, total: 3 },
   },
 };
 
 export const WithDescendantsBeyondDirectChildren: Story = {
-  args: { childTasks: directChildren, done: 3, total: 7 },
+  args: { childRows: directChildRows, counts: { done: 3, total: 7 } },
 };

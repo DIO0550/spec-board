@@ -1,6 +1,7 @@
 import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { type BoardCardApi, useBoardCard } from "../../BoardCardProvider";
@@ -88,6 +89,7 @@ const mountProbe = (overrides: MountOverrides = {}) => {
   const allTasks = overrides.allTasks ?? tasks;
   const tree: ReactNode = (
     <BoardProviders
+      projections={TaskProjection.emptyMap}
       columns={overrides.columns ?? [{ name: "Todo", order: 0 }]}
       tasks={tasks}
       allTasks={allTasks}

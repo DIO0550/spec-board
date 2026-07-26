@@ -97,6 +97,7 @@ const makeSeedTask = (labels: readonly string[]): Task =>
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
+  projections: new Map(),
 });
 
 beforeEach(() => {

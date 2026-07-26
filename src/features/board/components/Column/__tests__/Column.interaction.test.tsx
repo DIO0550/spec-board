@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import { Task, type TaskPayload } from "@/types/task";
 import { BoardCardProvider } from "../../BoardCardProvider";
 import { BoardColumnProvider } from "../../BoardColumnProvider";
@@ -66,7 +67,11 @@ function render(options: RenderOptions) {
   }));
   const columns = [self, ...others];
   const tree: ReactNode = (
-    <BoardCardProvider tasks={tasks} allTasks={allTasks}>
+    <BoardCardProvider
+      tasks={tasks}
+      allTasks={allTasks}
+      projections={TaskProjection.emptyMap}
+    >
       <BoardColumnProvider columns={columns} tasks={tasks} allTasks={allTasks}>
         <Column order={0} {...options.column} />
       </BoardColumnProvider>

@@ -71,8 +71,8 @@ const createHandlers = (): DetailFieldHandlers => ({
 /** 空の子タスク解決結果 */
 const emptyChildInfo: UseChildTasksResult = {
   childTasks: [],
-  descendantTasks: [],
-  effectiveDoneColumn: "Done",
+  subIssueCounts: { done: 0, total: 0 },
+  isDone: () => false,
 };
 
 /**

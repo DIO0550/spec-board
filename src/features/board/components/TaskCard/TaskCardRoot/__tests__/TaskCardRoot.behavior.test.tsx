@@ -1,6 +1,7 @@
 import { act, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../../../Board/mime";
@@ -89,6 +90,7 @@ const renderRoot = (
       <BoardCardProvider
         tasks={[merged.task]}
         allTasks={[merged.task]}
+        projections={TaskProjection.emptyMap}
         {...providerOverrides}
       >
         <TaskCardRoot {...merged} />

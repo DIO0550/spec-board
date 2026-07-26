@@ -84,8 +84,8 @@ function buildProps(
     columns: testColumns,
     childInfo: {
       childTasks: [],
-      descendantTasks: [],
-      effectiveDoneColumn: "Done",
+      subIssueCounts: { done: 0, total: 0 },
+      isDone: () => false,
     },
     parentTask: null,
     brokenLinks: noBrokenLinks,

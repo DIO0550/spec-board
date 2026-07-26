@@ -13,6 +13,7 @@ pub mod parse;
 pub mod path_lookup;
 pub(crate) mod path_normalization;
 pub mod preview_filename;
+pub mod projection;
 pub mod remove_link;
 pub mod reverse_links;
 pub mod task_content;

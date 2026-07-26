@@ -65,7 +65,11 @@ const taskA: Task = Task.fromPayload({
   filePath: "tasks/a.md",
 });
 
-const payload: OpenProjectPayload = { tasks: [taskA], columns: ["Todo"] };
+const payload: OpenProjectPayload = {
+  tasks: [taskA],
+  columns: ["Todo"],
+  projections: new Map(),
+};
 
 const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
   id: filePath,
@@ -183,7 +187,12 @@ test("loadedPath と異なる path の stale handler の event は無視され�
   const staleHandler = handlers["task-created"][0];
   // 別 project /other へ切替える。/p 用 handler は古い path を掴んだままになる。
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [], columns: ["Todo"] }),
+    Result.ok({
+      tasks: [],
+      columns: ["Todo"],
+      projections: new Map(),
+      openRequestId: 0,
+    }),
   );
   let pending!: Promise<void>;
   act(() => {

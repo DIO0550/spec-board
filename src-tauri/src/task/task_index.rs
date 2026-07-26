@@ -26,6 +26,7 @@ use crate::task::path_lookup::{
     normalize_parent_path_for_lookup, normalize_relative_path_for_input,
     normalize_task_path_for_lookup, parent_lookup_index, task_lookup_index, task_path_index,
 };
+use crate::task::projection::{SubIssueProgress, TaskProjection, TaskProjectionMap};
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
 use crate::task::task_content::TaskContent;
@@ -206,6 +207,123 @@ impl TaskIndex {
                 *counts.entry(name.to_owned()).or_insert(0) += 1;
                 counts
             })
+    }
+
+    /// 全タスク分の projection（子孫進捗 / 完了判定 / 直接子）をまとめて作る。
+    ///
+    /// **親子関係の入力は `Task.parent` であり `Task.children` ではない**。
+    /// `tasks_cache` 上の `children` は、watcher の upsert（`task_from_parsed` が
+    /// `children: Vec::new()` を返し、親側も更新されない）と、`parent` を変えない
+    /// `update_task`（`commit_cache` の `needs_full_rebuild == false` 経路）で
+    /// 古くなる。`parent` は常に disk の frontmatter 由来で最新なので、projection は
+    /// 毎回 `parent` から children adjacency を組み直す。
+    ///
+    /// 集計は task 集合そのものから導出されるため、`plan_*`（write 系の意図 →
+    /// outcome）ではなく `label_usage_counts` と同じ `&self` query として公開する。
+    /// I/O・時計・乱数に依存しない pure method。
+    ///
+    /// 契約:
+    /// - 集計対象は **全子孫**。root 自身は含まない
+    /// - サイクル（A→B→A）・自己参照（A→A）でも有限ステップで停止する
+    /// - 同じ子孫へ複数経路で到達しても 1 度だけ数える
+    /// - `parent` が実在 task に解決できない task は、誰の直接子にもならない
+    /// - `done_column` が `None` のとき `is_done` は常に false・done は 0
+    /// - `child_file_paths` は `file_path` 昇順
+    ///
+    /// サイクル打ち切りは**防御的実装ではなく必須機能**である。watcher の
+    /// `handle_upsert` は新しく作られた parent 循環を検出しない（`update_task`
+    /// 経由の parent 変更は `validate_parent_hierarchy` が弾く）ため、
+    /// `tasks_cache` が parent 循環を保持した状態は実データで発生しうる。
+    ///
+    /// **計算量の契約**: lookup index と children adjacency の構築は本 method
+    /// 1 呼び出しにつき各 1 回だけ（`children_paths_of` を task 数ぶん呼ぶ O(N^2)
+    /// 実装は禁止）。ただし集計本体は root ごとの DFS であり、訪問回数は
+    /// Σ(各 root の子孫数) になる。直線チェーン状のデータでは最悪 O(N×depth) と
+    /// なることを許容する（bottom-up メモ化による O(N) 集約は follow-up 候補）。
+    pub fn project_all(&self, done_column: Option<&ColumnName>) -> TaskProjectionMap {
+        let index = task_lookup_index(&self.tasks);
+        let adjacency = self.build_child_adjacency(&index);
+        self.tasks
+            .iter()
+            .enumerate()
+            .map(|(root_index, root)| {
+                let sub_issue_progress =
+                    self.collect_descendant_progress(root_index, &adjacency, done_column);
+                let child_file_paths = adjacency[root_index]
+                    .iter()
+                    .map(|&child_index| self.tasks[child_index].file_path.clone())
+                    .collect();
+                (
+                    root.file_path.as_str().to_owned(),
+                    TaskProjection {
+                        sub_issue_progress,
+                        is_done: is_in_done_column(root, done_column),
+                        child_file_paths,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// `Task.parent` から「親 index -> 直接子 index 列」の adjacency を 1 回だけ構築する。
+    ///
+    /// `path_lookup::parent_lookup_index` は使わない。あちらが返すのは
+    /// `HashMap<正規化 child path, Option<正規化 parent path>>` で、adjacency を組むには
+    /// parent path → index の変換に結局 `task_lookup_index` が要り、HashMap が 2 本になる。
+    ///
+    /// 自己参照（`parent` が自分自身）は載せない（`children_paths_of` の自己除外と同じ）。
+    /// 各 slot を `file_path` 昇順に整列するのは、`self.tasks` の並びが
+    /// `AppState::tasks_snapshot()`（`HashMap::values()`）由来で非決定的なため。
+    /// tasks 順をそのまま採用すると payload が実行ごとに揺れる。
+    fn build_child_adjacency(&self, index: &HashMap<String, usize>) -> Vec<Vec<usize>> {
+        let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); self.tasks.len()];
+        for (child_index, task) in self.tasks.iter().enumerate() {
+            let Some(parent) = task.parent.as_ref() else {
+                continue;
+            };
+            let Some(parent_norm) = normalize_parent_path_for_lookup(parent.as_str()) else {
+                continue;
+            };
+            let Some(&parent_index) = index.get(&parent_norm) else {
+                continue;
+            };
+            if parent_index == child_index {
+                continue;
+            }
+            adjacency[parent_index].push(child_index);
+        }
+        for children in adjacency.iter_mut() {
+            children.sort_by(|&a, &b| self.tasks[a].file_path.cmp(&self.tasks[b].file_path));
+        }
+        adjacency
+    }
+
+    /// root を起点に adjacency を DFS して完了数 / 総数を数える（root 自身は除外）。
+    ///
+    /// `visited` は正規化文字列ではなく task index で持つ（正規化は adjacency 構築時に
+    /// 済んでいるため、走査中に文字列正規化を繰り返さない）。
+    fn collect_descendant_progress(
+        &self,
+        root_index: usize,
+        adjacency: &[Vec<usize>],
+        done_column: Option<&ColumnName>,
+    ) -> SubIssueProgress {
+        let mut visited: HashSet<usize> = HashSet::new();
+        // root 自身を先に visited へ入れ、サイクルでも root を混入させない。
+        visited.insert(root_index);
+        let mut stack: Vec<usize> = adjacency[root_index].iter().rev().copied().collect();
+        let mut progress = SubIssueProgress::default();
+        while let Some(child_index) = stack.pop() {
+            if !visited.insert(child_index) {
+                continue;
+            }
+            progress.total += 1;
+            if is_in_done_column(&self.tasks[child_index], done_column) {
+                progress.done += 1;
+            }
+            stack.extend(adjacency[child_index].iter().rev().copied());
+        }
+        progress
     }
 
     /// aggregate が保持する `Task` を `id` 昇順に並べた `Vec<Task>` を返す。
@@ -1590,6 +1708,11 @@ fn is_graph_derived_warning(warning: &TaskWarning) -> bool {
         warning.code,
         TaskWarningCode::ParentNotFound | TaskWarningCode::ParentCycle
     )
+}
+
+/// task が完了カラムに居るか。`done_column` 未解決時は常に false。
+fn is_in_done_column(task: &Task, done_column: Option<&ColumnName>) -> bool {
+    done_column.is_some_and(|column| &task.status == column)
 }
 
 /// `actual` が移動元カラムとして期待した status と一致することを確かめる。

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBrokenLinks } from "@/domains/broken-link";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
 import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
@@ -20,8 +21,8 @@ export type DetailScreenProps = {
   columns: Column[];
   /** 全タスク一覧。サブIssue / Links セクションの解決に利用する */
   allTasks?: Task[];
-  /** 完了として扱うカラム名。サブIssue の完了判定に使用 */
-  doneColumn?: string;
+  /** filePath -> projection（BE 集計）。サブIssue の進捗 / 完了判定に使う */
+  projections: TaskProjectionMap;
   /**
    * 「正規化済み Task.filePath → Task」の lookup Map。
    * 渡された場合のみ broken link 判定を行う。
@@ -97,7 +98,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
     task,
     columns,
     allTasks,
-    doneColumn,
+    projections,
     tasksByNormalizedPath,
     onBack,
     onTaskUpdate,
@@ -112,8 +113,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
   const childInfo = useChildTasks({
     parentFilePath: task.filePath,
     allTasks,
-    columns,
-    doneColumn,
+    projections,
   });
   const { parentTask } = useParentTask({ task, allTasks });
   const fieldHandlers = useDetailFieldHandlers(task, onTaskUpdate);

@@ -1,3 +1,11 @@
+import {
+  normalizeRefPathForLookup,
+  normalizeTaskPathForLookup,
+} from "@/domains/task-path";
+import type {
+  TaskProjection,
+  TaskProjectionMap,
+} from "@/domains/task-projection";
 import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 
@@ -87,3 +95,69 @@ const initialTaskPayloads: TaskPayload[] = [
 
 /** Storybook 用の固定タスク配列。 */
 export const initialTasks = initialTaskPayloads.map(Task.fromPayload);
+
+/**
+ * タスク配列から、バックエンドが返すのと同じ形の projection map を組み立てる。
+ *
+ * 集計の実装はバックエンドにあり、Storybook にはバックエンドが無い。ストーリーを
+ * 「BE から集計が届いた状態」で描画するために、fixture 側で同じ契約
+ * （全子孫を数える / root は含まない / 循環と重複経路は 1 回だけ / 直接子は
+ * filePath 昇順）を再現する。プロダクションコードからは参照しない。
+ * @param tasks - 母集団のタスク配列
+ * @param doneColumn - 完了として扱うカラム名
+ * @returns filePath -> projection の Map
+ */
+export const buildProjectionsFixture = (
+  tasks: readonly Task[],
+  doneColumn: string,
+): TaskProjectionMap => {
+  const childrenOf = new Map<string, string[]>();
+  for (const task of tasks) {
+    const parent = task.hierarchy.parentFilePath;
+    if (parent === undefined || parent === task.filePath) {
+      continue;
+    }
+    const normalized = normalizeRefPathForLookup(parent);
+    const resolved = tasks.find(
+      (candidate) =>
+        normalized !== undefined &&
+        normalizeTaskPathForLookup(candidate.filePath) === normalized,
+    );
+    if (resolved === undefined) {
+      continue;
+    }
+    const bucket = childrenOf.get(resolved.filePath) ?? [];
+    bucket.push(task.filePath);
+    childrenOf.set(resolved.filePath, bucket);
+  }
+  for (const bucket of childrenOf.values()) {
+    bucket.sort();
+  }
+
+  const statusOf = new Map(tasks.map((task) => [task.filePath, task.status]));
+  const map = new Map<string, TaskProjection>();
+  for (const task of tasks) {
+    const visited = new Set<string>([task.filePath]);
+    const stack = [...(childrenOf.get(task.filePath) ?? [])];
+    let done = 0;
+    let total = 0;
+    while (stack.length > 0) {
+      const filePath = stack.pop();
+      if (filePath === undefined || visited.has(filePath)) {
+        continue;
+      }
+      visited.add(filePath);
+      total += 1;
+      if (statusOf.get(filePath) === doneColumn) {
+        done += 1;
+      }
+      stack.push(...(childrenOf.get(filePath) ?? []));
+    }
+    map.set(task.filePath, {
+      subIssueProgress: { done, total },
+      isDone: task.status === doneColumn,
+      childFilePaths: childrenOf.get(task.filePath) ?? [],
+    });
+  }
+  return map;
+};

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import { BoardCardProvider, type TaskDropHandler } from "../BoardCardProvider";
@@ -25,6 +26,8 @@ type BoardProvidersProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
+  /** filePath -> projection（BE 集計）。BoardCardProvider へそのまま渡す。 */
+  projections: TaskProjectionMap;
   /** name → マイルストーン定義の Map（カードバッジ用） */
   milestonesByName?: MilestonesByName;
   /** カード / カラムの DnD を無効化するか。両 Provider に同値で配線される */
@@ -54,6 +57,7 @@ export const BoardProviders = ({
   allTasks,
   tasksByNormalizedPath,
   doneColumn,
+  projections,
   milestonesByName,
   dndDisabled = false,
   onTaskDrop,
@@ -67,6 +71,7 @@ export const BoardProviders = ({
       tasksByNormalizedPath={tasksByNormalizedPath}
       milestonesByName={milestonesByName}
       doneColumn={doneColumn}
+      projections={projections}
       dndDisabled={dndDisabled}
       onTaskDrop={onTaskDrop}
     >

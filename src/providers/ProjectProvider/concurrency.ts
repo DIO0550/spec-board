@@ -90,3 +90,24 @@ export const enqueueProjectCommand = <T>(
   queue.current = next.catch(() => undefined);
   return next;
 };
+
+/**
+ * 現時点までに enqueue された project command がすべて完了するまで待つ。
+ *
+ * `enqueueProjectCommand` と違い queue を**占有しない**（`queue.current` を進めない）。
+ * 「直前までの書き込みが BE に commit されてから読む」ための read barrier であり、
+ * 後続の mutation をこの待機で遅らせないことが目的。
+ *
+ * 用途: projection 再同期（`useProjectionSyncEffect`）。楽観 dispatch は
+ * `enqueueProjectCommand` の中で起きるため、そこから発火した `get_tasks` を
+ * そのまま投げると in-flight mutation を追い越して commit 前の snapshot を読む。
+ * @param queue - project command queue
+ * @returns 現在の queue 末尾が解決したら解決する Promise（reject しない）
+ */
+export const awaitProjectCommands = (
+  queue: ProjectCommandQueue,
+): Promise<void> =>
+  queue.current.then(
+    () => undefined,
+    () => undefined,
+  );

@@ -27,28 +27,71 @@ beforeEach(() => {
 });
 
 test("invoke が 'open_project' という command 名で呼ばれる", async () => {
-  vi.mocked(invoke).mockResolvedValue({ tasks: [], columns: [] });
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: [],
+    projections: {},
+  });
   await openProject({ path: "/abs" });
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("open_project");
 });
 
 test("引数オブジェクト { path } がそのまま invoke 第 2 引数に渡る", async () => {
-  vi.mocked(invoke).mockResolvedValue({ tasks: [], columns: [] });
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: [],
+    projections: {},
+  });
   await openProject({ path: "/abs" });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("open_project", {
     path: "/abs",
   });
 });
 
-test("成功時は Result.ok({ tasks, columns }) を返す", async () => {
+test("成功時は Result.ok({ tasks, columns, projections }) を返す", async () => {
   vi.mocked(invoke).mockResolvedValue({
     tasks: [taskPayloadFixture],
     columns: ["Todo", "Done"],
+    projections: {
+      "tasks/x.md": {
+        subIssueProgress: { done: 1, total: 3 },
+        isDone: false,
+        childFilePaths: ["tasks/y.md"],
+      },
+    },
   });
   const res = await openProject({ path: "/abs" });
   expect(res).toEqual({
     ok: true,
-    value: { tasks: [taskFixture], columns: ["Todo", "Done"] },
+    value: {
+      tasks: [taskFixture],
+      columns: ["Todo", "Done"],
+      projections: new Map([
+        [
+          "tasks/x.md",
+          {
+            subIssueProgress: { done: 1, total: 3 },
+            isDone: false,
+            childFilePaths: ["tasks/y.md"],
+          },
+        ],
+      ]),
+    },
+  });
+});
+
+test("projections が空オブジェクトでも成功する", async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: ["Todo"],
+    projections: {},
+  });
+
+  const res = await openProject({ path: "/abs" });
+
+  expect(res).toEqual({
+    ok: true,
+    value: { tasks: [], columns: ["Todo"], projections: new Map() },
   });
 });
 

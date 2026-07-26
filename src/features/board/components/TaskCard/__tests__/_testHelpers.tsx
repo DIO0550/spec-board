@@ -1,4 +1,5 @@
 import type { PropsWithChildren, ReactNode } from "react";
+import { TaskProjection } from "@/domains/task-projection";
 import type { Task } from "@/types/task";
 import {
   BoardCardProvider,
@@ -15,7 +16,8 @@ export type CardWrapperArgs = Partial<
 
 /**
  * TaskCard 系テストで BoardCardProvider 配下に children を mount する helper。
- * task を渡すと allTasks のデフォルトに使い、descendantCount が動くようにする。
+ * task を渡すと allTasks のデフォルトに使う。集計値は BE 由来なので、進捗を
+ * 検証するテストは `projections` を明示的に注入する（未指定なら空 Map）。
  *
  * @param children Provider 配下に描画する React 要素
  * @param args 上書きしたい Provider props（任意）
@@ -31,6 +33,7 @@ export const wrapWithCardProvider = (
   // フォールバック構築するので、空 Map で潰さない。
   return (
     <BoardCardProvider
+      projections={args.projections ?? TaskProjection.emptyMap}
       tasks={args.tasks ?? allTasks}
       allTasks={allTasks}
       tasksByNormalizedPath={args.tasksByNormalizedPath}

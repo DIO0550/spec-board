@@ -1,65 +1,89 @@
-import { useMemo } from "react";
-import { ProjectColumns } from "@/domains/project-columns";
-import { TaskHierarchy } from "@/domains/task-hierarchy";
-import { SubIssue } from "@/features/detail/domains/sub-issue";
-import type { Column } from "@/types/column";
+import { useCallback, useMemo } from "react";
+import {
+  type SubIssueCounts,
+  TaskProjection,
+  type TaskProjectionMap,
+} from "@/domains/task-projection";
 import type { Task } from "@/types/task";
 
 /** useChildTasks の引数 */
 export type UseChildTasksArgs = {
   /** 親タスクのファイルパス */
   parentFilePath: string;
-  /** 全タスク一覧（未指定なら空配列扱い） */
+  /** 全タスク一覧（未指定なら空配列扱い）。projection の filePath から実体を引くのに使う */
   allTasks?: readonly Task[];
-  /** カラム一覧（doneColumn フォールバック計算用） */
-  columns: readonly Column[];
-  /** 明示的な完了カラム名（任意） */
-  doneColumn?: string;
+  /**
+   * filePath -> projection（BE 集計）。
+   * **必須**（テスト / Storybook は `TaskProjection.emptyMap` を明示的に渡す）。
+   */
+  projections: TaskProjectionMap;
 };
 
 /** useChildTasks の戻り値 */
 export type UseChildTasksResult = {
-  /** 直接の子タスク */
+  /**
+   * 直接の子タスク（BE projection の childFilePaths = `file_path` 昇順で解決済み）。
+   *
+   * 画面の行順は `SubIssueSection` が `parentTask.hierarchy.childFilePaths` から
+   * 決めるため、この並びは表示に影響しない。
+   */
   childTasks: readonly Task[];
-  /** 全子孫タスク（再帰展開済、root 自身は含まない） */
-  descendantTasks: readonly Task[];
-  /** 完了として扱うカラム名（解決済み） */
-  effectiveDoneColumn: string;
+  /** 全子孫の完了数 / 総数（BE projection 由来。未登録なら固定参照の 0/0） */
+  subIssueCounts: SubIssueCounts;
+  /**
+   * 子タスクの完了判定（BE projection 由来）。
+   * @param filePath - 判定対象 task の filePath
+   * @returns 完了カラムに居れば true
+   */
+  isDone: (filePath: string) => boolean;
 };
 
 const EMPTY_TASKS: readonly Task[] = [];
 
 /**
- * 親タスクの子タスク一覧と完了カラム名を解決する hook。
- * SubIssue ドメインの純粋関数を useMemo で配線するだけの薄い橋渡し。
+ * 親タスクの直下子・子孫進捗・完了判定を BE projection から解決する hook。
  *
- * `childTasks` / `descendantTasks` / `effectiveDoneColumn` は独立した useMemo で
- * メモ化しており、`columns` / `doneColumn` の変更だけでは `descendantTasks` の
- * 再計算は走らない。
+ * 集計は BE（`TaskIndex::project_all`）の結果をそのまま使い、FE では DFS も
+ * 完了カラム解決も行わない。
  *
- * hook 化を維持する理由: 戻り値 `UseChildTasksResult` を `PropertiesSidebar` の
- * prop 型として共有し、3 つの派生値（直下子 / 全子孫 / 完了カラム）と各々の
- * メモ化境界を 1 つの公開 API にまとめて component 境界をまたいで渡している。
- * 単一コンポーネント内の useMemo へ展開すると、この共有 ViewModel と独立した
- * メモ化境界が分散するため hook に残す。
- * @param args - 親ファイルパス・全タスク・カラム・doneColumn
- * @returns 直下子・全子孫・完了カラム名
+ * Board 側（`TaskCardContextValue`）では projection map を capture した関数を
+ * context に載せないが、ここでは `isDone` を返してよい。Board は N 枚のカードへ
+ * 同じ値を配るため 1 エントリの変化で全カードの memo が落ちるのに対し、Detail は
+ * 表示中の親 1 件に対して `SubIssueSection` 1 つが消費するだけで、関数参照が
+ * 変わっても再レンダーがそのセクションに閉じるため。
+ * @param args - 親ファイルパス・全タスク・projection
+ * @returns 直下子・子孫進捗・完了判定
  */
 export const useChildTasks = (args: UseChildTasksArgs): UseChildTasksResult => {
-  const { parentFilePath, allTasks, columns, doneColumn } = args;
-  const childTasks = useMemo(
-    () => SubIssue.filter(allTasks, parentFilePath),
-    [allTasks, parentFilePath],
-  );
-  const descendantTasks = useMemo(() => {
+  const { parentFilePath, allTasks, projections } = args;
+
+  const childTasks = useMemo(() => {
     if (allTasks === undefined) {
       return EMPTY_TASKS;
     }
-    return TaskHierarchy.collectDescendants(allTasks, parentFilePath);
-  }, [allTasks, parentFilePath]);
-  const effectiveDoneColumn = useMemo(
-    () => ProjectColumns.resolveDoneColumn(columns, doneColumn),
-    [columns, doneColumn],
+    const byFilePath = new Map(allTasks.map((task) => [task.filePath, task]));
+    const resolved = TaskProjection.findByFilePath(
+      projections,
+      parentFilePath,
+    ).childFilePaths.flatMap((filePath) => {
+      const task = byFilePath.get(filePath);
+      return task === undefined ? [] : [task];
+    });
+    return resolved.length === 0 ? EMPTY_TASKS : resolved;
+  }, [allTasks, projections, parentFilePath]);
+
+  const subIssueCounts = useMemo(
+    () =>
+      TaskProjection.findByFilePath(projections, parentFilePath)
+        .subIssueProgress,
+    [projections, parentFilePath],
   );
-  return { childTasks, descendantTasks, effectiveDoneColumn };
+
+  const isDone = useCallback(
+    (filePath: string): boolean =>
+      TaskProjection.findByFilePath(projections, filePath).isDone,
+    [projections],
+  );
+
+  return { childTasks, subIssueCounts, isDone };
 };

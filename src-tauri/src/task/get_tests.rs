@@ -70,13 +70,20 @@ fn state_lock_poisoned_display_matches_open_project_contract() {
     );
 }
 
+fn write_config_json(root: &Path, content: &str) {
+    let dir = root.join(".spec-board");
+    fs::create_dir_all(&dir).expect("create .spec-board");
+    fs::write(dir.join("config.json"), content).expect("write config.json");
+}
+
 #[test]
-fn returns_empty_vec_when_app_state_is_uninitialized() {
+fn returns_empty_payload_when_app_state_is_uninitialized() {
     let state = AppState::new();
 
-    let tasks = get_tasks_impl(&state).expect("should succeed even before open_project");
+    let payload = get_tasks_impl(&state).expect("should succeed even before open_project");
 
-    assert!(tasks.is_empty());
+    assert!(payload.tasks.is_empty());
+    assert!(payload.projections.is_empty());
 }
 
 #[test]
@@ -92,10 +99,165 @@ fn returns_tasks_sorted_by_id_after_open_project() {
     let raw = dir.path().to_str().expect("utf-8").to_string();
     open_with_noop(Arc::clone(&state), &raw);
 
-    let tasks = get_tasks_impl(&state).expect("get_tasks should succeed");
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
 
-    let ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    let ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(vec!["tasks/a.md", "tasks/b.md"], ids);
+}
+
+// ───────── projection の同梱 ─────────
+
+/// 3 カラム構成 + 親子 3 件（親 1 / 子 2、子の 1 件が Done）のプロジェクトを用意する。
+fn open_project_with_hierarchy(state: Arc<AppState>, dir: &TempDir) {
+    let config_json = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Todo",  "order": 0 },
+            { "name": "Doing", "order": 1 },
+            { "name": "Done",  "order": 2 }
+        ],
+        "cardOrder": {},
+        "doneColumn": "Done"
+    }"#;
+    write_config_json(dir.path(), config_json);
+    write_md(dir.path(), "tasks/p.md", &task_md("P", "Todo", None));
+    write_md(
+        dir.path(),
+        "tasks/c1.md",
+        &task_md("C1", "Done", Some("tasks/p.md")),
+    );
+    write_md(
+        dir.path(),
+        "tasks/c2.md",
+        &task_md("C2", "Doing", Some("tasks/p.md")),
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(state, &raw);
+}
+
+#[test]
+fn payload_has_a_projection_for_every_task() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    open_project_with_hierarchy(Arc::clone(&state), &dir);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert_eq!(payload.projections.len(), payload.tasks.len());
+}
+
+#[test]
+fn parent_projection_counts_descendants_and_done_children() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    open_project_with_hierarchy(Arc::clone(&state), &dir);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    let parent = &payload.projections["tasks/p.md"];
+    assert_eq!(parent.sub_issue_progress.total, 2);
+    assert_eq!(parent.sub_issue_progress.done, 1);
+    assert_eq!(
+        parent
+            .child_file_paths
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>(),
+        vec!["tasks/c1.md", "tasks/c2.md"]
+    );
+}
+
+#[test]
+fn task_in_done_column_is_marked_done() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    open_project_with_hierarchy(Arc::clone(&state), &dir);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert!(payload.projections["tasks/c1.md"].is_done);
+    assert!(!payload.projections["tasks/c2.md"].is_done);
+    assert!(!payload.projections["tasks/p.md"].is_done);
+}
+
+// ───────── 完了カラムの解決 ─────────
+
+#[test]
+fn without_done_column_setting_the_last_column_resolves_as_done() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let config_json = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Todo",     "order": 0 },
+            { "name": "Doing",    "order": 1 },
+            { "name": "Complete", "order": 2 }
+        ],
+        "cardOrder": {}
+    }"#;
+    write_config_json(dir.path(), config_json);
+    write_md(dir.path(), "tasks/p.md", &task_md("P", "Todo", None));
+    write_md(
+        dir.path(),
+        "tasks/c.md",
+        &task_md("C", "Complete", Some("tasks/p.md")),
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert!(payload.projections["tasks/c.md"].is_done);
+    assert_eq!(payload.projections["tasks/p.md"].sub_issue_progress.done, 1);
+}
+
+/// `doneColumn` に columns へ存在しない名前を設定した場合の現行契約を固定する。
+///
+/// `Config::resolved_done_column()` は `done_column` が `Some` なら columns に
+/// 存在するか検証せずその値をそのまま返すため、`status == "Archived"` の task が
+/// 完了扱いになり、末尾カラム `Complete` へはフォールバックしない。現行 resolver の
+/// 完全一致挙動を維持する判断であり、不正名を unresolved 扱いに変える設計は採らない。
+#[test]
+fn done_column_pointing_outside_columns_matches_that_status_verbatim() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let config_json = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Todo",     "order": 0 },
+            { "name": "Doing",    "order": 1 },
+            { "name": "Complete", "order": 2 }
+        ],
+        "cardOrder": {},
+        "doneColumn": "Archived"
+    }"#;
+    write_config_json(dir.path(), config_json);
+    write_md(dir.path(), "tasks/p.md", &task_md("P", "Todo", None));
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md("A", "Archived", Some("tasks/p.md")),
+    );
+    write_md(
+        dir.path(),
+        "tasks/c.md",
+        &task_md("C", "Complete", Some("tasks/p.md")),
+    );
+    write_md(
+        dir.path(),
+        "tasks/d.md",
+        &task_md("D", "Doing", Some("tasks/p.md")),
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert!(payload.projections["tasks/a.md"].is_done);
+    assert!(!payload.projections["tasks/c.md"].is_done);
+    assert!(!payload.projections["tasks/d.md"].is_done);
+    assert!(!payload.projections["tasks/p.md"].is_done);
+    assert_eq!(payload.projections["tasks/p.md"].sub_issue_progress.done, 1);
 }
 
 #[test]
@@ -111,8 +273,9 @@ fn preserves_children_and_reverse_links_built_by_open_project() {
     let raw = dir.path().to_str().expect("utf-8").to_string();
     open_with_noop(Arc::clone(&state), &raw);
 
-    let tasks = get_tasks_impl(&state).expect("get_tasks should succeed");
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
 
+    let tasks = &payload.tasks;
     let task_a = tasks
         .iter()
         .find(|t| t.id == "tasks/a.md")

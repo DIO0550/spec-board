@@ -65,6 +65,8 @@ const makeData = (tasks: readonly Task[]): ProjectData => ({
     { name: "Todo", order: 0 },
     { name: "Done", order: 1 },
   ],
+  projections: new Map(),
+  openRequestId: 0,
 });
 
 type Harness = {

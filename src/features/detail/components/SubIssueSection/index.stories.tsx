@@ -13,8 +13,8 @@ const meta: Meta<typeof SubIssueSection> = {
   args: {
     parentTask,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 0 },
+    isDone: () => false,
     onAddSubIssue: () => {},
   },
 };
@@ -24,17 +24,20 @@ export default meta;
 type Story = StoryObj<typeof SubIssueSection>;
 
 export const Empty: Story = {
-  args: { childTasks: [], descendantTasks: [] },
+  args: { childTasks: [], subIssueCounts: { done: 0, total: 0 } },
 };
 
 export const WithChildren: Story = {
-  args: { childTasks, descendantTasks: childTasks },
+  args: {
+    childTasks,
+    subIssueCounts: { done: 0, total: childTasks.length },
+  },
 };
 
 export const Clickable: Story = {
   args: {
     childTasks,
-    descendantTasks: childTasks,
+    subIssueCounts: { done: 0, total: childTasks.length },
     onChildClick: () => {},
   },
 };
@@ -42,13 +45,7 @@ export const Clickable: Story = {
 export const WithDescendantsBeyondDirectChildren: Story = {
   args: {
     childTasks,
-    descendantTasks: [
-      ...childTasks,
-      ...initialTasks.slice(0, 2).map((t) => ({
-        ...t,
-        id: `extra-${t.id}`,
-        status: "Done",
-      })),
-    ],
+    // 直下子より子孫の方が多いケース（孫 2 件が完了済み）。
+    subIssueCounts: { done: 2, total: childTasks.length + 2 },
   },
 };

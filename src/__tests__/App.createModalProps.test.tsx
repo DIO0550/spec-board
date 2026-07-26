@@ -165,6 +165,7 @@ const openProjectWithTasks = async () => {
     Result.ok({
       tasks: fixtureTasks,
       columns: ["Todo", "Done"],
+      projections: new Map(),
     }),
   );
   const buttons = container?.querySelectorAll("header button") ?? [];

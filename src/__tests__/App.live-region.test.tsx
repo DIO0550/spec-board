@@ -133,6 +133,7 @@ const taskB: Task = Task.fromPayload({
 const payload: OpenProjectPayload = {
   tasks: [taskA, taskB],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 /**
@@ -312,6 +313,7 @@ test("drop 後の LiveRegion は同一の安定 DOM ノードを維持しつつ 
 const threeColumnPayload: OpenProjectPayload = {
   tasks: [],
   columns: ["A", "B", "C"],
+  projections: new Map(),
 };
 
 const openThreeColumnProject = async (): Promise<void> => {
@@ -415,6 +417,17 @@ const openParentChildProject = async (): Promise<void> => {
     Result.ok({
       tasks: [parentTask, childTask],
       columns: ["Todo", "Done"],
+      // 直下子の解決は BE projection の childFilePaths 経由になった。
+      projections: new Map([
+        [
+          "tasks/p1.md",
+          {
+            subIssueProgress: { done: 0, total: 1 },
+            isDone: false,
+            childFilePaths: ["tasks/c1.md"],
+          },
+        ],
+      ]),
     }),
   );
   // beforeEach の暗黙初期化に依存させず、必要な columns / doneColumn を
@@ -543,6 +556,7 @@ const openLinkedTasksProject = async (options?: {
     Result.ok({
       tasks: [linkedA, linkedB],
       columns: ["Todo", "Done"],
+      projections: new Map(),
     }),
   );
   getColumnsMock.mockResolvedValueOnce(

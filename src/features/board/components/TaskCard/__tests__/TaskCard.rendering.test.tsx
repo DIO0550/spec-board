@@ -172,7 +172,21 @@ test("BoardCardProvider.descendantCount 経由で全子孫ベースの進捗サ�
   });
   render(
     { task: parent, onClick: vi.fn() },
-    { allTasks: [parent, c1, c2, g1, g2, g3], doneColumn: "Done" },
+    {
+      allTasks: [parent, c1, c2, g1, g2, g3],
+      doneColumn: "Done",
+      // 集計は BE (TaskIndex::project_all) 由来。直下子 2 + 孫 3 のうち done 3。
+      projections: new Map([
+        [
+          "tasks/parent.md",
+          {
+            subIssueProgress: { done: 3, total: 5 },
+            isDone: false,
+            childFilePaths: ["tasks/c1.md", "tasks/c2.md"],
+          },
+        ],
+      ]),
+    },
   );
   await vi.waitFor(() => {
     const bar = container?.querySelector(
@@ -233,7 +247,20 @@ test("子孫が存在する場合、フッターにサブIssue X/Y が表示さ�
   });
   render(
     { task: parent, onClick: vi.fn() },
-    { allTasks: [parent, c1, c2], doneColumn: "Done" },
+    {
+      allTasks: [parent, c1, c2],
+      doneColumn: "Done",
+      projections: new Map([
+        [
+          "tasks/parent.md",
+          {
+            subIssueProgress: { done: 1, total: 2 },
+            isDone: false,
+            childFilePaths: ["tasks/c1.md"],
+          },
+        ],
+      ]),
+    },
   );
   await vi.waitFor(() => {
     const count = container?.querySelector(

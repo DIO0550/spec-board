@@ -87,6 +87,7 @@ const childPayload = (n: number): TaskPayload => ({
 const openProjectRawPayload = {
   tasks: [],
   columns: ["Todo", "Doing", "Done"],
+  projections: {},
 };
 
 const getColumnsRawPayload = {
@@ -125,6 +126,8 @@ const makeInvoke =
     const responders: Record<string, Responder> = {
       open_project: () => Promise.resolve(openProjectRawPayload),
       get_columns: () => Promise.resolve(getColumnsRawPayload),
+      // projection 再同期（useProjectionSyncEffect）が tasks 変化のたびに呼ぶ読み取り系。
+      get_tasks: () => Promise.resolve({ tasks: [], projections: {} }),
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),
       get_labels: () => Promise.resolve({ labels: [] }),

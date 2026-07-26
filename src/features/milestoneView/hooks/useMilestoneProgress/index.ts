@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Task } from "@/types/task";
+import type { Task } from "@/types/task";
 
 /** マイルストーン 1 件分の進捗。 */
 export type MilestoneProgress = {
@@ -46,7 +46,9 @@ export const computeMilestoneProgress = (
       continue;
     }
     entry.total += 1;
-    if (Task.isDone(task, doneColumn)) {
+    // 完了判定は BE projection（TaskIndex::project_all）へ集約したが、milestone の
+    // 集計はまだ FE 側にある。projection 化はマイルストーン進捗の BE 移管に合わせて行う。
+    if (doneColumn !== undefined && task.status === doneColumn) {
       entry.done += 1;
     }
   }

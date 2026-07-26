@@ -56,6 +56,8 @@ const makeData = (
     { name: "Todo", order: 0 },
     { name: "Done", order: 1 },
   ],
+  projections: new Map(),
+  openRequestId: 0,
 });
 
 type Harness = {

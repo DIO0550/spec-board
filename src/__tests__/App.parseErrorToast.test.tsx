@@ -163,14 +163,17 @@ const taskWithBrokenLink = Task.fromPayload({
 const payloadWithParseError: OpenProjectPayload = {
   tasks: [taskWithParseError],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
   tasks: [taskClean],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 const payloadWithBoth: OpenProjectPayload = {
   tasks: [taskWithParseError, taskWithBrokenLink],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 const openProjectFlow = async (

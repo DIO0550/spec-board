@@ -1,4 +1,5 @@
 import type { Decorator } from "@storybook/react-vite";
+import { TaskProjection } from "@/domains/task-projection";
 import { BoardCardProvider, type BoardCardProviderProps } from "../index";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */
@@ -18,7 +19,13 @@ type BoardCardDecoratorArgs = Partial<Omit<BoardCardProviderProps, "children">>;
 export const withBoardCardProvider =
   (args: BoardCardDecoratorArgs = {}): Decorator =>
   (Story) => (
-    <BoardCardProvider tasks={[]} allTasks={[]} dndDisabled={false} {...args}>
+    <BoardCardProvider
+      tasks={[]}
+      allTasks={[]}
+      dndDisabled={false}
+      projections={TaskProjection.emptyMap}
+      {...args}
+    >
       <Story />
     </BoardCardProvider>
   );

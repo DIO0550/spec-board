@@ -52,6 +52,8 @@ const dataOf = (tasks: Task[]): ProjectData => ({
   tasks,
   columns: [],
   doneColumn: undefined,
+  projections: new Map(),
+  openRequestId: 0,
 });
 
 /** 購読者へ ProjectEvent を配信できる制御可能なイベント基盤。 */

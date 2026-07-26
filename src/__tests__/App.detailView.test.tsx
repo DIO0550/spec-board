@@ -123,6 +123,7 @@ const taskA: Task = Task.fromPayload({
 const payload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Doing", "Done"],
+  projections: new Map(),
 };
 
 /**
@@ -347,7 +348,11 @@ test("detail 表示中にプロジェクト切替で選択タスク消失→boar
   });
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/other"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [otherTask], columns: ["Todo", "Doing", "Done"] }),
+    Result.ok({
+      tasks: [otherTask],
+      columns: ["Todo", "Doing", "Done"],
+      projections: new Map(),
+    }),
   );
   const openBtn = Array.from(
     container?.querySelectorAll("header button") ?? [],

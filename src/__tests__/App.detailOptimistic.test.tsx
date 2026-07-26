@@ -116,6 +116,7 @@ const taskA: Task = Task.fromPayload({
 const payload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Doing", "Done"],
+  projections: new Map(),
 };
 
 /**

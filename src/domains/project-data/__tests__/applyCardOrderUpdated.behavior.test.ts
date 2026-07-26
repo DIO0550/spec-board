@@ -13,6 +13,8 @@ const dataOf = (
     makeTask({ id: filePath, filePath, status }),
   ),
   columns: columns("Todo", "Done"),
+  projections: new Map(),
+  openRequestId: 0,
 });
 
 test("対象カラム内のタスクを filePaths 順に並べ替える", () => {

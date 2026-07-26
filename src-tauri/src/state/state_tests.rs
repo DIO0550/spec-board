@@ -756,3 +756,87 @@ fn replace_config_and_tasks_keeps_config_untouched_when_task_update_fails() {
         "cache 更新失敗時に config を確定してはならない"
     );
 }
+
+// ───────── snapshot_config_and_tasks ─────────
+
+fn column(name: &str, order: u32) -> Column {
+    Column {
+        name: name.into(),
+        order,
+        color: None,
+    }
+}
+
+#[test]
+fn snapshot_config_and_tasks_returns_both_fields_when_committed() {
+    let state = AppState::new();
+    let mut config = sample_config();
+    config.columns = vec![column("Todo", 0), column("Doing", 1), column("Done", 2)];
+    state.replace_config(Some(config)).expect("writable");
+    let mut cache = HashMap::new();
+    cache.insert(PathBuf::from("a.md"), sample_task("a", "a.md"));
+    cache.insert(PathBuf::from("b.md"), sample_task("b", "b.md"));
+    state.replace_tasks_cache(cache).expect("writable");
+
+    let ctx = state.snapshot_config_and_tasks().expect("readable");
+
+    assert_eq!(ctx.config.expect("config").columns.len(), 3);
+    assert_eq!(ctx.tasks.len(), 2);
+}
+
+#[test]
+fn snapshot_config_and_tasks_returns_none_config_and_empty_tasks_when_uninitialized() {
+    let state = AppState::new();
+
+    let ctx = state.snapshot_config_and_tasks().expect("readable");
+
+    assert!(ctx.config.is_none());
+    assert!(ctx.tasks.is_empty());
+}
+
+#[test]
+fn snapshot_config_and_tasks_returns_cloned_tasks_unaffected_by_later_writes() {
+    let state = AppState::new();
+    let mut cache = HashMap::new();
+    cache.insert(PathBuf::from("a.md"), sample_task("a", "a.md"));
+    cache.insert(PathBuf::from("b.md"), sample_task("b", "b.md"));
+    state.replace_tasks_cache(cache.clone()).expect("writable");
+    let ctx = state.snapshot_config_and_tasks().expect("readable");
+
+    cache.insert(PathBuf::from("c.md"), sample_task("c", "c.md"));
+    state.replace_tasks_cache(cache).expect("writable");
+
+    assert_eq!(ctx.tasks.len(), 2);
+}
+
+#[test]
+fn snapshot_config_and_tasks_reports_config_lock_poison() {
+    let state = Arc::new(AppState::new());
+    poison_mutex(Arc::clone(&state), |s| {
+        let _guard = s.config.lock().expect("lockable before panic");
+        panic!("poison config");
+    });
+
+    assert_eq!(
+        AppStateError::LockPoisoned,
+        state
+            .snapshot_config_and_tasks()
+            .expect_err("poisoned read")
+    );
+}
+
+#[test]
+fn snapshot_config_and_tasks_reports_tasks_cache_lock_poison() {
+    let state = Arc::new(AppState::new());
+    poison_mutex(Arc::clone(&state), |s| {
+        let _guard = s.tasks_cache.lock().expect("lockable before panic");
+        panic!("poison tasks_cache");
+    });
+
+    assert_eq!(
+        AppStateError::LockPoisoned,
+        state
+            .snapshot_config_and_tasks()
+            .expect_err("poisoned read")
+    );
+}

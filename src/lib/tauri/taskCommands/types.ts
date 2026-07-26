@@ -1,5 +1,19 @@
 import type { Priority } from "@/domains/priority";
+import type {
+  TaskProjectionMap,
+  TaskProjectionPayloadInput,
+  TaskProjectionsPayloadInput,
+} from "@/domains/task-projection";
 import type { Task, TaskPayload } from "@/types/task";
+
+/**
+ * 1 タスク分の projection の raw payload。
+ * 実体は domain 側の入力型（循環依存を避けるため型の所有権は domain に置く）。
+ */
+export type TaskProjectionPayload = TaskProjectionPayloadInput;
+
+/** filePath をキーにした projection の raw payload。 */
+export type TaskProjectionsPayload = TaskProjectionsPayloadInput;
 
 /** open_project 引数。 */
 export type OpenProjectParams = {
@@ -13,6 +27,8 @@ export type OpenProjectPayload = {
   tasks: Task[];
   /** カラム名一覧 */
   columns: string[];
+  /** filePath -> projection */
+  projections: TaskProjectionMap;
 };
 
 /** open_project が Tauri IPC から返す raw payload。 */
@@ -21,6 +37,24 @@ export type OpenProjectRawPayload = {
   tasks: TaskPayload[];
   /** カラム名一覧 */
   columns: string[];
+  /** filePath をキーにした projection の raw payload */
+  projections: TaskProjectionsPayload;
+};
+
+/** get_tasks 戻り値ペイロード。 */
+export type GetTasksPayload = {
+  /** プロジェクト内のタスク一覧（id 昇順） */
+  tasks: Task[];
+  /** filePath -> projection */
+  projections: TaskProjectionMap;
+};
+
+/** get_tasks が Tauri IPC から返す raw payload。 */
+export type GetTasksRawPayload = {
+  /** プロジェクト内の flat task payload 一覧 */
+  tasks: TaskPayload[];
+  /** filePath をキーにした projection の raw payload */
+  projections: TaskProjectionsPayload;
 };
 
 /** create_task 引数（title / status は必須、その他は任意）。 */

@@ -165,8 +165,8 @@ const DetailFieldsSubIssue = (props: DetailFieldsSubIssueProps) => {
     <SubIssueSection
       parentTask={task}
       childTasks={childInfo.childTasks}
-      descendantTasks={childInfo.descendantTasks}
-      doneColumn={childInfo.effectiveDoneColumn}
+      subIssueCounts={childInfo.subIssueCounts}
+      isDone={childInfo.isDone}
       onAddSubIssue={onAddSubIssue}
       onChildClick={onChildClick}
       brokenChildPaths={brokenChildPaths}

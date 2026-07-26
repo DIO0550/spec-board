@@ -45,11 +45,15 @@ const cols = (...names: string[]): Column[] =>
 const dataA: ProjectData = {
   tasks: [makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" })],
   columns: cols("Todo", "Done"),
+  projections: new Map(),
+  openRequestId: 0,
 };
 
 const dataB: ProjectData = {
   tasks: [makeTask({ id: "b", filePath: "tasks/b.md", status: "Done" })],
   columns: cols("Todo", "Done"),
+  projections: new Map(),
+  openRequestId: 0,
 };
 
 const loadedAState: ProjectState = {
@@ -124,7 +128,12 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
   const loadedWithParent: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [parent], columns: cols("Todo") },
+    data: {
+      tasks: [parent],
+      columns: cols("Todo"),
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const child = makeTask({
     id: "c",
@@ -148,7 +157,12 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
   const loadedWithParent: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [parent], columns: cols("Todo") },
+    data: {
+      tasks: [parent],
+      columns: cols("Todo"),
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const child = makeTask({
     id: "c",
@@ -172,7 +186,12 @@ test("task-created (parent あり) で親が既に children を持っていれ�
   const loadedWithParent: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [parent], columns: cols("Todo") },
+    data: {
+      tasks: [parent],
+      columns: cols("Todo"),
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const child = makeTask({
     id: "c",
@@ -240,7 +259,12 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [a, b, c], columns: cols("Todo") },
+    data: {
+      tasks: [a, b, c],
+      columns: cols("Todo"),
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   // b を削除すると、a の links と reverseLinks から tasks/b.md が消える
   const next = reducer(loaded, {
@@ -284,6 +308,8 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
     data: {
       tasks: [parent, child, otherWithLink],
       columns: cols("Todo"),
+      projections: new Map(),
+      openRequestId: 0,
     },
   };
   // 親 (p) を削除した場合、子 (c) の parent と other (o) の children をクリア
@@ -326,6 +352,8 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
     data: {
       tasks: [parent, child],
       columns: cols("Todo"),
+      projections: new Map(),
+      openRequestId: 0,
     },
   };
 
@@ -367,7 +395,13 @@ test("columns-replaced: doneColumn が rename 対象なら自動追従する", (
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [], columns: cols("Todo", "Done"), doneColumn: "Done" },
+    data: {
+      tasks: [],
+      columns: cols("Todo", "Done"),
+      doneColumn: "Done",
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const next = reducer(loaded, {
     type: "columns-replaced",
@@ -382,7 +416,13 @@ test("columns-replaced: action.doneColumn 指定時はそれが採用される (
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [], columns: cols("Todo", "Done"), doneColumn: "Done" },
+    data: {
+      tasks: [],
+      columns: cols("Todo", "Done"),
+      doneColumn: "Done",
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const next = reducer(loaded, {
     type: "columns-replaced",
@@ -397,7 +437,13 @@ test("columns-replaced: doneColumn / renames 未指定時は既存値を維持",
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/x",
-    data: { tasks: [], columns: cols("Todo", "Done"), doneColumn: "Done" },
+    data: {
+      tasks: [],
+      columns: cols("Todo", "Done"),
+      doneColumn: "Done",
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const next = reducer(loaded, {
     type: "columns-replaced",
@@ -466,7 +512,12 @@ test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/p",
-    data: { tasks: [todoA, doneX, todoB], columns: cols("Todo", "Done") },
+    data: {
+      tasks: [todoA, doneX, todoB],
+      columns: cols("Todo", "Done"),
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const next = reducer(loaded, {
     type: "card-order-updated",
@@ -488,7 +539,12 @@ test("card-order-updated → 他カラムの tasks 順序は不変", () => {
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/p",
-    data: { tasks: [todoA, doneX, doneY], columns: cols("Todo", "Done") },
+    data: {
+      tasks: [todoA, doneX, doneY],
+      columns: cols("Todo", "Done"),
+      projections: new Map(),
+      openRequestId: 0,
+    },
   };
   const next = reducer(loaded, {
     type: "card-order-updated",

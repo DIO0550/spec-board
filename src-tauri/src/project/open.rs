@@ -85,6 +85,7 @@ use crate::state::{AppState, AppStateError};
 use crate::task::parse::{
     default_status_for, task_from_markdown, TaskParseContext, TaskParseError,
 };
+use crate::task::projection::TaskProjectionMap;
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::task::file_scanner::{scan_md_files, ScanError};
 use spec_board_fs::watcher::core::WatcherError;
@@ -98,6 +99,8 @@ use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 pub struct OpenProjectPayload {
     pub tasks: Vec<Task>,
     pub columns: Vec<ColumnName>,
+    /// filePath -> projection。初期表示時点で FE が集計を持てるよう同梱する。
+    pub projections: TaskProjectionMap,
 }
 
 /// `open_project` コマンドのエラー。
@@ -558,7 +561,13 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
 /// `cardOrder` に載っていないタスク（新規追加された md 等）は、そのカラムの末尾へ
 /// `id` 昇順で並ぶ（`cardOrder` の「記載されていないタスクは末尾に追加」ルール）。
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
-fn build_payload(mut tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
+fn build_payload(tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
+    // projection は並び順に依存しない（filePath キーの map）ため sort 前に作る。
+    // `TaskIndex` へ move → `into_tasks()` で戻すことで `Vec<Task>` の clone を避ける。
+    let index = TaskIndex::new(tasks);
+    let projections = index.project_all(config.resolved_done_column());
+    let mut tasks = index.into_tasks();
+
     let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
     sorted_columns.sort_by_key(|column| column.order);
 
@@ -580,7 +589,11 @@ fn build_payload(mut tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
         .into_iter()
         .map(|column| column.name.clone())
         .collect();
-    OpenProjectPayload { tasks, columns }
+    OpenProjectPayload {
+        tasks,
+        columns,
+        projections,
+    }
 }
 
 /// `task` の (カラム表示順, カラム内 cardOrder 位置) を返す。

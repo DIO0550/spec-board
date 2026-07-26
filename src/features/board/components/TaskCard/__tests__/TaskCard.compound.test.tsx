@@ -132,9 +132,10 @@ test("旧 API（Legacy）と新 API（Compound）が同じ data-testid と同じ
   expect(labelsA).toEqual(["bug", "urgent"]);
 });
 
-test("doneColumn 省略時に default 'Done' が適用された結果が観察可能な DOM に出る", () => {
-  // doneColumn が context に伝わるか直接観察せず、default が効いた結果として
-  // 「status='Done' の子タスクが done としてカウントされる」ことで間接観察する。
+test("フッターの サブIssue X/Y は projection 由来で doneColumn 指定の有無に依存しない", () => {
+  // 完了判定は BE (TaskIndex::project_all) が済ませているため、Provider の
+  // doneColumn（未指定なら default "Done"）は集計値に影響しない。カラム名判定
+  // （isDoneColumn）としての doneColumn は BoardCardProvider 側でテストする。
   const parent = createTask({
     id: "parent",
     filePath: "tasks/parent.md",
@@ -156,11 +157,22 @@ test("doneColumn 省略時に default 'Done' が適用された結果が観察�
         <TaskCard.Root task={parent} fromColumn="Todo">
           <TaskCard.Footer />
         </TaskCard.Root>,
-        { allTasks: [parent, childDone, childTodo] },
+        {
+          allTasks: [parent, childDone, childTodo],
+          projections: new Map([
+            [
+              "tasks/parent.md",
+              {
+                subIssueProgress: { done: 1, total: 2 },
+                isDone: false,
+                childFilePaths: ["tasks/c1.md", "tasks/c2.md"],
+              },
+            ],
+          ]),
+        },
       ),
     );
   });
-  // default "Done" が効いていれば 1/2、効かなければ 0/2。
   expect(
     containerA?.querySelector('[data-testid="task-card-subissue-count"]')
       ?.textContent,

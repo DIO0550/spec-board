@@ -59,8 +59,8 @@ test("子孫タスクが空でも追加ボタンは表示される（progressbar
   render({
     parentTask: PARENT,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 0 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
   });
   expect(
@@ -79,8 +79,8 @@ test("子タスクの進捗バーと完了/全数が表示される", () => {
   render({
     parentTask: PARENT,
     childTasks: tasks,
-    descendantTasks: tasks,
-    doneColumn: "Done",
+    subIssueCounts: { done: 2, total: 4 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
   });
   const bar = document.querySelector('[role="progressbar"]');
@@ -93,8 +93,8 @@ test("「+ サブIssue 追加」ボタンで親のファイルパスが渡され
   render({
     parentTask: PARENT,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 0 },
+    isDone: () => false,
     onAddSubIssue,
   });
   const button = document.querySelector(
@@ -118,8 +118,8 @@ test("子タスククリックで onChildClick が呼ばれる", () => {
   render({
     parentTask: parent,
     childTasks: [c1],
-    descendantTasks: [c1],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 1 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
     onChildClick,
   });
@@ -143,8 +143,8 @@ test("onChildClick が未指定なら子タスクのボタンは無効化され�
   render({
     parentTask: parent,
     childTasks: [c1],
-    descendantTasks: [c1],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 1 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
   });
   const child = document.querySelector(
@@ -153,7 +153,7 @@ test("onChildClick が未指定なら子タスクのボタンは無効化され�
   expect(child.disabled).toBe(true);
 });
 
-test("descendantTasks=5件(done=3)、childTasks=2件: 進捗バー aria-valuenow=60、サマリ 3/5、<li> 2 件", () => {
+test("subIssueCounts={done:3,total:5}、childTasks=2件: 進捗バー aria-valuenow=60、サマリ 3/5、<li> 2 件", () => {
   const c1 = makeTask({
     id: "c1",
     title: "子1",
@@ -175,14 +175,8 @@ test("descendantTasks=5件(done=3)、childTasks=2件: 進捗バー aria-valuenow
   render({
     parentTask: parent,
     childTasks: [c1, c2],
-    descendantTasks: [
-      c1,
-      c2,
-      makeTask({ id: "g1", status: "Done" }),
-      makeTask({ id: "g2", status: "Done" }),
-      makeTask({ id: "g3", status: "Todo" }),
-    ],
-    doneColumn: "Done",
+    subIssueCounts: { done: 3, total: 5 },
+    isDone: (filePath) => filePath === "tasks/c1.md",
     onAddSubIssue: vi.fn(),
   });
   const bar = document.querySelector('[role="progressbar"]');
@@ -194,17 +188,14 @@ test("descendantTasks=5件(done=3)、childTasks=2件: 進捗バー aria-valuenow
 
 test("Board ↔ Detail 整合性: 3 階層 fixture（root + 子 1 + 孫 2、うち done 1）で SubIssueSection の進捗は 1/3 になる", () => {
   // 同じ fixture を Column.rendering.test.tsx の対応ケースとも整合させる。
-  const grand1 = makeTask({ id: "g1", status: "Done" });
-  const grand2 = makeTask({ id: "g2", status: "Todo" });
   const child = makeTask({ id: "c1", title: "子1", status: "Todo" });
-  // collectDescendants の結果（root を含まない子孫）と同じ並び。
-  const descendants = [child, grand1, grand2];
 
   render({
     parentTask: PARENT,
     childTasks: [child],
-    descendantTasks: descendants,
-    doneColumn: "Done",
+    // BE projection の値（子 1 + 孫 2 のうち done 1）。
+    subIssueCounts: { done: 1, total: 3 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
   });
   const bar = document.querySelector('[role="progressbar"]');
