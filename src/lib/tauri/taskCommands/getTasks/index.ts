@@ -1,13 +1,25 @@
+import { TaskProjection } from "@/domains/task-projection";
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
+import type { GetTasksPayload, GetTasksRawPayload } from "../types";
 
 /**
- * 現在のプロジェクト内の全タスクを取得する。
- * @returns 成功時は Result.ok(Task[])、失敗時は Result.err(TauriError)
+ * Tauri 生 payload を UI 層が扱う `GetTasksPayload` に変換する。
+ * @param payload - Tauri から受け取った生 payload
+ * @returns Task / projection ドメインに正規化済みの payload
  */
-export const getTasks = (): Promise<ResultT<Task[], TauriError>> =>
-  invokeWrapped<TaskPayload[]>("get_tasks").then((result) =>
-    Result.map(result, (tasks) => tasks.map(Task.fromPayload)),
+const toGetTasksPayload = (payload: GetTasksRawPayload): GetTasksPayload => ({
+  tasks: payload.tasks.map(Task.fromPayload),
+  projections: TaskProjection.fromPayload(payload.projections),
+});
+
+/**
+ * 現在のプロジェクト内の全タスクと projection を取得する。
+ * @returns 成功時は Result.ok(GetTasksPayload)、失敗時は Result.err(TauriError)
+ */
+export const getTasks = (): Promise<ResultT<GetTasksPayload, TauriError>> =>
+  invokeWrapped<GetTasksRawPayload>("get_tasks").then((result) =>
+    Result.map(result, toGetTasksPayload),
   );

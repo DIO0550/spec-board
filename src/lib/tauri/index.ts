@@ -51,10 +51,13 @@ export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
 export type {
   CreateTaskParams,
   DeleteTaskParams,
+  GetTasksPayload,
   MoveTaskParams,
   OpenProjectParams,
   OpenProjectPayload,
   OrphanStrategy,
+  TaskProjectionPayload,
+  TaskProjectionsPayload,
   UpdateTaskParams,
 } from "./taskCommands/types";
 export { updateTask } from "./taskCommands/updateTask";
