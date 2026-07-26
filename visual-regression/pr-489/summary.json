@@ -1,7 +1,7 @@
 {
-  "reportVersion": "7bbbdcca5536d41f667cc5af2355c0285e7111fd",
+  "reportVersion": "0b1649ba01ef6b02a08c491c6f5a24b6eda0b10f",
   "maxDiffRatio": 0.002,
-  "failed": 3,
+  "failed": 0,
   "results": [
     {
       "story": "components-button--default",
@@ -680,36 +680,36 @@
       "id": "features-board-components-headerbar--board-view",
       "title": "features/board/components/HeaderBar",
       "name": "Board View",
-      "status": "changed",
-      "diffPixels": 3998,
-      "diffRatio": 0.0043,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-headerbar--settings-view",
       "id": "features-board-components-headerbar--settings-view",
       "title": "features/board/components/HeaderBar",
       "name": "Settings View",
-      "status": "changed",
-      "diffPixels": 3998,
-      "diffRatio": 0.0043,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-headerbar--with-milestone",
       "id": "features-board-components-headerbar--with-milestone",
       "title": "features/board/components/HeaderBar",
       "name": "With Milestone",
-      "status": "changed",
-      "diffPixels": 3998,
-      "diffRatio": 0.0043,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-labeltag--long",
