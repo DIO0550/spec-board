@@ -4,6 +4,7 @@ use crate::config::{CardOrder, Column, Config};
 use crate::project::watcher_factory::{NoopWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
 use crate::state::{AppState, BoxedWatcherHandle};
+use crate::task::projection::TaskProjectionMap;
 use crate::task::task_index::Task;
 use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
@@ -745,10 +746,12 @@ fn payload_serialization_uses_camel_case() {
     let payload = OpenProjectPayload {
         tasks: Vec::new(),
         columns: vec!["Todo".into()],
+        projections: TaskProjectionMap::new(),
     };
     let json = serde_json::to_string(&payload).expect("serialize");
     assert!(json.contains("\"tasks\""));
     assert!(json.contains("\"columns\""));
+    assert!(json.contains("\"projections\""));
 }
 
 #[test]
@@ -830,24 +833,30 @@ fn open_project_payload_round_trip() {
     // OpenProjectPayload は #[derive(Serialize)] のみだが、JSON 形状互換を
     // round-trip で機械検証する。Deserialize を派生せずに `serde_json::Value`
     // 経由で再パースする。
-    let json = r#"{"tasks":[],"columns":["Todo","Done"]}"#;
+    let json = r#"{"tasks":[],"columns":["Todo","Done"],"projections":{}}"#;
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(rename_all = "camelCase")]
     struct PayloadShape {
         tasks: Vec<serde_json::Value>,
         columns: Vec<String>,
+        projections: serde_json::Map<String, serde_json::Value>,
     }
     let parsed: PayloadShape = serde_json::from_str(json).unwrap();
     assert_eq!(parsed.tasks.len(), 0);
     assert_eq!(parsed.columns, vec!["Todo".to_string(), "Done".to_string()]);
+    assert!(parsed.projections.is_empty());
 
     // 反対方向: ColumnName VO の serde_transparent で文字列に戻ることを確認。
     let payload = OpenProjectPayload {
         tasks: vec![],
         columns: vec!["Todo".into(), "Done".into()],
+        projections: TaskProjectionMap::new(),
     };
     let serialized = serde_json::to_string(&payload).unwrap();
-    assert_eq!(serialized, r#"{"tasks":[],"columns":["Todo","Done"]}"#);
+    assert_eq!(
+        serialized,
+        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{}}"#
+    );
 }
 
 // ───────── labels.yml 読み込み（open_project 経由） ─────────
@@ -1214,4 +1223,151 @@ fn payload_tasks_are_grouped_by_column_display_order() {
 
     let paths: Vec<&str> = payload.tasks.iter().map(|t| t.file_path.as_str()).collect();
     assert_eq!(paths, vec!["tasks/b.md", "tasks/a.md"]);
+}
+
+// ───────── projection の同梱 ─────────
+
+/// `build_payload` を直接叩くテスト用の Task。`children` は空のまま渡し、
+/// projection が `parent` 由来であることを fixture 側で担保する。
+fn sample_task_with_parent(file_path: &str, parent: Option<&str>) -> Task {
+    Task {
+        draft: false,
+        id: file_path.into(),
+        file_path: file_path.into(),
+        title: "T".into(),
+        status: "Todo".into(),
+        priority: None,
+        milestone: None,
+        labels: Vec::new(),
+        parent: parent.map(Into::into),
+        due: None,
+        links: Vec::new(),
+        children: Vec::new(),
+        reverse_links: Vec::new(),
+        body: String::new(),
+        extras: Default::default(),
+        warnings: Vec::new(),
+    }
+}
+
+/// 親 1 / 子 2（うち 1 件が Done）の 3 カラム構成プロジェクトを open する。
+fn open_hierarchy_project(state: Arc<AppState>, dir: &TempDir) -> OpenProjectPayload {
+    let config_json = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Todo",  "order": 0 },
+            { "name": "Doing", "order": 1 },
+            { "name": "Done",  "order": 2 }
+        ],
+        "cardOrder": { "Todo": ["tasks/p.md"] },
+        "doneColumn": "Done"
+    }"#;
+    write_config_json(dir.path(), config_json);
+    write_md(dir.path(), "tasks/p.md", &task_md("P", "Todo", None));
+    write_md(
+        dir.path(),
+        "tasks/c1.md",
+        &task_md("C1", "Done", Some("tasks/p.md")),
+    );
+    write_md(
+        dir.path(),
+        "tasks/c2.md",
+        &task_md("C2", "Doing", Some("tasks/p.md")),
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(state, &raw).expect("open should succeed")
+}
+
+#[test]
+fn open_payload_includes_projections_for_every_task() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+
+    let payload = open_hierarchy_project(Arc::clone(&state), &dir);
+
+    assert_eq!(payload.projections.len(), payload.tasks.len());
+    let parent = payload
+        .projections
+        .get("tasks/p.md")
+        .expect("parent projection");
+    assert_eq!(parent.sub_issue_progress.total, 2);
+    assert_eq!(parent.sub_issue_progress.done, 1);
+}
+
+/// `open_project` と `get_tasks` は同じ aggregate method を通るため集計値が一致する。
+#[test]
+fn open_payload_projections_match_get_tasks_projections() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+
+    let payload = open_hierarchy_project(Arc::clone(&state), &dir);
+    let from_get_tasks = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
+
+    assert_eq!(payload.projections, from_get_tasks.projections);
+}
+
+/// projection は sort 前に作るため、cardOrder による並び替えの影響を受けない。
+#[test]
+fn card_order_sorting_does_not_affect_projections() {
+    let cfg = Config {
+        version: 1,
+        columns: vec![Column {
+            name: "Todo".into(),
+            order: 0,
+            color: None,
+        }],
+        card_order: CardOrder::from([("Todo".to_string(), vec!["tasks/c.md".to_string()])]),
+        done_column: None,
+    };
+    let parent = sample_task_with_parent("tasks/p.md", None);
+    let child = sample_task_with_parent("tasks/c.md", Some("tasks/p.md"));
+
+    let ordered = super::build_payload(vec![parent.clone(), child.clone()], &cfg);
+    let reversed = super::build_payload(vec![child, parent], &cfg);
+
+    assert_eq!(ordered.projections, reversed.projections);
+    assert_eq!(
+        ordered.projections["tasks/p.md"].sub_issue_progress.total,
+        1
+    );
+}
+
+#[test]
+fn project_without_tasks_has_empty_projections() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("open should succeed");
+
+    assert!(payload.tasks.is_empty());
+    assert!(payload.projections.is_empty());
+}
+
+/// `get_tasks.tasks` は id 昇順、`open_project.tasks` はカラム順 → cardOrder → id 順。
+/// 同じ集合だが順序が異なることを固定する。
+#[test]
+fn open_and_get_tasks_return_the_same_set_in_different_order() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let config_json = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Todo", "order": 0 },
+            { "name": "Done", "order": 1 }
+        ],
+        "cardOrder": {}
+    }"#;
+    write_config_json(dir.path(), config_json);
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Done", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("open should succeed");
+    let from_get_tasks = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
+
+    let open_ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
+    let get_ids: Vec<&str> = from_get_tasks.tasks.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(open_ids, vec!["tasks/b.md", "tasks/a.md"]);
+    assert_eq!(get_ids, vec!["tasks/a.md", "tasks/b.md"]);
 }
