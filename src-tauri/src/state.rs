@@ -98,6 +98,23 @@ pub struct LabelDeleteContext {
     pub tasks: Vec<Task>,
 }
 
+/// `get_tasks` が projection 生成に必要とするスナップショット。
+///
+/// done column の解決に `config`、集計に `tasks_cache` が要るため、両者を同一の
+/// lock 取得トランザクションで観測した値をまとめて運ぶ。
+///
+/// 他の Context 型（`LabelDeleteContext` 等）と異なり `project_root` を持たない。
+/// あちらは snapshot → disk write → 書き戻しの間の project swap を検出する
+/// check-and-set のために path を必要とするが、`get_tasks` は read-only で state へ
+/// 書き戻さないため path 一致検証が不要であり、使わないフィールドを運ばない。
+#[derive(Debug, Clone)]
+pub struct TasksProjectionContext {
+    /// snapshot 時点の `Config`。未オープン時は `None`。
+    pub config: Option<Config>,
+    /// snapshot 時点の全タスク。未オープン時は空 Vec。
+    pub tasks: Vec<Task>,
+}
+
 /// マイルストーン `create` / `update` コマンドが書き込み前に必要とするスナップショット。
 ///
 /// `LabelWriteContext` と同型。`project_path` と `milestones` を同一の lock 取得
@@ -408,6 +425,36 @@ impl AppState {
     /// 現在キャッシュしている `Task` の値を `Vec` として複製して返す。
     ///
     /// 呼び出し時点のスナップショットであり、戻り値の順序は不定。
+    /// `config` と `tasks_cache` を**両方の lock を順に同時保持した状態で** snapshot する。
+    ///
+    /// `get_tasks` が projection を作る際、別々に `config()?` → `tasks_snapshot()?` と
+    /// 取得すると、その 2 呼び出しの間に割り込んだ書き込みで「新 config + 旧 tasks」を
+    /// 観測する窓が開く。本 API は両 lock を順に同時保持して両フィールドを clone する
+    /// ことでその窓を閉じる。lock 取得順序は AppState の契約に従って
+    /// `config → tasks_cache` を遵守する（`snapshot_label_delete` と同型）。
+    ///
+    /// 既存 4 つの snapshot accessor（`snapshot_label_write` / `snapshot_label_delete` /
+    /// `snapshot_milestone_write` / `snapshot_milestone_delete`）はいずれも `config` を
+    /// 含まないため、再利用では代替できず新設している。
+    ///
+    /// # 保証の範囲
+    ///
+    /// - 保証する: `tasks_cache` 単体の torn read が起きないこと（watcher スレッドの
+    ///   並行更新に対して有効）。reader 側の 2 段取得による不整合が起きないこと。
+    /// - **保証しない**: writer が config と tasks を別クリティカルセクションで更新する
+    ///   経路（`project::open::commit_app_state_with_prepared` /
+    ///   `config::update_columns::update_columns_impl`）の途中状態を観測しないこと。
+    ///   呼び出し側（`get_tasks`）は FE 側の project command queue によってそれらの
+    ///   command と直列化される前提で使う。writer 側の atomic commit 化は follow-up。
+    pub fn snapshot_config_and_tasks(&self) -> Result<TasksProjectionContext, AppStateError> {
+        let config_guard = lock(&self.config)?;
+        let tasks_guard = lock(&self.tasks_cache)?;
+        Ok(TasksProjectionContext {
+            config: config_guard.clone(),
+            tasks: tasks_guard.values().cloned().collect(),
+        })
+    }
+
     pub fn tasks_snapshot(&self) -> Result<Vec<Task>, AppStateError> {
         let guard = lock(&self.tasks_cache)?;
         Ok(guard.values().cloned().collect())
