@@ -53,6 +53,7 @@ export const ActiveBoardView = ({
       tasksByNormalizedPath={workspace.tasksByNormalizedPath}
       milestonesByName={workspace.milestonesByName}
       doneColumn={workspace.doneColumn}
+      projections={workspace.projections}
       onTaskDrop={workspace.onTaskDrop}
       onColumnReorder={workspace.onColumnReorder}
       onAddTask={workspace.onAddTask}

@@ -277,6 +277,7 @@ const taskB: Task = Task.fromPayload({
 const payload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 const openLoaded = async (probe: { latest: ProbeResult }) => {
@@ -306,6 +307,8 @@ test("openProject 成功 (idle → loaded)、get_columns 成功時はその colu
         { name: "Done", order: 1 },
       ],
       doneColumn: "Done",
+      projections: new Map(),
+      openRequestId: 1,
     },
   });
 });
@@ -390,6 +393,8 @@ test("openProject 成功 → onLoaded が path / data 付きで 1 回だけ発�
         { name: "Done", order: 1 },
       ],
       doneColumn: "Done",
+      projections: new Map(),
+      openRequestId: 1,
     },
   });
 });
@@ -460,6 +465,8 @@ test("openProjectByPath 成功 → onLoaded が path / data 付きで発火す�
         { name: "Done", order: 1 },
       ],
       doneColumn: "Done",
+      projections: new Map(),
+      openRequestId: 1,
     },
   });
 });
@@ -614,7 +621,7 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
   // 2 回目: dialog ok → invoke は即 resolve
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/b"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
   );
   getColumnsMock.mockResolvedValueOnce(
     Result.ok({
@@ -640,7 +647,9 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
   });
   // 1 回目の invoke を resolve させて queue を進める
   await act(async () => {
-    resolveInvokeA(Result.ok({ tasks: [], columns: [] }));
+    resolveInvokeA(
+      Result.ok({ tasks: [], columns: [], projections: new Map() }),
+    );
     await pending1;
     await pending2;
   });
@@ -1451,7 +1460,7 @@ test("プロジェクト切替で旧 listen が unlisten され、新 listen が
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
   );
   let pending!: Promise<void>;
   act(() => {
@@ -1523,7 +1532,9 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
 
   // teardown: invoke を成功させる
   await act(async () => {
-    resolveInvoke(Result.ok({ tasks: [taskB], columns: ["Done"] }));
+    resolveInvoke(
+      Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    );
     await pending;
   });
 });
@@ -1639,7 +1650,7 @@ test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登�
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
   );
   let pending!: Promise<void>;
   act(() => {
@@ -1761,7 +1772,9 @@ test("open-start 直後の race: loading 中に旧 task-updated callback が発�
   expect(loadingState.previousLoaded?.data.tasks[0].title).toBe("A");
 
   await act(async () => {
-    resolveInvoke(Result.ok({ tasks: [taskB], columns: ["Done"] }));
+    resolveInvoke(
+      Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    );
     await pending;
   });
 });
@@ -1875,7 +1888,7 @@ test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登�
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"] }),
+    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
   );
   let pending!: Promise<void>;
   act(() => {
@@ -1939,7 +1952,9 @@ test("open-start 直後の race: loading 中に旧 task-deleted callback が発�
   ).toEqual(["tasks/a.md"]);
 
   await act(async () => {
-    resolveInvoke(Result.ok({ tasks: [taskB], columns: ["Done"] }));
+    resolveInvoke(
+      Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    );
     await pending;
   });
 });
@@ -2027,7 +2042,11 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
   // openLoaded uses default payload = [taskA], so override with parent/child setup
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskA, childTask], columns: ["Todo", "Done"] }),
+    Result.ok({
+      tasks: [taskA, childTask],
+      columns: ["Todo", "Done"],
+      projections: new Map(),
+    }),
   );
   const probe = renderHook();
   let pending!: Promise<void>;
@@ -2092,6 +2111,7 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
 const threeColumnPayload: OpenProjectPayload = {
   tasks: [],
   columns: ["A", "B", "C"],
+  projections: new Map(),
 };
 
 const openLoadedThree = async (probe: { latest: ProbeResult }) => {

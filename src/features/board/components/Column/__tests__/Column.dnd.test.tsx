@@ -1,6 +1,7 @@
 import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../../Board/mime";
@@ -94,6 +95,7 @@ const renderWithProviders = (options: RenderOptions) => {
   const columns = options.columns ?? [{ name: options.column.name, order: 0 }];
   const tree: ReactNode = (
     <BoardCardProvider
+      projections={TaskProjection.emptyMap}
       tasks={tasks}
       allTasks={allTasks}
       tasksByNormalizedPath={options.tasksByNormalizedPath}

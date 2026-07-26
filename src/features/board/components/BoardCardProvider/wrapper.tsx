@@ -1,4 +1,5 @@
 import type { ComponentType, PropsWithChildren } from "react";
+import { TaskProjection } from "@/domains/task-projection";
 import { BoardCardProvider, type BoardCardProviderProps } from "./index";
 
 /** wrapper に渡せる Partial の props（children は内部で当てる） */
@@ -14,6 +15,9 @@ const DEFAULTS: Omit<BoardCardProviderProps, "children"> = {
   allTasks: [],
   milestonesByName: new Map(),
   doneColumn: undefined,
+  // projections は Provider の必須 prop。テストでは明示的に空 Map を渡す
+  // （optional にすると配線漏れが型で検出できなくなるため）。
+  projections: TaskProjection.emptyMap,
   dndDisabled: false,
   onTaskDrop: undefined,
 };

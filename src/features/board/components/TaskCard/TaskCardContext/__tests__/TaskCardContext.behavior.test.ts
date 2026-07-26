@@ -65,7 +65,7 @@ test("Provider 内で useTaskCardContext は Value を返す", () => {
     hasBrokenLink: false,
     hasParseError: false,
     subIssueCounts: { done: 0, total: 0 },
-    childTasks: [],
+    childRows: [],
   };
   act(() => {
     root?.render(

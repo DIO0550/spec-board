@@ -141,10 +141,12 @@ const taskClean = Task.fromPayload({
 const payloadWithBroken: OpenProjectPayload = {
   tasks: [taskWithBrokenParent],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
   tasks: [taskClean],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 const openProjectFlow = async (

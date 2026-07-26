@@ -1,6 +1,7 @@
 import { act, type ReactNode, StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import {
   type BoardCardApi,
   BoardCardProvider,
@@ -54,7 +55,12 @@ const mountProbe = (
   };
   const tree: ReactNode = (
     <StrictMode>
-      <BoardCardProvider tasks={[]} allTasks={[]} {...overrides}>
+      <BoardCardProvider
+        tasks={[]}
+        allTasks={[]}
+        projections={TaskProjection.emptyMap}
+        {...overrides}
+      >
         <Probe onResult={handleResult} />
       </BoardCardProvider>
     </StrictMode>

@@ -1,6 +1,10 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import {
+  TaskProjection,
+  type TaskProjectionMap,
+} from "@/domains/task-projection";
 import { Task, type TaskPayload } from "@/types/task";
 import { BoardCardProvider } from "../../BoardCardProvider";
 import { BoardColumnProvider } from "../../BoardColumnProvider";
@@ -49,6 +53,8 @@ type RenderOptions = {
   doneColumn?: string;
   /** Provider に渡す tasksByNormalizedPath */
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** Provider に渡す projection map（BE 集計。未指定なら空 Map） */
+  projections?: TaskProjectionMap;
 };
 
 /**
@@ -67,6 +73,7 @@ function render(options: RenderOptions) {
   const columns = [{ name: options.column.name, order: 0 }];
   const tree: ReactNode = (
     <BoardCardProvider
+      projections={options.projections ?? TaskProjection.emptyMap}
       tasks={tasks}
       allTasks={allTasks}
       tasksByNormalizedPath={options.tasksByNormalizedPath}
@@ -160,6 +167,17 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
     tasks: [rootTask],
     allTasks,
     doneColumn: "Done",
+    // 集計は BE 由来。子 1 + 孫 2 のうち done 1。
+    projections: new Map([
+      [
+        "tasks/root.md",
+        {
+          subIssueProgress: { done: 1, total: 3 },
+          isDone: false,
+          childFilePaths: ["tasks/c1.md"],
+        },
+      ],
+    ]),
   });
 
   await vi.waitFor(() => {

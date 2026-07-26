@@ -49,8 +49,8 @@ test("`childFilePaths` の順序通りに描画される (解決済 → ボタ�
   render({
     parentTask: parent,
     childTasks: [c1],
-    descendantTasks: [c1],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 1 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
     brokenChildPaths: new Set(["tasks/dead.md"]),
   });
@@ -73,8 +73,8 @@ test("正常な child は従来通りボタン行が描画される", () => {
   render({
     parentTask: parent,
     childTasks: [c1],
-    descendantTasks: [c1],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 1 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
     onChildClick: vi.fn(),
     brokenChildPaths: new Set(),
@@ -96,8 +96,8 @@ test("`brokenChildPaths` が empty なら従来挙動と同一", () => {
   render({
     parentTask: parent,
     childTasks: [c1],
-    descendantTasks: [c1],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 1 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
   });
   expect(
@@ -117,8 +117,8 @@ test("`childTasks.length === 0` でも `brokenChildPaths.size > 0` なら broken
   render({
     parentTask: parent,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 0 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
     brokenChildPaths: new Set(["tasks/dead.md"]),
   });
@@ -136,8 +136,8 @@ test("broken 行に WarningIcon と取消線 path が描画される", () => {
   render({
     parentTask: parent,
     childTasks: [],
-    descendantTasks: [],
-    doneColumn: "Done",
+    subIssueCounts: { done: 0, total: 0 },
+    isDone: () => false,
     onAddSubIssue: vi.fn(),
     brokenChildPaths: new Set(["tasks/dead.md"]),
   });

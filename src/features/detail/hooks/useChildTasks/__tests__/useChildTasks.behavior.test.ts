@@ -2,7 +2,11 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
-import type { Column } from "@/types/column";
+import type {
+  TaskProjectionMap,
+  TaskProjection as TaskProjectionT,
+} from "@/domains/task-projection";
+import { TaskProjection } from "@/domains/task-projection";
 import {
   type UseChildTasksArgs,
   type UseChildTasksResult,
@@ -22,6 +26,17 @@ afterEach(() => {
 });
 
 const fp = (id: string) => `tasks/${id}.md`;
+
+const projection = (
+  done: number,
+  total: number,
+  childFilePaths: readonly string[] = [],
+  isDone = false,
+): TaskProjectionT => ({
+  subIssueProgress: { done, total },
+  isDone,
+  childFilePaths,
+});
 
 /**
  * useChildTasks の戻り値を観測する Probe。
@@ -71,92 +86,135 @@ const renderHook = (args: UseChildTasksArgs) => {
   };
 };
 
-const DEFAULT_COLUMNS: Column[] = [{ name: "Done", order: 0 }];
-
-test("3 階層構造で descendantTasks が 3 件（子 1 + 孫 2）を返す", () => {
-  const grand1 = makeTask({ id: "g1", parent: fp("c1") });
-  const grand2 = makeTask({ id: "g2", parent: fp("c1") });
-  const child = makeTask({
-    id: "c1",
-    parent: fp("root"),
-    children: [fp("g1"), fp("g2")],
-  });
-  const rootTask = makeTask({
-    id: "root",
-    children: [fp("c1")],
-  });
+test("childTasks は projection の childFilePaths を allTasks で解決して返す", () => {
+  const child = makeTask({ id: "c1", parent: fp("root") });
+  const grand = makeTask({ id: "g1", parent: fp("c1") });
+  const rootTask = makeTask({ id: "root" });
 
   const probe = renderHook({
     parentFilePath: fp("root"),
-    allTasks: [rootTask, child, grand1, grand2],
-    columns: DEFAULT_COLUMNS,
-    doneColumn: "Done",
-  });
-
-  const ids = probe.latest.descendantTasks.map((t) => t.id).sort();
-  expect(ids).toEqual(["c1", "g1", "g2"]);
-});
-
-test("childTasks は引き続き直下子のみを返す", () => {
-  const grand1 = makeTask({ id: "g1", parent: fp("c1") });
-  const child = makeTask({
-    id: "c1",
-    parent: fp("root"),
-    children: [fp("g1")],
-  });
-  const rootTask = makeTask({
-    id: "root",
-    children: [fp("c1")],
-  });
-
-  const probe = renderHook({
-    parentFilePath: fp("root"),
-    allTasks: [rootTask, child, grand1],
-    columns: DEFAULT_COLUMNS,
-    doneColumn: "Done",
+    allTasks: [rootTask, child, grand],
+    projections: new Map([[fp("root"), projection(0, 2, [fp("c1")])]]),
   });
 
   expect(probe.latest.childTasks.map((t) => t.id)).toEqual(["c1"]);
 });
 
-test("サイクル A→B→A 下でも descendantTasks は有限件数を返す（例外を投げない）", () => {
-  const a = makeTask({ id: "a", children: [fp("b")] });
-  const b = makeTask({
-    id: "b",
-    parent: fp("a"),
-    children: [fp("a")],
-  });
-
-  const probe = renderHook({
-    parentFilePath: fp("a"),
-    allTasks: [a, b],
-    columns: DEFAULT_COLUMNS,
-    doneColumn: "Done",
-  });
-
-  expect(probe.latest.descendantTasks.map((t) => t.id)).toEqual(["b"]);
-});
-
-test("columns / doneColumn のみが変わっても descendantTasks の参照は維持される（useMemo 独立性）", () => {
-  const child = makeTask({ id: "c1", parent: fp("root") });
-  const rootTask = makeTask({ id: "root", children: [fp("c1")] });
-  const allTasks = [rootTask, child];
+/**
+ * 並びは BE の `file_path` 昇順をそのまま維持する。画面の行順は
+ * `SubIssueSection.buildChildRowList` が `parentTask.hierarchy.childFilePaths`
+ * から決めるため、この並び順の契約は表示に影響しない。
+ */
+test("childTasks は projection の並び順（file_path 昇順）を維持する", () => {
+  const c1 = makeTask({ id: "c1", parent: fp("root") });
+  const c2 = makeTask({ id: "c2", parent: fp("root") });
+  const rootTask = makeTask({ id: "root" });
 
   const probe = renderHook({
     parentFilePath: fp("root"),
-    allTasks,
-    columns: [{ name: "Done", order: 0 }],
-    doneColumn: "Done",
+    // allTasks の並びは逆順にしておく。
+    allTasks: [rootTask, c2, c1],
+    projections: new Map([
+      [fp("root"), projection(0, 2, [fp("c1"), fp("c2")])],
+    ]),
   });
 
-  const before = probe.latest.descendantTasks;
+  expect(probe.latest.childTasks.map((t) => t.id)).toEqual(["c1", "c2"]);
+});
+
+test("subIssueCounts は projection の値を返す", () => {
+  const rootTask = makeTask({ id: "root" });
+
+  const probe = renderHook({
+    parentFilePath: fp("root"),
+    allTasks: [rootTask],
+    projections: new Map([[fp("root"), projection(1, 3)]]),
+  });
+
+  expect(probe.latest.subIssueCounts).toEqual({ done: 1, total: 3 });
+});
+
+test("isDone は projection の値を返す", () => {
+  const child = makeTask({ id: "c1", parent: fp("root") });
+  const rootTask = makeTask({ id: "root" });
+
+  const probe = renderHook({
+    parentFilePath: fp("root"),
+    allTasks: [rootTask, child],
+    projections: new Map([
+      [fp("root"), projection(1, 1, [fp("c1")])],
+      [fp("c1"), projection(0, 0, [], true)],
+    ]),
+  });
+
+  expect(probe.latest.isDone(fp("c1"))).toBe(true);
+  expect(probe.latest.isDone(fp("root"))).toBe(false);
+});
+
+test("allTasks 未指定なら childTasks は固定参照の空配列になる", () => {
+  const probe = renderHook({
+    parentFilePath: fp("root"),
+    projections: new Map([[fp("root"), projection(0, 1, [fp("c1")])]]),
+  });
+  const first = probe.latest.childTasks;
 
   probe.rerender({
     parentFilePath: fp("root"),
-    allTasks,
-    columns: [{ name: "Closed", order: 0 }],
-    doneColumn: "Closed",
+    projections: new Map([[fp("root"), projection(0, 2, [fp("c2")])]]),
   });
 
-  expect(probe.latest.descendantTasks).toBe(before);
+  expect(first).toEqual([]);
+  expect(probe.latest.childTasks).toBe(first);
+});
+
+test("projections が空 Map なら 0/0・false になる", () => {
+  const rootTask = makeTask({ id: "root" });
+
+  const probe = renderHook({
+    parentFilePath: fp("root"),
+    allTasks: [rootTask],
+    projections: TaskProjection.emptyMap,
+  });
+
+  expect(probe.latest.subIssueCounts).toEqual({ done: 0, total: 0 });
+  expect(probe.latest.isDone(fp("root"))).toBe(false);
+  expect(probe.latest.childTasks).toEqual([]);
+});
+
+test("childFilePaths に allTasks 未登録の path が混ざっても解決できた分だけ返す", () => {
+  const child = makeTask({ id: "c1", parent: fp("root") });
+  const rootTask = makeTask({ id: "root" });
+
+  const probe = renderHook({
+    parentFilePath: fp("root"),
+    allTasks: [rootTask, child],
+    projections: new Map([
+      [fp("root"), projection(0, 2, [fp("c1"), fp("missing")])],
+    ]),
+  });
+
+  expect(probe.latest.childTasks.map((t) => t.id)).toEqual(["c1"]);
+});
+
+test("同じ入力で再レンダーしても戻り値の参照が変わらない", () => {
+  const child = makeTask({ id: "c1", parent: fp("root") });
+  const rootTask = makeTask({ id: "root" });
+  const allTasks = [rootTask, child];
+  const projections: TaskProjectionMap = new Map([
+    [fp("root"), projection(0, 1, [fp("c1")])],
+  ]);
+  const args = { parentFilePath: fp("root"), allTasks, projections };
+
+  const probe = renderHook(args);
+  const before = {
+    childTasks: probe.latest.childTasks,
+    subIssueCounts: probe.latest.subIssueCounts,
+    isDone: probe.latest.isDone,
+  };
+
+  probe.rerender(args);
+
+  expect(probe.latest.childTasks).toBe(before.childTasks);
+  expect(probe.latest.subIssueCounts).toBe(before.subIssueCounts);
+  expect(probe.latest.isDone).toBe(before.isDone);
 });

@@ -87,6 +87,7 @@ const taskFeature: Task = Task.fromPayload({
 const payload: OpenProjectPayload = {
   tasks: [taskBug, taskFeature],
   columns: ["Todo", "Done"],
+  projections: new Map(),
 };
 
 let container: HTMLDivElement | null = null;

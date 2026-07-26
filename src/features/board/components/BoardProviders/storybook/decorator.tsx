@@ -1,5 +1,6 @@
 import type { Decorator } from "@storybook/react-vite";
 import type { ComponentProps } from "react";
+import { TaskProjection } from "@/domains/task-projection";
 import { BoardProviders } from "..";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */
@@ -26,7 +27,13 @@ export const withBoardProviders =
     const tasks = args.tasks ?? [];
     const allTasks = args.allTasks ?? tasks;
     return (
-      <BoardProviders columns={[]} {...args} tasks={tasks} allTasks={allTasks}>
+      <BoardProviders
+        columns={[]}
+        projections={TaskProjection.emptyMap}
+        {...args}
+        tasks={tasks}
+        allTasks={allTasks}
+      >
         <Story />
       </BoardProviders>
     );

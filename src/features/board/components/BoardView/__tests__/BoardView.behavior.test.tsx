@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { BoardView } from "..";
@@ -67,6 +68,7 @@ const renderBoardView = (options: RenderOptions) => {
   act(() => {
     root?.render(
       <BoardView
+        projections={TaskProjection.emptyMap}
         columns={options.columns}
         filtered={options.filtered ?? []}
         allTasks={options.allTasks ?? options.filtered ?? []}

@@ -3,6 +3,7 @@ import {
   ProjectData as ProjectDataDomain,
   type ProjectData as ProjectDataT,
 } from "@/domains/project-data";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -29,6 +30,7 @@ export type ProjectAction =
       doneColumn?: string;
     }
   | { type: "done-column-refreshed"; doneColumn: string }
+  | { type: "projections-refreshed"; projections: TaskProjectionMap }
   | { type: "card-order-updated"; columnName: string; filePaths: string[] }
   | { type: "reset" };
 
@@ -81,6 +83,10 @@ export const reducer = (
     case "done-column-refreshed":
       return ProjectState.updateData(state, (data) =>
         ProjectDataDomain.refreshDoneColumn(data, action.doneColumn),
+      );
+    case "projections-refreshed":
+      return ProjectState.updateData(state, (data) =>
+        ProjectDataDomain.replaceProjections(data, action.projections),
       );
     case "card-order-updated":
       return ProjectState.updateData(state, (data) =>

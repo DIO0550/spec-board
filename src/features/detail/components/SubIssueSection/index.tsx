@@ -1,19 +1,23 @@
 import { useMemo } from "react";
 import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
-import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { normalizeRefPathForLookup } from "@/domains/task-path";
-import { Task } from "@/types/task";
+import { type SubIssueCounts, TaskProjection } from "@/domains/task-projection";
+import type { Task } from "@/types/task";
 
 type SubIssueSectionProps = {
   /** 親タスク */
   parentTask: Task;
   /** 直接の子タスク一覧（<ul> リスト表示用） */
   childTasks: readonly Task[];
-  /** 全子孫タスク（進捗カウント・進捗バー算出用、再帰展開済） */
-  descendantTasks: readonly Task[];
-  /** 完了として扱うカラム名 */
-  doneColumn: string;
+  /** 全子孫の完了数 / 総数（BE projection 由来） */
+  subIssueCounts: SubIssueCounts;
+  /**
+   * 子タスクの完了判定（BE projection 由来）。
+   * @param filePath - 判定対象 task の filePath
+   * @returns 完了カラムに居れば true
+   */
+  isDone: (filePath: string) => boolean;
   /**
    * 「+ サブIssue 追加」ボタン押下時のコールバック。
    * 親タスクのファイルパスを引数に受け取り、タスク作成フォームを開く想定。
@@ -92,16 +96,14 @@ export const buildChildRowList = (
 export const SubIssueSection = ({
   parentTask,
   childTasks,
-  descendantTasks,
-  doneColumn,
+  subIssueCounts,
+  isDone,
   onAddSubIssue,
   onChildClick,
   brokenChildPaths,
 }: SubIssueSectionProps) => {
-  const { total, done, percentage } = TaskHierarchy.countSubIssueProgress(
-    descendantTasks,
-    doneColumn,
-  );
+  const { done, total } = subIssueCounts;
+  const percentage = TaskProjection.percentage(subIssueCounts);
 
   const rows = useMemo(
     () =>
@@ -160,7 +162,7 @@ export const SubIssueSection = ({
               );
             }
             const child = row.task;
-            const isDone = Task.isDone(child, doneColumn);
+            const childDone = isDone(child.filePath);
             const label = child.title || child.filePath;
             return (
               <li key={child.id}>
@@ -173,9 +175,9 @@ export const SubIssueSection = ({
                 >
                   <span
                     aria-hidden="true"
-                    className={isDone ? "text-green-600" : "text-muted"}
+                    className={childDone ? "text-green-600" : "text-muted"}
                   >
-                    {isDone ? "✓" : "○"}
+                    {childDone ? "✓" : "○"}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{label}</span>
                   <span className="text-xs text-muted">{child.status}</span>

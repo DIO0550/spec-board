@@ -28,6 +28,7 @@ import {
   invalidateProject,
   type ProjectCommandQueue,
 } from "./concurrency";
+import { EMPTY_COLUMNS, EMPTY_TASKS } from "./constants";
 import {
   ProjectColumnActionsContext,
   type ProjectColumnActionsContextValue,
@@ -42,6 +43,7 @@ import {
   type ProjectTaskActionsContextValue,
 } from "./context";
 import { createProjectStore, type ProjectStore } from "./store";
+import { useProjectionSyncEffect } from "./useProjectionSyncEffect";
 import { useTaskWatcherEffects } from "./useTaskWatcherEffects";
 
 export { PROJECT_SWITCHED_MESSAGE } from "./constants";
@@ -139,8 +141,25 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
   }
   const taskDeps = taskDepsRef.current;
 
+  const loadedPath = state.kind === "loaded" ? state.path : null;
+
   useTaskWatcherEffects({
-    loadedPath: state.kind === "loaded" ? state.path : null,
+    loadedPath,
+    getState: store.getState,
+    dispatch: store.dispatch,
+  });
+
+  // tasks の差分更新 / カラム設定変更で stale になった projection を get_tasks で
+  // 再同期する。columns も基準に含める（並び替えでは tasks も doneColumn 文字列も
+  // 変わらないが、BE の末尾カラムフォールバックの結果は変わるため）。
+  useProjectionSyncEffect({
+    loadedPath,
+    // open 失敗による旧 project 復元を「新しい open payload」と誤認しないための識別子。
+    openRequestId: state.kind === "loaded" ? state.data.openRequestId : null,
+    tasks: state.kind === "loaded" ? state.data.tasks : EMPTY_TASKS,
+    columns: state.kind === "loaded" ? state.data.columns : EMPTY_COLUMNS,
+    doneColumn: state.kind === "loaded" ? state.data.doneColumn : undefined,
+    projectCommandQueue: projectCommandQueueRef.current,
     getState: store.getState,
     dispatch: store.dispatch,
   });

@@ -1,3 +1,4 @@
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import { Board } from "@/features/board/components/Board";
 import type { TaskDropHandler } from "@/features/board/components/BoardCardProvider";
 import type { ColumnReorderHandler } from "@/features/board/components/BoardColumnProvider";
@@ -22,6 +23,8 @@ type BoardViewProps = {
   milestonesByName?: MilestonesByName;
   /** 完了カラム名 */
   doneColumn?: string;
+  /** filePath -> projection（BE 集計）。BoardProviders へそのまま渡す。 */
+  projections: TaskProjectionMap;
   /** タスク drop ハンドラ。Provider 側で sync / async を吸収する。 */
   onTaskDrop?: TaskDropHandler;
   /** カラム並び替えハンドラ。Provider 側で sync / async を吸収する。 */
@@ -71,6 +74,7 @@ export const BoardView = ({
   tasksByNormalizedPath,
   milestonesByName,
   doneColumn,
+  projections,
   onTaskDrop,
   onColumnReorder,
   onAddTask,
@@ -88,6 +92,7 @@ export const BoardView = ({
       tasksByNormalizedPath={tasksByNormalizedPath}
       milestonesByName={milestonesByName}
       doneColumn={doneColumn}
+      projections={projections}
       dndDisabled={filterActive}
       onTaskDrop={onTaskDrop}
       onColumnReorder={onColumnReorder}

@@ -9,7 +9,11 @@ import {
 } from "react";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { DEFAULT_DONE_COLUMN } from "@/domains/project-columns";
-import { TaskHierarchy } from "@/domains/task-hierarchy";
+import {
+  type SubIssueCounts,
+  TaskProjection,
+  type TaskProjectionMap,
+} from "@/domains/task-projection";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import type { MilestonesByName } from "../TaskCard";
@@ -44,6 +48,14 @@ export type BoardCardProviderProps = {
   milestonesByName?: MilestonesByName;
   /** 完了カラム名 */
   doneColumn?: string;
+  /**
+   * filePath -> projection（BE 集計）。descendantCount / isDone の source。
+   *
+   * **必須**。optional にすると配線漏れが typecheck を通り、全カードが無言で
+   * `0/0`・`false` に縮退する。値を持たないテスト / Storybook は
+   * `TaskProjection.emptyMap` を明示的に渡す。
+   */
+  projections: TaskProjectionMap;
   /** カード / カラムの DnD を無効化するか */
   dndDisabled?: boolean;
   /** drop 確定時のコールバック。Promise reject や throw は内部で握り、end() を必ず走らせる */
@@ -118,10 +130,17 @@ export type BoardCardApi = {
   doneColumn: string;
   /**
    * filePath を root とする子孫タスクの完了 / 総数を返す。
-   * 子なしのときは固定参照 `EMPTY_COUNT` を返し、子の useMemo が miss しないようにする。
+   * 未登録のときは固定参照 `TaskProjection.empty.subIssueProgress` を返し、
+   * 子の useMemo が miss しないようにする。
    * @param filePath 起点 task の filePath
    */
-  descendantCount: (filePath: string) => { total: number; done: number };
+  descendantCount: (filePath: string) => SubIssueCounts;
+  /**
+   * task 自身が完了カラムに居るか（BE projection 由来）。
+   * カラム名判定の `isDoneColumn` とは別物。
+   * @param filePath 判定対象 task の filePath
+   */
+  isDone: (filePath: string) => boolean;
 
   /**
    * 指定カラムに属する表示用タスクを返す（tasks ベースの status 別 grouping）。
@@ -191,8 +210,6 @@ const boardCardReducer: Reducer<CardDragState, CardDragAction> = (
   }
 };
 
-/** 子なしタスクの descendantCount 用 固定参照。 */
-const EMPTY_COUNT = { total: 0, done: 0 } as const;
 /** 該当 status のタスクなし時の tasksInColumn 用 固定参照。 */
 const EMPTY_TASKS: readonly Task[] = [];
 /** milestonesByName 未指定時の空 Map（参照同一性を保証）。 */
@@ -217,6 +234,7 @@ export const BoardCardProvider = ({
   tasksByNormalizedPath: tasksByNormalizedPathProp,
   milestonesByName,
   doneColumn,
+  projections,
   dndDisabled = false,
   onTaskDrop,
   children,
@@ -238,24 +256,6 @@ export const BoardCardProvider = ({
     () => new Map(allTasks.map((t) => [t.filePath, t])),
     [allTasks],
   );
-
-  const descendantMap = useMemo(() => {
-    const map = new Map<string, { total: number; done: number }>();
-    for (const t of allTasks) {
-      const desc = TaskHierarchy.collectDescendants(allTasks, t.filePath, {
-        lookup: byPathMap,
-      });
-      if (desc.length === 0) {
-        continue;
-      }
-      const progress = TaskHierarchy.countSubIssueProgress(
-        desc,
-        effectiveDoneColumn,
-      );
-      map.set(t.filePath, { total: progress.total, done: progress.done });
-    }
-    return map;
-  }, [allTasks, byPathMap, effectiveDoneColumn]);
 
   const tasksByStatus = useMemo(() => {
     // カラム名 (= task.status) はユーザー入力で任意文字列になり得る。
@@ -337,10 +337,18 @@ export const BoardCardProvider = ({
     [effectiveDoneColumn],
   );
 
+  // 集計は BE (TaskIndex::project_all) が済ませている。ここは lookup のみで、
+  // allTasks の変更ごとに全 task を DFS する O(N x M) を持たない。
   const descendantCount = useCallback(
-    (filePath: string): { total: number; done: number } =>
-      descendantMap.get(filePath) ?? EMPTY_COUNT,
-    [descendantMap],
+    (filePath: string): SubIssueCounts =>
+      TaskProjection.findByFilePath(projections, filePath).subIssueProgress,
+    [projections],
+  );
+
+  const isDone = useCallback(
+    (filePath: string): boolean =>
+      TaskProjection.findByFilePath(projections, filePath).isDone,
+    [projections],
   );
 
   const tasksInColumn = useCallback(
@@ -364,6 +372,7 @@ export const BoardCardProvider = ({
       isDoneColumn,
       doneColumn: effectiveDoneColumn,
       descendantCount,
+      isDone,
       tasksInColumn,
       milestonesByName: safeMilestonesByName,
       tasksByNormalizedPath,
@@ -382,6 +391,7 @@ export const BoardCardProvider = ({
       isDoneColumn,
       effectiveDoneColumn,
       descendantCount,
+      isDone,
       tasksInColumn,
       safeMilestonesByName,
       tasksByNormalizedPath,

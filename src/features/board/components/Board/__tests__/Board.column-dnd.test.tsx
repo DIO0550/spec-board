@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import type { Column as ColumnType } from "@/types/column";
 import type { ColumnReorderHandler } from "../../BoardColumnProvider";
@@ -44,6 +45,7 @@ const renderWithProviders = (options: RenderOptions) => {
   act(() => {
     root?.render(
       <BoardProviders
+        projections={TaskProjection.emptyMap}
         columns={options.columns}
         tasks={[]}
         allTasks={[]}

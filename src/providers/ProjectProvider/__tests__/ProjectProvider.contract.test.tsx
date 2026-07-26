@@ -190,6 +190,7 @@ test("StrictMode 下で mount → remount 後も openProjectByPath が loaded �
         }),
       ],
       columns: ["Todo"],
+      projections: new Map(),
     }),
   );
   const holder: {

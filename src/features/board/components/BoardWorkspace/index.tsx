@@ -5,6 +5,7 @@ import {
   tabNavPanelId,
   tabNavTabId,
 } from "@/components/TabNav";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
@@ -41,6 +42,8 @@ export type BoardWorkspaceProps = {
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
   /** 完了カラム名 */
   doneColumn?: string;
+  /** filePath -> projection（BE 集計）。BoardView へそのまま渡す。 */
+  projections: TaskProjectionMap;
   /** name → マイルストーン定義の Map（カードバッジ用） */
   milestonesByName?: MilestonesByName;
   /** 絞り込み UI に並べるマイルストーン定義 */

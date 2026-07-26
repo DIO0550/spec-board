@@ -1,6 +1,7 @@
 import { act, type ReactNode, StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import {
@@ -75,6 +76,7 @@ const mountProbe = (
   const tree: ReactNode = (
     <StrictMode>
       <BoardCardProvider
+        projections={overrides.projections ?? TaskProjection.emptyMap}
         tasks={overrides.tasks ?? []}
         allTasks={overrides.allTasks ?? []}
         tasksByNormalizedPath={overrides.tasksByNormalizedPath}
@@ -125,6 +127,13 @@ test("milestonesByName 指定時は同一参照を返す", () => {
   expect(probe.latest.milestonesByName).toBe(milestonesByName);
 });
 
+test("doneColumn 省略時は default 'Done' がカラム名判定に使われる", () => {
+  const probe = mountProbe({});
+
+  expect(probe.latest.isDoneColumn("Done")).toBe(true);
+  expect(probe.latest.isDoneColumn("Todo")).toBe(false);
+});
+
 test("isDoneColumn は effective doneColumn と一致するかで判定する", () => {
   const probe = mountProbe({ doneColumn: "完了" });
   expect(probe.latest.isDoneColumn("完了")).toBe(true);
@@ -161,11 +170,49 @@ test("descendantCount は子あり一部 done のとき total と done を返す
   const probe = mountProbe({
     allTasks: [parent, child1, child2],
     doneColumn: "Done",
+    projections: new Map([
+      [
+        "tasks/p.md",
+        {
+          subIssueProgress: { done: 1, total: 2 },
+          isDone: false,
+          childFilePaths: ["tasks/c1.md", "tasks/c2.md"],
+        },
+      ],
+    ]),
   });
   expect(probe.latest.descendantCount("tasks/p.md")).toEqual({
     total: 2,
     done: 1,
   });
+});
+
+test("descendantCount は projection 未登録の filePath で 0/0 の固定参照を返す", () => {
+  const probe = mountProbe({ allTasks: [] });
+
+  const first = probe.latest.descendantCount("tasks/missing.md");
+  const second = probe.latest.descendantCount("tasks/other.md");
+
+  expect(first).toEqual({ done: 0, total: 0 });
+  expect(first).toBe(second);
+});
+
+test("isDone は projection の値を返す", () => {
+  const probe = mountProbe({
+    projections: new Map([
+      [
+        "tasks/a.md",
+        {
+          subIssueProgress: { done: 0, total: 0 },
+          isDone: true,
+          childFilePaths: [],
+        },
+      ],
+    ]),
+  });
+
+  expect(probe.latest.isDone("tasks/a.md")).toBe(true);
+  expect(probe.latest.isDone("tasks/unknown.md")).toBe(false);
 });
 
 test("tasksInColumn は該当 column のタスクを status 別に返す", () => {

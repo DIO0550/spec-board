@@ -49,7 +49,7 @@ const baseValue = (
   hasBrokenLink: false,
   hasParseError: false,
   subIssueCounts: { done: 0, total: 0 },
-  childTasks: [],
+  childRows: [],
   ...overrides,
 });
 

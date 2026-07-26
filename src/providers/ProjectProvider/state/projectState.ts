@@ -107,14 +107,27 @@ export const ProjectState = {
     update: ProjectDataMapper,
   ): ProjectState => {
     if (state.kind === "loaded") {
-      return { ...state, data: update(state.data) };
+      const next = update(state.data);
+      // 派生値が完全に据え置かれたケース（等価 projection の再同期 / 未ヒットの
+      // task-updated / 空カラムの card-order-updated）で新しい state を作らない。
+      // store.dispatch は listener を無条件に通知するため、ここで参照を保たないと
+      // useSyncExternalStore が全ツリーを再レンダーし、ProjectData 側の参照据え置きが
+      // 無意味になる。
+      if (next === state.data) {
+        return state;
+      }
+      return { ...state, data: next };
     }
     if (state.kind === "loading" && state.previousLoaded !== undefined) {
+      const next = update(state.previousLoaded.data);
+      if (next === state.previousLoaded.data) {
+        return state;
+      }
       return {
         ...state,
         previousLoaded: {
           path: state.previousLoaded.path,
-          data: update(state.previousLoaded.data),
+          data: next,
         },
       };
     }

@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { DetailScreen } from "..";
@@ -76,6 +77,7 @@ const buildProps = (
 ): Parameters<typeof DetailScreen>[0] => ({
   task: overrides.task ?? createTask(),
   columns: testColumns,
+  projections: TaskProjection.emptyMap,
   onBack: vi.fn(),
   onTaskUpdate: vi.fn(),
   onDelete: vi.fn(),

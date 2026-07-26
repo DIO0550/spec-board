@@ -2,6 +2,8 @@ import type { ProjectColumnsChange } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { TaskLinks } from "@/domains/task-links";
 import { parentReferencesTaskPath } from "@/domains/task-path";
+import type { TaskProjectionMap } from "@/domains/task-projection";
+import { TaskProjection } from "@/domains/task-projection";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 
@@ -9,6 +11,114 @@ export type ProjectData = {
   tasks: Task[];
   columns: Column[];
   doneColumn?: string;
+  /**
+   * filePath -> projection（BE 集計）。tasks の差分更新に対しては stale になりうる。
+   * `useProjectionSyncEffect` が `get_tasks` 応答で丸ごと差し替える。
+   */
+  projections: TaskProjectionMap;
+  /**
+   * この ProjectData がどの `open_project` 応答に由来するかを表す識別子。
+   * `concurrency.beginOpenRequest()` の採番値をそのまま載せる。
+   *
+   * projection 再同期が「open 直後の fresh な payload」と「open 失敗による
+   * 旧 project の復元」を区別するために使う。path だけでは区別できない
+   * （`openFail` は `previousLoaded` を同じ path のまま `loaded` へ戻すため）。
+   */
+  openRequestId: number;
+};
+
+/**
+ * 新旧 projection map をマージする。
+ *
+ * 参照の据え置きは 4 段（エントリ / map / ProjectData / ProjectState）で行い、
+ * この helper は前 2 段を担う。map を丸ごと差し替えると、map を capture した
+ * `BoardCardProvider` の `useCallback` が毎回新しくなり context 値が変わるため、
+ * 全カードの `useMemo` が miss して board 全体が再レンダーする。
+ *
+ * - 値が等価なエントリは旧オブジェクトの参照を引き継ぐ
+ * - 全エントリが等価かつ件数も同じなら `prev` インスタンスをそのまま返す
+ *
+ * 件数比較を含めるのは、`next` 側がすべて等価でも `prev` にだけ存在する余分な
+ * キーが残るケース（task 削除）を取りこぼさないため。
+ * @param prev - 直前の projection map
+ * @param next - get_tasks が返した新しい projection map
+ * @returns 変化が無ければ `prev` そのもの、あれば未変更エントリが旧参照の新 Map
+ */
+const mergeProjections = (
+  prev: TaskProjectionMap,
+  next: TaskProjectionMap,
+): TaskProjectionMap => {
+  const merged = new Map<string, TaskProjection>();
+  let unchanged = prev.size === next.size;
+  for (const [filePath, projection] of next) {
+    const previous = prev.get(filePath);
+    if (previous !== undefined && TaskProjection.equals(previous, projection)) {
+      merged.set(filePath, previous);
+      continue;
+    }
+    unchanged = false;
+    merged.set(filePath, projection);
+  }
+  if (unchanged) {
+    return prev;
+  }
+  return merged;
+};
+
+/**
+ * 2 つの filePath 配列が同じ並びかを判定する。
+ * @param left - 比較対象
+ * @param right - 比較対象
+ * @returns 要素数と各要素がすべて一致すれば true
+ */
+const sameFilePaths = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean =>
+  left === right ||
+  (left.length === right.length &&
+    left.every((filePath, index) => filePath === right[index]));
+
+/**
+ * 更新後 task を、既存エントリの派生値（子一覧）を保ったまま合成する。
+ *
+ * BE payload の `children` は経路によって空になる。watcher の `handle_upsert` は
+ * `task_from_parsed`（`children: []`）をそのまま emit し、`parent` を変えない
+ * `update_task` も同じ値を返す。そのまま採用すると、親タスクを 1 文字編集した
+ * だけで `<details>` の子リストとサブ Issue 行が消える。
+ *
+ * 単一 task の更新は「その task を親とする子の集合」を変えない。子集合が変わるのは
+ * 他 task の created / parent 変更 / deleted のときで、いずれも
+ * `applyTaskCreated` / `syncParentChildren` / `detachChildFromOldParent` /
+ * `applyTaskDeleted` が親側を patch している。したがって既存値の保持が常に正しい。
+ * BE 側で `overwrite_preserving_derived` が派生値を保持しているのと同じ判断。
+ *
+ * `parentFilePath` は payload 側を採用する（parent の真実源は payload）。
+ * `reverseLinks` は `add_link` / `remove_link` の意味論に踏み込むためここでは触らない。
+ * @param previous - 差し替え前の既存エントリ
+ * @param updated - BE から受け取った更新後 task
+ * @returns 子一覧を保持した合成結果
+ */
+const mergeUpdatedTask = (previous: Task, updated: Task): Task => {
+  if (
+    sameFilePaths(
+      previous.hierarchy.childFilePaths,
+      updated.hierarchy.childFilePaths,
+    )
+  ) {
+    // 子一覧が実質同じなら `updated` をそのまま返す。`moveTask` の確定段は
+    // 「楽観 dispatch した Task が state にそのまま入っている」ことを参照同一性で
+    // 判定するため、ここで無条件に新オブジェクトを作ると外部更新が入ったと誤判定され、
+    // BE 応答（書き込み後の再解析結果）が捨てられる。
+    return updated;
+  }
+  return {
+    ...updated,
+    hierarchy: {
+      ...updated.hierarchy,
+      childFilePaths: previous.hierarchy.childFilePaths,
+    },
+  };
 };
 
 /**
@@ -227,7 +337,9 @@ export const ProjectData = {
     const filePathChanged = originalFilePath !== task.filePath;
 
     const replaced = data.tasks.map((current) =>
-      current.filePath === originalFilePath ? task : current,
+      current.filePath === originalFilePath
+        ? mergeUpdatedTask(current, task)
+        : current,
     );
 
     // 親が同値かつ filePath も不変なら他 task 参照は触らない。
@@ -301,6 +413,28 @@ export const ProjectData = {
     ...data,
     doneColumn,
   }),
+
+  /**
+   * BE から再取得した projection を丸ごと差し替える。
+   * tasks / columns には触れない（tasks の真実源は差分更新経路のまま）。
+   *
+   * 全エントリが等価なら **`data` そのもの**を返す。ここで `{ ...data }` を返すと
+   * `ProjectState.updateData` が新 state を作り、`store.dispatch` が listener を
+   * 無条件に通知して全ツリーが再レンダーする。
+   * @param data - 現在の ProjectData
+   * @param projections - 再取得した projection map
+   * @returns 変化が無ければ `data` そのもの、あれば projection だけ差し替えた新 ProjectData
+   */
+  replaceProjections: (
+    data: ProjectData,
+    projections: TaskProjectionMap,
+  ): ProjectData => {
+    const merged = mergeProjections(data.projections, projections);
+    if (merged === data.projections) {
+      return data;
+    }
+    return { ...data, projections: merged };
+  },
 
   /**
    * 指定カラム内のタスクを filePaths の順序で並べ替える。

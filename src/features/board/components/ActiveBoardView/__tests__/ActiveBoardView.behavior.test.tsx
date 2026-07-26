@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import type { BoardWorkspaceProps } from "@/features/board/components/BoardWorkspace";
 import type { BoardViewMode } from "@/features/board/hooks/useBoardViewMode";
 import type { Column as ColumnType } from "@/types/column";
@@ -53,6 +54,7 @@ const makeWorkspace = (
 ): BoardWorkspaceProps => ({
   columns: [{ name: "Todo", order: 0 }],
   tasks: [],
+  projections: TaskProjection.emptyMap,
   onAddTask: () => {},
   onTaskClick: () => {},
   ...overrides,
@@ -188,6 +190,17 @@ test("board で allTasks(絞り込み前) と filtered(絞り込み後) が別�
       columns: [{ name: "Todo", order: 0 }],
       tasks: [parent, child],
       doneColumn: "Done",
+      // 集計は BE 由来。子 1 件のうち done 1。
+      projections: new Map([
+        [
+          "tasks/p.md",
+          {
+            subIssueProgress: { done: 1, total: 1 },
+            isDone: false,
+            childFilePaths: ["tasks/c.md"],
+          },
+        ],
+      ]),
     }),
   });
   await vi.waitFor(() => {

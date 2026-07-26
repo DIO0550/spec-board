@@ -91,12 +91,14 @@ const seedTaskPayloadB: TaskPayload = {
 const openProjectRawPayload = {
   tasks: [seedTaskPayload],
   columns: ["Todo", "Doing", "Done"],
+  projections: {},
 };
 
 // 同一カラム並び替えを発火させるため Todo に 2 件並べた payload。
 const twoTaskRawPayload = {
   tasks: [seedTaskPayload, seedTaskPayloadB],
   columns: ["Todo", "Doing", "Done"],
+  projections: {},
 };
 
 const getColumnsRawPayload = {
@@ -270,6 +272,8 @@ const makeInvoke =
     const responders: Record<string, Responder> = {
       open_project: () => Promise.resolve(openProjectRawPayload),
       get_columns: () => Promise.resolve(getColumnsRawPayload),
+      // projection 再同期（useProjectionSyncEffect）が tasks 変化のたびに呼ぶ読み取り系。
+      get_tasks: () => Promise.resolve({ tasks: [], projections: {} }),
       // App が loaded 時に useMilestones から呼ぶ読み取り系。空レジストリを返す。
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),

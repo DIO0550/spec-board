@@ -6,6 +6,8 @@ import { ReorderSnapshot } from "../reorderColumns";
 const dataOf = (columns: readonly Column[]): ProjectData => ({
   tasks: [],
   columns: [...columns],
+  projections: new Map(),
+  openRequestId: 0,
 });
 
 const cols = (...names: readonly string[]): readonly Column[] =>
@@ -44,6 +46,8 @@ test("from: data.columns が逆順でも表示順 [A,B,C] に sort してから�
       { name: "B", order: 1 },
       { name: "A", order: 0 },
     ],
+    projections: new Map(),
+    openRequestId: 0,
   };
   const snapshot = ReorderSnapshot.from(data, "A", "C");
   expect(snapshot.afterColumns.map((c) => c.name)).toEqual(["B", "C", "A"]);
@@ -60,6 +64,8 @@ test("from: order に gap がある [A(0), B(5), C(10)] でも from='A', to='C' 
       { name: "B", order: 5 },
       { name: "C", order: 10 },
     ],
+    projections: new Map(),
+    openRequestId: 0,
   };
   const snapshot = ReorderSnapshot.from(data, "A", "C");
   expect(snapshot.afterColumns).toEqual([
@@ -137,6 +143,8 @@ test("toCommandBuilder: current 引数を見ず snapshot.afterColumns を返す"
       { name: "X", order: 0 },
       { name: "Y", order: 1 },
     ],
+    projections: new Map(),
+    openRequestId: 0,
   };
   expect(builder(unrelatedCurrent)).toEqual({
     columns: snapshot.afterColumns,

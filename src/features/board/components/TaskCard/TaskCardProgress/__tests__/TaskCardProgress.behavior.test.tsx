@@ -50,7 +50,7 @@ const baseValue = (
   hasBrokenLink: false,
   hasParseError: false,
   subIssueCounts: { done: 0, total: 0 },
-  childTasks: [],
+  childRows: [],
   ...overrides,
 });
 
@@ -60,7 +60,7 @@ const renderWithValue = (value: TaskCardContextValue, children: ReactNode) => {
   });
 };
 
-test("childTasks 未指定 / Provider が total=0 → SubIssueProgress 自体は null", () => {
+test("Provider の total=0 なら SubIssueProgress 自体は null", () => {
   renderWithValue(
     baseValue({ subIssueCounts: { done: 0, total: 0 } }),
     createElement(TaskCardProgress),
@@ -72,7 +72,7 @@ test("Provider の subIssueCounts={done:1,total:3} で進捗バーが 33% 表示
   renderWithValue(
     baseValue({
       subIssueCounts: { done: 1, total: 3 },
-      childTasks: [createTask({ id: "c1" })],
+      childRows: [{ key: "c1", label: "子1", isDone: false }],
     }),
     createElement(TaskCardProgress),
   );
@@ -80,30 +80,30 @@ test("Provider の subIssueCounts={done:1,total:3} で進捗バーが 33% 表示
   expect(bar?.getAttribute("aria-valuenow")).toBe("33");
 });
 
-test("props.childTasks override 時は done/total も再集計（Provider の subIssueCounts は使わない）", () => {
-  const overrideChildren = [
-    createTask({ id: "c1", status: "Done" }),
-    createTask({ id: "c2", status: "Todo" }),
-  ];
+test("Provider の projection をそのまま流し、FE 側で再集計しない", () => {
+  // override 経路は廃止済み。context の subIssueCounts が唯一の真実源であることを固定する。
   renderWithValue(
     baseValue({
-      subIssueCounts: { done: 99, total: 99 },
-      childTasks: [],
+      subIssueCounts: { done: 1, total: 2 },
+      childRows: [
+        { key: "c1", label: "子1", isDone: true },
+        { key: "c2", label: "子2", isDone: false },
+        { key: "c3", label: "子3", isDone: false },
+      ],
     }),
-    <TaskCardProgress childTasks={overrideChildren} />,
+    createElement(TaskCardProgress),
   );
   const bar = container?.querySelector("[role='progressbar']");
+  // childRows は 3 件だが counts は 1/2 なので 50%。行数から再集計していない証拠。
   expect(bar?.getAttribute("aria-valuenow")).toBe("50");
+  expect(container?.querySelectorAll("details ul li").length).toBe(3);
 });
 
-test("props.childTasks 未指定なら Provider の subIssueCounts={done:2,total:4} がそのまま反映される", () => {
-  // override 経路を踏まないことは aria-valuenow=50% (=2/4) で観察可能。
-  // Provider の {done:2,total:4} を再計算なしに使えば 50% になる。再計算が起きると
-  // Provider 値（done:2,total:4）でなく override 計算結果が出るため値が変わる。
+test("Provider の subIssueCounts={done:2,total:4} がそのまま反映される", () => {
   renderWithValue(
     baseValue({
       subIssueCounts: { done: 2, total: 4 },
-      childTasks: [createTask({ id: "c1" })],
+      childRows: [{ key: "c1", label: "子1", isDone: false }],
     }),
     createElement(TaskCardProgress),
   );

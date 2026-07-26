@@ -20,6 +20,8 @@ test("applyTaskCreated は task を追加し parent task の children を同期�
   const data: ProjectDataT = {
     tasks: [parent],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskCreated(data, child);
@@ -45,6 +47,8 @@ test("applyTaskCreated は parent children を二重追加しない", () => {
   const data: ProjectDataT = {
     tasks: [parent],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskCreated(data, child);
@@ -65,6 +69,8 @@ test("applyTaskUpdated は originalFilePath に一致する task を差し替え
   const data: ProjectDataT = {
     tasks: [current],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/a.md", updated);
@@ -96,6 +102,8 @@ test("applyTaskUpdated は parent が変わったとき旧親 children から該
   const data: ProjectDataT = {
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -128,6 +136,8 @@ test("applyTaskUpdated は parent が変わったとき新親 children に該当
   const data: ProjectDataT = {
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -154,6 +164,8 @@ test("applyTaskUpdated は parent が新規付与されたとき新親 children 
   const data: ProjectDataT = {
     tasks: [newParent, orphan],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -180,6 +192,8 @@ test("applyTaskUpdated は parent が解除されたとき旧親 children から
   const data: ProjectDataT = {
     tasks: [oldParent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -205,6 +219,8 @@ test("applyTaskUpdated は originalFilePath が存在しないとき parent-sync
   const data: ProjectDataT = {
     tasks: [parent],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(
@@ -246,6 +262,8 @@ test("applyTaskUpdated は rename + reparent で旧親から originalFilePath �
   const data: ProjectDataT = {
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -278,6 +296,8 @@ test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の
   const data: ProjectDataT = {
     tasks: [parent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -307,6 +327,8 @@ test("applyTaskUpdated は parent 変更がなければ他 task 参照を維持�
   const data: ProjectDataT = {
     tasks: [parent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -332,6 +354,8 @@ test("applyTaskDeleted は task を削除し hierarchy と links から参照を
   const data: ProjectDataT = {
     tasks: [parent, child],
     columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.applyTaskDeleted(data, "tasks/c.md");
@@ -352,6 +376,8 @@ test("replaceColumns は status と doneColumn を rename に追従させる", (
     tasks: [task],
     columns: columns("Todo", "Done"),
     doneColumn: "Done",
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.replaceColumns(data, {
@@ -368,6 +394,8 @@ test("replaceColumns は指定された doneColumn を rename 追従より優先
     tasks: [],
     columns: columns("Todo", "Done"),
     doneColumn: "Done",
+    projections: new Map(),
+    openRequestId: 0,
   };
 
   const next = ProjectData.replaceColumns(data, {
@@ -376,4 +404,73 @@ test("replaceColumns は指定された doneColumn を rename 追従より優先
   });
 
   expect(next.doneColumn).toBe("Todo");
+});
+
+// ───────── applyTaskUpdated の childFilePaths 保持 ─────────
+
+test("applyTaskUpdated は children 空の payload でも既存の childFilePaths を保つ", () => {
+  const parent = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+    children: ["tasks/c.md"],
+  });
+  const data: ProjectDataT = {
+    tasks: [parent],
+    columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
+  };
+  // watcher の task-updated / 非 parent の update_task はどちらも children: [] を返す。
+  const updated = makeTask({
+    id: "p",
+    filePath: "tasks/p.md",
+    title: "renamed",
+    children: [],
+  });
+
+  const next = ProjectData.applyTaskUpdated(data, "tasks/p.md", updated);
+
+  const target = next.tasks.find((task) => task.filePath === "tasks/p.md");
+  expect(target?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  expect(target?.title).toBe("renamed");
+});
+
+test("applyTaskUpdated は payload の parentFilePath を採用する", () => {
+  const child = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    parent: "tasks/p1.md",
+  });
+  const p1 = makeTask({
+    id: "p1",
+    filePath: "tasks/p1.md",
+    children: ["tasks/c.md"],
+  });
+  const p2 = makeTask({ id: "p2", filePath: "tasks/p2.md", children: [] });
+  const data: ProjectDataT = {
+    tasks: [child, p1, p2],
+    columns: columns("Todo"),
+    projections: new Map(),
+    openRequestId: 0,
+  };
+  const updated = makeTask({
+    id: "c",
+    filePath: "tasks/c.md",
+    parent: "tasks/p2.md",
+  });
+
+  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+
+  expect(
+    next.tasks.find((task) => task.filePath === "tasks/c.md")?.hierarchy
+      .parentFilePath,
+  ).toBe("tasks/p2.md");
+  expect(
+    next.tasks.find((task) => task.filePath === "tasks/p1.md")?.hierarchy
+      .childFilePaths,
+  ).toEqual([]);
+  expect(
+    next.tasks.find((task) => task.filePath === "tasks/p2.md")?.hierarchy
+      .childFilePaths,
+  ).toEqual(["tasks/c.md"]);
 });

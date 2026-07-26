@@ -40,6 +40,8 @@ const makeData = (): ProjectData => ({
     { name: "C", order: 2 },
   ],
   doneColumn: "C",
+  projections: new Map(),
+  openRequestId: 0,
 });
 
 type Harness = {

@@ -1,6 +1,7 @@
 import { act, Fragment } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { AddColumnButton } from "../../AddColumnButton";
@@ -71,6 +72,7 @@ const renderWithProviders = (options: RenderOptions) => {
   act(() => {
     root?.render(
       <BoardProviders
+        projections={TaskProjection.emptyMap}
         columns={options.columns}
         tasks={tasks}
         allTasks={allTasks}
@@ -323,6 +325,7 @@ test("任意 ReactNode の children を素通しで描画する（型制約な�
   act(() => {
     root?.render(
       <BoardProviders
+        projections={TaskProjection.emptyMap}
         columns={[
           { name: "Todo", order: 0 },
           { name: "Frag", order: 1 },

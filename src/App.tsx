@@ -3,6 +3,10 @@ import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { LabelRegistry } from "@/domains/label-registry";
 import { Milestone } from "@/domains/milestone";
+import {
+  TaskProjection,
+  type TaskProjectionMap,
+} from "@/domains/task-projection";
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
@@ -52,6 +56,7 @@ type DisplayableData = {
   readonly tasks: Task[];
   readonly columns: Column[];
   readonly doneColumn?: string;
+  readonly projections: TaskProjectionMap;
 };
 
 /**
@@ -105,6 +110,17 @@ const tasksOf = (state: ProjectState): Task[] =>
  */
 const columnsOf = (state: ProjectState): Column[] =>
   displayableDataOf(state)?.columns ?? [];
+
+/**
+ * 表示用 projection map を返す。
+ *
+ * 未 loaded 時は固定参照の空 Map を返す（毎 render 新しい Map を作ると
+ * BoardCardProvider の useCallback 依存が壊れて全カードが再レンダーするため）。
+ * @param state useProject の現在 state
+ * @returns filePath -> projection の Map
+ */
+const projectionsOf = (state: ProjectState): TaskProjectionMap =>
+  displayableDataOf(state)?.projections ?? TaskProjection.emptyMap;
 
 /**
  * 表示用 doneColumn を返す。
@@ -235,6 +251,7 @@ const AppShell = () => {
   const tasks = tasksOf(state);
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
+  const projections = projectionsOf(state);
   const tasksByNormalizedPath = useMemo(
     () => buildTasksByNormalizedPath(tasks),
     [tasks],
@@ -925,6 +942,7 @@ const AppShell = () => {
           tasks={tasks}
           tasksByNormalizedPath={tasksByNormalizedPath}
           doneColumn={doneColumn}
+          projections={projections}
           milestonesByName={milestonesResource.byName}
           milestones={milestonesResource.milestones}
           onAddTask={handleAddTask}
@@ -1015,7 +1033,7 @@ const AppShell = () => {
                   columns={columns}
                   allTasks={tasks}
                   tasksByNormalizedPath={tasksByNormalizedPath}
-                  doneColumn={doneColumn}
+                  projections={projections}
                   // 作成は全画面 create ビューへ分離され detail と共存しないため、
                   // detail に重なる上位モーダルは存在しない（旧 createModal 派生を廃止）。
                   // createModal が stale でも detail の Esc 戻るが抑止されない。

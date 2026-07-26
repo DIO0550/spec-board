@@ -11,7 +11,9 @@ import {
 } from "react";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import { useBoardCard } from "@/features/board/components/BoardCardProvider";
+import { useStableTaskList } from "@/features/board/hooks/useStableTaskList";
 import type { Task } from "@/types/task";
+import type { SubIssueRow } from "../../SubIssueProgress";
 import { TaskCardContext, type TaskCardContextValue } from "../TaskCardContext";
 
 /** 子なしタスク用に固定参照を返す空配列。 */
@@ -70,6 +72,29 @@ export const TaskCardRoot = ({
 
   const subIssueCounts = card.descendantCount(task.filePath);
 
+  // Column は childTasks を render ごとに新配列で作る（memo 化されていない）。
+  // 内容が同じなら前回の配列参照を返して、下流の memo が毎 render 落ちるのを防ぐ。
+  const stableChildTasks = useStableTaskList(effectiveChildTasks);
+
+  // 子行の完了状態を primitive に畳んだ signature。projection map の差し替えで
+  // card.isDone の関数参照は変わるが、このカードの子行の見た目が変わらない限り
+  // signature は同じ文字列になるため、childRows / contextValue の memo が保たれる。
+  const childDoneSignature = stableChildTasks
+    .map((child) => (card.isDone(child.filePath) ? "1" : "0"))
+    .join("");
+
+  const childRows = useMemo<readonly SubIssueRow[]>(
+    () =>
+      stableChildTasks.map((child, index) => ({
+        key: child.id,
+        label: child.title || child.filePath,
+        isDone: childDoneSignature[index] === "1",
+      })),
+    // card.isDone（map capture 関数）を依存に入れると 1 エントリの変化で全カードが
+    // 再計算されるため、primitive に畳んだ signature だけを依存にする。
+    [stableChildTasks, childDoneSignature],
+  );
+
   const contextValue = useMemo<TaskCardContextValue>(
     () => ({
       task,
@@ -78,7 +103,7 @@ export const TaskCardRoot = ({
       hasBrokenLink,
       hasParseError,
       subIssueCounts,
-      childTasks: effectiveChildTasks,
+      childRows,
     }),
     [
       task,
@@ -87,7 +112,7 @@ export const TaskCardRoot = ({
       hasBrokenLink,
       hasParseError,
       subIssueCounts,
-      effectiveChildTasks,
+      childRows,
     ],
   );
 

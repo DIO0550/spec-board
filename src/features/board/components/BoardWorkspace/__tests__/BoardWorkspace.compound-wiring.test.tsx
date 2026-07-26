@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskProjection } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { BoardWorkspace } from "..";
@@ -60,6 +61,7 @@ const renderWorkspace = (options: RenderOptions) => {
   act(() => {
     root?.render(
       <BoardWorkspace
+        projections={TaskProjection.emptyMap}
         columns={options.columns}
         tasks={options.tasks ?? []}
         onAddTask={options.onAddTask ?? (() => {})}
