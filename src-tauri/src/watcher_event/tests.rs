@@ -830,3 +830,133 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
         "emit payload も parent=None を反映する"
     );
 }
+
+// ───────── projection の cache 鮮度（`Task.children` 非依存の実証） ─────────
+
+fn task_md_with_parent(title: &str, parent: &str) -> String {
+    format!("---\ntitle: {title}\nstatus: Todo\nparent: {parent}\n---\n\nbody\n")
+}
+
+fn cached_children(state: &AppState, file_path: &str) -> Vec<String> {
+    state
+        .tasks_snapshot()
+        .expect("readable")
+        .into_iter()
+        .find(|task| task.file_path == file_path)
+        .unwrap_or_else(|| panic!("cached task {file_path}"))
+        .children
+        .into_iter()
+        .map(|path| path.into_string())
+        .collect()
+}
+
+fn projections(state: &AppState) -> crate::task::projection::TaskProjectionMap {
+    crate::task::get::get_tasks_impl(state)
+        .expect("get_tasks should succeed")
+        .projections
+}
+
+/// watcher 経由で作られた子が親の projection に計上されることを固定する。
+///
+/// `handle_upsert` は親の `children` を更新しないため、projection が
+/// `Task.children` を読む実装に戻すと必ず落ちる。
+#[test]
+fn watcher_created_child_is_counted_in_parent_projection() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let (ctx, _log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    let parent_abs = write_md(dir.path(), "tasks/p.md", &task_md("P"));
+    handle_event(&FsEvent::Created(parent_abs), &ctx).expect("seed parent");
+    let child_abs = write_md(
+        dir.path(),
+        "tasks/c.md",
+        &task_md_with_parent("C", "tasks/p.md"),
+    );
+
+    handle_event(&FsEvent::Created(child_abs), &ctx).expect("handler should succeed");
+
+    assert!(
+        cached_children(&state, "tasks/p.md").is_empty(),
+        "handle_upsert は親の children を更新しない（この前提が変わったらテストを見直す）"
+    );
+    let map = projections(&state);
+    assert_eq!(map["tasks/p.md"].sub_issue_progress.total, 1);
+    assert_eq!(map["tasks/p.md"].sub_issue_progress.done, 0);
+    assert_eq!(
+        map["tasks/p.md"]
+            .child_file_paths
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["tasks/c.md"]
+    );
+}
+
+/// watcher 経由の reparent で新旧の親 projection が入れ替わることを固定する。
+#[test]
+fn watcher_reparent_moves_child_between_projections() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let (ctx, _log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    for parent in ["tasks/p1.md", "tasks/p2.md"] {
+        let abs = write_md(dir.path(), parent, &task_md("P"));
+        handle_event(&FsEvent::Created(abs), &ctx).expect("seed parent");
+    }
+    let child_abs = write_md(
+        dir.path(),
+        "tasks/c.md",
+        &task_md_with_parent("C", "tasks/p1.md"),
+    );
+    handle_event(&FsEvent::Created(child_abs.clone()), &ctx).expect("seed child");
+
+    write_md(
+        dir.path(),
+        "tasks/c.md",
+        &task_md_with_parent("C", "tasks/p2.md"),
+    );
+    handle_event(&FsEvent::Modified(child_abs), &ctx).expect("handler should succeed");
+
+    let map = projections(&state);
+    assert_eq!(map["tasks/p1.md"].sub_issue_progress.total, 0);
+    assert!(map["tasks/p1.md"].child_file_paths.is_empty());
+    assert_eq!(map["tasks/p2.md"].sub_issue_progress.total, 1);
+    assert_eq!(
+        map["tasks/p2.md"]
+            .child_file_paths
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["tasks/c.md"]
+    );
+}
+
+/// watcher 経由で新規に作られた parent 循環でも `get_tasks_impl` が有限停止する。
+///
+/// `preserve_parent_cycle_state` は「既に cycle member だった task」の状態を維持する
+/// だけで新規循環は検出しないため、cache には循環が残ったままになる。projection の
+/// visited による打ち切りが到達可能な機能であることの実証。
+#[test]
+fn watcher_introduced_parent_cycle_terminates() {
+    let dir = TempDir::new().expect("tempdir");
+    let state = Arc::new(AppState::new());
+    let (ctx, _log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    let a_abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_parent("A", "tasks/b.md"),
+    );
+    handle_event(&FsEvent::Created(a_abs), &ctx).expect("seed a");
+    let b_abs = write_md(dir.path(), "tasks/b.md", &task_md("B"));
+    handle_event(&FsEvent::Created(b_abs.clone()), &ctx).expect("seed b");
+
+    write_md(
+        dir.path(),
+        "tasks/b.md",
+        &task_md_with_parent("B", "tasks/a.md"),
+    );
+    handle_event(&FsEvent::Modified(b_abs), &ctx).expect("handler should succeed");
+
+    let map = projections(&state);
+    assert_eq!(map["tasks/a.md"].sub_issue_progress.total, 1);
+    assert_eq!(map["tasks/b.md"].sub_issue_progress.total, 1);
+}

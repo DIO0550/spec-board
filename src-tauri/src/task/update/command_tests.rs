@@ -773,3 +773,53 @@ fn update_body_on_cycle_task_preserves_parent_cycle_warning() {
         .iter()
         .any(|w| w.code == TaskWarningCode::ParentCycle));
 }
+
+// ───────── projection の cache 鮮度（`Task.children` 非依存の実証） ─────────
+
+/// parent を変えない `update_task`（`needs_full_rebuild == false` 経路）を通しても
+/// 親の projection が保たれることを固定する。
+///
+/// `commit_cache` はこの経路で対象 task の `children` を空で上書きする。projection が
+/// `Task.children` を読む実装に戻すと total が 0 になって落ちる。
+#[test]
+fn non_parent_update_keeps_parent_projection_counts() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/p.md",
+        "---\ntitle: P\nstatus: Todo\n---\nbody\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/c1.md",
+        "---\ntitle: C1\nstatus: Todo\nparent: tasks/p.md\n---\nbody\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/c2.md",
+        "---\ntitle: C2\nstatus: Todo\nparent: tasks/p.md\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_for("tasks/p.md");
+    args.title = Some("Renamed".into());
+    update_task_impl(&state, &FsTaskIo, args).expect("ok");
+
+    let cached_parent = state
+        .tasks_snapshot()
+        .expect("readable")
+        .into_iter()
+        .find(|task| task.file_path == "tasks/p.md")
+        .expect("cached parent");
+    assert!(
+        cached_parent.children.is_empty(),
+        "非 parent 変更の commit_cache は children を空で上書きする（前提が変わったら見直す）"
+    );
+
+    let payload = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
+    assert_eq!(
+        payload.projections["tasks/p.md"].sub_issue_progress.total,
+        2
+    );
+}
