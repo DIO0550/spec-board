@@ -15,6 +15,8 @@
     "tauri": "tauri",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
+    "visual:capture": "node ./scripts/storybook-visual-regression.mjs capture",
+    "visual:compare": "node ./scripts/storybook-visual-regression.mjs compare",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "release:tag": "scripts/create-release-tag.sh"
@@ -40,11 +42,17 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.4",
     "happy-dom": "^20.8.9",
+    "odiff-bin": "4.5.0",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^0.20.0",
     "storybook": "^10.3.5",
     "typescript": "~5.8.3",
     "vite": "^8.0.5",
     "vitest": "^4.1.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "odiff-bin"
+    ]
   }
 }

@@ -17,7 +17,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -35,6 +35,9 @@ jobs:
 
       - name: Build Storybook
         run: pnpm build-storybook
+
+      - name: Capture visual baseline
+        run: pnpm visual:capture -- --storybook-dir storybook-static --out visual-baseline
 
       - name: Deploy to gh-pages (root)
         env:
@@ -61,9 +64,11 @@ jobs:
 
             cd /tmp/gh-pages
 
-            # pr-preview/ 以外を全削除してから main の成果物を配置
-            find . -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name .git -exec rm -rf {} +
+            # pr-preview/ と visual-regression/ 以外を全削除してから main の成果物を配置
+            find . -mindepth 1 -maxdepth 1 ! -name pr-preview ! -name visual-regression ! -name .git -exec rm -rf {} +
             cp -r "$GITHUB_WORKSPACE/$OUTPUT_DIR/." .
+            rm -rf visual-baseline
+            cp -r "$GITHUB_WORKSPACE/visual-baseline" visual-baseline
             touch .nojekyll
 
             git add -A

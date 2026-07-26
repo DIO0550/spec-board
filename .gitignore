@@ -195,4 +195,7 @@ plugin-workspace/
 
 # Storybook
 storybook-static/
+visual-actual/
+visual-baseline/
+visual-report/
 .codex/skills
