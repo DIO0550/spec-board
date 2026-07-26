@@ -1,7 +1,7 @@
 {
-  "reportVersion": "06554f51c8276c53ae8e7e53d2b742d47b7a3d2b",
+  "reportVersion": "7498baaf2ad506d64dbb56ac18261f252312d059",
   "maxDiffRatio": 0.002,
-  "failed": 16,
+  "failed": 3,
   "results": [
     {
       "story": "components-button--default",
@@ -524,12 +524,12 @@
       "id": "features-board-components-board--default",
       "title": "features/board/components/Board",
       "name": "Default",
-      "status": "changed",
-      "diffPixels": 3111,
-      "diffRatio": 0.0034000000000000002,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-board--empty",
@@ -548,24 +548,24 @@
       "id": "features-board-components-board--single-column",
       "title": "features/board/components/Board",
       "name": "Single Column",
-      "status": "changed",
-      "diffPixels": 3111,
-      "diffRatio": 0.0034000000000000002,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-column--default",
       "id": "features-board-components-column--default",
       "title": "features/board/components/Column",
       "name": "Default",
-      "status": "changed",
-      "diffPixels": 6557,
-      "diffRatio": 0.0070999999999999995,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-column--empty",
@@ -596,12 +596,12 @@
       "id": "features-board-components-column--without-menu",
       "title": "features/board/components/Column",
       "name": "Without Menu",
-      "status": "changed",
-      "diffPixels": 6551,
-      "diffRatio": 0.0070999999999999995,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-columncontextmenu--default",
@@ -681,8 +681,8 @@
       "title": "features/board/components/HeaderBar",
       "name": "Board View",
       "status": "changed",
-      "diffPixels": 3410,
-      "diffRatio": 0.0037,
+      "diffPixels": 4082,
+      "diffRatio": 0.0044,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -693,8 +693,8 @@
       "title": "features/board/components/HeaderBar",
       "name": "Settings View",
       "status": "changed",
-      "diffPixels": 3410,
-      "diffRatio": 0.0037,
+      "diffPixels": 4082,
+      "diffRatio": 0.0044,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -705,8 +705,8 @@
       "title": "features/board/components/HeaderBar",
       "name": "With Milestone",
       "status": "changed",
-      "diffPixels": 3410,
-      "diffRatio": 0.0037,
+      "diffPixels": 4082,
+      "diffRatio": 0.0044,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -836,36 +836,36 @@
       "id": "features-board-components-taskcard--clickable",
       "title": "features/board/components/TaskCard",
       "name": "Clickable",
-      "status": "changed",
-      "diffPixels": 2361,
-      "diffRatio": 0.0026,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--compound-full",
       "id": "features-board-components-taskcard--compound-full",
       "title": "features/board/components/TaskCard",
       "name": "Compound Full",
-      "status": "changed",
-      "diffPixels": 2611,
-      "diffRatio": 0.0028000000000000004,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--default",
       "id": "features-board-components-taskcard--default",
       "title": "features/board/components/TaskCard",
       "name": "Default",
-      "status": "changed",
-      "diffPixels": 2361,
-      "diffRatio": 0.0026,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--footer-only",
@@ -873,11 +873,11 @@
       "title": "features/board/components/TaskCard",
       "name": "Footer Only",
       "status": "passed",
-      "diffPixels": 331,
-      "diffRatio": 0.0004,
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--header-only",
@@ -896,12 +896,12 @@
       "id": "features-board-components-taskcard--high-priority",
       "title": "features/board/components/TaskCard",
       "name": "High Priority",
-      "status": "changed",
-      "diffPixels": 2151,
-      "diffRatio": 0.0023,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--labels-only",
@@ -933,11 +933,11 @@
       "title": "features/board/components/TaskCard",
       "name": "Minimal",
       "status": "passed",
-      "diffPixels": 1253,
-      "diffRatio": 0.0014000000000000002,
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--progress-only",
@@ -945,11 +945,11 @@
       "title": "features/board/components/TaskCard",
       "name": "Progress Only",
       "status": "passed",
-      "diffPixels": 178,
-      "diffRatio": 0.0002,
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--reordered-footer-first",
@@ -957,71 +957,71 @@
       "title": "features/board/components/TaskCard",
       "name": "Reordered Footer First",
       "status": "passed",
-      "diffPixels": 47,
-      "diffRatio": 0.0001,
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--with-broken-link",
       "id": "features-board-components-taskcard--with-broken-link",
       "title": "features/board/components/TaskCard",
       "name": "With Broken Link",
-      "status": "changed",
-      "diffPixels": 2403,
-      "diffRatio": 0.0026,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--with-children",
       "id": "features-board-components-taskcard--with-children",
       "title": "features/board/components/TaskCard",
       "name": "With Children",
-      "status": "changed",
-      "diffPixels": 2361,
-      "diffRatio": 0.0026,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--with-descendants-beyond-direct-children",
       "id": "features-board-components-taskcard--with-descendants-beyond-direct-children",
       "title": "features/board/components/TaskCard",
       "name": "With Descendants Beyond Direct Children",
-      "status": "changed",
-      "diffPixels": 2361,
-      "diffRatio": 0.0026,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--with-labels",
       "id": "features-board-components-taskcard--with-labels",
       "title": "features/board/components/TaskCard",
       "name": "With Labels",
-      "status": "changed",
-      "diffPixels": 2833,
-      "diffRatio": 0.0031,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard--with-milestone-and-labels",
       "id": "features-board-components-taskcard--with-milestone-and-labels",
       "title": "features/board/components/TaskCard",
       "name": "With Milestone And Labels",
-      "status": "changed",
-      "diffPixels": 2611,
-      "diffRatio": 0.0028000000000000004,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-linkssection--navigation-disabled",
