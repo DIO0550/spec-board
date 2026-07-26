@@ -1,9 +1,19 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { ThemeProvider } from "@/features/shell";
 import { HeaderBar } from ".";
 
 const meta: Meta<typeof HeaderBar> = {
   component: HeaderBar,
+  // HeaderBar は ThemeToggleButton 経由で useTheme を呼ぶため、Provider が無いと
+  // Storybook のエラー画面になる。
+  decorators: [
+    (Story) => (
+      <ThemeProvider>
+        <Story />
+      </ThemeProvider>
+    ),
+  ],
   parameters: {
     layout: "fullscreen",
   },
