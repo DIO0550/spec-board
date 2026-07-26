@@ -1,7 +1,12 @@
 // @jsdoc-rules-disable
+
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactElement } from "react";
-import { initialColumns, initialTasks } from "@/test-fixtures";
+import {
+  buildProjectionsFixture,
+  initialColumns,
+  initialTasks,
+} from "@/test-fixtures";
 import type { Column as ColumnType } from "@/types/column";
 import { withBoardProviders } from "../BoardProviders/storybook/decorator";
 import { Board } from ".";
@@ -38,6 +43,8 @@ const meta: Meta<typeof Board> = {
       tasks: initialTasks,
       allTasks: initialTasks,
       doneColumn: "Done",
+      // 集計は BE 由来なので、fixture 側で同じ契約の projection を組んで渡す。
+      projections: buildProjectionsFixture(initialTasks, "Done"),
     }),
   ],
 };
@@ -57,6 +64,7 @@ export const Empty: Story = {
       tasks: [],
       allTasks: [],
       doneColumn: "Done",
+      projections: buildProjectionsFixture([], "Done"),
     }),
   ],
   render: () => renderBoard(initialColumns),
@@ -72,6 +80,7 @@ export const SingleColumn: Story = {
       tasks: singleColumnTasks,
       allTasks: initialTasks,
       doneColumn: "Done",
+      projections: buildProjectionsFixture(initialTasks, "Done"),
     }),
   ],
   render: () => renderBoard(singleTodoColumn),

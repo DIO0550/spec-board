@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { initialTasks } from "@/test-fixtures";
+import { buildProjectionsFixture, initialTasks } from "@/test-fixtures";
 import type { Task } from "@/types/task";
 import { withBoardCardProvider } from "../BoardCardProvider/storybook/decorator";
 import { TaskCard } from ".";
@@ -16,6 +16,8 @@ const meta: Meta<typeof TaskCard> = {
       allTasks: initialTasks,
       milestonesByName: new Map(),
       doneColumn: "Done",
+      // 集計は BE 由来なので、fixture 側で同じ契約の projection を組んで渡す。
+      projections: buildProjectionsFixture(initialTasks, "Done"),
     }),
   ],
   args: {
