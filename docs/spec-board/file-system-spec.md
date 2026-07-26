@@ -12,7 +12,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | コマンド | 説明 |
 |:---------|:-----|
 | `open_project` | プロジェクトディレクトリを開き、mdファイルを一括読み込みし、`notify` ベースの実 watcher を起動して FE への `task-created` / `task-updated` / `task-deleted` 配信を開始する |
-| `get_tasks` | 現在のプロジェクト内の全タスクを取得 |
+| `get_tasks` | 現在のプロジェクト内の全タスクと集計 projection を取得 |
 | `create_task` | 新規タスクのmdファイルを作成 |
 | `update_task` | 既存タスクのmdファイルを更新 |
 | `delete_task` | タスクのmdファイルを削除 |
@@ -68,7 +68,14 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       ]
     }
   ],
-  "columns": ["Todo", "In Progress", "Done"]
+  "columns": ["Todo", "In Progress", "Done"],
+  "projections": {
+    "tasks/fix-bug.md": {
+      "subIssueProgress": { "done": 1, "total": 3 },
+      "isDone": false,
+      "childFilePaths": ["tasks/sub-a.md", "tasks/sub-b.md"]
+    }
+  }
 }
 ```
 
@@ -78,6 +85,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 - `reverseLinks`: このタスクを `links` に含んでいる他タスクのパス一覧（全タスク index 構築後の派生値）
 - `extras`: 定義外フロントマターを JSON 互換値として保持したオブジェクト
 - `warnings`: `title` / `status` の fallback や `parent` / `extras` の型不一致など、Task 生成を継続できる非致命警告の一覧
+- `projections`: filePath をキーにした集計値。詳細は `get_tasks` 節を参照する。初期表示時点でフロントエンドが集計を持てるよう同梱する
 
 フロントエンドでは、この Tauri IPC payload を `TaskPayload` として受け取り、domain model の `Task` に変換して扱う。`Task` では `parent` / `children` は `hierarchy.parentFilePath` / `hierarchy.childFilePaths` に、`links` / `reverseLinks` は `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に格納する。IPC payload と markdown frontmatter のフィールド名は互換性維持のため flat なまま変更しない。
 
@@ -105,7 +113,44 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 **引数**: なし
 
-**戻り値**: `open_project` と同じ `tasks` 配列。`children` と `reverseLinks` の逆引き情報を含む。
+**戻り値**: `{ tasks, projections }`。`tasks` は `open_project` と同じ Task 配列（`id` 昇順。`children` と `reverseLinks` の逆引き情報を含む）で、`projections` は filePath をキーにした集計値のオブジェクト。
+
+> `open_project` の `tasks` はカラム表示順 → `cardOrder` → `id` 順、`get_tasks` の `tasks` は `id` 昇順で、**同じ集合だが並び順は異なる**。
+
+```json
+{
+  "tasks": [ /* ... */ ],
+  "projections": {
+    "tasks/parent.md": {
+      "subIssueProgress": { "done": 1, "total": 3 },
+      "isDone": false,
+      "childFilePaths": ["tasks/child-a.md", "tasks/child-b.md"]
+    }
+  }
+}
+```
+
+**`projections` の各フィールド**:
+
+| フィールド | 説明 |
+|:----------|:-----|
+| `subIssueProgress.total` | 全子孫の件数。root 自身は含まない |
+| `subIssueProgress.done` | 全子孫のうち完了カラムに居る件数 |
+| `isDone` | そのタスク自身が完了カラムに居るか |
+| `childFilePaths` | 直接の子の filePath。`filePath` 昇順 |
+
+**集計規則**:
+
+- 親子関係は各タスクの `parent` から組み直す（payload の `children` には依存しない）
+- 集計対象は**全子孫**で、root 自身は含まない
+- サイクル（A→B→A）・自己参照（A→A）でも有限ステップで停止する
+- 同じ子孫へ複数経路で到達しても 1 度だけ数える
+- `parent` が実在タスクに解決できないタスクは、どのタスクの子にもならない（`childFilePaths` にも現れない）
+- `childFilePaths` の値は親が書いた raw な参照文字列ではなく、**解決先タスク自身の `filePath`**
+- 完了カラムは `doneColumn` 設定値。未設定時は `columns` の `order` 最大（表示上の末尾）カラム。どちらも解決できない場合は `isDone` が常に false・`done` は 0
+- 百分率は payload に含めない（表示層で算出する）
+
+**未オープン時**: `tasks` / `projections` ともに空の payload を成功で返す（エラーにはしない）。
 
 ---
 
