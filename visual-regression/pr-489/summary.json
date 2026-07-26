@@ -1,5 +1,5 @@
 {
-  "reportVersion": "7498baaf2ad506d64dbb56ac18261f252312d059",
+  "reportVersion": "7bbbdcca5536d41f667cc5af2355c0285e7111fd",
   "maxDiffRatio": 0.002,
   "failed": 3,
   "results": [
@@ -681,8 +681,8 @@
       "title": "features/board/components/HeaderBar",
       "name": "Board View",
       "status": "changed",
-      "diffPixels": 4082,
-      "diffRatio": 0.0044,
+      "diffPixels": 3998,
+      "diffRatio": 0.0043,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -693,8 +693,8 @@
       "title": "features/board/components/HeaderBar",
       "name": "Settings View",
       "status": "changed",
-      "diffPixels": 4082,
-      "diffRatio": 0.0044,
+      "diffPixels": 3998,
+      "diffRatio": 0.0043,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -705,8 +705,8 @@
       "title": "features/board/components/HeaderBar",
       "name": "With Milestone",
       "status": "changed",
-      "diffPixels": 4082,
-      "diffRatio": 0.0044,
+      "diffPixels": 3998,
+      "diffRatio": 0.0043,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
