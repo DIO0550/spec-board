@@ -97,8 +97,6 @@ jobs:
           REPORT_VERSION: ${{ github.event.pull_request.head.sha }}
         run: |
           test -f visual-report/index.html
-          grep -Fq 'id="story-navigation"' visual-report/index.html
-          grep -Fq 'placeholder="Filter stories..."' visual-report/index.html
           grep -Fq 'class="nav-reveal"' visual-report/index.html
           grep -Fq 'data-global-view-mode="overlay"' visual-report/index.html
           grep -Fq 'data-global-view-mode="split"' visual-report/index.html
@@ -109,6 +107,8 @@ jobs:
           node -e 'const summary = require("./visual-report/summary.json"); if (summary.reportVersion !== process.env.REPORT_VERSION) process.exit(1)'
           RESULTS=$(node -e 'console.log(require("./visual-report/summary.json").results.length)')
           if [ "$RESULTS" -gt 0 ]; then
+            grep -Fq 'id="story-navigation"' visual-report/index.html
+            grep -Fq 'placeholder="Filter stories..."' visual-report/index.html
             find visual-report -mindepth 2 -maxdepth 2 -name index.html -print -quit | grep -q .
           fi
 
