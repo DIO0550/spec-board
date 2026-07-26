@@ -1,0 +1,275 @@
+name: Storybook Visual Regression
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  pages: write
+
+concurrency:
+  group: storybook-visual-regression-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  visual-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        if: github.event.action != 'closed'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        if: github.event.action != 'closed'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        if: github.event.action != 'closed'
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify odiff binary
+        if: github.event.action != 'closed'
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync, rmSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import { join } from "node:path";
+          import { ODiffServer } from "odiff-bin";
+
+          const fixture = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+          const root = join(tmpdir(), `odiff-smoke-${process.pid}`);
+          const expected = `${root}-expected.png`;
+          const actual = `${root}-actual.png`;
+          const diff = `${root}-diff.png`;
+          writeFileSync(expected, fixture);
+          writeFileSync(actual, fixture);
+          const server = new ODiffServer();
+          try {
+            const result = await server.compare(expected, actual, diff, { timeout: 30_000 });
+            if (!result.match) throw new Error(`odiff smoke comparison failed: ${JSON.stringify(result)}`);
+          } finally {
+            server.stop();
+            for (const path of [expected, actual, diff]) rmSync(path, { force: true });
+          }
+          NODE
+
+      - name: Build Storybook
+        if: github.event.action != 'closed'
+        run: pnpm build-storybook
+
+      - name: Fetch visual baseline
+        if: github.event.action != 'closed'
+        run: |
+          mkdir -p visual-baseline
+          if git fetch origin +gh-pages:refs/remotes/origin/gh-pages 2>/dev/null; then
+            git checkout origin/gh-pages -- visual-baseline 2>/dev/null || true
+          fi
+
+      - name: Capture Storybook screenshots
+        if: github.event.action != 'closed'
+        run: pnpm visual:capture -- --storybook-dir storybook-static --out visual-actual
+
+      - name: Compare screenshots
+        if: github.event.action != 'closed'
+        id: compare
+        continue-on-error: true
+        run: >-
+          pnpm visual:compare --
+          --expected visual-baseline
+          --actual visual-actual
+          --out visual-report
+          --max-diff-ratio 0.002
+          --report-version ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify visual report UI
+        id: verify-report
+        if: always() && github.event.action != 'closed'
+        env:
+          REPORT_VERSION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test -f visual-report/index.html
+          grep -Fq 'id="story-navigation"' visual-report/index.html
+          grep -Fq 'placeholder="Filter stories..."' visual-report/index.html
+          grep -Fq 'class="nav-reveal"' visual-report/index.html
+          grep -Fq 'data-global-view-mode="overlay"' visual-report/index.html
+          grep -Fq 'data-global-view-mode="split"' visual-report/index.html
+          grep -Fq 'data-global-view-mode="slider"' visual-report/index.html
+          grep -Fq 'Visual report UI v7' visual-report/index.html
+          grep -Fq 'grid-template-columns: repeat(2, minmax(0, 1fr))' visual-report/index.html
+          grep -Fq 'mix-blend-mode: difference' visual-report/index.html
+          node -e 'const summary = require("./visual-report/summary.json"); if (summary.reportVersion !== process.env.REPORT_VERSION) process.exit(1)'
+          RESULTS=$(node -e 'console.log(require("./visual-report/summary.json").results.length)')
+          if [ "$RESULTS" -gt 0 ]; then
+            find visual-report -mindepth 2 -maxdepth 2 -name index.html -print -quit | grep -q .
+          fi
+
+      - name: Upload visual report
+        if: always() && github.event.action != 'closed'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: storybook-visual-report
+          path: visual-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Publish visual report to gh-pages
+        id: publish-report
+        if: github.event.action == 'closed' || steps.verify-report.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          CLOSED: ${{ github.event.action == 'closed' }}
+          VISUAL_REPORT_DIR: visual-report
+          REPORT_VERSION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ "$CLOSED" = "true" ]; then ACTION=removed; else ACTION=updated; fi
+
+          success=false
+          pushed=false
+          for attempt in 1 2 3 4 5; do
+            git worktree remove --force /tmp/gh-pages 2>/dev/null || true
+            git branch -D gh-pages 2>/dev/null || true
+
+            if git fetch origin +gh-pages:refs/remotes/origin/gh-pages 2>/dev/null; then
+              git worktree add --detach /tmp/gh-pages origin/gh-pages
+            else
+              git worktree add --detach /tmp/gh-pages
+              git -C /tmp/gh-pages checkout --orphan gh-pages
+              git -C /tmp/gh-pages rm -rf --quiet . || true
+            fi
+
+            cd /tmp/gh-pages
+
+            rm -rf "visual-regression/pr-$PR"
+            if [ "$CLOSED" != "true" ]; then
+              mkdir -p "visual-regression/pr-$PR"
+              cp -r "$GITHUB_WORKSPACE/$VISUAL_REPORT_DIR/." "visual-regression/pr-$PR/"
+              node -e 'const summary = require(`./visual-regression/pr-${process.env.PR}/summary.json`); if (summary.reportVersion !== process.env.REPORT_VERSION) process.exit(1)'
+            fi
+            touch .nojekyll
+
+            git add -A
+            if ! git commit -m "Visual regression report #$PR ($ACTION)"; then
+              echo "no changes"
+              success=true
+              break
+            fi
+
+            if git push origin HEAD:gh-pages; then
+              success=true
+              pushed=true
+              break
+            fi
+            echo "push failed (attempt $attempt), retrying..."
+            cd "$GITHUB_WORKSPACE"
+            sleep $((attempt * 2))
+          done
+          [ "$success" = "true" ]
+
+          if [ "$pushed" = "true" ]; then
+            build_ok=false
+            for attempt in 1 2 3; do
+              if out=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" 2>&1); then
+                build_ok=true
+                break
+              fi
+              echo "$out"
+              if echo "$out" | grep -Eq "HTTP (404|409)"; then
+                echo "Pages build request is unavailable or already in progress; waiting for the public revision instead"
+                build_ok=true
+                break
+              fi
+              echo "Pages build request failed (attempt $attempt), retrying..."
+              sleep $((attempt * 2))
+            done
+            [ "$build_ok" = "true" ]
+
+            if [ "$CLOSED" != "true" ]; then
+              OWNER="${GITHUB_REPOSITORY%%/*}"
+              REPO_NAME="${GITHUB_REPOSITORY#*/}"
+              PUBLIC_SUMMARY="https://${OWNER}.github.io/${REPO_NAME}/visual-regression/pr-${PR}/summary.json?revision=${REPORT_VERSION}"
+              published=false
+              for attempt in $(seq 1 60); do
+                if curl --fail --silent --show-error "$PUBLIC_SUMMARY" -o /tmp/published-visual-summary.json \
+                  && node -e 'const summary = require("/tmp/published-visual-summary.json"); if (summary.reportVersion !== process.env.REPORT_VERSION) process.exit(1)'; then
+                  published=true
+                  break
+                fi
+                echo "Waiting for Pages report revision $REPORT_VERSION (attempt $attempt)..."
+                sleep 5
+              done
+              [ "$published" = "true" ]
+            fi
+          fi
+
+      - name: Comment visual report
+        if: always() && github.event.action != 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify-report.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish-report.outcome }}
+        run: |
+          MARKER="<!-- sticky-comment: storybook-visual-regression -->"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          PREVIEW_URL="https://${OWNER}.github.io/${REPO_NAME}/pr-preview/pr-${PR_NUMBER}/"
+          REPORT_URL="https://${OWNER}.github.io/${REPO_NAME}/visual-regression/pr-${PR_NUMBER}/?revision=${{ github.event.pull_request.head.sha }}"
+          SUMMARY="visual-report/summary.json"
+
+          if [ "$PUBLISH_OUTCOME" != "success" ]; then
+            FAILED="unknown"
+            TOTAL="unknown"
+            STATUS="❌ report publish failed"
+          elif [ -f "$SUMMARY" ]; then
+            FAILED=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).failed)' "$SUMMARY")
+            TOTAL=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).results.length)' "$SUMMARY")
+            STATUS=$([ "$COMPARE_OUTCOME" = "success" ] && echo "✅ pass" || echo "❌ diff detected")
+          else
+            FAILED="unknown"
+            TOTAL="unknown"
+            STATUS="❌ report missing"
+          fi
+
+          BODY_FILE=visual-comment.md
+          {
+            echo "$MARKER"
+            echo "## Storybook visual regression"
+            echo ""
+            echo "Status: ${STATUS}"
+            echo ""
+            echo "- Changed stories over threshold: ${FAILED} / ${TOTAL}"
+            if [ "$PUBLISH_OUTCOME" = "success" ]; then
+              echo "- Rich visual diff report: ${REPORT_URL}"
+            else
+              echo "- Rich visual diff report: not updated (verify: ${VERIFY_OUTCOME}, publish: ${PUBLISH_OUTCOME})"
+            fi
+            echo "- Report artifact: ${RUN_URL}"
+            echo "- Storybook preview: ${PREVIEW_URL}"
+          } > "$BODY_FILE"
+
+          COMMENT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][0].id // empty")
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" --field body=@"$BODY_FILE"
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --field body=@"$BODY_FILE"
+          fi
+
+      - name: Fail on visual differences
+        if: github.event.action != 'closed' && steps.compare.outcome != 'success'
+        run: exit 1
