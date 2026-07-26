@@ -4,6 +4,10 @@ services:
       context: ./node
       dockerfile: Dockerfile
     container_name: spec-board
+    tmpfs:
+      - /var/tmp/codex-sqlite:size=1g
+    environment:
+      CODEX_SQLITE_HOME: /var/tmp/codex-sqlite
     volumes:
       - ..:/workspace:cached
     ports:
