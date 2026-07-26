@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { Task } from "@/types/task";
 
 /**
@@ -13,9 +13,11 @@ import type { Task } from "@/types/task";
  * `Column` 側で memo 化するには per-task の子コンポーネント抽出が必要で、
  * 本 spec と無関係な構造変更になるため、消費側の Root で吸収する。
  *
- * render 中に ref を書き換えるが、これは「同じ入力に対して同じ出力を返す」ための
- * キャッシュであり render を純粋に保つ（同一 render 内で 2 回呼んでも結果は同じ）。
- * `useMemo` では依存に配列参照そのものを置くしかなく目的を果たせない。
+ * キャッシュの更新は render 中ではなく commit 後に行う。concurrent rendering では
+ * 破棄される render がありうるため、render 中に ref を書き換えるとその値が次の
+ * commit へ混入する。render 中は ref を読むだけにし、確定した値を effect で書き戻す。
+ *
+ * `useMemo` では依存に配列参照そのものを置くしかなく、目的を果たせない。
  * @param tasks - 毎 render 新しくなりうる Task 配列
  * @returns 内容が変わらない限り同一の配列参照
  */
@@ -25,8 +27,11 @@ export const useStableTaskList = (tasks: readonly Task[]): readonly Task[] => {
   const same =
     previous.length === tasks.length &&
     previous.every((task, index) => task === tasks[index]);
-  if (!same) {
-    ref.current = tasks;
-  }
-  return ref.current;
+  const stable = same ? previous : tasks;
+
+  useEffect(() => {
+    ref.current = stable;
+  });
+
+  return stable;
 };
