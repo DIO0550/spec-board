@@ -62,6 +62,16 @@ jobs:
           }
           NODE
 
+      # ubuntu-24.04 ランナーには CJK フォントが無く、日本語が豆腐(□)で描画される。
+      # 豆腐は「差分なし」で baseline に焼き付いてしまうため、撮影前に必ず導入する。
+      - name: Install Japanese fonts
+        if: github.event.action != 'closed'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+          fc-list :lang=ja family
+
       - name: Build Storybook
         if: github.event.action != 'closed'
         run: pnpm build-storybook
