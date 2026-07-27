@@ -116,6 +116,51 @@ const openCdp = async (wsUrl) => {
   return { send, close: () => socket.close() };
 };
 
+// ページ内で評価して、日本語グリフが notdef(豆腐)へフォールバックしていないか調べる。
+// 同条件で「あ」「未割り当てコードポイント」「空白」を描き分け、ビットマップを比較する。
+// 未割り当てコードポイントはどのフォントでも必ず notdef になるため、これと一致したら
+// 「あ」も notdef、つまり日本語フォントが解決できていないと判定できる。
+const japaneseGlyphProbe = () => {
+  const draw = (text) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    context.font = "48px sans-serif";
+    context.textBaseline = "top";
+    context.fillText(text, 0, 0);
+    return canvas.toDataURL();
+  };
+  return { japanese: draw("あ"), notdef: draw("\u{10FFFD}"), blank: draw(" ") };
+};
+
+// Chrome は fontconfig 経由でフォントを解決するため、CJK フォントが無い環境では
+// 日本語が豆腐(□)で描画される。豆腐は毎回同じ絵なので比較では差分として現れず、
+// 気づかないまま baseline に焼き付いてしまう。撮影を始める前に落とす。
+const assertJapaneseFontAvailable = async () => {
+  const target = await requestJson(`http://127.0.0.1:9222/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT" });
+  const cdp = await openCdp(target.webSocketDebuggerUrl);
+  try {
+    const { result, exceptionDetails } = await cdp.send("Runtime.evaluate", {
+      expression: `(${japaneseGlyphProbe.toString()})()`,
+      returnByValue: true,
+    });
+    if (exceptionDetails) {
+      throw new Error(`Japanese font probe failed to evaluate: ${exceptionDetails.text ?? "unknown error"}`);
+    }
+    const { japanese, notdef, blank } = result.value;
+    if (japanese === notdef || japanese === blank) {
+      throw new Error(
+        "No Japanese font is available to Chrome; Japanese text would be captured as tofu (□).\n" +
+          "Install a CJK font before capturing, e.g. `apt-get install -y fonts-noto-cjk && fc-cache -f`.",
+      );
+    }
+  } finally {
+    cdp.close();
+    await requestOk(`http://127.0.0.1:9222/json/close/${target.id}`);
+  }
+};
+
 const capture = async (options) => {
   const storybookDir = options["storybook-dir"] ?? "storybook-static";
   const out = options.out ?? "visual-actual";
@@ -175,6 +220,7 @@ const capture = async (options) => {
     if (!version) {
       throw new Error(describeChromeFailure());
     }
+    await assertJapaneseFontAvailable();
     const index = await requestJson(`${origin}/index.json`);
     const stories = Object.values(index.entries ?? {}).filter((entry) => entry.type === "story").sort((a, b) => a.id.localeCompare(b.id));
     writeFileSync(join(out, "stories.json"), JSON.stringify(stories.map(({ id, title, name }) => ({ id, title, name })), null, 2));

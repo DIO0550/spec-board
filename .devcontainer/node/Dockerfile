@@ -10,10 +10,14 @@ ENV LANG=C.UTF-8
 
 # 基本パッケージとNode.jsのインストール
 # Tauri開発に必要なシステムライブラリも併せてインストール
+# fonts-noto-cjk: ubuntu:24.04 には CJK フォントが無く、Storybook や
+# playwright-cli での目視確認で日本語が豆腐(□)になる。
+# CI(storybook-visual-regression.yml)と同じフォントを入れて描画結果を揃える。
 RUN apt-get update \
     && apt-get install -y \
         curl \
         ca-certificates \
+        fonts-noto-cjk \
         gnupg \
         git \
         jq \
