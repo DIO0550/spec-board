@@ -63,9 +63,10 @@ export const envelope = (
 ): WatcherEnvelope => {
   const generation = overrides.generation ?? SESSION_PAYLOAD.generation;
   const eventSeq = overrides.eventSeq ?? SESSION_PAYLOAD.eventSeq + 1;
+  const rawProjectKey = overrides.projectKey ?? SESSION_PAYLOAD.projectKey;
+  const projectKey = rawProjectKey as WatcherEnvelope["projectKey"];
   return {
-    projectKey: (overrides.projectKey ??
-      SESSION_PAYLOAD.projectKey) as WatcherEnvelope["projectKey"],
+    projectKey,
     generation,
     revision: overrides.revision ?? SESSION_PAYLOAD.revision + 1,
     cacheMutating: overrides.cacheMutating ?? true,
