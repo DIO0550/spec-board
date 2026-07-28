@@ -16,6 +16,20 @@
 //! - `write_ignore` は `WriteIgnoreRegistry` 内部で独自の `Mutex` を持つため、
 //!   AppState の他フィールドの lock を保持したまま `write_ignore` API を呼ぶ
 //!   場合は常に最後（最下層）として扱うこと。
+//! - `project_generation` / `tasks_revision` / `event_seq` は `AtomicU64` であり
+//!   **この順序契約に参加しない**。他フィールドの lock を保持したまま読み書き
+//!   してよい（新しい辺を足さないための選択）。
+//!
+//! # atomic の Ordering について
+//!
+//! 3 つの `AtomicU64` には `SeqCst` を使うが、**正しさを担保しているのは
+//! `tasks_cache` の `Mutex` critical section であって ordering ではない**。
+//! revision の bump は cache 更新と同じ critical section 内で行われ、
+//! happens-before は Mutex が与えている。`event_seq` は単一の adapter スレッド
+//! だけが消費する。したがって atomic に要求するのは `fetch_add` の戻り値の
+//! 一意性のみで、`Relaxed` でも正しい。`SeqCst` は「ここに暗黙の順序期待を
+//! 持ち込まない」ことを読み手に示すための選択であり、happens-before を
+//! 足しているわけではない。
 //!
 //! # フィールドカプセル化
 //!
@@ -33,7 +47,8 @@
 //!   不変条件を維持する。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use thiserror::Error;
@@ -41,7 +56,14 @@ use thiserror::Error;
 use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
+use crate::config::column_name::ColumnName;
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
+use crate::state::event_seq::EventSeq;
+use crate::state::project_generation::ProjectGeneration;
+use crate::state::project_key::ProjectKey;
+use crate::state::tasks_revision::TasksRevision;
+use crate::state::watcher_session::WatcherSession;
+use crate::task::parse::default_status_for;
 use crate::task::task_index::Task;
 
 /// `tauri::Builder::manage` に渡すために `'static` を含む trait object 型。
@@ -69,6 +91,12 @@ pub struct AppState {
     tasks_cache: Mutex<HashMap<PathBuf, Task>>,
     watcher_handle: Mutex<Option<BoxedWatcherHandle>>,
     write_ignore: WriteIgnoreRegistry,
+    /// watcher 世代。`open_project` の commit で +1。
+    project_generation: AtomicU64,
+    /// `tasks_cache` の改訂番号。cache を変更する 3 アクセサ内部で +1。
+    tasks_revision: AtomicU64,
+    /// emit 連番。emit 失敗時も消費する（欠番 → FE の gap 検知 → 自動再取得）。
+    event_seq: AtomicU64,
 }
 
 /// ラベル `create` / `update` コマンドが書き込み前に必要とするスナップショット。
@@ -98,21 +126,23 @@ pub struct LabelDeleteContext {
     pub tasks: Vec<Task>,
 }
 
-/// `get_tasks` が projection 生成に必要とするスナップショット。
+/// `get_tasks` が projection 生成と watcher baseline の提示に必要とするスナップショット。
 ///
 /// done column の解決に `config`、集計に `tasks_cache` が要るため、両者を同一の
-/// lock 取得トランザクションで観測した値をまとめて運ぶ。
+/// lock 取得トランザクションで観測した値をまとめて運ぶ。加えて `session` を
+/// 同じトランザクションで確定させる。
 ///
-/// 他の Context 型（`LabelDeleteContext` 等）と異なり `project_root` を持たない。
-/// あちらは snapshot → disk write → 書き戻しの間の project swap を検出する
-/// check-and-set のために path を必要とするが、`get_tasks` は read-only で state へ
-/// 書き戻さないため path 一致検証が不要であり、使わないフィールドを運ばない。
+/// `session` を後から別途読むと「tasks は古いが session は新しい」組が FE に渡り、
+/// FE はその session を baseline にするため、直後に届く**正しい** envelope を
+/// stale として捨てる。cache が古いままの状態から復旧できなくなる。
 #[derive(Debug, Clone)]
-pub struct TasksProjectionContext {
+pub struct ConfigTasksSessionContext {
     /// snapshot 時点の `Config`。未オープン時は `None`。
     pub config: Option<Config>,
     /// snapshot 時点の全タスク。未オープン時は空 Vec。
     pub tasks: Vec<Task>,
+    /// `tasks` と同一トランザクションで確定した watcher session。
+    pub session: WatcherSession,
 }
 
 /// マイルストーン `create` / `update` コマンドが書き込み前に必要とするスナップショット。
@@ -162,6 +192,9 @@ impl AppState {
             tasks_cache: Mutex::new(HashMap::new()),
             watcher_handle: Mutex::new(None),
             write_ignore: WriteIgnoreRegistry::new(),
+            project_generation: AtomicU64::new(0),
+            tasks_revision: AtomicU64::new(0),
+            event_seq: AtomicU64::new(0),
         }
     }
 
@@ -412,46 +445,53 @@ impl AppState {
         }
     }
 
-    /// タスクキャッシュ全体を新しい map で置き換える。
+    /// タスクキャッシュ全体を新しい map で置き換え、置換後の revision を返す。
     ///
     /// 旧エントリは破棄されるため部分更新には使えない。`PathBuf` は呼び出し側
     /// が用意した形（`canonicalize()` 適用有無等）のままで保持する。
-    pub fn replace_tasks_cache(&self, cache: HashMap<PathBuf, Task>) -> Result<(), AppStateError> {
+    pub fn replace_tasks_cache_revision(
+        &self,
+        cache: HashMap<PathBuf, Task>,
+    ) -> Result<TasksRevision, AppStateError> {
         let mut guard = lock(&self.tasks_cache)?;
         *guard = cache;
-        Ok(())
+        Ok(self.bump_tasks_revision())
     }
 
-    /// 現在キャッシュしている `Task` の値を `Vec` として複製して返す。
-    ///
-    /// 呼び出し時点のスナップショットであり、戻り値の順序は不定。
-    /// `config` と `tasks_cache` を**両方の lock を順に同時保持した状態で** snapshot する。
+    /// revision を必要としない呼び出し元向けの薄いラッパ。
+    pub fn replace_tasks_cache(&self, cache: HashMap<PathBuf, Task>) -> Result<(), AppStateError> {
+        self.replace_tasks_cache_revision(cache).map(|_| ())
+    }
+
+    /// `project_path` / `config` / `tasks_cache` を**3 つの lock を順に同時保持した
+    /// 状態で** snapshot し、同じトランザクションで watcher session を確定させる。
     ///
     /// `get_tasks` が projection を作る際、別々に `config()?` → `tasks_snapshot()?` と
     /// 取得すると、その 2 呼び出しの間に割り込んだ書き込みで「新 config + 旧 tasks」を
-    /// 観測する窓が開く。本 API は両 lock を順に同時保持して両フィールドを clone する
+    /// 観測する窓が開く。本 API は lock を順に同時保持して各フィールドを clone する
     /// ことでその窓を閉じる。lock 取得順序は AppState の契約に従って
-    /// `config → tasks_cache` を遵守する（`snapshot_label_delete` と同型）。
-    ///
-    /// 既存 4 つの snapshot accessor（`snapshot_label_write` / `snapshot_label_delete` /
-    /// `snapshot_milestone_write` / `snapshot_milestone_delete`）はいずれも `config` を
-    /// 含まないため、再利用では代替できず新設している。
+    /// `project_path → config → tasks_cache` を遵守する。
     ///
     /// # 保証の範囲
     ///
     /// - 保証する: `tasks_cache` 単体の torn read が起きないこと（watcher スレッドの
     ///   並行更新に対して有効）。reader 側の 2 段取得による不整合が起きないこと。
+    ///   返す `session.revision` が返す `tasks` の版と一致すること。
     /// - **保証しない**: writer が config と tasks を別クリティカルセクションで更新する
-    ///   経路（`project::open::commit_app_state_with_prepared` /
-    ///   `config::update_columns::update_columns_impl`）の途中状態を観測しないこと。
-    ///   呼び出し側（`get_tasks`）は FE 側の project command queue によってそれらの
-    ///   command と直列化される前提で使う。writer 側の atomic commit 化は follow-up。
-    pub fn snapshot_config_and_tasks(&self) -> Result<TasksProjectionContext, AppStateError> {
+    ///   経路（`config::update_columns::update_columns_impl`）の途中状態を観測しない
+    ///   こと。呼び出し側（`get_tasks`）は FE 側の project command queue によって
+    ///   それらの command と直列化される前提で使う。
+    pub fn snapshot_config_tasks_and_session(
+        &self,
+    ) -> Result<ConfigTasksSessionContext, AppStateError> {
+        let path_guard = lock(&self.project_path)?;
         let config_guard = lock(&self.config)?;
         let tasks_guard = lock(&self.tasks_cache)?;
-        Ok(TasksProjectionContext {
+        let session = self.compose_session(path_guard.as_deref());
+        Ok(ConfigTasksSessionContext {
             config: config_guard.clone(),
             tasks: tasks_guard.values().cloned().collect(),
+            session,
         })
     }
 
@@ -511,6 +551,7 @@ impl AppState {
         match update_tasks(&mut tasks_guard) {
             Ok(value) => {
                 *config_guard = Some(config);
+                self.bump_tasks_revision();
                 Ok(Some(Ok(value)))
             }
             Err(err) => Ok(Some(Err(err))),
@@ -519,6 +560,45 @@ impl AppState {
 
     /// `tasks_cache` を可変で借りて closure 内で in-place 操作する。
     ///
+    /// **config も含めた check-and-set 版の全置換**（full rescan 専用）。
+    ///
+    /// revision だけを見る check-and-set では `Config` の差し替えを検出できない。
+    /// full rescan は lock 外で
+    /// 「現在の既定 status」を解決してから走査・パースするため、その間に
+    /// `update_columns` が先頭カラムを変えると、**revision は変わらないまま**
+    /// status 欠損 md だけが旧既定のカラムへ確定してしまう
+    /// （`update_columns` は config 差し替えと cache 更新が別区間のため、
+    /// config だけ新しく revision はまだ古い瞬間が実在する）。
+    ///
+    /// 置換と同一クリティカルセクションで「走査時に使った既定 status が今も
+    /// 有効か」まで検証し、変わっていれば置換せず呼び出し側に再走査させる。
+    ///
+    /// - revision も既定 status も一致 → 置換して `Some(置換後の revision)`
+    /// - どちらかが変化 → cache も revision も変えず `None`
+    ///
+    /// lock 取得順序は AppState の契約に従って `config → tasks_cache`。
+    pub fn replace_tasks_cache_if_unchanged(
+        &self,
+        expected_revision: TasksRevision,
+        expected_default_status: &ColumnName,
+        cache: HashMap<PathBuf, Task>,
+    ) -> Result<Option<TasksRevision>, AppStateError> {
+        let config_guard = lock(&self.config)?;
+        let mut tasks_guard = lock(&self.tasks_cache)?;
+        if self.tasks_revision() != expected_revision {
+            return Ok(None);
+        }
+        let status_changed = config_guard
+            .as_ref()
+            .map(default_status_for)
+            .is_some_and(|status| status != *expected_default_status);
+        if status_changed {
+            return Ok(None);
+        }
+        *tasks_guard = cache;
+        Ok(Some(self.bump_tasks_revision()))
+    }
+
     /// `tasks_snapshot` → 編集 → `replace_tasks_cache` のフローでは全 task を
     /// clone してから新 HashMap で書き戻すため O(n) のコピーが発生する。
     /// 1 path 単位の差分更新（watcher 由来の created / updated / deleted など）
@@ -526,12 +606,87 @@ impl AppState {
     ///
     /// closure は guard を保持したまま呼ばれるため、内部で AppState の他
     /// アクセサを呼んではならない（自己 deadlock の原因）。
-    pub fn with_tasks_cache_mut<F, R>(&self, f: F) -> Result<R, AppStateError>
+    ///
+    /// closure の適用と revision の bump を同一クリティカルセクションで行う。
+    pub fn with_tasks_cache_mut_revision<F, R>(
+        &self,
+        f: F,
+    ) -> Result<(R, TasksRevision), AppStateError>
     where
         F: FnOnce(&mut HashMap<PathBuf, Task>) -> R,
     {
         let mut guard = lock(&self.tasks_cache)?;
-        Ok(f(&mut guard))
+        let value = f(&mut guard);
+        Ok((value, self.bump_tasks_revision()))
+    }
+
+    /// revision を必要としない呼び出し元向けの薄いラッパ。
+    ///
+    /// closure が cache を変更しなくても bump される（closure の中身を検査でき
+    /// ないため）。その結果 emit を伴わない revision が生まれるが、FE の
+    /// 単調性判定は `revision > lastRevision` の**単調増加のみ**を要求するので
+    /// 欠番は問題にならない（連番性を要求するのは `EventSeq` だけ）。
+    pub fn with_tasks_cache_mut<F, R>(&self, f: F) -> Result<R, AppStateError>
+    where
+        F: FnOnce(&mut HashMap<PathBuf, Task>) -> R,
+    {
+        self.with_tasks_cache_mut_revision(f)
+            .map(|(value, _)| value)
+    }
+
+    /// **project の commit を 1 トランザクションで行い、session を確定する。**
+    ///
+    /// cache 置換 / revision bump / generation bump / eventSeq watermark 読み取り
+    /// を単一クリティカルセクションで行う。分割すると、spawn 済み watcher が
+    /// 先に 1 件 emit した場合に「session はその変更を含むが payload の tasks は
+    /// 含まない」状態が生まれ、その envelope は `revision <= R` で破棄され gap も
+    /// 立たないため**永久に復旧しない**。
+    ///
+    /// 呼び出し側は本メソッドの戻り値を `open_project` の応答へそのまま載せ、
+    /// **watcher の spawn より前に**確定させること。
+    pub fn install_project_session(
+        &self,
+        root: &Path,
+        cache: HashMap<PathBuf, Task>,
+    ) -> Result<WatcherSession, AppStateError> {
+        let mut guard = lock(&self.tasks_cache)?;
+        *guard = cache;
+        self.bump_tasks_revision();
+        self.project_generation.fetch_add(1, Ordering::SeqCst);
+        Ok(self.compose_session(Some(root)))
+    }
+
+    /// 現行 generation。adapter の stale 判定に使う。
+    pub fn project_generation(&self) -> ProjectGeneration {
+        ProjectGeneration::from_raw(self.project_generation.load(Ordering::SeqCst))
+    }
+
+    /// 現在の revision。full rescan の check-and-set 用に走査前へ控える。
+    pub fn tasks_revision(&self) -> TasksRevision {
+        TasksRevision::from_raw(self.tasks_revision.load(Ordering::SeqCst))
+    }
+
+    /// emit 直前に 1 つ消費して新しい連番を返す。
+    pub fn next_event_seq(&self) -> EventSeq {
+        EventSeq::from_raw(self.event_seq.fetch_add(1, Ordering::SeqCst) + 1)
+    }
+
+    fn bump_tasks_revision(&self) -> TasksRevision {
+        TasksRevision::from_raw(self.tasks_revision.fetch_add(1, Ordering::SeqCst) + 1)
+    }
+
+    /// 3 つの atomic と project root から session を組み立てる。
+    ///
+    /// **private に留める**。公開すると呼び出し側が cache の critical section の
+    /// 外で session を作れてしまい、`ConfigTasksSessionContext` が防いでいる
+    /// torn read が再発する。
+    fn compose_session(&self, root: Option<&Path>) -> WatcherSession {
+        WatcherSession {
+            project_key: ProjectKey::from_root(root.unwrap_or_else(|| Path::new(""))),
+            generation: self.project_generation(),
+            revision: self.tasks_revision(),
+            event_seq: EventSeq::from_raw(self.event_seq.load(Ordering::SeqCst)),
+        }
     }
 
     /// watcher ハンドルを差し替える。
@@ -651,6 +806,13 @@ impl AppState {
 fn lock<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, AppStateError> {
     m.lock().map_err(|_| AppStateError::LockPoisoned)
 }
+
+pub mod change_id;
+pub mod event_seq;
+pub mod project_generation;
+pub mod project_key;
+pub mod tasks_revision;
+pub mod watcher_session;
 
 #[cfg(test)]
 mod state_tests;
