@@ -4,6 +4,10 @@ import type {
   TaskProjectionPayloadInput,
   TaskProjectionsPayloadInput,
 } from "@/domains/task-projection";
+import type {
+  WatcherSession,
+  WatcherSessionPayloadInput,
+} from "@/domains/watcher-session";
 import type { Task, TaskPayload } from "@/types/task";
 
 /**
@@ -14,6 +18,12 @@ export type TaskProjectionPayload = TaskProjectionPayloadInput;
 
 /** filePath をキーにした projection の raw payload。 */
 export type TaskProjectionsPayload = TaskProjectionsPayloadInput;
+
+/**
+ * watcher session の raw payload。
+ * 実体は domain 側の入力型（循環依存を避けるため型の所有権は domain に置く）。
+ */
+export type WatcherSessionPayload = WatcherSessionPayloadInput;
 
 /** open_project 引数。 */
 export type OpenProjectParams = {
@@ -29,6 +39,8 @@ export type OpenProjectPayload = {
   columns: string[];
   /** filePath -> projection */
   projections: TaskProjectionMap;
+  /** watcher event 検証の初期 baseline（tasks と同一トランザクションの値） */
+  session: WatcherSession;
 };
 
 /** open_project が Tauri IPC から返す raw payload。 */
@@ -39,14 +51,22 @@ export type OpenProjectRawPayload = {
   columns: string[];
   /** filePath をキーにした projection の raw payload */
   projections: TaskProjectionsPayload;
+  /** watcher session の raw payload */
+  session: WatcherSessionPayload;
 };
 
 /** get_tasks 戻り値ペイロード。 */
 export type GetTasksPayload = {
-  /** プロジェクト内のタスク一覧（id 昇順） */
+  /**
+   * プロジェクト内のタスク一覧。`openProject` と同じ board 表示順
+   * （カラム表示順 → カラム内 cardOrder → id 昇順）で返る。
+   * board は配列順をそのまま表示順に使うため、watcher の再取得で並びが崩れない。
+   */
   tasks: Task[];
   /** filePath -> projection */
   projections: TaskProjectionMap;
+  /** この snapshot の watcher session（envelope 検証の baseline 再設定用） */
+  session: WatcherSession;
 };
 
 /** get_tasks が Tauri IPC から返す raw payload。 */
@@ -55,6 +75,8 @@ export type GetTasksRawPayload = {
   tasks: TaskPayload[];
   /** filePath をキーにした projection の raw payload */
   projections: TaskProjectionsPayload;
+  /** watcher session の raw payload */
+  session: WatcherSessionPayload;
 };
 
 /** create_task 引数（title / status は必須、その他は任意）。 */
