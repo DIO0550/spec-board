@@ -115,6 +115,76 @@ export type Task = {
   hierarchy: TaskHierarchy;
 };
 
+/** `Task.equals` が比較するキーの列挙（現状 14 キー = `Task` の全フィールド）。 */
+export const TASK_COMPARED_KEYS = [
+  "id",
+  "title",
+  "status",
+  "priority",
+  "milestone",
+  "due",
+  "draft",
+  "labels",
+  "body",
+  "filePath",
+  "extras",
+  "warnings",
+  "links",
+  "hierarchy",
+] as const satisfies readonly (keyof Task)[];
+
+/**
+ * 網羅の型レベル強制。
+ *
+ * `satisfies` は「各要素が `keyof Task` である」ことしか見ないため、`Task` に
+ * フィールドを足しても列挙漏れを検出できない。差集合が空であることを要求する
+ * ことで、**フィールド追加時にこの行がコンパイルエラーになる**。比較漏れは
+ * 「resync が変更を黙って捨てる」という本機能が解決すべき症状そのものを
+ * 再発させるため、型で止める。
+ */
+type MissingTaskKey = Exclude<keyof Task, (typeof TASK_COMPARED_KEYS)[number]>;
+const _taskKeysExhaustive: MissingTaskKey extends never
+  ? true
+  : MissingTaskKey = true;
+void _taskKeysExhaustive;
+
+/**
+ * JSON 互換値を再帰的に比較する。
+ * @param left 比較対象
+ * @param right 比較対象
+ * @returns 構造まで含めて等価なら true
+ */
+const deepEquals = (left: unknown, right: unknown): boolean => {
+  if (left === right) {
+    return true;
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((item, index) => deepEquals(item, right[index]))
+    );
+  }
+  if (
+    typeof left === "object" &&
+    typeof right === "object" &&
+    left !== null &&
+    right !== null
+  ) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every((key) =>
+        deepEquals(
+          (left as Record<string, unknown>)[key],
+          (right as Record<string, unknown>)[key],
+        ),
+      )
+    );
+  }
+  return false;
+};
+
 export const Task = {
   /**
    * Tauri IPC の flat payload を frontend domain の Task に変換する。
@@ -144,4 +214,18 @@ export const Task = {
       childFilePaths: payload.children,
     },
   }),
+
+  /**
+   * 2 つの Task が表示上等価かを判定する。
+   *
+   * 参照据え置きマージ（`ProjectData.resyncTasks`）で「旧参照を引き継いでよいか」
+   * を決めるために使う。`TaskProjection.equals` と同じ役割。配列 / オブジェクト
+   * フィールド（labels / links / hierarchy / extras / warnings）は要素ごとに
+   * 比較する。
+   * @param left 比較対象
+   * @param right 比較対象
+   * @returns 全フィールドが等価なら true
+   */
+  equals: (left: Task, right: Task): boolean =>
+    TASK_COMPARED_KEYS.every((key) => deepEquals(left[key], right[key])),
 } as const;

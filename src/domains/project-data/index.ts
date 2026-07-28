@@ -6,8 +6,9 @@ import {
   TaskProjection,
   type TaskProjectionMap,
 } from "@/domains/task-projection";
+import type { WatcherSession } from "@/domains/watcher-session";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import { Task } from "@/types/task";
 
 export type ProjectData = {
   tasks: Task[];
@@ -27,6 +28,15 @@ export type ProjectData = {
    * （`openFail` は `previousLoaded` を同じ path のまま `loaded` へ戻すため）。
    */
   openRequestId: number;
+  /**
+   * `open_project` 応答に含まれる watcher session。watcher event 検証の
+   * **初期 baseline**。open 時点の値で固定し、その後の進行は gate ref が追う
+   * （ここを更新すると、内容が変わらない resync でも ProjectData の参照が変わり
+   * `resyncTasks` の参照保存が効かなくなる）。
+   *
+   * `openRequestId`（FE 採番）とは由来が異なる（BE 採番）ので混同しないこと。
+   */
+  watcherSession: WatcherSession;
 };
 
 /**
@@ -63,6 +73,36 @@ const mergeProjections = (
   }
   if (unchanged) {
     return prev;
+  }
+  return merged;
+};
+
+/**
+ * 新旧 task 配列をマージする。
+ *
+ * `mergeProjections` と同じ理由で参照を据え置く。full rescan は「取りこぼしの
+ * 疑い」で走るのであって実変更の証拠ではないため、**走査したが内容は同じ**が
+ * 主要ケースになる。無条件に新配列へ差し替えると board 全体が再レンダーし、
+ * さらに `moveTask` の確定段が「楽観 dispatch した Task が state にそのまま
+ * 入っている」を参照同一性で判定している契約を壊しうる。
+ * @param prev - 直前の tasks
+ * @param next - get_tasks が返した新しい tasks
+ * @returns 変化が無ければ `prev` そのもの、あれば未変更要素が旧参照の新配列
+ */
+const mergeTasks = (prev: readonly Task[], next: readonly Task[]): Task[] => {
+  const previousByFilePath = new Map(prev.map((task) => [task.filePath, task]));
+  let unchanged = prev.length === next.length;
+  const merged = next.map((task, index) => {
+    const previous = previousByFilePath.get(task.filePath);
+    if (previous !== undefined && Task.equals(previous, task)) {
+      unchanged = unchanged && prev[index] === previous;
+      return previous;
+    }
+    unchanged = false;
+    return task;
+  });
+  if (unchanged) {
+    return prev as Task[];
   }
   return merged;
 };
@@ -436,6 +476,37 @@ export const ProjectData = {
       return data;
     }
     return { ...data, projections: merged };
+  },
+
+  /**
+   * full rescan / gap 復旧で取り直した snapshot を反映する。
+   *
+   * 既存の `replaceProjections` と同じ参照保存を必ず通す（`mergeProjections`）。
+   * tasks も `mergeTasks` を通し、**内容が同一なら `data` そのもの**を返す。
+   * ここで `{ ...data }` を返すと、projection map を capture した
+   * `BoardCardProvider` の `useCallback` が毎回作り直され board 全体が
+   * 再レンダーする（`mergeProjections` の doc と同じ理由）。
+   *
+   * `watcherSession` は書き戻さない。open 時点の baseline を保つことで、内容が
+   * 変わらない resync で ProjectData の参照が変わるのを防ぐ。
+   *
+   * @param data 現在の ProjectData
+   * @param snapshot get_tasks 応答（tasks / projections）
+   * @returns 変化が無ければ `data` そのもの、あれば差し替え後の ProjectData
+   */
+  resyncTasks: (
+    data: ProjectData,
+    snapshot: { tasks: Task[]; projections: TaskProjectionMap },
+  ): ProjectData => {
+    const tasks = mergeTasks(data.tasks, snapshot.tasks);
+    const projections = mergeProjections(
+      data.projections,
+      snapshot.projections,
+    );
+    if (tasks === data.tasks && projections === data.projections) {
+      return data;
+    }
+    return { ...data, tasks, projections };
   },
 
   /**
