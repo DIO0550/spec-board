@@ -66,14 +66,51 @@ pub enum FsEvent {
         to: PathBuf,
     },
     Other(PathBuf),
-    Error(String),
+    Error(WatcherFailure),
     /// バックエンドが過去のイベントを取りこぼした可能性がある旨を通知した
     /// ことを示す（キューオーバーフロー / コアレス）。呼び出し側は状態の
     /// 再スキャン / 再構築を行う必要がある。
     Rescan,
 }
 
-/// [`Watcher::start`] が返すエラー。
+/// 監視稼働中に発生した watcher バックエンドのランタイム障害。
+///
+/// 起動時の失敗を表す [`WatcherError`] とは役割が異なる。あちらは
+/// `Watcher::start` の戻り値で、監視がそもそも始まらなかったことを意味する。
+/// 本型はイベントストリーム上を流れ、既に稼働している監視が壊れたことを表す。
+///
+/// 上位層が障害種別で分岐できるよう、文字列ではなく機械可読な `kind` を持つ。
+/// 上位で文字列パースを強いる設計は、backend のメッセージ変更で静かに壊れる。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WatcherFailure {
+    /// 上位層（FE 通知）が分類に使う機械可読な種別。
+    pub kind: WatcherFailureKind,
+    /// 障害に関連するパス（backend が提示しない場合は空）。
+    pub paths: Vec<PathBuf>,
+    /// 人間向けの詳細。backend のメッセージをそのまま載せる。
+    pub detail: String,
+}
+
+/// [`WatcherFailure`] の種別。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatcherFailureKind {
+    /// 監視対象ディレクトリが消えた / 到達不能になった。
+    WatchPathUnavailable,
+    /// OS の監視資源が枯渇した（inotify watch 上限など）。
+    ResourceExhausted,
+    /// 権限不足で監視を継続できない。
+    PermissionDenied,
+    /// 上記に当てはまらない I/O エラー。
+    Io,
+    /// backend 固有で分類できないエラー。
+    Unknown,
+}
+
+/// [`Watcher::start`] が返す**起動時**エラー。
+///
+/// 稼働中のランタイム障害は [`WatcherFailure`] としてイベントストリームに流れる。
+/// 両者を 1 つの型にまとめると「監視が始まらなかった」と「監視が途中で壊れた」を
+/// 呼び出し側が区別できず、後者を起動失敗として扱って project を閉じてしまう。
 #[derive(Debug, Error)]
 pub enum WatcherError {
     #[error("failed to initialize file system watcher: {0}")]
@@ -443,7 +480,7 @@ fn spawn_adapter(
                 Ok(item) => {
                     let translated = match item {
                         Ok(ev) => convert_event(ev),
-                        Err(e) => Some(vec![FsEvent::Error(e.to_string())]),
+                        Err(e) => Some(vec![FsEvent::Error(classify_notify_error(e))]),
                     };
                     let Some(events) = translated else { continue };
                     let now = Instant::now();
@@ -484,6 +521,48 @@ fn spawn_adapter(
         }
     });
     (fs_rx, handle)
+}
+
+/// `notify::Error` を自前の [`WatcherFailure`] へ写像する。
+///
+/// 本関数だけが `notify::Error` に触れ、戻り値には一切漏らさない
+/// （spec-board-fs は pub API に外部 crate の型を出さない）。
+///
+/// inotify 上限は backend によって `MaxFilesWatch` にも
+/// `Io(StorageFull)`（ENOSPC）にもなるため、両方を資源枯渇として扱う。
+/// `ErrorKind` だけで分岐すると、Linux で最も起きやすい ENOSPC 経路が
+/// 一般 I/O に落ちて FE の文言が「監視上限」を案内できなくなる。
+fn classify_notify_error(err: notify::Error) -> WatcherFailure {
+    let kind = classify_notify_error_kind(&err.kind);
+    WatcherFailure {
+        kind,
+        paths: err.paths.clone(),
+        detail: err.to_string(),
+    }
+}
+
+fn classify_notify_error_kind(kind: &notify::ErrorKind) -> WatcherFailureKind {
+    match kind {
+        notify::ErrorKind::PathNotFound | notify::ErrorKind::WatchNotFound => {
+            WatcherFailureKind::WatchPathUnavailable
+        }
+        notify::ErrorKind::MaxFilesWatch => WatcherFailureKind::ResourceExhausted,
+        notify::ErrorKind::Io(source) => classify_io_error_kind(source.kind()),
+        notify::ErrorKind::Generic(_) | notify::ErrorKind::InvalidConfig(_) => {
+            WatcherFailureKind::Unknown
+        }
+    }
+}
+
+fn classify_io_error_kind(kind: std::io::ErrorKind) -> WatcherFailureKind {
+    match kind {
+        std::io::ErrorKind::NotFound => WatcherFailureKind::WatchPathUnavailable,
+        std::io::ErrorKind::PermissionDenied => WatcherFailureKind::PermissionDenied,
+        std::io::ErrorKind::StorageFull | std::io::ErrorKind::OutOfMemory => {
+            WatcherFailureKind::ResourceExhausted
+        }
+        _ => WatcherFailureKind::Io,
+    }
 }
 
 /// 単一の `notify::Event` を 0 件以上の [`FsEvent`] に変換する。
