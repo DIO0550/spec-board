@@ -1,6 +1,7 @@
 import { act, createElement, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
@@ -176,6 +177,7 @@ test("subscribe より前に emit されたイベントは届かない（replay 
 test("StrictMode 下で mount → remount 後も openProjectByPath が loaded に到達する", async () => {
   openProjectMock.mockResolvedValue(
     Result.ok<OpenProjectPayload>({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [
         Task.fromPayload({
           id: "a",

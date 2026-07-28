@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { type GetTasksPayload, getTasks } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
+import { Result } from "@/utils/result";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -22,7 +23,16 @@ const taskPayloadFixture: TaskPayload = {
 
 const taskFixture = Task.fromPayload(taskPayloadFixture);
 
-const emptyRawPayload = { tasks: [], projections: {} };
+const emptyRawPayload = {
+  tasks: [],
+  projections: {},
+  session: {
+    projectKey: "/home/user/specs",
+    generation: 1,
+    revision: 1,
+    eventSeq: 0,
+  },
+};
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
@@ -50,6 +60,12 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
         childFilePaths: ["tasks/y.md"],
       },
     },
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 1,
+      revision: 1,
+      eventSeq: 0,
+    },
   });
 
   const res = await getTasks();
@@ -73,6 +89,12 @@ test("projections は Map に変換される", async () => {
         childFilePaths: [],
       },
     },
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 1,
+      revision: 1,
+      eventSeq: 0,
+    },
   });
 
   const res = await getTasks();
@@ -89,7 +111,16 @@ test("tasks / projections が空でも成功する", async () => {
 
   expect(res).toEqual({
     ok: true,
-    value: { tasks: [], projections: new Map() },
+    value: {
+      tasks: [],
+      projections: new Map(),
+      session: {
+        projectKey: "/home/user/specs",
+        generation: 1,
+        revision: 1,
+        eventSeq: 0,
+      },
+    },
   });
 });
 
@@ -105,4 +136,48 @@ test("reject 時の error は TauriError インスタンス", async () => {
   expect((res as { ok: false; error: unknown }).error).toBeInstanceOf(
     TauriError,
   );
+});
+
+test("session の 4 フィールドが domain 型として透過する", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({
+    tasks: [],
+    projections: {},
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 3,
+      revision: 42,
+      eventSeq: 17,
+    },
+  });
+
+  const result = await getTasks();
+
+  expect(Result.isOk(result) && result.value.session).toEqual({
+    projectKey: "/home/user/specs",
+    generation: 3,
+    revision: 42,
+    eventSeq: 17,
+  });
+});
+
+test("session の値が 0 でも欠落しない", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({
+    tasks: [],
+    projections: {},
+    session: {
+      projectKey: "",
+      generation: 0,
+      revision: 0,
+      eventSeq: 0,
+    },
+  });
+
+  const result = await getTasks();
+
+  expect(Result.isOk(result) && result.value.session).toEqual({
+    projectKey: "",
+    generation: 0,
+    revision: 0,
+    eventSeq: 0,
+  });
 });

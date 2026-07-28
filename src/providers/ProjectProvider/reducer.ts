@@ -31,6 +31,18 @@ export type ProjectAction =
     }
   | { type: "done-column-refreshed"; doneColumn: string }
   | { type: "projections-refreshed"; projections: TaskProjectionMap }
+  // watcher の full rescan / event gap 復旧で get_tasks から取り直した
+  // tasks + projections を反映する。projection のみ差し替える
+  // "projections-refreshed" とは適用範囲が異なる。
+  //
+  // 既存の "state-replaced" とは**意味論が逆向き**なので流用しない。あちらは
+  // optimistic 更新の rollback 専用で「snapshot へ巻き戻す」、こちらは
+  // 「BE の最新へ前進する」。
+  //
+  // session は action に含めない。走行中の baseline は gate ref が持ち、
+  // ProjectData.watcherSession は open 時点の値のまま据え置く（ここで書き戻すと、
+  // 内容が変わらなくても毎回 data の参照が変わり参照保存が壊れる）。
+  | { type: "tasks-resynced"; tasks: Task[]; projections: TaskProjectionMap }
   | { type: "card-order-updated"; columnName: string; filePaths: string[] }
   | { type: "reset" };
 
@@ -87,6 +99,13 @@ export const reducer = (
     case "projections-refreshed":
       return ProjectState.updateData(state, (data) =>
         ProjectDataDomain.replaceProjections(data, action.projections),
+      );
+    case "tasks-resynced":
+      return ProjectState.updateData(state, (data) =>
+        ProjectDataDomain.resyncTasks(data, {
+          tasks: action.tasks,
+          projections: action.projections,
+        }),
       );
     case "card-order-updated":
       return ProjectState.updateData(state, (data) =>

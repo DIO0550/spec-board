@@ -1,0 +1,108 @@
+{
+  "description": "watcher event envelope contract shared by Rust (serde) and TS (parseWatcherEnvelope) tests. Both sides read this same file; changing one side without the other must fail CI.",
+  "cases": [
+    {
+      "eventName": "task-created",
+      "envelope": {
+        "projectKey": "/home/user/specs",
+        "generation": 3,
+        "revision": 42,
+        "cacheMutating": true,
+        "eventSeq": 17,
+        "changeId": "3-17",
+        "payload": {
+          "task": {
+            "id": "tasks/created.md",
+            "filePath": "tasks/created.md",
+            "title": "Created task",
+            "status": "Todo",
+            "priority": "High",
+            "milestone": "v0.3",
+            "due": "2026-08-01",
+            "draft": true,
+            "labels": ["bug"],
+            "parent": "tasks/parent.md",
+            "links": ["tasks/other.md"],
+            "children": ["tasks/child.md"],
+            "reverseLinks": ["tasks/referrer.md"],
+            "body": "created body\n",
+            "extras": { "assignee": "alice" },
+            "warnings": [
+              {
+                "code": "parentNotFound",
+                "field": "parent",
+                "message": "parent not found"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "eventName": "task-updated",
+      "envelope": {
+        "projectKey": "/home/user/specs",
+        "generation": 3,
+        "revision": 43,
+        "cacheMutating": true,
+        "eventSeq": 18,
+        "changeId": "3-18",
+        "payload": {
+          "task": {
+            "id": "tasks/updated.md",
+            "filePath": "tasks/updated.md",
+            "title": "Updated task",
+            "status": "Doing",
+            "labels": [],
+            "links": [],
+            "children": [],
+            "reverseLinks": [],
+            "body": "updated body\n",
+            "extras": {},
+            "warnings": []
+          }
+        }
+      }
+    },
+    {
+      "eventName": "task-deleted",
+      "envelope": {
+        "projectKey": "/home/user/specs",
+        "generation": 3,
+        "revision": 44,
+        "cacheMutating": true,
+        "eventSeq": 19,
+        "changeId": "3-19",
+        "payload": { "filePath": "tasks/done.md" }
+      }
+    },
+    {
+      "eventName": "watcher-resync-required",
+      "envelope": {
+        "projectKey": "/home/user/specs",
+        "generation": 3,
+        "revision": 45,
+        "cacheMutating": true,
+        "eventSeq": 20,
+        "changeId": "3-20",
+        "payload": { "reason": "rescan" }
+      }
+    },
+    {
+      "eventName": "watcher-diagnostic",
+      "envelope": {
+        "projectKey": "/home/user/specs",
+        "generation": 3,
+        "revision": 45,
+        "cacheMutating": false,
+        "eventSeq": 21,
+        "changeId": "3-21",
+        "payload": {
+          "code": "resourceExhausted",
+          "message": "inotify watch limit reached",
+          "paths": ["tasks"]
+        }
+      }
+    }
+  ]
+}

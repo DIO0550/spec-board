@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
@@ -90,6 +91,7 @@ const makeSeedTask = (body: string): Task =>
   });
 
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),

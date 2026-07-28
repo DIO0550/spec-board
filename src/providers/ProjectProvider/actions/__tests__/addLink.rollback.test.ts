@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { addLink as addLinkInvoke, TauriError } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -46,6 +47,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
   });
 
 const makeData = (tasks: readonly Task[]): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [...tasks],
   columns: [
     { name: "Todo", order: 0 },

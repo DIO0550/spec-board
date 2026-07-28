@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Column } from "@/types/column";
 import { ProjectData, type ProjectData as ProjectDataT } from "..";
 
@@ -18,6 +19,7 @@ test("applyTaskCreated は task を追加し parent task の children を同期�
     parent: ".\\tasks\\p.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
@@ -45,6 +47,7 @@ test("applyTaskCreated は parent children を二重追加しない", () => {
     parent: "tasks/p.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
@@ -67,6 +70,7 @@ test("applyTaskUpdated は originalFilePath に一致する task を差し替え
     title: "renamed",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [current],
     columns: columns("Todo"),
     projections: new Map(),
@@ -100,6 +104,7 @@ test("applyTaskUpdated は parent が変わったとき旧親 children から該
     parent: "tasks/new.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -134,6 +139,7 @@ test("applyTaskUpdated は parent が変わったとき新親 children に該当
     parent: "tasks/new.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -162,6 +168,7 @@ test("applyTaskUpdated は parent が新規付与されたとき新親 children 
     parent: "tasks/p.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [newParent, orphan],
     columns: columns("Todo"),
     projections: new Map(),
@@ -190,6 +197,7 @@ test("applyTaskUpdated は parent が解除されたとき旧親 children から
     filePath: "tasks/c.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [oldParent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -217,6 +225,7 @@ test("applyTaskUpdated は originalFilePath が存在しないとき parent-sync
     parent: "tasks/p.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
@@ -260,6 +269,7 @@ test("applyTaskUpdated は rename + reparent で旧親から originalFilePath �
     parent: "tasks/new.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -294,6 +304,7 @@ test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の
     parent: "tasks/p.md",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -325,6 +336,7 @@ test("applyTaskUpdated は parent 変更がなければ他 task 参照を維持�
     title: "new",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -352,6 +364,7 @@ test("applyTaskDeleted は task を削除し hierarchy と links から参照を
     reverseLinks: ["tasks/p.md"],
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent, child],
     columns: columns("Todo"),
     projections: new Map(),
@@ -373,6 +386,7 @@ test("replaceColumns は status と doneColumn を rename に追従させる", (
     status: "Done",
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [task],
     columns: columns("Todo", "Done"),
     doneColumn: "Done",
@@ -391,6 +405,7 @@ test("replaceColumns は status と doneColumn を rename に追従させる", (
 
 test("replaceColumns は指定された doneColumn を rename 追従より優先する", () => {
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [],
     columns: columns("Todo", "Done"),
     doneColumn: "Done",
@@ -415,6 +430,7 @@ test("applyTaskUpdated は children 空の payload でも既存の childFilePath
     children: ["tasks/c.md"],
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
@@ -448,6 +464,7 @@ test("applyTaskUpdated は payload の parentFilePath を採用する", () => {
   });
   const p2 = makeTask({ id: "p2", filePath: "tasks/p2.md", children: [] });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [child, p1, p2],
     columns: columns("Todo"),
     projections: new Map(),

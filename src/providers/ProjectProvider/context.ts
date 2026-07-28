@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { WatcherDiagnostic } from "@/domains/watcher-diagnostic";
 import type {
   CreateTaskParams,
   DeleteTaskParams,
@@ -127,7 +128,12 @@ export type ProjectColumnActionsContextValue = {
  */
 export type ProjectEvent =
   | { type: "loaded"; path: string; data: ProjectData }
-  | { type: "open-error"; error: ProjectError };
+  | { type: "open-error"; error: ProjectError }
+  // watcher backend の障害 / full rescan 失敗。state には保持せず通知だけ行う
+  // （監視が壊れたことを利用者へ伝えるのが目的で、UI 状態は持たない）。
+  // 型は `@/domains/watcher-diagnostic` が所有する（Provider の外へ出る契約なので
+  // `WatcherSession` と同じ基準で domain に置く）。
+  | ({ type: "watcher-diagnostic" } & WatcherDiagnostic);
 
 /** `useProjectEvents()` が返す値。 */
 export type ProjectEventsContextValue = {

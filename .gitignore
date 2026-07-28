@@ -189,6 +189,9 @@ tasks*
 # しまうため、当該コンポーネントを明示的に除外解除する。
 !src/features/task-form/components/TaskCreateScreen/TaskSubbar/
 !src/features/task-form/components/TaskCreateScreen/TaskSubbar/**
+# 同じ理由で BE の `tasks_revision` VO（`tasks*` に前方一致）も除外解除する。
+!src-tauri/src/state/tasks_revision.rs
+!src-tauri/src/state/tasks_revision_tests.rs
 .specs
 plugin-workspace/
 *.local.*

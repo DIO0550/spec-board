@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
@@ -110,6 +111,7 @@ const makeTaskBReversed = (): Task =>
  * @returns OpenProjectPayload
  */
 const makePayload = (tasks: Task[]): OpenProjectPayload => ({
+  session: WATCHER_SESSION_FIXTURE,
   tasks,
   columns: ["Todo", "Done"],
   projections: new Map(),

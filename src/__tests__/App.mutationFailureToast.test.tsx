@@ -92,6 +92,12 @@ const openProjectRawPayload = {
   tasks: [seedTaskPayload],
   columns: ["Todo", "Doing", "Done"],
   projections: {},
+  session: {
+    projectKey: "/test/project",
+    generation: 1,
+    revision: 1,
+    eventSeq: 0,
+  },
 };
 
 // 同一カラム並び替えを発火させるため Todo に 2 件並べた payload。
@@ -99,6 +105,12 @@ const twoTaskRawPayload = {
   tasks: [seedTaskPayload, seedTaskPayloadB],
   columns: ["Todo", "Doing", "Done"],
   projections: {},
+  session: {
+    projectKey: "/test/project",
+    generation: 1,
+    revision: 1,
+    eventSeq: 0,
+  },
 };
 
 const getColumnsRawPayload = {
@@ -273,7 +285,17 @@ const makeInvoke =
       open_project: () => Promise.resolve(openProjectRawPayload),
       get_columns: () => Promise.resolve(getColumnsRawPayload),
       // projection 再同期（useProjectionSyncEffect）が tasks 変化のたびに呼ぶ読み取り系。
-      get_tasks: () => Promise.resolve({ tasks: [], projections: {} }),
+      get_tasks: () =>
+        Promise.resolve({
+          tasks: [],
+          projections: {},
+          session: {
+            projectKey: "/test/project",
+            generation: 1,
+            revision: 1,
+            eventSeq: 0,
+          },
+        }),
       // App が loaded 時に useMilestones から呼ぶ読み取り系。空レジストリを返す。
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),

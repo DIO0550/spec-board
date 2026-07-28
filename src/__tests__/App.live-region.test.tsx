@@ -11,6 +11,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import {
   getColumns as getColumnsInvoke,
@@ -131,6 +132,7 @@ const taskB: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA, taskB],
   columns: ["Todo", "Done"],
   projections: new Map(),
@@ -311,6 +313,7 @@ test("drop 後の LiveRegion は同一の安定 DOM ノードを維持しつつ 
 // === column reorder ===
 
 const threeColumnPayload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [],
   columns: ["A", "B", "C"],
   projections: new Map(),
@@ -415,6 +418,7 @@ const openParentChildProject = async (): Promise<void> => {
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pc"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [parentTask, childTask],
       columns: ["Todo", "Done"],
       // 直下子の解決は BE projection の childFilePaths 経由になった。
@@ -554,6 +558,7 @@ const openLinkedTasksProject = async (options?: {
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pl"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [linkedA, linkedB],
       columns: ["Todo", "Done"],
       projections: new Map(),

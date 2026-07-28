@@ -81,19 +81,22 @@ use crate::config::{
 };
 use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
+use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError};
-use crate::task::parse::{
-    default_status_for, task_from_markdown, TaskParseContext, TaskParseError,
-};
+use crate::task::io::FsTaskIo;
+use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::projection::TaskProjectionMap;
+use crate::task::rebuild::{rebuild_tasks_from_disk, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
-use spec_board_fs::task::file_scanner::{scan_md_files, ScanError};
+use spec_board_fs::task::file_scanner::ScanError;
 use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
 /// `open_project` コマンドのペイロード。
 ///
-/// `tasks` は `id` 昇順、`columns` は `Config::columns` の `order` 昇順で `name` を抜き出す。
+/// `tasks` は board 表示順（カラム表示順 → カラム内 `cardOrder` → `id` 昇順）で、
+/// `columns` は `Config::columns` の `order` 昇順で `name` を抜き出す。
+/// 並び順の決定は `TaskIndex::sorted_by_board_order` に集約し、`get_tasks` と揃える。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenProjectPayload {
@@ -101,6 +104,9 @@ pub struct OpenProjectPayload {
     pub columns: Vec<ColumnName>,
     /// filePath -> projection。初期表示時点で FE が集計を持てるよう同梱する。
     pub projections: TaskProjectionMap,
+    /// watcher event の検証基準。`tasks` と**同一トランザクション**で確定した
+    /// 値であることが必須（そうでないと FE が復旧不能な split-brain に陥る）。
+    pub session: WatcherSession,
 }
 
 /// `open_project` コマンドのエラー。
@@ -232,16 +238,11 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     // マイルストーンマスタも labels と同様 commit 前に読み込む（load 失敗時は旧 state 非破壊）。
     let milestones = milestones_store.load().map_err(map_load_milestones_error)?;
 
-    let md_paths = scan_md_files(root).map_err(|e| map_scan_error(e, raw_path))?;
-
     let default_status = default_status_for(&config);
-    let tasks = collect_tasks(root, &md_paths, &default_status);
-
-    let tasks = TaskIndex::new(tasks)
-        .build_children_with_warnings()
-        .map_err(map_hierarchy_error)?
-        .build_reverse_links()
-        .into_tasks();
+    // scan → parse → TaskIndex 構築は watcher の full rescan と同じ関数を通す。
+    // 片側だけフィルタ条件が変わることを構造的に防ぐため。
+    let tasks = rebuild_tasks_from_disk(root, &default_status, &FsTaskIo)
+        .map_err(|err| map_rebuild_error(err, raw_path))?;
 
     // GUIDE.md 書き込みより **前に** prepare を実行する。watcher 初期化失敗で
     // 復帰する場合に新 dir 配下の `.spec-board/GUIDE.md` が副作用として残らない
@@ -255,9 +256,9 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
         labels: &labels,
         milestones: &milestones,
     };
-    commit_app_state_with_prepared(state, root, masters, &tasks, prepared, watcher)?;
+    let session = commit_app_state_with_prepared(state, root, masters, &tasks, prepared, watcher)?;
 
-    Ok(build_payload(tasks, &config))
+    Ok(build_payload(tasks, &config, session))
 }
 
 /// AppState 6 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
@@ -329,33 +330,12 @@ fn map_metadata_error(err: std::io::Error, raw_path: &str) -> OpenProjectError {
     }
 }
 
-/// 走査結果の `.md` ファイル群から `Task` を集める。
-///
-/// 各 md ファイルの `fs::read` 失敗、`task_from_markdown` 失敗はいずれも
-/// `log::warn!` を出して skip する（コマンド全体は成功させる）。
-fn collect_tasks(root: &Path, md_paths: &[PathBuf], default_status: &ColumnName) -> Vec<Task> {
-    let mut tasks = Vec::with_capacity(md_paths.len());
-    for rel_path in md_paths {
-        let absolute = root.join(rel_path);
-        let bytes = match fs::read(&absolute) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                log::warn!("failed to read task file `{}`: {err}", absolute.display());
-                continue;
-            }
-        };
-        let context = TaskParseContext {
-            file_path: rel_path.clone(),
-            default_status: default_status.clone(),
-        };
-        match task_from_markdown(&bytes, &context) {
-            Ok(task) => tasks.push(task),
-            Err(err) => {
-                log::warn!("failed to parse task file `{}`: {err}", absolute.display());
-            }
-        }
+/// `RebuildTasksError` を `OpenProjectError` に詰め直す。
+fn map_rebuild_error(err: RebuildTasksError, raw_path: &str) -> OpenProjectError {
+    match err {
+        RebuildTasksError::Scan(source) => map_scan_error(source, raw_path),
+        RebuildTasksError::Hierarchy(source) => map_hierarchy_error(source),
     }
-    tasks
 }
 
 /// `ScanError` を `OpenProjectError` に詰め直す。
@@ -493,7 +473,12 @@ pub(crate) struct CommittedMasters<'a> {
 ///      `labels` / `milestones` を **4 lock 同時保持下で atomic に swap**する
 ///      （`update_card_order` 等の reader が「新 path + 旧 config」を観測して旧 config を
 ///      新プロジェクトの `config.json` に書き出す cross-project corruption を防ぐ）
-///    - `replace_tasks_cache`: tasks_cache を新値に置換
+///    - `install_project_session`: tasks_cache 置換 / revision bump / generation
+///      bump / eventSeq watermark 読み取りを単一クリティカルセクションで行い、
+///      FE へ返す `WatcherSession` を確定する。**spawn より前**に確定させないと、
+///      spawn 済み watcher が先に emit した場合に「session はその変更を含むが
+///      payload の tasks は含まない」状態が生まれ、その envelope は `revision <= R`
+///      で破棄され gap も立たないため FE が永久に復旧できない
 ///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
 ///    - `install_watcher_handle`: 新 watcher を install。旧 handle は既に上で
 ///      `stop()` 済みのため、ここでは新 handle を置くだけ
@@ -520,7 +505,7 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
     tasks: &[Task],
     prepared: W::Prepared,
     watcher: &W,
-) -> Result<(), OpenProjectError> {
+) -> Result<WatcherSession, OpenProjectError> {
     state.check_all_locks()?;
     state.write_ignore().is_empty()?;
 
@@ -543,12 +528,16 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
         Some(masters.labels.clone()),
         Some(masters.milestones.clone()),
     )?;
-    state.replace_tasks_cache(cache)?;
+    // cache 置換 / revision bump / generation bump / eventSeq watermark を
+    // 1 トランザクションで確定する。spawn 済み watcher が先に emit した変更を
+    // session だけが含む（tasks は含まない）状態を作らないため、session の確定は
+    // **必ず spawn より前**に行う。
+    let session = state.install_project_session(root, cache)?;
     state.write_ignore().clear()?;
 
     let handle = watcher.spawn(prepared, state, root, masters.config);
     state.install_watcher_handle(handle)?;
-    Ok(())
+    Ok(session)
 }
 
 /// FE へ返す `OpenProjectPayload` を組み立てる。
@@ -561,30 +550,16 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
 /// `cardOrder` に載っていないタスク（新規追加された md 等）は、そのカラムの末尾へ
 /// `id` 昇順で並ぶ（`cardOrder` の「記載されていないタスクは末尾に追加」ルール）。
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
-fn build_payload(tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
+fn build_payload(tasks: Vec<Task>, config: &Config, session: WatcherSession) -> OpenProjectPayload {
     // projection は並び順に依存しない（filePath キーの map）ため sort 前に作る。
     // `TaskIndex` へ move → `into_tasks()` で戻すことで `Vec<Task>` の clone を避ける。
     let index = TaskIndex::new(tasks);
     let projections = index.project_all(config.resolved_done_column());
-    let mut tasks = index.into_tasks();
+    // 並び順の契約は aggregate に集約する（`get_tasks` も同じ入口を通す）。
+    let tasks = index.sorted_by_board_order(config);
 
     let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
     sorted_columns.sort_by_key(|column| column.order);
-
-    let column_rank: HashMap<&str, usize> = sorted_columns
-        .iter()
-        .enumerate()
-        .map(|(rank, column)| (column.name.as_str(), rank))
-        .collect();
-    let unknown_column_rank = sorted_columns.len();
-
-    // `sort_by` で比較のたびに cardOrder を線形探索すると、比較回数ぶん走査が繰り返される。
-    // key は 1 task につき 1 回だけ計算する。
-    tasks.sort_by_cached_key(|task| {
-        let (rank, position) = card_sort_key(task, config, &column_rank, unknown_column_rank);
-        (rank, position, task.id.clone())
-    });
-
     let columns = sorted_columns
         .into_iter()
         .map(|column| column.name.clone())
@@ -593,30 +568,8 @@ fn build_payload(tasks: Vec<Task>, config: &Config) -> OpenProjectPayload {
         tasks,
         columns,
         projections,
+        session,
     }
-}
-
-/// `task` の (カラム表示順, カラム内 cardOrder 位置) を返す。
-///
-/// `cardOrder` に載っていない場合の位置は `usize::MAX` とし、同カラムの記載済み
-/// タスクより後ろに回す（同順内の tie-break は呼び出し側が `id` で行う）。
-fn card_sort_key(
-    task: &Task,
-    config: &Config,
-    column_rank: &HashMap<&str, usize>,
-    unknown_column_rank: usize,
-) -> (usize, usize) {
-    let status = task.status.as_str();
-    let rank = column_rank
-        .get(status)
-        .copied()
-        .unwrap_or(unknown_column_rank);
-    let position = config
-        .card_order
-        .get(status)
-        .and_then(|paths| paths.iter().position(|p| p == task.file_path.as_str()))
-        .unwrap_or(usize::MAX);
-    (rank, position)
 }
 
 #[cfg(test)]

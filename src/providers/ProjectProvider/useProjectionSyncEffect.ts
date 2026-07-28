@@ -21,7 +21,7 @@ type SyncBasis = {
 };
 
 /** 同期済みマーカー。どの open 由来のどの basis まで同期したかを覚える。 */
-type SyncedMarker = SyncBasis & {
+export type SyncedMarker = SyncBasis & {
   /** `ProjectData.openRequestId`。open 失敗による復元と新規 open を区別する。 */
   openRequestId: number;
   path: string;
@@ -40,6 +40,13 @@ type ActiveRequest = {
   basis: SyncBasis;
 };
 
+/**
+ * 同期済み marker の ref。Provider が所有し `useWatcherResyncEffect` と共有する。
+ * watcher の resync が適用した snapshot をここへ書き戻すことで、同じ内容で
+ * 2 本目の `get_tasks` が飛ぶのを防ぐ。
+ */
+export type ProjectionSyncedRef = { current: SyncedMarker | null };
+
 /** useProjectionSyncEffect が受け取る依存。 */
 type ProjectionSyncDeps = SyncBasis & {
   /** 現在 loaded な project path（loading / idle / error は null）。 */
@@ -54,6 +61,11 @@ type ProjectionSyncDeps = SyncBasis & {
    * 楽観 dispatch 起点の再同期が in-flight mutation を追い越さないようにする。
    */
   projectCommandQueue: ProjectCommandQueue;
+  /**
+   * 同期済み marker。Provider が所有し `useWatcherResyncEffect` とも共有する。
+   * 本 hook のロジックは変えず、marker の所有権だけを外に出している。
+   */
+  synced: ProjectionSyncedRef;
   /** 最新 state を同期的に読む getter（= store.getState）。 */
   getState: () => ProjectState;
   /**
@@ -119,11 +131,10 @@ export const useProjectionSyncEffect = ({
   columns,
   doneColumn,
   projectCommandQueue,
+  synced: syncedRef,
   getState,
   dispatch,
 }: ProjectionSyncDeps): void => {
-  // 「どの open のどの basis まで同期済みか」。
-  const syncedRef = useRef<SyncedMarker | null>(null);
   // 各再同期リクエストに採番する世代 id。最新世代の応答だけが state を確定する。
   const requestIdRef = useRef(0);
   // 発行中の 1 本（null = gate が開いている）。IPC 本数の畳み込み用で、
@@ -166,9 +177,9 @@ export const useProjectionSyncEffect = ({
       pendingRef.current = false;
     }
 
-    const synced = syncedRef.current;
+    const syncedMarker = syncedRef.current;
     // 新しい open payload。projection は最新なので fetch せず marker だけ更新する。
-    if (synced === null || synced.openRequestId !== openRequestId) {
+    if (syncedMarker === null || syncedMarker.openRequestId !== openRequestId) {
       syncedRef.current = {
         openRequestId,
         path: loadedPath,
@@ -179,10 +190,10 @@ export const useProjectionSyncEffect = ({
       return discardInFlight;
     }
     if (
-      synced.path === loadedPath &&
-      synced.tasks === tasks &&
-      synced.columns === columns &&
-      synced.doneColumn === doneColumn
+      syncedMarker.path === loadedPath &&
+      syncedMarker.tasks === tasks &&
+      syncedMarker.columns === columns &&
+      syncedMarker.doneColumn === doneColumn
     ) {
       return discardInFlight;
     }
@@ -253,6 +264,7 @@ export const useProjectionSyncEffect = ({
     columns,
     doneColumn,
     projectCommandQueue,
+    syncedRef,
     getState,
     dispatch,
     syncTick,

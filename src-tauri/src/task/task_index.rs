@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::column_name::ColumnName;
+use crate::config::{Column, Config};
 use crate::task::add_link::error::AddLinkError;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
@@ -328,13 +329,44 @@ impl TaskIndex {
 
     /// aggregate が保持する `Task` を `id` 昇順に並べた `Vec<Task>` を返す。
     ///
-    /// `get_tasks` 等の読み取り API が依存する「id 昇順」契約をこの aggregate に
-    /// 集約することで、application 層から並び順の知識を排除する。`Vec::sort_by`
-    /// は安定ソートのため、同一 `id` の `Task` が混入した場合は入力順を保持する。
-    /// aggregate を再利用しない読み取り用途のため `self` を消費する。
+    /// board へ返す通常経路は [`Self::sorted_by_board_order`] であり、本メソッドは
+    /// **`Config` を解決できない場合のフォールバック**（project 未オープンなど）に使う。
+    /// `Vec::sort_by` は安定ソートのため、同一 `id` の `Task` が混入した場合は入力順を
+    /// 保持する。aggregate を再利用しない読み取り用途のため `self` を消費する。
     pub fn sorted_by_id(self) -> Vec<Task> {
         let mut tasks = self.into_tasks();
         tasks.sort_by(|a, b| a.id.cmp(&b.id));
+        tasks
+    }
+
+    /// board の表示順（カラム表示順 → カラム内 `cardOrder` の並び → `id` 昇順）で
+    /// `Task` を並べ替えて返す。
+    ///
+    /// FE はカラムごとに `tasks` を filter して**配列順をそのまま表示順**に使うため、
+    /// この並べ替えが「再オープンしても DnD で決めた並びが復元される」ための
+    /// rehydration になる。`open_project` と `get_tasks` の両方が同じ入口を通ることで、
+    /// full rescan / gap 復旧のたびに並びが id 順へ崩れるのを防ぐ。
+    ///
+    /// `cardOrder` に載っていないタスク（新規追加された md 等）はそのカラムの末尾へ
+    /// `id` 昇順で並ぶ。`columns` のいずれにも一致しない `status` のタスクは全カラムの
+    /// 後ろへ回す。
+    pub fn sorted_by_board_order(self, config: &Config) -> Vec<Task> {
+        let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
+        sorted_columns.sort_by_key(|column| column.order);
+        let column_rank: HashMap<&str, usize> = sorted_columns
+            .iter()
+            .enumerate()
+            .map(|(rank, column)| (column.name.as_str(), rank))
+            .collect();
+        let unknown_column_rank = sorted_columns.len();
+
+        let mut tasks = self.into_tasks();
+        // `sort_by` で比較のたびに cardOrder を線形探索すると、比較回数ぶん走査が
+        // 繰り返される。key は 1 task につき 1 回だけ計算する。
+        tasks.sort_by_cached_key(|task| {
+            let (rank, position) = card_sort_key(task, config, &column_rank, unknown_column_rank);
+            (rank, position, task.id.clone())
+        });
         tasks
     }
 
@@ -460,6 +492,21 @@ impl TaskIndex {
         Self::new(values)
             .validate_parent_hierarchy()?
             .build_children()
+            .map(Self::build_reverse_links)
+    }
+
+    /// disk 全体から作り直した `Task` 集合に対し、parent hierarchy 検証
+    /// （循環は warning として task に残す）→ `children` 再構築 →
+    /// `reverse_links` 再構築までを一括で行う aggregate メソッド。
+    ///
+    /// [`Self::rebuild_with_replaced`] の「1 件差し替え」に対する「全件入れ替え」版。
+    /// `open_project`（初回ロード）と `watcher_event`（full rescan）が同じ入口を
+    /// 通ることで、派生値の構築順序が片側だけずれることを構造的に防ぐ。
+    ///
+    /// 循環を `Err` にせず warning に倒すのは差し替え版との違い。scan 経路では
+    /// 1 箇所の循環で project 全体のロードが失敗してはならない。
+    pub(crate) fn rebuild_derived_with_warnings(self) -> Result<Self, TaskParseError> {
+        self.build_children_with_warnings()
             .map(Self::build_reverse_links)
     }
 
@@ -2111,3 +2158,26 @@ mod task_index_plan_remove_link_tests;
 #[cfg(test)]
 #[path = "task_index_plan_preview_filename_tests.rs"]
 mod task_index_plan_preview_filename_tests;
+
+/// `task` の (カラム表示順, カラム内 cardOrder 位置) を返す。
+///
+/// `cardOrder` に載っていない場合の位置は `usize::MAX` とし、同カラムの記載済み
+/// タスクより後ろに回す（同順内の tie-break は呼び出し側が `id` で行う）。
+fn card_sort_key(
+    task: &Task,
+    config: &Config,
+    column_rank: &HashMap<&str, usize>,
+    unknown_column_rank: usize,
+) -> (usize, usize) {
+    let status = task.status.as_str();
+    let rank = column_rank
+        .get(status)
+        .copied()
+        .unwrap_or(unknown_column_rank);
+    let position = config
+        .card_order
+        .get(status)
+        .and_then(|paths| paths.iter().position(|p| p == task.file_path.as_str()))
+        .unwrap_or(usize::MAX);
+    (rank, position)
+}

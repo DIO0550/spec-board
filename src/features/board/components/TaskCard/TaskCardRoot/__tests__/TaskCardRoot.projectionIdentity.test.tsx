@@ -9,6 +9,7 @@ import type {
   TaskProjection,
   TaskProjectionMap,
 } from "@/domains/task-projection";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { Task, type TaskPayload } from "@/types/task";
 import { BoardCardProvider } from "../../../BoardCardProvider";
 import {
@@ -136,6 +137,7 @@ test("等価な projections で再同期しても Context Value は同一参照"
   // map 単位の据え置きは store 側（ProjectData.replaceProjections）が担う。
   // 実パイプラインと同じく、等価な応答をマージした結果を Provider へ渡す。
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent, child, other],
     columns: [{ name: "Todo", order: 0 }],
     doneColumn: "Done",

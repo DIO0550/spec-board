@@ -271,6 +271,8 @@ fn create_task_registers_write_ignore_when_watcher_installed_and_consumed_on_eve
     let ctx = AdapterContext {
         root: dir.path().to_path_buf(),
         default_status: "Todo".into(),
+        project_key: crate::state::project_key::ProjectKey::from_root(dir.path()),
+        generation: state.project_generation(),
         state: Arc::clone(&state),
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,

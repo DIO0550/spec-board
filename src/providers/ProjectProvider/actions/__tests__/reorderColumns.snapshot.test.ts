@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
 import type { ProjectData } from "@/domains/project-data";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Column } from "@/types/column";
 import { ReorderSnapshot } from "../reorderColumns";
 
 const dataOf = (columns: readonly Column[]): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [],
   columns: [...columns],
   projections: new Map(),
@@ -40,6 +42,7 @@ test("from: columns.length < 2 は isNoop=true", () => {
 
 test("from: data.columns が逆順でも表示順 [A,B,C] に sort してから解決される", () => {
   const data: ProjectData = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [],
     columns: [
       { name: "C", order: 2 },
@@ -58,6 +61,7 @@ test("from: data.columns が逆順でも表示順 [A,B,C] に sort してから�
 
 test("from: order に gap がある [A(0), B(5), C(10)] でも from='A', to='C' で 0-origin 連番に正規化", () => {
   const data: ProjectData = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [],
     columns: [
       { name: "A", order: 0 },
@@ -138,6 +142,7 @@ test("toCommandBuilder: current 引数を見ず snapshot.afterColumns を返す"
   const snapshot = ReorderSnapshot.from(data, "A", "C");
   const builder = ReorderSnapshot.toCommandBuilder(snapshot);
   const unrelatedCurrent: ProjectData = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [],
     columns: [
       { name: "X", order: 0 },

@@ -644,6 +644,8 @@ fn update_task_registers_write_ignore_and_consumes_on_modified_and_renamed_event
     let ctx = AdapterContext {
         root: dir.path().to_path_buf(),
         default_status: "Todo".into(),
+        project_key: crate::state::project_key::ProjectKey::from_root(dir.path()),
+        generation: state.project_generation(),
         state: Arc::clone(&state),
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,

@@ -1,13 +1,39 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect } from "react";
-import { Task, type TaskPayload } from "@/types/task";
+import type { WatcherDiagnostic } from "@/domains/watcher-diagnostic";
+import type { WatcherSession } from "@/domains/watcher-session";
 import type { ProjectAction } from "./reducer";
 import type { ProjectState } from "./state/projectState";
+import {
+  parseWatcherEnvelope,
+  WATCHER_EVENT_NAMES,
+  WatcherGate,
+  type WatcherGateDecision,
+  type WatcherGateState,
+  type WatcherResyncReason,
+} from "./watcherEnvelopeGate";
+
+/** gate の可変 ref（ProjectVersion と同じ「ref で世代を持つ」既存パターン）。 */
+export type WatcherGateRef = { current: WatcherGateState };
 
 /** useTaskWatcherEffects が受け取る依存。 */
 type TaskWatcherDeps = {
   /** 現在 loaded な project path（未 loaded は null）。 */
   loadedPath: string | null;
+  /** open_project 応答の session。gate の baseline。 */
+  session: WatcherSession | null;
+  /** envelope 検証状態を保持する ref。 */
+  gate: WatcherGateRef;
+  /**
+   * Rescan / gap を受けて snapshot 再取得を要求する。
+   * @param reason 再取得の理由
+   */
+  requestResync: (reason: WatcherResyncReason) => void;
+  /**
+   * watcher backend の診断を通知する。
+   * @param diagnostic 通知内容
+   */
+  notifyDiagnostic: (diagnostic: WatcherDiagnostic) => void;
   /** 最新 state を同期的に読む getter（= store.getState）。 */
   getState: () => ProjectState;
   /**
@@ -67,73 +93,134 @@ const registerListen = <T>(
   };
 };
 
+/** decision を適用するための出力ポート。 */
+type DecisionSinks = Pick<
+  TaskWatcherDeps,
+  "dispatch" | "requestResync" | "notifyDiagnostic"
+>;
+
 /**
- * loaded な project の task ファイル変更（created / updated / deleted）を Tauri
- * event で購読し、capturedPath ガードを通過した変更だけ store へ dispatch する
- * Provider 内 private hook。listen callback は `getState()` で「今の state」を同期的に
- * 読み、project 切替・unmount 時は effect の再登録 / cleanup で購読を張り替える。
+ * gate の decision を store / 再取得 / 通知へ振り分ける。
+ * @param decision gate が返した判定
+ * @param sinks 出力先
+ */
+const applyDecision = (
+  decision: WatcherGateDecision,
+  sinks: DecisionSinks,
+): void => {
+  if (decision.kind === "resync") {
+    sinks.requestResync(decision.reason);
+    return;
+  }
+  if (decision.kind !== "apply") {
+    return;
+  }
+  const { payload } = decision.envelope;
+  if (payload.kind === "diagnostic") {
+    sinks.notifyDiagnostic({
+      code: payload.code,
+      message: payload.message,
+      changeId: decision.envelope.changeId,
+    });
+    // 診断の手前に欠番があった場合は通知と再取得を両方行う。
+    if (decision.alsoResync !== undefined) {
+      sinks.requestResync(decision.alsoResync);
+    }
+    return;
+  }
+  const action = WatcherGate.toAction(decision.envelope);
+  if (action === null) {
+    return;
+  }
+  sinks.dispatch(action);
+};
+
+/**
+ * loaded な project の watcher event（task 変更 / 再取得要求 / 診断）を **単一の
+ * effect** で購読し、gate の判定を経て store / 再取得 / 通知へ振り分ける
+ * Provider 内 private hook。
  *
- * @param deps loadedPath / getState / dispatch
+ * # 購読をまとめる理由
+ *
+ * gate は event 種別を跨ぐ単一の連番（`eventSeq`）と版（`revision`）を見るため、
+ * 購読が event ごとに分かれていると判定順が崩れる。
+ *
+ * # gate の初期化を分離する理由
+ *
+ * 購読 effect の依存には 4 つの callback が含まれる。どれか 1 つの参照が変われば
+ * effect が再実行されるため、そこで `gate.current = init(...)` すると buffer と
+ * カウンタが全消去される。`get_tasks` in-flight 中に踏むと、その後の
+ * `snapshotApplied` が初期化直後の gate に適用されて resync が失われ、board が
+ * 凍結する。初期化は callback を依存に含めない専用 effect に置き、さらに
+ * generation 比較で冪等にして二重に防ぐ。
+ *
+ * @param deps loadedPath / session / gate / requestResync / notifyDiagnostic / getState / dispatch
  */
 export const useTaskWatcherEffects = ({
   loadedPath,
+  session,
+  gate,
+  requestResync,
+  notifyDiagnostic,
   getState,
   dispatch,
 }: TaskWatcherDeps): void => {
   useEffect(() => {
-    if (loadedPath === null) {
+    if (session === null) {
       return;
     }
-    const capturedPath = loadedPath;
-    return registerListen<{ task: TaskPayload }>("task-created", (payload) => {
-      if (!payload?.task) {
-        return;
-      }
-      const current = getState();
-      if (current.kind !== "loaded" || current.path !== capturedPath) {
-        return;
-      }
-      const task = Task.fromPayload(payload.task);
-      dispatch({ type: "task-created", task });
-    });
-  }, [loadedPath, getState, dispatch]);
+    if (gate.current.session?.generation === session.generation) {
+      return;
+    }
+    gate.current = WatcherGate.init(session);
+    // 依存に callback を含めない。どれか 1 つの参照が変わるだけで gate を作り直すと、
+    // in-flight resync の buffer が消えて board が凍結する。
+  }, [session, gate]);
 
   useEffect(() => {
-    if (loadedPath === null) {
+    if (loadedPath === null || session === null) {
       return;
     }
     const capturedPath = loadedPath;
-    return registerListen<{ task: TaskPayload }>("task-updated", (payload) => {
-      if (!payload?.task) {
-        return;
-      }
-      const current = getState();
-      if (current.kind !== "loaded" || current.path !== capturedPath) {
-        return;
-      }
-      const task = Task.fromPayload(payload.task);
-      dispatch({
-        type: "task-updated",
-        originalFilePath: payload.task.filePath,
-        task,
+
+    const handleEvent =
+      (eventName: string) =>
+      (raw: unknown): void => {
+        const envelope = parseWatcherEnvelope(eventName, raw);
+        if (envelope === null) {
+          return;
+        }
+        // capturedPath ガードは gate の projectKey 判定とは独立の 2 段目。
+        // FE 採番の loadedPath と BE 採番の projectKey は別物なので統合しない。
+        const current = getState();
+        if (current.kind !== "loaded" || current.path !== capturedPath) {
+          return;
+        }
+        const step = WatcherGate.receive(gate.current, envelope);
+        gate.current = step.state;
+        applyDecision(step.decision, {
+          dispatch,
+          requestResync,
+          notifyDiagnostic,
+        });
+      };
+
+    const unlistens = WATCHER_EVENT_NAMES.map((name) =>
+      registerListen<unknown>(name, handleEvent(name)),
+    );
+    return () => {
+      unlistens.forEach((unlisten) => {
+        unlisten();
       });
-    });
-  }, [loadedPath, getState, dispatch]);
-
-  useEffect(() => {
-    if (loadedPath === null) {
-      return;
-    }
-    const capturedPath = loadedPath;
-    return registerListen<{ filePath: string }>("task-deleted", (payload) => {
-      if (typeof payload?.filePath !== "string") {
-        return;
-      }
-      const current = getState();
-      if (current.kind !== "loaded" || current.path !== capturedPath) {
-        return;
-      }
-      dispatch({ type: "task-deleted", filePath: payload.filePath });
-    });
-  }, [loadedPath, getState, dispatch]);
+    };
+    // この effect は gate を初期化しないので、依存が増えても buffer は消えない。
+  }, [
+    loadedPath,
+    session,
+    gate,
+    requestResync,
+    notifyDiagnostic,
+    getState,
+    dispatch,
+  ]);
 };

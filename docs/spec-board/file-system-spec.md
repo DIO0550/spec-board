@@ -75,6 +75,12 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "isDone": false,
       "childFilePaths": ["tasks/sub-a.md", "tasks/sub-b.md"]
     }
+  },
+  "session": {
+    "projectKey": "/home/user/specs",
+    "generation": 1,
+    "revision": 1,
+    "eventSeq": 0
   }
 }
 ```
@@ -86,6 +92,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 - `extras`: 定義外フロントマターを JSON 互換値として保持したオブジェクト
 - `warnings`: `title` / `status` の fallback や `parent` / `extras` の型不一致など、Task 生成を継続できる非致命警告の一覧
 - `projections`: filePath をキーにした集計値。詳細は `get_tasks` 節を参照する。初期表示時点でフロントエンドが集計を持てるよう同梱する
+- `session`: watcher イベント検証の初期 baseline。`tasks` と**同一トランザクション**で確定した値で、watcher を起動する前に組み立てる。分けて組み立てると「session はある変更を含むが tasks は含まない」状態が生まれ、その変更のイベントが stale として捨てられたまま復旧しなくなる。詳細は「イベント通知」節を参照
 
 フロントエンドでは、この Tauri IPC payload を `TaskPayload` として受け取り、domain model の `Task` に変換して扱う。`Task` では `parent` / `children` は `hierarchy.parentFilePath` / `hierarchy.childFilePaths` に、`links` / `reverseLinks` は `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に格納する。IPC payload と markdown frontmatter のフィールド名は互換性維持のため flat なまま変更しない。
 
@@ -113,9 +120,9 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 **引数**: なし
 
-**戻り値**: `{ tasks, projections }`。`tasks` は `open_project` と同じ Task 配列（`id` 昇順。`children` と `reverseLinks` の逆引き情報を含む）で、`projections` は filePath をキーにした集計値のオブジェクト。
+**戻り値**: `{ tasks, projections, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）で、`projections` は filePath をキーにした集計値のオブジェクト、`session` は watcher イベント検証の baseline。
 
-> `open_project` の `tasks` はカラム表示順 → `cardOrder` → `id` 順、`get_tasks` の `tasks` は `id` 昇順で、**同じ集合だが並び順は異なる**。
+> `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → `id` 昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ `id` 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。プロジェクト未オープンで `config` を解決できない場合のみ `id` 昇順にフォールバックする。
 
 ```json
 {
@@ -126,9 +133,18 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "isDone": false,
       "childFilePaths": ["tasks/child-a.md", "tasks/child-b.md"]
     }
+  },
+  "session": {
+    "projectKey": "/home/user/specs",
+    "generation": 1,
+    "revision": 42,
+    "eventSeq": 17
   }
 }
 ```
+
+`session` は返した `tasks` と同一トランザクションで確定した値で、受信側はこれで
+watcher イベント検証の baseline（`revision` と `eventSeq` の両方）を取り直す。
 
 **`projections` の各フィールド**:
 
@@ -150,7 +166,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 - 完了カラムは `doneColumn` 設定値。未設定時は `columns` の `order` 最大（表示上の末尾）カラム。どちらも解決できない場合は `isDone` が常に false・`done` は 0
 - 百分率は payload に含めない（表示層で算出する）
 
-**未オープン時**: `tasks` / `projections` ともに空の payload を成功で返す（エラーにはしない）。
+**未オープン時**: `tasks` / `projections` ともに空、`session` は初期値（`generation` / `revision` / `eventSeq` がすべて 0）の payload を成功で返す（エラーにはしない）。
 
 ---
 
@@ -340,26 +356,74 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | 監視ライブラリ | `notify` crate（Rust） |
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
-| 監視イベント | Create / Modify / Remove / Rename。いずれも本体クレート側 adapter で `tasks_cache` を差分更新後、Tauri IPC で FE に配信される。Remove は cache 登録済みパスのみ `task-deleted` を発火し、`WriteIgnoreRegistry` に登録された自前 delete はスキップする |
+| 監視イベント | Create / Modify / Remove / Rename / Rescan / Error。Create〜Rename は本体クレート側 adapter で `tasks_cache` を差分更新後、Tauri IPC で FE に配信される。Remove は cache 登録済みパスのみ `task-deleted` を発火し、`WriteIgnoreRegistry` に登録された自前 delete はスキップする。Rescan は full rescan を行って `tasks_cache` を全置換し、Error は structured diagnostics として FE へ通知する |
 | デバウンス | 後述の「デバウンス（スライディングウィンドウ集約）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
 | フロントエンドへの通知 | Tauri のイベントシステム（`emit`）を使用 |
 
 ### イベント通知
 
-フロントエンドに送信するイベント:
+すべての watcher イベントは共通 envelope に包んで配信する。
 
-| イベント名 | ペイロード | 発火条件 |
-|:----------|:----------|:---------|
-| `task-created` | `{ task: Task }` | 新しいmdファイルが作成された |
-| `task-updated` | `{ task: Task }` | 既存のmdファイルが更新された |
-| `task-deleted` | `{ filePath: string }` | mdファイルが削除された |
+```ts
+{
+  projectKey: string,      // BE 採番の project 識別子
+  generation: number,      // watcher 世代（open_project ごとに +1）
+  revision: number,        // tasks_cache の版
+  cacheMutating: boolean,  // この event が cache を変更したか
+  eventSeq: number,        // emit ごとに 1 消費する連番（欠番 = 取りこぼし）
+  changeId: string,        // "{generation}-{eventSeq}"（ログ相関用）
+  payload: { /* イベント別 */ }
+}
+```
+
+| イベント名 | payload | 発火条件 | cacheMutating |
+|:----------|:--------|:---------|:--------------|
+| `task-created` | `{ task: Task }` | 新しい md ファイルが作成された | true |
+| `task-updated` | `{ task: Task }` | 既存の md ファイルが更新された | true |
+| `task-deleted` | `{ filePath: string }` | md ファイルが削除された | true |
+| `watcher-resync-required` | `{ reason: "rescan" }` | `FsEvent::Rescan` を受けて full rescan を完了した。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
+| `watcher-diagnostic` | `{ code, message, paths }` | watcher backend の障害 / full rescan の失敗 | false |
+
+受信側は `projectKey` / `generation` の不一致を破棄し、`eventSeq` の欠番を検知したら
+`get_tasks` で snapshot を取り直す。`cacheMutating: true` の event についてのみ
+`revision` の単調性を検査する（診断イベントは cache を変えないため revision が進まない）。
+
+**現時点の保証範囲（1）— 通常の差分更新とカラム更新の競合**: status を省略した md の
+既定カラムは、その md を処理する時点の `Config` から解決する。ただし「`Config` を読む →
+md を parse する → `tasks_cache` を更新する」が単一のクリティカルセクションではないため、
+その途中で `update_columns` が commit すると、当該ファイルだけ 1 世代前の既定カラムに入る。
+**旧カラムが削除されていた場合は、どのカラムにも属さずボード上から見えなくなる**。
+いずれもそのファイルが再度変更されるか full rescan が走れば解消する。
+
+恒久対策は `update_columns` の atomic 化だけでは足りない（watcher は commit の前に
+古い `Config` で parse を終えているため）。cache への insert 時点で既定 status を
+再検証し、変わっていれば parse からやり直す **conditional upsert** が必要で、
+バックエンドのドメイン再構成（Epic #417）で扱う。
+
+**現時点の保証範囲（2）**: `open_project` は watcher を起動してから応答を返すため、
+「watcher 起動 → フロントエンドが購読を開始する」までの短い窓に発生した変更は、
+open 応答の snapshot にも購読にも含まれない。この欠落は**次のイベントが届いた時点で
+`eventSeq` の欠番として検知され、自動再取得で復旧する**。ただし窓の直後に一切
+イベントが発生しない場合はその変更が反映されないままになる。窓自体を無くすには
+購読の常設化または BE/FE のハンドシェイクが必要で、watcher reconciliation
+（Issue #460）で扱う。
+
+`open_project` / `get_tasks` の応答には、その snapshot と**同一トランザクション**で
+確定した `session`（`{ projectKey, generation, revision, eventSeq }`）が含まれる。
+受信側はこれを envelope 検証の baseline とし、再取得のたびに取り直す。
+
+`watcher-diagnostic` の `code` は
+`watchPathUnavailable` / `resourceExhausted` / `permissionDenied` / `io` / `unknown` /
+`rescanFailed` のいずれか。未知の値は受信側で `unknown` に丸めて必ず通知する。
 
 ### 処理フロー
 
 ```mermaid
 flowchart TD
-    A[ファイル変更を検知] --> A1{自己書き込み?}
+    A[ファイル変更を検知] --> G0{現行 generation?}
+    G0 -->|No| G1[旧 watcher なので cache も emit も触らない]
+    G0 -->|Yes| A1{自己書き込み?}
     A1 -->|Yes| A2[イベントを無視]
     A1 -->|No| B[デバウンス 100ms]
     B --> C{イベント種別}
@@ -367,6 +431,15 @@ flowchart TD
     C -->|Modify| D
     C -->|Remove| E[cache 登録済みなら task-deleted を発火。write_ignore 登録済みは skip]
     C -->|Rename| R[旧パスで task-deleted + 新パスで読み込み・パース]
+    C -->|Rescan| S0[走査前の revision を控える]
+    C -->|Error| X[watcher-diagnostic を発火。cache は変更しない]
+    S0 --> S1[lock 外で全 md を再走査・再構築]
+    S1 --> S2{revision と既定 status が一致?}
+    S2 -->|No・上限内| S0
+    S2 -->|No・上限超過| S6[cache 不変のまま rescanFailed を通知]
+    S2 -->|Yes| S3[cache 全置換 + write_ignore を clear]
+    S3 --> S4[watcher-resync-required を発火]
+    S1 -->|走査 / 構築が失敗| S5[cache 不変のまま rescanFailed を通知]
     D --> F{パース成功?}
     R --> F
     F -->|Yes| G[task-created / task-updated イベントを発火]
@@ -392,7 +465,7 @@ flowchart TD
 | 上書き仕様 | 集約中の保留イベントは後続イベントで `event` ごと上書きされる（`kind` も含めて最後のイベントのみが送出される） |
 | 集約キー | 通常イベント (`Created` / `Modified` / `Removed` / `Other`) はそのままの path を key とする。`Renamed { from, to }` は **宛先 `to`** を key とする（`from` 側は独立扱い）。rename 後に同じ `to` への `Modified` 等が連続すれば、後続イベントが pending 内の `Renamed` を上書きする |
 | バイパス対象 | `FsEvent::Rescan` / `FsEvent::Error` はデバウンスせず即時 forward する。状態乖離や障害検出を遅延させないため、保留イベントを **追い越して** 先に通知される |
-| 順序保証 | バイパスイベントは保留を flush せずに追い越すため、受信側は `Rescan` 後に古い `Modified` 等が遅延発火する可能性を許容する前提で実装すること |
+| 順序保証 | バイパスイベントは保留を flush せずに追い越すため、受信側は `Rescan` 後に古い `Modified` 等が遅延発火する可能性を許容する前提で実装すること。**上位層はこれを envelope の `revision` / `eventSeq` で吸収する**: 追い越した古い cache 変更は `revision` が snapshot 以下になるので破棄され、`eventSeq` の欠番は取りこぼしとして自動再取得を起こす。再取得の応答が届くまでに来た cache 変更は受信側 gate が buffer し、baseline 取り直し後に順に畳み込んで適用する |
 | Drop 時の保留 | `Watcher` の Drop で上流が解放された際、保留イベントは破棄せず deadline 昇順（同点は path 昇順）で flush されてから adapter スレッドが終了する |
 | 公開 API への影響 | 公開 API（`Watcher::start` / `FsEvent` / `WatcherError` / `Receiver<FsEvent>`）は完全互換 |
 
@@ -412,7 +485,7 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 - 書き込みパスセットは `HashSet<PathBuf>` で管理し、`Mutex` で排他制御
 - セット登録後に対応するイベントが来なかった場合の解除は呼び出し側が明示的に行う
 - **パス表現は絶対パス**で揃える。`FsEvent` から渡される `PathBuf` をそのまま key として比較するため、書き込み側も `register` 時に絶対パスを使うこと。相対表記や区切り違い（`./tasks/x.md` と `tasks/x.md` 等）は別キーとして扱われ、`unregister` がヒットせずに自己書き込みが二重通知される
-- **stale entry の TTL cleanup は行わない**。書き込み後に対応するイベントが届かなかった場合の登録は、`open_project` で別プロジェクトを開いたタイミングの `WriteIgnoreRegistry::clear()` でのみ解消される。プロジェクトを開き直さずに長時間動作させても自己書き込み判定が壊れない仕様にしたい場合は、呼び出し側で `unregister` を明示する
+- **stale entry の TTL cleanup は行わない**。書き込み後に対応するイベントが届かなかった場合の登録は、`open_project` で別プロジェクトを開いたタイミングと **full rescan 完了時**の `WriteIgnoreRegistry::clear()` で解消される。full rescan で clear するのは、stale entry が残ると以後の自前 write 判定を誤らせるため（`open_project` の commit と同じ扱い）。プロジェクトを開き直さずに長時間動作させても自己書き込み判定が壊れない仕様にしたい場合は、呼び出し側で `unregister` を明示する
 
 ## エラーハンドリング
 
@@ -424,6 +497,9 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 | フロントマターパース失敗 | YAML構文エラー、必須フィールド欠損 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
 | ファイル書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに返却 | ERROR |
 | 監視の初期化失敗 | OS制限（inotify上限等） | `Watcher::start` 内部で recommended → poll の自動フォールバックを試み、両方失敗した場合のみ `open_project` から `ファイル監視の初期化に失敗しました: ...` を返す。AppState は **一切変更せず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する | ERROR |
+| 監視稼働中の backend 障害 | 監視対象の消失 / 資源枯渇 / 権限剥奪 / I/O エラー | `FsEvent::Error(WatcherFailure)` を `watcher-diagnostic`（`cacheMutating: false`）として FE へ配信し、error トーストで可視化する。`tasks_cache` と `revision` は変更しない | WARN |
+| full rescan の失敗 | Rescan 受信後の再走査で root 不在 / 親チェーンの深さ超過 | `tasks_cache` を **一切変更せず**、`watcher-diagnostic`（`code: "rescanFailed"`）のみ発火する。FE に再取得させても BE の cache が古いままなので、「復旧できなかった」ことを伝える方が安全側 | WARN |
+| full rescan 中の並行 mutation / カラム更新 | 走査中に mutation command が commit して revision が進む、または `update_columns` が既定 status を変える | 置換直前の check-and-set が **revision と「走査に使った既定 status」の両方**の不一致を検出し、**最大 3 回**まで再走査する。上限超過時は cache を変更せず `rescanFailed` を通知する（最終試行を無条件採用すると、その走査中のカラム変更まで誤った内容で確定させてしまうため） | WARN |
 
 ## バックエンド API（内部）
 
@@ -525,8 +601,23 @@ pub enum FsEvent {
     Removed(PathBuf),
     Renamed { from: PathBuf, to: PathBuf },
     Other(PathBuf),
-    Error(String),
+    Error(WatcherFailure),
     Rescan,
+}
+
+/// 監視稼働中に発生したランタイム障害。起動時エラー `WatcherError` とは役割が違う。
+pub struct WatcherFailure {
+    pub kind: WatcherFailureKind,
+    pub paths: Vec<PathBuf>,
+    pub detail: String,
+}
+
+pub enum WatcherFailureKind {
+    WatchPathUnavailable,
+    ResourceExhausted,
+    PermissionDenied,
+    Io,
+    Unknown,
 }
 
 pub enum WatcherError {
@@ -557,7 +648,11 @@ pub enum WatcherError {
 | `Access(_)` / `Any` / `Other` | 〃 | `FsEvent::Other(paths[0])` |
 | 任意 | `paths.is_empty()` | 送信スキップ |
 | 任意 | `notify::Event::need_rescan() == true` | `FsEvent::Rescan`（キューオーバーフロー／コアレスでイベントが取りこぼされた可能性。`paths` の有無に関わらず先に判定し、caller に状態再構築を促す） |
-| `notify` バックエンドからの `Result::Err` | — | `FsEvent::Error(message)`（黙殺せず caller に通知） |
+| `notify` バックエンドからの `Result::Err` | — | `FsEvent::Error(WatcherFailure)`（黙殺せず caller に通知）。`kind` は `notify::ErrorKind` から写像する: `PathNotFound` / `WatchNotFound` → `WatchPathUnavailable`、`MaxFilesWatch` → `ResourceExhausted`、`Io(_)` は内側の `std::io::ErrorKind` を見て `NotFound` → `WatchPathUnavailable` / `PermissionDenied` → `PermissionDenied` / `StorageFull`・`OutOfMemory` → `ResourceExhausted` / それ以外 → `Io`、`Generic` / `InvalidConfig` → `Unknown` |
+
+`FsEvent::Error` は**稼働中**の障害、`WatcherError` は **`start` 時**の失敗を表す。両者を
+1 つの型にまとめると「監視が始まらなかった」と「監視が途中で壊れた」を呼び出し側が
+区別できず、後者を起動失敗として扱って project を閉じてしまう。
 
 #### `WatcherError`（`start` 時のみ）
 
@@ -572,8 +667,11 @@ pub enum WatcherError {
 `spec-board-fs::watcher` は OS の watcher backend を抽象化し `FsEvent` までを返す層であり、本体クレート `spec-board` 側の `watcher_event` adapter で以下を担当する:
 
 - 拡張子フィルタ（`.md` 等）— `watcher_event::handler::rel_md_path` で root 配下の `.md` のみを処理
-- Tauri IPC 経由のフロントエンド emit（`task-created` / `task-updated` / `task-deleted` への変換）— `watcher_event::handler::handle_event` + `EmittingWatcherHandle`
+- Tauri IPC 経由のフロントエンド emit（5 event の envelope 化）— `watcher_event::handler::handle_event` + `EmittingWatcherHandle`
 - `WriteIgnoreRegistry` との統合（自己書き込み抑制）— `watcher_event::handler` 内で `unregister(abs_path)` を呼ぶ
+- `FsEvent::Rescan` の full rescan（全 md 再走査 → `tasks_cache` 全置換 → `watcher-resync-required` 発火）— `watcher_event::handler::handle_rescan`
+- `FsEvent::Error` の structured diagnostics 化（`WatcherFailureKind` → `watcher-diagnostic` の `code`）— `watcher_event::handler::handle_backend_failure`
+- 旧世代 watcher の event 破棄（`generation` guard）— `watcher_event::handler::handle_event` 冒頭
 
 引き続き後続 Issue で扱うもの:
 

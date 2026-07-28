@@ -167,6 +167,9 @@ export const openProjectAction = async ({
       // 「open 失敗による旧 project の復元」を区別するために使う（openFail は
       // previousLoaded を同じ path のまま loaded へ戻すため path では区別できない）。
       openRequestId: openRequest,
+      // watcher envelope 検証の初期 baseline。tasks と同一トランザクションで
+      // 確定した値なので、ここで別途組み立て直してはならない。
+      watcherSession: openResult.value.session,
     };
     invalidateProject(projectVersion);
     dispatch({ type: "open-succeed", path, data });

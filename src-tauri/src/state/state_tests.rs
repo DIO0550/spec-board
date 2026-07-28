@@ -9,6 +9,7 @@ use std::thread;
 
 use spec_board_fs::watcher::handle::WatcherHandle;
 
+use crate::config::column_name::ColumnName;
 use crate::config::{
     CardOrder, Column, Config, LabelDefinition, LabelRegistry, MilestoneDefinition,
     MilestoneRegistry,
@@ -757,7 +758,7 @@ fn replace_config_and_tasks_keeps_config_untouched_when_task_update_fails() {
     );
 }
 
-// ───────── snapshot_config_and_tasks ─────────
+// ───────── snapshot_config_tasks_and_session ─────────
 
 fn column(name: &str, order: u32) -> Column {
     Column {
@@ -768,7 +769,7 @@ fn column(name: &str, order: u32) -> Column {
 }
 
 #[test]
-fn snapshot_config_and_tasks_returns_both_fields_when_committed() {
+fn snapshot_config_tasks_and_session_returns_both_fields_when_committed() {
     let state = AppState::new();
     let mut config = sample_config();
     config.columns = vec![column("Todo", 0), column("Doing", 1), column("Done", 2)];
@@ -778,30 +779,30 @@ fn snapshot_config_and_tasks_returns_both_fields_when_committed() {
     cache.insert(PathBuf::from("b.md"), sample_task("b", "b.md"));
     state.replace_tasks_cache(cache).expect("writable");
 
-    let ctx = state.snapshot_config_and_tasks().expect("readable");
+    let ctx = state.snapshot_config_tasks_and_session().expect("readable");
 
     assert_eq!(ctx.config.expect("config").columns.len(), 3);
     assert_eq!(ctx.tasks.len(), 2);
 }
 
 #[test]
-fn snapshot_config_and_tasks_returns_none_config_and_empty_tasks_when_uninitialized() {
+fn snapshot_config_tasks_and_session_returns_none_config_and_empty_tasks_when_uninitialized() {
     let state = AppState::new();
 
-    let ctx = state.snapshot_config_and_tasks().expect("readable");
+    let ctx = state.snapshot_config_tasks_and_session().expect("readable");
 
     assert!(ctx.config.is_none());
     assert!(ctx.tasks.is_empty());
 }
 
 #[test]
-fn snapshot_config_and_tasks_returns_cloned_tasks_unaffected_by_later_writes() {
+fn snapshot_config_tasks_and_session_returns_cloned_tasks_unaffected_by_later_writes() {
     let state = AppState::new();
     let mut cache = HashMap::new();
     cache.insert(PathBuf::from("a.md"), sample_task("a", "a.md"));
     cache.insert(PathBuf::from("b.md"), sample_task("b", "b.md"));
     state.replace_tasks_cache(cache.clone()).expect("writable");
-    let ctx = state.snapshot_config_and_tasks().expect("readable");
+    let ctx = state.snapshot_config_tasks_and_session().expect("readable");
 
     cache.insert(PathBuf::from("c.md"), sample_task("c", "c.md"));
     state.replace_tasks_cache(cache).expect("writable");
@@ -810,7 +811,7 @@ fn snapshot_config_and_tasks_returns_cloned_tasks_unaffected_by_later_writes() {
 }
 
 #[test]
-fn snapshot_config_and_tasks_reports_config_lock_poison() {
+fn snapshot_config_tasks_and_session_reports_config_lock_poison() {
     let state = Arc::new(AppState::new());
     poison_mutex(Arc::clone(&state), |s| {
         let _guard = s.config.lock().expect("lockable before panic");
@@ -820,13 +821,13 @@ fn snapshot_config_and_tasks_reports_config_lock_poison() {
     assert_eq!(
         AppStateError::LockPoisoned,
         state
-            .snapshot_config_and_tasks()
+            .snapshot_config_tasks_and_session()
             .expect_err("poisoned read")
     );
 }
 
 #[test]
-fn snapshot_config_and_tasks_reports_tasks_cache_lock_poison() {
+fn snapshot_config_tasks_and_session_reports_tasks_cache_lock_poison() {
     let state = Arc::new(AppState::new());
     poison_mutex(Arc::clone(&state), |s| {
         let _guard = s.tasks_cache.lock().expect("lockable before panic");
@@ -836,7 +837,315 @@ fn snapshot_config_and_tasks_reports_tasks_cache_lock_poison() {
     assert_eq!(
         AppStateError::LockPoisoned,
         state
-            .snapshot_config_and_tasks()
+            .snapshot_config_tasks_and_session()
             .expect_err("poisoned read")
     );
+}
+
+// ───────── revision / generation / eventSeq ─────────
+
+fn cache_with(entries: &[(&str, &str)]) -> HashMap<PathBuf, Task> {
+    entries
+        .iter()
+        .map(|(id, path)| (PathBuf::from(*path), sample_task(id, path)))
+        .collect()
+}
+
+#[test]
+fn new_initializes_generation_revision_and_event_seq_to_zero() {
+    let state = AppState::new();
+
+    let session = state
+        .snapshot_config_tasks_and_session()
+        .expect("readable")
+        .session;
+
+    assert_eq!(0, state.project_generation().as_u64());
+    assert_eq!(0, state.tasks_revision().as_u64());
+    assert_eq!(0, session.event_seq.as_u64());
+}
+
+#[test]
+fn with_tasks_cache_mut_revision_bumps_revision_and_returns_it() {
+    let state = AppState::new();
+
+    let (inserted, revision) = state
+        .with_tasks_cache_mut_revision(|cache| {
+            cache.insert(PathBuf::from("a.md"), sample_task("a", "a.md"));
+            cache.len()
+        })
+        .expect("writable");
+
+    assert_eq!(1, inserted);
+    assert_eq!(1, revision.as_u64());
+    assert_eq!(1, state.tasks_revision().as_u64());
+}
+
+#[test]
+fn with_tasks_cache_mut_bumps_revision_even_when_closure_leaves_cache_untouched() {
+    let state = AppState::new();
+
+    state
+        .with_tasks_cache_mut(|cache| cache.len())
+        .expect("writable");
+
+    assert_eq!(
+        1,
+        state.tasks_revision().as_u64(),
+        "closure の中身は検査できないので空振りでも bump する"
+    );
+}
+
+#[test]
+fn replace_tasks_cache_revision_replaces_all_entries_and_bumps_revision() {
+    let state = AppState::new();
+    state
+        .replace_tasks_cache(cache_with(&[("a", "a.md")]))
+        .expect("writable");
+
+    let revision = state
+        .replace_tasks_cache_revision(cache_with(&[("b", "b.md")]))
+        .expect("writable");
+
+    assert_eq!(2, revision.as_u64());
+    let paths: Vec<String> = state
+        .tasks_snapshot()
+        .expect("readable")
+        .into_iter()
+        .map(|task| task.file_path.into_string())
+        .collect();
+    assert_eq!(vec!["b.md".to_string()], paths);
+}
+
+#[test]
+fn replace_config_and_tasks_if_project_matches_bumps_revision_only_when_update_succeeds() {
+    let state = AppState::new();
+    let root = PathBuf::from("/tmp/project");
+    state
+        .set_project_path(Some(root.clone()))
+        .expect("writable");
+
+    state
+        .replace_config_and_tasks_if_project_matches(&root, sample_config(), |cache| {
+            cache.insert(PathBuf::from("a.md"), sample_task("a", "a.md"));
+            Ok::<(), ()>(())
+        })
+        .expect("writable")
+        .expect("path matches")
+        .expect("update ok");
+    assert_eq!(1, state.tasks_revision().as_u64());
+
+    state
+        .replace_config_and_tasks_if_project_matches(&root, sample_config(), |_cache| {
+            Err::<(), ()>(())
+        })
+        .expect("writable")
+        .expect("path matches")
+        .expect_err("update fails");
+    assert_eq!(
+        1,
+        state.tasks_revision().as_u64(),
+        "update_tasks が Err なら cache は変わらないので revision も進めない"
+    );
+
+    state
+        .replace_config_and_tasks_if_project_matches(
+            &PathBuf::from("/tmp/other"),
+            sample_config(),
+            |_cache| Ok::<(), ()>(()),
+        )
+        .expect("writable");
+    assert_eq!(
+        1,
+        state.tasks_revision().as_u64(),
+        "project 不一致では cache に触れないので revision も進めない"
+    );
+}
+
+#[test]
+fn install_project_session_commits_cache_and_returns_the_committed_session() {
+    let state = AppState::new();
+    let root = PathBuf::from("/tmp/project");
+
+    let session = state
+        .install_project_session(&root, cache_with(&[("a", "a.md")]))
+        .expect("writable");
+
+    assert_eq!("/tmp/project", session.project_key.as_str());
+    assert_eq!(1, session.generation.as_u64());
+    assert_eq!(1, session.revision.as_u64());
+    assert_eq!(0, session.event_seq.as_u64());
+    assert_eq!(1, state.tasks_snapshot().expect("readable").len());
+    assert_eq!(1, state.project_generation().as_u64());
+}
+
+#[test]
+fn install_project_session_increments_generation_on_every_open() {
+    let state = AppState::new();
+    let root = PathBuf::from("/tmp/project");
+
+    state
+        .install_project_session(&root, HashMap::new())
+        .expect("writable");
+    let second = state
+        .install_project_session(&root, HashMap::new())
+        .expect("writable");
+
+    assert_eq!(2, second.generation.as_u64());
+}
+
+#[test]
+fn install_project_session_carries_the_current_event_seq_watermark() {
+    let state = AppState::new();
+    state.next_event_seq();
+    state.next_event_seq();
+
+    let session = state
+        .install_project_session(&PathBuf::from("/tmp/project"), HashMap::new())
+        .expect("writable");
+
+    assert_eq!(2, session.event_seq.as_u64());
+}
+
+#[test]
+fn snapshot_config_tasks_and_session_reports_the_revision_of_the_returned_tasks() {
+    let state = AppState::new();
+    let root = PathBuf::from("/tmp/project");
+    state
+        .set_project_path(Some(root.clone()))
+        .expect("writable");
+    state
+        .replace_config(Some(sample_config()))
+        .expect("writable");
+    let installed = state
+        .install_project_session(&root, cache_with(&[("a", "a.md"), ("b", "b.md")]))
+        .expect("writable");
+
+    let context = state.snapshot_config_tasks_and_session().expect("readable");
+
+    assert_eq!(2, context.tasks.len());
+    assert_eq!(installed.revision, context.session.revision);
+    assert_eq!(installed.generation, context.session.generation);
+    assert_eq!("/tmp/project", context.session.project_key.as_str());
+}
+
+#[test]
+fn next_event_seq_increases_monotonically_without_repeating() {
+    let state = AppState::new();
+
+    let seqs: Vec<u64> = (0..5).map(|_| state.next_event_seq().as_u64()).collect();
+
+    assert_eq!(vec![1, 2, 3, 4, 5], seqs);
+}
+
+#[test]
+fn tasks_revision_stays_readable_when_tasks_cache_is_poisoned() {
+    let state = Arc::new(AppState::new());
+    state
+        .replace_tasks_cache_revision(HashMap::new())
+        .expect("writable");
+    poison_mutex(Arc::clone(&state), |s| {
+        let _guard = s.tasks_cache.lock().expect("lockable before panic");
+        panic!("poison tasks_cache");
+    });
+
+    assert_eq!(
+        1,
+        state.tasks_revision().as_u64(),
+        "revision は AtomicU64 なので tasks_cache の poison に巻き込まれない"
+    );
+}
+
+#[test]
+fn revision_keeps_increasing_across_project_switches() {
+    let state = AppState::new();
+
+    state
+        .install_project_session(&PathBuf::from("/tmp/a"), HashMap::new())
+        .expect("writable");
+    let switched = state
+        .install_project_session(&PathBuf::from("/tmp/b"), HashMap::new())
+        .expect("writable");
+
+    assert_eq!(
+        2,
+        switched.revision.as_u64(),
+        "project 往復で同じ revision が再出現すると FE が版を誤判定する"
+    );
+}
+
+#[test]
+fn concurrent_mutations_never_hand_out_the_same_revision() {
+    let state = Arc::new(AppState::new());
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let state = Arc::clone(&state);
+            thread::spawn(move || {
+                let (_, revision) = state
+                    .with_tasks_cache_mut_revision(|cache| cache.len())
+                    .expect("writable");
+                revision.as_u64()
+            })
+        })
+        .collect();
+
+    let mut revisions: Vec<u64> = threads
+        .into_iter()
+        .map(|handle| handle.join().expect("thread ok"))
+        .collect();
+    revisions.sort_unstable();
+
+    assert_eq!((1..=8).collect::<Vec<u64>>(), revisions);
+}
+
+#[test]
+fn replace_tasks_cache_if_unchanged_rejects_a_concurrent_config_swap() {
+    let state = AppState::new();
+    state
+        .replace_config(Some(sample_config()))
+        .expect("writable");
+    let expected_revision = state.tasks_revision();
+    let expected_status: ColumnName = "Todo".into();
+
+    // 走査中に config だけ差し替わり、revision はまだ進んでいない状況。
+    let mut swapped = sample_config();
+    swapped.columns = vec![Column {
+        name: "Backlog".into(),
+        order: 0,
+        color: None,
+    }];
+    state.replace_config(Some(swapped)).expect("writable");
+
+    let applied = state
+        .replace_tasks_cache_if_unchanged(
+            expected_revision,
+            &expected_status,
+            cache_with(&[("a", "a.md")]),
+        )
+        .expect("writable");
+
+    assert_eq!(
+        None, applied,
+        "既定 status が変わったのに置換すると、status 欠損 task が旧カラムに残る"
+    );
+    assert!(state.tasks_snapshot().expect("readable").is_empty());
+}
+
+#[test]
+fn replace_tasks_cache_if_unchanged_applies_when_revision_and_status_hold() {
+    let state = AppState::new();
+    state
+        .replace_config(Some(sample_config()))
+        .expect("writable");
+
+    let applied = state
+        .replace_tasks_cache_if_unchanged(
+            state.tasks_revision(),
+            &"Todo".into(),
+            cache_with(&[("a", "a.md")]),
+        )
+        .expect("writable");
+
+    assert_eq!(Some(1), applied.map(|revision| revision.as_u64()));
+    assert_eq!(1, state.tasks_snapshot().expect("readable").len());
 }

@@ -11,6 +11,7 @@ use tempfile::TempDir;
 
 use super::handler::{handle_event, run_event_loop};
 use super::{AdapterContext, EmitFn};
+use crate::state::project_key::ProjectKey;
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::core::FsEvent;
@@ -24,6 +25,8 @@ fn build_ctx(root: PathBuf, state: Arc<AppState>) -> (AdapterContext, EmitLog) {
         log_clone.lock().unwrap().push((ev.to_string(), payload));
     });
     let ctx = AdapterContext {
+        project_key: ProjectKey::from_root(&root),
+        generation: state.project_generation(),
         root,
         default_status: "Todo".into(),
         state,
@@ -73,7 +76,7 @@ fn create_event_for_new_path_emits_task_created_and_caches_task() {
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
     assert_eq!("task-created", entries[0].0);
-    assert_eq!("tasks/a.md", entries[0].1["task"]["filePath"]);
+    assert_eq!("tasks/a.md", entries[0].1["payload"]["task"]["filePath"]);
 
     assert_eq!(vec!["tasks/a.md".to_string()], snapshot_paths(&state));
 }
@@ -95,7 +98,7 @@ fn modify_event_for_existing_path_emits_task_updated_and_replaces_cache_entry() 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
     assert_eq!("task-updated", entries[0].0);
-    assert_eq!("A2", entries[0].1["task"]["title"]);
+    assert_eq!("A2", entries[0].1["payload"]["task"]["title"]);
 
     let tasks = state.tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
@@ -145,9 +148,9 @@ fn rename_event_emits_deleted_for_from_and_created_for_to() {
     let entries = drain_log(&log);
     assert_eq!(2, entries.len());
     assert_eq!("task-deleted", entries[0].0);
-    assert_eq!("tasks/from.md", entries[0].1["filePath"]);
+    assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
     assert_eq!("task-created", entries[1].0);
-    assert_eq!("tasks/to.md", entries[1].1["task"]["filePath"]);
+    assert_eq!("tasks/to.md", entries[1].1["payload"]["task"]["filePath"]);
 
     assert_eq!(vec!["tasks/to.md".to_string()], snapshot_paths(&state));
 }
@@ -182,12 +185,12 @@ fn rename_with_to_already_in_cache_emits_created_not_updated() {
     let entries = drain_log(&log);
     assert_eq!(2, entries.len(), "deleted + created expected");
     assert_eq!("task-deleted", entries[0].0);
-    assert_eq!("tasks/from.md", entries[0].1["filePath"]);
+    assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
     assert_eq!(
         "task-created", entries[1].0,
         "to-side should always be task-created in rename"
     );
-    assert_eq!("tasks/to.md", entries[1].1["task"]["filePath"]);
+    assert_eq!("tasks/to.md", entries[1].1["payload"]["task"]["filePath"]);
 }
 
 #[test]
@@ -215,7 +218,7 @@ fn rename_with_unparseable_to_emits_only_deleted_and_removes_from_cache() {
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
     assert_eq!("task-deleted", entries[0].0);
-    assert_eq!("tasks/from.md", entries[0].1["filePath"]);
+    assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
 
     assert!(snapshot_paths(&state).is_empty());
 }
@@ -317,7 +320,7 @@ fn uppercase_md_extension_is_accepted() {
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
     assert_eq!("task-created", entries[0].0);
-    assert_eq!("tasks/A.MD", entries[0].1["task"]["filePath"]);
+    assert_eq!("tasks/A.MD", entries[0].1["payload"]["task"]["filePath"]);
 }
 
 #[test]
@@ -450,7 +453,7 @@ fn removed_event_for_cached_path_emits_task_deleted_and_removes_from_cache() {
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one task-deleted expected");
     assert_eq!("task-deleted", entries[0].0);
-    assert_eq!("tasks/a.md", entries[0].1["filePath"]);
+    assert_eq!("tasks/a.md", entries[0].1["payload"]["filePath"]);
     assert!(snapshot_paths(&state).is_empty());
 }
 
@@ -469,7 +472,7 @@ fn removed_event_payload_uses_forward_slash_relative_path() {
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
     assert_eq!("task-deleted", entries[0].0);
-    assert_eq!(json!("tasks/sub/a.md"), entries[0].1["filePath"]);
+    assert_eq!(json!("tasks/sub/a.md"), entries[0].1["payload"]["filePath"]);
 }
 
 #[test]
@@ -561,15 +564,13 @@ fn removed_event_for_path_outside_root_is_ignored() {
 }
 
 #[test]
-fn other_rescan_error_variants_are_no_op() {
+fn other_variant_is_a_no_op() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
     handle_event(&FsEvent::Other(abs), &ctx).expect("ok");
-    handle_event(&FsEvent::Rescan, &ctx).expect("ok");
-    handle_event(&FsEvent::Error("backend boom".to_string()), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -585,7 +586,7 @@ fn task_created_payload_uses_camel_case_with_full_task() {
     handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
 
     let entries = drain_log(&log);
-    let payload = &entries[0].1;
+    let payload = &entries[0].1["payload"];
     let task = &payload["task"];
     assert_eq!("tasks/a.md", task["filePath"]);
     assert_eq!("tasks/a.md", task["id"]);
@@ -619,7 +620,7 @@ fn task_deleted_payload_contains_forward_slash_relative_path() {
         .iter()
         .find(|(name, _)| name == "task-deleted")
         .expect("deleted emitted");
-    assert_eq!(json!("tasks/sub/a.md"), deleted.1["filePath"]);
+    assert_eq!(json!("tasks/sub/a.md"), deleted.1["payload"]["filePath"]);
 }
 
 #[test]
@@ -656,6 +657,8 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
     let ctx = AdapterContext {
         root: dir.path().to_path_buf(),
         default_status: "Todo".into(),
+        project_key: ProjectKey::from_root(dir.path()),
+        generation: state.project_generation(),
         state,
         emit: panicking_emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
@@ -733,7 +736,7 @@ fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
         "cycle member の parentCycle warning は preserve される"
     );
 
-    let emitted = &entries[0].1["task"];
+    let emitted = &entries[0].1["payload"]["task"];
     assert!(
         emitted.get("parent").is_none_or(|v| v.is_null()),
         "emit payload も parent=None を反映する"
@@ -824,7 +827,7 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
         "disk 側で parent が消えた以上、parentCycle warning は維持しない"
     );
 
-    let emitted = &entries[0].1["task"];
+    let emitted = &entries[0].1["payload"]["task"];
     assert!(
         emitted.get("parent").is_none_or(|v| v.is_null()),
         "emit payload も parent=None を反映する"

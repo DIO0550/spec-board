@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import {
   createTask as createTaskInvoke,
@@ -135,6 +136,7 @@ const taskA: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo", "Done"],
   projections: new Map(),
@@ -206,7 +208,12 @@ test("loaded で tasks が 0 件のとき EmptyState type=empty-project が表�
   mountApp();
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [], columns: ["Todo", "Done"], projections: new Map() }),
+    Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
+      tasks: [],
+      columns: ["Todo", "Done"],
+      projections: new Map(),
+    }),
   );
   await act(async () => {
     clickHeaderOpenButton();
@@ -646,6 +653,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/project-b"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [taskAInProjectB],
       columns: ["Todo", "Done"],
       projections: new Map(),
@@ -783,6 +791,7 @@ const childTask: Task = Task.fromPayload({
 });
 
 const parentChildPayload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [parentTask, childTask],
   columns: ["Todo", "Done"],
   projections: new Map(),

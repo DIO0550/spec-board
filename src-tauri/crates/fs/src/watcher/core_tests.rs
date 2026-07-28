@@ -421,15 +421,120 @@ fn spawn_adapter_translates_runtime_error_into_fsevent_error() {
         .recv_timeout(Duration::from_secs(2))
         .expect("should receive an error event");
     match received {
-        FsEvent::Error(msg) => assert!(
-            msg.contains("backend exploded"),
-            "error message must include the source: {msg}"
-        ),
+        FsEvent::Error(failure) => {
+            assert!(
+                failure.detail.contains("backend exploded"),
+                "detail must include the source: {}",
+                failure.detail
+            );
+            assert_eq!(WatcherFailureKind::Unknown, failure.kind);
+        }
         other => panic!("expected FsEvent::Error, got {other:?}"),
     }
 
     drop(tx);
     let _ = handle.join();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// classify_notify_error: notify のランタイムエラー → WatcherFailure
+// ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn classify_notify_error_maps_every_failure_kind() {
+    struct Case {
+        name: &'static str,
+        build: fn() -> notify::Error,
+        expected: WatcherFailureKind,
+    }
+
+    let cases = vec![
+        Case {
+            name: "監視対象が消えた（PathNotFound）",
+            build: notify::Error::path_not_found,
+            expected: WatcherFailureKind::WatchPathUnavailable,
+        },
+        Case {
+            name: "監視登録が失われた（WatchNotFound）",
+            build: notify::Error::watch_not_found,
+            expected: WatcherFailureKind::WatchPathUnavailable,
+        },
+        Case {
+            name: "監視対象が I/O レベルで消えた（Io(NotFound)）",
+            build: || notify::Error::io(std::io::Error::from(std::io::ErrorKind::NotFound)),
+            expected: WatcherFailureKind::WatchPathUnavailable,
+        },
+        Case {
+            name: "OS の監視資源が枯渇した（MaxFilesWatch）",
+            build: || notify::Error::new(notify::ErrorKind::MaxFilesWatch),
+            expected: WatcherFailureKind::ResourceExhausted,
+        },
+        Case {
+            name: "資源枯渇が I/O レベルで出た（Io(StorageFull)）",
+            build: || notify::Error::io(std::io::Error::from(std::io::ErrorKind::StorageFull)),
+            expected: WatcherFailureKind::ResourceExhausted,
+        },
+        Case {
+            name: "権限不足（Io(PermissionDenied)）",
+            build: || notify::Error::io(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+            expected: WatcherFailureKind::PermissionDenied,
+        },
+        Case {
+            name: "一般 I/O エラー（Io(BrokenPipe)）",
+            build: || notify::Error::io(std::io::Error::from(std::io::ErrorKind::BrokenPipe)),
+            expected: WatcherFailureKind::Io,
+        },
+        Case {
+            name: "backend 固有で分類できない（Generic）",
+            build: || notify::Error::generic("weird backend state"),
+            expected: WatcherFailureKind::Unknown,
+        },
+        Case {
+            name: "設定不正も分類不能に倒す（InvalidConfig）",
+            build: || notify::Error::invalid_config(&NotifyConfig::default()),
+            expected: WatcherFailureKind::Unknown,
+        },
+    ];
+
+    for case in cases {
+        let err = (case.build)();
+        let expected_detail = err.to_string();
+        let failure = classify_notify_error(err);
+        assert_eq!(
+            case.expected, failure.kind,
+            "{}: kind が期待と異なる",
+            case.name
+        );
+        assert_eq!(
+            expected_detail, failure.detail,
+            "{}: detail に元メッセージが残るべき",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn classify_notify_error_keeps_paths_reported_by_backend() {
+    let err = notify::Error::path_not_found()
+        .add_path(PathBuf::from("/tmp/a"))
+        .add_path(PathBuf::from("/tmp/b"));
+
+    let failure = classify_notify_error(err);
+
+    assert_eq!(
+        vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")],
+        failure.paths
+    );
+}
+
+#[test]
+fn classify_notify_error_yields_empty_paths_when_backend_reports_none() {
+    let failure = classify_notify_error(notify::Error::generic("no paths here"));
+
+    assert!(
+        failure.paths.is_empty(),
+        "backend が path を提示しない場合は空 Vec になるべき"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -630,7 +735,14 @@ fn event_path_returns_destination_for_renamed() {
 #[test]
 fn event_path_returns_none_for_rescan_and_error() {
     assert_eq!(event_path(&FsEvent::Rescan), None);
-    assert_eq!(event_path(&FsEvent::Error("boom".into())), None);
+    assert_eq!(
+        event_path(&FsEvent::Error(WatcherFailure {
+            kind: WatcherFailureKind::Unknown,
+            paths: Vec::new(),
+            detail: "boom".to_string(),
+        })),
+        None
+    );
 }
 
 #[test]

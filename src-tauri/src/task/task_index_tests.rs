@@ -599,3 +599,159 @@ fn validate_parent_for_new_task_cycle_or_too_deep_cases() {
         );
     }
 }
+
+// ───────── rebuild_derived_with_warnings ─────────
+
+#[test]
+fn rebuild_derived_with_warnings_builds_children_and_reverse_links() {
+    let tasks = vec![
+        task_with_links_and_parent("tasks/parent.md", None, &[]),
+        task_with_links_and_parent(
+            "tasks/child.md",
+            Some("tasks/parent.md"),
+            &["tasks/parent.md"],
+        ),
+    ];
+
+    let rebuilt = TaskIndex::new(tasks)
+        .rebuild_derived_with_warnings()
+        .expect("no cycle")
+        .into_tasks();
+
+    let parent = rebuilt
+        .iter()
+        .find(|task| task.file_path == "tasks/parent.md")
+        .expect("parent present");
+    assert_eq!(vec!["tasks/child.md".to_string()], parent.children);
+    assert_eq!(vec!["tasks/child.md".to_string()], parent.reverse_links);
+}
+
+#[test]
+fn rebuild_derived_with_warnings_matches_the_open_project_chain() {
+    let tasks = vec![
+        task_with_links_and_parent("tasks/a.md", Some("tasks/b.md"), &["tasks/c.md"]),
+        task_with_links_and_parent("tasks/b.md", None, &["tasks/a.md"]),
+        task_with_links_and_parent("tasks/c.md", Some("tasks/b.md"), &[]),
+    ];
+
+    let chained = TaskIndex::new(tasks.clone())
+        .build_children_with_warnings()
+        .expect("no cycle")
+        .build_reverse_links()
+        .into_tasks();
+    let aggregated = TaskIndex::new(tasks)
+        .rebuild_derived_with_warnings()
+        .expect("no cycle")
+        .into_tasks();
+
+    assert_eq!(chained, aggregated);
+}
+
+#[test]
+fn rebuild_derived_with_warnings_marks_cycles_as_warnings_instead_of_failing() {
+    let tasks = vec![
+        task_with_parent("tasks/a.md", "tasks/b.md"),
+        task_with_parent("tasks/b.md", "tasks/a.md"),
+    ];
+
+    let rebuilt = TaskIndex::new(tasks)
+        .rebuild_derived_with_warnings()
+        .expect("循環は Err ではなく warning になる")
+        .into_tasks();
+
+    for task in &rebuilt {
+        assert_eq!(None, task.parent);
+        assert!(task
+            .warnings
+            .iter()
+            .any(|warning| warning.code == TaskWarningCode::ParentCycle));
+    }
+}
+
+#[test]
+fn rebuild_derived_with_warnings_accepts_an_empty_task_set() {
+    let rebuilt = TaskIndex::new(Vec::new())
+        .rebuild_derived_with_warnings()
+        .expect("空集合でも成功する")
+        .into_tasks();
+
+    assert!(rebuilt.is_empty());
+}
+
+// ───────── sorted_by_board_order ─────────
+
+fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::config::Config {
+    use crate::config::{CardOrder, Column, Config};
+    let mut order = CardOrder::default();
+    for (column, paths) in card_order {
+        order.insert(
+            (*column).to_string(),
+            paths.iter().map(|p| (*p).to_string()).collect(),
+        );
+    }
+    Config {
+        version: 1,
+        columns: columns
+            .iter()
+            .enumerate()
+            .map(|(index, name)| Column {
+                name: (*name).into(),
+                order: index as u32,
+                color: None,
+            })
+            .collect(),
+        card_order: order,
+        done_column: None,
+    }
+}
+
+fn task_with_status(path: &str, status: &str) -> Task {
+    task_from(&format!("---\ntitle: Task\nstatus: {status}\n---\n"), path)
+}
+
+#[test]
+fn sorted_by_board_order_orders_by_column_then_card_order() {
+    let config = board_config(
+        &["Todo", "Done"],
+        &[("Todo", &["tasks/b.md", "tasks/a.md"])],
+    );
+    let tasks = vec![
+        task_with_status("tasks/a.md", "Todo"),
+        task_with_status("tasks/z.md", "Done"),
+        task_with_status("tasks/b.md", "Todo"),
+    ];
+
+    let sorted = TaskIndex::new(tasks).sorted_by_board_order(&config);
+
+    let paths: Vec<&str> = sorted.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(vec!["tasks/b.md", "tasks/a.md", "tasks/z.md"], paths);
+}
+
+#[test]
+fn sorted_by_board_order_appends_unlisted_tasks_by_id() {
+    let config = board_config(&["Todo"], &[("Todo", &["tasks/c.md"])]);
+    let tasks = vec![
+        task_with_status("tasks/b.md", "Todo"),
+        task_with_status("tasks/a.md", "Todo"),
+        task_with_status("tasks/c.md", "Todo"),
+    ];
+
+    let sorted = TaskIndex::new(tasks).sorted_by_board_order(&config);
+
+    let paths: Vec<&str> = sorted.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(vec!["tasks/c.md", "tasks/a.md", "tasks/b.md"], paths);
+}
+
+#[test]
+fn sorted_by_board_order_puts_unknown_status_last() {
+    let config = board_config(&["Todo"], &[]);
+    let tasks = vec![
+        task_with_status("tasks/x.md", "Archived"),
+        task_with_status("tasks/a.md", "Todo"),
+    ];
+
+    let sorted = TaskIndex::new(tasks).sorted_by_board_order(&config);
+
+    let paths: Vec<&str> = sorted.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(vec!["tasks/a.md", "tasks/x.md"], paths);
+}
