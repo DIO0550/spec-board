@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -43,6 +44,7 @@ const cols = (...names: string[]): Column[] =>
   names.map((name, order) => ({ name, order }));
 
 const dataA: ProjectData = {
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" })],
   columns: cols("Todo", "Done"),
   projections: new Map(),
@@ -50,6 +52,7 @@ const dataA: ProjectData = {
 };
 
 const dataB: ProjectData = {
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [makeTask({ id: "b", filePath: "tasks/b.md", status: "Done" })],
   columns: cols("Todo", "Done"),
   projections: new Map(),
@@ -129,6 +132,7 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [parent],
       columns: cols("Todo"),
       projections: new Map(),
@@ -158,6 +162,7 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [parent],
       columns: cols("Todo"),
       projections: new Map(),
@@ -187,6 +192,7 @@ test("task-created (parent あり) で親が既に children を持っていれ�
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [parent],
       columns: cols("Todo"),
       projections: new Map(),
@@ -260,6 +266,7 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [a, b, c],
       columns: cols("Todo"),
       projections: new Map(),
@@ -306,6 +313,7 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [parent, child, otherWithLink],
       columns: cols("Todo"),
       projections: new Map(),
@@ -350,6 +358,7 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [parent, child],
       columns: cols("Todo"),
       projections: new Map(),
@@ -396,6 +405,7 @@ test("columns-replaced: doneColumn が rename 対象なら自動追従する", (
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [],
       columns: cols("Todo", "Done"),
       doneColumn: "Done",
@@ -417,6 +427,7 @@ test("columns-replaced: action.doneColumn 指定時はそれが採用される (
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [],
       columns: cols("Todo", "Done"),
       doneColumn: "Done",
@@ -438,6 +449,7 @@ test("columns-replaced: doneColumn / renames 未指定時は既存値を維持",
     kind: "loaded",
     path: "/x",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [],
       columns: cols("Todo", "Done"),
       doneColumn: "Done",
@@ -513,6 +525,7 @@ test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ
     kind: "loaded",
     path: "/p",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [todoA, doneX, todoB],
       columns: cols("Todo", "Done"),
       projections: new Map(),
@@ -540,6 +553,7 @@ test("card-order-updated → 他カラムの tasks 順序は不変", () => {
     kind: "loaded",
     path: "/p",
     data: {
+      watcherSession: WATCHER_SESSION_FIXTURE,
       tasks: [todoA, doneX, doneY],
       columns: cols("Todo", "Done"),
       projections: new Map(),
@@ -566,5 +580,51 @@ test("card-order-updated → idle state では no-op", () => {
     columnName: "Todo",
     filePaths: ["tasks/a.md"],
   });
+  expect(next).toBe(idle);
+});
+
+// ───────── tasks-resynced（watcher の full rescan / gap 復旧） ─────────
+
+test("tasks-resynced は tasks と projections を更新し columns は変えない", () => {
+  const next = reducer(loadedAState, {
+    type: "tasks-resynced",
+    tasks: [makeTask({ id: "z", filePath: "tasks/z.md", status: "Done" })],
+    projections: new Map(),
+  });
+
+  expect(next.kind).toBe("loaded");
+  const data = next.kind === "loaded" ? next.data : undefined;
+  expect(data?.tasks.map((task) => task.id)).toEqual(["z"]);
+  expect(data?.columns).toBe(dataA.columns);
+  expect(data?.openRequestId).toBe(dataA.openRequestId);
+  expect(data?.watcherSession).toBe(dataA.watcherSession);
+});
+
+test("state-replaced は ProjectData 全体を置き換え、tasks-resynced は tasks / projections だけ前進する", () => {
+  const replaced = reducer(loadedAState, {
+    type: "state-replaced",
+    data: dataB,
+  });
+  const resynced = reducer(loadedAState, {
+    type: "tasks-resynced",
+    tasks: dataB.tasks,
+    projections: dataB.projections,
+  });
+
+  const replacedData = replaced.kind === "loaded" ? replaced.data : undefined;
+  const resyncedData = resynced.kind === "loaded" ? resynced.data : undefined;
+  expect(replacedData).toBe(dataB);
+  expect(resyncedData?.columns).toBe(dataA.columns);
+});
+
+test("非 loaded state への tasks-resynced は無視される", () => {
+  const idle: ProjectState = { kind: "idle" };
+
+  const next = reducer(idle, {
+    type: "tasks-resynced",
+    tasks: dataB.tasks,
+    projections: new Map(),
+  });
+
   expect(next).toBe(idle);
 });

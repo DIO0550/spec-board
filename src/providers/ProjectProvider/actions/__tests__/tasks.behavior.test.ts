@@ -1,3 +1,4 @@
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { beforeEach, expect, test, vi } from "vitest";
 import { TauriError, updateTask as updateTaskInvoke } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
@@ -45,7 +46,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
 /**
  * 単一 task と Todo / Done カラムから ProjectData を組み立てるヘルパ。
  */
-const makeData = (tasks: readonly Task[]): ProjectData => ({
+const makeData = (tasks: readonly Task[]): ProjectData => ({ watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: tasks.map((t) => t),
   columns: [
     { name: "Todo", order: 0 },

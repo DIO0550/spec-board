@@ -19,5 +19,8 @@ export const bridgeProjectEvent = (
     onLoaded?.({ path: event.path, data: event.data });
     return;
   }
+  if (event.type === "watcher-diagnostic") {
+    return;
+  }
   onError?.(event.error);
 };

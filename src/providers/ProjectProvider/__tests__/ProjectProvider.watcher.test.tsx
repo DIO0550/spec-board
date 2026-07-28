@@ -2,6 +2,7 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
@@ -66,6 +67,7 @@ const taskA: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo"],
   projections: new Map(),
@@ -93,6 +95,8 @@ beforeEach(() => {
     value: { columns: [{ name: "Todo", order: 0 }], doneColumn: "Todo" },
   });
   listenMock.mockReset();
+  nextEventSeq = WATCHER_SESSION_FIXTURE.eventSeq;
+  nextRevision = WATCHER_SESSION_FIXTURE.revision;
 });
 
 afterEach(() => {
@@ -154,10 +158,63 @@ const fire = (
   });
 };
 
+/** envelope の連番 / revision を自動採番するためのカウンタ。 */
+let nextEventSeq = WATCHER_SESSION_FIXTURE.eventSeq;
+let nextRevision = WATCHER_SESSION_FIXTURE.revision;
+
+/**
+ * BE が emit する envelope を組み立てる。
+ * @param payloadValue event 固有の payload
+ * @param overrides identity / 順序フィールドの差し替え
+ * @returns envelope
+ */
+const envelopeOf = (
+  payloadValue: unknown,
+  overrides: Partial<{
+    projectKey: string;
+    generation: number;
+    revision: number;
+    cacheMutating: boolean;
+    eventSeq: number;
+  }> = {},
+) => {
+  nextEventSeq += 1;
+  nextRevision += 1;
+  const generation = overrides.generation ?? WATCHER_SESSION_FIXTURE.generation;
+  const eventSeq = overrides.eventSeq ?? nextEventSeq;
+  return {
+    projectKey: overrides.projectKey ?? WATCHER_SESSION_FIXTURE.projectKey,
+    generation,
+    revision: overrides.revision ?? nextRevision,
+    cacheMutating: overrides.cacheMutating ?? true,
+    eventSeq,
+    changeId: `${generation}-${eventSeq}`,
+    payload: payloadValue,
+  };
+};
+
+/**
+ * envelope に包んで listen handler を発火する。
+ * @param handlers キャプチャ済み handler
+ * @param name event 名
+ * @param payloadValue event 固有の payload
+ * @param overrides identity / 順序フィールドの差し替え
+ */
+const fireEnvelope = (
+  handlers: Record<string, Handler[]>,
+  name: string,
+  payloadValue: unknown,
+  overrides?: Parameters<typeof envelopeOf>[1],
+) => {
+  fire(handlers, name, envelopeOf(payloadValue, overrides));
+};
+
 test("loaded 後 task-created で新 task が state に追加される", async () => {
   const { handlers } = installCaptureListen();
   await mountLoaded();
-  fire(handlers, "task-created", { task: makeTaskPayload("tasks/b.md", "B") });
+  fireEnvelope(handlers, "task-created", {
+    task: makeTaskPayload("tasks/b.md", "B"),
+  });
   expect(currentTasks().map((t) => t.filePath)).toEqual([
     "tasks/a.md",
     "tasks/b.md",
@@ -167,7 +224,7 @@ test("loaded 後 task-created で新 task が state に追加される", async (
 test("loaded 後 task-updated で該当 task が置換される", async () => {
   const { handlers } = installCaptureListen();
   await mountLoaded();
-  fire(handlers, "task-updated", {
+  fireEnvelope(handlers, "task-updated", {
     task: makeTaskPayload("tasks/a.md", "A2"),
   });
   expect(currentTasks().map((t) => t.title)).toEqual(["A2"]);
@@ -176,7 +233,7 @@ test("loaded 後 task-updated で該当 task が置換される", async () => {
 test("loaded 後 task-deleted で該当 task が削除される", async () => {
   const { handlers } = installCaptureListen();
   await mountLoaded();
-  fire(handlers, "task-deleted", { filePath: "tasks/a.md" });
+  fireEnvelope(handlers, "task-deleted", { filePath: "tasks/a.md" });
   expect(currentTasks()).toEqual([]);
 });
 
@@ -188,10 +245,10 @@ test("loadedPath と異なる path の stale handler の event は無視され�
   // 別 project /other へ切替える。/p 用 handler は古い path を掴んだままになる。
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [],
       columns: ["Todo"],
       projections: new Map(),
-      openRequestId: 0,
     }),
   );
   let pending!: Promise<void>;
@@ -203,7 +260,9 @@ test("loadedPath と異なる path の stale handler の event は無視され�
   });
   // stale な /p handler を発火しても、現在 path は /other なので capturedPath ガードで無視。
   act(() => {
-    staleHandler({ payload: { task: makeTaskPayload("tasks/z.md", "Z") } });
+    staleHandler({
+      payload: envelopeOf({ task: makeTaskPayload("tasks/z.md", "Z") }),
+    });
   });
   expect(currentTasks()).toEqual([]);
 });
@@ -214,7 +273,7 @@ test("StrictMode 下でも task-created 由来の追加は 1 回だけ反映さ�
   // StrictMode で effect が二重登録されても、stale unlisten が解除され有効 handler は
   // 実質 1 セッション分。現在有効な handler を発火して二重追加が起きないことを確認する。
   const created = makeTaskPayload("tasks/b.md", "B");
-  fire(handlers, "task-created", { task: created });
+  fireEnvelope(handlers, "task-created", { task: created });
   expect(
     currentTasks().filter((t) => t.filePath === "tasks/b.md"),
   ).toHaveLength(1);
@@ -236,4 +295,74 @@ test("unmount で全 unlisten が呼ばれる", async () => {
   for (const unlisten of allUnlistens) {
     expect(unlisten).toHaveBeenCalled();
   }
+});
+
+test("mount 後に 5 つの watcher event 名が購読される", async () => {
+  const { handlers } = installCaptureListen();
+
+  await mountLoaded();
+
+  expect(Object.keys(handlers).sort()).toEqual([
+    "task-created",
+    "task-deleted",
+    "task-updated",
+    "watcher-diagnostic",
+    "watcher-resync-required",
+  ]);
+});
+
+test("旧世代の envelope は state を変えない", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+
+  fireEnvelope(
+    handlers,
+    "task-created",
+    { task: makeTaskPayload("tasks/z.md", "Z") },
+    { generation: WATCHER_SESSION_FIXTURE.generation + 1 },
+  );
+
+  expect(currentTasks().map((t) => t.filePath)).toEqual(["tasks/a.md"]);
+});
+
+test("追い越した古い revision の envelope は state を変えない", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+  fireEnvelope(handlers, "task-updated", {
+    task: makeTaskPayload("tasks/a.md", "A2"),
+  });
+
+  fireEnvelope(
+    handlers,
+    "task-updated",
+    { task: makeTaskPayload("tasks/a.md", "STALE") },
+    { revision: WATCHER_SESSION_FIXTURE.revision },
+  );
+
+  expect(currentTasks().map((t) => t.title)).toEqual(["A2"]);
+});
+
+test("別 projectKey の envelope は state を変えない", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+
+  fireEnvelope(
+    handlers,
+    "task-created",
+    { task: makeTaskPayload("tasks/z.md", "Z") },
+    { projectKey: "/other/project" },
+  );
+
+  expect(currentTasks().map((t) => t.filePath)).toEqual(["tasks/a.md"]);
+});
+
+test("不正な envelope でも例外を投げず state は不変", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+
+  expect(() => {
+    fire(handlers, "task-created", { broken: true });
+    fire(handlers, "task-created", null);
+  }).not.toThrow();
+  expect(currentTasks().map((t) => t.filePath)).toEqual(["tasks/a.md"]);
 });

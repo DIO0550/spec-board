@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { moveTask as moveTaskInvoke, TauriError } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -51,6 +52,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
 const makeData = (
   pairs: ReadonlyArray<readonly [string, string]>,
 ): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: pairs.map(([filePath, status]) => makeTask({ filePath, status })),
   columns: [
     { name: "Todo", order: 0 },

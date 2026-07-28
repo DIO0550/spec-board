@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   addLink as addLinkInvoke,
   removeLink as removeLinkInvoke,
@@ -80,6 +81,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
  * @returns ProjectData
  */
 const makeData = (tasks: readonly Task[]): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [...tasks],
   columns: [
     { name: "Todo", order: 0 },

@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { TaskProjection } from "@/domains/task-projection";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   getTasks as getTasksInvoke,
@@ -19,6 +20,10 @@ import {
   useProjectSessionActions,
   useProjectState,
 } from "../context";
+import {
+  resetWatcherEnvelopeCounters,
+  watcherEnvelope,
+} from "./watcherEnvelopeHarness";
 
 vi.mock("@/lib/tauri", async () => {
   const actual =
@@ -84,6 +89,7 @@ const openPayload: OpenProjectPayload = {
       },
     ],
   ]),
+  session: WATCHER_SESSION_FIXTURE,
 };
 
 const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
@@ -107,7 +113,7 @@ const projection = (done: number, total: number): TaskProjection => ({
 });
 
 const getTasksOk = (map: ReadonlyMap<string, TaskProjection>) =>
-  Result.ok({ tasks: [], projections: map });
+  Result.ok({ tasks: [], projections: map, session: WATCHER_SESSION_FIXTURE });
 
 beforeEach(() => {
   openProjectMock.mockReset();
@@ -127,6 +133,7 @@ beforeEach(() => {
   updateColumnsMock.mockReset();
   updateColumnsMock.mockResolvedValue(Result.ok(undefined));
   listenMock.mockReset();
+  resetWatcherEnvelopeCounters();
 });
 
 afterEach(() => {
@@ -178,7 +185,7 @@ const fire = (
 ) => {
   act(() => {
     for (const handler of handlers[name] ?? []) {
-      handler({ payload: payloadValue });
+      handler({ payload: watcherEnvelope(payloadValue) });
     }
   });
 };
@@ -258,6 +265,7 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/zzz.md", "Z"))],
       projections: new Map(),
+      session: WATCHER_SESSION_FIXTURE,
     }),
   );
   await mountLoaded();

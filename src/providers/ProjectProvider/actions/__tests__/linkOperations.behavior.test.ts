@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Task } from "@/types/task";
 import {
   createProjectVersion,
@@ -25,6 +26,7 @@ const asTaskUpdated = (
 };
 
 const makeData = (tasks: readonly Task[]): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [...tasks],
   columns: [
     { name: "Todo", order: 0 },

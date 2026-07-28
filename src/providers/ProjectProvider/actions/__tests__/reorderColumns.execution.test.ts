@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   TauriError,
@@ -33,6 +34,7 @@ const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
 
 const makeData = (): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [],
   columns: [
     { name: "A", order: 0 },

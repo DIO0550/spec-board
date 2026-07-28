@@ -13,6 +13,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   type CreateTaskParams,
   createTask as createTaskInvoke,
@@ -46,6 +47,10 @@ import type {
   ProjectTaskActionsContextValue,
 } from "../context";
 import { bridgeProjectEvent } from "./probeEventBridge";
+import {
+  resetWatcherEnvelopeCounters,
+  watcherEnvelope,
+} from "./watcherEnvelopeHarness";
 
 /** 旧 useProject option 相当。onLoaded / onError は project events から橋渡しする。 */
 type ProbeOptions = {
@@ -111,7 +116,14 @@ const installCaptureListen = <P,>(
     const unlisten = vi.fn();
     const handlerBucket = handlersByEvent[name] ?? [];
     handlersByEvent[name] = handlerBucket;
-    handlerBucket.push(handler as unknown as ListenHandler<P>);
+    // 既存テストは payload を raw のまま投げるため、envelope 化はここで吸収する。
+    // 各テストの呼び出し形（handlers[0]({ payload })）を変えずに新契約へ載せ替える。
+    const enveloping: ListenHandler<P> = (event) => {
+      (handler as unknown as ListenHandler<unknown>)({
+        payload: watcherEnvelope(event.payload),
+      });
+    };
+    handlerBucket.push(enveloping);
     const unlistenBucket = unlistenByEvent[name] ?? [];
     unlistenByEvent[name] = unlistenBucket;
     unlistenBucket.push(unlisten);
@@ -184,6 +196,7 @@ beforeEach(() => {
   updateColumnsMock.mockReset();
   listenMock.mockReset();
   listenMock.mockResolvedValue(vi.fn());
+  resetWatcherEnvelopeCounters();
 });
 
 afterEach(() => {
@@ -275,6 +288,7 @@ const taskB: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo", "Done"],
   projections: new Map(),
@@ -309,6 +323,7 @@ test("openProject 成功 (idle → loaded)、get_columns 成功時はその colu
       doneColumn: "Done",
       projections: new Map(),
       openRequestId: 1,
+      watcherSession: WATCHER_SESSION_FIXTURE,
     },
   });
 });
@@ -395,6 +410,7 @@ test("openProject 成功 → onLoaded が path / data 付きで 1 回だけ発�
       doneColumn: "Done",
       projections: new Map(),
       openRequestId: 1,
+      watcherSession: WATCHER_SESSION_FIXTURE,
     },
   });
 });
@@ -467,6 +483,7 @@ test("openProjectByPath 成功 → onLoaded が path / data 付きで発火す�
       doneColumn: "Done",
       projections: new Map(),
       openRequestId: 1,
+      watcherSession: WATCHER_SESSION_FIXTURE,
     },
   });
 });
@@ -621,7 +638,12 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
   // 2 回目: dialog ok → invoke は即 resolve
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/b"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
+      tasks: [taskB],
+      columns: ["Done"],
+      projections: new Map(),
+    }),
   );
   getColumnsMock.mockResolvedValueOnce(
     Result.ok({
@@ -648,7 +670,12 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
   // 1 回目の invoke を resolve させて queue を進める
   await act(async () => {
     resolveInvokeA(
-      Result.ok({ tasks: [], columns: [], projections: new Map() }),
+      Result.ok({
+        session: WATCHER_SESSION_FIXTURE,
+        tasks: [],
+        columns: [],
+        projections: new Map(),
+      }),
     );
     await pending1;
     await pending2;
@@ -1460,7 +1487,12 @@ test("プロジェクト切替で旧 listen が unlisten され、新 listen が
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
+      tasks: [taskB],
+      columns: ["Done"],
+      projections: new Map(),
+    }),
   );
   let pending!: Promise<void>;
   act(() => {
@@ -1533,7 +1565,12 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
   // teardown: invoke を成功させる
   await act(async () => {
     resolveInvoke(
-      Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+      Result.ok({
+        session: WATCHER_SESSION_FIXTURE,
+        tasks: [taskB],
+        columns: ["Done"],
+        projections: new Map(),
+      }),
     );
     await pending;
   });
@@ -1650,7 +1687,12 @@ test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登�
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
+      tasks: [taskB],
+      columns: ["Done"],
+      projections: new Map(),
+    }),
   );
   let pending!: Promise<void>;
   act(() => {
@@ -1773,7 +1815,12 @@ test("open-start 直後の race: loading 中に旧 task-updated callback が発�
 
   await act(async () => {
     resolveInvoke(
-      Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+      Result.ok({
+        session: WATCHER_SESSION_FIXTURE,
+        tasks: [taskB],
+        columns: ["Done"],
+        projections: new Map(),
+      }),
     );
     await pending;
   });
@@ -1888,7 +1935,12 @@ test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登�
 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
-    Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+    Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
+      tasks: [taskB],
+      columns: ["Done"],
+      projections: new Map(),
+    }),
   );
   let pending!: Promise<void>;
   act(() => {
@@ -1953,7 +2005,12 @@ test("open-start 直後の race: loading 中に旧 task-deleted callback が発�
 
   await act(async () => {
     resolveInvoke(
-      Result.ok({ tasks: [taskB], columns: ["Done"], projections: new Map() }),
+      Result.ok({
+        session: WATCHER_SESSION_FIXTURE,
+        tasks: [taskB],
+        columns: ["Done"],
+        projections: new Map(),
+      }),
     );
     await pending;
   });
@@ -2043,6 +2100,7 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [taskA, childTask],
       columns: ["Todo", "Done"],
       projections: new Map(),
@@ -2109,6 +2167,7 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
 // === reorderColumns ===
 
 const threeColumnPayload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [],
   columns: ["A", "B", "C"],
   projections: new Map(),
@@ -2291,4 +2350,30 @@ test("reorderColumns: queue 内で fromColumnName が削除済みなら applied=
   const data = (probe.latest.state as { data: { columns: { name: string }[] } })
     .data;
   expect(data.columns.map((c) => c.name)).toEqual(["B", "C"]);
+});
+
+// === watcher session の受け渡し ===
+
+test("open 応答の session が ProjectData.watcherSession に格納される", async () => {
+  const probe = renderHook();
+
+  await openLoaded(probe);
+
+  const state = probe.latest.state;
+  expect(state.kind).toBe("loaded");
+  expect(state.kind === "loaded" && state.data.watcherSession).toBe(
+    WATCHER_SESSION_FIXTURE,
+  );
+});
+
+test("watcherSession は openRequestId と併存し、互いを上書きしない", async () => {
+  const probe = renderHook();
+
+  await openLoaded(probe);
+
+  const state = probe.latest.state;
+  expect(state.kind === "loaded" && state.data.openRequestId).toBe(1);
+  expect(state.kind === "loaded" && state.data.watcherSession.projectKey).toBe(
+    "/test/project",
+  );
 });
