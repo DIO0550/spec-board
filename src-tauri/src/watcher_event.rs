@@ -24,6 +24,9 @@
 //! の 2 段で同期的に停止する。`stop()` は冪等で `AppState` の lock を
 //! 一切取得しない（`watcher_handle` 取得中の deadlock を防ぐ）。
 
+pub(crate) mod envelope;
+#[cfg(test)]
+mod envelope_fixture;
 pub(crate) mod handler;
 
 #[cfg(test)]
@@ -38,6 +41,8 @@ use tauri::{AppHandle, Emitter};
 
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
+use crate::state::project_generation::ProjectGeneration;
+use crate::state::project_key::ProjectKey;
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::default_status_for;
@@ -56,6 +61,11 @@ pub(crate) struct AdapterContext {
     /// MD ファイル I/O ポート。`handle_upsert` の `fs::read` を本 port 経由に
     /// 置換することで、effect 層から `std::fs::*` の直接呼び出しを排除する。
     pub(crate) io: Arc<dyn TaskIo>,
+    /// この adapter が担当する project の識別子（envelope に載せる）。
+    pub(crate) project_key: ProjectKey,
+    /// spawn 時点の watcher 世代。`AppState` の現行値と一致しない場合、
+    /// この adapter は旧世代なので一切 emit しない。
+    pub(crate) generation: ProjectGeneration,
 }
 
 /// 実 `WatcherHandle` 実装。Watcher Drop + adapter join を内包する。
@@ -112,9 +122,22 @@ pub(crate) fn spawn_adapter(
             log::warn!("failed to emit `{event}`: {err}");
         }
     });
+    // generation は commit 側（install_project_session）で spawn より前に bump
+    // 済み。ここで読むことで `WatcherFactory::spawn` の trait シグネチャを変えずに
+    // 世代を焼き込める。
+    //
+    // 前提: **`open_project` は同時実行されない**（FE の dialog ガードと単一
+    // ウィンドウ構成による）。同時 open が起きると、ここで読む値が
+    // `install_project_session` の返した session の generation より進んでいて
+    // 両者がずれる。trait シグネチャを変えない代償としてこの前提を受容しており、
+    // 前提が崩れる変更（複数ウィンドウ対応等）を入れる際は spawn へ generation を
+    // 引数で渡す形に改めること。
+    let generation = state.project_generation();
     let ctx = AdapterContext {
         root: root.to_path_buf(),
         default_status: default_status_for(config),
+        project_key: ProjectKey::from_root(root),
+        generation,
         state,
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
