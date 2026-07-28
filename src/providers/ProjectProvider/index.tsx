@@ -6,6 +6,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import type { WatcherDiagnostic } from "@/domains/watcher-diagnostic";
 import { addLinkAction } from "./actions/addLink";
 import type {
   DialogOpening,
@@ -43,8 +44,16 @@ import {
   type ProjectTaskActionsContextValue,
 } from "./context";
 import { createProjectStore, type ProjectStore } from "./store";
-import { useProjectionSyncEffect } from "./useProjectionSyncEffect";
-import { useTaskWatcherEffects } from "./useTaskWatcherEffects";
+import {
+  type SyncedMarker,
+  useProjectionSyncEffect,
+} from "./useProjectionSyncEffect";
+import {
+  useTaskWatcherEffects,
+  type WatcherGateRef,
+} from "./useTaskWatcherEffects";
+import { useWatcherResyncEffect } from "./useWatcherResyncEffect";
+import { WatcherGate, type WatcherGateState } from "./watcherEnvelopeGate";
 
 export { PROJECT_SWITCHED_MESSAGE } from "./constants";
 export type {
@@ -143,8 +152,37 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
 
   const loadedPath = state.kind === "loaded" ? state.path : null;
 
+  // watcher envelope の検証状態。ProjectVersion と同様「ref に世代を持ち、受信時に
+  // 比較する」既存パターンに揃える（Provider 生涯で参照は不変）。
+  const watcherGateRef = useRef<WatcherGateState>(WatcherGate.initial);
+  // projection 再同期の marker を Provider が所有し、2 hook で共有する。
+  const projectionSyncedRef = useRef<SyncedMarker | null>(null);
+
+  const watcherSession =
+    state.kind === "loaded" ? state.data.watcherSession : null;
+
+  const requestResync = useWatcherResyncEffect({
+    loadedPath,
+    gate: watcherGateRef as WatcherGateRef,
+    projectCommandQueue: projectCommandQueueRef.current,
+    projectionSynced: projectionSyncedRef,
+    getState: store.getState,
+    dispatch: store.dispatch,
+  });
+
+  const notifyDiagnostic = useCallback(
+    (diagnostic: WatcherDiagnostic): void => {
+      emit({ type: "watcher-diagnostic", ...diagnostic });
+    },
+    [emit],
+  );
+
   useTaskWatcherEffects({
     loadedPath,
+    session: watcherSession,
+    gate: watcherGateRef as WatcherGateRef,
+    requestResync,
+    notifyDiagnostic,
     getState: store.getState,
     dispatch: store.dispatch,
   });
@@ -160,6 +198,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     columns: state.kind === "loaded" ? state.data.columns : EMPTY_COLUMNS,
     doneColumn: state.kind === "loaded" ? state.data.doneColumn : undefined,
     projectCommandQueue: projectCommandQueueRef.current,
+    synced: projectionSyncedRef,
     getState: store.getState,
     dispatch: store.dispatch,
   });
