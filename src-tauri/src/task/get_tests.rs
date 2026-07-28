@@ -293,3 +293,58 @@ fn preserves_children_and_reverse_links_built_by_open_project() {
 
     assert_eq!(vec!["tasks/b.md".to_string()], task_a.links);
 }
+
+// ───────── watcher session（envelope 検証の baseline） ─────────
+
+#[test]
+fn payload_session_matches_the_current_state_values() {
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
+
+    let payload = get_tasks_impl(&state).expect("get ok");
+
+    assert_eq!(
+        dir.path().to_string_lossy().as_ref(),
+        payload.session.project_key.as_str()
+    );
+    assert_eq!(state.project_generation(), payload.session.generation);
+    assert_eq!(state.tasks_revision(), payload.session.revision);
+}
+
+#[test]
+fn an_unopened_state_returns_empty_tasks_and_an_initial_session() {
+    let state = Arc::new(AppState::new());
+
+    let payload = get_tasks_impl(&state).expect("get ok");
+
+    assert!(payload.tasks.is_empty());
+    assert!(payload.projections.is_empty());
+    assert_eq!(0, payload.session.generation.as_u64());
+    assert_eq!(0, payload.session.revision.as_u64());
+    assert_eq!(0, payload.session.event_seq.as_u64());
+}
+
+#[test]
+fn payload_session_revision_refers_to_the_returned_tasks() {
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
+    let first = get_tasks_impl(&state).expect("get ok");
+
+    // cache を 1 件増やしてから再取得すると、revision も一緒に進む。
+    state
+        .with_tasks_cache_mut(|cache| {
+            cache.insert(
+                std::path::PathBuf::from("tasks/b.md"),
+                first.tasks[0].clone(),
+            );
+        })
+        .expect("writable");
+    let second = get_tasks_impl(&state).expect("get ok");
+
+    assert!(first.session.revision < second.session.revision);
+    assert!(first.tasks.len() < second.tasks.len());
+}

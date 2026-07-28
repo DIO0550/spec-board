@@ -3,6 +3,11 @@ use super::{open_project_impl, OpenProjectError, OpenProjectPayload};
 use crate::config::{CardOrder, Column, Config};
 use crate::project::watcher_factory::{NoopWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
+use crate::state::event_seq::EventSeq;
+use crate::state::project_generation::ProjectGeneration;
+use crate::state::project_key::ProjectKey;
+use crate::state::tasks_revision::TasksRevision;
+use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, BoxedWatcherHandle};
 use crate::task::projection::TaskProjectionMap;
 use crate::task::task_index::Task;
@@ -15,6 +20,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tempfile::TempDir;
+
+/// payload 組み立てテスト用の初期 session（`AppState::new()` 直後の値）。
+fn zero_session() -> WatcherSession {
+    WatcherSession {
+        project_key: ProjectKey::from_root(Path::new("/tmp/project")),
+        generation: ProjectGeneration::from_raw(0),
+        revision: TasksRevision::from_raw(0),
+        event_seq: EventSeq::from_raw(0),
+    }
+}
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -747,11 +762,13 @@ fn payload_serialization_uses_camel_case() {
         tasks: Vec::new(),
         columns: vec!["Todo".into()],
         projections: TaskProjectionMap::new(),
+        session: zero_session(),
     };
     let json = serde_json::to_string(&payload).expect("serialize");
     assert!(json.contains("\"tasks\""));
     assert!(json.contains("\"columns\""));
     assert!(json.contains("\"projections\""));
+    assert!(json.contains("\"session\""));
 }
 
 #[test]
@@ -763,7 +780,7 @@ fn build_payload_returns_empty_columns_for_config_with_no_columns() {
         done_column: None,
     };
 
-    let payload = super::build_payload(Vec::new(), &cfg);
+    let payload = super::build_payload(Vec::new(), &cfg, zero_session());
 
     assert!(payload.tasks.is_empty());
     assert!(payload.columns.is_empty());
@@ -817,7 +834,7 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         ..task_b.clone()
     };
 
-    let payload = super::build_payload(vec![task_b, task_a], &cfg);
+    let payload = super::build_payload(vec![task_b, task_a], &cfg, zero_session());
 
     let task_ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(vec!["a.md", "b.md"], task_ids);
@@ -851,11 +868,12 @@ fn open_project_payload_round_trip() {
         tasks: vec![],
         columns: vec!["Todo".into(), "Done".into()],
         projections: TaskProjectionMap::new(),
+        session: zero_session(),
     };
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(
         serialized,
-        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{}}"#
+        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
     );
 }
 
@@ -1322,8 +1340,8 @@ fn card_order_sorting_does_not_affect_projections() {
     let parent = sample_task_with_parent("tasks/p.md", None);
     let child = sample_task_with_parent("tasks/c.md", Some("tasks/p.md"));
 
-    let ordered = super::build_payload(vec![parent.clone(), child.clone()], &cfg);
-    let reversed = super::build_payload(vec![child, parent], &cfg);
+    let ordered = super::build_payload(vec![parent.clone(), child.clone()], &cfg, zero_session());
+    let reversed = super::build_payload(vec![child, parent], &cfg, zero_session());
 
     assert_eq!(ordered.projections, reversed.projections);
     assert_eq!(
@@ -1344,10 +1362,11 @@ fn project_without_tasks_has_empty_projections() {
     assert!(payload.projections.is_empty());
 }
 
-/// `get_tasks.tasks` は id 昇順、`open_project.tasks` はカラム順 → cardOrder → id 順。
-/// 同じ集合だが順序が異なることを固定する。
+/// `open_project` と `get_tasks` は同じ board 表示順（カラム順 → cardOrder → id 順）
+/// で返す。FE は配列順をそのまま表示順に使うため、片方が id 順だと watcher の
+/// full rescan / gap 復旧のたびに DnD で決めた並びが崩れる。
 #[test]
-fn open_and_get_tasks_return_the_same_set_in_different_order() {
+fn open_and_get_tasks_return_the_same_board_order() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
     let config_json = r#"{
@@ -1368,6 +1387,260 @@ fn open_and_get_tasks_return_the_same_set_in_different_order() {
 
     let open_ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
     let get_ids: Vec<&str> = from_get_tasks.tasks.iter().map(|t| t.id.as_str()).collect();
-    assert_eq!(open_ids, vec!["tasks/b.md", "tasks/a.md"]);
-    assert_eq!(get_ids, vec!["tasks/a.md", "tasks/b.md"]);
+    assert_eq!(vec!["tasks/b.md", "tasks/a.md"], open_ids);
+    assert_eq!(open_ids, get_ids);
+}
+
+/// `cardOrder` が id 昇順と食い違う並びでも `get_tasks` がその並びを返す。
+#[test]
+fn get_tasks_preserves_a_card_order_that_differs_from_id_order() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let config_json = r#"{
+        "version": 1,
+        "columns": [{ "name": "Todo", "order": 0 }],
+        "cardOrder": { "Todo": ["tasks/c.md", "tasks/a.md", "tasks/b.md"] }
+    }"#;
+    write_config_json(dir.path(), config_json);
+    for name in ["a", "b", "c"] {
+        write_md(
+            dir.path(),
+            &format!("tasks/{name}.md"),
+            &task_md(name, "Todo", None),
+        );
+    }
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw).expect("open should succeed");
+
+    let from_get_tasks = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
+
+    let ids: Vec<&str> = from_get_tasks.tasks.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(vec!["tasks/c.md", "tasks/a.md", "tasks/b.md"], ids);
+}
+
+// ───────── full rescan パイプラインとの一致 ─────────
+
+#[test]
+fn open_project_impl_returns_the_same_tasks_as_the_shared_rebuild_pipeline() {
+    let dir = tempdir();
+    fs::create_dir_all(dir.path().join("tasks")).expect("create tasks dir");
+    fs::write(
+        dir.path().join("tasks/parent.md"),
+        "---\ntitle: Parent\nstatus: Todo\n---\n",
+    )
+    .expect("write parent");
+    fs::write(
+        dir.path().join("tasks/child.md"),
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\nlinks:\n  - tasks/parent.md\n---\n",
+    )
+    .expect("write child");
+    let state = Arc::new(AppState::new());
+
+    let payload =
+        open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("open ok");
+
+    let rebuilt = crate::task::rebuild::rebuild_tasks_from_disk(
+        dir.path(),
+        &"Todo".into(),
+        &crate::task::io::FsTaskIo,
+    )
+    .expect("rebuild ok");
+    let mut from_open: Vec<Task> = payload.tasks;
+    from_open.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    let mut from_rebuild = rebuilt;
+    from_rebuild.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+
+    assert_eq!(from_rebuild, from_open);
+}
+
+// ───────── watcher session（cache install と同一トランザクション） ─────────
+
+/// spawn の瞬間に 1 件 emit する watcher を模す factory。
+///
+/// session を commit の外で組み立てていると「session はその変更を含むが tasks は
+/// 含まない」状態が生まれる。その envelope は `revision <= R` で破棄され gap も
+/// 立たないため FE が永久に復旧できない。回帰として固定する。
+struct EmittingOnSpawnFactory;
+
+impl WatcherFactory for EmittingOnSpawnFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn spawn(
+        &self,
+        _prepared: (),
+        state: &Arc<AppState>,
+        _root: &Path,
+        _config: &crate::config::Config,
+    ) -> BoxedWatcherHandle {
+        state
+            .with_tasks_cache_mut(|cache| {
+                cache.insert(
+                    std::path::PathBuf::from("tasks/spawned.md"),
+                    sample_spawned_task(),
+                );
+            })
+            .expect("writable");
+        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+    }
+}
+
+/// spawn 時に観測した generation を記録する factory。
+struct GenerationProbeFactory {
+    observed: Arc<AtomicUsize>,
+}
+
+impl WatcherFactory for GenerationProbeFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn spawn(
+        &self,
+        _prepared: (),
+        state: &Arc<AppState>,
+        _root: &Path,
+        _config: &crate::config::Config,
+    ) -> BoxedWatcherHandle {
+        self.observed.store(
+            state.project_generation().as_u64() as usize,
+            Ordering::SeqCst,
+        );
+        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+    }
+}
+
+fn sample_spawned_task() -> Task {
+    Task {
+        draft: false,
+        id: "tasks/spawned.md".into(),
+        file_path: "tasks/spawned.md".into(),
+        title: "Spawned".into(),
+        status: "Todo".into(),
+        priority: None,
+        milestone: None,
+        labels: Vec::new(),
+        parent: None,
+        due: None,
+        links: Vec::new(),
+        children: Vec::new(),
+        reverse_links: Vec::new(),
+        body: String::new(),
+        extras: Default::default(),
+        warnings: Vec::new(),
+    }
+}
+
+fn open_with(
+    state: Arc<AppState>,
+    path: &str,
+    watcher: &impl WatcherFactory,
+) -> Result<OpenProjectPayload, OpenProjectError> {
+    let intent = OpenProjectIntent::try_from(path.to_string())?;
+    let labels_store = crate::config::label_registry_store(intent.as_path());
+    let milestones_store = crate::config::milestone_registry_store(intent.as_path());
+    open_project_impl(&state, &intent, &labels_store, &milestones_store, watcher)
+}
+
+#[test]
+fn open_payload_carries_the_project_key_and_the_first_generation() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+
+    let payload =
+        open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("open ok");
+
+    assert_eq!(
+        dir.path().to_string_lossy().as_ref(),
+        payload.session.project_key.as_str()
+    );
+    assert_eq!(1, payload.session.generation.as_u64());
+}
+
+#[test]
+fn reopening_a_project_advances_the_generation() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("first open");
+
+    let second =
+        open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("second");
+
+    assert_eq!(2, second.session.generation.as_u64());
+}
+
+#[test]
+fn a_watcher_emitting_during_spawn_cannot_desynchronize_session_and_tasks() {
+    let dir = tempdir();
+    fs::create_dir_all(dir.path().join("tasks")).expect("create tasks dir");
+    fs::write(
+        dir.path().join("tasks/a.md"),
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    )
+    .expect("write md");
+    let state = Arc::new(AppState::new());
+
+    let payload = open_with(
+        Arc::clone(&state),
+        dir.path().to_str().expect("utf-8"),
+        &EmittingOnSpawnFactory,
+    )
+    .expect("open ok");
+
+    assert_eq!(
+        1,
+        payload.tasks.len(),
+        "payload の tasks には spawn 後の変更が入らない"
+    );
+    assert!(
+        payload.session.revision < state.tasks_revision(),
+        "session も spawn 前に確定していれば、spawn 後の変更は revision が上回る = FE が新しい event として受け取れる"
+    );
+}
+
+#[test]
+fn spawn_observes_the_same_generation_that_the_payload_reports() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    let observed = Arc::new(AtomicUsize::new(0));
+    let factory = GenerationProbeFactory {
+        observed: Arc::clone(&observed),
+    };
+
+    let payload = open_with(
+        Arc::clone(&state),
+        dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("open ok");
+
+    assert_eq!(
+        payload.session.generation.as_u64() as usize,
+        observed.load(Ordering::SeqCst)
+    );
+}
+
+#[test]
+fn a_failed_watcher_init_leaves_the_generation_untouched() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    let factory = FailingPrepareFactory::new("inotify limit");
+
+    open_with(
+        Arc::clone(&state),
+        dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect_err("prepare fails");
+
+    assert_eq!(
+        0,
+        state.project_generation().as_u64(),
+        "commit へ到達していないので世代は発行されない"
+    );
 }

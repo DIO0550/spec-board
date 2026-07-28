@@ -2,8 +2,12 @@
 //!
 //! `AppState.tasks_cache` に格納済みの `Task` 一覧を取得し、`TaskIndex` aggregate
 //! に並び順の決定を委譲して返す純粋な読み取り専用 command。`open_project` で
-//! commit された state を消費する後続 API としての位置付け。並び順の契約
-//! （id 昇順）は `TaskIndex::sorted_by_id` 側に集約する。
+//! commit された state を消費する後続 API としての位置付け。
+//!
+//! 並び順の契約は `open_project` と同一（カラム表示順 → カラム内 `cardOrder` →
+//! `id` 昇順）で、`TaskIndex::sorted_by_board_order` に集約する。FE は watcher の
+//! full rescan / gap 復旧でこの応答を board へ反映するため、`open_project` と
+//! 並びが食い違うと復旧のたびに DnD で決めた順序が壊れる。
 //!
 //! # 構成
 //!
@@ -25,17 +29,25 @@ use thiserror::Error;
 
 use super::projection::TaskProjectionMap;
 use super::task_index::{Task, TaskIndex};
+use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError};
 
 /// `get_tasks` コマンドが FE へ返す payload。
 ///
-/// `tasks` は `id` 昇順。`projections` は `tasks` と同じ集合を対象に
+/// `tasks` は `open_project` と同じ board 表示順（カラム表示順 → カラム内
+/// `cardOrder` → `id` 昇順）。`projections` は `tasks` と同じ集合を対象に
 /// `TaskIndex::project_all` が作った filePath キーの map。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTasksPayload {
     pub tasks: Vec<Task>,
     pub projections: TaskProjectionMap,
+    /// この snapshot の watcher session（`open_project` 応答と同じ形）。
+    ///
+    /// FE は resync 完了時にこの値で envelope 検証の baseline を丸ごと取り直す。
+    /// revision だけでは `lastEventSeq` を更新できず、gap 検知が「破棄した番号が
+    /// 欠番のまま残る → 次の event で必ず gap」という自走ループになる。
+    pub session: WatcherSession,
 }
 
 /// `get_tasks` コマンドのエラー。
@@ -74,16 +86,16 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<GetTasksPayload, Str
 /// （`config` が `None` かつ cache が空）の場合は tasks / projections ともに空の
 /// payload を成功で返す。
 ///
-/// `sorted_by_id` は `self` を消費するため、`&self` query である `project_all` を
-/// 先に呼ぶ順序に依存する。`done_column` は `config` の borrow を跨がないよう
-/// `cloned()` で所有権を取る。
+/// 並べ替えは `self` を消費するため、`&self` query である `project_all` を先に呼ぶ
+/// 順序に依存する。`done_column` は `config` の borrow を跨がないよう `cloned()` で
+/// 所有権を取る。
 ///
 /// # Errors
 ///
 /// `config` / `tasks_cache` いずれかの `Mutex` が poison している場合に
 /// `GetTasksError::StateLockPoisoned` を返す。
 pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTasksError> {
-    let context = state.snapshot_config_and_tasks()?;
+    let context = state.snapshot_config_tasks_and_session()?;
     let done_column = context
         .config
         .as_ref()
@@ -91,9 +103,17 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
         .cloned();
     let index = TaskIndex::new(context.tasks);
     let projections = index.project_all(done_column.as_ref());
+    // 並び順は `open_project` と同じ board 表示順に揃える。FE は配列順をそのまま
+    // 表示順に使うため、ここが id 順だと full rescan / gap 復旧のたびに DnD で
+    // 決めた並びが崩れる。未 open（config なし）のときだけ id 昇順にフォールバックする。
+    let tasks = match context.config.as_ref() {
+        Some(config) => index.sorted_by_board_order(config),
+        None => index.sorted_by_id(),
+    };
     Ok(GetTasksPayload {
-        tasks: index.sorted_by_id(),
+        tasks,
         projections,
+        session: context.session,
     })
 }
 
