@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   getLabels as getLabelsInvoke,
@@ -95,6 +96,7 @@ const makeSeedTask = (labels: readonly string[]): Task =>
 
 /** open_project mock の返り値を seed task で構築する。 */
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),

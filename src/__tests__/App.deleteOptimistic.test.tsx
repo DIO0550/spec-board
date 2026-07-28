@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   deleteTask as deleteTaskInvoke,
   getColumns as getColumnsInvoke,
@@ -91,6 +92,7 @@ const makeSeedTask = (): Task =>
   });
 
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),
@@ -390,7 +392,12 @@ test("削除 pending 中に open-start (project switch) が走ると pendingDele
   });
   await act(async () => {
     resolveOpen(
-      Result.ok({ tasks: [], columns: ["Todo"], projections: new Map() }),
+      Result.ok({
+        session: WATCHER_SESSION_FIXTURE,
+        tasks: [],
+        columns: ["Todo"],
+        projections: new Map(),
+      }),
     );
     await Promise.resolve();
     await Promise.resolve();

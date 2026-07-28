@@ -3,6 +3,7 @@ import {
   TaskProjection,
   type TaskProjectionMap,
 } from "@/domains/task-projection";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
 import { ProjectData, type ProjectData as ProjectDataT } from "..";
@@ -34,6 +35,7 @@ const projectionOf = (done: number, total: number): TaskProjection => ({
 });
 
 const dataWith = (projections: TaskProjectionMap): ProjectDataT => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [makeTask("tasks/a.md")],
   columns,
   doneColumn: "Done",

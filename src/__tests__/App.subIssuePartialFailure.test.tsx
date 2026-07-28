@@ -88,6 +88,12 @@ const openProjectRawPayload = {
   tasks: [],
   columns: ["Todo", "Doing", "Done"],
   projections: {},
+  session: {
+    projectKey: "/test/project",
+    generation: 1,
+    revision: 1,
+    eventSeq: 0,
+  },
 };
 
 const getColumnsRawPayload = {
@@ -127,7 +133,17 @@ const makeInvoke =
       open_project: () => Promise.resolve(openProjectRawPayload),
       get_columns: () => Promise.resolve(getColumnsRawPayload),
       // projection 再同期（useProjectionSyncEffect）が tasks 変化のたびに呼ぶ読み取り系。
-      get_tasks: () => Promise.resolve({ tasks: [], projections: {} }),
+      get_tasks: () =>
+        Promise.resolve({
+          tasks: [],
+          projections: {},
+          session: {
+            projectKey: "/test/project",
+            generation: 1,
+            revision: 1,
+            eventSeq: 0,
+          },
+        }),
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),
       get_labels: () => Promise.resolve({ labels: [] }),

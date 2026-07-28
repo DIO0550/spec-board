@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   deleteTask as deleteTaskInvoke,
   getColumns as getColumnsInvoke,
@@ -121,6 +122,7 @@ const taskA: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),
@@ -349,6 +351,7 @@ test("detail 表示中にプロジェクト切替で選択タスク消失→boar
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/other"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: [otherTask],
       columns: ["Todo", "Doing", "Done"],
       projections: new Map(),

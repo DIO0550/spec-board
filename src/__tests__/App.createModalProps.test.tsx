@@ -9,6 +9,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 
 const taskCreateScreenSpy = vi.hoisted(() => vi.fn());
 
@@ -163,6 +164,7 @@ const openProjectWithTasks = async () => {
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      session: WATCHER_SESSION_FIXTURE,
       tasks: fixtureTasks,
       columns: ["Todo", "Done"],
       projections: new Map(),

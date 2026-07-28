@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
@@ -161,16 +162,19 @@ const taskWithBrokenLink = Task.fromPayload({
 });
 
 const payloadWithParseError: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithParseError],
   columns: ["Todo", "Done"],
   projections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskClean],
   columns: ["Todo", "Done"],
   projections: new Map(),
 };
 const payloadWithBoth: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithParseError, taskWithBrokenLink],
   columns: ["Todo", "Done"],
   projections: new Map(),

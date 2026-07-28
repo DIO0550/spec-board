@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
@@ -139,11 +140,13 @@ const taskClean = Task.fromPayload({
 });
 
 const payloadWithBroken: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithBrokenParent],
   columns: ["Todo", "Done"],
   projections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
+  session: WATCHER_SESSION_FIXTURE,
   tasks: [taskClean],
   columns: ["Todo", "Done"],
   projections: new Map(),

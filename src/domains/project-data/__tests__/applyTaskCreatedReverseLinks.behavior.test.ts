@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Column } from "@/types/column";
 import { ProjectData, type ProjectData as ProjectDataT } from "..";
 
@@ -14,6 +15,7 @@ test("applyTaskCreated は作成タスクの links 先 target の reverseLinkedF
     links: ["tasks/b.md"],
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [target],
     columns: columns("Todo"),
     projections: new Map(),
@@ -40,6 +42,7 @@ test("applyTaskCreated は既に reverse 済みの場合は重複追加しない
     links: ["tasks/b.md"],
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [target],
     columns: columns("Todo"),
     projections: new Map(),
@@ -58,6 +61,7 @@ test("applyTaskCreated は links 空のとき既存 task の reverse を変更�
   const other = makeTask({ id: "b", filePath: "tasks/b.md" });
   const created = makeTask({ id: "a", filePath: "tasks/a.md" });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [other],
     columns: columns("Todo"),
     projections: new Map(),
@@ -82,6 +86,7 @@ test("applyTaskCreated は reverse 同期しつつ parent children 同期も維�
     links: ["tasks/b.md"],
   });
   const data: ProjectDataT = {
+    watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [parent, target],
     columns: columns("Todo"),
     projections: new Map(),

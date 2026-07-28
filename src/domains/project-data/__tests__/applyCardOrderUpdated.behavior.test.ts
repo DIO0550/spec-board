@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { makeTask } from "@/domains/__tests__/taskFixtures";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Column } from "@/types/column";
 import { ProjectData, type ProjectData as ProjectDataT } from "..";
 
@@ -9,6 +10,7 @@ const columns = (...names: string[]): Column[] =>
 const dataOf = (
   pairs: ReadonlyArray<readonly [string, string]>,
 ): ProjectDataT => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: pairs.map(([filePath, status]) =>
     makeTask({ id: filePath, filePath, status }),
   ),
