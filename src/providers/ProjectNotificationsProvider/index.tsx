@@ -12,6 +12,7 @@ import {
 } from "@/providers/ProjectProvider";
 import { useRecentProjects } from "@/providers/RecentProjectsProvider";
 import { useToastDispatch } from "@/providers/ToastProvider";
+import { watcherDiagnosticMessage } from "./watcherDiagnosticMessage";
 
 /** ProjectNotificationsProvider の Props。 */
 type ProjectNotificationsProviderProps = {
@@ -52,6 +53,11 @@ export const ProjectNotificationsProvider = ({
         if (parseErrorCount >= 1) {
           showToast(`パースエラーが ${parseErrorCount} 件あります`, "warning");
         }
+        return;
+      }
+      if (event.type === "watcher-diagnostic") {
+        // 監視が壊れても board は静かに古くなるだけなので、必ず可視化する。
+        showToast(watcherDiagnosticMessage(event.code), "error");
         return;
       }
       // invokeWrapped が既に通知済み（allowlist 由来 tauri）なら二重通知を避ける。

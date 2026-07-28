@@ -1,6 +1,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { TauriError } from "@/lib/tauri";
 import type { ProjectData } from "@/providers/ProjectProvider";
 import {
@@ -14,6 +15,7 @@ import {
 import { ToastProvider } from "@/providers/ToastProvider";
 import { Task, type TaskPayload } from "@/types/task";
 import { ProjectNotificationsProvider } from "..";
+import { watcherDiagnosticMessage } from "../watcherDiagnosticMessage";
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -49,6 +51,7 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
 
 /** tasks から ProjectData を組む（columns は通知に無関係なので空）。 */
 const dataOf = (tasks: Task[]): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks,
   columns: [],
   doneColumn: undefined,
@@ -228,4 +231,63 @@ test("unmount 後は購読が解除されイベントを受け取らない", () 
   });
   root = null;
   expect(harness.listenerCount()).toBe(0);
+});
+
+// ───────── watcher diagnostics ─────────
+
+test("watcher-diagnostic（resourceExhausted）で error トーストが 1 回出る", () => {
+  const harness = createEventsHarness();
+  const probe = setup(harness.value);
+
+  act(() => {
+    harness.emit({
+      type: "watcher-diagnostic",
+      code: "resourceExhausted",
+      message: "inotify watch limit reached",
+      changeId: "1-1",
+    });
+  });
+
+  expect(bodyText()).toContain(watcherDiagnosticMessage("resourceExhausted"));
+  // 監視障害は project を開いた事実ではないので recent には積まない。
+  expect(probe.recentPaths).toEqual([]);
+});
+
+test("rescanFailed は再読み込み失敗の文言で通知される", () => {
+  const harness = createEventsHarness();
+  setup(harness.value);
+
+  act(() => {
+    harness.emit({
+      type: "watcher-diagnostic",
+      code: "rescanFailed",
+      message: "scan failed",
+      changeId: "1-2",
+    });
+  });
+
+  expect(bodyText()).toContain(watcherDiagnosticMessage("rescanFailed"));
+});
+
+test("diagnostic を 2 回 emit しても Provider は state を持たない", () => {
+  const harness = createEventsHarness();
+  const probe = setup(harness.value);
+
+  act(() => {
+    harness.emit({
+      type: "watcher-diagnostic",
+      code: "io",
+      message: "boom",
+      changeId: "1-3",
+    });
+    harness.emit({
+      type: "watcher-diagnostic",
+      code: "io",
+      message: "boom",
+      changeId: "1-4",
+    });
+  });
+
+  expect(probe.recentPaths).toEqual([]);
+  expect(bodyText()).toContain(watcherDiagnosticMessage("io"));
 });
