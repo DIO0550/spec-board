@@ -9,7 +9,7 @@ use crate::state::project_key::ProjectKey;
 use crate::state::tasks_revision::TasksRevision;
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, BoxedWatcherHandle};
-use crate::task::projection::TaskProjectionMap;
+use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
 use crate::task::task_index::Task;
 use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
@@ -134,6 +134,23 @@ fn task_md(title: &str, status: &str, parent: Option<&str>) -> String {
     s.push_str(&format!("status: {status}\n"));
     if let Some(p) = parent {
         s.push_str(&format!("parent: {p}\n"));
+    }
+    s.push_str("---\n\nbody\n");
+    s
+}
+
+fn task_md_with_milestone(
+    title: &str,
+    status: &str,
+    parent: Option<&str>,
+    milestone: &str,
+) -> String {
+    let mut s = String::from("---\n");
+    s.push_str(&format!("title: {title}\n"));
+    s.push_str(&format!("status: {status}\n"));
+    s.push_str(&format!("milestone: \"{milestone}\"\n"));
+    if let Some(parent) = parent {
+        s.push_str(&format!("parent: {parent}\n"));
     }
     s.push_str("---\n\nbody\n");
     s
@@ -762,12 +779,14 @@ fn payload_serialization_uses_camel_case() {
         tasks: Vec::new(),
         columns: vec!["Todo".into()],
         projections: TaskProjectionMap::new(),
+        milestone_projections: MilestoneProjectionMap::new(),
         session: zero_session(),
     };
     let json = serde_json::to_string(&payload).expect("serialize");
     assert!(json.contains("\"tasks\""));
     assert!(json.contains("\"columns\""));
     assert!(json.contains("\"projections\""));
+    assert!(json.contains("\"milestoneProjections\""));
     assert!(json.contains("\"session\""));
 }
 
@@ -850,30 +869,34 @@ fn open_project_payload_round_trip() {
     // OpenProjectPayload は #[derive(Serialize)] のみだが、JSON 形状互換を
     // round-trip で機械検証する。Deserialize を派生せずに `serde_json::Value`
     // 経由で再パースする。
-    let json = r#"{"tasks":[],"columns":["Todo","Done"],"projections":{}}"#;
+    let json =
+        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{}}"#;
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(rename_all = "camelCase")]
     struct PayloadShape {
         tasks: Vec<serde_json::Value>,
         columns: Vec<String>,
         projections: serde_json::Map<String, serde_json::Value>,
+        milestone_projections: serde_json::Map<String, serde_json::Value>,
     }
     let parsed: PayloadShape = serde_json::from_str(json).unwrap();
     assert_eq!(parsed.tasks.len(), 0);
     assert_eq!(parsed.columns, vec!["Todo".to_string(), "Done".to_string()]);
     assert!(parsed.projections.is_empty());
+    assert!(parsed.milestone_projections.is_empty());
 
     // 反対方向: ColumnName VO の serde_transparent で文字列に戻ることを確認。
     let payload = OpenProjectPayload {
         tasks: vec![],
         columns: vec!["Todo".into(), "Done".into()],
         projections: TaskProjectionMap::new(),
+        milestone_projections: MilestoneProjectionMap::new(),
         session: zero_session(),
     };
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(
         serialized,
-        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
+        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{},"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
     );
 }
 
@@ -1281,16 +1304,20 @@ fn open_hierarchy_project(state: Arc<AppState>, dir: &TempDir) -> OpenProjectPay
         "doneColumn": "Done"
     }"#;
     write_config_json(dir.path(), config_json);
-    write_md(dir.path(), "tasks/p.md", &task_md("P", "Todo", None));
+    write_md(
+        dir.path(),
+        "tasks/p.md",
+        &task_md_with_milestone("P", "Todo", None, "v1"),
+    );
     write_md(
         dir.path(),
         "tasks/c1.md",
-        &task_md("C1", "Done", Some("tasks/p.md")),
+        &task_md_with_milestone("C1", "Done", Some("tasks/p.md"), "v1"),
     );
     write_md(
         dir.path(),
         "tasks/c2.md",
-        &task_md("C2", "Doing", Some("tasks/p.md")),
+        &task_md_with_milestone("C2", "Doing", Some("tasks/p.md"), "v1"),
     );
     let raw = dir.path().to_str().expect("utf-8").to_string();
     open_with_noop(state, &raw).expect("open should succeed")
@@ -1310,6 +1337,12 @@ fn open_payload_includes_projections_for_every_task() {
         .expect("parent projection");
     assert_eq!(parent.sub_issue_progress.total, 2);
     assert_eq!(parent.sub_issue_progress.done, 1);
+    let milestone = payload
+        .milestone_projections
+        .get("v1")
+        .expect("v1 projection");
+    assert_eq!(milestone.total, 3);
+    assert_eq!(milestone.done, 1);
 }
 
 /// `open_project` と `get_tasks` は同じ aggregate method を通るため集計値が一致する。
@@ -1322,11 +1355,15 @@ fn open_payload_projections_match_get_tasks_projections() {
     let from_get_tasks = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
 
     assert_eq!(payload.projections, from_get_tasks.projections);
+    assert_eq!(
+        payload.milestone_projections,
+        from_get_tasks.milestone_projections
+    );
 }
 
-/// projection は sort 前に作るため、cardOrder による並び替えの影響を受けない。
+/// task projection は filePath key の内容だけを持ち、入力順に依存しない。
 #[test]
-fn card_order_sorting_does_not_affect_projections() {
+fn task_projection_semantics_do_not_depend_on_input_order() {
     let cfg = Config {
         version: 1,
         columns: vec![Column {
@@ -1360,6 +1397,78 @@ fn project_without_tasks_has_empty_projections() {
 
     assert!(payload.tasks.is_empty());
     assert!(payload.projections.is_empty());
+    assert!(payload.milestone_projections.is_empty());
+}
+
+#[test]
+fn open_and_get_tasks_milestone_paths_match_the_exact_board_order() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+  "version": 1,
+  "columns": [
+    { "name": "Todo", "order": 0 },
+    { "name": "Done", "order": 1 }
+  ],
+  "cardOrder": {
+    "Todo": ["tasks/e.md", "tasks/c.md", "tasks/a.md", "tasks/d.md"],
+    "Done": ["tasks/b.md"]
+  },
+  "doneColumn": "Done"
+}"#,
+    );
+    for (name, status) in [
+        ("a", "Todo"),
+        ("b", "Done"),
+        ("c", "Todo"),
+        ("d", "Todo"),
+        ("e", "Todo"),
+    ] {
+        write_md(
+            dir.path(),
+            &format!("tasks/{name}.md"),
+            &task_md_with_milestone(name, status, None, "v1"),
+        );
+    }
+
+    let open_payload = open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
+        .expect("open should succeed");
+    let get_payload = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
+    let open_task_paths: Vec<&str> = open_payload
+        .tasks
+        .iter()
+        .map(|task| task.file_path.as_str())
+        .collect();
+    let open_milestone_paths: Vec<&str> = open_payload.milestone_projections["v1"]
+        .task_file_paths
+        .iter()
+        .map(|path| path.as_str())
+        .collect();
+    let get_milestone_paths: Vec<&str> = get_payload.milestone_projections["v1"]
+        .task_file_paths
+        .iter()
+        .map(|path| path.as_str())
+        .collect();
+
+    assert_eq!(
+        open_task_paths,
+        vec![
+            "tasks/e.md",
+            "tasks/c.md",
+            "tasks/a.md",
+            "tasks/d.md",
+            "tasks/b.md"
+        ]
+    );
+    assert_eq!(open_milestone_paths, open_task_paths);
+    assert_eq!(get_milestone_paths, open_task_paths);
+    assert_eq!(open_payload.milestone_projections["v1"].done, 1);
+    assert_eq!(
+        open_payload.milestone_projections,
+        get_payload.milestone_projections
+    );
 }
 
 /// `open_project` と `get_tasks` は同じ board 表示順（カラム順 → cardOrder → id 順）
@@ -1523,7 +1632,7 @@ fn sample_spawned_task() -> Task {
         title: "Spawned".into(),
         status: "Todo".into(),
         priority: None,
-        milestone: None,
+        milestone: Some("v1".to_owned()),
         labels: Vec::new(),
         parent: None,
         due: None,
@@ -1580,7 +1689,7 @@ fn a_watcher_emitting_during_spawn_cannot_desynchronize_session_and_tasks() {
     fs::create_dir_all(dir.path().join("tasks")).expect("create tasks dir");
     fs::write(
         dir.path().join("tasks/a.md"),
-        "---\ntitle: A\nstatus: Todo\n---\n",
+        "---\ntitle: A\nstatus: Todo\nmilestone: v1\n---\n",
     )
     .expect("write md");
     let state = Arc::new(AppState::new());
@@ -1597,6 +1706,13 @@ fn a_watcher_emitting_during_spawn_cannot_desynchronize_session_and_tasks() {
         payload.tasks.len(),
         "payload の tasks には spawn 後の変更が入らない"
     );
+    let milestone = payload
+        .milestone_projections
+        .get("v1")
+        .expect("committed snapshot projection");
+    assert_eq!(milestone.total, 1);
+    assert_eq!(milestone.task_file_paths.len(), 1);
+    assert_eq!(milestone.task_file_paths[0].as_str(), "tasks/a.md");
     assert!(
         payload.session.revision < state.tasks_revision(),
         "session も spawn 前に確定していれば、spawn 後の変更は revision が上回る = FE が新しい event として受け取れる"

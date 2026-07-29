@@ -1,13 +1,10 @@
 //! Task 集合から導出される projection 型。
 //!
-//! `Task` entity の属性ではない導出値（子孫進捗・完了判定・直接子）を entity に
-//! 混ぜず、IPC payload 上で並列に返すための型を置く。生成ロジックは aggregate
-//! （`TaskIndex::project_all`）に閉じ、この module は型と serde 契約のみを持つ。
-//!
-//! # 拡張余地
-//!
-//! milestone progress は `TaskProjection` にフィールドを追加する形で合流させる。
-//! projection の map 構造（filePath -> projection）は変えない。
+//! `Task` entity の属性ではない導出値を entity に混ぜず、IPC payload 上で
+//! 並列に返すための型を置く。task 単位の子孫進捗と milestone 単位の進捗は
+//! 異なる key・更新単位を持つため、独立した deterministic map として表現する。
+//! 生成ロジックは aggregate（`TaskIndex`）に閉じ、この module は型と serde
+//! 契約のみを持つ。
 
 use std::collections::BTreeMap;
 
@@ -44,6 +41,19 @@ pub struct TaskProjection {
     /// ため、raw ref（`./tasks/a.md` のような表記揺れ）を入れると子が無言で落ちる。
     pub child_file_paths: Vec<TaskFilePath>,
 }
+
+/// 1 milestone 分の task 件数・完了件数・所属 task path。
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MilestoneProjection {
+    pub done: usize,
+    pub total: usize,
+    /// 集計元 `TaskIndex` の入力順を保つ raw `Task.file_path`。
+    pub task_file_paths: Vec<TaskFilePath>,
+}
+
+/// milestone 名（frontmatter の raw 値）→ projection の deterministic map。
+pub type MilestoneProjectionMap = BTreeMap<String, MilestoneProjection>;
 
 /// filePath（`Task.file_path` の raw 値。正規化はしない）→ projection の map。
 ///

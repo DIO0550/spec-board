@@ -85,7 +85,7 @@ use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError};
 use crate::task::io::FsTaskIo;
 use crate::task::parse::{default_status_for, TaskParseError};
-use crate::task::projection::TaskProjectionMap;
+use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
 use crate::task::rebuild::{rebuild_tasks_from_disk, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::task::file_scanner::ScanError;
@@ -104,6 +104,8 @@ pub struct OpenProjectPayload {
     pub columns: Vec<ColumnName>,
     /// filePath -> projection。初期表示時点で FE が集計を持てるよう同梱する。
     pub projections: TaskProjectionMap,
+    /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
+    pub milestone_projections: MilestoneProjectionMap,
     /// watcher event の検証基準。`tasks` と**同一トランザクション**で確定した
     /// 値であることが必須（そうでないと FE が復旧不能な split-brain に陥る）。
     pub session: WatcherSession,
@@ -551,12 +553,14 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
 /// `id` 昇順で並ぶ（`cardOrder` の「記載されていないタスクは末尾に追加」ルール）。
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
 fn build_payload(tasks: Vec<Task>, config: &Config, session: WatcherSession) -> OpenProjectPayload {
-    // projection は並び順に依存しない（filePath キーの map）ため sort 前に作る。
-    // `TaskIndex` へ move → `into_tasks()` で戻すことで `Vec<Task>` の clone を避ける。
-    let index = TaskIndex::new(tasks);
-    let projections = index.project_all(config.resolved_done_column());
     // 並び順の契約は aggregate に集約する（`get_tasks` も同じ入口を通す）。
-    let tasks = index.sorted_by_board_order(config);
+    let ordered_tasks = TaskIndex::new(tasks).sorted_by_board_order(config);
+    // payload tasks と milestone の path 列を同じ ordered 集合から導出する。
+    // `TaskIndex` へ move → `into_tasks()` で戻し、`Vec<Task>` の clone を避ける。
+    let index = TaskIndex::new(ordered_tasks);
+    let projections = index.project_all(config.resolved_done_column());
+    let milestone_projections = index.project_milestones(config.resolved_done_column());
+    let tasks = index.into_tasks();
 
     let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
     sorted_columns.sort_by_key(|column| column.order);
@@ -568,6 +572,7 @@ fn build_payload(tasks: Vec<Task>, config: &Config, session: WatcherSession) -> 
         tasks,
         columns,
         projections,
+        milestone_projections,
         session,
     }
 }

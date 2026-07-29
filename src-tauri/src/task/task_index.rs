@@ -27,7 +27,9 @@ use crate::task::path_lookup::{
     normalize_parent_path_for_lookup, normalize_relative_path_for_input,
     normalize_task_path_for_lookup, parent_lookup_index, task_lookup_index, task_path_index,
 };
-use crate::task::projection::{SubIssueProgress, TaskProjection, TaskProjectionMap};
+use crate::task::projection::{
+    MilestoneProjectionMap, SubIssueProgress, TaskProjection, TaskProjectionMap,
+};
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
 use crate::task::task_content::TaskContent;
@@ -208,6 +210,32 @@ impl TaskIndex {
                 *counts.entry(name.to_owned()).or_insert(0) += 1;
                 counts
             })
+    }
+
+    /// milestone ごとの進捗と所属 task path を1回の走査で集計する。
+    ///
+    /// `None` と空文字は未割当として除外し、空でない名称は config registry に
+    /// 未定義でも raw 値のまま保持する。`done_column` が未解決なら完了件数は 0。
+    /// `task_file_paths` は `self.tasks` の入力順をそのまま保持し、本 query では
+    /// sort しない。payload の board order は command 層が先に task を並べ替えて
+    /// `TaskIndex` を再構築することで保証する。I/O・config registry・Tauri 型には
+    /// 依存しない。task 集合は1回だけ走査し、deterministic な `BTreeMap` への
+    /// entry 操作を含む厳密な上界は O(tasks × log milestones)、追加領域は
+    /// O(tasks)。milestone ごとの task 再走査は行わない。
+    pub fn project_milestones(&self, done_column: Option<&ColumnName>) -> MilestoneProjectionMap {
+        let mut projections = MilestoneProjectionMap::new();
+        for task in &self.tasks {
+            let Some(name) = task.milestone.as_deref().filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            let projection = projections.entry(name.to_owned()).or_default();
+            projection.total += 1;
+            if is_in_done_column(task, done_column) {
+                projection.done += 1;
+            }
+            projection.task_file_paths.push(task.file_path.clone());
+        }
+        projections
     }
 
     /// 全タスク分の projection（子孫進捗 / 完了判定 / 直接子）をまとめて作る。
@@ -2122,6 +2150,10 @@ mod task_index_label_usage_tests;
 #[cfg(test)]
 #[path = "task_index_milestone_usage_tests.rs"]
 mod task_index_milestone_usage_tests;
+
+#[cfg(test)]
+#[path = "task_index_milestone_projection_tests.rs"]
+mod task_index_milestone_projection_tests;
 
 #[cfg(test)]
 #[path = "task_index_plan_create_tests.rs"]

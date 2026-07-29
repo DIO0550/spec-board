@@ -37,6 +37,10 @@ fn task_md(title: &str, status: &str, parent: Option<&str>) -> String {
     task_md_with_links(title, status, parent, &[])
 }
 
+fn task_md_with_milestone(title: &str, status: &str, milestone: &str) -> String {
+    format!("---\ntitle: {title}\nstatus: {status}\nmilestone: \"{milestone}\"\n---\n\nbody\n")
+}
+
 fn task_md_with_links(title: &str, status: &str, parent: Option<&str>, links: &[&str]) -> String {
     let mut s = String::from("---\n");
     s.push_str(&format!("title: {title}\n"));
@@ -70,6 +74,21 @@ fn state_lock_poisoned_display_matches_open_project_contract() {
     );
 }
 
+#[test]
+fn poisoned_tasks_cache_still_returns_state_lock_poisoned() {
+    let state = Arc::new(AppState::new());
+    let poison_target = Arc::clone(&state);
+    let join = std::thread::spawn(move || {
+        let _ = poison_target.with_tasks_cache_mut(|_| panic!("poison tasks_cache"));
+    })
+    .join();
+    assert!(join.is_err());
+
+    let error = get_tasks_impl(&state).expect_err("poisoned state should fail");
+
+    assert_eq!(error, GetTasksError::StateLockPoisoned);
+}
+
 fn write_config_json(root: &Path, content: &str) {
     let dir = root.join(".spec-board");
     fs::create_dir_all(&dir).expect("create .spec-board");
@@ -84,6 +103,9 @@ fn returns_empty_payload_when_app_state_is_uninitialized() {
 
     assert!(payload.tasks.is_empty());
     assert!(payload.projections.is_empty());
+    assert!(payload.milestone_projections.is_empty());
+    let value = serde_json::to_value(&payload).expect("payload serializable");
+    assert_eq!(value["milestoneProjections"], serde_json::json!({}));
 }
 
 #[test]
@@ -178,6 +200,125 @@ fn task_in_done_column_is_marked_done() {
     assert!(payload.projections["tasks/c1.md"].is_done);
     assert!(!payload.projections["tasks/c2.md"].is_done);
     assert!(!payload.projections["tasks/p.md"].is_done);
+}
+
+#[test]
+fn milestone_projection_paths_follow_the_same_board_order_and_snapshot_as_tasks() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+  "version": 1,
+  "columns": [
+    { "name": "Todo", "order": 0 },
+    { "name": "Done", "order": 1 }
+  ],
+  "cardOrder": {
+    "Todo": ["tasks/e.md", "tasks/c.md", "tasks/a.md", "tasks/d.md"],
+    "Done": ["tasks/b.md"]
+  },
+  "doneColumn": "Done"
+}"#,
+    );
+    for (name, status) in [
+        ("a", "Todo"),
+        ("b", "Done"),
+        ("c", "Todo"),
+        ("d", "Todo"),
+        ("e", "Todo"),
+    ] {
+        write_md(
+            dir.path(),
+            &format!("tasks/{name}.md"),
+            &task_md_with_milestone(name, status, "v1"),
+        );
+    }
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+    let task_paths: Vec<&str> = payload
+        .tasks
+        .iter()
+        .map(|task| task.file_path.as_str())
+        .collect();
+    let milestone = payload
+        .milestone_projections
+        .get("v1")
+        .expect("v1 projection");
+    let milestone_paths: Vec<&str> = milestone
+        .task_file_paths
+        .iter()
+        .map(|path| path.as_str())
+        .collect();
+
+    assert_eq!(
+        task_paths,
+        vec![
+            "tasks/e.md",
+            "tasks/c.md",
+            "tasks/a.md",
+            "tasks/d.md",
+            "tasks/b.md"
+        ]
+    );
+    assert_eq!(milestone_paths, task_paths);
+    assert_eq!(milestone.total, payload.tasks.len());
+    assert_eq!(milestone.done, 1);
+    assert!(payload
+        .tasks
+        .iter()
+        .all(|task| payload.projections.contains_key(task.file_path.as_str())));
+    assert_eq!(
+        dir.path().to_string_lossy().as_ref(),
+        payload.session.project_key.as_str()
+    );
+    assert_eq!(payload.session.generation, state.project_generation());
+    assert_eq!(payload.session.revision, state.tasks_revision());
+}
+
+#[test]
+fn milestone_projection_paths_follow_id_order_when_config_is_absent() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    for name in ["e", "d", "c", "b", "a"] {
+        write_md(
+            dir.path(),
+            &format!("tasks/{name}.md"),
+            &task_md_with_milestone(name, "Done", "v1"),
+        );
+    }
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
+    state.replace_config(None).expect("config writable");
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+    let task_paths: Vec<&str> = payload
+        .tasks
+        .iter()
+        .map(|task| task.file_path.as_str())
+        .collect();
+    let milestone = payload
+        .milestone_projections
+        .get("v1")
+        .expect("v1 projection");
+    let milestone_paths: Vec<&str> = milestone
+        .task_file_paths
+        .iter()
+        .map(|path| path.as_str())
+        .collect();
+
+    assert_eq!(
+        task_paths,
+        vec![
+            "tasks/a.md",
+            "tasks/b.md",
+            "tasks/c.md",
+            "tasks/d.md",
+            "tasks/e.md"
+        ]
+    );
+    assert_eq!(milestone_paths, task_paths);
+    assert_eq!(milestone.done, 0);
 }
 
 // ───────── 完了カラムの解決 ─────────
