@@ -2,6 +2,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import type { MilestoneDefinition } from "@/domains/milestone";
+import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { Task, type TaskPayload } from "@/types/task";
 import { MilestoneViewScreen } from ".";
@@ -105,6 +107,36 @@ const SAMPLE_TASKS: Task[] = [
   makeTask("ops-1", "メトリクス整理", "ops-2026q3", "Todo"),
 ];
 
+const SAMPLE_MILESTONE_PROJECTIONS: MilestoneProjectionMap = new Map([
+  [
+    "v1.5",
+    {
+      done: 2,
+      total: 4,
+      taskFilePaths: ["v15-1.md", "v15-2.md", "v15-3.md", "v15-4.md"],
+    },
+  ],
+  ["v1.6", { done: 0, total: 2, taskFilePaths: ["v16-1.md", "v16-2.md"] }],
+  ["v1.7", { done: 0, total: 2, taskFilePaths: ["v17-1.md", "v17-2.md"] }],
+  ["sprint-24", { done: 1, total: 2, taskFilePaths: ["s24-1.md", "s24-2.md"] }],
+  ["v1.4", { done: 2, total: 2, taskFilePaths: ["v14-1.md", "v14-2.md"] }],
+  ["ops-2026q3", { done: 0, total: 1, taskFilePaths: ["ops-1.md"] }],
+]);
+
+const doneTaskProjection = {
+  subIssueProgress: { done: 0, total: 0 },
+  isDone: true,
+  childFilePaths: [],
+} as const;
+
+const SAMPLE_TASK_PROJECTIONS: TaskProjectionMap = new Map([
+  ["v15-2.md", doneTaskProjection],
+  ["v15-4.md", doneTaskProjection],
+  ["s24-1.md", doneTaskProjection],
+  ["v14-1.md", doneTaskProjection],
+  ["v14-2.md", doneTaskProjection],
+]);
+
 /** Storybook では reload を呼ばないので no-op で埋める。 */
 const noopReload = () => Promise.resolve();
 
@@ -148,6 +180,25 @@ const ERROR_RESOURCE: MilestonesResource = {
   reload: noopReload,
 };
 
+const EDGE_MILESTONES: MilestoneDefinition[] = [
+  { name: "unused", title: "未使用", state: "open", order: 0 },
+  { name: "__proto__", title: "特殊名", state: "open", order: 1 },
+];
+
+const EDGE_RESOURCE: MilestonesResource = {
+  status: "loaded",
+  milestones: EDGE_MILESTONES,
+  byName: new Map(
+    EDGE_MILESTONES.map((milestone) => [milestone.name, milestone]),
+  ),
+  usageCounts: {},
+  reload: noopReload,
+};
+
+const EDGE_TASKS: Task[] = [
+  makeTask("special", "特殊 key のタスク", "__proto__", "Todo"),
+];
+
 const meta: Meta<typeof MilestoneViewScreen> = {
   component: MilestoneViewScreen,
   parameters: {
@@ -157,6 +208,8 @@ const meta: Meta<typeof MilestoneViewScreen> = {
     resource: LOADED_RESOURCE,
     tasks: SAMPLE_TASKS,
     doneColumn: "Done",
+    milestoneProjections: SAMPLE_MILESTONE_PROJECTIONS,
+    taskProjections: SAMPLE_TASK_PROJECTIONS,
   },
 };
 
@@ -171,6 +224,26 @@ export const Default: Story = {};
 export const WithoutDoneColumn: Story = {
   args: {
     doneColumn: undefined,
+  },
+};
+
+/** 未使用 definition、特殊名、definition のない参照を同時に確認する境界 story。 */
+export const EdgeCases: Story = {
+  args: {
+    resource: EDGE_RESOURCE,
+    tasks: EDGE_TASKS,
+    milestoneProjections: new Map([
+      ["__proto__", { done: 0, total: 1, taskFilePaths: ["special.md"] }],
+      [
+        "unknown-from-task",
+        {
+          done: 1,
+          total: 2,
+          taskFilePaths: ["unknown-a.md", "unknown-b.md"],
+        },
+      ],
+    ]),
+    taskProjections: new Map(),
   },
 };
 

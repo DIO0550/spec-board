@@ -1,5 +1,3 @@
-import type { Task } from "@/types/task";
-
 /** マイルストーンの開閉状態。`open` / `closed` 以外の未知値も保持する。 */
 export type MilestoneState = "open" | "closed" | (string & {});
 
@@ -23,26 +21,6 @@ export type MilestoneDefinition = {
 
 /** マイルストーンの表示・参照に使う共有ドメイン companion。 */
 export const Milestone = {
-  /**
-   * 現在のタスク集合からマイルストーン名ごとの使用数を算出する。
-   * バックエンドのスナップショット usageCounts と異なり、live なタスク集合から
-   * 毎回計算するため、タスクの milestone 付け替え後も常に最新になる。
-   * milestone 未設定（undefined / 空文字）のタスクは数えない。
-   * @param tasks - 現在のタスク一覧
-   * @returns name → 使用タスク件数
-   */
-  usageCounts: (tasks: readonly Task[]): Record<string, number> => {
-    const counts: Record<string, number> = {};
-    for (const task of tasks) {
-      const name = task.milestone;
-      if (name === undefined || name === "") {
-        continue;
-      }
-      counts[name] = (counts[name] ?? 0) + 1;
-    }
-    return counts;
-  },
-
   /**
    * 任意の state 文字列を表示用の既知状態へ正規化する。
    * `closed` のみ closed とし、未知値 / undefined / その他は open 相当へフォールバックする。

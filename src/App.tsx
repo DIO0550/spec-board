@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { LabelRegistry } from "@/domains/label-registry";
-import { Milestone } from "@/domains/milestone";
+import {
+  MilestoneProjection,
+  type MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -57,6 +60,7 @@ type DisplayableData = {
   readonly columns: Column[];
   readonly doneColumn?: string;
   readonly projections: TaskProjectionMap;
+  readonly milestoneProjections: MilestoneProjectionMap;
 };
 
 /**
@@ -121,6 +125,15 @@ const columnsOf = (state: ProjectState): Column[] =>
  */
 const projectionsOf = (state: ProjectState): TaskProjectionMap =>
   displayableDataOf(state)?.projections ?? TaskProjection.emptyMap;
+
+/**
+ * 表示用 milestone projection map を返す。
+ * @param state useProject の現在 state
+ * @returns milestone 名 -> projection の Map
+ */
+const milestoneProjectionsOf = (state: ProjectState): MilestoneProjectionMap =>
+  displayableDataOf(state)?.milestoneProjections ??
+  MilestoneProjection.emptyMap;
 
 /**
  * 表示用 doneColumn を返す。
@@ -252,6 +265,7 @@ const AppShell = () => {
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
   const projections = projectionsOf(state);
+  const milestoneProjections = milestoneProjectionsOf(state);
   const tasksByNormalizedPath = useMemo(
     () => buildTasksByNormalizedPath(tasks),
     [tasks],
@@ -266,16 +280,6 @@ const AppShell = () => {
   // を画面間で共有することで、片方の mutation 実行中に画面遷移して別画面から送信しても
   // 同じガードで短絡され、並行書き込みが直列化される。
   const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
-  // 設定画面の使用数はバックエンドのスナップショット（resource.usageCounts）だと
-  // タスク変更後に stale になり、削除確認が「未使用」と誤判定しうる。live な tasks から
-  // 毎回算出した usageCounts で上書きして渡し、常に現在の参照状況を反映させる。
-  const settingsMilestonesResource = useMemo(
-    () => ({
-      ...milestonesResource,
-      usageCounts: Milestone.usageCounts(tasks),
-    }),
-    [milestonesResource, tasks],
-  );
   // ラベルリソース（settings 向けの唯一の取得点）。TaskForm は別途 useLabelList を使う。
   const labelsResource = useLabels(loadedPath ?? undefined);
   // settings の使用数は milestone と対称に live な tasks から算出した値で上書きする。
@@ -1013,7 +1017,8 @@ const AppShell = () => {
               {view === "settings" && (
                 <SettingsScreen
                   labels={settingsLabelsResource}
-                  milestones={settingsMilestonesResource}
+                  milestones={milestonesResource}
+                  milestoneProjections={milestoneProjections}
                   milestoneMutations={milestoneMutations}
                   onLabelUsageClick={handleLabelUsageClick}
                 />
@@ -1023,6 +1028,8 @@ const AppShell = () => {
                   resource={milestonesResource}
                   tasks={tasks}
                   doneColumn={doneColumn}
+                  milestoneProjections={milestoneProjections}
+                  taskProjections={projections}
                   onCreateMilestone={milestoneMutations.create}
                   isCreating={milestoneMutations.isPending}
                 />

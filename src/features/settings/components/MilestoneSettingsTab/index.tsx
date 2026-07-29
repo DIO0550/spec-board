@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { Milestone } from "@/domains/milestone";
+import {
+  MilestoneProjection,
+  type MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs, MilestoneDefinition } from "@/lib/tauri";
 import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
@@ -71,6 +75,8 @@ const toForm = (def: MilestoneDefinition): FormValues => ({
 type MilestoneSettingsTabProps = {
   /** App / SettingsScreen から配られるマイルストーンリソース（唯一の取得点） */
   resource: MilestonesResource;
+  /** tasks と同一 snapshot の live milestone usage */
+  milestoneProjections: MilestoneProjectionMap;
   /**
    * App が hoist して保持するマイルストーン CRUD ハンドル。
    * 設定タブとマイルストーンビューで同一インスタンスを共有することで、
@@ -88,9 +94,10 @@ type MilestoneSettingsTabProps = {
  */
 export const MilestoneSettingsTab = ({
   resource,
+  milestoneProjections,
   mutations,
 }: MilestoneSettingsTabProps) => {
-  const { milestones, usageCounts, status } = resource;
+  const { milestones, status } = resource;
   const { isPending, create, update, remove } = mutations;
   // 編集対象の name（null は新規作成モード）。
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -148,7 +155,10 @@ export const MilestoneSettingsTab = ({
    * @param name - 削除対象の name
    */
   const handleDelete = async (name: string): Promise<void> => {
-    const count = usageCounts[name] ?? 0;
+    const count = MilestoneProjection.findByName(
+      milestoneProjections,
+      name,
+    ).total;
     const message =
       count > 0
         ? `「${name}」は ${count} 件のタスクで使用中です。削除しますか？（タスクの値は残ります）`
@@ -191,7 +201,11 @@ export const MilestoneSettingsTab = ({
                 <span className="text-muted">{def.due}</span>
               ) : null}
               <span className="text-muted">
-                使用 {usageCounts[def.name] ?? 0}
+                使用{" "}
+                {
+                  MilestoneProjection.findByName(milestoneProjections, def.name)
+                    .total
+                }
               </span>
               <button
                 type="button"

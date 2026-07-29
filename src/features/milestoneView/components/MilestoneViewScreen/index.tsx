@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Due } from "@/domains/due";
 import { Milestone } from "@/domains/milestone";
+import {
+  MilestoneProjection,
+  type MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import { MilestoneCreateModal } from "@/features/milestoneView/components/MilestoneCreateModal";
 import { MilestoneDetailSidebar } from "@/features/milestoneView/components/MilestoneDetailSidebar";
 import { MilestoneList } from "@/features/milestoneView/components/MilestoneList";
@@ -9,7 +14,6 @@ import {
   MilestoneToolbar,
   type ViewMode,
 } from "@/features/milestoneView/components/MilestoneToolbar";
-import { useMilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import {
   filterMilestones,
   groupByDisplayStatus,
@@ -25,10 +29,14 @@ import type { Task } from "@/types/task";
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */
   resource: MilestonesResource;
-  /** 全タスク（進捗算出・サイドバー task list 用） */
+  /** 全タスク（サイドバーのtask path解決用） */
   tasks: Task[];
   /** done とみなすカラム名（未解決は undefined） */
   doneColumn: string | undefined;
+  /** BE が task snapshot と同時生成した milestone projection map */
+  milestoneProjections: MilestoneProjectionMap;
+  /** sidebar の done 表示に使う task projection map */
+  taskProjections: TaskProjectionMap;
   /**
    * マイルストーンを作成する。成功なら true、失敗 / pending 中なら false。
    * 未指定なら追加ボタン自体を表示しない（プレビュー / 閲覧専用モード）。
@@ -56,6 +64,8 @@ export const MilestoneViewScreen = ({
   resource,
   tasks,
   doneColumn,
+  milestoneProjections,
+  taskProjections,
   onCreateMilestone,
   isCreating = false,
 }: MilestoneViewScreenProps) => {
@@ -63,13 +73,6 @@ export const MilestoneViewScreen = ({
     () => Milestone.sortByOrder(resource.milestones),
     [resource.milestones],
   );
-  const names = useMemo(() => sorted.map((m) => m.name), [sorted]);
-  const progress = useMilestoneProgress({
-    milestoneNames: names,
-    tasks,
-    doneColumn,
-  });
-
   const [filter, setFilter] = useState<StateFilter>("all");
   const [query, setQuery] = useState("");
   // milestones.yml で定義された order を尊重した既定順序を初期値にする。
@@ -111,26 +114,23 @@ export const MilestoneViewScreen = ({
 
   const visible = useMemo(() => {
     const filtered = filterMilestones(sorted, { state: filter, query }, now);
-    return sortMilestones(filtered, sort, progress);
-  }, [sorted, filter, query, sort, progress, now]);
+    return sortMilestones(
+      filtered,
+      sort,
+      milestoneProjections,
+      doneColumn !== undefined,
+    );
+  }, [sorted, filter, query, sort, milestoneProjections, doneColumn, now]);
 
   const stats = useMemo(() => groupByDisplayStatus(sorted, now), [sorted, now]);
-  const taskCounts = useMemo(() => {
-    let total = 0;
-    let done = 0;
-    for (const t of tasks) {
-      // 空文字 milestone は既存 API（updateTask 等）でクリアの意味で使われるため
-      // 未割当として扱う。undefined と "" の両方を除外する。
-      if (t.milestone === undefined || t.milestone === "") {
-        continue;
-      }
-      total += 1;
-      if (doneColumn !== undefined && t.status === doneColumn) {
-        done += 1;
-      }
-    }
-    return { total, done };
-  }, [tasks, doneColumn]);
+  const taskCounts = useMemo(
+    () => MilestoneProjection.sum(milestoneProjections),
+    [milestoneProjections],
+  );
+  const tasksByFilePath = useMemo(
+    () => new Map(tasks.map((task) => [task.filePath, task])),
+    [tasks],
+  );
 
   const selectedDef = useMemo(
     () =>
@@ -145,13 +145,19 @@ export const MilestoneViewScreen = ({
     selectedDef === undefined
       ? undefined
       : resolveDisplayStatus(selectedDef, now);
-  const selectedTasks = useMemo(
-    () =>
-      selectedName === undefined
-        ? []
-        : tasks.filter((t) => t.milestone === selectedName),
-    [tasks, selectedName],
-  );
+  const selectedProjection =
+    selectedName === undefined
+      ? undefined
+      : MilestoneProjection.findByName(milestoneProjections, selectedName);
+  const selectedTasks = useMemo(() => {
+    if (selectedProjection === undefined) {
+      return [];
+    }
+    return selectedProjection.taskFilePaths.flatMap((filePath) => {
+      const task = tasksByFilePath.get(filePath);
+      return task === undefined ? [] : [task];
+    });
+  }, [selectedProjection, tasksByFilePath]);
 
   if (resource.status === "loading" || resource.status === "idle") {
     return <p className="p-4 text-sm text-muted">読み込み中…</p>;
@@ -276,7 +282,10 @@ export const MilestoneViewScreen = ({
             <MilestoneList
               milestones={visible}
               statusOf={(d) => resolveDisplayStatus(d, now)}
-              progressOf={(d) => progress.get(d.name)}
+              projectionOf={(d) =>
+                MilestoneProjection.findByName(milestoneProjections, d.name)
+              }
+              showRatio={doneColumn !== undefined}
               selectedName={selectedName}
               onSelect={(d) => setSelectedName(d.name)}
               now={now}
@@ -293,13 +302,10 @@ export const MilestoneViewScreen = ({
         <MilestoneDetailSidebar
           def={selectedDef}
           status={selectedStatus}
-          progress={
-            selectedDef === undefined
-              ? undefined
-              : progress.get(selectedDef.name)
-          }
+          projection={selectedProjection}
+          showRatio={doneColumn !== undefined}
           tasks={selectedTasks}
-          doneColumn={doneColumn}
+          taskProjections={taskProjections}
           now={now}
         />
       </div>
