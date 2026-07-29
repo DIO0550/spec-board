@@ -229,6 +229,7 @@ export const useWatcherResyncEffect = ({
             type: "tasks-resynced",
             tasks: result.value.tasks,
             projections: result.value.projections,
+            milestoneProjections: result.value.milestoneProjections,
           });
           // marker は **replay を適用する前**の state で組む。replay の `task-*`
           // action は tasks だけを進めて projections は据え置くため、replay 後の

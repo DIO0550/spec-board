@@ -1,3 +1,7 @@
+import type {
+  MilestoneProjectionMap,
+  MilestoneProjectionsPayloadInput,
+} from "@/domains/milestone-projection";
 import type { Priority } from "@/domains/priority";
 import type {
   TaskProjectionMap,
@@ -39,6 +43,8 @@ export type OpenProjectPayload = {
   columns: string[];
   /** filePath -> projection */
   projections: TaskProjectionMap;
+  /** milestone 名 -> live progress / board-order task paths */
+  milestoneProjections: MilestoneProjectionMap;
   /** watcher event 検証の初期 baseline（tasks と同一トランザクションの値） */
   session: WatcherSession;
 };
@@ -51,6 +57,8 @@ export type OpenProjectRawPayload = {
   columns: string[];
   /** filePath をキーにした projection の raw payload */
   projections: TaskProjectionsPayload;
+  /** milestone 名をキーにした projection の raw payload */
+  milestoneProjections: MilestoneProjectionsPayloadInput;
   /** watcher session の raw payload */
   session: WatcherSessionPayload;
 };
@@ -65,6 +73,8 @@ export type GetTasksPayload = {
   tasks: Task[];
   /** filePath -> projection */
   projections: TaskProjectionMap;
+  /** milestone 名 -> live progress / board-order task paths */
+  milestoneProjections: MilestoneProjectionMap;
   /** この snapshot の watcher session（envelope 検証の baseline 再設定用） */
   session: WatcherSession;
 };
@@ -75,6 +85,8 @@ export type GetTasksRawPayload = {
   tasks: TaskPayload[];
   /** filePath をキーにした projection の raw payload */
   projections: TaskProjectionsPayload;
+  /** milestone 名をキーにした projection の raw payload */
+  milestoneProjections: MilestoneProjectionsPayloadInput;
   /** watcher session の raw payload */
   session: WatcherSessionPayload;
 };

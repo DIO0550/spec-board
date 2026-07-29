@@ -1,3 +1,4 @@
+import { MilestoneProjection } from "@/domains/milestone-projection";
 import { TaskProjection } from "@/domains/task-projection";
 import { WatcherSession } from "@/domains/watcher-session";
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
@@ -21,6 +22,9 @@ const toOpenProjectPayload = (
   tasks: payload.tasks.map(Task.fromPayload),
   columns: payload.columns,
   projections: TaskProjection.fromPayload(payload.projections),
+  milestoneProjections: MilestoneProjection.fromPayload(
+    payload.milestoneProjections,
+  ),
   session: WatcherSession.fromPayload(payload.session),
 });
 

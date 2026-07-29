@@ -26,6 +26,7 @@ const taskFixture = Task.fromPayload(taskPayloadFixture);
 const emptyRawPayload = {
   tasks: [],
   projections: {},
+  milestoneProjections: {},
   session: {
     projectKey: "/home/user/specs",
     generation: 1,
@@ -60,6 +61,13 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
         childFilePaths: ["tasks/y.md"],
       },
     },
+    milestoneProjections: {
+      v1: {
+        done: 1,
+        total: 1,
+        taskFilePaths: ["tasks/x.md"],
+      },
+    },
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -77,6 +85,11 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
     done: 1,
     total: 2,
   });
+  expect(value.milestoneProjections.get("v1")).toEqual({
+    done: 1,
+    total: 1,
+    taskFilePaths: ["tasks/x.md"],
+  });
 });
 
 test("projections は Map に変換される", async () => {
@@ -89,6 +102,7 @@ test("projections は Map に変換される", async () => {
         childFilePaths: [],
       },
     },
+    milestoneProjections: {},
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -114,6 +128,7 @@ test("tasks / projections が空でも成功する", async () => {
     value: {
       tasks: [],
       projections: new Map(),
+      milestoneProjections: new Map(),
       session: {
         projectKey: "/home/user/specs",
         generation: 1,
@@ -138,10 +153,37 @@ test("reject 時の error は TauriError インスタンス", async () => {
   );
 });
 
+test("milestoneProjections は特殊名と task path 順序を保つ Map に変換される", async () => {
+  const milestoneProjections = JSON.parse(
+    `{
+      "__proto__":{"done":1,"total":2,"taskFilePaths":["tasks/b.md","tasks/a.md"]},
+      "constructor":{"done":0,"total":1,"taskFilePaths":["tasks/c.md"]},
+      "toString":{"done":0,"total":1,"taskFilePaths":["tasks/d.md"]}
+    }`,
+  );
+  vi.mocked(invoke).mockResolvedValue({
+    ...emptyRawPayload,
+    milestoneProjections,
+  });
+
+  const result = await getTasks();
+
+  expect(Result.isOk(result)).toBe(true);
+  const { value } = result as { ok: true; value: GetTasksPayload };
+  expect(value.milestoneProjections).toBeInstanceOf(Map);
+  expect(value.milestoneProjections.get("__proto__")?.taskFilePaths).toEqual([
+    "tasks/b.md",
+    "tasks/a.md",
+  ]);
+  expect(value.milestoneProjections.has("constructor")).toBe(true);
+  expect(value.milestoneProjections.has("toString")).toBe(true);
+});
+
 test("session の 4 フィールドが domain 型として透過する", async () => {
   vi.mocked(invoke).mockResolvedValueOnce({
     tasks: [],
     projections: {},
+    milestoneProjections: {},
     session: {
       projectKey: "/home/user/specs",
       generation: 3,
@@ -164,6 +206,7 @@ test("session の値が 0 でも欠落しない", async () => {
   vi.mocked(invoke).mockResolvedValueOnce({
     tasks: [],
     projections: {},
+    milestoneProjections: {},
     session: {
       projectKey: "",
       generation: 0,

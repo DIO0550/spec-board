@@ -166,18 +166,21 @@ const payloadWithParseError: OpenProjectPayload = {
   tasks: [taskWithParseError],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskClean],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 const payloadWithBoth: OpenProjectPayload = {
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithParseError, taskWithBrokenLink],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 const openProjectFlow = async (

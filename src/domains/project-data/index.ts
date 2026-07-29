@@ -1,3 +1,7 @@
+import {
+  MilestoneProjection,
+  type MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
 import type { ProjectColumnsChange } from "@/domains/project-columns";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { TaskLinks } from "@/domains/task-links";
@@ -19,6 +23,11 @@ export type ProjectData = {
    * `useProjectionSyncEffect` が `get_tasks` 応答で丸ごと差し替える。
    */
   projections: TaskProjectionMap;
+  /**
+   * milestone 名 -> live progress / board-order task paths（BE 集計）。
+   * task projection と同じ snapshot から atomic に差し替える。
+   */
+  milestoneProjections: MilestoneProjectionMap;
   /**
    * この ProjectData がどの `open_project` 応答に由来するかを表す識別子。
    * `concurrency.beginOpenRequest()` の採番値をそのまま載せる。
@@ -70,6 +79,36 @@ const mergeProjections = (
     }
     unchanged = false;
     merged.set(filePath, projection);
+  }
+  if (unchanged) {
+    return prev;
+  }
+  return merged;
+};
+
+/**
+ * 新旧 milestone projection map を内容比較し、未変更参照を引き継ぐ。
+ * @param prev - 直前の milestone projection map
+ * @param next - get_tasks が返した新しい milestone projection map
+ * @returns 変化が無ければ prev、あれば未変更entryを共有する新 Map
+ */
+const mergeMilestoneProjections = (
+  prev: MilestoneProjectionMap,
+  next: MilestoneProjectionMap,
+): MilestoneProjectionMap => {
+  const merged = new Map<string, MilestoneProjection>();
+  let unchanged = prev.size === next.size;
+  for (const [name, projection] of next) {
+    const previous = prev.get(name);
+    if (
+      previous !== undefined &&
+      MilestoneProjection.equals(previous, projection)
+    ) {
+      merged.set(name, previous);
+      continue;
+    }
+    unchanged = false;
+    merged.set(name, projection);
   }
   if (unchanged) {
     return prev;
@@ -457,25 +496,38 @@ export const ProjectData = {
   }),
 
   /**
-   * BE から再取得した projection を丸ごと差し替える。
+   * BE から再取得した両 projection を同じ snapshot として差し替える。
    * tasks / columns には触れない（tasks の真実源は差分更新経路のまま）。
    *
    * 全エントリが等価なら **`data` そのもの**を返す。ここで `{ ...data }` を返すと
    * `ProjectState.updateData` が新 state を作り、`store.dispatch` が listener を
    * 無条件に通知して全ツリーが再レンダーする。
    * @param data - 現在の ProjectData
-   * @param projections - 再取得した projection map
-   * @returns 変化が無ければ `data` そのもの、あれば projection だけ差し替えた新 ProjectData
+   * @param snapshot - 再取得した task / milestone projection maps
+   * @returns 変化が無ければ `data` そのもの、あれば両 projections を反映した新 ProjectData
    */
   replaceProjections: (
     data: ProjectData,
-    projections: TaskProjectionMap,
+    snapshot: {
+      projections: TaskProjectionMap;
+      milestoneProjections: MilestoneProjectionMap;
+    },
   ): ProjectData => {
-    const merged = mergeProjections(data.projections, projections);
-    if (merged === data.projections) {
+    const projections = mergeProjections(
+      data.projections,
+      snapshot.projections,
+    );
+    const milestoneProjections = mergeMilestoneProjections(
+      data.milestoneProjections,
+      snapshot.milestoneProjections,
+    );
+    if (
+      projections === data.projections &&
+      milestoneProjections === data.milestoneProjections
+    ) {
       return data;
     }
-    return { ...data, projections: merged };
+    return { ...data, projections, milestoneProjections };
   },
 
   /**
@@ -491,22 +543,34 @@ export const ProjectData = {
    * 変わらない resync で ProjectData の参照が変わるのを防ぐ。
    *
    * @param data 現在の ProjectData
-   * @param snapshot get_tasks 応答（tasks / projections）
+   * @param snapshot get_tasks 応答（tasks / 両 projections）
    * @returns 変化が無ければ `data` そのもの、あれば差し替え後の ProjectData
    */
   resyncTasks: (
     data: ProjectData,
-    snapshot: { tasks: Task[]; projections: TaskProjectionMap },
+    snapshot: {
+      tasks: Task[];
+      projections: TaskProjectionMap;
+      milestoneProjections: MilestoneProjectionMap;
+    },
   ): ProjectData => {
     const tasks = mergeTasks(data.tasks, snapshot.tasks);
     const projections = mergeProjections(
       data.projections,
       snapshot.projections,
     );
-    if (tasks === data.tasks && projections === data.projections) {
+    const milestoneProjections = mergeMilestoneProjections(
+      data.milestoneProjections,
+      snapshot.milestoneProjections,
+    );
+    if (
+      tasks === data.tasks &&
+      projections === data.projections &&
+      milestoneProjections === data.milestoneProjections
+    ) {
       return data;
     }
-    return { ...data, tasks, projections };
+    return { ...data, tasks, projections, milestoneProjections };
   },
 
   /**

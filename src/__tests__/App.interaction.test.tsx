@@ -140,6 +140,7 @@ const payload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 const mountApp = () => {
@@ -213,6 +214,7 @@ test("loaded で tasks が 0 件のとき EmptyState type=empty-project が表�
       tasks: [],
       columns: ["Todo", "Done"],
       projections: new Map(),
+      milestoneProjections: new Map(),
     }),
   );
   await act(async () => {
@@ -657,6 +659,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
       tasks: [taskAInProjectB],
       columns: ["Todo", "Done"],
       projections: new Map(),
+      milestoneProjections: new Map(),
     }),
   );
   await act(async () => {
@@ -795,6 +798,7 @@ const parentChildPayload: OpenProjectPayload = {
   tasks: [parentTask, childTask],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 const openParentChildProject = async () => {

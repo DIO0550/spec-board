@@ -96,6 +96,7 @@ const makePayload = (seedTask: Task): OpenProjectPayload => ({
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 });
 
 beforeEach(() => {
@@ -397,6 +398,7 @@ test("削除 pending 中に open-start (project switch) が走ると pendingDele
         tasks: [],
         columns: ["Todo"],
         projections: new Map(),
+        milestoneProjections: new Map(),
       }),
     );
     await Promise.resolve();

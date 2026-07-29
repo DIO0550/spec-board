@@ -23,6 +23,7 @@ test("applyTaskCreated は task を追加し parent task の children を同期�
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -51,6 +52,7 @@ test("applyTaskCreated は parent children を二重追加しない", () => {
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -74,6 +76,7 @@ test("applyTaskUpdated は originalFilePath に一致する task を差し替え
     tasks: [current],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -108,6 +111,7 @@ test("applyTaskUpdated は parent が変わったとき旧親 children から該
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -143,6 +147,7 @@ test("applyTaskUpdated は parent が変わったとき新親 children に該当
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -172,6 +177,7 @@ test("applyTaskUpdated は parent が新規付与されたとき新親 children 
     tasks: [newParent, orphan],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -201,6 +207,7 @@ test("applyTaskUpdated は parent が解除されたとき旧親 children から
     tasks: [oldParent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -229,6 +236,7 @@ test("applyTaskUpdated は originalFilePath が存在しないとき parent-sync
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -273,6 +281,7 @@ test("applyTaskUpdated は rename + reparent で旧親から originalFilePath �
     tasks: [oldParent, newParent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -308,6 +317,7 @@ test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の
     tasks: [parent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -340,6 +350,7 @@ test("applyTaskUpdated は parent 変更がなければ他 task 参照を維持�
     tasks: [parent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -368,6 +379,7 @@ test("applyTaskDeleted は task を削除し hierarchy と links から参照を
     tasks: [parent, child],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -391,6 +403,7 @@ test("replaceColumns は status と doneColumn を rename に追従させる", (
     columns: columns("Todo", "Done"),
     doneColumn: "Done",
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -410,6 +423,7 @@ test("replaceColumns は指定された doneColumn を rename 追従より優先
     columns: columns("Todo", "Done"),
     doneColumn: "Done",
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
 
@@ -434,6 +448,7 @@ test("applyTaskUpdated は children 空の payload でも既存の childFilePath
     tasks: [parent],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
   // watcher の task-updated / 非 parent の update_task はどちらも children: [] を返す。
@@ -468,6 +483,7 @@ test("applyTaskUpdated は payload の parentFilePath を採用する", () => {
     tasks: [child, p1, p2],
     columns: columns("Todo"),
     projections: new Map(),
+    milestoneProjections: new Map(),
     openRequestId: 0,
   };
   const updated = makeTask({

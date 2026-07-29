@@ -43,6 +43,7 @@ const makeData = (): ProjectData => ({
   ],
   doneColumn: "C",
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 });
 

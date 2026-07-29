@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
-import { openProject } from "@/lib/tauri";
+import { type OpenProjectPayload, openProject } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -32,6 +32,7 @@ test("invoke が 'open_project' という command 名で呼ばれる", async () 
     tasks: [],
     columns: [],
     projections: {},
+    milestoneProjections: {},
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -48,6 +49,7 @@ test("引数オブジェクト { path } がそのまま invoke 第 2 引数に�
     tasks: [],
     columns: [],
     projections: {},
+    milestoneProjections: {},
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -70,6 +72,13 @@ test("成功時は Result.ok({ tasks, columns, projections }) を返す", async 
         subIssueProgress: { done: 1, total: 3 },
         isDone: false,
         childFilePaths: ["tasks/y.md"],
+      },
+    },
+    milestoneProjections: {
+      v1: {
+        done: 1,
+        total: 1,
+        taskFilePaths: ["tasks/x.md"],
       },
     },
     session: {
@@ -95,6 +104,16 @@ test("成功時は Result.ok({ tasks, columns, projections }) を返す", async 
           },
         ],
       ]),
+      milestoneProjections: new Map([
+        [
+          "v1",
+          {
+            done: 1,
+            total: 1,
+            taskFilePaths: ["tasks/x.md"],
+          },
+        ],
+      ]),
       session: {
         projectKey: "/home/user/specs",
         generation: 1,
@@ -110,6 +129,7 @@ test("projections が空オブジェクトでも成功する", async () => {
     tasks: [],
     columns: ["Todo"],
     projections: {},
+    milestoneProjections: {},
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -126,6 +146,7 @@ test("projections が空オブジェクトでも成功する", async () => {
       tasks: [],
       columns: ["Todo"],
       projections: new Map(),
+      milestoneProjections: new Map(),
       session: {
         projectKey: "/home/user/specs",
         generation: 1,
@@ -134,6 +155,40 @@ test("projections が空オブジェクトでも成功する", async () => {
       },
     },
   });
+});
+
+test("milestoneProjections は特殊名と task path 順序を保つ Map に変換される", async () => {
+  const milestoneProjections = JSON.parse(
+    `{
+      "__proto__":{"done":1,"total":2,"taskFilePaths":["tasks/b.md","tasks/a.md"]},
+      "constructor":{"done":0,"total":1,"taskFilePaths":["tasks/c.md"]},
+      "toString":{"done":0,"total":1,"taskFilePaths":["tasks/d.md"]}
+    }`,
+  );
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: [],
+    projections: {},
+    milestoneProjections,
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 1,
+      revision: 1,
+      eventSeq: 0,
+    },
+  });
+
+  const result = await openProject({ path: "/abs" });
+
+  expect(Result.isOk(result)).toBe(true);
+  const { value } = result as { ok: true; value: OpenProjectPayload };
+  expect(value.milestoneProjections).toBeInstanceOf(Map);
+  expect(value.milestoneProjections.get("__proto__")?.taskFilePaths).toEqual([
+    "tasks/b.md",
+    "tasks/a.md",
+  ]);
+  expect(value.milestoneProjections.has("constructor")).toBe(true);
+  expect(value.milestoneProjections.has("toString")).toBe(true);
 });
 
 test("invoke が reject すると throw せず Result.err を返す", async () => {
@@ -180,6 +235,7 @@ test.each([
     tasks: [],
     columns: [],
     projections: {},
+    milestoneProjections: {},
     session: {
       projectKey: "/home/user/specs",
       generation: 3,

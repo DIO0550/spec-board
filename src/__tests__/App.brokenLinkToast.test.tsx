@@ -144,12 +144,14 @@ const payloadWithBroken: OpenProjectPayload = {
   tasks: [taskWithBrokenParent],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskClean],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 const openProjectFlow = async (

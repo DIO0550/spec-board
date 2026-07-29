@@ -46,12 +46,17 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
 /**
  * 単一 task と Todo / Done カラムから ProjectData を組み立てるヘルパ。
  */
-const makeData = (tasks: readonly Task[]): ProjectData => ({ watcherSession: WATCHER_SESSION_FIXTURE,
+const makeData = (tasks: readonly Task[]): ProjectData => ({
+  watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: tasks.map((t) => t),
   columns: [
     { name: "Todo", order: 0 },
     { name: "Done", order: 1 },
-  ], projections: new Map(), openRequestId: 0,});
+  ],
+  projections: new Map(),
+  milestoneProjections: new Map(),
+  openRequestId: 0,
+});
 
 type Harness = {
   state: { current: ProjectState };

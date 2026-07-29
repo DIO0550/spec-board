@@ -16,6 +16,7 @@ const dataOf = (
   ),
   columns: columns("Todo", "Done"),
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 });
 

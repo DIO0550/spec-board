@@ -56,6 +56,7 @@ const dataOf = (tasks: Task[]): ProjectData => ({
   columns: [],
   doneColumn: undefined,
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 });
 

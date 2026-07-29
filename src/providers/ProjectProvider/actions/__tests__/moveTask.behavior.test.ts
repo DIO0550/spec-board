@@ -59,6 +59,7 @@ const makeData = (
     { name: "Done", order: 1 },
   ],
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 });
 
