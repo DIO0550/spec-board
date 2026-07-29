@@ -1,6 +1,7 @@
 # spec-board - 設定仕様（バックエンド）
 
 > **機能**: [spec-board](./index.md)
+> **バージョン**: 1.1
 > **ステータス**: 下書き
 
 ## 概要
@@ -246,6 +247,35 @@ milestones:
 - **YAML ルート型**: YAML ドキュメントのルートは mapping を要求する。ルートが sequence（`[]` / `[...]`）/ scalar（`foo` など）の場合は load エラーとする（ファイル全体が配列 / スカラのケースは「キー欠落（空レジストリ）」ではなく構造不正として扱う。null ドキュメント `---` のみは空レジストリ正規化の対象）。
 - **構造の strict 検証**: ルート mapping 配下の `milestones` が**配列以外**（mapping `{}` / スカラ `foo` など）、または**配列要素が mapping 以外**（`[null]` / `["v0.3"]` など）の場合は load エラーとして拒否する（labels.yml の strict 解釈に合わせる）。
 - プロジェクトオープン時（`open_project`）に読み込み in-memory state に保持し、独立コマンド `get_milestones` で取得する（labels.yml の `open_project` / `get_labels` の振り分けに倣う）。
+
+### タスク由来の live projection
+
+`open_project` と `get_tasks` は、タスク一覧・task projection・watcher session と同じ snapshot から導出した `milestoneProjections` を payload に同梱する。Rust のフィールド名は `milestone_projections` だが、IPC 上は `#[serde(rename_all = "camelCase")]` により次の camelCase DTO となる。
+
+```ts
+type MilestoneProjectionDto = {
+  done: number;
+  total: number;
+  taskFilePaths: string[];
+};
+
+type MilestoneProjectionsDto = {
+  [rawMilestoneName: string]: MilestoneProjectionDto;
+};
+```
+
+- `total` はその raw milestone 名を持つタスク件数、`done` はそのうち解決済み done column と `status` が完全一致するタスク件数。
+- `taskFilePaths` は所属タスクの raw `filePath` を payload の `tasks` と同じ順序で保持する。通常はカラム表示順 → `cardOrder` → `id` 昇順であり、`get_tasks` で config が存在しない場合のみ `id` 昇順へフォールバックする。
+- frontmatter の `milestone` が未指定（Rust の `None`）または空文字 `""` のタスクは projection から除外する。空白のみを含む名前を含め、空でない値は trim・大文字小文字変換をせず raw 値のまま完全一致キーとして扱う。
+- `milestones.yml` に未定義の暗黙名、および `__proto__` / `constructor` / `toString` のような特殊名も lossless にキーとして保持する。FE は wire object を `Map` に変換して参照し、object prototype に依存したキーアクセスを行わない。
+- 所属タスクがないマスタ定義は map に entry を持たない。FE は未登録名を `{ done: 0, total: 0, taskFilePaths: [] }` として表示する。全タスクが未割当の場合、wire 値は空 object `{}`。
+- done column を解決できない場合は `done=0` とする。この場合も UI は `done / total` の数値を表示するが、0% と誤認させないため ratio と進捗バーを表示しない。
+
+### `get_milestones.usageCounts` の互換契約
+
+進捗・所属タスク・live 使用件数の source of truth は上記 `milestoneProjections` とする。一方、`get_milestones` の `usageCounts: Record<string, number>` は既存 client との IPC 互換のため必須フィールドのまま維持する。Settings の使用数表示と削除確認は `usageCounts` ではなく、resident snapshot の該当 projection にある `total` を使用する。
+
+`delete_milestone` も既存の削除時契約を維持し、milestones と tasks の整合 snapshot から削除前の使用タスク件数を算出して `{ usageCount }` を返す。`usageCount > 0` でもマスタ定義の削除は実行し、タスク frontmatter の `milestone` は変更しない。この互換用集計・削除ガードは本 projection 追加では削除しない。
 
 ### lenient 解釈
 
@@ -563,3 +593,9 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 - [file-system-spec.md](./file-system-spec.md) - プロジェクトオープン時の設定初期化フロー
 - [board-view-spec.md](./board-view-spec.md) - カラムの表示・操作仕様
 - [task-format-spec.md](./task-format-spec.md) - フロントマターの `status` とカラムの対応
+
+## 変更履歴
+
+| バージョン | 日付 | 変更内容 | 変更者 |
+|:-----------|:-----|:---------|:-------|
+| 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection 契約と `get_milestones.usageCounts` の互換方針を追加 | - |
