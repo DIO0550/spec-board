@@ -560,6 +560,11 @@
     "name": "Default"
   },
   {
+    "id": "features-milestoneview-components-milestoneviewscreen--edge-cases",
+    "title": "features/milestoneView/components/MilestoneViewScreen",
+    "name": "Edge Cases"
+  },
+  {
     "id": "features-milestoneview-components-milestoneviewscreen--empty",
     "title": "features/milestoneView/components/MilestoneViewScreen",
     "name": "Empty"
