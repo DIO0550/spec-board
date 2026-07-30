@@ -333,6 +333,55 @@ fn projection_serializes_to_camel_case_without_percentage() {
     );
 }
 
+#[test]
+fn milestone_projection_serializes_task_file_paths_to_camel_case() {
+    let projection = MilestoneProjection {
+        done: 1,
+        total: 2,
+        task_file_paths: vec!["tasks/a.md".into(), "tasks/b.md".into()],
+    };
+
+    let value = serde_json::to_value(&projection).expect("serializable");
+
+    assert_eq!(
+        value,
+        json!({
+            "done": 1,
+            "total": 2,
+            "taskFilePaths": ["tasks/a.md", "tasks/b.md"],
+        })
+    );
+}
+
+#[test]
+fn empty_milestone_projection_map_serializes_as_an_empty_object() {
+    let value =
+        serde_json::to_value(MilestoneProjectionMap::new()).expect("empty map serializable");
+
+    assert_eq!(value, json!({}));
+}
+
+#[test]
+fn milestone_projection_map_serializes_special_names_losslessly() {
+    let mut projections = MilestoneProjectionMap::new();
+    for name in ["__proto__", "constructor", "toString"] {
+        projections.insert(
+            name.to_owned(),
+            MilestoneProjection {
+                done: 0,
+                total: 1,
+                task_file_paths: vec![format!("tasks/{name}.md").into()],
+            },
+        );
+    }
+
+    let value = serde_json::to_value(&projections).expect("map serializable");
+
+    assert_eq!(value["__proto__"]["total"], 1);
+    assert_eq!(value["constructor"]["total"], 1);
+    assert_eq!(value["toString"]["total"], 1);
+}
+
 // ───────── エッジケース ─────────
 
 /// watcher 経由で作られうる parent 循環でも有限停止することを固定する。

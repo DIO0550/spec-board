@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from "react";
+import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
@@ -22,6 +23,8 @@ type ActivePanelProps = {
   labels: LabelsResource;
   /** マイルストーンリソース（milestones タブへ配る） */
   milestones: MilestonesResource;
+  /** live milestone usage projection（milestones タブへ配る） */
+  milestoneProjections: MilestoneProjectionMap;
   /** App が hoist 保持するマイルストーン CRUD ハンドル（milestones タブへ配る） */
   milestoneMutations: UseMilestoneMutationsResult;
   /**
@@ -42,6 +45,7 @@ const ActivePanel = ({
   tabId,
   labels,
   milestones,
+  milestoneProjections,
   milestoneMutations,
   onLabelUsageClick,
 }: ActivePanelProps): ReactNode => {
@@ -57,6 +61,7 @@ const ActivePanel = ({
       return (
         <MilestoneSettingsTab
           resource={milestones}
+          milestoneProjections={milestoneProjections}
           mutations={milestoneMutations}
         />
       );
@@ -79,6 +84,8 @@ type SettingsScreenProps = {
    * 同一リソースに効くため、バッジ / フィルタ / 専用ビューが即時に最新化される。
    */
   milestones: MilestonesResource;
+  /** ProjectData が保持する live milestone projection map。 */
+  milestoneProjections: MilestoneProjectionMap;
   /**
    * マイルストーン CRUD ハンドル。App で hoist 保持し、本タブとマイルストーンビュー
    * （MilestoneCreateModal）で同一インスタンスを共有することで、画面遷移を跨いだ
@@ -102,6 +109,7 @@ type SettingsScreenProps = {
 export const SettingsScreen = ({
   labels,
   milestones,
+  milestoneProjections,
   milestoneMutations,
   onLabelUsageClick,
 }: SettingsScreenProps) => {
@@ -125,6 +133,7 @@ export const SettingsScreen = ({
           tabId={activeTab.id}
           labels={labels}
           milestones={milestones}
+          milestoneProjections={milestoneProjections}
           milestoneMutations={milestoneMutations}
           onLabelUsageClick={onLabelUsageClick}
         />

@@ -27,7 +27,7 @@ use serde::Serialize;
 use tauri::State;
 use thiserror::Error;
 
-use super::projection::TaskProjectionMap;
+use super::projection::{MilestoneProjectionMap, TaskProjectionMap};
 use super::task_index::{Task, TaskIndex};
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError};
@@ -42,6 +42,8 @@ use crate::state::{AppState, AppStateError};
 pub struct GetTasksPayload {
     pub tasks: Vec<Task>,
     pub projections: TaskProjectionMap,
+    /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
+    pub milestone_projections: MilestoneProjectionMap,
     /// この snapshot の watcher session（`open_project` 応答と同じ形）。
     ///
     /// FE は resync 完了時にこの値で envelope 検証の baseline を丸ごと取り直す。
@@ -83,12 +85,9 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<GetTasksPayload, Str
 ///
 /// `config` と `tasks_cache` を整合 snapshot し、done column を解決したうえで
 /// `TaskIndex` aggregate に並び順と projection の生成を委譲する。未 open
-/// （`config` が `None` かつ cache が空）の場合は tasks / projections ともに空の
-/// payload を成功で返す。
-///
-/// 並べ替えは `self` を消費するため、`&self` query である `project_all` を先に呼ぶ
-/// 順序に依存する。`done_column` は `config` の borrow を跨がないよう `cloned()` で
-/// 所有権を取る。
+/// （`config` が `None` かつ cache が空）の場合は tasks / 両 projection ともに空の
+/// payload を成功で返す。task を payload 順へ並べてから `TaskIndex` を再構築し、
+/// tasks と両 projection が同じ順序の集合から作られることを保証する。
 ///
 /// # Errors
 ///
@@ -101,18 +100,21 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
         .as_ref()
         .and_then(|config| config.resolved_done_column())
         .cloned();
-    let index = TaskIndex::new(context.tasks);
-    let projections = index.project_all(done_column.as_ref());
     // 並び順は `open_project` と同じ board 表示順に揃える。FE は配列順をそのまま
     // 表示順に使うため、ここが id 順だと full rescan / gap 復旧のたびに DnD で
     // 決めた並びが崩れる。未 open（config なし）のときだけ id 昇順にフォールバックする。
-    let tasks = match context.config.as_ref() {
-        Some(config) => index.sorted_by_board_order(config),
-        None => index.sorted_by_id(),
+    let ordered_tasks = match context.config.as_ref() {
+        Some(config) => TaskIndex::new(context.tasks).sorted_by_board_order(config),
+        None => TaskIndex::new(context.tasks).sorted_by_id(),
     };
+    let index = TaskIndex::new(ordered_tasks);
+    let projections = index.project_all(done_column.as_ref());
+    let milestone_projections = index.project_milestones(done_column.as_ref());
+    let tasks = index.into_tasks();
     Ok(GetTasksPayload {
         tasks,
         projections,
+        milestone_projections,
         session: context.session,
     })
 }

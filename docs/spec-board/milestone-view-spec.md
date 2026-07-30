@@ -1,6 +1,6 @@
 # マイルストーン専用ビュー仕様
 
-> **バージョン**: 1.0
+> **バージョン**: 1.1
 > **作成日**: 2026-06-21
 > **ステータス**: 下書き
 
@@ -11,6 +11,22 @@
 ボードビューおよびマイルストーン設定タブ（`MilestoneSettingsTab`）との関係:
 - マイルストーン一覧の取得は唯一の取得点 `useMilestones` リソースに委譲する（ボードビュー / マイルストーン設定タブと共有）。
 - 作成 mutation は `useMilestoneMutations`（設定タブと同フック）を共有し、どちらの画面から作成しても `reload` で同期する。
+- live な進捗・所属順・完了判定は、`open_project` / `get_tasks` が同一 task snapshot から返す Rust projection を唯一の source of truth とする。definition metadata 用の `useMilestones` と live projection は別データとして受け渡す。
+
+## Projection と表示の source of truth
+
+`ProjectData` は次の 2 map を常駐保持し、open、mutation 後の再同期、watcher gap/full resync のいずれでも同じ `get_tasks` 応答から atomic に更新する。
+
+| Map | キー | 用途 |
+|:--|:--|:--|
+| `milestoneProjections` | raw milestone name | `done` / `total` / board-order `taskFilePaths` |
+| task `projections` | raw task filePath | サイドバーの `TaskProjection.isDone` |
+
+- milestone name と filePath は正規化せず `Map` で参照する。`__proto__` / `constructor` などの特殊名も通常のキーとして扱う。
+- definition に存在するが projection に無い milestone は共有 zero projection（`done=0`、`total=0`、空 path）で表示する。
+- definition に無い raw milestone 参照も projection には残る。カード行は作らないが、ヘッダーの全体タスク完了数には合計する。
+- `milestoneProjections` の `taskFilePaths` は board order であり、選択時の所属タスク一覧もこの順序を維持する。FE の task lookup に存在しない path はその場で省略し、milestone 文字列を使った task 全走査へ fallback しない。
+- done column が解決できない場合、Rust は `done=0` を返す。UI は `done / total` を表示したまま進捗率とバーだけを隠す。
 
 ## 画面構成
 
@@ -28,7 +44,7 @@
 |:--|:--|:--|
 | 状態フィルタ pills | `all` / `open` / `overdue` / `closed` | 単一選択。`open` は overdue を含まず純粋 open のみ（overdue は専用 pill で分離） |
 | 検索 | 任意文字列 | `title` / `name` に対する部分一致（大小文字無視）。前後空白は内部でトリム |
-| ソート | `order` / `due` / `progress` / `name` | 単一選択。初期値は `order`（milestones.yml の `order` 設定を尊重した既定順序を保持）。`due` 未設定や `progress` ratio 未定義は末尾送り |
+| ソート | `order` / `due` / `progress` / `name` | 単一選択。初期値は `order`（milestones.yml の `order` 設定を尊重した既定順序を保持）。`due` 未設定や projection の `total=0` は末尾送り。done column 未解決時は全 ratio を比較不能として入力順を保つ |
 | ビュー切替 | `list` / `roadmap` | 切替時に選択中マイルストーンは保持 |
 
 フィルタ / 検索 / ソートの選択状態は画面内一時状態とし、ローカル永続化は行わない。
@@ -40,7 +56,7 @@
 - タイトル + name（title が name と異なる場合のみ）
 - 説明（1 行 truncate）
 - 期日 + カウントダウンバッジ
-- 進捗バー（done / total の比率）
+- Rust milestone projection の `done / total` と進捗バー。未使用行も `0 / 0` で表示する
 
 選択中カードは accent 色の枠 + halo を付与し、`aria-pressed={selected}` で a11y ツリーに公開する。
 
@@ -62,11 +78,16 @@
 - 状態バッジ + タイトル + name
 - 状態（日本語ラベル: オープン / クローズ / 期限超過）
 - 期日（`YYYY-MM-DD`）+ カウントダウンバッジ
-- タスク完了数 (`done / total`) + 進捗率%
+- milestone projection のタスク完了数 (`done / total`) + 進捗率%
 - 説明
-- 所属タスク一覧（id + title、done タスクは打ち消し線）
+- `taskFilePaths` 順の所属タスク一覧（id + title）
+- done 表示は task の status 文字列を再解釈せず、同一 snapshot の `TaskProjection.isDone` が true のとき打ち消し線にする
 
 未選択時は「マイルストーンを選択すると詳細を表示します」のプレースホルダ。
+
+## Settings の live 使用数
+
+`MilestoneSettingsTab` の「使用 N」表示と削除確認メッセージは、どちらも `MilestoneProjection.findByName(...).total` を使う。`get_milestones.usageCounts` は IPC 互換および backend の削除 guard のため維持するが、live 表示の source にはしない。これにより task mutation 後も画面 reload なしで一覧・サイドバー・Settings の件数が同じ resident snapshot に揃う。
 
 ## 作成モーダル（`MilestoneCreateModal`）
 
@@ -130,4 +151,5 @@ overlay は ConfirmDialog と同じく `<div role="presentation">` で a11y ツ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.1 | 2026-07-29 | Rust resident projection を進捗・所属順・done・Settings usage の source of truth として規定 | - |
 | 1.0 | 2026-06-21 | 初版作成（PR #408 にて画面挙動を仕様化） | - |

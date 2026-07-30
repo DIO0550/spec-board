@@ -142,9 +142,13 @@ test("等価な projections で再同期しても Context Value は同一参照"
     columns: [{ name: "Todo", order: 0 }],
     doneColumn: "Done",
     projections: withParent(0, 1),
+    milestoneProjections: new Map(),
     openRequestId: 1,
   };
-  const merged = ProjectDataDomain.replaceProjections(data, withParent(0, 1));
+  const merged = ProjectDataDomain.replaceProjections(data, {
+    projections: withParent(0, 1),
+    milestoneProjections: data.milestoneProjections,
+  });
 
   const values = renderWithProjections([data.projections, merged.projections]);
 

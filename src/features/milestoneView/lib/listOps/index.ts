@@ -1,5 +1,8 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
-import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
+import type {
+  MilestoneProjection,
+  MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
 import {
   dueSortKey,
   resolveDisplayStatus,
@@ -69,16 +72,18 @@ export const filterMilestones = (
  * @param milestones - 対象一覧
  * @param key - ソートキー
  * @param progress - 進捗 Map（key=progress のみ参照）
+ * @param isProgressRatioAvailable - done columnを解決でき、ratioを比較できるか
  * @returns 並べ替え後の新しい配列
  */
 export const sortMilestones = (
   milestones: readonly MilestoneDefinition[],
   key: SortKey,
-  progress: ReadonlyMap<string, MilestoneProgress>,
+  progress: MilestoneProjectionMap,
+  isProgressRatioAvailable = true,
 ): MilestoneDefinition[] => {
   const indexed = milestones.map((m, i) => ({ m, i }));
   indexed.sort((a, b) => {
-    const cmp = compareByKey(a.m, b.m, key, progress);
+    const cmp = compareByKey(a.m, b.m, key, progress, isProgressRatioAvailable);
     if (cmp !== 0) {
       return cmp;
     }
@@ -93,13 +98,15 @@ export const sortMilestones = (
  * @param b - 比較対象 2
  * @param key - ソートキー
  * @param progress - 進捗 Map（progress キーのみ参照）
+ * @param isProgressRatioAvailable - ratioを比較できるか
  * @returns 比較結果（負/0/正）
  */
 const compareByKey = (
   a: MilestoneDefinition,
   b: MilestoneDefinition,
   key: SortKey,
-  progress: ReadonlyMap<string, MilestoneProgress>,
+  progress: MilestoneProjectionMap,
+  isProgressRatioAvailable: boolean,
 ): number => {
   if (key === "order") {
     // order キーは入力順序を保つ。compareByKey はすべて 0 を返し、上位の
@@ -117,8 +124,8 @@ const compareByKey = (
   }
   // progress は降順なので b - a 相当を compareNumbers の引数順で表現する。
   return compareNumbers(
-    progressSortValue(b.name, progress),
-    progressSortValue(a.name, progress),
+    progressSortValue(b.name, progress, isProgressRatioAvailable),
+    progressSortValue(a.name, progress, isProgressRatioAvailable),
   );
 };
 
@@ -142,10 +149,17 @@ const compareNumbers = (x: number, y: number): number => {
 /** ratio を降順ソート用の数値へ。未定義は -Infinity（末尾送り）。 */
 const progressSortValue = (
   name: string,
-  progress: ReadonlyMap<string, MilestoneProgress>,
+  progress: MilestoneProjectionMap,
+  isProgressRatioAvailable: boolean,
 ): number => {
-  const p = progress.get(name);
-  return p?.ratio ?? Number.NEGATIVE_INFINITY;
+  if (!isProgressRatioAvailable) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const projection: MilestoneProjection | undefined = progress.get(name);
+  if (projection === undefined || projection.total === 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  return projection.done / projection.total;
 };
 
 /** open / closed / overdue の 3 群に分けた結果。 */

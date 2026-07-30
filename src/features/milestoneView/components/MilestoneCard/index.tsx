@@ -1,9 +1,9 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
 import { Milestone } from "@/domains/milestone";
+import type { MilestoneProjection } from "@/domains/milestone-projection";
 import { MilestoneCountdownBadge } from "@/features/milestoneView/components/MilestoneCountdownBadge";
 import { MilestoneProgressBar } from "@/features/milestoneView/components/MilestoneProgressBar";
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
-import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import {
   formatDue,
   type MilestoneDisplayStatus,
@@ -15,8 +15,10 @@ type MilestoneCardProps = {
   def: MilestoneDefinition;
   /** 派生表示ステータス */
   status: MilestoneDisplayStatus;
-  /** 進捗（done/total/ratio）。所属 0 件のときも total=0 で受ける */
-  progress: MilestoneProgress | undefined;
+  /** BE projection。未使用 milestone は共有 zero projection を受ける。 */
+  projection: MilestoneProjection;
+  /** done column 解決済みで ratio を表示できるか。 */
+  showRatio: boolean;
   /** 選択中かどうか（accent ハロー描画） */
   selected: boolean;
   /** カード全体クリック時に呼ばれる */
@@ -36,16 +38,16 @@ type MilestoneCardProps = {
 export const MilestoneCard = ({
   def,
   status,
-  progress,
+  projection,
+  showRatio,
   selected,
   onSelect,
   now,
 }: MilestoneCardProps) => {
   const countdown = resolveCountdown(def, now);
   const title = Milestone.badgeLabel(def.name, def);
-  const total = progress?.total ?? 0;
-  const done = progress?.done ?? 0;
-  const ratio = progress?.ratio;
+  const { done, total } = projection;
+  const ratio = showRatio && total > 0 ? done / total : undefined;
   const isClosed = status === "closed";
 
   return (

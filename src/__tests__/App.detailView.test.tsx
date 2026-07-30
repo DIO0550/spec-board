@@ -126,6 +126,7 @@ const payload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 /**
@@ -355,6 +356,7 @@ test("detail 表示中にプロジェクト切替で選択タスク消失→boar
       tasks: [otherTask],
       columns: ["Todo", "Doing", "Done"],
       projections: new Map(),
+      milestoneProjections: new Map(),
     }),
   );
   const openBtn = Array.from(

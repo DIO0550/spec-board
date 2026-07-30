@@ -2,6 +2,10 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type {
+  MilestoneProjection,
+  MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
 import type { TaskProjection } from "@/domains/task-projection";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
@@ -76,6 +80,12 @@ const taskA: Task = Task.fromPayload({
   filePath: "tasks/a.md",
 });
 
+const initialMilestoneProjection: MilestoneProjection = {
+  done: 0,
+  total: 1,
+  taskFilePaths: ["tasks/a.md"],
+};
+
 const openPayload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo", "Done"],
@@ -89,6 +99,7 @@ const openPayload: OpenProjectPayload = {
       },
     ],
   ]),
+  milestoneProjections: new Map([["M1", initialMilestoneProjection]]),
   session: WATCHER_SESSION_FIXTURE,
 };
 
@@ -112,8 +123,29 @@ const projection = (done: number, total: number): TaskProjection => ({
   childFilePaths: ["tasks/b.md"],
 });
 
-const getTasksOk = (map: ReadonlyMap<string, TaskProjection>) =>
-  Result.ok({ tasks: [], projections: map, session: WATCHER_SESSION_FIXTURE });
+const milestoneProjection = (
+  done: number,
+  total: number,
+  taskFilePaths: readonly string[],
+): MilestoneProjection => ({ done, total, taskFilePaths });
+
+const milestoneMap = (
+  done: number,
+  total: number,
+  taskFilePaths: readonly string[],
+): MilestoneProjectionMap =>
+  new Map([["M1", milestoneProjection(done, total, taskFilePaths)]]);
+
+const getTasksOk = (
+  projections: ReadonlyMap<string, TaskProjection>,
+  milestoneProjections: MilestoneProjectionMap,
+) =>
+  Result.ok({
+    tasks: [],
+    projections,
+    milestoneProjections,
+    session: WATCHER_SESSION_FIXTURE,
+  });
 
 beforeEach(() => {
   openProjectMock.mockReset();
@@ -129,7 +161,7 @@ beforeEach(() => {
       doneColumn: "Done",
     },
   });
-  getTasksMock.mockResolvedValue(getTasksOk(new Map()));
+  getTasksMock.mockResolvedValue(getTasksOk(new Map(), new Map()));
   updateColumnsMock.mockReset();
   updateColumnsMock.mockResolvedValue(Result.ok(undefined));
   listenMock.mockReset();
@@ -149,14 +181,15 @@ type Captured = {
   state: ProjectState;
   openProjectByPath: (path: string) => Promise<void>;
   reorderColumns: ReturnType<typeof useProjectColumnActions>["reorderColumns"];
+  updateColumns: ReturnType<typeof useProjectColumnActions>["updateColumns"];
 };
 let latest: Captured | null = null;
 
 const Probe = () => {
   const { state } = useProjectState();
   const { openProjectByPath } = useProjectSessionActions();
-  const { reorderColumns } = useProjectColumnActions();
-  latest = { state, openProjectByPath, reorderColumns };
+  const { reorderColumns, updateColumns } = useProjectColumnActions();
+  latest = { state, openProjectByPath, reorderColumns, updateColumns };
   return null;
 };
 
@@ -203,9 +236,14 @@ const currentProjections = (): ReadonlyMap<string, TaskProjection> => {
   return state?.kind === "loaded" ? state.data.projections : new Map();
 };
 
+const currentMilestoneProjections = (): MilestoneProjectionMap => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.milestoneProjections : new Map();
+};
+
 const getTasksCalls = (): number => getTasksMock.mock.calls.length;
 
-test("open 直後は get_tasks を呼ばない（payload の projection が最新）", async () => {
+test("open 直後は get_tasks を呼ばず payload の両 projection を維持する", async () => {
   installCaptureListen();
 
   await mountLoaded();
@@ -216,10 +254,19 @@ test("open 直後は get_tasks を呼ばない（payload の projection が最�
     done: 0,
     total: 1,
   });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    initialMilestoneProjection,
+  );
 });
 
-test("task-updated で tasks 参照が変われば get_tasks が 1 回呼ばれる", async () => {
+test("task-updated で tasks 参照が変われば両 projection を再同期する", async () => {
   const handlers = installCaptureListen();
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(1, 2)]]),
+      milestoneMap(1, 2, ["tasks/b.md", "tasks/a.md"]),
+    ),
+  );
   await mountLoaded();
   await flush();
 
@@ -227,25 +274,58 @@ test("task-updated で tasks 参照が変われば get_tasks が 1 回呼ばれ�
   await flush();
 
   expect(getTasksCalls()).toBe(1);
+  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 1,
+    total: 2,
+  });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(1, 2, ["tasks/b.md", "tasks/a.md"]),
+  );
 });
 
-test("task-created / task-deleted でも再同期する", async () => {
+test("task-created / task-deleted でも両 projection を再同期する", async () => {
   const handlers = installCaptureListen();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(0, 2)]]),
+      milestoneMap(0, 2, ["tasks/a.md", "tasks/b.md"]),
+    ),
+  );
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(0, 1)]]),
+      milestoneMap(0, 1, ["tasks/a.md"]),
+    ),
+  );
   await mountLoaded();
   await flush();
 
   fire(handlers, "task-created", { task: makeTaskPayload("tasks/b.md", "B") });
   await flush();
+  const milestoneAfterCreate = currentMilestoneProjections().get("M1");
   fire(handlers, "task-deleted", { filePath: "tasks/b.md" });
   await flush();
 
   expect(getTasksCalls()).toBe(2);
+  expect(milestoneAfterCreate).toEqual(
+    milestoneProjection(0, 2, ["tasks/a.md", "tasks/b.md"]),
+  );
+  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 0,
+    total: 1,
+  });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(0, 1, ["tasks/a.md"]),
+  );
 });
 
-test("応答の projections が state に反映される", async () => {
+test("応答の両 projections は path 順と done を保って state に同時反映される", async () => {
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValue(
-    getTasksOk(new Map([["tasks/a.md", projection(1, 3)]])),
+    getTasksOk(
+      new Map([["tasks/a.md", projection(1, 3)]]),
+      milestoneMap(2, 3, ["tasks/c.md", "tasks/a.md", "tasks/b.md"]),
+    ),
   );
   await mountLoaded();
   await flush();
@@ -257,6 +337,9 @@ test("応答の projections が state に反映される", async () => {
     done: 1,
     total: 3,
   });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(2, 3, ["tasks/c.md", "tasks/a.md", "tasks/b.md"]),
+  );
 });
 
 test("応答の tasks は state に反映されない（tasks の真実源は差分更新経路）", async () => {
@@ -265,6 +348,7 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/zzz.md", "Z"))],
       projections: new Map(),
+      milestoneProjections: new Map(),
       session: WATCHER_SESSION_FIXTURE,
     }),
   );
@@ -292,7 +376,7 @@ test("同じ tasks / columns / doneColumn では再取得しない", async () =>
   expect(getTasksCalls()).toBe(1);
 });
 
-test("get_tasks 失敗時は projections を据え置く", async () => {
+test("get_tasks IPC 失敗時は両 projections を据え置く", async () => {
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValue(Result.err(new TauriError("UNKNOWN", "fail")));
   await mountLoaded();
@@ -305,6 +389,9 @@ test("get_tasks 失敗時は projections を据え置く", async () => {
     done: 0,
     total: 1,
   });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    initialMilestoneProjection,
+  );
 });
 
 test("get_tasks 失敗後も次の tasks 変化で再試行される", async () => {
@@ -313,7 +400,10 @@ test("get_tasks 失敗後も次の tasks 変化で再試行される", async () 
     Result.err(new TauriError("UNKNOWN", "fail")),
   );
   getTasksMock.mockResolvedValue(
-    getTasksOk(new Map([["tasks/a.md", projection(2, 2)]])),
+    getTasksOk(
+      new Map([["tasks/a.md", projection(2, 2)]]),
+      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    ),
   );
   await mountLoaded();
   await flush();
@@ -328,6 +418,9 @@ test("get_tasks 失敗後も次の tasks 変化で再試行される", async () 
     done: 2,
     total: 2,
   });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+  );
 });
 
 test("in-flight 中の連続更新は畳み込まれ invoke が 2 本に収まる", async () => {
@@ -338,10 +431,16 @@ test("in-flight 中の連続更新は畳み込まれ invoke が 2 本に収ま�
   });
   getTasksMock.mockImplementationOnce(async () => {
     await firstGate;
-    return getTasksOk(new Map([["tasks/a.md", projection(1, 1)]]));
+    return getTasksOk(
+      new Map([["tasks/a.md", projection(1, 1)]]),
+      milestoneMap(1, 1, ["tasks/stale.md"]),
+    );
   });
   getTasksMock.mockResolvedValue(
-    getTasksOk(new Map([["tasks/a.md", projection(2, 2)]])),
+    getTasksOk(
+      new Map([["tasks/a.md", projection(2, 2)]]),
+      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    ),
   );
   await mountLoaded();
   await flush();
@@ -359,6 +458,13 @@ test("in-flight 中の連続更新は畳み込まれ invoke が 2 本に収ま�
   await flush();
 
   expect(getTasksCalls()).toBe(2);
+  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 2,
+    total: 2,
+  });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+  );
 });
 
 test("in-flight 中に基準が変わると先頭応答は採用されずトレーリング応答が反映される", async () => {
@@ -369,10 +475,16 @@ test("in-flight 中に基準が変わると先頭応答は採用されずトレ�
   });
   getTasksMock.mockImplementationOnce(async () => {
     await firstGate;
-    return getTasksOk(new Map([["tasks/a.md", projection(1, 1)]]));
+    return getTasksOk(
+      new Map([["tasks/a.md", projection(1, 1)]]),
+      milestoneMap(1, 1, ["tasks/stale.md"]),
+    );
   });
   getTasksMock.mockResolvedValue(
-    getTasksOk(new Map([["tasks/a.md", projection(2, 2)]])),
+    getTasksOk(
+      new Map([["tasks/a.md", projection(2, 2)]]),
+      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    ),
   );
   await mountLoaded();
   await flush();
@@ -391,6 +503,113 @@ test("in-flight 中に基準が変わると先頭応答は採用されずトレ�
     done: 2,
     total: 2,
   });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+  );
+});
+
+test("同一 path の open 失敗で復元した後は古い応答を捨て両 projection を取り直す", async () => {
+  const handlers = installCaptureListen();
+  let releaseStale!: () => void;
+  const staleGate = new Promise<void>((resolve) => {
+    releaseStale = resolve;
+  });
+  getTasksMock.mockImplementationOnce(async () => {
+    await staleGate;
+    return getTasksOk(
+      new Map([["tasks/a.md", projection(1, 1)]]),
+      milestoneMap(1, 1, ["tasks/stale.md"]),
+    );
+  });
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(2, 2)]]),
+      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    ),
+  );
+  await mountLoaded();
+  await flush();
+
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  await flush();
+  openProjectMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "reopen failed")),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await pending;
+  });
+  await flush();
+
+  await act(async () => {
+    releaseStale();
+    await Promise.resolve();
+  });
+  await flush();
+
+  expect(getTasksCalls()).toBe(2);
+  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 2,
+    total: 2,
+  });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+  );
+});
+
+test("project switch 後に旧 project の応答が着地しても両 projection を巻き戻さない", async () => {
+  const handlers = installCaptureListen();
+  let releaseOld!: () => void;
+  const oldGate = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  getTasksMock.mockImplementationOnce(async () => {
+    await oldGate;
+    return getTasksOk(
+      new Map([["tasks/a.md", projection(1, 1)]]),
+      milestoneMap(1, 1, ["tasks/old.md"]),
+    );
+  });
+  await mountLoaded();
+  await flush();
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  await flush();
+
+  const qProjections = new Map([["tasks/q.md", projection(3, 3)]]);
+  const qMilestoneProjections = new Map([
+    ["Q", milestoneProjection(3, 3, ["tasks/q.md"])],
+  ]);
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({
+      ...openPayload,
+      tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
+      projections: qProjections,
+      milestoneProjections: qMilestoneProjections,
+    }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/q") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await pending;
+  });
+  await flush();
+
+  await act(async () => {
+    releaseOld();
+    await Promise.resolve();
+  });
+  await flush();
+
+  expect(latest?.state.kind === "loaded" ? latest.state.path : undefined).toBe(
+    "/q",
+  );
+  expect(currentProjections()).toBe(qProjections);
+  expect(currentMilestoneProjections()).toBe(qMilestoneProjections);
 });
 
 test("未 loaded（idle）では get_tasks を呼ばない", async () => {
@@ -408,16 +627,40 @@ test("未 loaded（idle）では get_tasks を呼ばない", async () => {
   expect(getTasksCalls()).toBe(0);
 });
 
-test("カラム並び替えは tasks 参照も doneColumn も変わらないが再同期する", async () => {
+test("カラム並び替えは mutation queue 完了後に両 projection を再同期する", async () => {
   installCaptureListen();
+  let releaseUpdate!: () => void;
+  const updateGate = new Promise<void>((resolve) => {
+    releaseUpdate = resolve;
+  });
+  updateColumnsMock.mockImplementationOnce(async () => {
+    await updateGate;
+    return Result.ok(undefined);
+  });
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(1, 2)]]),
+      milestoneMap(1, 2, ["tasks/b.md", "tasks/a.md"]),
+    ),
+  );
   await mountLoaded();
   await flush();
   const before = latest?.state;
   const tasksBefore = before?.kind === "loaded" ? before.data.tasks : null;
   const doneBefore = before?.kind === "loaded" ? before.data.doneColumn : null;
 
+  let pendingReorder: Promise<unknown> = Promise.resolve();
+  act(() => {
+    pendingReorder =
+      latest?.reorderColumns("Todo", "Done") ?? Promise.resolve();
+  });
+  await flush();
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+  expect(getTasksCalls()).toBe(0);
+
   await act(async () => {
-    await latest?.reorderColumns("Todo", "Done");
+    releaseUpdate();
+    await pendingReorder;
   });
   await flush();
 
@@ -428,4 +671,51 @@ test("カラム並び替えは tasks 参照も doneColumn も変わらないが�
   expect(tasksAfter).toBe(tasksBefore);
   expect(doneAfter).toBe(doneBefore);
   expect(getTasksCalls()).toBe(1);
+  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 1,
+    total: 2,
+  });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(1, 2, ["tasks/b.md", "tasks/a.md"]),
+  );
+});
+
+test("doneColumn 変更は tasks 参照が同じでも両 projection を再同期する", async () => {
+  installCaptureListen();
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(1, 1)]]),
+      milestoneMap(1, 1, ["tasks/a.md"]),
+    ),
+  );
+  await mountLoaded();
+  await flush();
+  const before = latest?.state;
+  const tasksBefore = before?.kind === "loaded" ? before.data.tasks : null;
+
+  await act(async () => {
+    await latest?.updateColumns({
+      columns: [
+        { name: "Todo", order: 0 },
+        { name: "Done", order: 1 },
+      ],
+      renames: [],
+      doneColumn: "Todo",
+    });
+  });
+  await flush();
+
+  const after = latest?.state;
+  const tasksAfter = after?.kind === "loaded" ? after.data.tasks : null;
+  const doneAfter = after?.kind === "loaded" ? after.data.doneColumn : null;
+  expect(tasksAfter).toBe(tasksBefore);
+  expect(doneAfter).toBe("Todo");
+  expect(getTasksCalls()).toBe(1);
+  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 1,
+    total: 1,
+  });
+  expect(currentMilestoneProjections().get("M1")).toEqual(
+    milestoneProjection(1, 1, ["tasks/a.md"]),
+  );
 });

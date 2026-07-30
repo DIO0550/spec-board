@@ -1,4 +1,8 @@
 import { expect, test } from "vitest";
+import {
+  MilestoneProjection,
+  type MilestoneProjectionMap,
+} from "@/domains/milestone-projection";
 import { ProjectData } from "@/domains/project-data";
 import {
   TaskProjection,
@@ -31,6 +35,12 @@ const projectionOf = (filePath: string, done: boolean): TaskProjectionMap =>
     },
   });
 
+const milestoneProjectionOf = (
+  done: number,
+  total: number,
+  taskFilePaths: readonly string[] = ["tasks/a.md"],
+): MilestoneProjectionMap => new Map([["v1", { done, total, taskFilePaths }]]);
+
 const session = WatcherSession.fromPayload({
   projectKey: "/home/user/specs",
   generation: 3,
@@ -41,14 +51,25 @@ const session = WatcherSession.fromPayload({
 const baseData = (
   tasks: Task[],
   projections: TaskProjectionMap,
+  milestoneProjections: MilestoneProjectionMap = MilestoneProjection.emptyMap,
 ): ProjectData => ({
   tasks,
   columns: [{ name: "Todo", order: 0 }],
   doneColumn: "Done",
   projections,
+  milestoneProjections,
   openRequestId: 7,
   watcherSession: session,
 });
+
+const resyncTaskSnapshot = (
+  data: ProjectData,
+  snapshot: { tasks: Task[]; projections: TaskProjectionMap },
+): ProjectData =>
+  ProjectData.resyncTasks(data, {
+    ...snapshot,
+    milestoneProjections: data.milestoneProjections,
+  });
 
 test("内容が変わった task が反映され、他フィールドは据え置かれる", () => {
   const data = baseData(
@@ -56,7 +77,7 @@ test("内容が変わった task が反映され、他フィールドは据え�
     projectionOf("tasks/a.md", false),
   );
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload({ title: "A2" }))],
     projections: projectionOf("tasks/a.md", false),
   });
@@ -74,7 +95,7 @@ test("内容が同一なら ProjectData の参照がそのまま保たれる", (
     projectionOf("tasks/a.md", false),
   );
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload())],
     projections: projectionOf("tasks/a.md", false),
   });
@@ -92,7 +113,7 @@ test("3 件中 1 件だけ変わったとき、変わっていない 2 件は旧
   );
   const data = baseData([...kept, changed], new Map());
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [
       Task.fromPayload(payload({ filePath: "tasks/a.md", id: "tasks/a.md" })),
       Task.fromPayload(payload({ filePath: "tasks/b.md", id: "tasks/b.md" })),
@@ -112,7 +133,7 @@ test("tasks だけ変わったときも projections の参照は保たれる", (
   const projections = projectionOf("tasks/a.md", false);
   const data = baseData([Task.fromPayload(payload())], projections);
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload({ title: "A2" }))],
     projections: projectionOf("tasks/a.md", false),
   });
@@ -125,7 +146,7 @@ test("projections だけ変わったときも tasks の参照は保たれる", (
   const tasks = [Task.fromPayload(payload())];
   const data = baseData(tasks, projectionOf("tasks/a.md", false));
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload())],
     projections: projectionOf("tasks/a.md", true),
   });
@@ -140,7 +161,7 @@ test("空 snapshot は tasks を空配列にする", () => {
     projectionOf("tasks/a.md", false),
   );
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [],
     projections: new Map(),
   });
@@ -151,7 +172,7 @@ test("空 snapshot は tasks を空配列にする", () => {
 test("件数が増えた snapshot を取りこぼさない", () => {
   const data = baseData([Task.fromPayload(payload())], new Map());
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [
       Task.fromPayload(payload()),
       Task.fromPayload(payload({ filePath: "tasks/b.md", id: "tasks/b.md" })),
@@ -166,10 +187,69 @@ test("楽観 dispatch した Task と等価な snapshot ではその Task の参
   const optimistic = Task.fromPayload(payload({ status: "Doing" }));
   const data = baseData([optimistic], new Map());
 
-  const next = ProjectData.resyncTasks(data, {
+  const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload({ status: "Doing" }))],
     projections: new Map(),
   });
 
   expect(next.tasks[0]).toBe(optimistic);
+});
+
+test("resyncTasks は tasks と両 projection を同じ snapshot から更新する", () => {
+  const data = baseData(
+    [Task.fromPayload(payload())],
+    projectionOf("tasks/a.md", false),
+    milestoneProjectionOf(0, 1),
+  );
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [Task.fromPayload(payload({ title: "A2" }))],
+    projections: projectionOf("tasks/a.md", true),
+    milestoneProjections: milestoneProjectionOf(1, 1),
+  });
+
+  expect(next.tasks[0].title).toBe("A2");
+  expect(next.projections.get("tasks/a.md")?.isDone).toBe(true);
+  expect(next.milestoneProjections.get("v1")?.done).toBe(1);
+});
+
+test("milestone projection だけ変わると tasks と task Map の参照を保つ", () => {
+  const tasks = [Task.fromPayload(payload())];
+  const projections = projectionOf("tasks/a.md", false);
+  const data = baseData(tasks, projections, milestoneProjectionOf(0, 1));
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [Task.fromPayload(payload())],
+    projections: projectionOf("tasks/a.md", false),
+    milestoneProjections: milestoneProjectionOf(1, 1),
+  });
+
+  expect(next.tasks).toBe(tasks);
+  expect(next.projections).toBe(projections);
+  expect(next.milestoneProjections).not.toBe(data.milestoneProjections);
+});
+
+test("tasks と両 Map が等価なら resyncTasks は ProjectData 参照を保つ", () => {
+  const milestoneEntry = {
+    done: 0,
+    total: 2,
+    taskFilePaths: ["tasks/a.md", "tasks/b.md"],
+  };
+  const data = baseData(
+    [Task.fromPayload(payload())],
+    projectionOf("tasks/a.md", false),
+    new Map([["v1", milestoneEntry]]),
+  );
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [Task.fromPayload(payload())],
+    projections: projectionOf("tasks/a.md", false),
+    milestoneProjections: milestoneProjectionOf(0, 2, [
+      "tasks/a.md",
+      "tasks/b.md",
+    ]),
+  });
+
+  expect(next).toBe(data);
+  expect(next.milestoneProjections.get("v1")).toBe(milestoneEntry);
 });

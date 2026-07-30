@@ -12,7 +12,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | コマンド | 説明 |
 |:---------|:-----|
 | `open_project` | プロジェクトディレクトリを開き、mdファイルを一括読み込みし、`notify` ベースの実 watcher を起動して FE への `task-created` / `task-updated` / `task-deleted` 配信を開始する |
-| `get_tasks` | 現在のプロジェクト内の全タスクと集計 projection を取得 |
+| `get_tasks` | 現在のプロジェクト内の全タスクと task / milestone の集計 projection を取得 |
 | `create_task` | 新規タスクのmdファイルを作成 |
 | `update_task` | 既存タスクのmdファイルを更新 |
 | `delete_task` | タスクのmdファイルを削除 |
@@ -76,6 +76,13 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "childFilePaths": ["tasks/sub-a.md", "tasks/sub-b.md"]
     }
   },
+  "milestoneProjections": {
+    "release-v1": {
+      "total": 1,
+      "done": 0,
+      "taskFilePaths": ["tasks/fix-bug.md"]
+    }
+  },
   "session": {
     "projectKey": "/home/user/specs",
     "generation": 1,
@@ -92,6 +99,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 - `extras`: 定義外フロントマターを JSON 互換値として保持したオブジェクト
 - `warnings`: `title` / `status` の fallback や `parent` / `extras` の型不一致など、Task 生成を継続できる非致命警告の一覧
 - `projections`: filePath をキーにした集計値。詳細は `get_tasks` 節を参照する。初期表示時点でフロントエンドが集計を持てるよう同梱する
+- `milestoneProjections`: milestone 名をキーにした `{ total, done, taskFilePaths }`。`projections` と別取得せず、同じ payload に同梱する
 - `session`: watcher イベント検証の初期 baseline。`tasks` と**同一トランザクション**で確定した値で、watcher を起動する前に組み立てる。分けて組み立てると「session はある変更を含むが tasks は含まない」状態が生まれ、その変更のイベントが stale として捨てられたまま復旧しなくなる。詳細は「イベント通知」節を参照
 
 フロントエンドでは、この Tauri IPC payload を `TaskPayload` として受け取り、domain model の `Task` に変換して扱う。`Task` では `parent` / `children` は `hierarchy.parentFilePath` / `hierarchy.childFilePaths` に、`links` / `reverseLinks` は `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に格納する。IPC payload と markdown frontmatter のフィールド名は互換性維持のため flat なまま変更しない。
@@ -120,9 +128,9 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 **引数**: なし
 
-**戻り値**: `{ tasks, projections, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）で、`projections` は filePath をキーにした集計値のオブジェクト、`session` は watcher イベント検証の baseline。
+**戻り値**: `{ tasks, projections, milestoneProjections, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）、`projections` は filePath をキーにした task 集計、`milestoneProjections` は milestone 名をキーにした集計、`session` は watcher イベント検証の baseline。
 
-> `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → `id` 昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ `id` 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。プロジェクト未オープンで `config` を解決できない場合のみ `id` 昇順にフォールバックする。
+> `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → `id` 昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ `id` 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。`milestoneProjections[*].taskFilePaths` も、この `tasks` を milestone ごとに絞り込んだ順序と一致する。`config` が `None` の場合のみ `TaskIndex::sorted_by_id` にフォールバックし、`tasks` / `taskFilePaths` ともに `id` 昇順とする。この場合は完了カラムも解決できないため `done` は 0。
 
 ```json
 {
@@ -132,6 +140,17 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "subIssueProgress": { "done": 1, "total": 3 },
       "isDone": false,
       "childFilePaths": ["tasks/child-a.md", "tasks/child-b.md"]
+    }
+  },
+  "milestoneProjections": {
+    "release-v1": {
+      "total": 3,
+      "done": 1,
+      "taskFilePaths": [
+        "tasks/parent.md",
+        "tasks/child-a.md",
+        "tasks/child-b.md"
+      ]
     }
   },
   "session": {
@@ -155,6 +174,16 @@ watcher イベント検証の baseline（`revision` と `eventSeq` の両方）�
 | `isDone` | そのタスク自身が完了カラムに居るか |
 | `childFilePaths` | 直接の子の filePath。`filePath` 昇順 |
 
+**`milestoneProjections` の各フィールド**:
+
+| フィールド | 説明 |
+|:----------|:-----|
+| `total` | その milestone が割り当てられた task 件数 |
+| `done` | 対象 task のうち、snapshot の config から解決した完了カラムに居る件数。完了カラムを解決できない場合は 0 |
+| `taskFilePaths` | 対象 task の `filePath`。payload の `tasks` と同じ board order（config が `None` なら id 順） |
+
+`milestone: null` と空文字は未割当として map に含めない。空でない名称は milestone registry に未定義でも raw 値を key として保持し、task 集合を 1 回走査して `total` / `done` / `taskFilePaths` を同時に集計する。`taskFilePaths` 自体は集計中に sort せず、command 層が先に tasks を payload 順へ sort してから `TaskIndex` を再構築することで順序を保証する。百分率は payload に含めない。
+
 **集計規則**:
 
 - 親子関係は各タスクの `parent` から組み直す（payload の `children` には依存しない）
@@ -166,7 +195,17 @@ watcher イベント検証の baseline（`revision` と `eventSeq` の両方）�
 - 完了カラムは `doneColumn` 設定値。未設定時は `columns` の `order` 最大（表示上の末尾）カラム。どちらも解決できない場合は `isDone` が常に false・`done` は 0
 - 百分率は payload に含めない（表示層で算出する）
 
-**未オープン時**: `tasks` / `projections` ともに空、`session` は初期値（`generation` / `revision` / `eventSeq` がすべて 0）の payload を成功で返す（エラーにはしない）。
+**未オープン時**: `tasks` / `projections` / `milestoneProjections` はすべて空、`session` は初期値（`generation` / `revision` / `eventSeq` がすべて 0）の payload を成功で返す（エラーにはしない）。
+
+### Snapshot / projection 同期契約
+
+`get_tasks` は `project_path → config → tasks_cache` の順に 3 lock を取得して同時保持し、config / tasks を clone すると同じ critical section で watcher session を確定する。lock 解放後、snapshot の config で完了カラムを解決し、tasks を board order（config が `None` なら id 順）へ sort して `TaskIndex` を再構築する。その同じ index から task projection、milestone projection、最後に payload の tasks を取り出す。
+
+`open_project` は読み込んだ同じ config / tasks を state に commit し、`tasks_cache` の置換・revision / generation 更新・session 確定を watcher spawn 前に行う。payload は途中の state を再読込せず、その config / tasks と確定済み session から `get_tasks` と同じ `sort → task projection → milestone projection → tasks` の順で構築する。このため両 command は同じ project snapshot に対して `tasks` / `projections` / `milestoneProjections` の値と順序が一致し、4 フィールドは同じ論理 snapshot に属する。
+
+フロントエンドでは、open 成功時に `tasks` と両 projection map を 1 つの `ProjectData` に設定する。task mutation、column reorder、完了カラム変更後の projection sync は project command queue の barrier 後に `get_tasks` を呼び、1 つの `projections-refreshed` action で両 map を同時置換する。single in-flight と path / open request id / request sequence の guard を通らない古い応答、および IPC 失敗時は現在値を保持する。
+
+watcher の `eventSeq` gap または full rescan 通知から復旧する場合も、queue barrier 後に `get_tasks` で full snapshot を取得する。読み取り中に mutation が enqueue された応答、project / generation / session が変わった応答は採用しない。gate が snapshot session を受理したときだけ、1 つの `tasks-resynced` action で `tasks` / `projections` / `milestoneProjections` を atomic に反映する。走行中の session baseline は watcher gate が更新し、`ProjectData.watcherSession` は open baseline のまま保持する。buffer した watcher event の replay で tasks がさらに進んだ場合は、通常の projection sync が両 map を再取得する。
 
 ---
 
@@ -696,3 +735,9 @@ pub enum WatcherError {
 - [task-format-spec.md](./task-format-spec.md) - mdファイルのフォーマット定義・パース仕様
 - [board-view-spec.md](./board-view-spec.md) - ファイル変更イベントを受け取るフロントエンド側の仕様
 - [task-card-spec.md](./task-card-spec.md) - タスクデータの表示仕様
+
+## 変更履歴
+
+| バージョン | 日付 | 変更内容 | 変更者 |
+|:-----------|:-----|:---------|:-------|
+| 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection、同一 snapshot・board order、mutation / watcher resync の atomic 同期契約を追加 | - |

@@ -54,6 +54,7 @@ const makeData = (tasks: readonly Task[]): ProjectData => ({
     { name: "Done", order: 1 },
   ],
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 });
 

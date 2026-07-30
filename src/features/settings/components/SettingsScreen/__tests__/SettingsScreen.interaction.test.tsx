@@ -63,6 +63,7 @@ const Harness = () => {
   return createElement(SettingsScreen, {
     labels: labelsResource,
     milestones: milestonesResource,
+    milestoneProjections: new Map(),
     milestoneMutations,
     onLabelUsageClick: noopUsageClick,
   });

@@ -2,6 +2,8 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
+import type { TaskProjectionMap } from "@/domains/task-projection";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   createTask as createTaskInvoke,
@@ -78,18 +80,53 @@ const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
 
 const taskA = Task.fromPayload(makeTaskPayload("tasks/a.md", "A"));
 
+const taskProjectionMap = (
+  done: number,
+  total: number,
+  childFilePaths: readonly string[] = [],
+): TaskProjectionMap =>
+  new Map([
+    [
+      "tasks/a.md",
+      {
+        subIssueProgress: { done, total },
+        isDone: done === total,
+        childFilePaths,
+      },
+    ],
+  ]);
+
+const milestoneProjectionMap = (
+  done: number,
+  total: number,
+  taskFilePaths: readonly string[],
+): MilestoneProjectionMap => new Map([["M1", { done, total, taskFilePaths }]]);
+
+const initialTaskProjections = taskProjectionMap(0, 1);
+const initialMilestoneProjections = milestoneProjectionMap(0, 1, [
+  "tasks/a.md",
+]);
+
 const openPayload: OpenProjectPayload = {
   tasks: [taskA],
   columns: ["Todo"],
-  projections: new Map(),
+  projections: initialTaskProjections,
+  milestoneProjections: initialMilestoneProjections,
   session: WATCHER_SESSION_FIXTURE,
 };
 
 /** get_tasks の成功応答を作る。session は open と同一世代。 */
-const getTasksOk = (tasks: Task[], eventSeq: number, revision: number) =>
+const getTasksOk = (
+  tasks: Task[],
+  eventSeq: number,
+  revision: number,
+  projections: TaskProjectionMap = new Map(),
+  milestoneProjections: MilestoneProjectionMap = new Map(),
+) =>
   Result.ok({
     tasks,
-    projections: new Map(),
+    projections,
+    milestoneProjections,
     session: {
       ...WATCHER_SESSION_FIXTURE,
       revision,
@@ -171,6 +208,16 @@ const currentTasks = (): Task[] => {
   return state?.kind === "loaded" ? state.data.tasks : [];
 };
 
+const currentProjections = (): TaskProjectionMap => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.projections : new Map();
+};
+
+const currentMilestoneProjections = (): MilestoneProjectionMap => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.milestoneProjections : new Map();
+};
+
 beforeEach(() => {
   openProjectMock.mockReset();
   getColumnsMock.mockReset();
@@ -201,14 +248,21 @@ afterEach(() => {
   root = null;
 });
 
-test("watcher-resync-required で get_tasks が 1 回呼ばれ state に反映される", async () => {
+test("watcher-resync-required は tasks と両 projection を同一 snapshot で反映する", async () => {
   const handlers = installCaptureListen();
   await mountLoaded();
+  const projections = taskProjectionMap(1, 2, ["tasks/rescanned.md"]);
+  const milestoneProjections = milestoneProjectionMap(1, 2, [
+    "tasks/rescanned.md",
+    "tasks/a.md",
+  ]);
   getTasksMock.mockResolvedValueOnce(
     getTasksOk(
       [Task.fromPayload(makeTaskPayload("tasks/rescanned.md", "R"))],
       WATCHER_SESSION_FIXTURE.eventSeq + 1,
       WATCHER_SESSION_FIXTURE.revision + 1,
+      projections,
+      milestoneProjections,
     ),
   );
 
@@ -219,16 +273,25 @@ test("watcher-resync-required で get_tasks が 1 回呼ばれ state に反映�
   expect(currentTasks().map((task) => task.filePath)).toEqual([
     "tasks/rescanned.md",
   ]);
+  expect(currentProjections()).toEqual(projections);
+  expect(currentMilestoneProjections()).toEqual(milestoneProjections);
 });
 
 test("eventSeq を 1 つ飛ばした envelope で get_tasks が呼ばれ board が復旧する", async () => {
   const handlers = installCaptureListen();
   await mountLoaded();
+  const projections = taskProjectionMap(2, 2);
+  const milestoneProjections = milestoneProjectionMap(2, 2, [
+    "tasks/recovered.md",
+    "tasks/a.md",
+  ]);
   getTasksMock.mockResolvedValueOnce(
     getTasksOk(
       [Task.fromPayload(makeTaskPayload("tasks/recovered.md", "R"))],
       WATCHER_SESSION_FIXTURE.eventSeq + 5,
       WATCHER_SESSION_FIXTURE.revision + 5,
+      projections,
+      milestoneProjections,
     ),
   );
 
@@ -244,11 +307,27 @@ test("eventSeq を 1 つ飛ばした envelope で get_tasks が呼ばれ board �
   expect(currentTasks().map((task) => task.filePath)).toEqual([
     "tasks/recovered.md",
   ]);
+  expect(currentProjections()).toEqual(projections);
+  expect(currentMilestoneProjections()).toEqual(milestoneProjections);
 });
 
 test("resync 中に届いた新しい envelope は snapshot 適用後に replay される", async () => {
   const handlers = installCaptureListen();
   await mountLoaded();
+  const replayProjections = taskProjectionMap(2, 2, ["tasks/late.md"]);
+  const replayMilestoneProjections = milestoneProjectionMap(2, 2, [
+    "tasks/late.md",
+    "tasks/a.md",
+  ]);
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      [taskA],
+      WATCHER_SESSION_FIXTURE.eventSeq + 2,
+      WATCHER_SESSION_FIXTURE.revision + 9,
+      replayProjections,
+      replayMilestoneProjections,
+    ),
+  );
   let resolveGetTasks!: (value: ReturnType<typeof getTasksOk>) => void;
   getTasksMock.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -273,6 +352,8 @@ test("resync 中に届いた新しい envelope は snapshot 適用後に replay 
         [taskA],
         WATCHER_SESSION_FIXTURE.eventSeq + 1,
         WATCHER_SESSION_FIXTURE.revision + 1,
+        taskProjectionMap(1, 1),
+        milestoneProjectionMap(1, 1, ["tasks/a.md"]),
       ),
     );
   });
@@ -282,6 +363,9 @@ test("resync 中に届いた新しい envelope は snapshot 適用後に replay 
     "tasks/a.md",
     "tasks/late.md",
   ]);
+  expect(getTasksMock).toHaveBeenCalledTimes(2);
+  expect(currentProjections()).toEqual(replayProjections);
+  expect(currentMilestoneProjections()).toEqual(replayMilestoneProjections);
 });
 
 test("resync 中に届いた古い envelope は snapshot を上書きしない", async () => {
@@ -347,7 +431,7 @@ test("resync 完了後に連番の envelope が 1 件届いても追加の get_t
   expect(currentTasks().map((task) => task.title)).toEqual(["A2"]);
 });
 
-test("get_tasks 失敗時は state を据え置き通知もしない", async () => {
+test("get_tasks 失敗時は tasks と両 projection を据え置き通知もしない", async () => {
   const handlers = installCaptureListen();
   await mountLoaded();
   getTasksMock.mockResolvedValueOnce(
@@ -358,6 +442,8 @@ test("get_tasks 失敗時は state を据え置き通知もしない", async () 
   await flush();
 
   expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/a.md"]);
+  expect(currentProjections()).toBe(initialTaskProjections);
+  expect(currentMilestoneProjections()).toBe(initialMilestoneProjections);
 });
 
 test("get_tasks が 1 度失敗しても、次の gap で 2 本目が発行され board が復旧する", async () => {
@@ -421,7 +507,8 @@ test("応答の session が別世代なら dispatch されない", async () => {
   getTasksMock.mockResolvedValueOnce(
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/other.md", "O"))],
-      projections: new Map(),
+      projections: taskProjectionMap(1, 1),
+      milestoneProjections: milestoneProjectionMap(1, 1, ["tasks/other.md"]),
       session: {
         ...WATCHER_SESSION_FIXTURE,
         generation: WATCHER_SESSION_FIXTURE.generation + 1,
@@ -433,6 +520,8 @@ test("応答の session が別世代なら dispatch されない", async () => {
   await flush();
 
   expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/a.md"]);
+  expect(currentProjections()).toBe(initialTaskProjections);
+  expect(currentMilestoneProjections()).toBe(initialMilestoneProjections);
 });
 
 test("resync-required の 3 連発でも in-flight は 1 本に畳まれる", async () => {
@@ -524,10 +613,16 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
   expect(getTasksMock).toHaveBeenCalledTimes(1);
 
   // 別 project を開いて session（generation）を進める。
+  const qOpenProjections = taskProjectionMap(0, 1);
+  const qOpenMilestoneProjections = milestoneProjectionMap(0, 1, [
+    "tasks/q-open.md",
+  ]);
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
       ...openPayload,
       tasks: [],
+      projections: qOpenProjections,
+      milestoneProjections: qOpenMilestoneProjections,
       session: {
         ...WATCHER_SESSION_FIXTURE,
         generation: WATCHER_SESSION_FIXTURE.generation + 1,
@@ -546,10 +641,15 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
   // project 切替そのものが projection 再同期を起こすため、以降は差分で数える。
   const callsAfterSwitch = getTasksMock.mock.calls.length;
 
+  const qResyncProjections = taskProjectionMap(1, 1);
+  const qResyncMilestoneProjections = milestoneProjectionMap(1, 1, [
+    "tasks/q.md",
+  ]);
   getTasksMock.mockResolvedValueOnce(
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
-      projections: new Map(),
+      projections: qResyncProjections,
+      milestoneProjections: qResyncMilestoneProjections,
       session: {
         ...WATCHER_SESSION_FIXTURE,
         generation: WATCHER_SESSION_FIXTURE.generation + 1,
@@ -575,12 +675,16 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
         [Task.fromPayload(makeTaskPayload("tasks/old.md", "OLD"))],
         WATCHER_SESSION_FIXTURE.eventSeq + 1,
         WATCHER_SESSION_FIXTURE.revision + 1,
+        taskProjectionMap(9, 9),
+        milestoneProjectionMap(9, 9, ["tasks/old.md"]),
       ),
     );
   });
   await flush();
 
   expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/q.md"]);
+  expect(currentProjections()).toEqual(qResyncProjections);
+  expect(currentMilestoneProjections()).toEqual(qResyncMilestoneProjections);
 });
 
 test("欠番を露呈した診断は toast を出しつつ get_tasks も発行する（結線）", async () => {
@@ -737,6 +841,7 @@ test("旧 project の応答が新 session の resync より先に着地しても
       Result.ok({
         tasks: [taskA],
         projections: new Map(),
+        milestoneProjections: new Map(),
         session: {
           ...WATCHER_SESSION_FIXTURE,
           generation: nextGeneration,
@@ -789,13 +894,26 @@ test("buffer 溢れ由来の 2 本目の取得中も、届いた変更は即時�
   // 連番を実際に消費しているため、それより古い eventSeq を返すのは不自然）。
   const floodLastSeq =
     WATCHER_SESSION_FIXTURE.eventSeq + 2 + WATCHER_BUFFER_LIMIT;
+  const overflowProjections = taskProjectionMap(1, 2);
+  const overflowMilestoneProjections = milestoneProjectionMap(1, 2, [
+    "tasks/flood-last.md",
+    "tasks/a.md",
+  ]);
   await act(async () => {
     resolveFirst(
-      getTasksOk([taskA], floodLastSeq, WATCHER_SESSION_FIXTURE.revision + 1),
+      getTasksOk(
+        [taskA],
+        floodLastSeq,
+        WATCHER_SESSION_FIXTURE.revision + 1,
+        overflowProjections,
+        overflowMilestoneProjections,
+      ),
     );
   });
   await flush();
   expect(getTasksMock).toHaveBeenCalledTimes(2);
+  expect(currentProjections()).toEqual(overflowProjections);
+  expect(currentMilestoneProjections()).toEqual(overflowMilestoneProjections);
 
   // baseline は floodLastSeq。**その直後の一意な連番**を投げることで、
   // 「gap だから buffer された」ではなく「resyncing だから buffer された」ことを
@@ -847,11 +965,18 @@ test("読み取り中に mutation が commit したら、古い snapshot を採�
     void latest?.createTask({ title: "C", status: "Todo" });
   });
   // 取り直し用の応答。mutation 後の版を返す。
-  getTasksMock.mockResolvedValueOnce(
+  const freshProjections = taskProjectionMap(2, 2);
+  const freshMilestoneProjections = milestoneProjectionMap(2, 2, [
+    "tasks/after-mutation.md",
+    "tasks/a.md",
+  ]);
+  getTasksMock.mockResolvedValue(
     getTasksOk(
       [Task.fromPayload(makeTaskPayload("tasks/after-mutation.md", "M"))],
       WATCHER_SESSION_FIXTURE.eventSeq + 2,
       WATCHER_SESSION_FIXTURE.revision + 2,
+      freshProjections,
+      freshMilestoneProjections,
     ),
   );
 
@@ -861,6 +986,8 @@ test("読み取り中に mutation が commit したら、古い snapshot を採�
         [Task.fromPayload(makeTaskPayload("tasks/stale.md", "S"))],
         WATCHER_SESSION_FIXTURE.eventSeq + 1,
         WATCHER_SESSION_FIXTURE.revision + 1,
+        taskProjectionMap(1, 1),
+        milestoneProjectionMap(1, 1, ["tasks/stale.md"]),
       ),
     );
   });
@@ -869,6 +996,8 @@ test("読み取り中に mutation が commit したら、古い snapshot を採�
   expect(currentTasks().map((task) => task.filePath)).toEqual([
     "tasks/after-mutation.md",
   ]);
+  expect(currentProjections()).toEqual(freshProjections);
+  expect(currentMilestoneProjections()).toEqual(freshMilestoneProjections);
 });
 
 test("barrier 待機中に欠番診断が届いても、解放後の取得 1 本で収束する", async () => {

@@ -102,6 +102,7 @@ const makePayload = (tasks: Task[]): OpenProjectPayload => ({
   tasks,
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 });
 
 beforeEach(() => {

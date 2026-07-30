@@ -1,3 +1,4 @@
+import { MilestoneProjection } from "@/domains/milestone-projection";
 import { TaskProjection } from "@/domains/task-projection";
 import { WatcherSession } from "@/domains/watcher-session";
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
@@ -14,11 +15,14 @@ import type { GetTasksPayload, GetTasksRawPayload } from "../types";
 const toGetTasksPayload = (payload: GetTasksRawPayload): GetTasksPayload => ({
   tasks: payload.tasks.map(Task.fromPayload),
   projections: TaskProjection.fromPayload(payload.projections),
+  milestoneProjections: MilestoneProjection.fromPayload(
+    payload.milestoneProjections,
+  ),
   session: WatcherSession.fromPayload(payload.session),
 });
 
 /**
- * 現在のプロジェクト内の全タスクと projection を取得する。
+ * 現在のプロジェクト内の全タスクと両 projection を取得する。
  * @returns 成功時は Result.ok(GetTasksPayload)、失敗時は Result.err(TauriError)
  */
 export const getTasks = (): Promise<ResultT<GetTasksPayload, TauriError>> =>

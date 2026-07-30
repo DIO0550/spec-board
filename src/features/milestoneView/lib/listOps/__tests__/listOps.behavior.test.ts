@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { MilestoneDefinition } from "@/domains/milestone";
-import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
+import type { MilestoneProjection } from "@/domains/milestone-projection";
 import {
   filterMilestones,
   groupByDisplayStatus,
@@ -113,13 +113,41 @@ test("sortMilestones: by-name は name 昇順", () => {
 
 test("sortMilestones: by-progress は ratio 降順、ratio 未定義は末尾", () => {
   const list = [def("low", "open"), def("high", "open"), def("none", "open")];
-  const progress = new Map<string, MilestoneProgress>([
-    ["low", { total: 4, done: 1, ratio: 0.25 }],
-    ["high", { total: 4, done: 3, ratio: 0.75 }],
-    ["none", { total: 0, done: 0, ratio: undefined }],
+  const progress = new Map<string, MilestoneProjection>([
+    ["low", { total: 4, done: 1, taskFilePaths: [] }],
+    ["high", { total: 4, done: 3, taskFilePaths: [] }],
+    ["none", { total: 0, done: 0, taskFilePaths: [] }],
   ]);
   const res = sortMilestones(list, "progress", progress);
   expect(res.map((m) => m.name)).toEqual(["high", "low", "none"]);
+});
+
+test("sortMilestones: ratioを表示できないときは使用件数にかかわらず元の順序を保つ", () => {
+  const list = [def("unused", "open"), def("active", "open")];
+  const progress = new Map<string, MilestoneProjection>([
+    ["active", { total: 2, done: 0, taskFilePaths: [] }],
+  ]);
+
+  const res = sortMilestones(list, "progress", progress, false);
+
+  expect(res.map((m) => m.name)).toEqual(["unused", "active"]);
+});
+
+test("sortMilestones: 特殊名を Map から安全に引き、同率は入力順を保つ", () => {
+  const list = [
+    def("constructor", "open"),
+    def("__proto__", "open"),
+    def("toString", "open"),
+  ];
+  const progress = new Map<string, MilestoneProjection>([
+    ["constructor", { total: 2, done: 1, taskFilePaths: [] }],
+    ["__proto__", { total: 2, done: 2, taskFilePaths: [] }],
+    ["toString", { total: 4, done: 2, taskFilePaths: [] }],
+  ]);
+
+  expect(sortMilestones(list, "progress", progress).map((m) => m.name)).toEqual(
+    ["__proto__", "constructor", "toString"],
+  );
 });
 
 test("groupByDisplayStatus: open / closed / overdue に分割", () => {

@@ -48,6 +48,7 @@ const dataA: ProjectData = {
   tasks: [makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" })],
   columns: cols("Todo", "Done"),
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 };
 
@@ -56,6 +57,7 @@ const dataB: ProjectData = {
   tasks: [makeTask({ id: "b", filePath: "tasks/b.md", status: "Done" })],
   columns: cols("Todo", "Done"),
   projections: new Map(),
+  milestoneProjections: new Map(),
   openRequestId: 0,
 };
 
@@ -97,6 +99,46 @@ test("open-succeed → loaded", () => {
   expect(next).toEqual({ kind: "loaded", path: "/a", data: dataA });
 });
 
+test("open-succeed は task と milestone の projection map を同時に設定する", () => {
+  const projections = new Map([
+    [
+      "tasks/a.md",
+      {
+        subIssueProgress: { done: 1, total: 2 },
+        isDone: false,
+        childFilePaths: ["tasks/child.md"],
+      },
+    ],
+  ]);
+  const milestoneProjections = new Map([
+    [
+      "v1",
+      { done: 1, total: 2, taskFilePaths: ["tasks/a.md", "tasks/child.md"] },
+    ],
+  ]);
+  const data = { ...dataA, projections, milestoneProjections };
+  const start = reducer({ kind: "idle" }, { type: "open-start", path: "/a" });
+
+  const next = reducer(start, {
+    type: "open-succeed",
+    path: "/a",
+    data,
+  });
+
+  expect(next.kind === "loaded" ? next.data.projections : undefined).toBe(
+    projections,
+  );
+  expect(
+    next.kind === "loaded" ? next.data.milestoneProjections : undefined,
+  ).toBe(milestoneProjections);
+  expect(next.kind === "loaded" ? next.data.projections : undefined).not.toBe(
+    dataA.projections,
+  );
+  expect(
+    next.kind === "loaded" ? next.data.milestoneProjections : undefined,
+  ).not.toBe(dataA.milestoneProjections);
+});
+
 test("open-fail (loading) → error", () => {
   const start = reducer({ kind: "idle" }, { type: "open-start", path: "/a" });
   const err = new TauriError("UNKNOWN", "boom");
@@ -109,6 +151,12 @@ test("open-fail (loaded 起点の loading) → 直前の loaded に復元", () =
   const err = new TauriError("NOT_FOUND", "fail");
   const next = reducer(start, { type: "open-fail", path: "/b", error: err });
   expect(next).toEqual({ kind: "loaded", path: "/a", data: dataA });
+  expect(next.kind === "loaded" ? next.data.projections : undefined).toBe(
+    dataA.projections,
+  );
+  expect(
+    next.kind === "loaded" ? next.data.milestoneProjections : undefined,
+  ).toBe(dataA.milestoneProjections);
 });
 
 test("task-created → state.data.tasks 末尾に追加", () => {
@@ -136,6 +184,7 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
       tasks: [parent],
       columns: cols("Todo"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -166,6 +215,7 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
       tasks: [parent],
       columns: cols("Todo"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -196,6 +246,7 @@ test("task-created (parent あり) で親が既に children を持っていれ�
       tasks: [parent],
       columns: cols("Todo"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -270,6 +321,7 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
       tasks: [a, b, c],
       columns: cols("Todo"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -317,6 +369,7 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
       tasks: [parent, child, otherWithLink],
       columns: cols("Todo"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -362,6 +415,7 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
       tasks: [parent, child],
       columns: cols("Todo"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -410,6 +464,7 @@ test("columns-replaced: doneColumn が rename 対象なら自動追従する", (
       columns: cols("Todo", "Done"),
       doneColumn: "Done",
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -432,6 +487,7 @@ test("columns-replaced: action.doneColumn 指定時はそれが採用される (
       columns: cols("Todo", "Done"),
       doneColumn: "Done",
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -454,6 +510,7 @@ test("columns-replaced: doneColumn / renames 未指定時は既存値を維持",
       columns: cols("Todo", "Done"),
       doneColumn: "Done",
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -529,6 +586,7 @@ test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ
       tasks: [todoA, doneX, todoB],
       columns: cols("Todo", "Done"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -557,6 +615,7 @@ test("card-order-updated → 他カラムの tasks 順序は不変", () => {
       tasks: [todoA, doneX, doneY],
       columns: cols("Todo", "Done"),
       projections: new Map(),
+      milestoneProjections: new Map(),
       openRequestId: 0,
     },
   };
@@ -583,19 +642,84 @@ test("card-order-updated → idle state では no-op", () => {
   expect(next).toBe(idle);
 });
 
+// ───────── projections / tasks resync ─────────
+
+test("projections-refreshed は task と milestone の projection map を同時に更新する", () => {
+  const projections = new Map([
+    [
+      "tasks/a.md",
+      {
+        subIssueProgress: { done: 0, total: 1 },
+        isDone: false,
+        childFilePaths: ["tasks/child.md"],
+      },
+    ],
+  ]);
+  const milestoneProjections = new Map([
+    ["release", { done: 0, total: 1, taskFilePaths: ["tasks/a.md"] }],
+  ]);
+
+  const next = reducer(loadedAState, {
+    type: "projections-refreshed",
+    projections,
+    milestoneProjections,
+  });
+
+  expect(next.kind === "loaded" ? next.data.projections : undefined).toEqual(
+    projections,
+  );
+  expect(
+    next.kind === "loaded" ? next.data.milestoneProjections : undefined,
+  ).toEqual(milestoneProjections);
+  expect(next.kind === "loaded" ? next.data.projections : undefined).not.toBe(
+    dataA.projections,
+  );
+  expect(
+    next.kind === "loaded" ? next.data.milestoneProjections : undefined,
+  ).not.toBe(dataA.milestoneProjections);
+});
+
+test("非 loaded state への projections-refreshed は両 map を変更しない", () => {
+  const idle: ProjectState = { kind: "idle" };
+
+  const next = reducer(idle, {
+    type: "projections-refreshed",
+    projections: new Map(),
+    milestoneProjections: new Map(),
+  });
+
+  expect(next).toBe(idle);
+});
+
 // ───────── tasks-resynced（watcher の full rescan / gap 復旧） ─────────
 
-test("tasks-resynced は tasks と projections を更新し columns は変えない", () => {
+test("tasks-resynced は tasks と両 projection map を更新し columns は変えない", () => {
+  const projections = new Map([
+    [
+      "tasks/z.md",
+      {
+        subIssueProgress: { done: 0, total: 0 },
+        isDone: true,
+        childFilePaths: [],
+      },
+    ],
+  ]);
+  const milestoneProjections = new Map([
+    ["v2", { done: 1, total: 1, taskFilePaths: ["tasks/z.md"] }],
+  ]);
   const next = reducer(loadedAState, {
     type: "tasks-resynced",
     tasks: [makeTask({ id: "z", filePath: "tasks/z.md", status: "Done" })],
-    projections: new Map(),
+    projections,
+    milestoneProjections,
   });
 
   expect(next.kind).toBe("loaded");
   const data = next.kind === "loaded" ? next.data : undefined;
   expect(data?.tasks.map((task) => task.id)).toEqual(["z"]);
   expect(data?.columns).toBe(dataA.columns);
+  expect(data?.projections).toEqual(projections);
+  expect(data?.milestoneProjections).toEqual(milestoneProjections);
   expect(data?.openRequestId).toBe(dataA.openRequestId);
   expect(data?.watcherSession).toBe(dataA.watcherSession);
 });
@@ -609,6 +733,7 @@ test("state-replaced は ProjectData 全体を置き換え、tasks-resynced は 
     type: "tasks-resynced",
     tasks: dataB.tasks,
     projections: dataB.projections,
+    milestoneProjections: dataB.milestoneProjections,
   });
 
   const replacedData = replaced.kind === "loaded" ? replaced.data : undefined;
@@ -624,6 +749,7 @@ test("非 loaded state への tasks-resynced は無視される", () => {
     type: "tasks-resynced",
     tasks: dataB.tasks,
     projections: new Map(),
+    milestoneProjections: new Map(),
   });
 
   expect(next).toBe(idle);

@@ -136,6 +136,7 @@ const payload: OpenProjectPayload = {
   tasks: [taskA, taskB],
   columns: ["Todo", "Done"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 /**
@@ -317,6 +318,7 @@ const threeColumnPayload: OpenProjectPayload = {
   tasks: [],
   columns: ["A", "B", "C"],
   projections: new Map(),
+  milestoneProjections: new Map(),
 };
 
 const openThreeColumnProject = async (): Promise<void> => {
@@ -432,6 +434,7 @@ const openParentChildProject = async (): Promise<void> => {
           },
         ],
       ]),
+      milestoneProjections: new Map(),
     }),
   );
   // beforeEach の暗黙初期化に依存させず、必要な columns / doneColumn を
@@ -562,6 +565,7 @@ const openLinkedTasksProject = async (options?: {
       tasks: [linkedA, linkedB],
       columns: ["Todo", "Done"],
       projections: new Map(),
+      milestoneProjections: new Map(),
     }),
   );
   getColumnsMock.mockResolvedValueOnce(

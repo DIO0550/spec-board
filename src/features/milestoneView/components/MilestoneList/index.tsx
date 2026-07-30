@@ -1,6 +1,6 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
+import type { MilestoneProjection } from "@/domains/milestone-projection";
 import { MilestoneCard } from "@/features/milestoneView/components/MilestoneCard";
-import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import type { MilestoneDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
 
 type MilestoneListProps = {
@@ -13,11 +13,13 @@ type MilestoneListProps = {
    */
   statusOf: (def: MilestoneDefinition) => MilestoneDisplayStatus;
   /**
-   * 各マイルストーンの進捗を返す。所属 0 件のときも undefined を返してよい。
+   * 各マイルストーンの BE projection を返す。
    * @param def - マイルストーン定義
-   * @returns 進捗、または undefined
+   * @returns projection
    */
-  progressOf: (def: MilestoneDefinition) => MilestoneProgress | undefined;
+  projectionOf: (def: MilestoneDefinition) => MilestoneProjection;
+  /** done column 解決済みで ratio を表示できるか。 */
+  showRatio: boolean;
   /** 選択中のマイルストーン名（未選択なら undefined） */
   selectedName: string | undefined;
   /**
@@ -41,7 +43,8 @@ type MilestoneListProps = {
 export const MilestoneList = ({
   milestones,
   statusOf,
-  progressOf,
+  projectionOf,
+  showRatio,
   selectedName,
   onSelect,
   now,
@@ -60,7 +63,8 @@ export const MilestoneList = ({
           <MilestoneCard
             def={def}
             status={statusOf(def)}
-            progress={progressOf(def)}
+            projection={projectionOf(def)}
+            showRatio={showRatio}
             selected={selectedName === def.name}
             onSelect={() => onSelect(def)}
             now={now}

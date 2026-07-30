@@ -163,6 +163,7 @@ export const openProjectAction = async ({
       columns: columnsResult.value.columns,
       doneColumn: columnsResult.value.doneColumn,
       projections: openResult.value.projections,
+      milestoneProjections: openResult.value.milestoneProjections,
       // この open 固有の識別子。projection 再同期が「open 直後の fresh な payload」と
       // 「open 失敗による旧 project の復元」を区別するために使う（openFail は
       // previousLoaded を同じ path のまま loaded へ戻すため path では区別できない）。

@@ -1,8 +1,12 @@
 import type { MilestoneDefinition } from "@/domains/milestone";
 import { Milestone } from "@/domains/milestone";
+import type { MilestoneProjection } from "@/domains/milestone-projection";
+import {
+  TaskProjection,
+  type TaskProjectionMap,
+} from "@/domains/task-projection";
 import { MilestoneCountdownBadge } from "@/features/milestoneView/components/MilestoneCountdownBadge";
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
-import type { MilestoneProgress } from "@/features/milestoneView/hooks/useMilestoneProgress";
 import {
   displayStatusLabel,
   formatDue,
@@ -16,12 +20,14 @@ type MilestoneDetailSidebarProps = {
   def: MilestoneDefinition | undefined;
   /** 派生表示ステータス */
   status: MilestoneDisplayStatus | undefined;
-  /** 進捗 */
-  progress: MilestoneProgress | undefined;
+  /** BE milestone projection */
+  projection: MilestoneProjection | undefined;
+  /** done column 解決済みで ratio を表示できるか。 */
+  showRatio: boolean;
   /** マイルストーン名に紐づくタスク（一覧表示用） */
   tasks: readonly Task[];
-  /** done 判定用カラム名（未解決は undefined） */
-  doneColumn: string | undefined;
+  /** tasks と同一 snapshot の task projection map */
+  taskProjections: TaskProjectionMap;
   /** 現在時刻（テスト差し替え用） */
   now?: Date;
 };
@@ -35,9 +41,10 @@ type MilestoneDetailSidebarProps = {
 export const MilestoneDetailSidebar = ({
   def,
   status,
-  progress,
+  projection,
+  showRatio,
   tasks,
-  doneColumn,
+  taskProjections,
   now,
 }: MilestoneDetailSidebarProps) => {
   if (def === undefined || status === undefined) {
@@ -82,13 +89,13 @@ export const MilestoneDetailSidebar = ({
             })()}
             <MilestoneCountdownBadge countdown={countdown} />
           </dd>
-          {progress !== undefined ? (
+          {projection !== undefined ? (
             <>
               <dt className="text-muted">タスク</dt>
               <dd className="font-mono text-foreground">
-                {progress.done} / {progress.total}
-                {progress.ratio !== undefined
-                  ? ` (${Math.round(progress.ratio * 100)}%)`
+                {projection.done} / {projection.total}
+                {showRatio && projection.total > 0
+                  ? ` (${Math.round((projection.done / projection.total) * 100)}%)`
                   : ""}
               </dd>
             </>
@@ -110,8 +117,10 @@ export const MilestoneDetailSidebar = ({
         ) : (
           <ul className="flex flex-col">
             {tasks.map((t) => {
-              const isDone =
-                doneColumn !== undefined && t.status === doneColumn;
+              const isDone = TaskProjection.findByFilePath(
+                taskProjections,
+                t.filePath,
+              ).isDone;
               return (
                 <li
                   key={t.id}

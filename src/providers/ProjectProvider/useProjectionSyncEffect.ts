@@ -77,15 +77,16 @@ type ProjectionSyncDeps = SyncBasis & {
 
 /**
  * tasks の差分更新（watcher event / mutation 戻り値 / 楽観 dispatch）やカラム設定の
- * 変更で stale になった projection を `get_tasks` で再同期する Provider 内 private hook。
+ * 変更で stale になった task / milestone projections を `get_tasks` で
+ * 同一 snapshot として再同期する Provider 内 private hook。
  *
  * # 再同期のトリガ
  *
- * `tasks` 参照 / `columns` 参照 / `doneColumn` の 3 点組。projection の完了判定は
+ * `tasks` 参照 / `columns` 参照 / `doneColumn` の 3 点組。projections の完了判定は
  * BE の `Config::resolved_done_column()` に依存するため、tasks が同一参照でも
  * カラム設定が変われば集計結果が変わる。とくに**カラム並び替えでは tasks 参照も
  * doneColumn 文字列も変わらない**ので、`columns` の配列参照まで見ないと
- * 末尾カラムフォールバックの変化を取りこぼし、projection が恒久的に stale になる。
+ * 末尾カラムフォールバックの変化を取りこぼし、両 map が恒久的に stale になる。
  *
  * # open の鮮度判定
  *
@@ -118,7 +119,7 @@ type ProjectionSyncDeps = SyncBasis & {
  * mutation action 6 箇所 / watcher hook 3 箇所への挿し忘れが恒久的な stale を生む
  * ため、state の変化を単一のトリガとして自動再取得する。
  *
- * 失敗時は通知を出さず旧 projection を据え置く。読み取り系 IPC の失敗は App 側で
+ * 失敗時は通知を出さず旧 projections を据え置く。読み取り系 IPC の失敗は App 側で
  * 通知するのがこの codebase の既定方針だが、本 hook はユーザー操作を伴わない
  * 自動再取得であり、失敗しても進捗表示が旧値のまま残るだけで編集操作は成立する
  * ため、あえて逸脱して無通知にする。
@@ -178,7 +179,7 @@ export const useProjectionSyncEffect = ({
     }
 
     const syncedMarker = syncedRef.current;
-    // 新しい open payload。projection は最新なので fetch せず marker だけ更新する。
+    // 新しい open payload。両 projections は最新なので fetch せず marker だけ更新する。
     if (syncedMarker === null || syncedMarker.openRequestId !== openRequestId) {
       syncedRef.current = {
         openRequestId,
@@ -234,6 +235,7 @@ export const useProjectionSyncEffect = ({
         dispatch({
           type: "projections-refreshed",
           projections: result.value.projections,
+          milestoneProjections: result.value.milestoneProjections,
         });
         syncedRef.current = {
           openRequestId,
