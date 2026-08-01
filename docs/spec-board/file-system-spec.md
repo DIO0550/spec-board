@@ -32,9 +32,9 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 **説明**: 指定ディレクトリをプロジェクトとして開き、配下のmdファイルをスキャンしてタスク一覧を返す。同時に `notify` ベースの実 watcher を起動し、`task-created` / `task-updated` / `task-deleted` を `tauri::AppHandle::emit` でフロントエンドに配信する adapter を `AppState` に設置する。
 
-> 本コマンド呼び出しでは GUIDE.md の best-effort 書き出し（`<project_root>/.spec-board/GUIDE.md`）と `AppState` の 6 フィールド（`project_path` / `config` / `labels` / `tasks_cache` / `watcher_handle` / `write_ignore`）の更新を、(1) watcher 起動準備 → (2) 旧 watcher 停止 → (3) state commit → (4) adapter spawn の 4 段階で行う。watcher 起動が失敗した場合は AppState を一切変更せず `WatcherInitFailed` を返す（旧プロジェクトを表示したまま動作継続）。
+> 本コマンドは対象の exact raw `ProjectRoot` writer gate を取得し、config / registries / tasks の読み込み、`SessionId` の予約、paused watcher と session-scoped `WriteIgnoreRegistry` の stage を resident state の外で完了する。その後、単一 critical section で `ProjectSession` と active resources を swap し、watcher activation latch を `Pending` から `Active` へ遷移させる。swap 前のどの失敗でも旧 session/resources は一切変更しない。
 
-> `.spec-board/labels.yml`（ラベルマスタ）も config 読み込みと同じく open 時に読み込み、`AppState.labels` に commit する。不在時は空レジストリ（`labels: []`）で開け、後方互換を保つ。壊れた YAML / name 重複 / name 空文字は `labels load failed (parse)`、I/O 異常は `labels load failed (io)` として open に失敗する。取得は独立コマンド `get_labels` で行い、本コマンドの payload には同梱しない。
+> `.spec-board/labels.yml`（ラベルマスタ）も config 読み込みと同じく open 時に読み込み、config / milestones / tasks と同じ `ProjectSession` に commit する。不在時は空レジストリ（`labels: []`）で開け、後方互換を保つ。壊れた YAML / name 重複 / name 空文字は `labels load failed (parse)`、I/O 異常は `labels load failed (io)` として open に失敗する。取得は独立コマンド `get_labels` で行い、本コマンドの payload には同梱しない。
 
 **引数**:
 
@@ -86,7 +86,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
   "session": {
     "projectKey": "/home/user/specs",
     "generation": 1,
-    "revision": 1,
+    "revision": 0,
     "eventSeq": 0
   }
 }
@@ -100,7 +100,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 - `warnings`: `title` / `status` の fallback や `parent` / `extras` の型不一致など、Task 生成を継続できる非致命警告の一覧
 - `projections`: filePath をキーにした集計値。詳細は `get_tasks` 節を参照する。初期表示時点でフロントエンドが集計を持てるよう同梱する
 - `milestoneProjections`: milestone 名をキーにした `{ total, done, taskFilePaths }`。`projections` と別取得せず、同じ payload に同梱する
-- `session`: watcher イベント検証の初期 baseline。`tasks` と**同一トランザクション**で確定した値で、watcher を起動する前に組み立てる。分けて組み立てると「session はある変更を含むが tasks は含まない」状態が生まれ、その変更のイベントが stale として捨てられたまま復旧しなくなる。詳細は「イベント通知」節を参照
+- `session`: watcher イベント検証の初期 baseline。swap で commit された immutable snapshot だけから `tasks` と一緒に組み立てる。`generation` は内部 `SessionId`、`revision` は session-local `SessionRevision` の既存 wire adapter 値である。詳細は「イベント通知」節を参照
 
 フロントエンドでは、この Tauri IPC payload を `TaskPayload` として受け取り、domain model の `Task` に変換して扱う。`Task` では `parent` / `children` は `hierarchy.parentFilePath` / `hierarchy.childFilePaths` に、`links` / `reverseLinks` は `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に格納する。IPC payload と markdown frontmatter のフィールド名は互換性維持のため flat なまま変更しない。
 
@@ -111,14 +111,14 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | ディレクトリ不存在 | 指定パスが存在しない | `ディレクトリが見つかりません: {path}` |
 | ディレクトリではない | 指定パスがディレクトリでない（通常ファイル等） | `ディレクトリではありません: {path}` |
 | アクセス権限なし | 読み取り権限がない | `ディレクトリにアクセスできません: {path}` |
-| 内部状態の lock 破損 | `AppState` の Mutex / `WriteIgnoreRegistry` が poison 状態 | `内部状態のロックが破損しました` |
+| 内部状態の lock 破損 | project domain / active resources / writer gate の Mutex が poison 状態 | `内部状態のロックが破損しました` |
 | スキャン致命エラー | parent 循環 / scan I/O など | `io scan failed: {message}` |
 | config 読み込み失敗 | `config.json` が壊れている等 | `config load failed (io|parse): {message}` |
 | ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}` |
 
 > 個別 md ファイルの `fs::read` 失敗、および `task_from_markdown` のパース失敗は致命扱いせず、`log::warn!` で記録して該当ファイルだけ skip する（コマンド全体は成功する）。warning を payload へ同梱する仕様は別 Issue 扱い。
 >
-> ファイル監視の初期化失敗時は AppState の全フィールド（`project_path` / `config` / `tasks_cache` / `watcher_handle` / `write_ignore`）が **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。FE 側 `TauriError.PATTERNS` には未対応のため `UNKNOWN` 分類になる（必要なら FE 側で「ファイル監視の初期化」パターンを個別追加する）。
+> ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側 `TauriError.PATTERNS` には watcher 初期化失敗の個別分類がないため `UNKNOWN` 分類になる。
 
 ---
 
@@ -199,13 +199,31 @@ watcher イベント検証の baseline（`revision` と `eventSeq` の両方）�
 
 ### Snapshot / projection 同期契約
 
-`get_tasks` は `project_path → config → tasks_cache` の順に 3 lock を取得して同時保持し、config / tasks を clone すると同じ critical section で watcher session を確定する。lock 解放後、snapshot の config で完了カラムを解決し、tasks を board order（config が `None` なら id 順）へ sort して `TaskIndex` を再構築する。その同じ index から task projection、milestone projection、最後に payload の tasks を取り出す。
+`get_tasks` は project domain lock を 1 回だけ取得して immutable `ProjectSessionSnapshot` を作る。lock 解放後、snapshot の config で完了カラムを解決し、tasks を board order へ sort して `TaskIndex` を再構築する。その同じ index から task projection、milestone projection、最後に payload の tasks を取り出す。未オープン時だけ従来どおり空 payload と idle session を返す。
 
-`open_project` は読み込んだ同じ config / tasks を state に commit し、`tasks_cache` の置換・revision / generation 更新・session 確定を watcher spawn 前に行う。payload は途中の state を再読込せず、その config / tasks と確定済み session から `get_tasks` と同じ `sort → task projection → milestone projection → tasks` の順で構築する。このため両 command は同じ project snapshot に対して `tasks` / `projections` / `milestoneProjections` の値と順序が一致し、4 フィールドは同じ論理 snapshot に属する。
+`open_project` の payload は swap で commit された snapshot を途中で再読込せず、`get_tasks` と同じ `sort → task projection → milestone projection → tasks` の順で構築する。このため両 command は同じ project snapshot に対して `tasks` / `projections` / `milestoneProjections` の値と順序が一致し、config / registries / tasks / session は同じ論理 revision に属する。
 
 フロントエンドでは、open 成功時に `tasks` と両 projection map を 1 つの `ProjectData` に設定する。task mutation、column reorder、完了カラム変更後の projection sync は project command queue の barrier 後に `get_tasks` を呼び、1 つの `projections-refreshed` action で両 map を同時置換する。single in-flight と path / open request id / request sequence の guard を通らない古い応答、および IPC 失敗時は現在値を保持する。
 
 watcher の `eventSeq` gap または full rescan 通知から復旧する場合も、queue barrier 後に `get_tasks` で full snapshot を取得する。読み取り中に mutation が enqueue された応答、project / generation / session が変わった応答は採用しない。gate が snapshot session を受理したときだけ、1 つの `tasks-resynced` action で `tasks` / `projections` / `milestoneProjections` を atomic に反映する。走行中の session baseline は watcher gate が更新し、`ProjectData.watcherSession` は open baseline のまま保持する。buffer した watcher event の replay で tasks がさらに進んだ場合は、通常の projection sync が両 map を再取得する。
+
+### ProjectSession と並行性契約
+
+`AppState` の resident domain は `Idle | Loaded(ProjectSession)` を単一 Mutex で保持する。`ProjectSession` は exact raw `ProjectRoot`、process 内で一意な `SessionId`、session-local `SessionRevision`、config、labels、milestones、tasks を一体として所有する。watcher handle と `WriteIgnoreRegistry` は cache 対象になり得る domain から分離し、同じ `SessionVersion { SessionId, SessionRevision }` を持つ active resources として最大 1 組だけ保持する。
+
+mutation と watcher event は次の protocol を使う。
+
+1. gate 取得前に対象の root / SessionId を控える。
+2. exact raw `ProjectRoot` ごとの writer gate を取得する。同一 root は直列化し、別 root は互いに待たない。
+3. gate 取得後に fresh snapshot を読み、root + SessionId を再検証する。待機中の正常な revision 進行は許可するが、project switch と same-path reopen は disk I/O 前に typed conflict として拒否する。
+4. resident validation と target 解決を副作用なしで行い、revision の checked increment と active resource identity を preflight する。`u64::MAX` なら disk/store read・write-ignore 登録・disk write を行わない。
+5. 必要な disk I/O を行った後、snapshot の full SessionId + Revision で resident mutation を CAS commit する。成功 commit だけが revision を 1 増やす。
+
+disk write 後に revision conflict が起きた場合は current session を上書きせず、同じ gate lease を保持したまま operation 別の disk source から same-project resync を 1 回行う。resync 成否にかかわらず caller へは元の typed conflict を返す。task/config 書き込みの write-ignore marker は resync 成功時だけ watcher の 1 回 consume 用に残し、resync 失敗またはその他の post-disk error では cleanup する。
+
+open は target root の同じ gate を使う。swap 後は gate と state locks を解放してから旧 watcher を stop/join するため、停止が遅くても別 root の open/writer を block しない。旧 watcher の stop が panic しても新 session は rollback せず、旧 `SessionVersion` と panic message を diagnostic に残す。stale adapter は resource access、state mutation、eventSeq 採番、emit の前に identity guard で破棄する。
+
+reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` / `get_milestones` / `export_labels` の各 command で `session_snapshot()` を 1 回だけ読み、異なる revision の field を混在させない。
 
 ---
 
@@ -407,8 +425,8 @@ watcher の `eventSeq` gap または full rescan 通知から復旧する場合�
 ```ts
 {
   projectKey: string,      // BE 採番の project 識別子
-  generation: number,      // watcher 世代（open_project ごとに +1）
-  revision: number,        // tasks_cache の版
+  generation: number,      // 内部 SessionId の互換値（成功 open ごとに一意）
+  revision: number,        // session-local SessionRevision の互換値
   cacheMutating: boolean,  // この event が cache を変更したか
   eventSeq: number,        // emit ごとに 1 消費する連番（欠番 = 取りこぼし）
   changeId: string,        // "{generation}-{eventSeq}"（ログ相関用）
@@ -428,17 +446,12 @@ watcher の `eventSeq` gap または full rescan 通知から復旧する場合�
 `get_tasks` で snapshot を取り直す。`cacheMutating: true` の event についてのみ
 `revision` の単調性を検査する（診断イベントは cache を変えないため revision が進まない）。
 
-**現時点の保証範囲（1）— 通常の差分更新とカラム更新の競合**: status を省略した md の
-既定カラムは、その md を処理する時点の `Config` から解決する。ただし「`Config` を読む →
-md を parse する → `tasks_cache` を更新する」が単一のクリティカルセクションではないため、
-その途中で `update_columns` が commit すると、当該ファイルだけ 1 世代前の既定カラムに入る。
-**旧カラムが削除されていた場合は、どのカラムにも属さずボード上から見えなくなる**。
-いずれもそのファイルが再度変更されるか full rescan が走れば解消する。
-
-恒久対策は `update_columns` の atomic 化だけでは足りない（watcher は commit の前に
-古い `Config` で parse を終えているため）。cache への insert 時点で既定 status を
-再検証し、変わっていれば parse からやり直す **conditional upsert** が必要で、
-バックエンドのドメイン再構成（Epic #417）で扱う。
+**通常の差分更新とカラム更新の競合**: watcher adapter も command と同じ exact-root
+writer gate を取得してから fresh snapshot を読み、その snapshot の `Config` で status
+欠落時の既定カラムを解決する。parse 後は full SessionId + Revision で commit するため、
+`update_columns` と interleave して 1 世代前の既定カラムを resident state へ混入させない。
+project switch / same-path reopen で identity が変わった場合は event を破棄し、eventSeq も
+消費しない。
 
 **現時点の保証範囲（2）**: `open_project` は watcher を起動してから応答を返すため、
 「watcher 起動 → フロントエンドが購読を開始する」までの短い窓に発生した変更は、
@@ -448,7 +461,7 @@ open 応答の snapshot にも購読にも含まれない。この欠落は**次
 購読の常設化または BE/FE のハンドシェイクが必要で、watcher reconciliation
 （Issue #460）で扱う。
 
-`open_project` / `get_tasks` の応答には、その snapshot と**同一トランザクション**で
+`open_project` / `get_tasks` の応答には、その snapshot と**同一 domain snapshot**で
 確定した `session`（`{ projectKey, generation, revision, eventSeq }`）が含まれる。
 受信側はこれを envelope 検証の baseline とし、再取得のたびに取り直す。
 
@@ -460,9 +473,10 @@ open 応答の snapshot にも購読にも含まれない。この欠落は**次
 
 ```mermaid
 flowchart TD
-    A[ファイル変更を検知] --> G0{現行 generation?}
-    G0 -->|No| G1[旧 watcher なので cache も emit も触らない]
-    G0 -->|Yes| A1{自己書き込み?}
+    A[ファイル変更を検知] --> G0{現行 SessionId?}
+    G0 -->|No| G1[旧 watcher なので resource/state/seq/emit に触らない]
+    G0 -->|Yes| W[exact-root writer gate + fresh snapshot]
+    W --> A1{自己書き込み?}
     A1 -->|Yes| A2[イベントを無視]
     A1 -->|No| B[デバウンス 100ms]
     B --> C{イベント種別}
@@ -472,16 +486,16 @@ flowchart TD
     C -->|Rename| R[旧パスで task-deleted + 新パスで読み込み・パース]
     C -->|Rescan| S0[走査前の revision を控える]
     C -->|Error| X[watcher-diagnostic を発火。cache は変更しない]
-    S0 --> S1[lock 外で全 md を再走査・再構築]
-    S1 --> S2{revision と既定 status が一致?}
-    S2 -->|No・上限内| S0
-    S2 -->|No・上限超過| S6[cache 不変のまま rescanFailed を通知]
-    S2 -->|Yes| S3[cache 全置換 + write_ignore を clear]
-    S3 --> S4[watcher-resync-required を発火]
+    S0 --> S1[domain lock 外で全 md を再走査・再構築]
+    S1 --> S2{full identity で commit可能?}
+    S2 -->|same session conflict・上限内| S0
+    S2 -->|retry上限超過| S6[session 不変のまま rescanFailed を通知]
+    S2 -->|Yes| S3[tasks 全置換 + revision commit + write_ignore clear]
+    S3 --> S4[conditional eventSeq採番後 watcher-resync-required]
     S1 -->|走査 / 構築が失敗| S5[cache 不変のまま rescanFailed を通知]
     D --> F{パース成功?}
     R --> F
-    F -->|Yes| G[task-created / task-updated イベントを発火]
+    F -->|Yes| G[revision commit → conditional eventSeq → event発火]
     F -->|No| H[エラーログ出力]
 ```
 
@@ -492,6 +506,10 @@ flowchart TD
 1. 旧パスのタスクに対して `task-deleted` イベントを発火
 2. 新パスのファイルを読み込み・パースし、`task-created` イベントを発火
 3. 旧パスへの `task-deleted` 処理時、他タスクの `parent` / `links` / `reverseLinks` に残っていた旧パス参照は **自動的に cleanup される**（リンク切れの状態で残さない）。新パスの `task-created` では新タスク自身の frontmatter 由来の `parent` / `links` と親側 `children` の同期だけが反映されるため、他タスクに残っていた旧パス参照を新パスへ自動変換することはしない。新パス参照を他タスクに復元するには、外部側で当該タスクの md を編集して新パスを記述し直す必要がある
+
+delete と create は同じ writer gate 内でも別々の fresh snapshot / revision commit /
+conditional eventSeq 採番を行い、従来どおり 2 envelope を順番に emit する。composite rename
+event や同一 revision の 2 payload には統合しない。
 
 ### デバウンス（スライディングウィンドウ集約）
 
@@ -521,10 +539,10 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 | 3 | ファイル監視がイベントを受け取った際、「書き込みパスセット」にパスが含まれていればイベントを無視 |
 | 4 | イベント無視後、該当パスを「書き込みパスセット」から除去 |
 
-- 書き込みパスセットは `HashSet<PathBuf>` で管理し、`Mutex` で排他制御
+- 書き込みパスセットは active session ごとの `HashSet<PathBuf>` として管理し、`Mutex` で排他制御する。取得時に `SessionVersion` を検証して `Arc<WriteIgnoreRegistry>` だけを clone し、resource lock を disk I/O 区間へ持ち越さない
 - セット登録後に対応するイベントが来なかった場合の解除は呼び出し側が明示的に行う
 - **パス表現は絶対パス**で揃える。`FsEvent` から渡される `PathBuf` をそのまま key として比較するため、書き込み側も `register` 時に絶対パスを使うこと。相対表記や区切り違い（`./tasks/x.md` と `tasks/x.md` 等）は別キーとして扱われ、`unregister` がヒットせずに自己書き込みが二重通知される
-- **stale entry の TTL cleanup は行わない**。書き込み後に対応するイベントが届かなかった場合の登録は、`open_project` で別プロジェクトを開いたタイミングと **full rescan 完了時**の `WriteIgnoreRegistry::clear()` で解消される。full rescan で clear するのは、stale entry が残ると以後の自前 write 判定を誤らせるため（`open_project` の commit と同じ扱い）。プロジェクトを開き直さずに長時間動作させても自己書き込み判定が壊れない仕様にしたい場合は、呼び出し側で `unregister` を明示する
+- **stale entry の TTL cleanup は行わない**。full rescan 成功時は current session の registry を clear し、open 成功時は新 session 用の空 registry へ resources ごと swap する。disk 失敗、resync 失敗、または conflict 以外の post-disk commit error では、その command が登録した entry を best-effort で明示解除する。disk 成功後の same-project resync に成功した場合だけ、対応する watcher event が 1 回 consume できるよう entry を残す
 
 ## エラーハンドリング
 
@@ -728,6 +746,7 @@ pub enum WatcherError {
 - シンボリックリンク先のmdファイルは監視対象外
 - ファイル名に使用できない文字がタイトルに含まれる場合、自動的に除去して生成
 - 大量ファイルの同時変更時（100ファイル以上）はバッチ処理で順次反映
+- writer gate の key は loaded session が保持する **exact raw `ProjectRoot`** であり、canonicalize や symlink 解決は行わない。同じ実ディレクトリを異なる文字列表現・symlink alias で同時に開いた場合は別 gate として扱われ、同一 disk target の直列化を保証できない。path identity の正規化は Issue #453 の対象外であり、呼び出し側は同じ root 表現を使用する
 
 ## 関連仕様
 
@@ -740,4 +759,5 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.2 | 2026-07-31 | Issue #453: `ProjectSession` aggregate、session-local revision CAS、project-scoped writer gate、staged watcher swap、session-scoped resources と stale event guard を追加 | - |
 | 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection、同一 snapshot・board order、mutation / watcher resync の atomic 同期契約を追加 | - |

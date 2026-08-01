@@ -208,7 +208,7 @@ type GetLabelsPayload = {
   - プロジェクト未オープン → `"プロジェクトが開かれていません"`
   - 内部状態の lock 破損 → `"内部状態のロックが破損しました"`
 - 親ディレクトリ不存在・書込権限なし等は `std::fs::write` の失敗として OS のエラー文字列を透過する。
-- write は project 外への単発書込のため、`delete_label` のような snapshot / lock preflight は不要（read-only に `state.labels()` を取得するだけ）。
+- write は project 外への単発書込のため resident mutation は行わないが、labels は `session_snapshot()` を 1 回取得して coherent に直列化する。保存先への `std::fs::write` は snapshot lock 解放後に実行する。
 
 ## milestones.yml スキーマ
 
@@ -472,16 +472,17 @@ links:（任意）
 | doneColumn | `String` | いいえ | 完了カラム名。**rename 適用後の名前空間**で指定する。未指定時は変更しない |
 
 **振る舞い**:
-1. すべての引数が未指定（`columns`/`doneColumn`/`renames` のいずれも `None`）の場合は no-op として `Ok(())` を返し、ファイルや state を一切変更しない
+1. exact raw project root の writer gate を取得し、gate 後の fresh `ProjectSessionSnapshot` から pure plan を作る。すべての引数が未指定（`columns`/`doneColumn`/`renames` のいずれも `None`）の場合は no-op として `Ok(())` を返し、ファイルや state を一切変更しない
 2. `renames` 内で `from == to` の項目は冪等にスキップ
-3. `renames` が指定され、かつ空でない場合、該当するタスクの md ファイルの `status` を一括更新（空配列または未指定の場合はこのステップをスキップ）。`from == to` の項目は冪等にスキップされ、md への書き込みも `WriteIgnoreRegistry` の登録/解除も行わない（preflight 時の `write_ignore` 健全性 probe は通常通り走る）。一括更新はトランザクション的に処理され、以下の段階で進行する:
+3. revision の checked increment と session-scoped resource identity を preflight する。Revision が `u64::MAX` の場合は task disk read、write-ignore 登録、config/task write を一切行わず typed error を返す
+4. `renames` が指定され、かつ空でない場合、該当するタスクの md ファイルの `status` を一括更新（空配列または未指定の場合はこのステップをスキップ）。`from == to` の項目は冪等にスキップされ、md への書き込みも `WriteIgnoreRegistry` の登録/解除も行わない。一括更新はトランザクション的に処理され、以下の段階で進行する:
    - **(a) pre-read**: 対象 md 全件の原本 bytes をメモリに読み込む。1 件でも読み込み失敗した場合は `RenameReadFailed` を返し、disk を一切変更せず終了する。
-   - **(b) write_ignore 登録**: watcher 起動中 (`is_watcher_installed() == true`) のみ、対象 md のパスを `WriteIgnoreRegistry` に bulk 登録する。watcher 未起動時は登録をスキップ。
-   - **(c) 順次 write**: 各 md の frontmatter `status` を新カラム名に書き換えて atomic write。途中で 1 件でも失敗した場合、書き込み完了済み md を原本 bytes で書き戻し、**rollback が成功した場合に限り** 登録済み write_ignore エントリを解除してから失敗エラーを返す。rollback 自体が失敗した場合は `RenameRollbackFailed` を返し、その時点で early return するため write_ignore の解除は行われない（現状仕様）。
-4. `columns` が指定されている場合、カラム集合を上書きして `config.json` に保存
-5. `doneColumn` が指定されている場合、完了カラム名を更新して `config.json` に保存
-6. `GUIDE.md` を再生成（**best-effort**。書き込み失敗時はログ (WARN + stderr fallback) のみ出力し、`update_columns` 自体は成功扱いとする）
-7. 戻り値なし（更新後の設定が必要な場合は呼び出し側が `get_columns` で取得する）
+   - **(b) write_ignore 登録**: snapshot と同じ `SessionVersion` の active resource から取得した `WriteIgnoreRegistry` へ対象 md のパスを bulk 登録する。
+   - **(c) 順次 write**: 各 md の frontmatter `status` を新カラム名に書き換えて atomic write。途中で 1 件でも失敗した場合、書き込み完了済み md を原本 bytes で書き戻し、rollback の成否にかかわらず登録済み write-ignore entry を best-effort で解除してから失敗エラーを返す。
+5. `columns` / `doneColumn` の変更をまとめた新 config を `config.json` に保存
+6. snapshot の full SessionId + Revision が current の場合だけ、config と tasks を単一 revision commit で resident session へ反映する。disk 後 conflict の扱いは後述の「ProjectSession writer protocol」を参照
+7. `GUIDE.md` を再生成（**best-effort**。書き込み失敗時はログ (WARN + stderr fallback) のみ出力し、`update_columns` 自体は成功扱いとする）
+8. 戻り値なし（更新後の設定が必要な場合は呼び出し側が `get_columns` で取得する）
 
 **エラー**:
 
@@ -505,7 +506,7 @@ links:（任意）
 | config.json シリアライズ失敗 | `serde_json::to_string_pretty` 失敗 | config.json のシリアライズに失敗しました |
 | config.json 書き込み失敗 | atomic write 失敗（権限・ディスク容量等） | config.json の書き込みに失敗しました: {path} |
 
-**rollback 時の副作用**: 失敗時のロールバックは原本 bytes による書き戻しを行い、**rollback が成功した場合のみ** `WriteIgnoreRegistry` への登録解除も併せて実施する。これにより通常の rename 途中失敗パスでは watcher 由来の自己 write イベント抑止状態が残らず、後続の `update_columns` 呼び出しに副作用を残さない。rollback 自体が失敗した場合 (`RenameRollbackFailed`) は early return するため write_ignore の解除は行われない（実装の現状仕様。改修は本 PR スコープ外として別 Issue 化候補）。
+**rollback 時の副作用**: 失敗時のロールバックは原本 bytes による書き戻しを行い、rollback 自体が失敗した場合も含めて、この command が登録した `WriteIgnoreRegistry` entry を best-effort で解除する。解除に失敗しても元の disk/rollback error を上書きしない。
 
 ---
 
@@ -551,9 +552,22 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 
 **並行性**:
 
-- **逐次**呼び出し（前の呼び出しが完了してから次が始まる場合）は、最後の呼び出しの結果が最終的に保存される（後勝ち）。
-- **`open_project` との並行**: 処理開始時に `project_path` と `config` を**両 lock 同時保持下で atomic に snapshot** し、disk write 後の in-memory 更新も**両 lock 同時保持下で `project_path` の一致確認 + `config` 更新の atomic check-and-set** として行う。これにより `open_project` の commit と interleave しても「新 path + 旧 config」を観測する race や、旧プロジェクトの config を新プロジェクトの in-memory state に注入する race は発生しない。snapshot 取得後に project が swap された場合、disk write は旧プロジェクトの `.spec-board/config.json` に対して整合的に完了し、新プロジェクトの in-memory 更新は no-op となる。
-- **同一プロジェクト内での `move_task` 並行**呼び出し時の厳密な整合性は本機能では保証しない。`snapshot_project_and_config` から `replace_config_if_project_matches` までは 2 回の lock 取得に分かれているため、間に別の `move_task` 呼び出しが完了すると、後勝ちの disk 書き込みより前に取得した snapshot で disk が上書きされる race window が残る。本ケースは現状の DnD UX 上の問題が観測されていないため受容しており、将来 `AppState::with_config_mut` のような atomic update helper を導入した時点で改善する。
+- **同一プロジェクト**: exact-root writer gate により command 全体を直列化し、後発は先行 commit 後の fresh snapshot から plan する。古い config/cardOrder snapshot で先行結果を上書きする lost update は起こさない。
+- **`open_project` との並行**: same-root reopen は同じ gate で直列化する。別 root の open は別 gate なので並行できるが、disk 後の full SessionId + Revision CAS が旧 project の state を新 session へ注入することを防ぐ。旧 root への disk write が成功して current session が同じ exact root/session のままなら resync を試み、project switch または same-path reopen 後なら current state を変更せず typed conflict を返す。
+- config と tasks の resident 反映は 1 回の `ProjectSession` commit で行い、「config だけ移動後・tasks は移動前」の部分状態を reader に公開しない。
+
+## ProjectSession writer protocol
+
+`update_columns`、`move_task`、label CRUD、milestone CRUD は
+[ファイルシステム仕様の ProjectSession と並行性契約](./file-system-spec.md#projectsession-と並行性契約)
+に従う。
+
+- 同じ exact raw `ProjectRoot` の writer は command 種別をまたいで 1 本の gate に直列化する。gate 待機後に fresh snapshot を読み直すため、先行 writer の config/registry/task 更新を後発 writer が保持する
+- project switch と same-path reopen は root + SessionId の pre-gate identity 検証で disk I/O 前に拒否し、resident commit は full SessionId + Revision CAS で行う
+- resident validation / target 解決後、store load、task disk read、write-ignore 登録、disk writeより先に revision increment を checked preflight する。revision 枯渇時は disk/store I/O ゼロで session と marker を不変に保つ
+- disk write 成功後に同じ session の revision conflict が判明した場合、同じ非 reentrant gate を再取得せず、operation と同じ injected task I/O / config loader / registry store で current disk state を再読込して CAS resync する
+- resync 成功時も command は元の typed conflict を返す。resync 失敗は warning diagnostic に残すが元の conflict を上書きしない。task/config 系の write-ignore marker は resync 成功時だけ watcher consume 用に残し、失敗時は cleanup する
+- project switch、same-path reopen、resource identity 不一致、revision 枯渇は内部では別々の typed error で保持する。Tauri command 名・引数・成功 payload と既存 validation/I/O error の表示文字列は変更しない
 
 ## エラーハンドリング
 
@@ -598,4 +612,5 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.2 | 2026-07-31 | Issue #453: config/registry writer の project-scoped gate、session revision CAS、revision preflight、disk 後 conflict resync 契約を追加 | - |
 | 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection 契約と `get_milestones.usageCounts` の互換方針を追加 | - |
