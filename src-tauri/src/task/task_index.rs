@@ -302,7 +302,7 @@ impl TaskIndex {
     ///
     /// 自己参照（`parent` が自分自身）は載せない（`children_paths_of` の自己除外と同じ）。
     /// 各 slot を `file_path` 昇順に整列するのは、`self.tasks` の並びが
-    /// `test fixture task snapshot`（`HashMap::values()`）由来で非決定的なため。
+    /// `HashMap::values()` 由来で非決定的なため。
     /// tasks 順をそのまま採用すると payload が実行ごとに揺れる。
     fn build_child_adjacency(&self, index: &HashMap<String, usize>) -> Vec<Vec<usize>> {
         let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); self.tasks.len()];
