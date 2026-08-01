@@ -15,7 +15,6 @@ use spec_board_fs::watcher::handle::WatcherHandle;
 #[cfg(test)]
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
-use crate::config::column_name::ColumnName;
 use crate::project::open::OpenProjectError;
 use crate::project_session::SessionIdentity;
 use crate::state::active_project_resources::StagedProjectResources;
@@ -45,7 +44,6 @@ pub(crate) trait WatcherFactory {
         prepared: Self::Prepared,
         state: &Arc<AppState>,
         identity: SessionIdentity,
-        default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError>;
 }
 
@@ -81,18 +79,10 @@ impl WatcherFactory for TauriWatcherFactory {
         prepared: Self::Prepared,
         state: &Arc<AppState>,
         identity: SessionIdentity,
-        default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let (watcher, rx) = prepared;
-        crate::watcher_event::stage_adapter(
-            &self.app,
-            default_status,
-            Arc::clone(state),
-            identity,
-            watcher,
-            rx,
-        )
-        .map_err(|source| OpenProjectError::WatcherInitFailed { source })
+        crate::watcher_event::stage_adapter(&self.app, Arc::clone(state), identity, watcher, rx)
+            .map_err(|source| OpenProjectError::WatcherInitFailed { source })
     }
 }
 
@@ -129,7 +119,6 @@ impl WatcherFactory for NoopWatcherFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let activation_state = pending_activation_state();
         let worker_state = Arc::clone(&activation_state);

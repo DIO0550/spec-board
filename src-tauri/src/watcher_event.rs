@@ -39,7 +39,6 @@ use std::thread::{self, JoinHandle};
 
 use tauri::{AppHandle, Emitter};
 
-use crate::config::column_name::ColumnName;
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{SessionId, SessionIdentity};
 use crate::state::active_project_resources::{
@@ -107,7 +106,6 @@ pub(crate) fn prepare_watcher(root: &Path) -> Result<(Watcher, Receiver<FsEvent>
 /// resources は resident state に一切入らない。
 pub(crate) fn stage_adapter(
     app: &AppHandle,
-    _default_status: ColumnName,
     state: Arc<AppState>,
     identity: SessionIdentity,
     watcher: Watcher,

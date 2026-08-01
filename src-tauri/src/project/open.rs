@@ -296,12 +296,7 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     );
     let session_id = state.reserve_session_id()?;
     let candidate = prepared_session.into_session(session_id);
-    let staged = watcher.stage_paused(
-        prepared_watcher,
-        state,
-        candidate.identity(),
-        default_status,
-    )?;
+    let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
 
     write_guide_markdown_best_effort(root, &config);
 

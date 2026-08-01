@@ -2,7 +2,6 @@ use super::{
     open_project_impl, open_project_impl_with_reporter, OpenProjectError, OpenProjectPayload,
 };
 
-use crate::config::column_name::ColumnName;
 use crate::config::{CardOrder, Column, Config};
 use crate::project::watcher_factory::{NoopWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
@@ -139,7 +138,6 @@ impl WatcherFactory for FailingPrepareFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         _identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         panic!("stage should not be invoked when prepare fails");
     }
@@ -163,7 +161,6 @@ impl WatcherFactory for CountingFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let stop_calls = Arc::clone(&self.stop_calls);
         let state = Arc::clone(&self.state);
@@ -236,7 +233,6 @@ impl WatcherFactory for PanickingStopFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         stage_test_resources(identity, || {}, || panic!("watcher stop panic for test"))
     }
@@ -269,7 +265,6 @@ impl WatcherFactory for FailingStageFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         _identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         Err(OpenProjectError::WatcherInitFailed {
             source: WatcherError::Init("synthetic stage failure".to_owned()),
@@ -291,7 +286,6 @@ impl WatcherFactory for IdentityMismatchFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let wrong_id =
             crate::project_session::SessionId::from_raw(identity.version().session_id.as_u64() + 1);
@@ -325,7 +319,6 @@ impl WatcherFactory for ActivationProbeFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let activation_state = pending_activation_state();
         let worker_state = Arc::clone(&activation_state);
@@ -381,7 +374,6 @@ impl WatcherFactory for BlockingStopFactory {
         _prepared: (),
         _state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let stop_started = self.stop_started.clone();
         let release_stop = self
@@ -1852,7 +1844,6 @@ impl WatcherFactory for EmittingOnActivationFactory {
         _prepared: (),
         state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let state = Arc::clone(state);
         let completed = self.completed.clone();
@@ -1892,7 +1883,6 @@ impl WatcherFactory for GenerationProbeFactory {
         _prepared: (),
         state: &Arc<AppState>,
         identity: SessionIdentity,
-        _default_status: ColumnName,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         let observed = Arc::clone(&self.observed);
         let completed = self.completed.clone();
