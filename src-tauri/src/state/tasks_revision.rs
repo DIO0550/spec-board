@@ -1,10 +1,8 @@
 //! `tasks_cache` の改訂番号を表す Value Object。
 //!
-//! cache を変更する 3 アクセサ（`with_tasks_cache_mut` / `replace_tasks_cache` /
-//! `replace_config_and_tasks_if_project_matches`）の内部で +1 される。
-//! **project を跨いで単調増加し、リセットしない**。リセットすると project の
-//! 往復で同じ値が再出現し、FE が新しい cache を古い cache と誤判定する ABA に
-//! なる。
+//! この VO は旧 wire 形状との互換 adapter であり、resident の版管理は
+//! `ProjectSession` の session-local `SessionRevision` が担う。
+//! session-local revision は SessionId と組み合わせて project switch を識別する。
 //!
 //! [`super::event_seq::EventSeq`] との役割分担: 本 VO は「cache の版」であり、
 //! emit を伴わない mutation でも進む。したがって**連番の欠落判定には使えない**。

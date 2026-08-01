@@ -4,14 +4,14 @@
 //! 削除前に「そのラベルを使っているタスク件数」を算出して payload で返す。usageCount > 0
 //! でも削除は実行し、タスク frontmatter（`task.labels`）は一切変更しない。
 //!
-//! 使用数は「削除前に何件で使われていたか」という操作結果のため、`snapshot_label_delete`
+//! 使用数は「削除前に何件で使われていたか」という操作結果のため、`coherent session snapshot`
 //! で labels と tasks を整合した 1 回の観測から算出する（`get_labels` の eventual-consistent な
 //! 集計とは異なる）。
 //!
 //! # ロック取得順序
 //!
-//! `project_path → labels → tasks_cache`（preflight `check_labels_lock` + `check_tasks_cache_lock`、
-//! `snapshot_label_delete`、`replace_labels_if_project_matches`）。
+//! `writer gate → session snapshot → tasks_cache`（preflight `check_labels_lock` + `check_tasks_cache_lock`、
+//! `coherent session snapshot`、`expected SessionId + revision CAS commit`）。
 //!
 //! # エラー文字列の契約
 //!
@@ -27,7 +27,9 @@ use thiserror::Error;
 use crate::config::{
     label_registry_store, DeleteLabelPlanError, LabelRegistryStore, SaveLabelsError,
 };
-use crate::state::{AppState, AppStateError};
+use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
+use crate::project_session::SessionIdentity;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 use crate::task::task_index::TaskIndex;
 
 /// `delete_label` コマンドの引数。
@@ -59,11 +61,23 @@ pub enum DeleteLabelError {
     /// labels.yml への保存失敗。
     #[error(transparent)]
     Save(#[from] SaveLabelsError),
+    /// project session writer protocolの失敗。
+    #[error(transparent)]
+    SessionWrite(SessionWriteError),
 }
 
 impl From<AppStateError> for DeleteLabelError {
     fn from(_: AppStateError) -> Self {
         DeleteLabelError::StateLockPoisoned
+    }
+}
+impl From<SessionWriteError> for DeleteLabelError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            error => Self::SessionWrite(error),
+        }
     }
 }
 
@@ -79,36 +93,58 @@ pub fn delete_label(
 /// 単体テスト境界の本体関数。
 ///
 /// 1. preflight: `check_labels_lock` + `check_tasks_cache_lock`（副作用前の lock 健全性確認）
-/// 2. snapshot: `snapshot_label_delete` で `project_path` / `labels` / `tasks` を整合取得
+/// 2. snapshot: `coherent session snapshot` で `project_path` / `labels` / `tasks` を整合取得
 /// 3. 削除前 usageCount を `TaskIndex::label_usage_counts` から算出（frontmatter 不変のため
 ///    削除後も同値）
 /// 4. plan: `plan_delete_label`（不在なら `NotFound`）
 /// 5. write: `store.save`
-/// 6. commit: `replace_labels_if_project_matches`
+/// 6. commit: `expected SessionId + revision CAS commit`
 pub(crate) fn delete_label_impl(
     state: &AppState,
     args: DeleteLabelArgs,
 ) -> Result<DeleteLabelPayload, DeleteLabelError> {
-    state.check_labels_lock()?;
-    state.check_tasks_cache_lock()?;
-    let ctx = state.snapshot_label_delete()?;
-    let project_root = ctx.project_root.ok_or(DeleteLabelError::NoProjectOpen)?;
-    let registry = ctx.labels.ok_or(DeleteLabelError::NoProjectOpen)?;
+    let target = state
+        .active_session_identity()
+        .map_err(SessionWriteError::from)?;
+    let store = label_registry_store(target.project_root().as_path());
+    delete_label_impl_with_store(state, &target, &store, args)
+}
 
-    // 削除前の使用数（タスク単位・完全一致）。task 集約へ委譲する。
-    let usage_count = TaskIndex::new(ctx.tasks)
-        .label_usage_counts()
-        .get(&args.name)
-        .copied()
-        .unwrap_or(0);
+pub(crate) fn delete_label_impl_with_store(
+    state: &AppState,
+    target: &SessionIdentity,
+    store: &dyn LabelRegistryStore,
+    args: DeleteLabelArgs,
+) -> Result<DeleteLabelPayload, DeleteLabelError> {
+    state.with_project_writer_lease_for(target, |snapshot| {
+        let usage_count = TaskIndex::new(snapshot.tasks().values().cloned().collect())
+            .label_usage_counts()
+            .get(&args.name)
+            .copied()
+            .unwrap_or(0);
+        let next = snapshot.labels().plan_delete_label(&args.name)?;
+        let _resources = state.preflight_session_write(snapshot)?;
+        store.save(&next)?;
 
-    let next = registry.plan_delete_label(&args.name)?;
-
-    let store = label_registry_store(&project_root);
-    store.save(&next)?;
-
-    state.replace_labels_if_project_matches(&project_root, next)?;
-    Ok(DeleteLabelPayload { usage_count })
+        let commit = state.commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_labels(next);
+        });
+        match commit {
+            Ok(_) => Ok(DeleteLabelPayload { usage_count }),
+            Err(SessionWriteError::Conflict(conflict)) => {
+                if let Err(recovery) = resync_if_same_project_under_lease(
+                    state,
+                    target.project_root(),
+                    &conflict,
+                    ResyncSource::Labels { store },
+                ) {
+                    log::warn!("delete_label conflict recovery failed: {recovery}");
+                }
+                Err(SessionWriteError::Conflict(conflict).into())
+            }
+            Err(error) => Err(error.into()),
+        }
+    })
 }
 
 #[cfg(test)]

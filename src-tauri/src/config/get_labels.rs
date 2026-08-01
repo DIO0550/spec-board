@@ -14,10 +14,6 @@
 //! task 集約 [`TaskIndex::label_usage_counts`] に委譲し、依存方向を label/config → task の
 //! 一方向に保つ。
 //!
-//! # ロック取得順序
-//!
-//! `labels`（先）→ `tasks_cache`（後）の順で取得する（AppState の lock 契約に従う）。
-//!
 //! # エラー文字列の契約
 //!
 //! - `NoProjectOpen` の Display は `"プロジェクトが開かれていません"`（`get_columns` と一致）
@@ -86,13 +82,14 @@ pub fn get_labels(state: State<'_, Arc<AppState>>) -> Result<GetLabelsPayload, S
 /// - `AppState.labels` が `None` の場合 `GetLabelsError::NoProjectOpen`
 /// - `labels` / `tasks_cache` の `Mutex` が poison している場合 `GetLabelsError::StateLockPoisoned`
 pub(crate) fn get_labels_impl(state: &AppState) -> Result<GetLabelsPayload, GetLabelsError> {
-    // lock 取得順序契約: labels（先）→ tasks_cache（後）。
-    let registry = state.labels()?.ok_or(GetLabelsError::NoProjectOpen)?;
-    let tasks = state.tasks_snapshot()?;
+    let snapshot = state
+        .session_snapshot()?
+        .ok_or(GetLabelsError::NoProjectOpen)?;
+    let tasks = snapshot.tasks().values().cloned().collect();
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
     let usage_counts = TaskIndex::new(tasks).label_usage_counts();
     Ok(GetLabelsPayload {
-        labels: registry.labels,
+        labels: snapshot.labels().labels.clone(),
         usage_counts,
     })
 }

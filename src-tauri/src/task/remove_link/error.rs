@@ -7,7 +7,8 @@
 
 use thiserror::Error;
 
-use crate::state::AppStateError;
+use crate::project_session::{RevisionExhausted, SessionConflict};
+use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::io::TaskIoError;
 use crate::task::task_content::TaskContentError;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
@@ -46,6 +47,24 @@ pub enum RemoveLinkCommandError {
     WriteIgnore(#[from] WriteIgnoreError),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    SessionConflict(#[from] SessionConflict),
+    #[error(transparent)]
+    RevisionExhausted(#[from] RevisionExhausted),
+    #[error(transparent)]
+    ResourceConflict(#[from] SessionResourceConflict),
+}
+
+impl From<SessionWriteError> for RemoveLinkCommandError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(error) => Self::AppState(error),
+            SessionWriteError::Conflict(error) => Self::SessionConflict(error),
+            SessionWriteError::RevisionExhausted(error) => Self::RevisionExhausted(error),
+            SessionWriteError::ResourceConflict(error) => Self::ResourceConflict(error),
+        }
+    }
 }
 
 impl From<TaskIoError> for RemoveLinkCommandError {

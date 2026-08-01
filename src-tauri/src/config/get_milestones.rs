@@ -1,17 +1,17 @@
 //! `get_milestones` Tauri command 本体。
 //!
-//! `AppState.milestones` に commit 済みの `MilestoneRegistry` からマイルストーン定義一覧を
-//! 取得し、各マイルストーンの使用数（`tasks_cache` から算出）と合わせて FE の表示用 payload
+//! `session_snapshot()` から同じ revision の `MilestoneRegistry` と tasks を取得し、
+//! 各マイルストーンの使用数と合わせて FE の表示用 payload
 //! として返す読み取り専用 command。`get_labels` と同型の 3 段構成（payload 型 +
 //! `#[tauri::command]` 薄層 + `_impl`）を採用する。
 //!
 //! payload は milestones.yml の定義順をそのまま保持する（並べ替えない）。milestones.yml
-//! 不在（= 空レジストリ）でも `Ok(空配列)` を返す。プロジェクト未オープン（`milestones` が
-//! `None`）のときのみ `NoProjectOpen`。
+//! 不在（= 空レジストリ）でも `Ok(空配列)` を返す。プロジェクト未オープンのときのみ
+//! `NoProjectOpen`。
 //!
 //! 使用数集計は task 集約 [`TaskIndex::milestone_usage_counts`] に委譲し、依存方向を
-//! milestone/config → task の一方向に保つ。`snapshot_milestone_delete` で milestones と tasks を
-//! 整合した 1 回の観測から算出する。
+//! milestone/config → task の一方向に保つ。同じ session snapshot の milestones と tasks を
+//! 1 回の観測から算出する。
 //!
 //! # エラー文字列の契約
 //!
@@ -71,13 +71,14 @@ pub fn get_milestones(state: State<'_, Arc<AppState>>) -> Result<GetMilestonesPa
 pub(crate) fn get_milestones_impl(
     state: &AppState,
 ) -> Result<GetMilestonesPayload, GetMilestonesError> {
-    // milestones と tasks を整合 snapshot で取得（usage 算出のため）。
-    let ctx = state.snapshot_milestone_delete()?;
-    let registry = ctx.milestones.ok_or(GetMilestonesError::NoProjectOpen)?;
+    let snapshot = state
+        .session_snapshot()?
+        .ok_or(GetMilestonesError::NoProjectOpen)?;
+    let tasks = snapshot.tasks().values().cloned().collect();
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
-    let usage_counts = TaskIndex::new(ctx.tasks).milestone_usage_counts();
+    let usage_counts = TaskIndex::new(tasks).milestone_usage_counts();
     Ok(GetMilestonesPayload {
-        milestones: registry.milestones,
+        milestones: snapshot.milestones().milestones.clone(),
         usage_counts,
     })
 }

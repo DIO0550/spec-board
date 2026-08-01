@@ -8,7 +8,7 @@
 //!
 //! # ロック取得順序
 //!
-//! `project_path → labels`（`snapshot_label_write` / `replace_labels_if_project_matches`）。
+//! `writer gate → session snapshot`（`coherent session snapshot` / `expected SessionId + revision CAS commit`）。
 //!
 //! # エラー文字列の契約
 //!
@@ -25,7 +25,9 @@ use crate::config::{
     label_registry_store, Clock, LabelColor, LabelGroup, LabelRegistryStore, SaveLabelsError,
     SystemClock, UpdateLabelIntent, UpdateLabelPlanError,
 };
-use crate::state::{AppState, AppStateError};
+use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
+use crate::project_session::SessionIdentity;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 
 /// `update_label` コマンドの引数。FE は全フィールドを camelCase で送る（PUT）。
 #[derive(Debug, Clone, Deserialize)]
@@ -65,11 +67,24 @@ pub enum UpdateLabelError {
     /// labels.yml への保存失敗。
     #[error(transparent)]
     Save(#[from] SaveLabelsError),
+    /// project session writer protocolの失敗。
+    #[error(transparent)]
+    SessionWrite(SessionWriteError),
 }
 
 impl From<AppStateError> for UpdateLabelError {
     fn from(_: AppStateError) -> Self {
         UpdateLabelError::StateLockPoisoned
+    }
+}
+
+impl From<SessionWriteError> for UpdateLabelError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            error => Self::SessionWrite(error),
+        }
     }
 }
 
@@ -85,19 +100,45 @@ pub(crate) fn update_label_impl(
     args: UpdateLabelArgs,
     clock: &dyn Clock,
 ) -> Result<(), UpdateLabelError> {
-    state.check_labels_lock()?;
-    let ctx = state.snapshot_label_write()?;
-    let project_root = ctx.project_root.ok_or(UpdateLabelError::NoProjectOpen)?;
-    let registry = ctx.labels.ok_or(UpdateLabelError::NoProjectOpen)?;
+    let target = state
+        .active_session_identity()
+        .map_err(SessionWriteError::from)?;
+    let store = label_registry_store(target.project_root().as_path());
+    update_label_impl_with_store(state, &target, &store, args, clock)
+}
 
-    let intent: UpdateLabelIntent = args.into();
-    let next = registry.plan_update_label(intent, clock)?;
+pub(crate) fn update_label_impl_with_store(
+    state: &AppState,
+    target: &SessionIdentity,
+    store: &dyn LabelRegistryStore,
+    args: UpdateLabelArgs,
+    clock: &dyn Clock,
+) -> Result<(), UpdateLabelError> {
+    state.with_project_writer_lease_for(target, |snapshot| {
+        let intent: UpdateLabelIntent = args.into();
+        let next = snapshot.labels().plan_update_label(intent, clock)?;
+        let _resources = state.preflight_session_write(snapshot)?;
+        store.save(&next)?;
 
-    let store = label_registry_store(&project_root);
-    store.save(&next)?;
-
-    state.replace_labels_if_project_matches(&project_root, next)?;
-    Ok(())
+        let commit = state.commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_labels(next);
+        });
+        match commit {
+            Ok(_) => Ok(()),
+            Err(SessionWriteError::Conflict(conflict)) => {
+                if let Err(recovery) = resync_if_same_project_under_lease(
+                    state,
+                    target.project_root(),
+                    &conflict,
+                    ResyncSource::Labels { store },
+                ) {
+                    log::warn!("update_label conflict recovery failed: {recovery}");
+                }
+                Err(SessionWriteError::Conflict(conflict).into())
+            }
+            Err(error) => Err(error.into()),
+        }
+    })
 }
 
 #[cfg(test)]

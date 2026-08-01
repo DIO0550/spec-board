@@ -48,20 +48,16 @@ pub(crate) fn preview_task_filename_impl(
     state: &AppState,
     args: PreviewTaskFilenameArgs,
 ) -> Result<PreviewTaskFilenamePayload, PreviewTaskFilenameError> {
-    state.check_tasks_cache_lock()?;
-
-    let project_root = match state.project_path()? {
-        Some(p) => p,
-        None => {
-            return Ok(PreviewTaskFilenamePayload::Pending);
-        }
+    let Some(snapshot) = state.session_snapshot()? else {
+        return Ok(PreviewTaskFilenamePayload::Pending);
     };
 
-    let snapshot = state.tasks_snapshot()?;
-    let index = TaskIndex::from(snapshot);
-    let outcome = index.plan_preview_filename(&project_root, &args);
+    let project_root = snapshot.project_root().as_path();
+    let tasks = snapshot.tasks().values().cloned().collect();
+    let index = TaskIndex::new(tasks);
+    let outcome = index.plan_preview_filename(project_root, &args);
 
-    Ok(outcome.into_payload(&project_root))
+    Ok(outcome.into_payload(project_root))
 }
 
 #[cfg(test)]

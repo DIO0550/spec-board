@@ -1,5 +1,6 @@
 pub mod config;
 pub mod project;
+pub mod project_session;
 pub mod state;
 pub mod task;
 pub mod watcher_event;

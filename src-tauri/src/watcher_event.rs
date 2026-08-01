@@ -7,9 +7,9 @@
 //! - `prepare_watcher(root)`: `Watcher::start` を呼んで `(Watcher, Receiver)`
 //!   を確保するだけ。`open_project_impl` の AppState commit より前に
 //!   実行される 1 段目。
-//! - `spawn_adapter(app, root, config, state, watcher, rx)`: 既に確保済みの
-//!   watcher / rx から adapter スレッドを spawn し、`EmittingWatcherHandle` を
-//!   返す 2 段目。spawn は panic 以外で失敗しない。
+//! - `stage_adapter(...)`: 既に確保済みの watcher / rx から adapter thread と
+//!   handle を fallible に構築する。worker は activation latch が `Pending` の
+//!   間 park し、open swap が `Active` にするまで event を処理しない。
 //! - `handler::handle_event`: 1 件の `FsEvent` を処理する純粋関数。テストは
 //!   ここに対して書く。
 //! - `handler::run_event_loop`: adapter スレッド本体。`Receiver::recv` を
@@ -22,7 +22,7 @@
 //! 2. adapter スレッドを `join` する
 //!
 //! の 2 段で同期的に停止する。`stop()` は冪等で `AppState` の lock を
-//! 一切取得しない（`watcher_handle` 取得中の deadlock を防ぐ）。
+//! 一切取得しない（displaced stop 中の deadlock を防ぐ）。
 
 pub(crate) mod envelope;
 #[cfg(test)]
@@ -32,7 +32,7 @@ pub(crate) mod handler;
 #[cfg(test)]
 mod tests;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -40,32 +40,29 @@ use std::thread::{self, JoinHandle};
 use tauri::{AppHandle, Emitter};
 
 use crate::config::column_name::ColumnName;
-use crate::config::Config;
-use crate::state::project_generation::ProjectGeneration;
-use crate::state::project_key::ProjectKey;
-use crate::state::AppState;
+use crate::project::project_root::ProjectRoot;
+use crate::project_session::{SessionId, SessionIdentity};
+use crate::state::active_project_resources::{
+    pending_activation_state, wait_for_activation, StagedProjectResources, WatcherActivation,
+};
+use crate::state::{AppState, BoxedWatcherHandle};
 use crate::task::io::{FsTaskIo, TaskIo};
-use crate::task::parse::default_status_for;
 use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
 use spec_board_fs::watcher::handle::WatcherHandle;
+use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
 /// emit の抽象化（本番 = `AppHandle::emit`、テスト = Vec push）。
 pub(crate) type EmitFn = Box<dyn Fn(&str, serde_json::Value) + Send + Sync + 'static>;
 
 /// adapter スレッドが共有する不変コンテキスト。
 pub(crate) struct AdapterContext {
-    pub(crate) root: PathBuf,
-    pub(crate) default_status: ColumnName,
+    pub(crate) project_root: ProjectRoot,
+    pub(crate) session_id: SessionId,
     pub(crate) state: Arc<AppState>,
     pub(crate) emit: EmitFn,
     /// MD ファイル I/O ポート。`handle_upsert` の `fs::read` を本 port 経由に
     /// 置換することで、effect 層から `std::fs::*` の直接呼び出しを排除する。
     pub(crate) io: Arc<dyn TaskIo>,
-    /// この adapter が担当する project の識別子（envelope に載せる）。
-    pub(crate) project_key: ProjectKey,
-    /// spawn 時点の watcher 世代。`AppState` の現行値と一致しない場合、
-    /// この adapter は旧世代なので一切 emit しない。
-    pub(crate) generation: ProjectGeneration,
 }
 
 /// 実 `WatcherHandle` 実装。Watcher Drop + adapter join を内包する。
@@ -73,7 +70,7 @@ pub(crate) struct AdapterContext {
 /// `watcher` が `Some` のうちは notify バックエンドの送信側が生きている。
 /// `stop()` で `watcher` を drop して送信側を切断したのち adapter スレッドを
 /// join することで、同期的に停止が完了する。
-pub struct EmittingWatcherHandle {
+pub(crate) struct EmittingWatcherHandle {
     watcher: Option<Watcher>,
     join: Option<JoinHandle<()>>,
 }
@@ -103,68 +100,71 @@ pub(crate) fn prepare_watcher(root: &Path) -> Result<(Watcher, Receiver<FsEvent>
     Watcher::start(root)
 }
 
-/// `open_project_impl` の **AppState commit 完了後**に呼び出される 2 段目。
+/// `open_project_impl` の **AppState swap 前**に呼び出される 2 段目。
 ///
-/// 確保済みの `(watcher, rx)` から adapter スレッドを spawn し、実
-/// `EmittingWatcherHandle` を組み立てる。spawn は panic 以外で失敗しないため
-/// 戻り値は `EmittingWatcherHandle` 直接。
-pub(crate) fn spawn_adapter(
+/// thread/handle/registry をすべて構築するが、worker は activation latch で park
+/// する。thread spawn が失敗した場合は `WatcherError::Io` を返し、candidate
+/// resources は resident state に一切入らない。
+pub(crate) fn stage_adapter(
     app: &AppHandle,
-    root: &Path,
-    config: &Config,
+    _default_status: ColumnName,
     state: Arc<AppState>,
+    identity: SessionIdentity,
     watcher: Watcher,
     rx: Receiver<FsEvent>,
-) -> EmittingWatcherHandle {
+) -> Result<StagedProjectResources, WatcherError> {
     let app_for_emit = app.clone();
     let emit: EmitFn = Box::new(move |event, payload| {
         if let Err(err) = app_for_emit.emit(event, payload) {
             log::warn!("failed to emit `{event}`: {err}");
         }
     });
-    // generation は commit 側（install_project_session）で spawn より前に bump
-    // 済み。ここで読むことで `WatcherFactory::spawn` の trait シグネチャを変えずに
-    // 世代を焼き込める。
-    //
-    // 前提: **`open_project` は同時実行されない**（FE の dialog ガードと単一
-    // ウィンドウ構成による）。同時 open が起きると、ここで読む値が
-    // `install_project_session` の返した session の generation より進んでいて
-    // 両者がずれる。trait シグネチャを変えない代償としてこの前提を受容しており、
-    // 前提が崩れる変更（複数ウィンドウ対応等）を入れる際は spawn へ generation を
-    // 引数で渡す形に改めること。
-    let generation = state.project_generation();
     let ctx = AdapterContext {
-        root: root.to_path_buf(),
-        default_status: default_status_for(config),
-        project_key: ProjectKey::from_root(root),
-        generation,
+        project_root: identity.project_root().clone(),
+        session_id: identity.version().session_id,
         state,
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
     };
-    spawn_adapter_with_ctx(watcher, rx, ctx)
+    stage_adapter_with_ctx(watcher, rx, ctx, identity)
 }
 
-/// 既に組み立て済みの `AdapterContext` から adapter スレッドを spawn する。
-/// テストでは emit を Vec push スタブにした context を渡すために直接呼ぶ。
-pub(crate) fn spawn_adapter_with_ctx(
+/// 既に組み立て済みの context から paused adapter resources を stage する。
+pub(crate) fn stage_adapter_with_ctx(
     watcher: Watcher,
     rx: Receiver<FsEvent>,
     ctx: AdapterContext,
-) -> EmittingWatcherHandle {
-    let join = thread::spawn(move || {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            handler::run_event_loop(rx, ctx);
-        }));
-        if let Err(payload) = result {
-            let msg = panic_payload_string(&payload);
-            log::error!("watcher_event adapter thread panicked: {msg}");
-        }
-    });
-    EmittingWatcherHandle {
+    identity: SessionIdentity,
+) -> Result<StagedProjectResources, WatcherError> {
+    let activation_state = pending_activation_state();
+    let worker_state = Arc::clone(&activation_state);
+    let join = thread::Builder::new()
+        .name("spec-board-watcher-adapter".to_owned())
+        .spawn(move || {
+            if !wait_for_activation(worker_state.as_ref()) {
+                return;
+            }
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                handler::run_event_loop(rx, ctx);
+            }));
+            if let Err(payload) = result {
+                let msg = panic_payload_string(&payload);
+                log::error!("watcher_event adapter thread panicked: {msg}");
+            }
+        })
+        .map_err(WatcherError::Io)?;
+    let activation = WatcherActivation::new(activation_state, join.thread().clone());
+    let handle = EmittingWatcherHandle {
         watcher: Some(watcher),
         join: Some(join),
-    }
+    };
+
+    Ok(StagedProjectResources::new(
+        identity,
+        Box::new(handle) as BoxedWatcherHandle,
+        activation,
+        Arc::new(WriteIgnoreRegistry::new()),
+    ))
 }
 
 /// `catch_unwind` payload を可能な範囲で文字列化する。

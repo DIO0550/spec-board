@@ -1,12 +1,13 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::State;
 
 use super::args::DeleteTaskArgs;
 use super::error::{DeleteTaskCommandError, DeleteTaskError};
+use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
+use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::TaskIndex;
 
 /// `delete_task` Tauri command 薄層。
@@ -18,62 +19,49 @@ pub fn delete_task(state: State<'_, Arc<AppState>>, args: DeleteTaskArgs) -> Res
 }
 
 /// `delete_task` の effect 層本体（テスト境界）。
-///
-/// I/O は `TaskIo` port 経由で実行し、`state.rs` が定める lock 取得順序契約
-/// (project_path -> tasks_cache -> watcher_handle -> write_ignore) を維持する。
 pub(crate) fn delete_task_impl(
     state: &AppState,
     io: &dyn TaskIo,
     args: DeleteTaskArgs,
 ) -> Result<(), DeleteTaskCommandError> {
-    state.check_tasks_cache_lock()?;
-    let _ = state.write_ignore().is_empty()?;
+    state.with_project_writer_lease(|target, snapshot| -> Result<(), DeleteTaskCommandError> {
+        let project_root = snapshot.project_root();
+        let intent = args.into_intent(project_root.as_path())?;
+        let rel_path = intent.file_path;
+        let abs = project_root.as_path().join(&rel_path);
+        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let deleted_file_path = index
+            .find_by_path(&rel_path)
+            .map(|task| task.file_path.clone())
+            .ok_or_else(|| DeleteTaskError::FileNotFound(abs.clone()))?;
+        index.plan_delete_abort(&rel_path.to_string_lossy())?;
 
-    let project_root = state
-        .project_path()?
-        .ok_or(DeleteTaskCommandError::NoProjectOpen)?;
+        let mut next_tasks = snapshot.tasks().clone();
+        next_tasks.retain(|_, task| task.file_path != deleted_file_path);
+        let resources = state.preflight_session_write(snapshot)?;
+        let registered_paths = vec![abs.clone()];
+        resources.write_ignore().register(&abs)?;
 
-    let intent = args.into_intent(project_root.as_path())?;
-    let rel_path = intent.file_path;
-    let abs = project_root.join(&rel_path);
-
-    let snapshot = state.tasks_snapshot()?;
-    let index = TaskIndex::from(snapshot);
-    if index.find_by_path(&rel_path).is_none() {
-        return Err(DeleteTaskError::FileNotFound(abs).into());
-    }
-    let rel_str = rel_path.to_string_lossy();
-    index.plan_delete_abort(&rel_str)?;
-
-    let watcher_active = state.is_watcher_installed()?;
-
-    if watcher_active {
-        state.write_ignore().register(&abs)?;
-    }
-
-    if let Err(err) = io.remove(&abs) {
-        if watcher_active {
-            let _ = state.write_ignore().unregister(&abs);
+        if let Err(error) = io.remove(&abs) {
+            cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+            let crate::task::io::TaskIoError::Io(ref source) = error;
+            if source.kind() == std::io::ErrorKind::NotFound {
+                return Err(DeleteTaskError::FileNotFound(abs).into());
+            }
+            return Err(error.into());
         }
-        let crate::task::io::TaskIoError::Io(ref e) = err;
-        if e.kind() == std::io::ErrorKind::NotFound {
-            return Err(DeleteTaskError::FileNotFound(abs).into());
-        }
-        return Err(err.into());
-    }
 
-    let cache_key: PathBuf = rel_path;
-    let result = state.with_tasks_cache_mut(|cache| {
-        cache.remove(&cache_key);
-    });
-    if let Err(err) = result {
-        if watcher_active {
-            let _ = state.write_ignore().unregister(&abs);
-        }
-        return Err(err.into());
-    }
-
-    Ok(())
+        commit_or_resync_under_lease(
+            state,
+            target.project_root(),
+            &snapshot.identity(),
+            &resources,
+            &registered_paths,
+            ResyncSource::Tasks { task_io: io },
+            "delete_task",
+            move |session| session.replace_tasks(next_tasks),
+        )
+    })
 }
 
 #[cfg(test)]

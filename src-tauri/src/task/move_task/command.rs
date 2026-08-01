@@ -6,9 +6,9 @@
 //!
 //! # ロック取得順序
 //!
-//! `AppState` の lock 契約 `project_path → config → tasks_cache → watcher_handle →
-//! write_ignore` に従う。`snapshot_project_and_config` で前半 2 つを同時保持して
-//! snapshot し、その後 `tasks_snapshot` → `write_ignore` の順に進む。
+//! exact `ProjectRoot` writer gate → coherent session snapshot → resource/revision
+//! preflight → disk writes → expected SessionId + revision の CAS commit の順に進む。
+//! state lock は snapshot/commit の短い区間だけ保持し、disk I/O 中は解放する。
 //!
 //! # 書き込みの原子性
 //!
@@ -21,16 +21,18 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
 
-use spec_board_fs::config::config_io::write_config_json;
+use spec_board_fs::config::config_io::{self, ConfigIoError};
 use tauri::State;
 
-use crate::config::Config;
+use crate::config::{load_or_default, Config, ConfigWriter, FsConfigWriter, LoadConfigError};
+use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::move_task::args::MoveTaskArgs;
-use crate::task::move_task::error::MoveTaskCommandError;
+use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
 use crate::task::parse::default_status_for;
+use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::{MoveTaskIntent, MoveTaskOutcome, Task, TaskIndex};
 
 /// `move_task` Tauri command 薄層。
@@ -39,173 +41,268 @@ pub fn move_task(state: State<'_, Arc<AppState>>, args: MoveTaskArgs) -> Result<
     move_task_impl(state.inner().as_ref(), &FsTaskIo, args).map_err(|e| e.to_string())
 }
 
-/// effect 層本体（テスト境界）。
+/// effect 層本体（既存テスト境界）。
 pub(crate) fn move_task_impl(
     state: &AppState,
     io: &dyn TaskIo,
     args: MoveTaskArgs,
 ) -> Result<Task, MoveTaskCommandError> {
-    // `project_path` と `config` を atomic に snapshot して、`open_project` の
-    // 両者更新の間に割り込んで「新 path + 旧 config」を観測する race を防ぐ。
-    let (project_root, config) = state.snapshot_project_and_config()?;
-    let project_root = project_root.ok_or(MoveTaskCommandError::NoProjectOpen)?;
-    let config = config.ok_or(MoveTaskCommandError::NoProjectOpen)?;
-
-    let intent = args.into_intent(project_root.as_path())?;
-    ensure_column_exists(&config, &intent.from_column)?;
-    ensure_column_exists(&config, &intent.to_column)?;
-
-    let rel_path = intent.file_path.clone();
-    let abs = project_root.join(&rel_path);
-
-    // cache 全体を clone すると DnD 1 回ごとに全 task の本文までコピーすることになる。
-    // 対象 1 件だけを lock 内で引き当てて clone する。
-    let existing = state
-        .with_tasks_cache(|cache| TaskIndex::find_in_cache(cache, rel_path.as_path()).cloned())?
-        .ok_or_else(|| MoveTaskCommandError::TaskNotFound {
-            path: rel_path.to_string_lossy().into_owned(),
-        })?;
-
-    // 同一カラム並び替えでも md を読むのは、status 一致検証と cross/same 判定の
-    // 両方を aggregate (`plan_move`) に委ねているため。effect 層側で from == to を
-    // 先に判定して読み飛ばすと、stale な status のまま cardOrder だけが書き換わる。
-    let original_bytes = io
-        .read(&abs)
-        .map_err(|e| MoveTaskCommandError::TaskIoRead(e.to_string()))?;
-    let parsed = frontmatter::parse_bytes(&original_bytes)
-        .map_err(|e| MoveTaskCommandError::ParseFailed(e.to_string()))?
-        .ok_or_else(|| {
-            MoveTaskCommandError::ParseFailed("no frontmatter delimiter found".to_string())
-        })?;
-
-    // `plan_move` は移動対象 1 件の不変条件だけを見る（`plan_update` の parent 階層検証と
-    // 違って兄弟 task を参照しない）ため、aggregate は対象 1 件から組み立てる。
-    let index = TaskIndex::new(vec![existing.clone()]);
-    // md の `status:` が欠落 / 非文字列のときの実効 status は scan 時と同じ既定値になる。
-    // 既定値の決定は Config のドメインなので effect 層で解決し、値だけを aggregate に渡す。
-    let scan_default_status = default_status_for(&config);
-    let outcome = index.plan_move(&intent, &existing, parsed, scan_default_status.as_str())?;
-
-    match outcome {
-        MoveTaskOutcome::SameColumn { existing_task } => {
-            let next_config = plan_destination_card_order(
-                &config,
-                &project_root,
-                &intent,
-                existing.file_path.as_str(),
-            )?;
-            write_and_commit_config(state, &project_root, next_config)?;
-            Ok(existing_task)
-        }
-        MoveTaskOutcome::CrossColumn {
-            updated_task,
-            file_content,
-        } => {
-            let watcher_active = state.is_watcher_installed()?;
-            if watcher_active {
-                state.write_ignore().register(&abs)?;
-            }
-
-            if let Err(err) = io.write_existing(&abs, file_content.as_bytes()) {
-                if watcher_active {
-                    let _ = state.write_ignore().unregister(&abs);
-                }
-                return Err(MoveTaskCommandError::TaskIoWrite(err.to_string()));
-            }
-
-            // md 書き込み以降の失敗はすべて rollback 経路へ流す必要があるため、
-            // cardOrder の計算・config 書き込み・cache commit を 1 本の Result に
-            // 畳んでから分岐する。
-            let commit_result = commit_cross_column(CrossColumnCommit {
-                state,
-                project_root: &project_root,
-                config: &config,
-                intent: &intent,
-                updated_task: &updated_task,
-            });
-
-            match commit_result {
-                Ok(task) => Ok(task),
-                Err(err) => {
-                    // task md だけが新 status で残ると、config の cardOrder と disk が
-                    // 食い違ったまま再収束の手がかりが無くなる。書き戻しに失敗しても
-                    // watcher / 再スキャンでの収束に委ね、元の失敗理由を返す。
-                    let _ = io.write_existing(&abs, &original_bytes);
-                    if watcher_active {
-                        let _ = state.write_ignore().unregister(&abs);
-                    }
-                    Err(err)
-                }
-            }
-        }
-    }
+    move_task_impl_with_config_io(state, io, &FsConfigWriter, &load_or_default, args)
 }
 
-/// `commit_cross_column` の引数。effect 層の局所的な束ねで、公開はしない。
-struct CrossColumnCommit<'a> {
+/// injected config I/Oを使うmove effect本体。
+pub(crate) fn move_task_impl_with_config_io(
+    state: &AppState,
+    io: &dyn TaskIo,
+    config_writer: &dyn ConfigWriter,
+    config_loader: &dyn Fn(&Path) -> Result<Config, LoadConfigError>,
+    args: MoveTaskArgs,
+) -> Result<Task, MoveTaskCommandError> {
+    state.with_project_writer_lease(|target, snapshot| -> Result<Task, MoveTaskCommandError> {
+        let project_root = snapshot.project_root();
+        let config = snapshot.config();
+        let intent = args.into_intent(project_root.as_path())?;
+        ensure_column_exists(config, &intent.from_column)?;
+        ensure_column_exists(config, &intent.to_column)?;
+
+        let rel_path = intent.file_path.clone();
+        let abs = project_root.as_path().join(&rel_path);
+        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let existing = index
+            .find_by_path(rel_path.as_path())
+            .cloned()
+            .ok_or_else(|| MoveTaskCommandError::TaskNotFound {
+                path: rel_path.to_string_lossy().into_owned(),
+            })?;
+        if existing.status.as_str() != intent.from_column {
+            return Err(MoveTaskError::StatusMismatch {
+                expected: intent.from_column.clone(),
+                actual: existing.status.as_str().to_string(),
+            }
+            .into());
+        }
+
+        // revision/resource preflightはTaskIo readとcard-order metadata走査より先。
+        let resources = state.preflight_session_write(snapshot)?;
+        let original_bytes = io
+            .read(&abs)
+            .map_err(|error| MoveTaskCommandError::TaskIoRead(error.to_string()))?;
+        let parsed = frontmatter::parse_bytes(&original_bytes)
+            .map_err(|error| MoveTaskCommandError::ParseFailed(error.to_string()))?
+            .ok_or_else(|| {
+                MoveTaskCommandError::ParseFailed("no frontmatter delimiter found".to_string())
+            })?;
+        let scan_default_status = default_status_for(config);
+        let outcome = index.plan_move(&intent, &existing, parsed, scan_default_status.as_str())?;
+
+        match outcome {
+            MoveTaskOutcome::SameColumn { existing_task } => {
+                commit_same_column_move(SameColumnMove {
+                    state,
+                    io,
+                    config_writer,
+                    config_loader,
+                    target_root: target.project_root(),
+                    snapshot,
+                    resources: &resources,
+                    config,
+                    intent: &intent,
+                    existing_task,
+                })
+            }
+            MoveTaskOutcome::CrossColumn {
+                updated_task,
+                file_content,
+            } => commit_cross_column_move(CrossColumnMove {
+                state,
+                io,
+                config_writer,
+                config_loader,
+                target_root: target.project_root(),
+                snapshot,
+                resources: &resources,
+                config,
+                intent: &intent,
+                abs: &abs,
+                original_bytes: &original_bytes,
+                updated_task,
+                file_content,
+            }),
+        }
+    })
+}
+
+struct SameColumnMove<'a> {
     state: &'a AppState,
-    project_root: &'a Path,
+    io: &'a dyn TaskIo,
+    config_writer: &'a dyn ConfigWriter,
+    config_loader: &'a dyn Fn(&Path) -> Result<Config, LoadConfigError>,
+    target_root: &'a crate::project::project_root::ProjectRoot,
+    snapshot: &'a crate::project_session::ProjectSessionSnapshot,
+    resources: &'a crate::state::SessionResourceAccess,
     config: &'a Config,
     intent: &'a MoveTaskIntent,
-    updated_task: &'a Task,
+    existing_task: Task,
 }
 
-/// カラム間移動の cardOrder 計算 → `config.json` 書き込み → in-memory commit を行う。
-///
-/// `config` の差し替えと tasks キャッシュ更新は
-/// `replace_config_and_tasks_if_project_matches` で**同一クリティカルセクション**に入れる。
-/// 2 段に分けると、その間に `open_project` が完了して旧プロジェクト由来の `Task` を
-/// 新プロジェクトのキャッシュへ挿入してしまう。
-///
-/// project が切り替わっていた場合（`None`）は in-memory を一切変更せず、計画済みの
-/// `Task` をそのまま返す。disk 書き込みは旧プロジェクト視点では整合的に完了しており、
-/// FE 側は version guard でこの応答を破棄する。
-///
-/// cache commit が失敗した場合（並行削除で対象が消えていた等）は、既に書き終えている
-/// `config.json` を移動前の内容へ書き戻す。呼び出し側が task md を書き戻すのと合わせて、
-/// disk 上を移動前の状態へ揃えるため（`config.json` だけ移動後に進むと、FE の全面
-/// rollback と永続状態が食い違う）。
-fn commit_cross_column(args: CrossColumnCommit<'_>) -> Result<Task, MoveTaskCommandError> {
-    let CrossColumnCommit {
+/// 同一column reorderをconfig writeと1 revision commitで確定する。
+fn commit_same_column_move(args: SameColumnMove<'_>) -> Result<Task, MoveTaskCommandError> {
+    let SameColumnMove {
         state,
-        project_root,
+        io,
+        config_writer,
+        config_loader,
+        target_root,
+        snapshot,
+        resources,
         config,
         intent,
-        updated_task,
+        existing_task,
     } = args;
-    let moved_file_path = updated_task.file_path.as_str();
-
-    let next_config = plan_source_card_order(config, project_root, intent, moved_file_path)?;
-    let next_config =
-        plan_destination_card_order(&next_config, project_root, intent, moved_file_path)?;
-
-    let json = serde_json::to_string_pretty(&next_config)?;
-    write_config_json(project_root, &json)?;
-
-    let committed =
-        state.replace_config_and_tasks_if_project_matches(project_root, next_config, |cache| {
-            TaskIndex::commit_move_into_cache(cache, &intent.file_path, updated_task)
-        })?;
-
-    match committed {
-        Some(Ok(task)) => Ok(task),
-        Some(Err(err)) => {
-            restore_config_json_best_effort(project_root, config);
-            Err(MoveTaskCommandError::from(err))
-        }
-        None => Ok(updated_task.clone()),
+    let next_config = plan_destination_card_order(
+        config,
+        target_root.as_path(),
+        intent,
+        existing_task.file_path.as_str(),
+    )?;
+    if &next_config == config {
+        return Ok(existing_task);
     }
+
+    let content = serde_json::to_string_pretty(&next_config)?;
+    write_config_content(config_writer, target_root.as_path(), &content)?;
+    commit_or_resync_under_lease(
+        state,
+        target_root,
+        &snapshot.identity(),
+        resources,
+        &[],
+        ResyncSource::ConfigAndTasks {
+            task_io: io,
+            load_config: config_loader,
+        },
+        "move_task",
+        move |session| {
+            session.replace_config(next_config);
+            existing_task
+        },
+    )
 }
 
-/// 移動前の `config` を `config.json` へ書き戻す。失敗しても元のエラーを潰さない。
-///
-/// 書き戻せなかった場合の再収束は、task md の best-effort rollback と同じく
-/// watcher / 再スキャンに委ねる。
-fn restore_config_json_best_effort(project_root: &Path, config: &Config) {
-    let Ok(json) = serde_json::to_string_pretty(config) else {
-        return;
-    };
-    let _ = write_config_json(project_root, &json);
+struct CrossColumnMove<'a> {
+    state: &'a AppState,
+    io: &'a dyn TaskIo,
+    config_writer: &'a dyn ConfigWriter,
+    config_loader: &'a dyn Fn(&Path) -> Result<Config, LoadConfigError>,
+    target_root: &'a crate::project::project_root::ProjectRoot,
+    snapshot: &'a crate::project_session::ProjectSessionSnapshot,
+    resources: &'a crate::state::SessionResourceAccess,
+    config: &'a Config,
+    intent: &'a MoveTaskIntent,
+    abs: &'a Path,
+    original_bytes: &'a [u8],
+    updated_task: Task,
+    file_content: String,
+}
+
+/// cross-columnのtask/config planをI/O前に完成し、disk→aggregateの順に確定する。
+fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskCommandError> {
+    let CrossColumnMove {
+        state,
+        io,
+        config_writer,
+        config_loader,
+        target_root,
+        snapshot,
+        resources,
+        config,
+        intent,
+        abs,
+        original_bytes,
+        updated_task,
+        file_content,
+    } = args;
+    let moved_file_path = updated_task.file_path.as_str();
+    let next_config =
+        plan_source_card_order(config, target_root.as_path(), intent, moved_file_path)?;
+    let next_config =
+        plan_destination_card_order(&next_config, target_root.as_path(), intent, moved_file_path)?;
+    let config_content = serde_json::to_string_pretty(&next_config)?;
+
+    let mut next_tasks = snapshot.tasks().clone();
+    let returned =
+        TaskIndex::commit_move_into_cache(&mut next_tasks, &intent.file_path, &updated_task)?;
+    let registered_paths = vec![abs.to_path_buf()];
+    resources.write_ignore().register(abs)?;
+    if let Err(error) = io.write_existing(abs, file_content.as_bytes()) {
+        cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+        return Err(MoveTaskCommandError::TaskIoWrite(error.to_string()));
+    }
+    if let Err(error) = write_config_content(config_writer, target_root.as_path(), &config_content)
+    {
+        // rollback failure must not skip marker cleanup or replace the original config error.
+        let _ = io.write_existing(abs, original_bytes);
+        cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+        return Err(error);
+    }
+
+    commit_or_resync_under_lease(
+        state,
+        target_root,
+        &snapshot.identity(),
+        resources,
+        &registered_paths,
+        ResyncSource::ConfigAndTasks {
+            task_io: io,
+            load_config: config_loader,
+        },
+        "move_task",
+        move |session| {
+            session.replace_config(next_config);
+            session.replace_tasks(next_tasks);
+            returned
+        },
+    )
+}
+
+/// injected writerへ渡す前に既存config I/Oと同じsymlink拒否を行う。
+fn write_config_content(
+    writer: &dyn ConfigWriter,
+    project_root: &Path,
+    content: &str,
+) -> Result<(), MoveTaskCommandError> {
+    let config_path = config_io::config_path(project_root);
+    let spec_board_dir = config_path
+        .parent()
+        .expect("config path always has .spec-board parent");
+    reject_existing_symlink(spec_board_dir)?;
+    reject_existing_symlink(&config_path)?;
+    writer
+        .write_atomic(&config_path, content)
+        .map_err(|source| ConfigIoError::Io {
+            path: config_path,
+            source,
+        })?;
+    Ok(())
+}
+
+/// pathがexisting symlinkならconfig writeを拒否する。
+fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(ConfigIoError::Io {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{} is a symlink", path.display()),
+            ),
+        }),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(ConfigIoError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 /// `column_name` が `Config.columns` に存在することを確かめる。
@@ -272,21 +369,6 @@ fn plan_source_card_order(
     config
         .plan_update_card_order(intent.from_column.clone(), retained, &existing_paths)
         .map_err(MoveTaskCommandError::from)
-}
-
-/// `config.json` へ書き出し、成功した場合のみ in-memory `Config` を更新する。
-///
-/// 同一カラム並び替え用。tasks キャッシュは変更しないため、`project_path` の照合は
-/// `replace_config_if_project_matches` の check-and-set だけで足りる。
-fn write_and_commit_config(
-    state: &AppState,
-    project_root: &Path,
-    config: Config,
-) -> Result<(), MoveTaskCommandError> {
-    let json = serde_json::to_string_pretty(&config)?;
-    write_config_json(project_root, &json)?;
-    state.replace_config_if_project_matches(project_root, config)?;
-    Ok(())
 }
 
 /// `file_paths` のうち `project_root` 配下で「保持すべき」パスの集合を返す。

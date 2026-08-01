@@ -8,7 +8,8 @@
 use thiserror::Error;
 
 use crate::config::UpdateCardOrderPlanError;
-use crate::state::AppStateError;
+use crate::project_session::{RevisionExhausted, SessionConflict};
+use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::create::error::ContentRejectReason;
 use crate::task::task_content::TaskContentError;
 use spec_board_fs::config::config_io::ConfigIoError;
@@ -86,6 +87,26 @@ pub enum MoveTaskCommandError {
 
     #[error("config.json のシリアライズに失敗しました: {0}")]
     Serialize(#[from] serde_json::Error),
+    #[error(transparent)]
+    SessionConflict(#[from] SessionConflict),
+
+    #[error(transparent)]
+    RevisionExhausted(#[from] RevisionExhausted),
+
+    #[error(transparent)]
+    ResourceConflict(#[from] SessionResourceConflict),
+}
+
+impl From<SessionWriteError> for MoveTaskCommandError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            SessionWriteError::Conflict(error) => Self::SessionConflict(error),
+            SessionWriteError::RevisionExhausted(error) => Self::RevisionExhausted(error),
+            SessionWriteError::ResourceConflict(error) => Self::ResourceConflict(error),
+        }
+    }
 }
 
 impl From<AppStateError> for MoveTaskCommandError {

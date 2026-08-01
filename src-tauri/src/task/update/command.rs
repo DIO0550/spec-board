@@ -7,9 +7,11 @@ use std::sync::Arc;
 
 use tauri::State;
 
+use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
+use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
@@ -27,102 +29,99 @@ pub(crate) fn update_task_impl(
     io: &dyn TaskIo,
     args: UpdateTaskArgs,
 ) -> Result<Task, UpdateTaskCommandError> {
-    state.check_tasks_cache_lock()?;
-    let _ = state.write_ignore().is_empty()?;
+    state.with_project_writer_lease(|target, snapshot| -> Result<Task, UpdateTaskCommandError> {
+        let project_root = snapshot.project_root();
+        let intent = args
+            .into_intent(project_root.as_path())
+            .map_err(UpdateTaskCommandError::Validation)?;
+        let rel_path = intent.file_path.clone();
+        let abs = project_root.as_path().join(&rel_path);
+        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let existing_task = index
+            .find_by_path(rel_path.as_path())
+            .cloned()
+            .ok_or_else(|| UpdateTaskError::FileNotFound(abs.clone()))?;
 
-    let project_root = state
-        .project_path()?
-        .ok_or(UpdateTaskCommandError::NoProjectOpen)?;
-
-    let intent = args
-        .into_intent(project_root.as_path())
-        .map_err(UpdateTaskCommandError::Validation)?;
-    let rel_path = intent.file_path.clone();
-    let abs = project_root.join(&rel_path);
-
-    let snapshot = state.tasks_snapshot()?;
-    let index = TaskIndex::new(snapshot);
-    let existing_task = index
-        .find_by_path(rel_path.as_path())
-        .cloned()
-        .ok_or_else(|| UpdateTaskError::FileNotFound(abs.clone()))?;
-
-    let bytes = match io.read(&abs) {
-        Ok(b) => b,
-        Err(TaskIoError::Io(source)) if source.kind() == ErrorKind::NotFound => {
-            return Err(UpdateTaskError::FileNotFound(abs.clone()).into());
+        if let Some(parent) = intent.parent.as_deref().filter(|parent| !parent.is_empty()) {
+            if index.resolve_parent_for_new_task(parent).is_none() {
+                return Err(UpdateTaskError::ParentNotFound {
+                    path: parent.to_string(),
+                }
+                .into());
+            }
         }
-        Err(e) => return Err(e.into()),
-    };
 
-    let parsed = frontmatter::parse_bytes(&bytes)
-        .map_err(|e| UpdateTaskError::ParseFailed(e.to_string()))?
-        .ok_or_else(|| {
-            UpdateTaskError::ParseFailed("no frontmatter delimiter found".to_string())
-        })?;
+        let resources = state.preflight_session_write(snapshot)?;
+        let bytes = match io.read(&abs) {
+            Ok(bytes) => bytes,
+            Err(TaskIoError::Io(source)) if source.kind() == ErrorKind::NotFound => {
+                return Err(UpdateTaskError::FileNotFound(abs.clone()).into());
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let parsed = frontmatter::parse_bytes(&bytes)
+            .map_err(|error| UpdateTaskError::ParseFailed(error.to_string()))?
+            .ok_or_else(|| {
+                UpdateTaskError::ParseFailed("no frontmatter delimiter found".to_string())
+            })?;
+        let outcome = index
+            .plan_update(project_root.as_path(), intent, &existing_task, parsed)
+            .map_err(UpdateTaskCommandError::Validation)?;
 
-    let outcome: UpdateTaskOutcome = index
-        .plan_update(project_root.as_path(), intent, &existing_task, parsed)
-        .map_err(UpdateTaskCommandError::Validation)?;
-
-    let watcher_active = state.is_watcher_installed()?;
-
-    if watcher_active {
-        state.write_ignore().register(&abs)?;
-    }
-
-    if let Err(err) = io.write_existing(&abs, outcome.file_content.as_bytes()) {
-        if watcher_active {
-            let _ = state.write_ignore().unregister(&abs);
+        let mut next_tasks = snapshot.tasks().clone();
+        let returned = apply_update_to_cache(&mut next_tasks, &rel_path, &outcome)?;
+        let registered_paths = vec![abs.clone()];
+        resources.write_ignore().register(&abs)?;
+        if let Err(error) = io.write_existing(&abs, outcome.file_content.as_bytes()) {
+            cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+            return Err(error.into());
         }
-        return Err(err.into());
-    }
 
-    let returned = commit_cache(state, &rel_path, &outcome)?;
-    Ok(returned)
+        commit_or_resync_under_lease(
+            state,
+            target.project_root(),
+            &snapshot.identity(),
+            &resources,
+            &registered_paths,
+            ResyncSource::Tasks { task_io: io },
+            "update_task",
+            move |session| {
+                session.replace_tasks(next_tasks);
+                returned
+            },
+        )
+    })
 }
 
-/// cache を更新し、返却すべき最終的な Task を返す。
-///
-/// `plan_update` の snapshot 取得と本関数の lock 再取得の間に他コマンドが cache を
-/// 変更すると、再構築用 `Vec<Task>` の hierarchy が `plan_update` 時点と乖離する
-/// 可能性がある。validation を `?` で propagate して panic を避け、レース由来の
-/// 不整合は `UpdateTaskCommandError::Validation` として呼び出し側に返す。
-fn commit_cache(
-    state: &AppState,
+/// planned updateをcloned task mapへ適用し、commit後の戻り値を作る。
+fn apply_update_to_cache(
+    cache: &mut HashMap<PathBuf, Task>,
     rel_path: &Path,
     outcome: &UpdateTaskOutcome,
 ) -> Result<Task, UpdateTaskCommandError> {
-    let cache_key: PathBuf = rel_path.to_path_buf();
-    let returned: Result<Option<Task>, UpdateTaskError> =
-        state.with_tasks_cache_mut(|cache: &mut HashMap<PathBuf, Task>| {
-            if outcome.needs_full_rebuild {
-                let values: Vec<Task> = cache.values().cloned().collect();
-                let index = TaskIndex::new(values)
-                    .rebuild_with_replaced(outcome.updated_task.clone())
-                    .map_err(UpdateTaskError::from)?;
-                cache.clear();
-                for task in index.into_tasks() {
-                    cache.insert(PathBuf::from(task.file_path.as_str()), task);
-                }
-                Ok(cache.get(&cache_key).cloned())
-            } else {
-                // 非 parent 更新では、scan で cycle member とマークされた状態
-                // (parent=None + parentCycle warning) を新しい cache 値でも
-                // 維持する。`outcome.updated_task` は disk の生の `parent:` を
-                // 復活させているため、明示的に override しないとバナーが消える。
-                let was_cycle_member = cache
-                    .get(&cache_key)
-                    .map(|prev| has_parent_cycle_warning(&prev.warnings))
-                    .unwrap_or(false);
-                let mut next = outcome.updated_task.clone();
-                next.preserve_parent_cycle_state(was_cycle_member, false);
-                cache.insert(cache_key.clone(), next.clone());
-                Ok(Some(next))
-            }
-        })?;
+    let cache_key = rel_path.to_path_buf();
+    let returned = if outcome.needs_full_rebuild {
+        let values = cache.values().cloned().collect();
+        let index = TaskIndex::new(values)
+            .rebuild_with_replaced(outcome.updated_task.clone())
+            .map_err(UpdateTaskError::from)?;
+        cache.clear();
+        for task in index.into_tasks() {
+            cache.insert(PathBuf::from(task.file_path.as_str()), task);
+        }
+        cache.get(&cache_key).cloned()
+    } else {
+        let was_cycle_member = cache
+            .get(&cache_key)
+            .map(|previous| has_parent_cycle_warning(&previous.warnings))
+            .unwrap_or(false);
+        let mut next = outcome.updated_task.clone();
+        next.preserve_parent_cycle_state(was_cycle_member, false);
+        cache.insert(cache_key.clone(), next.clone());
+        Some(next)
+    };
 
-    returned?.ok_or(UpdateTaskCommandError::Validation(
+    returned.ok_or(UpdateTaskCommandError::Validation(
         UpdateTaskError::FileNotFound(cache_key),
     ))
 }
