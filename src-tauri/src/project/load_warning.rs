@@ -68,17 +68,18 @@ impl ProjectLoadWarning {
 
 /// warning の重複を除去し、payload に安定した順序で返す。
 pub fn deduplicate_and_sort(mut warnings: Vec<ProjectLoadWarning>) -> Vec<ProjectLoadWarning> {
-    warnings.sort_by(|left, right| warning_sort_key(left).cmp(&warning_sort_key(right)));
+    warnings.sort_by_cached_key(warning_sort_key);
     warnings.dedup();
     warnings
 }
 
-fn warning_sort_key(warning: &ProjectLoadWarning) -> (String, String, String, String) {
+fn warning_sort_key(warning: &ProjectLoadWarning) -> (String, String, String, String, bool) {
     (
         format!("{:?}", warning.stage),
         warning.path.clone().unwrap_or_default(),
         format!("{:?}", warning.code),
         warning.message.clone(),
+        warning.recoverable,
     )
 }
 
@@ -136,5 +137,25 @@ mod tests {
         assert_eq!(warnings.len(), 2);
         assert_eq!(warnings[0].path.as_deref(), Some("tasks/a.md"));
         assert_eq!(warnings[1].path.as_deref(), Some("tasks/b.md"));
+    }
+
+    #[test]
+    fn warnings_that_differ_by_recoverable_are_not_deduplicated() {
+        let recoverable = ProjectLoadWarning::new(
+            ProjectLoadWarningCode::TaskReadFailed,
+            ProjectLoadWarningStage::Read,
+            Some("tasks/a.md".to_owned()),
+            "read failed",
+        );
+        let non_recoverable = ProjectLoadWarning {
+            recoverable: false,
+            ..recoverable.clone()
+        };
+
+        let warnings =
+            deduplicate_and_sort(vec![recoverable.clone(), non_recoverable, recoverable]);
+
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|warning| !warning.recoverable));
     }
 }
