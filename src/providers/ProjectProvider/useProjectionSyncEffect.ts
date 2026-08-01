@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import { getTasks } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -73,6 +74,8 @@ type ProjectionSyncDeps = SyncBasis & {
    * @param action - 反映する ProjectAction
    */
   dispatch: (action: ProjectAction) => void;
+  /** 採用したsnapshotのロード警告を通知する。 */
+  notifyLoadWarnings?: (warnings: ProjectLoadWarning[], path: string) => void;
 };
 
 /**
@@ -135,6 +138,7 @@ export const useProjectionSyncEffect = ({
   synced: syncedRef,
   getState,
   dispatch,
+  notifyLoadWarnings,
 }: ProjectionSyncDeps): void => {
   // 各再同期リクエストに採番する世代 id。最新世代の応答だけが state を確定する。
   const requestIdRef = useRef(0);
@@ -237,6 +241,11 @@ export const useProjectionSyncEffect = ({
           projections: result.value.projections,
           milestoneProjections: result.value.milestoneProjections,
         });
+        dispatch({
+          type: "load-warnings-replaced",
+          loadWarnings: result.value.loadWarnings,
+        });
+        notifyLoadWarnings?.(result.value.loadWarnings, request.path);
         syncedRef.current = {
           openRequestId,
           path: request.path,
@@ -269,6 +278,7 @@ export const useProjectionSyncEffect = ({
     syncedRef,
     getState,
     dispatch,
+    notifyLoadWarnings,
     syncTick,
   ]);
 };

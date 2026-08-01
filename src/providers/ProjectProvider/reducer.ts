@@ -4,6 +4,7 @@ import {
   ProjectData as ProjectDataDomain,
   type ProjectData as ProjectDataT,
 } from "@/domains/project-data";
+import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
@@ -52,7 +53,9 @@ export type ProjectAction =
       tasks: Task[];
       projections: TaskProjectionMap;
       milestoneProjections: MilestoneProjectionMap;
+      loadWarnings: ProjectLoadWarning[];
     }
+  | { type: "load-warnings-replaced"; loadWarnings: ProjectLoadWarning[] }
   | { type: "card-order-updated"; columnName: string; filePaths: string[] }
   | { type: "reset" };
 
@@ -119,7 +122,12 @@ export const reducer = (
           tasks: action.tasks,
           projections: action.projections,
           milestoneProjections: action.milestoneProjections,
+          loadWarnings: action.loadWarnings ?? data.loadWarnings,
         }),
+      );
+    case "load-warnings-replaced":
+      return ProjectState.updateData(state, (data) =>
+        ProjectDataDomain.replaceLoadWarnings(data, action.loadWarnings),
       );
     case "card-order-updated":
       return ProjectState.updateData(state, (data) =>

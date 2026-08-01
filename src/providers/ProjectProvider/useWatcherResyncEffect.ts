@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import { WatcherSession } from "@/domains/watcher-session";
 import { getTasks } from "@/lib/tauri";
 import { awaitProjectCommands, type ProjectCommandQueue } from "./concurrency";
@@ -52,6 +53,8 @@ type WatcherResyncDeps = {
    * @param action 反映する ProjectAction
    */
   dispatch: (action: ProjectAction) => void;
+  /** 採用したsnapshotのロード警告を通知する。 */
+  notifyLoadWarnings?: (warnings: ProjectLoadWarning[], path: string) => void;
 };
 
 /**
@@ -113,6 +116,7 @@ export const useWatcherResyncEffect = ({
   projectionSynced,
   getState,
   dispatch,
+  notifyLoadWarnings,
 }: WatcherResyncDeps): ((reason: WatcherResyncReason) => void) => {
   const requestIdRef = useRef(0);
   const activeRef = useRef<ActiveRequest | null>(null);
@@ -230,7 +234,12 @@ export const useWatcherResyncEffect = ({
             tasks: result.value.tasks,
             projections: result.value.projections,
             milestoneProjections: result.value.milestoneProjections,
+            loadWarnings: result.value.loadWarnings,
           });
+          const appliedState = getState();
+          if (appliedState.kind === "loaded") {
+            notifyLoadWarnings?.(result.value.loadWarnings, request.path);
+          }
           // marker は **replay を適用する前**の state で組む。replay の `task-*`
           // action は tasks だけを進めて projections は据え置くため、replay 後の
           // state を「同期済み」と記録すると、古い projections が最新扱いになって
@@ -275,6 +284,7 @@ export const useWatcherResyncEffect = ({
       projectionSynced,
       getState,
       dispatch,
+      notifyLoadWarnings,
     ],
   );
 

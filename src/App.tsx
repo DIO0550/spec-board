@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
+import { ProjectLoadWarnings } from "@/components/ProjectLoadWarnings";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { LabelRegistry } from "@/domains/label-registry";
 import {
@@ -936,36 +937,39 @@ const AppShell = () => {
     // board-view spec に従う)。空プロジェクト時のガイダンスは Board 上に
     // 重ねて表示する。
     return (
-      <div className="relative flex flex-1 overflow-hidden">
-        <BoardWorkspace
-          // settings 表示中は BoardWorkspace が unmount されるため、settings→board 遷移で
-          // 必ず remount される。これにより useTaskFilter の useState 初期 seed が遷移ごとに
-          // 1 回適用される（key の追加はかえって seed→クリア→再 remount で seed 消失を招く
-          // ので付けない）。
-          columns={columns}
-          tasks={tasks}
-          tasksByNormalizedPath={tasksByNormalizedPath}
-          doneColumn={doneColumn}
-          projections={projections}
-          milestonesByName={milestonesResource.byName}
-          milestones={milestonesResource.milestones}
-          onAddTask={handleAddTask}
-          onAddColumn={handleAddColumn}
-          onRenameColumn={handleRenameColumn}
-          onDeleteColumn={handleDeleteColumn}
-          onTaskClick={handleTaskClick}
-          onTaskDrop={handleTaskDrop}
-          onColumnReorder={handleColumnReorder}
-          initialLabelFilter={pendingLabelFilter}
-          onLabelFilterApplied={handleLabelFilterApplied}
-        />
-        {tasks.length === 0 && (
-          <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
-            <p className="rounded bg-surface/90 px-4 py-2 text-sm text-muted shadow">
-              タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
-            </p>
-          </div>
-        )}
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        <ProjectLoadWarnings warnings={state.data.loadWarnings} />
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <BoardWorkspace
+            // settings 表示中は BoardWorkspace が unmount されるため、settings→board 遷移で
+            // 必ず remount される。これにより useTaskFilter の useState 初期 seed が遷移ごとに
+            // 1 回適用される（key の追加はかえって seed→クリア→再 remount で seed 消失を招く
+            // ので付けない）。
+            columns={columns}
+            tasks={tasks}
+            tasksByNormalizedPath={tasksByNormalizedPath}
+            doneColumn={doneColumn}
+            projections={projections}
+            milestonesByName={milestonesResource.byName}
+            milestones={milestonesResource.milestones}
+            onAddTask={handleAddTask}
+            onAddColumn={handleAddColumn}
+            onRenameColumn={handleRenameColumn}
+            onDeleteColumn={handleDeleteColumn}
+            onTaskClick={handleTaskClick}
+            onTaskDrop={handleTaskDrop}
+            onColumnReorder={handleColumnReorder}
+            initialLabelFilter={pendingLabelFilter}
+            onLabelFilterApplied={handleLabelFilterApplied}
+          />
+          {tasks.length === 0 && (
+            <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
+              <p className="rounded bg-surface/90 px-4 py-2 text-sm text-muted shadow">
+                タスクがありません。「+追加」ボタンまたはmdファイルを作成してタスクを追加してください
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     );
   };

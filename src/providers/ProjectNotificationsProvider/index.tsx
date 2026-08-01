@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import {
   buildTasksByNormalizedPath,
   countTasksWithBrokenLink,
 } from "@/domains/broken-link";
 import { countTasksWithParseError } from "@/domains/parse-error";
+import { ProjectLoadWarning } from "@/domains/project-load-warning";
 import {
   type ProjectEvent,
   projectErrorMessage,
@@ -12,6 +13,7 @@ import {
 } from "@/providers/ProjectProvider";
 import { useRecentProjects } from "@/providers/RecentProjectsProvider";
 import { useToastDispatch } from "@/providers/ToastProvider";
+import { projectLoadWarningMessage } from "./projectLoadWarningMessage";
 import { watcherDiagnosticMessage } from "./watcherDiagnosticMessage";
 
 /** ProjectNotificationsProvider の Props。 */
@@ -36,8 +38,28 @@ export const ProjectNotificationsProvider = ({
   const { subscribe } = useProjectEvents();
   const { showToast } = useToastDispatch();
   const { add: addRecentProject } = useRecentProjects();
+  const lastWarningToastRef = useRef<{
+    path: string;
+    fingerprint: string;
+  } | null>(null);
 
   useEffect(() => {
+    const notifyLoadWarnings = (
+      path: string,
+      warnings: ProjectLoadWarning[],
+    ): void => {
+      const fingerprint = ProjectLoadWarning.fingerprint(warnings);
+      const previous = lastWarningToastRef.current;
+      lastWarningToastRef.current = { path, fingerprint };
+      if (warnings.length === 0) {
+        return;
+      }
+      if (previous?.path === path && previous.fingerprint === fingerprint) {
+        return;
+      }
+      showToast(projectLoadWarningMessage(warnings), "warning");
+    };
+
     const handleEvent = (event: ProjectEvent): void => {
       if (event.type === "loaded") {
         addRecentProject(event.path);
@@ -53,6 +75,11 @@ export const ProjectNotificationsProvider = ({
         if (parseErrorCount >= 1) {
           showToast(`パースエラーが ${parseErrorCount} 件あります`, "warning");
         }
+        notifyLoadWarnings(event.path, event.data.loadWarnings);
+        return;
+      }
+      if (event.type === "load-warnings-updated") {
+        notifyLoadWarnings(event.path, event.warnings);
         return;
       }
       if (event.type === "watcher-diagnostic") {

@@ -6,6 +6,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import { ProjectLoadWarning } from "@/domains/project-load-warning";
 import type { WatcherDiagnostic } from "@/domains/watcher-diagnostic";
 import { addLinkAction } from "./actions/addLink";
 import type {
@@ -161,6 +162,23 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
   const watcherSession =
     state.kind === "loaded" ? state.data.watcherSession : null;
 
+  const lastLoadWarningsRef = useRef<{
+    path: string;
+    fingerprint: string;
+  } | null>(null);
+  const notifyLoadWarnings = useCallback(
+    (warnings: ProjectLoadWarning[], path: string): void => {
+      const fingerprint = ProjectLoadWarning.fingerprint(warnings);
+      const previous = lastLoadWarningsRef.current;
+      lastLoadWarningsRef.current = { path, fingerprint };
+      if (previous?.path === path && previous.fingerprint === fingerprint) {
+        return;
+      }
+      emit({ type: "load-warnings-updated", path, warnings });
+    },
+    [emit],
+  );
+
   const requestResync = useWatcherResyncEffect({
     loadedPath,
     gate: watcherGateRef as WatcherGateRef,
@@ -168,6 +186,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     projectionSynced: projectionSyncedRef,
     getState: store.getState,
     dispatch: store.dispatch,
+    notifyLoadWarnings,
   });
 
   const notifyDiagnostic = useCallback(
@@ -201,6 +220,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     synced: projectionSyncedRef,
     getState: store.getState,
     dispatch: store.dispatch,
+    notifyLoadWarnings,
   });
 
   // unmount 時は世代 bump のみ（active フラグは持たない）。in-flight command / open は
@@ -220,6 +240,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
       dispatch: store.dispatch,
       onLoaded: (event) => {
         emit({ type: "loaded", path: event.path, data: event.data });
+        notifyLoadWarnings(event.data.loadWarnings, event.path);
       },
       onError: (error) => {
         emit({ type: "open-error", error });
@@ -234,7 +255,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
         store.dispatch({ type: "reset" });
       },
     };
-  }, [store, emit]);
+  }, [store, emit, notifyLoadWarnings]);
 
   const taskActions = useMemo<ProjectTaskActionsContextValue>(
     () => ({
