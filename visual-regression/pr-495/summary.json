@@ -1,7 +1,7 @@
 {
-  "reportVersion": "fe40f9d4707fd922758166242bf0ef169d1ca98f",
+  "reportVersion": "77fc84a1334deae233d1487003c878e66d7e4974",
   "maxDiffRatio": 0.002,
-  "failed": 2,
+  "failed": 0,
   "results": [
     {
       "story": "components-button--default",
@@ -1292,12 +1292,12 @@
       "id": "features-milestoneview-components-milestoneroadmap--default",
       "title": "features/milestoneView/components/MilestoneRoadmap",
       "name": "Default",
-      "status": "changed",
-      "diffPixels": 18194,
-      "diffRatio": 0.0197,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-milestoneview-components-milestoneroadmap--empty",
@@ -1317,23 +1317,23 @@
       "title": "features/milestoneView/components/MilestoneRoadmap",
       "name": "Single Milestone",
       "status": "passed",
-      "diffPixels": 1708,
-      "diffRatio": 0.0019,
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-milestoneview-components-milestoneroadmap--with-selection",
       "id": "features-milestoneview-components-milestoneroadmap--with-selection",
       "title": "features/milestoneView/components/MilestoneRoadmap",
       "name": "With Selection",
-      "status": "changed",
-      "diffPixels": 18239,
-      "diffRatio": 0.019799999999999998,
+      "status": "passed",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-milestoneview-components-milestoneviewscreen--default",
