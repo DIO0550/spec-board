@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::project::load_warning::{ProjectLoadWarningCode, ProjectLoadWarningStage};
+
 use std::path::Path;
 
 use tempfile::TempDir;
@@ -145,4 +147,93 @@ fn applies_the_same_file_filter_as_scan_md_files() {
         paths
     };
     assert_eq!(scanned, sorted_paths(&tasks));
+}
+
+#[test]
+fn report_contains_frontmatter_parse_warning_and_keeps_valid_tasks() {
+    let dir = TempDir::new().expect("tempdir");
+    write_md(dir.path(), "tasks/ok.md", &task_md("Ok"));
+    write_md(
+        dir.path(),
+        "tasks/broken.md",
+        "---\ntitle: [unclosed\n---\n",
+    );
+
+    let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &FsTaskIo)
+        .expect("rebuild report should succeed");
+
+    assert_eq!(vec!["tasks/ok.md".to_string()], sorted_paths(&report.tasks));
+    assert!(report.warnings.iter().any(|warning| {
+        warning.code == ProjectLoadWarningCode::FrontmatterParseFailed
+            && warning.stage == ProjectLoadWarningStage::Parse
+            && warning.path.as_deref() == Some("tasks/broken.md")
+            && warning.recoverable
+    }));
+}
+
+#[test]
+fn report_contains_task_read_warning_from_io_port() {
+    let dir = TempDir::new().expect("tempdir");
+    write_md(dir.path(), "tasks/ok.md", &task_md("Ok"));
+    write_md(dir.path(), "tasks/unreadable.md", &task_md("Unreadable"));
+    let io = InMemoryTaskIo::new();
+    io.pre_register_dir(&dir.path().join("tasks"));
+    io.write_new(&dir.path().join("tasks/ok.md"), task_md("Ok").as_bytes())
+        .expect("seed readable file");
+
+    let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &io)
+        .expect("rebuild report should succeed");
+
+    assert_eq!(vec!["tasks/ok.md".to_string()], sorted_paths(&report.tasks));
+    assert!(report.warnings.iter().any(|warning| {
+        warning.code == ProjectLoadWarningCode::TaskReadFailed
+            && warning.stage == ProjectLoadWarningStage::Read
+            && warning.path.as_deref() == Some("tasks/unreadable.md")
+    }));
+}
+
+#[test]
+fn report_maps_scan_warnings_and_keeps_normal_tasks() {
+    let dir = TempDir::new().expect("tempdir");
+    write_md(dir.path(), "tasks/ok.md", &task_md("Ok"));
+    let binary_path = dir.path().join("tasks/binary.md");
+    std::fs::write(&binary_path, b"binary\x00content").expect("write binary file");
+    let oversized_path = dir.path().join("tasks/oversized.md");
+    let oversized = std::fs::File::create(&oversized_path).expect("create oversized file");
+    oversized
+        .set_len(1024 * 1024 + 1)
+        .expect("resize oversized file");
+
+    let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &FsTaskIo)
+        .expect("rebuild report should succeed");
+
+    assert_eq!(vec!["tasks/ok.md".to_string()], sorted_paths(&report.tasks));
+    assert!(report.warnings.iter().any(|warning| {
+        warning.code == ProjectLoadWarningCode::BinaryFile
+            && warning.stage == ProjectLoadWarningStage::Scan
+            && warning.path.as_deref() == Some("tasks/binary.md")
+    }));
+    assert!(report.warnings.iter().any(|warning| {
+        warning.code == ProjectLoadWarningCode::FileTooLarge
+            && warning.stage == ProjectLoadWarningStage::Scan
+            && warning.path.as_deref() == Some("tasks/oversized.md")
+    }));
+}
+
+#[test]
+fn report_keeps_hierarchy_failure_fatal() {
+    let dir = TempDir::new().expect("tempdir");
+    for index in 0..21 {
+        let body = format!(
+            "---\ntitle: Task {index}\nstatus: Todo\nparent: tasks/{}.md\n---\n",
+            index + 1
+        );
+        write_md(dir.path(), &format!("tasks/{index}.md"), &body);
+    }
+    write_md(dir.path(), "tasks/21.md", &task_md("Root"));
+
+    let error = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &FsTaskIo)
+        .expect_err("hierarchy depth must remain fatal");
+
+    assert!(matches!(error, RebuildTasksError::Hierarchy(_)));
 }

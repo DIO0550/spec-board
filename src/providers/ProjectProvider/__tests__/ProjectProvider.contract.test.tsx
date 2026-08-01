@@ -177,6 +177,7 @@ test("subscribe より前に emit されたイベントは届かない（replay 
 test("StrictMode 下で mount → remount 後も openProjectByPath が loaded に到達する", async () => {
   openProjectMock.mockResolvedValue(
     Result.ok<OpenProjectPayload>({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [
         Task.fromPayload({

@@ -1,6 +1,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { TauriError } from "@/lib/tauri";
 import type { ProjectData } from "@/providers/ProjectProvider";
@@ -58,6 +59,7 @@ const dataOf = (tasks: Task[]): ProjectData => ({
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 });
 
 /** 購読者へ ProjectEvent を配信できる制御可能なイベント基盤。 */
@@ -232,6 +234,68 @@ test("unmount 後は購読が解除されイベントを受け取らない", () 
   });
   root = null;
   expect(harness.listenerCount()).toBe(0);
+});
+
+const warningOf = (message: string): ProjectLoadWarning => ({
+  code: "unreadableFile",
+  stage: "read",
+  path: "tasks/a.md",
+  message,
+  recoverable: true,
+});
+
+test("loaded の loadWarnings は件数の要約toastを出す", () => {
+  const harness = createEventsHarness();
+  setup(harness.value);
+  act(() => {
+    harness.emit({
+      type: "loaded",
+      path: "/proj",
+      data: {
+        ...dataOf([makeTask()]),
+        loadWarnings: [warningOf("読めません")],
+      },
+    });
+  });
+  expect(bodyText()).toContain("読み込み時の注意が 1 件あります");
+});
+
+test("同一path・同一fingerprintのwarningsは再通知しない", () => {
+  const harness = createEventsHarness();
+  setup(harness.value);
+  const warnings = [warningOf("読めません")];
+  act(() => {
+    harness.emit({ type: "load-warnings-updated", path: "/proj", warnings });
+    harness.emit({
+      type: "load-warnings-updated",
+      path: "/proj",
+      warnings: [...warnings],
+    });
+  });
+  expect(bodyText().match(/読み込み時の注意が 1 件あります/g)).toHaveLength(1);
+});
+
+test("rescanでwarningsの内容が変わると再通知し、空配列では通知しない", () => {
+  const harness = createEventsHarness();
+  setup(harness.value);
+  act(() => {
+    harness.emit({
+      type: "load-warnings-updated",
+      path: "/proj",
+      warnings: [warningOf("最初")],
+    });
+    harness.emit({
+      type: "load-warnings-updated",
+      path: "/proj",
+      warnings: [warningOf("次")],
+    });
+    harness.emit({
+      type: "load-warnings-updated",
+      path: "/proj",
+      warnings: [],
+    });
+  });
+  expect(bodyText().match(/読み込み時の注意が 1 件あります/g)).toHaveLength(2);
 });
 
 // ───────── watcher diagnostics ─────────

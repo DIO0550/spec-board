@@ -70,6 +70,7 @@ const makeData = (tasks: readonly Task[]): ProjectData => ({
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 });
 
 type Harness = {

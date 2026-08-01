@@ -100,6 +100,7 @@ const openPayload: OpenProjectPayload = {
     ],
   ]),
   milestoneProjections: new Map([["M1", initialMilestoneProjection]]),
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
 };
 
@@ -144,6 +145,7 @@ const getTasksOk = (
     tasks: [],
     projections,
     milestoneProjections,
+    loadWarnings: [],
     session: WATCHER_SESSION_FIXTURE,
   });
 
@@ -349,6 +351,7 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
       tasks: [Task.fromPayload(makeTaskPayload("tasks/zzz.md", "Z"))],
       projections: new Map(),
       milestoneProjections: new Map(),
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
     }),
   );

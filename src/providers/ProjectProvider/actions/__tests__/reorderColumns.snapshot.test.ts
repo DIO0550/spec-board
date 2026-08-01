@@ -11,6 +11,7 @@ const dataOf = (columns: readonly Column[]): ProjectData => ({
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 });
 
 const cols = (...names: readonly string[]): readonly Column[] =>
@@ -53,6 +54,7 @@ test("from: data.columns が逆順でも表示順 [A,B,C] に sort してから�
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
   const snapshot = ReorderSnapshot.from(data, "A", "C");
   expect(snapshot.afterColumns.map((c) => c.name)).toEqual(["B", "C", "A"]);
@@ -73,6 +75,7 @@ test("from: order に gap がある [A(0), B(5), C(10)] でも from='A', to='C' 
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
   const snapshot = ReorderSnapshot.from(data, "A", "C");
   expect(snapshot.afterColumns).toEqual([
@@ -154,6 +157,7 @@ test("toCommandBuilder: current 引数を見ず snapshot.afterColumns を返す"
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
   expect(builder(unrelatedCurrent)).toEqual({
     columns: snapshot.afterColumns,

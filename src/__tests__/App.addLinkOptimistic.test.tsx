@@ -98,6 +98,7 @@ const makeTaskB = (): Task =>
   });
 
 const makePayload = (tasks: Task[]): OpenProjectPayload => ({
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks,
   columns: ["Todo", "Done"],

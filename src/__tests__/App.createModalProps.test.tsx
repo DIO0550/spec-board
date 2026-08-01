@@ -169,6 +169,7 @@ const openProjectWithTasks = async () => {
       columns: ["Todo", "Done"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      loadWarnings: [],
     }),
   );
   const buttons = container?.querySelectorAll("header button") ?? [];

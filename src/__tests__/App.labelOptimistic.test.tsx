@@ -96,6 +96,7 @@ const makeSeedTask = (labels: readonly string[]): Task =>
 
 /** open_project mock の返り値を seed task で構築する。 */
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],

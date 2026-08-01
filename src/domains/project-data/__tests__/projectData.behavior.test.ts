@@ -25,6 +25,7 @@ test("applyTaskCreated は task を追加し parent task の children を同期�
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskCreated(data, child);
@@ -54,6 +55,7 @@ test("applyTaskCreated は parent children を二重追加しない", () => {
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskCreated(data, child);
@@ -78,6 +80,7 @@ test("applyTaskUpdated は originalFilePath に一致する task を差し替え
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/a.md", updated);
@@ -113,6 +116,7 @@ test("applyTaskUpdated は parent が変わったとき旧親 children から該
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -149,6 +153,7 @@ test("applyTaskUpdated は parent が変わったとき新親 children に該当
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -179,6 +184,7 @@ test("applyTaskUpdated は parent が新規付与されたとき新親 children 
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -209,6 +215,7 @@ test("applyTaskUpdated は parent が解除されたとき旧親 children から
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -238,6 +245,7 @@ test("applyTaskUpdated は originalFilePath が存在しないとき parent-sync
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(
@@ -283,6 +291,7 @@ test("applyTaskUpdated は rename + reparent で旧親から originalFilePath �
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -319,6 +328,7 @@ test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -352,6 +362,7 @@ test("applyTaskUpdated は parent 変更がなければ他 task 参照を維持�
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
@@ -381,6 +392,7 @@ test("applyTaskDeleted は task を削除し hierarchy と links から参照を
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.applyTaskDeleted(data, "tasks/c.md");
@@ -405,6 +417,7 @@ test("replaceColumns は status と doneColumn を rename に追従させる", (
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.replaceColumns(data, {
@@ -425,6 +438,7 @@ test("replaceColumns は指定された doneColumn を rename 追従より優先
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
 
   const next = ProjectData.replaceColumns(data, {
@@ -450,6 +464,7 @@ test("applyTaskUpdated は children 空の payload でも既存の childFilePath
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
   // watcher の task-updated / 非 parent の update_task はどちらも children: [] を返す。
   const updated = makeTask({
@@ -485,6 +500,7 @@ test("applyTaskUpdated は payload の parentFilePath を採用する", () => {
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 0,
+    loadWarnings: [],
   };
   const updated = makeTask({
     id: "c",

@@ -144,6 +144,7 @@ test("等価な projections で再同期しても Context Value は同一参照"
     projections: withParent(0, 1),
     milestoneProjections: new Map(),
     openRequestId: 1,
+    loadWarnings: [],
   };
   const merged = ProjectDataDomain.replaceProjections(data, {
     projections: withParent(0, 1),

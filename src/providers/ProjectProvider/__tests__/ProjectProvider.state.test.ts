@@ -50,6 +50,7 @@ const dataA: ProjectData = {
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 };
 
 const dataB: ProjectData = {
@@ -59,6 +60,7 @@ const dataB: ProjectData = {
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 };
 
 const loadedAState: ProjectState = {
@@ -186,6 +188,7 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const child = makeTask({
@@ -217,6 +220,7 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const child = makeTask({
@@ -248,6 +252,7 @@ test("task-created (parent あり) で親が既に children を持っていれ�
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const child = makeTask({
@@ -323,6 +328,7 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   // b を削除すると、a の links と reverseLinks から tasks/b.md が消える
@@ -371,6 +377,7 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   // 親 (p) を削除した場合、子 (c) の parent と other (o) の children をクリア
@@ -417,6 +424,7 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
 
@@ -466,6 +474,7 @@ test("columns-replaced: doneColumn が rename 対象なら自動追従する", (
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const next = reducer(loaded, {
@@ -489,6 +498,7 @@ test("columns-replaced: action.doneColumn 指定時はそれが採用される (
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const next = reducer(loaded, {
@@ -512,6 +522,7 @@ test("columns-replaced: doneColumn / renames 未指定時は既存値を維持",
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const next = reducer(loaded, {
@@ -588,6 +599,7 @@ test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const next = reducer(loaded, {
@@ -617,6 +629,7 @@ test("card-order-updated → 他カラムの tasks 順序は不変", () => {
       projections: new Map(),
       milestoneProjections: new Map(),
       openRequestId: 0,
+      loadWarnings: [],
     },
   };
   const next = reducer(loaded, {
@@ -712,6 +725,7 @@ test("tasks-resynced は tasks と両 projection map を更新し columns は変
     tasks: [makeTask({ id: "z", filePath: "tasks/z.md", status: "Done" })],
     projections,
     milestoneProjections,
+    loadWarnings: [],
   });
 
   expect(next.kind).toBe("loaded");
@@ -734,6 +748,7 @@ test("state-replaced は ProjectData 全体を置き換え、tasks-resynced は 
     tasks: dataB.tasks,
     projections: dataB.projections,
     milestoneProjections: dataB.milestoneProjections,
+    loadWarnings: [],
   });
 
   const replacedData = replaced.kind === "loaded" ? replaced.data : undefined;
@@ -750,6 +765,7 @@ test("非 loaded state への tasks-resynced は無視される", () => {
     tasks: dataB.tasks,
     projections: new Map(),
     milestoneProjections: new Map(),
+    loadWarnings: [],
   });
 
   expect(next).toBe(idle);

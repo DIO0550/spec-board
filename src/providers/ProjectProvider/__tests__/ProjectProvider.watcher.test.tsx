@@ -67,6 +67,7 @@ const taskA: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo"],
@@ -246,6 +247,7 @@ test("loadedPath と異なる path の stale handler の event は無視され�
   // 別 project /other へ切替える。/p 用 handler は古い path を掴んだままになる。
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [],
       columns: ["Todo"],

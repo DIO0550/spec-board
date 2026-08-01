@@ -89,6 +89,7 @@ const openProjectRawPayload = {
   columns: ["Todo", "Doing", "Done"],
   projections: {},
   milestoneProjections: {},
+  loadWarnings: [],
   session: {
     projectKey: "/test/project",
     generation: 1,
@@ -139,6 +140,7 @@ const makeInvoke =
           tasks: [],
           projections: {},
           milestoneProjections: {},
+          loadWarnings: [],
           session: {
             projectKey: "/test/project",
             generation: 1,

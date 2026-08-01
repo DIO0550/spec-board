@@ -86,6 +86,7 @@ const taskFeature: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskBug, taskFeature],
   columns: ["Todo", "Done"],

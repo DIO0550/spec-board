@@ -615,66 +615,68 @@ fn updates_app_state_fields_on_success() {
 }
 
 #[test]
-fn config_load_failure_for_invalid_json_returns_parse_category() {
+fn config_load_failure_for_invalid_json_falls_back_with_warning() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
-    // 壊れた JSON
     write_config_json(dir.path(), "{ this is not json");
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
-    let err = open_with_noop(Arc::clone(&state), &raw).expect_err("invalid config should fail");
+    let payload = open_with_noop(Arc::clone(&state), &raw)
+        .expect("invalid config should fall back to the default config");
 
-    match err {
-        OpenProjectError::ConfigLoadFailed {
-            category,
-            ref message,
-        } => {
-            assert_eq!("parse", category);
-            let display = err.to_string();
-            assert!(display.contains("parse"), "display: {display}");
-            assert!(!message.is_empty());
-        }
-        other => panic!("expected ConfigLoadFailed, got {other:?}"),
-    }
+    assert_eq!(Config::default().columns.len(), payload.columns.len());
+    assert_eq!(1, payload.load_warnings.len());
+    assert_eq!(
+        crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback,
+        payload.load_warnings[0].code
+    );
+    assert_eq!(
+        crate::project::load_warning::ProjectLoadWarningStage::Config,
+        payload.load_warnings[0].stage
+    );
+    assert_eq!(
+        Some(".spec-board/config.json"),
+        payload.load_warnings[0].path.as_deref()
+    );
 }
 
 #[test]
-fn config_load_failure_for_empty_columns_returns_parse_category() {
+fn config_load_failure_for_empty_columns_falls_back_with_warning() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
     let config_json = r#"{ "version": 1, "columns": [], "cardOrder": {} }"#;
     write_config_json(dir.path(), config_json);
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
-    let err = open_with_noop(Arc::clone(&state), &raw).expect_err("empty columns should fail");
+    let payload = open_with_noop(Arc::clone(&state), &raw)
+        .expect("invalid config validation should fall back to defaults");
 
-    match err {
-        OpenProjectError::ConfigLoadFailed { category, .. } => {
-            assert_eq!("parse", category);
-            assert!(err.to_string().contains("parse"));
-        }
-        other => panic!("expected ConfigLoadFailed, got {other:?}"),
-    }
+    assert_eq!(
+        Config::default().columns,
+        state.test_config().expect("readable").unwrap().columns
+    );
+    assert!(payload.load_warnings.iter().any(|warning| {
+        warning.code == crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback
+            && warning.stage == crate::project::load_warning::ProjectLoadWarningStage::Config
+    }));
 }
 
 #[test]
-fn config_load_failure_when_spec_board_path_is_a_file_returns_io_category() {
+fn registry_load_failure_remains_fatal_when_spec_board_path_is_a_file() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
-    // .spec-board をファイルにしておく → config.json への読み込みが Io エラーになる。
     let spec_path = dir.path().join(".spec-board");
     fs::write(&spec_path, "not a directory").expect("write file at .spec-board");
     let raw = dir.path().to_str().expect("utf-8").to_string();
 
     let err =
-        open_with_noop(Arc::clone(&state), &raw).expect_err(".spec-board as file should fail");
+        open_with_noop(Arc::clone(&state), &raw).expect_err("registry load should remain fatal");
 
     match err {
-        OpenProjectError::ConfigLoadFailed { category, .. } => {
+        OpenProjectError::LabelsLoadFailed { category, .. } => {
             assert_eq!("io", category);
-            assert!(err.to_string().contains("io"));
         }
-        other => panic!("expected ConfigLoadFailed io, got {other:?}"),
+        other => panic!("expected LabelsLoadFailed io, got {other:?}"),
     }
 }
 
@@ -997,39 +999,29 @@ fn displaced_watcher_stop_observes_the_new_committed_session() {
 }
 
 #[test]
-fn previous_app_state_is_preserved_when_load_fails() {
-    // 1 回目の open で AppState を確定させる。
+fn project_state_is_replaced_when_config_falls_back() {
     let state = Arc::new(AppState::new());
     let first_dir = tempdir();
     write_md(first_dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
-    let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
-    open_with_noop(Arc::clone(&state), &first_raw).expect("first open should succeed");
+    open_with_noop(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("first open should succeed");
 
-    let snapshot_before = state.test_tasks_snapshot().expect("readable");
-    let project_before = state.test_project_root().expect("readable");
-
-    // 2 回目の open は config 不正で失敗させる。
     let bad_dir = tempdir();
     write_config_json(bad_dir.path(), "{ this is not json");
-    let bad_raw = bad_dir.path().to_str().expect("utf-8").to_string();
-    let err = open_with_noop(Arc::clone(&state), &bad_raw)
-        .expect_err("second open with broken config should fail");
-    assert!(matches!(err, OpenProjectError::ConfigLoadFailed { .. }));
+    let payload = open_with_noop(Arc::clone(&state), bad_dir.path().to_str().expect("utf-8"))
+        .expect("config failure should not prevent opening the project");
 
-    // 失敗時に前のプロジェクト state がそのまま残ることを担保する。
-    let snapshot_after = state.test_tasks_snapshot().expect("readable");
-    let project_after = state.test_project_root().expect("readable");
-    assert_eq!(project_before, project_after);
-    assert_eq!(snapshot_before.len(), snapshot_after.len());
-    let file_paths_before: Vec<String> = snapshot_before
-        .iter()
-        .map(|t| t.file_path.as_str().to_string())
-        .collect();
-    let file_paths_after: Vec<String> = snapshot_after
-        .iter()
-        .map(|t| t.file_path.as_str().to_string())
-        .collect();
-    assert_eq!(file_paths_before, file_paths_after);
+    assert_eq!(
+        Some(bad_dir.path().to_path_buf()),
+        state.test_project_root().expect("readable")
+    );
+    assert!(state.test_tasks_snapshot().expect("readable").is_empty());
+    assert!(payload.load_warnings.iter().any(|warning| {
+        warning.code == crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback
+    }));
 }
 
 #[test]
@@ -1039,6 +1031,7 @@ fn payload_serialization_uses_camel_case() {
         columns: vec!["Todo".into()],
         projections: TaskProjectionMap::new(),
         milestone_projections: MilestoneProjectionMap::new(),
+        load_warnings: Vec::new(),
         session: zero_session(),
     };
     let json = serde_json::to_string(&payload).expect("serialize");
@@ -1128,8 +1121,7 @@ fn open_project_payload_round_trip() {
     // OpenProjectPayload は #[derive(Serialize)] のみだが、JSON 形状互換を
     // round-trip で機械検証する。Deserialize を派生せずに `serde_json::Value`
     // 経由で再パースする。
-    let json =
-        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{}}"#;
+    let json = r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{},"loadWarnings":[]}"#;
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(rename_all = "camelCase")]
     struct PayloadShape {
@@ -1137,6 +1129,7 @@ fn open_project_payload_round_trip() {
         columns: Vec<String>,
         projections: serde_json::Map<String, serde_json::Value>,
         milestone_projections: serde_json::Map<String, serde_json::Value>,
+        load_warnings: Vec<serde_json::Value>,
     }
     let parsed: PayloadShape = serde_json::from_str(json).unwrap();
     assert_eq!(parsed.tasks.len(), 0);
@@ -1150,12 +1143,13 @@ fn open_project_payload_round_trip() {
         columns: vec!["Todo".into(), "Done".into()],
         projections: TaskProjectionMap::new(),
         milestone_projections: MilestoneProjectionMap::new(),
+        load_warnings: Vec::new(),
         session: zero_session(),
     };
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(
         serialized,
-        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{},"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
+        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{},"loadWarnings":[],"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
     );
 }
 

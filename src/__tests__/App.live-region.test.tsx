@@ -132,6 +132,7 @@ const taskB: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA, taskB],
   columns: ["Todo", "Done"],
@@ -314,6 +315,7 @@ test("drop 後の LiveRegion は同一の安定 DOM ノードを維持しつつ 
 // === column reorder ===
 
 const threeColumnPayload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [],
   columns: ["A", "B", "C"],
@@ -420,6 +422,7 @@ const openParentChildProject = async (): Promise<void> => {
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pc"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [parentTask, childTask],
       columns: ["Todo", "Done"],
@@ -561,6 +564,7 @@ const openLinkedTasksProject = async (options?: {
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pl"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [linkedA, linkedB],
       columns: ["Todo", "Done"],

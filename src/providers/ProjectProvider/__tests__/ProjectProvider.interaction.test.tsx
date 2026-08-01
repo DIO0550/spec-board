@@ -288,6 +288,7 @@ const taskB: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo", "Done"],
@@ -325,6 +326,7 @@ test("openProject 成功 (idle → loaded)、get_columns 成功時はその colu
       ],
       doneColumn: "Done",
       projections: new Map(),
+      loadWarnings: payload.loadWarnings,
       milestoneProjections: payload.milestoneProjections,
       openRequestId: 1,
       watcherSession: WATCHER_SESSION_FIXTURE,
@@ -413,6 +415,7 @@ test("openProject 成功 → onLoaded が path / data 付きで 1 回だけ発�
       ],
       doneColumn: "Done",
       projections: new Map(),
+      loadWarnings: payload.loadWarnings,
       milestoneProjections: payload.milestoneProjections,
       openRequestId: 1,
       watcherSession: WATCHER_SESSION_FIXTURE,
@@ -487,6 +490,7 @@ test("openProjectByPath 成功 → onLoaded が path / data 付きで発火す�
       ],
       doneColumn: "Done",
       projections: new Map(),
+      loadWarnings: payload.loadWarnings,
       milestoneProjections: payload.milestoneProjections,
       openRequestId: 1,
       watcherSession: WATCHER_SESSION_FIXTURE,
@@ -645,6 +649,7 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/b"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [taskB],
       columns: ["Done"],
@@ -678,6 +683,7 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
   await act(async () => {
     resolveInvokeA(
       Result.ok({
+        loadWarnings: [],
         session: WATCHER_SESSION_FIXTURE,
         tasks: [],
         columns: [],
@@ -1496,6 +1502,7 @@ test("プロジェクト切替で旧 listen が unlisten され、新 listen が
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [taskB],
       columns: ["Done"],
@@ -1575,6 +1582,7 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
   await act(async () => {
     resolveInvoke(
       Result.ok({
+        loadWarnings: [],
         session: WATCHER_SESSION_FIXTURE,
         tasks: [taskB],
         columns: ["Done"],
@@ -1698,6 +1706,7 @@ test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登�
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [taskB],
       columns: ["Done"],
@@ -1827,6 +1836,7 @@ test("open-start 直後の race: loading 中に旧 task-updated callback が発�
   await act(async () => {
     resolveInvoke(
       Result.ok({
+        loadWarnings: [],
         session: WATCHER_SESSION_FIXTURE,
         tasks: [taskB],
         columns: ["Done"],
@@ -1948,6 +1958,7 @@ test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登�
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/q"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [taskB],
       columns: ["Done"],
@@ -2019,6 +2030,7 @@ test("open-start 直後の race: loading 中に旧 task-deleted callback が発�
   await act(async () => {
     resolveInvoke(
       Result.ok({
+        loadWarnings: [],
         session: WATCHER_SESSION_FIXTURE,
         tasks: [taskB],
         columns: ["Done"],
@@ -2114,6 +2126,7 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [taskA, childTask],
       columns: ["Todo", "Done"],
@@ -2182,6 +2195,7 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
 // === reorderColumns ===
 
 const threeColumnPayload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [],
   columns: ["A", "B", "C"],

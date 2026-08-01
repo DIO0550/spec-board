@@ -92,6 +92,7 @@ const makeSeedTask = (): Task =>
   });
 
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
@@ -394,6 +395,7 @@ test("削除 pending 中に open-start (project switch) が走ると pendingDele
   await act(async () => {
     resolveOpen(
       Result.ok({
+        loadWarnings: [],
         session: WATCHER_SESSION_FIXTURE,
         tasks: [],
         columns: ["Todo"],

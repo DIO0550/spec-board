@@ -91,6 +91,7 @@ const makeSeedTask = (body: string): Task =>
   });
 
 const makePayload = (seedTask: Task): OpenProjectPayload => ({
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [seedTask],
   columns: ["Todo", "Doing", "Done"],
