@@ -1,16 +1,23 @@
 //! `create_milestone_impl` / `From<CreateMilestoneArgs>` のテスト（E2E・TempDir）。
 
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use tempfile::TempDir;
 
-use super::{create_milestone_impl, CreateMilestoneArgs, CreateMilestoneError};
+use super::{
+    create_milestone_impl, create_milestone_impl_with_store, CreateMilestoneArgs,
+    CreateMilestoneError,
+};
 use crate::config::clock::FixedClock;
 use crate::config::{
-    milestone_registry_store, MilestoneDefinition, MilestoneRegistry, MilestoneRegistryStore,
-    MilestoneState,
+    milestone_registry_store, LoadMilestonesError, MilestoneDefinition, MilestoneRegistry,
+    MilestoneRegistryStore, MilestoneState, SaveMilestonesError,
 };
-use crate::state::{AppState, AppStateError};
+use crate::config::{Config, LabelRegistry};
+use crate::project_session::SessionRevision;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 
 const FIXED_NOW: &str = "2026-06-03T12:00:00Z";
 
@@ -43,11 +50,52 @@ fn definition(name: &str) -> MilestoneDefinition {
 
 fn opened_state(root: &Path, registry: MilestoneRegistry) -> AppState {
     let state = AppState::new();
+    state.install_test_project(
+        root,
+        Config::default(),
+        LabelRegistry::default(),
+        registry,
+        Vec::new(),
+    );
     state
-        .set_project_path(Some(root.to_path_buf()))
-        .expect("writable");
-    state.replace_milestones(Some(registry)).expect("writable");
-    state
+}
+
+struct ConflictAfterSaveMilestoneStore<'a> {
+    state: &'a AppState,
+    stored: Mutex<MilestoneRegistry>,
+    save_calls: AtomicUsize,
+    load_calls: AtomicUsize,
+}
+
+impl<'a> ConflictAfterSaveMilestoneStore<'a> {
+    fn new(state: &'a AppState) -> Self {
+        Self {
+            state,
+            stored: Mutex::new(MilestoneRegistry::default()),
+            save_calls: AtomicUsize::new(0),
+            load_calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl MilestoneRegistryStore for ConflictAfterSaveMilestoneStore<'_> {
+    fn load(&self) -> Result<MilestoneRegistry, LoadMilestonesError> {
+        self.load_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.stored.lock().expect("fake store lock").clone())
+    }
+
+    fn save(&self, registry: &MilestoneRegistry) -> Result<(), SaveMilestonesError> {
+        self.save_calls.fetch_add(1, Ordering::SeqCst);
+        *self.stored.lock().expect("fake store lock") = registry.clone();
+        let identity = self
+            .state
+            .active_session_identity()
+            .expect("active session identity");
+        self.state
+            .commit_session_write(&identity, |_| ())
+            .expect("inject concurrent revision");
+        Ok(())
+    }
 }
 
 // ───────── From<CreateMilestoneArgs>（lenient 変換） ─────────
@@ -96,7 +144,7 @@ fn impl_creates_and_persists_with_updated() {
     assert_eq!(on_disk.milestones.len(), 1);
     assert_eq!(on_disk.milestones[0].name, "v0.3");
     assert_eq!(on_disk.milestones[0].updated.as_deref(), Some(FIXED_NOW));
-    let in_mem = state.milestones().expect("milestones").expect("some");
+    let in_mem = state.test_milestones().expect("milestones").expect("some");
     assert_eq!(in_mem.milestones.len(), 1);
 }
 
@@ -112,6 +160,67 @@ fn impl_creates_file_when_absent() {
         .join(".spec-board")
         .join("milestones.yml")
         .exists());
+}
+
+#[test]
+fn revision_exhaustion_performs_no_disk_write_and_keeps_milestones_unchanged() {
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), MilestoneRegistry::default());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let before = state
+        .session_snapshot()
+        .expect("snapshot lock")
+        .expect("loaded snapshot");
+
+    let error = create_milestone_impl(&state, args("v0.3"), &fixed_clock())
+        .expect_err("revision exhaustion");
+
+    assert!(matches!(
+        error,
+        CreateMilestoneError::SessionWrite(SessionWriteError::RevisionExhausted(_))
+    ));
+    assert!(!tmp
+        .path()
+        .join(".spec-board")
+        .join("milestones.yml")
+        .exists());
+    let after = state
+        .session_snapshot()
+        .expect("snapshot lock")
+        .expect("loaded snapshot");
+    assert_eq!(after.version(), before.version());
+    assert_eq!(after.milestones(), before.milestones());
+}
+
+#[test]
+fn disk_success_conflict_resync_uses_the_same_injected_milestone_store() {
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), MilestoneRegistry::default());
+    let target = state.active_session_identity().expect("active identity");
+    let store = ConflictAfterSaveMilestoneStore::new(&state);
+
+    let error =
+        create_milestone_impl_with_store(&state, &target, &store, args("v0.3"), &fixed_clock())
+            .expect_err("original conflict");
+
+    assert!(matches!(
+        error,
+        CreateMilestoneError::SessionWrite(SessionWriteError::Conflict(_))
+    ));
+    assert_eq!(1, store.save_calls.load(Ordering::SeqCst));
+    assert_eq!(1, store.load_calls.load(Ordering::SeqCst));
+    let milestones = state
+        .test_milestones()
+        .expect("milestones lock")
+        .expect("loaded milestones");
+    assert_eq!(
+        vec!["v0.3"],
+        milestones
+            .milestones
+            .iter()
+            .map(|milestone| milestone.name.as_str())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -134,7 +243,7 @@ fn impl_no_commit_on_duplicate_name() {
     let err = create_milestone_impl(&state, args("v0.3"), &fixed_clock()).expect_err("duplicate");
     assert!(matches!(err, CreateMilestoneError::Validation(_)));
     // in-memory は 1 件のまま・disk write されない。
-    let in_mem = state.milestones().expect("milestones").expect("some");
+    let in_mem = state.test_milestones().expect("milestones").expect("some");
     assert_eq!(in_mem.milestones.len(), 1);
     assert!(!tmp
         .path()
@@ -150,7 +259,7 @@ fn impl_no_commit_on_empty_name() {
 
     let err = create_milestone_impl(&state, args(""), &fixed_clock()).expect_err("empty name");
     assert!(matches!(err, CreateMilestoneError::Validation(_)));
-    let in_mem = state.milestones().expect("milestones").expect("some");
+    let in_mem = state.test_milestones().expect("milestones").expect("some");
     assert!(in_mem.milestones.is_empty());
 }
 

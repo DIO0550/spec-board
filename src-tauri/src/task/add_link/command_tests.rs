@@ -14,8 +14,12 @@ use super::add_link_impl;
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::io::FsTaskIo;
+use crate::task::writer_test_support::{
+    session_revision, session_write_ignore_len, CountingTaskIo,
+};
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -71,7 +75,7 @@ fn add_link_writes_file_and_updates_cache_on_success() {
     assert!(on_disk.contains("links:"));
     assert!(on_disk.contains("- tasks/b.md"));
 
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     let a = snap
         .iter()
         .find(|t| t.file_path == "tasks/a.md")
@@ -98,7 +102,8 @@ fn add_link_noop_when_target_already_in_links() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let before = fs::read(dir.path().join("tasks/a.md")).unwrap();
-    let snap_before = state.tasks_snapshot().expect("snap");
+    let revision_before = session_revision(&state);
+    let snap_before = state.test_tasks_snapshot().expect("snap");
 
     let _ = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md"))
         .expect("noop returns Ok");
@@ -106,13 +111,11 @@ fn add_link_noop_when_target_already_in_links() {
     let after = fs::read(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(before, after, "noop must not rewrite file");
 
-    let snap_after = state.tasks_snapshot().expect("snap");
+    let snap_after = state.test_tasks_snapshot().expect("snap");
     assert_eq!(snap_before.len(), snap_after.len());
 
-    assert!(
-        state.write_ignore().is_empty().expect("probe"),
-        "noop must not consume write_ignore slot"
-    );
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(revision_before, session_revision(&state));
 }
 
 #[test]
@@ -203,11 +206,7 @@ fn add_link_returns_self_link_error_for_same_path() {
 }
 
 #[test]
-fn add_link_registers_write_ignore_then_writes() {
-    // NoopWatcherFactory でも install_watcher_handle は実行されるため
-    // is_watcher_installed() == true。effect 層は register → write_existing の順で
-    // 動作し、watcher event が来るまで write_ignore に entry が 1 件残る
-    // （update_task と同型）。
+fn add_link_registers_session_write_ignore_and_advances_revision() {
     let dir = tempdir();
     seed_md(
         dir.path(),
@@ -222,14 +221,15 @@ fn add_link_registers_write_ignore_then_writes() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
+    let revision_before = session_revision(&state);
     let _ = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
 
     let after = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert!(after.contains("- tasks/b.md"));
+    assert_eq!(1, session_write_ignore_len(&state));
     assert_eq!(
-        1,
-        state.write_ignore().len().expect("len"),
-        "write_ignore must hold exactly one entry for the source path"
+        revision_before.as_u64() + 1,
+        session_revision(&state).as_u64()
     );
 }
 
@@ -271,4 +271,33 @@ fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"
     );
+}
+
+#[test]
+fn add_link_revision_exhausted_performs_zero_task_io() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let io = CountingTaskIo::default();
+
+    let error = add_link_impl(&state, &io, args_for("tasks/a.md", "tasks/b.md"))
+        .expect_err("revision exhaustion must reject the writer");
+
+    assert!(matches!(error, AddLinkCommandError::RevisionExhausted(_)));
+    assert_eq!(0, io.calls(), "preflight must run before every TaskIo call");
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(u64::MAX, session_revision(&state).as_u64());
+    let content = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read unchanged source");
+    assert!(!content.contains("links:"));
 }

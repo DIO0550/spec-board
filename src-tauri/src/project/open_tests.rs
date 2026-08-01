@@ -1,8 +1,16 @@
-use super::{open_project_impl, OpenProjectError, OpenProjectPayload};
+use super::{
+    open_project_impl, open_project_impl_with_reporter, OpenProjectError, OpenProjectPayload,
+};
 
+use crate::config::column_name::ColumnName;
 use crate::config::{CardOrder, Column, Config};
 use crate::project::watcher_factory::{NoopWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionIdentity;
+use crate::state::active_project_resources::{
+    pending_activation_state, wait_for_activation, StagedProjectResources, WatcherActivation,
+    WatcherStopDiagnostic, WatcherStopDiagnosticReporter,
+};
 use crate::state::event_seq::EventSeq;
 use crate::state::project_generation::ProjectGeneration;
 use crate::state::project_key::ProjectKey;
@@ -12,12 +20,14 @@ use crate::state::{AppState, BoxedWatcherHandle};
 use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
 use crate::task::task_index::Task;
 use spec_board_fs::watcher::core::WatcherError;
-use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
+use spec_board_fs::watcher::handle::WatcherHandle;
+use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread::{self, JoinHandle};
 
 use tempfile::TempDir;
 
@@ -56,8 +66,53 @@ fn open_with_noop(
     )
 }
 
+struct TestPausedHandle {
+    join: Option<JoinHandle<()>>,
+    on_stop: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl WatcherHandle for TestPausedHandle {
+    fn stop(&mut self) {
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        if let Some(on_stop) = self.on_stop.take() {
+            on_stop();
+        }
+    }
+}
+
+fn stage_test_resources(
+    identity: SessionIdentity,
+    on_active: impl FnOnce() + Send + 'static,
+    on_stop: impl FnOnce() + Send + 'static,
+) -> Result<StagedProjectResources, OpenProjectError> {
+    let activation_state = pending_activation_state();
+    let worker_state = Arc::clone(&activation_state);
+    let join = thread::Builder::new()
+        .name("open-test-paused-watcher".to_owned())
+        .spawn(move || {
+            if wait_for_activation(worker_state.as_ref()) {
+                on_active();
+            }
+        })
+        .map_err(WatcherError::Io)
+        .map_err(|source| OpenProjectError::WatcherInitFailed { source })?;
+    let activation = WatcherActivation::new(activation_state, join.thread().clone());
+    let handle = TestPausedHandle {
+        join: Some(join),
+        on_stop: Some(Box::new(on_stop)),
+    };
+
+    Ok(StagedProjectResources::new(
+        identity,
+        Box::new(handle) as BoxedWatcherHandle,
+        activation,
+        Arc::new(WriteIgnoreRegistry::new()),
+    ))
+}
+
 /// `prepare` で `WatcherInitFailed` を返すテスト用 factory。
-/// `spawn` は呼ばれない契約のため panic でガードする。
 struct FailingPrepareFactory {
     init_message: String,
 }
@@ -79,19 +134,18 @@ impl WatcherFactory for FailingPrepareFactory {
         })
     }
 
-    fn spawn(
+    fn stage_paused(
         &self,
         _prepared: (),
         _state: &Arc<AppState>,
-        _root: &Path,
-        _config: &Config,
-    ) -> BoxedWatcherHandle {
-        panic!("spawn should not be invoked when prepare fails");
+        _identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        panic!("stage should not be invoked when prepare fails");
     }
 }
 
-/// `spawn` 段階で旧 watcher の停止と AppState commit が完了していることを
-/// 検証するためのテスト用 factory。
+/// displaced stop が新session commit後に実行されたことを検証する factory。
 struct CountingFactory {
     stop_calls: Arc<AtomicUsize>,
     state: Arc<AppState>,
@@ -104,19 +158,25 @@ impl WatcherFactory for CountingFactory {
         Ok(())
     }
 
-    fn spawn(
+    fn stage_paused(
         &self,
         _prepared: (),
         _state: &Arc<AppState>,
-        _root: &Path,
-        _config: &Config,
-    ) -> BoxedWatcherHandle {
-        // spawn 段階では旧 stop が既に呼ばれており、cache も新値で commit 済み。
-        assert_eq!(1, self.stop_calls.load(Ordering::SeqCst));
-        let snapshot = self.state.tasks_snapshot().expect("readable");
-        assert_eq!(1, snapshot.len());
-        assert_eq!("tasks/a.md", snapshot[0].file_path);
-        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let stop_calls = Arc::clone(&self.stop_calls);
+        let state = Arc::clone(&self.state);
+        stage_test_resources(
+            identity,
+            || {},
+            move || {
+                let snapshot = state.test_tasks_snapshot().expect("new session readable");
+                assert_eq!(1, snapshot.len());
+                assert_eq!("tasks/a.md", snapshot[0].file_path);
+                stop_calls.fetch_add(1, Ordering::SeqCst);
+            },
+        )
     }
 }
 
@@ -162,21 +222,182 @@ fn write_config_json(root: &Path, content: &str) {
     fs::write(dir.join("config.json"), content).expect("write config.json");
 }
 
-struct CountingHandle {
-    stop_calls: Arc<AtomicUsize>,
-}
+struct PanickingStopFactory;
 
-impl WatcherHandle for CountingHandle {
-    fn stop(&mut self) {
-        self.stop_calls.fetch_add(1, Ordering::SeqCst);
+impl WatcherFactory for PanickingStopFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn stage_paused(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        stage_test_resources(identity, || {}, || panic!("watcher stop panic for test"))
     }
 }
 
-struct PanickingHandle;
+#[derive(Default)]
+struct CollectingStopReporter {
+    diagnostics: Mutex<Vec<WatcherStopDiagnostic>>,
+}
 
-impl WatcherHandle for PanickingHandle {
-    fn stop(&mut self) {
-        panic!("watcher stop panic for test");
+impl WatcherStopDiagnosticReporter for CollectingStopReporter {
+    fn report(&self, diagnostic: WatcherStopDiagnostic) {
+        self.diagnostics
+            .lock()
+            .expect("diagnostics writable")
+            .push(diagnostic);
+    }
+}
+struct FailingStageFactory;
+
+impl WatcherFactory for FailingStageFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn stage_paused(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        _identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        Err(OpenProjectError::WatcherInitFailed {
+            source: WatcherError::Init("synthetic stage failure".to_owned()),
+        })
+    }
+}
+
+struct IdentityMismatchFactory;
+
+impl WatcherFactory for IdentityMismatchFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn stage_paused(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let wrong_id =
+            crate::project_session::SessionId::from_raw(identity.version().session_id.as_u64() + 1);
+        let wrong_identity = crate::project_session::PreparedProjectSession::new(
+            identity.project_root().clone(),
+            Config::default(),
+            crate::config::LabelRegistry::default(),
+            crate::config::MilestoneRegistry::default(),
+            std::collections::HashMap::new(),
+        )
+        .into_session(wrong_id)
+        .identity();
+        stage_test_resources(wrong_identity, || {}, || {})
+    }
+}
+
+struct ActivationProbeFactory {
+    processed: Arc<AtomicUsize>,
+    completed: mpsc::Sender<()>,
+}
+
+impl WatcherFactory for ActivationProbeFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn stage_paused(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let activation_state = pending_activation_state();
+        let worker_state = Arc::clone(&activation_state);
+        let processed = Arc::clone(&self.processed);
+        let completed = self.completed.clone();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let join = thread::Builder::new()
+            .name("open-test-activation-probe".to_owned())
+            .spawn(move || {
+                ready_tx.send(()).expect("signal worker ready");
+                if wait_for_activation(worker_state.as_ref()) {
+                    processed.fetch_add(1, Ordering::SeqCst);
+                    completed.send(()).expect("signal worker processed");
+                }
+            })
+            .map_err(WatcherError::Io)
+            .map_err(|source| OpenProjectError::WatcherInitFailed { source })?;
+        ready_rx.recv().expect("worker reached activation latch");
+        assert_eq!(
+            0,
+            self.processed.load(Ordering::SeqCst),
+            "paused worker must not process before swap"
+        );
+        let activation = WatcherActivation::new(activation_state, join.thread().clone());
+        let handle = TestPausedHandle {
+            join: Some(join),
+            on_stop: Some(Box::new(|| {})),
+        };
+
+        Ok(StagedProjectResources::new(
+            identity,
+            Box::new(handle) as BoxedWatcherHandle,
+            activation,
+            Arc::new(WriteIgnoreRegistry::new()),
+        ))
+    }
+}
+
+struct BlockingStopFactory {
+    stop_started: mpsc::Sender<()>,
+    release_stop: Mutex<Option<mpsc::Receiver<()>>>,
+}
+
+impl WatcherFactory for BlockingStopFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn stage_paused(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let stop_started = self.stop_started.clone();
+        let release_stop = self
+            .release_stop
+            .lock()
+            .expect("release receiver available")
+            .take()
+            .expect("stage called once");
+        stage_test_resources(
+            identity,
+            || {},
+            move || {
+                stop_started.send(()).expect("signal stop started");
+                release_stop.recv().expect("release blocked stop");
+            },
+        )
     }
 }
 
@@ -387,18 +608,18 @@ fn updates_app_state_fields_on_success() {
 
     assert_eq!(
         Some(dir.path().to_path_buf()),
-        state.project_path().expect("readable")
+        state.test_project_root().expect("readable")
     );
-    let cfg = state.config().expect("readable").expect("config set");
+    let cfg = state.test_config().expect("readable").expect("config set");
     assert_eq!(Config::default(), cfg);
-    let snapshot = state.tasks_snapshot().expect("readable");
+    let snapshot = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, snapshot.len());
     assert_eq!("tasks/a.md", snapshot[0].file_path);
-    let handle = state
-        .take_watcher_handle()
-        .expect("readable")
-        .expect("watcher installed");
-    drop(handle);
+    let identity = state.active_session_identity().expect("active session");
+    let resources = state
+        .resources_for(identity.version())
+        .expect("matching active resources");
+    assert_eq!(identity.version(), resources.version());
 }
 
 #[test]
@@ -521,62 +742,114 @@ fn corrupted_md_files_are_skipped_and_command_succeeds() {
 }
 
 #[test]
-fn reopen_stops_previous_watcher_exactly_once() {
+fn reopen_stops_previous_active_watcher_exactly_once() {
     let state = Arc::new(AppState::new());
     let counter = Arc::new(AtomicUsize::new(0));
-    state
-        .install_watcher_handle(Box::new(CountingHandle {
-            stop_calls: Arc::clone(&counter),
-        }))
-        .expect("install old watcher");
+    let first_dir = tempdir();
+    let second_dir = tempdir();
+    write_md(second_dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let factory = CountingFactory {
+        stop_calls: Arc::clone(&counter),
+        state: Arc::clone(&state),
+    };
 
-    let dir = tempdir();
-    let raw = dir.path().to_str().expect("utf-8").to_string();
-
-    open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+    open_with(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("first open");
+    open_with_noop(
+        Arc::clone(&state),
+        second_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("reopen");
 
     assert_eq!(1, counter.load(Ordering::SeqCst));
 }
 
 #[test]
-fn reopen_clears_previous_write_ignore_paths() {
+fn reopen_installs_a_fresh_session_scoped_write_ignore_registry() {
     let state = Arc::new(AppState::new());
-    state
+    let first_dir = tempdir();
+    open_with_noop(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("first open");
+    let first_identity = state.active_session_identity().expect("first identity");
+    let first_resources = state
+        .resources_for(first_identity.version())
+        .expect("first resources");
+    first_resources
         .write_ignore()
         .register("tasks/dirty.md")
-        .expect("register");
-    assert!(!state.write_ignore().is_empty().expect("readable"));
+        .expect("register old session path");
 
-    let dir = tempdir();
-    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let second_dir = tempdir();
+    open_with_noop(
+        Arc::clone(&state),
+        second_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("reopen");
+    let second_identity = state.active_session_identity().expect("second identity");
+    let second_resources = state
+        .resources_for(second_identity.version())
+        .expect("second resources");
 
-    open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
-
-    assert!(state.write_ignore().is_empty().expect("readable"));
+    assert!(second_resources
+        .write_ignore()
+        .is_empty()
+        .expect("readable"));
+    assert!(
+        first_resources
+            .write_ignore()
+            .should_ignore("tasks/dirty.md")
+            .expect("old registry readable"),
+        "session registries are isolated rather than globally cleared"
+    );
 }
 
 #[test]
-fn watcher_stop_panic_propagates_without_poisoning_watcher_handle_mutex() {
-    // 新しい 4 段階フローでは旧 watcher の `stop()` は
-    // `take_watcher_handle()` で取り出した後（lock 解放後）に呼ばれる。
-    // panic は伝播するが watcher_handle mutex は poison しないため、
-    // 後続 open は成功する。
+fn watcher_stop_panic_is_reported_without_rolling_back_new_session() {
     let state = Arc::new(AppState::new());
-    state
-        .install_watcher_handle(Box::new(PanickingHandle))
-        .expect("install panicking watcher");
+    let first_dir = tempdir();
+    let first = open_with(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+        &PanickingStopFactory,
+    )
+    .expect("first open");
 
-    let dir = tempdir();
-    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let second_dir = tempdir();
+    let second_raw = second_dir.path().to_str().expect("utf-8").to_owned();
+    let intent = OpenProjectIntent::try_from(second_raw).expect("intent");
+    let reporter = CollectingStopReporter::default();
+    let second = open_project_impl_with_reporter(
+        &state,
+        &intent,
+        &crate::config::label_registry_store(intent.as_path()),
+        &crate::config::milestone_registry_store(intent.as_path()),
+        &NoopWatcherFactory,
+        &reporter,
+    )
+    .expect("stop panic must not fail reopen");
 
-    let panic_state = Arc::clone(&state);
-    let panic_path = raw.clone();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        let _ = open_with_noop(Arc::clone(&panic_state), &panic_path);
-    }));
-    assert!(result.is_err(), "stop panic should propagate");
-
-    open_with_noop(Arc::clone(&state), &raw).expect("subsequent open should succeed");
+    assert_eq!(
+        second_dir.path(),
+        state
+            .test_project_root()
+            .expect("readable")
+            .expect("active root")
+    );
+    assert!(second.session.generation > first.session.generation);
+    let diagnostics = reporter.diagnostics.lock().expect("diagnostics readable");
+    assert_eq!(1, diagnostics.len());
+    assert_eq!(
+        first.session.generation.as_u64(),
+        diagnostics[0].version.session_id.as_u64()
+    );
+    assert_eq!("watcher stop panic for test", diagnostics[0].panic_message);
 }
 
 #[test]
@@ -589,7 +862,7 @@ fn tasks_cache_uses_path_buf_keys_from_file_path() {
 
     open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
-    let snapshot = state.tasks_snapshot().expect("readable");
+    let snapshot = state.test_tasks_snapshot().expect("readable");
     let mut paths: Vec<String> = snapshot
         .iter()
         .map(|t| t.file_path.as_str().to_string())
@@ -610,10 +883,11 @@ fn watcher_init_failure_keeps_app_state_completely_unchanged() {
     let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
     open_with_noop(Arc::clone(&state), &first_raw).expect("first open");
 
-    let project_before = state.project_path().expect("readable");
-    let config_before = state.config().expect("readable");
-    let snapshot_before = state.tasks_snapshot().expect("readable");
+    let project_before = state.test_project_root().expect("readable");
+    let config_before = state.test_config().expect("readable");
+    let snapshot_before = state.test_tasks_snapshot().expect("readable");
 
+    let identity_before = state.active_session_identity().expect("active identity");
     // 2 回目: prepare で WatcherInitFailed を返すスタブを使う。
     let other_dir = tempdir();
     let other_raw = other_dir.path().to_str().expect("utf-8").to_string();
@@ -630,16 +904,17 @@ fn watcher_init_failure_keeps_app_state_completely_unchanged() {
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
 
     // AppState の全フィールドが 1 回目の状態のまま残ることを確認する。
-    assert_eq!(project_before, state.project_path().expect("readable"));
-    assert_eq!(config_before, state.config().expect("readable"));
-    let snapshot_after = state.tasks_snapshot().expect("readable");
+    assert_eq!(project_before, state.test_project_root().expect("readable"));
+    assert_eq!(config_before, state.test_config().expect("readable"));
+    let snapshot_after = state.test_tasks_snapshot().expect("readable");
     assert_eq!(snapshot_before.len(), snapshot_after.len());
-    // watcher_handle はまだ前回の NoopWatcherHandle が install されたまま。
-    let still_installed = state
-        .take_watcher_handle()
-        .expect("readable")
-        .expect("watcher should still be present");
-    drop(still_installed);
+    assert_eq!(
+        identity_before,
+        state.active_session_identity().expect("identity preserved")
+    );
+    state
+        .resources_for(identity_before.version())
+        .expect("resources preserved");
 }
 
 #[test]
@@ -671,18 +946,20 @@ fn watcher_init_failure_does_not_write_guide_md_in_new_dir() {
 }
 
 #[test]
-fn watcher_init_failure_does_not_invoke_old_watcher_stop() {
-    // 失敗 prepare のあとに `take_watcher_handle()` が呼ばれないことを担保する
-    // ための回帰テスト。PanickingHandle が install されていても panic しない。
+fn watcher_init_failure_does_not_invoke_active_watcher_stop() {
     let state = Arc::new(AppState::new());
-    state
-        .install_watcher_handle(Box::new(PanickingHandle))
-        .expect("install panicking watcher");
+    let first_dir = tempdir();
+    open_with(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+        &PanickingStopFactory,
+    )
+    .expect("first open");
+    let identity_before = state.active_session_identity().expect("active identity");
 
-    let dir = tempdir();
-    let raw = dir.path().to_str().expect("utf-8").to_string();
-
-    let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
+    let second_dir = tempdir();
+    let second_raw = second_dir.path().to_str().expect("utf-8").to_owned();
+    let intent = OpenProjectIntent::try_from(second_raw).expect("intent");
     let factory = FailingPrepareFactory::new("synth");
     let err = open_project_impl(
         &state,
@@ -692,40 +969,37 @@ fn watcher_init_failure_does_not_invoke_old_watcher_stop() {
         &factory,
     )
     .expect_err("watcher init failure");
+
     assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
+    assert_eq!(
+        identity_before,
+        state.active_session_identity().expect("identity preserved")
+    );
 }
 
 #[test]
-fn old_watcher_is_stopped_before_state_commit() {
-    // CountingHandle を pre-install し、spawn factory 内で `tasks_snapshot`
-    // が新値を返すこと、stop call カウンタが spawn 前に 1 になっていることを
-    // 観察し、(1) prepare → (2) stop_old → (3) commit → (4) spawn の順序を
-    // 検証する。
+fn displaced_watcher_stop_observes_the_new_committed_session() {
     let state = Arc::new(AppState::new());
     let stop_counter = Arc::new(AtomicUsize::new(0));
-    state
-        .install_watcher_handle(Box::new(CountingHandle {
-            stop_calls: Arc::clone(&stop_counter),
-        }))
-        .expect("install old watcher");
-
-    let dir = tempdir();
-    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
-    let raw = dir.path().to_str().expect("utf-8").to_string();
-
-    let intent = OpenProjectIntent::try_from(raw.clone()).expect("non-empty path");
+    let first_dir = tempdir();
     let factory = CountingFactory {
         stop_calls: Arc::clone(&stop_counter),
         state: Arc::clone(&state),
     };
-    open_project_impl(
-        &state,
-        &intent,
-        &crate::config::label_registry_store(intent.as_path()),
-        &crate::config::milestone_registry_store(intent.as_path()),
+    open_with(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
         &factory,
     )
-    .expect("open should succeed");
+    .expect("first open");
+
+    let second_dir = tempdir();
+    write_md(second_dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    open_with_noop(
+        Arc::clone(&state),
+        second_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("reopen");
 
     assert_eq!(1, stop_counter.load(Ordering::SeqCst));
 }
@@ -739,8 +1013,8 @@ fn previous_app_state_is_preserved_when_load_fails() {
     let first_raw = first_dir.path().to_str().expect("utf-8").to_string();
     open_with_noop(Arc::clone(&state), &first_raw).expect("first open should succeed");
 
-    let snapshot_before = state.tasks_snapshot().expect("readable");
-    let project_before = state.project_path().expect("readable");
+    let snapshot_before = state.test_tasks_snapshot().expect("readable");
+    let project_before = state.test_project_root().expect("readable");
 
     // 2 回目の open は config 不正で失敗させる。
     let bad_dir = tempdir();
@@ -751,8 +1025,8 @@ fn previous_app_state_is_preserved_when_load_fails() {
     assert!(matches!(err, OpenProjectError::ConfigLoadFailed { .. }));
 
     // 失敗時に前のプロジェクト state がそのまま残ることを担保する。
-    let snapshot_after = state.tasks_snapshot().expect("readable");
-    let project_after = state.project_path().expect("readable");
+    let snapshot_after = state.test_tasks_snapshot().expect("readable");
+    let project_after = state.test_project_root().expect("readable");
     assert_eq!(project_before, project_after);
     assert_eq!(snapshot_before.len(), snapshot_after.len());
     let file_paths_before: Vec<String> = snapshot_before
@@ -764,13 +1038,6 @@ fn previous_app_state_is_preserved_when_load_fails() {
         .map(|t| t.file_path.as_str().to_string())
         .collect();
     assert_eq!(file_paths_before, file_paths_after);
-}
-
-#[test]
-fn write_ignore_error_lock_poisoned_maps_to_state_lock_poisoned() {
-    use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
-    let err: OpenProjectError = WriteIgnoreError::LockPoisoned.into();
-    assert!(matches!(err, OpenProjectError::StateLockPoisoned));
 }
 
 #[test]
@@ -799,7 +1066,7 @@ fn build_payload_returns_empty_columns_for_config_with_no_columns() {
         done_column: None,
     };
 
-    let payload = super::build_payload(Vec::new(), &cfg, zero_session());
+    let payload = super::build_payload_from_parts(Vec::new(), &cfg, zero_session());
 
     assert!(payload.tasks.is_empty());
     assert!(payload.columns.is_empty());
@@ -853,7 +1120,7 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         ..task_b.clone()
     };
 
-    let payload = super::build_payload(vec![task_b, task_a], &cfg, zero_session());
+    let payload = super::build_payload_from_parts(vec![task_b, task_a], &cfg, zero_session());
 
     let task_ids: Vec<&str> = payload.tasks.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(vec!["a.md", "b.md"], task_ids);
@@ -921,7 +1188,10 @@ fn open_commits_labels_from_labels_yml() {
     open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"))
         .expect("open should succeed");
 
-    let registry = state.labels().expect("readable").expect("labels committed");
+    let registry = state
+        .test_labels()
+        .expect("readable")
+        .expect("labels committed");
     let names: Vec<&str> = registry.labels.iter().map(|l| l.name.as_str()).collect();
     assert_eq!(names, vec!["bug", "enhancement"]);
 }
@@ -936,7 +1206,7 @@ fn open_without_labels_yml_commits_empty_registry() {
         .expect("open should succeed");
 
     let registry = state
-        .labels()
+        .test_labels()
         .expect("readable")
         .expect("labels committed (default)");
     assert!(registry.labels.is_empty());
@@ -995,7 +1265,7 @@ fn reopen_into_project_without_labels_yml_resets_labels_to_empty() {
     assert_eq!(
         1,
         state
-            .labels()
+            .test_labels()
             .expect("readable")
             .expect("some")
             .labels
@@ -1007,7 +1277,7 @@ fn reopen_into_project_without_labels_yml_resets_labels_to_empty() {
     open_with_noop(Arc::clone(&state), dir2.path().to_str().expect("utf-8"))
         .expect("second open should succeed");
     assert!(state
-        .labels()
+        .test_labels()
         .expect("readable")
         .expect("some")
         .labels
@@ -1024,8 +1294,8 @@ fn failed_open_due_to_broken_labels_keeps_previous_state() {
     write_labels_yml(dir1.path(), "labels:\n  - name: bug\n");
     open_with_noop(Arc::clone(&state), dir1.path().to_str().expect("utf-8"))
         .expect("first open should succeed");
-    let project_before = state.project_path().expect("readable");
-    let labels_before = state.labels().expect("readable");
+    let project_before = state.test_project_root().expect("readable");
+    let labels_before = state.test_labels().expect("readable");
 
     // 2 回目: 壊れ labels.yml の別プロジェクト → load は commit より前なので旧 state 非破壊
     let dir2 = tempdir();
@@ -1034,8 +1304,8 @@ fn failed_open_due_to_broken_labels_keeps_previous_state() {
         .expect_err("broken labels.yml should fail open");
     assert!(matches!(err, OpenProjectError::LabelsLoadFailed { .. }));
 
-    assert_eq!(project_before, state.project_path().expect("readable"));
-    assert_eq!(labels_before, state.labels().expect("readable"));
+    assert_eq!(project_before, state.test_project_root().expect("readable"));
+    assert_eq!(labels_before, state.test_labels().expect("readable"));
 }
 
 // ───────── milestones.yml 読み込み（open_project 経由） ─────────
@@ -1060,7 +1330,7 @@ fn open_commits_milestones_from_milestones_yml() {
         .expect("open should succeed");
 
     let registry = state
-        .milestones()
+        .test_milestones()
         .expect("readable")
         .expect("milestones committed");
     let names: Vec<&str> = registry
@@ -1081,7 +1351,7 @@ fn open_without_milestones_yml_commits_empty_registry() {
         .expect("open should succeed");
 
     let registry = state
-        .milestones()
+        .test_milestones()
         .expect("readable")
         .expect("milestones committed (default)");
     assert!(registry.milestones.is_empty());
@@ -1141,11 +1411,11 @@ fn open_commits_config_labels_and_milestones_together() {
         .expect("open should succeed");
 
     // config / labels / milestones が一貫して反映される
-    assert!(state.config().expect("readable").is_some());
+    assert!(state.test_config().expect("readable").is_some());
     assert_eq!(
         1,
         state
-            .labels()
+            .test_labels()
             .expect("readable")
             .expect("some")
             .labels
@@ -1154,7 +1424,7 @@ fn open_commits_config_labels_and_milestones_together() {
     assert_eq!(
         1,
         state
-            .milestones()
+            .test_milestones()
             .expect("readable")
             .expect("some")
             .milestones
@@ -1173,7 +1443,7 @@ fn reopen_into_project_without_milestones_yml_resets_to_empty() {
     assert_eq!(
         1,
         state
-            .milestones()
+            .test_milestones()
             .expect("readable")
             .expect("some")
             .milestones
@@ -1184,7 +1454,7 @@ fn reopen_into_project_without_milestones_yml_resets_to_empty() {
     open_with_noop(Arc::clone(&state), dir2.path().to_str().expect("utf-8"))
         .expect("second open should succeed");
     assert!(state
-        .milestones()
+        .test_milestones()
         .expect("readable")
         .expect("some")
         .milestones
@@ -1377,8 +1647,9 @@ fn task_projection_semantics_do_not_depend_on_input_order() {
     let parent = sample_task_with_parent("tasks/p.md", None);
     let child = sample_task_with_parent("tasks/c.md", Some("tasks/p.md"));
 
-    let ordered = super::build_payload(vec![parent.clone(), child.clone()], &cfg, zero_session());
-    let reversed = super::build_payload(vec![child, parent], &cfg, zero_session());
+    let ordered =
+        super::build_payload_from_parts(vec![parent.clone(), child.clone()], &cfg, zero_session());
+    let reversed = super::build_payload_from_parts(vec![child, parent], &cfg, zero_session());
 
     assert_eq!(ordered.projections, reversed.projections);
     assert_eq!(
@@ -1564,42 +1835,49 @@ fn open_project_impl_returns_the_same_tasks_as_the_shared_rebuild_pipeline() {
 
 // ───────── watcher session（cache install と同一トランザクション） ─────────
 
-/// spawn の瞬間に 1 件 emit する watcher を模す factory。
-///
-/// session を commit の外で組み立てていると「session はその変更を含むが tasks は
-/// 含まない」状態が生まれる。その envelope は `revision <= R` で破棄され gap も
-/// 立たないため FE が永久に復旧できない。回帰として固定する。
-struct EmittingOnSpawnFactory;
+/// activation 後に 1 件の mutation を模す factory。
+struct EmittingOnActivationFactory {
+    completed: mpsc::Sender<()>,
+}
 
-impl WatcherFactory for EmittingOnSpawnFactory {
+impl WatcherFactory for EmittingOnActivationFactory {
     type Prepared = ();
 
     fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
         Ok(())
     }
 
-    fn spawn(
+    fn stage_paused(
         &self,
         _prepared: (),
         state: &Arc<AppState>,
-        _root: &Path,
-        _config: &crate::config::Config,
-    ) -> BoxedWatcherHandle {
-        state
-            .with_tasks_cache_mut(|cache| {
-                cache.insert(
-                    std::path::PathBuf::from("tasks/spawned.md"),
-                    sample_spawned_task(),
-                );
-            })
-            .expect("writable");
-        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let state = Arc::clone(state);
+        let completed = self.completed.clone();
+        stage_test_resources(
+            identity,
+            move || {
+                state
+                    .test_update_tasks(|cache| {
+                        cache.insert(
+                            std::path::PathBuf::from("tasks/spawned.md"),
+                            sample_spawned_task(),
+                        );
+                    })
+                    .expect("writable");
+                completed.send(()).expect("signal activation mutation");
+            },
+            || {},
+        )
     }
 }
 
-/// spawn 時に観測した generation を記録する factory。
+/// activation 後に観測した generation を記録する factory。
 struct GenerationProbeFactory {
     observed: Arc<AtomicUsize>,
+    completed: mpsc::Sender<()>,
 }
 
 impl WatcherFactory for GenerationProbeFactory {
@@ -1609,18 +1887,27 @@ impl WatcherFactory for GenerationProbeFactory {
         Ok(())
     }
 
-    fn spawn(
+    fn stage_paused(
         &self,
         _prepared: (),
         state: &Arc<AppState>,
-        _root: &Path,
-        _config: &crate::config::Config,
-    ) -> BoxedWatcherHandle {
-        self.observed.store(
-            state.project_generation().as_u64() as usize,
-            Ordering::SeqCst,
-        );
-        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle
+        identity: SessionIdentity,
+        _default_status: ColumnName,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let observed = Arc::clone(&self.observed);
+        let completed = self.completed.clone();
+        let state = Arc::clone(state);
+        stage_test_resources(
+            identity,
+            move || {
+                observed.store(
+                    state.test_project_generation().as_u64() as usize,
+                    Ordering::SeqCst,
+                );
+                completed.send(()).expect("signal generation observation");
+            },
+            || {},
+        )
     }
 }
 
@@ -1684,7 +1971,7 @@ fn reopening_a_project_advances_the_generation() {
 }
 
 #[test]
-fn a_watcher_emitting_during_spawn_cannot_desynchronize_session_and_tasks() {
+fn post_activation_mutation_cannot_desynchronize_committed_payload() {
     let dir = tempdir();
     fs::create_dir_all(dir.path().join("tasks")).expect("create tasks dir");
     fs::write(
@@ -1693,39 +1980,9 @@ fn a_watcher_emitting_during_spawn_cannot_desynchronize_session_and_tasks() {
     )
     .expect("write md");
     let state = Arc::new(AppState::new());
-
-    let payload = open_with(
-        Arc::clone(&state),
-        dir.path().to_str().expect("utf-8"),
-        &EmittingOnSpawnFactory,
-    )
-    .expect("open ok");
-
-    assert_eq!(
-        1,
-        payload.tasks.len(),
-        "payload の tasks には spawn 後の変更が入らない"
-    );
-    let milestone = payload
-        .milestone_projections
-        .get("v1")
-        .expect("committed snapshot projection");
-    assert_eq!(milestone.total, 1);
-    assert_eq!(milestone.task_file_paths.len(), 1);
-    assert_eq!(milestone.task_file_paths[0].as_str(), "tasks/a.md");
-    assert!(
-        payload.session.revision < state.tasks_revision(),
-        "session も spawn 前に確定していれば、spawn 後の変更は revision が上回る = FE が新しい event として受け取れる"
-    );
-}
-
-#[test]
-fn spawn_observes_the_same_generation_that_the_payload_reports() {
-    let dir = tempdir();
-    let state = Arc::new(AppState::new());
-    let observed = Arc::new(AtomicUsize::new(0));
-    let factory = GenerationProbeFactory {
-        observed: Arc::clone(&observed),
+    let (completed_tx, completed_rx) = mpsc::channel();
+    let factory = EmittingOnActivationFactory {
+        completed: completed_tx,
     };
 
     let payload = open_with(
@@ -1734,6 +1991,45 @@ fn spawn_observes_the_same_generation_that_the_payload_reports() {
         &factory,
     )
     .expect("open ok");
+    completed_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("activated mutation completes");
+
+    assert_eq!(
+        1,
+        payload.tasks.len(),
+        "payload is derived solely from the committed swap snapshot"
+    );
+    let milestone = payload
+        .milestone_projections
+        .get("v1")
+        .expect("committed snapshot projection");
+    assert_eq!(milestone.total, 1);
+    assert_eq!(milestone.task_file_paths.len(), 1);
+    assert_eq!(milestone.task_file_paths[0].as_str(), "tasks/a.md");
+    assert!(payload.session.revision < state.test_tasks_revision());
+}
+
+#[test]
+fn activation_observes_the_same_generation_that_the_payload_reports() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    let observed = Arc::new(AtomicUsize::new(0));
+    let (completed_tx, completed_rx) = mpsc::channel();
+    let factory = GenerationProbeFactory {
+        observed: Arc::clone(&observed),
+        completed: completed_tx,
+    };
+
+    let payload = open_with(
+        Arc::clone(&state),
+        dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("open ok");
+    completed_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("generation observation completes");
 
     assert_eq!(
         payload.session.generation.as_u64() as usize,
@@ -1756,7 +2052,157 @@ fn a_failed_watcher_init_leaves_the_generation_untouched() {
 
     assert_eq!(
         0,
-        state.project_generation().as_u64(),
+        state.test_project_generation().as_u64(),
         "commit へ到達していないので世代は発行されない"
     );
+}
+
+#[test]
+fn stage_failure_preserves_resident_state_and_leaves_a_session_id_gap() {
+    let state = Arc::new(AppState::new());
+    let first_dir = tempdir();
+    let first = open_with_noop(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("first open");
+    let identity_before = state.active_session_identity().expect("first identity");
+
+    let failed_dir = tempdir();
+    let error = open_with(
+        Arc::clone(&state),
+        failed_dir.path().to_str().expect("utf-8"),
+        &FailingStageFactory,
+    )
+    .expect_err("stage fails");
+    assert!(matches!(error, OpenProjectError::WatcherInitFailed { .. }));
+    assert_eq!(
+        identity_before,
+        state.active_session_identity().expect("identity preserved")
+    );
+    state
+        .resources_for(identity_before.version())
+        .expect("resources preserved");
+
+    let third_dir = tempdir();
+    let third = open_with_noop(
+        Arc::clone(&state),
+        third_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("next open");
+    assert_eq!(
+        first.session.generation.as_u64() + 2,
+        third.session.generation.as_u64(),
+        "the ID reserved before failed stage is never reused"
+    );
+}
+
+#[test]
+fn identity_mismatch_is_typed_and_preserves_resident_state() {
+    let state = Arc::new(AppState::new());
+    let first_dir = tempdir();
+    open_with_noop(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+    )
+    .expect("first open");
+    let identity_before = state.active_session_identity().expect("first identity");
+
+    let second_dir = tempdir();
+    let error = open_with(
+        Arc::clone(&state),
+        second_dir.path().to_str().expect("utf-8"),
+        &IdentityMismatchFactory,
+    )
+    .expect_err("identity mismatch");
+
+    assert!(matches!(
+        error,
+        OpenProjectError::SessionIdentityMismatch { .. }
+    ));
+    assert_eq!(
+        identity_before,
+        state.active_session_identity().expect("identity preserved")
+    );
+    state
+        .resources_for(identity_before.version())
+        .expect("resources preserved");
+}
+
+#[test]
+fn paused_worker_processes_only_after_atomic_swap_activation() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let processed = Arc::new(AtomicUsize::new(0));
+    let (completed_tx, completed_rx) = mpsc::channel();
+    let factory = ActivationProbeFactory {
+        processed: Arc::clone(&processed),
+        completed: completed_tx,
+    };
+
+    let payload = open_with(
+        Arc::clone(&state),
+        dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("open succeeds");
+    completed_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("worker activated");
+
+    assert_eq!(1, processed.load(Ordering::SeqCst));
+    let identity = state.active_session_identity().expect("active identity");
+    assert_eq!(
+        payload.session.generation.as_u64(),
+        identity.version().session_id.as_u64()
+    );
+    state
+        .resources_for(identity.version())
+        .expect("resources active with domain");
+}
+
+#[test]
+fn blocked_displaced_stop_holds_neither_writer_gate_nor_state_locks() {
+    let state = Arc::new(AppState::new());
+    let first_dir = tempdir();
+    let (stop_started_tx, stop_started_rx) = mpsc::channel();
+    let (release_stop_tx, release_stop_rx) = mpsc::channel();
+    let factory = BlockingStopFactory {
+        stop_started: stop_started_tx,
+        release_stop: Mutex::new(Some(release_stop_rx)),
+    };
+    open_with(
+        Arc::clone(&state),
+        first_dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("first open");
+
+    let second_dir = tempdir();
+    let second_path = second_dir.path().to_str().expect("utf-8").to_owned();
+    let state_for_second = Arc::clone(&state);
+    let second_join = thread::spawn(move || open_with_noop(state_for_second, &second_path));
+    stop_started_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("displaced stop blocks after swap");
+
+    let third_dir = tempdir();
+    let third_path = third_dir.path().to_str().expect("utf-8").to_owned();
+    let state_for_third = Arc::clone(&state);
+    let (third_done_tx, third_done_rx) = mpsc::channel();
+    let third_join = thread::spawn(move || {
+        let result = open_with_noop(state_for_third, &third_path).map(|_| ());
+        third_done_tx.send(result).expect("signal third open");
+    });
+    let third_before_release = third_done_rx.recv_timeout(std::time::Duration::from_secs(2));
+
+    release_stop_tx.send(()).expect("release displaced stop");
+    second_join
+        .join()
+        .expect("second thread joins")
+        .expect("second open succeeds");
+    third_join.join().expect("third thread joins");
+    third_before_release
+        .expect("third open completes while displaced stop is blocked")
+        .expect("third open succeeds");
 }

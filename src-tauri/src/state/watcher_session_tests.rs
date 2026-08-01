@@ -1,6 +1,11 @@
 use super::*;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+use crate::config::{Config, LabelRegistry, MilestoneRegistry};
+use crate::project::project_root::ProjectRoot;
+use crate::project_session::{PreparedProjectSession, SessionId};
 
 fn sample_session() -> WatcherSession {
     WatcherSession {
@@ -32,4 +37,35 @@ fn inner_value_objects_serialize_transparently() {
     assert_eq!(3, json["generation"]);
     assert_eq!(42, json["revision"]);
     assert_eq!(17, json["eventSeq"]);
+}
+
+#[test]
+fn coherent_snapshot_converts_to_existing_wire_shape() {
+    let root = ProjectRoot::try_from_str("/home/user/specs").expect("valid root");
+    let snapshot = PreparedProjectSession::new(
+        root,
+        Config::default(),
+        LabelRegistry::default(),
+        MilestoneRegistry::default(),
+        HashMap::new(),
+    )
+    .into_session(SessionId::from_raw(9))
+    .snapshot();
+
+    let session = WatcherSession::from_snapshot(&snapshot, EventSeq::from_raw(17));
+
+    assert_eq!("/home/user/specs", session.project_key.as_str());
+    assert_eq!(9, session.generation.as_u64());
+    assert_eq!(0, session.revision.as_u64());
+    assert_eq!(17, session.event_seq.as_u64());
+}
+
+#[test]
+fn idle_session_uses_empty_project_and_zero_counters() {
+    let session = WatcherSession::idle();
+
+    assert_eq!("", session.project_key.as_str());
+    assert_eq!(0, session.generation.as_u64());
+    assert_eq!(0, session.revision.as_u64());
+    assert_eq!(0, session.event_seq.as_u64());
 }

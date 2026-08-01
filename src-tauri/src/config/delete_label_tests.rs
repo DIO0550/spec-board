@@ -1,6 +1,6 @@
 //! `delete_label_impl` / `LabelRegistry::plan_delete_label` のテスト。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tempfile::TempDir;
 
@@ -8,6 +8,7 @@ use super::{delete_label_impl, DeleteLabelArgs, DeleteLabelError, DeleteLabelPay
 use crate::config::{
     label_registry_store, DeleteLabelPlanError, LabelDefinition, LabelRegistry, LabelRegistryStore,
 };
+use crate::config::{Config, MilestoneRegistry};
 use crate::state::{AppState, AppStateError};
 use crate::task::label::Label;
 use crate::task::task_index::Task;
@@ -51,16 +52,13 @@ fn args(name: &str) -> DeleteLabelArgs {
 
 fn opened_state(root: &Path, registry: LabelRegistry, tasks: Vec<Task>) -> AppState {
     let state = AppState::new();
-    state
-        .set_project_path(Some(root.to_path_buf()))
-        .expect("writable");
-    state.replace_labels(Some(registry)).expect("writable");
-    let cache = tasks
-        .into_iter()
-        .enumerate()
-        .map(|(i, t)| (PathBuf::from(format!("{i}.md")), t))
-        .collect();
-    state.replace_tasks_cache(cache).expect("writable");
+    state.install_test_project(
+        root,
+        Config::default(),
+        registry,
+        MilestoneRegistry::default(),
+        tasks,
+    );
     state
 }
 
@@ -105,7 +103,7 @@ fn impl_deletes_and_persists_with_zero_usage() {
 
     let on_disk = label_registry_store(tmp.path()).load().expect("load");
     assert!(on_disk.labels.iter().all(|l| l.name != "bug"));
-    let in_mem = state.labels().expect("labels").expect("some");
+    let in_mem = state.test_labels().expect("labels").expect("some");
     assert!(in_mem.labels.iter().all(|l| l.name != "bug"));
 }
 
@@ -163,7 +161,7 @@ fn impl_does_not_touch_task_frontmatter() {
     delete_label_impl(&state, args("bug")).expect("delete ok");
 
     // tasks_cache のラベルは変化しない。
-    let tasks = state.tasks_snapshot().expect("tasks");
+    let tasks = state.test_tasks_snapshot().expect("tasks");
     assert_eq!(tasks.len(), 1);
     assert!(tasks[0].labels.iter().any(|l| l.as_str() == "bug"));
 }
@@ -179,7 +177,7 @@ fn impl_returns_no_project_open() {
 fn from_app_state_error_maps_to_state_lock_poisoned() {
     // labels / tasks_cache いずれの lock poison も state 層で `AppStateError::LockPoisoned`
     // となり、command 層は `From` で `StateLockPoisoned`（文字列契約一致）に変換する。
-    // 個別フィールドの poison 検出は state 層テスト（snapshot_label_delete_reports_poison_*）が担う。
+    // domain snapshot の poison 検出は state 層テストで担う。
     let err: DeleteLabelError = AppStateError::LockPoisoned.into();
     assert!(matches!(err, DeleteLabelError::StateLockPoisoned));
     assert_eq!(err.to_string(), "内部状態のロックが破損しました");
@@ -199,7 +197,7 @@ fn impl_no_commit_on_unknown_name() {
     let err = delete_label_impl(&state, args("ghost")).expect_err("unknown");
     assert!(matches!(err, DeleteLabelError::Plan(_)));
     // in-memory は bug を保持。
-    let in_mem = state.labels().expect("labels").expect("some");
+    let in_mem = state.test_labels().expect("labels").expect("some");
     assert!(in_mem.labels.iter().any(|l| l.name == "bug"));
     // disk は書き換わっていない。
     assert!(!tmp.path().join(".spec-board").join("labels.yml").exists());

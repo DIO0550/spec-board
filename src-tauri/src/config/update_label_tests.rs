@@ -10,6 +10,7 @@ use crate::config::{
     label_registry_store, LabelColor, LabelDefinition, LabelGroup, LabelRegistry,
     LabelRegistryStore, UpdateLabelIntent, UpdateLabelPlanError,
 };
+use crate::config::{Config, MilestoneRegistry};
 use crate::state::{AppState, AppStateError};
 
 const FIXED_NOW: &str = "2026-05-31T12:00:00Z";
@@ -58,10 +59,13 @@ fn args(name: &str) -> UpdateLabelArgs {
 
 fn opened_state(root: &Path, registry: LabelRegistry) -> AppState {
     let state = AppState::new();
-    state
-        .set_project_path(Some(root.to_path_buf()))
-        .expect("writable");
-    state.replace_labels(Some(registry)).expect("writable");
+    state.install_test_project(
+        root,
+        Config::default(),
+        registry,
+        MilestoneRegistry::default(),
+        Vec::new(),
+    );
     state
 }
 
@@ -155,7 +159,7 @@ fn impl_updates_and_persists() {
     let on_disk = label_registry_store(tmp.path()).load().expect("load");
     assert_eq!(on_disk.labels[0].description.as_deref(), Some("new"));
     assert_eq!(on_disk.labels[0].updated.as_deref(), Some(FIXED_NOW));
-    let in_mem = state.labels().expect("labels").expect("some");
+    let in_mem = state.test_labels().expect("labels").expect("some");
     assert_eq!(in_mem.labels[0].description.as_deref(), Some("new"));
 }
 

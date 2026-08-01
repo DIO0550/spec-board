@@ -45,7 +45,7 @@ fn set_tasks(state: &AppState, tasks: Vec<Task>) {
         .enumerate()
         .map(|(i, t)| (PathBuf::from(format!("{i}.md")), t))
         .collect();
-    state.replace_tasks_cache(cache).expect("writable");
+    state.test_replace_tasks(cache).expect("writable");
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn returns_empty_payload_when_registry_is_empty() {
     let state = AppState::new();
     // labels.yml 不在 = 空レジストリでも Ok（暗黙ラベル）。タスクも無いので usage は空。
     state
-        .replace_labels(Some(LabelRegistry::default()))
+        .test_replace_labels(Some(LabelRegistry::default()))
         .expect("writable");
 
     let payload = get_labels_impl(&state).expect("正常系");
@@ -79,7 +79,7 @@ fn returns_labels_preserving_definition_order() {
         ],
     };
     state
-        .replace_labels(Some(registry.clone()))
+        .test_replace_labels(Some(registry.clone()))
         .expect("writable");
 
     let payload = get_labels_impl(&state).expect("正常系");
@@ -100,7 +100,7 @@ fn returns_all_fields_in_payload() {
             updated: Some("2026-05-30T00:00:00Z".to_string()),
         }],
     };
-    state.replace_labels(Some(registry)).expect("writable");
+    state.test_replace_labels(Some(registry)).expect("writable");
 
     let payload = get_labels_impl(&state).expect("正常系");
     let label = &payload.labels[0];
@@ -118,7 +118,7 @@ fn returns_all_fields_in_payload() {
 fn usage_counts_empty_when_no_task_uses_labels() {
     let state = AppState::new();
     state
-        .replace_labels(Some(LabelRegistry {
+        .test_replace_labels(Some(LabelRegistry {
             labels: vec![label("bug", None)],
         }))
         .expect("writable");
@@ -132,7 +132,7 @@ fn usage_counts_empty_when_no_task_uses_labels() {
 fn usage_counts_counts_matching_task_labels() {
     let state = AppState::new();
     state
-        .replace_labels(Some(LabelRegistry {
+        .test_replace_labels(Some(LabelRegistry {
             labels: vec![label("bug", None), label("feat", None)],
         }))
         .expect("writable");
@@ -154,7 +154,7 @@ fn usage_counts_counts_matching_task_labels() {
 fn duplicate_label_within_task_counts_once() {
     let state = AppState::new();
     state
-        .replace_labels(Some(LabelRegistry {
+        .test_replace_labels(Some(LabelRegistry {
             labels: vec![label("bug", None)],
         }))
         .expect("writable");
@@ -169,7 +169,7 @@ fn implicit_label_appears_in_counts_not_in_labels() {
     let state = AppState::new();
     // registry には bug のみ定義。タスクは registry 未定義の "impl" を使う。
     state
-        .replace_labels(Some(LabelRegistry {
+        .test_replace_labels(Some(LabelRegistry {
             labels: vec![label("bug", None)],
         }))
         .expect("writable");

@@ -14,8 +14,12 @@ use super::remove_link_impl;
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::io::FsTaskIo;
+use crate::task::writer_test_support::{
+    session_revision, session_write_ignore_len, CountingTaskIo,
+};
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -78,7 +82,7 @@ fn removes_link_from_disk_and_cache() {
         "links key should be removed when last entry dropped, got {on_disk:?}"
     );
 
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     let a = snap
         .iter()
         .find(|t| t.file_path == "tasks/a.md")
@@ -103,7 +107,7 @@ fn removes_reverse_link_on_target() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     // open_project の reverse_links 構築で b.reverse_links に a が入っている前提を確認。
-    let snap_before = state.tasks_snapshot().expect("snap");
+    let snap_before = state.test_tasks_snapshot().expect("snap");
     let b_before = snap_before
         .iter()
         .find(|t| t.file_path == "tasks/b.md")
@@ -118,7 +122,7 @@ fn removes_reverse_link_on_target() {
 
     let _ = remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
 
-    let snap_after = state.tasks_snapshot().expect("snap");
+    let snap_after = state.test_tasks_snapshot().expect("snap");
     let b_after = snap_after
         .iter()
         .find(|t| t.file_path == "tasks/b.md")
@@ -150,7 +154,8 @@ fn noop_when_link_not_present() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let before = fs::read(dir.path().join("tasks/a.md")).unwrap();
-    let snap_before = state.tasks_snapshot().expect("snap");
+    let revision_before = session_revision(&state);
+    let snap_before = state.test_tasks_snapshot().expect("snap");
 
     let _ = remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md"))
         .expect("noop returns Ok");
@@ -158,13 +163,11 @@ fn noop_when_link_not_present() {
     let after = fs::read(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(before, after, "noop must not rewrite file");
 
-    let snap_after = state.tasks_snapshot().expect("snap");
+    let snap_after = state.test_tasks_snapshot().expect("snap");
     assert_eq!(snap_before.len(), snap_after.len());
 
-    assert!(
-        state.write_ignore().is_empty().expect("probe"),
-        "noop must not consume write_ignore slot"
-    );
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(revision_before, session_revision(&state));
 }
 
 #[test]
@@ -305,7 +308,7 @@ fn self_link_removal_returns_updated_reverse_links() {
         returned.reverse_links
     );
 
-    let snap = state.tasks_snapshot().expect("snap");
+    let snap = state.test_tasks_snapshot().expect("snap");
     let a = snap
         .iter()
         .find(|t| t.file_path == "tasks/a.md")
@@ -317,7 +320,7 @@ fn self_link_removal_returns_updated_reverse_links() {
 }
 
 #[test]
-fn registers_write_ignore_for_write_path() {
+fn registers_session_write_ignore_and_advances_revision() {
     let dir = tempdir();
     seed_md(
         dir.path(),
@@ -332,12 +335,13 @@ fn registers_write_ignore_for_write_path() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
+    let revision_before = session_revision(&state);
     let _ = remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
 
+    assert_eq!(1, session_write_ignore_len(&state));
     assert_eq!(
-        1,
-        state.write_ignore().len().expect("len"),
-        "write_ignore must hold exactly one entry for the source path"
+        revision_before.as_u64() + 1,
+        session_revision(&state).as_u64()
     );
 }
 
@@ -377,4 +381,36 @@ fn remove_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"
     );
+}
+
+#[test]
+fn remove_link_revision_exhausted_performs_zero_task_io() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nlinks:\n  - tasks/b.md\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let io = CountingTaskIo::default();
+
+    let error = remove_link_impl(&state, &io, args_for("tasks/a.md", "tasks/b.md"))
+        .expect_err("revision exhaustion must reject the writer");
+
+    assert!(matches!(
+        error,
+        RemoveLinkCommandError::RevisionExhausted(_)
+    ));
+    assert_eq!(0, io.calls(), "preflight must run before every TaskIo call");
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(u64::MAX, session_revision(&state).as_u64());
+    let content = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read unchanged source");
+    assert!(content.contains("- tasks/b.md"));
 }

@@ -44,15 +44,17 @@ fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
 fn opened_state(root: &Path, registry: MilestoneRegistry, tasks: Vec<Task>) -> AppState {
     let state = AppState::new();
     state
-        .set_project_path(Some(root.to_path_buf()))
+        .test_set_project_root(Some(root.to_path_buf()))
         .expect("writable");
-    state.replace_milestones(Some(registry)).expect("writable");
+    state
+        .test_replace_milestones(Some(registry))
+        .expect("writable");
     let cache = tasks
         .into_iter()
         .enumerate()
         .map(|(i, t)| (PathBuf::from(format!("{i}.md")), t))
         .collect();
-    state.replace_tasks_cache(cache).expect("writable");
+    state.test_replace_tasks(cache).expect("writable");
     state
 }
 

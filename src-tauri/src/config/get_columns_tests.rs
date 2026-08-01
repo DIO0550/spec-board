@@ -36,7 +36,7 @@ fn returns_columns_with_explicit_done_column() {
         vec![column("Todo", 0), column("Doing", 1), column("Done", 2)],
         Some(ColumnName::from("Done")),
     );
-    state.replace_config(Some(cfg)).expect("writable");
+    state.test_replace_config(Some(cfg)).expect("writable");
 
     let payload = get_columns_impl(&state).expect("正常系");
     assert_eq!(
@@ -55,7 +55,7 @@ fn returns_columns_sorted_by_order() {
         vec![column("Done", 2), column("Todo", 0), column("Doing", 1)],
         Some(ColumnName::from("Done")),
     );
-    state.replace_config(Some(cfg)).expect("writable");
+    state.test_replace_config(Some(cfg)).expect("writable");
 
     let payload = get_columns_impl(&state).expect("正常系");
     let names: Vec<String> = payload.columns.iter().map(|c| c.name.to_string()).collect();
@@ -71,7 +71,7 @@ fn falls_back_to_order_max_column_when_done_column_is_none() {
         vec![column("Archive", 5), column("Todo", 0), column("Doing", 1)],
         None,
     );
-    state.replace_config(Some(cfg)).expect("writable");
+    state.test_replace_config(Some(cfg)).expect("writable");
 
     let payload = get_columns_impl(&state).expect("正常系");
     assert_eq!(payload.done_column, "Archive");
@@ -103,7 +103,7 @@ fn panics_when_columns_empty_even_if_done_column_is_some() {
     // `Some` を返してしまうため、空 columns チェックは `assert!` で独立に行う
     // 必要がある。本テストはその不変条件防御の回帰を防ぐ。
     let cfg = make_config(vec![], Some(ColumnName::from("Done")));
-    state.replace_config(Some(cfg)).expect("writable");
+    state.test_replace_config(Some(cfg)).expect("writable");
 
     let _ = get_columns_impl(&state);
 }

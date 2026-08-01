@@ -1,16 +1,20 @@
 //! `create_label_impl` / `LabelRegistry::plan_create_label` / `From<CreateLabelArgs>` のテスト。
 
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use tempfile::TempDir;
 
-use super::{create_label_impl, CreateLabelArgs, CreateLabelError};
+use super::{create_label_impl, create_label_impl_with_store, CreateLabelArgs, CreateLabelError};
 use crate::config::clock::FixedClock;
 use crate::config::{
     label_registry_store, LabelColor, LabelDefinition, LabelGroup, LabelRegistry,
-    LabelRegistryStore,
+    LabelRegistryStore, LoadLabelsError, SaveLabelsError,
 };
-use crate::state::{AppState, AppStateError};
+use crate::config::{Config, MilestoneRegistry};
+use crate::project_session::SessionRevision;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 
 const FIXED_NOW: &str = "2026-05-31T12:00:00Z";
 
@@ -39,11 +43,52 @@ fn definition(name: &str) -> LabelDefinition {
 
 fn opened_state(root: &Path, registry: LabelRegistry) -> AppState {
     let state = AppState::new();
+    state.install_test_project(
+        root,
+        Config::default(),
+        registry,
+        MilestoneRegistry::default(),
+        Vec::new(),
+    );
     state
-        .set_project_path(Some(root.to_path_buf()))
-        .expect("writable");
-    state.replace_labels(Some(registry)).expect("writable");
-    state
+}
+
+struct ConflictAfterSaveLabelStore<'a> {
+    state: &'a AppState,
+    stored: Mutex<LabelRegistry>,
+    save_calls: AtomicUsize,
+    load_calls: AtomicUsize,
+}
+
+impl<'a> ConflictAfterSaveLabelStore<'a> {
+    fn new(state: &'a AppState) -> Self {
+        Self {
+            state,
+            stored: Mutex::new(LabelRegistry::default()),
+            save_calls: AtomicUsize::new(0),
+            load_calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl LabelRegistryStore for ConflictAfterSaveLabelStore<'_> {
+    fn load(&self) -> Result<LabelRegistry, LoadLabelsError> {
+        self.load_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.stored.lock().expect("fake store lock").clone())
+    }
+
+    fn save(&self, registry: &LabelRegistry) -> Result<(), SaveLabelsError> {
+        self.save_calls.fetch_add(1, Ordering::SeqCst);
+        *self.stored.lock().expect("fake store lock") = registry.clone();
+        let identity = self
+            .state
+            .active_session_identity()
+            .expect("active session identity");
+        self.state
+            .commit_session_write(&identity, |_| ())
+            .expect("inject concurrent revision");
+        Ok(())
+    }
 }
 
 // ───────── plan_create_label（純粋ロジック） ─────────
@@ -163,7 +208,7 @@ fn impl_creates_label_and_persists() {
     assert_eq!(on_disk.labels[0].name, "bug");
     assert_eq!(on_disk.labels[0].updated.as_deref(), Some(FIXED_NOW));
     // in-memory へ commit。
-    let in_mem = state.labels().expect("labels").expect("some");
+    let in_mem = state.test_labels().expect("labels").expect("some");
     assert_eq!(in_mem.labels.len(), 1);
 }
 
@@ -176,6 +221,62 @@ fn impl_creates_file_when_absent() {
     create_label_impl(&state, args("bug"), &fixed_clock()).expect("create ok");
 
     assert!(tmp.path().join(".spec-board").join("labels.yml").exists());
+}
+
+#[test]
+fn revision_exhaustion_performs_no_disk_write_and_keeps_labels_unchanged() {
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), LabelRegistry::default());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let before = state
+        .session_snapshot()
+        .expect("snapshot lock")
+        .expect("loaded snapshot");
+
+    let error =
+        create_label_impl(&state, args("bug"), &fixed_clock()).expect_err("revision exhaustion");
+
+    assert!(matches!(
+        error,
+        CreateLabelError::SessionWrite(SessionWriteError::RevisionExhausted(_))
+    ));
+    assert!(!tmp.path().join(".spec-board").join("labels.yml").exists());
+    let after = state
+        .session_snapshot()
+        .expect("snapshot lock")
+        .expect("loaded snapshot");
+    assert_eq!(after.version(), before.version());
+    assert_eq!(after.labels(), before.labels());
+}
+
+#[test]
+fn disk_success_conflict_resync_uses_the_same_injected_label_store() {
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), LabelRegistry::default());
+    let target = state.active_session_identity().expect("active identity");
+    let store = ConflictAfterSaveLabelStore::new(&state);
+
+    let error = create_label_impl_with_store(&state, &target, &store, args("bug"), &fixed_clock())
+        .expect_err("original conflict");
+
+    assert!(matches!(
+        error,
+        CreateLabelError::SessionWrite(SessionWriteError::Conflict(_))
+    ));
+    assert_eq!(1, store.save_calls.load(Ordering::SeqCst));
+    assert_eq!(1, store.load_calls.load(Ordering::SeqCst));
+    let labels = state
+        .test_labels()
+        .expect("labels lock")
+        .expect("loaded labels");
+    assert_eq!(
+        vec!["bug"],
+        labels
+            .labels
+            .iter()
+            .map(|label| label.name.as_str())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -207,7 +308,7 @@ fn impl_no_commit_on_duplicate_name() {
     let err = create_label_impl(&state, args("bug"), &fixed_clock()).expect_err("duplicate");
     assert!(matches!(err, CreateLabelError::Validation(_)));
     // in-memory は変化しない（1 件のまま）。
-    let in_mem = state.labels().expect("labels").expect("some");
+    let in_mem = state.test_labels().expect("labels").expect("some");
     assert_eq!(in_mem.labels.len(), 1);
     // labels.yml は書き込まれていない。
     assert!(!tmp.path().join(".spec-board").join("labels.yml").exists());

@@ -10,9 +10,13 @@ use super::create_task_impl;
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::io::FsTaskIo;
 use crate::task::task_index::ParentHierarchyErrorReason;
+use crate::task::writer_test_support::{
+    session_revision, session_write_ignore_len, CountingTaskIo,
+};
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -63,7 +67,7 @@ fn create_task_writes_md_and_inserts_into_cache_for_empty_project() {
     assert!(content.contains("title: Fix Login Bug"));
     assert!(content.contains("status: Todo"));
 
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     assert_eq!(1, snap.len());
     assert_eq!("tasks/fix-login-bug.md", snap[0].file_path);
 }
@@ -128,7 +132,7 @@ fn create_task_under_parent_places_into_parent_dir_and_updates_children() {
     let abs = dir.path().join("issues/82/child-task.md");
     assert!(abs.exists());
 
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     let parent_task = snap
         .iter()
         .find(|t| t.file_path == "issues/82/parent.md")
@@ -210,7 +214,7 @@ fn create_task_returns_parent_not_found_for_missing_parent() {
         }
         other => panic!("expected ParentNotFound, got {other:?}"),
     }
-    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert!(state.test_tasks_snapshot().unwrap().is_empty());
 }
 
 #[test]
@@ -229,61 +233,21 @@ fn create_task_returns_invalid_title_for_empty_title() {
 }
 
 #[test]
-fn create_task_succeeds_when_watcher_not_installed_and_does_not_register_write_ignore() {
-    let dir = tempdir();
-    let state = Arc::new(AppState::new());
-    state
-        .set_project_path(Some(dir.path().to_path_buf()))
-        .unwrap();
-
-    let task =
-        create_task_impl(&state, &FsTaskIo, args_with_title("No Watcher")).expect("succeeds");
-    let abs = dir.path().join(task.file_path.as_str());
-    assert!(abs.exists());
-    assert!(
-        state.write_ignore().is_empty().unwrap(),
-        "write_ignore must stay empty when watcher is not installed"
-    );
-}
-
-#[test]
-fn create_task_registers_write_ignore_when_watcher_installed_and_consumed_on_event() {
-    use crate::watcher_event::handler::handle_event;
-    use crate::watcher_event::AdapterContext;
-    use crate::watcher_event::EmitFn;
-    use spec_board_fs::watcher::core::FsEvent;
-    use std::sync::Mutex;
-
+fn create_task_registers_session_write_ignore_and_advances_revision() {
     let dir = tempdir();
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
+    let before = session_revision(&state);
 
     let task = create_task_impl(&state, &FsTaskIo, args_with_title("Watched")).expect("create");
     let abs = dir.path().join(task.file_path.as_str());
-
-    assert_eq!(1, state.write_ignore().len().expect("len"));
-
-    let log: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::new(Mutex::new(Vec::new()));
-    let log_clone = Arc::clone(&log);
-    let emit: EmitFn = Box::new(move |ev, payload| {
-        log_clone.lock().unwrap().push((ev.to_string(), payload));
-    });
-    let ctx = AdapterContext {
-        root: dir.path().to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: crate::state::project_key::ProjectKey::from_root(dir.path()),
-        generation: state.project_generation(),
-        state: Arc::clone(&state),
-        emit,
-        io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,
-    };
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handle ok");
-
-    assert!(
-        log.lock().unwrap().is_empty(),
-        "self-write should not emit IPC"
+    assert!(abs.exists());
+    assert_eq!(1, session_write_ignore_len(&state));
+    assert_eq!(
+        before.as_u64() + 1,
+        session_revision(&state).as_u64(),
+        "one successful writer commit advances revision exactly once"
     );
-    assert!(state.write_ignore().is_empty().unwrap());
 }
 
 #[test]
@@ -304,8 +268,8 @@ fn create_task_with_existing_file_returns_already_exists_and_leaves_state_clean(
         }
         other => panic!("expected Io(AlreadyExists), got {other:?}"),
     }
-    assert!(state.write_ignore().is_empty().unwrap());
-    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert!(state.test_tasks_snapshot().unwrap().is_empty());
 }
 
 #[test]
@@ -357,8 +321,8 @@ fn create_task_create_dir_all_failure_leaves_state_clean() {
 
     let err = create_task_impl(&state, &FsTaskIo, args_with_title("X")).expect_err("should fail");
     assert!(matches!(err, CreateTaskCommandError::Io(_)));
-    assert!(state.write_ignore().is_empty().unwrap());
-    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert!(state.test_tasks_snapshot().unwrap().is_empty());
 }
 
 #[test]
@@ -378,8 +342,8 @@ fn create_task_rejects_body_larger_than_scanner_max_size() {
         other => panic!("expected ContentNotScannerEligible(TooLarge), got {other:?}"),
     }
     assert!(!dir.path().join("tasks/huge.md").exists());
-    assert!(state.tasks_snapshot().unwrap().is_empty());
-    assert!(state.write_ignore().is_empty().unwrap());
+    assert!(state.test_tasks_snapshot().unwrap().is_empty());
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]
@@ -401,8 +365,8 @@ fn create_task_rejects_body_with_nul_byte_in_first_8kb() {
         other => panic!("expected ContentNotScannerEligible(BinaryDetected), got {other:?}"),
     }
     assert!(!dir.path().join("tasks/nul.md").exists());
-    assert!(state.tasks_snapshot().unwrap().is_empty());
-    assert!(state.write_ignore().is_empty().unwrap());
+    assert!(state.test_tasks_snapshot().unwrap().is_empty());
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]
@@ -423,7 +387,7 @@ fn create_task_detects_augmented_cycle_via_dangling_parent_resolution() {
         other => panic!("expected ParentCycleOrTooDeep, got {other:?}"),
     }
     assert!(!dir.path().join("tasks/new.md").exists());
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     assert_eq!(1, snap.len());
 }
 
@@ -513,7 +477,7 @@ fn create_task_with_existing_target_updates_reverse_links_in_cache() {
     assert!(task.links.iter().any(|l| l.as_str() == "tasks/target.md"));
 
     // cache 内 target の reverse_links に作成タスク path が追加される。
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     let target_task = snap
         .iter()
         .find(|t| t.file_path == "tasks/target.md")
@@ -582,7 +546,7 @@ fn create_task_with_invalid_file_name_creates_nothing() {
         err,
         CreateTaskCommandError::Validation(CreateTaskError::InvalidFileName(_))
     ));
-    assert!(state.tasks_snapshot().unwrap().is_empty());
+    assert!(state.test_tasks_snapshot().unwrap().is_empty());
     assert!(!dir.path().join("tasks").join("bad").exists());
 }
 
@@ -642,4 +606,29 @@ fn create_task_without_draft_omits_draft_key() {
     let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
     assert!(!content.contains("draft:"));
     assert!(!task.draft);
+}
+
+#[test]
+fn create_task_revision_exhausted_performs_zero_task_io() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let io = CountingTaskIo::default();
+
+    let error = create_task_impl(&state, &io, args_with_title("At Max"))
+        .expect_err("revision exhaustion must reject the writer");
+
+    assert!(matches!(
+        error,
+        CreateTaskCommandError::RevisionExhausted(_)
+    ));
+    assert_eq!(0, io.calls(), "preflight must run before every TaskIo call");
+    assert!(!dir.path().join("tasks/at-max.md").exists());
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(
+        u64::MAX,
+        session_revision(&state).as_u64(),
+        "rejected writer must not change revision"
+    );
 }
