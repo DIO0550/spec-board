@@ -75,16 +75,13 @@ pub(crate) fn add_link_impl(
             .plan_add_link(project_root.as_path(), intent, &existing_source, parsed)
             .map_err(AddLinkCommandError::Validation)?;
 
-        let AddLinkOutcome::Write {
-            updated_task,
-            file_content,
-            target_normalized,
-        } = outcome
-        else {
-            let AddLinkOutcome::NoOp { existing_task } = outcome else {
-                unreachable!("all add-link outcomes handled")
-            };
-            return Ok(existing_task);
+        let (updated_task, file_content, target_normalized) = match outcome {
+            AddLinkOutcome::NoOp { existing_task } => return Ok(existing_task),
+            AddLinkOutcome::Write {
+                updated_task,
+                file_content,
+                target_normalized,
+            } => (updated_task, file_content, target_normalized),
         };
 
         let mut next_tasks = snapshot.tasks().clone();
