@@ -17,6 +17,7 @@ pub mod projection;
 pub mod rebuild;
 pub mod remove_link;
 pub mod reverse_links;
+pub(crate) mod session_write;
 pub mod task_content;
 pub mod task_file_name;
 pub mod task_file_path;
@@ -24,3 +25,5 @@ pub mod task_index;
 pub mod task_title;
 pub mod update;
 pub mod warning;
+#[cfg(test)]
+pub(crate) mod writer_test_support;

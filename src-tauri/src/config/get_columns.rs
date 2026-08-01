@@ -76,7 +76,10 @@ pub fn get_columns(state: State<'_, Arc<AppState>>) -> Result<GetColumnsPayload,
 /// - `AppState.config` が `None` の場合 `GetColumnsError::NoProjectOpen`
 /// - `config` の `Mutex` が poison している場合 `GetColumnsError::StateLockPoisoned`
 pub(crate) fn get_columns_impl(state: &AppState) -> Result<GetColumnsPayload, GetColumnsError> {
-    let config = state.config()?.ok_or(GetColumnsError::NoProjectOpen)?;
+    let snapshot = state
+        .session_snapshot()?
+        .ok_or(GetColumnsError::NoProjectOpen)?;
+    let config = snapshot.config();
 
     // columns 非空は `Config` aggregate 側の不変条件として
     // `Config::load_or_default` が `EmptyColumns` で担保している。
@@ -96,7 +99,7 @@ pub(crate) fn get_columns_impl(state: &AppState) -> Result<GetColumnsPayload, Ge
         .as_str()
         .to_string();
 
-    let mut columns: Vec<Column> = config.columns;
+    let mut columns = config.columns.clone();
     columns.sort_by_key(|column| column.order);
 
     Ok(GetColumnsPayload {

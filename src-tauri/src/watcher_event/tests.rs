@@ -11,24 +11,71 @@ use tempfile::TempDir;
 
 use super::handler::{handle_event, run_event_loop};
 use super::{AdapterContext, EmitFn};
-use crate::state::project_key::ProjectKey;
-use crate::state::AppState;
+use crate::project::project_root::ProjectRoot;
+use crate::project_session::{PreparedProjectSession, SessionIdentity};
+use crate::state::active_project_resources::{
+    pending_activation_state, StagedProjectResources, WatcherActivation,
+};
+use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::core::FsEvent;
+use spec_board_fs::watcher::handle::NoopWatcherHandle;
+use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
+use std::thread;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
 
+fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
+    let session_id = state.reserve_session_id().expect("reserve session ID");
+    let candidate = PreparedProjectSession::new(
+        ProjectRoot::from_path_buf(root.to_path_buf()).expect("valid project root"),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+    )
+    .into_session(session_id);
+    let identity = candidate.identity();
+    let staged = StagedProjectResources::new(
+        identity.clone(),
+        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        WatcherActivation::new(pending_activation_state(), thread::current()),
+        Arc::new(WriteIgnoreRegistry::new()),
+    );
+    state
+        .swap_open(candidate, staged)
+        .expect("install active test session");
+    identity
+}
+
+fn active_resources(state: &AppState) -> SessionResourceAccess {
+    let snapshot = state.require_session_snapshot().expect("active session");
+    state
+        .resources_for(snapshot.version())
+        .expect("matching active resources")
+}
+
+fn insert_task(state: &AppState, task: crate::task::task_index::Task) {
+    let snapshot = state.require_session_snapshot().expect("active session");
+    state
+        .commit_session_write(&snapshot.identity(), move |session| {
+            session
+                .tasks_mut()
+                .insert(task.file_path.as_path_buf(), task);
+        })
+        .expect("insert test task");
+}
+
 fn build_ctx(root: PathBuf, state: Arc<AppState>) -> (AdapterContext, EmitLog) {
+    let identity = install_active_session(&state, &root);
     let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
     let log_clone = Arc::clone(&log);
     let emit: EmitFn = Box::new(move |ev, payload| {
         log_clone.lock().unwrap().push((ev.to_string(), payload));
     });
     let ctx = AdapterContext {
-        project_key: ProjectKey::from_root(&root),
-        generation: state.project_generation(),
-        root,
-        default_status: "Todo".into(),
+        project_root: identity.project_root().clone(),
+        session_id: identity.version().session_id,
         state,
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
@@ -51,7 +98,7 @@ fn write_md(root: &Path, rel: &str, body: &str) -> PathBuf {
 
 fn snapshot_paths(state: &AppState) -> Vec<String> {
     let mut paths: Vec<String> = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
         .map(|t| t.file_path.into_string())
@@ -100,7 +147,7 @@ fn modify_event_for_existing_path_emits_task_updated_and_replaces_cache_entry() 
     assert_eq!("task-updated", entries[0].0);
     assert_eq!("A2", entries[0].1["payload"]["task"]["title"]);
 
-    let tasks = state.tasks_snapshot().expect("readable");
+    let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
     assert_eq!("A2", tasks[0].title);
 }
@@ -151,6 +198,17 @@ fn rename_event_emits_deleted_for_from_and_created_for_to() {
     assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
     assert_eq!("task-created", entries[1].0);
     assert_eq!("tasks/to.md", entries[1].1["payload"]["task"]["filePath"]);
+    assert_eq!(
+        entries[0].1["revision"].as_u64().expect("delete revision") + 1,
+        entries[1].1["revision"].as_u64().expect("create revision"),
+        "rename delete/create must commit as two ordered revisions"
+    );
+    assert_eq!(
+        entries[0].1["eventSeq"].as_u64().expect("delete eventSeq") + 1,
+        entries[1].1["eventSeq"].as_u64().expect("create eventSeq"),
+        "rename delete/create must emit as two ordered sequence numbers"
+    );
+    assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
 
     assert_eq!(vec!["tasks/to.md".to_string()], snapshot_paths(&state));
 }
@@ -253,17 +311,20 @@ fn write_ignore_consume_skips_emit_for_self_originated_create() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    state
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
+    active_resources(&state)
         .write_ignore()
         .register(&abs)
         .expect("register write_ignore");
-    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
     handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty(), "self write should not emit");
     assert!(snapshot_paths(&state).is_empty());
-    assert!(state.write_ignore().is_empty().expect("readable"));
+    assert!(active_resources(&state)
+        .write_ignore()
+        .is_empty()
+        .expect("readable"));
 }
 
 #[test]
@@ -497,7 +558,7 @@ fn write_ignore_consume_skips_emit_for_self_originated_remove() {
     handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
-    state
+    active_resources(&state)
         .write_ignore()
         .register(&abs)
         .expect("register write_ignore");
@@ -507,7 +568,10 @@ fn write_ignore_consume_skips_emit_for_self_originated_remove() {
 
     assert!(drain_log(&log).is_empty(), "self delete should not emit");
     assert_eq!(vec!["tasks/a.md".to_string()], snapshot_paths(&state));
-    assert!(state.write_ignore().is_empty().expect("readable"));
+    assert!(active_resources(&state)
+        .write_ignore()
+        .is_empty()
+        .expect("readable"));
 }
 
 #[test]
@@ -651,14 +715,13 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+    let identity = install_active_session(&state, dir.path());
     let panicking_emit: EmitFn = Box::new(|_event, _payload| {
         panic!("emit panic in test");
     });
     let ctx = AdapterContext {
-        root: dir.path().to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: ProjectKey::from_root(dir.path()),
-        generation: state.project_generation(),
+        project_root: identity.project_root().clone(),
+        session_id: identity.version().session_id,
         state,
         emit: panicking_emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
@@ -685,6 +748,7 @@ fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
 
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     // disk 上は A.md / B.md が相互参照する循環構成。
     let a_body = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nbody\n";
     let abs_a = write_md(dir.path(), "tasks/a.md", a_body);
@@ -703,24 +767,19 @@ fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
     let mut seeded = task_from_markdown(a_body.as_bytes(), &parse_ctx).expect("parse seed");
     seeded.parent = None;
     ensure_parent_cycle_warning(&mut seeded.warnings);
-    state
-        .with_tasks_cache_mut(|cache| {
-            cache.insert(PathBuf::from("tasks/a.md"), seeded);
-        })
-        .expect("seed cache");
+    insert_task(&state, seeded);
 
     // 外部編集で A.md の本文を更新したものとする（parent は disk 上もそのまま）。
     let updated_body = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nupdated body\n";
     write_md(dir.path(), "tasks/a.md", updated_body);
 
-    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     handle_event(&FsEvent::Modified(abs_a), &ctx).expect("modify ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
     assert_eq!("task-updated", entries[0].0);
 
-    let snapshot = state.tasks_snapshot().expect("readable");
+    let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -756,7 +815,7 @@ fn modify_event_for_non_cycle_task_does_not_inject_parent_cycle_warning() {
     write_md(dir.path(), "tasks/a.md", &task_md("A2"));
     handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
 
-    let snapshot = state.tasks_snapshot().expect("readable");
+    let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -779,6 +838,7 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
 
     // 元々 A.md は parent: tasks/b.md で B.md と循環していた。
     let a_initial = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nbody\n";
+    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     let abs_a = write_md(dir.path(), "tasks/a.md", a_initial);
     write_md(
         dir.path(),
@@ -793,24 +853,19 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
     let mut seeded = task_from_markdown(a_initial.as_bytes(), &parse_ctx).expect("parse seed");
     seeded.parent = None;
     ensure_parent_cycle_warning(&mut seeded.warnings);
-    state
-        .with_tasks_cache_mut(|cache| {
-            cache.insert(PathBuf::from("tasks/a.md"), seeded);
-        })
-        .expect("seed cache");
+    insert_task(&state, seeded);
 
     // ユーザーが外部編集で A.md から parent を除去して循環を解消した。
     let a_resolved = "---\ntitle: A\nstatus: Todo\n---\n\nresolved body\n";
     write_md(dir.path(), "tasks/a.md", a_resolved);
 
-    let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     handle_event(&FsEvent::Modified(abs_a), &ctx).expect("modify ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
     assert_eq!("task-updated", entries[0].0);
 
-    let snapshot = state.tasks_snapshot().expect("readable");
+    let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -842,7 +897,7 @@ fn task_md_with_parent(title: &str, parent: &str) -> String {
 
 fn cached_children(state: &AppState, file_path: &str) -> Vec<String> {
     state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
         .find(|task| task.file_path == file_path)

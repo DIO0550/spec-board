@@ -12,7 +12,7 @@
 //!   は本層で構築する `TauriWatcherFactory` のフィールドへ閉じ込め、effect 層
 //!   へは漏出させない
 //! - `open_project_impl`: 単体テストの境界となる effect 層本体
-//!   （`tauri::AppHandle` を受け取らず、watcher の prepare / spawn を
+//!   （`tauri::AppHandle` を受け取らず、watcher の prepare / paused stage を
 //!   `WatcherFactory` trait で注入することでテスト容易性を確保する）
 //!
 //! # エラー文字列の契約
@@ -61,7 +61,6 @@
 //! 追加すること。現状はこれら 2 variant は `UNKNOWN` 扱いとなる前提で
 //! BE 側エラー Display を生成している。
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -75,14 +74,19 @@ use std::sync::Arc;
 use crate::config::column_name::ColumnName;
 use crate::config::{
     label_registry_store, load_or_default, milestone_registry_store,
-    write_guide_markdown_best_effort, Column, Config, LabelRegistry, LabelRegistryStore,
-    LoadConfigError, LoadLabelsError, LoadMilestonesError, MilestoneRegistry,
-    MilestoneRegistryStore,
+    write_guide_markdown_best_effort, Column, Config, LabelRegistryStore, LoadConfigError,
+    LoadLabelsError, LoadMilestonesError, MilestoneRegistryStore,
 };
 use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
+use crate::project_session::{
+    PreparedProjectSession, ProjectSessionSnapshot, SessionIdExhausted, SessionIdentity,
+};
+use crate::state::active_project_resources::{
+    LogWatcherStopDiagnosticReporter, WatcherStopDiagnosticReporter,
+};
 use crate::state::watcher_session::WatcherSession;
-use crate::state::{AppState, AppStateError};
+use crate::state::{AppState, AppStateError, OpenSwapError};
 use crate::task::io::FsTaskIo;
 use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
@@ -90,7 +94,6 @@ use crate::task::rebuild::{rebuild_tasks_from_disk, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::task::file_scanner::ScanError;
 use spec_board_fs::watcher::core::WatcherError;
-use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
 /// `open_project` コマンドのペイロード。
 ///
@@ -128,6 +131,17 @@ pub enum OpenProjectError {
     /// `AppState` 内部 mutex / `WriteIgnoreRegistry` の lock が poison している。
     #[error("内部状態のロックが破損しました")]
     StateLockPoisoned,
+    /// process内で一意なproject session IDをこれ以上採番できない。
+    #[error(transparent)]
+    SessionIdExhausted(#[from] SessionIdExhausted),
+    /// candidate domainとstage済みresourcesのidentityが一致しない。
+    #[error(
+        "project session/resource identity mismatch: candidate={candidate:?}, staged={staged:?}"
+    )]
+    SessionIdentityMismatch {
+        candidate: SessionIdentity,
+        staged: SessionIdentity,
+    },
     /// scan / parent chain の致命的失敗。Display に "io" を含めて FE 正規表現にマッチさせる。
     #[error("io scan failed: {message}")]
     ScanFailed { message: String },
@@ -160,9 +174,9 @@ pub enum OpenProjectError {
     },
     /// Watcher 初期化失敗（inotify 上限 / poll fallback 失敗 / path missing 等）。
     ///
-    /// FE 側 `PATTERNS` には未対応のため `UNKNOWN` 分類になる。失敗時は
-    /// `commit_app_state` の (1) 段階で復帰し、`AppState` の全フィールドが
-    /// 一切変更されない契約。
+    /// FE 側 `PATTERNS` には未対応のため `UNKNOWN` 分類になる。prepare / thread
+    /// stage は `swap_open` より前に完了するため、失敗時は resident domain/resources
+    /// を一切変更しない。
     #[error("ファイル監視の初期化に失敗しました: {source}")]
     WatcherInitFailed {
         #[from]
@@ -176,13 +190,14 @@ impl From<AppStateError> for OpenProjectError {
     }
 }
 
-impl From<WriteIgnoreError> for OpenProjectError {
-    /// `WriteIgnoreError` を意味別に詰め直す。
-    ///
-    /// - `LockPoisoned` を `StateLockPoisoned` として「内部状態のロック破損」と扱う
-    fn from(err: WriteIgnoreError) -> Self {
-        match err {
-            WriteIgnoreError::LockPoisoned => OpenProjectError::StateLockPoisoned,
+/// `swap_open` のtyped failureをopen command境界へexhaustiveに変換する。
+fn map_open_swap_error(error: OpenSwapError) -> OpenProjectError {
+    match error {
+        OpenSwapError::DomainLockPoisoned | OpenSwapError::ResourceLockPoisoned => {
+            OpenProjectError::StateLockPoisoned
+        }
+        OpenSwapError::IdentityMismatch { candidate, staged } => {
+            OpenProjectError::SessionIdentityMismatch { candidate, staged }
         }
     }
 }
@@ -204,24 +219,24 @@ pub fn open_project(
 ) -> Result<OpenProjectPayload, String> {
     let intent = OpenProjectIntent::try_from(path).map_err(|e| e.to_string())?;
     let watcher = TauriWatcherFactory::new(app);
+    let stop_reporter = LogWatcherStopDiagnosticReporter;
     // ファクトリで既定の labels store（YAML 具象）を生成して注入する。
     // effect 層は `&dyn LabelRegistryStore` のみに依存し、具象型も YAML 形式も知らない。
     let labels_store = label_registry_store(intent.as_path());
     let milestones_store = milestone_registry_store(intent.as_path());
-    open_project_impl(
+    open_project_impl_with_reporter(
         state.inner(),
         &intent,
         &labels_store,
         &milestones_store,
         &watcher,
+        &stop_reporter,
     )
     .map_err(|e| e.to_string())
 }
 
-/// `open_project` Tauri command の effect 層本体（テスト容易性のための一般化版）。
-///
-/// `tauri::AppHandle` を受け取らず、watcher の prepare / spawn を
-/// `WatcherFactory` trait で注入することでテスト容易性を確保する。
+/// 既存 test helper 向けの production reporter 付き effect wrapper。
+#[cfg(test)]
 pub(crate) fn open_project_impl<W: WatcherFactory>(
     state: &Arc<AppState>,
     intent: &OpenProjectIntent,
@@ -229,52 +244,81 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     milestones_store: &dyn MilestoneRegistryStore,
     watcher: &W,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
+    open_project_impl_with_reporter(
+        state,
+        intent,
+        labels_store,
+        milestones_store,
+        watcher,
+        &LogWatcherStopDiagnosticReporter,
+    )
+}
+
+/// `open_project` の effect 層本体。
+///
+/// target exact-root gate を保持して load/prepare/stage/swap を直列化する。domain と
+/// resources の置換後は gate を解放し、旧 watcher の停止を全 state lock 外で行う。
+pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
+    state: &Arc<AppState>,
+    intent: &OpenProjectIntent,
+    labels_store: &dyn LabelRegistryStore,
+    milestones_store: &dyn MilestoneRegistryStore,
+    watcher: &W,
+    stop_reporter: &dyn WatcherStopDiagnosticReporter,
+) -> Result<OpenProjectPayload, OpenProjectError> {
     let root = intent.as_path();
     let raw_path = intent.as_path_str();
     validate_directory(root, raw_path)?;
     check_app_state_locks(state)?;
 
+    let target_gate = state.writer_gate(intent.root())?;
+    let open_guard = state.lock_writer_gate(target_gate.as_ref())?;
+
     let config = load_or_default(root).map_err(map_load_config_error)?;
-    // ラベルマスタも config と同様 commit 前に読み込む（load 失敗時は旧 state 非破壊）。
     let labels = labels_store.load().map_err(map_load_labels_error)?;
-    // マイルストーンマスタも labels と同様 commit 前に読み込む（load 失敗時は旧 state 非破壊）。
     let milestones = milestones_store.load().map_err(map_load_milestones_error)?;
-
     let default_status = default_status_for(&config);
-    // scan → parse → TaskIndex 構築は watcher の full rescan と同じ関数を通す。
-    // 片側だけフィルタ条件が変わることを構造的に防ぐため。
     let tasks = rebuild_tasks_from_disk(root, &default_status, &FsTaskIo)
-        .map_err(|err| map_rebuild_error(err, raw_path))?;
+        .map_err(|error| map_rebuild_error(error, raw_path))?;
 
-    // GUIDE.md 書き込みより **前に** prepare を実行する。watcher 初期化失敗で
-    // 復帰する場合に新 dir 配下の `.spec-board/GUIDE.md` が副作用として残らない
-    // ようにするため。prepare 自体は AppState を一切更新しない。
-    let prepared = watcher.prepare(root)?;
+    // backend/channel と paused worker の構築を resident state の変更前に完了する。
+    let prepared_watcher = watcher.prepare(root)?;
+    let task_cache = tasks
+        .into_iter()
+        .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+        .collect();
+    let prepared_session = PreparedProjectSession::new(
+        intent.root().clone(),
+        config.clone(),
+        labels,
+        milestones,
+        task_cache,
+    );
+    let session_id = state.reserve_session_id()?;
+    let candidate = prepared_session.into_session(session_id);
+    let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
 
     write_guide_markdown_best_effort(root, &config);
 
-    let masters = CommittedMasters {
-        config: &config,
-        labels: &labels,
-        milestones: &milestones,
-    };
-    let session = commit_app_state_with_prepared(state, root, masters, &tasks, prepared, watcher)?;
+    let swap = state
+        .swap_open(candidate, staged)
+        .map_err(map_open_swap_error)?;
+    drop(open_guard);
 
-    Ok(build_payload(tasks, &config, session))
+    if let Some(displaced) = swap.displaced_resources {
+        displaced.stop_displaced_best_effort(stop_reporter);
+    }
+
+    Ok(build_payload(swap.snapshot, swap.watcher_session))
 }
 
-/// AppState 6 mutex + WriteIgnoreRegistry の lock 健全性を一括 probe する。
+/// resident domain/resources の lock 健全性を probe する。
 ///
 /// scan / parse / GUIDE 副作用を実行する前に呼び出すことで、lock poison が
 /// 確定している場合に `.spec-board/GUIDE.md` の不要な書き出しや scan の無駄を
 /// 避けつつ早期に `Err(StateLockPoisoned)` を返せる。
-///
-/// `commit_app_state` でも最終的に同じ probe を実行するが、これは TOCTOU 的に
-/// pre-flight 後 / commit 前に他スレッドで poison が発生する稀なケースを
-/// 検出するためのもの。
 fn check_app_state_locks(state: &AppState) -> Result<(), OpenProjectError> {
-    state.check_all_locks()?;
-    state.write_ignore().is_empty()?;
+    state.check_open_locks()?;
     Ok(())
 }
 
@@ -432,116 +476,6 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
     }
 }
 
-/// `commit_app_state_with_prepared` に渡す確定済みマスタ群（config + 2 レジストリ）。
-///
-/// commit 関数の引数肥大を避けるため、atomic swap 対象のマスタ群を 1 つの借用
-/// 構造体にまとめて運ぶ。`tasks` / `prepared` / `watcher` は性質が異なるため含めない。
-pub(crate) struct CommittedMasters<'a> {
-    pub config: &'a Config,
-    pub labels: &'a LabelRegistry,
-    pub milestones: &'a MilestoneRegistry,
-}
-
-/// `AppState` に新値を確定させる。
-///
-/// # ロック健全性の早期検出（pre-flight の限界）
-///
-/// 6 つの lock を独立して順次取得するため、**真の atomic な commit ではない**。
-/// commit 冒頭で実行する pre-flight は「commit 開始時点で既に poison している
-/// mutex を早期検出して副作用前に Err 復帰させる」ためのものであり、
-/// pre-flight 後 / 個別 setter 呼び出し中に他スレッドの panic 等で後続 lock が
-/// poison するケースまでは防げない（その場合は途中までの setter が成功した
-/// 状態で Err が返る = 部分更新が残り得る）。
-///
-/// 真に atomic な commit が必要になった時点で、AppState 側に lock 取得順序に従って
-/// 全フィールドを単一クリティカルセクションで更新する API を追加し、
-/// ここから呼び替える設計に切り替える前提とする。現状は Tauri command
-/// が単一スレッドで直列処理されることを前提に pre-flight ベースの「best-effort 防御」
-/// に留める。
-///
-/// `open_project_impl` 冒頭の `check_app_state_locks` でも同じ probe を行うが、
-/// これは scan / parse / GUIDE 副作用の前に poison を検出して無駄な計算を
-/// 避けるためであり、commit 直前の probe は pre-flight 後 / commit 前に
-/// 他スレッドで poison が発生する稀なケースの取り逃しを減らすための念押し。
-///
-/// 1. **pre-flight**: `project_path` / `config` / `labels` / `milestones` /
-///    `tasks_cache` / `watcher_handle` / `write_ignore` の各 lock を順に probe し、
-///    開始時点で既に poison していれば早期に `Err(StateLockPoisoned)` を返す。
-///    この時点ではまだ何も書き換えていないため、`open_project_impl` の
-///    「失敗時は旧プロジェクト state を保持する」契約が守られる。
-/// 2. **書き込み**: 副作用を以下の順で実行する。
-///    - `take_watcher_handle().stop()`: 新 cache が書かれる前に旧 watcher を必ず停止
-///    - `replace_project_config_labels_and_milestones`: `project_path` / `config` /
-///      `labels` / `milestones` を **4 lock 同時保持下で atomic に swap**する
-///      （`update_card_order` 等の reader が「新 path + 旧 config」を観測して旧 config を
-///      新プロジェクトの `config.json` に書き出す cross-project corruption を防ぐ）
-///    - `install_project_session`: tasks_cache 置換 / revision bump / generation
-///      bump / eventSeq watermark 読み取りを単一クリティカルセクションで行い、
-///      FE へ返す `WatcherSession` を確定する。**spawn より前**に確定させないと、
-///      spawn 済み watcher が先に emit した場合に「session はその変更を含むが
-///      payload の tasks は含まない」状態が生まれ、その envelope は `revision <= R`
-///      で破棄され gap も立たないため FE が永久に復旧できない
-///    - `write_ignore().clear()`: 旧プロジェクトの登録パスを破棄
-///    - `install_watcher_handle`: 新 watcher を install。旧 handle は既に上で
-///      `stop()` 済みのため、ここでは新 handle を置くだけ
-///
-/// `replace_project_config_labels_and_milestones` は `project_path → config → labels →
-/// milestones` の AppState lock 順序契約に従って 4 lock を順に取得・同時保持する。他の
-/// setter は単一フィールドのみを操作するため、AppState の AB-BA 防止規約に抵触しない。
-///
-/// `tasks_cache` の key は `PathBuf::from(task.file_path)`（`task.file_path` は
-/// 既に root 相対の正規化済み文字列）。
-///
-/// `prepare` の実行と GUIDE.md 書き込みは呼び出し側（`open_project_impl`）で
-/// 順序を制御するため、本関数には **既に確保済みの `prepared`** を直接渡す。
-/// これにより watcher 起動失敗時に `.spec-board/GUIDE.md` を新 dir に書き込んで
-/// しまう副作用を避けられる。
-///
-/// 最後に `watcher.spawn(prepared, state, root, config)` で adapter スレッドを
-/// 起動し、返り値を `install_watcher_handle` で AppState に格納する。spawn は
-/// panic 以外で失敗しない契約。
-pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
-    state: &Arc<AppState>,
-    root: &Path,
-    masters: CommittedMasters<'_>,
-    tasks: &[Task],
-    prepared: W::Prepared,
-    watcher: &W,
-) -> Result<WatcherSession, OpenProjectError> {
-    state.check_all_locks()?;
-    state.write_ignore().is_empty()?;
-
-    if let Some(mut prev) = state.take_watcher_handle()? {
-        prev.stop();
-    }
-
-    let mut cache = HashMap::with_capacity(tasks.len());
-    for task in tasks {
-        cache.insert(PathBuf::from(task.file_path.as_str()), task.clone());
-    }
-
-    // `project_path` / `config` / `labels` / `milestones` を atomic に swap する。別 lock で
-    // 順次更新すると、他 command（例: `update_card_order`）が「新 path + 旧 config」を観測して
-    // 旧 config を新プロジェクトの `.spec-board/config.json` に書き出してしまう
-    // cross-project corruption を起こしうる。
-    state.replace_project_config_labels_and_milestones(
-        Some(root.to_path_buf()),
-        Some(masters.config.clone()),
-        Some(masters.labels.clone()),
-        Some(masters.milestones.clone()),
-    )?;
-    // cache 置換 / revision bump / generation bump / eventSeq watermark を
-    // 1 トランザクションで確定する。spawn 済み watcher が先に emit した変更を
-    // session だけが含む（tasks は含まない）状態を作らないため、session の確定は
-    // **必ず spawn より前**に行う。
-    let session = state.install_project_session(root, cache)?;
-    state.write_ignore().clear()?;
-
-    let handle = watcher.spawn(prepared, state, root, masters.config);
-    state.install_watcher_handle(handle)?;
-    Ok(session)
-}
-
 /// FE へ返す `OpenProjectPayload` を組み立てる。
 ///
 /// `columns` は `Config::columns` の `order` 昇順 sort 後に `name` を抽出する。
@@ -552,7 +486,16 @@ pub(crate) fn commit_app_state_with_prepared<W: WatcherFactory>(
 /// `cardOrder` に載っていないタスク（新規追加された md 等）は、そのカラムの末尾へ
 /// `id` 昇順で並ぶ（`cardOrder` の「記載されていないタスクは末尾に追加」ルール）。
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
-fn build_payload(tasks: Vec<Task>, config: &Config, session: WatcherSession) -> OpenProjectPayload {
+fn build_payload(snapshot: ProjectSessionSnapshot, session: WatcherSession) -> OpenProjectPayload {
+    let tasks = snapshot.tasks().values().cloned().collect();
+    build_payload_from_parts(tasks, snapshot.config(), session)
+}
+
+fn build_payload_from_parts(
+    tasks: Vec<Task>,
+    config: &Config,
+    session: WatcherSession,
+) -> OpenProjectPayload {
     // 並び順の契約は aggregate に集約する（`get_tasks` も同じ入口を通す）。
     let ordered_tasks = TaskIndex::new(tasks).sorted_by_board_order(config);
     // payload tasks と milestone の path 列を同じ ordered 集合から導出する。

@@ -6,7 +6,8 @@ use std::fmt;
 
 use thiserror::Error;
 
-use crate::state::AppStateError;
+use crate::project_session::{RevisionExhausted, SessionConflict};
+use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::TaskIoError;
 use crate::task::task_file_name::TaskFileNameError;
@@ -70,6 +71,24 @@ pub enum CreateTaskCommandError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Frontmatter(#[from] FrontmatterError),
+    #[error(transparent)]
+    SessionConflict(#[from] SessionConflict),
+    #[error(transparent)]
+    RevisionExhausted(#[from] RevisionExhausted),
+    #[error(transparent)]
+    ResourceConflict(#[from] SessionResourceConflict),
+}
+
+impl From<SessionWriteError> for CreateTaskCommandError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(error) => Self::AppState(error),
+            SessionWriteError::Conflict(error) => Self::SessionConflict(error),
+            SessionWriteError::RevisionExhausted(error) => Self::RevisionExhausted(error),
+            SessionWriteError::ResourceConflict(error) => Self::ResourceConflict(error),
+        }
+    }
 }
 
 impl From<ParentValidationFailure> for CreateTaskError {

@@ -5,13 +5,13 @@
 //! usageCount > 0 でも削除は実行し、タスク frontmatter（`task.milestone`）は一切変更しない
 //! （非破壊）。
 //!
-//! 使用数は「削除前に何件で使われていたか」という操作結果のため、`snapshot_milestone_delete`
+//! 使用数は「削除前に何件で使われていたか」という操作結果のため、`coherent session snapshot`
 //! で milestones と tasks を整合した 1 回の観測から算出する。
 //!
 //! # ロック取得順序
 //!
-//! `project_path → milestones → tasks_cache`（preflight `check_milestones_lock` +
-//! `check_tasks_cache_lock`、`snapshot_milestone_delete`、`replace_milestones_if_project_matches`）。
+//! `writer gate → session snapshot → tasks_cache`（preflight `check_milestones_lock` +
+//! `check_tasks_cache_lock`、`coherent session snapshot`、`expected SessionId + revision CAS commit`）。
 //!
 //! # エラー文字列の契約
 //!
@@ -27,7 +27,9 @@ use thiserror::Error;
 use crate::config::{
     milestone_registry_store, DeleteMilestonePlanError, MilestoneRegistryStore, SaveMilestonesError,
 };
-use crate::state::{AppState, AppStateError};
+use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
+use crate::project_session::SessionIdentity;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 use crate::task::task_index::TaskIndex;
 
 /// `delete_milestone` コマンドの引数。
@@ -59,11 +61,23 @@ pub enum DeleteMilestoneError {
     /// milestones.yml への保存失敗。
     #[error(transparent)]
     Save(#[from] SaveMilestonesError),
+    /// project session writer protocolの失敗。
+    #[error(transparent)]
+    SessionWrite(SessionWriteError),
 }
 
 impl From<AppStateError> for DeleteMilestoneError {
     fn from(_: AppStateError) -> Self {
         DeleteMilestoneError::StateLockPoisoned
+    }
+}
+impl From<SessionWriteError> for DeleteMilestoneError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            error => Self::SessionWrite(error),
+        }
     }
 }
 
@@ -84,28 +98,48 @@ pub(crate) fn delete_milestone_impl(
     state: &AppState,
     args: DeleteMilestoneArgs,
 ) -> Result<DeleteMilestonePayload, DeleteMilestoneError> {
-    state.check_milestones_lock()?;
-    state.check_tasks_cache_lock()?;
-    let ctx = state.snapshot_milestone_delete()?;
-    let project_root = ctx
-        .project_root
-        .ok_or(DeleteMilestoneError::NoProjectOpen)?;
-    let registry = ctx.milestones.ok_or(DeleteMilestoneError::NoProjectOpen)?;
+    let target = state
+        .active_session_identity()
+        .map_err(SessionWriteError::from)?;
+    let store = milestone_registry_store(target.project_root().as_path());
+    delete_milestone_impl_with_store(state, &target, &store, args)
+}
 
-    // 削除前の使用数（タスク単位・完全一致）。task 集約へ委譲する。
-    let usage_count = TaskIndex::new(ctx.tasks)
-        .milestone_usage_counts()
-        .get(&args.name)
-        .copied()
-        .unwrap_or(0);
+pub(crate) fn delete_milestone_impl_with_store(
+    state: &AppState,
+    target: &SessionIdentity,
+    store: &dyn MilestoneRegistryStore,
+    args: DeleteMilestoneArgs,
+) -> Result<DeleteMilestonePayload, DeleteMilestoneError> {
+    state.with_project_writer_lease_for(target, |snapshot| {
+        let usage_count = TaskIndex::new(snapshot.tasks().values().cloned().collect())
+            .milestone_usage_counts()
+            .get(&args.name)
+            .copied()
+            .unwrap_or(0);
+        let next = snapshot.milestones().plan_delete_milestone(&args.name)?;
+        let _resources = state.preflight_session_write(snapshot)?;
+        store.save(&next)?;
 
-    let next = registry.plan_delete_milestone(&args.name)?;
-
-    let store = milestone_registry_store(&project_root);
-    store.save(&next)?;
-
-    state.replace_milestones_if_project_matches(&project_root, next)?;
-    Ok(DeleteMilestonePayload { usage_count })
+        let commit = state.commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_milestones(next);
+        });
+        match commit {
+            Ok(_) => Ok(DeleteMilestonePayload { usage_count }),
+            Err(SessionWriteError::Conflict(conflict)) => {
+                if let Err(recovery) = resync_if_same_project_under_lease(
+                    state,
+                    target.project_root(),
+                    &conflict,
+                    ResyncSource::Milestones { store },
+                ) {
+                    log::warn!("delete_milestone conflict recovery failed: {recovery}");
+                }
+                Err(SessionWriteError::Conflict(conflict).into())
+            }
+            Err(error) => Err(error.into()),
+        }
+    })
 }
 
 #[cfg(test)]

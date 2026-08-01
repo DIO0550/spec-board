@@ -1,69 +1,58 @@
 //! アプリケーション全体で共有するグローバル状態 `AppState`。
 //!
 //! `open_project` / `get_tasks` 等の Tauri command が共有するアプリ状態を集約する。
-//! 各フィールドは独立した `Mutex` で保護され、フィールド単位で lock 競合を最小化する。
+//! domain aggregate と active project resources を別々の `Mutex` で保持し、
+//! snapshot/commit/swap の境界でだけ両者を同期する。
 //!
 //! # Lock 取得順序
 //!
 //! 複数フィールドの lock を同時に取得する場合は、必ず以下の順序で取得すること。
 //! AB-BA デッドロックを防ぐための運用規約である。
 //!
-//! ```text
-//! project_path → config → labels → milestones → tasks_cache → watcher_handle → write_ignore
-//! ```
-//!
-//! - 単一フィールドのみを操作するアクセサは順序を意識する必要はない。
-//! - `write_ignore` は `WriteIgnoreRegistry` 内部で独自の `Mutex` を持つため、
-//!   AppState の他フィールドの lock を保持したまま `write_ignore` API を呼ぶ
-//!   場合は常に最後（最下層）として扱うこと。
-//! - `project_generation` / `tasks_revision` / `event_seq` は `AtomicU64` であり
-//!   **この順序契約に参加しない**。他フィールドの lock を保持したまま読み書き
-//!   してよい（新しい辺を足さないための選択）。
-//!
-//! # atomic の Ordering について
-//!
-//! 3 つの `AtomicU64` には `SeqCst` を使うが、**正しさを担保しているのは
-//! `tasks_cache` の `Mutex` critical section であって ordering ではない**。
-//! revision の bump は cache 更新と同じ critical section 内で行われ、
-//! happens-before は Mutex が与えている。`event_seq` は単一の adapter スレッド
-//! だけが消費する。したがって atomic に要求するのは `fetch_add` の戻り値の
-//! 一意性のみで、`Relaxed` でも正しい。`SeqCst` は「ここに暗黙の順序期待を
-//! 持ち込まない」ことを読み手に示すための選択であり、happens-before を
-//! 足しているわけではない。
+//! domain lock → resources lock の順序を全 commit/swap で固定する。writer gate は
+//! domain/resource lock の外側で取得し、disk I/O 中に state lock を保持しない。
 //!
 //! # フィールドカプセル化
 //!
 //! `AppState` の `Mutex` フィールドはすべて private にしてある。
 //! 公開アクセサを通すことで以下を保証する。
 //!
-//! - `AppState` 自身が保持する `Mutex`（`project_path` / `config` /
-//!   `labels` / `milestones` / `tasks_cache` / `watcher_handle`）の `PoisonError` を
-//!   `AppStateError::LockPoisoned` へ統一変換する。
-//!   ただし `write_ignore` は `WriteIgnoreRegistry` 内部で独自の `Mutex` を
-//!   持つため例外で、forwarder 経由の操作は `WriteIgnoreError::LockPoisoned`
-//!   をそのまま返す（`AppStateError` には変換しない）。
-//! - lock 取得順序の運用規約を caller に強制する。
-//! - `watcher_handle` の差し替え時に必ず旧ハンドルへ `stop()` を呼ぶ
-//!   不変条件を維持する。
+//! - domain/resources の poison を typed error に変換する。
+//! - resources は active session version を検証してから session-scoped registry を返す。
+//! - watcher の停止・join は resources swap 後かつ AppState lock 外で行う。
 
-use std::collections::HashMap;
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use thiserror::Error;
 
 use spec_board_fs::watcher::handle::WatcherHandle;
+#[cfg(test)]
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
-use crate::config::column_name::ColumnName;
+#[cfg(test)]
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
+use crate::project::project_root::ProjectRoot;
+#[cfg(test)]
+use crate::project_session::{PreparedProjectSession, SessionRevision};
+use crate::project_session::{
+    ProjectSession, ProjectSessionCommitError, ProjectSessionSnapshot, ProjectSessionStateError,
+    ProjectState, RevisionExhausted, SessionCommit, SessionConflict, SessionId, SessionIdExhausted,
+    SessionIdentity, SessionVersion,
+};
+pub(crate) use crate::state::active_project_resources::SessionResourceAccess;
+pub use crate::state::active_project_resources::SessionResourceConflict;
+use crate::state::active_project_resources::{ActiveProjectResources, StagedProjectResources};
 use crate::state::event_seq::EventSeq;
+#[cfg(test)]
 use crate::state::project_generation::ProjectGeneration;
-use crate::state::project_key::ProjectKey;
+use crate::state::project_writer_gates::ProjectWriterGates;
+#[cfg(test)]
 use crate::state::tasks_revision::TasksRevision;
 use crate::state::watcher_session::WatcherSession;
-use crate::task::parse::default_status_for;
+#[cfg(test)]
 use crate::task::task_index::Task;
 
 /// `tauri::Builder::manage` に渡すために `'static` を含む trait object 型。
@@ -72,9 +61,134 @@ pub type BoxedWatcherHandle = Box<dyn WatcherHandle + Send + 'static>;
 /// `AppState` のロック関連エラー。
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AppStateError {
+    /// project domain の `Mutex` が poison 状態にある。
+    #[error("project domain lock poisoned")]
+    DomainLockPoisoned,
     /// いずれかの内部 `Mutex` が poison 状態にあり、ロックを取得できなかった。
     #[error("app state lock poisoned")]
     LockPoisoned,
+    /// project domain が `Idle` である。
+    #[error("no project is open")]
+    NoProjectOpen,
+    /// active project resources の `Mutex` が poison 状態にある。
+    #[error("active project resource lock poisoned")]
+    ResourceLockPoisoned,
+    /// project writer gate table の `Mutex` が poison 状態にある。
+    #[error("project writer gate table lock poisoned")]
+    WriterGateTablePoisoned,
+    /// project 固有 writer gate の `Mutex` が poison 状態にある。
+    #[error("project writer gate lock poisoned")]
+    WriterGatePoisoned,
+}
+
+/// session-scoped resourcesの取得失敗。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub(crate) enum ResourceAccessError {
+    /// resources lockを取得できない。
+    #[error(transparent)]
+    State(#[from] AppStateError),
+    /// 要求したsession versionがactive resourcesと一致しない。
+    #[error(transparent)]
+    Conflict(#[from] SessionResourceConflict),
+}
+
+/// ProjectSessionのresident commit失敗。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub(crate) enum CommitSessionError {
+    /// AppState lockを取得できない。
+    #[error(transparent)]
+    State(#[from] AppStateError),
+    /// stale identityまたはrevision枯渇。
+    #[error(transparent)]
+    Domain(#[from] ProjectSessionCommitError),
+    /// domainとactive resourcesのversionが一致しない。
+    #[error(transparent)]
+    ResourceConflict(#[from] SessionResourceConflict),
+}
+
+/// writer lease取得からresident commitまでに発生するsession protocol error。
+///
+/// 各commandはこの型を1つのvariantとして保持し、lock poison、switch/reopen、
+/// revision枯渇、resource identity不一致を文字列へ潰さず伝播する。
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum SessionWriteError {
+    /// projectが開かれていない。
+    #[error("no project is open")]
+    NoProjectOpen,
+    /// AppState内部のlockまたはwriter gateへアクセスできない。
+    #[error(transparent)]
+    State(AppStateError),
+    /// target lookup後にproject switchまたはsame-path reopenが完了した。
+    #[error(transparent)]
+    Conflict(#[from] SessionConflict),
+    /// session-local revisionが最大値に達している。
+    #[error(transparent)]
+    RevisionExhausted(#[from] RevisionExhausted),
+    /// snapshotとactive resourcesのversionが一致しない。
+    #[error(transparent)]
+    ResourceConflict(#[from] SessionResourceConflict),
+}
+
+impl From<AppStateError> for SessionWriteError {
+    fn from(error: AppStateError) -> Self {
+        match error {
+            AppStateError::NoProjectOpen => Self::NoProjectOpen,
+            error => Self::State(error),
+        }
+    }
+}
+
+impl From<ResourceAccessError> for SessionWriteError {
+    fn from(error: ResourceAccessError) -> Self {
+        match error {
+            ResourceAccessError::State(error) => error.into(),
+            ResourceAccessError::Conflict(error) => Self::ResourceConflict(error),
+        }
+    }
+}
+
+impl From<CommitSessionError> for SessionWriteError {
+    fn from(error: CommitSessionError) -> Self {
+        match error {
+            CommitSessionError::State(error) => error.into(),
+            CommitSessionError::Domain(ProjectSessionCommitError::Conflict(error)) => {
+                Self::Conflict(error)
+            }
+            CommitSessionError::Domain(ProjectSessionCommitError::RevisionExhausted(error)) => {
+                Self::RevisionExhausted(error)
+            }
+            CommitSessionError::ResourceConflict(error) => Self::ResourceConflict(error),
+        }
+    }
+}
+
+/// prepared openをdomain/resourcesへ確定できない理由。
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub(crate) enum OpenSwapError {
+    /// domain lockがpoisonしている。
+    #[error("project domain lock poisoned")]
+    DomainLockPoisoned,
+    /// resources lockがpoisonしている。
+    #[error("active project resource lock poisoned")]
+    ResourceLockPoisoned,
+    /// candidateとstage済みresourcesのidentityが一致しない。
+    #[error(
+        "staged resources do not match candidate session: candidate={candidate:?}, staged={staged:?}"
+    )]
+    IdentityMismatch {
+        candidate: SessionIdentity,
+        staged: SessionIdentity,
+    },
+}
+
+/// atomic open swapの確定結果。
+pub(crate) struct OpenSwap {
+    /// commitされたdomain snapshot。
+    pub(crate) snapshot: ProjectSessionSnapshot,
+    /// snapshotと同じbaselineから作った既存wire session。
+    pub(crate) watcher_session: WatcherSession,
+    /// lock外で停止する旧resources。
+    pub(crate) displaced_resources: Option<ActiveProjectResources>,
 }
 
 /// アプリ全体で共有するグローバル状態。
@@ -84,98 +198,19 @@ pub enum AppStateError {
 ///
 /// 全フィールドは private。caller は公開アクセサを通じてのみ操作できる。
 pub struct AppState {
-    project_path: Mutex<Option<PathBuf>>,
-    config: Mutex<Option<Config>>,
-    labels: Mutex<Option<LabelRegistry>>,
-    milestones: Mutex<Option<MilestoneRegistry>>,
-    tasks_cache: Mutex<HashMap<PathBuf, Task>>,
-    watcher_handle: Mutex<Option<BoxedWatcherHandle>>,
-    write_ignore: WriteIgnoreRegistry,
-    /// watcher 世代。`open_project` の commit で +1。
-    project_generation: AtomicU64,
-    /// `tasks_cache` の改訂番号。cache を変更する 3 アクセサ内部で +1。
-    tasks_revision: AtomicU64,
+    domain: Mutex<ProjectState>,
+    resources: Mutex<Option<ActiveProjectResources>>,
+    writer_gates: ProjectWriterGates,
+    /// 次に予約するprocess内一意なsession ID。
+    next_session_id: AtomicU64,
     /// emit 連番。emit 失敗時も消費する（欠番 → FE の gap 検知 → 自動再取得）。
     event_seq: AtomicU64,
-}
-
-/// ラベル `create` / `update` コマンドが書き込み前に必要とするスナップショット。
-///
-/// `project_path` と `labels` を **同一の lock 取得トランザクション**で観測した値を
-/// まとめて運ぶ。複数フィールドの取得を `snapshot_..._and_...` のように `and` 連結した
-/// 関数名で表す代わりに、運ぶ内容を表す専用 context 型として定義する。
-#[derive(Debug, Clone)]
-pub struct LabelWriteContext {
-    /// snapshot 時点の project root。未オープン時は `None`。
-    pub project_root: Option<PathBuf>,
-    /// snapshot 時点のラベルレジストリ。未オープン時は `None`。
-    pub labels: Option<LabelRegistry>,
-}
-
-/// ラベル `delete` コマンドが書き込み前に必要とするスナップショット。
-///
-/// 削除前 usageCount を「labels と tasks の整合した観測」から算出するため、
-/// `project_path` / `labels` に加えて `tasks_cache` も同一トランザクションで取得する。
-#[derive(Debug, Clone)]
-pub struct LabelDeleteContext {
-    /// snapshot 時点の project root。未オープン時は `None`。
-    pub project_root: Option<PathBuf>,
-    /// snapshot 時点のラベルレジストリ。未オープン時は `None`。
-    pub labels: Option<LabelRegistry>,
-    /// snapshot 時点の全タスク（usageCount 算出用）。
-    pub tasks: Vec<Task>,
-}
-
-/// `get_tasks` が projection 生成と watcher baseline の提示に必要とするスナップショット。
-///
-/// done column の解決に `config`、集計に `tasks_cache` が要るため、両者を同一の
-/// lock 取得トランザクションで観測した値をまとめて運ぶ。加えて `session` を
-/// 同じトランザクションで確定させる。
-///
-/// `session` を後から別途読むと「tasks は古いが session は新しい」組が FE に渡り、
-/// FE はその session を baseline にするため、直後に届く**正しい** envelope を
-/// stale として捨てる。cache が古いままの状態から復旧できなくなる。
-#[derive(Debug, Clone)]
-pub struct ConfigTasksSessionContext {
-    /// snapshot 時点の `Config`。未オープン時は `None`。
-    pub config: Option<Config>,
-    /// snapshot 時点の全タスク。未オープン時は空 Vec。
-    pub tasks: Vec<Task>,
-    /// `tasks` と同一トランザクションで確定した watcher session。
-    pub session: WatcherSession,
-}
-
-/// マイルストーン `create` / `update` コマンドが書き込み前に必要とするスナップショット。
-///
-/// `LabelWriteContext` と同型。`project_path` と `milestones` を同一の lock 取得
-/// トランザクションで観測した値をまとめて運ぶ。
-#[derive(Debug, Clone)]
-pub struct MilestoneWriteContext {
-    /// snapshot 時点の project root。未オープン時は `None`。
-    pub project_root: Option<PathBuf>,
-    /// snapshot 時点のマイルストーンレジストリ。未オープン時は `None`。
-    pub milestones: Option<MilestoneRegistry>,
-}
-
-/// マイルストーン `delete` コマンドが書き込み前に必要とするスナップショット。
-///
-/// 削除前 usageCount を「milestones と tasks の整合した観測」から算出するため、
-/// `project_path` / `milestones` に加えて `tasks_cache` も同一トランザクションで取得する。
-#[derive(Debug, Clone)]
-pub struct MilestoneDeleteContext {
-    /// snapshot 時点の project root。未オープン時は `None`。
-    pub project_root: Option<PathBuf>,
-    /// snapshot 時点のマイルストーンレジストリ。未オープン時は `None`。
-    pub milestones: Option<MilestoneRegistry>,
-    /// snapshot 時点の全タスク（usageCount 算出用）。
-    pub tasks: Vec<Task>,
 }
 
 impl AppState {
     /// 全フィールドを初期状態にした `AppState` を生成する。
     ///
-    /// `project_path` / `config` / `labels` / `watcher_handle` は `None`、
-    /// `tasks_cache` は空 HashMap、`write_ignore` は空 registry になる。
+    /// domain は `Idle`、active resources は `None` で初期化される。
     ///
     /// 初期化エントリーポイントは `new()` のみとし、`Default` 実装は意図的に
     /// 提供しない。
@@ -185,485 +220,263 @@ impl AppState {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            project_path: Mutex::new(None),
-            config: Mutex::new(None),
-            labels: Mutex::new(None),
-            milestones: Mutex::new(None),
-            tasks_cache: Mutex::new(HashMap::new()),
-            watcher_handle: Mutex::new(None),
-            write_ignore: WriteIgnoreRegistry::new(),
-            project_generation: AtomicU64::new(0),
-            tasks_revision: AtomicU64::new(0),
+            domain: Mutex::new(ProjectState::Idle),
+            resources: Mutex::new(None),
+            writer_gates: ProjectWriterGates::new(),
+            next_session_id: AtomicU64::new(1),
             event_seq: AtomicU64::new(0),
         }
     }
 
-    /// 現在保持している project root のパスを clone して返す。
-    pub fn project_path(&self) -> Result<Option<PathBuf>, AppStateError> {
-        let guard = lock(&self.project_path)?;
-        Ok(guard.clone())
-    }
-
-    /// project root のパスを上書きする。`None` を渡すとリセットになる。
-    pub fn set_project_path(&self, path: Option<PathBuf>) -> Result<(), AppStateError> {
-        let mut guard = lock(&self.project_path)?;
-        *guard = path;
-        Ok(())
-    }
-
-    /// 現在保持している `Config` を clone して返す。
-    pub fn config(&self) -> Result<Option<Config>, AppStateError> {
-        let guard = lock(&self.config)?;
-        Ok(guard.clone())
-    }
-
-    /// `Config` を丸ごと差し替える。`None` を渡すと未保持状態に戻せる。
-    pub fn replace_config(&self, config: Option<Config>) -> Result<(), AppStateError> {
-        let mut guard = lock(&self.config)?;
-        *guard = config;
-        Ok(())
-    }
-
-    /// 現在保持している `LabelRegistry` を clone して返す。
+    /// 現在のproject sessionをcoherentなsnapshotとして返す。
     ///
-    /// プロジェクト未オープン時は `None`。labels.yml 不在で開いた場合は
-    /// `Some(LabelRegistry::default())`（空レジストリ）が入る。
-    pub fn labels(&self) -> Result<Option<LabelRegistry>, AppStateError> {
-        let guard = lock(&self.labels)?;
-        Ok(guard.clone())
+    /// project未open時は[`AppStateError::NoProjectOpen`]を返す。
+    pub fn require_session_snapshot(&self) -> Result<ProjectSessionSnapshot, AppStateError> {
+        let guard = lock_domain(&self.domain)?;
+        guard.snapshot().map_err(|err| match err {
+            ProjectSessionStateError::NoProjectOpen => AppStateError::NoProjectOpen,
+        })
     }
 
-    /// `LabelRegistry` を丸ごと差し替える。`None` を渡すと未保持状態に戻せる。
-    pub fn replace_labels(&self, labels: Option<LabelRegistry>) -> Result<(), AppStateError> {
-        let mut guard = lock(&self.labels)?;
-        *guard = labels;
-        Ok(())
-    }
-
-    /// 現在保持している `MilestoneRegistry` を clone して返す。
+    /// 現在のproject sessionをoptionalなcoherent snapshotとして返す。
     ///
-    /// プロジェクト未オープン時は `None`。milestones.yml 不在で開いた場合は
-    /// `Some(MilestoneRegistry::default())`（空レジストリ）が入る。
-    pub fn milestones(&self) -> Result<Option<MilestoneRegistry>, AppStateError> {
-        let guard = lock(&self.milestones)?;
-        Ok(guard.clone())
-    }
-
-    /// `MilestoneRegistry` を丸ごと差し替える。`None` を渡すと未保持状態に戻せる。
-    pub fn replace_milestones(
-        &self,
-        milestones: Option<MilestoneRegistry>,
-    ) -> Result<(), AppStateError> {
-        let mut guard = lock(&self.milestones)?;
-        *guard = milestones;
-        Ok(())
-    }
-
-    /// `project_path` と `config` を**両方の lock を順に同時保持した状態で** snapshot する。
-    ///
-    /// 一方の lock だけを取得して順に読むと、両フィールドを別々に更新する writer と
-    /// 割り込み合った際に「新 project_path + 旧 config」または「旧 project_path + 新 config」
-    /// の組を観測してしまう。本 API は両 lock を順に同時保持して両フィールドを clone する
-    /// ことで、その不整合観測を防ぐ atomic 読み取り API として機能する。lock 取得順序は
-    /// AppState の契約に従って `project_path → config` を遵守する。
-    ///
-    /// 同時更新側は [`Self::replace_project_config_labels_and_milestones`] / [`Self::replace_config_if_project_matches`]
-    /// で同様に両 lock を同時保持して書き換えることで、reader 側の観測整合性を確保する。
-    ///
-    /// 戻り値はそれぞれ clone 済み snapshot のため、呼び出し側が長く保持しても
-    /// AppState 側の lock は保持されない。
-    pub fn snapshot_project_and_config(
-        &self,
-    ) -> Result<(Option<PathBuf>, Option<crate::config::Config>), AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let config_guard = lock(&self.config)?;
-        Ok((path_guard.clone(), config_guard.clone()))
-    }
-
-    /// `project_path` / `config` / `labels` / `milestones` を**4 つの lock を順に同時保持
-    /// した状態で** swap する。
-    ///
-    /// 各フィールドを別 lock で順次更新すると、その間に reader（例:
-    /// `update_card_order`）が「新 path + 旧 config」を観測し、旧 config を新
-    /// プロジェクトの `config.json` に書き出してしまう cross-project corruption が
-    /// 起き得る。本 API は 4 つの lock を保持したまま swap することでその不整合を防ぐ。
-    /// lock 取得順序は AppState の契約に従って `project_path → config → labels → milestones`
-    /// を遵守する。
-    ///
-    /// commit の整合範囲は `project_path / config / labels / milestones` の 4 フィールドに
-    /// 限定され、`tasks_cache` 等との間は従来どおり非 atomic（別更新）である。
-    pub fn replace_project_config_labels_and_milestones(
-        &self,
-        path: Option<PathBuf>,
-        config: Option<crate::config::Config>,
-        labels: Option<LabelRegistry>,
-        milestones: Option<MilestoneRegistry>,
-    ) -> Result<(), AppStateError> {
-        let mut path_guard = lock(&self.project_path)?;
-        let mut config_guard = lock(&self.config)?;
-        let mut labels_guard = lock(&self.labels)?;
-        let mut milestones_guard = lock(&self.milestones)?;
-        *path_guard = path;
-        *config_guard = config;
-        *labels_guard = labels;
-        *milestones_guard = milestones;
-        Ok(())
-    }
-
-    /// 現在の `project_path` が `expected_path` と一致する場合のみ `config` を更新する。
-    ///
-    /// `snapshot_project_and_config` で読んだ snapshot を mutate して書き戻す flow で、
-    /// snapshot 取得から書き戻しまでの間に `open_project` が project を swap した
-    /// ケースを検出するための atomic check-and-set。lock 取得順序は
-    /// `project_path → config` を遵守する。
-    ///
-    /// - `expected_path` が一致 → `config` を更新して `Ok(true)`
-    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
-    pub fn replace_config_if_project_matches(
-        &self,
-        expected_path: &std::path::Path,
-        config: crate::config::Config,
-    ) -> Result<bool, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let mut config_guard = lock(&self.config)?;
-        if path_guard.as_deref() == Some(expected_path) {
-            *config_guard = Some(config);
-            Ok(true)
-        } else {
-            Ok(false)
+    /// project未openは正常な`None`であり、domain lock poisonだけがerrorになる。
+    pub fn session_snapshot(&self) -> Result<Option<ProjectSessionSnapshot>, AppStateError> {
+        let guard = lock_domain(&self.domain)?;
+        match &*guard {
+            ProjectState::Idle => Ok(None),
+            ProjectState::Loaded(session) => Ok(Some(session.snapshot())),
         }
     }
 
-    /// `project_path` と `labels` を**両方の lock を順に同時保持した状態で** snapshot する。
-    ///
-    /// `create_label` / `update_label` が書き込み前に使う。別々に `project_path()?` →
-    /// `labels()?` と取得すると、その間に `open_project` が project を swap して
-    /// 「新 path + 旧 labels」を観測する race window が生じる。本 API は両 lock を順に
-    /// 同時保持して両フィールドを clone することで整合 snapshot を返す。lock 取得順序は
-    /// AppState の契約に従って `project_path → labels` を遵守する。
-    pub fn snapshot_label_write(&self) -> Result<LabelWriteContext, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let labels_guard = lock(&self.labels)?;
-        Ok(LabelWriteContext {
-            project_root: path_guard.clone(),
-            labels: labels_guard.clone(),
-        })
-    }
-
-    /// `project_path` / `labels` / `tasks_cache` を**3 つの lock を順に同時保持した状態で**
-    /// snapshot する。
-    ///
-    /// `delete_label` が使う。削除前 usageCount は「削除前に何件のタスクで使われていたか」
-    /// という操作結果のため、labels と tasks を整合した 1 回の観測から算出する必要がある
-    /// （別々に取得すると不整合な組を観測し得る）。lock 取得順序は AppState の契約に従って
-    /// `project_path → labels → tasks_cache` を遵守する。
-    pub fn snapshot_label_delete(&self) -> Result<LabelDeleteContext, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let labels_guard = lock(&self.labels)?;
-        let tasks_guard = lock(&self.tasks_cache)?;
-        Ok(LabelDeleteContext {
-            project_root: path_guard.clone(),
-            labels: labels_guard.clone(),
-            tasks: tasks_guard.values().cloned().collect(),
-        })
-    }
-
-    /// 現在の `project_path` が `expected_path` と一致する場合のみ `labels` を差し替える。
-    ///
-    /// `snapshot_label_write` / `snapshot_label_delete` で読んだ snapshot を mutate し
-    /// disk write 成功後に書き戻す flow で、snapshot 取得から書き戻しまでの間に
-    /// `open_project` が project を swap したケースを検出するための atomic check-and-set。
-    /// lock 取得順序は `project_path → labels` を遵守する。
-    ///
-    /// - `expected_path` が一致 → `labels` を更新して `Ok(true)`
-    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
-    pub fn replace_labels_if_project_matches(
-        &self,
-        expected_path: &std::path::Path,
-        labels: LabelRegistry,
-    ) -> Result<bool, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let mut labels_guard = lock(&self.labels)?;
-        if path_guard.as_deref() == Some(expected_path) {
-            *labels_guard = Some(labels);
-            Ok(true)
-        } else {
-            Ok(false)
+    /// 現在のproject session identityを返す。
+    pub fn active_session_identity(&self) -> Result<SessionIdentity, AppStateError> {
+        let guard = lock_domain(&self.domain)?;
+        match &*guard {
+            ProjectState::Idle => Err(AppStateError::NoProjectOpen),
+            ProjectState::Loaded(session) => Ok(session.identity()),
         }
     }
 
-    /// `project_path` と `milestones` を**両方の lock を順に同時保持した状態で** snapshot する。
-    ///
-    /// `create_milestone` / `update_milestone` が書き込み前に使う。`snapshot_label_write`
-    /// と同型。lock 取得順序は AppState の契約に従って `project_path → milestones` を遵守する。
-    pub fn snapshot_milestone_write(&self) -> Result<MilestoneWriteContext, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let milestones_guard = lock(&self.milestones)?;
-        Ok(MilestoneWriteContext {
-            project_root: path_guard.clone(),
-            milestones: milestones_guard.clone(),
-        })
+    /// process内で一意なsession IDを予約する。
+    pub(crate) fn reserve_session_id(&self) -> Result<SessionId, SessionIdExhausted> {
+        let reserved = self
+            .next_session_id
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |next_session_id| {
+                next_session_id.checked_add(1)
+            })
+            .map_err(|_| SessionIdExhausted)?;
+
+        Ok(SessionId::from_raw(reserved))
     }
 
-    /// `project_path` / `milestones` / `tasks_cache` を**3 つの lock を順に同時保持した
-    /// 状態で** snapshot する。
-    ///
-    /// `delete_milestone` / `get_milestones` が使う。削除前 usageCount は milestones と
-    /// tasks を整合した 1 回の観測から算出する必要がある。lock 取得順序は AppState の契約に
-    /// 従って `project_path → milestones → tasks_cache` を遵守する。
-    pub fn snapshot_milestone_delete(&self) -> Result<MilestoneDeleteContext, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let milestones_guard = lock(&self.milestones)?;
-        let tasks_guard = lock(&self.tasks_cache)?;
-        Ok(MilestoneDeleteContext {
-            project_root: path_guard.clone(),
-            milestones: milestones_guard.clone(),
-            tasks: tasks_guard.values().cloned().collect(),
-        })
-    }
-
-    /// 現在の `project_path` が `expected_path` と一致する場合のみ `milestones` を差し替える。
-    ///
-    /// `snapshot_milestone_write` / `snapshot_milestone_delete` で読んだ snapshot を mutate
-    /// し disk write 成功後に書き戻す flow で、並行 `open_project` による project swap を
-    /// 検出するための atomic check-and-set。lock 取得順序は `project_path → milestones`。
-    ///
-    /// - `expected_path` が一致 → `milestones` を更新して `Ok(true)`
-    /// - 不一致（並行 `open_project` 等） → 何も変更せず `Ok(false)`
-    pub fn replace_milestones_if_project_matches(
+    /// domain snapshotを既存watcher wire shapeへ変換する。
+    pub(crate) fn watcher_session_for_snapshot(
         &self,
-        expected_path: &std::path::Path,
-        milestones: MilestoneRegistry,
-    ) -> Result<bool, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let mut milestones_guard = lock(&self.milestones)?;
-        if path_guard.as_deref() == Some(expected_path) {
-            *milestones_guard = Some(milestones);
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        snapshot: &ProjectSessionSnapshot,
+    ) -> WatcherSession {
+        WatcherSession::from_snapshot(
+            snapshot,
+            EventSeq::from_raw(self.event_seq.load(Ordering::SeqCst)),
+        )
     }
 
-    /// タスクキャッシュ全体を新しい map で置き換え、置換後の revision を返す。
+    /// exact ProjectRootに対応するwriter gateを返す。
     ///
-    /// 旧エントリは破棄されるため部分更新には使えない。`PathBuf` は呼び出し側
-    /// が用意した形（`canonicalize()` 適用有無等）のままで保持する。
-    pub fn replace_tasks_cache_revision(
+    /// pathのcanonicalizeは行わず、sessionが保持するraw rootをそのままkeyにする。
+    pub(crate) fn writer_gate(&self, root: &ProjectRoot) -> Result<Arc<Mutex<()>>, AppStateError> {
+        self.writer_gates.gate_for(root)
+    }
+
+    /// project固有writer gateを取得し、poisonをtyped errorへ変換する。
+    pub(crate) fn lock_writer_gate<'a>(
         &self,
-        cache: HashMap<PathBuf, Task>,
-    ) -> Result<TasksRevision, AppStateError> {
-        let mut guard = lock(&self.tasks_cache)?;
-        *guard = cache;
-        Ok(self.bump_tasks_revision())
+        gate: &'a Mutex<()>,
+    ) -> Result<MutexGuard<'a, ()>, AppStateError> {
+        gate.lock().map_err(|_| AppStateError::WriterGatePoisoned)
     }
 
-    /// revision を必要としない呼び出し元向けの薄いラッパ。
-    pub fn replace_tasks_cache(&self, cache: HashMap<PathBuf, Task>) -> Result<(), AppStateError> {
-        self.replace_tasks_cache_revision(cache).map(|_| ())
-    }
-
-    /// `project_path` / `config` / `tasks_cache` を**3 つの lock を順に同時保持した
-    /// 状態で** snapshot し、同じトランザクションで watcher session を確定させる。
+    /// current projectのexact-root writer leaseを保持したままoperationを実行する。
     ///
-    /// `get_tasks` が projection を作る際、別々に `config()?` → `tasks_snapshot()?` と
-    /// 取得すると、その 2 呼び出しの間に割り込んだ書き込みで「新 config + 旧 tasks」を
-    /// 観測する窓が開く。本 API は lock を順に同時保持して各フィールドを clone する
-    /// ことでその窓を閉じる。lock 取得順序は AppState の契約に従って
-    /// `project_path → config → tasks_cache` を遵守する。
-    ///
-    /// # 保証の範囲
-    ///
-    /// - 保証する: `tasks_cache` 単体の torn read が起きないこと（watcher スレッドの
-    ///   並行更新に対して有効）。reader 側の 2 段取得による不整合が起きないこと。
-    ///   返す `session.revision` が返す `tasks` の版と一致すること。
-    /// - **保証しない**: writer が config と tasks を別クリティカルセクションで更新する
-    ///   経路（`config::update_columns::update_columns_impl`）の途中状態を観測しない
-    ///   こと。呼び出し側（`get_tasks`）は FE 側の project command queue によって
-    ///   それらの command と直列化される前提で使う。
-    pub fn snapshot_config_tasks_and_session(
+    /// target identityはgate取得前、mutation snapshotはgate取得後に読む。fresh
+    /// snapshotはroot + SessionIdだけをtargetと比較するため、gate待機中の正常な
+    /// revision進行を許可しつつproject switchとsame-path reopenをI/O前に拒否する。
+    pub(crate) fn with_project_writer_lease<T, E>(
         &self,
-    ) -> Result<ConfigTasksSessionContext, AppStateError> {
-        let path_guard = lock(&self.project_path)?;
-        let config_guard = lock(&self.config)?;
-        let tasks_guard = lock(&self.tasks_cache)?;
-        let session = self.compose_session(path_guard.as_deref());
-        Ok(ConfigTasksSessionContext {
-            config: config_guard.clone(),
-            tasks: tasks_guard.values().cloned().collect(),
-            session,
-        })
-    }
-
-    pub fn tasks_snapshot(&self) -> Result<Vec<Task>, AppStateError> {
-        let guard = lock(&self.tasks_cache)?;
-        Ok(guard.values().cloned().collect())
-    }
-
-    /// `tasks_cache` を不変で借りて closure 内で読み取る。
-    ///
-    /// `tasks_snapshot` は全 task を clone するため、1 件だけ引き当てたい用途では
-    /// task 本文を含む無駄なコピーが発生する。本 API は lock 内で参照だけを渡し、
-    /// 必要な 1 件だけを呼び出し側が clone できるようにする。
-    ///
-    /// closure は guard を保持したまま呼ばれるため、内部で AppState の他アクセサを
-    /// 呼んではならない（自己 deadlock の原因）。
-    pub fn with_tasks_cache<F, R>(&self, f: F) -> Result<R, AppStateError>
+        operation: impl FnOnce(&SessionIdentity, &ProjectSessionSnapshot) -> Result<T, E>,
+    ) -> Result<T, E>
     where
-        F: FnOnce(&HashMap<PathBuf, Task>) -> R,
+        E: From<SessionWriteError>,
     {
-        let guard = lock(&self.tasks_cache)?;
-        Ok(f(&guard))
+        let target = self
+            .active_session_identity()
+            .map_err(SessionWriteError::from)
+            .map_err(E::from)?;
+        self.with_project_writer_lease_for(&target, |snapshot| operation(&target, snapshot))
     }
 
-    /// 現在の `project_path` が `expected_path` と一致する場合のみ、`tasks_cache` の更新と
-    /// `config` の差し替えを**同一クリティカルセクション内で**行う。
+    /// callerが事前に束縛したtargetのexact-root writer leaseを取得する。
     ///
-    /// `replace_config_if_project_matches` → `with_tasks_cache_mut` と 2 回に分けると、
-    /// その間に `open_project` が完了して、旧プロジェクト由来の `Task` を新プロジェクトの
-    /// cache へ挿入してしまう。両方を 1 つの lock 保持区間に入れることでこれを防ぐ。
-    /// lock 取得順序は AppState の契約に従って `project_path → config → tasks_cache`
-    /// を遵守する。
-    ///
-    /// `update_tasks` は失敗し得る（並行削除で対象が cache から消えている等）。**`config` の
-    /// 差し替えは `update_tasks` が成功した場合のみ**行い、失敗時は cache も config も
-    /// 呼び出し前の状態に保つ。順序を逆にすると「config だけ移動後・tasks は移動前」という
-    /// 部分適用が in-memory に残る。
-    ///
-    /// - `expected_path` が一致 → `update_tasks` を適用し、成功時のみ `config` も更新して
-    ///   `Some(Ok(R))`。`update_tasks` 失敗時は何も変更せず `Some(Err(E))`
-    /// - 不一致（並行 `open_project` 等） → 何も変更せず `None`
-    pub fn replace_config_and_tasks_if_project_matches<F, R, E>(
+    /// registry storeなどをtarget rootへ束縛してeffect境界へ注入するcommand向け。
+    /// gate待機後のfresh snapshotはroot + SessionIdで再検証し、same-path reopenを
+    /// disk/store I/O前に拒否する。
+    pub(crate) fn with_project_writer_lease_for<T, E>(
         &self,
-        expected_path: &std::path::Path,
-        config: crate::config::Config,
-        update_tasks: F,
-    ) -> Result<Option<Result<R, E>>, AppStateError>
+        target: &SessionIdentity,
+        operation: impl FnOnce(&ProjectSessionSnapshot) -> Result<T, E>,
+    ) -> Result<T, E>
     where
-        F: FnOnce(&mut HashMap<PathBuf, Task>) -> Result<R, E>,
+        E: From<SessionWriteError>,
     {
-        let path_guard = lock(&self.project_path)?;
-        let mut config_guard = lock(&self.config)?;
-        let mut tasks_guard = lock(&self.tasks_cache)?;
-        if path_guard.as_deref() != Some(expected_path) {
+        let gate = self
+            .writer_gate(target.project_root())
+            .map_err(SessionWriteError::from)
+            .map_err(E::from)?;
+        let _writer = self
+            .lock_writer_gate(&gate)
+            .map_err(SessionWriteError::from)
+            .map_err(E::from)?;
+        let snapshot = self
+            .require_session_snapshot()
+            .map_err(SessionWriteError::from)
+            .map_err(E::from)?;
+        snapshot
+            .ensure_same_session(target)
+            .map_err(SessionWriteError::from)
+            .map_err(E::from)?;
+
+        operation(&snapshot)
+    }
+
+    /// revision枯渇をresource取得より先に検証し、session-scoped accessを返す。
+    ///
+    /// callerはresident validationとtarget解決を済ませた直後、disk read、
+    /// write-ignore登録、disk writeより前にこのAPIを呼ぶ。
+    pub(crate) fn preflight_session_write(
+        &self,
+        snapshot: &ProjectSessionSnapshot,
+    ) -> Result<SessionResourceAccess, SessionWriteError> {
+        snapshot.version().revision.checked_next()?;
+        let access = self.resources_for(snapshot.version())?;
+        debug_assert_eq!(access.version(), snapshot.version());
+        Ok(access)
+    }
+
+    /// full SessionId + Revision CASでresident mutationをcommitする。
+    pub(crate) fn commit_session_write<T>(
+        &self,
+        expected: &SessionIdentity,
+        apply: impl FnOnce(&mut ProjectSession) -> T,
+    ) -> Result<SessionCommit<T>, SessionWriteError> {
+        self.commit_session(expected, apply).map_err(Into::into)
+    }
+
+    /// expected versionと一致するactive resourcesのsession-scoped accessを返す。
+    ///
+    /// resources lock内でidentityを検証して`Arc<WriteIgnoreRegistry>`だけをclone
+    /// するため、callerがdisk I/O中にresources guardを保持することはない。
+    pub(crate) fn resources_for(
+        &self,
+        expected: SessionVersion,
+    ) -> Result<SessionResourceAccess, ResourceAccessError> {
+        let resources = lock_resources(&self.resources)?;
+        let Some(active) = resources.as_ref() else {
+            return Err(SessionResourceConflict::new(expected, None).into());
+        };
+        if active.version() != expected {
+            return Err(SessionResourceConflict::new(expected, Some(active.version())).into());
+        }
+        Ok(active.session_access())
+    }
+
+    /// expected identityとactive resourcesが一致するときだけresident stateをcommitする。
+    ///
+    /// lock順序はdomain→resources。revision枯渇・resource conflictではclosureを
+    /// 実行せず、domain/resourcesのどちらも変更しない。
+    pub(crate) fn commit_session<T>(
+        &self,
+        expected: &SessionIdentity,
+        apply: impl FnOnce(&mut ProjectSession) -> T,
+    ) -> Result<SessionCommit<T>, CommitSessionError> {
+        let mut domain = lock_domain(&self.domain)?;
+        domain
+            .ensure_identity(expected)
+            .map_err(ProjectSessionCommitError::from)?;
+
+        let mut resources = lock_resources(&self.resources)?;
+        let Some(active) = resources.as_mut() else {
+            return Err(SessionResourceConflict::new(expected.version(), None).into());
+        };
+        if active.version() != expected.version() {
+            return Err(
+                SessionResourceConflict::new(expected.version(), Some(active.version())).into(),
+            );
+        }
+
+        let committed = domain.commit(expected, apply)?;
+        active.update_version(committed.version());
+        Ok(committed)
+    }
+
+    /// expected identityがcurrentのときだけevent sequenceを1つ採番する。
+    ///
+    /// identity検証と採番を同じdomain critical sectionで直列化し、switch後の
+    /// stale adapterがsequenceを消費するfalse gapを防ぐ。
+    pub(crate) fn next_event_seq_if_current(
+        &self,
+        expected: &SessionIdentity,
+    ) -> Result<Option<EventSeq>, AppStateError> {
+        let domain = lock_domain(&self.domain)?;
+        if domain.active_identity().as_ref() != Some(expected) {
             return Ok(None);
         }
-        match update_tasks(&mut tasks_guard) {
-            Ok(value) => {
-                *config_guard = Some(config);
-                self.bump_tasks_revision();
-                Ok(Some(Ok(value)))
-            }
-            Err(err) => Ok(Some(Err(err))),
-        }
+        Ok(Some(EventSeq::from_raw(
+            self.event_seq.fetch_add(1, Ordering::SeqCst) + 1,
+        )))
     }
 
-    /// `tasks_cache` を可変で借りて closure 内で in-place 操作する。
+    /// candidate domainとstage済みresourcesを1つのcritical sectionで確定する。
     ///
-    /// **config も含めた check-and-set 版の全置換**（full rescan 専用）。
-    ///
-    /// revision だけを見る check-and-set では `Config` の差し替えを検出できない。
-    /// full rescan は lock 外で
-    /// 「現在の既定 status」を解決してから走査・パースするため、その間に
-    /// `update_columns` が先頭カラムを変えると、**revision は変わらないまま**
-    /// status 欠損 md だけが旧既定のカラムへ確定してしまう
-    /// （`update_columns` は config 差し替えと cache 更新が別区間のため、
-    /// config だけ新しく revision はまだ古い瞬間が実在する）。
-    ///
-    /// 置換と同一クリティカルセクションで「走査時に使った既定 status が今も
-    /// 有効か」まで検証し、変わっていれば置換せず呼び出し側に再走査させる。
-    ///
-    /// - revision も既定 status も一致 → 置換して `Some(置換後の revision)`
-    /// - どちらかが変化 → cache も revision も変えず `None`
-    ///
-    /// lock 取得順序は AppState の契約に従って `config → tasks_cache`。
-    pub fn replace_tasks_cache_if_unchanged(
+    /// 両lockとidentity検証、ready parts構築をstate replacement前に完了する。
+    /// 最初のreplace以降はinfallibleなreplace/store/unparkだけを実行する。
+    pub(crate) fn swap_open(
         &self,
-        expected_revision: TasksRevision,
-        expected_default_status: &ColumnName,
-        cache: HashMap<PathBuf, Task>,
-    ) -> Result<Option<TasksRevision>, AppStateError> {
-        let config_guard = lock(&self.config)?;
-        let mut tasks_guard = lock(&self.tasks_cache)?;
-        if self.tasks_revision() != expected_revision {
-            return Ok(None);
+        candidate: ProjectSession,
+        staged: StagedProjectResources,
+    ) -> Result<OpenSwap, OpenSwapError> {
+        let mut domain = self
+            .domain
+            .lock()
+            .map_err(|_| OpenSwapError::DomainLockPoisoned)?;
+        let mut resources = self
+            .resources
+            .lock()
+            .map_err(|_| OpenSwapError::ResourceLockPoisoned)?;
+
+        let candidate_identity = candidate.identity();
+        if staged.identity() != &candidate_identity {
+            let staged_identity = staged.identity().clone();
+            drop(resources);
+            drop(domain);
+            return Err(OpenSwapError::IdentityMismatch {
+                candidate: candidate_identity,
+                staged: staged_identity,
+            });
         }
-        let status_changed = config_guard
-            .as_ref()
-            .map(default_status_for)
-            .is_some_and(|status| status != *expected_default_status);
-        if status_changed {
-            return Ok(None);
-        }
-        *tasks_guard = cache;
-        Ok(Some(self.bump_tasks_revision()))
-    }
 
-    /// `tasks_snapshot` → 編集 → `replace_tasks_cache` のフローでは全 task を
-    /// clone してから新 HashMap で書き戻すため O(n) のコピーが発生する。
-    /// 1 path 単位の差分更新（watcher 由来の created / updated / deleted など）
-    /// では本 API を使うことで O(1) のロック内 in-place 更新ができる。
-    ///
-    /// closure は guard を保持したまま呼ばれるため、内部で AppState の他
-    /// アクセサを呼んではならない（自己 deadlock の原因）。
-    ///
-    /// closure の適用と revision の bump を同一クリティカルセクションで行う。
-    pub fn with_tasks_cache_mut_revision<F, R>(
-        &self,
-        f: F,
-    ) -> Result<(R, TasksRevision), AppStateError>
-    where
-        F: FnOnce(&mut HashMap<PathBuf, Task>) -> R,
-    {
-        let mut guard = lock(&self.tasks_cache)?;
-        let value = f(&mut guard);
-        Ok((value, self.bump_tasks_revision()))
-    }
+        let snapshot = candidate.snapshot();
+        let watcher_session = self.watcher_session_for_snapshot(&snapshot);
+        let (ready, activation) = staged.into_ready_parts();
 
-    /// revision を必要としない呼び出し元向けの薄いラッパ。
-    ///
-    /// closure が cache を変更しなくても bump される（closure の中身を検査でき
-    /// ないため）。その結果 emit を伴わない revision が生まれるが、FE の
-    /// 単調性判定は `revision > lastRevision` の**単調増加のみ**を要求するので
-    /// 欠番は問題にならない（連番性を要求するのは `EventSeq` だけ）。
-    pub fn with_tasks_cache_mut<F, R>(&self, f: F) -> Result<R, AppStateError>
-    where
-        F: FnOnce(&mut HashMap<PathBuf, Task>) -> R,
-    {
-        self.with_tasks_cache_mut_revision(f)
-            .map(|(value, _)| value)
-    }
+        *domain = ProjectState::Loaded(candidate);
+        let displaced_resources = resources.replace(ready);
+        activation.activate();
 
-    /// **project の commit を 1 トランザクションで行い、session を確定する。**
-    ///
-    /// cache 置換 / revision bump / generation bump / eventSeq watermark 読み取り
-    /// を単一クリティカルセクションで行う。分割すると、spawn 済み watcher が
-    /// 先に 1 件 emit した場合に「session はその変更を含むが payload の tasks は
-    /// 含まない」状態が生まれ、その envelope は `revision <= R` で破棄され gap も
-    /// 立たないため**永久に復旧しない**。
-    ///
-    /// 呼び出し側は本メソッドの戻り値を `open_project` の応答へそのまま載せ、
-    /// **watcher の spawn より前に**確定させること。
-    pub fn install_project_session(
-        &self,
-        root: &Path,
-        cache: HashMap<PathBuf, Task>,
-    ) -> Result<WatcherSession, AppStateError> {
-        let mut guard = lock(&self.tasks_cache)?;
-        *guard = cache;
-        self.bump_tasks_revision();
-        self.project_generation.fetch_add(1, Ordering::SeqCst);
-        Ok(self.compose_session(Some(root)))
-    }
-
-    /// 現行 generation。adapter の stale 判定に使う。
-    pub fn project_generation(&self) -> ProjectGeneration {
-        ProjectGeneration::from_raw(self.project_generation.load(Ordering::SeqCst))
-    }
-
-    /// 現在の revision。full rescan の check-and-set 用に走査前へ控える。
-    pub fn tasks_revision(&self) -> TasksRevision {
-        TasksRevision::from_raw(self.tasks_revision.load(Ordering::SeqCst))
+        Ok(OpenSwap {
+            snapshot,
+            watcher_session,
+            displaced_resources,
+        })
     }
 
     /// emit 直前に 1 つ消費して新しい連番を返す。
@@ -671,154 +484,257 @@ impl AppState {
         EventSeq::from_raw(self.event_seq.fetch_add(1, Ordering::SeqCst) + 1)
     }
 
-    fn bump_tasks_revision(&self) -> TasksRevision {
-        TasksRevision::from_raw(self.tasks_revision.fetch_add(1, Ordering::SeqCst) + 1)
-    }
-
-    /// 3 つの atomic と project root から session を組み立てる。
-    ///
-    /// **private に留める**。公開すると呼び出し側が cache の critical section の
-    /// 外で session を作れてしまい、`ConfigTasksSessionContext` が防いでいる
-    /// torn read が再発する。
-    fn compose_session(&self, root: Option<&Path>) -> WatcherSession {
-        WatcherSession {
-            project_key: ProjectKey::from_root(root.unwrap_or_else(|| Path::new(""))),
-            generation: self.project_generation(),
-            revision: self.tasks_revision(),
-            event_seq: EventSeq::from_raw(self.event_seq.load(Ordering::SeqCst)),
-        }
-    }
-
-    /// watcher ハンドルを差し替える。
-    ///
-    /// 旧ハンドルが存在する場合は、新ハンドルを置く前に `stop()` を呼び出す。
-    /// 旧ハンドルの `stop()` が panic した場合はそのまま伝播し、`watcher_handle`
-    /// の `Mutex` は poison する。次回アクセサで `LockPoisoned` が返る。
-    /// なお panic は guard 保持中に発生するため、新ハンドルは install されない。
-    pub fn install_watcher_handle(&self, handle: BoxedWatcherHandle) -> Result<(), AppStateError> {
-        let mut guard = lock(&self.watcher_handle)?;
-        if let Some(existing) = guard.as_mut() {
-            existing.stop();
-        }
-        *guard = Some(handle);
+    /// openのfallible load/stage前にdomain→resources lockを副作用なく検証する。
+    pub(crate) fn check_open_locks(&self) -> Result<(), AppStateError> {
+        let _domain = lock_domain(&self.domain)?;
+        let _resources = lock_resources(&self.resources)?;
         Ok(())
     }
 
-    /// watcher ハンドルを取り出して `None` 状態に戻す。
+    /// unit test用にcoherentなdomain/resources一式をinstallする。
     ///
-    /// 取り出された旧ハンドルの `stop()` 呼び出しは caller の責務。
-    pub fn take_watcher_handle(&self) -> Result<Option<BoxedWatcherHandle>, AppStateError> {
-        let mut guard = lock(&self.watcher_handle)?;
-        Ok(guard.take())
+    /// production openと同じSessionId採番・swap経路を使い、disk watcherだけを
+    /// no-op handleへ差し替える。legacy setterでdomainだけを作るfixtureを防ぐ。
+    #[cfg(test)]
+    pub(crate) fn install_test_project(
+        &self,
+        root: &Path,
+        config: Config,
+        labels: LabelRegistry,
+        milestones: MilestoneRegistry,
+        tasks: Vec<Task>,
+    ) -> ProjectSessionSnapshot {
+        use std::thread;
+
+        use spec_board_fs::watcher::handle::NoopWatcherHandle;
+
+        use crate::state::active_project_resources::{pending_activation_state, WatcherActivation};
+
+        let root = ProjectRoot::from_path_buf(root.to_path_buf()).expect("valid test project root");
+        let tasks = tasks
+            .into_iter()
+            .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+            .collect();
+        let session_id = self
+            .reserve_session_id()
+            .expect("test session ID must remain available");
+        let candidate = PreparedProjectSession::new(root, config, labels, milestones, tasks)
+            .into_session(session_id);
+        let identity = candidate.identity();
+        let staged = StagedProjectResources::new(
+            identity,
+            Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+            WatcherActivation::new(pending_activation_state(), thread::current()),
+            Arc::new(WriteIgnoreRegistry::new()),
+        );
+        let swapped = self
+            .swap_open(candidate, staged)
+            .expect("test project swap must succeed");
+        assert!(
+            swapped.displaced_resources.is_none(),
+            "install_test_project expects a fresh AppState"
+        );
+        swapped.snapshot
     }
 
-    /// `watcher_handle` が install 済みかを返す非破壊 accessor。
-    ///
-    /// `take_watcher_handle` と異なり handle を取り出さず、`Mutex` 内の
-    /// `Option<BoxedWatcherHandle>` の `is_some()` のみを返す。
-    pub fn is_watcher_installed(&self) -> Result<bool, AppStateError> {
-        let guard = lock(&self.watcher_handle)?;
-        Ok(guard.is_some())
-    }
+    /// writer境界テスト用にdomain/resourcesのrevisionを同時に差し替える。
+    #[cfg(test)]
+    pub(crate) fn seed_session_revision_for_test(&self, revision: SessionRevision) {
+        let mut domain = self.domain.lock().expect("test domain lock");
+        let mut resources = self.resources.lock().expect("test resources lock");
+        let ProjectState::Loaded(session) = &mut *domain else {
+            panic!("test project must be installed before seeding revision");
+        };
+        let Some(active) = resources.as_mut() else {
+            panic!("test resources must be installed before seeding revision");
+        };
 
-    /// `project_path` 用 `Mutex` の健全性をチェックする副作用なしの probe。
-    ///
-    /// `project_path()` と異なりクローンを行わないため、pre-flight 用途で
-    /// 大きな PathBuf をコピーするコストを避けられる。
-    pub fn check_project_path_lock(&self) -> Result<(), AppStateError> {
-        let _guard = lock(&self.project_path)?;
-        Ok(())
-    }
-
-    /// `config` 用 `Mutex` の健全性をチェックする副作用なしの probe。
-    ///
-    /// `config()` と異なりクローンを行わないため、pre-flight 用途で
-    /// `Config` のコピーコストを避けられる。
-    pub fn check_config_lock(&self) -> Result<(), AppStateError> {
-        let _guard = lock(&self.config)?;
-        Ok(())
-    }
-
-    /// `labels` 用 `Mutex` の健全性をチェックする副作用なしの probe。
-    ///
-    /// `labels()` と異なりクローンを行わないため、pre-flight 用途で
-    /// `LabelRegistry` のコピーコストを避けられる。
-    pub fn check_labels_lock(&self) -> Result<(), AppStateError> {
-        let _guard = lock(&self.labels)?;
-        Ok(())
-    }
-
-    /// `milestones` 用 `Mutex` の健全性をチェックする副作用なしの probe。
-    ///
-    /// `milestones()` と異なりクローンを行わないため、pre-flight 用途で
-    /// `MilestoneRegistry` のコピーコストを避けられる。
-    pub fn check_milestones_lock(&self) -> Result<(), AppStateError> {
-        let _guard = lock(&self.milestones)?;
-        Ok(())
-    }
-
-    /// `tasks_cache` 用 `Mutex` の健全性をチェックする副作用なしの probe。
-    ///
-    /// `tasks_snapshot()` と異なり全 `Task` の clone+collect を行わないため、
-    /// 既存プロジェクトが大きい場合でも O(1) で lock 健全性のみ確認できる。
-    pub fn check_tasks_cache_lock(&self) -> Result<(), AppStateError> {
-        let _guard = lock(&self.tasks_cache)?;
-        Ok(())
-    }
-
-    /// `watcher_handle` 用 `Mutex` の健全性をチェックする副作用なしの probe。
-    ///
-    /// `install_watcher_handle` などの破壊的操作を行う前に lock の poison を
-    /// 早期検出するための pre-flight 用 API。lock を取得して即解放するだけで、
-    /// 内部状態は変更しない。
-    pub fn check_watcher_handle_lock(&self) -> Result<(), AppStateError> {
-        let _guard = lock(&self.watcher_handle)?;
-        Ok(())
-    }
-
-    /// AppState が保持する 6 つの `Mutex` フィールドすべての lock 健全性を
-    /// 一括 probe する副作用なしの API。
-    ///
-    /// `WriteIgnoreRegistry` は AppState の `Mutex` ではなく内部に独自の
-    /// `Mutex` を持つため対象外。caller が必要なら
-    /// `state.write_ignore().is_empty()?` 等を組み合わせて確認する。
-    pub fn check_all_locks(&self) -> Result<(), AppStateError> {
-        self.check_project_path_lock()?;
-        self.check_config_lock()?;
-        self.check_labels_lock()?;
-        self.check_milestones_lock()?;
-        self.check_tasks_cache_lock()?;
-        self.check_watcher_handle_lock()?;
-        Ok(())
-    }
-
-    /// `WriteIgnoreRegistry` への参照を返す forwarder。
-    ///
-    /// registry は内部に独自の `Mutex` を持つため、`AppState` 側では別途 lock を
-    /// 取らない。他フィールドの lock を保持したまま呼ぶ場合は、lock 取得順序
-    /// の最下層として扱うこと。
-    pub fn write_ignore(&self) -> &WriteIgnoreRegistry {
-        &self.write_ignore
+        session.seed_revision_for_test(revision);
+        active.update_version(session.version());
     }
 }
 
-/// 共通 lock ヘルパー。`PoisonError` を `AppStateError::LockPoisoned` に統一する。
-fn lock<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, AppStateError> {
-    m.lock().map_err(|_| AppStateError::LockPoisoned)
+#[cfg(test)]
+#[allow(dead_code)]
+impl AppState {
+    fn test_session_identity(&self) -> SessionIdentity {
+        if let Ok(identity) = self.active_session_identity() {
+            return identity;
+        }
+
+        self.install_test_project(
+            Path::new("."),
+            Config::default(),
+            LabelRegistry::default(),
+            MilestoneRegistry::default(),
+            Vec::new(),
+        )
+        .identity()
+    }
+
+    pub(crate) fn test_project_root(&self) -> Result<Option<PathBuf>, AppStateError> {
+        Ok(self
+            .session_snapshot()?
+            .map(|snapshot| snapshot.project_root().as_path_buf().clone()))
+    }
+
+    pub(crate) fn test_config(&self) -> Result<Option<Config>, AppStateError> {
+        Ok(self
+            .session_snapshot()?
+            .map(|snapshot| snapshot.config().clone()))
+    }
+
+    pub(crate) fn test_labels(&self) -> Result<Option<LabelRegistry>, AppStateError> {
+        Ok(self
+            .session_snapshot()?
+            .map(|snapshot| snapshot.labels().clone()))
+    }
+
+    pub(crate) fn test_milestones(&self) -> Result<Option<MilestoneRegistry>, AppStateError> {
+        Ok(self
+            .session_snapshot()?
+            .map(|snapshot| snapshot.milestones().clone()))
+    }
+
+    pub(crate) fn test_set_project_root(&self, path: Option<PathBuf>) -> Result<(), AppStateError> {
+        let Some(path) = path else {
+            let mut domain = lock_domain(&self.domain)?;
+            let mut resources = lock_resources(&self.resources)?;
+            *domain = ProjectState::Idle;
+            *resources = None;
+            return Ok(());
+        };
+
+        let root = ProjectRoot::from_path_buf(path).map_err(|_| AppStateError::NoProjectOpen)?;
+        let identity = self.test_session_identity();
+        self.commit_session(&identity, |session| session.replace_project_root(root))
+            .map_err(|error| match error {
+                CommitSessionError::State(error) => error,
+                _ => AppStateError::LockPoisoned,
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn test_replace_config(&self, config: Option<Config>) -> Result<(), AppStateError> {
+        let Some(config) = config else {
+            return self.test_set_project_root(None);
+        };
+        let identity = self.test_session_identity();
+        self.commit_session(&identity, |session| session.replace_config(config))
+            .map_err(|error| match error {
+                CommitSessionError::State(error) => error,
+                _ => AppStateError::LockPoisoned,
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn test_replace_labels(
+        &self,
+        labels: Option<LabelRegistry>,
+    ) -> Result<(), AppStateError> {
+        let Some(labels) = labels else {
+            return self.test_set_project_root(None);
+        };
+        let identity = self.test_session_identity();
+        self.commit_session(&identity, |session| session.replace_labels(labels))
+            .map_err(|error| match error {
+                CommitSessionError::State(error) => error,
+                _ => AppStateError::LockPoisoned,
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn test_replace_milestones(
+        &self,
+        milestones: Option<MilestoneRegistry>,
+    ) -> Result<(), AppStateError> {
+        let Some(milestones) = milestones else {
+            return self.test_set_project_root(None);
+        };
+        let identity = self.test_session_identity();
+        self.commit_session(&identity, |session| session.replace_milestones(milestones))
+            .map_err(|error| match error {
+                CommitSessionError::State(error) => error,
+                _ => AppStateError::LockPoisoned,
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn test_replace_tasks(
+        &self,
+        cache: std::collections::HashMap<PathBuf, Task>,
+    ) -> Result<(), AppStateError> {
+        let identity = self.test_session_identity();
+        self.commit_session(&identity, |session| session.replace_tasks(cache))
+            .map_err(|error| match error {
+                CommitSessionError::State(error) => error,
+                _ => AppStateError::LockPoisoned,
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn test_tasks_snapshot(&self) -> Result<Vec<Task>, AppStateError> {
+        Ok(self
+            .session_snapshot()?
+            .map(|snapshot| snapshot.tasks().values().cloned().collect())
+            .unwrap_or_default())
+    }
+
+    pub(crate) fn test_update_tasks<F, R>(&self, f: F) -> Result<R, AppStateError>
+    where
+        F: FnOnce(&mut std::collections::HashMap<PathBuf, Task>) -> R,
+    {
+        let identity = self.test_session_identity();
+        let mut result = None;
+        self.commit_session(&identity, |session| {
+            result = Some(f(session.tasks_mut()));
+        })
+        .map_err(|error| match error {
+            CommitSessionError::State(error) => error,
+            _ => AppStateError::LockPoisoned,
+        })?;
+        result.ok_or(AppStateError::NoProjectOpen)
+    }
+
+    pub(crate) fn test_project_generation(&self) -> ProjectGeneration {
+        self.session_snapshot()
+            .ok()
+            .flatten()
+            .map(|snapshot| ProjectGeneration::from_raw(snapshot.version().session_id.as_u64()))
+            .unwrap_or_else(|| ProjectGeneration::from_raw(0))
+    }
+
+    pub(crate) fn test_tasks_revision(&self) -> TasksRevision {
+        self.session_snapshot()
+            .ok()
+            .flatten()
+            .map(|snapshot| TasksRevision::from_raw(snapshot.version().revision.as_u64()))
+            .unwrap_or_else(|| TasksRevision::from_raw(0))
+    }
 }
 
+/// project domain lock専用helper。poisonをtyped errorへ変換する。
+fn lock_domain(m: &Mutex<ProjectState>) -> Result<MutexGuard<'_, ProjectState>, AppStateError> {
+    m.lock().map_err(|_| AppStateError::DomainLockPoisoned)
+}
+
+/// active resources lock専用helper。poisonをtyped errorへ変換する。
+fn lock_resources(
+    resources: &Mutex<Option<ActiveProjectResources>>,
+) -> Result<MutexGuard<'_, Option<ActiveProjectResources>>, AppStateError> {
+    resources
+        .lock()
+        .map_err(|_| AppStateError::ResourceLockPoisoned)
+}
+
+pub(crate) mod active_project_resources;
 pub mod change_id;
 pub mod event_seq;
 pub mod project_generation;
 pub mod project_key;
+mod project_writer_gates;
 pub mod tasks_revision;
 pub mod watcher_session;
 
 #[cfg(test)]
 mod state_tests;
-
-#[cfg(test)]
-mod state_label_tests;
-
-#[cfg(test)]
-mod state_milestone_tests;

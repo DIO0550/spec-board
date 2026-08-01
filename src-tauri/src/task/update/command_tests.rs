@@ -10,11 +10,15 @@ use super::update_task_impl;
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::create::error::ContentRejectReason;
 use crate::task::io::FsTaskIo;
 use crate::task::task_index::ParentHierarchyErrorReason;
 use crate::task::warning::TaskWarningCode;
+use crate::task::writer_test_support::{
+    session_revision, session_write_ignore_len, CountingTaskIo,
+};
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -240,7 +244,7 @@ fn update_parent_rebuilds_children_in_cache() {
     let returned = update_task_impl(&state, &FsTaskIo, args).expect("ok");
     assert_eq!(returned.file_path, "tasks/a.md");
 
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     let parent = snap
         .iter()
         .find(|t| t.file_path == "tasks/p.md")
@@ -274,7 +278,7 @@ fn update_parent_change_removes_from_old_parent_and_adds_to_new() {
 
     let _ = update_task_impl(&state, &FsTaskIo, args).expect("ok");
 
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     let p1 = snap.iter().find(|t| t.file_path == "tasks/p1.md").unwrap();
     let p2 = snap.iter().find(|t| t.file_path == "tasks/p2.md").unwrap();
     assert!(!p1.children.iter().any(|c| c.as_str() == "tasks/a.md"));
@@ -302,7 +306,7 @@ fn update_parent_clear_removes_from_parent_children() {
 
     let _ = update_task_impl(&state, &FsTaskIo, args).expect("ok");
 
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     let p = snap.iter().find(|t| t.file_path == "tasks/p.md").unwrap();
     assert!(p.children.is_empty());
 }
@@ -333,7 +337,7 @@ fn update_parent_not_found_leaves_state_untouched() {
 
     let after = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(original, after);
-    assert!(state.write_ignore().is_empty().unwrap());
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]
@@ -475,7 +479,7 @@ fn update_body_too_large_does_not_modify_file_or_cache() {
 
     let after = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(original, after);
-    assert!(state.write_ignore().is_empty().unwrap());
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]
@@ -520,7 +524,7 @@ fn update_descendant_cycle_is_rejected_without_filesystem_change() {
 
     let before_a = fs::read_to_string(root.join("tasks/a.md")).unwrap();
     let before_b = fs::read_to_string(root.join("tasks/b.md")).unwrap();
-    let before_snapshot = state.tasks_snapshot().unwrap();
+    let before_snapshot = state.test_tasks_snapshot().unwrap();
 
     let mut args = args_for("tasks/a.md");
     args.parent = Some("tasks/b.md".into());
@@ -540,7 +544,7 @@ fn update_descendant_cycle_is_rejected_without_filesystem_change() {
         before_b
     );
 
-    let after_snapshot = state.tasks_snapshot().unwrap();
+    let after_snapshot = state.test_tasks_snapshot().unwrap();
     let before_a_task = before_snapshot
         .iter()
         .find(|t| t.file_path == "tasks/a.md")
@@ -577,7 +581,7 @@ fn update_chain_too_deep_is_rejected_without_filesystem_change() {
     open_with_noop(Arc::clone(&state), root);
 
     let before_c = fs::read_to_string(root.join("tasks/C.md")).unwrap();
-    let before_snapshot = state.tasks_snapshot().unwrap();
+    let before_snapshot = state.test_tasks_snapshot().unwrap();
 
     // C.parent = B0 → C → B0 → ... → B20 で 21 edge → TooDeep
     let mut args = args_for("tasks/C.md");
@@ -597,7 +601,7 @@ fn update_chain_too_deep_is_rejected_without_filesystem_change() {
         before_c
     );
 
-    let after_snapshot = state.tasks_snapshot().unwrap();
+    let after_snapshot = state.test_tasks_snapshot().unwrap();
     let before_c_task = before_snapshot
         .iter()
         .find(|t| t.file_path == "tasks/C.md")
@@ -609,19 +613,8 @@ fn update_chain_too_deep_is_rejected_without_filesystem_change() {
     assert_eq!(before_c_task.parent, after_c_task.parent);
 }
 
-// watcher install 下で update_task_impl が write_ignore に自前 write のパスを登録し、
-// 続く handle_event(FsEvent::Modified / Renamed) でその token が consume されて
-// IPC emit が抑止される self-write 抑止経路を handler-level integration で検証する。
-// FsTaskIo::write_existing が tmp → rename のアトミック書き込みを行うため、
-// 実 watcher は Modified / Renamed どちらも発火し得る前提で両ケースを確認する。
 #[test]
-fn update_task_registers_write_ignore_and_consumes_on_modified_and_renamed_events() {
-    use crate::watcher_event::handler::handle_event;
-    use crate::watcher_event::AdapterContext;
-    use crate::watcher_event::EmitFn;
-    use spec_board_fs::watcher::core::FsEvent;
-    use std::sync::Mutex;
-
+fn update_task_registers_session_write_ignore_and_advances_revision() {
     let dir = tempdir();
     seed_md(
         dir.path(),
@@ -629,68 +622,20 @@ fn update_task_registers_write_ignore_and_consumes_on_modified_and_renamed_event
         "---\ntitle: A\nstatus: Todo\n---\nbody\n",
     );
     let state = Arc::new(AppState::new());
-    // NoopWatcherFactory を install することで is_watcher_installed() == true になり、
-    // update_task_impl が write_ignore へ register する経路に入る。
     open_with_noop(Arc::clone(&state), dir.path());
-    let abs = dir.path().join("tasks/a.md");
+    let before = session_revision(&state);
 
-    // emit closure は呼ばれた event 名 + payload を log に蓄積する。
-    // self-write 抑止が効いていれば log は最後まで空のまま。
-    let log: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::new(Mutex::new(Vec::new()));
-    let log_for_emit = Arc::clone(&log);
-    let emit: EmitFn = Box::new(move |ev, payload| {
-        log_for_emit.lock().unwrap().push((ev.to_string(), payload));
-    });
-    let ctx = AdapterContext {
-        root: dir.path().to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: crate::state::project_key::ProjectKey::from_root(dir.path()),
-        generation: state.project_generation(),
-        state: Arc::clone(&state),
-        emit,
-        io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,
-    };
+    let mut args = args_for("tasks/a.md");
+    args.status = Some("Doing".into());
+    let updated = update_task_impl(&state, &FsTaskIo, args).expect("update ok");
 
-    // 1 回目: status だけを更新 → write_ignore に abs が register される。
-    let mut args1 = args_for("tasks/a.md");
-    args1.status = Some("Doing".into());
-    let _t1 = update_task_impl(&state, &FsTaskIo, args1).expect("update#1 ok");
-    assert_eq!(1, state.write_ignore().len().expect("len"));
-
-    // FsEvent::Modified(abs) が handler に届くと token が consume され、
-    // IPC emit は抑止される（self-write は FE に通知しない）。
-    handle_event(&FsEvent::Modified(abs.clone()), &ctx).expect("handle Modified ok");
-    assert!(
-        log.lock().unwrap().is_empty(),
-        "self-write should not emit IPC on Modified"
+    assert_eq!("Doing", updated.status.as_str());
+    assert_eq!(1, session_write_ignore_len(&state));
+    assert_eq!(
+        before.as_u64() + 1,
+        session_revision(&state).as_u64(),
+        "one successful writer commit advances revision exactly once"
     );
-    assert!(state.write_ignore().is_empty().unwrap());
-
-    // 2 回目: priority を更新して再度 write_ignore に abs を register する。
-    let mut args2 = args_for("tasks/a.md");
-    args2.priority = Some("high".into());
-    let _t2 = update_task_impl(&state, &FsTaskIo, args2).expect("update#2 ok");
-    assert_eq!(1, state.write_ignore().len().expect("len"));
-
-    // FsEvent::Renamed { from: tmp, to: abs } 経路でも、handler は from を delete として
-    // 処理した後 to を upsert として処理する。abs 側が write_ignore に登録されているため
-    // upsert 段階で consume されて IPC emit は抑止される。
-    // tmp の実 path は試験対象でないため、実装と同じ命名規則に合わせる必要はない
-    // （from 側は rel 解決失敗で早期 return される）。
-    let tmp = abs.with_extension("md.tmp.0");
-    handle_event(
-        &FsEvent::Renamed {
-            from: tmp,
-            to: abs.clone(),
-        },
-        &ctx,
-    )
-    .expect("handle Renamed ok");
-    assert!(
-        log.lock().unwrap().is_empty(),
-        "self-write should not emit IPC on Renamed(tmp -> abs)"
-    );
-    assert!(state.write_ignore().is_empty().unwrap());
 }
 
 /// scan 経路で循環判定された task のタイトルを更新しても、
@@ -713,7 +658,7 @@ fn update_title_on_cycle_task_preserves_parent_cycle_warning() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), root);
 
-    let before = state.tasks_snapshot().unwrap();
+    let before = state.test_tasks_snapshot().unwrap();
     let before_a = before.iter().find(|t| t.file_path == "tasks/a.md").unwrap();
     assert!(before_a.parent.is_none());
     assert!(before_a
@@ -738,7 +683,7 @@ fn update_title_on_cycle_task_preserves_parent_cycle_warning() {
         "parentCycle warning must be preserved after non-parent update"
     );
 
-    let after = state.tasks_snapshot().unwrap();
+    let after = state.test_tasks_snapshot().unwrap();
     let after_b = after.iter().find(|t| t.file_path == "tasks/b.md").unwrap();
     assert!(after_b.parent.is_none());
     assert!(after_b
@@ -809,7 +754,7 @@ fn non_parent_update_keeps_parent_projection_counts() {
     update_task_impl(&state, &FsTaskIo, args).expect("ok");
 
     let cached_parent = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
         .find(|task| task.file_path == "tasks/p.md")
@@ -824,4 +769,36 @@ fn non_parent_update_keeps_parent_projection_counts() {
         payload.projections["tasks/p.md"].sub_issue_progress.total,
         2
     );
+}
+
+#[test]
+fn update_task_revision_exhausted_performs_zero_task_io() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let original = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read original");
+    let io = CountingTaskIo::default();
+    let mut args = args_for("tasks/a.md");
+    args.status = Some("Doing".into());
+
+    let error = update_task_impl(&state, &io, args)
+        .expect_err("revision exhaustion must reject the writer");
+
+    assert!(matches!(
+        error,
+        UpdateTaskCommandError::RevisionExhausted(_)
+    ));
+    assert_eq!(0, io.calls(), "preflight must run before every TaskIo call");
+    assert_eq!(
+        original,
+        fs::read_to_string(dir.path().join("tasks/a.md")).expect("read unchanged file")
+    );
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(u64::MAX, session_revision(&state).as_u64());
 }

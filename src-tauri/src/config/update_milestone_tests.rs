@@ -11,6 +11,7 @@ use crate::config::{
     milestone_registry_store, MilestoneDefinition, MilestoneRegistry, MilestoneRegistryStore,
     MilestoneState, UpdateMilestonePlanError,
 };
+use crate::config::{Config, LabelRegistry};
 use crate::state::AppState;
 
 const FIXED_NOW: &str = "2026-06-03T12:00:00Z";
@@ -32,10 +33,13 @@ fn args(name: &str) -> UpdateMilestoneArgs {
 
 fn opened_state(root: &Path, registry: MilestoneRegistry) -> AppState {
     let state = AppState::new();
-    state
-        .set_project_path(Some(root.to_path_buf()))
-        .expect("writable");
-    state.replace_milestones(Some(registry)).expect("writable");
+    state.install_test_project(
+        root,
+        Config::default(),
+        LabelRegistry::default(),
+        registry,
+        Vec::new(),
+    );
     state
 }
 

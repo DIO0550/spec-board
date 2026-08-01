@@ -4,7 +4,8 @@
 //! 担当し、純粋計算は aggregate `TaskIndex::plan_create` に委譲する。
 //! 標準 fs API への直接呼び出しは持たず、すべての I/O は `TaskIo` ポート経由で行う。
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::State;
@@ -12,10 +13,12 @@ use tauri::State;
 use super::args::CreateTaskArgs;
 use super::error::CreateTaskCommandError;
 use crate::config::column_name::ColumnName;
+use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::frontmatter::parse as parse_frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::{task_from_parsed, TaskParseContext};
+use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_content::TaskContent;
 use crate::task::task_index::{CreateTaskIntent, Task, TaskIndex};
 
@@ -29,77 +32,69 @@ pub fn create_task(state: State<'_, Arc<AppState>>, args: CreateTaskArgs) -> Res
 
 /// `create_task` の effect 層本体（テスト境界）。
 ///
-/// I/O は `TaskIo` port 経由で実行し、標準 fs API の直接呼び出しは行わない。
-/// `state.rs` モジュール doc が定める AppState lock 取得順序契約を維持し、aggregate の
-/// `plan_create`（副作用なしの planning）を副作用前に呼び出すことで
-/// validation 失敗時の副作用ゼロを保証する。
+/// resident planningとcache applyをI/O前に完了し、exact-root writer lease内で
+/// revision/resource preflight → disk write → full identity commitを行う。
 pub(crate) fn create_task_impl(
     state: &AppState,
     io: &dyn TaskIo,
     args: CreateTaskArgs,
 ) -> Result<Task, CreateTaskCommandError> {
-    // 1. preflight (side effect 前の lock 健全性確認)
-    state.check_tasks_cache_lock()?;
-    let _ = state.write_ignore().is_empty()?;
+    state.with_project_writer_lease(|target, snapshot| -> Result<Task, CreateTaskCommandError> {
+        let intent = CreateTaskIntent::from(args);
+        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let outcome = index.plan_create(snapshot.project_root().as_path(), &intent)?;
+        let (next_tasks, created_task) = plan_cache_insert(
+            snapshot.tasks(),
+            &outcome.content,
+            &outcome.rel_path,
+            outcome.status.clone(),
+        )?;
+        let resources = state.preflight_session_write(snapshot)?;
 
-    // 2. snapshot + project root
-    let project_root = state
-        .project_path()?
-        .ok_or(CreateTaskCommandError::NoProjectOpen)?;
-    let snapshot = state.tasks_snapshot()?;
+        // directory作成失敗時はmarkerを登録しない。
+        io.ensure_dir(&outcome.target_dir_abs)?;
+        let registered_paths = vec![outcome.abs_path.clone()];
+        resources.write_ignore().register(&outcome.abs_path)?;
 
-    // 3. DTO → Intent 変換 + aggregate planning（純粋計算、副作用ゼロ）
-    let intent = CreateTaskIntent::from(args);
-    let outcome = TaskIndex::from(snapshot).plan_create(project_root.as_path(), &intent)?;
-
-    // 4. watcher 起動有無 probe（副作用前に lock 健全性を確認）
-    let watcher_active = state.is_watcher_installed()?;
-
-    // 5. ディレクトリ確保
-    //    ensure_dir 失敗時は write_ignore に未触のまま return する。
-    io.ensure_dir(&outcome.target_dir_abs)?;
-
-    // 6. write_ignore 登録（ensure_dir 成功後 / write_new 直前）
-    if watcher_active {
-        state.write_ignore().register(&outcome.abs_path)?;
-    }
-
-    // 7. I/O via port (排他作成 write)
-    //    partial-write cleanup は FsTaskIo::write_new 内部に閉じ込め済み。
-    //    既存ファイル衝突 (AlreadyExists) 経路で既存ファイルを誤削除しない
-    //    ため、本層は失敗時に追加の io.remove を呼ばない（二重削除防止）。
-    if let Err(err) = io.write_new(&outcome.abs_path, outcome.content.as_bytes()) {
-        if watcher_active {
-            let _ = state.write_ignore().unregister(&outcome.abs_path);
+        // partial-write cleanupはTaskIo側に閉じる。既存file collision時に
+        // command層からremoveを呼ぶと既存fileを消すため、markerだけ解除する。
+        if let Err(error) = io.write_new(&outcome.abs_path, outcome.content.as_bytes()) {
+            cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+            return Err(error.into());
         }
-        return Err(err.into());
-    }
 
-    // 8. cache commit
-    let result =
-        parse_and_insert_into_cache(state, &outcome.content, &outcome.rel_path, outcome.status);
-    if result.is_err() && watcher_active {
-        let _ = state.write_ignore().unregister(&outcome.abs_path);
-    }
-    result
+        commit_or_resync_under_lease(
+            state,
+            target.project_root(),
+            &snapshot.identity(),
+            &resources,
+            &registered_paths,
+            ResyncSource::Tasks { task_io: io },
+            "create_task",
+            move |session| {
+                session.replace_tasks(next_tasks);
+                created_task
+            },
+        )
+    })
 }
 
-/// post-write phase: 書き込んだ md を再 parse → Task に変換 → cache に差分挿入。
-fn parse_and_insert_into_cache(
-    state: &AppState,
+/// generated contentをTaskへ変換し、cloned task mapへ差分追加したcommit planを返す。
+fn plan_cache_insert(
+    tasks: &HashMap<PathBuf, Task>,
     content: &TaskContent,
     rel_path: &Path,
     status: ColumnName,
-) -> Result<Task, CreateTaskCommandError> {
+) -> Result<(HashMap<PathBuf, Task>, Task), CreateTaskCommandError> {
     let parsed = parse_frontmatter(content.as_str())?.expect("just-written frontmatter must parse");
-    let ctx = TaskParseContext {
+    let context = TaskParseContext {
         file_path: rel_path.to_path_buf(),
         default_status: status,
     };
-    let task = task_from_parsed(parsed, &ctx);
-    let final_task =
-        state.with_tasks_cache_mut(|cache| TaskIndex::insert_new_task_into_cache(cache, task))?;
-    Ok(final_task)
+    let task = task_from_parsed(parsed, &context);
+    let mut next_tasks = tasks.clone();
+    let created_task = TaskIndex::insert_new_task_into_cache(&mut next_tasks, task);
+    Ok((next_tasks, created_task))
 }
 
 #[cfg(test)]

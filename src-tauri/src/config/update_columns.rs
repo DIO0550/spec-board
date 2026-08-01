@@ -7,7 +7,7 @@
 //! → GUIDE.md 再生成、の順で適用する。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_yaml_ng::Value as YamlValue;
@@ -18,12 +18,16 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::config::column_name::ColumnName;
-use crate::config::{write_guide_markdown_best_effort, ConfigWriter, FsConfigWriter, RenameTarget};
-use crate::state::{AppState, AppStateError};
+use crate::config::{
+    load_or_default, write_guide_markdown_best_effort, Config, ConfigWriter, FsConfigWriter,
+    LoadConfigError, RenameTarget,
+};
+use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
+use crate::state::{AppState, AppStateError, SessionWriteError};
 use crate::task::frontmatter::{self, FrontmatterError};
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use spec_board_fs::config::config_io;
-use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
+use spec_board_fs::watcher::write_ignore::{WriteIgnoreError, WriteIgnoreRegistry};
 
 /// `update_columns` の引数 DTO。
 ///
@@ -122,6 +126,8 @@ pub enum UpdateColumnsError {
         #[source]
         source: std::io::Error,
     },
+    #[error(transparent)]
+    SessionWrite(SessionWriteError),
 }
 
 impl From<AppStateError> for UpdateColumnsError {
@@ -138,6 +144,16 @@ impl From<WriteIgnoreError> for UpdateColumnsError {
     }
 }
 
+impl From<SessionWriteError> for UpdateColumnsError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            error => Self::SessionWrite(error),
+        }
+    }
+}
+
 /// `update_columns` Tauri command 薄層。
 ///
 /// `update_columns_impl` を呼び、エラーを文字列化して FE へ返す。
@@ -150,7 +166,14 @@ pub fn update_columns(
     state: State<'_, Arc<AppState>>,
     args: UpdateColumnsArgs,
 ) -> Result<(), String> {
-    update_columns_impl(state.inner(), &FsTaskIo, &FsConfigWriter, args).map_err(|e| e.to_string())
+    update_columns_impl_with_loader(
+        state.inner(),
+        &FsTaskIo,
+        &FsConfigWriter,
+        &load_or_default,
+        args,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// `update_columns` の effect 層本体。
@@ -161,120 +184,172 @@ pub fn update_columns(
 /// # Errors
 ///
 /// 詳細は [`UpdateColumnsError`] の各 variant を参照。
+#[cfg(test)]
 pub(crate) fn update_columns_impl(
     state: &AppState,
     io: &dyn TaskIo,
     config_writer: &dyn ConfigWriter,
     args: UpdateColumnsArgs,
 ) -> Result<(), UpdateColumnsError> {
-    // (1) preflight
-    state.check_tasks_cache_lock()?;
-    let _ = state.write_ignore().is_empty()?;
+    update_columns_impl_with_loader(state, io, config_writer, &load_or_default, args)
+}
 
-    // (2) snapshot
-    let project_root = state
-        .project_path()?
-        .ok_or(UpdateColumnsError::NoProjectOpen)?;
-    let config = state.config()?.ok_or(UpdateColumnsError::NoProjectOpen)?;
-    let tasks_snapshot = state.tasks_snapshot()?;
-
-    // (3) aggregate planning（pure）
-    let plan = config.plan_update_columns(&args, &tasks_snapshot)?;
-    if plan.is_noop {
-        return Ok(());
-    }
-
-    let abs_for = |target: &RenameTarget| project_root.join(target.rel_path.as_str());
-
-    // (4) 原本 bytes を読み込んで HashMap に保持（key = abs_path）
-    //     ここで失敗してもまだ書き換えていないため `RenameReadFailed` を使う
-    //     （「変更を元に戻しました」を含む `RenameWriteFailed` は誤解を招く）。
-    let mut originals: HashMap<PathBuf, Vec<u8>> = HashMap::new();
-    for target in &plan.rename_targets {
-        let abs = abs_for(target);
-        let bytes = io
-            .read(&abs)
-            .map_err(|source| UpdateColumnsError::RenameReadFailed {
-                path: abs.clone(),
-                source,
-            })?;
-        originals.insert(abs, bytes);
-    }
-
-    // (5) watcher 起動有無に応じて write_ignore を bulk 登録
-    //     登録した path は失敗パスで unregister し、後続の本物のユーザー編集イベントが
-    //     stale な ignore エントリで抑止されないようにする。
-    let watcher_active = state.is_watcher_installed()?;
-    let registered_paths: Vec<PathBuf> = if watcher_active && !plan.rename_targets.is_empty() {
-        let paths: Vec<PathBuf> = plan.rename_targets.iter().map(&abs_for).collect();
-        state.write_ignore().register_bulk(&paths)?;
-        paths
-    } else {
-        Vec::new()
-    };
-
-    // (6) rename 対象 md を順次 atomic write。失敗時は rollback
-    let mut written: Vec<PathBuf> = Vec::new();
-    for target in &plan.rename_targets {
-        let abs = abs_for(target);
-        let original_bytes = originals
-            .get(&abs)
-            .expect("originals must contain abs path");
-
-        match rewrite_status_in_md(original_bytes, &target.new_status) {
-            Ok(Some(new_bytes)) => match io.write_existing(&abs, &new_bytes) {
-                Ok(()) => written.push(abs),
-                Err(source) => {
-                    rollback_md(&written, &originals, io)?;
-                    cleanup_registered_write_ignores(state, &registered_paths);
-                    return Err(UpdateColumnsError::RenameWriteFailed { path: abs, source });
-                }
-            },
-            Ok(None) => {
-                rollback_md(&written, &originals, io)?;
-                cleanup_registered_write_ignores(state, &registered_paths);
-                return Err(UpdateColumnsError::RenameMissingFrontmatter { path: abs });
-            }
-            Err(source) => {
-                rollback_md(&written, &originals, io)?;
-                cleanup_registered_write_ignores(state, &registered_paths);
-                return Err(UpdateColumnsError::RenameParseFailed { path: abs, source });
-            }
+pub(crate) fn update_columns_impl_with_loader(
+    state: &AppState,
+    io: &dyn TaskIo,
+    config_writer: &dyn ConfigWriter,
+    load_config: &dyn Fn(&Path) -> Result<Config, LoadConfigError>,
+    args: UpdateColumnsArgs,
+) -> Result<(), UpdateColumnsError> {
+    state.with_project_writer_lease(|target, snapshot| {
+        let tasks_snapshot: Vec<_> = snapshot.tasks().values().cloned().collect();
+        let plan = snapshot
+            .config()
+            .plan_update_columns(&args, &tasks_snapshot)?;
+        if plan.is_noop {
+            return Ok(());
         }
-    }
 
-    // (7) config.json atomic write
-    let config_path = config_io::config_path(&project_root);
-    let content = match serde_json::to_string_pretty(&plan.new_config) {
-        Ok(s) => s,
-        Err(source) => {
-            rollback_md(&written, &originals, io)?;
-            cleanup_registered_write_ignores(state, &registered_paths);
-            return Err(UpdateColumnsError::ConfigSerializeFailed { source });
-        }
-    };
-    if let Err(source) = config_writer.write_atomic(&config_path, &content) {
-        rollback_md(&written, &originals, io)?;
-        cleanup_registered_write_ignores(state, &registered_paths);
-        return Err(UpdateColumnsError::ConfigWriteFailed {
-            path: config_path,
-            source,
-        });
-    }
-
-    // (8) commit: AppState.config 差し替え → tasks_cache in-place 更新 → GUIDE.md 再生成
-    state.replace_config(Some(plan.new_config.clone()))?;
-    state.with_tasks_cache_mut(|cache| {
+        let project_root = snapshot.project_root().as_path().to_path_buf();
+        let mut next_tasks = snapshot.tasks().clone();
         for target in &plan.rename_targets {
             let rel = PathBuf::from(target.rel_path.as_str());
-            if let Some(task) = cache.get_mut(&rel) {
+            if let Some(task) = next_tasks.get_mut(&rel) {
                 task.status = ColumnName::from_lenient(&target.new_status);
             }
         }
-    })?;
-    write_guide_markdown_best_effort(&project_root, &plan.new_config);
 
-    Ok(())
+        // resident plan完成後、disk read/marker/writeより先にrevisionをpreflightする。
+        let resources = state.preflight_session_write(snapshot)?;
+        let abs_for = |target: &RenameTarget| project_root.join(target.rel_path.as_str());
+
+        let mut originals: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+        for target in &plan.rename_targets {
+            let abs = abs_for(target);
+            let bytes = io
+                .read(&abs)
+                .map_err(|source| UpdateColumnsError::RenameReadFailed {
+                    path: abs.clone(),
+                    source,
+                })?;
+            originals.insert(abs, bytes);
+        }
+
+        let registered_paths: Vec<PathBuf> = if plan.rename_targets.is_empty() {
+            Vec::new()
+        } else {
+            let paths: Vec<PathBuf> = plan.rename_targets.iter().map(&abs_for).collect();
+            resources.write_ignore().register_bulk(&paths)?;
+            paths
+        };
+
+        let mut written: Vec<PathBuf> = Vec::new();
+        for target in &plan.rename_targets {
+            let abs = abs_for(target);
+            let original_bytes = originals
+                .get(&abs)
+                .expect("originals must contain abs path");
+
+            match rewrite_status_in_md(original_bytes, &target.new_status) {
+                Ok(Some(new_bytes)) => match io.write_existing(&abs, &new_bytes) {
+                    Ok(()) => written.push(abs),
+                    Err(source) => {
+                        rollback_and_cleanup(
+                            &written,
+                            &originals,
+                            io,
+                            resources.write_ignore(),
+                            &registered_paths,
+                        )?;
+                        return Err(UpdateColumnsError::RenameWriteFailed { path: abs, source });
+                    }
+                },
+                Ok(None) => {
+                    rollback_and_cleanup(
+                        &written,
+                        &originals,
+                        io,
+                        resources.write_ignore(),
+                        &registered_paths,
+                    )?;
+                    return Err(UpdateColumnsError::RenameMissingFrontmatter { path: abs });
+                }
+                Err(source) => {
+                    rollback_and_cleanup(
+                        &written,
+                        &originals,
+                        io,
+                        resources.write_ignore(),
+                        &registered_paths,
+                    )?;
+                    return Err(UpdateColumnsError::RenameParseFailed { path: abs, source });
+                }
+            }
+        }
+
+        let next_config = plan.new_config;
+        let config_path = config_io::config_path(&project_root);
+        let content = match serde_json::to_string_pretty(&next_config) {
+            Ok(content) => content,
+            Err(source) => {
+                rollback_and_cleanup(
+                    &written,
+                    &originals,
+                    io,
+                    resources.write_ignore(),
+                    &registered_paths,
+                )?;
+                return Err(UpdateColumnsError::ConfigSerializeFailed { source });
+            }
+        };
+        if let Err(source) = config_writer.write_atomic(&config_path, &content) {
+            rollback_and_cleanup(
+                &written,
+                &originals,
+                io,
+                resources.write_ignore(),
+                &registered_paths,
+            )?;
+            return Err(UpdateColumnsError::ConfigWriteFailed {
+                path: config_path,
+                source,
+            });
+        }
+
+        let guide_config = next_config.clone();
+        let commit = state.commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_config(next_config);
+            session.replace_tasks(next_tasks);
+        });
+        match commit {
+            Ok(_) => {
+                write_guide_markdown_best_effort(&project_root, &guide_config);
+                Ok(())
+            }
+            Err(SessionWriteError::Conflict(conflict)) => {
+                let recovery = resync_if_same_project_under_lease(
+                    state,
+                    target.project_root(),
+                    &conflict,
+                    ResyncSource::ConfigAndTasks {
+                        task_io: io,
+                        load_config,
+                    },
+                );
+                if let Err(error) = recovery {
+                    cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+                    log::warn!("update_columns conflict recovery failed: {error}");
+                } else {
+                    write_guide_markdown_best_effort(&project_root, &guide_config);
+                }
+                Err(SessionWriteError::Conflict(conflict).into())
+            }
+            Err(error) => {
+                cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+                Err(error.into())
+            }
+        }
+    })
 }
 
 /// 失敗パスで `register_bulk` 済み path の write_ignore エントリを掃除する best-effort helper。
@@ -283,10 +358,23 @@ pub(crate) fn update_columns_impl(
 /// 後続の本物のユーザー編集イベントが stale な ignore エントリに飲まれてしまう。
 /// 失敗時は明示的に unregister し、cache と fs の整合性は別途 `rollback_md` で復元する。
 /// 内部 Mutex の poison 等は無視する（既に別エラーで失敗パスにいるため）。
-fn cleanup_registered_write_ignores(state: &AppState, paths: &[PathBuf]) {
+fn cleanup_registered_write_ignores(registry: &WriteIgnoreRegistry, paths: &[PathBuf]) {
     for path in paths {
-        let _ = state.write_ignore().unregister(path);
+        let _ = registry.unregister(path);
     }
+}
+
+/// rollbackの成否にかかわらず、このoperationが登録したmarkerを掃除する。
+fn rollback_and_cleanup(
+    written: &[PathBuf],
+    originals: &HashMap<PathBuf, Vec<u8>>,
+    io: &dyn TaskIo,
+    registry: &WriteIgnoreRegistry,
+    registered_paths: &[PathBuf],
+) -> Result<(), UpdateColumnsError> {
+    let rollback = rollback_md(written, originals, io);
+    cleanup_registered_write_ignores(registry, registered_paths);
+    rollback
 }
 
 /// rollback ループ。既に書き換え済みの md を `originals` の内容で書き戻す。

@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::state::AppStateError;
+use crate::project_session::{RevisionExhausted, SessionConflict};
+use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::create::error::ContentRejectReason;
 use crate::task::io::TaskIoError;
 use crate::task::parse::TaskParseError;
@@ -52,6 +53,24 @@ pub enum UpdateTaskCommandError {
     WriteIgnore(#[from] WriteIgnoreError),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    SessionConflict(#[from] SessionConflict),
+    #[error(transparent)]
+    RevisionExhausted(#[from] RevisionExhausted),
+    #[error(transparent)]
+    ResourceConflict(#[from] SessionResourceConflict),
+}
+
+impl From<SessionWriteError> for UpdateTaskCommandError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(error) => Self::AppState(error),
+            SessionWriteError::Conflict(error) => Self::SessionConflict(error),
+            SessionWriteError::RevisionExhausted(error) => Self::RevisionExhausted(error),
+            SessionWriteError::ResourceConflict(error) => Self::ResourceConflict(error),
+        }
+    }
 }
 
 impl From<ParentValidationFailure> for UpdateTaskError {

@@ -8,12 +8,11 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::config::column_name::ColumnName;
-use crate::config::Column;
-use crate::config::Config;
-use crate::config::FsConfigWriter;
+use crate::config::{Column, Config, FsConfigWriter, LabelRegistry, MilestoneRegistry};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::FsTaskIo;
@@ -919,7 +918,7 @@ fn e2e_columns_reorder_writes_config_json_and_guide_md() {
 
     let on_disk = read_config_json(dir.path());
     assert_eq!(on_disk.columns, new_cols);
-    let state_cfg = state.config().unwrap().unwrap();
+    let state_cfg = state.test_config().unwrap().unwrap();
     assert_eq!(state_cfg.columns, new_cols);
 
     let guide = fs::read_to_string(dir.path().join(".spec-board/GUIDE.md")).unwrap();
@@ -1016,7 +1015,7 @@ fn e2e_renames_updates_md_status_and_tasks_cache() {
     assert_eq!(read_status(dir.path(), "tasks/b.md"), "Doing");
     assert_eq!(read_status(dir.path(), "tasks/c.md"), "Done");
 
-    let snapshot = state.tasks_snapshot().unwrap();
+    let snapshot = state.test_tasks_snapshot().unwrap();
     let a = snapshot
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -1088,6 +1087,7 @@ struct FailingTaskIo {
     fail_write_indices: Mutex<HashSet<usize>>,
     write_existing_calls: AtomicUsize,
     fail_read_for: Mutex<HashSet<PathBuf>>,
+    read_calls: AtomicUsize,
 }
 
 impl FailingTaskIo {
@@ -1097,6 +1097,7 @@ impl FailingTaskIo {
             fail_write_indices: Mutex::new(HashSet::new()),
             write_existing_calls: AtomicUsize::new(0),
             fail_read_for: Mutex::new(HashSet::new()),
+            read_calls: AtomicUsize::new(0),
         }
     }
 
@@ -1108,6 +1109,10 @@ impl FailingTaskIo {
     fn fail_read_for(self, path: PathBuf) -> Self {
         self.fail_read_for.lock().unwrap().insert(path);
         self
+    }
+
+    fn read_call_count(&self) -> usize {
+        self.read_calls.load(Ordering::Relaxed)
     }
 }
 
@@ -1131,6 +1136,7 @@ impl TaskIo for FailingTaskIo {
         self.inner.remove(path)
     }
     fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
+        self.read_calls.fetch_add(1, Ordering::Relaxed);
         if self.fail_read_for.lock().unwrap().contains(path) {
             return Err(TaskIoError::from(std::io::Error::other(format!(
                 "injected read fault for {}",
@@ -1154,6 +1160,132 @@ impl ConfigWriter for FailingConfigWriter {
             Ok(())
         }
     }
+}
+
+#[derive(Default)]
+struct CountingConfigWriter {
+    calls: AtomicUsize,
+}
+
+impl ConfigWriter for CountingConfigWriter {
+    fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct ConflictAfterConfigWrite<'a> {
+    state: &'a AppState,
+    calls: AtomicUsize,
+}
+
+impl ConfigWriter for ConflictAfterConfigWrite<'_> {
+    fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let identity = self
+            .state
+            .active_session_identity()
+            .expect("active session identity");
+        self.state
+            .commit_session_write(&identity, |_| ())
+            .expect("inject concurrent revision");
+        Ok(())
+    }
+}
+
+#[test]
+fn revision_exhaustion_preflight_performs_no_io_and_keeps_state_and_markers() {
+    let dir = tempdir();
+    write_initial_config(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Done", "order": 1 }
+            ],
+            "cardOrder": {},
+            "doneColumn": "Done"
+        }"#,
+    );
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+
+    let before = state.require_session_snapshot().unwrap();
+    let resources = state.resources_for(before.version()).unwrap();
+    let io = FailingTaskIo::new();
+    let config_writer = CountingConfigWriter::default();
+
+    let error = update_columns_impl(
+        &state,
+        &io,
+        &config_writer,
+        UpdateColumnsArgs {
+            renames: Some(vec![rename("Todo", "To Do")]),
+            ..Default::default()
+        },
+    )
+    .expect_err("MAX revision must fail before I/O");
+
+    assert!(matches!(
+        error,
+        UpdateColumnsError::SessionWrite(SessionWriteError::RevisionExhausted(_))
+    ));
+    assert_eq!(0, io.read_call_count());
+    assert_eq!(0, io.write_existing_calls.load(Ordering::Relaxed));
+    assert_eq!(0, config_writer.calls.load(Ordering::Relaxed));
+    assert!(resources.write_ignore().is_empty().unwrap());
+
+    let after = state.require_session_snapshot().unwrap();
+    assert_eq!(before.version(), after.version());
+    assert_eq!(before.config(), after.config());
+    assert_eq!(before.tasks(), after.tasks());
+}
+
+#[test]
+fn disk_success_conflict_resync_uses_the_injected_config_loader() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    let writer = ConflictAfterConfigWrite {
+        state: &state,
+        calls: AtomicUsize::new(0),
+    };
+    let loader_calls = AtomicUsize::new(0);
+    let recovered_config = config_with(vec![col("Recovered", 0)], None);
+    let load_config = |_root: &Path| {
+        loader_calls.fetch_add(1, Ordering::SeqCst);
+        Ok::<Config, LoadConfigError>(recovered_config.clone())
+    };
+
+    let error = update_columns_impl_with_loader(
+        &state,
+        &FsTaskIo,
+        &writer,
+        &load_config,
+        UpdateColumnsArgs {
+            columns: Some(vec![col("Queued", 0), col("Done", 1)]),
+            ..Default::default()
+        },
+    )
+    .expect_err("original conflict");
+
+    assert!(matches!(
+        error,
+        UpdateColumnsError::SessionWrite(SessionWriteError::Conflict(_))
+    ));
+    assert_eq!(1, writer.calls.load(Ordering::SeqCst));
+    assert_eq!(1, loader_calls.load(Ordering::SeqCst));
+    assert_eq!(
+        &recovered_config,
+        state.require_session_snapshot().unwrap().config()
+    );
 }
 
 #[test]
@@ -1281,7 +1413,7 @@ fn fault_rewrite_fails_at_index_2_rolls_back_first_two_files() {
         before_cfg
     );
 
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     for t in &snap {
         assert_eq!(t.status.as_str(), "Todo");
     }
@@ -1397,7 +1529,7 @@ fn fault_config_write_fails_after_all_md_rewritten_rolls_back_all_md() {
     );
 
     // cache 未更新
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     for t in &snap {
         assert_eq!(t.status.as_str(), "Todo");
     }
@@ -1451,17 +1583,13 @@ fn fault_frontmatter_parse_error_returns_rename_parse_failed_and_rolls_back() {
         }"#,
     )
     .unwrap();
-    state
-        .set_project_path(Some(dir.path().to_path_buf()))
-        .unwrap();
-    state.replace_config(Some(cfg)).unwrap();
-    let mut cache = std::collections::HashMap::new();
-    cache.insert(PathBuf::from("tasks/a.md"), task("tasks/a.md", "Todo"));
-    cache.insert(
-        PathBuf::from("tasks/broken.md"),
-        task("tasks/broken.md", "Todo"),
+    state.install_test_project(
+        dir.path(),
+        cfg,
+        LabelRegistry::default(),
+        MilestoneRegistry::default(),
+        vec![task("tasks/a.md", "Todo"), task("tasks/broken.md", "Todo")],
     );
-    state.replace_tasks_cache(cache).unwrap();
 
     let before_a = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     let before_broken = fs::read_to_string(dir.path().join("tasks/broken.md")).unwrap();
@@ -1541,17 +1669,13 @@ fn fault_missing_frontmatter_returns_rename_missing_frontmatter_and_rolls_back()
         }"#,
     )
     .unwrap();
-    state
-        .set_project_path(Some(dir.path().to_path_buf()))
-        .unwrap();
-    state.replace_config(Some(cfg)).unwrap();
-    let mut cache = std::collections::HashMap::new();
-    cache.insert(PathBuf::from("tasks/a.md"), task("tasks/a.md", "Todo"));
-    cache.insert(
-        PathBuf::from("tasks/plain.md"),
-        task("tasks/plain.md", "Todo"),
+    state.install_test_project(
+        dir.path(),
+        cfg,
+        LabelRegistry::default(),
+        MilestoneRegistry::default(),
+        vec![task("tasks/a.md", "Todo"), task("tasks/plain.md", "Todo")],
     );
-    state.replace_tasks_cache(cache).unwrap();
 
     let before_a = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     let before_plain = fs::read_to_string(dir.path().join("tasks/plain.md")).unwrap();
@@ -1701,7 +1825,12 @@ fn fault_write_ignore_lock_poisoned_returns_state_lock_poisoned() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    state.write_ignore().poison_lock_for_testing();
+    let snapshot = state.require_session_snapshot().unwrap();
+    state
+        .resources_for(snapshot.version())
+        .unwrap()
+        .write_ignore()
+        .poison_lock_for_testing();
 
     let err = update_columns_impl(
         &state,
@@ -1745,7 +1874,8 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    assert!(state.is_watcher_installed().unwrap());
+    let snapshot = state.require_session_snapshot().unwrap();
+    let resources = state.resources_for(snapshot.version()).unwrap();
 
     let before_a = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     let before_b = fs::read_to_string(dir.path().join("tasks/b.md")).unwrap();
@@ -1765,7 +1895,7 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
     assert!(matches!(err, UpdateColumnsError::RenameWriteFailed { .. }));
 
     assert!(
-        state.write_ignore().is_empty().unwrap(),
+        resources.write_ignore().is_empty().unwrap(),
         "write_ignore registry must be empty after failed rename"
     );
 
@@ -1778,7 +1908,7 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
         before_b
     );
 
-    let snap = state.tasks_snapshot().unwrap();
+    let snap = state.test_tasks_snapshot().unwrap();
     assert_eq!(
         snap.len(),
         2,

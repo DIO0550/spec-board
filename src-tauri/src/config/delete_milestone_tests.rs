@@ -1,7 +1,7 @@
 //! `delete_milestone_impl` のテスト（E2E・TempDir）。削除 + usageCount 返却 +
 //! frontmatter 不変（非破壊）+ 不在拒否を検証する。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tempfile::TempDir;
 
@@ -12,6 +12,7 @@ use crate::config::{
     milestone_registry_store, DeleteMilestonePlanError, MilestoneDefinition, MilestoneRegistry,
     MilestoneRegistryStore,
 };
+use crate::config::{Config, LabelRegistry};
 use crate::state::AppState;
 use crate::task::task_index::Task;
 
@@ -56,16 +57,13 @@ fn args(name: &str) -> DeleteMilestoneArgs {
 
 fn opened_state(root: &Path, registry: MilestoneRegistry, tasks: Vec<Task>) -> AppState {
     let state = AppState::new();
-    state
-        .set_project_path(Some(root.to_path_buf()))
-        .expect("writable");
-    state.replace_milestones(Some(registry)).expect("writable");
-    let cache = tasks
-        .into_iter()
-        .enumerate()
-        .map(|(i, t)| (PathBuf::from(format!("{i}.md")), t))
-        .collect();
-    state.replace_tasks_cache(cache).expect("writable");
+    state.install_test_project(
+        root,
+        Config::default(),
+        LabelRegistry::default(),
+        registry,
+        tasks,
+    );
     state
 }
 
@@ -89,7 +87,7 @@ fn impl_deletes_and_returns_usage_count() {
 
     let on_disk = milestone_registry_store(tmp.path()).load().expect("load");
     assert!(on_disk.milestones.iter().all(|m| m.name != "v0.3"));
-    let in_mem = state.milestones().expect("milestones").expect("some");
+    let in_mem = state.test_milestones().expect("milestones").expect("some");
     assert!(in_mem.milestones.iter().all(|m| m.name != "v0.3"));
 }
 
@@ -122,7 +120,7 @@ fn impl_does_not_touch_task_frontmatter() {
     delete_milestone_impl(&state, args("v0.3")).expect("delete ok");
 
     // tasks_cache の milestone 値は変化しない（非破壊）。
-    let tasks = state.tasks_snapshot().expect("tasks");
+    let tasks = state.test_tasks_snapshot().expect("tasks");
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].milestone.as_deref(), Some("v0.3"));
 }
@@ -143,7 +141,7 @@ fn impl_no_commit_on_unknown_name() {
         err,
         DeleteMilestoneError::Plan(DeleteMilestonePlanError::NotFound { .. })
     ));
-    let in_mem = state.milestones().expect("milestones").expect("some");
+    let in_mem = state.test_milestones().expect("milestones").expect("some");
     assert!(in_mem.milestones.iter().any(|m| m.name == "v0.3"));
     assert!(!tmp
         .path()

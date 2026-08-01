@@ -10,10 +10,14 @@ use super::delete_task_impl;
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::create::args::CreateTaskArgs;
 use crate::task::create::create_task_impl;
 use crate::task::io::FsTaskIo;
+use crate::task::writer_test_support::{
+    session_revision, session_write_ignore_len, CountingTaskIo,
+};
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -72,7 +76,7 @@ fn delete_childless_task_removes_file_and_cache() {
     delete_task_impl(&state, &FsTaskIo, delete_args(task.file_path.as_str())).expect("delete");
 
     assert!(!abs.exists(), "file should be removed");
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     assert!(snap.is_empty(), "cache should be empty");
 }
 
@@ -88,7 +92,7 @@ fn delete_task_leaves_other_tasks_in_cache() {
 
     delete_task_impl(&state, &FsTaskIo, delete_args(t2.file_path.as_str())).expect("delete");
 
-    let snap = state.tasks_snapshot().expect("snapshot");
+    let snap = state.test_tasks_snapshot().expect("snapshot");
     assert_eq!(2, snap.len());
     assert!(snap.iter().any(|t| t.file_path == t1.file_path));
     assert!(snap.iter().any(|t| t.file_path == t3.file_path));
@@ -96,43 +100,24 @@ fn delete_task_leaves_other_tasks_in_cache() {
 }
 
 #[test]
-fn delete_task_succeeds_without_watcher() {
+fn delete_task_registers_session_write_ignore_and_advances_revision() {
     let dir = tempdir();
-    let state = Arc::new(AppState::new());
-    state
-        .set_project_path(Some(dir.path().to_path_buf()))
-        .unwrap();
-
-    let task = create_task_impl(&state, &FsTaskIo, args_with_title("No Watcher")).expect("create");
-    let abs = dir.path().join(task.file_path.as_str());
-    assert!(abs.exists());
-
-    delete_task_impl(&state, &FsTaskIo, delete_args(task.file_path.as_str())).expect("delete");
-
-    assert!(!abs.exists());
-    assert!(
-        state.write_ignore().is_empty().unwrap(),
-        "write_ignore must stay empty when watcher is not installed"
-    );
-}
-
-#[test]
-fn delete_task_registers_write_ignore_when_watcher_installed() {
-    let dir = tempdir();
+    let abs = dir.path().join("tasks/watched.md");
+    fs::create_dir_all(abs.parent().expect("task parent")).expect("create tasks directory");
+    fs::write(&abs, "---\ntitle: Watched\nstatus: Todo\n---\n").expect("seed task");
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
+    let before = session_revision(&state);
 
-    let task = create_task_impl(&state, &FsTaskIo, args_with_title("Watched")).expect("create");
+    delete_task_impl(&state, &FsTaskIo, delete_args("tasks/watched.md")).expect("delete");
 
-    // create_task_impl が write_ignore を登録しているので、watcher event で消費する
-    let abs = dir.path().join(task.file_path.as_str());
-    consume_write_ignore_via_event(&state, &dir, &abs);
-
-    assert!(state.write_ignore().is_empty().unwrap());
-
-    delete_task_impl(&state, &FsTaskIo, delete_args(task.file_path.as_str())).expect("delete");
-
-    assert_eq!(1, state.write_ignore().len().expect("len"));
+    assert!(!abs.exists());
+    assert_eq!(1, session_write_ignore_len(&state));
+    assert_eq!(
+        before.as_u64() + 1,
+        session_revision(&state).as_u64(),
+        "one successful writer commit advances revision exactly once"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +190,7 @@ fn delete_task_returns_has_children_and_preserves_file() {
     child_args.parent = Some("tasks/parent.md".into());
     create_task_impl(&state, &FsTaskIo, child_args).expect("create child");
 
-    let snap_before = state.tasks_snapshot().expect("snapshot");
+    let snap_before = state.test_tasks_snapshot().expect("snapshot");
     let err = delete_task_impl(&state, &FsTaskIo, delete_args("tasks/parent.md"))
         .expect_err("should fail");
     match err {
@@ -216,7 +201,7 @@ fn delete_task_returns_has_children_and_preserves_file() {
     }
 
     assert!(parent_abs.exists(), "parent file should be preserved");
-    let snap_after = state.tasks_snapshot().expect("snapshot");
+    let snap_after = state.test_tasks_snapshot().expect("snapshot");
     assert_eq!(
         snap_before.len(),
         snap_after.len(),
@@ -224,30 +209,26 @@ fn delete_task_returns_has_children_and_preserves_file() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// helper
-// ---------------------------------------------------------------------------
+#[test]
+fn delete_task_revision_exhausted_performs_zero_task_io() {
+    let dir = tempdir();
+    let abs = dir.path().join("tasks/a.md");
+    fs::create_dir_all(abs.parent().expect("task parent")).expect("create tasks directory");
+    fs::write(&abs, "---\ntitle: A\nstatus: Todo\n---\n").expect("seed task");
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+    let io = CountingTaskIo::default();
 
-fn consume_write_ignore_via_event(state: &Arc<AppState>, dir: &TempDir, abs: &Path) {
-    use crate::watcher_event::handler::handle_event;
-    use crate::watcher_event::AdapterContext;
-    use crate::watcher_event::EmitFn;
-    use spec_board_fs::watcher::core::FsEvent;
-    use std::sync::Mutex;
+    let error = delete_task_impl(&state, &io, delete_args("tasks/a.md"))
+        .expect_err("revision exhaustion must reject the writer");
 
-    let log: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::new(Mutex::new(Vec::new()));
-    let log_clone = Arc::clone(&log);
-    let emit: EmitFn = Box::new(move |ev, payload| {
-        log_clone.lock().unwrap().push((ev.to_string(), payload));
-    });
-    let ctx = AdapterContext {
-        root: dir.path().to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: crate::state::project_key::ProjectKey::from_root(dir.path()),
-        generation: state.project_generation(),
-        state: Arc::clone(state),
-        emit,
-        io: Arc::new(FsTaskIo) as Arc<dyn crate::task::io::TaskIo>,
-    };
-    handle_event(&FsEvent::Created(abs.to_path_buf()), &ctx).expect("handle ok");
+    assert!(matches!(
+        error,
+        DeleteTaskCommandError::RevisionExhausted(_)
+    ));
+    assert_eq!(0, io.calls(), "preflight must run before every TaskIo call");
+    assert!(abs.exists(), "rejected writer must not remove the task");
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(u64::MAX, session_revision(&state).as_u64());
 }

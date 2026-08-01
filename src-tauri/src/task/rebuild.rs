@@ -11,8 +11,8 @@
 //!
 //! 本関数は **`AppState` の lock を一切取らない**。走査・パースは lock 外で行い、
 //! 呼び出し側が結果を短い critical section で cache へ反映する契約。そのため
-//! 「走査中に cache が変わっていないか」の確認は呼び出し側の責務
-//! （`AppState::replace_tasks_cache_if_unchanged`）。
+//! 「走査中に resident session が変わっていないか」の確認と反映は呼び出し側の責務
+//! （expected SessionId + SessionRevision の session commit）。
 //!
 //! ファイル読み取りは `TaskIo` port 経由。テストは `InMemoryTaskIo` を注入して
 //! 実 FS 非依存に parse / skip の分岐を検証できる。

@@ -1,6 +1,6 @@
 //! `get_tasks` Tauri command 本体。
 //!
-//! `AppState.tasks_cache` に格納済みの `Task` 一覧を取得し、`TaskIndex` aggregate
+//! 現在の project session snapshot に格納済みの `Task` 一覧を取得し、`TaskIndex` aggregate
 //! に並び順の決定を委譲して返す純粋な読み取り専用 command。`open_project` で
 //! commit された state を消費する後続 API としての位置付け。
 //!
@@ -94,19 +94,20 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<GetTasksPayload, Str
 /// `config` / `tasks_cache` いずれかの `Mutex` が poison している場合に
 /// `GetTasksError::StateLockPoisoned` を返す。
 pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTasksError> {
-    let context = state.snapshot_config_tasks_and_session()?;
-    let done_column = context
-        .config
-        .as_ref()
-        .and_then(|config| config.resolved_done_column())
-        .cloned();
+    let Some(snapshot) = state.session_snapshot()? else {
+        return Ok(GetTasksPayload {
+            tasks: Vec::new(),
+            projections: TaskProjectionMap::new(),
+            milestone_projections: MilestoneProjectionMap::new(),
+            session: WatcherSession::idle(),
+        });
+    };
+    let done_column = snapshot.config().resolved_done_column().cloned();
     // 並び順は `open_project` と同じ board 表示順に揃える。FE は配列順をそのまま
     // 表示順に使うため、ここが id 順だと full rescan / gap 復旧のたびに DnD で
     // 決めた並びが崩れる。未 open（config なし）のときだけ id 昇順にフォールバックする。
-    let ordered_tasks = match context.config.as_ref() {
-        Some(config) => TaskIndex::new(context.tasks).sorted_by_board_order(config),
-        None => TaskIndex::new(context.tasks).sorted_by_id(),
-    };
+    let tasks = snapshot.tasks().values().cloned().collect();
+    let ordered_tasks = TaskIndex::new(tasks).sorted_by_board_order(snapshot.config());
     let index = TaskIndex::new(ordered_tasks);
     let projections = index.project_all(done_column.as_ref());
     let milestone_projections = index.project_milestones(done_column.as_ref());
@@ -115,7 +116,7 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
         tasks,
         projections,
         milestone_projections,
-        session: context.session,
+        session: state.watcher_session_for_snapshot(&snapshot),
     })
 }
 

@@ -8,7 +8,7 @@
 //!
 //! # ロック取得順序
 //!
-//! `project_path → labels`（`snapshot_label_write` / `replace_labels_if_project_matches`）。
+//! `writer gate → session snapshot`（`coherent session snapshot` / `expected SessionId + revision CAS commit`）。
 //!
 //! # エラー文字列の契約
 //!
@@ -25,7 +25,9 @@ use crate::config::{
     label_registry_store, Clock, LabelColor, LabelDefinition, LabelGroup, LabelRegistryStore,
     LabelValidationError, SaveLabelsError, SystemClock,
 };
-use crate::state::{AppState, AppStateError};
+use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
+use crate::project_session::SessionIdentity;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 
 /// `create_label` コマンドの引数。FE は camelCase で送る。
 #[derive(Debug, Clone, Deserialize)]
@@ -66,11 +68,23 @@ pub enum CreateLabelError {
     /// labels.yml への保存失敗。
     #[error(transparent)]
     Save(#[from] SaveLabelsError),
+    /// project session writer protocolの失敗。
+    #[error(transparent)]
+    SessionWrite(SessionWriteError),
 }
 
 impl From<AppStateError> for CreateLabelError {
     fn from(_: AppStateError) -> Self {
         CreateLabelError::StateLockPoisoned
+    }
+}
+impl From<SessionWriteError> for CreateLabelError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            error => Self::SessionWrite(error),
+        }
     }
 }
 
@@ -83,10 +97,10 @@ pub fn create_label(state: State<'_, Arc<AppState>>, args: CreateLabelArgs) -> R
 /// 単体テスト境界の本体関数。
 ///
 /// 1. preflight: `check_labels_lock` で副作用前に lock 健全性を確認
-/// 2. snapshot: `snapshot_label_write` で `project_path` / `labels` を整合取得
+/// 2. snapshot: `coherent session snapshot` で `project_path` / `labels` を整合取得
 /// 3. plan: `plan_create_label`（副作用ゼロ・updated 自動セット・validate 再利用）
 /// 4. write: `store.save` で disk へ atomic 書き込み
-/// 5. commit: `replace_labels_if_project_matches` で snapshot 時と同一プロジェクトのときのみ反映
+/// 5. commit: `expected SessionId + revision CAS commit` で snapshot 時と同一プロジェクトのときのみ反映
 ///
 /// disk write 失敗時は commit を呼ばないため in-memory は汚れない。
 pub(crate) fn create_label_impl(
@@ -94,19 +108,45 @@ pub(crate) fn create_label_impl(
     args: CreateLabelArgs,
     clock: &dyn Clock,
 ) -> Result<(), CreateLabelError> {
-    state.check_labels_lock()?;
-    let ctx = state.snapshot_label_write()?;
-    let project_root = ctx.project_root.ok_or(CreateLabelError::NoProjectOpen)?;
-    let registry = ctx.labels.ok_or(CreateLabelError::NoProjectOpen)?;
+    let target = state
+        .active_session_identity()
+        .map_err(SessionWriteError::from)?;
+    let store = label_registry_store(target.project_root().as_path());
+    create_label_impl_with_store(state, &target, &store, args, clock)
+}
 
-    let definition: LabelDefinition = args.into();
-    let next = registry.plan_create_label(definition, clock)?;
+pub(crate) fn create_label_impl_with_store(
+    state: &AppState,
+    target: &SessionIdentity,
+    store: &dyn LabelRegistryStore,
+    args: CreateLabelArgs,
+    clock: &dyn Clock,
+) -> Result<(), CreateLabelError> {
+    state.with_project_writer_lease_for(target, |snapshot| {
+        let definition: LabelDefinition = args.into();
+        let next = snapshot.labels().plan_create_label(definition, clock)?;
+        let _resources = state.preflight_session_write(snapshot)?;
+        store.save(&next)?;
 
-    let store = label_registry_store(&project_root);
-    store.save(&next)?;
-
-    state.replace_labels_if_project_matches(&project_root, next)?;
-    Ok(())
+        let commit = state.commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_labels(next);
+        });
+        match commit {
+            Ok(_) => Ok(()),
+            Err(SessionWriteError::Conflict(conflict)) => {
+                if let Err(recovery) = resync_if_same_project_under_lease(
+                    state,
+                    target.project_root(),
+                    &conflict,
+                    ResyncSource::Labels { store },
+                ) {
+                    log::warn!("create_label conflict recovery failed: {recovery}");
+                }
+                Err(SessionWriteError::Conflict(conflict).into())
+            }
+            Err(error) => Err(error.into()),
+        }
+    })
 }
 
 #[cfg(test)]

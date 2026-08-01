@@ -9,12 +9,19 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use tempfile::TempDir;
 
-use super::{handle_event, HandleError};
-use crate::state::project_generation::ProjectGeneration;
-use crate::state::project_key::ProjectKey;
+use super::{handle_event, handle_event_with_before_sequence, HandleError};
+use crate::project::project_root::ProjectRoot;
+use crate::project_session::{PreparedProjectSession, SessionId, SessionIdentity};
+use crate::state::active_project_resources::{
+    pending_activation_state, StagedProjectResources, WatcherActivation,
+};
+use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::watcher_event::{AdapterContext, EmitFn};
 use spec_board_fs::watcher::core::{FsEvent, WatcherFailure, WatcherFailureKind};
+use spec_board_fs::watcher::handle::NoopWatcherHandle;
+use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
+use std::thread;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
 
@@ -32,11 +39,64 @@ fn write_md(root: &Path, rel: &str, body: &str) -> PathBuf {
 }
 
 /// `open_project` 相当の commit を行い、現行世代の adapter context を作る。
+fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
+    let session_id = state.reserve_session_id().expect("reserve session ID");
+    let candidate = PreparedProjectSession::new(
+        ProjectRoot::from_path_buf(root.to_path_buf()).expect("valid project root"),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+    )
+    .into_session(session_id);
+    let identity = candidate.identity();
+    let staged = StagedProjectResources::new(
+        identity.clone(),
+        Box::new(NoopWatcherHandle::new()) as BoxedWatcherHandle,
+        WatcherActivation::new(pending_activation_state(), thread::current()),
+        Arc::new(WriteIgnoreRegistry::new()),
+    );
+    state
+        .swap_open(candidate, staged)
+        .expect("install active test session");
+    identity
+}
+
+fn active_resources(state: &AppState) -> SessionResourceAccess {
+    let snapshot = state.require_session_snapshot().expect("active session");
+    state
+        .resources_for(snapshot.version())
+        .expect("matching active resources")
+}
+
+fn session_revision(state: &AppState) -> u64 {
+    state
+        .require_session_snapshot()
+        .expect("active session")
+        .version()
+        .revision
+        .as_u64()
+}
+
+fn commit_config(state: &AppState, config: crate::config::Config) {
+    let snapshot = state.require_session_snapshot().expect("active session");
+    state
+        .commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_config(config);
+        })
+        .expect("commit config");
+}
+
+fn bump_session_revision(state: &AppState) {
+    let snapshot = state.require_session_snapshot().expect("active session");
+    state
+        .commit_session_write(&snapshot.identity(), |_| ())
+        .expect("bump revision");
+}
+
 fn build_installed_ctx(root: &Path) -> (Arc<crate::state::AppState>, AdapterContext, EmitLog) {
     let state = Arc::new(crate::state::AppState::new());
-    state
-        .install_project_session(root, Default::default())
-        .expect("install session");
+    let identity = install_active_session(&state, root);
     let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
     let log_clone = Arc::clone(&log);
     let emit: EmitFn = Box::new(move |event, payload| {
@@ -46,10 +106,8 @@ fn build_installed_ctx(root: &Path) -> (Arc<crate::state::AppState>, AdapterCont
             .push((event.to_string(), payload));
     });
     let ctx = AdapterContext {
-        root: root.to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: ProjectKey::from_root(root),
-        generation: state.project_generation(),
+        project_root: identity.project_root().clone(),
+        session_id: identity.version().session_id,
         state: Arc::clone(&state),
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
@@ -89,14 +147,118 @@ fn events_from_a_stale_generation_touch_neither_the_cache_nor_the_emitter() {
     let (state, mut ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     // 旧 watcher が生き残ったまま新しい project が commit された状況を再現する。
-    ctx.generation = ProjectGeneration::from_raw(ctx.generation.as_u64() - 1);
-    let revision_before = state.tasks_revision();
+    ctx.session_id = SessionId::from_raw(ctx.session_id.as_u64() - 1);
+    let revision_before = session_revision(&state);
 
     handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
 
     assert!(drain(&log).is_empty(), "旧世代は一切 emit してはならない");
-    assert!(state.tasks_snapshot().expect("readable").is_empty());
-    assert_eq!(revision_before, state.tasks_revision());
+    assert!(state.test_tasks_snapshot().expect("readable").is_empty());
+    assert_eq!(revision_before, session_revision(&state));
+}
+
+#[test]
+fn same_path_reopen_makes_the_old_adapter_a_complete_no_op() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+    install_active_session(&state, dir.path());
+    let current_resources = active_resources(&state);
+    current_resources
+        .write_ignore()
+        .register(&abs)
+        .expect("register current marker");
+    let revision_before = session_revision(&state);
+    let snapshot_before = state.require_session_snapshot().expect("current session");
+    let event_seq_before = state
+        .watcher_session_for_snapshot(&snapshot_before)
+        .event_seq
+        .as_u64();
+
+    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("stale event is ignored");
+
+    let snapshot_after = state.require_session_snapshot().expect("current session");
+    let event_seq_after = state
+        .watcher_session_for_snapshot(&snapshot_after)
+        .event_seq
+        .as_u64();
+    assert!(drain(&log).is_empty());
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(event_seq_before, event_seq_after);
+    assert!(
+        current_resources
+            .write_ignore()
+            .unregister(&abs)
+            .expect("current marker remains"),
+        "stale adapter must not consume the reopened session marker"
+    );
+}
+
+#[test]
+fn switch_after_commit_before_sequence_consumes_no_event_seq_and_emits_nothing() {
+    let project_a = TempDir::new().expect("project A");
+    let project_b = TempDir::new().expect("project B");
+    let (state, ctx, log) = build_installed_ctx(project_a.path());
+    let abs = write_md(project_a.path(), "tasks/a.md", &task_md("A"));
+    let state_for_hook = Arc::clone(&state);
+    let project_b_root = project_b.path().to_path_buf();
+    let baseline = Arc::new(Mutex::new(None));
+    let baseline_for_hook = Arc::clone(&baseline);
+    let mut switched = false;
+
+    handle_event_with_before_sequence(&FsEvent::Created(abs), &ctx, move || {
+        assert!(!switched, "single upsert emits at most once");
+        switched = true;
+        install_active_session(&state_for_hook, &project_b_root);
+        let snapshot = state_for_hook
+            .require_session_snapshot()
+            .expect("project B active");
+        let event_seq = state_for_hook
+            .watcher_session_for_snapshot(&snapshot)
+            .event_seq
+            .as_u64();
+        *baseline_for_hook.lock().expect("baseline") = Some(event_seq);
+    })
+    .expect("stale post-commit emit is suppressed");
+
+    assert!(drain(&log).is_empty());
+    assert_eq!(Some(0), *baseline.lock().expect("baseline"));
+    let current = state.require_session_snapshot().expect("project B active");
+    assert_eq!(project_b.path(), current.project_root().as_path());
+    assert!(current.tasks().is_empty());
+    assert_eq!(
+        0,
+        state
+            .watcher_session_for_snapshot(&current)
+            .event_seq
+            .as_u64(),
+        "project B baseline must not contain a false eventSeq gap"
+    );
+}
+#[test]
+fn watcher_mutation_acquires_the_exact_root_writer_gate_before_touching_state() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    let root = crate::project::project_root::ProjectRoot::from_path_buf(dir.path().to_path_buf())
+        .expect("valid project root");
+    let gate = state.writer_gate(&root).expect("writer gate");
+    let poison = Arc::clone(&gate);
+    let _ = std::thread::spawn(move || {
+        let _guard = poison.lock().expect("writer gate");
+        panic!("poison watcher writer gate");
+    })
+    .join();
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+
+    let error = handle_event(&FsEvent::Created(abs), &ctx)
+        .expect_err("poisoned writer gate must stop the watcher mutation");
+
+    assert!(matches!(
+        error,
+        HandleError::StateLock(crate::state::AppStateError::WriterGatePoisoned)
+    ));
+    assert!(drain(&log).is_empty());
+    assert!(state.test_tasks_snapshot().expect("readable").is_empty());
 }
 
 #[test]
@@ -122,9 +284,7 @@ fn consecutive_upserts_advance_both_revision_and_event_seq() {
 fn event_seq_is_consumed_even_when_the_emitter_drops_the_event() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(crate::state::AppState::new());
-    state
-        .install_project_session(dir.path(), Default::default())
-        .expect("install session");
+    let identity = install_active_session(&state, dir.path());
     let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
     let log_clone = Arc::clone(&log);
     let dropped = Arc::new(Mutex::new(false));
@@ -143,10 +303,8 @@ fn event_seq_is_consumed_even_when_the_emitter_drops_the_event() {
             .push((event.to_string(), payload));
     });
     let ctx = AdapterContext {
-        root: dir.path().to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: ProjectKey::from_root(dir.path()),
-        generation: state.project_generation(),
+        project_root: identity.project_root().clone(),
+        session_id: identity.version().session_id,
         state: Arc::clone(&state),
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
@@ -238,16 +396,14 @@ impl TaskIo for RevisionBumpingIo {
         let mut remaining = self.remaining_bumps.lock().expect("bumps");
         if *remaining > 0 {
             *remaining -= 1;
-            self.state
-                .with_tasks_cache_mut(|_| ())
-                .expect("bump revision");
+            bump_session_revision(&self.state);
         }
         self.inner.read(path)
     }
 }
 
 fn ctx_with_io(
-    root: &Path,
+    _root: &Path,
     state: &Arc<crate::state::AppState>,
     io: Arc<dyn TaskIo>,
 ) -> (AdapterContext, EmitLog) {
@@ -259,11 +415,12 @@ fn ctx_with_io(
             .expect("emit log")
             .push((event.to_string(), payload));
     });
+    let identity = state
+        .active_session_identity()
+        .expect("active session identity");
     let ctx = AdapterContext {
-        root: root.to_path_buf(),
-        default_status: "Todo".into(),
-        project_key: ProjectKey::from_root(root),
-        generation: state.project_generation(),
+        project_root: identity.project_root().clone(),
+        session_id: identity.version().session_id,
         state: Arc::clone(state),
         emit,
         io,
@@ -282,7 +439,7 @@ fn rescan_fills_an_empty_cache_from_disk_and_requests_a_single_resync() {
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
     let mut paths: Vec<String> = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
         .map(|task| task.file_path.into_string())
@@ -314,7 +471,7 @@ fn rescan_converges_a_diverged_cache_onto_the_disk_contents() {
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
     let paths: Vec<String> = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
         .map(|task| task.file_path.into_string())
@@ -343,13 +500,13 @@ fn rescan_envelope_reports_the_bumped_revision_as_cache_mutating() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    let before = state.tasks_revision().as_u64();
+    let before = session_revision(&state);
 
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
     let entries = drain(&log);
-    assert_eq!(before + 1, state.tasks_revision().as_u64());
-    assert_eq!(state.tasks_revision().as_u64(), entries[0].1["revision"]);
+    assert_eq!(before + 1, session_revision(&state));
+    assert_eq!(session_revision(&state), entries[0].1["revision"]);
     assert_eq!(true, entries[0].1["cacheMutating"]);
 }
 
@@ -357,9 +514,7 @@ fn rescan_envelope_reports_the_bumped_revision_as_cache_mutating() {
 fn rescan_retries_the_scan_when_the_revision_moved_while_scanning() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(crate::state::AppState::new());
-    state
-        .install_project_session(dir.path(), Default::default())
-        .expect("install session");
+    install_active_session(&state, dir.path());
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let io = Arc::new(RevisionBumpingIo::new(Arc::clone(&state), 1));
     let (ctx, log) = ctx_with_io(dir.path(), &state, Arc::clone(&io) as Arc<dyn TaskIo>);
@@ -371,7 +526,7 @@ fn rescan_retries_the_scan_when_the_revision_moved_while_scanning() {
         io.read_count(),
         "1 回目は CAS 不一致で捨て、走査からやり直す"
     );
-    assert_eq!(1, state.tasks_snapshot().expect("readable").len());
+    assert_eq!(1, state.test_tasks_snapshot().expect("readable").len());
     assert_eq!(1, drain(&log).len());
 }
 
@@ -379,9 +534,7 @@ fn rescan_retries_the_scan_when_the_revision_moved_while_scanning() {
 fn rescan_gives_up_without_committing_when_the_state_keeps_moving() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(crate::state::AppState::new());
-    state
-        .install_project_session(dir.path(), Default::default())
-        .expect("install session");
+    install_active_session(&state, dir.path());
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
     // 毎回 revision が進み続けるので CAS は一度も成功しない。
     let io = Arc::new(RevisionBumpingIo::new(Arc::clone(&state), u32::MAX));
@@ -391,7 +544,7 @@ fn rescan_gives_up_without_committing_when_the_state_keeps_moving() {
 
     assert_eq!(3, io.read_count(), "上限 3 回で打ち切る");
     assert!(
-        state.tasks_snapshot().expect("readable").is_empty(),
+        state.test_tasks_snapshot().expect("readable").is_empty(),
         "最終試行を無条件で採用すると、その走査中の config 変更まで確定させてしまう"
     );
     let entries = drain(&log);
@@ -404,7 +557,7 @@ fn rescan_gives_up_without_committing_when_the_state_keeps_moving() {
 fn rescan_clears_the_write_ignore_registry() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, _log) = build_installed_ctx(dir.path());
-    state
+    active_resources(&state)
         .write_ignore()
         .register(dir.path().join("tasks/self-written.md"))
         .expect("register");
@@ -412,7 +565,10 @@ fn rescan_clears_the_write_ignore_registry() {
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
     assert!(
-        state.write_ignore().is_empty().expect("readable"),
+        active_resources(&state)
+            .write_ignore()
+            .is_empty()
+            .expect("readable"),
         "stale entry が残ると以後の自前 write 判定を誤らせる"
     );
 }
@@ -428,7 +584,7 @@ fn rescan_on_an_empty_project_empties_the_cache_and_still_requests_a_resync() {
 
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
-    assert!(state.tasks_snapshot().expect("readable").is_empty());
+    assert!(state.test_tasks_snapshot().expect("readable").is_empty());
     assert_eq!(1, drain(&log).len());
 }
 
@@ -439,7 +595,10 @@ fn rescan_handles_the_already_empty_and_single_file_boundaries() {
 
     handle_event(&FsEvent::Rescan, &empty_ctx).expect("rescan ok");
 
-    assert!(empty_state.tasks_snapshot().expect("readable").is_empty());
+    assert!(empty_state
+        .test_tasks_snapshot()
+        .expect("readable")
+        .is_empty());
     assert_eq!(1, drain(&empty_log).len());
 
     let single_dir = TempDir::new().expect("tempdir");
@@ -448,7 +607,10 @@ fn rescan_handles_the_already_empty_and_single_file_boundaries() {
 
     handle_event(&FsEvent::Rescan, &single_ctx).expect("rescan ok");
 
-    assert_eq!(1, single_state.tasks_snapshot().expect("readable").len());
+    assert_eq!(
+        1,
+        single_state.test_tasks_snapshot().expect("readable").len()
+    );
     assert_eq!(1, drain(&single_log).len());
 }
 
@@ -459,13 +621,13 @@ fn rescan_failure_keeps_the_cache_and_reports_a_diagnostic_only() {
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     handle_event(&FsEvent::Created(abs), &ctx).expect("seed");
     drain(&log);
-    let revision_before = state.tasks_revision();
+    let revision_before = session_revision(&state);
     std::fs::remove_dir_all(dir.path()).expect("remove project root");
 
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan reports instead of failing");
 
-    assert_eq!(1, state.tasks_snapshot().expect("readable").len());
-    assert_eq!(revision_before, state.tasks_revision());
+    assert_eq!(1, state.test_tasks_snapshot().expect("readable").len());
+    assert_eq!(revision_before, session_revision(&state));
     let entries = drain(&log);
     assert_eq!("watcher-diagnostic", entries[0].0);
     assert_eq!("rescanFailed", entries[0].1["payload"]["code"]);
@@ -478,9 +640,13 @@ fn rescan_surfaces_a_poisoned_tasks_cache_as_a_handle_error() {
     let (state, ctx, _log) = build_installed_ctx(dir.path());
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let poison_state = Arc::clone(&state);
+    let expected = state
+        .require_session_snapshot()
+        .expect("active session")
+        .identity();
     let _ = std::thread::spawn(move || {
         poison_state
-            .with_tasks_cache_mut(|_| panic!("poison tasks_cache"))
+            .commit_session_write(&expected, |_| panic!("poison project domain"))
             .ok();
     })
     .join();
@@ -496,19 +662,19 @@ fn a_late_modify_after_a_rescan_still_lands_with_a_higher_revision() {
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
-    let rescan_revision = state.tasks_revision();
+    let rescan_revision = session_revision(&state);
     drain(&log);
 
     write_md(dir.path(), "tasks/a.md", &task_md("A2"));
     handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
 
-    let tasks = state.tasks_snapshot().expect("readable");
+    let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
     assert_eq!("A2", tasks[0].title);
-    assert!(rescan_revision < state.tasks_revision());
+    assert!(rescan_revision < session_revision(&state));
     let entries = drain(&log);
     assert!(
-        rescan_revision.as_u64() < entries[0].1["revision"].as_u64().expect("revision"),
+        rescan_revision < entries[0].1["revision"].as_u64().expect("revision"),
         "Rescan を追い越した event ではないことが revision で判る"
     );
 }
@@ -557,7 +723,7 @@ fn a_diagnostic_leaves_the_cache_and_revision_untouched() {
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     handle_event(&FsEvent::Created(abs), &ctx).expect("seed");
     drain(&log);
-    let revision_before = state.tasks_revision();
+    let revision_before = session_revision(&state);
 
     handle_event(
         &FsEvent::Error(failure(WatcherFailureKind::Io, "read error", Vec::new())),
@@ -570,8 +736,8 @@ fn a_diagnostic_leaves_the_cache_and_revision_untouched() {
         false, entries[0].1["cacheMutating"],
         "true にすると FE が revision の単調性を要求して通知が 1 度も届かない"
     );
-    assert_eq!(revision_before, state.tasks_revision());
-    assert_eq!(1, state.tasks_snapshot().expect("readable").len());
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(1, state.test_tasks_snapshot().expect("readable").len());
 }
 
 #[test]
@@ -608,8 +774,9 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, _log) = build_installed_ctx(dir.path());
     // spawn 時点の既定は "Todo"。カラム更新で先頭が "Backlog" に変わった状況を作る。
-    state
-        .replace_config(Some(crate::config::Config {
+    commit_config(
+        &state,
+        crate::config::Config {
             version: 1,
             columns: vec![crate::config::Column {
                 name: "Backlog".into(),
@@ -618,8 +785,8 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
             }],
             card_order: Default::default(),
             done_column: None,
-        }))
-        .expect("writable");
+        },
+    );
     write_md(
         dir.path(),
         "tasks/no-status.md",
@@ -628,7 +795,7 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
 
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
-    let tasks = state.tasks_snapshot().expect("readable");
+    let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
     assert_eq!(
         "Backlog",
@@ -642,7 +809,9 @@ fn rescan_still_requests_a_resync_when_clearing_write_ignore_fails() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    state.write_ignore().poison_lock_for_testing();
+    active_resources(&state)
+        .write_ignore()
+        .poison_lock_for_testing();
 
     let error = handle_event(&FsEvent::Rescan, &ctx).expect_err("clear failure surfaces");
 
@@ -654,15 +823,16 @@ fn rescan_still_requests_a_resync_when_clearing_write_ignore_fails() {
     );
     assert_eq!("watcher-resync-required", entries[0].0);
     assert!(matches!(error, HandleError::WriteIgnore(_)));
-    assert_eq!(1, state.tasks_snapshot().expect("readable").len());
+    assert_eq!(1, state.test_tasks_snapshot().expect("readable").len());
 }
 
 #[test]
 fn upsert_resolves_the_default_status_from_the_current_config() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, _log) = build_installed_ctx(dir.path());
-    state
-        .replace_config(Some(crate::config::Config {
+    commit_config(
+        &state,
+        crate::config::Config {
             version: 1,
             columns: vec![crate::config::Column {
                 name: "Backlog".into(),
@@ -671,8 +841,8 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
             }],
             card_order: Default::default(),
             done_column: None,
-        }))
-        .expect("writable");
+        },
+    );
     let abs = write_md(
         dir.path(),
         "tasks/no-status.md",
@@ -681,7 +851,7 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
 
     handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
 
-    let tasks = state.tasks_snapshot().expect("readable");
+    let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(
         "Backlog",
         tasks[0].status.as_str(),
@@ -693,9 +863,7 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
 fn rescan_reresolves_the_default_status_on_every_retry() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(crate::state::AppState::new());
-    state
-        .install_project_session(dir.path(), Default::default())
-        .expect("install session");
+    install_active_session(&state, dir.path());
     write_md(
         dir.path(),
         "tasks/no-status.md",
@@ -707,7 +875,7 @@ fn rescan_reresolves_the_default_status_on_every_retry() {
 
     handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
 
-    let tasks = state.tasks_snapshot().expect("readable");
+    let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(
         "Backlog",
         tasks[0].status.as_str(),
@@ -757,8 +925,9 @@ impl TaskIo for ConfigSwappingIo {
         let mut swapped = self.swapped.lock().expect("swap flag");
         if !*swapped {
             *swapped = true;
-            self.state
-                .replace_config(Some(crate::config::Config {
+            commit_config(
+                &self.state,
+                crate::config::Config {
                     version: 1,
                     columns: vec![crate::config::Column {
                         name: "Backlog".into(),
@@ -767,117 +936,8 @@ impl TaskIo for ConfigSwappingIo {
                     }],
                     card_order: Default::default(),
                     done_column: None,
-                }))
-                .expect("writable");
-            // CAS を不一致にして再走査させる。
-            self.state
-                .with_tasks_cache_mut(|_| ())
-                .expect("bump revision");
-        }
-        self.inner.read(path)
-    }
-}
-
-#[test]
-fn rescan_rescans_when_only_the_config_changed_during_the_scan() {
-    let dir = TempDir::new().expect("tempdir");
-    let state = Arc::new(crate::state::AppState::new());
-    state
-        .install_project_session(dir.path(), Default::default())
-        .expect("install session");
-    state
-        .replace_config(Some(crate::config::Config {
-            version: 1,
-            columns: vec![crate::config::Column {
-                name: "Todo".into(),
-                order: 0,
-                color: None,
-            }],
-            card_order: Default::default(),
-            done_column: None,
-        }))
-        .expect("writable");
-    write_md(
-        dir.path(),
-        "tasks/no-status.md",
-        "---\ntitle: NoStatus\n---\n",
-    );
-    // revision は据え置きのまま config だけ差し替わる（update_columns の実在する窓）。
-    let io = Arc::new(ConfigOnlySwappingIo::new(Arc::clone(&state)));
-    let (ctx, _log) = ctx_with_io(dir.path(), &state, Arc::clone(&io) as Arc<dyn TaskIo>);
-
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
-
-    assert_eq!(
-        2,
-        io.read_count(),
-        "revision が動かなくても既定 status が変われば再走査する"
-    );
-    let tasks = state.tasks_snapshot().expect("readable");
-    assert_eq!("Backlog", tasks[0].status.as_str());
-}
-
-/// 最初の `read` で **config だけ**を差し替える（revision は進めない）`TaskIo`。
-struct ConfigOnlySwappingIo {
-    inner: FsTaskIo,
-    state: Arc<crate::state::AppState>,
-    swapped: Mutex<bool>,
-    reads: Mutex<u32>,
-}
-
-impl ConfigOnlySwappingIo {
-    fn new(state: Arc<crate::state::AppState>) -> Self {
-        Self {
-            inner: FsTaskIo,
-            state,
-            swapped: Mutex::new(false),
-            reads: Mutex::new(0),
-        }
-    }
-
-    fn read_count(&self) -> u32 {
-        *self.reads.lock().expect("reads")
-    }
-}
-
-impl TaskIo for ConfigOnlySwappingIo {
-    fn ensure_dir(&self, dir: &Path) -> Result<(), crate::task::io::TaskIoError> {
-        self.inner.ensure_dir(dir)
-    }
-
-    fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::task::io::TaskIoError> {
-        self.inner.write_new(path, bytes)
-    }
-
-    fn write_existing(
-        &self,
-        path: &Path,
-        bytes: &[u8],
-    ) -> Result<(), crate::task::io::TaskIoError> {
-        self.inner.write_existing(path, bytes)
-    }
-
-    fn remove(&self, path: &Path) -> Result<(), crate::task::io::TaskIoError> {
-        self.inner.remove(path)
-    }
-
-    fn read(&self, path: &Path) -> Result<Vec<u8>, crate::task::io::TaskIoError> {
-        *self.reads.lock().expect("reads") += 1;
-        let mut swapped = self.swapped.lock().expect("swap flag");
-        if !*swapped {
-            *swapped = true;
-            self.state
-                .replace_config(Some(crate::config::Config {
-                    version: 1,
-                    columns: vec![crate::config::Column {
-                        name: "Backlog".into(),
-                        order: 0,
-                        color: None,
-                    }],
-                    card_order: Default::default(),
-                    done_column: None,
-                }))
-                .expect("writable");
+                },
+            );
         }
         self.inner.read(path)
     }

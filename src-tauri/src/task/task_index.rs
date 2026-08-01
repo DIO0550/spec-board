@@ -302,7 +302,7 @@ impl TaskIndex {
     ///
     /// 自己参照（`parent` が自分自身）は載せない（`children_paths_of` の自己除外と同じ）。
     /// 各 slot を `file_path` 昇順に整列するのは、`self.tasks` の並びが
-    /// `AppState::tasks_snapshot()`（`HashMap::values()`）由来で非決定的なため。
+    /// `HashMap::values()` 由来で非決定的なため。
     /// tasks 順をそのまま採用すると payload が実行ごとに揺れる。
     fn build_child_adjacency(&self, index: &HashMap<String, usize>) -> Vec<Vec<usize>> {
         let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); self.tasks.len()];
@@ -732,19 +732,7 @@ impl TaskIndex {
         Ok(returned_task)
     }
 
-    /// 与えられた cache から `key` に対応する `Task` を正規化済み path で引き当てる。
-    ///
-    /// `tasks_snapshot`（全 clone）を経由せずに 1 件だけ取り出すための入口。表記揺れ
-    /// （`./tasks/a.md` / `tasks\a.md` 等）を吸収するため、`find_by_path` と同じ
-    /// 正規化比較を使う。
-    pub(crate) fn find_in_cache<'a>(
-        cache: &'a HashMap<PathBuf, Task>,
-        key: &Path,
-    ) -> Option<&'a Task> {
-        Self::find_entry_in_cache(cache, key).map(|(_, task)| task)
-    }
-
-    /// [`Self::find_in_cache`] と同じ引き当てで、**cache の実際の key** も返す。
+    /// `find_by_path` と同じ正規化比較で、**cache の実際の key** も返す。
     ///
     /// mutate する呼び出し側は必ずこちらを使う。`Task::file_path` から key を組み直すと、
     /// cache の実 key が `./tasks/a.md` で `file_path` が `tasks/a.md` のように表記が

@@ -8,8 +8,8 @@
 //!
 //! # ロック取得順序
 //!
-//! `project_path → milestones`（`snapshot_milestone_write` /
-//! `replace_milestones_if_project_matches`）。
+//! `writer gate → session snapshot`（`coherent session snapshot` /
+//! `expected SessionId + revision CAS commit`）。
 //!
 //! # エラー文字列の契約
 //!
@@ -26,7 +26,9 @@ use crate::config::{
     milestone_registry_store, Clock, MilestoneDefinition, MilestoneRegistryStore, MilestoneState,
     MilestoneValidationError, SaveMilestonesError, SystemClock,
 };
-use crate::state::{AppState, AppStateError};
+use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
+use crate::project_session::SessionIdentity;
+use crate::state::{AppState, AppStateError, SessionWriteError};
 
 /// `create_milestone` コマンドの引数。FE は camelCase で送る。
 #[derive(Debug, Clone, Deserialize)]
@@ -76,11 +78,23 @@ pub enum CreateMilestoneError {
     /// milestones.yml への保存失敗。
     #[error(transparent)]
     Save(#[from] SaveMilestonesError),
+    /// project session writer protocolの失敗。
+    #[error(transparent)]
+    SessionWrite(SessionWriteError),
 }
 
 impl From<AppStateError> for CreateMilestoneError {
     fn from(_: AppStateError) -> Self {
         CreateMilestoneError::StateLockPoisoned
+    }
+}
+impl From<SessionWriteError> for CreateMilestoneError {
+    fn from(error: SessionWriteError) -> Self {
+        match error {
+            SessionWriteError::NoProjectOpen => Self::NoProjectOpen,
+            SessionWriteError::State(_) => Self::StateLockPoisoned,
+            error => Self::SessionWrite(error),
+        }
     }
 }
 
@@ -101,21 +115,47 @@ pub(crate) fn create_milestone_impl(
     args: CreateMilestoneArgs,
     clock: &dyn Clock,
 ) -> Result<(), CreateMilestoneError> {
-    state.check_milestones_lock()?;
-    let ctx = state.snapshot_milestone_write()?;
-    let project_root = ctx
-        .project_root
-        .ok_or(CreateMilestoneError::NoProjectOpen)?;
-    let registry = ctx.milestones.ok_or(CreateMilestoneError::NoProjectOpen)?;
+    let target = state
+        .active_session_identity()
+        .map_err(SessionWriteError::from)?;
+    let store = milestone_registry_store(target.project_root().as_path());
+    create_milestone_impl_with_store(state, &target, &store, args, clock)
+}
 
-    let definition: MilestoneDefinition = args.into();
-    let next = registry.plan_create_milestone(definition, clock)?;
+pub(crate) fn create_milestone_impl_with_store(
+    state: &AppState,
+    target: &SessionIdentity,
+    store: &dyn MilestoneRegistryStore,
+    args: CreateMilestoneArgs,
+    clock: &dyn Clock,
+) -> Result<(), CreateMilestoneError> {
+    state.with_project_writer_lease_for(target, |snapshot| {
+        let definition: MilestoneDefinition = args.into();
+        let next = snapshot
+            .milestones()
+            .plan_create_milestone(definition, clock)?;
+        let _resources = state.preflight_session_write(snapshot)?;
+        store.save(&next)?;
 
-    let store = milestone_registry_store(&project_root);
-    store.save(&next)?;
-
-    state.replace_milestones_if_project_matches(&project_root, next)?;
-    Ok(())
+        let commit = state.commit_session_write(&snapshot.identity(), move |session| {
+            session.replace_milestones(next);
+        });
+        match commit {
+            Ok(_) => Ok(()),
+            Err(SessionWriteError::Conflict(conflict)) => {
+                if let Err(recovery) = resync_if_same_project_under_lease(
+                    state,
+                    target.project_root(),
+                    &conflict,
+                    ResyncSource::Milestones { store },
+                ) {
+                    log::warn!("create_milestone conflict recovery failed: {recovery}");
+                }
+                Err(SessionWriteError::Conflict(conflict).into())
+            }
+            Err(error) => Err(error.into()),
+        }
+    })
 }
 
 #[cfg(test)]

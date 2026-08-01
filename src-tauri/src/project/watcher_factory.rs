@@ -1,55 +1,64 @@
-//! watcher の prepare / spawn を effect 層へ注入するための port abstraction。
+//! watcher の prepare / paused stage を effect 層へ注入する port abstraction。
 //!
 //! 本番実装 `TauriWatcherFactory` は `tauri::AppHandle` を保持し、
-//! `crate::watcher_event::spawn_adapter` 経由で Tauri IPC emit を行う。
-//! テストでは `NoopWatcherFactory` 等の手書きフェイクを差し込む。
-//!
-//! port 化の意図:
-//! - effect 層 (`open_project_impl`) からは `tauri::AppHandle` を完全に隠蔽し、
-//!   thin layer 側でのみ `AppHandle` を保持する契約を保つ
-//! - prepare / spawn の 2 closure を `WatcherFactory` trait 1 つに集約することで、
-//!   effect 層シグネチャの引数数とジェネリック数を削減する
+//! `crate::watcher_event::stage_adapter` 経由で Tauri IPC emit を行う。
+//! stage 済み worker は open swap が activation latch を解放するまで event を
+//! 処理しない。テストでは `NoopWatcherFactory` 等の手書き fake を差し込む。
 
 use std::path::Path;
 use std::sync::Arc;
+#[cfg(test)]
+use std::thread::{self, JoinHandle};
 
-use crate::config::Config;
+#[cfg(test)]
+use spec_board_fs::watcher::handle::WatcherHandle;
+#[cfg(test)]
+use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
+
 use crate::project::open::OpenProjectError;
-use crate::state::{AppState, BoxedWatcherHandle};
+use crate::project_session::SessionIdentity;
+use crate::state::active_project_resources::StagedProjectResources;
+#[cfg(test)]
+use crate::state::active_project_resources::{
+    pending_activation_state, wait_for_activation, WatcherActivation,
+};
+use crate::state::AppState;
+#[cfg(test)]
+use crate::state::BoxedWatcherHandle;
 
-/// watcher 準備 / 起動の port。
+/// watcher 準備 / paused stage の crate 内 port。
 ///
-/// `prepare` は GUIDE.md 書き込みより前に呼ばれ、失敗時は effect 層が
-/// 副作用ゼロで `Err` 復帰する契約。`spawn` は AppState commit 完了後に
-/// 呼ばれ、adapter スレッドを起動して `BoxedWatcherHandle` を返す。
-pub trait WatcherFactory {
+/// `prepare` は GUIDE.md 書き込みより前に backend/channel を確保する。`stage_paused`
+/// は adapter thread と handle をすべて構築するが、worker は activation latch が
+/// `Active` になるまで event loop へ進まない。どちらかが失敗した場合、resident
+/// project session/resources は変更されない。
+pub(crate) trait WatcherFactory {
     /// `prepare` の結果型。本番では `(Watcher, Receiver<FsEvent>)` 相当、
     /// テストでは `()` 等の軽量な値で代替する。
     type Prepared;
 
     fn prepare(&self, root: &Path) -> Result<Self::Prepared, OpenProjectError>;
 
-    fn spawn(
+    fn stage_paused(
         &self,
         prepared: Self::Prepared,
         state: &Arc<AppState>,
-        root: &Path,
-        config: &Config,
-    ) -> BoxedWatcherHandle;
+        identity: SessionIdentity,
+    ) -> Result<StagedProjectResources, OpenProjectError>;
 }
 
 /// 本番実装。`AppHandle` を保持し、`watcher_event::prepare_watcher` /
-/// `spawn_adapter` に委譲する。
+/// `stage_adapter` に委譲する。
 ///
 /// `AppHandle` は本構造体のフィールドに閉じ込め、effect 層
 /// (`open_project_impl`) には漏出させない。フィールド自体も非公開とし、
 /// 外部からの取り出しを `new` 経由のみに制限する。
-pub struct TauriWatcherFactory {
+pub(crate) struct TauriWatcherFactory {
     app: tauri::AppHandle,
 }
 
 impl TauriWatcherFactory {
-    pub fn new(app: tauri::AppHandle) -> Self {
+    pub(crate) fn new(app: tauri::AppHandle) -> Self {
         Self { app }
     }
 }
@@ -65,29 +74,35 @@ impl WatcherFactory for TauriWatcherFactory {
             .map_err(|source| OpenProjectError::WatcherInitFailed { source })
     }
 
-    fn spawn(
+    fn stage_paused(
         &self,
         prepared: Self::Prepared,
         state: &Arc<AppState>,
-        root: &Path,
-        config: &Config,
-    ) -> BoxedWatcherHandle {
+        identity: SessionIdentity,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
         let (watcher, rx) = prepared;
-        let handle = crate::watcher_event::spawn_adapter(
-            &self.app,
-            root,
-            config,
-            Arc::clone(state),
-            watcher,
-            rx,
-        );
-        Box::new(handle) as BoxedWatcherHandle
+        crate::watcher_event::stage_adapter(&self.app, Arc::clone(state), identity, watcher, rx)
+            .map_err(|source| OpenProjectError::WatcherInitFailed { source })
     }
 }
 
-/// テスト共有の no-op 実装。`prepare` は常に `Ok(())`、`spawn` は
-/// `NoopWatcherHandle` を返す。`open_tests.rs` / `task/get_tests.rs` /
-/// `task/create/command_tests.rs` から共用する。
+/// paused worker を所有し、`stop` で必ず join する test 用 handle。
+#[cfg(test)]
+struct NoopPausedWatcherHandle {
+    join: Option<JoinHandle<()>>,
+}
+
+#[cfg(test)]
+impl WatcherHandle for NoopPausedWatcherHandle {
+    fn stop(&mut self) {
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
+/// テスト共有の no-op 実装。実 watcher と同じく worker を Pending で spawn し、
+/// stage abandon 時は Cancelled、swap 成功時は Active を観測して終了する。
 #[cfg(test)]
 pub(crate) struct NoopWatcherFactory;
 
@@ -99,13 +114,29 @@ impl WatcherFactory for NoopWatcherFactory {
         Ok(())
     }
 
-    fn spawn(
+    fn stage_paused(
         &self,
         _prepared: (),
         _state: &Arc<AppState>,
-        _root: &Path,
-        _config: &Config,
-    ) -> BoxedWatcherHandle {
-        Box::new(spec_board_fs::watcher::handle::NoopWatcherHandle::new()) as BoxedWatcherHandle
+        identity: SessionIdentity,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let activation_state = pending_activation_state();
+        let worker_state = Arc::clone(&activation_state);
+        let join = thread::Builder::new()
+            .name("spec-board-noop-watcher".to_owned())
+            .spawn(move || {
+                let _ = wait_for_activation(worker_state.as_ref());
+            })
+            .map_err(spec_board_fs::watcher::core::WatcherError::Io)
+            .map_err(|source| OpenProjectError::WatcherInitFailed { source })?;
+        let activation = WatcherActivation::new(activation_state, join.thread().clone());
+        let handle = Box::new(NoopPausedWatcherHandle { join: Some(join) }) as BoxedWatcherHandle;
+
+        Ok(StagedProjectResources::new(
+            identity,
+            handle,
+            activation,
+            Arc::new(WriteIgnoreRegistry::new()),
+        ))
     }
 }

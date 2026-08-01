@@ -89,8 +89,8 @@ pub fn export_labels(
 /// 単体テスト境界の effect 層。
 ///
 /// 1. 空 path を `EmptyPath` で拒否する
-/// 2. `state.labels()?` を read-only 取得（書込でないため snapshot / lock preflight は不要）
-/// 3. `serde_yaml_ng::to_string(&registry)` で直列化（store と同一経路）
+/// 2. `session_snapshot()` を 1 回取得して coherent な labels registry を得る
+/// 3. `serde_yaml_ng::to_string` で直列化（store と同一経路）
 /// 4. `std::fs::write(args.path, yaml)` で任意パスへ書き出す
 ///
 /// # Errors
@@ -111,10 +111,10 @@ pub(crate) fn export_labels_impl(
     if path.is_empty() {
         return Err(ExportLabelsError::EmptyPath);
     }
-    // read-only 取得（get_labels_impl と同形）。export は書込でないため
-    // delete のような snapshot / lock preflight は不要。
-    let registry = state.labels()?.ok_or(ExportLabelsError::NoProjectOpen)?;
-    let yaml = serde_yaml_ng::to_string(&registry).map_err(ExportLabelsError::Serialize)?;
+    let snapshot = state
+        .session_snapshot()?
+        .ok_or(ExportLabelsError::NoProjectOpen)?;
+    let yaml = serde_yaml_ng::to_string(snapshot.labels()).map_err(ExportLabelsError::Serialize)?;
     std::fs::write(path, yaml).map_err(ExportLabelsError::Write)?;
     Ok(())
 }

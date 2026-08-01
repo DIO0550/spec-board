@@ -21,9 +21,9 @@ fn definition(name: &str) -> LabelDefinition {
 fn opened_state(root: &Path, registry: LabelRegistry) -> AppState {
     let state = AppState::new();
     state
-        .set_project_path(Some(root.to_path_buf()))
+        .test_set_project_root(Some(root.to_path_buf()))
         .expect("writable");
-    state.replace_labels(Some(registry)).expect("writable");
+    state.test_replace_labels(Some(registry)).expect("writable");
     state
 }
 

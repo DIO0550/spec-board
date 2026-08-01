@@ -2,16 +2,18 @@
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::State;
 
+use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::add_link::args::AddLinkArgs;
 use crate::task::add_link::error::{AddLinkCommandError, AddLinkError};
 use crate::task::frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
+use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::{AddLinkOutcome, Task, TaskIndex};
 
 /// `add_link` Tauri command 薄層。
@@ -26,112 +28,101 @@ pub(crate) fn add_link_impl(
     io: &dyn TaskIo,
     args: AddLinkArgs,
 ) -> Result<Task, AddLinkCommandError> {
-    state.check_tasks_cache_lock()?;
-    let _ = state.write_ignore().is_empty()?;
-
-    let project_root = state
-        .project_path()?
-        .ok_or(AddLinkCommandError::NoProjectOpen)?;
-
-    let intent = args
-        .into_intent(project_root.as_path())
-        .map_err(AddLinkCommandError::Validation)?;
-    let source_rel = intent.source.clone();
-    let source_abs = project_root.join(&source_rel);
-
-    let snapshot = state.tasks_snapshot()?;
-    let index = TaskIndex::new(snapshot);
-    let existing_source = index
-        .find_by_path(source_rel.as_path())
-        .cloned()
-        .ok_or_else(|| AddLinkError::SourceNotFound {
-            path: source_rel.to_string_lossy().into_owned(),
-        })?;
-
-    let bytes = match io.read(&source_abs) {
-        Ok(b) => b,
-        Err(TaskIoError::Io(source)) if source.kind() == ErrorKind::NotFound => {
-            return Err(AddLinkError::SourceNotFound {
+    state.with_project_writer_lease(|target, snapshot| -> Result<Task, AddLinkCommandError> {
+        let project_root = snapshot.project_root();
+        let intent = args
+            .into_intent(project_root.as_path())
+            .map_err(AddLinkCommandError::Validation)?;
+        let source_rel = intent.source.clone();
+        let source_abs = project_root.as_path().join(&source_rel);
+        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let existing_source = index
+            .find_by_path(source_rel.as_path())
+            .cloned()
+            .ok_or_else(|| AddLinkError::SourceNotFound {
+                path: source_rel.to_string_lossy().into_owned(),
+            })?;
+        if source_rel == intent.target {
+            return Err(AddLinkError::SelfLink {
                 path: source_rel.to_string_lossy().into_owned(),
             }
             .into());
         }
-        Err(e) => return Err(e.into()),
-    };
-
-    let parsed = frontmatter::parse_bytes(&bytes)
-        .map_err(|e| AddLinkError::ParseFailed(e.to_string()))?
-        .ok_or_else(|| AddLinkError::ParseFailed("no frontmatter delimiter found".to_string()))?;
-
-    let outcome = index
-        .plan_add_link(
-            project_root.as_path(),
-            intent.clone(),
-            &existing_source,
-            parsed,
-        )
-        .map_err(AddLinkCommandError::Validation)?;
-
-    match outcome {
-        AddLinkOutcome::NoOp { existing_task } => Ok(existing_task),
-        AddLinkOutcome::Write {
-            updated_task,
-            file_content,
-            target_normalized,
-        } => {
-            let watcher_active = state.is_watcher_installed()?;
-            if watcher_active {
-                state.write_ignore().register(&source_abs)?;
+        if index.find_by_path(&intent.target).is_none() {
+            return Err(AddLinkError::TargetNotFound {
+                path: intent.target.to_string_lossy().into_owned(),
             }
-            if let Err(err) = io.write_existing(&source_abs, file_content.as_bytes()) {
-                if watcher_active {
-                    let _ = state.write_ignore().unregister(&source_abs);
-                }
-                return Err(err.into());
-            }
-
-            // commit_cache が SourceVanished / TargetVanished で失敗した場合、
-            // disk への write はすでに完了しているため、watcher event を
-            // 通常経路で処理して cache を disk に追従させる必要がある。
-            // write_ignore に entry が残ったままだと event が consume されて
-            // cache が永続的に disk と乖離するので、commit 失敗時は unregister
-            // して watcher 側で再走させる（create_task_impl と同型）。
-            match commit_cache(state, &source_rel, &target_normalized, &updated_task) {
-                Ok(returned) => Ok(returned),
-                Err(err) => {
-                    if watcher_active {
-                        let _ = state.write_ignore().unregister(&source_abs);
-                    }
-                    Err(err)
-                }
-            }
+            .into());
         }
-    }
+
+        let resources = state.preflight_session_write(snapshot)?;
+        let bytes = match io.read(&source_abs) {
+            Ok(bytes) => bytes,
+            Err(TaskIoError::Io(source)) if source.kind() == ErrorKind::NotFound => {
+                return Err(AddLinkError::SourceNotFound {
+                    path: source_rel.to_string_lossy().into_owned(),
+                }
+                .into());
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let parsed = frontmatter::parse_bytes(&bytes)
+            .map_err(|error| AddLinkError::ParseFailed(error.to_string()))?
+            .ok_or_else(|| {
+                AddLinkError::ParseFailed("no frontmatter delimiter found".to_string())
+            })?;
+        let outcome = index
+            .plan_add_link(project_root.as_path(), intent, &existing_source, parsed)
+            .map_err(AddLinkCommandError::Validation)?;
+
+        let (updated_task, file_content, target_normalized) = match outcome {
+            AddLinkOutcome::NoOp { existing_task } => return Ok(existing_task),
+            AddLinkOutcome::Write {
+                updated_task,
+                file_content,
+                target_normalized,
+            } => (updated_task, file_content, target_normalized),
+        };
+
+        let mut next_tasks = snapshot.tasks().clone();
+        let returned = apply_add_link_to_cache(
+            &mut next_tasks,
+            &source_rel,
+            &target_normalized,
+            &updated_task,
+        )?;
+        let registered_paths = vec![source_abs.clone()];
+        resources.write_ignore().register(&source_abs)?;
+        if let Err(error) = io.write_existing(&source_abs, file_content.as_bytes()) {
+            cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
+            return Err(error.into());
+        }
+
+        commit_or_resync_under_lease(
+            state,
+            target.project_root(),
+            &snapshot.identity(),
+            &resources,
+            &registered_paths,
+            ResyncSource::Tasks { task_io: io },
+            "add_link",
+            move |session| {
+                session.replace_tasks(next_tasks);
+                returned
+            },
+        )
+    })
 }
 
-/// cache lock を取得し、cache 差分更新を `TaskIndex` の aggregate メソッドに委譲する。
-///
-/// source / target の存在確認・派生フィールドの保持マージ・cycle member の
-/// `parent=None` 維持・target `reverse_links` への append といったドメインロジックは
-/// すべて `TaskIndex::commit_add_link_into_cache` に閉じる。effect 層はロック取得と
-/// エラーの詰め替えのみを担う。
-fn commit_cache(
-    state: &AppState,
+/// planned link追加をcloned task mapへ適用する。
+fn apply_add_link_to_cache(
+    cache: &mut HashMap<PathBuf, Task>,
     source_rel: &Path,
     target_normalized: &str,
     updated_task: &Task,
 ) -> Result<Task, AddLinkCommandError> {
-    let returned: Result<Task, AddLinkError> =
-        state.with_tasks_cache_mut(|cache: &mut HashMap<_, Task>| {
-            TaskIndex::commit_add_link_into_cache(
-                cache,
-                source_rel,
-                target_normalized,
-                updated_task,
-            )
-        })?;
-
-    Ok(returned?)
+    TaskIndex::commit_add_link_into_cache(cache, source_rel, target_normalized, updated_task)
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

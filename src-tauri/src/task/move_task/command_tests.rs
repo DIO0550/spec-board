@@ -5,21 +5,26 @@
 //! 双方を検証する。
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tempfile::TempDir;
 
-use super::move_task_impl;
-use crate::config::Config;
+use super::{move_task_impl, move_task_impl_with_config_io};
+use crate::config::{load_or_default, Config, ConfigWriter};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
+use crate::project_session::{SessionIdentity, SessionRevision};
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
 use crate::task::warning::TaskWarningCode;
+use crate::task::writer_test_support::{
+    session_revision, session_write_ignore_len, CountingTaskIo,
+};
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -77,6 +82,24 @@ fn make_args(file_path: &str, from: &str, to: &str, to_paths: &[&str]) -> MoveTa
     }
 }
 
+#[derive(Default)]
+struct FailingConfigWriter {
+    calls: AtomicUsize,
+}
+
+impl FailingConfigWriter {
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl ConfigWriter for FailingConfigWriter {
+    fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(std::io::Error::other("injected config write failure"))
+    }
+}
+
 #[test]
 fn cross_column_move_updates_status_on_disk() {
     let dir = tempdir();
@@ -87,6 +110,7 @@ fn cross_column_move_updates_status_on_disk() {
     );
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
+    let revision_before = session_revision(&state);
 
     let task = move_task_impl(
         &state,
@@ -99,6 +123,10 @@ fn cross_column_move_updates_status_on_disk() {
 
     let content = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read md");
     assert!(content.contains("status: Done"), "{content}");
+    assert_eq!(
+        revision_before.as_u64() + 1,
+        session_revision(&state).as_u64()
+    );
 }
 
 #[test]
@@ -160,7 +188,7 @@ fn cross_column_move_sets_destination_card_order_in_given_order() {
         on_disk.card_order.get("Done"),
         Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
     );
-    let in_state = state.config().expect("lock").expect("config");
+    let in_state = state.test_config().expect("lock").expect("config");
     assert_eq!(
         in_state.card_order.get("Done"),
         Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
@@ -226,6 +254,36 @@ fn same_column_reorder_updates_card_order() {
 }
 
 #[test]
+fn same_column_noop_does_not_advance_revision_or_register_marker() {
+    let dir = tempdir();
+    let original = "---\ntitle: A\nstatus: Todo\n---\nbody\n";
+    seed_md(dir.path(), "tasks/a.md", original);
+    seed_config_with_card_order(dir.path(), &[("Todo", &["tasks/a.md"])]);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let revision_before = session_revision(&state);
+    let config_before = read_config_json(dir.path());
+
+    let task = move_task_impl(
+        &state,
+        &FsTaskIo,
+        make_args("tasks/a.md", "Todo", "Todo", &["tasks/a.md"]),
+    )
+    .expect("identical reorder is a no-op");
+
+    assert_eq!("Todo", task.status.as_str());
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(
+        original,
+        fs::read_to_string(dir.path().join("tasks/a.md")).expect("read unchanged task")
+    );
+    assert_eq!(
+        config_before.card_order,
+        read_config_json(dir.path()).card_order
+    );
+}
+#[test]
 fn destination_card_order_drops_paths_without_a_file_on_disk() {
     let dir = tempdir();
     seed_md(
@@ -281,7 +339,7 @@ fn card_order_survives_reopening_the_project() {
     let reopened = Arc::new(AppState::new());
     open_with_noop(&reopened, dir.path());
 
-    let config = reopened.config().expect("lock").expect("config");
+    let config = reopened.test_config().expect("lock").expect("config");
     assert_eq!(
         config.card_order.get("Done"),
         Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
@@ -394,7 +452,7 @@ fn cross_column_move_keeps_children_and_reverse_links() {
     );
 
     let cached = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("lock")
         .into_iter()
         .find(|t| t.file_path.as_str() == "tasks/parent.md")
@@ -427,7 +485,7 @@ fn cross_column_move_clears_parse_warnings_that_no_longer_apply() {
     open_with_noop(&state, dir.path());
 
     let before = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("lock")
         .into_iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -457,7 +515,7 @@ fn cross_column_move_clears_parse_warnings_that_no_longer_apply() {
         returned.warnings
     );
     let cached = state
-        .tasks_snapshot()
+        .test_tasks_snapshot()
         .expect("lock")
         .into_iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -498,111 +556,100 @@ fn cross_column_move_keeps_parent_not_found_warning() {
 }
 
 #[test]
-fn switching_project_mid_command_leaves_the_new_project_cache_untouched() {
-    // md 書き込みと in-memory commit の間にプロジェクトが切り替わる状況を、
-    // write のタイミングで project_path を差し替える TaskIo で決定的に再現する。
-    struct SwitchProjectOnWrite<'a> {
+fn disk_success_conflict_returns_typed_error_and_resyncs_same_session() {
+    struct AdvanceRevisionOnWrite<'a> {
         inner: FsTaskIo,
         state: &'a AppState,
-        switch_to: PathBuf,
+        expected: SessionIdentity,
+        advanced: AtomicBool,
     }
 
-    impl TaskIo for SwitchProjectOnWrite<'_> {
+    impl TaskIo for AdvanceRevisionOnWrite<'_> {
         fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
             self.inner.ensure_dir(dir)
         }
+
         fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
             self.inner.write_new(path, bytes)
         }
+
         fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
             let result = self.inner.write_existing(path, bytes);
-            self.state
-                .set_project_path(Some(self.switch_to.clone()))
-                .expect("swap project path");
+            if result.is_ok() && !self.advanced.swap(true, Ordering::SeqCst) {
+                self.state
+                    .commit_session_write(&self.expected, |_| ())
+                    .expect("inject one resident revision advance");
+            }
             result
         }
+
         fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
             self.inner.remove(path)
         }
+
         fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
             self.inner.read(path)
         }
     }
 
     let dir = tempdir();
-    seed_md(
-        dir.path(),
-        "tasks/a.md",
-        "---\ntitle: A\nstatus: Todo\n---\n",
-    );
+    let original = "---\ntitle: A\nstatus: Todo\n---\n";
+    seed_md(dir.path(), "tasks/a.md", original);
+    seed_config_with_card_order(dir.path(), &[("Todo", &["tasks/a.md"])]);
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
-
-    let other = tempdir();
-    let io = SwitchProjectOnWrite {
+    let revision_before = session_revision(&state);
+    let io = AdvanceRevisionOnWrite {
         inner: FsTaskIo,
         state: &state,
-        switch_to: other.path().to_path_buf(),
+        expected: state
+            .require_session_snapshot()
+            .expect("session snapshot")
+            .identity(),
+        advanced: AtomicBool::new(false),
     };
 
-    move_task_impl(
+    let error = move_task_impl(
         &state,
         &io,
         make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
-    .expect("disk 書き込みは旧プロジェクト視点で完了するので Ok を返す");
+    .expect_err("the original resident CAS must report its conflict");
 
-    // in-memory は一切変更されない（config も tasks キャッシュも旧プロジェクトのまま）。
+    assert!(matches!(error, MoveTaskCommandError::SessionConflict(_)));
+    assert!(fs::read_to_string(dir.path().join("tasks/a.md"))
+        .expect("read moved task")
+        .contains("status: Done"));
     let cached = state
-        .tasks_snapshot()
-        .expect("lock")
+        .test_tasks_snapshot()
+        .expect("resident tasks")
         .into_iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
-        .expect("task stays in cache");
+        .expect("resynced task");
+    assert_eq!("Done", cached.status.as_str());
     assert_eq!(
-        cached.status.as_str(),
-        "Todo",
-        "project 切替後は cache を書き換えない"
+        Some(&vec!["tasks/a.md".to_string()]),
+        state
+            .test_config()
+            .expect("resident config lock")
+            .expect("resident config")
+            .card_order
+            .get("Done")
     );
-    let in_state = state.config().expect("lock").expect("config");
-    assert!(
-        !in_state.card_order.contains_key("Done"),
-        "project 切替後は in-memory config も書き換えない"
+    assert_eq!(
+        revision_before.as_u64() + 2,
+        session_revision(&state).as_u64(),
+        "injected advance and recovery commit each consume one revision"
+    );
+    assert_eq!(
+        1,
+        session_write_ignore_len(&state),
+        "successful recovery preserves the self-write marker"
     );
 }
 
 #[test]
-fn task_vanishing_before_commit_rolls_back_both_md_and_config() {
-    // md 書き込みと in-memory commit の間に対象タスクが cache から消える状況
-    // （並行 delete_task / 再 scan など）を、write のタイミングで cache を空にする
-    // TaskIo で決定的に再現する。
-    struct DropTaskOnWrite<'a> {
-        inner: FsTaskIo,
-        state: &'a AppState,
-    }
-
-    impl TaskIo for DropTaskOnWrite<'_> {
-        fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
-            self.inner.ensure_dir(dir)
-        }
-        fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
-            self.inner.write_new(path, bytes)
-        }
-        fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
-            let result = self.inner.write_existing(path, bytes);
-            self.state
-                .with_tasks_cache_mut(|cache| cache.clear())
-                .expect("clear cache");
-            result
-        }
-        fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
-            self.inner.remove(path)
-        }
-        fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
-            self.inner.read(path)
-        }
-    }
-
+fn config_writer_failure_rolls_back_md_cleans_marker_and_keeps_revision() {
     let dir = tempdir();
     let original_md = "---\ntitle: A\nstatus: Todo\n---\n";
     seed_md(dir.path(), "tasks/a.md", original_md);
@@ -610,36 +657,37 @@ fn task_vanishing_before_commit_rolls_back_both_md_and_config() {
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
     let config_before = read_config_json(dir.path());
+    let revision_before = session_revision(&state);
+    let writer = FailingConfigWriter::default();
 
-    let io = DropTaskOnWrite {
-        inner: FsTaskIo,
-        state: &state,
-    };
-
-    let err = move_task_impl(
+    let error = move_task_impl_with_config_io(
         &state,
-        &io,
+        &FsTaskIo,
+        &writer,
+        &load_or_default,
         make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
-    .expect_err("commit 時に対象が消えていれば失敗する");
+    .expect_err("injected config failure must abort the move");
 
-    assert!(
-        matches!(
-            err,
-            MoveTaskCommandError::Validation(MoveTaskError::TaskVanished { .. })
-        ),
-        "unexpected error: {err:?}"
-    );
+    assert!(matches!(error, MoveTaskCommandError::ConfigIo(_)));
+    assert_eq!(1, writer.calls());
     assert_eq!(
-        fs::read_to_string(dir.path().join("tasks/a.md")).expect("read md"),
         original_md,
-        "task md は移動前に戻る"
+        fs::read_to_string(dir.path().join("tasks/a.md")).expect("read rolled back task")
     );
     assert_eq!(
-        read_config_json(dir.path()).card_order,
         config_before.card_order,
-        "config.json も移動前に戻る（片方だけ移動後に進ませない）"
+        read_config_json(dir.path()).card_order
     );
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(revision_before, session_revision(&state));
+    let resident = state
+        .test_tasks_snapshot()
+        .expect("resident tasks")
+        .into_iter()
+        .find(|task| task.file_path.as_str() == "tasks/a.md")
+        .expect("resident task");
+    assert_eq!("Todo", resident.status.as_str());
 }
 
 #[test]
@@ -679,7 +727,7 @@ fn duplicate_destination_paths_are_collapsed() {
 }
 
 #[test]
-fn cross_column_move_registers_the_task_path_as_self_write() {
+fn cross_column_move_registers_session_marker_and_advances_revision() {
     let dir = tempdir();
     seed_md(
         dir.path(),
@@ -689,6 +737,7 @@ fn cross_column_move_registers_the_task_path_as_self_write() {
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
+    let revision_before = session_revision(&state);
     move_task_impl(
         &state,
         &FsTaskIo,
@@ -696,10 +745,11 @@ fn cross_column_move_registers_the_task_path_as_self_write() {
     )
     .expect("move should succeed");
 
-    assert!(state
-        .write_ignore()
-        .should_ignore(dir.path().join("tasks/a.md"))
-        .expect("registry lock"));
+    assert_eq!(1, session_write_ignore_len(&state));
+    assert_eq!(
+        revision_before.as_u64() + 1,
+        session_revision(&state).as_u64()
+    );
 }
 
 #[test]
@@ -988,5 +1038,72 @@ fn config_write_failure_unregisters_the_self_write_marker() {
     )
     .expect_err("config write should fail");
 
-    assert!(state.write_ignore().is_empty().expect("registry lock"));
+    assert_eq!(0, session_write_ignore_len(&state));
+}
+
+#[test]
+fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
+    let dir = tempdir();
+    let original_md = "---\ntitle: A\nstatus: Todo\n---\nbody\n";
+    seed_md(dir.path(), "tasks/a.md", original_md);
+    seed_config_with_card_order(dir.path(), &[("Todo", &["tasks/a.md"])]);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let resident_before = state
+        .require_session_snapshot()
+        .expect("resident snapshot before exhaustion");
+    let status_before = resident_before
+        .tasks()
+        .get(Path::new("tasks/a.md"))
+        .expect("resident task before exhaustion")
+        .status
+        .clone();
+    let card_order_before = resident_before.config().card_order.clone();
+    let config_path = dir.path().join(".spec-board").join("config.json");
+    let config_disk_before = fs::read_to_string(&config_path).expect("seeded config");
+    state.seed_session_revision_for_test(SessionRevision::from_raw(u64::MAX));
+
+    let task_io = CountingTaskIo::default();
+    let config_writer = FailingConfigWriter::default();
+    let loader_calls = AtomicUsize::new(0);
+    let counting_loader = |root: &Path| {
+        loader_calls.fetch_add(1, Ordering::SeqCst);
+        load_or_default(root)
+    };
+
+    let error = move_task_impl_with_config_io(
+        &state,
+        &task_io,
+        &config_writer,
+        &counting_loader,
+        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+    )
+    .expect_err("revision exhaustion must reject the composite writer");
+
+    assert!(matches!(error, MoveTaskCommandError::RevisionExhausted(_)));
+    assert_eq!(0, task_io.calls(), "TaskIo must not be reached");
+    assert_eq!(0, config_writer.calls(), "ConfigWriter must not be reached");
+    assert_eq!(
+        0,
+        loader_calls.load(Ordering::SeqCst),
+        "loader must not be reached"
+    );
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(u64::MAX, session_revision(&state).as_u64());
+    assert_eq!(
+        original_md,
+        fs::read_to_string(dir.path().join("tasks/a.md")).expect("unchanged task")
+    );
+    assert_eq!(
+        config_disk_before,
+        fs::read_to_string(config_path).expect("unchanged config")
+    );
+    let resident_after = state
+        .require_session_snapshot()
+        .expect("resident snapshot after rejection");
+    assert_eq!(
+        status_before,
+        resident_after.tasks()[Path::new("tasks/a.md")].status
+    );
+    assert_eq!(card_order_before, resident_after.config().card_order);
 }
