@@ -74,9 +74,10 @@ use std::sync::Arc;
 use crate::config::column_name::ColumnName;
 use crate::config::{
     label_registry_store, load_or_default, milestone_registry_store,
-    write_guide_markdown_best_effort, Column, Config, LabelRegistryStore, LoadConfigError,
-    LoadLabelsError, LoadMilestonesError, MilestoneRegistryStore,
+    write_guide_markdown_best_effort, Column, Config, LabelRegistryStore, LoadLabelsError,
+    LoadMilestonesError, MilestoneRegistryStore,
 };
+use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarning};
 use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
 use crate::project_session::{
@@ -90,7 +91,7 @@ use crate::state::{AppState, AppStateError, OpenSwapError};
 use crate::task::io::FsTaskIo;
 use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
-use crate::task::rebuild::{rebuild_tasks_from_disk, RebuildTasksError};
+use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::task::file_scanner::ScanError;
 use spec_board_fs::watcher::core::WatcherError;
@@ -109,6 +110,8 @@ pub struct OpenProjectPayload {
     pub projections: TaskProjectionMap,
     /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
     pub milestone_projections: MilestoneProjectionMap,
+    /// project load 中に個別ファイルや config fallback で発生した warning。
+    pub load_warnings: Vec<ProjectLoadWarning>,
     /// watcher event の検証基準。`tasks` と**同一トランザクション**で確定した
     /// 値であることが必須（そうでないと FE が復旧不能な split-brain に陥る）。
     pub session: WatcherSession,
@@ -274,25 +277,35 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     let target_gate = state.writer_gate(intent.root())?;
     let open_guard = state.lock_writer_gate(target_gate.as_ref())?;
 
-    let config = load_or_default(root).map_err(map_load_config_error)?;
+    let (config, mut load_warnings) = match load_or_default(root) {
+        Ok(config) => (config, Vec::new()),
+        Err(error) => (
+            Config::default(),
+            vec![ProjectLoadWarning::config_fallback(error.to_string())],
+        ),
+    };
     let labels = labels_store.load().map_err(map_load_labels_error)?;
     let milestones = milestones_store.load().map_err(map_load_milestones_error)?;
     let default_status = default_status_for(&config);
-    let tasks = rebuild_tasks_from_disk(root, &default_status, &FsTaskIo)
+    let rebuild = rebuild_tasks_from_disk_with_report(root, &default_status, &FsTaskIo)
         .map_err(|error| map_rebuild_error(error, raw_path))?;
+    load_warnings.extend(rebuild.warnings);
+    let load_warnings = deduplicate_and_sort(load_warnings);
 
     // backend/channel と paused worker の構築を resident state の変更前に完了する。
     let prepared_watcher = watcher.prepare(root)?;
-    let task_cache = tasks
+    let task_cache = rebuild
+        .tasks
         .into_iter()
         .map(|task| (PathBuf::from(task.file_path.as_str()), task))
         .collect();
-    let prepared_session = PreparedProjectSession::new(
+    let prepared_session = PreparedProjectSession::new_with_warnings(
         intent.root().clone(),
         config.clone(),
         labels,
         milestones,
         task_cache,
+        load_warnings,
     );
     let session_id = state.reserve_session_id()?;
     let candidate = prepared_session.into_session(session_id);
@@ -412,26 +425,6 @@ fn map_scan_error(err: ScanError, raw_path: &str) -> OpenProjectError {
     }
 }
 
-/// `LoadConfigError` を `category` 付きの `ConfigLoadFailed` に分類する。
-///
-/// - `Io` / `BackupFailed` → `category: "io"`
-/// - `Parse` / `UnknownFutureVersion` / `DuplicateColumnName` /
-///   `EmptyColumns` / `MigrationFailed` → `category: "parse"`
-fn map_load_config_error(err: LoadConfigError) -> OpenProjectError {
-    let category = match &err {
-        LoadConfigError::Io(_) | LoadConfigError::BackupFailed { .. } => "io",
-        LoadConfigError::Parse { .. }
-        | LoadConfigError::UnknownFutureVersion { .. }
-        | LoadConfigError::DuplicateColumnName { .. }
-        | LoadConfigError::EmptyColumns { .. }
-        | LoadConfigError::MigrationFailed { .. } => "parse",
-    };
-    OpenProjectError::ConfigLoadFailed {
-        category,
-        message: err.to_string(),
-    }
-}
-
 /// `LoadLabelsError` を `category` 付きの `LabelsLoadFailed` に分類する。
 ///
 /// - `Io` → `category: "io"`
@@ -488,12 +481,23 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
 fn build_payload(snapshot: ProjectSessionSnapshot, session: WatcherSession) -> OpenProjectPayload {
     let tasks = snapshot.tasks().values().cloned().collect();
-    build_payload_from_parts(tasks, snapshot.config(), session)
+    let load_warnings = snapshot.load_warnings().to_vec();
+    build_payload_from_parts_with_warnings(tasks, snapshot.config(), load_warnings, session)
 }
 
+#[cfg(test)]
 fn build_payload_from_parts(
     tasks: Vec<Task>,
     config: &Config,
+    session: WatcherSession,
+) -> OpenProjectPayload {
+    build_payload_from_parts_with_warnings(tasks, config, Vec::new(), session)
+}
+
+fn build_payload_from_parts_with_warnings(
+    tasks: Vec<Task>,
+    config: &Config,
+    load_warnings: Vec<ProjectLoadWarning>,
     session: WatcherSession,
 ) -> OpenProjectPayload {
     // 並び順の契約は aggregate に集約する（`get_tasks` も同じ入口を通す）。
@@ -516,6 +520,7 @@ fn build_payload_from_parts(
         columns,
         projections,
         milestone_projections,
+        load_warnings,
         session,
     }
 }

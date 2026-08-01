@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
+use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
 use crate::task::task_index::Task;
 
@@ -137,6 +138,7 @@ pub struct PreparedProjectSession {
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
     tasks: HashMap<PathBuf, Task>,
+    load_warnings: Vec<ProjectLoadWarning>,
 }
 
 impl PreparedProjectSession {
@@ -148,12 +150,25 @@ impl PreparedProjectSession {
         milestones: MilestoneRegistry,
         tasks: HashMap<PathBuf, Task>,
     ) -> Self {
+        Self::new_with_warnings(root, config, labels, milestones, tasks, Vec::new())
+    }
+
+    /// load warning を伴う open 用の prepared session を作る。
+    pub fn new_with_warnings(
+        root: ProjectRoot,
+        config: Config,
+        labels: LabelRegistry,
+        milestones: MilestoneRegistry,
+        tasks: HashMap<PathBuf, Task>,
+        load_warnings: Vec<ProjectLoadWarning>,
+    ) -> Self {
         Self {
             root,
             config,
             labels,
             milestones,
             tasks,
+            load_warnings,
         }
     }
 
@@ -168,6 +183,7 @@ impl PreparedProjectSession {
             labels: self.labels,
             milestones: self.milestones,
             tasks: self.tasks,
+            load_warnings: self.load_warnings,
         }
     }
 }
@@ -182,6 +198,7 @@ pub struct ProjectSession {
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
     tasks: HashMap<PathBuf, Task>,
+    load_warnings: Vec<ProjectLoadWarning>,
 }
 
 impl ProjectSession {
@@ -213,6 +230,7 @@ impl ProjectSession {
             labels: self.labels.clone(),
             milestones: self.milestones.clone(),
             tasks: self.tasks.clone(),
+            load_warnings: self.load_warnings.clone(),
         }
     }
 
@@ -240,6 +258,16 @@ impl ProjectSession {
     /// 互換adapterまたはcommit closureがtask mapを差し替える。
     pub(crate) fn replace_tasks(&mut self, tasks: HashMap<PathBuf, Task>) {
         self.tasks = tasks;
+    }
+
+    /// task map と load warnings を同じ session commit で置き換える。
+    pub(crate) fn replace_tasks_and_load_warnings(
+        &mut self,
+        tasks: HashMap<PathBuf, Task>,
+        load_warnings: Vec<ProjectLoadWarning>,
+    ) {
+        self.tasks = tasks;
+        self.load_warnings = load_warnings;
     }
 
     /// 互換adapterまたはcommit closureへtask mapの可変参照を渡す。
@@ -280,6 +308,7 @@ pub struct ProjectSessionSnapshot {
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
     tasks: HashMap<PathBuf, Task>,
+    load_warnings: Vec<ProjectLoadWarning>,
 }
 
 impl ProjectSessionSnapshot {
@@ -312,6 +341,11 @@ impl ProjectSessionSnapshot {
     /// snapshotのtask mapを返す。
     pub fn tasks(&self) -> &HashMap<PathBuf, Task> {
         &self.tasks
+    }
+
+    /// snapshot 時点の project load warnings を返す。
+    pub fn load_warnings(&self) -> &[ProjectLoadWarning] {
+        &self.load_warnings
     }
 
     /// project rootとversionを持つcommit比較用identityを作る。

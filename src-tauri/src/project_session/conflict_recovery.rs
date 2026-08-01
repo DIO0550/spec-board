@@ -9,6 +9,7 @@ use crate::config::{
     Config, LabelRegistry, LabelRegistryStore, LoadConfigError, LoadLabelsError,
     LoadMilestonesError, MilestoneRegistry, MilestoneRegistryStore,
 };
+use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarningStage};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{ProjectSession, ProjectSessionSnapshot, SessionConflict};
 use crate::state::{AppState, AppStateError, SessionWriteError};
@@ -62,10 +63,14 @@ pub(crate) enum ResyncSource<'a> {
 
 /// I/O完了後に1回のaggregate commitで反映する復旧値。
 enum RecoveredAggregate {
-    Tasks(HashMap<PathBuf, Task>),
+    Tasks {
+        tasks: HashMap<PathBuf, Task>,
+        load_warnings: Vec<crate::project::load_warning::ProjectLoadWarning>,
+    },
     ConfigAndTasks {
         config: Config,
         tasks: HashMap<PathBuf, Task>,
+        load_warnings: Vec<crate::project::load_warning::ProjectLoadWarning>,
     },
     Labels(LabelRegistry),
     Milestones(MilestoneRegistry),
@@ -75,10 +80,17 @@ impl RecoveredAggregate {
     /// 事前構築済みの復旧値を失敗しないresident mutationとして適用する。
     fn apply(self, session: &mut ProjectSession) {
         match self {
-            Self::Tasks(tasks) => session.replace_tasks(tasks),
-            Self::ConfigAndTasks { config, tasks } => {
+            Self::Tasks {
+                tasks,
+                load_warnings,
+            } => session.replace_tasks_and_load_warnings(tasks, load_warnings),
+            Self::ConfigAndTasks {
+                config,
+                tasks,
+                load_warnings,
+            } => {
                 session.replace_config(config);
-                session.replace_tasks(tasks);
+                session.replace_tasks_and_load_warnings(tasks, load_warnings);
             }
             Self::Labels(labels) => session.replace_labels(labels),
             Self::Milestones(milestones) => session.replace_milestones(milestones),
@@ -92,6 +104,20 @@ fn tasks_by_path(tasks: Vec<Task>) -> HashMap<PathBuf, Task> {
         .into_iter()
         .map(|task| (PathBuf::from(task.file_path.as_str()), task))
         .collect()
+}
+
+fn merge_task_load_warnings(
+    snapshot: &ProjectSessionSnapshot,
+    warnings: Vec<crate::project::load_warning::ProjectLoadWarning>,
+) -> Vec<crate::project::load_warning::ProjectLoadWarning> {
+    let mut merged = snapshot
+        .load_warnings()
+        .iter()
+        .filter(|warning| warning.stage == ProjectLoadWarningStage::Config)
+        .cloned()
+        .collect::<Vec<_>>();
+    merged.extend(warnings);
+    deduplicate_and_sort(merged)
 }
 
 /// callerが保持するexact-root write lease内でsame-session stateを再同期する。
@@ -143,9 +169,15 @@ fn load_recovered_aggregate(
     match source {
         ResyncSource::Tasks { task_io } => {
             let default_status = default_status_for(snapshot.config());
-            let tasks =
-                crate::task::rebuild::rebuild_tasks_from_disk(root, &default_status, task_io)?;
-            Ok(RecoveredAggregate::Tasks(tasks_by_path(tasks)))
+            let report = crate::task::rebuild::rebuild_tasks_from_disk_with_report(
+                root,
+                &default_status,
+                task_io,
+            )?;
+            Ok(RecoveredAggregate::Tasks {
+                tasks: tasks_by_path(report.tasks),
+                load_warnings: merge_task_load_warnings(snapshot, report.warnings),
+            })
         }
         ResyncSource::ConfigAndTasks {
             task_io,
@@ -153,11 +185,15 @@ fn load_recovered_aggregate(
         } => {
             let config = load_config(root)?;
             let default_status = default_status_for(&config);
-            let tasks =
-                crate::task::rebuild::rebuild_tasks_from_disk(root, &default_status, task_io)?;
+            let report = crate::task::rebuild::rebuild_tasks_from_disk_with_report(
+                root,
+                &default_status,
+                task_io,
+            )?;
             Ok(RecoveredAggregate::ConfigAndTasks {
                 config,
-                tasks: tasks_by_path(tasks),
+                tasks: tasks_by_path(report.tasks),
+                load_warnings: deduplicate_and_sort(report.warnings),
             })
         }
         ResyncSource::Labels { store } => Ok(RecoveredAggregate::Labels(store.load()?)),

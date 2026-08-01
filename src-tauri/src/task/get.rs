@@ -29,6 +29,7 @@ use thiserror::Error;
 
 use super::projection::{MilestoneProjectionMap, TaskProjectionMap};
 use super::task_index::{Task, TaskIndex};
+use crate::project::load_warning::ProjectLoadWarning;
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError};
 
@@ -44,6 +45,7 @@ pub struct GetTasksPayload {
     pub projections: TaskProjectionMap,
     /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
     pub milestone_projections: MilestoneProjectionMap,
+    pub load_warnings: Vec<ProjectLoadWarning>,
     /// この snapshot の watcher session（`open_project` 応答と同じ形）。
     ///
     /// FE は resync 完了時にこの値で envelope 検証の baseline を丸ごと取り直す。
@@ -99,6 +101,7 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
             tasks: Vec::new(),
             projections: TaskProjectionMap::new(),
             milestone_projections: MilestoneProjectionMap::new(),
+            load_warnings: Vec::new(),
             session: WatcherSession::idle(),
         });
     };
@@ -116,6 +119,7 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
         tasks,
         projections,
         milestone_projections,
+        load_warnings: snapshot.load_warnings().to_vec(),
         session: state.watcher_session_for_snapshot(&snapshot),
     })
 }
