@@ -93,6 +93,7 @@ flowchart TD
 | フロントマター | mdファイル冒頭のYAMLメタデータブロック（`---` で囲まれた部分） |
 | カラム | ボードビューにおけるステータス別の列。ユーザーが自由に定義可能 |
 | マイルストーン | タスクをリリース単位で束ねる横断メタ情報。frontmatter `milestone`（単数）で参照し、`.spec-board/milestones.yml` でメタ情報（表示名・期日・並び順・状態）を定義する |
+| ProjectLoadWarning | open_project / get_tasks が返す、部分的な読み込み失敗を code / stage / path / message / recoverable で表す warning。fatal error とは区別し、loaded board の注意パネルと要約 toast に表示する |
 | ProjectSession | 現在開いている 1 project の root / SessionId / session-local Revision / config / registries / tasks を単一 snapshot として扱うバックエンド aggregate。watcher handle と write-ignore は session version で紐づく別 resource として保持する |
 | IDEシェル | ヘッダー下を「左サイドバー｜メイン」に分割した IDE 風の画面構成。サイドバー（プロジェクトスイッチャー / ファイルツリー）・ビュー切替サブバー・横断フィルタ・外観切替から成る |
 | ビュー（表示形態） | ボード領域の表示形態。ボード / リスト / ツリー / カレンダーをサブバーで切り替える |
@@ -106,4 +107,5 @@ flowchart TD
 | 1.1 | 2026-05-31 | 画面区分（ボード / 設定）と設定画面のサブナビ基盤・ラベル読み取りタブを追加 | - |
 | 1.2 | 2026-06-07 | IDEシェル（サイドバー / ビュー切替サブバー / 横断フィルタ / 外観テーマ）を追加。検索・フィルタを MVP 採用へ昇格 | - |
 | 1.3 | 2026-06-21 | マイルストーン専用ビューの仕様書 ([milestone-view-spec.md](./milestone-view-spec.md)) を追加 | - |
+| 1.5 | 2026-08-01 | Issue #458: ProjectLoadWarning、partial success、読み込み注意パネルとwarnings通知を追加 | - |
 | 1.4 | 2026-07-31 | Issue #453: backend の ProjectSession aggregate / writer gate / revision CAS / staged watcher swap を仕様化。multi-project cache (#189)、wire redesign (#465)、OwnWriteGuard (#468)、path canonicalization は対象外 | - |

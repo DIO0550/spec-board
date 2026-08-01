@@ -566,10 +566,26 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 - project switch と same-path reopen は root + SessionId の pre-gate identity 検証で disk I/O 前に拒否し、resident commit は full SessionId + Revision CAS で行う
 - resident validation / target 解決後、store load、task disk read、write-ignore 登録、disk writeより先に revision increment を checked preflight する。revision 枯渇時は disk/store I/O ゼロで session と marker を不変に保つ
 - disk write 成功後に同じ session の revision conflict が判明した場合、同じ非 reentrant gate を再取得せず、operation と同じ injected task I/O / config loader / registry store で current disk state を再読込して CAS resync する
-- resync 成功時も command は元の typed conflict を返す。resync 失敗は warning diagnostic に残すが元の conflict を上書きしない。task/config 系の write-ignore marker は resync 成功時だけ watcher consume 用に残し、失敗時は cleanup する
+- resync 成功時も command は元の typed conflict を返す。resync 失敗は warning として残すが元の conflict を上書きしない。task/config 系の write-ignore marker は resync 成功時だけ watcher consume 用に残し、失敗時は cleanup する
 - project switch、same-path reopen、resource identity 不一致、revision 枯渇は内部では別々の typed error で保持する。Tauri command 名・引数・成功 payload と既存 validation/I/O error の表示文字列は変更しない
 
 ## エラーハンドリング
+
+### open_project の config fallback と `loadWarnings`
+
+`.spec-board/config.json` が存在しない場合は `Config::default()` を使用して正常に開き、warning は生成しない。既存 config の read / parse / validation / migration / backup に失敗した場合も `open_project` は `Config::default()` で継続し、`loadWarnings` に次の warning を 1 件追加する。
+
+```json
+{
+  "code": "configFallback",
+  "stage": "config",
+  "path": ".spec-board/config.json",
+  "message": "設定を読み込めないため既定値を使用しました",
+  "recoverable": true
+}
+```
+
+FE は `loadWarnings` の件数を warning toast と loaded board の展開パネルで示す。root access、hierarchy depth / cycle、labels / milestones registry、watcher 初期化、session / lock の失敗は設定 fallback では吸収せず、従来どおり `open_project` の fatal error とする。
 
 ### load_or_default が返す `LoadConfigError` バリアント
 
@@ -577,13 +593,13 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 
 | エラーケース | 発生条件 | バックエンド戻り値 | 呼び出し層の振る舞い | ログレベル |
 |:------------|:---------|:------------------|:-------------------|:----------|
-| JSON パース失敗 | JSON 構文エラー、必須フィールド欠落、`version` の型不一致 / `u32` 範囲外 | `LoadConfigError::Parse` | デフォルト設定で起動し、トースト通知 | ERROR |
-| 未来 version 検出 | `version > DEFAULT_VERSION` | `LoadConfigError::UnknownFutureVersion` | デフォルト設定で起動し、トースト通知（アプリの更新案内を含む） | ERROR |
-| カラム名重複 | `columns` 内に同一名のカラムが存在 | `LoadConfigError::DuplicateColumnName` | デフォルト設定で起動し、トースト通知 | ERROR |
-| 空カラム | `columns: []` (spec の「最低1つのカラムが必要」違反) | `LoadConfigError::EmptyColumns` | デフォルト設定で起動し、トースト通知 | ERROR |
-| マイグレーション失敗（**本Issue 時点では到達不能**: 詳細は表下注を参照） | `migrate_config` が `MigrationError` を返す | `LoadConfigError::MigrationFailed` | デフォルト設定で起動し、トースト通知 | ERROR |
-| バックアップ失敗 | `.bak` の書き出しに失敗（権限不足 / symlink 宛先 / ディレクトリ衝突など） | `LoadConfigError::BackupFailed` | デフォルト設定で起動し、トースト通知（バックアップ作成失敗の旨を明示） | ERROR |
-| I/O 失敗 | `.spec-board/` の作成 / `config.json` の読み取りに失敗 | `LoadConfigError::Io` | デフォルト設定で起動し、トースト通知 | ERROR |
+| JSON パース失敗 | JSON 構文エラー、必須フィールド欠落、`version` の型不一致 / `u32` 範囲外 | `LoadConfigError::Parse` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
+| 未来 version 検出 | `version > DEFAULT_VERSION` | `LoadConfigError::UnknownFutureVersion` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知）（アプリの更新案内を含む） | ERROR |
+| カラム名重複 | `columns` 内に同一名のカラムが存在 | `LoadConfigError::DuplicateColumnName` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
+| 空カラム | `columns: []` (spec の「最低1つのカラムが必要」違反) | `LoadConfigError::EmptyColumns` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
+| マイグレーション失敗（**本Issue 時点では到達不能**: 詳細は表下注を参照） | `migrate_config` が `MigrationError` を返す | `LoadConfigError::MigrationFailed` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
+| バックアップ失敗 | `.bak` の書き出しに失敗（権限不足 / symlink 宛先 / ディレクトリ衝突など） | `LoadConfigError::BackupFailed` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知）（バックアップ作成失敗の旨を明示） | ERROR |
+| I/O 失敗 | `.spec-board/` の作成 / `config.json` の読み取りに失敗 | `LoadConfigError::Io` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
 
 > **`MigrationFailed` の到達可能性について**
 >
@@ -612,5 +628,6 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.3 | 2026-08-01 | Issue #458: config failure の `Config::default()` 継続、`configFallback` `loadWarnings`、registry / root fatal 境界を追加 | - |
 | 1.2 | 2026-07-31 | Issue #453: config/registry writer の project-scoped gate、session revision CAS、revision preflight、disk 後 conflict resync 契約を追加 | - |
 | 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection 契約と `get_milestones.usageCounts` の互換方針を追加 | - |

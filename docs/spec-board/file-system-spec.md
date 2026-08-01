@@ -83,6 +83,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "taskFilePaths": ["tasks/fix-bug.md"]
     }
   },
+  "loadWarnings": [],
   "session": {
     "projectKey": "/home/user/specs",
     "generation": 1,
@@ -112,15 +113,31 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | ディレクトリではない | 指定パスがディレクトリでない（通常ファイル等） | `ディレクトリではありません: {path}` |
 | アクセス権限なし | 読み取り権限がない | `ディレクトリにアクセスできません: {path}` |
 | 内部状態の lock 破損 | project domain / active resources / writer gate の Mutex が poison 状態 | `内部状態のロックが破損しました` |
-| スキャン致命エラー | parent 循環 / scan I/O など | `io scan failed: {message}` |
-| config 読み込み失敗 | `config.json` が壊れている等 | `config load failed (io|parse): {message}` |
+| スキャン致命エラー | root の metadata/read_dir、hierarchy 循環/深さ超過など | `io scan failed: {message}` |
+| config 読み込み失敗 | `config.json` が壊れている等 | `Config::default()` で継続し、`loadWarnings` に `configFallback` を含める |
 | ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}` |
 
-> 個別 md ファイルの `fs::read` 失敗、および `task_from_markdown` のパース失敗は致命扱いせず、`log::warn!` で記録して該当ファイルだけ skip する（コマンド全体は成功する）。warning を payload へ同梱する仕様は別 Issue 扱い。
+> 個別 md ファイルの fs::read 失敗、task_from_markdown のパース失敗、scanner の per-entry 失敗は recoverable な load warning として payload の loadWarnings に含め、該当ファイルを skip して残りのタスクで処理を継続する。root metadata/read_dir、hierarchy、labels/milestones、watcher/session 初期化、lock は従来どおり fatal とし、コマンド全体を失敗させる。
 >
 > ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側 `TauriError.PATTERNS` には watcher 初期化失敗の個別分類がないため `UNKNOWN` 分類になる。
 
 ---
+
+### ProjectLoadWarning と `loadWarnings`
+
+`open_project` と `get_tasks` は、タスクを一部読み込めない場合でも成功し、成功した `tasks` / projections と同じ snapshot に `loadWarnings` を同梱する。warning は UI が分類できる安定した値であり、fatal error の代替ではない。
+
+| フィールド | 型 | 説明 |
+|:----------|:---|:-----|
+| `code` | `scanEntryError` / `metadataError` / `unreadableFile` / `fileTooLarge` / `binaryFile` / `invalidPath` / `taskReadFailed` / `frontmatterParseFailed` / `configFallback` / `unknown` | 失敗分類。未知値は FE で `unknown` として安全に表示する |
+| `stage` | `scan` / `read` / `parse` / `config` / `unknown` | 発生段階 |
+| `path` | `string` または `null` | project root からの相対 path。相対化できない場合は `null`。config fallback は `.spec-board/config.json` |
+| `message` | `string` | 原因の補足。UI は raw message をそのまま HTML として解釈しない |
+| `recoverable` | `boolean` | 今回は load warning がすべて `true`。root / hierarchy / registry / watcher / session / lock の fatal error は payload に含めない |
+
+同一 `(stage, path, code, message, recoverable)` は payload 直前に重複除去し、順序を安定化する。`loadWarnings: []` は警告が無い正常な読み込みを表す。config が存在しない場合は既定値で開き、warning は生成しない。存在する config の read / parse / validation / migration / backup 失敗は `Config::default()` で継続し、`configFallback` を追加する。
+
+watcher の full rescan が成功した場合は、その rescan report の warnings で session の `loadWarnings` を tasks と atomic に置き換える。修復されたファイルの warning は消え、新たに失敗したファイルだけが残る。rescan 自体が fatal の場合は旧 tasks と旧 warnings を保持し、既存の watcher diagnostic を通知する。
 
 ### `get_tasks`
 
@@ -128,7 +145,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 **引数**: なし
 
-**戻り値**: `{ tasks, projections, milestoneProjections, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）、`projections` は filePath をキーにした task 集計、`milestoneProjections` は milestone 名をキーにした集計、`session` は watcher イベント検証の baseline。
+**戻り値**: `{ tasks, projections, milestoneProjections, loadWarnings, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）、`projections` は filePath をキーにした task 集計、`milestoneProjections` は milestone 名をキーにした集計、`session` は watcher イベント検証の baseline。
 
 > `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → `id` 昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ `id` 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。`milestoneProjections[*].taskFilePaths` も、この `tasks` を milestone ごとに絞り込んだ順序と一致する。`config` が `None` の場合のみ `TaskIndex::sorted_by_id` にフォールバックし、`tasks` / `taskFilePaths` ともに `id` 昇順とする。この場合は完了カラムも解決できないため `done` は 0。
 
@@ -153,6 +170,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       ]
     }
   },
+  "loadWarnings": [],
   "session": {
     "projectKey": "/home/user/specs",
     "generation": 1,
@@ -549,9 +567,9 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 | エラーケース | 発生条件 | 振る舞い | ログレベル |
 |:------------|:---------|:---------|:----------|
 | ファイルスキャンの致命的エラー | スキャン root が不在 / アクセス不可 / ディレクトリでない | `open_project` 経由でフロントエンドに「ディレクトリが見つかりません / アクセスできません / ディレクトリではありません」相当のエラーを返却 | ERROR |
-| 走査中の個別 I/O エラー | 走査中の特定ファイル / サブディレクトリの権限不足等 | 黙って skip し、走査を継続する（ログ出力は別 Issue で本格導入予定） | （現状は出力しない） |
-| ファイル読み込み失敗 | 権限不足、ファイルロック中 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
-| フロントマターパース失敗 | YAML構文エラー、必須フィールド欠損 | `log::warn!` で記録し該当ファイルだけ skip。`open_project` 全体は成功する。フロントエンドへの個別通知 / payload 同梱は別 Issue | WARN |
+| 走査中の個別 I/O エラー | `.md` 候補の entry / metadata 取得失敗 | `loadWarnings` に `scanEntryError` / `metadataError` を追加し、その項目を skip。ほかのファイルの走査を継続 | WARN |
+| ファイル読み込み失敗 | 個別 md の権限不足、ファイルロック中など | `loadWarnings` に `unreadableFile`/`taskReadFailed` を追加し、そのファイルだけ skip。残りのタスクで成功 | WARN |
+| フロントマターパース失敗 | YAML構文エラー、Task生成中の読み取り/解析失敗 | `loadWarnings` に `frontmatterParseFailed` を追加し、そのファイルだけ skip。残りのタスクで成功 | WARN |
 | ファイル書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに返却 | ERROR |
 | 監視の初期化失敗 | OS制限（inotify上限等） | `Watcher::start` 内部で recommended → poll の自動フォールバックを試み、両方失敗した場合のみ `open_project` から `ファイル監視の初期化に失敗しました: ...` を返す。AppState は **一切変更せず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する | ERROR |
 | 監視稼働中の backend 障害 | 監視対象の消失 / 資源枯渇 / 権限剥奪 / I/O エラー | `FsEvent::Error(WatcherFailure)` を `watcher-diagnostic`（`cacheMutating: false`）として FE へ配信し、error トーストで可視化する。`tasks_cache` と `revision` は変更しない | WARN |
@@ -759,5 +777,6 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.3 | 2026-08-01 | Issue #458: `open_project` / `get_tasks` の `loadWarnings`、partial success、config fallback、full rescan における warnings 置換契約を追加 | - |
 | 1.2 | 2026-07-31 | Issue #453: `ProjectSession` aggregate、session-local revision CAS、project-scoped writer gate、staged watcher swap、session-scoped resources と stale event guard を追加 | - |
 | 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection、同一 snapshot・board order、mutation / watcher resync の atomic 同期契約を追加 | - |
