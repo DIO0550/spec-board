@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvError};
 
+use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarningStage};
 use crate::project_session::{ProjectSessionSnapshot, SessionIdentity};
 use crate::state::project_generation::ProjectGeneration;
 use crate::state::project_key::ProjectKey;
@@ -18,7 +19,7 @@ use crate::state::{AppStateError, ResourceAccessError, SessionResourceAccess, Se
 use crate::task::parse::{
     default_status_for, normalized_task_file_path, task_from_markdown, TaskParseContext,
 };
-use crate::task::rebuild::rebuild_tasks_from_disk;
+use crate::task::rebuild::rebuild_tasks_from_disk_with_report;
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::Task;
 use crate::task::warning::has_parent_cycle_warning;
@@ -347,12 +348,12 @@ fn handle_rescan(
             return Ok(());
         };
         let default_status = default_status_for(snapshot.config());
-        let tasks = match rebuild_tasks_from_disk(
+        let report = match rebuild_tasks_from_disk_with_report(
             ctx.project_root.as_path(),
             &default_status,
             ctx.io.as_ref(),
         ) {
-            Ok(tasks) => tasks,
+            Ok(report) => report,
             Err(err) => {
                 log::warn!("watcher_event: full rescan failed: {err}");
                 return emit_diagnostic(
@@ -365,13 +366,22 @@ fn handle_rescan(
                 );
             }
         };
-        let cache: HashMap<PathBuf, Task> = tasks
+        let mut load_warnings = snapshot
+            .load_warnings()
+            .iter()
+            .filter(|warning| warning.stage == ProjectLoadWarningStage::Config)
+            .cloned()
+            .collect::<Vec<_>>();
+        load_warnings.extend(report.warnings);
+        let load_warnings = deduplicate_and_sort(load_warnings);
+        let cache: HashMap<PathBuf, Task> = report
+            .tasks
             .into_iter()
             .map(|task| (PathBuf::from(task.file_path.as_str()), task))
             .collect();
         let expected = snapshot.identity();
         let commit = match ctx.state.commit_session_write(&expected, move |session| {
-            session.replace_tasks(cache);
+            session.replace_tasks_and_load_warnings(cache, load_warnings);
         }) {
             Ok(committed) => RescanCommit::Committed(committed.identity().clone()),
             Err(SessionWriteError::Conflict(conflict)) => {

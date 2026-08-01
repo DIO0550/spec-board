@@ -18,6 +18,7 @@ const dataOf = (
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 });
 
 test("対象カラム内のタスクを filePaths 順に並べ替える", () => {

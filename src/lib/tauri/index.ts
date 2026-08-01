@@ -1,4 +1,12 @@
 // columnCommands
+
+// taskCommands
+export type {
+  ProjectLoadWarning,
+  ProjectLoadWarningCode,
+  ProjectLoadWarningPayloadInput,
+  ProjectLoadWarningStage,
+} from "@/domains/project-load-warning";
 export { getColumns } from "./columnCommands/getColumns";
 export type {
   ColumnRename,
@@ -40,8 +48,6 @@ export type {
   UpdateMilestoneArgs,
 } from "./milestoneCommands/types";
 export { updateMilestone } from "./milestoneCommands/updateMilestone";
-
-// taskCommands
 export { createTask } from "./taskCommands/createTask";
 export { deleteTask } from "./taskCommands/deleteTask";
 export { getTasks } from "./taskCommands/getTasks";

@@ -33,6 +33,7 @@ test("invoke が 'open_project' という command 名で呼ばれる", async () 
     columns: [],
     projections: {},
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -50,6 +51,7 @@ test("引数オブジェクト { path } がそのまま invoke 第 2 引数に�
     columns: [],
     projections: {},
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -81,6 +83,7 @@ test("成功時は Result.ok({ tasks, columns, projections }) を返す", async 
         taskFilePaths: ["tasks/x.md"],
       },
     },
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -114,6 +117,7 @@ test("成功時は Result.ok({ tasks, columns, projections }) を返す", async 
           },
         ],
       ]),
+      loadWarnings: [],
       session: {
         projectKey: "/home/user/specs",
         generation: 1,
@@ -130,6 +134,7 @@ test("projections が空オブジェクトでも成功する", async () => {
     columns: ["Todo"],
     projections: {},
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -147,6 +152,7 @@ test("projections が空オブジェクトでも成功する", async () => {
       columns: ["Todo"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      loadWarnings: [],
       session: {
         projectKey: "/home/user/specs",
         generation: 1,
@@ -170,6 +176,7 @@ test("milestoneProjections は特殊名と task path 順序を保つ Map に変�
     columns: [],
     projections: {},
     milestoneProjections,
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -236,6 +243,7 @@ test.each([
     columns: [],
     projections: {},
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 3,
@@ -258,4 +266,40 @@ test("invoke が Err なら session 変換は走らず Result.err になる", as
   const result = await openProject({ path: "/x" });
 
   expect(Result.isOk(result)).toBe(false);
+});
+
+test("unknown warning code / stage と null path は mapper で安全な domain 値になる", async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: [],
+    projections: {},
+    milestoneProjections: {},
+    loadWarnings: [
+      {
+        code: "futureWarningCode",
+        stage: "futureStage",
+        path: null,
+        message: "unknown warning",
+        recoverable: true,
+      },
+    ],
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 1,
+      revision: 1,
+      eventSeq: 0,
+    },
+  });
+
+  const result = await openProject({ path: "/abs" });
+
+  expect(Result.isOk(result) && result.value.loadWarnings).toEqual([
+    {
+      code: "unknown",
+      stage: "unknown",
+      path: null,
+      message: "unknown warning",
+      recoverable: true,
+    },
+  ]);
 });

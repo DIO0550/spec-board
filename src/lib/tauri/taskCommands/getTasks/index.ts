@@ -1,4 +1,5 @@
 import { MilestoneProjection } from "@/domains/milestone-projection";
+import { ProjectLoadWarning } from "@/domains/project-load-warning";
 import { TaskProjection } from "@/domains/task-projection";
 import { WatcherSession } from "@/domains/watcher-session";
 import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
@@ -18,6 +19,7 @@ const toGetTasksPayload = (payload: GetTasksRawPayload): GetTasksPayload => ({
   milestoneProjections: MilestoneProjection.fromPayload(
     payload.milestoneProjections,
   ),
+  loadWarnings: payload.loadWarnings.map(ProjectLoadWarning.fromPayload),
   session: WatcherSession.fromPayload(payload.session),
 });
 

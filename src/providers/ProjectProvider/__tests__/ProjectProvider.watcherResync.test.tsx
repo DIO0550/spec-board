@@ -112,6 +112,7 @@ const openPayload: OpenProjectPayload = {
   columns: ["Todo"],
   projections: initialTaskProjections,
   milestoneProjections: initialMilestoneProjections,
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
 };
 
@@ -127,6 +128,7 @@ const getTasksOk = (
     tasks,
     projections,
     milestoneProjections,
+    loadWarnings: [],
     session: {
       ...WATCHER_SESSION_FIXTURE,
       revision,
@@ -509,6 +511,7 @@ test("応答の session が別世代なら dispatch されない", async () => {
       tasks: [Task.fromPayload(makeTaskPayload("tasks/other.md", "O"))],
       projections: taskProjectionMap(1, 1),
       milestoneProjections: milestoneProjectionMap(1, 1, ["tasks/other.md"]),
+      loadWarnings: [],
       session: {
         ...WATCHER_SESSION_FIXTURE,
         generation: WATCHER_SESSION_FIXTURE.generation + 1,
@@ -623,6 +626,7 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
       tasks: [],
       projections: qOpenProjections,
       milestoneProjections: qOpenMilestoneProjections,
+      loadWarnings: [],
       session: {
         ...WATCHER_SESSION_FIXTURE,
         generation: WATCHER_SESSION_FIXTURE.generation + 1,
@@ -650,6 +654,7 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
       tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
       projections: qResyncProjections,
       milestoneProjections: qResyncMilestoneProjections,
+      loadWarnings: [],
       session: {
         ...WATCHER_SESSION_FIXTURE,
         generation: WATCHER_SESSION_FIXTURE.generation + 1,
@@ -784,6 +789,7 @@ test("旧 project の応答が新 session の resync より先に着地しても
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
       ...openPayload,
+      loadWarnings: [],
       session: { ...WATCHER_SESSION_FIXTURE, generation: nextGeneration },
     }),
   );
@@ -842,6 +848,7 @@ test("旧 project の応答が新 session の resync より先に着地しても
         tasks: [taskA],
         projections: new Map(),
         milestoneProjections: new Map(),
+        loadWarnings: [],
         session: {
           ...WATCHER_SESSION_FIXTURE,
           generation: nextGeneration,

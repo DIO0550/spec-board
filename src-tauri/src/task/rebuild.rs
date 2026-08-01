@@ -19,9 +19,14 @@
 
 use std::path::{Path, PathBuf};
 
-use spec_board_fs::task::file_scanner::{scan_md_files, ScanError};
+use spec_board_fs::task::file_scanner::{
+    scan_md_files_with_warnings, ScanError, ScanWarning, ScanWarningCode,
+};
 
 use crate::config::column_name::ColumnName;
+use crate::project::load_warning::{
+    deduplicate_and_sort, ProjectLoadWarning, ProjectLoadWarningCode, ProjectLoadWarningStage,
+};
 use crate::task::io::TaskIo;
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
 use crate::task::task_index::{Task, TaskIndex};
@@ -35,37 +40,87 @@ pub enum RebuildTasksError {
     Hierarchy(#[from] TaskParseError),
 }
 
-/// root 配下を再走査して `Task` 一覧を再構築する。
-///
-/// 個々の md の read / parse 失敗は `log::warn!` して skip し、全体は成功させる。
-/// 1 ファイルの破損で project 全体のロードを落とさないため。scan 自体の失敗と
-/// 親チェーンの深さ超過のみ `Err` になる。
+/// disk 上の md から再構築した task と recoverable warning の組。
+#[derive(Debug, PartialEq)]
+pub struct TaskRebuildReport {
+    pub tasks: Vec<Task>,
+    pub warnings: Vec<ProjectLoadWarning>,
+}
+
+/// root 配下を再走査して Task 一覧だけを返す互換 wrapper。
 pub fn rebuild_tasks_from_disk(
     root: &Path,
     default_status: &ColumnName,
     io: &dyn TaskIo,
 ) -> Result<Vec<Task>, RebuildTasksError> {
-    let md_paths = scan_md_files(root)?;
-    let tasks = collect_tasks(root, &md_paths, default_status, io);
-    Ok(TaskIndex::new(tasks)
-        .rebuild_derived_with_warnings()?
-        .into_tasks())
+    Ok(rebuild_tasks_from_disk_with_report(root, default_status, io)?.tasks)
 }
 
-/// 走査結果の `.md` から `Task` を集める。
+/// root 配下を再走査して task と、走査・read・parse の warning を再構築する。
+///
+/// 個々の md の read / parse 失敗は warning に変換して skip し、全体は成功させる。
+/// scan root の失敗と親チェーンの深さ超過・循環だけは従来どおり Err になる。
+pub fn rebuild_tasks_from_disk_with_report(
+    root: &Path,
+    default_status: &ColumnName,
+    io: &dyn TaskIo,
+) -> Result<TaskRebuildReport, RebuildTasksError> {
+    let scan = scan_md_files_with_warnings(root)?;
+    let mut warnings: Vec<ProjectLoadWarning> = scan
+        .warnings
+        .into_iter()
+        .map(project_warning_from_scan)
+        .collect();
+    let (tasks, task_warnings) = collect_tasks(root, &scan.items, default_status, io);
+    warnings.extend(task_warnings);
+    let tasks = TaskIndex::new(tasks)
+        .rebuild_derived_with_warnings()?
+        .into_tasks();
+
+    Ok(TaskRebuildReport {
+        tasks,
+        warnings: deduplicate_and_sort(warnings),
+    })
+}
+
+fn project_warning_from_scan(warning: ScanWarning) -> ProjectLoadWarning {
+    let code = match warning.code {
+        ScanWarningCode::EntryError => ProjectLoadWarningCode::ScanEntryError,
+        ScanWarningCode::MetadataError => ProjectLoadWarningCode::MetadataError,
+        ScanWarningCode::FileTooLarge => ProjectLoadWarningCode::FileTooLarge,
+        ScanWarningCode::BinaryFile => ProjectLoadWarningCode::BinaryFile,
+        ScanWarningCode::InvalidPath => ProjectLoadWarningCode::InvalidPath,
+        ScanWarningCode::UnreadableFile => ProjectLoadWarningCode::UnreadableFile,
+    };
+    ProjectLoadWarning::new(
+        code,
+        ProjectLoadWarningStage::Scan,
+        warning.path,
+        warning.message,
+    )
+}
+
+/// 走査結果の md から Task と warning を集める。
 fn collect_tasks(
     root: &Path,
     md_paths: &[PathBuf],
     default_status: &ColumnName,
     io: &dyn TaskIo,
-) -> Vec<Task> {
+) -> (Vec<Task>, Vec<ProjectLoadWarning>) {
     let mut tasks = Vec::with_capacity(md_paths.len());
+    let mut warnings = Vec::new();
     for rel_path in md_paths {
         let absolute = root.join(rel_path);
         let bytes = match io.read(&absolute) {
             Ok(bytes) => bytes,
             Err(err) => {
-                log::warn!("failed to read task file `{}`: {err}", absolute.display());
+                log::warn!("failed to read task file {}: {err}", absolute.display());
+                warnings.push(ProjectLoadWarning::new(
+                    ProjectLoadWarningCode::TaskReadFailed,
+                    ProjectLoadWarningStage::Read,
+                    Some(rel_path.to_string_lossy().into_owned()),
+                    err.to_string(),
+                ));
                 continue;
             }
         };
@@ -76,11 +131,17 @@ fn collect_tasks(
         match task_from_markdown(&bytes, &context) {
             Ok(task) => tasks.push(task),
             Err(err) => {
-                log::warn!("failed to parse task file `{}`: {err}", absolute.display());
+                log::warn!("failed to parse task file {}: {err}", absolute.display());
+                warnings.push(ProjectLoadWarning::new(
+                    ProjectLoadWarningCode::FrontmatterParseFailed,
+                    ProjectLoadWarningStage::Parse,
+                    Some(rel_path.to_string_lossy().into_owned()),
+                    err.to_string(),
+                ));
             }
         }
     }
-    tasks
+    (tasks, warnings)
 }
 
 #[cfg(test)]

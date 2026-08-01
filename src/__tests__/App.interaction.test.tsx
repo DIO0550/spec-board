@@ -136,6 +136,7 @@ const taskA: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo", "Done"],
@@ -210,6 +211,7 @@ test("loaded で tasks が 0 件のとき EmptyState type=empty-project が表�
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [],
       columns: ["Todo", "Done"],
@@ -655,6 +657,7 @@ test("プロジェクト切替: A で task 選択中に B を開いても stale 
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/project-b"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [taskAInProjectB],
       columns: ["Todo", "Done"],
@@ -794,6 +797,7 @@ const childTask: Task = Task.fromPayload({
 });
 
 const parentChildPayload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [parentTask, childTask],
   columns: ["Todo", "Done"],

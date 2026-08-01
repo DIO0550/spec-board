@@ -4,6 +4,7 @@ import {
   type MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
 import { ProjectData } from "@/domains/project-data";
+import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -59,6 +60,7 @@ const baseData = (
   projections,
   milestoneProjections,
   openRequestId: 7,
+  loadWarnings: [],
   watcherSession: session,
 });
 
@@ -252,4 +254,52 @@ test("tasks と両 Map が等価なら resyncTasks は ProjectData 参照を保�
 
   expect(next).toBe(data);
   expect(next.milestoneProjections.get("v1")).toBe(milestoneEntry);
+});
+
+const loadWarning = (message: string): ProjectLoadWarning => ({
+  code: "unreadableFile",
+  stage: "read",
+  path: "tasks/broken.md",
+  message,
+  recoverable: true,
+});
+
+test("同一fingerprintのloadWarningsではProjectDataと配列参照を保持する", () => {
+  const previous = [loadWarning("読めません")];
+  const data = {
+    ...baseData([Task.fromPayload(payload())], new Map()),
+    loadWarnings: previous,
+  };
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [Task.fromPayload(payload())],
+    projections: new Map(),
+    milestoneProjections: new Map(),
+    loadWarnings: [loadWarning("読めません")],
+  });
+
+  expect(next).toBe(data);
+  expect(next.loadWarnings).toBe(previous);
+});
+
+test("loadWarningsは内容変更と空配列への遷移をatomicに反映する", () => {
+  const data = {
+    ...baseData([Task.fromPayload(payload())], new Map()),
+    loadWarnings: [loadWarning("最初")],
+  };
+  const changed = ProjectData.resyncTasks(data, {
+    tasks: [Task.fromPayload(payload())],
+    projections: new Map(),
+    milestoneProjections: new Map(),
+    loadWarnings: [loadWarning("次")],
+  });
+  const cleared = ProjectData.resyncTasks(changed, {
+    tasks: [Task.fromPayload(payload())],
+    projections: new Map(),
+    milestoneProjections: new Map(),
+    loadWarnings: [],
+  });
+
+  expect(changed.loadWarnings).toHaveLength(1);
+  expect(changed.loadWarnings[0].message).toBe("次");
+  expect(cleared.loadWarnings).toEqual([]);
 });

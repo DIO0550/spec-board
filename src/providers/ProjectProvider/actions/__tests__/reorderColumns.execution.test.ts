@@ -45,6 +45,7 @@ const makeData = (): ProjectData => ({
   projections: new Map(),
   milestoneProjections: new Map(),
   openRequestId: 0,
+  loadWarnings: [],
 });
 
 type Harness = {

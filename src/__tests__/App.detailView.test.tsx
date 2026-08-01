@@ -122,6 +122,7 @@ const taskA: Task = Task.fromPayload({
 });
 
 const payload: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskA],
   columns: ["Todo", "Doing", "Done"],
@@ -352,6 +353,7 @@ test("detail 表示中にプロジェクト切替で選択タスク消失→boar
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/other"));
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
+      loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
       tasks: [otherTask],
       columns: ["Todo", "Doing", "Done"],

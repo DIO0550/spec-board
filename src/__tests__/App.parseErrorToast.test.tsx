@@ -162,6 +162,7 @@ const taskWithBrokenLink = Task.fromPayload({
 });
 
 const payloadWithParseError: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithParseError],
   columns: ["Todo", "Done"],
@@ -169,6 +170,7 @@ const payloadWithParseError: OpenProjectPayload = {
   milestoneProjections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskClean],
   columns: ["Todo", "Done"],
@@ -176,6 +178,7 @@ const payloadClean: OpenProjectPayload = {
   milestoneProjections: new Map(),
 };
 const payloadWithBoth: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithParseError, taskWithBrokenLink],
   columns: ["Todo", "Done"],

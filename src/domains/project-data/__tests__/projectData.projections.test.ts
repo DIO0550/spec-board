@@ -55,6 +55,7 @@ const dataWith = (
   projections,
   milestoneProjections,
   openRequestId: 1,
+  loadWarnings: [],
 });
 
 const replaceTaskProjections = (

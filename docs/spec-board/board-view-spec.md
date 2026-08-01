@@ -174,6 +174,12 @@ stateDiagram-v2
 | ファイル書き込み失敗 | ディスク容量不足、権限エラー | トースト通知（書き込み系コマンドは下記の一元化対象） | ファイルシステムの状態を確認 |
 | リンク切れ (プロジェクトロード時) | 開いたプロジェクトに `parent` / `links` / `children` / `reverseLinks` のいずれかが解決できないタスクが N >= 1 件含まれる | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「リンク切れが N 件あります」を 1 回表示。同一 `loadedPath` 内では再発火しない（別 project に切替後、N >= 1 なら再度 1 回発火する） | 詳細（全画面 2 ペイン）で該当 path を確認し、リンクを削除するか参照先ファイルを作成。詳細は [task-card-spec.md](./task-card-spec.md) の「エラー表示」セクション参照 |
 
+### プロジェクト読み込み時の注意
+
+`open_project` / `get_tasks` が返す `loadWarnings` は、読み込みを継続できた部分失敗を表す。loaded board のメイン領域上部に `ProjectLoadWarnings` の compact persistent panel を表示し、警告が 0 件なら panel 自体を描画しない。panel は初期状態では件数だけを示し、「原因を確認する」を展開すると code の表示名、stage、project root 相対 path（path が `null` の場合は「プロジェクト全体」）、message を確認できる。unknown code / stage や空 message でも汎用ラベルへ安全にフォールバックし、長い path / message はレイアウトを壊さず折り返す。
+
+初回 open と full rescan 後の warnings 更新では、同じ project path・同じ warnings fingerprint を重ねて通知せず、内容が変わった場合だけ `読み込み時の注意が N 件あります` の warning toast を表示する。空配列への遷移では toast を出さず panel を消す。project を切り替えた場合は path ごとに state と通知を分離し、旧 project の warnings を新 project に表示しない。panel は `settings` / `create` / no-project の画面には表示しない。
+
 ### 書き込み失敗トーストの一元化
 
 書き込み（ミューテーション）系コマンドの失敗トーストは、各ハンドラではなく IPC ラッパ層（`invokeWrapped`）に集約して発火する。これにより失敗通知の source of truth を一本化し、握り潰し・通知の不統一・二重通知を防ぐ。
@@ -285,3 +291,9 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 - [task-card-spec.md](./task-card-spec.md) - タスクカードの表示内容・詳細（全画面 2 ペイン）・フォーム仕様
 - [file-system-spec.md](./file-system-spec.md) - ファイル監視・変更検知の仕組み
 - [task-format-spec.md](./task-format-spec.md) - mdファイルのフォーマットとフロントマターの定義
+
+## 変更履歴
+
+| バージョン | 日付 | 変更内容 | 変更者 |
+|:-----------|:-----|:---------|:-------|
+| 1.3 | 2026-08-01 | Issue #458: loaded board の `ProjectLoadWarnings` persistent panel、`loadWarnings` summary toast、fingerprint抑制とproject切替 isolationを追加 | - |

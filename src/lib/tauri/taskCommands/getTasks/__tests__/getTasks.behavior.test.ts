@@ -27,6 +27,7 @@ const emptyRawPayload = {
   tasks: [],
   projections: {},
   milestoneProjections: {},
+  loadWarnings: [],
   session: {
     projectKey: "/home/user/specs",
     generation: 1,
@@ -68,6 +69,7 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
         taskFilePaths: ["tasks/x.md"],
       },
     },
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -103,6 +105,7 @@ test("projections は Map に変換される", async () => {
       },
     },
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 1,
@@ -129,6 +132,7 @@ test("tasks / projections が空でも成功する", async () => {
       tasks: [],
       projections: new Map(),
       milestoneProjections: new Map(),
+      loadWarnings: [],
       session: {
         projectKey: "/home/user/specs",
         generation: 1,
@@ -184,6 +188,7 @@ test("session の 4 フィールドが domain 型として透過する", async (
     tasks: [],
     projections: {},
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
       generation: 3,
@@ -207,6 +212,7 @@ test("session の値が 0 でも欠落しない", async () => {
     tasks: [],
     projections: {},
     milestoneProjections: {},
+    loadWarnings: [],
     session: {
       projectKey: "",
       generation: 0,
@@ -223,4 +229,31 @@ test("session の値が 0 でも欠落しない", async () => {
     revision: 0,
     eventSeq: 0,
   });
+});
+
+test("unknown warning code / stage と null path は mapper で安全な domain 値になる", async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    ...emptyRawPayload,
+    loadWarnings: [
+      {
+        code: "futureWarningCode",
+        stage: "futureStage",
+        path: null,
+        message: "unknown warning",
+        recoverable: true,
+      },
+    ],
+  });
+
+  const result = await getTasks();
+
+  expect(Result.isOk(result) && result.value.loadWarnings).toEqual([
+    {
+      code: "unknown",
+      stage: "unknown",
+      path: null,
+      message: "unknown warning",
+      recoverable: true,
+    },
+  ]);
 });

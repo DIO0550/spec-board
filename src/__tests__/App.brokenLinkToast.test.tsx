@@ -140,6 +140,7 @@ const taskClean = Task.fromPayload({
 });
 
 const payloadWithBroken: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskWithBrokenParent],
   columns: ["Todo", "Done"],
@@ -147,6 +148,7 @@ const payloadWithBroken: OpenProjectPayload = {
   milestoneProjections: new Map(),
 };
 const payloadClean: OpenProjectPayload = {
+  loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
   tasks: [taskClean],
   columns: ["Todo", "Done"],

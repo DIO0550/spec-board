@@ -34,6 +34,7 @@ const loadedState: ProjectState = {
     projections: new Map(),
     milestoneProjections: new Map(),
     openRequestId: 1,
+    loadWarnings: [],
     watcherSession: session,
   },
 };

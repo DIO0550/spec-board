@@ -3,6 +3,7 @@ import {
   type MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
 import type { ProjectColumnsChange } from "@/domains/project-columns";
+import { ProjectLoadWarning } from "@/domains/project-load-warning";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { TaskLinks } from "@/domains/task-links";
 import { parentReferencesTaskPath } from "@/domains/task-path";
@@ -46,6 +47,8 @@ export type ProjectData = {
    * `openRequestId`（FE 採番）とは由来が異なる（BE 採番）ので混同しないこと。
    */
   watcherSession: WatcherSession;
+  /** open/get が返した、継続可能な読み込み警告。 */
+  loadWarnings: ProjectLoadWarning[];
 };
 
 /**
@@ -367,6 +370,15 @@ const applyTaskDeletedToTask = (task: Task, filePath: string): Task =>
     filePath,
   );
 
+const mergeLoadWarnings = (
+  previous: readonly ProjectLoadWarning[],
+  next: readonly ProjectLoadWarning[],
+): ProjectLoadWarning[] =>
+  ProjectLoadWarning.fingerprint(previous) ===
+  ProjectLoadWarning.fingerprint(next)
+    ? (previous as ProjectLoadWarning[])
+    : [...next];
+
 export const ProjectData = {
   /**
    * 作成された task を追加し、親 task の children も同期する。
@@ -496,15 +508,31 @@ export const ProjectData = {
   }),
 
   /**
-   * BE から再取得した両 projection を同じ snapshot として差し替える。
-   * tasks / columns には触れない（tasks の真実源は差分更新経路のまま）。
+   * BE から再取得した load warnings を差し替える。
+   * 同じ fingerprint の warning は既存の配列・要素参照を保持する。
    *
-   * 全エントリが等価なら **`data` そのもの**を返す。ここで `{ ...data }` を返すと
-   * `ProjectState.updateData` が新 state を作り、`store.dispatch` が listener を
-   * 無条件に通知して全ツリーが再レンダーする。
    * @param data - 現在の ProjectData
-   * @param snapshot - 再取得した task / milestone projection maps
-   * @returns 変化が無ければ `data` そのもの、あれば両 projections を反映した新 ProjectData
+   * @param loadWarnings - 再取得した load warnings
+   * @returns 変化が無ければ `data` そのもの、あれば warnings を反映した新 ProjectData
+   */
+  replaceLoadWarnings: (
+    data: ProjectData,
+    loadWarnings: ProjectLoadWarning[],
+  ): ProjectData => {
+    const merged = mergeLoadWarnings(data.loadWarnings, loadWarnings);
+    if (merged === data.loadWarnings) {
+      return data;
+    }
+    return { ...data, loadWarnings: merged };
+  },
+
+  /**
+   * BE から再取得した task / milestone projection maps を差し替える。
+   * 変更がなければ現在の ProjectData 参照を保持する。
+   *
+   * @param data - 現在の ProjectData
+   * @param snapshot - 再取得した projection maps
+   * @returns projection 更新後の ProjectData
    */
   replaceProjections: (
     data: ProjectData,
@@ -552,6 +580,7 @@ export const ProjectData = {
       tasks: Task[];
       projections: TaskProjectionMap;
       milestoneProjections: MilestoneProjectionMap;
+      loadWarnings?: ProjectLoadWarning[];
     },
   ): ProjectData => {
     const tasks = mergeTasks(data.tasks, snapshot.tasks);
@@ -563,14 +592,19 @@ export const ProjectData = {
       data.milestoneProjections,
       snapshot.milestoneProjections,
     );
+    const loadWarnings = mergeLoadWarnings(
+      data.loadWarnings,
+      snapshot.loadWarnings ?? data.loadWarnings,
+    );
     if (
       tasks === data.tasks &&
       projections === data.projections &&
-      milestoneProjections === data.milestoneProjections
+      milestoneProjections === data.milestoneProjections &&
+      loadWarnings === data.loadWarnings
     ) {
       return data;
     }
-    return { ...data, tasks, projections, milestoneProjections };
+    return { ...data, tasks, projections, milestoneProjections, loadWarnings };
   },
 
   /**

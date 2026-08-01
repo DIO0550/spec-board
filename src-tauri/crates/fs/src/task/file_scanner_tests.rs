@@ -439,3 +439,83 @@ fn scan_md_files_skips_unreadable_file_silently() {
         assert_eq!(collected, vec!["locked.md", "readable.md"]);
     }
 }
+
+// ── structured warnings ─────────────────────────────────────────
+
+#[test]
+fn scan_md_files_with_warnings_reports_rejected_entries() {
+    let dir = TempDir::new().unwrap();
+    make_file_with_bytes(dir.path(), "ok.md", b"ok");
+    make_file_with_bytes(dir.path(), "binary.md", b"hello\x00world");
+    make_file_with_size(dir.path(), "too-large.md", 1024 * 1024 + 1);
+
+    let outcome = scan_md_files_with_warnings(dir.path()).unwrap();
+
+    assert_eq!(collect_sorted_relative(&outcome.items), vec!["ok.md"]);
+    assert!(outcome.warnings.iter().any(|warning| {
+        warning.code == ScanWarningCode::BinaryFile && warning.path.as_deref() == Some("binary.md")
+    }));
+    assert!(outcome.warnings.iter().any(|warning| {
+        warning.code == ScanWarningCode::FileTooLarge
+            && warning.path.as_deref() == Some("too-large.md")
+    }));
+}
+
+#[cfg(unix)]
+#[test]
+fn scan_md_files_with_warnings_reports_invalid_utf8_paths() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let dir = TempDir::new().unwrap();
+    let invalid_name = OsString::from_vec(b"invalid\xff.md".to_vec());
+    std::fs::write(dir.path().join(&invalid_name), b"content").unwrap();
+
+    let outcome = scan_md_files_with_warnings(dir.path()).unwrap();
+
+    assert!(outcome.items.is_empty());
+    assert!(outcome
+        .warnings
+        .iter()
+        .any(|warning| { warning.code == ScanWarningCode::InvalidPath && warning.path.is_none() }));
+}
+
+#[cfg(unix)]
+#[test]
+fn scan_md_files_with_warnings_reports_unreadable_files_when_os_denies_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    make_file_with_bytes(dir.path(), "locked.md", b"secret");
+    let locked = dir.path().join("locked.md");
+    let mut permissions = std::fs::metadata(&locked).unwrap().permissions();
+    permissions.set_mode(0o000);
+    std::fs::set_permissions(&locked, permissions).unwrap();
+    let actually_unreadable = std::fs::File::open(&locked).is_err();
+
+    let outcome = scan_md_files_with_warnings(dir.path());
+
+    let mut restore = std::fs::metadata(&locked).unwrap().permissions();
+    restore.set_mode(0o644);
+    std::fs::set_permissions(&locked, restore).unwrap();
+
+    let outcome = outcome.unwrap();
+    if actually_unreadable {
+        assert!(outcome.warnings.iter().any(|warning| {
+            warning.code == ScanWarningCode::UnreadableFile
+                && warning.path.as_deref() == Some("locked.md")
+        }));
+    } else {
+        assert_eq!(collect_sorted_relative(&outcome.items), vec!["locked.md"]);
+    }
+}
+
+#[test]
+fn scan_md_files_with_warnings_keeps_root_errors_fatal() {
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("missing");
+
+    let error = scan_md_files_with_warnings(&missing).unwrap_err();
+
+    assert!(matches!(error, ScanError::Io { .. }));
+}
