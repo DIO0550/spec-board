@@ -32,7 +32,7 @@ pub struct TaskProjection {
     ///
     /// **並び順の契約**: `file_path` 昇順。`Task.children` の順序にも
     /// `TaskIndex.tasks` の順序にも依存しない。`tasks` は
-    /// `test fixture task snapshot`（`HashMap::values()`）由来で順序が非決定的な
+    /// `HashMap::values()` 由来で順序が非決定的な
     /// ため、明示的に整列しないと payload が実行ごとに揺れる。
     ///
     /// **値の契約**: 親が frontmatter に書いた raw な参照文字列ではなく、
