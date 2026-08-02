@@ -147,6 +147,9 @@ test("壊れた full markdown は raw/rendered を表示せずエラーにする
     container?.querySelector('[data-testid="preview-error"]'),
   ).not.toBeNull();
   expect(container?.querySelector('[data-testid="preview-raw"]')).toBeNull();
+  expect(
+    container?.querySelector('[data-testid="preview-meta"]')?.textContent,
+  ).toContain("0B");
 });
 
 test("pv-collapse クリックで onCollapse が 1 回呼ばれる", () => {

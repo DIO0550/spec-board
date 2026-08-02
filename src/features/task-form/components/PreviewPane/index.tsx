@@ -34,10 +34,12 @@ export const PreviewPane = (props: PreviewPaneProps) => {
       props.state.kind === "ready" ? splitPreviewMarkdown(markdown) : null,
     [markdown, props.state.kind],
   );
-  const byteLength = useMemo(
-    () => new TextEncoder().encode(markdown).length,
-    [markdown],
-  );
+  const byteLength = useMemo(() => {
+    if (props.state.kind !== "ready" || split === null) {
+      return 0;
+    }
+    return new TextEncoder().encode(markdown).length;
+  }, [markdown, props.state.kind, split]);
   const hasError = props.state.kind === "error" || split === null;
   const errorMessage =
     props.state.kind === "error"
