@@ -9,7 +9,7 @@ use std::fmt;
 use thiserror::Error;
 
 use crate::task::create::error::{ContentRejectReason, CreateTaskError};
-use crate::task::frontmatter::{serialize as serialize_frontmatter, Frontmatter, Parsed};
+use crate::task::document::{TaskDocument, TaskDraft};
 use crate::task::task_index::CreateTaskIntent;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,7 @@ impl TaskContent {
         resolved_parent_path: Option<&str>,
         normalized_links: &[String],
     ) -> Result<Self, CreateTaskError> {
-        let raw = render_markdown_from_intent(intent, resolved_parent_path, normalized_links);
+        let raw = render_markdown_from_intent(intent, resolved_parent_path, normalized_links)?;
         Self::try_new(raw).map_err(|err| match err {
             TaskContentError::TooLarge { size, .. } => CreateTaskError::ContentNotScannerEligible {
                 reason: ContentRejectReason::TooLarge { size },
@@ -86,51 +86,29 @@ fn render_markdown_from_intent(
     intent: &CreateTaskIntent,
     resolved_parent_path: Option<&str>,
     normalized_links: &[String],
-) -> String {
-    use serde_yaml_ng::{Mapping, Value};
-
-    let mut extras = Mapping::new();
-    extras.insert(
-        Value::String("title".into()),
-        Value::String(intent.title.as_str().to_string()),
-    );
-    extras.insert(
-        Value::String("status".into()),
-        Value::String(intent.status.as_str().to_string()),
-    );
-    if let Some(parent_path) = resolved_parent_path {
-        extras.insert(
-            Value::String("parent".into()),
-            Value::String(parent_path.to_string()),
-        );
-    }
-    // due は typed フィールドではなく extras 保持（既存の表示・warning 経路を維持）。
-    // 未入力（None / 空文字）のときは due キー自体を出力しない。
-    if let Some(due) = intent.due.as_deref().filter(|s| !s.is_empty()) {
-        extras.insert(Value::String("due".into()), Value::String(due.to_string()));
-    }
-
-    let frontmatter = Frontmatter {
+) -> Result<String, CreateTaskError> {
+    let document = TaskDocument::from_draft(TaskDraft {
+        title: intent.title.as_str().to_string(),
+        status: intent.status.as_str().to_string(),
         priority: intent.priority,
-        // 空文字は未割当として frontmatter から省く（lenient deserializer と対称）。
-        milestone: intent
-            .milestone
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned),
-        labels: intent.labels.iter().map(|l| l.to_string()).collect(),
+        labels: intent
+            .labels
+            .iter()
+            .map(|label| label.as_str().to_string())
+            .collect(),
+        milestone: intent.milestone.clone(),
+        parent: resolved_parent_path.map(str::to_owned),
         links: normalized_links.to_vec(),
-        // 下書きのときのみ draft: true を出力する（false は書かない）。
-        draft: intent.draft.then_some(true),
-        extras,
-    };
+        due: intent.due.clone(),
+        draft: intent.draft,
+        body: intent.body.clone().unwrap_or_default(),
+    });
 
-    let body = match intent.body.as_deref() {
-        Some(b) if !b.is_empty() => format!("\n{b}"),
-        _ => String::new(),
-    };
-
-    serialize_frontmatter(&Parsed { frontmatter, body })
+    document
+        .render()
+        .map_err(|error| CreateTaskError::DocumentRender {
+            reason: error.to_string(),
+        })
 }
 
 impl fmt::Display for TaskContent {

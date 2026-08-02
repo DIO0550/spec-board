@@ -30,6 +30,8 @@ pub enum CreateTaskError {
     },
     #[error("作成しようとしたタスク本文が scanner の対象外です: {reason}")]
     ContentNotScannerEligible { reason: ContentRejectReason },
+    #[error("task document render failed: {reason}")]
+    DocumentRender { reason: String },
 }
 
 impl CreateTaskError {
@@ -71,6 +73,8 @@ pub enum CreateTaskCommandError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Frontmatter(#[from] FrontmatterError),
+    #[error(transparent)]
+    Document(#[from] crate::task::document::TaskDocumentError),
     #[error(transparent)]
     SessionConflict(#[from] SessionConflict),
     #[error(transparent)]

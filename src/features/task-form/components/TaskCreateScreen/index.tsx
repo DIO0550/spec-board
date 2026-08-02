@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
+import { usePreviewTaskMarkdown } from "@/features/task-form/hooks/usePreviewTaskMarkdown";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
-import { LabelsField } from "@/features/task-form/lib/fields/labels";
-import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import type { TaskFormValues } from "@/features/task-form/types";
-import type { PreviewTaskFilenamePayload } from "@/lib/tauri/taskCommands/types";
+import type {
+  PreviewTaskFilenamePayload,
+  PreviewTaskMarkdownParams,
+} from "@/lib/tauri/taskCommands/types";
 import {
   type ProjectError,
   projectErrorMessage,
@@ -21,8 +23,8 @@ import { TaskFormFooter } from "./TaskFormFooter";
 import { TaskSubbar } from "./TaskSubbar";
 import { TaskTopbar } from "./TaskTopbar";
 
-/** プレビューへ渡すフォーム現在値（branded frontmatter + 本文）。 */
-type PreviewValues = { frontmatter: PreviewFrontmatter; body: string };
+/** プレビューへ渡すフォーム現在値（BE codec 用 draft）。 */
+type PreviewValues = PreviewTaskMarkdownParams;
 
 /** プレビュー幅の既定値（px）。 */
 const DEFAULT_PREVIEW_WIDTH = 480;
@@ -69,16 +71,14 @@ export type TaskCreateScreenProps = {
  * @returns 空フォーム相当のプレビュー値
  */
 const buildInitialPreview = (initialStatus: string): PreviewValues => ({
-  frontmatter: PreviewFrontmatter.from({
-    title: "",
-    status: initialStatus,
-    priority: "",
-    parent: undefined,
-    labels: LabelsField.initial([]),
-    links: [],
-    due: "",
-    draft: false,
-  }),
+  title: "",
+  status: initialStatus,
+  priority: undefined,
+  labels: [],
+  parent: undefined,
+  links: [],
+  due: undefined,
+  draft: false,
   body: "",
 });
 
@@ -167,6 +167,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const [previewWidth, setPreviewWidth] = useState(DEFAULT_PREVIEW_WIDTH);
 
   const previewFileName = previewFileNameLabel(pathPreview);
+  const previewMarkdown = usePreviewTaskMarkdown(previewValues);
 
   const handleSubmit = useCallback(
     async (values: TaskFormValues) => {
@@ -308,11 +309,8 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
             </div>
           </div>
           <TaskFormFooter
-            saveHint={footerSaveHint(
-              previewValues.frontmatter.title,
-              pathPreview,
-            )}
-            canSubmit={previewValues.frontmatter.title.trim() !== ""}
+            saveHint={footerSaveHint(previewValues.title, pathPreview)}
+            canSubmit={previewValues.title.trim() !== ""}
             isSubmitting={isSubmitting}
             onCancel={requestClose}
             onSubmit={() => submitFormElement(formRef.current)}
@@ -321,8 +319,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
         {previewVisible && <PreviewResizer onWidthChange={setPreviewWidth} />}
         {previewVisible && (
           <PreviewPane
-            frontmatter={previewValues.frontmatter}
-            body={previewValues.body}
+            state={previewMarkdown}
             fileName={previewFileName}
             onCollapse={() => setPreviewVisible(false)}
           />

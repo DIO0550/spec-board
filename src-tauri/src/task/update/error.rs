@@ -39,6 +39,8 @@ pub enum UpdateTaskError {
     },
     #[error("content not scanner eligible: {reason}")]
     ContentNotScannerEligible { reason: ContentRejectReason },
+    #[error("task document render failed: {0}")]
+    DocumentRender(String),
 }
 
 #[derive(Debug, Error)]

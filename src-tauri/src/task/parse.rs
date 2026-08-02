@@ -11,7 +11,7 @@ use thiserror::Error;
 use crate::config::column_name::ColumnName;
 use crate::config::Config;
 use crate::task::due::{Due, DueFromRaw};
-use crate::task::frontmatter::{parse_bytes, FrontmatterError, Parsed};
+use crate::task::frontmatter::{parse_bytes, FrontmatterError, Parsed, TYPED_KEYS};
 use crate::task::label::Label;
 use crate::task::path_normalization::normalize_path_parts;
 use crate::task::task_file_path::TaskFilePath;
@@ -219,18 +219,6 @@ fn convert_extras(
     parsed: &Parsed,
     warnings: &mut Vec<TaskWarning>,
 ) -> BTreeMap<String, serde_json::Value> {
-    // frontmatter.rs の build_mapping にも同名・同内容の定数がある。
-    // typed キーを追加・変更する場合は両方を同時に更新すること。
-    const TYPED_KEYS: [&str; 8] = [
-        "title",
-        "status",
-        "priority",
-        "labels",
-        "milestone",
-        "parent",
-        "links",
-        "draft",
-    ];
     let mut extras = BTreeMap::new();
 
     for (key, value) in &parsed.frontmatter.extras {

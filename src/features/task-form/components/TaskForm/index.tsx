@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/Button";
-import { LabelsField } from "@/components/fields/LabelsField";
+import { LabelsField as LabelsFieldView } from "@/components/fields/LabelsField";
 import { PriorityField } from "@/components/fields/PriorityField";
 import { StatusField } from "@/components/fields/StatusField";
 import { Priority } from "@/domains/priority";
@@ -11,11 +11,14 @@ import { useLinksInput } from "@/features/task-form/hooks/useLinksInput";
 import { usePreviewTaskFilename } from "@/features/task-form/hooks/usePreviewTaskFilename";
 import { useTaskFormFields } from "@/features/task-form/hooks/useTaskFormFields";
 import { FileNameField } from "@/features/task-form/lib/fields/fileName";
+import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
-import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
 import type { TaskFormValues } from "@/features/task-form/types";
 import { useLabelList } from "@/hooks/useLabelList";
-import type { PreviewTaskFilenamePayload } from "@/lib/tauri/taskCommands/types";
+import type {
+  PreviewTaskFilenamePayload,
+  PreviewTaskMarkdownParams,
+} from "@/lib/tauri/taskCommands/types";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import { SavePathPreview as SavePathPreviewView } from "./SavePathPreview";
@@ -63,12 +66,9 @@ type TaskFormProps = {
    * フォーム現在値の変化を親へ通知するコールバック（ライブプレビュー用）。
    * mount 直後にも初期値で一度発火する。
    * 値変化時の `useEffect` 依存に含めるため、参照安定なコールバックを渡すこと。
-   * @param payload - branded `PreviewFrontmatter`（`PreviewFrontmatter.from` で構築）と本文 `body` を分離した構造化 payload。priority は string、未コミット label も含む
+   * @param payload - BE の preview_task_markdown に渡す構造化 draft。priority は string、未コミット label も含む
    */
-  onValuesChange?: (payload: {
-    frontmatter: PreviewFrontmatter;
-    body: string;
-  }) => void;
+  onValuesChange?: (payload: PreviewTaskMarkdownParams) => void;
   /** form 要素への ref（キーボードショートカットからの requestSubmit 用） */
   formRef?: RefObject<HTMLFormElement | null>;
   /**
@@ -159,16 +159,14 @@ export const TaskForm = ({
       return;
     }
     onValuesChange({
-      frontmatter: PreviewFrontmatter.from({
-        title: previewTitle,
-        status: previewStatus,
-        priority: previewPriority,
-        parent: parentValue,
-        labels: labels.state,
-        links: links.links,
-        due: previewDue,
-        draft: previewDraft,
-      }),
+      title: previewTitle,
+      status: previewStatus,
+      priority: previewPriority === "" ? undefined : previewPriority,
+      labels: LabelsField.finalize(labels.state),
+      parent: parentValue === "" ? undefined : parentValue,
+      links: links.links,
+      due: previewDue === "" ? undefined : previewDue,
+      draft: previewDraft,
       body: previewBody,
     });
   }, [
@@ -270,7 +268,7 @@ export const TaskForm = ({
         onChange={(p) => fields.dispatch({ type: "priority", value: p ?? "" })}
         disabled={isSubmitting}
       />
-      <LabelsField
+      <LabelsFieldView
         label="ラベル"
         value={labels.state.labels}
         suggestions={labelDefinitions}

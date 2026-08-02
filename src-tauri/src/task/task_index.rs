@@ -17,11 +17,12 @@ use crate::task::add_link::error::AddLinkError;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
 use crate::task::delete::error::DeleteTaskError;
+use crate::task::document::{Patch, TaskDocument, TaskPatch};
 use crate::task::due::Due;
-use crate::task::frontmatter::{self, Parsed, Priority};
+use crate::task::frontmatter::{Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::move_task::error::MoveTaskError;
-use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
+use crate::task::parse::{TaskParseContext, TaskParseError};
 use crate::task::path_lookup::{
     append_child_to_parent, clear_children, normalize_link_path_for_lookup,
     normalize_parent_path_for_lookup, normalize_relative_path_for_input,
@@ -970,7 +971,7 @@ impl TaskIndex {
     ///
     /// 1. parent 存在チェック（cache key 探索）→ なければ `ParentNotFound`
     /// 2. parent 置換後の `Vec<Task>` に対して `validate_parent_hierarchy`
-    /// 3. patch 適用 + `frontmatter::serialize` で `String` を構築
+    /// 3. patch 適用 + `TaskDocument::render` で `String` を構築
     /// 4. `TaskContent::try_new(String)` で eligibility 検証
     /// 5. `task_from_parsed` を呼び直して updated_task を再構築し warning を再生成
     pub(crate) fn plan_update(
@@ -980,60 +981,11 @@ impl TaskIndex {
         existing: &Task,
         existing_parsed: Parsed,
     ) -> Result<UpdateTaskOutcome, UpdateTaskError> {
-        let Parsed {
-            mut frontmatter,
-            mut body,
-        } = existing_parsed;
-
-        if let Some(title) = &intent.title {
-            frontmatter.extras.insert(
-                serde_yaml_ng::Value::String("title".into()),
-                serde_yaml_ng::Value::String(title.clone()),
-            );
-        }
-        if let Some(status) = &intent.status {
-            frontmatter.extras.insert(
-                serde_yaml_ng::Value::String("status".into()),
-                serde_yaml_ng::Value::String(status.clone()),
-            );
-        }
-        if let Some(priority) = intent.priority {
-            frontmatter.priority = Some(priority);
-        }
-        // milestone は 3 値セマンティクス: None = 不変 / Some("") = クリア / Some(name) = 設定。
-        if let Some(milestone) = &intent.milestone {
-            if milestone.is_empty() {
-                frontmatter.milestone = None;
-            } else {
-                frontmatter.milestone = Some(milestone.clone());
-            }
-        }
-        // draft は 3 値セマンティクス: None = 不変 / Some(true) = 設定 / Some(false) = 解除。
-        // 解除時は frontmatter から draft キー自体を除去する（draft: false は書かない）。
-        if let Some(draft) = intent.draft {
-            if draft {
-                frontmatter.draft = Some(true);
-            } else {
-                frontmatter.draft = None;
-            }
-        }
-        if let Some(labels) = &intent.labels {
-            frontmatter.labels = labels.clone();
-        }
+        let mut document = TaskDocument::from_parsed(existing_parsed);
         let parent_changed = match &intent.parent {
             None => false,
-            Some(s) if s.is_empty() => {
-                let removed = frontmatter
-                    .extras
-                    .remove(serde_yaml_ng::Value::String("parent".into()))
-                    .is_some();
-                removed || existing.parent.is_some()
-            }
+            Some(s) if s.is_empty() => document.has_extra("parent") || existing.parent.is_some(),
             Some(s) => {
-                frontmatter.extras.insert(
-                    serde_yaml_ng::Value::String("parent".into()),
-                    serde_yaml_ng::Value::String(s.clone()),
-                );
                 // 正規化済み lookup key で比較する。raw string equality だと
                 // `./tasks/p.md` / `tasks\p.md` 等の表記揺れで同一 task を指していても
                 // changed と誤判定し、不要な full rebuild と非正規形での書き戻しを招く。
@@ -1045,17 +997,50 @@ impl TaskIndex {
                 new_normalized != existing_normalized
             }
         };
-        if let Some(b) = &intent.body {
-            // create_task と同じ正規化: 空文字は空 body / 既に `\n` で始まる入力は
-            // そのまま採用 / それ以外は `---` 直後の慣例的な空行として `\n` を 1 個だけ前置。
-            body = if b.is_empty() {
-                String::new()
-            } else if b.starts_with('\n') {
-                b.clone()
-            } else {
-                format!("\n{b}")
-            };
-        }
+
+        let patch = TaskPatch {
+            title: intent
+                .title
+                .clone()
+                .map(Patch::Set)
+                .unwrap_or(Patch::Unchanged),
+            status: intent
+                .status
+                .clone()
+                .map(Patch::Set)
+                .unwrap_or(Patch::Unchanged),
+            priority: intent.priority.map(Patch::Set).unwrap_or(Patch::Unchanged),
+            labels: intent
+                .labels
+                .clone()
+                .map(Patch::Set)
+                .unwrap_or(Patch::Unchanged),
+            milestone: match intent.milestone.clone() {
+                None => Patch::Unchanged,
+                Some(value) if value.is_empty() => Patch::Clear,
+                Some(value) => Patch::Set(value),
+            },
+            parent: match intent.parent.clone() {
+                None => Patch::Unchanged,
+                Some(value) if value.is_empty() => Patch::Clear,
+                Some(value) => Patch::Set(value),
+            },
+            links: Patch::Unchanged,
+            draft: match intent.draft {
+                None => Patch::Unchanged,
+                Some(true) => Patch::Set(true),
+                Some(false) => Patch::Clear,
+            },
+            due: Patch::Unchanged,
+            body: intent
+                .body
+                .clone()
+                .map(Patch::Set)
+                .unwrap_or(Patch::Unchanged),
+        };
+        document
+            .apply(patch)
+            .map_err(|error| UpdateTaskError::DocumentRender(error.to_string()))?;
 
         if let Some(parent_str) = intent.parent.as_deref().filter(|s| !s.is_empty()) {
             if resolve_parent_for_new_task(parent_str, self.as_slice()).is_none() {
@@ -1082,10 +1067,9 @@ impl TaskIndex {
                 .map_err(UpdateTaskError::from)?;
         }
 
-        let serialized = frontmatter::serialize(&Parsed {
-            frontmatter: frontmatter.clone(),
-            body: body.clone(),
-        });
+        let serialized = document
+            .render()
+            .map_err(|error| UpdateTaskError::DocumentRender(error.to_string()))?;
 
         TaskContent::try_new(serialized.clone()).map_err(UpdateTaskError::from)?;
 
@@ -1093,7 +1077,7 @@ impl TaskIndex {
             file_path: existing.file_path.as_path_buf(),
             default_status: existing.status.clone(),
         };
-        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+        let updated_task = document.to_task(&context);
 
         Ok(UpdateTaskOutcome {
             updated_task,
@@ -1136,8 +1120,8 @@ impl TaskIndex {
         // 片方だけを信じると、外部エディタで status を変えられた直後の移動で
         // その変更を握り潰して上書きしてしまう。`status:` が欠落 / 非文字列の md は
         // scan と同じ既定 status が実効値になるため、そちらと突き合わせる。
-        let effective_on_disk =
-            status_in_frontmatter(&existing_parsed).unwrap_or(scan_default_status);
+        let document = TaskDocument::from_parsed(existing_parsed);
+        let effective_on_disk = document.status_raw().unwrap_or(scan_default_status);
         ensure_status_matches(intent, effective_on_disk)?;
 
         if intent.from_column == intent.to_column {
@@ -1146,20 +1130,17 @@ impl TaskIndex {
             });
         }
 
-        let Parsed {
-            mut frontmatter,
-            body,
-        } = existing_parsed;
+        let mut document = document;
+        document
+            .apply(TaskPatch {
+                status: Patch::Set(intent.to_column.clone()),
+                ..TaskPatch::default()
+            })
+            .map_err(|error| MoveTaskError::DocumentRender(error.to_string()))?;
 
-        frontmatter.extras.insert(
-            serde_yaml_ng::Value::String("status".into()),
-            serde_yaml_ng::Value::String(intent.to_column.clone()),
-        );
-
-        let file_content = frontmatter::serialize(&Parsed {
-            frontmatter: frontmatter.clone(),
-            body: body.clone(),
-        });
+        let file_content = document
+            .render()
+            .map_err(|error| MoveTaskError::DocumentRender(error.to_string()))?;
 
         // 書き込んだ結果が scanner の受理条件から外れると、移動は成功したのに
         // 次の再スキャンで task が消える。plan_update / plan_add_link と同様に
@@ -1170,7 +1151,7 @@ impl TaskIndex {
             file_path: existing.file_path.as_path_buf(),
             default_status: existing.status.clone(),
         };
-        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+        let updated_task = document.to_task(&context);
 
         Ok(MoveTaskOutcome::CrossColumn {
             updated_task,
@@ -1193,7 +1174,7 @@ impl TaskIndex {
     /// 2. 同一 path への self-link は `SelfLink` で reject。
     /// 3. target が aggregate に存在しなければ `TargetNotFound`。
     /// 4. `source.links` に target が既に含まれていれば `NoOp` を返す（表記揺れ吸収）。
-    /// 5. それ以外は `links` 末尾に正規化済み相対 path を push し、`frontmatter::serialize`
+    /// 5. それ以外は `links` 末尾に正規化済み相対 path を push し、`TaskDocument::render`
     ///    で書き戻し用文字列を作る。`TaskContent::try_new` で scanner eligible 検証も行う。
     /// 6. `task_from_parsed` で `updated_task` を再構築して `Write` Outcome を返す。
     pub(crate) fn plan_add_link(
@@ -1228,9 +1209,9 @@ impl TaskIndex {
             return Err(AddLinkError::TargetNotFound { path: target_norm });
         }
 
-        let existing_set: HashSet<String> = source_parsed
-            .frontmatter
-            .links
+        let document = TaskDocument::from_parsed(source_parsed);
+        let existing_set: HashSet<String> = document
+            .links()
             .iter()
             .filter_map(|l| normalize_link_path_for_lookup(l))
             .collect();
@@ -1246,23 +1227,26 @@ impl TaskIndex {
             }
         })?;
 
-        let Parsed {
-            mut frontmatter,
-            body,
-        } = source_parsed;
-        frontmatter.links.push(push_str);
+        let mut document = document;
+        let mut links = document.links().to_vec();
+        links.push(push_str);
+        document
+            .apply(TaskPatch {
+                links: Patch::Set(links),
+                ..TaskPatch::default()
+            })
+            .map_err(|error| AddLinkError::DocumentRender(error.to_string()))?;
 
-        let file_content = frontmatter::serialize(&Parsed {
-            frontmatter: frontmatter.clone(),
-            body: body.clone(),
-        });
+        let file_content = document
+            .render()
+            .map_err(|error| AddLinkError::DocumentRender(error.to_string()))?;
         TaskContent::try_new(file_content.clone()).map_err(AddLinkError::from)?;
 
         let context = TaskParseContext {
             file_path: source_existing.file_path.as_path_buf(),
             default_status: source_existing.status.clone(),
         };
-        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+        let updated_task = document.to_task(&context);
 
         Ok(AddLinkOutcome::Write {
             updated_task,
@@ -1288,7 +1272,7 @@ impl TaskIndex {
     ///    完全一致する要素を **すべて** 除去する。表記揺れで重複登録されている場合は
     ///    一括で掃除される。
     /// 3. 1 件も除去されなければ `NoOp { existing_task }` を返す（冪等成功）。
-    /// 4. 除去ありなら `frontmatter::serialize` で書き戻し用 string を生成し、
+    /// 4. 除去ありなら `TaskDocument::render` で書き戻し用 string を生成し、
     ///    `TaskContent::try_new` で scanner eligible 検証、`task_from_parsed` で
     ///    `updated_task` を再構築して `Write` Outcome を返す。
     ///
@@ -1318,32 +1302,37 @@ impl TaskIndex {
             }
         })?;
 
-        let Parsed {
-            mut frontmatter,
-            body,
-        } = source_parsed;
-
-        let original_len = frontmatter.links.len();
-        frontmatter
-            .links
-            .retain(|l| normalize_link_path_for_lookup(l).as_deref() != Some(target_norm.as_str()));
-        if frontmatter.links.len() == original_len {
+        let mut document = TaskDocument::from_parsed(source_parsed);
+        let original_links = document.links().to_vec();
+        let links: Vec<String> = original_links
+            .iter()
+            .filter(|link| {
+                normalize_link_path_for_lookup(link).as_deref() != Some(target_norm.as_str())
+            })
+            .cloned()
+            .collect();
+        if links.len() == original_links.len() {
             return Ok(RemoveLinkOutcome::NoOp {
                 existing_task: source_existing.clone(),
             });
         }
 
-        let file_content = frontmatter::serialize(&Parsed {
-            frontmatter: frontmatter.clone(),
-            body: body.clone(),
-        });
+        document
+            .apply(TaskPatch {
+                links: Patch::Set(links),
+                ..TaskPatch::default()
+            })
+            .map_err(|error| RemoveLinkError::DocumentRender(error.to_string()))?;
+        let file_content = document
+            .render()
+            .map_err(|error| RemoveLinkError::DocumentRender(error.to_string()))?;
         TaskContent::try_new(file_content.clone()).map_err(RemoveLinkError::from)?;
 
         let context = TaskParseContext {
             file_path: source_existing.file_path.as_path_buf(),
             default_status: source_existing.status.clone(),
         };
-        let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+        let updated_task = document.to_task(&context);
 
         Ok(RemoveLinkOutcome::Write {
             updated_task,
@@ -1413,21 +1402,24 @@ impl TaskIndex {
         let mut entries = Vec::with_capacity(loaded.len());
 
         for ClearChildrenInput { path, parsed } in loaded {
-            let Parsed {
-                mut frontmatter,
-                body,
-            } = parsed;
+            let mut document = TaskDocument::from_parsed(parsed);
+            document
+                .apply(TaskPatch {
+                    parent: Patch::Clear,
+                    ..TaskPatch::default()
+                })
+                .map_err(|error| ClearChildrenError::DocumentRender {
+                    path: path.clone(),
+                    reason: error.to_string(),
+                })?;
 
-            // parent キー除去（typed フィールドではなく extras 上に保持されているため
-            // plan_update と同じ `extras.remove` API を使う）。
-            frontmatter
-                .extras
-                .remove(serde_yaml_ng::Value::String("parent".into()));
-
-            let serialized = frontmatter::serialize(&Parsed {
-                frontmatter: frontmatter.clone(),
-                body: body.clone(),
-            });
+            let serialized =
+                document
+                    .render()
+                    .map_err(|error| ClearChildrenError::DocumentRender {
+                        path: path.clone(),
+                        reason: error.to_string(),
+                    })?;
 
             TaskContent::try_new(serialized.clone()).map_err(|err| {
                 ClearChildrenError::ContentRejected {
@@ -1444,7 +1436,7 @@ impl TaskIndex {
                 file_path: path.clone(),
                 default_status,
             };
-            let updated_task = task_from_parsed(Parsed { frontmatter, body }, &context);
+            let updated_task = document.to_task(&context);
 
             entries.push(ClearedChildEntry {
                 path,
@@ -1666,7 +1658,7 @@ pub(crate) struct ClearedChildEntry {
     pub path: PathBuf,
     /// `task_from_parsed` で再構築済みの新 Task（effect 層が cache に書き戻す）。
     pub updated_task: Task,
-    /// `frontmatter::serialize` 出力（effect 層が `io.write_existing` で書き戻す）。
+    /// `TaskDocument::render` 出力（effect 層が `io.write_existing` で書き戻す）。
     pub file_content: String,
 }
 
@@ -1677,6 +1669,8 @@ pub(crate) struct ClearedChildEntry {
 pub(crate) enum ClearChildrenError {
     #[error("content rejected for {}: {reason}", .path.display())]
     ContentRejected { path: PathBuf, reason: String },
+    #[error("task document render failed for {}: {reason}", .path.display())]
+    DocumentRender { path: PathBuf, reason: String },
 }
 
 /// `TaskIndex::plan_preview_filename` の計算結果。
@@ -1787,18 +1781,6 @@ fn ensure_status_matches(intent: &MoveTaskIntent, actual: &str) -> Result<(), Mo
         expected: intent.from_column.clone(),
         actual: actual.to_string(),
     })
-}
-
-/// frontmatter の `status:` を文字列として取り出す。キーが無い / 文字列でない場合は `None`。
-///
-/// `None` は「disk 側に比較対象が無い」ことを意味するだけなので、呼び出し側は
-/// cache の status だけで判定を続ける（scan 時に既定 status が割り当てられている）。
-fn status_in_frontmatter(parsed: &Parsed) -> Option<&str> {
-    parsed
-        .frontmatter
-        .extras
-        .get(serde_yaml_ng::Value::String("status".into()))
-        .and_then(serde_yaml_ng::Value::as_str)
 }
 
 fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {

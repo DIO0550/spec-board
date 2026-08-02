@@ -292,16 +292,14 @@ test("onValuesChange は mount 直後に初期値を一度通知する", () => {
   });
   expect(onValuesChange).toHaveBeenCalled();
   expect(onValuesChange.mock.calls[0][0]).toEqual({
-    frontmatter: {
-      title: "",
-      status: "Todo",
-      priority: "",
-      parent: "",
-      labels: [],
-      links: [],
-      due: "",
-      draft: false,
-    },
+    title: "",
+    status: "Todo",
+    priority: undefined,
+    labels: [],
+    parent: undefined,
+    links: [],
+    due: undefined,
+    draft: false,
     body: "",
   });
 });
@@ -321,7 +319,7 @@ test("title 入力で onValuesChange に最新 title が通知される", () => 
   act(() => {
     changeInputValue(title, "新タイトル");
   });
-  expect(lastValues(onValuesChange).frontmatter.title).toBe("新タイトル");
+  expect(lastValues(onValuesChange).title).toBe("新タイトル");
 });
 
 test("popover でラベルを作成すると onValuesChange の labels に反映される", () => {
@@ -336,7 +334,7 @@ test("popover でラベルを作成すると onValuesChange の labels に反映
   openLabels();
   typeLabelSearch("bug");
   pressEnterOnLabelSearch();
-  expect(lastValues(onValuesChange).frontmatter.labels).toEqual(["bug"]);
+  expect(lastValues(onValuesChange).labels).toEqual(["bug"]);
 });
 
 test("links 追加で onValuesChange の links に反映される", () => {
@@ -375,9 +373,7 @@ test("links 追加で onValuesChange の links に反映される", () => {
       new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
     );
   });
-  expect(lastValues(onValuesChange).frontmatter.links).toEqual([
-    "tasks/candidate.md",
-  ]);
+  expect(lastValues(onValuesChange).links).toEqual(["tasks/candidate.md"]);
 });
 
 test("値変化時にフィールド state が保持される（key 再 mount しない）", () => {

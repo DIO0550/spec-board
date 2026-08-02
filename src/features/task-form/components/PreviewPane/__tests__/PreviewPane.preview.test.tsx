@@ -1,8 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { LabelsField } from "@/features/task-form/lib/fields/labels";
-import { PreviewFrontmatter } from "@/features/task-form/lib/previewFrontmatter";
+import type { PreviewMarkdownState } from "@/features/task-form/hooks/usePreviewTaskMarkdown";
+import { TauriError } from "@/lib/tauri";
 import { PreviewPane } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -17,18 +17,17 @@ afterEach(() => {
   container = null;
 });
 
-type Payload = { frontmatter: PreviewFrontmatter; body: string };
+const MARKDOWN =
+  "---\ntitle: タスク\nstatus: Todo\nlabels:\n  - bug\n---\n# 見出し\n\n本文テキスト";
 
-const baseFrontmatter = {
-  title: "タスク",
-  status: "Todo",
-  parent: undefined,
-  labels: LabelsField.initial([]),
-  links: [],
-};
+const ready = (markdown = MARKDOWN): PreviewMarkdownState => ({
+  kind: "ready",
+  markdown,
+  error: null,
+});
 
 const render = (
-  payload: Payload,
+  state: PreviewMarkdownState,
   options: { fileName?: string; onCollapse?: () => void } = {},
 ) => {
   container = document.createElement("div");
@@ -37,8 +36,7 @@ const render = (
   act(() => {
     root?.render(
       createElement(PreviewPane, {
-        frontmatter: payload.frontmatter,
-        body: payload.body,
+        state,
         fileName: options.fileName ?? "new-issue.md",
         onCollapse: options.onCollapse ?? vi.fn(),
       }),
@@ -50,105 +48,113 @@ const clickRawTab = () => {
   const tabs = container?.querySelectorAll<HTMLButtonElement>(
     'button[type="button"]',
   );
-  const raw = Array.from(tabs ?? []).find((b) => b.textContent === "Raw");
+  const raw = Array.from(tabs ?? []).find(
+    (button) => button.textContent === "Raw",
+  );
   act(() => {
     raw?.click();
   });
 };
 
-test("既定は Rendered 表示", () => {
-  render({
-    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-    body: "# 見出し",
-  });
+test("ready state の既定は Rendered 表示で frontmatter と本文を分ける", () => {
+  render(ready());
   expect(
     container?.querySelector('[data-testid="preview-rendered"]'),
   ).not.toBeNull();
+  expect(
+    container?.querySelector('[data-testid="preview-rendered"] pre')
+      ?.textContent,
+  ).toBe("---\ntitle: タスク\nstatus: Todo\nlabels:\n  - bug\n---");
+  expect(
+    container?.querySelector('[data-testid="markdown-content"]'),
+  ).not.toBeNull();
+});
+
+test("Raw タブは BE が返した full markdown をそのまま表示する", () => {
+  render(ready());
+  clickRawTab();
+  expect(
+    container?.querySelector('[data-testid="preview-raw"]')?.textContent,
+  ).toBe(MARKDOWN);
+});
+
+test("backend の labels を含む frontmatter は再 stringify せず表示する", () => {
+  const markdown =
+    "---\ntitle: 'Title: #1'\nlabels:\n- needs:review\n---\n本文";
+  render(ready(markdown));
+  expect(
+    container?.querySelector('[data-testid="preview-rendered"] pre')
+      ?.textContent,
+  ).toBe("---\ntitle: 'Title: #1'\nlabels:\n- needs:review\n---");
+});
+
+test("本文のタスクリストが Rendered で MarkdownContent により描画される", () => {
+  render(ready("---\ntitle: タスク\n---\n- [ ] やること\n- [x] 完了"));
+  expect(
+    container?.querySelector('[data-testid="markdown-content"]'),
+  ).not.toBeNull();
+  expect(
+    container?.querySelectorAll(
+      '[data-testid="markdown-content"] input[type="checkbox"]',
+    ).length,
+  ).toBe(2);
+});
+
+test("空本文の full markdown もエラーにならず frontmatter を表示する", () => {
+  render(ready("---\ntitle: タスク\n---\n"));
+  expect(
+    container?.querySelector('[data-testid="preview-rendered"] pre')
+      ?.textContent,
+  ).toBe("---\ntitle: タスク\n---");
+});
+
+test("pv-meta に BE が返した full markdown の UTF-8 バイト長が表示される", () => {
+  render(ready());
+  const expectedBytes = new TextEncoder().encode(MARKDOWN).length;
+  expect(
+    container?.querySelector('[data-testid="preview-meta"]')?.textContent,
+  ).toContain(`${expectedBytes}B`);
+});
+
+test("pending state は古い markdown を表示せず生成中を表示する", () => {
+  render({ kind: "pending", markdown: null, error: null });
+  expect(
+    container?.querySelector('[data-testid="preview-pending"]'),
+  ).not.toBeNull();
   expect(container?.querySelector('[data-testid="preview-raw"]')).toBeNull();
+  expect(
+    container?.querySelector('[data-testid="preview-meta"]')?.textContent,
+  ).toContain("0B");
 });
 
-test("Raw タブ click で最終 markdown が <pre> に出る", () => {
+test("error state はエラーを表示し、古い markdown に fallback しない", () => {
   render({
-    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-    body: "本文テキスト",
+    kind: "error",
+    markdown: null,
+    error: new TauriError("PARSE_ERROR", "preview failed"),
   });
-  clickRawTab();
-  const raw = container?.querySelector('[data-testid="preview-raw"]');
-  expect(raw?.tagName).toBe("PRE");
-  expect(raw?.textContent).toBe(
-    "---\ntitle: タスク\nstatus: Todo\n---\n本文テキスト",
-  );
+  expect(
+    container?.querySelector('[data-testid="preview-error"]')?.textContent,
+  ).toContain("preview failed");
+  expect(
+    container?.querySelector('[data-testid="preview-rendered"]'),
+  ).toBeNull();
 });
 
-test("priority/labels が Raw プレビューの frontmatter に反映される", () => {
-  render({
-    frontmatter: PreviewFrontmatter.from({
-      ...baseFrontmatter,
-      priority: "High",
-      labels: LabelsField.initial(["bug"]),
-    }),
-    body: "",
-  });
-  clickRawTab();
-  const raw = container?.querySelector('[data-testid="preview-raw"]');
-  expect(raw?.textContent).toContain("priority: High");
-  expect(raw?.textContent).toContain("labels:\n  - bug");
-});
-
-test("本文のタスクリストが Rendered で MarkdownContent によりレンダリングされる", () => {
-  render({
-    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-    body: "- [ ] やること\n- [x] 完了",
-  });
-  const content = container?.querySelector('[data-testid="markdown-content"]');
-  expect(content).not.toBeNull();
-  expect(content?.querySelectorAll('input[type="checkbox"]').length).toBe(2);
-});
-
-test("空本文でもエラーにならず最小 frontmatter を表示する", () => {
-  render({
-    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-    body: "",
-  });
-  const rendered = container?.querySelector('[data-testid="preview-rendered"]');
-  expect(rendered?.querySelector("pre")?.textContent).toBe(
-    "---\ntitle: タスク\nstatus: Todo\n---",
-  );
-});
-
-test("pv-meta に最終 markdown の UTF-8 バイト長 + B が表示される", () => {
-  render({
-    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-    body: "本文テキスト",
-  });
-  const finalMarkdown = "---\ntitle: タスク\nstatus: Todo\n---\n本文テキスト";
-  const expectedBytes = new TextEncoder().encode(finalMarkdown).length;
-  const meta = container?.querySelector('[data-testid="preview-meta"]');
-  expect(meta?.textContent).toContain(`${expectedBytes}B`);
-});
-
-test("空本文では Raw に出る最終 markdown と同じバイト長が表示される", () => {
-  render({
-    frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-    body: "",
-  });
-  clickRawTab();
-  const finalMarkdown =
-    container?.querySelector('[data-testid="preview-raw"]')?.textContent ?? "";
-  const expectedBytes = new TextEncoder().encode(finalMarkdown).length;
-  const meta = container?.querySelector('[data-testid="preview-meta"]');
-  expect(meta?.textContent).toContain(`${expectedBytes}B`);
+test("壊れた full markdown は raw/rendered を表示せずエラーにする", () => {
+  render(ready("not markdown"));
+  expect(
+    container?.querySelector('[data-testid="preview-error"]'),
+  ).not.toBeNull();
+  expect(container?.querySelector('[data-testid="preview-raw"]')).toBeNull();
+  expect(
+    container?.querySelector('[data-testid="preview-meta"]')?.textContent,
+  ).toContain("0B");
 });
 
 test("pv-collapse クリックで onCollapse が 1 回呼ばれる", () => {
   const onCollapse = vi.fn();
-  render(
-    {
-      frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-      body: "",
-    },
-    { onCollapse },
-  );
+  render(ready(), { onCollapse });
   const collapse = container?.querySelector(
     '[data-testid="preview-collapse"]',
   ) as HTMLButtonElement;
@@ -159,13 +165,7 @@ test("pv-collapse クリックで onCollapse が 1 回呼ばれる", () => {
 });
 
 test("pv-foot に保存先ファイル名が表示される", () => {
-  render(
-    {
-      frontmatter: PreviewFrontmatter.from(baseFrontmatter),
-      body: "",
-    },
-    { fileName: "my-task.md" },
-  );
+  render(ready(), { fileName: "my-task.md" });
   const foot = container?.querySelector('[data-testid="preview-foot"]');
   expect(foot?.textContent).toContain("my-task.md");
   expect(foot?.textContent).toContain("新規作成されます");

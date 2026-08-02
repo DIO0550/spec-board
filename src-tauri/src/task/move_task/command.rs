@@ -27,7 +27,7 @@ use tauri::State;
 use crate::config::{load_or_default, Config, ConfigWriter, FsConfigWriter, LoadConfigError};
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
-use crate::task::frontmatter;
+use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
@@ -87,11 +87,9 @@ pub(crate) fn move_task_impl_with_config_io(
         let original_bytes = io
             .read(&abs)
             .map_err(|error| MoveTaskCommandError::TaskIoRead(error.to_string()))?;
-        let parsed = frontmatter::parse_bytes(&original_bytes)
+        let parsed = TaskDocument::parse(&original_bytes)
             .map_err(|error| MoveTaskCommandError::ParseFailed(error.to_string()))?
-            .ok_or_else(|| {
-                MoveTaskCommandError::ParseFailed("no frontmatter delimiter found".to_string())
-            })?;
+            .into_parsed();
         let scan_default_status = default_status_for(config);
         let outcome = index.plan_move(&intent, &existing, parsed, scan_default_status.as_str())?;
 

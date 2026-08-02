@@ -234,6 +234,21 @@ flowchart TD
 | SL-004 | 改行コード | LF（`\n`）で統一 |
 | SL-005 | 末尾改行 | ファイル末尾に改行を付与 |
 
+## TaskDocument codec と preview
+
+### TaskDocument / TaskPatch
+
+- タスク Markdown の YAML Mapping は `TaskDocument` の codec 境界に閉じ込める。create / update / move / add_link / remove_link / 子タスク parent 解除 / `update_columns` は、同じ `TaskDocument::parse` → `TaskPatch` → `TaskDocument::render` 経路を使う。
+- 新規 draft は `TaskDocument::from_draft` で構築し、既存文書の変更は `TaskPatch` の `Unchanged`（保持） / `Set`（設定） / `Clear`（キーまたは値を除去）の 3 状態で表す。`priority`、`labels`、`milestone`、`parent`、`links`、`draft`、`due`、本文を個別の raw YAML mutation として扱わない。
+- typed フィールドの順序・lenient 解釈・未知キーの保持は codec が一元管理する。未知キーの値と出現順、本文、CRLF 入力の意味を可能な限り保持し、出力は LF と末尾改行に統一する。
+- serializer の失敗は typed error として呼び出し側へ返し、panic に依存しない。
+
+### `preview_task_markdown`
+
+- Task Form は `title`、`status`、`priority`、`labels`、`parent`、`links`、`due`、`draft`、`body` の camelCase DTO を Tauri command に渡す。`fileName` や project state は含めない。
+- command は I/O や project state を参照せず、`TaskDocument::from_draft` と同じ renderer で full Markdown（frontmatter + 本文）を返す。保存時の create 経路と preview の出力規則は同一である。
+- FE は返却された full Markdown を再度 YAML parse / stringify せず、Raw 表示または fence の内側と本文の表示にだけ分割する。IPC の pending / error / stale 応答では古い preview を表示しない。
+
 ## ディレクトリ構造
 
 ```
@@ -336,7 +351,7 @@ parent: tasks/search-ui.md
 
 - `Some` で渡されたフィールドだけが反映され、未指定フィールドは保持される
 - raw frontmatter の未知 key・`links`・YAML 値型・出現順は **そのまま保持** される
-  （内部実装は `Parsed { frontmatter, body }` の mut copy に patch を当て、`frontmatter::serialize` で書き戻す）
+  （内部実装は `TaskDocument::parse` に読み込み、`TaskPatch` を適用して `TaskDocument::render` で書き戻す）
 - `parent: ""` で親解除（frontmatter から `parent` キーを除去）
 - `labels: []` で全ラベル削除
 - `priority: None` は不変。**priority 自体を「なし」にする操作は本コマンドではサポートしない**

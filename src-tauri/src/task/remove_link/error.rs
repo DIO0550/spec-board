@@ -30,9 +30,11 @@ pub enum RemoveLinkError {
     /// commit 時点で snapshot にあった source が cache から消えていた場合。
     #[error("source vanished from cache during commit: {path}")]
     SourceVanished { path: String },
-    /// `frontmatter::serialize` 後の本文が scanner eligible でない場合。
+    /// `TaskDocument::render` 後の本文が scanner eligible でない場合。
     #[error("content not scanner eligible: {reason}")]
     ContentRejected { reason: ContentRejectReason },
+    #[error("task document render failed: {0}")]
+    DocumentRender(String),
 }
 
 #[derive(Debug, Error)]

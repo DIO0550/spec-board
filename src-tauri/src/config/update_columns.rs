@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde_yaml_ng::Value as YamlValue;
 use thiserror::Error;
 
 use std::sync::Arc;
@@ -24,7 +23,8 @@ use crate::config::{
 };
 use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
 use crate::state::{AppState, AppStateError, SessionWriteError};
-use crate::task::frontmatter::{self, FrontmatterError};
+use crate::task::document::{Patch, TaskDocument, TaskDocumentError, TaskPatch};
+use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use spec_board_fs::config::config_io;
 use spec_board_fs::watcher::write_ignore::{WriteIgnoreError, WriteIgnoreRegistry};
@@ -412,16 +412,31 @@ pub(crate) fn rewrite_status_in_md(
     bytes: &[u8],
     new_status: &str,
 ) -> Result<Option<Vec<u8>>, FrontmatterError> {
-    let Some(mut parsed) = frontmatter::parse_bytes(bytes)? else {
-        return Ok(None);
+    let mut document = match TaskDocument::parse(bytes) {
+        Ok(document) => document,
+        Err(TaskDocumentError::NotTask) => return Ok(None),
+        Err(TaskDocumentError::Frontmatter(error)) => return Err(error),
+        Err(TaskDocumentError::Render { reason }) => {
+            return Err(FrontmatterError::SerializeMessage(reason));
+        }
     };
 
-    parsed.frontmatter.extras.insert(
-        YamlValue::String("status".into()),
-        YamlValue::String(new_status.to_string()),
-    );
+    document
+        .apply(TaskPatch {
+            status: Patch::Set(new_status.to_string()),
+            ..TaskPatch::default()
+        })
+        .map_err(document_error_to_frontmatter)?;
+    let rendered = document.render().map_err(document_error_to_frontmatter)?;
+    Ok(Some(rendered.into_bytes()))
+}
 
-    Ok(Some(frontmatter::serialize(&parsed).into_bytes()))
+fn document_error_to_frontmatter(error: TaskDocumentError) -> FrontmatterError {
+    match error {
+        TaskDocumentError::NotTask => FrontmatterError::NotTask,
+        TaskDocumentError::Frontmatter(error) => error,
+        TaskDocumentError::Render { reason } => FrontmatterError::SerializeMessage(reason),
+    }
 }
 
 #[cfg(test)]

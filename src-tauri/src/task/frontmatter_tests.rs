@@ -680,7 +680,7 @@ fn assert_keys_in_order(output: &str, keys: &[&str]) {
 fn serialize_minimum_title_status_round_trips() {
     let original = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
     let parsed = parse(original).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(parsed, reparsed);
 }
@@ -708,7 +708,7 @@ fn serialize_emits_priority_with_leading_capital_when_some() {
 
     for (input, expected_substr, label) in cases {
         let parsed = parse(input).unwrap().unwrap();
-        let output = serialize(&parsed);
+        let output = serialize(&parsed).unwrap();
         assert!(
             output.contains(expected_substr),
             "{label}: expected to contain `{expected_substr}`:\n{output}"
@@ -721,7 +721,7 @@ fn serialize_emits_priority_with_leading_capital_when_some() {
 fn serialize_omits_priority_line_when_none() {
     let input = "---\ntitle: A\nstatus: TODO\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         !output.contains("priority:"),
         "expected no `priority:` line:\n{output}"
@@ -735,7 +735,7 @@ fn serialize_drops_invalid_priority_value_due_to_parse_normalization() {
     let input = "---\ntitle: A\nstatus: TODO\npriority: urgent\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(parsed.frontmatter.priority, None);
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         !output.contains("priority:"),
         "expected no `priority:` line for invalid value:\n{output}"
@@ -747,7 +747,7 @@ fn serialize_drops_invalid_priority_value_due_to_parse_normalization() {
 fn serialize_emits_labels_as_sequence_when_non_empty() {
     let input = "---\ntitle: A\nlabels: [bug, fix]\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         output.contains("labels:"),
         "should contain labels key:\n{output}"
@@ -769,7 +769,7 @@ fn serialize_omits_labels_line_when_empty() {
 
     for (input, label) in cases {
         let parsed = parse(input).unwrap().unwrap();
-        let output = serialize(&parsed);
+        let output = serialize(&parsed).unwrap();
         assert!(
             !output.contains("labels:"),
             "{label}: expected no `labels:` line:\n{output}"
@@ -782,7 +782,7 @@ fn serialize_omits_labels_line_when_empty() {
 fn serialize_places_parent_between_labels_and_links() {
     let input = "---\ntitle: A\nstatus: TODO\nlabels: [bug]\nparent: tasks/p.md\nlinks: [a.md]\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert_keys_in_order(&output, &["title", "status", "labels", "parent", "links"]);
 }
 
@@ -791,7 +791,7 @@ fn serialize_places_parent_between_labels_and_links() {
 fn serialize_emits_links_as_sequence_when_non_empty() {
     let input = "---\ntitle: A\nlinks: [a.md, b.md]\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         output.contains("links:"),
         "should contain links key:\n{output}"
@@ -813,7 +813,7 @@ fn serialize_omits_links_line_when_empty() {
 
     for (input, label) in cases {
         let parsed = parse(input).unwrap().unwrap();
-        let output = serialize(&parsed);
+        let output = serialize(&parsed).unwrap();
         assert!(
             !output.contains("links:"),
             "{label}: expected no `links:` line:\n{output}"
@@ -826,7 +826,7 @@ fn serialize_omits_links_line_when_empty() {
 fn serialize_preserves_extras_insertion_order() {
     let input = "---\nfoo: 1\nbar: 2\nbaz: 3\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert_keys_in_order(&output, &["foo", "bar", "baz"]);
 }
 
@@ -835,7 +835,7 @@ fn serialize_preserves_extras_insertion_order() {
 fn serialize_preserves_body_byte_for_byte() {
     let input = "---\ntitle: A\n---\n## 概要\n\n本文\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let body_in_output = output
         .split_once("---\n")
         .and_then(|(_, rest)| rest.split_once("---\n"))
@@ -855,7 +855,7 @@ fn serialize_ensures_trailing_newline() {
 
     for (input, label) in cases {
         let parsed = parse(input).unwrap().unwrap();
-        let output = serialize(&parsed);
+        let output = serialize(&parsed).unwrap();
         assert!(
             output.ends_with('\n'),
             "{label}: expected output to end with newline:\n{output}"
@@ -868,7 +868,7 @@ fn serialize_ensures_trailing_newline() {
 fn serialize_uses_lf_line_endings_only_for_parse_origin_input() {
     let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         !output.contains('\r'),
         "expected output without CR:\n{output:?}"
@@ -880,7 +880,7 @@ fn serialize_uses_lf_line_endings_only_for_parse_origin_input() {
 fn serialize_keeps_empty_frontmatter_fences_with_body() {
     let input = "---\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert_eq!(output, "---\n---\nbody\n");
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(parsed, reparsed);
@@ -905,7 +905,7 @@ fn serialize_full_case_round_trips_through_parse() {
         "body text\n",
     );
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert_keys_in_order(
         &output,
         &[
@@ -923,10 +923,10 @@ fn serialize_round_trips_for_body_without_trailing_newline_via_fixed_point() {
     let input = "---\n---\nbody";
     let p1 = parse(input).unwrap().unwrap();
     assert_eq!(p1.body, "body");
-    let s1 = serialize(&p1);
+    let s1 = serialize(&p1).unwrap();
     let p2 = parse(&s1).unwrap().unwrap();
     assert_eq!(p2.body, format!("{}\n", p1.body));
-    assert_eq!(serialize(&p2), s1);
+    assert_eq!(serialize(&p2).unwrap(), s1);
 }
 
 /// 空 body 入力でラウンドトリップが成立する（`Parsed` 直比較）。
@@ -935,7 +935,7 @@ fn serialize_round_trips_for_empty_body() {
     let input = "---\ntitle: A\n---\n";
     let parsed = parse(input).unwrap().unwrap();
     assert_eq!(parsed.body, "");
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(parsed, reparsed);
 }
@@ -948,7 +948,7 @@ fn serialize_round_trips_for_empty_frontmatter_and_empty_body() {
 
     for (input, label) in cases {
         let parsed = parse(input).unwrap().unwrap();
-        let output = serialize(&parsed);
+        let output = serialize(&parsed).unwrap();
         let reparsed = parse(&output).unwrap().unwrap();
         assert_eq!(parsed, reparsed, "{label}");
     }
@@ -959,7 +959,7 @@ fn serialize_round_trips_for_empty_frontmatter_and_empty_body() {
 fn serialize_round_trips_for_crlf_input_via_parse() {
     let input = "---\r\ntitle: A\r\nstatus: TODO\r\n---\r\nbody\r\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(parsed, reparsed);
 }
@@ -969,7 +969,7 @@ fn serialize_round_trips_for_crlf_input_via_parse() {
 fn serialize_round_trips_for_bom_prefixed_input_via_parse_bytes() {
     let input: &[u8] = b"\xEF\xBB\xBF---\ntitle: A\nstatus: TODO\n---\nbody\n";
     let parsed = parse_bytes(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(parsed, reparsed);
 }
@@ -998,11 +998,11 @@ fn serialize_dumps_extras_title_status_parent_at_typed_position_for_non_string()
 
     for (input, expected_order, label) in cases {
         let parsed = parse(input).unwrap().unwrap();
-        let output = serialize(&parsed);
+        let output = serialize(&parsed).unwrap();
         assert_keys_in_order(&output, expected_order);
         let reparsed = parse(&output).unwrap().unwrap();
         assert_eq!(
-            serialize(&reparsed),
+            serialize(&reparsed).unwrap(),
             output,
             "{label}: fixed-point should hold"
         );
@@ -1043,7 +1043,7 @@ fn parse_milestone_non_string_or_empty_is_none() {
 fn serialize_places_milestone_between_labels_and_parent() {
     let input = "---\ntitle: A\nstatus: TODO\npriority: High\nlabels: [bug]\nmilestone: v0.3\nparent: tasks/p.md\nlinks: [a.md]\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert_keys_in_order(
         &output,
         &[
@@ -1076,7 +1076,7 @@ fn serialize_milestone_round_trip_is_stable() {
     let input =
         "---\ntitle: A\nstatus: TODO\nlabels: [bug]\nmilestone: v0.3\nassignee: alice\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(reparsed.frontmatter.milestone.as_deref(), Some("v0.3"));
     assert!(!reparsed
@@ -1084,7 +1084,7 @@ fn serialize_milestone_round_trip_is_stable() {
         .extras
         .contains_key(serde_yaml_ng::Value::String("milestone".into())));
     // fixed-point: もう 1 周しても同一。
-    assert_eq!(serialize(&reparsed), output);
+    assert_eq!(serialize(&reparsed).unwrap(), output);
 }
 
 /// milestone 不在の frontmatter は milestone 行を出力しない（後方互換・skip_serializing）。
@@ -1093,7 +1093,7 @@ fn serialize_omits_milestone_line_when_none() {
     let parsed = parse("---\ntitle: A\nstatus: TODO\n---\nbody\n")
         .unwrap()
         .unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         !output.contains("milestone:"),
         "expected no `milestone:` line:\n{output}"
@@ -1106,7 +1106,7 @@ fn serialize_omits_milestone_line_when_none() {
 fn serialize_preserves_valid_due_as_extra() {
     let input = "---\ntitle: A\nlabels: [bug]\nlinks: [a.md]\ndue: 2026-06-30\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
 
     assert_keys_in_order(&output, &["title", "labels", "links", "due"]);
     let reparsed = parse(&output).unwrap().unwrap();
@@ -1122,7 +1122,7 @@ fn serialize_preserves_valid_due_as_extra() {
 fn serialize_preserves_invalid_due_as_extra() {
     let input = "---\ntitle: A\nlinks: [a.md]\ndue: 2026/6/30\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
 
     assert_eq!(
@@ -1183,7 +1183,7 @@ fn parse_draft_does_not_leak_into_extras() {
 fn serialize_emits_draft_after_links_when_some_true() {
     let input = "---\ntitle: A\nstatus: TODO\nlinks:\n  - tasks/b.md\ndraft: true\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let links_pos = output.find("links:").expect("links line");
     let draft_pos = output.find("draft: true").expect("draft line");
     assert!(
@@ -1197,10 +1197,10 @@ fn serialize_emits_draft_after_links_when_some_true() {
 fn serialize_draft_round_trip_is_stable() {
     let input = "---\ntitle: A\nstatus: TODO\ndraft: true\nassignee: alice\n---\nbody\n";
     let parsed = parse(input).unwrap().unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     let reparsed = parse(&output).unwrap().unwrap();
     assert_eq!(reparsed.frontmatter.draft, Some(true));
-    assert_eq!(serialize(&reparsed), output);
+    assert_eq!(serialize(&reparsed).unwrap(), output);
 }
 
 /// draft 不在・None の frontmatter は draft 行を出力しない。
@@ -1209,7 +1209,7 @@ fn serialize_omits_draft_line_when_none() {
     let parsed = parse("---\ntitle: A\nstatus: TODO\n---\nbody\n")
         .unwrap()
         .unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         !output.contains("draft:"),
         "expected no `draft:` line:\n{output}"
@@ -1222,7 +1222,7 @@ fn serialize_drops_non_bool_draft_without_duplicate_output() {
     let parsed = parse("---\ntitle: A\nstatus: TODO\ndraft: \"yes\"\n---\nbody\n")
         .unwrap()
         .unwrap();
-    let output = serialize(&parsed);
+    let output = serialize(&parsed).unwrap();
     assert!(
         !output.contains("draft"),
         "非 bool draft は再 serialize で出力されないべき:\n{output}"

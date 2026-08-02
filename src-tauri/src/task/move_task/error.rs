@@ -30,6 +30,8 @@ pub enum MoveTaskError {
     /// 書き込んでしまうと移動は成功したのに次の再スキャンで task が消える。
     #[error("タスクの内容がスキャン対象の条件を満たしません: {reason}")]
     ContentNotScannerEligible { reason: ContentRejectReason },
+    #[error("task document render failed: {0}")]
+    DocumentRender(String),
 
     /// cache commit 時点で対象タスクが cache から消えていた（並行削除 / 再 scan）。
     #[error("対象のタスクが見つかりません: {path}")]
