@@ -486,7 +486,8 @@ const renderCard = (result, options) => {
         </li>`;
 };
 
-const renderSections = (summary, options) => groupByCategory(summary.results).map((group) => `<section class="section" data-section="${group.key}">
+// data-count は CSS 側でカードの大きさを決めるために使う(件数が少ない分類ほど大きく見せる)。
+const renderSections = (summary, options) => groupByCategory(summary.results).map((group) => `<section class="section" data-section="${group.key}" data-count="${Math.min(group.results.length, 3)}">
       <h2 class="section__title">${group.label} items <span class="section__count">${group.results.length}</span></h2>
       <ul class="cards">
         ${group.results.map((result) => renderCard(result, options)).join("")}
@@ -588,9 +589,13 @@ const renderStyles = () => `
     .section__title { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 800; letter-spacing: -0.01em; text-transform: uppercase; }
     .section__count { border-radius: 999px; padding: 3px 12px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 700; }
     .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 22px; list-style: none; margin: 22px 0 0; padding: 0; }
+    /* 1〜2件しかない分類は横に余白が余るだけなので、その分カードを大きくする。 */
+    .section[data-count="1"] .cards { grid-template-columns: minmax(0, 680px); }
+    .section[data-count="2"] .cards { grid-template-columns: repeat(2, minmax(0, 500px)); }
     .card { overflow: hidden; border-radius: 10px; background: var(--surface); box-shadow: 0 2px 10px rgb(13 51 54 / 8%); transition: transform 120ms ease, box-shadow 120ms ease; }
     .card:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgb(13 51 54 / 14%); }
-    .card__open { position: relative; display: block; height: 200px; }
+    /* 既定の撮影サイズ(1280x720)に合わせる。比が違う画像は市松模様の余白が出る。 */
+    .card__open { position: relative; display: block; aspect-ratio: 16 / 9; }
     .card__thumb { display: block; height: 100%; }
     .card__thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
     .card__badge { position: absolute; top: 12px; left: 12px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; background: var(--surface); box-shadow: 0 1px 4px rgb(13 51 54 / 22%); }
@@ -615,6 +620,9 @@ const renderStyles = () => `
 
     /* 画像は原寸のまま上限だけ掛け、枠と操作列はその実寸に合わせて縮める。 */
     .stagewrap { width: fit-content; max-width: 100%; margin: 0 auto; }
+    /* 比較相手が無いぶん操作列も要らないので、その高さを画像に回す。 */
+    .stagewrap--solo .vimg { max-height: calc(100vh - 200px); }
+    .solo-label { margin-bottom: 12px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
     .frame { position: relative; overflow: hidden; width: fit-content; max-width: 100%; margin: 0 auto; border-radius: 8px; box-shadow: 0 2px 12px rgb(13 51 54 / 10%); }
     .vimg { display: block; max-width: 100%; max-height: calc(100vh - 300px); user-select: none; }
     /* 重ね合わせる側は下地と同じ矩形へ収める。寸法が違っても contain なので歪まない。 */
@@ -761,7 +769,26 @@ const renderScript = () => `
       return frame;
     };
 
+    // 片側しか無い項目(New / Deleted)は、空の "Not available" を並べても情報が無い。
+    // ある方のスクリーンショットを全幅で大きく見せる。
+    const buildSolo = (item) => {
+      const kind = item.hasActual ? "actual" : "expected";
+      const wrapper = document.createElement("div");
+      wrapper.className = "stagewrap stagewrap--solo";
+      const label = document.createElement("p");
+      label.className = "solo-label";
+      label.textContent = item.hasActual ? "After (new)" : "Before (deleted)";
+      const frame = document.createElement("div");
+      frame.className = "frame checker";
+      frame.appendChild(image(kind, item));
+      wrapper.append(label, frame);
+      return wrapper;
+    };
+
     const buildTwoUp = (item) => {
+      if (!bothSides(item)) {
+        return buildSolo(item);
+      }
       const wrapper = document.createElement("div");
       wrapper.className = "twoup";
       wrapper.append(pane("Before", item, "expected", item.hasExpected), pane("After", item, "actual", item.hasActual));

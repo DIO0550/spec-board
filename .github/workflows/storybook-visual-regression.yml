@@ -246,61 +246,34 @@ jobs:
           BODY_FILE=visual-comment.md
 
           if [ "$PUBLISH_OUTCOME" = "success" ] && [ -f "$SUMMARY" ]; then
-            # reg-suit のコメントに倣い、分類ごとの玉と内訳表を出す。
-            MARKER="$MARKER" REPORT_URL="$REPORT_URL" node --input-type=module <<'NODE' > "$BODY_FILE"
-          import { readFileSync } from "node:fs";
-
-          const summary = JSON.parse(readFileSync("visual-report/summary.json", "utf8"));
-          const categories = [
-            ["🔴", "Changed", summary.changed],
-            ["⚪", "New", summary.new],
-            ["⚫", "Deleted", summary.deleted],
-            ["🔵", "Passed", summary.passed],
-          ];
-
-          // 玉が数百個並ぶとコメントが読めなくなるので頭から50個で打ち切る(正確な件数は表にある)。
-          const MAX_BALLS = 50;
-          const allBalls = categories.flatMap(([ball, , count]) => Array.from({ length: count }, () => ball));
-          const balls = allBalls.length > MAX_BALLS ? `${allBalls.slice(0, MAX_BALLS).join("")} …` : allBalls.join("");
-
-          const headline = summary.changed > 0
-            ? "**Detected visual differences.**"
-            : "**No visual differences.**";
-          const legend = categories.map(([ball, label]) => `${ball}: ${label} items`).join(", ");
-
-          console.log(process.env.MARKER);
-          console.log("## Storybook visual regression");
-          console.log("");
-          console.log(headline);
-          console.log("");
-          console.log(`Check [this report](${process.env.REPORT_URL}), and review them.`);
-          console.log("");
-          console.log(balls || "(no stories captured)");
-          console.log("");
-          console.log("<details>");
-          console.log("<summary>What balls mean?</summary>");
-          console.log("");
-          console.log("The number of balls represents the number of images in each category.");
-          console.log("");
-          console.log(legend);
-          console.log("");
-          console.log("</details>");
-          console.log("");
-          console.log(`| ${categories.map(([ball, label]) => `${ball} ${label}`).join(" | ")} |`);
-          console.log(`| ${categories.map(() => "---:").join(" | ")} |`);
-          console.log(`| ${categories.map(([, , count]) => count).join(" | ")} |`);
-          console.log("");
-          console.log(`Threshold: ${summary.maxDiffRatio} diff ratio.`);
-          NODE
+            COUNTS=$(node -e 'const s = require("./visual-report/summary.json"); console.log(s.changed, s.new, s.deleted, s.passed)')
+            set -- $COUNTS
+            if [ "$1" -gt 0 ]; then
+              HEADLINE="Detected visual differences."
+            else
+              HEADLINE="No visual differences."
+            fi
+            {
+              echo "$MARKER"
+              echo "## Storybook visual regression"
+              echo ""
+              echo "$HEADLINE"
+              echo ""
+              echo "$REPORT_URL"
+              echo ""
+              echo "| Changed | New | Deleted | Passed |"
+              echo "| ---: | ---: | ---: | ---: |"
+              echo "| $1 | $2 | $3 | $4 |"
+            } > "$BODY_FILE"
           else
             {
               echo "$MARKER"
               echo "## Storybook visual regression"
               echo ""
               if [ -f "$SUMMARY" ]; then
-                echo "**Report could not be published.**"
+                echo "Report could not be published."
               else
-                echo "**Report is missing.**"
+                echo "Report is missing."
               fi
               echo ""
               echo "- Report not updated (compare: ${COMPARE_OUTCOME}, verify: ${VERIFY_OUTCOME}, publish: ${PUBLISH_OUTCOME})"
