@@ -249,18 +249,18 @@ jobs:
             COUNTS=$(node -e 'const s = require("./visual-report/summary.json"); console.log(s.changed, s.new, s.deleted, s.passed)')
             set -- $COUNTS
             if [ "$1" -gt 0 ]; then
-              HEADLINE="Detected visual differences."
+              HEADLINE="差分が見つかりました。"
             else
-              HEADLINE="No visual differences."
+              HEADLINE="差分はありませんでした。"
             fi
             {
               echo "$MARKER"
-              echo "## Storybook visual regression"
+              echo "## Storybook ビジュアルリグレッション"
               echo ""
               echo "$HEADLINE"
               echo ""
               # 玉の色はレポート画面の分類アイコンと揃えてある。
-              echo "| 🔴 Changed | ⚪ New | ⚫ Deleted | 🔵 Passed |"
+              echo "| 🔴 変更 | ⚪ 新規 | ⚫ 削除 | 🔵 差分なし |"
               echo "| ---: | ---: | ---: | ---: |"
               echo "| $1 | $2 | $3 | $4 |"
               echo ""
@@ -269,20 +269,21 @@ jobs:
           else
             {
               echo "$MARKER"
-              echo "## Storybook visual regression"
+              echo "## Storybook ビジュアルリグレッション"
               echo ""
               if [ -f "$SUMMARY" ]; then
-                echo "Report could not be published."
+                echo "レポートを公開できませんでした。"
               else
-                echo "Report is missing."
+                echo "レポートが見つかりませんでした。"
               fi
               echo ""
-              echo "- Report not updated (compare: ${COMPARE_OUTCOME}, verify: ${VERIFY_OUTCOME}, publish: ${PUBLISH_OUTCOME})"
+              # 括弧内はワークフローの各ステップ名なので英語のままにする。
+              echo "- レポート未更新（compare: ${COMPARE_OUTCOME} / verify: ${VERIFY_OUTCOME} / publish: ${PUBLISH_OUTCOME}）"
             } > "$BODY_FILE"
           fi
 
           {
-            echo "- [Artifact](${RUN_URL})"
+            echo "- [Actions](${RUN_URL})"
             echo "- [Storybook](${PREVIEW_URL})"
           } >> "$BODY_FILE"
 
