@@ -163,6 +163,19 @@ export type MoveTaskParams = {
   readonly toColumnFilePaths: readonly string[];
 };
 
+/** preview_task_markdown 引数。Task entity や fileName を含めない明示的な draft DTO。 */
+export type PreviewTaskMarkdownParams = {
+  title: string;
+  status: string;
+  priority?: string;
+  labels: string[];
+  parent?: string;
+  links: string[];
+  due?: string;
+  draft: boolean;
+  body: string;
+};
+
 /** preview_task_filename 引数。 */
 export type PreviewTaskFilenameParams = {
   /** タスクタイトル */

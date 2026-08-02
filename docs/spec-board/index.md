@@ -71,7 +71,7 @@ flowchart TD
 | [milestone-view-spec.md](./milestone-view-spec.md) | [FE] マイルストーン専用ビュー（フィルタ・検索・ソート・list⇔roadmap 切替・作成モーダル） |
 | [task-card-spec.md](./task-card-spec.md) | [FE] タスクカード表示・詳細（全画面 2 ペイン）・作成/編集フォーム |
 | [file-system-spec.md](./file-system-spec.md) | [BE] mdファイルのパース・ファイル監視・CRUD操作・[ProjectSession と並行性契約](./file-system-spec.md#projectsession-と並行性契約) |
-| [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット定義・フロントマター仕様（priority / labels / milestone / parent / links） |
+| [task-format-spec.md](./task-format-spec.md) | [BE] mdファイルフォーマット・TaskDocument codec・preview_task_markdown・フロントマター仕様（priority / labels / milestone / parent / links） |
 | [config-spec.md](./config-spec.md) | [BE] 設定ファイル・カラム管理・カード並び順・labels.yml / milestones.yml マスタ・[writer protocol](./config-spec.md#projectsession-writer-protocol)・AIエージェント向けガイド |
 | [label-registry-spec.md](./label-registry-spec.md) | [FE] ラベルのグループ分類・oklch カラーパレット・グループ色割当 |
 
@@ -109,3 +109,4 @@ flowchart TD
 | 1.3 | 2026-06-21 | マイルストーン専用ビューの仕様書 ([milestone-view-spec.md](./milestone-view-spec.md)) を追加 | - |
 | 1.4 | 2026-07-31 | Issue #453: backend の ProjectSession aggregate / writer gate / revision CAS / staged watcher swap を仕様化。multi-project cache (#189)、wire redesign (#465)、OwnWriteGuard (#468)、path canonicalization は対象外 | - |
 | 1.5 | 2026-08-01 | Issue #458: ProjectLoadWarning、partial success、読み込み注意パネルとwarnings通知を追加 | - |
+| 1.6 | 2026-08-01 | Issue #455

@@ -9,7 +9,7 @@ use tauri::State;
 
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
-use crate::task::frontmatter;
+use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::remove_link::args::RemoveLinkArgs;
 use crate::task::remove_link::error::{RemoveLinkCommandError, RemoveLinkError};
@@ -54,11 +54,9 @@ pub(crate) fn remove_link_impl(
             }
             Err(error) => return Err(error.into()),
         };
-        let parsed = frontmatter::parse_bytes(&bytes)
+        let parsed = TaskDocument::parse(&bytes)
             .map_err(|error| RemoveLinkError::ParseFailed(error.to_string()))?
-            .ok_or_else(|| {
-                RemoveLinkError::ParseFailed("no frontmatter delimiter found".to_string())
-            })?;
+            .into_parsed();
         let outcome = index
             .plan_remove_link(project_root.as_path(), intent, &existing_source, parsed)
             .map_err(RemoveLinkCommandError::Validation)?;

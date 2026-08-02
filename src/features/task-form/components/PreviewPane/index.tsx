@@ -1,15 +1,11 @@
 import { useMemo, useState } from "react";
 import { MarkdownContent } from "@/components/MarkdownContent";
-import {
-  combineMarkdown,
-  PreviewFrontmatter,
-} from "@/features/task-form/lib/previewFrontmatter";
+import type { PreviewMarkdownState } from "@/features/task-form/hooks/usePreviewTaskMarkdown";
+import { splitPreviewMarkdown } from "./splitPreviewMarkdown";
 
 export type PreviewPaneProps = {
-  /** プレビュー対象 frontmatter（branded）。 */
-  frontmatter: PreviewFrontmatter;
-  /** プレビュー対象本文。 */
-  body: string;
+  /** BE の shared document codec が生成した preview 状態。 */
+  state: PreviewMarkdownState;
   /** 保存先ファイル名（pv-foot 表示用）。 */
   fileName: string;
   /** プレビュー折りたたみ要求（pv-collapse ボタン）。 */
@@ -23,29 +19,30 @@ const TAB_BASE_CLASS_NAME =
   "rounded-md px-3 py-1 text-xs font-medium text-muted aria-pressed:bg-panel aria-pressed:text-foreground aria-pressed:shadow-sm";
 
 /**
- * frontmatter＋本文を結合した最終 markdown を Raw / Rendered でトグル表示する
- * プレビューペイン。再計算は `useMemo` で値変化時のみに抑える。
- * Rendered 時は frontmatter を `<pre>` で上部に出し、本文のみ `MarkdownContent` で描画する。
- * pv-meta に最終 markdown の UTF-8 バイト長、pv-foot に保存先ファイル名を表示する。
+ * BE が生成した full markdown を Raw / Rendered でトグル表示するプレビューペイン。
+ * Rendered 時は fence の内側を `<pre>` で上部に出し、本文のみ `MarkdownContent` で描画する。
+ * pending / error 中は古い markdown を表示せず、pv-meta は 0B とする。
  * @param props - {@link PreviewPaneProps}
  * @returns プレビューペイン要素
  */
 export const PreviewPane = (props: PreviewPaneProps) => {
   const [mode, setMode] = useState<PreviewMode>("rendered");
 
-  const frontmatterYaml = useMemo(
-    () => PreviewFrontmatter.toYaml(props.frontmatter),
-    [props.frontmatter],
+  const markdown = props.state.kind === "ready" ? props.state.markdown : "";
+  const split = useMemo(
+    () =>
+      props.state.kind === "ready" ? splitPreviewMarkdown(markdown) : null,
+    [markdown, props.state.kind],
   );
-  const finalMarkdown = useMemo(
-    () => combineMarkdown(frontmatterYaml, props.body),
-    [frontmatterYaml, props.body],
-  );
-  // 最終 markdown の UTF-8 バイト長。finalMarkdown と同じ依存で計算し effect を増やさない。
   const byteLength = useMemo(
-    () => new TextEncoder().encode(finalMarkdown).length,
-    [finalMarkdown],
+    () => new TextEncoder().encode(markdown).length,
+    [markdown],
   );
+  const hasError = props.state.kind === "error" || split === null;
+  const errorMessage =
+    props.state.kind === "error"
+      ? props.state.error.message
+      : "プレビューを生成できませんでした";
 
   return (
     <aside
@@ -90,12 +87,26 @@ export const PreviewPane = (props: PreviewPaneProps) => {
           ✕
         </button>
       </div>
-      {mode === "raw" ? (
+      {props.state.kind === "pending" ? (
+        <div
+          data-testid="preview-pending"
+          className="rounded-lg border border-border bg-panel p-4 text-sm text-muted"
+        >
+          プレビューを生成しています…
+        </div>
+      ) : hasError ? (
+        <div
+          data-testid="preview-error"
+          className="rounded-lg border border-danger/40 bg-panel p-4 text-sm text-danger"
+        >
+          {errorMessage}
+        </div>
+      ) : mode === "raw" ? (
         <pre
           data-testid="preview-raw"
           className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-foreground p-4 font-mono text-xs leading-relaxed text-surface"
         >
-          {finalMarkdown}
+          {markdown}
         </pre>
       ) : (
         <div
@@ -103,10 +114,10 @@ export const PreviewPane = (props: PreviewPaneProps) => {
           className="overflow-hidden rounded-lg border border-border bg-panel"
         >
           <pre className="overflow-x-auto whitespace-pre-wrap border-b border-border bg-surface-muted p-3.5 font-mono text-xs leading-relaxed text-muted">
-            {frontmatterYaml}
+            {split.frontmatter}
           </pre>
           <div className="p-4">
-            <MarkdownContent body={props.body} />
+            <MarkdownContent body={split.body} />
           </div>
         </div>
       )}

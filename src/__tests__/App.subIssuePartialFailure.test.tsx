@@ -152,6 +152,8 @@ const makeInvoke =
         Promise.resolve({ milestones: [], usageCounts: {} }),
       get_labels: () => Promise.resolve({ labels: [] }),
       preview_task_filename: () => Promise.resolve({ kind: "pending" }),
+      preview_task_markdown: () =>
+        Promise.resolve("---\ntitle: Preview\nstatus: Todo\n---\n"),
       ...overrides,
     };
     return (responders[cmd] ?? resolveUndefined)();

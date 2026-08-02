@@ -1,8 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
-import { unregisterToastSink } from "@/lib/tauri";
+import { previewTaskMarkdown, unregisterToastSink } from "@/lib/tauri";
 import { ProjectError } from "@/providers/ProjectProvider";
 import { ToastProvider } from "@/providers/ToastProvider";
 import type { Column } from "@/types/column";
@@ -10,8 +10,34 @@ import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 import { TaskCreateScreen } from "..";
 
+vi.mock("@/lib/tauri", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
+  return {
+    ...actual,
+    previewTaskMarkdown: vi.fn(),
+  };
+});
+
+const previewMarkdownMock = vi.mocked(previewTaskMarkdown);
+
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
+
+beforeEach(() => {
+  previewMarkdownMock.mockReset();
+  previewMarkdownMock.mockImplementation(async (params) =>
+    Result.ok(
+      [
+        "---",
+        `title: ${params.title}`,
+        `status: ${params.status}`,
+        "---",
+        params.body,
+      ].join("\n"),
+    ),
+  );
+});
 
 afterEach(() => {
   act(() => {
@@ -207,7 +233,7 @@ test("既存タスクと重複するタイトルでも送信される（重複�
   ).toBeNull();
 });
 
-test("左フォームの入力が右プレビューに追従する（ライブプレビュー）", () => {
+test("左フォームの入力が右プレビューに追従する（ライブプレビュー）", async () => {
   render(baseProps());
   act(() => {
     setInput("task-form-title", "追従タイトル");
@@ -215,6 +241,7 @@ test("左フォームの入力が右プレビューに追従する（ライブ�
   act(() => {
     setInput("task-form-body", "本文プレビュー");
   });
+  await flush();
   const rendered = document.querySelector('[data-testid="preview-rendered"]');
   expect(rendered?.querySelector("pre")?.textContent).toContain(
     "title: 追従タイトル",

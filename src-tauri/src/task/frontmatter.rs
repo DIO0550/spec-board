@@ -3,6 +3,18 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use thiserror::Error;
 
+// YAML Mapping から除外し、codec が固定順で扱う typed frontmatter keys。
+pub(crate) const TYPED_KEYS: [&str; 8] = [
+    "title",
+    "status",
+    "priority",
+    "labels",
+    "milestone",
+    "parent",
+    "links",
+    "draft",
+];
+
 /// タスクの優先度。YAML フロントマターの `priority` 値を
 /// ASCII 大小文字非区別で正規化したもの。
 ///
@@ -174,7 +186,7 @@ pub struct Parsed {
 pub enum FrontmatterError {
     /// YAML 構文エラー、または YAML ルートが mapping でない場合。
     #[error("invalid YAML in frontmatter: {0}")]
-    InvalidYaml(#[from] serde_yaml_ng::Error),
+    InvalidYaml(#[source] serde_yaml_ng::Error),
 
     /// 入力バイト列が UTF-8 として解釈できない場合（= `std::str::from_utf8` が失敗する場合）に返す。
     /// UTF-8 BOM (EF BB BF) 除去後のバイト列が UTF-8 として valid でないとき発生する。
@@ -183,6 +195,24 @@ pub enum FrontmatterError {
     /// バイト列の場合は別経路でパースされる）。
     #[error("invalid encoding in frontmatter: {0}")]
     InvalidEncoding(#[from] std::str::Utf8Error),
+
+    #[error("frontmatter was not found")]
+    NotTask,
+
+    #[error("failed to serialize frontmatter: {source}")]
+    Serialize {
+        #[source]
+        source: serde_yaml_ng::Error,
+    },
+
+    #[error("failed to serialize frontmatter: {0}")]
+    SerializeMessage(String),
+}
+
+impl From<serde_yaml_ng::Error> for FrontmatterError {
+    fn from(source: serde_yaml_ng::Error) -> Self {
+        Self::InvalidYaml(source)
+    }
 }
 
 /// バイト列入力を受け取り、UTF-8 BOM (EF BB BF) を 1 個剥がしてから UTF-8 として検証し、
@@ -242,7 +272,8 @@ pub fn parse(input: &str) -> Result<Option<Parsed>, FrontmatterError> {
     };
     let frontmatter: Frontmatter = (!yaml_text.trim().is_empty())
         .then(|| serde_yaml_ng::from_str::<Frontmatter>(&yaml_text))
-        .transpose()?
+        .transpose()
+        .map_err(FrontmatterError::InvalidYaml)?
         .unwrap_or_default();
     Ok(Some(Parsed { frontmatter, body }))
 }
@@ -289,8 +320,8 @@ fn split_frontmatter(input: &str) -> Option<(String, String)> {
 /// `Parsed` を md ファイル相当の文字列に書き戻す。
 ///
 /// # フィールド順序
-/// `title → status → priority → labels → parent → links → その他 (extras 出現順)`。
-/// 既知 6 キー以外の extras は parse 時の出現順を保ったまま末尾に並ぶ
+/// `title → status → priority → labels → milestone → parent → links → draft → その他 (extras 出現順)`。
+/// typed キー以外の extras は parse 時の出現順を保ったまま末尾に並ぶ
 /// （`Frontmatter::extras` が `serde_yaml_ng::Mapping` で挿入順を保持するため）。
 ///
 /// # 空値の省略
@@ -314,16 +345,15 @@ fn split_frontmatter(input: &str) -> Option<(String, String)> {
 /// extras も空の場合、出力は `"---\n---\nbody\n"` を保ち、フロントマターの区切りは必ず出力する。
 ///
 /// # 失敗時の挙動
-/// 内部で `serde_yaml_ng::to_string` がエラーを返した場合は `expect` で panic する。
-/// 入力 `Parsed` は `parse` / `parse_bytes` 由来でシリアライズ可能性が保証されるため、
-/// 通常運用ではこの panic に到達しない。
-pub fn serialize(parsed: &Parsed) -> String {
+/// `serde_yaml_ng::to_string` の失敗は `FrontmatterError::Serialize` として返す。
+/// 呼び出し側は panic に依存せず、typed error として利用者へ伝播できる。
+pub fn serialize(parsed: &Parsed) -> Result<String, FrontmatterError> {
     let mapping = build_mapping(&parsed.frontmatter);
     let yaml_body = if mapping.is_empty() {
         String::new()
     } else {
         serde_yaml_ng::to_string(&mapping)
-            .expect("frontmatter value should be serializable as YAML")
+            .map_err(|source| FrontmatterError::Serialize { source })?
     };
 
     let mut out = String::with_capacity(yaml_body.len() + parsed.body.len() + 8);
@@ -334,7 +364,7 @@ pub fn serialize(parsed: &Parsed) -> String {
     if !out.ends_with('\n') {
         out.push('\n');
     }
-    out
+    Ok(out)
 }
 
 /// 固定順 typed キー → 残り extras (出現順) の `Mapping` を組み立てる。
@@ -346,18 +376,6 @@ pub fn serialize(parsed: &Parsed) -> String {
 fn build_mapping(fm: &Frontmatter) -> serde_yaml_ng::Mapping {
     use serde_yaml_ng::{Mapping, Value};
 
-    // parse.rs の convert_extras にも同名・同内容の定数がある。
-    // typed キーを追加・変更する場合は両方を同時に更新すること。
-    const TYPED_KEYS: [&str; 8] = [
-        "title",
-        "status",
-        "priority",
-        "labels",
-        "milestone",
-        "parent",
-        "links",
-        "draft",
-    ];
     let mut map = Mapping::new();
 
     if let Some(v) = fm.extras.get("title") {

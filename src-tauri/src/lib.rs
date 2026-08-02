@@ -26,6 +26,7 @@ pub fn run() {
             task::delete::delete_task,
             task::move_task::move_task,
             task::preview_filename::preview_task_filename,
+            task::preview_markdown::preview_task_markdown,
             task::add_link::add_link,
             task::remove_link::remove_link,
             config::get_columns::get_columns,

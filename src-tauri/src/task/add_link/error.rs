@@ -32,9 +32,11 @@ pub enum AddLinkError {
     /// commit 時点で snapshot にあった target が cache から消えていた場合に返す。
     #[error("target vanished from cache during commit: {path}")]
     TargetVanished { path: String },
-    /// `frontmatter::serialize` 後の本文が scanner eligible でない場合。
+    /// `TaskDocument::render` 後の本文が scanner eligible でない場合。
     #[error("content not scanner eligible: {reason}")]
     ContentRejected { reason: ContentRejectReason },
+    #[error("task document render failed: {0}")]
+    DocumentRender(String),
 }
 
 #[derive(Debug, Error)]

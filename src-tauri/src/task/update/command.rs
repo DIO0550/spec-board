@@ -9,7 +9,7 @@ use tauri::State;
 
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
-use crate::task::frontmatter;
+use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
@@ -59,11 +59,9 @@ pub(crate) fn update_task_impl(
             }
             Err(error) => return Err(error.into()),
         };
-        let parsed = frontmatter::parse_bytes(&bytes)
+        let parsed = TaskDocument::parse(&bytes)
             .map_err(|error| UpdateTaskError::ParseFailed(error.to_string()))?
-            .ok_or_else(|| {
-                UpdateTaskError::ParseFailed("no frontmatter delimiter found".to_string())
-            })?;
+            .into_parsed();
         let outcome = index
             .plan_update(project_root.as_path(), intent, &existing_task, parsed)
             .map_err(UpdateTaskCommandError::Validation)?;

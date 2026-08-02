@@ -54,6 +54,7 @@ export { getTasks } from "./taskCommands/getTasks";
 export { moveTask } from "./taskCommands/moveTask";
 export { openProject } from "./taskCommands/openProject";
 export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
+export { previewTaskMarkdown } from "./taskCommands/previewTaskMarkdown";
 export type {
   CreateTaskParams,
   DeleteTaskParams,
@@ -62,6 +63,7 @@ export type {
   OpenProjectParams,
   OpenProjectPayload,
   OrphanStrategy,
+  PreviewTaskMarkdownParams,
   TaskProjectionPayload,
   TaskProjectionsPayload,
   UpdateTaskParams,

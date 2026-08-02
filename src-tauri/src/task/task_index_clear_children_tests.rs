@@ -243,7 +243,7 @@ fn plan_clear_children_of_preserves_loaded_order_with_two_inputs() {
 
 #[test]
 fn plan_clear_children_of_preserves_typed_field_order() {
-    // frontmatter::serialize 規約: title → status → priority → labels → links → extras 出現順
+    // TaskDocument::render 規約: title → status → priority → labels → links → extras 出現順
     let parsed = parsed_from_md(
         "---\n\
          title: T\n\
@@ -355,6 +355,9 @@ fn plan_clear_children_of_rejects_oversized_content() {
         ClearChildrenError::ContentRejected { path, .. } => {
             assert_eq!(path, PathBuf::from("tasks/c.md"));
         }
+        ClearChildrenError::DocumentRender { path, .. } => {
+            assert_eq!(path, PathBuf::from("tasks/c.md"));
+        }
     }
 }
 
@@ -379,6 +382,9 @@ fn plan_clear_children_of_rejects_nul_byte_content() {
 
     match err {
         ClearChildrenError::ContentRejected { path, .. } => {
+            assert_eq!(path, PathBuf::from("tasks/c.md"));
+        }
+        ClearChildrenError::DocumentRender { path, .. } => {
             assert_eq!(path, PathBuf::from("tasks/c.md"));
         }
     }

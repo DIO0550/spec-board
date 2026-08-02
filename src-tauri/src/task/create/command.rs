@@ -15,9 +15,8 @@ use super::error::CreateTaskCommandError;
 use crate::config::column_name::ColumnName;
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
-use crate::task::frontmatter::parse as parse_frontmatter;
+use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
-use crate::task::parse::{task_from_parsed, TaskParseContext};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_content::TaskContent;
 use crate::task::task_index::{CreateTaskIntent, Task, TaskIndex};
@@ -86,12 +85,12 @@ fn plan_cache_insert(
     rel_path: &Path,
     status: ColumnName,
 ) -> Result<(HashMap<PathBuf, Task>, Task), CreateTaskCommandError> {
-    let parsed = parse_frontmatter(content.as_str())?.expect("just-written frontmatter must parse");
-    let context = TaskParseContext {
+    let document = TaskDocument::parse(content.as_bytes())?;
+    let context = crate::task::parse::TaskParseContext {
         file_path: rel_path.to_path_buf(),
         default_status: status,
     };
-    let task = task_from_parsed(parsed, &context);
+    let task = document.to_task(&context);
     let mut next_tasks = tasks.clone();
     let created_task = TaskIndex::insert_new_task_into_cache(&mut next_tasks, task);
     Ok((next_tasks, created_task))

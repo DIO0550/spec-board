@@ -11,7 +11,7 @@ use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::add_link::args::AddLinkArgs;
 use crate::task::add_link::error::{AddLinkCommandError, AddLinkError};
-use crate::task::frontmatter;
+use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::{AddLinkOutcome, Task, TaskIndex};
@@ -66,11 +66,9 @@ pub(crate) fn add_link_impl(
             }
             Err(error) => return Err(error.into()),
         };
-        let parsed = frontmatter::parse_bytes(&bytes)
+        let parsed = TaskDocument::parse(&bytes)
             .map_err(|error| AddLinkError::ParseFailed(error.to_string()))?
-            .ok_or_else(|| {
-                AddLinkError::ParseFailed("no frontmatter delimiter found".to_string())
-            })?;
+            .into_parsed();
         let outcome = index
             .plan_add_link(project_root.as_path(), intent, &existing_source, parsed)
             .map_err(AddLinkCommandError::Validation)?;
