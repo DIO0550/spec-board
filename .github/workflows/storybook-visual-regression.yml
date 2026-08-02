@@ -255,12 +255,12 @@ jobs:
             fi
             {
               echo "$MARKER"
-              echo "## Storybook ビジュアルリグレッション"
+              echo "## Storybook visual regression"
               echo ""
               echo "$HEADLINE"
               echo ""
               # 玉の色はレポート画面の分類アイコンと揃えてある。
-              echo "| 🔴 変更 | ⚪ 新規 | ⚫ 削除 | 🔵 差分なし |"
+              echo "| 🔴 Changed | ⚪ New | ⚫ Deleted | 🔵 Passed |"
               echo "| ---: | ---: | ---: | ---: |"
               echo "| $1 | $2 | $3 | $4 |"
               echo ""
@@ -269,7 +269,7 @@ jobs:
           else
             {
               echo "$MARKER"
-              echo "## Storybook ビジュアルリグレッション"
+              echo "## Storybook visual regression"
               echo ""
               if [ -f "$SUMMARY" ]; then
                 echo "レポートを公開できませんでした。"
