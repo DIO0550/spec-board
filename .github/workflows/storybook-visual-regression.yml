@@ -259,11 +259,12 @@ jobs:
               echo ""
               echo "$HEADLINE"
               echo ""
-              echo "$REPORT_URL"
-              echo ""
-              echo "| Changed | New | Deleted | Passed |"
+              # 玉の色はレポート画面の分類アイコンと揃えてある。
+              echo "| 🔴 Changed | ⚪ New | ⚫ Deleted | 🔵 Passed |"
               echo "| ---: | ---: | ---: | ---: |"
               echo "| $1 | $2 | $3 | $4 |"
+              echo ""
+              echo "- [VRT](${REPORT_URL})"
             } > "$BODY_FILE"
           else
             {
@@ -281,9 +282,8 @@ jobs:
           fi
 
           {
-            echo ""
-            echo "- Report artifact: ${RUN_URL}"
-            echo "- Storybook preview: ${PREVIEW_URL}"
+            echo "- [Artifact](${RUN_URL})"
+            echo "- [Storybook](${PREVIEW_URL})"
           } >> "$BODY_FILE"
 
           COMMENT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
