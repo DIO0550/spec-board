@@ -109,4 +109,4 @@ flowchart TD
 | 1.3 | 2026-06-21 | マイルストーン専用ビューの仕様書 ([milestone-view-spec.md](./milestone-view-spec.md)) を追加 | - |
 | 1.4 | 2026-07-31 | Issue #453: backend の ProjectSession aggregate / writer gate / revision CAS / staged watcher swap を仕様化。multi-project cache (#189)、wire redesign (#465)、OwnWriteGuard (#468)、path canonicalization は対象外 | - |
 | 1.5 | 2026-08-01 | Issue #458: ProjectLoadWarning、partial success、読み込み注意パネルとwarnings通知を追加 | - |
-| 1.6 | 2026-08-01 | Issue #455
+| 1.6 | 2026-08-01 | Issue #455/#402: TaskDocument codec、TaskPatch、preview_task_markdown の共通 renderer と full Markdown preview を追加 | - |
