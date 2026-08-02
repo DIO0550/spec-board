@@ -107,18 +107,21 @@ jobs:
           REPORT_VERSION: ${{ github.event.pull_request.head.sha }}
         run: |
           test -f visual-report/index.html
-          grep -Fq 'class="nav-reveal"' visual-report/index.html
-          grep -Fq 'data-global-view-mode="overlay"' visual-report/index.html
-          grep -Fq 'data-global-view-mode="split"' visual-report/index.html
-          grep -Fq 'data-global-view-mode="slider"' visual-report/index.html
-          grep -Fq 'Visual report UI v7' visual-report/index.html
-          grep -Fq 'grid-template-columns: repeat(2, minmax(0, 1fr))' visual-report/index.html
-          grep -Fq 'mix-blend-mode: difference' visual-report/index.html
+          grep -Fq 'Visual report UI v8' visual-report/index.html
+          # reg-viz と同じ5つの比較モードが揃っていること。
+          grep -Fq 'data-view-mode="diff"' visual-report/index.html
+          grep -Fq 'data-view-mode="slide"' visual-report/index.html
+          grep -Fq 'data-view-mode="2up"' visual-report/index.html
+          grep -Fq 'data-view-mode="blend"' visual-report/index.html
+          grep -Fq 'data-view-mode="toggle"' visual-report/index.html
+          grep -Fq 'id="report-data"' visual-report/index.html
           node -e 'const summary = require("./visual-report/summary.json"); if (summary.reportVersion !== process.env.REPORT_VERSION) process.exit(1)'
+          # Changed / New / Deleted / Passed の集計がコメント生成の前提になる。
+          node -e 'const summary = require("./visual-report/summary.json"); for (const key of ["changed", "new", "deleted", "passed"]) if (typeof summary[key] !== "number") process.exit(1)'
           RESULTS=$(node -e 'console.log(require("./visual-report/summary.json").results.length)')
           if [ "$RESULTS" -gt 0 ]; then
             grep -Fq 'id="story-navigation"' visual-report/index.html
-            grep -Fq 'placeholder="Filter stories..."' visual-report/index.html
+            grep -Fq 'placeholder="Filter by file name"' visual-report/index.html
             find visual-report -mindepth 2 -maxdepth 2 -name index.html -print -quit | grep -q .
           fi
 
@@ -240,37 +243,49 @@ jobs:
           PREVIEW_URL="https://${OWNER}.github.io/${REPO_NAME}/pr-preview/pr-${PR_NUMBER}/"
           REPORT_URL="https://${OWNER}.github.io/${REPO_NAME}/visual-regression/pr-${PR_NUMBER}/?revision=${{ github.event.pull_request.head.sha }}"
           SUMMARY="visual-report/summary.json"
+          BODY_FILE=visual-comment.md
 
-          if [ "$PUBLISH_OUTCOME" != "success" ]; then
-            FAILED="unknown"
-            TOTAL="unknown"
-            STATUS="❌ report publish failed"
-          elif [ -f "$SUMMARY" ]; then
-            FAILED=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).failed)' "$SUMMARY")
-            TOTAL=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).results.length)' "$SUMMARY")
-            STATUS=$([ "$COMPARE_OUTCOME" = "success" ] && echo "✅ pass" || echo "❌ diff detected")
+          if [ "$PUBLISH_OUTCOME" = "success" ] && [ -f "$SUMMARY" ]; then
+            COUNTS=$(node -e 'const s = require("./visual-report/summary.json"); console.log(s.changed, s.new, s.deleted, s.passed)')
+            set -- $COUNTS
+            if [ "$1" -gt 0 ]; then
+              HEADLINE="差分が見つかりました。"
+            else
+              HEADLINE="差分はありませんでした。"
+            fi
+            {
+              echo "$MARKER"
+              echo "## Storybook visual regression"
+              echo ""
+              echo "$HEADLINE"
+              echo ""
+              # 玉の色はレポート画面の分類アイコンと揃えてある。
+              echo "| 🔴 Changed | ⚪ New | ⚫ Deleted | 🔵 Passed |"
+              echo "| ---: | ---: | ---: | ---: |"
+              echo "| $1 | $2 | $3 | $4 |"
+              echo ""
+              echo "- [VRT](${REPORT_URL})"
+            } > "$BODY_FILE"
           else
-            FAILED="unknown"
-            TOTAL="unknown"
-            STATUS="❌ report missing"
+            {
+              echo "$MARKER"
+              echo "## Storybook visual regression"
+              echo ""
+              if [ -f "$SUMMARY" ]; then
+                echo "レポートを公開できませんでした。"
+              else
+                echo "レポートが見つかりませんでした。"
+              fi
+              echo ""
+              # 括弧内はワークフローの各ステップ名なので英語のままにする。
+              echo "- レポート未更新（compare: ${COMPARE_OUTCOME} / verify: ${VERIFY_OUTCOME} / publish: ${PUBLISH_OUTCOME}）"
+            } > "$BODY_FILE"
           fi
 
-          BODY_FILE=visual-comment.md
           {
-            echo "$MARKER"
-            echo "## Storybook visual regression"
-            echo ""
-            echo "Status: ${STATUS}"
-            echo ""
-            echo "- Changed stories over threshold: ${FAILED} / ${TOTAL}"
-            if [ "$PUBLISH_OUTCOME" = "success" ]; then
-              echo "- Rich visual diff report: ${REPORT_URL}"
-            else
-              echo "- Rich visual diff report: not updated (verify: ${VERIFY_OUTCOME}, publish: ${PUBLISH_OUTCOME})"
-            fi
-            echo "- Report artifact: ${RUN_URL}"
-            echo "- Storybook preview: ${PREVIEW_URL}"
-          } > "$BODY_FILE"
+            echo "- [Actions](${RUN_URL})"
+            echo "- [Storybook](${PREVIEW_URL})"
+          } >> "$BODY_FILE"
 
           COMMENT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
             --jq "[.[] | select(.body | startswith(\"$MARKER\"))][0].id // empty")
