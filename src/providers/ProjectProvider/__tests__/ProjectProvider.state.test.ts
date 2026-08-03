@@ -49,6 +49,7 @@ const dataA: ProjectData = {
   columns: cols("Todo", "Done"),
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
   openRequestId: 0,
   loadWarnings: [],
 };
@@ -59,6 +60,7 @@ const dataB: ProjectData = {
   columns: cols("Todo", "Done"),
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
   openRequestId: 0,
   loadWarnings: [],
 };
@@ -187,6 +189,7 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
       columns: cols("Todo"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -219,6 +222,7 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
       columns: cols("Todo"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -251,6 +255,7 @@ test("task-created (parent あり) で親が既に children を持っていれ�
       columns: cols("Todo"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -327,6 +332,7 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
       columns: cols("Todo"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -376,6 +382,7 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
       columns: cols("Todo"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -423,6 +430,7 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
       columns: cols("Todo"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -473,6 +481,7 @@ test("columns-replaced: doneColumn が rename 対象なら自動追従する", (
       doneColumn: "Done",
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -497,6 +506,7 @@ test("columns-replaced: action.doneColumn 指定時はそれが採用される (
       doneColumn: "Done",
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -521,6 +531,7 @@ test("columns-replaced: doneColumn / renames 未指定時は既存値を維持",
       doneColumn: "Done",
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -598,6 +609,7 @@ test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ
       columns: cols("Todo", "Done"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -628,6 +640,7 @@ test("card-order-updated → 他カラムの tasks 順序は不変", () => {
       columns: cols("Todo", "Done"),
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       openRequestId: 0,
       loadWarnings: [],
     },
@@ -676,6 +689,7 @@ test("projections-refreshed は task と milestone の projection map を同時�
     type: "projections-refreshed",
     projections,
     milestoneProjections,
+    taskTree: [],
   });
 
   expect(next.kind === "loaded" ? next.data.projections : undefined).toEqual(
@@ -699,6 +713,7 @@ test("非 loaded state への projections-refreshed は両 map を変更しな�
     type: "projections-refreshed",
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
   });
 
   expect(next).toBe(idle);
@@ -725,6 +740,7 @@ test("tasks-resynced は tasks と両 projection map を更新し columns は変
     tasks: [makeTask({ id: "z", filePath: "tasks/z.md", status: "Done" })],
     projections,
     milestoneProjections,
+    taskTree: [],
     loadWarnings: [],
   });
 
@@ -748,6 +764,7 @@ test("state-replaced は ProjectData 全体を置き換え、tasks-resynced は 
     tasks: dataB.tasks,
     projections: dataB.projections,
     milestoneProjections: dataB.milestoneProjections,
+    taskTree: [],
     loadWarnings: [],
   });
 
@@ -765,6 +782,7 @@ test("非 loaded state への tasks-resynced は無視される", () => {
     tasks: dataB.tasks,
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     loadWarnings: [],
   });
 

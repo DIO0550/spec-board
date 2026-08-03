@@ -33,6 +33,7 @@ test("invoke が 'open_project' という command 名で呼ばれる", async () 
     columns: [],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -51,6 +52,7 @@ test("引数オブジェクト { path } がそのまま invoke 第 2 引数に�
     columns: [],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -83,6 +85,7 @@ test("成功時は Result.ok({ tasks, columns, projections }) を返す", async 
         taskFilePaths: ["tasks/x.md"],
       },
     },
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -117,6 +120,7 @@ test("成功時は Result.ok({ tasks, columns, projections }) を返す", async 
           },
         ],
       ]),
+      taskTree: [],
       loadWarnings: [],
       session: {
         projectKey: "/home/user/specs",
@@ -134,6 +138,7 @@ test("projections が空オブジェクトでも成功する", async () => {
     columns: ["Todo"],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -152,6 +157,7 @@ test("projections が空オブジェクトでも成功する", async () => {
       columns: ["Todo"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       loadWarnings: [],
       session: {
         projectKey: "/home/user/specs",
@@ -176,6 +182,7 @@ test("milestoneProjections は特殊名と task path 順序を保つ Map に変�
     columns: [],
     projections: {},
     milestoneProjections,
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -243,6 +250,7 @@ test.each([
     columns: [],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -302,4 +310,56 @@ test("unknown warning code / stage と null path は mapper で安全な domain 
       recoverable: true,
     },
   ]);
+});
+
+test("taskTree がネスト構造を保ったまま domain 型へ変換される", async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: [],
+    projections: {},
+    milestoneProjections: {},
+    taskTree: [
+      {
+        filePath: "tasks/p.md",
+        children: [{ filePath: "tasks/c.md", children: [] }],
+      },
+    ],
+    loadWarnings: [],
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 1,
+      revision: 1,
+      eventSeq: 0,
+    },
+  });
+
+  const result = await openProject({ path: "/abs" });
+
+  expect(Result.isOk(result) && result.value.taskTree).toEqual([
+    {
+      filePath: "tasks/p.md",
+      children: [{ filePath: "tasks/c.md", children: [] }],
+    },
+  ]);
+});
+
+test("taskTree が空配列でも成功する", async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    tasks: [],
+    columns: [],
+    projections: {},
+    milestoneProjections: {},
+    taskTree: [],
+    loadWarnings: [],
+    session: {
+      projectKey: "/home/user/specs",
+      generation: 1,
+      revision: 1,
+      eventSeq: 0,
+    },
+  });
+
+  const result = await openProject({ path: "/abs" });
+
+  expect(Result.isOk(result) && result.value.taskTree).toEqual([]);
 });

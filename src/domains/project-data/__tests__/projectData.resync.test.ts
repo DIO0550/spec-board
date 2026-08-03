@@ -5,6 +5,7 @@ import {
 } from "@/domains/milestone-projection";
 import { ProjectData } from "@/domains/project-data";
 import type { ProjectLoadWarning } from "@/domains/project-load-warning";
+import { TaskForest } from "@/domains/task-forest";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -53,12 +54,14 @@ const baseData = (
   tasks: Task[],
   projections: TaskProjectionMap,
   milestoneProjections: MilestoneProjectionMap = MilestoneProjection.emptyMap,
+  taskTree: TaskForest = TaskForest.empty,
 ): ProjectData => ({
   tasks,
   columns: [{ name: "Todo", order: 0 }],
   doneColumn: "Done",
   projections,
   milestoneProjections,
+  taskTree,
   openRequestId: 7,
   loadWarnings: [],
   watcherSession: session,
@@ -71,6 +74,7 @@ const resyncTaskSnapshot = (
   ProjectData.resyncTasks(data, {
     ...snapshot,
     milestoneProjections: data.milestoneProjections,
+    taskTree: [],
   });
 
 test("内容が変わった task が反映され、他フィールドは据え置かれる", () => {
@@ -208,6 +212,7 @@ test("resyncTasks は tasks と両 projection を同じ snapshot から更新す
     tasks: [Task.fromPayload(payload({ title: "A2" }))],
     projections: projectionOf("tasks/a.md", true),
     milestoneProjections: milestoneProjectionOf(1, 1),
+    taskTree: [],
   });
 
   expect(next.tasks[0].title).toBe("A2");
@@ -224,6 +229,7 @@ test("milestone projection だけ変わると tasks と task Map の参照を保
     tasks: [Task.fromPayload(payload())],
     projections: projectionOf("tasks/a.md", false),
     milestoneProjections: milestoneProjectionOf(1, 1),
+    taskTree: [],
   });
 
   expect(next.tasks).toBe(tasks);
@@ -250,6 +256,7 @@ test("tasks と両 Map が等価なら resyncTasks は ProjectData 参照を保�
       "tasks/a.md",
       "tasks/b.md",
     ]),
+    taskTree: [],
   });
 
   expect(next).toBe(data);
@@ -274,6 +281,7 @@ test("同一fingerprintのloadWarningsではProjectDataと配列参照を保持�
     tasks: [Task.fromPayload(payload())],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     loadWarnings: [loadWarning("読めません")],
   });
 
@@ -290,16 +298,115 @@ test("loadWarningsは内容変更と空配列への遷移をatomicに反映す�
     tasks: [Task.fromPayload(payload())],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     loadWarnings: [loadWarning("次")],
   });
   const cleared = ProjectData.resyncTasks(changed, {
     tasks: [Task.fromPayload(payload())],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     loadWarnings: [],
   });
 
   expect(changed.loadWarnings).toHaveLength(1);
   expect(changed.loadWarnings[0].message).toBe("次");
   expect(cleared.loadWarnings).toEqual([]);
+});
+
+// ───────── taskTree の atomic 更新 ─────────
+
+const treeOf = (...filePaths: string[]): TaskForest =>
+  TaskForest.fromPayload(
+    filePaths.map((filePath) => ({ filePath, children: [] })),
+  );
+
+test("tasks / projections / tree すべて等価な resync では data 参照が変わらない", () => {
+  const data = baseData(
+    [Task.fromPayload(payload())],
+    projectionOf("tasks/a.md", false),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [Task.fromPayload(payload())],
+    projections: projectionOf("tasks/a.md", false),
+    milestoneProjections: MilestoneProjection.emptyMap,
+    taskTree: treeOf("tasks/a.md"),
+  });
+
+  expect(next).toBe(data);
+});
+
+test("tasks と taskTree が同じ snapshot として同時に更新される", () => {
+  const data = baseData(
+    [Task.fromPayload(payload())],
+    projectionOf("tasks/a.md", false),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+  const taskTree = TaskForest.fromPayload([
+    {
+      filePath: "tasks/a.md",
+      children: [{ filePath: "tasks/b.md", children: [] }],
+    },
+  ]);
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [
+      Task.fromPayload(payload()),
+      Task.fromPayload(payload({ id: "b", filePath: "tasks/b.md" })),
+    ],
+    projections: projectionOf("tasks/a.md", false),
+    milestoneProjections: MilestoneProjection.emptyMap,
+    taskTree,
+  });
+
+  expect(next.tasks).toHaveLength(2);
+  expect(next.taskTree).toBe(taskTree);
+});
+
+test("tree だけ変化した resync でも新しい構造が反映される", () => {
+  const data = baseData(
+    [Task.fromPayload(payload())],
+    projectionOf("tasks/a.md", false),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md", "tasks/b.md"),
+  );
+  const taskTree = TaskForest.fromPayload([
+    {
+      filePath: "tasks/a.md",
+      children: [{ filePath: "tasks/b.md", children: [] }],
+    },
+  ]);
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: data.tasks,
+    projections: data.projections,
+    milestoneProjections: data.milestoneProjections,
+    taskTree,
+  });
+
+  expect(next).not.toBe(data);
+  expect(next.taskTree).toBe(taskTree);
+});
+
+test("全タスク削除後の rescan では taskTree が空になる", () => {
+  const data = baseData(
+    [Task.fromPayload(payload())],
+    projectionOf("tasks/a.md", false),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+
+  const next = ProjectData.resyncTasks(data, {
+    tasks: [],
+    projections: new Map(),
+    milestoneProjections: MilestoneProjection.emptyMap,
+    taskTree: [],
+  });
+
+  expect(next.tasks).toHaveLength(0);
+  expect(next.taskTree).toHaveLength(0);
 });

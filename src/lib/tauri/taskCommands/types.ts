@@ -7,6 +7,7 @@ import type {
   ProjectLoadWarning,
   ProjectLoadWarningPayloadInput,
 } from "@/domains/project-load-warning";
+import type { TaskForest, TaskForestPayloadInput } from "@/domains/task-forest";
 import type {
   TaskProjectionMap,
   TaskProjectionPayloadInput,
@@ -26,6 +27,12 @@ export type TaskProjectionPayload = TaskProjectionPayloadInput;
 
 /** filePath をキーにした projection の raw payload。 */
 export type TaskProjectionsPayload = TaskProjectionsPayloadInput;
+
+/**
+ * 階層ツリーの raw payload。
+ * 実体は domain 側の入力型（循環依存を避けるため型の所有権は domain に置く）。
+ */
+export type TaskForestPayload = TaskForestPayloadInput;
 
 /**
  * watcher session の raw payload。
@@ -49,6 +56,8 @@ export type OpenProjectPayload = {
   projections: TaskProjectionMap;
   /** milestone 名 -> live progress / board-order task paths */
   milestoneProjections: MilestoneProjectionMap;
+  /** 親子階層のネストツリー（全タスクの正準ツリー。絞り込みは FE 側で行う） */
+  taskTree: TaskForest;
   /** プロジェクト読み込み中に継続可能だった警告 */
   loadWarnings: ProjectLoadWarning[];
   /** watcher event 検証の初期 baseline（tasks と同一トランザクションの値） */
@@ -65,6 +74,8 @@ export type OpenProjectRawPayload = {
   projections: TaskProjectionsPayload;
   /** milestone 名をキーにした projection の raw payload */
   milestoneProjections: MilestoneProjectionsPayloadInput;
+  /** 階層ツリーの raw payload */
+  taskTree: TaskForestPayload;
   /** プロジェクト読み込み中に継続可能だった警告 */
   loadWarnings: ProjectLoadWarningPayloadInput[];
   /** watcher session の raw payload */
@@ -83,6 +94,8 @@ export type GetTasksPayload = {
   projections: TaskProjectionMap;
   /** milestone 名 -> live progress / board-order task paths */
   milestoneProjections: MilestoneProjectionMap;
+  /** 親子階層のネストツリー（全タスクの正準ツリー。絞り込みは FE 側で行う） */
+  taskTree: TaskForest;
   /** プロジェクト読み込み中に継続可能だった警告 */
   loadWarnings: ProjectLoadWarning[];
   /** この snapshot の watcher session（envelope 検証の baseline 再設定用） */
@@ -97,6 +110,8 @@ export type GetTasksRawPayload = {
   projections: TaskProjectionsPayload;
   /** milestone 名をキーにした projection の raw payload */
   milestoneProjections: MilestoneProjectionsPayloadInput;
+  /** 階層ツリーの raw payload */
+  taskTree: TaskForestPayload;
   /** プロジェクト読み込み中に継続可能だった警告 */
   loadWarnings: ProjectLoadWarningPayloadInput[];
   /** watcher session の raw payload */

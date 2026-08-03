@@ -3,6 +3,7 @@ import {
   MilestoneProjection,
   type MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
+import { TaskForest } from "@/domains/task-forest";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -47,6 +48,7 @@ const milestoneProjectionOf = (
 const dataWith = (
   projections: TaskProjectionMap,
   milestoneProjections: MilestoneProjectionMap = MilestoneProjection.emptyMap,
+  taskTree: TaskForest = TaskForest.empty,
 ): ProjectDataT => ({
   watcherSession: WATCHER_SESSION_FIXTURE,
   tasks: [makeTask("tasks/a.md")],
@@ -54,6 +56,7 @@ const dataWith = (
   doneColumn: "Done",
   projections,
   milestoneProjections,
+  taskTree,
   openRequestId: 1,
   loadWarnings: [],
 });
@@ -65,6 +68,7 @@ const replaceTaskProjections = (
   ProjectData.replaceProjections(data, {
     projections,
     milestoneProjections: data.milestoneProjections,
+    taskTree: [],
   });
 
 test("replaceProjections は projections だけを差し替える", () => {
@@ -215,6 +219,7 @@ test("replaceProjections は task と milestone の両 Map を1回で更新す�
   const next = ProjectData.replaceProjections(data, {
     projections: new Map([["tasks/a.md", projectionOf(1, 1)]]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(1, 1)]]),
+    taskTree: [],
   });
 
   expect(next.projections.get("tasks/a.md")?.subIssueProgress.done).toBe(1);
@@ -231,6 +236,7 @@ test("task projection だけ変わると milestone Map の参照を保つ", () =
   const next = ProjectData.replaceProjections(data, {
     projections: new Map([["tasks/a.md", projectionOf(1, 1)]]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(0, 1)]]),
+    taskTree: [],
   });
 
   expect(next.milestoneProjections).toBe(milestoneProjections);
@@ -247,6 +253,7 @@ test("milestone projection だけ変わると task Map の参照を保つ", () =
   const next = ProjectData.replaceProjections(data, {
     projections: new Map([["tasks/a.md", projectionOf(0, 1)]]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(1, 1)]]),
+    taskTree: [],
   });
 
   expect(next.projections).toBe(projections);
@@ -262,6 +269,7 @@ test("milestone task path の順序が変わると新しい entry と Map を採
     milestoneProjections: new Map([
       ["v1", milestoneProjectionOf(0, 2, ["tasks/b.md", "tasks/a.md"])],
     ]),
+    taskTree: [],
   });
 
   expect(next.milestoneProjections).not.toBe(data.milestoneProjections);
@@ -279,6 +287,7 @@ test("両 Map が完全等価なら entry・Map・ProjectData の全参照を保
   const next = ProjectData.replaceProjections(data, {
     projections: new Map([["tasks/a.md", projectionOf(0, 1)]]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(0, 1)]]),
+    taskTree: [],
   });
 
   expect(next).toBe(data);
@@ -295,8 +304,108 @@ test("milestone entry の削除と空 Map を反映する", () => {
   const next = ProjectData.replaceProjections(data, {
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
   });
 
   expect(next.milestoneProjections.size).toBe(0);
   expect(next.milestoneProjections).not.toBe(data.milestoneProjections);
+});
+
+// ───────── taskTree の参照保存 ─────────
+
+const treeOf = (...filePaths: string[]): TaskForest =>
+  TaskForest.fromPayload(
+    filePaths.map((filePath) => ({ filePath, children: [] })),
+  );
+
+test("projections も tree も等価なら ProjectData 参照を据え置く", () => {
+  const data = dataWith(
+    new Map(),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+
+  const next = ProjectData.replaceProjections(data, {
+    projections: new Map(),
+    milestoneProjections: new Map(),
+    taskTree: treeOf("tasks/a.md"),
+  });
+
+  expect(next).toBe(data);
+  expect(next.taskTree).toBe(data.taskTree);
+});
+
+test("tree だけ変わった場合も新しい ProjectData に反映される", () => {
+  const data = dataWith(
+    new Map(),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+  const taskTree = TaskForest.fromPayload([
+    {
+      filePath: "tasks/a.md",
+      children: [{ filePath: "tasks/b.md", children: [] }],
+    },
+  ]);
+
+  const next = ProjectData.replaceProjections(data, {
+    projections: new Map(),
+    milestoneProjections: new Map(),
+    taskTree,
+  });
+
+  expect(next).not.toBe(data);
+  expect(next.taskTree).toBe(taskTree);
+});
+
+test("optimistic な task 追加では taskTree が据え置かれる", () => {
+  const data = dataWith(
+    new Map(),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+
+  const next = ProjectData.applyTaskCreated(data, makeTask("tasks/new.md"));
+
+  expect(next.taskTree).toBe(data.taskTree);
+  expect(next.tasks).toHaveLength(2);
+});
+
+test("optimistic な task 削除でも taskTree が据え置かれる", () => {
+  const data = dataWith(
+    new Map(),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+
+  const next = ProjectData.applyTaskDeleted(data, "tasks/a.md");
+
+  expect(next.taskTree).toBe(data.taskTree);
+  expect(next.tasks).toHaveLength(0);
+});
+
+test("optimistic な親付け替えでは次の get_tasks まで旧階層のまま", () => {
+  const data = dataWith(
+    new Map(),
+    MilestoneProjection.emptyMap,
+    treeOf("tasks/a.md"),
+  );
+  const reparented = Task.fromPayload({
+    id: "tasks/a.md",
+    filePath: "tasks/a.md",
+    title: "T",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    extras: {},
+    warnings: [],
+    parent: "tasks/parent.md",
+  });
+
+  const next = ProjectData.applyTaskUpdated(data, "tasks/a.md", reparented);
+
+  expect(next.taskTree).toBe(data.taskTree);
 });

@@ -60,6 +60,7 @@ const makeData = (
   ],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
   openRequestId: 0,
   loadWarnings: [],
 });

@@ -240,6 +240,7 @@ export const useProjectionSyncEffect = ({
           type: "projections-refreshed",
           projections: result.value.projections,
           milestoneProjections: result.value.milestoneProjections,
+          taskTree: result.value.taskTree,
         });
         dispatch({
           type: "load-warnings-replaced",

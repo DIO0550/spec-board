@@ -17,6 +17,7 @@ const dataOf = (
   columns: columns("Todo", "Done"),
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
   openRequestId: 0,
   loadWarnings: [],
 });

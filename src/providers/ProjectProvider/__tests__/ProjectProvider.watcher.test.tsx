@@ -73,6 +73,7 @@ const payload: OpenProjectPayload = {
   columns: ["Todo"],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
 };
 
 const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
@@ -253,6 +254,7 @@ test("loadedPath と異なる path の stale handler の event は無視され�
       columns: ["Todo"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   let pending!: Promise<void>;

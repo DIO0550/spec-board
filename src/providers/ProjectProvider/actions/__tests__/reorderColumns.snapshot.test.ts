@@ -10,6 +10,7 @@ const dataOf = (columns: readonly Column[]): ProjectData => ({
   columns: [...columns],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
   openRequestId: 0,
   loadWarnings: [],
 });
@@ -53,6 +54,7 @@ test("from: data.columns が逆順でも表示順 [A,B,C] に sort してから�
     ],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };
@@ -74,6 +76,7 @@ test("from: order に gap がある [A(0), B(5), C(10)] でも from='A', to='C' 
     ],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };
@@ -156,6 +159,7 @@ test("toCommandBuilder: current 引数を見ず snapshot.afterColumns を返す"
     ],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };
