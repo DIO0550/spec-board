@@ -545,3 +545,45 @@ fn deep_chain_is_traversed_iteratively_without_stack_overflow() {
     assert_eq!(progress_of(&map, "tasks/a500.md").total, depth - 500);
     assert_eq!(progress_of(&map, "tasks/a1000.md").total, 0);
 }
+
+// ───────── TaskTreeNode の serde 契約 ─────────
+
+/// 生成は `TaskIndex::project_forest` の責務なので、ここは型の serde 契約だけを
+/// 固定する（IPC のキー名は FE の codec と 1:1 で、変えると無言で lookup が外れる）。
+fn tree_node(file_path: &str, children: Vec<TaskTreeNode>) -> TaskTreeNode {
+    TaskTreeNode {
+        file_path: file_path.into(),
+        children,
+    }
+}
+
+#[test]
+fn task_tree_node_serializes_keys_as_camel_case() {
+    let node = tree_node("tasks/parent.md", vec![tree_node("tasks/child.md", vec![])]);
+
+    let value = serde_json::to_value(node).unwrap();
+
+    assert_eq!(value["filePath"], json!("tasks/parent.md"));
+    assert_eq!(value["children"][0]["filePath"], json!("tasks/child.md"));
+}
+
+#[test]
+fn task_tree_node_does_not_serialize_depth() {
+    let node = tree_node("tasks/a.md", vec![tree_node("tasks/b.md", vec![])]);
+
+    let value = serde_json::to_value(node).unwrap();
+
+    assert!(
+        value.get("depth").is_none(),
+        "深さは構造から導出するため payload には載せない"
+    );
+}
+
+#[test]
+fn task_tree_node_without_children_serializes_an_empty_array() {
+    let node = tree_node("tasks/leaf.md", vec![]);
+
+    let value = serde_json::to_value(node).unwrap();
+
+    assert_eq!(value["children"], json!([]), "null ではなく空配列で返す");
+}

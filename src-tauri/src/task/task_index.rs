@@ -29,7 +29,8 @@ use crate::task::path_lookup::{
     normalize_task_path_for_lookup, parent_lookup_index, task_lookup_index, task_path_index,
 };
 use crate::task::projection::{
-    MilestoneProjectionMap, SubIssueProgress, TaskProjection, TaskProjectionMap,
+    MilestoneProjectionMap, SubIssueProgress, TaskForest, TaskProjection, TaskProjectionMap,
+    TaskTreeNode,
 };
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
@@ -51,6 +52,56 @@ use crate::task::warning::{
 /// の親チェーン検証で辿るノード数が増えるため、深い階層を許容したい場合は
 /// 検証コストへの影響を確認してから変更すること。
 const MAX_PARENT_DEPTH: usize = 20;
+
+/// `TaskIndex::cycle_members` の 3 色法で使う走査状態。
+///
+/// `InPath` は「今辿っている 1 本のパス上」を意味する。パスを抜けるたび全メンバを
+/// `Settled` へ移すため、`InPath` に再訪したら必ず現在のパス上の閉路になる。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CycleScanState {
+    Unseen,
+    InPath,
+    Settled,
+}
+
+/// `TaskIndex::build_forest_node` の反復 DFS で使う、組み立て途中の 1 段分。
+///
+/// 再帰を使わない代わりに、この Frame を `Vec` に積んで呼び出しスタックの役割を
+/// 持たせる。関数内では定義せず module レベルに置く。
+struct ForestFrame {
+    task_index: usize,
+    /// `adjacency[task_index]` のうち次に調べる位置
+    cursor: usize,
+    /// 組み立て済みの子ノード（隣接リストの入力順 = board 表示順）
+    children: Vec<TaskTreeNode>,
+}
+
+impl ForestFrame {
+    fn new(task_index: usize) -> Self {
+        Self {
+            task_index,
+            cursor: 0,
+            children: Vec::new(),
+        }
+    }
+}
+
+/// board 表示順に整列した tasks と、そこから導出した全 projection の束。
+///
+/// IPC には出さない（各 command が自分の payload struct へ詰め替える）。
+/// `open_project` / `get_tasks` が「順序 → projection 群」の手順を各自にコピーしていた
+/// 重複を解消し、projection を増やしたとき片側だけ更新し忘れる事故を型で防ぐための集約点。
+///
+/// `ClearChildrenOutcome` 等の `*Outcome` は `plan_*`（write の意図）に対する結果に付く
+/// 命名なので、`project_*` query の束であるこちらは既存 projection 群に揃えて `*Projection`
+/// とする。両 command が別の payload struct へ詰め替えるため `into_payload` は持たせず、
+/// フィールドの直接読みとする。
+pub(crate) struct TaskViewProjection {
+    pub(crate) tasks: Vec<Task>,
+    pub(crate) projections: TaskProjectionMap,
+    pub(crate) milestone_projections: MilestoneProjectionMap,
+    pub(crate) task_tree: TaskForest,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -295,17 +346,37 @@ impl TaskIndex {
             .collect()
     }
 
-    /// `Task.parent` から「親 index -> 直接子 index 列」の adjacency を 1 回だけ構築する。
+    /// 直接の子の adjacency を **`file_path` 昇順**で構築する。
+    ///
+    /// `TaskProjection::child_file_paths` の並び順契約を担うのはこちら。整列が要るのは
+    /// `self.tasks` の並びが `HashMap::values()` 由来で非決定的なためで、tasks 順を
+    /// そのまま採用すると payload が実行ごとに揺れる。
+    ///
+    /// 入力順のまま欲しい場合は [`Self::build_child_adjacency_in_input_order`] を使う。
+    fn build_child_adjacency(&self, index: &HashMap<String, usize>) -> Vec<Vec<usize>> {
+        let mut adjacency = self.build_child_adjacency_in_input_order(index);
+        for children in adjacency.iter_mut() {
+            children.sort_by(|&a, &b| self.tasks[a].file_path.cmp(&self.tasks[b].file_path));
+        }
+        adjacency
+    }
+
+    /// 直接の子の adjacency を **`self.tasks` の入力順**で構築する。
+    ///
+    /// 並び順の契約は持たない。`file_path` 昇順が要る呼び出し側は
+    /// [`Self::build_child_adjacency`] を通すこと。`project_forest` は兄弟順に
+    /// board 表示順（= command 層が渡す入力順）を要求するため、整列前のこちらを使う。
     ///
     /// `path_lookup::parent_lookup_index` は使わない。あちらが返すのは
     /// `HashMap<正規化 child path, Option<正規化 parent path>>` で、adjacency を組むには
     /// parent path → index の変換に結局 `task_lookup_index` が要り、HashMap が 2 本になる。
     ///
     /// 自己参照（`parent` が自分自身）は載せない（`children_paths_of` の自己除外と同じ）。
-    /// 各 slot を `file_path` 昇順に整列するのは、`self.tasks` の並びが
-    /// `HashMap::values()` 由来で非決定的なため。
-    /// tasks 順をそのまま採用すると payload が実行ごとに揺れる。
-    fn build_child_adjacency(&self, index: &HashMap<String, usize>) -> Vec<Vec<usize>> {
+    /// 載せると DFS が自分自身を子として展開しかけ、`visited` 依存でしか止まらなくなる。
+    fn build_child_adjacency_in_input_order(
+        &self,
+        index: &HashMap<String, usize>,
+    ) -> Vec<Vec<usize>> {
         let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); self.tasks.len()];
         for (child_index, task) in self.tasks.iter().enumerate() {
             let Some(parent) = task.parent.as_ref() else {
@@ -322,10 +393,203 @@ impl TaskIndex {
             }
             adjacency[parent_index].push(child_index);
         }
-        for children in adjacency.iter_mut() {
-            children.sort_by(|&a, &b| self.tasks[a].file_path.cmp(&self.tasks[b].file_path));
-        }
         adjacency
+    }
+
+    /// 親子階層のネストツリーを組み立てる。
+    ///
+    /// **契約**: 全 task がちょうど 1 回出現する。**root 列と兄弟列はともに
+    /// `self.tasks` の入力順**（command 層が `sorted_by_board_order` 済みで渡すため
+    /// board 表示順）。
+    ///
+    /// **root になるのは「親を持たない task」と「閉路そのもののメンバ全員」**。
+    /// 閉路にぶら下がるだけの子孫は親配下に残す。この規則は scan 経路の
+    /// `build_children_with_warnings` → `mark_cycle_members` が閉路メンバ全員の
+    /// `parent` を `None` 化するのと同じ木の形になるよう合わせたもの。片方だけ
+    /// 「閉路の先頭 1 件が root で残りはその子」にすると、同じ循環データが
+    /// scan 経路（`open_project` / full rescan）と watcher の差分 upsert 経路とで
+    /// 違う形に描画されてしまう。
+    ///
+    /// **cycle 打ち切りは必須機能**。scan 経路は上記のとおり `parent` を `None` 化
+    /// 済みで届くが、watcher の差分 upsert は新規循環を検出しないため、cache が
+    /// 循環を保持したままこの query に到達しうる（`project_all` の doc と同じ理由）。
+    ///
+    /// 到達可能性を別に計算しないのは、root 候補以外は親を辿れば必ず root 候補に
+    /// 行き着くため（親を持ち閉路にも乗らない task の親チェーンは、有限長で
+    /// 自然 root か閉路メンバのどちらかに到達する）。したがって board 順に 1 周
+    /// するだけで、子が親より前に居ても root 列には出ない。
+    ///
+    /// 移管元の FE 実装は閉路メンバを「到達できなかった残り」として root 列の**末尾へ
+    /// append** していたが、それは採らない。FE 側の枝刈り（`TaskForest.prune`）は
+    /// 可視集合を board 順に走査するので末尾 append を保存できず、BE と FE で root 順の
+    /// 規則が食い違う。root 列に例外規則を作らず board 順 1 本に揃える。
+    ///
+    /// 計算量は隣接リスト構築 + 閉路判定 + emit DFS の各 O(N + E)。
+    pub fn project_forest(&self) -> TaskForest {
+        let index = task_lookup_index(&self.tasks);
+        let adjacency = self.build_child_adjacency_in_input_order(&index);
+
+        // has_parent と、child -> parent の逆引き（`cycle_members` が親方向に辿るのに使う）を
+        // 隣接リストの 1 周で同時に作る。
+        let mut has_parent = vec![false; self.tasks.len()];
+        let mut parent_of: Vec<Option<usize>> = vec![None; self.tasks.len()];
+        for (parent_index, children) in adjacency.iter().enumerate() {
+            for &child_index in children {
+                has_parent[child_index] = true;
+                parent_of[child_index] = Some(parent_index);
+            }
+        }
+
+        let on_cycle = self.cycle_members(&parent_of);
+
+        let mut emitted = vec![false; self.tasks.len()];
+        let mut roots: TaskForest = Vec::new();
+        for root_index in 0..self.tasks.len() {
+            let is_root = !has_parent[root_index] || on_cycle[root_index];
+            if emitted[root_index] || !is_root {
+                continue;
+            }
+            roots.push(self.build_forest_node(root_index, &adjacency, &on_cycle, &mut emitted));
+        }
+        roots
+    }
+
+    /// parent ポインタの閉路上に居る task を true にして返す。
+    ///
+    /// 各 task の parent は高々 1 つなので、閉路を含む成分は「1 本の閉路 + そこに
+    /// ぶら下がる木」の形にしかならない。したがって閉路の判定は parent 方向へ辿って
+    /// 自分の走査パス上に戻るかを見るだけでよい（既存
+    /// `walk_parent_chain_collecting_cycle` と同じ親方向の走査。あちらは正規化文字列を
+    /// `HashSet` に積む起点ごとの走査で、index ベースの O(N) 判定には流用できない）。
+    ///
+    /// 自己参照（`parent` が自分自身）は隣接に載せないので `has_parent == false` に
+    /// なり、ここへは来ない（自然 root として扱われる）。
+    ///
+    /// `Unseen` / `InPath`（今辿っている 1 本のパス上）/ `Settled`（判定済み）の
+    /// 3 色法。パスを抜けるたび全メンバを `Settled` にするため、`InPath` に当たるのは
+    /// 必ず**現在のパス**上であり、そこから末尾までが閉路になる。パスより手前は
+    /// 閉路に**ぶら下がっている**だけなので false のまま残す。各 task は高々 1 回
+    /// `InPath` になり 1 回 `Settled` になるだけなので全体で O(N)。
+    fn cycle_members(&self, parent_of: &[Option<usize>]) -> Vec<bool> {
+        let mut scan_state = vec![CycleScanState::Unseen; self.tasks.len()];
+        let mut on_cycle = vec![false; self.tasks.len()];
+        let mut path: Vec<usize> = Vec::new();
+
+        for start in 0..self.tasks.len() {
+            if scan_state[start] != CycleScanState::Unseen {
+                continue;
+            }
+            path.clear();
+            let mut cursor = Some(start);
+            while let Some(current) = cursor {
+                match scan_state[current] {
+                    CycleScanState::Unseen => {
+                        scan_state[current] = CycleScanState::InPath;
+                        path.push(current);
+                        cursor = parent_of[current];
+                    }
+                    CycleScanState::InPath => {
+                        for &member in path.iter().rev() {
+                            on_cycle[member] = true;
+                            if member == current {
+                                break;
+                            }
+                        }
+                        cursor = None;
+                    }
+                    CycleScanState::Settled => {
+                        cursor = None;
+                    }
+                }
+            }
+            for &visited in &path {
+                scan_state[visited] = CycleScanState::Settled;
+            }
+        }
+        on_cycle
+    }
+
+    /// `root_index` を根とする部分木を組み立てる。**出力済みの子と、それ自身が
+    /// root になる子（閉路メンバ）は children から落とす**。前者は同一 task の
+    /// 二重出現を防ぎ、後者は「閉路メンバは全員 root」という契約を保つ
+    /// （A↔B の閉路なら A の children に B を入れない。B は B 自身の番で root として出る）。
+    ///
+    /// `emitted` を root をまたいで共有するのは、「全 task がちょうど 1 回」を
+    /// 「親は高々 1 つ」という入力側の不変条件ではなく走査側の構造で保証するため。
+    /// 既存 `collect_descendant_progress` の `visited` は root ごとにローカルなので
+    /// 流用できない。
+    ///
+    /// **明示 stack による反復で書く**。理由は 2 つ:
+    /// 1. `task_index.rs` の既存 DFS（`collect_descendant_progress` 等）がすべて反復で、
+    ///    このファイルの流儀に揃える。
+    /// 2. 親チェーンの深さ上限 `MAX_PARENT_DEPTH` は `build_children_with_warnings` の
+    ///    検証経路にしか無く、この query は watcher 差分 upsert 由来の未検証 cache からも
+    ///    呼ばれうる。再帰にすると深さが呼び出しスタックの限界に直結する。
+    fn build_forest_node(
+        &self,
+        root_index: usize,
+        adjacency: &[Vec<usize>],
+        on_cycle: &[bool],
+        emitted: &mut [bool],
+    ) -> TaskTreeNode {
+        emitted[root_index] = true;
+        let mut frames = vec![ForestFrame::new(root_index)];
+
+        loop {
+            let frame = frames
+                .last_mut()
+                .expect("root frame は確定と同時に return するため loop 中は空にならない");
+            let siblings = &adjacency[frame.task_index];
+
+            if frame.cursor < siblings.len() {
+                let child_index = siblings[frame.cursor];
+                frame.cursor += 1;
+                if emitted[child_index] || on_cycle[child_index] {
+                    continue;
+                }
+                emitted[child_index] = true;
+                frames.push(ForestFrame::new(child_index));
+                continue;
+            }
+
+            let task_index = frame.task_index;
+            let children = std::mem::take(&mut frame.children);
+            frames.pop();
+            let node = TaskTreeNode {
+                file_path: self.tasks[task_index].file_path.clone(),
+                children,
+            };
+            match frames.last_mut() {
+                Some(parent) => parent.children.push(node),
+                None => return node,
+            }
+        }
+    }
+
+    /// tasks を board 表示順へ整列し、同じ ordered 集合から全 projection を導出する。
+    ///
+    /// tasks / projections / milestone_projections / task_tree が**同一スナップショット
+    /// かつ同一順序**であることが FE 側の契約（`taskTree` は `tasks` の filePath 集合と
+    /// 過不足なく一致する）なので、この関数以外で payload を組み立ててはならない。
+    ///
+    /// lookup index と隣接リストは `project_all` と `project_forest` で各 1 回、
+    /// payload 1 回あたり計 2 回構築される（各 O(N + E) なので合計も O(N + E)）。
+    /// 1 回に減らす共有化は既存 query の signature を変えるため、本 PR では採らない。
+    pub(crate) fn project_board_view(tasks: Vec<Task>, config: &Config) -> TaskViewProjection {
+        let ordered_tasks = TaskIndex::new(tasks).sorted_by_board_order(config);
+        let index = TaskIndex::new(ordered_tasks);
+        // done column は借用のまま渡す（`get_tasks` 側にだけあった `.cloned()` の非対称は
+        // この単一入口へ寄せることで消える）。
+        let done_column = config.resolved_done_column();
+        let projections = index.project_all(done_column);
+        let milestone_projections = index.project_milestones(done_column);
+        let task_tree = index.project_forest();
+        TaskViewProjection {
+            tasks: index.into_tasks(),
+            projections,
+            milestone_projections,
+            task_tree,
+        }
     }
 
     /// root を起点に adjacency を DFS して完了数 / 総数を数える（root 自身は除外）。
@@ -2112,6 +2376,10 @@ mod task_index_tests;
 #[cfg(test)]
 #[path = "task_index_parent_chain_tests.rs"]
 mod task_index_parent_chain_tests;
+
+#[cfg(test)]
+#[path = "task_index_forest_tests.rs"]
+mod task_index_forest_tests;
 
 #[cfg(test)]
 #[path = "task_index_label_usage_tests.rs"]
