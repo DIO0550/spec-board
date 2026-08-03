@@ -5,6 +5,7 @@ import {
   tabNavPanelId,
   tabNavTabId,
 } from "@/components/TabNav";
+import type { TaskForest } from "@/domains/task-forest";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
 import type { MilestoneDefinition } from "@/lib/tauri";
@@ -44,6 +45,11 @@ export type BoardWorkspaceProps = {
   doneColumn?: string;
   /** filePath -> projection（BE 集計）。BoardView へそのまま渡す。 */
   projections: TaskProjectionMap;
+  /**
+   * BE 由来の全タスク正準ツリー。TreeView が可視集合で枝刈りして使う。
+   * 絞り込みは適用されていない（`filtered` 側が可視集合の真実源）。
+   */
+  taskTree: TaskForest;
   /** name → マイルストーン定義の Map（カードバッジ用） */
   milestonesByName?: MilestonesByName;
   /** 絞り込み UI に並べるマイルストーン定義 */

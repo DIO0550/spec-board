@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskForest } from "@/domains/task-forest";
 import { TaskProjection } from "@/domains/task-projection";
 import type { BoardWorkspaceProps } from "@/features/board/components/BoardWorkspace";
 import type { BoardViewMode } from "@/features/board/hooks/useBoardViewMode";
@@ -55,6 +56,7 @@ const makeWorkspace = (
   columns: [{ name: "Todo", order: 0 }],
   tasks: [],
   projections: TaskProjection.emptyMap,
+  taskTree: TaskForest.empty,
   onAddTask: () => {},
   onTaskClick: () => {},
   ...overrides,

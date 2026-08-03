@@ -7,6 +7,7 @@ import {
   MilestoneProjection,
   type MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
+import { TaskForest } from "@/domains/task-forest";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -62,6 +63,7 @@ type DisplayableData = {
   readonly doneColumn?: string;
   readonly projections: TaskProjectionMap;
   readonly milestoneProjections: MilestoneProjectionMap;
+  readonly taskTree: TaskForest;
 };
 
 /**
@@ -126,6 +128,17 @@ const columnsOf = (state: ProjectState): Column[] =>
  */
 const projectionsOf = (state: ProjectState): TaskProjectionMap =>
   displayableDataOf(state)?.projections ?? TaskProjection.emptyMap;
+
+/**
+ * 表示用の階層ツリーを返す。
+ *
+ * 未 open / load 中 / error では固定参照の空 forest を返す（毎 render 新しい配列を
+ * 作ると TreeView の `useMemo(prune)` が無用に miss するため）。
+ * @param state useProject の現在 state
+ * @returns 全タスクの正準ツリー
+ */
+const taskTreeOf = (state: ProjectState): TaskForest =>
+  displayableDataOf(state)?.taskTree ?? TaskForest.empty;
 
 /**
  * 表示用 milestone projection map を返す。
@@ -266,6 +279,7 @@ const AppShell = () => {
   const columns = columnsOf(state);
   const doneColumn = doneColumnOf(state);
   const projections = projectionsOf(state);
+  const taskTree = taskTreeOf(state);
   const milestoneProjections = milestoneProjectionsOf(state);
   const tasksByNormalizedPath = useMemo(
     () => buildTasksByNormalizedPath(tasks),
@@ -950,6 +964,7 @@ const AppShell = () => {
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
             projections={projections}
+            taskTree={taskTree}
             milestonesByName={milestonesResource.byName}
             milestones={milestonesResource.milestones}
             onAddTask={handleAddTask}

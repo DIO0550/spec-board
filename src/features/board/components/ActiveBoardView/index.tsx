@@ -37,7 +37,13 @@ export const ActiveBoardView = ({
     return <ListView tasks={filtered} onTaskClick={workspace.onTaskClick} />;
   }
   if (viewMode === "tree") {
-    return <TreeView tasks={filtered} onTaskClick={workspace.onTaskClick} />;
+    return (
+      <TreeView
+        tasks={filtered}
+        taskTree={workspace.taskTree}
+        onTaskClick={workspace.onTaskClick}
+      />
+    );
   }
   if (viewMode === "calendar") {
     return (
