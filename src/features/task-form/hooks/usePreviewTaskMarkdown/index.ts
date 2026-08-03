@@ -28,6 +28,13 @@ export const usePreviewTaskMarkdown = (
     const currentId = ++requestIdRef.current;
     setState(PENDING_STATE);
 
+    /**
+     * プレビューを取得して state へ反映する。
+     *
+     * 自分より新しい要求が始まっていたら結果を捨てる（後着の応答が先着の結果を
+     * 上書きしないようにするため）。
+     * @returns 反映完了を表す Promise
+     */
     const fetch = async (): Promise<void> => {
       const result = await previewTaskMarkdown(params);
       if (requestIdRef.current !== currentId) {

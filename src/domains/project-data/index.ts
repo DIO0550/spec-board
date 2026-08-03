@@ -378,6 +378,15 @@ const applyTaskDeletedToTask = (task: Task, filePath: string): Task =>
     filePath,
   );
 
+/**
+ * 新旧の load warnings をマージする。
+ *
+ * 同じ警告集合なら旧配列の参照をそのまま返す。内容が変わらない再同期のたびに
+ * 新配列を作ると、`ProjectData` の参照が変わって参照保存が効かなくなる。
+ * @param previous - 直前の warnings
+ * @param next - 取り直した warnings
+ * @returns 集合が同じなら `previous` そのもの、違えば新配列
+ */
 const mergeLoadWarnings = (
   previous: readonly ProjectLoadWarning[],
   next: readonly ProjectLoadWarning[],
