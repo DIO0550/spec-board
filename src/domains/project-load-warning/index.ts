@@ -58,12 +58,27 @@ const KNOWN_STAGES = [
   "unknown",
 ] as const satisfies readonly ProjectLoadWarningStage[];
 
+/**
+ * raw な code 文字列が既知の warning code かを判定する。
+ * @param raw - BE から届いた code 文字列
+ * @returns 既知の code なら true
+ */
 const isKnownCode = (raw: string): raw is ProjectLoadWarningCode =>
   (KNOWN_CODES as readonly string[]).includes(raw);
 
+/**
+ * raw な stage 文字列が既知の warning stage かを判定する。
+ * @param raw - BE から届いた stage 文字列
+ * @returns 既知の stage なら true
+ */
 const isKnownStage = (raw: string): raw is ProjectLoadWarningStage =>
   (KNOWN_STAGES as readonly string[]).includes(raw);
 
+/**
+ * 並べ替えに使う、1 件分の warning の安定キーを作る。
+ * @param warning - キーを作る対象
+ * @returns 全フィールドを含む決定的な文字列
+ */
 const warningSortKey = (warning: ProjectLoadWarning): string =>
   JSON.stringify([
     warning.code,
@@ -75,15 +90,27 @@ const warningSortKey = (warning: ProjectLoadWarning): string =>
 
 /** ProjectLoadWarning の正規化・識別用 companion API。 */
 export const ProjectLoadWarning = {
-  /** 未知の code を unknown に丸める。 */
+  /**
+   * 未知の code を unknown に丸める。
+   * @param raw - BE から届いた code 文字列
+   * @returns 既知の code、または `unknown`
+   */
   normalizeCode: (raw: string): ProjectLoadWarningCode =>
     isKnownCode(raw) ? raw : "unknown",
 
-  /** 未知の stage を unknown に丸める。 */
+  /**
+   * 未知の stage を unknown に丸める。
+   * @param raw - BE から届いた stage 文字列
+   * @returns 既知の stage、または `unknown`
+   */
   normalizeStage: (raw: string): ProjectLoadWarningStage =>
     isKnownStage(raw) ? raw : "unknown",
 
-  /** raw payload を UI が扱う domain 値へ変換する。 */
+  /**
+   * raw payload を UI が扱う domain 値へ変換する。
+   * @param payload - BE から受け取った warning payload
+   * @returns 正規化済みの ProjectLoadWarning
+   */
   fromPayload: (
     payload: ProjectLoadWarningPayloadInput,
   ): ProjectLoadWarning => ({
@@ -94,7 +121,11 @@ export const ProjectLoadWarning = {
     recoverable: payload.recoverable,
   }),
 
-  /** 警告 code の安定した日本語表示名を返す。 */
+  /**
+   * 警告 code の安定した日本語表示名を返す。
+   * @param code - 正規化済みの warning code
+   * @returns 表示用のラベル
+   */
   codeLabel: (code: ProjectLoadWarningCode): string => {
     const labels: Record<ProjectLoadWarningCode, string> = {
       scanEntryError: "走査エラー",
@@ -111,7 +142,11 @@ export const ProjectLoadWarning = {
     return labels[code];
   },
 
-  /** 警告 stage の安定した日本語表示名を返す。 */
+  /**
+   * 警告 stage の安定した日本語表示名を返す。
+   * @param stage - 正規化済みの warning stage
+   * @returns 表示用のラベル
+   */
   stageLabel: (stage: ProjectLoadWarningStage): string => {
     const labels: Record<ProjectLoadWarningStage, string> = {
       scan: "走査",
@@ -123,7 +158,11 @@ export const ProjectLoadWarning = {
     return labels[stage];
   },
 
-  /** 同じ警告集合かどうかを参照に依存せず判定するための安定 fingerprint。 */
+  /**
+   * 同じ警告集合かどうかを参照に依存せず判定するための安定 fingerprint。
+   * @param warnings - 比較対象の warning 集合
+   * @returns 並び順に依存しない決定的な文字列
+   */
   fingerprint: (warnings: readonly ProjectLoadWarning[]): string =>
     JSON.stringify(
       [...warnings]

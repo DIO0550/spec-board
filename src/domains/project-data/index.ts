@@ -4,6 +4,7 @@ import {
 } from "@/domains/milestone-projection";
 import type { ProjectColumnsChange } from "@/domains/project-columns";
 import { ProjectLoadWarning } from "@/domains/project-load-warning";
+import { TaskForest } from "@/domains/task-forest";
 import { TaskHierarchy } from "@/domains/task-hierarchy";
 import { TaskLinks } from "@/domains/task-links";
 import { parentReferencesTaskPath } from "@/domains/task-path";
@@ -29,6 +30,13 @@ export type ProjectData = {
    * task projection と同じ snapshot から atomic に差し替える。
    */
   milestoneProjections: MilestoneProjectionMap;
+  /**
+   * 全タスクの親子階層ツリー（BE 集計）。projections と同じく tasks の差分更新に
+   * 対しては stale になりうる（`useProjectionSyncEffect` が `get_tasks` 応答で
+   * 差し替える）。TreeView は可視集合を主として枝刈りするため、stale でも
+   * タスクが欠落しない。
+   */
+  taskTree: TaskForest;
   /**
    * この ProjectData がどの `open_project` 応答に由来するかを表す識別子。
    * `concurrency.beginOpenRequest()` の採番値をそのまま載せる。
@@ -370,6 +378,15 @@ const applyTaskDeletedToTask = (task: Task, filePath: string): Task =>
     filePath,
   );
 
+/**
+ * 新旧の load warnings をマージする。
+ *
+ * 同じ警告集合なら旧配列の参照をそのまま返す。内容が変わらない再同期のたびに
+ * 新配列を作ると、`ProjectData` の参照が変わって参照保存が効かなくなる。
+ * @param previous - 直前の warnings
+ * @param next - 取り直した warnings
+ * @returns 集合が同じなら `previous` そのもの、違えば新配列
+ */
 const mergeLoadWarnings = (
   previous: readonly ProjectLoadWarning[],
   next: readonly ProjectLoadWarning[],
@@ -539,6 +556,7 @@ export const ProjectData = {
     snapshot: {
       projections: TaskProjectionMap;
       milestoneProjections: MilestoneProjectionMap;
+      taskTree: TaskForest;
     },
   ): ProjectData => {
     const projections = mergeProjections(
@@ -549,13 +567,17 @@ export const ProjectData = {
       data.milestoneProjections,
       snapshot.milestoneProjections,
     );
+    // 構造等価なら旧参照を維持する。毎回新 forest を入れると TreeView の
+    // useMemo(prune) が再同期のたびに再計算される。
+    const taskTree = TaskForest.merge(data.taskTree, snapshot.taskTree);
     if (
       projections === data.projections &&
-      milestoneProjections === data.milestoneProjections
+      milestoneProjections === data.milestoneProjections &&
+      taskTree === data.taskTree
     ) {
       return data;
     }
-    return { ...data, projections, milestoneProjections };
+    return { ...data, projections, milestoneProjections, taskTree };
   },
 
   /**
@@ -571,7 +593,7 @@ export const ProjectData = {
    * 変わらない resync で ProjectData の参照が変わるのを防ぐ。
    *
    * @param data 現在の ProjectData
-   * @param snapshot get_tasks 応答（tasks / 両 projections）
+   * @param snapshot get_tasks 応答（tasks / 両 projections / taskTree）
    * @returns 変化が無ければ `data` そのもの、あれば差し替え後の ProjectData
    */
   resyncTasks: (
@@ -580,6 +602,7 @@ export const ProjectData = {
       tasks: Task[];
       projections: TaskProjectionMap;
       milestoneProjections: MilestoneProjectionMap;
+      taskTree: TaskForest;
       loadWarnings?: ProjectLoadWarning[];
     },
   ): ProjectData => {
@@ -592,6 +615,7 @@ export const ProjectData = {
       data.milestoneProjections,
       snapshot.milestoneProjections,
     );
+    const taskTree = TaskForest.merge(data.taskTree, snapshot.taskTree);
     const loadWarnings = mergeLoadWarnings(
       data.loadWarnings,
       snapshot.loadWarnings ?? data.loadWarnings,
@@ -600,11 +624,19 @@ export const ProjectData = {
       tasks === data.tasks &&
       projections === data.projections &&
       milestoneProjections === data.milestoneProjections &&
+      taskTree === data.taskTree &&
       loadWarnings === data.loadWarnings
     ) {
       return data;
     }
-    return { ...data, tasks, projections, milestoneProjections, loadWarnings };
+    return {
+      ...data,
+      tasks,
+      projections,
+      milestoneProjections,
+      taskTree,
+      loadWarnings,
+    };
   },
 
   /**

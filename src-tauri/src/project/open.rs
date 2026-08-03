@@ -90,7 +90,7 @@ use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError, OpenSwapError};
 use crate::task::io::FsTaskIo;
 use crate::task::parse::{default_status_for, TaskParseError};
-use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
+use crate::task::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::task::file_scanner::ScanError;
@@ -110,6 +110,9 @@ pub struct OpenProjectPayload {
     pub projections: TaskProjectionMap,
     /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
     pub milestone_projections: MilestoneProjectionMap,
+    /// 親子階層のネストツリー。`get_tasks` の `taskTree` と同形・同順序。
+    /// 初回ロード直後にツリービューを開いても再取得が要らないよう同梱する。
+    pub task_tree: TaskForest,
     /// project load 中に個別ファイルや config fallback で発生した warning。
     pub load_warnings: Vec<ProjectLoadWarning>,
     /// watcher event の検証基準。`tasks` と**同一トランザクション**で確定した
@@ -500,14 +503,9 @@ fn build_payload_from_parts_with_warnings(
     load_warnings: Vec<ProjectLoadWarning>,
     session: WatcherSession,
 ) -> OpenProjectPayload {
-    // 並び順の契約は aggregate に集約する（`get_tasks` も同じ入口を通す）。
-    let ordered_tasks = TaskIndex::new(tasks).sorted_by_board_order(config);
-    // payload tasks と milestone の path 列を同じ ordered 集合から導出する。
-    // `TaskIndex` へ move → `into_tasks()` で戻し、`Vec<Task>` の clone を避ける。
-    let index = TaskIndex::new(ordered_tasks);
-    let projections = index.project_all(config.resolved_done_column());
-    let milestone_projections = index.project_milestones(config.resolved_done_column());
-    let tasks = index.into_tasks();
+    // 並び順と projection 群の導出は aggregate の単一入口に委譲する
+    // （`get_tasks` も同じ関数を通す。ここに手順をコピーしないこと）。
+    let view = TaskIndex::project_board_view(tasks, config);
 
     let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
     sorted_columns.sort_by_key(|column| column.order);
@@ -516,10 +514,11 @@ fn build_payload_from_parts_with_warnings(
         .map(|column| column.name.clone())
         .collect();
     OpenProjectPayload {
-        tasks,
+        tasks: view.tasks,
         columns,
-        projections,
-        milestone_projections,
+        projections: view.projections,
+        milestone_projections: view.milestone_projections,
+        task_tree: view.task_tree,
         load_warnings,
         session,
     }

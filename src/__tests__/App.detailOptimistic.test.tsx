@@ -121,6 +121,7 @@ const payload: OpenProjectPayload = {
   columns: ["Todo", "Doing", "Done"],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
 };
 
 /**

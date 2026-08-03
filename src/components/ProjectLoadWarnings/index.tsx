@@ -8,7 +8,11 @@ type ProjectLoadWarningsProps = {
   warnings: readonly ProjectLoadWarningT[];
 };
 
-/** loaded board に表示する、展開可能な読み込み警告一覧。 */
+/**
+ * loaded board に表示する、展開可能な読み込み警告一覧。
+ * @param props - {@link ProjectLoadWarningsProps}
+ * @returns 警告が 1 件以上あれば警告パネル、無ければ `null`
+ */
 export const ProjectLoadWarnings = ({ warnings }: ProjectLoadWarningsProps) => {
   if (warnings.length === 0) {
     return null;

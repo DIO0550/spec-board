@@ -296,6 +296,7 @@ const payload: OpenProjectPayload = {
   milestoneProjections: new Map([
     ["release-1", { done: 0, total: 1, taskFilePaths: ["tasks/a.md"] }],
   ]),
+  taskTree: [],
 };
 
 const openLoaded = async (probe: { latest: ProbeResult }) => {
@@ -328,6 +329,7 @@ test("openProject 成功 (idle → loaded)、get_columns 成功時はその colu
       projections: new Map(),
       loadWarnings: payload.loadWarnings,
       milestoneProjections: payload.milestoneProjections,
+      taskTree: [],
       openRequestId: 1,
       watcherSession: WATCHER_SESSION_FIXTURE,
     },
@@ -417,6 +419,7 @@ test("openProject 成功 → onLoaded が path / data 付きで 1 回だけ発�
       projections: new Map(),
       loadWarnings: payload.loadWarnings,
       milestoneProjections: payload.milestoneProjections,
+      taskTree: [],
       openRequestId: 1,
       watcherSession: WATCHER_SESSION_FIXTURE,
     },
@@ -492,6 +495,7 @@ test("openProjectByPath 成功 → onLoaded が path / data 付きで発火す�
       projections: new Map(),
       loadWarnings: payload.loadWarnings,
       milestoneProjections: payload.milestoneProjections,
+      taskTree: [],
       openRequestId: 1,
       watcherSession: WATCHER_SESSION_FIXTURE,
     },
@@ -655,6 +659,7 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
       columns: ["Done"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   getColumnsMock.mockResolvedValueOnce(
@@ -689,6 +694,7 @@ test("openProject 後勝ち: 1 回目の invoke pending 中に 2 回目が来る
         columns: [],
         projections: new Map(),
         milestoneProjections: new Map(),
+        taskTree: [],
       }),
     );
     await pending1;
@@ -1508,6 +1514,7 @@ test("プロジェクト切替で旧 listen が unlisten され、新 listen が
       columns: ["Done"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   let pending!: Promise<void>;
@@ -1588,6 +1595,7 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
         columns: ["Done"],
         projections: new Map(),
         milestoneProjections: new Map(),
+        taskTree: [],
       }),
     );
     await pending;
@@ -1712,6 +1720,7 @@ test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登�
       columns: ["Done"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   let pending!: Promise<void>;
@@ -1842,6 +1851,7 @@ test("open-start 直後の race: loading 中に旧 task-updated callback が発�
         columns: ["Done"],
         projections: new Map(),
         milestoneProjections: new Map(),
+        taskTree: [],
       }),
     );
     await pending;
@@ -1964,6 +1974,7 @@ test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登�
       columns: ["Done"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   let pending!: Promise<void>;
@@ -2036,6 +2047,7 @@ test("open-start 直後の race: loading 中に旧 task-deleted callback が発�
         columns: ["Done"],
         projections: new Map(),
         milestoneProjections: new Map(),
+        taskTree: [],
       }),
     );
     await pending;
@@ -2132,6 +2144,7 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
       columns: ["Todo", "Done"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   const probe = renderHook();
@@ -2201,6 +2214,7 @@ const threeColumnPayload: OpenProjectPayload = {
   columns: ["A", "B", "C"],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
 };
 
 const openLoadedThree = async (probe: { latest: ProbeResult }) => {

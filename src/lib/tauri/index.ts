@@ -64,6 +64,7 @@ export type {
   OpenProjectPayload,
   OrphanStrategy,
   PreviewTaskMarkdownParams,
+  TaskForestPayload,
   TaskProjectionPayload,
   TaskProjectionsPayload,
   UpdateTaskParams,

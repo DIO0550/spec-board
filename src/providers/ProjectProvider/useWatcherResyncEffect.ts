@@ -234,6 +234,7 @@ export const useWatcherResyncEffect = ({
             tasks: result.value.tasks,
             projections: result.value.projections,
             milestoneProjections: result.value.milestoneProjections,
+            taskTree: result.value.taskTree,
             loadWarnings: result.value.loadWarnings,
           });
           const appliedState = getState();

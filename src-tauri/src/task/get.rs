@@ -27,7 +27,7 @@ use serde::Serialize;
 use tauri::State;
 use thiserror::Error;
 
-use super::projection::{MilestoneProjectionMap, TaskProjectionMap};
+use super::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use super::task_index::{Task, TaskIndex};
 use crate::project::load_warning::ProjectLoadWarning;
 use crate::state::watcher_session::WatcherSession;
@@ -45,6 +45,9 @@ pub struct GetTasksPayload {
     pub projections: TaskProjectionMap,
     /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
     pub milestone_projections: MilestoneProjectionMap,
+    /// 親子階層のネストツリー。root 列・兄弟列とも `tasks` と同じ board 表示順で、
+    /// ノード集合は `tasks` と過不足なく一致する（`open_project` と同形）。
+    pub task_tree: TaskForest,
     pub load_warnings: Vec<ProjectLoadWarning>,
     /// この snapshot の watcher session（`open_project` 応答と同じ形）。
     ///
@@ -85,11 +88,13 @@ pub fn get_tasks(state: State<'_, Arc<AppState>>) -> Result<GetTasksPayload, Str
 
 /// 単体テスト境界の本体関数。
 ///
-/// `config` と `tasks_cache` を整合 snapshot し、done column を解決したうえで
-/// `TaskIndex` aggregate に並び順と projection の生成を委譲する。未 open
-/// （`config` が `None` かつ cache が空）の場合は tasks / 両 projection ともに空の
-/// payload を成功で返す。task を payload 順へ並べてから `TaskIndex` を再構築し、
-/// tasks と両 projection が同じ順序の集合から作られることを保証する。
+/// `config` と `tasks_cache` を整合 snapshot し、並び順と projection 群の導出は
+/// `TaskIndex::project_board_view` へ委譲する。`open_project` も同じ関数を通すため、
+/// 両応答の tasks / projections / milestoneProjections / taskTree は同一の集合・順序に
+/// なる。ここに手順をコピーしないこと。
+///
+/// 未 open（`config` が `None` かつ cache が空）の場合は tasks / 両 projection /
+/// taskTree ともに空の payload を成功で返す。
 ///
 /// # Errors
 ///
@@ -101,24 +106,18 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
             tasks: Vec::new(),
             projections: TaskProjectionMap::new(),
             milestone_projections: MilestoneProjectionMap::new(),
+            task_tree: TaskForest::new(),
             load_warnings: Vec::new(),
             session: WatcherSession::idle(),
         });
     };
-    let done_column = snapshot.config().resolved_done_column().cloned();
-    // 並び順は `open_project` と同じ board 表示順に揃える。FE は配列順をそのまま
-    // 表示順に使うため、ここが id 順だと full rescan / gap 復旧のたびに DnD で
-    // 決めた並びが崩れる。未 open（config なし）のときだけ id 昇順にフォールバックする。
     let tasks = snapshot.tasks().values().cloned().collect();
-    let ordered_tasks = TaskIndex::new(tasks).sorted_by_board_order(snapshot.config());
-    let index = TaskIndex::new(ordered_tasks);
-    let projections = index.project_all(done_column.as_ref());
-    let milestone_projections = index.project_milestones(done_column.as_ref());
-    let tasks = index.into_tasks();
+    let view = TaskIndex::project_board_view(tasks, snapshot.config());
     Ok(GetTasksPayload {
-        tasks,
-        projections,
-        milestone_projections,
+        tasks: view.tasks,
+        projections: view.projections,
+        milestone_projections: view.milestone_projections,
+        task_tree: view.task_tree,
         load_warnings: snapshot.load_warnings().to_vec(),
         session: state.watcher_session_for_snapshot(&snapshot),
     })

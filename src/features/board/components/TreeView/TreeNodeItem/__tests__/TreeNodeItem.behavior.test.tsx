@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { TaskTreeNode } from "@/features/board/lib/buildTaskTree";
+import type { TaskTreeNode } from "@/domains/task-forest";
 import { Task, type TaskPayload } from "@/types/task";
 import { TreeNodeItem } from "..";
 
@@ -39,10 +39,13 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
   });
 
 const node = (
-  task: Task,
-  depth: number,
+  filePath: string,
   children: TaskTreeNode[] = [],
-): TaskTreeNode => ({ task, depth, children });
+): TaskTreeNode => ({ filePath, children });
+
+/** ノードが参照する Task を lookup Map に詰める。 */
+const lookup = (...tasks: Task[]): ReadonlyMap<string, Task> =>
+  new Map(tasks.map((task) => [task.filePath, task]));
 
 const render = (props: Parameters<typeof TreeNodeItem>[0]) => {
   act(() => {
@@ -65,7 +68,13 @@ const titleButton = (): HTMLButtonElement | null =>
   container?.querySelector("button:not([aria-expanded])") ?? null;
 
 test("子なしノードではトグルボタンがなくスペーサーが描画される", () => {
-  render({ node: node(createTask(), 0), onSelect: vi.fn() });
+  const task = createTask();
+  render({
+    node: node(task.filePath),
+    depth: 0,
+    tasksByFilePath: lookup(task),
+    onSelect: vi.fn(),
+  });
 
   expect(toggleButtons()).toHaveLength(0);
   expect(container?.querySelector('span[aria-hidden="true"].w-5')).toBeTruthy();
@@ -73,7 +82,13 @@ test("子なしノードではトグルボタンがなくスペーサーが描�
 
 test("タイトルボタン click で onSelect が task.id 引数で発火する", () => {
   const onSelect = vi.fn();
-  render({ node: node(createTask({ id: "task-42" }), 0), onSelect });
+  const task = createTask({ id: "task-42" });
+  render({
+    node: node(task.filePath),
+    depth: 0,
+    tasksByFilePath: lookup(task),
+    onSelect,
+  });
 
   click(titleButton());
 
@@ -82,8 +97,18 @@ test("タイトルボタン click で onSelect が task.id 引数で発火する
 });
 
 test("子ありノードではトグルボタンが展開状態で描画され子 ul が表示される", () => {
-  const child = node(createTask({ id: "child-1", title: "子" }), 1);
-  render({ node: node(createTask(), 0, [child]), onSelect: vi.fn() });
+  const parent = createTask();
+  const child = createTask({
+    id: "child-1",
+    title: "子",
+    filePath: "tasks/child.md",
+  });
+  render({
+    node: node(parent.filePath, [node(child.filePath)]),
+    depth: 0,
+    tasksByFilePath: lookup(parent, child),
+    onSelect: vi.fn(),
+  });
 
   const [toggle] = toggleButtons();
   expect(toggle).toBeTruthy();
@@ -94,8 +119,18 @@ test("子ありノードではトグルボタンが展開状態で描画され�
 });
 
 test("トグル click で折りたたみ・再 click で復帰する", () => {
-  const child = node(createTask({ id: "child-1", title: "子タスク" }), 1);
-  render({ node: node(createTask(), 0, [child]), onSelect: vi.fn() });
+  const parent = createTask();
+  const child = createTask({
+    id: "child-1",
+    title: "子タスク",
+    filePath: "tasks/child.md",
+  });
+  render({
+    node: node(parent.filePath, [node(child.filePath)]),
+    depth: 0,
+    tasksByFilePath: lookup(parent, child),
+    onSelect: vi.fn(),
+  });
 
   const [toggle] = toggleButtons();
   click(toggle);
@@ -119,15 +154,54 @@ test.each([
   depth,
   expected,
 }) => {
-  render({ node: node(createTask(), depth), onSelect: vi.fn() });
+  const task = createTask();
+  render({
+    node: node(task.filePath),
+    depth,
+    tasksByFilePath: lookup(task),
+    onSelect: vi.fn(),
+  });
 
   const row = container?.querySelector("li > div");
   expect((row as HTMLElement | null)?.style.paddingLeft).toBe(expected);
 });
 
-test("title と status が描画される", () => {
+test("子には depth + 1 が渡り 1 段深いインデントで描画される", () => {
+  const parent = createTask();
+  const child = createTask({
+    id: "child-1",
+    title: "子",
+    filePath: "tasks/child.md",
+  });
   render({
-    node: node(createTask({ title: "ログイン修正", status: "Doing" }), 0),
+    node: node(parent.filePath, [node(child.filePath)]),
+    depth: 1,
+    tasksByFilePath: lookup(parent, child),
+    onSelect: vi.fn(),
+  });
+
+  const rows = Array.from(container?.querySelectorAll("li > div") ?? []);
+  expect((rows[0] as HTMLElement).style.paddingLeft).toBe("16px");
+  expect((rows[1] as HTMLElement).style.paddingLeft).toBe("32px");
+});
+
+test("lookup が外れたノードは行を描画しない", () => {
+  render({
+    node: node("tasks/missing.md"),
+    depth: 0,
+    tasksByFilePath: lookup(),
+    onSelect: vi.fn(),
+  });
+
+  expect(container?.querySelector("li")).toBeNull();
+});
+
+test("title と status が描画される", () => {
+  const task = createTask({ title: "ログイン修正", status: "Doing" });
+  render({
+    node: node(task.filePath),
+    depth: 0,
+    tasksByFilePath: lookup(task),
     onSelect: vi.fn(),
   });
 
@@ -136,16 +210,34 @@ test("title と status が描画される", () => {
 });
 
 test("あるノードのトグルは兄弟ノードの折りたたみ state に波及しない", () => {
-  const grandchildA = node(createTask({ id: "gc-a", title: "孫A" }), 2);
-  const grandchildB = node(createTask({ id: "gc-b", title: "孫B" }), 2);
-  const childA = node(createTask({ id: "child-a", title: "子A" }), 1, [
-    grandchildA,
-  ]);
-  const childB = node(createTask({ id: "child-b", title: "子B" }), 1, [
-    grandchildB,
-  ]);
+  const parent = createTask();
+  const childA = createTask({
+    id: "child-a",
+    title: "子A",
+    filePath: "tasks/child-a.md",
+  });
+  const childB = createTask({
+    id: "child-b",
+    title: "子B",
+    filePath: "tasks/child-b.md",
+  });
+  const grandchildA = createTask({
+    id: "gc-a",
+    title: "孫A",
+    filePath: "tasks/gc-a.md",
+  });
+  const grandchildB = createTask({
+    id: "gc-b",
+    title: "孫B",
+    filePath: "tasks/gc-b.md",
+  });
   render({
-    node: node(createTask(), 0, [childA, childB]),
+    node: node(parent.filePath, [
+      node(childA.filePath, [node(grandchildA.filePath)]),
+      node(childB.filePath, [node(grandchildB.filePath)]),
+    ]),
+    depth: 0,
+    tasksByFilePath: lookup(parent, childA, childB, grandchildA, grandchildB),
     onSelect: vi.fn(),
   });
 

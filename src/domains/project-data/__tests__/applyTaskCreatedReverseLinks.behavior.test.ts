@@ -20,6 +20,7 @@ test("applyTaskCreated は作成タスクの links 先 target の reverseLinkedF
     columns: columns("Todo"),
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };
@@ -49,6 +50,7 @@ test("applyTaskCreated は既に reverse 済みの場合は重複追加しない
     columns: columns("Todo"),
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };
@@ -70,6 +72,7 @@ test("applyTaskCreated は links 空のとき既存 task の reverse を変更�
     columns: columns("Todo"),
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };
@@ -97,6 +100,7 @@ test("applyTaskCreated は reverse 同期しつつ parent children 同期も維�
     columns: columns("Todo"),
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 0,
     loadWarnings: [],
   };

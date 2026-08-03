@@ -168,6 +168,7 @@ const payloadWithParseError: OpenProjectPayload = {
   columns: ["Todo", "Done"],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
 };
 const payloadClean: OpenProjectPayload = {
   loadWarnings: [],
@@ -176,6 +177,7 @@ const payloadClean: OpenProjectPayload = {
   columns: ["Todo", "Done"],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
 };
 const payloadWithBoth: OpenProjectPayload = {
   loadWarnings: [],
@@ -184,6 +186,7 @@ const payloadWithBoth: OpenProjectPayload = {
   columns: ["Todo", "Done"],
   projections: new Map(),
   milestoneProjections: new Map(),
+  taskTree: [],
 };
 
 const openProjectFlow = async (

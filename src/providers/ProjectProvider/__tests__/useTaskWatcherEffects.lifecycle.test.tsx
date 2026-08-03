@@ -33,6 +33,7 @@ const loadedState: ProjectState = {
     columns: [],
     projections: new Map(),
     milestoneProjections: new Map(),
+    taskTree: [],
     openRequestId: 1,
     loadWarnings: [],
     watcherSession: session,

@@ -1,6 +1,7 @@
 import { act, createElement, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { TaskForest } from "@/domains/task-forest";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
@@ -195,6 +196,7 @@ test("StrictMode 下で mount → remount 後も openProjectByPath が loaded �
       columns: ["Todo"],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
     }),
   );
   const holder: {
@@ -229,4 +231,53 @@ test("StrictMode 下で mount → remount 後も openProjectByPath が loaded �
     await pending;
   });
   expect(holder.latest?.state.kind).toBe("loaded");
+});
+
+test("open 直後の初期 ProjectData に payload の taskTree が入っている", async () => {
+  const taskTree = TaskForest.fromPayload([
+    {
+      filePath: "tasks/a.md",
+      children: [{ filePath: "tasks/b.md", children: [] }],
+    },
+  ]);
+  openProjectMock.mockResolvedValue(
+    Result.ok<OpenProjectPayload>({
+      loadWarnings: [],
+      session: WATCHER_SESSION_FIXTURE,
+      tasks: [],
+      columns: ["Todo"],
+      projections: new Map(),
+      milestoneProjections: new Map(),
+      taskTree,
+    }),
+  );
+  const holder: {
+    latest: {
+      state: ProjectState;
+      open: (path: string) => Promise<void>;
+    } | null;
+  } = { latest: null };
+  const Probe = () => {
+    const { state } = useProjectState();
+    const { openProjectByPath } = useProjectSessionActions();
+    holder.latest = { state, open: openProjectByPath };
+    return null;
+  };
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = holder.latest?.open("/p") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await pending;
+  });
+
+  const state = holder.latest?.state;
+  expect(state?.kind).toBe("loaded");
+  expect(state?.kind === "loaded" && state.data.taskTree).toEqual(taskTree);
 });

@@ -27,6 +27,7 @@ const emptyRawPayload = {
   tasks: [],
   projections: {},
   milestoneProjections: {},
+  taskTree: [],
   loadWarnings: [],
   session: {
     projectKey: "/home/user/specs",
@@ -69,6 +70,7 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
         taskFilePaths: ["tasks/x.md"],
       },
     },
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -105,6 +107,7 @@ test("projections は Map に変換される", async () => {
       },
     },
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -132,6 +135,7 @@ test("tasks / projections が空でも成功する", async () => {
       tasks: [],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       loadWarnings: [],
       session: {
         projectKey: "/home/user/specs",
@@ -188,6 +192,7 @@ test("session の 4 フィールドが domain 型として透過する", async (
     tasks: [],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "/home/user/specs",
@@ -212,6 +217,7 @@ test("session の値が 0 でも欠落しない", async () => {
     tasks: [],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [],
     session: {
       projectKey: "",
@@ -256,4 +262,33 @@ test("unknown warning code / stage と null path は mapper で安全な domain 
       recoverable: true,
     },
   ]);
+});
+
+test("taskTree がネスト構造を保ったまま domain 型へ変換される", async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    ...emptyRawPayload,
+    taskTree: [
+      {
+        filePath: "tasks/p.md",
+        children: [{ filePath: "tasks/c.md", children: [] }],
+      },
+    ],
+  });
+
+  const result = await getTasks();
+
+  expect(Result.isOk(result) && result.value.taskTree).toEqual([
+    {
+      filePath: "tasks/p.md",
+      children: [{ filePath: "tasks/c.md", children: [] }],
+    },
+  ]);
+});
+
+test("taskTree が空配列でも成功する", async () => {
+  vi.mocked(invoke).mockResolvedValue(emptyRawPayload);
+
+  const result = await getTasks();
+
+  expect(Result.isOk(result) && result.value.taskTree).toEqual([]);
 });

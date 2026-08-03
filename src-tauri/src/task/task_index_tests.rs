@@ -755,3 +755,108 @@ fn sorted_by_board_order_puts_unknown_status_last() {
     let paths: Vec<&str> = sorted.iter().map(|t| t.file_path.as_str()).collect();
     assert_eq!(vec!["tasks/a.md", "tasks/x.md"], paths);
 }
+
+// ───────── project_board_view ─────────
+
+fn task_with_status_and_parent(path: &str, status: &str, parent: Option<&str>) -> Task {
+    let mut source = format!("---\ntitle: Task\nstatus: {status}\n");
+    if let Some(parent) = parent {
+        source.push_str(&format!("parent: {parent}\n"));
+    }
+    source.push_str("---\n");
+    task_from(&source, path)
+}
+
+fn file_paths(tasks: &[Task]) -> Vec<&str> {
+    tasks.iter().map(|task| task.file_path.as_str()).collect()
+}
+
+#[test]
+fn project_board_view_derives_every_output_from_the_same_ordered_task_set() {
+    let config = board_config(
+        &["Todo", "Done"],
+        &[("Todo", &["tasks/c.md", "tasks/a.md"])],
+    );
+    let tasks = vec![
+        task_with_status_and_parent("tasks/a.md", "Todo", None),
+        task_with_status_and_parent("tasks/z.md", "Done", Some("tasks/c.md")),
+        task_with_status_and_parent("tasks/c.md", "Todo", None),
+    ];
+
+    let view = TaskIndex::project_board_view(tasks, &config);
+
+    assert_eq!(
+        file_paths(&view.tasks),
+        vec!["tasks/c.md", "tasks/a.md", "tasks/z.md"],
+        "tasks は board 表示順"
+    );
+    let projection_keys: Vec<&str> = view.projections.keys().map(|key| key.as_str()).collect();
+    assert_eq!(
+        projection_keys,
+        vec!["tasks/a.md", "tasks/c.md", "tasks/z.md"],
+        "projection のキー集合が tasks と一致する"
+    );
+    let root_paths: Vec<&str> = view
+        .task_tree
+        .iter()
+        .map(|node| node.file_path.as_str())
+        .collect();
+    assert_eq!(
+        root_paths,
+        vec!["tasks/c.md", "tasks/a.md"],
+        "taskTree の root 列も同じ board 順から作られる"
+    );
+    assert_eq!(
+        view.task_tree[0].children.len(),
+        1,
+        "tasks/z.md は tasks/c.md の子として 1 度だけ現れる"
+    );
+}
+
+#[test]
+fn project_board_view_keeps_child_file_paths_sorted_while_tree_children_follow_board_order() {
+    let config = board_config(
+        &["Todo"],
+        &[("Todo", &["tasks/a.md", "tasks/z.md", "tasks/b.md"])],
+    );
+    let tasks = vec![
+        task_with_status_and_parent("tasks/a.md", "Todo", None),
+        task_with_status_and_parent("tasks/b.md", "Todo", Some("tasks/a.md")),
+        task_with_status_and_parent("tasks/z.md", "Todo", Some("tasks/a.md")),
+    ];
+
+    let view = TaskIndex::project_board_view(tasks, &config);
+
+    let projection_children: Vec<&str> = view.projections["tasks/a.md"]
+        .child_file_paths
+        .iter()
+        .map(|path| path.as_str())
+        .collect();
+    assert_eq!(
+        projection_children,
+        vec!["tasks/b.md", "tasks/z.md"],
+        "projection の child_file_paths は file_path 昇順のまま"
+    );
+    let tree_children: Vec<&str> = view.task_tree[0]
+        .children
+        .iter()
+        .map(|node| node.file_path.as_str())
+        .collect();
+    assert_eq!(
+        tree_children,
+        vec!["tasks/z.md", "tasks/b.md"],
+        "taskTree の children は board 順"
+    );
+}
+
+#[test]
+fn project_board_view_returns_empty_outputs_for_no_tasks() {
+    let config = board_config(&["Todo"], &[]);
+
+    let view = TaskIndex::project_board_view(Vec::new(), &config);
+
+    assert!(view.tasks.is_empty());
+    assert!(view.projections.is_empty());
+    assert!(view.milestone_projections.is_empty());
+    assert!(view.task_tree.is_empty());
+}

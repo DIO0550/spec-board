@@ -471,3 +471,167 @@ fn payload_session_revision_refers_to_the_returned_tasks() {
     assert!(first.session.revision < second.session.revision);
     assert!(first.tasks.len() < second.tasks.len());
 }
+
+// ───────── taskTree の同梱 ─────────
+
+fn tree_root_paths(payload: &GetTasksPayload) -> Vec<&str> {
+    payload
+        .task_tree
+        .iter()
+        .map(|node| node.file_path.as_str())
+        .collect()
+}
+
+fn tree_node_count(payload: &GetTasksPayload) -> usize {
+    let mut count = 0;
+    let mut stack: Vec<&crate::task::projection::TaskTreeNode> = payload.task_tree.iter().collect();
+    while let Some(node) = stack.pop() {
+        count += 1;
+        stack.extend(node.children.iter());
+    }
+    count
+}
+
+#[test]
+fn payload_contains_the_task_hierarchy_as_a_nested_tree() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    open_project_with_hierarchy(Arc::clone(&state), &dir);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert_eq!(tree_root_paths(&payload), vec!["tasks/p.md"]);
+    let children: Vec<&str> = payload.task_tree[0]
+        .children
+        .iter()
+        .map(|node| node.file_path.as_str())
+        .collect();
+    assert_eq!(children, vec!["tasks/c2.md", "tasks/c1.md"]);
+}
+
+#[test]
+fn task_tree_node_set_matches_the_task_set() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+        "version": 1,
+        "columns": [{ "name": "Todo", "order": 0 }],
+        "cardOrder": {}
+    }"#,
+    );
+    write_md(dir.path(), "tasks/root.md", &task_md("Root", "Todo", None));
+    write_md(
+        dir.path(),
+        "tasks/child.md",
+        &task_md("Child", "Todo", Some("tasks/root.md")),
+    );
+    write_md(
+        dir.path(),
+        "tasks/orphan.md",
+        &task_md("Orphan", "Todo", Some("tasks/missing.md")),
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert_eq!(tree_node_count(&payload), payload.tasks.len());
+}
+
+#[test]
+fn task_tree_roots_follow_the_same_board_order_as_tasks() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+        "version": 1,
+        "columns": [{ "name": "Todo", "order": 0 }],
+        "cardOrder": { "Todo": ["tasks/c.md", "tasks/a.md", "tasks/b.md"] }
+    }"#,
+    );
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    write_md(dir.path(), "tasks/c.md", &task_md("C", "Todo", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    let task_paths: Vec<&str> = payload.tasks.iter().map(|t| t.file_path.as_str()).collect();
+    assert_eq!(tree_root_paths(&payload), task_paths);
+}
+
+#[test]
+fn unopened_state_returns_an_empty_task_tree() {
+    let state = AppState::new();
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert!(payload.task_tree.is_empty());
+}
+
+#[test]
+fn cache_holding_a_parent_cycle_from_watcher_upsert_still_succeeds() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+        "version": 1,
+        "columns": [{ "name": "Todo", "order": 0 }],
+        "cardOrder": {}
+    }"#,
+    );
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw);
+
+    // watcher の差分 upsert は新規循環を検出しないため、`mark_cycle_members` を
+    // 通っていない循環が cache に残る経路を直接再現する。
+    let cyclic = |path: &str, parent: &str| {
+        let context = crate::task::parse::TaskParseContext {
+            file_path: std::path::PathBuf::from(path),
+            default_status: "Todo".into(),
+        };
+        crate::task::parse::task_from_markdown(
+            format!("---\ntitle: T\nstatus: Todo\nparent: {parent}\n---\n").as_bytes(),
+            &context,
+        )
+        .expect("fixture markdown should parse")
+    };
+    state
+        .test_update_tasks(|tasks| {
+            tasks.insert(
+                std::path::PathBuf::from("tasks/x.md"),
+                cyclic("tasks/x.md", "tasks/y.md"),
+            );
+            tasks.insert(
+                std::path::PathBuf::from("tasks/y.md"),
+                cyclic("tasks/y.md", "tasks/x.md"),
+            );
+        })
+        .expect("update tasks cache");
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed even with a cycle");
+
+    assert_eq!(tree_node_count(&payload), payload.tasks.len());
+    let roots = tree_root_paths(&payload);
+    assert!(roots.contains(&"tasks/x.md"));
+    assert!(roots.contains(&"tasks/y.md"));
+}
+
+#[test]
+fn payload_serializes_the_tree_under_the_task_tree_key() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    open_project_with_hierarchy(Arc::clone(&state), &dir);
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+    let value = serde_json::to_value(payload).expect("payload should serialize");
+
+    assert!(value["taskTree"].is_array());
+    assert_eq!(value["taskTree"][0]["filePath"], "tasks/p.md");
+}

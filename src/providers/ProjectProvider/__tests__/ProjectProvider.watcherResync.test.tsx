@@ -3,6 +3,7 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
+import { TaskForest } from "@/domains/task-forest";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
@@ -112,6 +113,7 @@ const openPayload: OpenProjectPayload = {
   columns: ["Todo"],
   projections: initialTaskProjections,
   milestoneProjections: initialMilestoneProjections,
+  taskTree: [],
   loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
 };
@@ -123,11 +125,13 @@ const getTasksOk = (
   revision: number,
   projections: TaskProjectionMap = new Map(),
   milestoneProjections: MilestoneProjectionMap = new Map(),
+  taskTree: TaskForest = TaskForest.empty,
 ) =>
   Result.ok({
     tasks,
     projections,
     milestoneProjections,
+    taskTree,
     loadWarnings: [],
     session: {
       ...WATCHER_SESSION_FIXTURE,
@@ -511,6 +515,7 @@ test("応答の session が別世代なら dispatch されない", async () => {
       tasks: [Task.fromPayload(makeTaskPayload("tasks/other.md", "O"))],
       projections: taskProjectionMap(1, 1),
       milestoneProjections: milestoneProjectionMap(1, 1, ["tasks/other.md"]),
+      taskTree: [],
       loadWarnings: [],
       session: {
         ...WATCHER_SESSION_FIXTURE,
@@ -626,6 +631,7 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
       tasks: [],
       projections: qOpenProjections,
       milestoneProjections: qOpenMilestoneProjections,
+      taskTree: [],
       loadWarnings: [],
       session: {
         ...WATCHER_SESSION_FIXTURE,
@@ -654,6 +660,7 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
       tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
       projections: qResyncProjections,
       milestoneProjections: qResyncMilestoneProjections,
+      taskTree: [],
       loadWarnings: [],
       session: {
         ...WATCHER_SESSION_FIXTURE,
@@ -848,6 +855,7 @@ test("旧 project の応答が新 session の resync より先に着地しても
         tasks: [taskA],
         projections: new Map(),
         milestoneProjections: new Map(),
+        taskTree: [],
         loadWarnings: [],
         session: {
           ...WATCHER_SESSION_FIXTURE,
@@ -1057,4 +1065,111 @@ test("barrier 待機中に欠番診断が届いても、解放後の取得 1 本
   await flush();
 
   expect(getTasksMock).toHaveBeenCalledTimes(1);
+});
+
+// ───────── taskTree の atomic 更新（UC-4 の結線） ─────────
+
+const currentTaskTree = (): TaskForest => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.taskTree : TaskForest.empty;
+};
+
+const rescannedTree: TaskForest = TaskForest.fromPayload([
+  {
+    filePath: "tasks/a.md",
+    children: [{ filePath: "tasks/rescanned.md", children: [] }],
+  },
+]);
+
+test("resync では tasks と taskTree が同じ世代の内容で同時に更新される", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [taskA, Task.fromPayload(makeTaskPayload("tasks/rescanned.md", "R"))],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+      new Map(),
+      new Map(),
+      rescannedTree,
+    ),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentTasks().map((task) => task.filePath)).toEqual([
+    "tasks/a.md",
+    "tasks/rescanned.md",
+  ]);
+  expect(currentTaskTree()).toEqual(rescannedTree);
+});
+
+test("resync 後の replay では taskTree が据え置かれ tasks だけが進む", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  let resolveGetTasks!: (value: ReturnType<typeof getTasksOk>) => void;
+  getTasksMock.mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveGetTasks = resolve;
+    }),
+  );
+  // replay が tasks を進めると projection 再同期が走る。その応答を保留させて、
+  // 「replay 自体は tree を触らない」ことだけを観測する。
+  getTasksMock.mockReturnValueOnce(new Promise(() => {}));
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  fire(
+    handlers,
+    "task-created",
+    { task: makeTaskPayload("tasks/late.md", "L") },
+    {
+      eventSeq: WATCHER_SESSION_FIXTURE.eventSeq + 2,
+      revision: WATCHER_SESSION_FIXTURE.revision + 9,
+    },
+  );
+  await act(async () => {
+    resolveGetTasks(
+      getTasksOk(
+        [taskA],
+        WATCHER_SESSION_FIXTURE.eventSeq + 1,
+        WATCHER_SESSION_FIXTURE.revision + 1,
+        new Map(),
+        new Map(),
+        rescannedTree,
+      ),
+    );
+  });
+  await flush();
+
+  // replay された task-created は tasks だけを進め、tree は resync 時点のまま。
+  expect(currentTasks().map((task) => task.filePath)).toContain(
+    "tasks/late.md",
+  );
+  expect(currentTaskTree()).toEqual(rescannedTree);
+});
+
+test("世代違いの resync 応答は tasks も taskTree も取り込まない", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  const before = currentTaskTree();
+  getTasksMock.mockResolvedValueOnce(
+    Result.ok({
+      tasks: [Task.fromPayload(makeTaskPayload("tasks/other.md", "O"))],
+      projections: new Map(),
+      milestoneProjections: new Map(),
+      taskTree: rescannedTree,
+      loadWarnings: [],
+      session: {
+        ...WATCHER_SESSION_FIXTURE,
+        generation: WATCHER_SESSION_FIXTURE.generation + 1,
+      },
+    }),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/a.md"]);
+  expect(currentTaskTree()).toBe(before);
 });

@@ -6,6 +6,7 @@ import type {
   MilestoneProjection,
   MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
+import { TaskForest } from "@/domains/task-forest";
 import type { TaskProjection } from "@/domains/task-projection";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
@@ -100,6 +101,7 @@ const openPayload: OpenProjectPayload = {
     ],
   ]),
   milestoneProjections: new Map([["M1", initialMilestoneProjection]]),
+  taskTree: [],
   loadWarnings: [],
   session: WATCHER_SESSION_FIXTURE,
 };
@@ -140,11 +142,13 @@ const milestoneMap = (
 const getTasksOk = (
   projections: ReadonlyMap<string, TaskProjection>,
   milestoneProjections: MilestoneProjectionMap,
+  taskTree: TaskForest = TaskForest.empty,
 ) =>
   Result.ok({
     tasks: [],
     projections,
     milestoneProjections,
+    taskTree,
     loadWarnings: [],
     session: WATCHER_SESSION_FIXTURE,
   });
@@ -351,6 +355,7 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
       tasks: [Task.fromPayload(makeTaskPayload("tasks/zzz.md", "Z"))],
       projections: new Map(),
       milestoneProjections: new Map(),
+      taskTree: [],
       loadWarnings: [],
       session: WATCHER_SESSION_FIXTURE,
     }),
@@ -591,6 +596,7 @@ test("project switch 後に旧 project の応答が着地しても両 projection
       tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
       projections: qProjections,
       milestoneProjections: qMilestoneProjections,
+      taskTree: [],
     }),
   );
   let pending!: Promise<void>;
@@ -721,4 +727,155 @@ test("doneColumn 変更は tasks 参照が同じでも両 projection を再同�
   expect(currentMilestoneProjections().get("M1")).toEqual(
     milestoneProjection(1, 1, ["tasks/a.md"]),
   );
+});
+
+// ───────── taskTree の結線 ─────────
+
+const currentTaskTree = (): TaskForest => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.taskTree : TaskForest.empty;
+};
+
+const currentData = () => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data : null;
+};
+
+const nestedTree: TaskForest = TaskForest.fromPayload([
+  {
+    filePath: "tasks/a.md",
+    children: [{ filePath: "tasks/b.md", children: [] }],
+  },
+]);
+
+test("projections-refreshed で taskTree が新しい内容へ更新される", async () => {
+  const handlers = installCaptureListen();
+  getTasksMock.mockResolvedValue(getTasksOk(new Map(), new Map(), nestedTree));
+  await mountLoaded();
+  await flush();
+
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  await flush();
+
+  expect(currentTaskTree()).toEqual(nestedTree);
+});
+
+test("projections と taskTree は同じ dispatch で入る", async () => {
+  const handlers = installCaptureListen();
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([["tasks/a.md", projection(1, 2)]]),
+      new Map(),
+      nestedTree,
+    ),
+  );
+  await mountLoaded();
+  await flush();
+  const before = currentData();
+
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  await flush();
+
+  const after = currentData();
+  // 中間で「projections だけ新・tree だけ旧」の data は観測されない。
+  expect(after).not.toBe(before);
+  expect(after?.projections.get("tasks/a.md")?.subIssueProgress).toEqual({
+    done: 1,
+    total: 2,
+  });
+  expect(after?.taskTree).toEqual(nestedTree);
+});
+
+test("内容不変の同期では data 参照が据え置かれる", async () => {
+  const handlers = installCaptureListen();
+  getTasksMock.mockResolvedValue(
+    getTasksOk(
+      new Map([
+        [
+          "tasks/a.md",
+          {
+            subIssueProgress: { done: 0, total: 1 },
+            isDone: false,
+            childFilePaths: ["tasks/b.md"],
+          },
+        ],
+      ]),
+      new Map([["M1", initialMilestoneProjection]]),
+      TaskForest.empty,
+    ),
+  );
+  await mountLoaded();
+  await flush();
+
+  // task-updated 自体は tasks を進めるので data 参照が変わる。ここで見たいのは
+  // 「その後に届く projections-refreshed が内容不変なら data を作り直さない」こと
+  // なので、event 適用直後・get_tasks 応答適用前の data を基準にする。
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A") });
+  const beforeSync = currentData();
+  await flush();
+
+  expect(currentData()).toBe(beforeSync);
+});
+
+test("get_tasks が失敗しても直前の taskTree を捨てない", async () => {
+  const handlers = installCaptureListen();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(new Map(), new Map(), nestedTree),
+  );
+  await mountLoaded();
+  await flush();
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  await flush();
+
+  getTasksMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "失敗")),
+  );
+  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A3") });
+  await flush();
+
+  expect(currentTaskTree()).toEqual(nestedTree);
+});
+
+test("プロジェクト切替に成功すると taskTree が新しいプロジェクトの内容に入れ替わる", async () => {
+  installCaptureListen();
+  await mountLoaded();
+  await flush();
+
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ ...openPayload, taskTree: nestedTree }),
+  );
+  await act(async () => {
+    await latest?.openProjectByPath("/q");
+  });
+  await flush();
+
+  expect(currentTaskTree()).toEqual(nestedTree);
+});
+
+test("プロジェクト切替の open が失敗しても旧プロジェクトの taskTree を保持する", async () => {
+  installCaptureListen();
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({ ...openPayload, taskTree: nestedTree }),
+  );
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  await act(async () => {
+    await latest?.openProjectByPath("/p");
+  });
+  await flush();
+
+  openProjectMock.mockResolvedValueOnce(
+    Result.err(new TauriError("UNKNOWN", "失敗")),
+  );
+  await act(async () => {
+    await latest?.openProjectByPath("/q");
+  });
+  await flush();
+
+  expect(currentTaskTree()).toEqual(nestedTree);
 });

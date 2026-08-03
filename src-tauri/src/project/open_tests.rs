@@ -16,7 +16,9 @@ use crate::state::project_key::ProjectKey;
 use crate::state::tasks_revision::TasksRevision;
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, BoxedWatcherHandle};
-use crate::task::projection::{MilestoneProjectionMap, TaskProjectionMap};
+use crate::task::projection::{
+    MilestoneProjectionMap, TaskForest, TaskProjectionMap, TaskTreeNode,
+};
 use crate::task::task_index::Task;
 use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::handle::WatcherHandle;
@@ -1031,6 +1033,7 @@ fn payload_serialization_uses_camel_case() {
         columns: vec!["Todo".into()],
         projections: TaskProjectionMap::new(),
         milestone_projections: MilestoneProjectionMap::new(),
+        task_tree: TaskForest::new(),
         load_warnings: Vec::new(),
         session: zero_session(),
     };
@@ -1039,6 +1042,7 @@ fn payload_serialization_uses_camel_case() {
     assert!(json.contains("\"columns\""));
     assert!(json.contains("\"projections\""));
     assert!(json.contains("\"milestoneProjections\""));
+    assert!(json.contains("\"taskTree\""));
     assert!(json.contains("\"session\""));
 }
 
@@ -1143,13 +1147,14 @@ fn open_project_payload_round_trip() {
         columns: vec!["Todo".into(), "Done".into()],
         projections: TaskProjectionMap::new(),
         milestone_projections: MilestoneProjectionMap::new(),
+        task_tree: TaskForest::new(),
         load_warnings: Vec::new(),
         session: zero_session(),
     };
     let serialized = serde_json::to_string(&payload).unwrap();
     assert_eq!(
         serialized,
-        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{},"loadWarnings":[],"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
+        r#"{"tasks":[],"columns":["Todo","Done"],"projections":{},"milestoneProjections":{},"taskTree":[],"loadWarnings":[],"session":{"projectKey":"/tmp/project","generation":0,"revision":0,"eventSeq":0}}"#
     );
 }
 
@@ -2189,4 +2194,100 @@ fn blocked_displaced_stop_holds_neither_writer_gate_nor_state_locks() {
     third_before_release
         .expect("third open completes while displaced stop is blocked")
         .expect("third open succeeds");
+}
+
+// ───────── taskTree の同梱（get_tasks と同形・同順序） ─────────
+
+fn tree_node_count(forest: &TaskForest) -> usize {
+    let mut count = 0;
+    let mut stack: Vec<&TaskTreeNode> = forest.iter().collect();
+    while let Some(node) = stack.pop() {
+        count += 1;
+        stack.extend(node.children.iter());
+    }
+    count
+}
+
+#[test]
+fn open_payload_contains_the_task_hierarchy_as_a_nested_tree() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+
+    let payload = open_hierarchy_project(Arc::clone(&state), &dir);
+
+    let roots: Vec<&str> = payload
+        .task_tree
+        .iter()
+        .map(|node| node.file_path.as_str())
+        .collect();
+    assert_eq!(roots, vec!["tasks/p.md"]);
+    let children: Vec<&str> = payload.task_tree[0]
+        .children
+        .iter()
+        .map(|node| node.file_path.as_str())
+        .collect();
+    assert_eq!(children, vec!["tasks/c2.md", "tasks/c1.md"]);
+}
+
+#[test]
+fn open_and_get_tasks_return_the_same_task_tree() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+
+    let open_payload = open_hierarchy_project(Arc::clone(&state), &dir);
+    let get_payload = crate::task::get::get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert_eq!(
+        open_payload.task_tree, get_payload.task_tree,
+        "初回ロード直後にツリービューを開いても再取得が要らない"
+    );
+}
+
+#[test]
+fn open_payload_task_tree_is_empty_for_a_project_without_tasks() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+        "version": 1,
+        "columns": [{ "name": "Todo", "order": 0 }],
+        "cardOrder": {}
+    }"#,
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("open should succeed");
+
+    assert!(payload.task_tree.is_empty());
+}
+
+#[test]
+fn open_succeeds_for_mutually_referencing_parents_and_lists_each_task_once() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+        "version": 1,
+        "columns": [{ "name": "Todo", "order": 0 }],
+        "cardOrder": {}
+    }"#,
+    );
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md("A", "Todo", Some("tasks/b.md")),
+    );
+    write_md(
+        dir.path(),
+        "tasks/b.md",
+        &task_md("B", "Todo", Some("tasks/a.md")),
+    );
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("open should succeed");
+
+    assert_eq!(tree_node_count(&payload.task_tree), payload.tasks.len());
+    assert_eq!(payload.task_tree.len(), 2, "循環メンバは全員 root");
 }

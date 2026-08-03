@@ -5,6 +5,7 @@ import {
   type ProjectData as ProjectDataT,
 } from "@/domains/project-data";
 import type { ProjectLoadWarning } from "@/domains/project-load-warning";
+import type { TaskForest } from "@/domains/task-forest";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
@@ -36,6 +37,8 @@ export type ProjectAction =
       type: "projections-refreshed";
       projections: TaskProjectionMap;
       milestoneProjections: MilestoneProjectionMap;
+      /** tasks と同一 payload 由来の階層ツリー。projections と分けて配らない。 */
+      taskTree: TaskForest;
     }
   // watcher の full rescan / event gap 復旧で get_tasks から取り直した
   // tasks + projections（task / milestone）を同一 snapshot として反映する。
@@ -53,6 +56,8 @@ export type ProjectAction =
       tasks: Task[];
       projections: TaskProjectionMap;
       milestoneProjections: MilestoneProjectionMap;
+      /** tasks と同一 snapshot の階層ツリー。tasks と atomic に入れ替える。 */
+      taskTree: TaskForest;
       loadWarnings: ProjectLoadWarning[];
     }
   | { type: "load-warnings-replaced"; loadWarnings: ProjectLoadWarning[] }
@@ -114,6 +119,7 @@ export const reducer = (
         ProjectDataDomain.replaceProjections(data, {
           projections: action.projections,
           milestoneProjections: action.milestoneProjections,
+          taskTree: action.taskTree,
         }),
       );
     case "tasks-resynced":
@@ -122,6 +128,7 @@ export const reducer = (
           tasks: action.tasks,
           projections: action.projections,
           milestoneProjections: action.milestoneProjections,
+          taskTree: action.taskTree,
           loadWarnings: action.loadWarnings ?? data.loadWarnings,
         }),
       );
