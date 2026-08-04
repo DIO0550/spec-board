@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use super::{move_task_impl, move_task_impl_with_config_io};
-use crate::config::{load_or_default, Config, ConfigWriter};
+use crate::config::{load_or_default, CardOrder, Config, ConfigWriter};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
@@ -49,20 +49,44 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
     fs::write(abs, content).expect("write md");
 }
 
+/// 指定カラムの並びを `&str` の Vec として取り出す。キーが無ければ空 Vec。
+fn column_paths<'a>(card_order: &'a CardOrder, column: &str) -> Vec<&'a str> {
+    card_order
+        .get(column)
+        .map(|paths| paths.iter().map(|path| path.as_str()).collect())
+        .unwrap_or_default()
+}
+
 fn read_config_json(project_root: &Path) -> Config {
     let raw = fs::read_to_string(project_root.join(".spec-board").join("config.json"))
         .expect("config.json exists");
     serde_json::from_str(&raw).expect("config.json is valid")
 }
 
+/// `config.json` に**書かれたままの** cardOrder を読む。
+///
+/// `Config` として deserialize すると `CardOrder` が canonical 化と dedupe をやり直すため、
+/// 「ディスク上に何が永続化されたか」を主張するテストは `Config` 経由では検証できない。
+fn read_raw_card_order(project_root: &Path, column: &str) -> Vec<String> {
+    let raw = fs::read_to_string(project_root.join(".spec-board").join("config.json"))
+        .expect("config.json exists");
+    let value: serde_json::Value = serde_json::from_str(&raw).expect("config.json is valid json");
+    value["cardOrder"][column]
+        .as_array()
+        .map(|paths| {
+            paths
+                .iter()
+                .map(|path| path.as_str().expect("path is a string").to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// `open_project_impl` の前に `.spec-board/config.json` を書き出し、初期 cardOrder を仕込む。
 fn seed_config_with_card_order(root: &Path, entries: &[(&str, &[&str])]) {
     let mut config = Config::default();
     for (column, paths) in entries {
-        config.card_order.insert(
-            (*column).to_string(),
-            paths.iter().map(|p| (*p).to_string()).collect(),
-        );
+        config.card_order.set_column(column, paths);
     }
     let dir = root.join(".spec-board");
     fs::create_dir_all(&dir).expect("create .spec-board");
@@ -71,6 +95,13 @@ fn seed_config_with_card_order(root: &Path, entries: &[(&str, &[&str])]) {
         serde_json::to_string_pretty(&config).expect("serialize config"),
     )
     .expect("write config.json");
+}
+
+/// `.spec-board/config.json` を canonical 化を挟まず生の文字列のまま置く。
+fn seed_raw_config_json(root: &Path, json: &str) {
+    let dir = root.join(".spec-board");
+    fs::create_dir_all(&dir).expect("create .spec-board");
+    fs::write(dir.join("config.json"), json).expect("write config.json");
 }
 
 fn make_args(file_path: &str, from: &str, to: &str, to_paths: &[&str]) -> MoveTaskArgs {
@@ -154,10 +185,7 @@ fn cross_column_move_removes_task_from_source_card_order() {
     .expect("move should succeed");
 
     let on_disk = read_config_json(dir.path());
-    assert_eq!(
-        on_disk.card_order.get("Todo"),
-        Some(&vec!["tasks/b.md".to_string()])
-    );
+    assert_eq!(column_paths(&on_disk.card_order, "Todo"), ["tasks/b.md"]);
 }
 
 #[test]
@@ -185,13 +213,13 @@ fn cross_column_move_sets_destination_card_order_in_given_order() {
 
     let on_disk = read_config_json(dir.path());
     assert_eq!(
-        on_disk.card_order.get("Done"),
-        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
+        column_paths(&on_disk.card_order, "Done"),
+        ["tasks/x.md", "tasks/a.md"]
     );
     let in_state = state.test_config().expect("lock").expect("config");
     assert_eq!(
-        in_state.card_order.get("Done"),
-        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
+        column_paths(&in_state.card_order, "Done"),
+        ["tasks/x.md", "tasks/a.md"]
     );
 }
 
@@ -248,9 +276,55 @@ fn same_column_reorder_updates_card_order() {
 
     let on_disk = read_config_json(dir.path());
     assert_eq!(
-        on_disk.card_order.get("Todo"),
-        Some(&vec!["tasks/b.md".to_string(), "tasks/a.md".to_string()])
+        column_paths(&on_disk.card_order, "Todo"),
+        ["tasks/b.md", "tasks/a.md"]
     );
+}
+
+#[test]
+fn move_removes_source_entry_written_with_backslash_separators() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    // 外部エディタや Windows 由来のツールが書いた表記を再現するため、
+    // seed helper を通さず生の JSON を置く（helper は canonical 化してしまう）。
+    seed_raw_config_json(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "In Progress", "order": 1 },
+                { "name": "Done", "order": 2 }
+            ],
+            "cardOrder": { "Todo": ["tasks\\a.md", "tasks\\b.md"] },
+            "doneColumn": "Done"
+        }"#,
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    move_task_impl(
+        &state,
+        &FsTaskIo,
+        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+    )
+    .expect("move should succeed");
+
+    assert_eq!(
+        read_raw_card_order(dir.path(), "Todo"),
+        ["tasks/b.md"],
+        "backslash 表記のまま書き戻さず、canonical 表記で永続化する"
+    );
+    assert_eq!(read_raw_card_order(dir.path(), "Done"), ["tasks/a.md"]);
 }
 
 #[test]
@@ -307,10 +381,7 @@ fn destination_card_order_drops_paths_without_a_file_on_disk() {
     .expect("move should succeed");
 
     let on_disk = read_config_json(dir.path());
-    assert_eq!(
-        on_disk.card_order.get("Done"),
-        Some(&vec!["tasks/a.md".to_string()])
-    );
+    assert_eq!(column_paths(&on_disk.card_order, "Done"), ["tasks/a.md"]);
 }
 
 #[test]
@@ -341,8 +412,8 @@ fn card_order_survives_reopening_the_project() {
 
     let config = reopened.test_config().expect("lock").expect("config");
     assert_eq!(
-        config.card_order.get("Done"),
-        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
+        column_paths(&config.card_order, "Done"),
+        ["tasks/x.md", "tasks/a.md"]
     );
 }
 
@@ -366,8 +437,8 @@ fn empty_destination_paths_still_register_the_moved_task() {
 
     let on_disk = read_config_json(dir.path());
     assert_eq!(
-        on_disk.card_order.get("Done"),
-        Some(&vec!["tasks/a.md".to_string()]),
+        column_paths(&on_disk.card_order, "Done"),
+        ["tasks/a.md"],
         "移動先カラムの並びには移動したタスクが必ず載る"
     );
 }
@@ -397,8 +468,8 @@ fn destination_paths_missing_the_moved_task_get_it_appended() {
 
     let on_disk = read_config_json(dir.path());
     assert_eq!(
-        on_disk.card_order.get("Done"),
-        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()])
+        column_paths(&on_disk.card_order, "Done"),
+        ["tasks/x.md", "tasks/a.md"]
     );
 }
 
@@ -627,14 +698,13 @@ fn disk_success_conflict_returns_typed_error_and_resyncs_same_session() {
         .find(|t| t.file_path.as_str() == "tasks/a.md")
         .expect("resynced task");
     assert_eq!("Done", cached.status.as_str());
+    let resident_config = state
+        .test_config()
+        .expect("resident config lock")
+        .expect("resident config");
     assert_eq!(
-        Some(&vec!["tasks/a.md".to_string()]),
-        state
-            .test_config()
-            .expect("resident config lock")
-            .expect("resident config")
-            .card_order
-            .get("Done")
+        column_paths(&resident_config.card_order, "Done"),
+        ["tasks/a.md"]
     );
     assert_eq!(
         revision_before.as_u64() + 2,
@@ -713,16 +783,15 @@ fn duplicate_destination_paths_are_collapsed() {
             "tasks/a.md",
             "Todo",
             "Done",
-            &["tasks/x.md", "tasks/a.md", "tasks/a.md", "tasks/x.md"],
+            &["tasks/x.md", "tasks/a.md", "tasks\\a.md", "tasks/x.md"],
         ),
     )
     .expect("move should succeed");
 
-    let on_disk = read_config_json(dir.path());
     assert_eq!(
-        on_disk.card_order.get("Done"),
-        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()]),
-        "同じパスが複数回並ぶことはない（初出優先）"
+        read_raw_card_order(dir.path(), "Done"),
+        ["tasks/x.md", "tasks/a.md"],
+        "同じパスが複数回並ぶことはない（初出優先）。config.json に書かれた値そのものを見る"
     );
 }
 
@@ -900,11 +969,10 @@ fn destination_paths_are_normalized_before_being_persisted() {
     )
     .expect("move should succeed");
 
-    let on_disk = read_config_json(dir.path());
     assert_eq!(
-        on_disk.card_order.get("Done"),
-        Some(&vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()]),
-        "`./` 付きの表記は正規化してから永続化する"
+        read_raw_card_order(dir.path(), "Done"),
+        ["tasks/x.md", "tasks/a.md"],
+        "`./` 付きの表記は正規化してから永続化する。config.json に書かれた値そのものを見る"
     );
 }
 

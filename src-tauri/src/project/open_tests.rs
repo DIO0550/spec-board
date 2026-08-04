@@ -23,6 +23,7 @@ use crate::task::task_index::Task;
 use spec_board_fs::watcher::core::WatcherError;
 use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
+use std::collections::BTreeMap;
 
 use std::fs;
 use std::path::Path;
@@ -1632,7 +1633,10 @@ fn task_projection_semantics_do_not_depend_on_input_order() {
             order: 0,
             color: None,
         }],
-        card_order: CardOrder::from([("Todo".to_string(), vec!["tasks/c.md".to_string()])]),
+        card_order: CardOrder::from_raw_map(BTreeMap::from([(
+            "Todo".to_string(),
+            vec!["tasks/c.md".to_string()],
+        )])),
         done_column: None,
     };
     let parent = sample_task_with_parent("tasks/p.md", None);

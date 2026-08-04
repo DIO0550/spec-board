@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
-
 use super::{get_columns_impl, GetColumnsError, GetColumnsPayload};
 use crate::config::column_name::ColumnName;
-use crate::config::{Column, Config};
+use crate::config::{CardOrder, Column, Config};
 use crate::state::{AppState, AppStateError};
 
 fn column(name: &str, order: u32) -> Column {
@@ -17,7 +15,7 @@ fn make_config(columns: Vec<Column>, done_column: Option<ColumnName>) -> Config 
     Config {
         version: 1,
         columns,
-        card_order: BTreeMap::new(),
+        card_order: CardOrder::new(),
         done_column,
     }
 }
