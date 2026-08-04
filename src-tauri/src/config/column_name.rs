@@ -54,6 +54,15 @@ impl<'de> serde::Deserialize<'de> for ColumnName {
     }
 }
 
+/// `BTreeMap<ColumnName, _>` / `HashMap<ColumnName, _>` を `&str` のまま引けるようにする。
+/// `PartialEq` / `Ord` / `Hash` はいずれも内部 `String` に対する derive なので、
+/// 借用元と借用先で比較・ハッシュが一致するという `Borrow` の要求を満たす。
+impl std::borrow::Borrow<str> for ColumnName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 impl From<&str> for ColumnName {
     fn from(value: &str) -> Self {
         Self::from_lenient(value.to_string())
