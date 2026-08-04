@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::config::column_name::ColumnName;
-use crate::config::{Column, Config, FsConfigWriter, LabelRegistry, MilestoneRegistry};
+use crate::config::{CardOrder, Column, Config, FsConfigWriter, LabelRegistry, MilestoneRegistry};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
@@ -32,7 +32,7 @@ fn config_with(columns: Vec<Column>, done: Option<&str>) -> Config {
     Config {
         version: 1,
         columns,
-        card_order: BTreeMap::new(),
+        card_order: CardOrder::new(),
         done_column: done.map(ColumnName::from_lenient),
     }
 }
@@ -45,9 +45,17 @@ fn config_with_card_order(
     Config {
         version: 1,
         columns,
-        card_order,
+        card_order: CardOrder::from_raw_map(card_order),
         done_column: done.map(ColumnName::from_lenient),
     }
+}
+
+/// 指定カラムの並びを `&str` の Vec として取り出す。キーが無ければ空 Vec。
+fn column_paths<'a>(card_order: &'a CardOrder, column: &str) -> Vec<&'a str> {
+    card_order
+        .get(column)
+        .map(|paths| paths.iter().map(|path| path.as_str()).collect())
+        .unwrap_or_default()
 }
 
 fn task(path: &str, status: &str) -> Task {
@@ -365,9 +373,9 @@ fn plan_columns_only_remove_drops_column_and_cleans_card_order() {
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
     assert_eq!(plan.new_config.columns, new_cols);
-    assert!(plan.new_config.card_order.contains_key("Todo"));
-    assert!(plan.new_config.card_order.contains_key("Done"));
-    assert!(!plan.new_config.card_order.contains_key("Doing"));
+    assert!(plan.new_config.card_order.get("Todo").is_some());
+    assert!(plan.new_config.card_order.get("Done").is_some());
+    assert!(plan.new_config.card_order.get("Doing").is_none());
 }
 
 #[test]
@@ -402,12 +410,12 @@ fn plan_renames_only_swaps_card_order_keys() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert!(plan.new_config.card_order.contains_key("In Progress"));
+    assert!(plan.new_config.card_order.get("In Progress").is_some());
     assert_eq!(
-        plan.new_config.card_order.get("In Progress").unwrap(),
-        &vec!["b.md".to_string()]
+        column_paths(&plan.new_config.card_order, "In Progress"),
+        ["b.md"]
     );
-    assert!(!plan.new_config.card_order.contains_key("Doing"));
+    assert!(plan.new_config.card_order.get("Doing").is_none());
     assert!(plan
         .new_config
         .columns
@@ -472,14 +480,8 @@ fn plan_card_order_swap_a_to_b_and_b_to_a_preserves_both_entries() {
     // rename_map {"A":"B","B":"A"} の適用で [B, A] になる。
     // card_order のキーも入れ替わり {"B":[a.md], "A":[b.md]} になる。
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert_eq!(
-        plan.new_config.card_order.get("B").unwrap(),
-        &vec!["a.md".to_string()]
-    );
-    assert_eq!(
-        plan.new_config.card_order.get("A").unwrap(),
-        &vec!["b.md".to_string()]
-    );
+    assert_eq!(column_paths(&plan.new_config.card_order, "B"), ["a.md"]);
+    assert_eq!(column_paths(&plan.new_config.card_order, "A"), ["b.md"]);
 }
 
 #[test]
@@ -497,17 +499,10 @@ fn plan_card_order_collapse_merges_paths_first_occurrence_wins() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    let merged = plan.new_config.card_order.get("B").expect("B exists");
+    let merged = column_paths(&plan.new_config.card_order, "B");
     // A の entries (a.md, shared.md) → B の entries (b.md) の順で、shared.md は重複除去で
     // 1 つだけ残る。順序は BTreeMap の iteration 順（A, B）に従う。
-    assert_eq!(
-        merged,
-        &vec![
-            "a.md".to_string(),
-            "shared.md".to_string(),
-            "b.md".to_string()
-        ]
-    );
+    assert_eq!(merged, ["a.md", "shared.md", "b.md"]);
 }
 
 #[test]
@@ -664,7 +659,7 @@ fn plan_card_order_orphan_key_is_dropped_after_rename() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert!(!plan.new_config.card_order.contains_key("Old"));
+    assert!(plan.new_config.card_order.get("Old").is_none());
 }
 
 #[test]
@@ -1063,12 +1058,9 @@ fn e2e_renames_with_card_order_swap_persists_in_config_json() {
     .expect("ok");
 
     let on_disk = read_config_json(dir.path());
-    assert!(on_disk.card_order.contains_key("To Do"));
-    assert_eq!(
-        on_disk.card_order.get("To Do").unwrap(),
-        &vec!["tasks/a.md".to_string()]
-    );
-    assert!(!on_disk.card_order.contains_key("Todo"));
+    assert!(on_disk.card_order.get("To Do").is_some());
+    assert_eq!(column_paths(&on_disk.card_order, "To Do"), ["tasks/a.md"]);
+    assert!(on_disk.card_order.get("Todo").is_none());
 }
 
 // ───── fault injection mocks ─────

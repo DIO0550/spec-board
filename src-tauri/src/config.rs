@@ -5,8 +5,9 @@
 //! （モジュール記法: 子フォルダを持つドメイン親ファイルは「`pub mod` 列挙 + `pub use`」のみ）。
 //!
 //! # 子モジュールの責務
-//! - [`core`] — `Config` / `Column` / `ColumnColor` / `CardOrder` などコアスキーマ型と、
+//! - [`core`] — `Config` / `Column` / `ColumnColor` などコアスキーマ型と、
 //!   GUIDE.md 生成・`update_columns` 純粋計算・`build_config_from_statuses` 等のドメインロジック
+//! - [`card_order`] — `cardOrder` の newtype `CardOrder`（canonical パス + 同一カラム内一意）
 //! - [`migration`] — `config.json` の `version` マイグレーションフック
 //! - [`load`] — `.spec-board/config.json` の読み込みと低レベル atomic write インフラ
 //! - [`label_registry`] — ラベルマスタ（`labels.yml`）のドメイン型・aggregate・永続化
@@ -14,6 +15,7 @@
 //! - その他（`column_name` / `clock` / `get_*` / `create_*` / `update_*` / `delete_*`）は
 //!   VO・時計・Tauri command 各モジュール
 
+pub mod card_order;
 pub mod clock;
 pub mod column_name;
 pub mod core;
@@ -35,11 +37,11 @@ pub mod update_milestone;
 
 pub use clock::{Clock, SystemClock};
 
+pub use card_order::CardOrder;
 pub use core::{
-    build_config_from_statuses, clean_card_order, generate_guide_markdown,
-    generate_guide_markdown_for_columns, validate_unique_column_names,
-    write_guide_markdown_best_effort, CardOrder, Column, ColumnColor, Config, RenameTarget,
-    UpdateCardOrderPlanError, UpdateColumnsPlan,
+    build_config_from_statuses, generate_guide_markdown, generate_guide_markdown_for_columns,
+    validate_unique_column_names, write_guide_markdown_best_effort, Column, ColumnColor, Config,
+    RenameTarget, UpdateCardOrderPlanError, UpdateColumnsPlan,
 };
 pub use load::{load_or_default, ConfigWriter, FsConfigWriter, LoadConfigError};
 pub use migration::{migrate_config, MigrationError};

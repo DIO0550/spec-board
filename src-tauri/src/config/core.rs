@@ -1,10 +1,12 @@
 //! プロジェクト設定 `.spec-board/config.json` のコアスキーマ型とドメインロジック。
 //!
-//! [`Config`] / [`Column`] / [`ColumnColor`] と、`cardOrder` 型エイリアス [`CardOrder`]、
-//! GUIDE.md 本文生成、`update_columns` 純粋計算（[`Config::plan_update_columns`]）、
+//! [`Config`] / [`Column`] / [`ColumnColor`] と、GUIDE.md 本文生成、
+//! `update_columns` 純粋計算（[`Config::plan_update_columns`]）、
 //! status 列からの config 組み立て（[`build_config_from_statuses`]）、
-//! `cardOrder` クレンジング（[`clean_card_order`]）、カラム名重複検証
-//! （[`validate_unique_column_names`]）を提供する。
+//! カラム名重複検証（[`validate_unique_column_names`]）を提供する。
+//!
+//! `cardOrder` そのものの型と不変条件は [`crate::config::card_order::CardOrder`] が持ち、
+//! 本モジュールはカラム跨ぎの一意性（[`Config::normalize_card_order`]）だけを担う。
 //!
 //! # serde 規約
 //! 型レベルで `#[serde(rename_all = "camelCase")]` を付与し、
@@ -15,22 +17,16 @@
 
 use log::warn;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+use crate::config::card_order::CardOrder;
 use crate::config::column_name::ColumnName;
 use crate::config::update_columns::{ColumnRename, UpdateColumnsArgs, UpdateColumnsError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::Task;
 use spec_board_fs::config::config_io::write_guide_markdown;
-
-/// `cardOrder` の型エイリアス。キー = カラム名、値 = タスクファイルパスの並び順配列。
-///
-/// `.spec-board/config.json` は git にコミットされる前提のため、シリアライズ時に
-/// キー順序が決定論的になる `BTreeMap`（キー昇順）を採用し、無意味な diff や
-/// マージコンフリクトを抑止する。値配列 `Vec<String>` 内の順序がカード表示順。
-pub type CardOrder = BTreeMap<String, Vec<String>>;
 
 /// プロジェクト設定全体。
 ///
@@ -140,7 +136,7 @@ impl Default for Config {
         Self {
             version: DEFAULT_VERSION,
             columns,
-            card_order: BTreeMap::new(),
+            card_order: CardOrder::new(),
             done_column,
         }
     }
@@ -268,25 +264,20 @@ impl Config {
 
         let valid_names: HashSet<&str> =
             candidate_columns.iter().map(|c| c.name.as_str()).collect();
-        let mut new_card_order: CardOrder = BTreeMap::new();
-        for (key, paths) in &self.card_order {
+        let mut new_card_order = CardOrder::new();
+        for (key, paths) in self.card_order.iter() {
             let new_key = rename_map
                 .get(key.as_str())
                 .cloned()
-                .unwrap_or_else(|| key.clone());
+                .unwrap_or_else(|| key.as_str().to_string());
             if !valid_names.contains(new_key.as_str()) {
                 continue;
             }
             // 複数の旧キーが同じ new_key に collapse する場合（例: args.columns で
             // 残す側として B のみ指定 + rename A→B が指定され、旧 card_order に
-            // A と B 両方の entry がある）に paths を後勝ち上書きしないよう、
-            // 既存 Vec へ append + 重複除去（first-occurrence wins）でマージする。
-            let entry = new_card_order.entry(new_key).or_default();
-            for path in paths {
-                if !entry.contains(path) {
-                    entry.push(path.clone());
-                }
-            }
+            // A と B 両方の entry がある）に paths を後勝ち上書きしないよう append する。
+            // 重複除去は CardOrder 側の不変条件が担う。
+            new_card_order.append_to_column(&new_key, paths);
         }
 
         let mut rename_targets: Vec<RenameTarget> = Vec::new();
@@ -313,74 +304,36 @@ impl Config {
         })
     }
 
-    /// cardOrder の canonical membership を保証する正規化メソッド。
+    /// cardOrder のカラム跨ぎ一意性を保証する正規化メソッド。
     ///
-    /// 2 段階で正規化する:
-    /// 1. 同一カラム内の重複パスを除去（first occurrence wins）
-    /// 2. 列跨ぎ重複を解消（columns の order 昇順走査で first occurrence が winner）
+    /// 同一パスが複数カラムに出現する場合、columns を order 昇順 → 同 order は
+    /// カラム名の辞書順で走査し、最初に見つかったカラムに残す。columns に存在
+    /// しないキーはキー昇順で末尾に続けて走査する（キー自体は除去しない）。
+    ///
+    /// 同一カラム内の重複除去と canonical 化は [`CardOrder`] 型が構築時に
+    /// 済ませているため、本メソッドでは行わない。
     ///
     /// `&self` を借用し、正規化済みの新しい `Config` を返す。
     /// 第 2 返却値は「入力と出力が異なるか」を表す。
     pub fn normalize_card_order(&self) -> (Config, bool) {
-        let mut changed = false;
-        let mut normalized: CardOrder = BTreeMap::new();
+        let mut normalized = self.card_order.clone();
 
-        for (key, paths) in &self.card_order {
-            let mut seen = HashSet::new();
-            let deduped: Vec<String> = paths
-                .iter()
-                .filter(|p| seen.insert(p.as_str()))
-                .cloned()
-                .collect();
-            if deduped.len() != paths.len() {
-                changed = true;
-            }
-            normalized.insert(key.clone(), deduped);
-        }
-
-        // columns を order 昇順にソートし、その順で走査する。
-        // columns に存在しないキーは末尾に（BTreeMap キー辞書順で）走査する。
-        let column_order: Vec<&str> = {
-            let mut sorted: Vec<&Column> = self.columns.iter().collect();
-            sorted.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
-            sorted.iter().map(|c| c.name.as_str()).collect()
-        };
-        let all_keys: Vec<String> = normalized.keys().cloned().collect();
-        let ordered_keys: Vec<String> = column_order
-            .iter()
-            .filter(|k| all_keys.contains(&k.to_string()))
-            .map(|k| k.to_string())
-            .chain(
-                all_keys
-                    .iter()
-                    .filter(|k| !column_order.contains(&k.as_str()))
-                    .cloned(),
-            )
-            .collect();
-
-        let mut global_seen: HashSet<String> = HashSet::new();
-        let mut removals: HashMap<String, HashSet<String>> = HashMap::new();
-        for key in &ordered_keys {
-            let Some(paths) = normalized.get(key) else {
+        let mut global_seen: HashSet<TaskFilePath> = HashSet::new();
+        for key in self.card_order_scan_order() {
+            let Some(paths) = self.card_order.get(key) else {
                 continue;
             };
-            for path in paths {
-                if !global_seen.insert(path.clone()) {
-                    removals
-                        .entry(key.clone())
-                        .or_default()
-                        .insert(path.clone());
-                }
+            let retained: Vec<TaskFilePath> = paths
+                .iter()
+                .filter(|path| global_seen.insert((*path).clone()))
+                .cloned()
+                .collect();
+            if retained.len() != paths.len() {
+                normalized.set_column(key, &retained);
             }
         }
 
-        for (key, to_remove) in &removals {
-            if let Some(paths) = normalized.get_mut(key) {
-                paths.retain(|p| !to_remove.contains(p));
-                changed = true;
-            }
-        }
-
+        let changed = normalized != self.card_order;
         let result = Config {
             card_order: normalized,
             ..self.clone()
@@ -388,13 +341,43 @@ impl Config {
         (result, changed)
     }
 
+    /// カラム跨ぎ dedupe の走査順を返す。
+    ///
+    /// `columns` を order 昇順 → 同 order はカラム名の辞書順に並べたものを先頭に置き、
+    /// `columns` に存在しない cardOrder のキーをキー昇順（`BTreeMap` のキー順）で
+    /// 末尾に続ける。返すのは cardOrder に実在するキーのみ。
+    fn card_order_scan_order(&self) -> Vec<&str> {
+        let mut sorted: Vec<&Column> = self.columns.iter().collect();
+        sorted.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
+
+        let mut keys: Vec<&str> = Vec::new();
+        let mut added: HashSet<&str> = HashSet::new();
+        for column in sorted {
+            let name = column.name.as_str();
+            if self.card_order.get(name).is_some() && added.insert(name) {
+                keys.push(name);
+            }
+        }
+        for key in self.card_order.keys() {
+            let name = key.as_str();
+            if added.insert(name) {
+                keys.push(name);
+            }
+        }
+        keys
+    }
+
     /// `cardOrder[column_name]` を `file_paths` で上書きした新しい `Config` を返す
     /// （副作用なし）。
     ///
     /// `column_name` が [`Self::columns`] に存在しなければ
     /// [`UpdateCardOrderPlanError::UnknownColumn`] を返し、`self` は変更しない。
-    /// `file_paths` のうち `existing_paths` に含まれないエントリは
-    /// 「実体が消えたタスク」として除外する。入力順は保持する。
+    /// `file_paths` のうち canonical 化できないもの、および `existing_paths` に
+    /// 含まれないエントリ（実体が消えたタスク）は除外する。入力順は保持する。
+    ///
+    /// `existing_paths` は canonical 表記の集合であることを呼び出し側の契約とする。
+    /// 実在判定は canonical 化した後のパスで引くため、呼び出し側が生の表記のまま
+    /// 集合を作ると実在するタスクまで落ちる。
     ///
     /// 実在判定の走査（fs アクセス）は呼び出し側の責務で、本メソッドは
     /// `existing_paths` を真値として扱う純粋関数。これにより
@@ -415,13 +398,14 @@ impl Config {
             return Err(UpdateCardOrderPlanError::UnknownColumn { column_name });
         }
 
-        let retained: Vec<String> = file_paths
-            .into_iter()
-            .filter(|rel| existing_paths.contains(rel.as_str()))
+        let retained: Vec<TaskFilePath> = file_paths
+            .iter()
+            .filter_map(|raw| CardOrder::canonical_path(raw))
+            .filter(|path| existing_paths.contains(path.as_str()))
             .collect();
 
         let mut next = self.clone();
-        next.card_order.insert(column_name, retained);
+        next.card_order.set_column(&column_name, &retained);
         Ok(next)
     }
 }
@@ -672,7 +656,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         return Config {
             version: DEFAULT_VERSION,
             columns: Vec::new(),
-            card_order: BTreeMap::new(),
+            card_order: CardOrder::new(),
             done_column: None,
         };
     }
@@ -704,66 +688,9 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
     Config {
         version: DEFAULT_VERSION,
         columns,
-        card_order: BTreeMap::new(),
+        card_order: CardOrder::new(),
         done_column,
     }
-}
-
-/// `cardOrder` から「実体が消えたファイルパス」「`columns` に存在しないキー」を取り除いた
-/// 新しい [`CardOrder`] を返す純粋関数。
-///
-/// # 入力規約
-/// - `card_order`: 元の `cardOrder`（`BTreeMap<String, Vec<String>>`）。借用のみで変更しない。
-/// - `columns`: 現在のカラム定義スライス。`columns[].name` をキー存続判定に用いる。
-/// - `existing_paths`: プロジェクト上で実在するタスクファイルの相対パス集合。
-///   走査は呼び出し側責務（本関数は fs にアクセスしない）。
-///
-/// # 戻り値
-/// - 新規 [`CardOrder`]。in-place mutation はしない。
-///
-/// # 削除ルール
-/// 1. 各カラム値の `Vec<String>` から `existing_paths` に含まれないエントリを除去する。
-/// 2. キーが `columns[].name` のいずれにも一致しない場合、そのキーごと除去する。
-/// 3. 除去結果として値が空 `Vec` になっても、キーは保持する（カラムの初期状態を表す）。
-///
-/// # 決定論性
-/// 戻り値は `BTreeMap` のためキー順序はキー昇順で決定論的。値の `Vec` は元の順序を保持する。
-///
-/// # 重複パスの扱い
-/// 値配列内の重複パス除去は [`Config::normalize_card_order`] が担当する。
-/// 本関数は「存在しないパスの除去」のみを担当し、重複除去は行わない。
-///
-/// # 例
-/// ```ignore
-/// use std::collections::{BTreeMap, HashSet};
-/// let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
-/// map.insert("Todo".into(), vec!["a.md".into(), "x.md".into()]);
-/// let columns = vec![Column { name: "Todo".into(), order: 0, color: None }];
-/// let mut existing: HashSet<String> = HashSet::new();
-/// existing.insert("a.md".to_string());
-/// let cleaned = clean_card_order(&map, &columns, &existing);
-/// assert_eq!(cleaned.get("Todo").unwrap(), &vec!["a.md".to_string()]);
-/// ```
-pub fn clean_card_order(
-    card_order: &CardOrder,
-    columns: &[Column],
-    existing_paths: &HashSet<String>,
-) -> CardOrder {
-    let valid_keys: HashSet<&str> = columns.iter().map(|c| c.name.as_str()).collect();
-
-    let mut cleaned: CardOrder = BTreeMap::new();
-    for (key, paths) in card_order.iter() {
-        if !valid_keys.contains(key.as_str()) {
-            continue;
-        }
-        let filtered: Vec<String> = paths
-            .iter()
-            .filter(|p| existing_paths.contains(p.as_str()))
-            .cloned()
-            .collect();
-        cleaned.insert(key.clone(), filtered);
-    }
-    cleaned
 }
 
 /// `Config::columns` のカラム名重複を検証する純粋関数。

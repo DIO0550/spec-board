@@ -24,7 +24,9 @@ use std::sync::Arc;
 use spec_board_fs::config::config_io::{self, ConfigIoError};
 use tauri::State;
 
-use crate::config::{load_or_default, Config, ConfigWriter, FsConfigWriter, LoadConfigError};
+use crate::config::{
+    load_or_default, CardOrder, Config, ConfigWriter, FsConfigWriter, LoadConfigError,
+};
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::document::TaskDocument;
@@ -33,6 +35,7 @@ use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
 use crate::task::parse::default_status_for;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
+use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::{MoveTaskIntent, MoveTaskOutcome, Task, TaskIndex};
 
 /// `move_task` Tauri command 薄層。
@@ -315,24 +318,29 @@ fn ensure_column_exists(config: &Config, column_name: &str) -> Result<(), MoveTa
 
 /// 移動先カラムの cardOrder を FE 指定順で上書きした `Config` を返す。
 ///
-/// 重複を除いた上で、指定並びに移動対象が含まれていなければ末尾に追加する。FE の
-/// 算出漏れや stale な並びをそのまま保存すると、移動したタスクだけが移動先カラムの
-/// 並びから抜け落ちる / 同じカードが 2 回並ぶ。
+/// 指定並びに移動対象が含まれていなければ末尾に追加する。FE の算出漏れや stale な
+/// 並びをそのまま保存すると、移動したタスクだけが移動先カラムの並びから抜け落ちる。
 fn plan_destination_card_order(
     config: &Config,
     project_root: &Path,
     intent: &MoveTaskIntent,
     moved_file_path: &str,
 ) -> Result<Config, MoveTaskCommandError> {
-    let mut seen: HashSet<&str> = HashSet::new();
+    // 重複除去は CardOrder 型の不変条件が担うため、ここでは行わない。
+    // canonical 化だけ先に済ませ、実在走査と cardOrder 保存で同じ表記を使う。
     let mut file_paths: Vec<String> = intent
         .to_column_file_paths
         .iter()
-        .filter(|p| seen.insert(p.as_str()))
-        .cloned()
+        .filter_map(|raw| CardOrder::canonical_path(raw))
+        .map(TaskFilePath::into_string)
         .collect();
-    if !file_paths.iter().any(|p| p == moved_file_path) {
-        file_paths.push(moved_file_path.to_string());
+    // 移動対象も同じ canonical 化を通す。`file_paths` に raw 表記が 1 つでも混ざると
+    // `collect_existing_paths` が作る実在集合と `plan_update_card_order` の canonical 表記が
+    // 食い違い、移動したタスクが移動先の並びから落ちる。
+    if let Some(moved) = CardOrder::canonical_path(moved_file_path) {
+        if !file_paths.iter().any(|p| p == moved.as_str()) {
+            file_paths.push(moved.into_string());
+        }
     }
     let existing_paths = collect_existing_paths(project_root, &file_paths);
     config
@@ -354,14 +362,17 @@ fn plan_source_card_order(
     let Some(current) = config.card_order.get(&intent.from_column) else {
         return Ok(config.clone());
     };
-    if !current.iter().any(|p| p == moved_file_path) {
+    let Some(moved) = CardOrder::canonical_path(moved_file_path) else {
+        return Ok(config.clone());
+    };
+    if !current.contains(&moved) {
         return Ok(config.clone());
     }
 
     let retained: Vec<String> = current
         .iter()
-        .filter(|p| p.as_str() != moved_file_path)
-        .cloned()
+        .filter(|p| *p != &moved)
+        .map(|p| p.as_str().to_string())
         .collect();
     let existing_paths = collect_existing_paths(project_root, &retained);
     config

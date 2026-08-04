@@ -94,10 +94,7 @@ fn task_with_status_and_parent(path: &str, status: &str, parent: Option<&str>) -
 fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> Config {
     let mut order = CardOrder::default();
     for (column, paths) in card_order {
-        order.insert(
-            (*column).to_string(),
-            paths.iter().map(|path| (*path).to_string()).collect(),
-        );
+        order.set_column(column, paths);
     }
     Config {
         version: 1,

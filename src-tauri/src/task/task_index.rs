@@ -2447,7 +2447,11 @@ fn card_sort_key(
     let position = config
         .card_order
         .get(status)
-        .and_then(|paths| paths.iter().position(|p| p == task.file_path.as_str()))
+        .and_then(|paths| {
+            paths
+                .iter()
+                .position(|p| p.as_str() == task.file_path.as_str())
+        })
         .unwrap_or(usize::MAX);
     (rank, position)
 }

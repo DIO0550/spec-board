@@ -684,10 +684,7 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::conf
     use crate::config::{CardOrder, Column, Config};
     let mut order = CardOrder::default();
     for (column, paths) in card_order {
-        order.insert(
-            (*column).to_string(),
-            paths.iter().map(|p| (*p).to_string()).collect(),
-        );
+        order.set_column(column, paths);
     }
     Config {
         version: 1,
