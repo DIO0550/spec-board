@@ -28,6 +28,14 @@ pub(crate) fn normalize_path_parts(path_text: &str, remove_drive_prefix: bool) -
     parts.join("/")
 }
 
+/// slash 区切りの path 文字列が `..` セグメントを含むかを判定する。
+///
+/// @param path_text slash 区切りへ変換済みの path 文字列。
+/// @returns いずれかのセグメントが `..` の場合は `true`。
+pub(crate) fn contains_parent_dir(path_text: &str) -> bool {
+    path_text.split('/').any(|segment| segment == "..")
+}
+
 /// セグメントが Windows の drive letter（`C:` のような ASCII 1 文字 + `:`）か判定する。
 fn is_drive_letter_segment(segment: &str) -> bool {
     let bytes = segment.as_bytes();

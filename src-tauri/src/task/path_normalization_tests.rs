@@ -1,4 +1,4 @@
-use super::{has_windows_drive_prefix, normalize_path_parts};
+use super::{contains_parent_dir, has_windows_drive_prefix, normalize_path_parts};
 
 #[test]
 fn replaces_backslash_to_slash_via_caller_then_normalizes() {
@@ -54,6 +54,22 @@ fn keeps_non_drive_segment_ending_with_colon_on_unix() {
     // `notes:` のような ASCII 文字数 != 2 の末尾コロン文字列は drive prefix
     // ではないため削除しない（Unix で正規ディレクトリ名として有効）。
     assert_eq!(normalize_path_parts("notes:/foo.md", true), "notes:/foo.md");
+}
+
+#[test]
+fn detects_parent_dir_segment() {
+    assert!(contains_parent_dir("a/../b.md"));
+    assert!(contains_parent_dir("../b.md"));
+    assert!(contains_parent_dir(".."));
+    assert!(!contains_parent_dir("a/b.md"));
+    assert!(!contains_parent_dir(""));
+}
+
+#[test]
+fn does_not_treat_dot_dot_prefixed_name_as_parent_dir() {
+    // `..foo` は親ディレクトリ参照ではなく、先頭がドット 2 つのファイル名。
+    assert!(!contains_parent_dir("..foo/b.md"));
+    assert!(!contains_parent_dir("a/...md"));
 }
 
 #[test]
