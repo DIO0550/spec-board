@@ -176,6 +176,8 @@ export type MoveTaskParams = {
   readonly toColumn: string;
   /** 移動先カラムの新しい並び順（タスクファイルパスの配列。先頭が最上位） */
   readonly toColumnFilePaths: readonly string[];
+  /** 移動先カラムが移動前にこうであったはず、という並び。BE が現実と照合する。 */
+  readonly expectedToColumnOrder: readonly string[];
 };
 
 /** preview_task_markdown 引数。Task entity や fileName を含めない明示的な draft DTO。 */

@@ -22,6 +22,9 @@ pub struct MoveTaskArgs {
     pub to_column: String,
     /// 移動先カラムの新しい cardOrder。FE がドロップ位置を反映した完全な並びを送る。
     pub to_column_file_paths: Vec<String>,
+    /// 移動先カラムが「移動前にこうであったはず」という並びの期待値。
+    /// FE が drop 直前に見ていた表示順をそのまま送る。
+    pub expected_to_column_order: Vec<String>,
 }
 
 impl MoveTaskArgs {
@@ -37,22 +40,35 @@ impl MoveTaskArgs {
         project_root: &Path,
     ) -> Result<MoveTaskIntent, MoveTaskCommandError> {
         let file_path = resolve_input_file_path(&self.file_path, project_root)?;
-        let to_column_file_paths = self
-            .to_column_file_paths
-            .iter()
-            .map(|raw| {
-                resolve_input_file_path(raw, project_root)
-                    .map(|path| path.to_string_lossy().into_owned())
-            })
-            .collect::<Result<Vec<String>, MoveTaskCommandError>>()?;
+        let to_column_file_paths =
+            resolve_input_file_paths(&self.to_column_file_paths, project_root)?;
+        let expected_to_column_order =
+            resolve_input_file_paths(&self.expected_to_column_order, project_root)?;
 
         Ok(MoveTaskIntent {
             file_path,
             from_column: self.from_column,
             to_column: self.to_column,
             to_column_file_paths,
+            expected_to_column_order,
         })
     }
+}
+
+/// 入力パス列を 1 件ずつ正規化する。1 件でも解決できなければ全体を reject する。
+///
+/// 一部だけ黙って捨てると、照合が「本当は一致していたのに不一致」と判定したり、
+/// 並びの一部が理由なく消えたように見えたりする。
+fn resolve_input_file_paths(
+    raws: &[String],
+    project_root: &Path,
+) -> Result<Vec<String>, MoveTaskCommandError> {
+    raws.iter()
+        .map(|raw| {
+            resolve_input_file_path(raw, project_root)
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 /// 入力 filePath を VO で `.md` 必須として正規化し、reject を `InvalidPath` へ詰め替える。
@@ -71,3 +87,7 @@ fn resolve_input_file_path(
         .map(InputTaskPath::into_path_buf)
         .map_err(|_| MoveTaskCommandError::InvalidPath(raw.into()))
 }
+
+#[cfg(test)]
+#[path = "args_tests.rs"]
+mod args_tests;

@@ -217,8 +217,10 @@ stateDiagram-v2
 
 | 種類 | IPC 呼び出し |
 |:-----|:------------|
-| カラム間移動 | `move_task({ filePath, fromColumn, toColumn, toColumnFilePaths })` を 1 回。status 変更・移動元 cardOrder からの除去・移動先 cardOrder の設定はすべて BE 側の単一コマンド内で完結する |
-| 同一カラム内並び替え | `move_task({ filePath, fromColumn, toColumn, toColumnFilePaths })` を 1 回（`fromColumn === toColumn`）。並び順に変化が無い場合は IPC を呼ばない |
+| カラム間移動 | `move_task({ filePath, fromColumn, toColumn, toColumnFilePaths, expectedToColumnOrder })` を 1 回。status 変更・移動元 cardOrder からの除去・移動先 cardOrder の設定はすべて BE 側の単一コマンド内で完結する |
+| 同一カラム内並び替え | `move_task({ filePath, fromColumn, toColumn, toColumnFilePaths, expectedToColumnOrder })` を 1 回（`fromColumn === toColumn`）。並び順に変化が無い場合は IPC を呼ばない |
+
+`expectedToColumnOrder` は「移動先カラムが移動前にこうであったはず」という並びで、FE が drop 直前に見ていた表示順をそのまま送る。BE はこれを resident な board 表示順（カラムの `cardOrder` の並び → 載っていないものは `id` 昇順）と照合し、一致しない場合は**書き込みを一切行わずに**移動を拒否する。拒否時は task md・`config.json` のいずれも変更されず、セッションの revision も消費しない。移動元カラムの並びは照合しない（移動元に対する操作は対象を取り除くだけで、他のカードの並びが変わっていても結果が変わらないため）。
 
 `cardOrder` の永続化は上記 IPC で完了し、reopen 時は `open_project` が payload の `tasks` を「カラムの表示順 → そのカラムの `cardOrder` の並び → `id` 昇順」で返すことで表示順を復元する（rehydration）。`cardOrder` に載っていないタスク（新規追加された md 等）はそのカラムの末尾へ `id` 昇順で並ぶ。
 
@@ -226,6 +228,7 @@ stateDiagram-v2
 
 - **成功時**: カラム間移動では `task-updated` を 1 段だけ確定 dispatch する。cardOrder は楽観反映した並びがそのまま永続化されているため、確定用の `card-order-updated` は流さない（IPC 待機中に入った外部更新を巻き戻さないため）。確定値は、対象 task が**楽観 dispatch した Task のまま（誰も触っていない）**であれば BE 応答の Task をそのまま採用し（書き込み後の md を再解析した warning 等がここで反映される）、IPC 待機中に外部更新が入っていた場合は move が所有する `status` だけを載せ替えて title / body / labels 等の外部更新を保護する。対象が state から消えていた場合は確定 dispatch を行わない。同一カラム並び替えでは追加 dispatch を行わない
 - **失敗時**: カラム間移動はスナップショットへフル rollback し、ライブリージョンで「移動を取り消しました」を通知する。同一カラム並び替えは移動先 cardOrder のみ 1 段 rollback する
+- **競合による拒否時**: 上記の rollback に加えて、最新状態の取り直しを要求する。取り直しは watcher の再同期経路と同じ手続き（in-flight の書き込みを追い越さない read barrier → `get_tasks` → 反映）を通る。これにより、拒否の原因になった変更がまだ watcher で届いていない場合でも画面が現実に追いつき、同じ操作をもう一度行えば成功する。移動元 status の食い違いによる拒否も同じ扱いとする
 - **projectVersion 不一致時**: 新 project state を破壊しないため rollback / 確定 dispatch をスキップし、`invalid-state` を返す
 
 BE 側は task md の書き込み成功後に `config.json` の書き込みが失敗した場合、task md を元の内容へ書き戻す best-effort rollback を行う。task md と config.json は別ファイルのため POSIX 上のトランザクション保証はなく、書き戻し自体が失敗した場合の再収束は watcher / 再スキャンに委ねる。

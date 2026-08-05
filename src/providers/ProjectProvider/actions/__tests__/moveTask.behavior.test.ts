@@ -68,6 +68,7 @@ const makeData = (
 type Harness = {
   state: { current: ProjectState };
   actions: ProjectAction[];
+  requestResync: ReturnType<typeof vi.fn>;
   deps: Parameters<typeof moveTaskAction>[0];
 };
 
@@ -83,9 +84,11 @@ const setupLoaded = (data: ProjectData): Harness => {
   const actions: ProjectAction[] = [];
   const queue: ProjectCommandQueue = { current: Promise.resolve() };
   const version = createProjectVersion();
+  const requestResync = vi.fn();
   return {
     state,
     actions,
+    requestResync,
     deps: {
       projectVersion: version,
       projectCommandQueue: queue,
@@ -94,6 +97,7 @@ const setupLoaded = (data: ProjectData): Harness => {
         actions.push(action);
         state.current = reducer(state.current, action);
       },
+      requestResync,
     },
   };
 };
@@ -127,7 +131,60 @@ test("カラム間移動: move_task に filePath / fromColumn / toColumn / 移�
     fromColumn: "Todo",
     toColumn: "Done",
     toColumnFilePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
+    expectedToColumnOrder: ["tasks/b.md", "tasks/c.md"],
   });
+});
+
+test("カラム間移動: expectedToColumnOrder に drop 直前の宛先カラムの並びが渡される", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+      ["tasks/c.md", "Done"],
+    ]),
+  );
+  moveTaskMock.mockResolvedValue(
+    Result.ok(makeTask({ filePath: "tasks/a.md", status: "Done" })),
+  );
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 1,
+  });
+
+  expect(moveTaskMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      expectedToColumnOrder: ["tasks/b.md", "tasks/c.md"],
+    }),
+  );
+});
+
+test("同一カラム並び替え: expectedToColumnOrder に移動前の並びが渡される", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Todo"],
+      ["tasks/c.md", "Todo"],
+    ]),
+  );
+  moveTaskMock.mockResolvedValue(
+    Result.ok(makeTask({ filePath: "tasks/a.md", status: "Todo" })),
+  );
+
+  await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Todo",
+    toIndex: 2,
+  });
+
+  expect(moveTaskMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      expectedToColumnOrder: ["tasks/a.md", "tasks/b.md", "tasks/c.md"],
+    }),
+  );
 });
 
 test("カラム間移動: 楽観 2 段の後、確定は BE 応答の task-updated 1 段のみ", async () => {
@@ -240,6 +297,7 @@ test.each([
     fromColumn: "Todo",
     toColumn: "Done",
     toColumnFilePaths: expected,
+    expectedToColumnOrder: ["tasks/b.md"],
   });
 });
 
@@ -268,6 +326,7 @@ test("同一カラム並び替え: 楽観 card-order-updated 1 段のみで確�
     fromColumn: "Todo",
     toColumn: "Todo",
     toColumnFilePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
+    expectedToColumnOrder: ["tasks/a.md", "tasks/b.md", "tasks/c.md"],
   });
   expect(harness.actions).toEqual([
     {
@@ -781,6 +840,7 @@ test("session が loaded でない時 invalidState で抜ける", async () => {
       projectCommandQueue: queue,
       getState: () => state.current,
       dispatch: () => {},
+      requestResync: () => {},
     },
     {
       taskFilePath: "tasks/a.md",
@@ -826,6 +886,144 @@ test("IPC 中に projectVersion が変わると invalidState で抜け、確定�
     "task-updated",
     "card-order-updated",
   ]);
+});
+
+test("カラム間移動: CONFLICT 拒否は rollback 後に requestResync('move-conflict') を 1 回要求する", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  moveTaskMock.mockResolvedValue(
+    Result.err(
+      new TauriError(
+        "CONFLICT",
+        "移動先カラムの並びが変わっています: Done（期待=1件, 実際=2件）",
+      ),
+    ),
+  );
+
+  const result = await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  expect(result.ok).toBe(false);
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "task-updated",
+    "card-order-updated",
+    "card-order-updated",
+    "task-updated",
+    "card-order-updated",
+  ]);
+  expect(harness.requestResync).toHaveBeenCalledTimes(1);
+  expect(harness.requestResync).toHaveBeenCalledWith("move-conflict");
+});
+
+test("同一カラム並び替え: CONFLICT 拒否でも rollback 後に requestResync を要求する", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Todo"],
+      ["tasks/c.md", "Todo"],
+    ]),
+  );
+  moveTaskMock.mockResolvedValue(
+    Result.err(
+      new TauriError(
+        "CONFLICT",
+        "移動先カラムの並びが変わっています: Todo（期待=3件, 実際=4件）",
+      ),
+    ),
+  );
+
+  const result = await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Todo",
+    toIndex: 2,
+  });
+
+  expect(result.ok).toBe(false);
+  expect(harness.actions).toEqual([
+    {
+      type: "card-order-updated",
+      columnName: "Todo",
+      filePaths: ["tasks/b.md", "tasks/a.md", "tasks/c.md"],
+    },
+    {
+      type: "card-order-updated",
+      columnName: "Todo",
+      filePaths: ["tasks/a.md", "tasks/b.md", "tasks/c.md"],
+    },
+  ]);
+  expect(harness.requestResync).toHaveBeenCalledTimes(1);
+  expect(harness.requestResync).toHaveBeenCalledWith("move-conflict");
+});
+
+test("CONFLICT 以外の失敗（IO_ERROR）では rollback は流れるが requestResync は呼ばれない", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  moveTaskMock.mockResolvedValue(
+    Result.err(new TauriError("IO_ERROR", "書き込みに失敗しました")),
+  );
+
+  const result = await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  expect(result.ok).toBe(false);
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "task-updated",
+    "card-order-updated",
+    "card-order-updated",
+    "task-updated",
+    "card-order-updated",
+  ]);
+  expect(harness.requestResync).not.toHaveBeenCalled();
+});
+
+test("IPC 中に projectVersion が変わった CONFLICT では rollback も resync 要求も行わない", async () => {
+  const harness = setupLoaded(
+    makeData([
+      ["tasks/a.md", "Todo"],
+      ["tasks/b.md", "Done"],
+    ]),
+  );
+  moveTaskMock.mockImplementation(async () => {
+    invalidateProject(harness.deps.projectVersion);
+    return Result.err(
+      new TauriError(
+        "CONFLICT",
+        "移動先カラムの並びが変わっています: Done（期待=1件, 実際=2件）",
+      ),
+    );
+  });
+
+  const result = await moveTaskAction(harness.deps, {
+    taskFilePath: "tasks/a.md",
+    fromColumn: "Todo",
+    toColumn: "Done",
+    toIndex: 0,
+  });
+
+  expect(result.ok).toBe(false);
+  expect((result as { error: ProjectError }).error.kind).toBe("invalid-state");
+  expect(harness.actions.map((a) => a.type)).toEqual([
+    "task-updated",
+    "card-order-updated",
+  ]);
+  expect(harness.requestResync).not.toHaveBeenCalled();
 });
 
 test("楽観 dispatch + 外部 listen の二重 dispatch でも最終 state が同じ（idempotent）", async () => {

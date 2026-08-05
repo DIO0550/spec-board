@@ -140,3 +140,21 @@ test.each([
 ])("既存パターン '%s' は引き続き %s に分類される（非干渉リグレッション）", (message, code) => {
   expect(TauriError.from(new Error(message)).code).toBe(code);
 });
+
+test.each([
+  [
+    "CardOrderConflict",
+    "移動先カラムの並びが変わっています: Done（期待=2件, 実際=3件）",
+  ],
+  [
+    "StatusMismatch",
+    "タスクの状態が変わっています: 期待=Todo, 実際=In Progress",
+  ],
+])("BE の %s の文言は CONFLICT に分類される", (_, message) => {
+  expect(TauriError.from(new Error(message)).code).toBe("CONFLICT");
+});
+
+test("「変わっています」を含まない類似文言は CONFLICT にならない", () => {
+  const e = TauriError.from(new Error("カラムの並びを更新しました"));
+  expect(e.code).toBe("UNKNOWN");
+});

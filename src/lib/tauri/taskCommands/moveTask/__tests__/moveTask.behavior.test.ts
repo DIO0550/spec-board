@@ -27,6 +27,7 @@ const params = {
   fromColumn: "Todo",
   toColumn: "Done",
   toColumnFilePaths: ["tasks/x.md"],
+  expectedToColumnOrder: [],
 };
 
 beforeEach(() => {
@@ -48,6 +49,7 @@ test("引数が args キー配下に camelCase のまま渡る", async () => {
       fromColumn: "Todo",
       toColumn: "Done",
       toColumnFilePaths: ["tasks/x.md"],
+      expectedToColumnOrder: [],
     },
   });
 });
@@ -58,6 +60,7 @@ test("同一カラム並び替え（fromColumn === toColumn）も同じ command 
     ...params,
     toColumn: "Todo",
     toColumnFilePaths: ["tasks/y.md", "tasks/x.md"],
+    expectedToColumnOrder: ["tasks/x.md", "tasks/y.md"],
   });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("move_task", {
     args: {
@@ -65,6 +68,7 @@ test("同一カラム並び替え（fromColumn === toColumn）も同じ command 
       fromColumn: "Todo",
       toColumn: "Todo",
       toColumnFilePaths: ["tasks/y.md", "tasks/x.md"],
+      expectedToColumnOrder: ["tasks/x.md", "tasks/y.md"],
     },
   });
 });

@@ -663,6 +663,34 @@ impl TaskIndex {
         tasks
     }
 
+    /// 指定カラムの board 表示順を file_path 列として返す。
+    ///
+    /// `config.card_order` の生値ではなく「実際に board へ表示される順」を返す。
+    /// cardOrder に載っているタスクはその順、載っていないタスクは末尾へ `id` 昇順で
+    /// 並ぶ。cardOrder の生値と比較すると、一度も並び替えていないカラム（エントリ
+    /// 自体が無い）への移動が必ず不一致になってしまう。
+    ///
+    /// `card_sort_key` を再利用しないのは、あちらが全カラム対象の
+    /// `(カラム順位, カラム内順位)` を返す設計で、呼び出し側に `column_rank` の
+    /// HashMap 組み立てを要求するため（単一カラムではカラム順位が不要）。並びの
+    /// 規則は [`Self::sorted_by_board_order`] と同一でなければならず、両者の一致は
+    /// テストで固定している。
+    pub(crate) fn board_order_of_column(&self, config: &Config, column: &str) -> Vec<String> {
+        let mut members: Vec<&Task> = self
+            .tasks
+            .iter()
+            .filter(|task| task.status.as_str() == column)
+            .collect();
+        members.sort_by_cached_key(|task| {
+            let position = card_position_in_column(config, column, task.file_path.as_str());
+            (position, task.id.clone())
+        });
+        members
+            .into_iter()
+            .map(|task| task.file_path.as_str().to_string())
+            .collect()
+    }
+
     /// parent 参照の存在のみを検証し、見つからない場合は warning を追加する。
     pub fn validate_parent_existence(self) -> Self {
         Self {
@@ -1358,7 +1386,7 @@ impl TaskIndex {
     ///   引き当て済みの `&Task`。
     /// - `existing_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
     ///
-    /// 振る舞い:
+    /// 振る舞い（検証は status 照合 → 並び照合 → 書き込み計画の順）:
     ///
     /// 1. cache 上の `existing.status` と、md から解決した実効 status の**両方**が
     ///    `intent.from_column` と一致することを要求し、外れていれば `StatusMismatch`
@@ -1366,18 +1394,45 @@ impl TaskIndex {
     ///    まま cardOrder だけが書き換わることはない。md の実効 status は `status:` が
     ///    文字列で読めればその値、欠落 / 非文字列なら `scan_default_status`
     ///    （scan 時に割り当てられる既定値。決定は Config のドメインなので effect 層が解決）。
-    /// 2. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
-    /// 3. それ以外は frontmatter の `status` を `to_column` に書き換え、
+    /// 2. 移動先カラムの board 表示順が `intent.expected_to_column_order` と一致する
+    ///    ことを要求し、外れていれば `CardOrderConflict` で reject する。同一カラム
+    ///    並び替えも対象（宛先＝移動元なので期待値は移動前の自分を含む並び）。
+    /// 3. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
+    /// 4. それ以外は frontmatter の `status` を `to_column` に書き換え、
     ///    serialize 済み `file_content` と再構築した `updated_task` を返す。
     ///
-    /// cardOrder は Config 側のドメインのため本メソッドでは扱わない。effect 層が
-    /// `Config::plan_update_card_order` を呼んで別途計算する。
+    /// cardOrder の**書き込み内容**は Config 側のドメインのため本メソッドでは扱わない。
+    /// effect 層が `Config::plan_update_card_order` を呼んで別途計算する（`config` は
+    /// 並び照合の読み取りにのみ使う）。
+    /// 移動先カラムの並びが FE の前提と一致するかを検証する。
+    ///
+    /// 一致しない場合は「他の変更が先に入っている」ことを意味するため、
+    /// 書き込みを一切行わずに reject する。移動元カラムは照合しない（移動元への
+    /// 操作は対象を取り除くだけで、他のカードの並びが変わっていても結果が
+    /// 変わらない冪等な操作。照合すると無関係な並び替えで誤検知する）。
+    pub(crate) fn ensure_to_column_order_matches(
+        &self,
+        config: &Config,
+        intent: &MoveTaskIntent,
+    ) -> Result<(), MoveTaskError> {
+        let actual = self.board_order_of_column(config, &intent.to_column);
+        if actual == intent.expected_to_column_order {
+            return Ok(());
+        }
+        Err(MoveTaskError::CardOrderConflict {
+            column: intent.to_column.clone(),
+            expected: intent.expected_to_column_order.clone(),
+            actual,
+        })
+    }
+
     pub(crate) fn plan_move(
         &self,
         intent: &MoveTaskIntent,
         existing: &Task,
         existing_parsed: Parsed,
         scan_default_status: &str,
+        config: &Config,
     ) -> Result<MoveTaskOutcome, MoveTaskError> {
         ensure_status_matches(intent, existing.status.as_str())?;
         // cache は watcher 反映待ちで古くなり得るため、直前に読んだ md の値でも検証する。
@@ -1387,6 +1442,10 @@ impl TaskIndex {
         let document = TaskDocument::from_parsed(existing_parsed);
         let effective_on_disk = document.status_raw().unwrap_or(scan_default_status);
         ensure_status_matches(intent, effective_on_disk)?;
+
+        // 並びの照合は status 照合の後・書き込み内容の組み立て前。ここで reject
+        // すれば呼び出し元は書き込みを 1 バイトも行わない。
+        self.ensure_to_column_order_matches(config, intent)?;
 
         if intent.from_column == intent.to_column {
             return Ok(MoveTaskOutcome::SameColumn {
@@ -1801,6 +1860,9 @@ pub(crate) struct MoveTaskIntent {
     pub to_column: String,
     /// 移動先カラムの新しい cardOrder（FE が算出済みの完全な並び）。
     pub to_column_file_paths: Vec<String>,
+    /// 移動先カラムの移動前の並びとして FE が前提にしていた値。
+    /// resident な board 表示順と食い違う場合は移動を reject する。
+    pub expected_to_column_order: Vec<String>,
 }
 
 /// `TaskIndex::plan_move` の計算結果。effect 層が消費する。
@@ -2444,14 +2506,19 @@ fn card_sort_key(
         .get(status)
         .copied()
         .unwrap_or(unknown_column_rank);
-    let position = config
-        .card_order
-        .get(status)
-        .and_then(|paths| {
-            paths
-                .iter()
-                .position(|p| p.as_str() == task.file_path.as_str())
-        })
-        .unwrap_or(usize::MAX);
+    let position = card_position_in_column(config, status, task.file_path.as_str());
     (rank, position)
+}
+
+/// `file_path` の、指定カラムの cardOrder における位置を返す。
+///
+/// cardOrder に載っていない（またはカラムのエントリ自体が無い）場合は `usize::MAX`
+/// とし、記載済みタスクより後ろに回す（同順位の tie-break は呼び出し側が `id` で行う）。
+/// `card_sort_key` と `TaskIndex::board_order_of_column` の双方がこの規則を共有する。
+fn card_position_in_column(config: &Config, column: &str, file_path: &str) -> usize {
+    config
+        .card_order
+        .get(column)
+        .and_then(|paths| paths.iter().position(|p| p.as_str() == file_path))
+        .unwrap_or(usize::MAX)
 }

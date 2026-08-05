@@ -2,6 +2,7 @@ import type { ProjectCommandQueue, ProjectVersion } from "../concurrency";
 import type { ProjectError } from "../errors";
 import type { ProjectAction, ProjectData } from "../reducer";
 import type { ProjectState } from "../state/projectState";
+import type { WatcherResyncReason } from "../watcherEnvelopeGate";
 
 /** ディレクトリダイアログの二重オープンを防ぐための mutable フラグ。 */
 export type DialogOpening = {
@@ -22,6 +23,15 @@ export type TaskActionDeps = {
    * @param action 反映する ProjectAction
    */
   dispatch: (action: ProjectAction) => void;
+  /**
+   * 他の変更が先に入っていて操作が拒否されたときに、最新状態の取り直しを要求する。
+   *
+   * Provider 生涯で不変な deps に載せるため、実体は ref 経由の間接呼び出しにする
+   * （`useWatcherResyncEffect` の戻り値は loadedPath に依存して identity が変わる）。
+   *
+   * @param reason 取り直しの理由（診断・ログで区別するため）
+   */
+  readonly requestResync: (reason: WatcherResyncReason) => void;
 };
 
 /**

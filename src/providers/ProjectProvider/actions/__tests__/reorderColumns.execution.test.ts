@@ -69,6 +69,7 @@ const setupLoaded = (data: ProjectData): Harness => {
       projectVersion: version,
       projectCommandQueue: queue,
       getState: () => state.current,
+      requestResync: () => {},
       dispatch: (action) => {
         actions.push(action);
         state.current = reducer(state.current, action);

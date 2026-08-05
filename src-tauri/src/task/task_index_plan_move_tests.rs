@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use super::{MoveTaskIntent, MoveTaskOutcome, Task, TaskIndex};
 use crate::config::column_name::ColumnName;
+use crate::config::{CardOrder, Config};
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::move_task::error::MoveTaskError;
@@ -43,11 +44,30 @@ fn parsed_from_md(md: &str) -> Parsed {
 const DEFAULT_STATUS: &str = "Todo";
 
 fn intent(rel: &str, from: &str, to: &str) -> MoveTaskIntent {
+    intent_expecting(rel, from, to, &[])
+}
+
+fn intent_expecting(rel: &str, from: &str, to: &str, expected: &[&str]) -> MoveTaskIntent {
     MoveTaskIntent {
         file_path: PathBuf::from(rel),
         from_column: from.to_string(),
         to_column: to.to_string(),
         to_column_file_paths: Vec::new(),
+        expected_to_column_order: expected.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// cardOrder エントリだけを差し替えた Config を作る。
+///
+/// `plan_move` が config から読むのは cardOrder のみ（board 表示順の算出に使う）。
+fn config_with_card_order(entries: &[(&str, &[&str])]) -> Config {
+    let mut order = CardOrder::default();
+    for (column, paths) in entries {
+        order.set_column(column, paths);
+    }
+    Config {
+        card_order: order,
+        ..Config::default()
     }
 }
 
@@ -63,6 +83,7 @@ fn cross_column_move_updates_status_to_destination_column() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -82,10 +103,11 @@ fn same_column_move_returns_same_column_outcome_without_touching_task() {
 
     let outcome = index
         .plan_move(
-            &intent("tasks/a.md", "Todo", "Todo"),
+            &intent_expecting("tasks/a.md", "Todo", "Todo", &["tasks/a.md"]),
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -109,6 +131,7 @@ fn cross_column_move_writes_destination_status_into_file_content() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -135,6 +158,7 @@ fn cross_column_move_preserves_non_status_fields() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -173,6 +197,7 @@ fn cross_column_move_preserves_unknown_frontmatter_keys() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -203,6 +228,7 @@ fn minimal_frontmatter_without_body_is_movable() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -226,6 +252,7 @@ fn column_name_containing_space_is_moved_as_is() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -253,6 +280,7 @@ fn status_mismatch_is_rejected() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect_err("stale from_column should be rejected");
 
@@ -279,6 +307,7 @@ fn status_changed_on_disk_after_last_scan_is_rejected() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect_err("disk 上の status 変更は拒否されるべき");
 
@@ -305,6 +334,7 @@ fn frontmatter_without_status_key_is_compared_against_the_scan_default() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect("plan_move should succeed");
 
@@ -331,6 +361,7 @@ fn status_key_removed_on_disk_is_rejected_when_default_differs_from_cache() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect_err("status キー削除は拒否されるべき");
 
@@ -356,6 +387,7 @@ fn non_string_status_on_disk_is_rejected_when_default_differs_from_cache() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect_err("非文字列 status は拒否されるべき");
 
@@ -365,6 +397,154 @@ fn non_string_status_on_disk_is_rejected_when_default_differs_from_cache() {
             expected: "In Progress".to_string(),
             actual: "Todo".to_string(),
         }
+    );
+}
+
+#[test]
+fn destination_with_an_extra_task_is_rejected_as_card_order_conflict() {
+    // FE が見た後に宛先カラムへ別のタスクが増えている。そのまま確定すると
+    // FE の完成品の並びが増えたカードを消したように見える。
+    let task = make_task("tasks/a.md", "Todo");
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nbody\n");
+    let index = TaskIndex::new(vec![task.clone(), make_task("tasks/x.md", "Done")]);
+
+    let err = index
+        .plan_move(
+            &intent_expecting("tasks/a.md", "Todo", "Done", &[]),
+            &task,
+            parsed,
+            DEFAULT_STATUS,
+            &Config::default(),
+        )
+        .expect_err("宛先にカードが増えていたら拒否されるべき");
+
+    assert_eq!(
+        err,
+        MoveTaskError::CardOrderConflict {
+            column: "Done".to_string(),
+            expected: Vec::new(),
+            actual: vec!["tasks/x.md".to_string()],
+        }
+    );
+}
+
+#[test]
+fn destination_with_a_missing_task_is_rejected_as_card_order_conflict() {
+    let task = make_task("tasks/a.md", "Todo");
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nbody\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let err = index
+        .plan_move(
+            &intent_expecting("tasks/a.md", "Todo", "Done", &["tasks/x.md"]),
+            &task,
+            parsed,
+            DEFAULT_STATUS,
+            &Config::default(),
+        )
+        .expect_err("宛先からカードが消えていたら拒否されるべき");
+
+    assert_eq!(
+        err,
+        MoveTaskError::CardOrderConflict {
+            column: "Done".to_string(),
+            expected: vec!["tasks/x.md".to_string()],
+            actual: Vec::new(),
+        }
+    );
+}
+
+#[test]
+fn destination_with_reordered_tasks_is_rejected_as_card_order_conflict() {
+    let task = make_task("tasks/a.md", "Todo");
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nbody\n");
+    let index = TaskIndex::new(vec![
+        task.clone(),
+        make_task("tasks/x.md", "Done"),
+        make_task("tasks/y.md", "Done"),
+    ]);
+    let config = config_with_card_order(&[("Done", &["tasks/y.md", "tasks/x.md"])]);
+
+    let err = index
+        .plan_move(
+            &intent_expecting("tasks/a.md", "Todo", "Done", &["tasks/x.md", "tasks/y.md"]),
+            &task,
+            parsed,
+            DEFAULT_STATUS,
+            &config,
+        )
+        .expect_err("宛先の順序が入れ替わっていたら拒否されるべき");
+
+    assert!(
+        matches!(err, MoveTaskError::CardOrderConflict { .. }),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn matching_expectation_allows_the_cross_column_move() {
+    let task = make_task("tasks/a.md", "Todo");
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nbody\n");
+    let index = TaskIndex::new(vec![task.clone(), make_task("tasks/x.md", "Done")]);
+
+    let outcome = index
+        .plan_move(
+            &intent_expecting("tasks/a.md", "Todo", "Done", &["tasks/x.md"]),
+            &task,
+            parsed,
+            DEFAULT_STATUS,
+            &Config::default(),
+        )
+        .expect("期待値が現実と一致していれば成功する");
+
+    assert!(matches!(outcome, MoveTaskOutcome::CrossColumn { .. }));
+}
+
+#[test]
+fn same_column_move_with_stale_expectation_is_rejected() {
+    // 同一カラム並び替えでも照合する。宛先＝移動元なので、期待値には移動前の
+    // 自分自身を含む並びが載っているはずである。
+    let task = make_task("tasks/a.md", "Todo");
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\nbody\n");
+    let index = TaskIndex::new(vec![task.clone()]);
+
+    let err = index
+        .plan_move(
+            &intent_expecting("tasks/a.md", "Todo", "Todo", &[]),
+            &task,
+            parsed,
+            DEFAULT_STATUS,
+            &Config::default(),
+        )
+        .expect_err("同一カラムでも stale な期待値は拒否されるべき");
+
+    assert!(
+        matches!(err, MoveTaskError::CardOrderConflict { .. }),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn status_mismatch_takes_precedence_over_card_order_conflict() {
+    // status 照合 → 並び照合の順。両方が食い違う場合は先に StatusMismatch が返り、
+    // FE のトーストが「状態が変わった」ことを指す。
+    let task = make_task("tasks/a.md", "In Progress");
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: In Progress\n---\nbody\n");
+    let index = TaskIndex::new(vec![task.clone(), make_task("tasks/x.md", "Done")]);
+
+    let err = index
+        .plan_move(
+            &intent_expecting("tasks/a.md", "Todo", "Done", &[]),
+            &task,
+            parsed,
+            DEFAULT_STATUS,
+            &Config::default(),
+        )
+        .expect_err("status と並びの両方が食い違う場合も拒否されるべき");
+
+    assert!(
+        matches!(err, MoveTaskError::StatusMismatch { .. }),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -383,6 +563,7 @@ fn content_that_would_exceed_the_scanner_limit_is_rejected() {
             &task,
             parsed,
             DEFAULT_STATUS,
+            &Config::default(),
         )
         .expect_err("scanner の受理上限を超える content は拒否されるべき");
 

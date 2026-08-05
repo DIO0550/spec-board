@@ -8,7 +8,7 @@ import {
   useTaskWatcherEffects,
   type WatcherGateRef,
 } from "../useTaskWatcherEffects";
-import { WatcherGate } from "../watcherEnvelopeGate";
+import { WatcherGate, type WatcherResyncReason } from "../watcherEnvelopeGate";
 import { watcherEnvelope } from "./watcherEnvelopeHarness";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -43,7 +43,7 @@ const loadedState: ProjectState = {
 /** hook を単独で駆動するテスト用コンポーネント。 */
 const Harness = (props: {
   gate: WatcherGateRef;
-  requestResync: (reason: "rescan" | "event-gap") => void;
+  requestResync: (reason: WatcherResyncReason) => void;
   notifyDiagnostic: () => void;
   dispatch: () => void;
 }) => {
@@ -91,7 +91,7 @@ afterEach(() => {
 const render = (
   gate: WatcherGateRef,
   callbacks: {
-    requestResync: (reason: "rescan" | "event-gap") => void;
+    requestResync: (reason: WatcherResyncReason) => void;
     notifyDiagnostic: () => void;
     dispatch: () => void;
   },

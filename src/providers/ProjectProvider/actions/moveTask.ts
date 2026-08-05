@@ -1,4 +1,4 @@
-import { moveTask } from "@/lib/tauri";
+import { moveTask, type TauriError } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
@@ -291,6 +291,29 @@ const safeCallback = <T>(fn: SafeCallbackFn<T> | undefined, arg: T): void => {
   }
 };
 
+/**
+ * 拒否理由が「他の変更が先に入っていた」ものであれば、最新状態の取り直しを要求する。
+ *
+ * rollback だけで終えると、拒否の原因になった変更が watcher で届いていない場合に
+ * 古い画面のまま再試行して再び失敗する。取り直しは既存の resync 経路に委ねる
+ * （read barrier / single-in-flight / gate の watermark 更新を持っているのはそちら）。
+ *
+ * この関数は queue の中から呼ばれるが、resync は queue を占有せず read barrier で
+ * tail の安定を待つため、呼び出し元の action が return するまで実際の取得は始まらない。
+ *
+ * @param deps task action の共通 deps
+ * @param error IPC が返した TauriError
+ */
+const requestResyncOnConflict = (
+  deps: TaskActionDeps,
+  error: TauriError,
+): void => {
+  if (error.code !== "CONFLICT") {
+    return;
+  }
+  deps.requestResync("move-conflict");
+};
+
 type RevalidatedSnapshot = {
   readonly data: ProjectData;
   readonly target: Task;
@@ -394,6 +417,7 @@ const MoveExecution = {
       fromColumn: params.fromColumn,
       toColumn: params.toColumn,
       toColumnFilePaths: optimisticToOrder,
+      expectedToColumnOrder: snapshot.toColumnOrderBefore,
     });
     const guard = versionGuard(deps, version);
     if (guard) {
@@ -413,6 +437,7 @@ const MoveExecution = {
         fromColumn: params.fromColumn,
         toColumn: params.toColumn,
       });
+      requestResyncOnConflict(deps, moveResult.error);
       return Result.err(ProjectError.tauri(moveResult.error));
     }
 
@@ -463,6 +488,8 @@ const MoveExecution = {
       fromColumn: params.fromColumn,
       toColumn: params.toColumn,
       toColumnFilePaths: filePaths,
+      // 宛先＝移動元なので、toColumnOrderBefore が移動前の並びを表す。
+      expectedToColumnOrder: snapshot.toColumnOrderBefore,
     });
     const guard = versionGuard(deps, version);
     if (guard) {
@@ -473,6 +500,7 @@ const MoveExecution = {
         deps,
         MoveSnapshot.rollbackSameDispatches(snapshot, params),
       );
+      requestResyncOnConflict(deps, moveResult.error);
       return Result.err(ProjectError.tauri(moveResult.error));
     }
     // 楽観 dispatch と同じ並びが永続化されたため、確定 dispatch は不要。

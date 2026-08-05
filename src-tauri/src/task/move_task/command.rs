@@ -84,6 +84,11 @@ pub(crate) fn move_task_impl_with_config_io(
             }
             .into());
         }
+        // 並び照合は revision preflight / TaskIo read より前。stale な前提の移動は
+        // ここで確定拒否になり、revision 消費も TaskIo 到達もゼロで返る。plan_move
+        // 内にも同じ照合があるが、あちらは aggregate 単体で検証を完結させるための
+        // 重複であり、md の内容には依存しない（md を使う再検証は status のみ）。
+        index.ensure_to_column_order_matches(config, &intent)?;
 
         // revision/resource preflightはTaskIo readとcard-order metadata走査より先。
         let resources = state.preflight_session_write(snapshot)?;
@@ -94,7 +99,13 @@ pub(crate) fn move_task_impl_with_config_io(
             .map_err(|error| MoveTaskCommandError::ParseFailed(error.to_string()))?
             .into_parsed();
         let scan_default_status = default_status_for(config);
-        let outcome = index.plan_move(&intent, &existing, parsed, scan_default_status.as_str())?;
+        let outcome = index.plan_move(
+            &intent,
+            &existing,
+            parsed,
+            scan_default_status.as_str(),
+            config,
+        )?;
 
         match outcome {
             MoveTaskOutcome::SameColumn { existing_task } => {

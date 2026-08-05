@@ -21,6 +21,7 @@ use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
+use crate::task::task_index::TaskIndex;
 use crate::task::warning::TaskWarningCode;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
@@ -104,12 +105,38 @@ fn seed_raw_config_json(root: &Path, json: &str) {
     fs::write(dir.join("config.json"), json).expect("write config.json");
 }
 
-fn make_args(file_path: &str, from: &str, to: &str, to_paths: &[&str]) -> MoveTaskArgs {
+/// AppState が今まさに保持している board 表示順を、move の期待値として取り出す。
+///
+/// 既存テストは「誰も割り込んでいない」状況を作っているため、期待値は常に現在の
+/// 並びと一致する。ここを経由させることで、並び規則を変えたときにテストごとの
+/// ハードコードを直して回らずに済む。project 未 open のテストでは空を返す
+/// （`NoProjectOpen` が照合より先に返るため期待値は使われない）。
+fn current_board_order(state: &AppState, column: &str) -> Vec<String> {
+    let snapshot = state.session_snapshot().expect("state lock is healthy");
+    let Some(snapshot) = snapshot else {
+        return Vec::new();
+    };
+    let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+    index.board_order_of_column(snapshot.config(), column)
+}
+
+/// 期待値は現在の board 表示順で埋める。
+///
+/// conflict を意図的に起こすテストは、この helper を使わず `MoveTaskArgs` を
+/// 直接構築して期待値をずらす。
+fn make_args(
+    state: &AppState,
+    file_path: &str,
+    from: &str,
+    to: &str,
+    to_paths: &[&str],
+) -> MoveTaskArgs {
     MoveTaskArgs {
         file_path: file_path.to_string(),
         from_column: from.to_string(),
         to_column: to.to_string(),
         to_column_file_paths: to_paths.iter().map(|s| s.to_string()).collect(),
+        expected_to_column_order: current_board_order(state, to),
     }
 }
 
@@ -146,7 +173,7 @@ fn cross_column_move_updates_status_on_disk() {
     let task = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect("move should succeed");
 
@@ -180,7 +207,7 @@ fn cross_column_move_removes_task_from_source_card_order() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect("move should succeed");
 
@@ -207,7 +234,13 @@ fn cross_column_move_sets_destination_card_order_in_given_order() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/x.md", "tasks/a.md"]),
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/x.md", "tasks/a.md"],
+        ),
     )
     .expect("move should succeed");
 
@@ -239,7 +272,13 @@ fn same_column_reorder_leaves_task_md_untouched() {
     let task = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Todo", &["tasks/b.md", "tasks/a.md"]),
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Todo",
+            &["tasks/b.md", "tasks/a.md"],
+        ),
     )
     .expect("reorder should succeed");
 
@@ -270,7 +309,13 @@ fn same_column_reorder_updates_card_order() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Todo", &["tasks/b.md", "tasks/a.md"]),
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Todo",
+            &["tasks/b.md", "tasks/a.md"],
+        ),
     )
     .expect("reorder should succeed");
 
@@ -315,7 +360,7 @@ fn move_removes_source_entry_written_with_backslash_separators() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect("move should succeed");
 
@@ -341,7 +386,7 @@ fn same_column_noop_does_not_advance_revision_or_register_marker() {
     let task = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Todo", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Todo", &["tasks/a.md"]),
     )
     .expect("identical reorder is a no-op");
 
@@ -372,6 +417,7 @@ fn destination_card_order_drops_paths_without_a_file_on_disk() {
         &state,
         &FsTaskIo,
         make_args(
+            &state,
             "tasks/a.md",
             "Todo",
             "Done",
@@ -403,7 +449,13 @@ fn card_order_survives_reopening_the_project() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/x.md", "tasks/a.md"]),
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/x.md", "tasks/a.md"],
+        ),
     )
     .expect("move should succeed");
 
@@ -431,7 +483,7 @@ fn empty_destination_paths_still_register_the_moved_task() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &[]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &[]),
     )
     .expect("move should succeed");
 
@@ -462,7 +514,7 @@ fn destination_paths_missing_the_moved_task_get_it_appended() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/x.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/x.md"]),
     )
     .expect("move should succeed");
 
@@ -499,7 +551,13 @@ fn cross_column_move_keeps_children_and_reverse_links() {
     let returned = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/parent.md", "Todo", "Done", &["tasks/parent.md"]),
+        make_args(
+            &state,
+            "tasks/parent.md",
+            "Todo",
+            "Done",
+            &["tasks/parent.md"],
+        ),
     )
     .expect("move should succeed");
 
@@ -573,7 +631,7 @@ fn cross_column_move_clears_parse_warnings_that_no_longer_apply() {
     let returned = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect("move should succeed");
 
@@ -612,7 +670,7 @@ fn cross_column_move_keeps_parent_not_found_warning() {
     let returned = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect("move should succeed");
 
@@ -683,7 +741,7 @@ fn disk_success_conflict_returns_typed_error_and_resyncs_same_session() {
     let error = move_task_impl(
         &state,
         &io,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("the original resident CAS must report its conflict");
 
@@ -735,7 +793,7 @@ fn config_writer_failure_rolls_back_md_cleans_marker_and_keeps_revision() {
         &FsTaskIo,
         &writer,
         &load_or_default,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("injected config failure must abort the move");
 
@@ -780,6 +838,7 @@ fn duplicate_destination_paths_are_collapsed() {
         &state,
         &FsTaskIo,
         make_args(
+            &state,
             "tasks/a.md",
             "Todo",
             "Done",
@@ -810,7 +869,7 @@ fn cross_column_move_registers_session_marker_and_advances_revision() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect("move should succeed");
 
@@ -828,7 +887,7 @@ fn returns_no_project_open_when_no_project_is_open() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("move without a project should fail");
 
@@ -847,7 +906,13 @@ fn returns_task_not_found_when_task_is_absent_from_cache() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/ghost.md", "Todo", "Done", &["tasks/ghost.md"]),
+        make_args(
+            &state,
+            "tasks/ghost.md",
+            "Todo",
+            "Done",
+            &["tasks/ghost.md"],
+        ),
     )
     .expect_err("missing task should fail");
 
@@ -871,7 +936,7 @@ fn returns_status_mismatch_when_from_column_is_stale() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("stale from_column should fail");
 
@@ -901,7 +966,7 @@ fn returns_unknown_column_when_source_column_is_absent() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Ghost", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Ghost", "Done", &["tasks/a.md"]),
     )
     .expect_err("unknown from_column should fail");
 
@@ -928,7 +993,7 @@ fn returns_unknown_column_when_destination_column_is_absent() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Ghost", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Ghost", &["tasks/a.md"]),
     )
     .expect_err("unknown to_column should fail");
 
@@ -961,6 +1026,7 @@ fn destination_paths_are_normalized_before_being_persisted() {
         &state,
         &FsTaskIo,
         make_args(
+            &state,
             "tasks/a.md",
             "Todo",
             "Done",
@@ -993,6 +1059,7 @@ fn destination_paths_escaping_the_project_root_are_rejected() {
         &state,
         &FsTaskIo,
         make_args(
+            &state,
             "tasks/a.md",
             "Todo",
             "Done",
@@ -1026,7 +1093,7 @@ fn returns_unknown_column_for_empty_column_names() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "", "", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "", "", &["tasks/a.md"]),
     )
     .expect_err("empty column names should fail");
 
@@ -1062,7 +1129,7 @@ fn config_write_failure_restores_the_original_task_md() {
     let err = move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("config write should fail");
 
@@ -1102,7 +1169,7 @@ fn config_write_failure_unregisters_the_self_write_marker() {
     move_task_impl(
         &state,
         &FsTaskIo,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("config write should fail");
 
@@ -1144,7 +1211,7 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         &task_io,
         &config_writer,
         &counting_loader,
-        make_args("tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("revision exhaustion must reject the composite writer");
 
@@ -1174,4 +1241,302 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         resident_after.tasks()[Path::new("tasks/a.md")].status
     );
     assert_eq!(card_order_before, resident_after.config().card_order);
+}
+
+/// 宛先カラム（Done に x が居る）を「空だったはず」とする stale な期待値の args。
+///
+/// `make_args` は現在の board 表示順を期待値に入れてしまうため、conflict を起こす
+/// テストは期待値を直接ずらして構築する。
+fn stale_expectation_args(file_path: &str) -> MoveTaskArgs {
+    MoveTaskArgs {
+        file_path: file_path.to_string(),
+        from_column: "Todo".to_string(),
+        to_column: "Done".to_string(),
+        to_column_file_paths: vec![file_path.to_string()],
+        expected_to_column_order: Vec::new(),
+    }
+}
+
+#[test]
+fn card_order_conflict_leaves_task_md_and_config_json_untouched() {
+    let dir = tempdir();
+    let original_md = "---\ntitle: A\nstatus: Todo\n---\n";
+    seed_md(dir.path(), "tasks/a.md", original_md);
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    seed_config_with_card_order(
+        dir.path(),
+        &[("Todo", &["tasks/a.md"]), ("Done", &["tasks/x.md"])],
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let config_disk_before =
+        fs::read_to_string(dir.path().join(".spec-board/config.json")).expect("config.json exists");
+
+    let error = move_task_impl(&state, &FsTaskIo, stale_expectation_args("tasks/a.md"))
+        .expect_err("stale な期待値の移動は拒否されるべき");
+
+    assert!(
+        matches!(
+            error,
+            MoveTaskCommandError::Validation(MoveTaskError::CardOrderConflict { .. })
+        ),
+        "unexpected error: {error:?}"
+    );
+    assert_eq!(
+        original_md,
+        fs::read_to_string(dir.path().join("tasks/a.md")).expect("unchanged task md")
+    );
+    assert_eq!(
+        config_disk_before,
+        fs::read_to_string(dir.path().join(".spec-board/config.json"))
+            .expect("unchanged config.json")
+    );
+    let resident = state
+        .test_tasks_snapshot()
+        .expect("resident tasks")
+        .into_iter()
+        .find(|task| task.file_path.as_str() == "tasks/a.md")
+        .expect("resident task");
+    assert_eq!("Todo", resident.status.as_str());
+}
+
+#[test]
+fn card_order_conflict_keeps_revision_and_registers_no_marker() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let revision_before = session_revision(&state);
+
+    move_task_impl(&state, &FsTaskIo, stale_expectation_args("tasks/a.md"))
+        .expect_err("stale な期待値の移動は拒否されるべき");
+
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
+}
+
+#[test]
+fn card_order_conflict_does_not_reach_task_io_or_config_writer() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let task_io = CountingTaskIo::default();
+    let config_writer = FailingConfigWriter::default();
+
+    let error = move_task_impl_with_config_io(
+        &state,
+        &task_io,
+        &config_writer,
+        &load_or_default,
+        stale_expectation_args("tasks/a.md"),
+    )
+    .expect_err("stale な期待値の移動は拒否されるべき");
+
+    assert!(
+        matches!(
+            error,
+            MoveTaskCommandError::Validation(MoveTaskError::CardOrderConflict { .. })
+        ),
+        "unexpected error: {error:?}"
+    );
+    assert_eq!(0, task_io.calls(), "TaskIo must not be reached");
+    assert_eq!(0, config_writer.calls(), "ConfigWriter must not be reached");
+}
+
+#[test]
+fn same_column_card_order_conflict_leaves_disk_revision_and_io_untouched() {
+    // 同一カラム並び替えでも照合が効き、拒否は cross-column と同じく副作用ゼロで返る。
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    seed_config_with_card_order(dir.path(), &[("Todo", &["tasks/a.md", "tasks/b.md"])]);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let revision_before = session_revision(&state);
+    let config_disk_before =
+        fs::read_to_string(dir.path().join(".spec-board/config.json")).expect("config.json exists");
+    let task_io = CountingTaskIo::default();
+    let config_writer = FailingConfigWriter::default();
+
+    let error = move_task_impl_with_config_io(
+        &state,
+        &task_io,
+        &config_writer,
+        &load_or_default,
+        MoveTaskArgs {
+            file_path: "tasks/a.md".to_string(),
+            from_column: "Todo".to_string(),
+            to_column: "Todo".to_string(),
+            to_column_file_paths: vec!["tasks/b.md".to_string(), "tasks/a.md".to_string()],
+            // 実際は [a, b] なのに [b, a] を前提にした stale な期待値。
+            expected_to_column_order: vec!["tasks/b.md".to_string(), "tasks/a.md".to_string()],
+        },
+    )
+    .expect_err("同一カラムでも stale な期待値は拒否されるべき");
+
+    assert!(
+        matches!(
+            error,
+            MoveTaskCommandError::Validation(MoveTaskError::CardOrderConflict { .. })
+        ),
+        "unexpected error: {error:?}"
+    );
+    assert_eq!(0, task_io.calls(), "TaskIo must not be reached");
+    assert_eq!(0, config_writer.calls(), "ConfigWriter must not be reached");
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
+    assert_eq!(
+        config_disk_before,
+        fs::read_to_string(dir.path().join(".spec-board/config.json"))
+            .expect("unchanged config.json")
+    );
+}
+
+#[test]
+fn first_move_into_a_column_without_card_order_entry_succeeds() {
+    // 一度も並び替えていないカラムは cardOrder にエントリ自体が無い。期待値が
+    // cardOrder の生値（= 無い）ではなく board 表示順（id 昇順）と照合されることで、
+    // 初回移動が拒否されない。
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/y.md",
+        "---\ntitle: Y\nstatus: Done\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    let task = move_task_impl(
+        &state,
+        &FsTaskIo,
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/x.md", "tasks/a.md", "tasks/y.md"],
+        ),
+    )
+    .expect("cardOrder 未登録のカラムへの初回移動は成功するべき");
+
+    assert_eq!("Done", task.status.as_str());
+}
+
+#[test]
+fn unrelated_reorder_in_the_source_column_does_not_reject_the_move() {
+    // 移動元カラムは照合対象外。移動元への操作は対象を取り除くだけで、他のカードの
+    // 並びが変わっていても結果は変わらない。
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    seed_config_with_card_order(
+        dir.path(),
+        &[
+            ("Todo", &["tasks/b.md", "tasks/a.md"]),
+            ("Done", &["tasks/x.md"]),
+        ],
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    // FE が移動元を [a, b] だと思っていても（実際は [b, a]）、宛先の期待値さえ
+    // 一致していれば移動は成功する。
+    let task = move_task_impl(
+        &state,
+        &FsTaskIo,
+        MoveTaskArgs {
+            file_path: "tasks/a.md".to_string(),
+            from_column: "Todo".to_string(),
+            to_column: "Done".to_string(),
+            to_column_file_paths: vec!["tasks/x.md".to_string(), "tasks/a.md".to_string()],
+            expected_to_column_order: vec!["tasks/x.md".to_string()],
+        },
+    )
+    .expect("移動元カラムの無関係な並び替えでは拒否されないべき");
+
+    assert_eq!("Done", task.status.as_str());
+}
+
+#[test]
+fn parent_dir_segment_in_expected_order_rejects_before_matching() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    let error = move_task_impl(
+        &state,
+        &FsTaskIo,
+        MoveTaskArgs {
+            file_path: "tasks/a.md".to_string(),
+            from_column: "Todo".to_string(),
+            to_column: "Done".to_string(),
+            to_column_file_paths: vec!["tasks/a.md".to_string()],
+            expected_to_column_order: vec!["../outside.md".to_string()],
+        },
+    )
+    .expect_err("`..` を含む期待値は照合より前に拒否されるべき");
+
+    assert!(
+        matches!(error, MoveTaskCommandError::InvalidPath(_)),
+        "unexpected error: {error:?}"
+    );
 }

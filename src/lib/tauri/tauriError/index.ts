@@ -8,6 +8,8 @@ export type TauriErrorCode =
   | "PARSE_ERROR"
   | "HAS_CHILDREN"
   | "INVALID_FILE_NAME"
+  /** 他の変更が先に入っていたため操作が拒否された。巻き戻して取り直す。 */
+  | "CONFLICT"
   | "UNKNOWN";
 
 const FALLBACK_MESSAGE = "不明なエラーが発生しました";
@@ -22,6 +24,9 @@ const PATTERNS: ReadonlyArray<{
   { regex: /\bparse\b|フロントマター/i, code: "PARSE_ERROR" },
   { regex: /task has children/i, code: "HAS_CHILDREN" },
   { regex: /invalid file name/i, code: "INVALID_FILE_NAME" },
+  // BE の MoveTaskError::StatusMismatch / CardOrderConflict の文言に対応する。
+  // どちらも「他の変更が先に入った」ことを表すため同じコードに寄せる。
+  { regex: /並びが変わっています|状態が変わっています/, code: "CONFLICT" },
 ];
 
 /**

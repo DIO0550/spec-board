@@ -253,7 +253,7 @@ export type WatcherDiscardReason =
   /** 追い越された古い cache 変更 → **S は進める** */
   | "stale-revision";
 
-export type WatcherResyncReason = "rescan" | "event-gap";
+export type WatcherResyncReason = "rescan" | "event-gap" | "move-conflict";
 
 export type WatcherGateDecision =
   | { readonly kind: "discard"; readonly reason: WatcherDiscardReason }

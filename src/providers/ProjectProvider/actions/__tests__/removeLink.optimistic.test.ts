@@ -121,6 +121,7 @@ const setupLoaded = (data: ProjectData): Harness => {
       projectVersion: version,
       projectCommandQueue: queue,
       getState: () => state.current,
+      requestResync: () => {},
       dispatch: (action) => {
         actions.push(action);
         state.current = reducer(state.current, action);
@@ -493,6 +494,7 @@ test("idle state では preflight invalid-state で IPC を呼ばない", async 
     projectVersion: version,
     projectCommandQueue: queue,
     getState: () => state.current,
+    requestResync: () => {},
     dispatch: (action: ProjectAction) => {
       actions.push(action);
       state.current = reducer(state.current, action);
