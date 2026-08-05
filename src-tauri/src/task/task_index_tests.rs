@@ -753,6 +753,101 @@ fn sorted_by_board_order_puts_unknown_status_last() {
     assert_eq!(vec!["tasks/a.md", "tasks/x.md"], paths);
 }
 
+// ───────── board_order_of_column ─────────
+
+#[test]
+fn board_order_of_column_returns_card_order_sequence_when_all_tasks_are_listed() {
+    let config = board_config(
+        &["Todo", "Done"],
+        &[("Todo", &["tasks/b.md", "tasks/a.md"])],
+    );
+    let index = TaskIndex::new(vec![
+        task_with_status("tasks/a.md", "Todo"),
+        task_with_status("tasks/b.md", "Todo"),
+        task_with_status("tasks/z.md", "Done"),
+    ]);
+
+    let order = index.board_order_of_column(&config, "Todo");
+
+    assert_eq!(vec!["tasks/b.md", "tasks/a.md"], order);
+}
+
+#[test]
+fn board_order_of_column_appends_unlisted_tasks_by_id() {
+    let config = board_config(&["Todo"], &[("Todo", &["tasks/c.md"])]);
+    let index = TaskIndex::new(vec![
+        task_with_status("tasks/b.md", "Todo"),
+        task_with_status("tasks/a.md", "Todo"),
+        task_with_status("tasks/c.md", "Todo"),
+    ]);
+
+    let order = index.board_order_of_column(&config, "Todo");
+
+    assert_eq!(vec!["tasks/c.md", "tasks/a.md", "tasks/b.md"], order);
+}
+
+#[test]
+fn board_order_of_column_falls_back_to_id_order_when_column_has_no_card_order_entry() {
+    let config = board_config(&["Todo"], &[]);
+    let index = TaskIndex::new(vec![
+        task_with_status("tasks/b.md", "Todo"),
+        task_with_status("tasks/a.md", "Todo"),
+    ]);
+
+    let order = index.board_order_of_column(&config, "Todo");
+
+    assert_eq!(vec!["tasks/a.md", "tasks/b.md"], order);
+}
+
+#[test]
+fn board_order_of_column_returns_empty_for_column_without_tasks() {
+    let config = board_config(&["Todo", "Done"], &[]);
+    let index = TaskIndex::new(vec![task_with_status("tasks/a.md", "Todo")]);
+
+    let order = index.board_order_of_column(&config, "Done");
+
+    assert!(order.is_empty());
+}
+
+#[test]
+fn board_order_of_column_ignores_card_order_entries_for_deleted_tasks() {
+    // cardOrder に削除済みタスクのパスが残留していても、返るのは実在する
+    // resident task だけ。存在しないパスまで返すと、FE から見えないゴーストとの
+    // 不一致で期待値照合が誤って移動を拒否する。
+    let config = board_config(&["Todo"], &[("Todo", &["tasks/deleted.md", "tasks/a.md"])]);
+    let index = TaskIndex::new(vec![task_with_status("tasks/a.md", "Todo")]);
+
+    let order = index.board_order_of_column(&config, "Todo");
+
+    assert_eq!(vec!["tasks/a.md"], order);
+}
+
+#[test]
+fn board_order_of_column_matches_sorted_by_board_order_for_the_same_column() {
+    // 並び規則が sorted_by_board_order と 2 箇所に分かれるため、同じ config /
+    // tasks に対して両者のカラム部分が完全一致することを固定する。
+    let config = board_config(
+        &["Todo", "Done"],
+        &[("Todo", &["tasks/c.md", "tasks/a.md"])],
+    );
+    let tasks = vec![
+        task_with_status("tasks/a.md", "Todo"),
+        task_with_status("tasks/b.md", "Todo"),
+        task_with_status("tasks/c.md", "Todo"),
+        task_with_status("tasks/z.md", "Done"),
+    ];
+
+    let order = TaskIndex::new(tasks.clone()).board_order_of_column(&config, "Todo");
+    let sorted: Vec<String> = TaskIndex::new(tasks)
+        .sorted_by_board_order(&config)
+        .into_iter()
+        .filter(|task| task.status.as_str() == "Todo")
+        .map(|task| task.file_path.as_str().to_string())
+        .collect();
+
+    assert_eq!(sorted, order);
+}
+
 // ───────── project_board_view ─────────
 
 fn task_with_status_and_parent(path: &str, status: &str, parent: Option<&str>) -> Task {
