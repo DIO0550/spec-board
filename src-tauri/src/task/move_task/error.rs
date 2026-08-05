@@ -26,6 +26,20 @@ pub enum MoveTaskError {
     #[error("タスクの状態が変わっています: 期待={expected}, 実際={actual}")]
     StatusMismatch { expected: String, actual: String },
 
+    /// 移動先カラムの並びが、FE が前提にしていたものと食い違う。
+    /// 別ウィンドウ・外部エディタ・watcher 経由の変更が先に入っている状態を弾く。
+    ///
+    /// `expected` / `actual` はテストが「何と何が食い違ったか」を主張するために保持
+    /// する。Display には件数だけを出す（並び全体を文字列化するとトーストが読めない
+    /// 長さになる）。「並びが変わっています」は FE の分類パターンが CONFLICT を
+    /// 引き当てる鍵なので、文言を変えるときは FE 側のパターンも同時に変える。
+    #[error("移動先カラムの並びが変わっています: {column}（期待={}件, 実際={}件）", .expected.len(), .actual.len())]
+    CardOrderConflict {
+        column: String,
+        expected: Vec<String>,
+        actual: Vec<String>,
+    },
+
     /// 書き換え後の内容が scanner の受理条件（サイズ / バイナリ判定）を満たさない。
     /// 書き込んでしまうと移動は成功したのに次の再スキャンで task が消える。
     #[error("タスクの内容がスキャン対象の条件を満たしません: {reason}")]

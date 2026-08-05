@@ -84,6 +84,10 @@ pub(crate) fn move_task_impl_with_config_io(
             }
             .into());
         }
+        // 並び照合は revision preflight / TaskIo read より前。stale な前提の移動は
+        // ここで確定拒否になり、revision 消費も TaskIo 到達もゼロで返る（plan_move
+        // 内の同じ検証は、直前に読んだ md まで含めた再確認として残している）。
+        index.ensure_to_column_order_matches(config, &intent)?;
 
         // revision/resource preflightはTaskIo readとcard-order metadata走査より先。
         let resources = state.preflight_session_write(snapshot)?;
@@ -94,7 +98,13 @@ pub(crate) fn move_task_impl_with_config_io(
             .map_err(|error| MoveTaskCommandError::ParseFailed(error.to_string()))?
             .into_parsed();
         let scan_default_status = default_status_for(config);
-        let outcome = index.plan_move(&intent, &existing, parsed, scan_default_status.as_str())?;
+        let outcome = index.plan_move(
+            &intent,
+            &existing,
+            parsed,
+            scan_default_status.as_str(),
+            config,
+        )?;
 
         match outcome {
             MoveTaskOutcome::SameColumn { existing_task } => {
