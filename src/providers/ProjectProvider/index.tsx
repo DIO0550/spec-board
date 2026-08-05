@@ -201,7 +201,13 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     dispatch: store.dispatch,
     notifyLoadWarnings,
   });
-  requestResyncRef.current = requestResync;
+  // render 中に ref を書き換えると、concurrent rendering で中断・破棄された
+  // render のクロージャが ref に残りうる。commit 済みの identity にだけ追従
+  // させるため effect で代入する。呼び出し側（task action）は IPC 失敗後の
+  // 非同期文脈からしか参照しないため、effect 反映までの遅延は観測されない。
+  useEffect(() => {
+    requestResyncRef.current = requestResync;
+  }, [requestResync]);
 
   const notifyDiagnostic = useCallback(
     (diagnostic: WatcherDiagnostic): void => {
