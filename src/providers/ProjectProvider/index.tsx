@@ -54,7 +54,11 @@ import {
   type WatcherGateRef,
 } from "./useTaskWatcherEffects";
 import { useWatcherResyncEffect } from "./useWatcherResyncEffect";
-import { WatcherGate, type WatcherGateState } from "./watcherEnvelopeGate";
+import {
+  WatcherGate,
+  type WatcherGateState,
+  type WatcherResyncReason,
+} from "./watcherEnvelopeGate";
 
 export { PROJECT_SWITCHED_MESSAGE } from "./constants";
 export type {
@@ -138,6 +142,12 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     [],
   );
 
+  // requestResync は useWatcherResyncEffect の戻り値で、この時点ではまだ生成されて
+  // いない。deps を Provider 生涯不変に保つため、ref を挟んで後から実体を差し込む。
+  const requestResyncRef = useRef<
+    ((reason: WatcherResyncReason) => void) | null
+  >(null);
+
   // task / column action の共通 deps を mount 時 1 度だけ生成する。store のメソッドは
   // 恒久 stable なので、この deps は Provider の生涯にわたり不変にできる。
   const taskDepsRef = useRef<TaskActionDeps | null>(null);
@@ -147,6 +157,9 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
       projectCommandQueue: projectCommandQueueRef.current,
       getState: store.getState,
       dispatch: store.dispatch,
+      requestResync: (reason) => {
+        requestResyncRef.current?.(reason);
+      },
     };
   }
   const taskDeps = taskDepsRef.current;
@@ -188,6 +201,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     dispatch: store.dispatch,
     notifyLoadWarnings,
   });
+  requestResyncRef.current = requestResync;
 
   const notifyDiagnostic = useCallback(
     (diagnostic: WatcherDiagnostic): void => {
