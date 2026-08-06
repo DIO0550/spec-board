@@ -12,9 +12,6 @@ use std::sync::mpsc::{Receiver, RecvError};
 
 use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarningStage};
 use crate::project_session::{ProjectSessionSnapshot, SessionIdentity};
-use crate::state::project_generation::ProjectGeneration;
-use crate::state::project_key::ProjectKey;
-use crate::state::tasks_revision::TasksRevision;
 use crate::state::{AppStateError, ResourceAccessError, SessionResourceAccess, SessionWriteError};
 use crate::task::parse::{
     default_status_for, normalized_task_file_path, task_from_markdown, TaskParseContext,
@@ -27,9 +24,9 @@ use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::{FsEvent, WatcherFailure, WatcherFailureKind};
 
 use super::envelope::{
-    build_envelope, DiagnosticCode, DiagnosticPayload, EnvelopePayload, ResyncReason,
-    ResyncRequiredPayload, TaskDeletedPayload, TaskUpsertPayload, EVENT_DIAGNOSTIC,
-    EVENT_RESYNC_REQUIRED, EVENT_TASK_CREATED, EVENT_TASK_DELETED, EVENT_TASK_UPDATED,
+    DiagnosticCode, DiagnosticPayload, EnvelopePayload, ResyncReason, ResyncRequiredPayload,
+    TaskDeletedPayload, TaskUpsertPayload, EVENT_DIAGNOSTIC, EVENT_RESYNC_REQUIRED,
+    EVENT_TASK_CREATED, EVENT_TASK_DELETED, EVENT_TASK_UPDATED,
 };
 use super::AdapterContext;
 
@@ -515,8 +512,9 @@ fn emit_diagnostic(
 
 /// committed identity を既存 numeric wire shape へ変換し、current の場合だけ emit する。
 ///
-/// eventSeq の identity 検証と採番は同じ domain critical section で行われる。
-/// 採番後に emit が失敗しても番号は戻さず、FE の gap recovery に委ねる。
+/// 本体は `watcher_event::emit_envelope_if_current` に置く。adapter 経路と背景
+/// resync 経路で identity ガードの挙動が乖離しないよう、実装は 1 つに保つ。
+/// adapter 固有の `before_sequence` テストシームだけをここに残している。
 fn emit_compat_envelope<P: EnvelopePayload + serde::Serialize>(
     ctx: &AdapterContext,
     identity: &SessionIdentity,
@@ -525,20 +523,13 @@ fn emit_compat_envelope<P: EnvelopePayload + serde::Serialize>(
     before_sequence: &mut dyn FnMut(),
 ) -> Result<(), HandleError> {
     before_sequence();
-    let Some(event_seq) = ctx.state.next_event_seq_if_current(identity)? else {
-        return Ok(());
-    };
-    let version = identity.version();
-    let project_key = ProjectKey::from_root(identity.project_root().as_path());
-    let generation = ProjectGeneration::from_raw(version.session_id.as_u64());
-    let revision = TasksRevision::from_raw(version.revision.as_u64());
-    let envelope = build_envelope(&project_key, generation, revision, event_seq, payload);
-    match serde_json::to_value(&envelope) {
-        Ok(value) => (ctx.emit)(event_name, value),
-        Err(err) => {
-            log::warn!("watcher_event: failed to serialize `{event_name}` envelope: {err}");
-        }
-    }
+    super::emit_envelope_if_current(
+        ctx.state.as_ref(),
+        ctx.emit.as_ref(),
+        identity,
+        event_name,
+        payload,
+    )?;
     Ok(())
 }
 

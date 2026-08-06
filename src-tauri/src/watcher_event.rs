@@ -44,7 +44,10 @@ use crate::project_session::{SessionId, SessionIdentity};
 use crate::state::active_project_resources::{
     pending_activation_state, wait_for_activation, StagedProjectResources, WatcherActivation,
 };
-use crate::state::{AppState, BoxedWatcherHandle};
+use crate::state::project_generation::ProjectGeneration;
+use crate::state::project_key::ProjectKey;
+use crate::state::tasks_revision::TasksRevision;
+use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
 use spec_board_fs::watcher::handle::WatcherHandle;
@@ -163,6 +166,34 @@ pub(crate) fn stage_adapter_with_ctx(
         activation,
         Arc::new(WriteIgnoreRegistry::new()),
     ))
+}
+
+/// identity が current のときだけ envelope を emit する、adapter 外からも使える実装。
+///
+/// eventSeq の identity 検証と採番は同じ domain critical section で行われる。
+/// 採番後に emit が失敗しても番号は戻さず、FE の gap recovery に委ねる。
+pub(crate) fn emit_envelope_if_current<P: envelope::EnvelopePayload + serde::Serialize>(
+    state: &AppState,
+    emit: &(dyn Fn(&str, serde_json::Value) + Sync),
+    identity: &SessionIdentity,
+    event_name: &str,
+    payload: P,
+) -> Result<(), AppStateError> {
+    let Some(event_seq) = state.next_event_seq_if_current(identity)? else {
+        return Ok(());
+    };
+    let version = identity.version();
+    let project_key = ProjectKey::from_root(identity.project_root().as_path());
+    let generation = ProjectGeneration::from_raw(version.session_id.as_u64());
+    let revision = TasksRevision::from_raw(version.revision.as_u64());
+    let built = envelope::build_envelope(&project_key, generation, revision, event_seq, payload);
+    match serde_json::to_value(&built) {
+        Ok(value) => emit(event_name, value),
+        Err(err) => {
+            log::warn!("watcher_event: failed to serialize `{event_name}` envelope: {err}");
+        }
+    }
+    Ok(())
 }
 
 /// `catch_unwind` payload を可能な範囲で文字列化する。
