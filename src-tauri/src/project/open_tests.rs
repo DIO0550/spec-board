@@ -3,12 +3,16 @@ use super::{
 };
 
 use crate::config::{CardOrder, Column, Config};
+use crate::project::reactivation::{
+    CollectingReactivationScheduler, NoopReactivationScheduler, ReactivationResyncScheduler,
+};
 use crate::project::watcher_factory::{NoopWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionIdentity;
 use crate::state::active_project_resources::{
-    pending_activation_state, wait_for_activation, StagedProjectResources, WatcherActivation,
-    WatcherStopDiagnostic, WatcherStopDiagnosticReporter,
+    pending_activation_state, wait_for_activation, LogWatcherStopDiagnosticReporter,
+    StagedProjectResources, WatcherActivation, WatcherStopDiagnostic,
+    WatcherStopDiagnosticReporter,
 };
 use crate::state::event_seq::EventSeq;
 use crate::state::project_generation::ProjectGeneration;
@@ -829,6 +833,7 @@ fn watcher_stop_panic_is_reported_without_rolling_back_new_session() {
         &crate::config::milestone_registry_store(intent.as_path()),
         &NoopWatcherFactory,
         &reporter,
+        &NoopReactivationScheduler,
     )
     .expect("stop panic must not fail reopen");
 
@@ -2294,4 +2299,350 @@ fn open_succeeds_for_mutually_referencing_parents_and_lists_each_task_once() {
 
     assert_eq!(tree_node_count(&payload.task_tree), payload.tasks.len());
     assert_eq!(payload.task_tree.len(), 2, "循環メンバは全員 root");
+}
+
+/// stop 呼び出し回数だけを数える factory。
+struct StopCountingFactory {
+    stop_calls: Arc<AtomicUsize>,
+}
+
+impl WatcherFactory for StopCountingFactory {
+    type Prepared = ();
+
+    fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
+        Ok(())
+    }
+
+    fn stage_paused(
+        &self,
+        _prepared: (),
+        _state: &Arc<AppState>,
+        identity: SessionIdentity,
+    ) -> Result<StagedProjectResources, OpenProjectError> {
+        let stop_calls = Arc::clone(&self.stop_calls);
+        stage_test_resources(
+            identity,
+            || {},
+            move || {
+                stop_calls.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+    }
+}
+
+fn open_with_scheduler(
+    state: Arc<AppState>,
+    path: &str,
+    resync: &dyn ReactivationResyncScheduler,
+) -> Result<OpenProjectPayload, OpenProjectError> {
+    let intent = OpenProjectIntent::try_from(path.to_string())?;
+    let labels_store = crate::config::label_registry_store(intent.as_path());
+    let milestones_store = crate::config::milestone_registry_store(intent.as_path());
+    open_project_impl_with_reporter(
+        &state,
+        &intent,
+        &labels_store,
+        &milestones_store,
+        &NoopWatcherFactory,
+        &LogWatcherStopDiagnosticReporter,
+        resync,
+    )
+}
+
+#[test]
+fn reopen_after_switch_serves_tasks_from_cache_without_rescan() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    write_md(dir_a.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8")).expect("cold open A");
+    open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8")).expect("cold open B");
+    // watcher 停止中の disk 変更。キャッシュ応答なら削除は payload に現れない。
+    fs::remove_file(dir_a.path().join("tasks/a.md")).expect("remove task md");
+
+    let payload = open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8"))
+        .expect("cache-hit reopen A");
+
+    assert_eq!(1, payload.tasks.len());
+    assert_eq!("tasks/a.md", payload.tasks[0].file_path.as_str());
+}
+
+#[test]
+fn reopen_after_switch_advances_generation_and_resets_revision() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let first = open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8"))
+        .expect("cold open A");
+    open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8")).expect("cold open B");
+
+    let reopened = open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8"))
+        .expect("cache-hit reopen A");
+
+    assert_eq!(1, first.session.generation.as_u64());
+    assert_eq!(3, reopened.session.generation.as_u64());
+    assert_eq!(0, reopened.session.revision.as_u64());
+}
+
+#[test]
+fn cache_hit_schedules_reactivation_resync_for_the_new_identity() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let scheduler = CollectingReactivationScheduler::new();
+    open_with_scheduler(
+        Arc::clone(&state),
+        dir_a.path().to_str().expect("utf-8"),
+        &scheduler,
+    )
+    .expect("cold open A");
+    open_with_scheduler(
+        Arc::clone(&state),
+        dir_b.path().to_str().expect("utf-8"),
+        &scheduler,
+    )
+    .expect("cold open B");
+
+    let reopened = open_with_scheduler(
+        Arc::clone(&state),
+        dir_a.path().to_str().expect("utf-8"),
+        &scheduler,
+    )
+    .expect("cache-hit reopen A");
+
+    let scheduled = scheduler.scheduled();
+    assert_eq!(1, scheduled.len());
+    assert_eq!(
+        reopened.session.generation.as_u64(),
+        scheduled[0].version().session_id.as_u64()
+    );
+    assert_eq!(0, scheduled[0].version().revision.as_u64());
+    assert_eq!(dir_a.path(), scheduled[0].project_root().as_path());
+}
+
+#[test]
+fn cold_open_does_not_schedule_reactivation_resync() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let scheduler = CollectingReactivationScheduler::new();
+
+    open_with_scheduler(
+        Arc::clone(&state),
+        dir_a.path().to_str().expect("utf-8"),
+        &scheduler,
+    )
+    .expect("cold open A");
+    open_with_scheduler(
+        Arc::clone(&state),
+        dir_b.path().to_str().expect("utf-8"),
+        &scheduler,
+    )
+    .expect("cold open B");
+
+    assert!(scheduler.scheduled().is_empty());
+}
+
+#[test]
+fn switch_stops_previous_watcher_exactly_once_on_cache_hit() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let stop_calls = Arc::new(AtomicUsize::new(0));
+    let factory = StopCountingFactory {
+        stop_calls: Arc::clone(&stop_calls),
+    };
+    open_with(
+        Arc::clone(&state),
+        dir_a.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("cold open A");
+
+    open_with(
+        Arc::clone(&state),
+        dir_b.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("cold open B");
+    assert_eq!(1, stop_calls.load(Ordering::SeqCst));
+
+    open_with(
+        Arc::clone(&state),
+        dir_a.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("cache-hit reopen A");
+    assert_eq!(2, stop_calls.load(Ordering::SeqCst));
+}
+
+#[test]
+fn cache_hit_installs_a_fresh_write_ignore_registry() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8")).expect("cold open A");
+    let first_identity = state.active_session_identity().expect("first identity");
+    let first_resources = state
+        .resources_for(first_identity.version())
+        .expect("first resources");
+    first_resources
+        .write_ignore()
+        .register("tasks/dirty.md")
+        .expect("register old session path");
+    open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8")).expect("cold open B");
+
+    open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8"))
+        .expect("cache-hit reopen A");
+
+    let reactivated = state
+        .active_session_identity()
+        .expect("reactivated identity");
+    let resources = state
+        .resources_for(reactivated.version())
+        .expect("reactivated resources");
+    assert!(resources.write_ignore().is_empty().expect("readable"));
+}
+
+#[test]
+fn same_root_reopen_stays_cold() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_labels_yml(dir.path(), "labels:\n  - name: bug\n");
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("first open");
+    assert_eq!(
+        1,
+        state
+            .test_labels()
+            .expect("readable")
+            .expect("labels loaded")
+            .labels
+            .len()
+    );
+    fs::remove_file(dir.path().join(".spec-board/labels.yml")).expect("remove labels.yml");
+
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("second open");
+
+    assert!(state
+        .test_labels()
+        .expect("readable")
+        .expect("labels loaded")
+        .labels
+        .is_empty());
+}
+
+#[test]
+fn cache_hit_open_fails_when_directory_disappears() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let raw_a = dir_a.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw_a).expect("cold open A");
+    open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8")).expect("cold open B");
+    let identity_before = state.active_session_identity().expect("B stays active");
+    fs::remove_dir_all(dir_a.path()).expect("remove project A");
+
+    let err = open_with_noop(Arc::clone(&state), &raw_a).expect_err("validation runs before cache");
+
+    assert!(matches!(err, OpenProjectError::DirectoryNotFound { .. }));
+    assert_eq!(
+        identity_before,
+        state.active_session_identity().expect("B stays active")
+    );
+}
+
+#[test]
+fn failed_reactivation_consumes_the_cache_entry() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    write_md(dir_a.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let raw_a = dir_a.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw_a).expect("cold open A");
+    open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8")).expect("cold open B");
+    let identity_before = state.active_session_identity().expect("B stays active");
+
+    let err = open_with(
+        Arc::clone(&state),
+        &raw_a,
+        &FailingPrepareFactory::new("inotify limit"),
+    )
+    .expect_err("watcher prepare failure aborts the reactivation");
+
+    assert!(matches!(err, OpenProjectError::WatcherInitFailed { .. }));
+    assert_eq!(
+        identity_before,
+        state.active_session_identity().expect("B stays active")
+    );
+    // 消費済みエントリは再 stash しない。リトライは disk を読むコールド経路になる。
+    fs::remove_file(dir_a.path().join("tasks/a.md")).expect("remove task md");
+    let retried = open_with_noop(Arc::clone(&state), &raw_a).expect("retry opens cold");
+    assert!(retried.tasks.is_empty());
+}
+
+#[test]
+fn switch_chain_keeps_one_cache_entry_per_root() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    let dir_c = tempdir();
+    write_md(dir_a.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    write_md(dir_b.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    write_md(dir_c.path(), "tasks/c.md", &task_md("C", "Todo", None));
+    for dir in [&dir_a, &dir_b, &dir_c] {
+        open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8")).expect("cold open");
+    }
+
+    let reopened_b = open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8"))
+        .expect("cache-hit reopen B");
+    let reopened_a = open_with_noop(Arc::clone(&state), dir_a.path().to_str().expect("utf-8"))
+        .expect("cache-hit reopen A");
+
+    assert_eq!("tasks/b.md", reopened_b.tasks[0].file_path.as_str());
+    assert_eq!("tasks/a.md", reopened_a.tasks[0].file_path.as_str());
+    assert_eq!(4, reopened_b.session.generation.as_u64());
+    assert_eq!(5, reopened_a.session.generation.as_u64());
+}
+
+#[test]
+fn repeated_same_root_reopen_keeps_reading_disk() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw).expect("open 1");
+    open_with_noop(Arc::clone(&state), &raw).expect("open 2");
+    fs::remove_file(dir.path().join("tasks/a.md")).expect("remove task md");
+
+    let third = open_with_noop(Arc::clone(&state), &raw).expect("open 3");
+
+    assert!(
+        third.tasks.is_empty(),
+        "same-path reopen must never serve the cache, got {:?}",
+        third
+            .tasks
+            .iter()
+            .map(|task| task.file_path.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn open_falls_back_to_a_cold_read_when_the_cache_lock_is_poisoned() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    write_md(dir_a.path(), "tasks/a.md", &task_md("A", "Todo", None));
+    let raw_a = dir_a.path().to_str().expect("utf-8").to_string();
+    open_with_noop(Arc::clone(&state), &raw_a).expect("cold open A");
+    open_with_noop(Arc::clone(&state), dir_b.path().to_str().expect("utf-8")).expect("cold open B");
+    let poisoning_state = Arc::clone(&state);
+    let poisoned = thread::spawn(move || poisoning_state.poison_background_sessions_for_test());
+    assert!(poisoned.join().is_err());
+
+    let reopened =
+        open_with_noop(Arc::clone(&state), &raw_a).expect("cache poison must not fail open");
+
+    assert_eq!(1, reopened.tasks.len());
+    assert_eq!("tasks/a.md", reopened.tasks[0].file_path.as_str());
 }
