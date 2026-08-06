@@ -407,6 +407,126 @@ fn stale_identity_does_not_consume_event_sequence_after_switch() {
 }
 
 #[test]
+fn swap_from_idle_returns_no_displaced_session() {
+    let state = AppState::new();
+
+    let swap = swap_session(&state, "/tmp/project-a", HashMap::new());
+
+    assert!(swap.displaced_session.is_none());
+}
+
+#[test]
+fn same_root_swap_does_not_displace_a_session_into_the_cache() {
+    let state = AppState::new();
+    swap_session(&state, "/tmp/project-a", HashMap::new());
+
+    let reopened = swap_session(&state, "/tmp/project-a", HashMap::new());
+
+    assert!(
+        reopened.displaced_session.is_none(),
+        "same-root reopen must not leave a stale entry for the foreground project"
+    );
+}
+
+#[test]
+fn take_discards_a_cache_entry_older_than_the_resident_session() {
+    let state = AppState::new();
+    let stale = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    swap_session(&state, "/tmp/project-a", HashMap::new());
+    state
+        .stash_background_session(stale)
+        .expect("a concurrent open can stash after the root became resident again");
+
+    let taken = state
+        .take_background_session(&ProjectRoot::try_from_str("/tmp/project-a").unwrap())
+        .expect("cache lock healthy");
+
+    assert!(
+        taken.is_none(),
+        "entries behind the resident session are dropped"
+    );
+}
+
+#[test]
+fn swap_over_loaded_project_returns_the_displaced_session() {
+    let state = AppState::new();
+    let first = swap_session(&state, "/tmp/project-a", HashMap::new());
+
+    let second = swap_session(&state, "/tmp/project-b", HashMap::new());
+
+    let displaced = second
+        .displaced_session
+        .expect("second swap displaces the first session");
+    assert_eq!(first.snapshot.identity(), displaced.identity());
+}
+
+#[test]
+fn take_background_session_removes_the_entry() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid test root");
+    state
+        .stash_background_session(candidate_for(&state, "/tmp/project-a", HashMap::new()))
+        .expect("stash succeeds");
+
+    let taken = state
+        .take_background_session(&root)
+        .expect("cache lock healthy");
+    let taken_again = state
+        .take_background_session(&root)
+        .expect("cache lock healthy");
+
+    assert!(taken.is_some());
+    assert!(taken_again.is_none());
+}
+
+#[test]
+fn take_background_session_misses_for_unknown_root() {
+    let state = AppState::new();
+
+    let taken = state
+        .take_background_session(&ProjectRoot::try_from_str("/tmp/never-opened").unwrap())
+        .expect("missing entry is not an error");
+
+    assert!(taken.is_none());
+}
+
+#[test]
+fn stash_replaces_an_older_session_for_the_same_root() {
+    let state = AppState::new();
+    let older = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    let newer = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    let newer_id = newer.version().session_id;
+    state.stash_background_session(older).expect("stash older");
+
+    state.stash_background_session(newer).expect("stash newer");
+
+    let kept = state
+        .take_background_session(&ProjectRoot::try_from_str("/tmp/project-a").unwrap())
+        .expect("cache lock healthy")
+        .expect("entry exists");
+    assert_eq!(newer_id, kept.version().session_id);
+}
+
+#[test]
+fn stash_keeps_the_session_with_the_newer_session_id() {
+    let state = AppState::new();
+    let older = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    let newer = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    let newer_id = newer.version().session_id;
+    state.stash_background_session(newer).expect("stash newer");
+
+    state
+        .stash_background_session(older)
+        .expect("stashing an older session is accepted but must not win");
+
+    let kept = state
+        .take_background_session(&ProjectRoot::try_from_str("/tmp/project-a").unwrap())
+        .expect("cache lock healthy")
+        .expect("entry exists");
+    assert_eq!(newer_id, kept.version().session_id);
+}
+
+#[test]
 fn identity_mismatch_rejects_open_swap_before_replacing_domain() {
     let state = AppState::new();
     let candidate = candidate_for(&state, "/tmp/project-a", HashMap::new());
