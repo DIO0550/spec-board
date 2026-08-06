@@ -14,6 +14,7 @@ import {
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
+import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { ProjectProvider, type ProjectState } from "..";
@@ -222,6 +223,21 @@ const currentProjections = (): TaskProjectionMap => {
 const currentMilestoneProjections = (): MilestoneProjectionMap => {
   const state = latest?.state;
   return state?.kind === "loaded" ? state.data.milestoneProjections : new Map();
+};
+
+const currentColumns = (): Column[] => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.columns : [];
+};
+
+const currentDoneColumn = (): string | undefined => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.doneColumn : undefined;
+};
+
+const currentData = (): unknown => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data : null;
 };
 
 beforeEach(() => {
@@ -1172,4 +1188,87 @@ test("世代違いの resync 応答は tasks も taskTree も取り込まない"
 
   expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/a.md"]);
   expect(currentTaskTree()).toBe(before);
+});
+
+test("resync は columns / doneColumn も取り直し、backend の config 変更を board へ反映する", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({
+      columns: [
+        { name: "Backlog", order: 0 },
+        { name: "Shipped", order: 1 },
+      ],
+      doneColumn: "Shipped",
+    }),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  const state = latest?.state;
+  expect(state?.kind).toBe("loaded");
+  expect(currentColumns().map((column) => column.name)).toEqual([
+    "Backlog",
+    "Shipped",
+  ]);
+  expect(currentDoneColumn()).toBe("Shipped");
+});
+
+test("columns の取り直しが失敗しても tasks の resync 結果は保持される", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [Task.fromPayload(makeTaskPayload("tasks/rescanned.md", "R"))],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+    ),
+  );
+  getColumnsMock.mockResolvedValueOnce(
+    Result.err(TauriError.from("内部状態のロックが破損しました")),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentTasks().map((task) => task.filePath)).toEqual([
+    "tasks/rescanned.md",
+  ]);
+  expect(currentColumns().map((column) => column.name)).toEqual(["Todo"]);
+});
+
+test("columns に変化が無い resync では ProjectData の参照が据え置かれる", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  const before = currentData();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [taskA],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+      initialTaskProjections,
+      initialMilestoneProjections,
+    ),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentData()).toBe(before);
+  expect(getTasksMock).toHaveBeenCalledTimes(1);
+});
+
+test("doneColumn だけが変わった場合も resync で反映される", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getColumnsMock.mockResolvedValueOnce(
+    Result.ok({ columns: [{ name: "Todo", order: 0 }], doneColumn: "Done" }),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentDoneColumn()).toBe("Done");
+  expect(currentColumns().map((column) => column.name)).toEqual(["Todo"]);
 });
