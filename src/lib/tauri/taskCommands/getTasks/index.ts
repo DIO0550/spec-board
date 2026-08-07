@@ -16,6 +16,8 @@ import type { GetTasksPayload, GetTasksRawPayload } from "../types";
  */
 const toGetTasksPayload = (payload: GetTasksRawPayload): GetTasksPayload => ({
   tasks: payload.tasks.map(Task.fromPayload),
+  columns: payload.columns,
+  doneColumn: payload.doneColumn ?? undefined,
   projections: TaskProjection.fromPayload(payload.projections),
   milestoneProjections: MilestoneProjection.fromPayload(
     payload.milestoneProjections,
