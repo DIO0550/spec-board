@@ -30,6 +30,42 @@ fn default_returns_spec_baseline_columns_and_done_column() {
     assert_eq!(c.done_column.as_deref(), Some("Done"));
 }
 
+#[test]
+fn columns_in_display_order_sorts_by_order_not_by_array_position() {
+    let config = Config {
+        version: 1,
+        columns: vec![
+            Column {
+                name: "Done".into(),
+                order: 2,
+                color: None,
+            },
+            Column {
+                name: "Todo".into(),
+                order: 0,
+                color: None,
+            },
+            Column {
+                name: "In Progress".into(),
+                order: 1,
+                color: None,
+            },
+        ],
+        card_order: CardOrder::default(),
+        done_column: None,
+    };
+
+    let ordered = config.columns_in_display_order();
+
+    assert_eq!(
+        vec!["Todo", "In Progress", "Done"],
+        ordered
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
 // ───────── Round-trip ─────────
 
 #[test]

@@ -29,6 +29,8 @@ use thiserror::Error;
 
 use super::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use super::task_index::{Task, TaskIndex};
+use crate::config::column_name::ColumnName;
+use crate::config::Column;
 use crate::project::load_warning::ProjectLoadWarning;
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError};
@@ -42,6 +44,14 @@ use crate::state::{AppState, AppStateError};
 #[serde(rename_all = "camelCase")]
 pub struct GetTasksPayload {
     pub tasks: Vec<Task>,
+    /// board 表示順のカラム定義。`get_columns` と同じ導出規則。
+    ///
+    /// `tasks` と**同一 snapshot の `Config`** から導出することが必須。別 IPC で
+    /// 取り直すと、間に走った commit をまたいで「tasks は旧 revision・columns は
+    /// 新 revision」が混在しうる（FE の read barrier は BE 側 commit を捉えない）。
+    pub columns: Vec<Column>,
+    /// 解決済みの完了カラム。project 未 open では `None`。
+    pub done_column: Option<ColumnName>,
     pub projections: TaskProjectionMap,
     /// milestone 名ごとの進捗と、`tasks` と同じ順序の所属 task path。
     pub milestone_projections: MilestoneProjectionMap,
@@ -104,6 +114,8 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
     let Some(snapshot) = state.session_snapshot()? else {
         return Ok(GetTasksPayload {
             tasks: Vec::new(),
+            columns: Vec::new(),
+            done_column: None,
             projections: TaskProjectionMap::new(),
             milestone_projections: MilestoneProjectionMap::new(),
             task_tree: TaskForest::new(),
@@ -112,9 +124,12 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
         });
     };
     let tasks = snapshot.tasks().values().cloned().collect();
-    let view = TaskIndex::project_board_view(tasks, snapshot.config());
+    let config = snapshot.config();
+    let view = TaskIndex::project_board_view(tasks, config);
     Ok(GetTasksPayload {
         tasks: view.tasks,
+        columns: config.columns_in_display_order(),
+        done_column: config.resolved_done_column().cloned(),
         projections: view.projections,
         milestone_projections: view.milestone_projections,
         task_tree: view.task_tree,

@@ -99,11 +99,8 @@ pub(crate) fn get_columns_impl(state: &AppState) -> Result<GetColumnsPayload, Ge
         .as_str()
         .to_string();
 
-    let mut columns = config.columns.clone();
-    columns.sort_by_key(|column| column.order);
-
     Ok(GetColumnsPayload {
-        columns,
+        columns: config.columns_in_display_order(),
         done_column,
     })
 }

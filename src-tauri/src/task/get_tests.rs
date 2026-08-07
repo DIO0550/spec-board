@@ -635,3 +635,63 @@ fn payload_serializes_the_tree_under_the_task_tree_key() {
     assert!(value["taskTree"].is_array());
     assert_eq!(value["taskTree"][0]["filePath"], "tasks/p.md");
 }
+
+#[test]
+fn payload_carries_columns_and_done_column_from_the_same_snapshot() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    fs::create_dir_all(dir.path().join(".spec-board")).expect("create .spec-board");
+    fs::write(
+        dir.path().join(".spec-board/config.json"),
+        r#"{"version":1,"columns":[{"name":"Doing","order":1},{"name":"Backlog","order":0}],"cardOrder":{},"doneColumn":"Doing"}"#,
+    )
+    .expect("write config.json");
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Backlog", None));
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert_eq!(
+        vec!["Backlog", "Doing"],
+        payload
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        "tasks の並びと同じ config から導出されるので resync でカラムも収束できる"
+    );
+    assert_eq!(
+        Some("Doing"),
+        payload.done_column.as_ref().map(|name| name.as_str())
+    );
+}
+
+#[test]
+fn payload_resolves_done_column_from_the_last_column_when_unset() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    fs::create_dir_all(dir.path().join(".spec-board")).expect("create .spec-board");
+    fs::write(
+        dir.path().join(".spec-board/config.json"),
+        r#"{"version":1,"columns":[{"name":"Backlog","order":0},{"name":"Shipped","order":1}],"cardOrder":{}}"#,
+    )
+    .expect("write config.json");
+    open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert_eq!(
+        Some("Shipped"),
+        payload.done_column.as_ref().map(|name| name.as_str())
+    );
+}
+
+#[test]
+fn payload_has_no_columns_before_a_project_is_open() {
+    let state = Arc::new(AppState::new());
+
+    let payload = get_tasks_impl(&state).expect("get_tasks should succeed");
+
+    assert!(payload.columns.is_empty());
+    assert!(payload.done_column.is_none());
+}
