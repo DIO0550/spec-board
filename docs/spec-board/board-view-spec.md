@@ -228,7 +228,7 @@ stateDiagram-v2
 
 - **成功時**: カラム間移動では `task-updated` を 1 段だけ確定 dispatch する。cardOrder は楽観反映した並びがそのまま永続化されているため、確定用の `card-order-updated` は流さない（IPC 待機中に入った外部更新を巻き戻さないため）。確定値は、対象 task が**楽観 dispatch した Task のまま（誰も触っていない）**であれば BE 応答の Task をそのまま採用し（書き込み後の md を再解析した warning 等がここで反映される）、IPC 待機中に外部更新が入っていた場合は move が所有する `status` だけを載せ替えて title / body / labels 等の外部更新を保護する。対象が state から消えていた場合は確定 dispatch を行わない。同一カラム並び替えでは追加 dispatch を行わない
 - **失敗時**: カラム間移動はスナップショットへフル rollback し、ライブリージョンで「移動を取り消しました」を通知する。同一カラム並び替えは移動先 cardOrder のみ 1 段 rollback する
-- **競合による拒否時**: 上記の rollback に加えて、最新状態の取り直しを要求する。取り直しは watcher の再同期経路と同じ手続き（in-flight の書き込みを追い越さない read barrier → `get_tasks` + `get_columns` → 反映）を通る。これにより、拒否の原因になった変更がまだ watcher で届いていない場合でも画面が現実に追いつき、同じ操作をもう一度行えば成功する。移動元 status の食い違いによる拒否も同じ扱いとする
+- **競合による拒否時**: 上記の rollback に加えて、最新状態の取り直しを要求する。取り直しは watcher の再同期経路と同じ手続き（in-flight の書き込みを追い越さない read barrier → `get_tasks` → 反映）を通る。これにより、拒否の原因になった変更がまだ watcher で届いていない場合でも画面が現実に追いつき、同じ操作をもう一度行えば成功する。移動元 status の食い違いによる拒否も同じ扱いとする
 - **projectVersion 不一致時**: 新 project state を破壊しないため rollback / 確定 dispatch をスキップし、`invalid-state` を返す
 
 BE 側は task md の書き込み成功後に `config.json` の書き込みが失敗した場合、task md を元の内容へ書き戻す best-effort rollback を行う。task md と config.json は別ファイルのため POSIX 上のトランザクション保証はなく、書き戻し自体が失敗した場合の再収束は watcher / 再スキャンに委ねる。
