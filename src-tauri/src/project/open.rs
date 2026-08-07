@@ -13,7 +13,16 @@
 //!   へは漏出させない
 //! - `open_project_impl`: 単体テストの境界となる effect 層本体
 //!   （`tauri::AppHandle` を受け取らず、watcher の prepare / paused stage を
-//!   `WatcherFactory` trait で注入することでテスト容易性を確保する）
+//!   `WatcherFactory` trait、背景再スキャンの予約を
+//!   `ReactivationResyncScheduler` trait で注入することでテスト容易性を確保する）
+//!
+//! # プロジェクトセッションキャッシュ
+//!
+//! 別プロジェクトへ切り替えるとき、退避された `ProjectSession` は
+//! `AppState` の background cache に保存される。同じ root を再び開くと disk 走査
+//! なしでその session data を再利用し、SessionId だけ新規採番して再活性化する。
+//! 即時応答の直後に `project::reactivation` の背景再スキャンを予約し、watcher
+//! 停止中の disk 変更を `watcher-resync-required` 経由で反映させる。
 //!
 //! # エラー文字列の契約
 //!
@@ -61,6 +70,7 @@
 //! 追加すること。現状はこれら 2 variant は `UNKNOWN` 扱いとなる前提で
 //! BE 側エラー Display を生成している。
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -74,21 +84,26 @@ use std::sync::Arc;
 use crate::config::column_name::ColumnName;
 use crate::config::{
     label_registry_store, load_or_default, milestone_registry_store,
-    write_guide_markdown_best_effort, Column, Config, LabelRegistryStore, LoadLabelsError,
-    LoadMilestonesError, MilestoneRegistryStore,
+    write_guide_markdown_best_effort, Column, Config, LabelRegistry, LabelRegistryStore,
+    LoadLabelsError, LoadMilestonesError, MilestoneRegistry, MilestoneRegistryStore,
 };
 use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarning};
+use crate::project::project_root::ProjectRoot;
+#[cfg(test)]
+use crate::project::reactivation::NoopReactivationScheduler;
+use crate::project::reactivation::{ReactivationResyncScheduler, TauriReactivationResyncScheduler};
 use crate::project::watcher_factory::{TauriWatcherFactory, WatcherFactory};
 use crate::project::OpenProjectIntent;
 use crate::project_session::{
-    PreparedProjectSession, ProjectSessionSnapshot, SessionIdExhausted, SessionIdentity,
+    PreparedProjectSession, ProjectSession, ProjectSessionSnapshot, SessionIdExhausted,
+    SessionIdentity,
 };
 use crate::state::active_project_resources::{
     LogWatcherStopDiagnosticReporter, WatcherStopDiagnosticReporter,
 };
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError, OpenSwapError};
-use crate::task::io::FsTaskIo;
+use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksError};
@@ -224,6 +239,7 @@ pub fn open_project(
     path: String,
 ) -> Result<OpenProjectPayload, String> {
     let intent = OpenProjectIntent::try_from(path).map_err(|e| e.to_string())?;
+    let resync = TauriReactivationResyncScheduler::new(app.clone(), Arc::clone(state.inner()));
     let watcher = TauriWatcherFactory::new(app);
     let stop_reporter = LogWatcherStopDiagnosticReporter;
     // ファクトリで既定の labels store（YAML 具象）を生成して注入する。
@@ -237,11 +253,14 @@ pub fn open_project(
         &milestones_store,
         &watcher,
         &stop_reporter,
+        &resync,
     )
     .map_err(|e| e.to_string())
 }
 
 /// 既存 test helper 向けの production reporter 付き effect wrapper。
+///
+/// 背景 resync の予約有無を検証しないテストのために、scheduler は no-op を注入する。
 #[cfg(test)]
 pub(crate) fn open_project_impl<W: WatcherFactory>(
     state: &Arc<AppState>,
@@ -257,6 +276,7 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
         milestones_store,
         watcher,
         &LogWatcherStopDiagnosticReporter,
+        &NoopReactivationScheduler,
     )
 }
 
@@ -271,6 +291,7 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     milestones_store: &dyn MilestoneRegistryStore,
     watcher: &W,
     stop_reporter: &dyn WatcherStopDiagnosticReporter,
+    resync: &dyn ReactivationResyncScheduler,
 ) -> Result<OpenProjectPayload, OpenProjectError> {
     let root = intent.as_path();
     let raw_path = intent.as_path_str();
@@ -280,6 +301,114 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     let target_gate = state.writer_gate(intent.root())?;
     let open_guard = state.lock_writer_gate(target_gate.as_ref())?;
 
+    // キャッシュヒット時は disk 走査・parse・GUIDE 書き出しを一切行わず、保持して
+    // いた session data を新しい identity で再活性化する。取り出したエントリは
+    // 以降の失敗（watcher prepare / stage / swap）でも再 stash しない。次回の open が
+    // コールド経路になるだけで、stale なデータを返す危険はないため。
+    //
+    // take は writer gate の内側で行う。gate が同一 root の open を直列化するので、
+    // take から swap までの間に同 root の並行 open が割り込めない。
+    let cached = take_cached_session(state, intent.root());
+    let from_cache = cached.is_some();
+    let prepared_session = match cached {
+        Some(cached_session) => cached_session.into_prepared(),
+        None => load_cold_prepared_session(intent, labels_store, milestones_store)?,
+    };
+
+    // backend/channel と paused worker の構築を resident state の変更前に完了する。
+    let prepared_watcher = watcher.prepare(root)?;
+    let session_id = state.reserve_session_id()?;
+    let candidate = prepared_session.into_session(session_id);
+    let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
+
+    if !from_cache {
+        write_guide_markdown_best_effort(root, candidate.config());
+    }
+
+    let swap = state
+        .swap_open(candidate, staged)
+        .map_err(map_open_swap_error)?;
+    drop(open_guard);
+
+    if let Some(displaced_session) = swap.displaced_session {
+        if let Err(error) = state.stash_background_session(displaced_session) {
+            log::warn!("failed to stash displaced project session: {error}");
+        }
+    }
+    if let Some(displaced) = swap.displaced_resources {
+        displaced.stop_displaced_best_effort(stop_reporter);
+    }
+    if from_cache {
+        resync.schedule(swap.snapshot.identity());
+    }
+
+    Ok(build_payload(swap.snapshot, swap.watcher_session))
+}
+
+/// background cache から再活性化できる session を取り出す。
+///
+/// cache は純粋な最適化なので、lock poison は open の失敗にせずコールドオープンへ
+/// 落とす。ここで `?` すると一度 poison した時点で以後の open が恒久的に失敗する。
+fn take_cached_session(state: &AppState, root: &ProjectRoot) -> Option<ProjectSession> {
+    match state.take_background_session(root) {
+        Ok(cached) => cached,
+        Err(error) => {
+            log::warn!("background session cache is unavailable; opening cold: {error}");
+            None
+        }
+    }
+}
+
+/// キャッシュに無い project を disk から読み、open 用の材料へ詰める。
+fn load_cold_prepared_session(
+    intent: &OpenProjectIntent,
+    labels_store: &dyn LabelRegistryStore,
+    milestones_store: &dyn MilestoneRegistryStore,
+) -> Result<PreparedProjectSession, OpenProjectError> {
+    let loaded = load_project_data(intent.as_path(), labels_store, milestones_store, &FsTaskIo)
+        .map_err(|error| map_load_project_data_error(error, intent.as_path_str()))?;
+
+    Ok(PreparedProjectSession::new_with_warnings(
+        intent.root().clone(),
+        loaded.config,
+        loaded.labels,
+        loaded.milestones,
+        loaded.tasks,
+        loaded.load_warnings,
+    ))
+}
+
+/// コールドオープンと reactivation resync が共有する disk 全量読込の結果。
+pub(crate) struct LoadedProjectData {
+    pub(crate) config: Config,
+    pub(crate) labels: LabelRegistry,
+    pub(crate) milestones: MilestoneRegistry,
+    pub(crate) tasks: HashMap<PathBuf, Task>,
+    pub(crate) load_warnings: Vec<ProjectLoadWarning>,
+}
+
+/// 全量読込が中断した理由。config は fallback するため variant を持たない。
+#[derive(Debug, Error)]
+pub(crate) enum LoadProjectDataError {
+    #[error(transparent)]
+    Labels(#[from] LoadLabelsError),
+    #[error(transparent)]
+    Milestones(#[from] LoadMilestonesError),
+    #[error(transparent)]
+    Tasks(#[from] RebuildTasksError),
+}
+
+/// project root 配下の config / labels / milestones / tasks を 1 セットで読み込む。
+///
+/// 「reactivation resync 後の状態 = コールドオープンした場合の状態」という収束
+/// 不変条件を守るため、読み込み規則は両経路でこの関数だけに置く。片方へ書き写すと
+/// 二重管理になり、fallback や warning の扱いがすぐ食い違う。
+pub(crate) fn load_project_data(
+    root: &Path,
+    labels_store: &dyn LabelRegistryStore,
+    milestones_store: &dyn MilestoneRegistryStore,
+    io: &dyn TaskIo,
+) -> Result<LoadedProjectData, LoadProjectDataError> {
     let (config, mut load_warnings) = match load_or_default(root) {
         Ok(config) => (config, Vec::new()),
         Err(error) => (
@@ -287,45 +416,34 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
             vec![ProjectLoadWarning::config_fallback(error.to_string())],
         ),
     };
-    let labels = labels_store.load().map_err(map_load_labels_error)?;
-    let milestones = milestones_store.load().map_err(map_load_milestones_error)?;
+    let labels = labels_store.load()?;
+    let milestones = milestones_store.load()?;
     let default_status = default_status_for(&config);
-    let rebuild = rebuild_tasks_from_disk_with_report(root, &default_status, &FsTaskIo)
-        .map_err(|error| map_rebuild_error(error, raw_path))?;
-    load_warnings.extend(rebuild.warnings);
+    let report = rebuild_tasks_from_disk_with_report(root, &default_status, io)?;
+    load_warnings.extend(report.warnings);
     let load_warnings = deduplicate_and_sort(load_warnings);
-
-    // backend/channel と paused worker の構築を resident state の変更前に完了する。
-    let prepared_watcher = watcher.prepare(root)?;
-    let task_cache = rebuild
+    let tasks = report
         .tasks
         .into_iter()
         .map(|task| (PathBuf::from(task.file_path.as_str()), task))
         .collect();
-    let prepared_session = PreparedProjectSession::new_with_warnings(
-        intent.root().clone(),
-        config.clone(),
+
+    Ok(LoadedProjectData {
+        config,
         labels,
         milestones,
-        task_cache,
+        tasks,
         load_warnings,
-    );
-    let session_id = state.reserve_session_id()?;
-    let candidate = prepared_session.into_session(session_id);
-    let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
+    })
+}
 
-    write_guide_markdown_best_effort(root, &config);
-
-    let swap = state
-        .swap_open(candidate, staged)
-        .map_err(map_open_swap_error)?;
-    drop(open_guard);
-
-    if let Some(displaced) = swap.displaced_resources {
-        displaced.stop_displaced_best_effort(stop_reporter);
+/// 共有ローダの typed error を open command のエラー契約へ詰め直す。
+fn map_load_project_data_error(error: LoadProjectDataError, raw_path: &str) -> OpenProjectError {
+    match error {
+        LoadProjectDataError::Labels(source) => map_load_labels_error(source),
+        LoadProjectDataError::Milestones(source) => map_load_milestones_error(source),
+        LoadProjectDataError::Tasks(source) => map_rebuild_error(source, raw_path),
     }
-
-    Ok(build_payload(swap.snapshot, swap.watcher_session))
 }
 
 /// resident domain/resources の lock 健全性を probe する。

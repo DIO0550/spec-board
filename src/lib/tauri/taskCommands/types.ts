@@ -17,6 +17,7 @@ import type {
   WatcherSession,
   WatcherSessionPayloadInput,
 } from "@/domains/watcher-session";
+import type { Column } from "@/types/column";
 import type { Task, TaskPayload } from "@/types/task";
 
 /**
@@ -90,6 +91,15 @@ export type GetTasksPayload = {
    * board は配列順をそのまま表示順に使うため、watcher の再取得で並びが崩れない。
    */
   tasks: Task[];
+  /**
+   * board 表示順のカラム定義。`tasks` と同一 snapshot の config 由来。
+   *
+   * 別コマンドで取り直すと、間に走った backend の commit をまたいで
+   * 「tasks は旧 revision・columns は新 revision」が混在しうる。
+   */
+  columns: Column[];
+  /** 解決済みの完了カラム。プロジェクト未 open では undefined */
+  doneColumn?: string;
   /** filePath -> projection */
   projections: TaskProjectionMap;
   /** milestone 名 -> live progress / board-order task paths */
@@ -106,6 +116,10 @@ export type GetTasksPayload = {
 export type GetTasksRawPayload = {
   /** プロジェクト内の flat task payload 一覧 */
   tasks: TaskPayload[];
+  /** board 表示順のカラム定義 */
+  columns: Column[];
+  /** 解決済みの完了カラム。プロジェクト未 open では null */
+  doneColumn: string | null;
   /** filePath をキーにした projection の raw payload */
   projections: TaskProjectionsPayload;
   /** milestone 名をキーにした projection の raw payload */

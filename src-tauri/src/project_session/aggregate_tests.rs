@@ -4,8 +4,10 @@ use std::path::PathBuf;
 
 use crate::config::column_name::ColumnName;
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
+use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
 use crate::task::parse::{task_from_markdown, TaskParseContext};
+use crate::task::task_index::Task;
 
 use super::{
     PreparedProjectSession, ProjectSessionCommitError, ProjectSessionStateError, ProjectState,
@@ -198,6 +200,52 @@ fn same_session_check_allows_revision_progress_but_rejects_reopen() {
         .expect_err("new SessionId must reject the stale target");
     assert_eq!(target, conflict.expected);
     assert_eq!(Some(reopened.identity()), conflict.actual);
+}
+
+#[test]
+fn into_prepared_keeps_domain_data_and_restarts_revision_from_initial() {
+    let mut session = PreparedProjectSession::new_with_warnings(
+        ProjectRoot::try_from_str("/tmp/spec-board/project-a").expect("valid root"),
+        Config::default(),
+        LabelRegistry::default(),
+        MilestoneRegistry::default(),
+        HashMap::from([(PathBuf::from("tasks/aggregate.md"), sample_task())]),
+        vec![ProjectLoadWarning::config_fallback(
+            "broken config".to_string(),
+        )],
+    )
+    .into_session(SessionId::from_raw(101));
+    let initial = session.identity();
+    session
+        .commit(&initial, |_| ())
+        .expect("commit advances revision away from INITIAL");
+    let before = session.snapshot();
+    assert_eq!(before.config(), session.config());
+
+    let after = session
+        .into_prepared()
+        .into_session(SessionId::from_raw(202))
+        .snapshot();
+
+    assert_eq!(before.project_root(), after.project_root());
+    assert_eq!(before.config(), after.config());
+    assert_eq!(before.labels(), after.labels());
+    assert_eq!(before.milestones(), after.milestones());
+    assert_eq!(before.tasks(), after.tasks());
+    assert_eq!(before.load_warnings(), after.load_warnings());
+    assert_eq!(202, after.version().session_id.as_u64());
+    assert_eq!(SessionRevision::INITIAL, after.version().revision);
+}
+
+fn sample_task() -> Task {
+    task_from_markdown(
+        b"---\ntitle: Aggregate task\nstatus: Todo\n---\nbody\n",
+        &TaskParseContext {
+            file_path: PathBuf::from("tasks/aggregate.md"),
+            default_status: ColumnName::from_lenient("Todo"),
+        },
+    )
+    .expect("valid task")
 }
 
 fn assert_same_snapshot(

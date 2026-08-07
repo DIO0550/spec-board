@@ -14,6 +14,7 @@ import {
   openProject as openProjectInvoke,
 } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
+import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { ProjectProvider, type ProjectState } from "..";
@@ -118,6 +119,9 @@ const openPayload: OpenProjectPayload = {
   session: WATCHER_SESSION_FIXTURE,
 };
 
+/** open 応答と同じカラム構成。resync でカラムが変わらない既定値。 */
+const OPEN_COLUMNS: Column[] = [{ name: "Todo", order: 0 }];
+
 /** get_tasks の成功応答を作る。session は open と同一世代。 */
 const getTasksOk = (
   tasks: Task[],
@@ -126,9 +130,13 @@ const getTasksOk = (
   projections: TaskProjectionMap = new Map(),
   milestoneProjections: MilestoneProjectionMap = new Map(),
   taskTree: TaskForest = TaskForest.empty,
+  columns: Column[] = OPEN_COLUMNS,
+  doneColumn = "Todo",
 ) =>
   Result.ok({
     tasks,
+    columns,
+    doneColumn,
     projections,
     milestoneProjections,
     taskTree,
@@ -222,6 +230,21 @@ const currentProjections = (): TaskProjectionMap => {
 const currentMilestoneProjections = (): MilestoneProjectionMap => {
   const state = latest?.state;
   return state?.kind === "loaded" ? state.data.milestoneProjections : new Map();
+};
+
+const currentColumns = (): Column[] => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.columns : [];
+};
+
+const currentDoneColumn = (): string | undefined => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data.doneColumn : undefined;
+};
+
+const currentData = (): unknown => {
+  const state = latest?.state;
+  return state?.kind === "loaded" ? state.data : null;
 };
 
 beforeEach(() => {
@@ -513,6 +536,8 @@ test("応答の session が別世代なら dispatch されない", async () => {
   getTasksMock.mockResolvedValueOnce(
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/other.md", "O"))],
+      columns: OPEN_COLUMNS,
+      doneColumn: "Todo",
       projections: taskProjectionMap(1, 1),
       milestoneProjections: milestoneProjectionMap(1, 1, ["tasks/other.md"]),
       taskTree: [],
@@ -658,6 +683,8 @@ test("旧 project の resync が未解決でも、新 session の要求は塞が
   getTasksMock.mockResolvedValueOnce(
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
+      columns: OPEN_COLUMNS,
+      doneColumn: "Todo",
       projections: qResyncProjections,
       milestoneProjections: qResyncMilestoneProjections,
       taskTree: [],
@@ -853,6 +880,8 @@ test("旧 project の応答が新 session の resync より先に着地しても
     resolveNew(
       Result.ok({
         tasks: [taskA],
+        columns: OPEN_COLUMNS,
+        doneColumn: "Todo",
         projections: new Map(),
         milestoneProjections: new Map(),
         taskTree: [],
@@ -1156,6 +1185,8 @@ test("世代違いの resync 応答は tasks も taskTree も取り込まない"
   getTasksMock.mockResolvedValueOnce(
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/other.md", "O"))],
+      columns: OPEN_COLUMNS,
+      doneColumn: "Todo",
       projections: new Map(),
       milestoneProjections: new Map(),
       taskTree: rescannedTree,
@@ -1172,4 +1203,102 @@ test("世代違いの resync 応答は tasks も taskTree も取り込まない"
 
   expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/a.md"]);
   expect(currentTaskTree()).toBe(before);
+});
+
+test("resync は tasks と同じ応答の columns / doneColumn を board へ反映する", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [taskA],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+      initialTaskProjections,
+      initialMilestoneProjections,
+      TaskForest.empty,
+      [
+        { name: "Backlog", order: 0 },
+        { name: "Shipped", order: 1 },
+      ],
+      "Shipped",
+    ),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentColumns().map((column) => column.name)).toEqual([
+    "Backlog",
+    "Shipped",
+  ]);
+  expect(currentDoneColumn()).toBe("Shipped");
+});
+
+test("columns は tasks と 1 回の get_tasks でまとめて取得する", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getColumnsMock.mockClear();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [Task.fromPayload(makeTaskPayload("tasks/rescanned.md", "R"))],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+    ),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentTasks().map((task) => task.filePath)).toEqual([
+    "tasks/rescanned.md",
+  ]);
+  expect(getTasksMock).toHaveBeenCalledTimes(1);
+  expect(
+    getColumnsMock,
+    "別 IPC で取り直すと tasks と columns の revision が混在しうる",
+  ).not.toHaveBeenCalled();
+});
+
+test("columns に変化が無い resync では ProjectData の参照が据え置かれる", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  const before = currentData();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [taskA],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+      initialTaskProjections,
+      initialMilestoneProjections,
+    ),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentData()).toBe(before);
+  expect(getTasksMock).toHaveBeenCalledTimes(1);
+});
+
+test("doneColumn だけが変わった場合も resync で反映される", async () => {
+  const handlers = installCaptureListen();
+  await mountLoaded();
+  getTasksMock.mockResolvedValueOnce(
+    getTasksOk(
+      [taskA],
+      WATCHER_SESSION_FIXTURE.eventSeq + 1,
+      WATCHER_SESSION_FIXTURE.revision + 1,
+      initialTaskProjections,
+      initialMilestoneProjections,
+      TaskForest.empty,
+      OPEN_COLUMNS,
+      "Done",
+    ),
+  );
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+  await flush();
+
+  expect(currentDoneColumn()).toBe("Done");
+  expect(currentColumns().map((column) => column.name)).toEqual(["Todo"]);
 });

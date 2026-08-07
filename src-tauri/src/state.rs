@@ -12,6 +12,10 @@
 //! domain lock → resources lock の順序を全 commit/swap で固定する。writer gate は
 //! domain/resource lock の外側で取得し、disk I/O 中に state lock を保持しない。
 //!
+//! `background_sessions` lock は leaf lock として扱う。**保持している間は他の lock を
+//! 一切取得しない**（writer gate の内側で取得することは許容する）。この規約により
+//! 既存の取得順序契約へ参加させずに済み、lock 循環が構造的に発生しない。
+//!
 //! # フィールドカプセル化
 //!
 //! `AppState` の `Mutex` フィールドはすべて private にしてある。
@@ -21,6 +25,7 @@
 //! - resources は active session version を検証してから session-scoped registry を返す。
 //! - watcher の停止・join は resources swap 後かつ AppState lock 外で行う。
 
+use std::collections::HashMap;
 #[cfg(test)]
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -61,6 +66,9 @@ pub type BoxedWatcherHandle = Box<dyn WatcherHandle + Send + 'static>;
 /// `AppState` のロック関連エラー。
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AppStateError {
+    /// background session cache の `Mutex` が poison 状態にある。
+    #[error("background session cache lock poisoned")]
+    BackgroundSessionsLockPoisoned,
     /// project domain の `Mutex` が poison 状態にある。
     #[error("project domain lock poisoned")]
     DomainLockPoisoned,
@@ -189,6 +197,8 @@ pub(crate) struct OpenSwap {
     pub(crate) watcher_session: WatcherSession,
     /// lock外で停止する旧resources。
     pub(crate) displaced_resources: Option<ActiveProjectResources>,
+    /// lock外でbackground cacheへstashする旧session。
+    pub(crate) displaced_session: Option<ProjectSession>,
 }
 
 /// アプリ全体で共有するグローバル状態。
@@ -200,6 +210,9 @@ pub(crate) struct OpenSwap {
 pub struct AppState {
     domain: Mutex<ProjectState>,
     resources: Mutex<Option<ActiveProjectResources>>,
+    /// フォアグラウンドから退避した project session。プロセス終了まで保持する
+    /// （上限なし。LRU / close_project は本 issue のスコープ外）。
+    background_sessions: Mutex<HashMap<ProjectRoot, ProjectSession>>,
     writer_gates: ProjectWriterGates,
     /// 次に予約するprocess内一意なsession ID。
     next_session_id: AtomicU64,
@@ -222,6 +235,7 @@ impl AppState {
         Self {
             domain: Mutex::new(ProjectState::Idle),
             resources: Mutex::new(None),
+            background_sessions: Mutex::new(HashMap::new()),
             writer_gates: ProjectWriterGates::new(),
             next_session_id: AtomicU64::new(1),
             event_seq: AtomicU64::new(0),
@@ -468,7 +482,18 @@ impl AppState {
         let watcher_session = self.watcher_session_for_snapshot(&snapshot);
         let (ready, activation) = staged.into_ready_parts();
 
-        *domain = ProjectState::Loaded(candidate);
+        let previous = std::mem::replace(&mut *domain, ProjectState::Loaded(candidate));
+        // 同一rootのreopenで押し出されたsessionは退避対象にしない。cacheへ残すと、
+        // 次の同一root openが「コールドで読み直す」契約を破って過去のデータを返す。
+        let displaced_session = match previous {
+            ProjectState::Idle => None,
+            ProjectState::Loaded(session)
+                if session.identity().project_root() == candidate_identity.project_root() =>
+            {
+                None
+            }
+            ProjectState::Loaded(session) => Some(session),
+        };
         let displaced_resources = resources.replace(ready);
         activation.activate();
 
@@ -476,7 +501,63 @@ impl AppState {
             snapshot,
             watcher_session,
             displaced_resources,
+            displaced_session,
         })
+    }
+
+    /// exact rootに一致するbackground sessionをcacheから取り出す。
+    ///
+    /// エントリはcacheから除去される。呼び出し側が再活性化に失敗した場合も
+    /// 再stashはしない（次回openがコールド経路になるだけで、staleは返らない）。
+    ///
+    /// resident sessionと同じrootのエントリが、そのresidentより古い場合は破棄して
+    /// `None`を返す。stashはdisplaced rootのgateを持たないため、別rootのopenが退避を
+    /// 完了する前に同じrootがコールドで開き直されると、residentより古いエントリが
+    /// 後から入り込みうる。これをそのまま返すと2世代前のデータをstaleに配ってしまう。
+    pub(crate) fn take_background_session(
+        &self,
+        root: &ProjectRoot,
+    ) -> Result<Option<ProjectSession>, AppStateError> {
+        // resident の読み取りと cache lock は入れ子にしない（leaf lock を保つ）。
+        let resident = {
+            let domain = lock_domain(&self.domain)?;
+            domain.active_identity()
+        };
+        let mut cache = lock_background_sessions(&self.background_sessions)?;
+        let Some(cached) = cache.remove(root) else {
+            return Ok(None);
+        };
+        if is_superseded_by_resident(resident.as_ref(), &cached) {
+            return Ok(None);
+        }
+        Ok(Some(cached))
+    }
+
+    /// swapで退避された旧sessionをbackground cacheへ保存する。
+    ///
+    /// 同一rootのエントリが既にある場合、SessionIdが大きい（= 後からopenされた）
+    /// 方を残す。SessionIdはprocess内で単調増加するため、並行openによってstash
+    /// 順序が逆転しても常に最新のsessionが勝つ。
+    pub(crate) fn stash_background_session(
+        &self,
+        session: ProjectSession,
+    ) -> Result<(), AppStateError> {
+        use std::collections::hash_map::Entry;
+
+        let root = session.identity().project_root().clone();
+        let mut cache = lock_background_sessions(&self.background_sessions)?;
+        match cache.entry(root) {
+            Entry::Vacant(entry) => {
+                entry.insert(session);
+            }
+            Entry::Occupied(mut entry) => {
+                let existing_id = entry.get().version().session_id;
+                if existing_id < session.version().session_id {
+                    entry.insert(session);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// emit 直前に 1 つ消費して新しい連番を返す。
@@ -485,10 +566,21 @@ impl AppState {
     }
 
     /// openのfallible load/stage前にdomain→resources lockを副作用なく検証する。
+    ///
+    /// background sessions lockはここではprobeしない。cacheは純粋な最適化であり、
+    /// 使えなくてもコールドオープンで機能を継続できる。probeに含めると一度poisonした
+    /// 時点で以後のopenが恒久的に失敗し、プロセス再起動でしか復旧できなくなる。
     pub(crate) fn check_open_locks(&self) -> Result<(), AppStateError> {
         let _domain = lock_domain(&self.domain)?;
         let _resources = lock_resources(&self.resources)?;
         Ok(())
+    }
+
+    /// テストからbackground session cacheのlockをpoisonさせる。
+    #[cfg(test)]
+    pub(crate) fn poison_background_sessions_for_test(&self) {
+        let _guard = self.background_sessions.lock();
+        panic!("poison background session cache");
     }
 
     /// unit test用にcoherentなdomain/resources一式をinstallする。
@@ -716,6 +808,25 @@ impl AppState {
 /// project domain lock専用helper。poisonをtyped errorへ変換する。
 fn lock_domain(m: &Mutex<ProjectState>) -> Result<MutexGuard<'_, ProjectState>, AppStateError> {
     m.lock().map_err(|_| AppStateError::DomainLockPoisoned)
+}
+
+/// cacheエントリが同じrootのresident sessionに追い越されているかを判定する。
+fn is_superseded_by_resident(resident: Option<&SessionIdentity>, cached: &ProjectSession) -> bool {
+    let Some(resident) = resident else {
+        return false;
+    };
+    let cached_identity = cached.identity();
+    resident.project_root() == cached_identity.project_root()
+        && resident.version().session_id >= cached_identity.version().session_id
+}
+
+/// background sessions lock専用helper。poisonをtyped errorへ変換する。
+fn lock_background_sessions(
+    cache: &Mutex<HashMap<ProjectRoot, ProjectSession>>,
+) -> Result<MutexGuard<'_, HashMap<ProjectRoot, ProjectSession>>, AppStateError> {
+    cache
+        .lock()
+        .map_err(|_| AppStateError::BackgroundSessionsLockPoisoned)
 }
 
 /// active resources lock専用helper。poisonをtyped errorへ変換する。

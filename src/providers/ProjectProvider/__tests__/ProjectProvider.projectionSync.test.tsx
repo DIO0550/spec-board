@@ -139,6 +139,12 @@ const milestoneMap = (
 ): MilestoneProjectionMap =>
   new Map([["M1", milestoneProjection(done, total, taskFilePaths)]]);
 
+/** open 応答と get_tasks 応答が共有するカラム定義。 */
+const OPEN_COLUMNS = [
+  { name: "Todo", order: 0 },
+  { name: "Done", order: 1 },
+];
+
 const getTasksOk = (
   projections: ReadonlyMap<string, TaskProjection>,
   milestoneProjections: MilestoneProjectionMap,
@@ -146,6 +152,8 @@ const getTasksOk = (
 ) =>
   Result.ok({
     tasks: [],
+    columns: OPEN_COLUMNS,
+    doneColumn: "Done",
     projections,
     milestoneProjections,
     taskTree,
@@ -353,6 +361,8 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
   getTasksMock.mockResolvedValue(
     Result.ok({
       tasks: [Task.fromPayload(makeTaskPayload("tasks/zzz.md", "Z"))],
+      columns: OPEN_COLUMNS,
+      doneColumn: "Done",
       projections: new Map(),
       milestoneProjections: new Map(),
       taskTree: [],

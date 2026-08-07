@@ -163,6 +163,18 @@ impl Config {
         self.columns.iter().max_by_key(|c| c.order).map(|c| &c.name)
     }
 
+    /// board 表示順（`columns[].order` 昇順）に並べた columns を返す。
+    ///
+    /// JSON の配列順は表示順の真値ではないため、必ず `order` で並べ替える。
+    /// `get_columns` と `get_tasks` の `columns` はこの 1 箇所から導出する。
+    /// 片側にコピーすると、resync で FE が受け取るカラムが取得元によって食い違う。
+    #[must_use]
+    pub fn columns_in_display_order(&self) -> Vec<Column> {
+        let mut columns = self.columns.clone();
+        columns.sort_by_key(|column| column.order);
+        columns
+    }
+
     /// 指定された名前のカラムが [`Self::columns`] に存在するかを返す。
     ///
     /// 比較は完全一致（case-sensitive）。`cardOrder` の更新前に

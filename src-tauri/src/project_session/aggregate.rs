@@ -281,6 +281,27 @@ impl ProjectSession {
         self.revision = revision;
     }
 
+    /// GUIDE.md 書き出しなど、commit前のcandidateから設定だけを読む。
+    pub(crate) fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// キャッシュ済みsessionのdomain dataを、identityを持たないopen材料へ戻す。
+    ///
+    /// 再活性化ではSessionIdを新規採番し直すため、cache hitでも既存の
+    /// `into_session`経路へ合流させる。この往復でrevisionは`INITIAL`へ戻る。
+    #[must_use]
+    pub(crate) fn into_prepared(self) -> PreparedProjectSession {
+        PreparedProjectSession::new_with_warnings(
+            self.root,
+            self.config,
+            self.labels,
+            self.milestones,
+            self.tasks,
+            self.load_warnings,
+        )
+    }
+
     /// 1回のin-memory mutationを適用し、revisionを進める。
     pub(crate) fn commit<T>(
         &mut self,

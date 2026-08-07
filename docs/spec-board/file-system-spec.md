@@ -121,6 +121,16 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 >
 > ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側 `TauriError.PATTERNS` には watcher 初期化失敗の個別分類がないため `UNKNOWN` 分類になる。
 
+#### プロジェクトセッションキャッシュ（再オープンの即時応答）
+
+- 一度開いたプロジェクトの `ProjectSession` は、別プロジェクトへの切替時にバックグラウンドキャッシュへ退避され、プロセス終了まで保持される（上限なし）。
+- キャッシュに一致する root（exact raw `ProjectRoot`）で `open_project` を呼ぶと、ディスク走査・パースを行わずキャッシュから payload を構築して即時応答する。このとき `session.generation` は**新規採番**され、`session.revision` は 0 から再開する。`GUIDE.md` の書き出しもコールドオープン時のみ行う。
+- 即時応答の直後、バックグラウンドで tasks / config / labels / milestones を全量再読込し、キャッシュとの差分があれば 1 commit で置換のうえ `watcher-resync-required`（reason: `rescan`）を emit する。フロントエンドは既存の resync 経路で最新化する。差分がなければ何も送らない。
+- resync で使う `get_tasks` の応答には `columns` と `doneColumn` を同梱する。`tasks` の並びは backend の config に従うため、カラム定義を取り直さないと「並びは新しいがカラムは古い」board で固定される。`get_columns` を別途呼ぶ形にはしない。2 つの読み取りの間に backend の commit が走ると `tasks` と `columns` の revision が混在するため、**同一 snapshot から導出した 1 応答**で配る。
+- バックグラウンド再読込の規則はコールドオープンと同一（config は fallback + warning、labels / milestones / tasks の失敗は中断）。したがって「再スキャン後の状態 = そのプロジェクトをコールドオープンした場合の状態」に収束する。読み込みに失敗した場合はキャッシュを変更せず、`watcher-diagnostic`（code: `rescanFailed`）を通知する。
+- 同一パスの再オープン（切替を挟まない reopen）はキャッシュを使わず、従来どおりコールドオープンする。
+- ディレクトリ検証（不存在 / ディレクトリでない / 権限なし）はキャッシュ参照より前に実行するため、キャッシュがあってもエラー契約は従来と変わらない。再活性化が watcher 初期化などで失敗した場合、消費済みのキャッシュエントリは復元しない（次回 open がコールドになるだけで、stale な状態は返らない）。
+
 ---
 
 ### ProjectLoadWarning と `loadWarnings`
@@ -145,13 +155,20 @@ watcher の full rescan が成功した場合は、その rescan report の warn
 
 **引数**: なし
 
-**戻り値**: `{ tasks, projections, milestoneProjections, loadWarnings, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）、`projections` は filePath をキーにした task 集計、`milestoneProjections` は milestone 名をキーにした集計、`session` は watcher イベント検証の baseline。
+**戻り値**: `{ tasks, columns, doneColumn, projections, milestoneProjections, loadWarnings, session }`。`tasks` は `open_project` と同じ Task 配列（`children` と `reverseLinks` の逆引き情報を含む）、`columns` / `doneColumn` は `get_columns` と同じ導出のカラム定義と完了カラム、`projections` は filePath をキーにした task 集計、`milestoneProjections` は milestone 名をキーにした集計、`session` は watcher イベント検証の baseline。
+
+> `columns` / `doneColumn` を同梱するのは、フロントエンドが resync でカラム定義も取り直せるようにするため。`tasks` の並びは backend の config に従うので、カラムだけ据え置くと board が「並びは新しいがカラムは古い」状態で固定される。`get_columns` を別に呼ぶ形にすると、2 つの読み取りの間に走った commit をまたいで revision が混在するため、**同じ snapshot の `Config` から導出**して 1 応答で返す。プロジェクト未 open のときは `columns` が空配列、`doneColumn` は `null`。
 
 > `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → `id` 昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ `id` 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。`milestoneProjections[*].taskFilePaths` も、この `tasks` を milestone ごとに絞り込んだ順序と一致する。`config` が `None` の場合のみ `TaskIndex::sorted_by_id` にフォールバックし、`tasks` / `taskFilePaths` ともに `id` 昇順とする。この場合は完了カラムも解決できないため `done` は 0。
 
 ```json
 {
   "tasks": [ /* ... */ ],
+  "columns": [
+    { "name": "Todo", "order": 0 },
+    { "name": "Done", "order": 1 }
+  ],
+  "doneColumn": "Done",
   "projections": {
     "tasks/parent.md": {
       "subIssueProgress": { "done": 1, "total": 3 },
@@ -242,6 +259,17 @@ disk write 後に revision conflict が起きた場合は current session を上
 open は target root の同じ gate を使う。swap 後は gate と state locks を解放してから旧 watcher を stop/join するため、停止が遅くても別 root の open/writer を block しない。旧 watcher の stop が panic しても新 session は rollback せず、旧 `SessionVersion` と panic message を diagnostic に残す。stale adapter は resource access、state mutation、eventSeq 採番、emit の前に identity guard で破棄する。
 
 reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` / `get_milestones` / `export_labels` の各 command で `session_snapshot()` を 1 回だけ読み、異なる revision の field を混在させない。
+
+フォアグラウンドの session とは別に、`AppState` は退避済み session を `ProjectRoot` をキーにしたバックグラウンドキャッシュ（`HashMap<ProjectRoot, ProjectSession>`）で保持する。このキャッシュは leaf lock として扱い、domain lock / resources lock と同時には取得しない（open フロー内で単独取得のみ）。したがって既存の lock 取得順序契約（domain → resources、writer gate は外側）は変わらない。
+
+- キャッシュへの退避は swap で押し出された session に対して行い、writer gate と全 state lock を解放した後に実行する。
+- 同一 root のエントリが既にある場合は `SessionId` が大きい方を残す。`SessionId` はプロセス内で単調増加するため、並行 open で退避順序が逆転しても常に最新の session が勝つ。
+- キャッシュから取り出した session はそのままでは resident state に戻さず、`SessionId` を新規採番して `SessionRevision` を初期値から再開する。データの再利用と identity の一意性を分離することで、既存の「open のたびに generation が前進する」契約を維持する。
+- 同一 root の reopen で押し出された session はキャッシュへ退避しない。退避してしまうと、次の同一 root open が「常にコールドで読み直す」契約を破って過去のデータを返す。
+- 取り出し時に、resident session と同じ root で resident より古いエントリは破棄する。退避は displaced 側の writer gate を持たないため、別 root の open が退避を終える前に同じ root がコールドで開き直されると、resident より古いエントリが後から入りうる。
+- キャッシュ上限は設けない（プロセス終了で破棄）。1 プロジェクトあたり config + labels + milestones + 全 task（`body` に Markdown 全文を含む）を保持するため、多数のプロジェクトを開くとメモリは単調増加する。明示的な close によるキャッシュ破棄は現時点では提供しない。
+- キャッシュ lock が poison した場合は open を失敗させず、コールドオープンへ縮退する（キャッシュは純粋な最適化であり、恒久的に open を失敗させる理由にならない）。
+- 背景再スキャンは対象 root の writer gate を保持したまま全量読込を行う。したがって再オープン直後は、同じプロジェクトへの書き込みコマンドと同一 root の再オープンが、スキャン完了までシリアライズされる（即時応答そのものはスキャン開始前に返る）。
 
 ---
 
@@ -431,6 +459,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | 監視ライブラリ | `notify` crate（Rust） |
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
+| 稼働数 | 常にフォアグラウンドのプロジェクト 1 つ分のみ。プロジェクト切替のたびに旧 watcher を stop / join し、OS ハンドルとスレッドを解放する。キャッシュから再活性化した場合も watcher と `WriteIgnoreRegistry` は新規作成する（write-ignore は session-scoped の意味を保つため空で始まる） |
 | 監視イベント | Create / Modify / Remove / Rename / Rescan / Error。Create〜Rename は本体クレート側 adapter で `tasks_cache` を差分更新後、Tauri IPC で FE に配信される。Remove は cache 登録済みパスのみ `task-deleted` を発火し、`WriteIgnoreRegistry` に登録された自前 delete はスキップする。Rescan は full rescan を行って `tasks_cache` を全置換し、Error は structured diagnostics として FE へ通知する |
 | デバウンス | 後述の「デバウンス（スライディングウィンドウ集約）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
@@ -457,7 +486,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | `task-created` | `{ task: Task }` | 新しい md ファイルが作成された | true |
 | `task-updated` | `{ task: Task }` | 既存の md ファイルが更新された | true |
 | `task-deleted` | `{ filePath: string }` | md ファイルが削除された | true |
-| `watcher-resync-required` | `{ reason: "rescan" }` | `FsEvent::Rescan` を受けて full rescan を完了した。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
+| `watcher-resync-required` | `{ reason: "rescan" }` | `FsEvent::Rescan` を受けて full rescan を完了した、またはキャッシュヒット再オープン後の背景再スキャンが差分を commit した。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
 | `watcher-diagnostic` | `{ code, message, paths }` | watcher backend の障害 / full rescan の失敗 | false |
 
 受信側は `projectKey` / `generation` の不一致を破棄し、`eventSeq` の欠番を検知したら
@@ -478,6 +507,11 @@ open 応答の snapshot にも購読にも含まれない。この欠落は**次
 イベントが発生しない場合はその変更が反映されないままになる。窓自体を無くすには
 購読の常設化または BE/FE のハンドシェイクが必要で、watcher reconciliation
 （Issue #460）で扱う。
+
+キャッシュヒット再オープン後の背景再スキャンが emit する `watcher-resync-required`
+にも同じ窓がある。応答直後に差分が確定した場合、フロントエンドが購読を確立する前に
+イベントが落ちることがある。これも上記と同様、**次のイベントの `eventSeq` 欠番検知で
+回収される**既知の制限として扱い、wire 契約の追加フィールドは設けない。
 
 `open_project` / `get_tasks` の応答には、その snapshot と**同一 domain snapshot**で
 確定した `session`（`{ projectKey, generation, revision, eventSeq }`）が含まれる。
@@ -765,6 +799,7 @@ pub enum WatcherError {
 - ファイル名に使用できない文字がタイトルに含まれる場合、自動的に除去して生成
 - 大量ファイルの同時変更時（100ファイル以上）はバッチ処理で順次反映
 - writer gate の key は loaded session が保持する **exact raw `ProjectRoot`** であり、canonicalize や symlink 解決は行わない。同じ実ディレクトリを異なる文字列表現・symlink alias で同時に開いた場合は別 gate として扱われ、同一 disk target の直列化を保証できない。path identity の正規化は Issue #453 の対象外であり、呼び出し側は同じ root 表現を使用する
+- プロジェクトセッションキャッシュの key も writer gate と同じ exact raw `ProjectRoot` である。canonicalize しないため、同じ実ディレクトリを symlink 等の別経路で開くと別エントリになり、キャッシュヒットせずコールドオープンになる
 
 ## 関連仕様
 
@@ -777,6 +812,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.4 | 2026-08-06 | Issue #189: プロジェクトセッションキャッシュ（切替後の再オープンを即時応答）、背景全量再スキャンによる `watcher-resync-required`、`get_tasks` への `columns` / `doneColumn` 同梱、watcher 稼働数と再活性化時のリソース再生成、キャッシュ key の制限事項を追加 | - |
 | 1.3 | 2026-08-01 | Issue #458: `open_project` / `get_tasks` の `loadWarnings`、partial success、config fallback、full rescan における warnings 置換契約を追加 | - |
 | 1.2 | 2026-07-31 | Issue #453: `ProjectSession` aggregate、session-local revision CAS、project-scoped writer gate、staged watcher swap、session-scoped resources と stale event guard を追加 | - |
 | 1.1 | 2026-07-29 | `open_project` / `get_tasks` の milestone projection、同一 snapshot・board order、mutation / watcher resync の atomic 同期契約を追加 | - |

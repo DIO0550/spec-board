@@ -1,7 +1,9 @@
 import { useCallback, useRef } from "react";
+import type { ProjectData } from "@/domains/project-data";
 import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import { WatcherSession } from "@/domains/watcher-session";
 import { getTasks } from "@/lib/tauri";
+import type { Column } from "@/types/column";
 import { awaitProjectCommands, type ProjectCommandQueue } from "./concurrency";
 import type { ProjectAction } from "./reducer";
 import type { ProjectState } from "./state/projectState";
@@ -21,6 +23,56 @@ import {
  * 落ち着いていれば読める）。
  */
 const BARRIER_MAX_ATTEMPTS = 5;
+
+/** store への dispatcher。 */
+type ProjectDispatch = (action: ProjectAction) => void;
+
+/**
+ * 2 つの columns が board 表示上まったく同じかを返す。
+ * @param current 現在 state が持つ columns
+ * @param next backend から取り直した columns
+ * @returns 並び・名前・order・色がすべて一致すれば true
+ */
+const isSameColumns = (
+  current: readonly Column[],
+  next: readonly Column[],
+): boolean => {
+  if (current.length !== next.length) {
+    return false;
+  }
+  return current.every((column, index) => {
+    const other = next[index];
+    return (
+      other !== undefined &&
+      other.name === column.name &&
+      other.order === column.order &&
+      other.color === column.color
+    );
+  });
+};
+
+/**
+ * snapshot の columns / doneColumn に変化があるときだけ dispatch する。
+ *
+ * `replaceColumns` は常に新しい ProjectData を返すため、無条件に dispatch すると
+ * 内容が同じ resync でも board 全体が再レンダーする（`resyncTasks` が参照据え置きを
+ * 徹底しているのと同じ理由）。
+ *
+ * @param snapshot get_tasks 応答の columns / doneColumn
+ * @param data 現在の ProjectData
+ * @param dispatch store への dispatcher
+ */
+const dispatchColumnsIfChanged = (
+  snapshot: { columns: Column[]; doneColumn?: string },
+  data: ProjectData,
+  dispatch: ProjectDispatch,
+): void => {
+  const { columns, doneColumn } = snapshot;
+  if (isSameColumns(data.columns, columns) && data.doneColumn === doneColumn) {
+    return;
+  }
+  dispatch({ type: "columns-replaced", columns, doneColumn });
+};
 
 /** 発行中の 1 本を表す token。放棄された旧世代が新世代の gate を開けるのを防ぐ。 */
 type ActiveRequest = {
@@ -237,6 +289,12 @@ export const useWatcherResyncEffect = ({
             taskTree: result.value.taskTree,
             loadWarnings: result.value.loadWarnings,
           });
+          // columns は tasks と同一 snapshot から来る。backend の config は watcher の
+          // full rescan や再オープン後の背景再スキャンでも変わり、tasks の並びは
+          // その config に従うため、据え置くと「並びは新しいがカラムは古い」board で
+          // 固定される。別 IPC で取り直すと 2 つの読み取りの間に走った commit を
+          // またいで revision が混在するので、必ず同じ payload から取る。
+          dispatchColumnsIfChanged(result.value, state.data, dispatch);
           const appliedState = getState();
           if (appliedState.kind === "loaded") {
             notifyLoadWarnings?.(result.value.loadWarnings, request.path);
