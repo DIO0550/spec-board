@@ -1,5 +1,5 @@
 {
-  "reportVersion": "2c591cffda04ef2dfc5e69b8d5d484519e808c91",
+  "reportVersion": "1f431b8e0fd997a5574fc3886b02c75e0168b562",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -1457,8 +1457,8 @@
       "name": "Default",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 118,
-      "diffRatio": 0.0001,
+      "diffPixels": 145,
+      "diffRatio": 0.0002,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -1522,8 +1522,8 @@
       "name": "With Create Action",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 118,
-      "diffRatio": 0.0001,
+      "diffPixels": 145,
+      "diffRatio": 0.0002,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -1535,8 +1535,8 @@
       "name": "Without Done Column",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 118,
-      "diffRatio": 0.0001,
+      "diffPixels": 145,
+      "diffRatio": 0.0002,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
