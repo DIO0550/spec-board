@@ -77,13 +77,12 @@ export const resolveResyncSnapshot = (
   if (state.kind !== "loaded" || state.path !== request.path) {
     return { kind: "drop", reason: "project-changed" };
   }
-  if (gateSession?.generation !== request.generation) {
+  // gate に session が無い場合もここで落とす。session が消えているなら発行時の
+  // 世代はもう現行ではなく、後段の同一性判定にかける意味がないため。
+  if (gateSession === null || gateSession.generation !== request.generation) {
     return { kind: "drop", reason: "generation-changed" };
   }
-  if (
-    gateSession === null ||
-    !WatcherSession.isSameSession(gateSession, result.value.session)
-  ) {
+  if (!WatcherSession.isSameSession(gateSession, result.value.session)) {
     return { kind: "drop", reason: "session-changed" };
   }
   return { kind: "use", snapshot: result.value, data: state.data };
