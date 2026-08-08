@@ -1,11 +1,14 @@
 import { useCallback, useRef } from "react";
 import type { ProjectData } from "@/domains/project-data";
 import type { ProjectLoadWarning } from "@/domains/project-load-warning";
-import { WatcherSession } from "@/domains/watcher-session";
 import { getTasks } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import { awaitProjectCommands, type ProjectCommandQueue } from "./concurrency";
+import type { ProjectCommandQueue } from "./concurrency";
+import { ProjectCommandBarrier } from "./projectCommandBarrier";
 import type { ProjectAction } from "./reducer";
+import { resolveResyncSnapshot } from "./resolveResyncSnapshot";
+import { ResyncGateLifecycle } from "./resyncGateLifecycle";
+import { ResyncRequests, type ResyncRequestsState } from "./resyncRequests";
 import type { ProjectState } from "./state/projectState";
 import type { ProjectionSyncedRef } from "./useProjectionSyncEffect";
 import type { WatcherGateRef } from "./useTaskWatcherEffects";
@@ -13,6 +16,7 @@ import {
   WatcherGate,
   type WatcherGateDecision,
   type WatcherResyncReason,
+  type WatcherSnapshotResult,
 } from "./watcherEnvelopeGate";
 
 /**
@@ -74,16 +78,6 @@ const dispatchColumnsIfChanged = (
   dispatch({ type: "columns-replaced", columns, doneColumn });
 };
 
-/** 発行中の 1 本を表す token。放棄された旧世代が新世代の gate を開けるのを防ぐ。 */
-type ActiveRequest = {
-  /** `requestIdRef` の採番値。応答の採否判定に使う。 */
-  id: number;
-  /** 発行時点の loaded path。project 切替時の放棄判定に使う。 */
-  path: string;
-  /** 発行時点の watcher generation。同一 path の再オープンを取りこぼさない。 */
-  generation: number;
-};
-
 /** useWatcherResyncEffect が受け取る依存。 */
 type WatcherResyncDeps = {
   /** 現在 loaded な project path（未 loaded は null）。 */
@@ -113,24 +107,16 @@ type WatcherResyncDeps = {
  * Rescan / revision gap を受けて `get_tasks` で snapshot を再取得し、gate の buffer を
  * replay する Provider 内 private hook。
  *
- * - single in-flight。要求が重なった場合は pending に畳み、応答後に 1 本だけ再発行する
- * - `awaitProjectCommands` で in-flight mutation を追い越さない
- * - 採否は `requestId` 一致 / `loadedPath` 一致に加えて **generation ガード**も見る。
- *   path だけだと同一 path の再オープンを取りこぼす
- * - 応答の session が現行と別なら dispatch しない。gate 自体は状態を変えない契約だが、
- *   本 hook は `finally` で `resyncFailed` を通して `resyncing` から必ず抜ける。
- *   generation が変わっていれば初期化 effect が `init()` で自己回復するが、それを
- *   待たずに済ませる方が「二度と resync が出ない」故障モードから遠い
- * - 解放は必ず `finally` で通す（採否と解放を別レイヤにする）
+ * 1 本の要求は「受付 → 開始 → barrier → 発行 → 採否 → 適用 → 解放」の順に進む。
+ * 各段の判断は責務ごとのモジュールが持ち、本 hook はその結果を配線するだけにする。
  *
- * # 失敗時（**この経路が無いと board が恒久フリーズする**）
+ * - 受付と trailing 再発行: `ResyncRequests`
+ * - read barrier の安定化: `ProjectCommandBarrier`
+ * - 応答の採否: `resolveResyncSnapshot`
+ * - gate 遷移と所有権: `ResyncGateLifecycle`
  *
- * `invoke` が Err を返した場合・例外が飛んだ場合・バリア後に中断した場合は、必ず
- * `WatcherGate.resyncFailed` を通して `status` を `synced` に戻す。gate を
- * `resyncing` のまま残すと、以後の envelope はすべて buffer 行に落ちて `resync`
- * decision が二度と出ないため、`requestResync` が再発行されず board が一切更新
- * されなくなる。通知は出さない（自動再取得は無通知の既定方針）が、**次の watcher
- * event が gap を検出して自動的に再試行する**ので手動操作は不要。
+ * 解放（`lifecycle.release()` と `ResyncRequests.end`）は必ず `finally` で通す。
+ * 採否と解放を別レイヤにしておかないと、途中 return のたびに後始末が漏れる。
  *
  * # snapshot 採用後の marker 更新
  *
@@ -146,11 +132,12 @@ type WatcherResyncDeps = {
  *
  * # 共通化しない理由
  *
- * `requestIdRef` による stale 応答破棄のイディオムは `useProjectionSyncEffect` /
- * `useLabels` / `useMilestones` に既に 3 実装あり、本 hook は 4 実装目になる。
- * ただし `useLabels` / `useMilestones` は single-in-flight でも read barrier 付きでも
+ * stale 応答破棄のイディオムは `useProjectionSyncEffect` / `useLabels` /
+ * `useMilestones` にもあるが、後ろ 2 つは single-in-flight でも read barrier 付きでも
  * ないため、そのまま共通化すると最も要件の緩い実装に引きずられて「Rescan 連発でも
- * IPC を積み上げない」要件を満たせない。共通化は follow-up 候補として残す。
+ * IPC を積み上げない」要件を満たせない。`useProjectionSyncEffect` は要件が揃うが
+ * trailing 再発行が `setSyncTick` に密結合しており、`ResyncRequests` への移行は
+ * follow-up 候補として残す。
  *
  * # 未解決事項（follow-up）
  *
@@ -170,9 +157,7 @@ export const useWatcherResyncEffect = ({
   dispatch,
   notifyLoadWarnings,
 }: WatcherResyncDeps): ((reason: WatcherResyncReason) => void) => {
-  const requestIdRef = useRef(0);
-  const activeRef = useRef<ActiveRequest | null>(null);
-  const pendingRef = useRef(false);
+  const requestsRef = useRef<ResyncRequestsState>(ResyncRequests.initial);
 
   const requestResync = useCallback(
     (_reason: WatcherResyncReason): void => {
@@ -180,124 +165,90 @@ export const useWatcherResyncEffect = ({
       if (loadedPath === null || session === null) {
         return;
       }
-      // 旧 project / 旧世代の要求が未解決でも、新 session の復旧を塞がない。
-      // 放棄した要求の finalizer は下の identity チェックで no-op になる。
-      const active = activeRef.current;
-      if (
-        active !== null &&
-        (active.path !== loadedPath || active.generation !== session.generation)
-      ) {
-        activeRef.current = null;
-        pendingRef.current = false;
-      }
-      // 先行リクエストが解決するまで畳む（トレーリング 1 本だけを後で出す）。
-      if (activeRef.current !== null) {
-        pendingRef.current = true;
-        return;
-      }
-      const requestId = requestIdRef.current + 1;
-      requestIdRef.current = requestId;
-      const request: ActiveRequest = {
-        id: requestId,
+      const begun = ResyncRequests.begin(requestsRef.current, {
         path: loadedPath,
         generation: session.generation,
-      };
-      activeRef.current = request;
-      // 応答待ちのあいだに届く cache 変更を必ず buffer させる。ここを通さないと
-      // buffer 溢れ由来の 2 本目で「即時 apply → 古い snapshot で上書き」が起きる。
-      gate.current = WatcherGate.resyncStarted(gate.current);
+      });
+      requestsRef.current = begun.state;
+      if (begun.kind === "merged") {
+        return;
+      }
+      const request = begun.request;
+      const lifecycle = ResyncGateLifecycle.forRequest(
+        gate,
+        request.generation,
+      );
+      lifecycle.start();
 
       const runResync = async (): Promise<void> => {
-        let applied: ReturnType<typeof WatcherGate.snapshotApplied> | null =
-          null;
+        let applied: WatcherSnapshotResult | null = null;
         // 読み取り中に mutation が commit したため snapshot を捨てた場合に立つ。
         // 失敗ではないので即座に取り直す。
         let supersededByMutation = false;
         try {
           // commit 前 snapshot を読まない（queue は占有しない read barrier）。
-          //
-          // barrier は「呼び出した時点の tail」しか待たないため、待機中に enqueue
-          // された mutation は待ってもらえない。tail が動かなくなるまで待ち直して
-          // 「読み始める時点で未完了の mutation が無い」状態を作る。
-          let barrierStable = false;
-          for (let attempt = 0; attempt < BARRIER_MAX_ATTEMPTS; attempt += 1) {
-            const tail = projectCommandQueue.current;
-            await awaitProjectCommands(projectCommandQueue);
-            if (requestIdRef.current !== request.id) {
-              return;
-            }
-            if (projectCommandQueue.current === tail) {
-              barrierStable = true;
-              break;
-            }
+          const barrier = await ProjectCommandBarrier.awaitStable(
+            projectCommandQueue,
+            {
+              maxAttempts: BARRIER_MAX_ATTEMPTS,
+              isLatest: () =>
+                ResyncRequests.isLatest(requestsRef.current, request),
+            },
+          );
+          if (barrier.kind === "abandoned") {
+            return;
           }
-          if (!barrierStable) {
+          if (barrier.kind === "unstable") {
             // mutation が途切れない。今読んでも古い版になるので取り直しに倒す。
             supersededByMutation = true;
             return;
           }
-          // 債務はここで下ろす。barrier のあとに投げる snapshot は、待機中に
-          // 立った latch の欠落まで含んでいるため。これ以降に立つ latch は
-          // この snapshot では回収できない新しい欠落を表す。
-          gate.current = WatcherGate.resyncIssued(gate.current);
-          // 読み取り開始時点の queue 末尾。応答が返るまでに mutation が
-          // enqueue されていたら、この snapshot はその commit より前の版なので
-          // 採用してはならない（採用すると確定済みの変更を巻き戻す）。
-          const queueAtRead = projectCommandQueue.current;
+          lifecycle.issue();
           const result = await getTasks();
-          if (requestIdRef.current !== request.id) {
-            return;
-          }
-          if (projectCommandQueue.current !== queueAtRead) {
-            // 読み取り中に mutation が走った。古い snapshot は捨てて取り直す。
+          const resolution = resolveResyncSnapshot({
+            request,
+            currentRequestId: requestsRef.current.lastRequestId,
+            queueAtRead: barrier.tail,
+            queueNow: projectCommandQueue.current,
+            result,
+            state: getState(),
+            gateSession: gate.current.session,
+          });
+          if (resolution.kind === "refetch") {
             supersededByMutation = true;
             return;
           }
-          if (!result.ok) {
+          if (resolution.kind === "drop") {
             return;
           }
-          const state = getState();
-          if (state.kind !== "loaded" || state.path !== request.path) {
+          applied = lifecycle.apply(resolution.snapshot.session);
+          if (applied === null) {
             return;
           }
-          if (gate.current.session?.generation !== request.generation) {
-            return;
-          }
-          if (
-            gate.current.session === null ||
-            !WatcherSession.isSameSession(
-              gate.current.session,
-              result.value.session,
-            )
-          ) {
-            return;
-          }
-          applied = WatcherGate.snapshotApplied(
-            gate.current,
-            result.value.session,
-          );
-          if (!applied.accepted) {
-            applied = null;
-            return;
-          }
-          gate.current = applied.state;
           dispatch({
             type: "tasks-resynced",
-            tasks: result.value.tasks,
-            projections: result.value.projections,
-            milestoneProjections: result.value.milestoneProjections,
-            taskTree: result.value.taskTree,
-            loadWarnings: result.value.loadWarnings,
+            tasks: resolution.snapshot.tasks,
+            projections: resolution.snapshot.projections,
+            milestoneProjections: resolution.snapshot.milestoneProjections,
+            taskTree: resolution.snapshot.taskTree,
+            loadWarnings: resolution.snapshot.loadWarnings,
           });
           // columns は tasks と同一 snapshot から来る。backend の config は watcher の
           // full rescan や再オープン後の背景再スキャンでも変わり、tasks の並びは
           // その config に従うため、据え置くと「並びは新しいがカラムは古い」board で
           // 固定される。別 IPC で取り直すと 2 つの読み取りの間に走った commit を
           // またいで revision が混在するので、必ず同じ payload から取る。
-          dispatchColumnsIfChanged(result.value, state.data, dispatch);
+          dispatchColumnsIfChanged(
+            resolution.snapshot,
+            resolution.data,
+            dispatch,
+          );
           const appliedState = getState();
           if (appliedState.kind === "loaded") {
-            notifyLoadWarnings?.(result.value.loadWarnings, request.path);
+            notifyLoadWarnings?.(
+              resolution.snapshot.loadWarnings,
+              request.path,
+            );
           }
           // marker は **replay を適用する前**の state で組む。replay の `task-*`
           // action は tasks だけを進めて projections は据え置くため、replay 後の
@@ -307,24 +258,16 @@ export const useWatcherResyncEffect = ({
           // （それは無駄な取得ではなく、replay 分の集計に必要な取得）。
           rememberProjectionSync(projectionSynced, getState(), request.path);
         } finally {
-          // gate は既に別 session のものに差し替わっている可能性がある。自分が
-          // 発行した世代の gate だけを触る（触ると新 session の buffer を壊す）。
-          const ownsGate =
-            gate.current.session?.generation === request.generation;
-          // 採否と無関係に必ず通る解放処理。snapshot を採用できなかった場合は
-          // resyncing のまま残さない（残すと以後の envelope が全て buffer 行に落ちる）。
-          if (applied === null && ownsGate) {
-            gate.current = WatcherGate.resyncFailed(gate.current);
-          }
-          if (activeRef.current === request) {
-            activeRef.current = null;
-            const shouldRetry =
-              pendingRef.current ||
-              supersededByMutation ||
-              (applied?.resyncRequired ?? false);
-            pendingRef.current = false;
+          // 採否と無関係に必ず通る解放処理。
+          lifecycle.release();
+          const ended = ResyncRequests.end(requestsRef.current, request, {
+            supersededByMutation,
+            resyncRequired: applied?.resyncRequired ?? false,
+          });
+          requestsRef.current = ended.state;
+          if (ended.wasActive) {
             applyReplayDecisions(applied?.decisions ?? [], dispatch);
-            if (shouldRetry) {
+            if (ended.shouldRetry) {
               requestResyncRef.current?.("event-gap");
             }
           }
