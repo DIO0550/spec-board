@@ -1,17 +1,18 @@
 //! `notify` クレートの上に構築する再帰ファイルシステムウォッチャ。
 //!
 //! 公開 API では `notify::*` の型を一切露出させず、呼び出し側は `std` の型
-//! と本モジュールが定義する [`FsEvent`] / [`WatcherError`] にのみ依存する。
+//! と [`FileChangeBatch`] / [`WatcherError`] にのみ依存する。デバウンス
+//! ウィンドウ内の変更は path ごとの最終状態へ畳み込まれ、1 つの
+//! [`FileChangeBatch`] として送出される。
 //! バックエンドは自動選択: まず `RecommendedWatcher` を試み、初期化または
 //! 再帰 `watch()` のいずれかが失敗した場合は `PollWatcher`（2 秒間隔）に
 //! フォールバックする。
 //!
 //! 停止は `Drop` を介して同期的に行う: 先にバックエンドを解放し、続いて
 //! アダプタスレッドを join する。`Drop` から復帰した後に発生したファイル
-//! 変更はイベント化されないが、Drop 前にアダプタが enqueue 済みのイベン
-//! トは `Disconnected` が観測されるまで receiver から取り出せる。
+//! 変更はイベント化されないが、Drop 前にアダプタが enqueue 済みの batch
+//! は `Disconnected` が観測されるまで receiver から取り出せる。
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
@@ -23,6 +24,9 @@ use notify::{
     RecursiveMode, Watcher as NotifyWatcher,
 };
 use thiserror::Error;
+
+use super::file_change_batch::FileChangeBatch;
+use super::pending_changes::PendingChanges;
 
 /// `PollWatcher` フォールバック時にファイルシステムを走査する間隔。
 ///
@@ -43,11 +47,13 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// まとめて吸収できる程度の幅でありつつ、人間が「変更したのに反映されない」
 /// と感じない短さに収まる値として選んでいる。短すぎると 1 回の保存が複数
 /// イベントに割れ、長すぎると反映遅延として体感される。
-const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
+pub(crate) const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
 
-/// 呼び出し側に渡すファイルシステムイベント。
+/// `notify::Event` の翻訳結果を表す **watcher モジュール内部の中間表現**。
 ///
-/// `notify::Event` のペイロードを以下のいずれかの variant に変換する。
+/// 公開 API には出さない。呼び出し側が受け取るのは、これを畳み込んだ
+/// [`FileChangeBatch`] だけである。
+///
 /// rename は `notify::Event` が source と destination の両方のパスを持つ
 /// 場合のみ単一の [`FsEvent::Renamed`] として発火し、それ以外は先頭パスで
 /// [`FsEvent::Other`] に降格する。
@@ -57,7 +63,7 @@ const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
 /// を発火し、呼び出し側がファイルシステムと永続的に乖離しないよう状態を
 /// 再構築できるようにする。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FsEvent {
+pub(crate) enum FsEvent {
     Created(PathBuf),
     Modified(PathBuf),
     Removed(PathBuf),
@@ -145,16 +151,17 @@ pub(crate) enum Backend {
 /// 再帰ファイルシステムウォッチャ。値を drop すると同期的に監視を停止す
 /// る: 先に OS レベルのバックエンドを解放し、続いてアダプタスレッドを
 /// join する。`Drop` が復帰した **後** に発生したファイル変更は receiver
-/// に届かない。Drop 前にアダプタが enqueue 済みのイベントは receiver が
-/// `Disconnected` を観測するまで取り出せる。
+/// に届かない。Drop 前にアダプタが保持していた保留は 1 つの
+/// [`FileChangeBatch`] として flush され、receiver が `Disconnected` を
+/// 観測するまで取り出せる。
 pub struct Watcher {
     backend: Option<Backend>,
     adapter_handle: Option<JoinHandle<()>>,
 }
 
 impl Watcher {
-    /// `path` を再帰的に監視し、変換済み [`FsEvent`] を流す receiver と
-    /// ウォッチャ本体を返す。
+    /// `path` を再帰的に監視し、畳み込み済み [`FileChangeBatch`] を流す
+    /// receiver とウォッチャ本体を返す。
     ///
     /// まず `RecommendedWatcher` を試し、`new` または `watch` のいずれか
     /// が失敗した場合（例: Linux の inotify 上限超過）に `PollWatcher`
@@ -168,7 +175,9 @@ impl Watcher {
     /// - [`WatcherError::Init`]: recommended / poll の両バックエンドが
     ///   初期化または再帰監視開始に失敗した場合。エラーメッセージには
     ///   両バックエンドの原因が含まれる
-    pub fn start(path: impl AsRef<Path>) -> Result<(Self, Receiver<FsEvent>), WatcherError> {
+    pub fn start(
+        path: impl AsRef<Path>,
+    ) -> Result<(Self, Receiver<FileChangeBatch>), WatcherError> {
         let path = path.as_ref();
         validate_path(path)?;
 
@@ -199,7 +208,7 @@ impl Watcher {
     #[cfg(test)]
     pub(crate) fn start_with_poll(
         path: impl AsRef<Path>,
-    ) -> Result<(Self, Receiver<FsEvent>), WatcherError> {
+    ) -> Result<(Self, Receiver<FileChangeBatch>), WatcherError> {
         let path = path.as_ref();
         validate_path(path)?;
 
@@ -227,9 +236,9 @@ impl Drop for Watcher {
         self.backend.take();
 
         // アダプタスレッドを join して呼び出し側に「同期停止が完了し
-        // た」状態を保証する。`drop` 復帰後は新規ファイル変更が
-        // FsEvent 化されることはない。enqueue 済みイベントは `fs_rx`
-        // が `Disconnected` を観測するまで取り出せる。
+        // た」状態を保証する。`drop` 復帰後は新規ファイル変更が batch
+        // 化されることはない。flush 済みの batch は `fs_rx` が
+        // `Disconnected` を観測するまで取り出せる。
         if let Some(handle) = self.adapter_handle.take() {
             let _ = handle.join();
         }
@@ -335,99 +344,19 @@ fn forward_handler(tx: Sender<notify::Result<NotifyEvent>>) -> impl EventHandler
     }
 }
 
-/// デバウンスバッファ内の 1 エントリ。
+/// `notify::Result<Event>` を [`FileChangeBatch`] へ畳み込んで、呼び出し
+/// 側向けのチャネルへ転送するアダプタスレッドを spawn する。
 ///
-/// 同一 path に対する新着イベントは `event` を上書きし、`deadline` を
-/// `now + DEBOUNCE_DURATION` まで延長する（スライディングウィンドウ）。
-/// 静止後に `event` がそのまま `fs_tx` に送出される。
-struct PendingEvent {
-    event: FsEvent,
-    deadline: Instant,
-}
-
-/// path → PendingEvent のマップ。アダプタスレッド固有の可変状態。
-type PendingMap = HashMap<PathBuf, PendingEvent>;
-
-/// 通常イベントを保留マップに登録する（スライディング）。
-///
-/// 同一 path のエントリが既にあれば event を上書きし、deadline を
-/// `now + DEBOUNCE_DURATION` まで延長する。
-///
-/// `FsEvent::Rescan` / `FsEvent::Error` は呼び出し側でバイパスされる
-/// 前提で、本関数には届かないことを `debug_assert!` で守る。
-fn enqueue_pending(pending: &mut PendingMap, path: PathBuf, event: FsEvent, now: Instant) {
-    debug_assert!(!matches!(event, FsEvent::Rescan | FsEvent::Error(_)));
-    pending.insert(
-        path,
-        PendingEvent {
-            event,
-            deadline: now + DEBOUNCE_DURATION,
-        },
-    );
-}
-
-/// 保留マップから「deadline ≤ now」のエントリを取り出して返す。
-///
-/// 呼び出し側の決定論性のため、deadline 昇順（同点は path 昇順）に
-/// 並べてから返す。
-fn drain_due(pending: &mut PendingMap, now: Instant) -> Vec<FsEvent> {
-    let mut due_keys: Vec<PathBuf> = pending
-        .iter()
-        .filter(|(_, p)| p.deadline <= now)
-        .map(|(k, _)| k.clone())
-        .collect();
-    due_keys.sort_by(|a, b| {
-        let da = pending[a].deadline;
-        let db = pending[b].deadline;
-        da.cmp(&db).then_with(|| a.cmp(b))
-    });
-    due_keys
-        .into_iter()
-        .map(|k| pending.remove(&k).expect("key was just collected").event)
-        .collect()
-}
-
-/// 次の発火までの残時間を返す。保留が無ければ `None`（= 無限ブロック）。
-///
-/// deadline がすでに過ぎていれば `Duration::ZERO` を返す（saturating）。
-fn next_wait(pending: &PendingMap, now: Instant) -> Option<Duration> {
-    pending
-        .values()
-        .map(|p| p.deadline)
-        .min()
-        .map(|d| d.saturating_duration_since(now))
-}
-
-/// イベントから集約キーとなる path を抽出する。
-///
-/// 集約キー仕様:
-/// - `Created` / `Modified` / `Removed` / `Other` はそのままの path を key とする。
-/// - `Renamed { from, to }` は **宛先 `to` を key** とする。`from` 側は独立扱い。
-/// - `Rescan` / `Error` は path を持たないため `None` を返す（バイパス対象）。
-fn event_path(ev: &FsEvent) -> Option<PathBuf> {
-    match ev {
-        FsEvent::Created(p) | FsEvent::Modified(p) | FsEvent::Removed(p) | FsEvent::Other(p) => {
-            Some(p.clone())
-        }
-        FsEvent::Renamed { to, .. } => Some(to.clone()),
-        FsEvent::Rescan | FsEvent::Error(_) => None,
-    }
-}
-
-/// `notify::Result<Event>` を [`FsEvent`] に変換して、呼び出し側向けの
-/// チャネルへ転送するアダプタスレッドを spawn する。
-///
-/// 同一 path の連続イベントは [`DEBOUNCE_DURATION`] のスライディング
-/// ウィンドウで集約され、ウィンドウ満了後に最後のイベントのみが送出
-/// される。`FsEvent::Rescan` / `FsEvent::Error` は集約対象外で、保留
-/// イベントを追い越して即時 forward する。
+/// ウィンドウ内のイベントは [`PendingChanges`] が path ごとの最終状態へ
+/// 畳み込み、[`DEBOUNCE_DURATION`] 静止した時点で 1 つの batch として
+/// 送出される。`FsEvent::Rescan` / `FsEvent::Error` は畳み込み対象外で、
+/// 保留を追い越して専用 batch で即時 forward する。
 ///
 /// loop の終了条件は 2 つ:
 ///
 /// 1. **上流の sender が drop された場合**（バックエンドが解放された）—
 ///    `recv_timeout` / `recv` が `Disconnected` を返した時点で検知し、
-///    終了前に保留イベントを deadline 昇順（同点は path 昇順）で flush
-///    してから終了する。
+///    終了前に残保留を 1 つの batch へまとめて flush してから終了する。
 /// 2. **下流の receiver が drop された場合**（呼び出し側が受信をやめた）—
 ///    次に `fs_tx.send` を試みた際に `Err` が返ったタイミングで検知して
 ///    終了する。なお、保留が空のときの `notify_rx.recv()` は無限ブロック
@@ -439,43 +368,42 @@ fn event_path(ev: &FsEvent) -> Option<PathBuf> {
 ///    が届く」極めて限定的な場合のみ。
 fn spawn_adapter(
     notify_rx: Receiver<notify::Result<NotifyEvent>>,
-) -> (Receiver<FsEvent>, JoinHandle<()>) {
-    let (fs_tx, fs_rx) = mpsc::channel::<FsEvent>();
+) -> (Receiver<FileChangeBatch>, JoinHandle<()>) {
+    let (fs_tx, fs_rx) = mpsc::channel::<FileChangeBatch>();
     let handle = thread::spawn(move || {
-        let mut pending: PendingMap = HashMap::new();
+        let mut pending = PendingChanges::new();
         loop {
             // ループの基準時刻を 1 度だけキャプチャし、drain_due と
             // next_wait の双方に渡す。2 度 `Instant::now()` を呼ぶと、
             // その隙間で deadline が「未到来 → 到来」へ遷移したエン
             // トリが drain_due では残り、続く next_wait では `ZERO`
             // を返してしまい、`recv_timeout(0)` で受信した新着で
-            // 同一 key が上書きされる race が生じる。同一時刻基準
-            // で判定すれば、drain_due 後の pending には deadline > now
-            // のエントリしか残らず、next_wait は必ず正の duration を
-            // 返すため、recv_timeout が即時 Ok になっても overwrite
-            // されるのは sliding window 仕様（deadline 延長）として
-            // 正しい振る舞いに収まる。
+            // 同一 path の状態が上書きされる race が生じる。同一時刻
+            // 基準で判定すれば、drain_due 後の pending には deadline
+            // > now のエントリしか残らず、next_wait は必ず正の
+            // duration を返すため、recv_timeout が即時 Ok になっても
+            // 上書きされるのは sliding window 仕様（deadline 延長）と
+            // して正しい振る舞いに収まる。
             let now = Instant::now();
 
-            // 1. 期限到来分を先に発火する。
+            // 1. 期限到来分を 1 batch にまとめて発火する。
             //
             // recv 前に drain することで、同一 path の新着イベントが
             // notify_rx に既に queued されていても、期限切れの保留
             // エントリが先に発火する。
-            let due = drain_due(&mut pending, now);
-            for ev in due {
-                if fs_tx.send(ev).is_err() {
+            if let Some(batch) = pending.drain_due(now) {
+                if fs_tx.send(batch).is_err() {
                     return;
                 }
             }
 
             // 2. 受信待ち時間を決定。保留が無ければ無限ブロック。
-            let recv_result = match next_wait(&pending, now) {
+            let recv_result = match pending.next_wait(now) {
                 Some(remaining) => notify_rx.recv_timeout(remaining),
                 None => notify_rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
             };
 
-            // 3. 受信結果を分類してバッファ更新 / 即時 forward を行う。
+            // 3. 受信結果を分類して畳み込み / 即時 forward を行う。
             match recv_result {
                 Ok(item) => {
                     let translated = match item {
@@ -485,18 +413,19 @@ fn spawn_adapter(
                     let Some(events) = translated else { continue };
                     let now = Instant::now();
                     for fs_ev in events {
-                        match fs_ev {
-                            bypass @ (FsEvent::Rescan | FsEvent::Error(_)) => {
-                                if fs_tx.send(bypass).is_err() {
-                                    return;
-                                }
-                            }
+                        // Rescan / Error は保留を追い越して専用 batch で即時
+                        // 送出する。畳み込んで 100ms 遅らせると、状態乖離と
+                        // 障害の検知が同じだけ遅れる。
+                        let bypass = match fs_ev {
+                            FsEvent::Rescan => FileChangeBatch::rescan(),
+                            FsEvent::Error(failure) => FileChangeBatch::from_failure(failure),
                             other => {
-                                let Some(path) = event_path(&other) else {
-                                    continue;
-                                };
-                                enqueue_pending(&mut pending, path, other, now);
+                                pending.record(&other, now);
+                                continue;
                             }
+                        };
+                        if fs_tx.send(bypass).is_err() {
+                            return;
                         }
                     }
                 }
@@ -504,16 +433,10 @@ fn spawn_adapter(
                     // 次ループ先頭の drain_due で発火する。
                 }
                 Err(RecvTimeoutError::Disconnected) => {
-                    // 上流（バックエンド）が drop された。残保留を
-                    // deadline 昇順 + path 昇順で flush して終了する。
-                    let mut remaining: Vec<(PathBuf, PendingEvent)> = pending.drain().collect();
-                    remaining.sort_by(|a, b| {
-                        a.1.deadline.cmp(&b.1.deadline).then_with(|| a.0.cmp(&b.0))
-                    });
-                    for (_, pe) in remaining {
-                        if fs_tx.send(pe.event).is_err() {
-                            return;
-                        }
+                    // 上流（バックエンド）が drop された。残保留を 1 batch に
+                    // まとめて flush して終了する。
+                    if let Some(batch) = pending.drain_all() {
+                        let _ = fs_tx.send(batch);
                     }
                     return;
                 }
