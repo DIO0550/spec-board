@@ -124,7 +124,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 #### プロジェクトセッションキャッシュ（再オープンの即時応答）
 
 - 一度開いたプロジェクトの `ProjectSession` は、別プロジェクトへの切替時にバックグラウンドキャッシュへ退避され、プロセス終了まで保持される（上限なし）。
-- キャッシュに一致する root（exact raw `ProjectRoot`）で `open_project` を呼ぶと、ディスク走査・パースを行わずキャッシュから payload を構築して即時応答する。このとき `session.generation` は**新規採番**され、`session.revision` は 0 から再開する。`GUIDE.md` の書き出しもコールドオープン時のみ行う。
+- キャッシュに一致する root（exact raw `ProjectRoot`）で `open_project` を呼ぶと、ディスク走査・パースを行わずキャッシュから payload を構築して即時応答する。このとき `session.generation` は**新規採番**され、`session.revision` は 0 から再開する。`GUIDE.md` の書き出しもコールドオープン時のみ行う。config 不在時の `config.json` 生成もコールドオープン時のみ行う。ただし生成は watcher 初期化より前に実行するため、watcher 初期化に失敗した open でも生成済みの `config.json` は残る（生成は冪等で、次回オープンがその内容を読むだけ）。
 - 即時応答の直後、バックグラウンドで tasks / config / labels / milestones を全量再読込し、キャッシュとの差分があれば 1 commit で置換のうえ `watcher-resync-required`（reason: `rescan`）を emit する。フロントエンドは既存の resync 経路で最新化する。差分がなければ何も送らない。
 - resync で使う `get_tasks` の応答には `columns` と `doneColumn` を同梱する。`tasks` の並びは backend の config に従うため、カラム定義を取り直さないと「並びは新しいがカラムは古い」board で固定される。`get_columns` を別途呼ぶ形にはしない。2 つの読み取りの間に backend の commit が走ると `tasks` と `columns` の revision が混在するため、**同一 snapshot から導出した 1 応答**で配る。
 - バックグラウンド再読込の規則はコールドオープンと同一（config は fallback + warning、labels / milestones / tasks の失敗は中断）。したがって「再スキャン後の状態 = そのプロジェクトをコールドオープンした場合の状態」に収束する。読み込みに失敗した場合はキャッシュを変更せず、`watcher-diagnostic`（code: `rescanFailed`）を通知する。
@@ -145,7 +145,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | `message` | `string` | 原因の補足。UI は raw message をそのまま HTML として解釈しない |
 | `recoverable` | `boolean` | 今回は load warning がすべて `true`。root / hierarchy / registry / watcher / session / lock の fatal error は payload に含めない |
 
-同一 `(stage, path, code, message, recoverable)` は payload 直前に重複除去し、順序を安定化する。`loadWarnings: []` は警告が無い正常な読み込みを表す。config が存在しない場合は既定値で開き、warning は生成しない。存在する config の read / parse / validation / migration / backup 失敗は `Config::default()` で継続し、`configFallback` を追加する。
+同一 `(stage, path, code, message, recoverable)` は payload 直前に重複除去し、順序を安定化する。`loadWarnings: []` は警告が無い正常な読み込みを表す。config が存在しない場合はタスクの `status` からカラムを生成して保存し、成功時は warning を生成しない。生成した config の保存に失敗した場合は `Config::default()` で開き `configFallback` を追加する。この warning はコールドオープンでのみ付くため、保存に失敗したまま別プロジェクトへ切り替えて戻ると（キャッシュヒット + 背景再スキャン）payload から消える。背景再スキャンはディスクへ書かず生成も再試行しないためで、config は `Config::default()` のままなので board の見え方は変わらない。存在する config の read / parse / validation / migration / backup 失敗は `Config::default()` で継続し、`configFallback` を追加する（この場合は生成・保存を行わない）。
 
 watcher の full rescan が成功した場合は、その rescan report の warnings で session の `loadWarnings` を tasks と atomic に置き換える。修復されたファイルの warning は消え、新たに失敗したファイルだけが残る。rescan 自体が fatal の場合は旧 tasks と旧 warnings を保持し、既存の watcher diagnostic を通知する。
 
