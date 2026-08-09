@@ -33,8 +33,8 @@ use crate::state::BoxedWatcherHandle;
 /// `Active` になるまで event loop へ進まない。どちらかが失敗した場合、resident
 /// project session/resources は変更されない。
 pub(crate) trait WatcherFactory {
-    /// `prepare` の結果型。本番では `(Watcher, Receiver<FsEvent>)` 相当、
-    /// テストでは `()` 等の軽量な値で代替する。
+    /// `prepare` の結果型。本番では `(Watcher, Receiver<FileChangeBatch>)`
+    /// 相当、テストでは `()` 等の軽量な値で代替する。
     type Prepared;
 
     fn prepare(&self, root: &Path) -> Result<Self::Prepared, OpenProjectError>;
@@ -66,7 +66,7 @@ impl TauriWatcherFactory {
 impl WatcherFactory for TauriWatcherFactory {
     type Prepared = (
         spec_board_fs::watcher::core::Watcher,
-        std::sync::mpsc::Receiver<spec_board_fs::watcher::core::FsEvent>,
+        std::sync::mpsc::Receiver<spec_board_fs::watcher::file_change_batch::FileChangeBatch>,
     );
 
     fn prepare(&self, root: &Path) -> Result<Self::Prepared, OpenProjectError> {

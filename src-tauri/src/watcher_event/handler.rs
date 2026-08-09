@@ -1,7 +1,8 @@
-//! `FsEvent` を active `ProjectSession` へ反映し、既存 wire envelope を emit する。
+//! `FileChangeBatch` を active `ProjectSession` へ反映し、既存 wire envelope を
+//! emit する。
 //!
 //! adapter が保持する `ProjectRoot` と `SessionId` の安定ペアは spawn 時から
-//! 不変である。各 event は exact-root writer gate の内側で fresh
+//! 不変である。batch 内の各変更は exact-root writer gate の内側で fresh
 //! snapshot と session-scoped resources を検証する。project switch や same-path
 //! reopen 後の adapter は write-ignore、resident state、eventSeq、emit のどれにも
 //! 触れない。
@@ -23,7 +24,8 @@ use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::Task;
 use crate::task::warning::has_parent_cycle_warning;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
-use spec_board_fs::watcher::core::{FsEvent, WatcherFailure, WatcherFailureKind};
+use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
+use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
 
 use super::envelope::{
     DiagnosticCode, DiagnosticPayload, EnvelopePayload, ResyncReason, ResyncRequiredPayload,
@@ -35,16 +37,21 @@ use super::AdapterContext;
 /// full rescan の SessionRevision CAS 再試行上限。
 const RESCAN_MAX_ATTEMPTS: u32 = 3;
 
-/// adapter スレッド本体。`Receiver<FsEvent>` を blocking で消費し、
+/// batch を構成する 1 件分の変更。writer gate 取得の単位でもある。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TaskFileChange {
+    Rescan,
+    Failure(WatcherFailure),
+    Removed(PathBuf),
+    Upserted(PathBuf),
+}
+
+/// adapter スレッド本体。`Receiver<FileChangeBatch>` を blocking で消費し、
 /// Disconnected で抜ける。
-pub(crate) fn run_event_loop(rx: Receiver<FsEvent>, ctx: AdapterContext) {
+pub(crate) fn run_event_loop(rx: Receiver<FileChangeBatch>, ctx: AdapterContext) {
     loop {
         match rx.recv() {
-            Ok(event) => {
-                if let Err(err) = handle_event(&event, &ctx) {
-                    log::warn!("watcher_event handler error: {err}");
-                }
-            }
+            Ok(batch) => handle_batch(&batch, &ctx),
             Err(RecvError) => {
                 log::trace!("watcher_event channel disconnected; adapter stopping");
                 return;
@@ -53,60 +60,72 @@ pub(crate) fn run_event_loop(rx: Receiver<FsEvent>, ctx: AdapterContext) {
     }
 }
 
-/// upsert が emit する event 名の決定方法。
-#[derive(Debug, Clone, Copy)]
-enum UpsertMode {
-    /// cache 存在で updated / created を切り替える通常モード。
-    Auto,
-    /// rename の to 側を常に created として扱う互換モード。
-    ForceCreated,
+/// batch を決定的な順序で 1 件ずつ処理する。
+///
+/// 1 件の失敗で残りを落とさない。ここで打ち切ると batch 化した意味が消え、
+/// 「ウィンドウ内の変更を取りこぼさない」という前提に反する。
+pub(crate) fn handle_batch(batch: &FileChangeBatch, ctx: &AdapterContext) {
+    for change in changes_in_order(batch) {
+        if let Err(err) = handle_change(&change, ctx) {
+            log::warn!("watcher_event handler error: {err}");
+        }
+    }
 }
 
-/// 1 件の event を exact-root writer gate 内で処理する。
-pub(crate) fn handle_event(event: &FsEvent, ctx: &AdapterContext) -> Result<(), HandleError> {
+/// batch を処理順に展開する。
+///
+/// 順序は rescan → errors → removed → upserted。removed を upserted より先に
+/// 処理するのは、rename が `removed(from) + upserted(to)` に分解されるため、
+/// 旧パスの削除を新パスの登録より先に反映させる必要があるからである。
+fn changes_in_order(batch: &FileChangeBatch) -> Vec<TaskFileChange> {
+    let mut changes = Vec::new();
+    if batch.rescan {
+        changes.push(TaskFileChange::Rescan);
+    }
+    for failure in &batch.errors {
+        changes.push(TaskFileChange::Failure(failure.clone()));
+    }
+    for path in &batch.removed {
+        changes.push(TaskFileChange::Removed(path.clone()));
+    }
+    for path in &batch.upserted {
+        changes.push(TaskFileChange::Upserted(path.clone()));
+    }
+    changes
+}
+
+/// 1 件の変更を exact-root writer gate 内で処理する。
+pub(crate) fn handle_change(
+    change: &TaskFileChange,
+    ctx: &AdapterContext,
+) -> Result<(), HandleError> {
     let mut before_sequence = || {};
-    handle_event_with_sequence_hook(event, ctx, &mut before_sequence)
+    handle_change_with_sequence_hook(change, ctx, &mut before_sequence)
 }
 
 /// commit/validation 後、conditional eventSeq 採番の直前を制御するテスト入口。
 #[cfg(test)]
-pub(crate) fn handle_event_with_before_sequence(
-    event: &FsEvent,
+pub(crate) fn handle_change_with_before_sequence(
+    change: &TaskFileChange,
     ctx: &AdapterContext,
     mut before_sequence: impl FnMut(),
 ) -> Result<(), HandleError> {
-    handle_event_with_sequence_hook(event, ctx, &mut before_sequence)
+    handle_change_with_sequence_hook(change, ctx, &mut before_sequence)
 }
 
-fn handle_event_with_sequence_hook(
-    event: &FsEvent,
+fn handle_change_with_sequence_hook(
+    change: &TaskFileChange,
     ctx: &AdapterContext,
     before_sequence: &mut dyn FnMut(),
 ) -> Result<(), HandleError> {
     let gate = ctx.state.writer_gate(&ctx.project_root)?;
     let _writer = ctx.state.lock_writer_gate(gate.as_ref())?;
 
-    match event {
-        FsEvent::Created(path) | FsEvent::Modified(path) => {
-            handle_upsert(path, ctx, UpsertMode::Auto, before_sequence)
-        }
-        FsEvent::Renamed { from, to } => {
-            handle_delete(from, ctx, before_sequence)?;
-            handle_upsert(to, ctx, UpsertMode::ForceCreated, before_sequence)
-        }
-        FsEvent::Removed(path) => handle_delete(path, ctx, before_sequence),
-        FsEvent::Other(path) => {
-            let Some(snapshot) = fresh_adapter_snapshot(ctx)? else {
-                return Ok(());
-            };
-            let Some(_resources) = resources_for_snapshot(ctx, &snapshot)? else {
-                return Ok(());
-            };
-            log::trace!("watcher_event: ignoring Other event for {}", path.display());
-            Ok(())
-        }
-        FsEvent::Rescan => handle_rescan(ctx, before_sequence),
-        FsEvent::Error(failure) => handle_backend_failure(failure, ctx, before_sequence),
+    match change {
+        TaskFileChange::Rescan => handle_rescan(ctx, before_sequence),
+        TaskFileChange::Failure(failure) => handle_backend_failure(failure, ctx, before_sequence),
+        TaskFileChange::Removed(path) => handle_delete(path, ctx, before_sequence),
+        TaskFileChange::Upserted(path) => handle_upsert(path, ctx, before_sequence),
     }
 }
 
@@ -195,7 +214,6 @@ fn rel_md_path_lenient(abs_path: &Path, root: &Path) -> Option<TaskFilePath> {
 fn handle_upsert(
     abs_path: &Path,
     ctx: &AdapterContext,
-    mode: UpsertMode,
     before_sequence: &mut dyn FnMut(),
 ) -> Result<(), HandleError> {
     let Some(snapshot) = fresh_adapter_snapshot(ctx)? else {
@@ -241,9 +259,10 @@ fn handle_upsert(
     };
 
     let cache_key = PathBuf::from(task.file_path.as_str());
-    let event_name = match mode {
-        UpsertMode::Auto if snapshot.tasks().contains_key(&cache_key) => EVENT_TASK_UPDATED,
-        UpsertMode::Auto | UpsertMode::ForceCreated => EVENT_TASK_CREATED,
+    let event_name = if snapshot.tasks().contains_key(&cache_key) {
+        EVENT_TASK_UPDATED
+    } else {
+        EVENT_TASK_CREATED
     };
     let was_cycle_member = snapshot
         .tasks()
@@ -699,7 +718,7 @@ fn emit_compat_envelope<P: EnvelopePayload + serde::Serialize>(
     Ok(())
 }
 
-/// `handle_event` 内で発生し得る typed error。
+/// `handle_change` 内で発生し得る typed error。
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum HandleError {
     #[error("AppState lock poisoned: {0}")]

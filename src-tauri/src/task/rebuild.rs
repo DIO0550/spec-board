@@ -1,6 +1,6 @@
 //! disk 上の `.md` から `Task` 一覧を再構築する共通パイプライン。
 //!
-//! `open_project`（初回ロード）と `watcher_event`（`FsEvent::Rescan` 由来の
+//! `open_project`（初回ロード）と `watcher_event`（batch の rescan 由来の
 //! full rescan）が同じ関数を通ることで、両者のフィルタ条件・親子/逆リンク構築が
 //! 恒久的に一致することを保証する。片側だけ条件が変わると「初回 scan で読まれない
 //! ファイルが watcher 経由で現れる」ような非対称なバグになる。
