@@ -334,9 +334,13 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     // キャッシュヒット経路は open の同期処理では disk を一切触らず、直後に予約する
     // 背景 resync が同じ load_project_data を通って reconcile を担う。
     //
-    let prepared_session = match cached {
-        Some(cached_session) => cached_session.into_prepared(),
-        None => load_cold_prepared_session(intent, ports)?,
+    // `None` はキャッシュヒット（disk を読んでいないので config の由来が無い）を表す。
+    let (prepared_session, cold_config_origin) = match cached {
+        Some(cached_session) => (cached_session.into_prepared(), None),
+        None => {
+            let (prepared, origin) = load_cold_prepared_session(intent, ports)?;
+            (prepared, Some(origin))
+        }
     };
 
     // backend/channel と paused worker の構築を resident state の変更前に完了する。
@@ -345,9 +349,17 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     let candidate = prepared_session.into_session(session_id);
     let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
 
-    // bootstrap / reconcile 済みの config が入っているため、GUIDE.md も
-    // 生成・追加されたカラムで出力される。
-    if !from_cache {
+    // GUIDE.md は「config を読めた」または「不在から生成できた」コールドオープンで
+    // だけ書き直す。bootstrap 済み / reconcile 済みの config が入っているため、
+    // 生成・追加されたカラムもそのまま出力される。
+    //
+    // 読み込みに失敗して既定値へ倒れた場合は書かない。実際のカラムは disk の
+    // config.json に残っているのに、既定 3 カラムの一覧で GUIDE を上書きすると、
+    // AI エージェントへ実在しない status 値を案内することになるため。
+    if matches!(
+        cold_config_origin,
+        Some(ConfigOrigin::Persisted | ConfigOrigin::Absent)
+    ) {
         write_guide_markdown_best_effort(root, candidate.config());
     }
 
@@ -386,10 +398,12 @@ fn take_cached_session(state: &AppState, root: &ProjectRoot) -> Option<ProjectSe
 }
 
 /// キャッシュに無い project を disk から読み、open 用の材料へ詰める。
+///
+/// 呼び出し側が GUIDE.md の書き出し可否を判断できるよう、config の由来も返す。
 fn load_cold_prepared_session(
     intent: &OpenProjectIntent,
     ports: ProjectDataPorts<'_>,
-) -> Result<PreparedProjectSession, OpenProjectError> {
+) -> Result<(PreparedProjectSession, ConfigOrigin), OpenProjectError> {
     let root = intent.as_path();
     let mut loaded = load_project_data(
         root,
@@ -421,13 +435,17 @@ fn load_cold_prepared_session(
         }
     }
 
-    Ok(PreparedProjectSession::new_with_warnings(
-        intent.root().clone(),
-        loaded.config,
-        loaded.labels,
-        loaded.milestones,
-        loaded.tasks,
-        loaded.load_warnings,
+    let origin = loaded.config_origin;
+    Ok((
+        PreparedProjectSession::new_with_warnings(
+            intent.root().clone(),
+            loaded.config,
+            loaded.labels,
+            loaded.milestones,
+            loaded.tasks,
+            loaded.load_warnings,
+        ),
+        origin,
     ))
 }
 
