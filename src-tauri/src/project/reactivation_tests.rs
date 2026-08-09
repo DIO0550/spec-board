@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 use super::{run_reactivation_resync, ReactivationResyncOutcome};
-use crate::config::{label_registry_store, milestone_registry_store, FsConfigWriter};
+use crate::config::{
+    label_registry_store, milestone_registry_store, Column, Config, ConfigWriter, FsConfigWriter,
+};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
@@ -79,15 +81,70 @@ fn resync(
     io: &dyn TaskIo,
     log: &EmitLog,
 ) -> ReactivationResyncOutcome {
+    resync_with_config_writer(state, snapshot, root, io, &FsConfigWriter, log)
+}
+
+/// config の書き込みだけ差し替えて resync する。書き込み回数の計数と失敗注入に使う。
+fn resync_with_config_writer(
+    state: &Arc<AppState>,
+    snapshot: &ProjectSessionSnapshot,
+    root: &Path,
+    io: &dyn TaskIo,
+    config_writer: &dyn ConfigWriter,
+    log: &EmitLog,
+) -> ReactivationResyncOutcome {
     run_reactivation_resync(
         state,
         &snapshot.identity(),
         io,
         &label_registry_store(root),
         &milestone_registry_store(root),
-        &FsConfigWriter,
+        config_writer,
         &collecting_emit(log),
     )
+}
+
+/// 常に書き込みへ失敗する `ConfigWriter`。
+struct FailingConfigWriter;
+
+impl ConfigWriter for FailingConfigWriter {
+    fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "config write denied",
+        ))
+    }
+}
+
+/// 本番と同じ書き込みを行いつつ、呼ばれた回数を数える `ConfigWriter`。
+#[derive(Default)]
+struct CountingConfigWriter {
+    calls: AtomicU32,
+}
+
+impl CountingConfigWriter {
+    fn calls(&self) -> u32 {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl ConfigWriter for CountingConfigWriter {
+    fn write_atomic(&self, dst: &Path, content: &str) -> std::io::Result<()> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        FsConfigWriter.write_atomic(dst, content)
+    }
+}
+
+/// `.spec-board/GUIDE.md` を読む。存在しなければ `None`。
+fn read_guide(root: &Path) -> Option<String> {
+    fs::read_to_string(root.join(".spec-board").join("GUIDE.md")).ok()
+}
+
+/// `.spec-board/config.json` を保存済み `Config` として読む。
+fn read_saved_config(root: &Path) -> Config {
+    let raw = fs::read_to_string(root.join(".spec-board").join("config.json"))
+        .expect("config.json should exist");
+    serde_json::from_str(&raw).expect("saved config.json should parse")
 }
 
 fn write_task_md_with_status(root: &Path, rel: &str, title: &str, status: &str) {
@@ -100,6 +157,14 @@ fn write_task_md_with_status(root: &Path, rel: &str, title: &str, status: &str) 
         format!("---\ntitle: {title}\nstatus: {status}\n---\n\nbody\n"),
     )
     .expect("write md");
+}
+
+fn column_names_of(config: &Config) -> Vec<&str> {
+    config
+        .columns
+        .iter()
+        .map(|column| column.name.as_str())
+        .collect()
 }
 
 /// 読み込みのたびに同一 session の commit を注入し、並行 writer との競合を再現する。
@@ -398,4 +463,325 @@ fn emit_is_skipped_when_the_identity_is_no_longer_current() {
     .expect("stale identity is a normal skip, not an error");
 
     assert!(emitted(&log).is_empty());
+}
+
+// ───────── 背景 resync 経路の reconcile ─────────
+
+/// `Todo(0)` / `Done(1)` の config を置く。
+fn write_base_config(root: &Path) {
+    write_spec_board_file(
+        root,
+        "config.json",
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1}],"cardOrder":{},"doneColumn":"Done"}"#,
+    );
+}
+
+#[test]
+fn background_resync_reconciles_an_unknown_status_added_while_backgrounded() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_task_md(dir.path(), "task-1.md", "Task one");
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_task_md_with_status(dir.path(), "task-2.md", "Task two", "Review");
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+    let writer = CountingConfigWriter::default();
+
+    let outcome =
+        resync_with_config_writer(&state, &snapshot, dir.path(), &FsTaskIo, &writer, &log);
+
+    assert_eq!(ReactivationResyncOutcome::Committed, outcome);
+    assert_eq!(1, writer.calls());
+    let saved = read_saved_config(dir.path());
+    assert_eq!(column_names_of(&saved), vec!["Todo", "Done", "Review"]);
+    let events = emitted(&log);
+    assert_eq!(1, events.len());
+    assert_eq!(EVENT_RESYNC_REQUIRED, events[0].0);
+    let resident = state
+        .require_session_snapshot()
+        .expect("session stays open")
+        .config()
+        .clone();
+    assert_eq!(column_names_of(&resident), vec!["Todo", "Done", "Review"]);
+}
+
+#[test]
+fn background_resync_refreshes_the_guide_markdown_with_the_new_column() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Review");
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+
+    resync(&state, &snapshot, dir.path(), &FsTaskIo, &log);
+
+    let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
+    assert!(guide.contains("- Review"));
+}
+
+#[test]
+fn background_resync_does_not_rewrite_the_guide_when_the_config_is_missing_or_broken() {
+    struct Case {
+        label: &'static str,
+        replacement: Option<&'static str>,
+    }
+
+    let cases = vec![
+        Case {
+            label: "config.json が削除された",
+            replacement: None,
+        },
+        Case {
+            label: "config.json が壊れている",
+            replacement: Some("{ not json"),
+        },
+    ];
+
+    for case in cases {
+        let dir = tempdir();
+        write_base_config(dir.path());
+        write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Todo");
+        let state = Arc::new(AppState::new());
+        let snapshot = open_from_disk(&state, dir.path());
+        let guide_before = read_guide(dir.path()).expect("cold open writes GUIDE.md");
+        match case.replacement {
+            Some(content) => write_spec_board_file(dir.path(), "config.json", content),
+            None => fs::remove_file(dir.path().join(".spec-board").join("config.json"))
+                .expect("remove config.json"),
+        }
+        // resident の知らない status を置いても、config を読めない以上何も書かない。
+        write_task_md_with_status(dir.path(), "task-2.md", "Task two", "Review");
+        let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+        let writer = CountingConfigWriter::default();
+
+        resync_with_config_writer(&state, &snapshot, dir.path(), &FsTaskIo, &writer, &log);
+
+        assert_eq!(0, writer.calls(), "case: {}", case.label);
+        assert_eq!(
+            read_guide(dir.path()).as_deref(),
+            Some(guide_before.as_str()),
+            "case: {}",
+            case.label
+        );
+        let resident = state
+            .require_session_snapshot()
+            .expect("session stays open")
+            .config()
+            .clone();
+        assert_eq!(
+            resident,
+            Config::default(),
+            "config を読めない場合は既定値へ倒れる: case: {}",
+            case.label
+        );
+        if case.replacement.is_none() {
+            assert!(
+                !dir.path().join(".spec-board").join("config.json").exists(),
+                "削除された config.json を作り直さない: case: {}",
+                case.label
+            );
+        }
+    }
+}
+
+#[test]
+fn background_resync_writes_nothing_when_the_disk_is_unchanged() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_task_md(dir.path(), "task-1.md", "Task one");
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+    let writer = CountingConfigWriter::default();
+
+    let outcome =
+        resync_with_config_writer(&state, &snapshot, dir.path(), &FsTaskIo, &writer, &log);
+
+    assert_eq!(ReactivationResyncOutcome::Unchanged, outcome);
+    assert_eq!(0, writer.calls());
+    assert!(emitted(&log).is_empty());
+}
+
+#[test]
+fn a_reconciled_column_survives_a_second_resync() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Review");
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+    resync(&state, &snapshot, dir.path(), &FsTaskIo, &log);
+    let after_first = state
+        .require_session_snapshot()
+        .expect("session stays open");
+
+    let writer = CountingConfigWriter::default();
+    let outcome =
+        resync_with_config_writer(&state, &after_first, dir.path(), &FsTaskIo, &writer, &log);
+
+    assert_eq!(ReactivationResyncOutcome::Unchanged, outcome);
+    assert_eq!(0, writer.calls());
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"]
+    );
+}
+
+#[test]
+fn a_failed_reconcile_save_keeps_the_resident_config_and_the_session_intact() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Review");
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+
+    let outcome = resync_with_config_writer(
+        &state,
+        &snapshot,
+        dir.path(),
+        &FsTaskIo,
+        &FailingConfigWriter,
+        &log,
+    );
+
+    assert_eq!(ReactivationResyncOutcome::Committed, outcome);
+    let current = state
+        .require_session_snapshot()
+        .expect("session stays open");
+    assert_eq!(column_names_of(current.config()), vec!["Todo", "Done"]);
+    assert_eq!(1, current.load_warnings().len());
+    assert_eq!(
+        crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback,
+        current.load_warnings()[0].code
+    );
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done"]
+    );
+}
+
+#[test]
+fn a_concurrent_commit_does_not_make_the_reconcile_write_twice() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Review");
+    let io = CommitInjectingTaskIo::new(Arc::clone(&state), 1);
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+    let writer = CountingConfigWriter::default();
+
+    let outcome = resync_with_config_writer(&state, &snapshot, dir.path(), &io, &writer, &log);
+
+    assert_eq!(ReactivationResyncOutcome::Committed, outcome);
+    assert_eq!(
+        1,
+        writer.calls(),
+        "2 周目は disk に新カラムがあるので reconcile が no-op になる"
+    );
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"]
+    );
+}
+
+#[test]
+fn background_resync_keeps_an_update_columns_change_that_landed_just_before_it() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Todo");
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+
+    crate::config::update_columns::update_columns_impl(
+        &state,
+        &FsTaskIo,
+        &FsConfigWriter,
+        crate::config::update_columns::UpdateColumnsArgs {
+            columns: Some(vec![
+                Column {
+                    name: "Todo".into(),
+                    order: 0,
+                    color: None,
+                },
+                Column {
+                    name: "Done".into(),
+                    order: 1,
+                    color: None,
+                },
+                Column {
+                    name: "Idea".into(),
+                    order: 2,
+                    color: None,
+                },
+            ]),
+            done_column: None,
+            renames: None,
+        },
+    )
+    .expect("update_columns adds the Idea column");
+    write_task_md_with_status(dir.path(), "task-2.md", "Task two", "Review");
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+
+    resync(&state, &snapshot, dir.path(), &FsTaskIo, &log);
+
+    let saved = read_saved_config(dir.path());
+    assert_eq!(
+        column_names_of(&saved),
+        vec!["Todo", "Done", "Idea", "Review"],
+        "reconcile は disk を読んでから書くので update_columns の変更を潰さない"
+    );
+}
+
+#[test]
+fn background_resync_commits_a_config_only_difference() {
+    // watcher の CAS 競合で「disk の config.json は新カラムあり / resident は旧」に
+    // なった状態。md には 1 件も変更が無くても resident が disk に追いつく。
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Todo");
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_spec_board_file(
+        dir.path(),
+        "config.json",
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1},{"name":"Review","order":2}],"cardOrder":{},"doneColumn":"Done"}"#,
+    );
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+    let writer = CountingConfigWriter::default();
+
+    let outcome =
+        resync_with_config_writer(&state, &snapshot, dir.path(), &FsTaskIo, &writer, &log);
+
+    assert_eq!(ReactivationResyncOutcome::Committed, outcome);
+    assert_eq!(0, writer.calls());
+    let resident = state
+        .require_session_snapshot()
+        .expect("session stays open")
+        .config()
+        .clone();
+    assert_eq!(column_names_of(&resident), vec!["Todo", "Done", "Review"]);
+    let events = emitted(&log);
+    assert_eq!(1, events.len());
+    assert_eq!(EVENT_RESYNC_REQUIRED, events[0].0);
+}
+
+#[test]
+fn a_retried_commit_still_leaves_the_guide_markdown_up_to_date() {
+    // GUIDE.md を commit の後ろで書くと、1 周目の競合で retry へ抜けたときに
+    // 2 周目の reconcile が no-op になり、書き直す機会が二度と来ない。
+    let dir = tempdir();
+    write_base_config(dir.path());
+    let state = Arc::new(AppState::new());
+    let snapshot = open_from_disk(&state, dir.path());
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Review");
+    let io = CommitInjectingTaskIo::new(Arc::clone(&state), 1);
+    let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
+
+    resync(&state, &snapshot, dir.path(), &io, &log);
+
+    let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
+    assert!(guide.contains("- Review"));
 }
