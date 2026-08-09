@@ -1,8 +1,9 @@
 use super::{
     open_project_impl, open_project_impl_with_reporter, OpenProjectError, OpenProjectPayload,
+    ProjectDataPorts,
 };
 
-use crate::config::{CardOrder, Column, Config};
+use crate::config::{CardOrder, Column, Config, ConfigWriter, FsConfigWriter};
 use crate::project::reactivation::{
     CollectingReactivationScheduler, NoopReactivationScheduler, ReactivationResyncScheduler,
 };
@@ -582,6 +583,314 @@ fn columns_sorted_by_order_irrespective_of_input_array_order() {
     );
 }
 
+// ───────── config bootstrap（config 不在時の生成・保存） ─────────
+
+/// `.spec-board/config.json` を読み、保存された Config として解釈する。
+fn read_saved_config(root: &Path) -> Config {
+    let raw = fs::read_to_string(root.join(".spec-board").join("config.json"))
+        .expect("config.json should exist");
+    serde_json::from_str(&raw).expect("saved config.json should parse")
+}
+
+/// config の書き込みだけ差し替えて開く。書き込み失敗時の fallback 検証に使う。
+fn open_with_config_writer(
+    state: Arc<AppState>,
+    path: &str,
+    config_writer: &dyn ConfigWriter,
+) -> Result<OpenProjectPayload, OpenProjectError> {
+    let intent = OpenProjectIntent::try_from(path.to_string())?;
+    let labels_store = crate::config::label_registry_store(intent.as_path());
+    let milestones_store = crate::config::milestone_registry_store(intent.as_path());
+    open_project_impl_with_reporter(
+        &state,
+        &intent,
+        ProjectDataPorts {
+            labels_store: &labels_store,
+            milestones_store: &milestones_store,
+            config_writer,
+        },
+        &NoopWatcherFactory,
+        &LogWatcherStopDiagnosticReporter,
+        &NoopReactivationScheduler,
+    )
+}
+
+/// 常に書き込みへ失敗する `ConfigWriter`。
+struct FailingConfigWriter;
+
+impl ConfigWriter for FailingConfigWriter {
+    fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "config write denied",
+        ))
+    }
+}
+
+/// 本番と同じ書き込みを行いつつ、呼ばれた回数を数える `ConfigWriter`。
+#[derive(Default)]
+struct CountingConfigWriter {
+    calls: AtomicUsize,
+}
+
+impl CountingConfigWriter {
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl ConfigWriter for CountingConfigWriter {
+    fn write_atomic(&self, dst: &Path, content: &str) -> std::io::Result<()> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        FsConfigWriter.write_atomic(dst, content)
+    }
+}
+
+#[test]
+fn bootstrap_generates_columns_from_task_statuses() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    write_md(dir.path(), "tasks/c.md", &task_md("C", "Done", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+
+    assert_eq!(
+        vec!["Doing".to_string(), "Todo".to_string(), "Done".to_string()],
+        payload.columns
+    );
+    let saved = read_saved_config(dir.path());
+    let saved_columns: Vec<&str> = saved.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(vec!["Doing", "Todo", "Done"], saved_columns);
+    assert_eq!(saved.done_column.as_deref(), Some("Done"));
+}
+
+#[test]
+fn bootstrap_persisted_config_is_reused_on_reopen() {
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let first = open_with_noop(Arc::new(AppState::new()), &raw).expect("first open");
+    let after_first = fs::read(dir.path().join(".spec-board").join("config.json"))
+        .expect("config.json should exist after the first open");
+
+    // 別 AppState から開き直してキャッシュを経由させない（= コールドオープン）。
+    let second = open_with_noop(Arc::new(AppState::new()), &raw).expect("second open");
+    let after_second = fs::read(dir.path().join(".spec-board").join("config.json"))
+        .expect("config.json should still exist");
+
+    assert_eq!(first.columns, second.columns);
+    assert_eq!(after_first, after_second);
+}
+
+#[test]
+fn reopen_keeps_status_less_task_in_the_same_column() {
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    write_md(dir.path(), "tasks/b.md", "---\ntitle: B\n---\n\nbody\n");
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let first = open_with_noop(Arc::new(AppState::new()), &raw).expect("first open");
+    let second = open_with_noop(Arc::new(AppState::new()), &raw).expect("second open");
+
+    // 生成 config の既定 status は order 最小の `Doing`。初回オープンの時点で
+    // それを反映しないと、2 回目にカードが別カラムへ移って見える。
+    assert_eq!("Doing", status_of(&first, "tasks/b.md"));
+    assert_eq!("Doing", status_of(&second, "tasks/b.md"));
+    assert_eq!(vec!["Doing".to_string(), "Todo".to_string()], first.columns);
+    assert_eq!(first.columns, second.columns);
+}
+
+/// payload から指定 id のタスクの status を取り出す。
+fn status_of(payload: &OpenProjectPayload, id: &str) -> String {
+    payload
+        .tasks
+        .iter()
+        .find(|task| task.id == id)
+        .expect("task exists")
+        .status
+        .as_str()
+        .to_owned()
+}
+
+#[test]
+fn bootstrap_deduplicates_repeated_status() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Doing", None));
+    write_md(dir.path(), "tasks/c.md", &task_md("C", "Doing", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+
+    assert_eq!(vec!["Doing".to_string()], payload.columns);
+}
+
+#[test]
+fn bootstrap_writes_default_config_for_empty_directory() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+
+    let default_columns: Vec<String> = Config::default()
+        .columns
+        .iter()
+        .map(|c| c.name.as_str().to_string())
+        .collect();
+    let payload_columns: Vec<String> = payload
+        .columns
+        .iter()
+        .map(|c| c.as_str().to_string())
+        .collect();
+    assert_eq!(default_columns, payload_columns);
+    assert_eq!(Config::default(), read_saved_config(dir.path()));
+}
+
+#[test]
+fn existing_config_is_not_overwritten_by_bootstrap() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let config_json = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Backlog", "order": 0 }
+        ],
+        "cardOrder": {}
+    }"#;
+    write_config_json(dir.path(), config_json);
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let before = fs::read(dir.path().join(".spec-board").join("config.json")).expect("read config");
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+
+    assert_eq!(vec!["Backlog".to_string()], payload.columns);
+    let after = fs::read(dir.path().join(".spec-board").join("config.json")).expect("read config");
+    assert_eq!(before, after);
+}
+
+#[test]
+fn config_write_failure_falls_back_to_default_columns_with_warning() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_config_writer(Arc::clone(&state), &raw, &FailingConfigWriter)
+        .expect("config write failure must not fail the open");
+
+    let default_columns: Vec<String> = Config::default()
+        .columns
+        .iter()
+        .map(|c| c.name.as_str().to_string())
+        .collect();
+    let payload_columns: Vec<String> = payload
+        .columns
+        .iter()
+        .map(|c| c.as_str().to_string())
+        .collect();
+    assert_eq!(default_columns, payload_columns);
+    assert_eq!(1, payload.load_warnings.len());
+    assert_eq!(
+        crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback,
+        payload.load_warnings[0].code
+    );
+    assert!(!dir.path().join(".spec-board").join("config.json").exists());
+}
+
+#[test]
+fn broken_config_is_not_replaced_by_bootstrap() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    let broken = "{ this is not json";
+    write_config_json(dir.path(), broken);
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should fall back and succeed");
+
+    let default_columns: Vec<String> = Config::default()
+        .columns
+        .iter()
+        .map(|c| c.name.as_str().to_string())
+        .collect();
+    let payload_columns: Vec<String> = payload
+        .columns
+        .iter()
+        .map(|c| c.as_str().to_string())
+        .collect();
+    assert_eq!(default_columns, payload_columns);
+    assert!(payload.load_warnings.iter().any(|warning| {
+        warning.code == crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback
+    }));
+    let on_disk = fs::read_to_string(dir.path().join(".spec-board").join("config.json"))
+        .expect("config.json should still exist");
+    assert_eq!(broken, on_disk);
+}
+
+#[test]
+fn bootstrap_keeps_status_unnormalized() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md("A", "\"  Todo  \"", None),
+    );
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+
+    assert_eq!(
+        vec!["  Todo  ".to_string(), "Todo".to_string()],
+        payload.columns
+    );
+}
+
+#[test]
+fn bootstrap_uses_default_status_for_tasks_without_status() {
+    let state = Arc::new(AppState::new());
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", "---\ntitle: A\n---\n\nbody\n");
+    write_md(dir.path(), "tasks/b.md", "---\ntitle: B\n---\n\nbody\n");
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
+
+    assert_eq!(vec!["Todo".to_string()], payload.columns);
+}
+
+#[test]
+fn bootstrap_runs_only_on_cold_open() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    write_md(dir_a.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    let raw_a = dir_a.path().to_str().expect("utf-8").to_string();
+    let raw_b = dir_b.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    open_with_config_writer(Arc::clone(&state), &raw_a, &writer).expect("cold open A");
+    open_with_config_writer(Arc::clone(&state), &raw_b, &writer).expect("cold open B");
+    let calls_before_reopen = writer.calls();
+    let reopened = open_with_config_writer(Arc::clone(&state), &raw_a, &writer).expect("reopen A");
+
+    assert_eq!(vec!["Doing".to_string()], reopened.columns);
+    assert_eq!(
+        calls_before_reopen,
+        writer.calls(),
+        "キャッシュヒット経路では config を書き直さない"
+    );
+}
+
 #[test]
 fn writes_guide_markdown_to_disk() {
     let state = Arc::new(AppState::new());
@@ -609,8 +918,10 @@ fn updates_app_state_fields_on_success() {
         Some(dir.path().to_path_buf()),
         state.test_project_root().expect("readable")
     );
+    // config 不在なので、置いた 1 件の status から生成された config が state に入る。
     let cfg = state.test_config().expect("readable").expect("config set");
-    assert_eq!(Config::default(), cfg);
+    let column_names: Vec<&str> = cfg.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(vec!["Todo"], column_names);
     let snapshot = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, snapshot.len());
     assert_eq!("tasks/a.md", snapshot[0].file_path);
@@ -829,8 +1140,11 @@ fn watcher_stop_panic_is_reported_without_rolling_back_new_session() {
     let second = open_project_impl_with_reporter(
         &state,
         &intent,
-        &crate::config::label_registry_store(intent.as_path()),
-        &crate::config::milestone_registry_store(intent.as_path()),
+        ProjectDataPorts {
+            labels_store: &crate::config::label_registry_store(intent.as_path()),
+            milestones_store: &crate::config::milestone_registry_store(intent.as_path()),
+            config_writer: &FsConfigWriter,
+        },
         &NoopWatcherFactory,
         &reporter,
         &NoopReactivationScheduler,
@@ -2341,8 +2655,11 @@ fn open_with_scheduler(
     open_project_impl_with_reporter(
         &state,
         &intent,
-        &labels_store,
-        &milestones_store,
+        ProjectDataPorts {
+            labels_store: &labels_store,
+            milestones_store: &milestones_store,
+            config_writer: &FsConfigWriter,
+        },
         &NoopWatcherFactory,
         &LogWatcherStopDiagnosticReporter,
         resync,
