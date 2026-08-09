@@ -765,7 +765,9 @@ fn existing_config_is_not_overwritten_by_bootstrap() {
         "cardOrder": {}
     }"#;
     write_config_json(dir.path(), config_json);
-    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    // status は既存カラムに合わせる。未知 status を置くと reconcile が末尾へ
+    // カラムを足すため、bootstrap による上書きの有無を切り分けられなくなる。
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Backlog", None));
     let raw = dir.path().to_str().expect("utf-8").to_string();
     let before = fs::read(dir.path().join(".spec-board").join("config.json")).expect("read config");
 
@@ -869,7 +871,7 @@ fn bootstrap_uses_default_status_for_tasks_without_status() {
 }
 
 #[test]
-fn bootstrap_runs_only_on_cold_open() {
+fn cache_hit_reopen_does_not_bootstrap_the_config_again() {
     let state = Arc::new(AppState::new());
     let dir_a = tempdir();
     let dir_b = tempdir();
@@ -887,7 +889,7 @@ fn bootstrap_runs_only_on_cold_open() {
     assert_eq!(
         calls_before_reopen,
         writer.calls(),
-        "キャッシュヒット経路では config を書き直さない"
+        "差分が無ければ config を書き直さない"
     );
 }
 
@@ -2962,4 +2964,523 @@ fn open_falls_back_to_a_cold_read_when_the_cache_lock_is_poisoned() {
 
     assert_eq!(1, reopened.tasks.len());
     assert_eq!("tasks/a.md", reopened.tasks[0].file_path.as_str());
+}
+
+// ───────── config reconcile（既存 config への未知 status 追加） ─────────
+
+/// `.spec-board/GUIDE.md` を読む。存在しなければ `None`。
+fn read_guide(root: &Path) -> Option<String> {
+    fs::read_to_string(root.join(".spec-board").join("GUIDE.md")).ok()
+}
+
+fn write_guide(root: &Path, content: &str) {
+    let dir = root.join(".spec-board");
+    fs::create_dir_all(&dir).expect("create .spec-board");
+    fs::write(dir.join("GUIDE.md"), content).expect("write GUIDE.md");
+}
+
+/// `Todo(0)` / `Doing(1)` / `Done(2)` の config を置く。
+fn write_base_config(root: &Path) {
+    write_config_json(
+        root,
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo",  "order": 0 },
+                { "name": "Doing", "order": 1 },
+                { "name": "Done",  "order": 2 }
+            ],
+            "cardOrder": {},
+            "doneColumn": "Done"
+        }"#,
+    );
+}
+
+fn column_names_of(payload: &OpenProjectPayload) -> Vec<&str> {
+    payload
+        .columns
+        .iter()
+        .map(|column| column.as_str())
+        .collect()
+}
+
+#[test]
+fn reconcile_appends_unknown_status_column_to_payload_and_disk() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    assert_eq!(
+        column_names_of(&payload),
+        vec!["Todo", "Doing", "Done", "Review"]
+    );
+    let saved = read_saved_config(dir.path());
+    let saved_names: Vec<&str> = saved.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(saved_names, vec!["Todo", "Doing", "Done", "Review"]);
+    assert_eq!(saved.columns[3].order, 3);
+    assert_eq!(saved.done_column.as_deref(), Some("Done"));
+}
+
+#[test]
+fn reconcile_keeps_user_column_order_and_card_order() {
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Alpha", "order": 2 },
+                { "name": "Beta",  "order": 0 },
+                { "name": "Gamma", "order": 1 }
+            ],
+            "cardOrder": { "Beta": ["tasks/b.md"] },
+            "doneColumn": "Alpha"
+        }"#,
+    );
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Beta", None));
+    write_md(dir.path(), "tasks/z.md", &task_md("Z", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    let saved = read_saved_config(dir.path());
+    assert_eq!(
+        saved.columns[..3].to_vec(),
+        vec![
+            Column {
+                name: "Alpha".into(),
+                order: 2,
+                color: None
+            },
+            Column {
+                name: "Beta".into(),
+                order: 0,
+                color: None
+            },
+            Column {
+                name: "Gamma".into(),
+                order: 1,
+                color: None
+            },
+        ]
+    );
+    assert_eq!(saved.columns[3].name.as_str(), "Review");
+    assert_eq!(saved.columns[3].order, 3);
+    assert_eq!(
+        saved.card_order.get("Beta").map(|paths| paths
+            .iter()
+            .map(|p| p.as_str().to_string())
+            .collect::<Vec<_>>()),
+        Some(vec!["tasks/b.md".to_string()])
+    );
+    assert_eq!(saved.done_column.as_deref(), Some("Alpha"));
+}
+
+#[test]
+fn reconcile_writes_nothing_when_every_status_is_known() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("should succeed");
+
+    assert_eq!(0, writer.calls());
+}
+
+#[test]
+fn reconcile_is_idempotent_across_cold_reopens() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    let first =
+        open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("first open");
+    let calls_after_first = writer.calls();
+    let second =
+        open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("second open");
+
+    assert_eq!(first.columns, second.columns);
+    assert_eq!(
+        read_saved_config(dir.path()).done_column.as_deref(),
+        Some("Done")
+    );
+    assert_eq!(1, calls_after_first);
+    assert_eq!(calls_after_first, writer.calls(), "2 回目は書き直さない");
+}
+
+#[test]
+fn reconcile_freezes_done_column_when_the_config_has_none() {
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Done", "order": 1 }
+            ],
+            "cardOrder": {}
+        }"#,
+    );
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    let saved = read_saved_config(dir.path());
+    assert_eq!(
+        saved.done_column.as_deref(),
+        Some("Done"),
+        "追加前の末尾カラムで確定し、新カラムを指さない"
+    );
+}
+
+#[test]
+fn reconcile_does_not_repair_a_done_column_outside_columns() {
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 }
+            ],
+            "cardOrder": {},
+            "doneColumn": "Ghost"
+        }"#,
+    );
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    let saved = read_saved_config(dir.path());
+    assert_eq!(saved.done_column.as_deref(), Some("Ghost"));
+    let names: Vec<&str> = saved.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, vec!["Todo", "Review"]);
+}
+
+#[test]
+fn reconcile_save_failure_keeps_the_old_columns_and_adds_one_warning() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let before = fs::read(dir.path().join(".spec-board").join("config.json")).expect("read config");
+
+    let payload = open_with_config_writer(Arc::new(AppState::new()), &raw, &FailingConfigWriter)
+        .expect("config write failure must not fail the open");
+
+    assert_eq!(column_names_of(&payload), vec!["Todo", "Doing", "Done"]);
+    assert_eq!(1, payload.load_warnings.len());
+    assert_eq!(
+        crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback,
+        payload.load_warnings[0].code
+    );
+    let after = fs::read(dir.path().join(".spec-board").join("config.json")).expect("read config");
+    assert_eq!(before, after);
+}
+
+#[test]
+fn broken_config_is_not_reconciled_and_keeps_a_single_warning() {
+    let dir = tempdir();
+    let broken = "{ this is not json";
+    write_config_json(dir.path(), broken);
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::new(AppState::new()), &raw).expect("should fall back");
+
+    let on_disk = fs::read_to_string(dir.path().join(".spec-board").join("config.json"))
+        .expect("config.json should still exist");
+    assert_eq!(broken, on_disk);
+    assert_eq!(1, payload.load_warnings.len());
+    assert_eq!(
+        crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback,
+        payload.load_warnings[0].code
+    );
+}
+
+#[test]
+fn broken_config_leaves_the_existing_guide_markdown_untouched() {
+    let dir = tempdir();
+    write_config_json(dir.path(), "{ this is not json");
+    let guide_before = "# ユーザーが用意した GUIDE\n\n- Backlog\n";
+    write_guide(dir.path(), guide_before);
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should fall back");
+
+    assert_eq!(read_guide(dir.path()).as_deref(), Some(guide_before));
+}
+
+#[test]
+fn readable_config_still_refreshes_the_guide_markdown_on_cold_open() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_guide(dir.path(), "stale\n");
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
+    assert!(guide.contains("- Todo"));
+    assert!(guide.contains("- Doing"));
+    assert!(guide.contains("- Done"));
+}
+
+#[test]
+fn absent_config_still_writes_the_guide_markdown_on_cold_open() {
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Backlog", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
+    assert!(guide.contains("- Backlog"));
+}
+
+#[test]
+fn reconcile_refreshes_the_guide_markdown_with_the_new_column() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
+    assert!(guide.contains("- Review"));
+}
+
+#[test]
+fn absent_config_bootstraps_without_a_second_write() {
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("should succeed");
+
+    assert_eq!(
+        1,
+        writer.calls(),
+        "bootstrap だけが走り reconcile は走らない"
+    );
+}
+
+#[test]
+fn bootstrap_reload_path_still_writes_the_config_once() {
+    // 生成 config の既定 status（order 最小）が走査時の "Todo" と変わるため、
+    // `load_project_data` が 2 回走る経路。2 周目は生成 config が全 status を
+    // 含むので reconcile は no-op になる。
+    let dir = tempdir();
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    write_md(dir.path(), "tasks/b.md", "---\ntitle: B\n---\n\nbody\n");
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    let payload =
+        open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("should succeed");
+
+    assert_eq!(column_names_of(&payload), vec!["Doing", "Todo"]);
+    assert_eq!(1, writer.calls());
+}
+
+#[test]
+fn reconcile_writes_nothing_for_an_empty_or_status_less_project() {
+    struct Case {
+        label: &'static str,
+        md: Option<(&'static str, &'static str)>,
+    }
+
+    let cases = vec![
+        Case {
+            label: "task 0 件",
+            md: None,
+        },
+        Case {
+            label: "status 未記載タスクのみ",
+            md: Some(("tasks/a.md", "---\ntitle: A\n---\n\nbody\n")),
+        },
+    ];
+
+    for case in cases {
+        let dir = tempdir();
+        write_base_config(dir.path());
+        if let Some((rel, body)) = case.md {
+            write_md(dir.path(), rel, body);
+        }
+        let raw = dir.path().to_str().expect("utf-8").to_string();
+        let writer = CountingConfigWriter::default();
+
+        let payload = open_with_config_writer(Arc::new(AppState::new()), &raw, &writer)
+            .expect("should succeed");
+
+        assert_eq!(0, writer.calls(), "case: {}", case.label);
+        assert_eq!(
+            column_names_of(&payload),
+            vec!["Todo", "Doing", "Done"],
+            "case: {}",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn reconcile_keeps_the_default_status_of_status_less_tasks() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", "---\ntitle: A\n---\n\nbody\n");
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    assert_eq!("Todo", status_of(&payload, "tasks/a.md"));
+}
+
+#[test]
+fn reconcile_persists_an_empty_status_column_verbatim() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "\"\"", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    let first =
+        open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("first open");
+    let calls_after_first = writer.calls();
+    let second =
+        open_with_config_writer(Arc::new(AppState::new()), &raw, &writer).expect("second open");
+
+    assert_eq!(column_names_of(&first), vec!["Todo", "Doing", "Done", ""]);
+    let saved = read_saved_config(dir.path());
+    assert_eq!(saved.columns[3].name.as_str(), "");
+    assert_eq!(column_names_of(&second), column_names_of(&first));
+    assert_eq!(calls_after_first, writer.calls(), "reopen で書き直さない");
+}
+
+#[test]
+fn reconcile_adds_unknown_statuses_in_path_ascending_first_occurrence() {
+    let dir = tempdir();
+    write_base_config(dir.path());
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Blocked", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Review", None));
+    write_md(dir.path(), "tasks/c.md", &task_md("C", "Blocked", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+
+    let payload = open_with_noop(Arc::new(AppState::new()), &raw).expect("should succeed");
+
+    assert_eq!(
+        column_names_of(&payload),
+        vec!["Todo", "Doing", "Done", "Blocked", "Review"]
+    );
+}
+
+#[test]
+fn a_column_deleted_by_update_columns_comes_back_at_the_tail() {
+    let dir = tempdir();
+    write_config_json(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo",   "order": 0 },
+                { "name": "Review", "order": 1 },
+                { "name": "Done",   "order": 2 }
+            ],
+            "cardOrder": { "Review": ["tasks/b.md", "tasks/a.md"] },
+            "doneColumn": "Done"
+        }"#,
+    );
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Review", None));
+    write_md(dir.path(), "tasks/b.md", &task_md("B", "Review", None));
+    let raw = dir.path().to_str().expect("utf-8").to_string();
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), &raw).expect("first open");
+
+    crate::config::update_columns::update_columns_impl(
+        &state,
+        &crate::task::io::FsTaskIo,
+        &FsConfigWriter,
+        crate::config::update_columns::UpdateColumnsArgs {
+            columns: Some(vec![
+                Column {
+                    name: "Todo".into(),
+                    order: 0,
+                    color: None,
+                },
+                Column {
+                    name: "Done".into(),
+                    order: 2,
+                    color: None,
+                },
+            ]),
+            done_column: None,
+            renames: None,
+        },
+    )
+    .expect("update_columns removes the Review column");
+    assert!(
+        read_saved_config(dir.path())
+            .card_order
+            .get("Review")
+            .is_none(),
+        "削除で cardOrder のエントリも消える"
+    );
+
+    let reopened = open_with_noop(Arc::new(AppState::new()), &raw).expect("cold reopen");
+
+    assert_eq!(column_names_of(&reopened), vec!["Todo", "Done", "Review"]);
+    let saved = read_saved_config(dir.path());
+    assert!(saved.card_order.get("Review").is_none());
+    let review_task_ids: Vec<&str> = reopened
+        .tasks
+        .iter()
+        .filter(|task| task.status.as_str() == "Review")
+        .map(|task| task.id.as_str())
+        .collect();
+    assert_eq!(
+        review_task_ids,
+        vec!["tasks/a.md", "tasks/b.md"],
+        "cardOrder が無いカラムは id 昇順で並ぶ"
+    );
+}
+
+#[test]
+fn cache_hit_reopen_does_not_write_the_config_synchronously() {
+    let state = Arc::new(AppState::new());
+    let dir_a = tempdir();
+    let dir_b = tempdir();
+    write_base_config(dir_a.path());
+    write_md(dir_a.path(), "tasks/a.md", &task_md("A", "Review", None));
+    let raw_a = dir_a.path().to_str().expect("utf-8").to_string();
+    let raw_b = dir_b.path().to_str().expect("utf-8").to_string();
+    let writer = CountingConfigWriter::default();
+
+    open_with_config_writer(Arc::clone(&state), &raw_a, &writer).expect("cold open A");
+    open_with_config_writer(Arc::clone(&state), &raw_b, &writer).expect("cold open B");
+    let calls_before_reopen = writer.calls();
+    let reopened = open_with_config_writer(Arc::clone(&state), &raw_a, &writer).expect("reopen A");
+
+    assert_eq!(
+        column_names_of(&reopened),
+        vec!["Todo", "Doing", "Done", "Review"]
+    );
+    assert_eq!(
+        calls_before_reopen,
+        writer.calls(),
+        "再オープンの同期経路では config を書かない（差分の有無に関わらず、書き込みは背景 resync の責務）"
+    );
 }

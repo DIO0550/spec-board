@@ -11,6 +11,7 @@ use tempfile::TempDir;
 
 use super::handler::{handle_event, run_event_loop};
 use super::{AdapterContext, EmitFn};
+use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, SessionIdentity};
 use crate::state::active_project_resources::{
@@ -79,6 +80,7 @@ fn build_ctx(root: PathBuf, state: Arc<AppState>) -> (AdapterContext, EmitLog) {
         state,
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
+        config_writer: Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
     };
     (ctx, log)
 }
@@ -725,6 +727,7 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
         state,
         emit: panicking_emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
+        config_writer: Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
     };
     let (tx, rx) = std::sync::mpsc::channel::<FsEvent>();
 

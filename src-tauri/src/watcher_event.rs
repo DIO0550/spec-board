@@ -39,6 +39,7 @@ use std::thread::{self, JoinHandle};
 
 use tauri::{AppHandle, Emitter};
 
+use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{SessionId, SessionIdentity};
 use crate::state::active_project_resources::{
@@ -65,6 +66,10 @@ pub(crate) struct AdapterContext {
     /// MD ファイル I/O ポート。`handle_upsert` の `fs::read` を本 port 経由に
     /// 置換することで、effect 層から `std::fs::*` の直接呼び出しを排除する。
     pub(crate) io: Arc<dyn TaskIo>,
+    /// config.json 書き出しポート。未知 status のカラム追加（reconcile）でのみ使い、
+    /// 追加すべきカラムが無い通常の event では 1 度も呼ばれない。open 側と同じ
+    /// `ConfigWriter` を共有することで、書き込み失敗をテストから注入できる。
+    pub(crate) config_writer: Arc<dyn ConfigWriter + Send + Sync>,
 }
 
 /// 実 `WatcherHandle` 実装。Watcher Drop + adapter join を内包する。
@@ -126,6 +131,7 @@ pub(crate) fn stage_adapter(
         state,
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
+        config_writer: Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
     };
     stage_adapter_with_ctx(watcher, rx, ctx, identity)
 }
