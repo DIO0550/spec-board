@@ -177,8 +177,13 @@ impl Config {
 
     /// 指定された名前のカラムが [`Self::columns`] に存在するかを返す。
     ///
-    /// 比較は完全一致（case-sensitive）。`cardOrder` の更新前に
-    /// 「未知のカラムに対する書き込み」を弾くプリチェックとして利用する。
+    /// 比較は完全一致（case-sensitive）。前後空白付きや空文字も別の名前として
+    /// 扱う（カラム名を正規化しない仕様に合わせる）。
+    ///
+    /// 「そのカラム名が現在の設定で有効か」を判定する共通の入口で、
+    /// `cardOrder` 更新前のプリチェック、`move_task` の移動先検証、
+    /// 未知 status のカラム追加（[`Self::plan_reconcile_columns`]）が
+    /// いずれもこれを使う。
     pub fn has_column(&self, name: &str) -> bool {
         self.columns.iter().any(|c| c.name.as_str() == name)
     }
@@ -420,6 +425,154 @@ impl Config {
         next.card_order.set_column(&column_name, &retained);
         Ok(next)
     }
+
+    /// 既存 columns に無い status を末尾カラムとして追加する純粋計算。
+    ///
+    /// [`Self::plan_update_columns`] と同じく `&self` を借用して新しい `Config` を
+    /// 返し、disk も state も触らない。
+    ///
+    /// [`build_config_from_statuses`]（config 不在時の生成）と統合していないのは
+    /// `doneColumn` の規則が異なるため。生成側は末尾 status を `doneColumn` に
+    /// 採用するが、reconcile は既存の `doneColumn` を動かさない。走査順と初出順の
+    /// 規則だけは [`distinct_statuses_in_path_order`] で共有する。
+    ///
+    /// # 入力規約
+    /// [`build_config_from_statuses`] と同一。`status` は trim も大文字小文字統一も
+    /// せずそのままカラム名になる。`None`（status 未記載）は追加候補にしない。
+    /// 未記載タスクの status はパース時に既定 status（`order` 最小の既存カラム）へ
+    /// 解決済みで、新しいカラムを生む余地がないため。
+    ///
+    /// 「path 昇順の初出順」で並ぶのは 1 回の呼び出しに渡された `inputs` の中だけで、
+    /// 呼び出しを分けた場合の順序は呼び出し順になる。
+    ///
+    /// # 戻り値
+    /// - 追加が無ければ `is_noop = true` と `self.clone()`
+    /// - 追加があれば `order` 最大 +1 から連番を振ったカラムを末尾に足した `Config`。
+    ///   `order` が `u32` の上限に張り付いている異常な config では採番が飽和し、
+    ///   新カラムは既存カラムと同じ `order` になる。その場合の表示順は
+    ///   [`Self::columns_in_display_order`] の安定ソートに従い、`columns` ベクタで
+    ///   後ろにある新カラムが末尾に残る。
+    /// - `done_column` は `Some(_)` なら維持する（`columns` に存在しない値でも
+    ///   修復しない。reconcile の責務は未知 status のカラム追加であって不正な
+    ///   config の是正ではなく、勝手に直すとユーザーが後から追加するつもりの
+    ///   カラム名を奪う）。`None` かつ追加がある場合のみ
+    ///   [`Self::resolved_done_column`] の解決結果を凍結する。
+    ///
+    /// 凍結が要るのは、`done_column` が `None` のときの解決規則が `max_by_key`
+    /// （同順位では最後の要素）で、末尾へ push しただけで解決結果が新カラムへ
+    /// 移ってしまうため。`default_status_for` 側の `min_by_key` は同順位で最初の
+    /// 要素を返すので末尾追加の影響を受けない。この非対称が「既定 status は
+    /// 放っておいてよいが `doneColumn` は凍結が要る」という扱いの差の根拠になる。
+    ///
+    /// 凍結値は必ず [`Self::resolved_done_column`] から取る。「追加前の `order`
+    /// 最大カラム名」を手書きで求めると、同一 `order` のときのタイブレーク規則を
+    /// 取りこぼして凍結したはずの `doneColumn` がずれる。
+    pub fn plan_reconcile_columns(
+        &self,
+        inputs: &[(PathBuf, Option<String>)],
+    ) -> ReconcileColumnsPlan {
+        // 「既存カラムに在るか」の判定は helper へ持ち込まず has_column に委ねる。
+        // helper 側の `seen` を既存カラム名で prime する形にすると、重複除去と
+        // 既存除外という 2 つの意味が混ざり、名前の一致規則が写経される。
+        let added: Vec<String> = distinct_statuses_in_path_order(inputs, None)
+            .into_iter()
+            .filter(|name| !self.has_column(name))
+            .collect();
+
+        if added.is_empty() {
+            return ReconcileColumnsPlan {
+                new_config: self.clone(),
+                added_columns: Vec::new(),
+                is_noop: true,
+            };
+        }
+
+        // append より前に解決する。後に呼ぶと、`done_column` が None の config では
+        // 新カラム自身が解決結果になる。
+        let frozen_done_column = self.resolved_done_column().cloned();
+
+        let mut columns = self.columns.clone();
+        let mut next_order = columns
+            .iter()
+            .map(|column| column.order)
+            .max()
+            .map_or(0, |max| max.saturating_add(1));
+        let mut added_columns: Vec<ColumnName> = Vec::with_capacity(added.len());
+        for name in added {
+            let name = ColumnName::from_lenient(name);
+            columns.push(Column {
+                name: name.clone(),
+                order: next_order,
+                color: None,
+            });
+            added_columns.push(name);
+            next_order = next_order.saturating_add(1);
+        }
+
+        ReconcileColumnsPlan {
+            new_config: Config {
+                version: self.version,
+                columns,
+                // 新カラムは cardOrder にエントリを持たない。CardOrder は全カラム分の
+                // キーを要求しないため、これで不変条件は保たれる。
+                card_order: self.card_order.clone(),
+                done_column: frozen_done_column,
+            },
+            added_columns,
+            is_noop: false,
+        }
+    }
+}
+
+/// [`Config::plan_reconcile_columns`] の計算結果。
+///
+/// `is_noop` が true のとき `new_config` は `self.clone()` と等しく、
+/// 呼び出し側は config.json への書き込みを一切行わない。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReconcileColumnsPlan {
+    /// 未知 status を末尾へ追加した新しい [`Config`]。
+    pub new_config: Config,
+    /// 実際に追加されたカラム名（追加順 = path 昇順での初出順）。
+    pub added_columns: Vec<ColumnName>,
+    /// 追加すべきカラムが 1 つも無いことを表すフラグ。
+    pub is_noop: bool,
+}
+
+/// `(path, status)` 列から、採用すべき status 名を **path 昇順での初出順**で取り出す。
+///
+/// [`build_config_from_statuses`]（config 不在時の生成）と
+/// [`Config::plan_reconcile_columns`]（既存 config への追加）が共有する走査規則。
+/// doc だけで契約を揃えても、`PathBuf::Ord` に依る走査順が 2 か所へ写経されれば
+/// 片方だけ変わるため、実体を共有する。
+///
+/// - `inputs` は関数内で path 昇順へ defensive sort する（`PathBuf::Ord` = OS の
+///   `OsStr` 表現順序。project-root からの相対パスでの比較が前提）。
+/// - `status` は trim も大文字小文字統一もせず、そのまま名前として採用する。
+/// - 同じ名前が複数回現れた場合は初出だけを残す。
+/// - `missing_status` は `status` が `None` だったときに採用する名前。生成側は
+///   先頭デフォルトカラム名、reconcile 側は `None` を渡して読み飛ばす。
+///
+/// 「既存カラムに在るか」の判定はここでは行わない。呼び出し側が
+/// [`Config::has_column`] で絞ることで、カラム名の一致規則（完全一致・
+/// case-sensitive）が 1 箇所に留まる。
+fn distinct_statuses_in_path_order(
+    inputs: &[(PathBuf, Option<String>)],
+    missing_status: Option<&str>,
+) -> Vec<String> {
+    let mut order: Vec<usize> = (0..inputs.len()).collect();
+    order.sort_by(|&a, &b| inputs[a].0.cmp(&inputs[b].0));
+
+    let mut seen: HashSet<String> = HashSet::with_capacity(inputs.len());
+    let mut names: Vec<String> = Vec::new();
+    for &i in &order {
+        let Some(name) = inputs[i].1.as_deref().or(missing_status) else {
+            continue;
+        };
+        if seen.insert(name.to_string()) {
+            names.push(name.to_string());
+        }
+    }
+    names
 }
 
 /// `Config::plan_update_columns` の戻り値。
@@ -673,18 +826,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         };
     }
 
-    let mut order: Vec<usize> = (0..inputs.len()).collect();
-    order.sort_by(|&a, &b| inputs[a].0.cmp(&inputs[b].0));
-
-    let fallback: &str = DEFAULT_COLUMN_NAMES[0];
-    let mut seen: HashSet<&str> = HashSet::with_capacity(inputs.len());
-    let mut names: Vec<String> = Vec::with_capacity(inputs.len());
-    for &i in &order {
-        let name: &str = inputs[i].1.as_deref().unwrap_or(fallback);
-        if seen.insert(name) {
-            names.push(name.to_string());
-        }
-    }
+    let names = distinct_statuses_in_path_order(inputs, Some(DEFAULT_COLUMN_NAMES[0]));
 
     let columns: Vec<Column> = names
         .into_iter()
