@@ -124,7 +124,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 #### プロジェクトセッションキャッシュ（再オープンの即時応答）
 
 - 一度開いたプロジェクトの `ProjectSession` は、別プロジェクトへの切替時にバックグラウンドキャッシュへ退避され、プロセス終了まで保持される（上限なし）。
-- キャッシュに一致する root（exact raw `ProjectRoot`）で `open_project` を呼ぶと、ディスク走査・パースを行わずキャッシュから payload を構築して即時応答する。このとき `session.generation` は**新規採番**され、`session.revision` は 0 から再開する。`GUIDE.md` の書き出しもコールドオープン時のみ行う。config 不在時の `config.json` 生成もコールドオープン時のみ行う。ただし生成は watcher 初期化より前に実行するため、watcher 初期化に失敗した open でも生成済みの `config.json` は残る（生成は冪等で、次回オープンがその内容を読むだけ）。
+- キャッシュに一致する root（exact raw `ProjectRoot`）で `open_project` を呼ぶと、ディスク走査・パースを行わずキャッシュから payload を構築して即時応答する。このとき `session.generation` は**新規採番**され、`session.revision` は 0 から再開する。`GUIDE.md` の書き出しもコールドオープン時のみ行う。config 不在時の `config.json` 生成もコールドオープン時のみ行う。ただし生成は watcher 初期化より前に実行するため、watcher 初期化に失敗した open でも生成済みの `config.json` は残る（生成は冪等で、次回オープンがその内容を読むだけ）。未知 status のカラム追加（reconcile。[config-spec.md](./config-spec.md) の「既存 config への未知 status 追加（reconcile）」節）はキャッシュヒット後の背景再スキャンでも行い、追加すべきカラムが無ければ `config.json` も `GUIDE.md` も書き込まない。
 - 即時応答の直後、バックグラウンドで tasks / config / labels / milestones を全量再読込し、キャッシュとの差分があれば 1 commit で置換のうえ `watcher-resync-required`（reason: `rescan`）を emit する。フロントエンドは既存の resync 経路で最新化する。差分がなければ何も送らない。
 - resync で使う `get_tasks` の応答には `columns` と `doneColumn` を同梱する。`tasks` の並びは backend の config に従うため、カラム定義を取り直さないと「並びは新しいがカラムは古い」board で固定される。`get_columns` を別途呼ぶ形にはしない。2 つの読み取りの間に backend の commit が走ると `tasks` と `columns` の revision が混在するため、**同一 snapshot から導出した 1 応答**で配る。
 - バックグラウンド再読込の規則はコールドオープンと同一（config は fallback + warning、labels / milestones / tasks の失敗は中断）。したがって「再スキャン後の状態 = そのプロジェクトをコールドオープンした場合の状態」に収束する。読み込みに失敗した場合はキャッシュを変更せず、`watcher-diagnostic`（code: `rescanFailed`）を通知する。
@@ -595,6 +595,7 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 - セット登録後に対応するイベントが来なかった場合の解除は呼び出し側が明示的に行う
 - **パス表現は絶対パス**で揃える。`FsEvent` から渡される `PathBuf` をそのまま key として比較するため、書き込み側も `register` 時に絶対パスを使うこと。相対表記や区切り違い（`./tasks/x.md` と `tasks/x.md` 等）は別キーとして扱われ、`unregister` がヒットせずに自己書き込みが二重通知される
 - **stale entry の TTL cleanup は行わない**。full rescan 成功時は current session の registry を clear し、open 成功時は新 session 用の空 registry へ resources ごと swap する。disk 失敗、resync 失敗、または conflict 以外の post-disk commit error では、その command が登録した entry を best-effort で明示解除する。disk 成功後の same-project resync に成功した場合だけ、対応する watcher event が 1 回 consume できるよう entry を残す
+- **未知 status のカラム追加（reconcile）由来の `config.json` / `GUIDE.md` の書き込みは、書き込みパスセットへ登録しない**。監視イベント側は `.spec-board/`（先頭がドットのディレクトリ）と `.md` 以外の拡張子を、書き込みパスセットの照合より前に除外する。登録しても照合されず、消費されないエントリが残り続けるためである
 
 ## エラーハンドリング
 
@@ -812,6 +813,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.5 | 2026-08-09 | Issue #457: 未知 status のカラム追加（reconcile）を背景再スキャンでも行う契約と、その `config.json` / `GUIDE.md` 書き込みを書き込みパスセットへ登録しない理由を追加 | - |
 | 1.4 | 2026-08-06 | Issue #189: プロジェクトセッションキャッシュ（切替後の再オープンを即時応答）、背景全量再スキャンによる `watcher-resync-required`、`get_tasks` への `columns` / `doneColumn` 同梱、watcher 稼働数と再活性化時のリソース再生成、キャッシュ key の制限事項を追加 | - |
 | 1.3 | 2026-08-01 | Issue #458: `open_project` / `get_tasks` の `loadWarnings`、partial success、config fallback、full rescan における warnings 置換契約を追加 | - |
 | 1.2 | 2026-07-31 | Issue #453: `ProjectSession` aggregate、session-local revision CAS、project-scoped writer gate、staged watcher swap、session-scoped resources と stale event guard を追加 | - |
