@@ -2175,3 +2175,476 @@ fn normalize_card_order_large_entry() {
     assert!(!changed, "列跨ぎ重複が無ければ normalize は何も変えない");
     assert_eq!(normalized.card_order.get("Todo").unwrap().len(), 100);
 }
+
+// ───────── plan_reconcile_columns ─────────
+
+/// reconcile テストの基準 config（`Todo(0)` / `Doing(1)` / `Done(2)`、`doneColumn = "Done"`）。
+fn reconcile_base_config() -> Config {
+    Config {
+        version: DEFAULT_VERSION,
+        columns: vec![col("Todo", 0), col("Doing", 1), col("Done", 2)],
+        card_order: CardOrder::new(),
+        done_column: Some("Done".into()),
+    }
+}
+
+/// `(path, status)` の組を `plan_reconcile_columns` の入力形へ詰める。
+fn status_inputs(entries: Vec<(&str, Option<&str>)>) -> Vec<(PathBuf, Option<String>)> {
+    entries
+        .into_iter()
+        .map(|(path, status)| (pb(path), status.map(String::from)))
+        .collect()
+}
+
+/// `columns` の名前を宣言順のまま取り出す。
+fn column_names(config: &Config) -> Vec<&str> {
+    config
+        .columns
+        .iter()
+        .map(|column| column.name.as_str())
+        .collect()
+}
+
+/// `columns_in_display_order()` の名前を取り出す。
+fn display_order_names(config: &Config) -> Vec<String> {
+    config
+        .columns_in_display_order()
+        .into_iter()
+        .map(|column| column.name.as_str().to_string())
+        .collect()
+}
+
+#[test]
+fn plan_reconcile_columns_appends_unknown_status_to_the_tail() {
+    let config = reconcile_base_config();
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
+
+    assert!(!plan.is_noop);
+    assert_eq!(
+        plan.added_columns
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Review"]
+    );
+    assert_eq!(
+        plan.new_config.columns,
+        vec![
+            col("Todo", 0),
+            col("Doing", 1),
+            col("Done", 2),
+            col("Review", 3),
+        ]
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_is_noop_parametrized() {
+    struct Case {
+        label: &'static str,
+        inputs: Vec<(PathBuf, Option<String>)>,
+    }
+
+    let cases = vec![
+        Case {
+            label: "既知 status のみ",
+            inputs: status_inputs(vec![
+                ("a.md", Some("Todo")),
+                ("b.md", Some("Doing")),
+                ("c.md", Some("Done")),
+            ]),
+        },
+        Case {
+            label: "入力 0 件",
+            inputs: Vec::new(),
+        },
+        Case {
+            label: "status 未記載のみ（Todo を勝手に足さない）",
+            inputs: status_inputs(vec![("a.md", None), ("b.md", None)]),
+        },
+    ];
+
+    for case in cases {
+        let config = reconcile_base_config();
+        let plan = config.plan_reconcile_columns(&case.inputs);
+        assert!(plan.is_noop, "case: {}", case.label);
+        assert_eq!(plan.new_config, config, "case: {}", case.label);
+        assert!(plan.added_columns.is_empty(), "case: {}", case.label);
+    }
+}
+
+#[test]
+fn plan_reconcile_columns_orders_a_single_batch_by_path_ascending_first_occurrence() {
+    let config = reconcile_base_config();
+
+    // 配列順は path 昇順ではない（b.md が先）。
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![
+        ("b.md", Some("Review")),
+        ("a.md", Some("Blocked")),
+    ]));
+
+    assert_eq!(
+        column_names(&plan.new_config),
+        vec!["Todo", "Doing", "Done", "Blocked", "Review"]
+    );
+    assert_eq!(plan.new_config.columns[3].order, 3);
+    assert_eq!(plan.new_config.columns[4].order, 4);
+}
+
+#[test]
+fn plan_reconcile_columns_falls_back_to_arrival_order_across_separate_calls() {
+    // watcher の逐次イベント相当。path 昇順の保証は 1 バッチ内に閉じる。
+    let first = reconcile_base_config()
+        .plan_reconcile_columns(&status_inputs(vec![("b.md", Some("Review"))]))
+        .new_config;
+    let second = first
+        .plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Blocked"))]))
+        .new_config;
+
+    assert_eq!(
+        column_names(&second),
+        vec!["Todo", "Doing", "Done", "Review", "Blocked"]
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_adds_a_repeated_unknown_status_only_once() {
+    let config = reconcile_base_config();
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![
+        ("a.md", Some("Review")),
+        ("b.md", Some("Review")),
+        ("c.md", Some("Review")),
+    ]));
+
+    assert_eq!(plan.added_columns.len(), 1);
+    assert_eq!(
+        column_names(&plan.new_config),
+        vec!["Todo", "Doing", "Done", "Review"]
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_keeps_existing_columns_and_card_order_untouched() {
+    let config = Config {
+        version: DEFAULT_VERSION,
+        columns: vec![
+            Column {
+                name: "Todo".into(),
+                order: 0,
+                color: ColumnColor::from_hex("#abcdef"),
+            },
+            col("Done", 1),
+        ],
+        card_order: card_order_of(vec![("Todo", vec!["a.md"])]),
+        done_column: Some("Done".into()),
+    };
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("b.md", Some("Review"))]));
+
+    assert_eq!(plan.new_config.columns[..2], config.columns[..]);
+    assert_eq!(plan.new_config.card_order, config.card_order);
+    assert_eq!(plan.new_config.done_column.as_deref(), Some("Done"));
+    assert!(
+        plan.new_config.card_order.get("Review").is_none(),
+        "新カラムは cardOrder にエントリを持たない"
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_freezes_the_resolved_done_column_when_unset() {
+    struct Case {
+        label: &'static str,
+        columns: Vec<Column>,
+        expected_done: Option<&'static str>,
+    }
+
+    let cases = vec![
+        Case {
+            label: "order 最大が末尾",
+            columns: vec![col("Todo", 0), col("Done", 1)],
+            expected_done: Some("Done"),
+        },
+        Case {
+            label: "同一 order は max_by_key の安定性で最後の要素",
+            columns: vec![col("A", 5), col("B", 5), col("C", 5)],
+            expected_done: Some("C"),
+        },
+        Case {
+            label: "columns 空では凍結する値が無い",
+            columns: Vec::new(),
+            expected_done: None,
+        },
+    ];
+
+    for case in cases {
+        let config = Config {
+            version: DEFAULT_VERSION,
+            columns: case.columns,
+            card_order: CardOrder::new(),
+            done_column: None,
+        };
+        let before = config.resolved_done_column().cloned();
+
+        let plan = config.plan_reconcile_columns(&status_inputs(vec![("z.md", Some("Review"))]));
+
+        assert_eq!(
+            plan.new_config.done_column.as_deref(),
+            case.expected_done,
+            "case: {}",
+            case.label
+        );
+        if before.is_some() {
+            assert_eq!(
+                plan.new_config.resolved_done_column(),
+                before.as_ref(),
+                "追加前後で解決結果が変わらない: case: {}",
+                case.label
+            );
+        }
+    }
+}
+
+#[test]
+fn plan_reconcile_columns_leaves_done_column_none_on_noop() {
+    let config = Config {
+        done_column: None,
+        ..reconcile_base_config()
+    };
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Todo"))]));
+
+    assert!(plan.is_noop);
+    assert_eq!(plan.new_config.done_column, None);
+}
+
+#[test]
+fn plan_reconcile_columns_does_not_repair_a_done_column_outside_columns() {
+    let config = Config {
+        done_column: Some("Ghost".into()),
+        ..reconcile_base_config()
+    };
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
+
+    assert_eq!(plan.new_config.done_column.as_deref(), Some("Ghost"));
+}
+
+#[test]
+fn plan_reconcile_columns_numbers_new_orders_from_the_existing_maximum() {
+    let config = Config {
+        version: DEFAULT_VERSION,
+        columns: vec![col("A", 0), col("B", 5), col("C", 9)],
+        card_order: CardOrder::new(),
+        done_column: Some("C".into()),
+    };
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![
+        ("a.md", Some("Review")),
+        ("b.md", Some("Blocked")),
+    ]));
+
+    let orders: Vec<u32> = plan.new_config.columns[3..]
+        .iter()
+        .map(|column| column.order)
+        .collect();
+    assert_eq!(orders, vec![10, 11]);
+}
+
+#[test]
+fn plan_reconcile_columns_saturates_the_order_without_panicking() {
+    let config = Config {
+        version: DEFAULT_VERSION,
+        columns: vec![col("A", 0), col("B", u32::MAX)],
+        card_order: CardOrder::new(),
+        done_column: Some("B".into()),
+    };
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
+
+    assert_eq!(plan.new_config.columns[2].order, u32::MAX);
+    assert_eq!(
+        display_order_names(&plan.new_config)
+            .last()
+            .map(String::as_str),
+        Some("Review"),
+        "同一 order でも stable sort により push 順が末尾に残る"
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_keeps_the_default_status_even_when_orders_saturate() {
+    let config = Config {
+        version: DEFAULT_VERSION,
+        columns: vec![col("A", u32::MAX), col("B", u32::MAX)],
+        card_order: CardOrder::new(),
+        done_column: Some("B".into()),
+    };
+    let before = crate::task::parse::default_status_for(&config);
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
+
+    assert_eq!(
+        crate::task::parse::default_status_for(&plan.new_config),
+        before,
+        "min_by_key は同順位で最初の要素を返すので、末尾 push では既定 status が動かない"
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_keeps_status_strings_unnormalized() {
+    struct Case {
+        label: &'static str,
+        status: &'static str,
+    }
+
+    let cases = vec![
+        Case {
+            label: "空文字",
+            status: "",
+        },
+        Case {
+            label: "空白のみ",
+            status: " ",
+        },
+        Case {
+            label: "前後空白付き",
+            status: "  Todo  ",
+        },
+        Case {
+            label: "既存カラムと前後空白だけ違う",
+            status: " Doing ",
+        },
+        Case {
+            label: "既存カラムと大文字小文字だけ違う",
+            status: "todo",
+        },
+    ];
+
+    for case in cases {
+        let config = reconcile_base_config();
+        let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some(case.status))]));
+
+        assert!(!plan.is_noop, "case: {}", case.label);
+        let appended = plan.new_config.columns.last().expect("appended column");
+        assert_eq!(
+            appended.name.as_str().as_bytes(),
+            case.status.as_bytes(),
+            "trim も case 変換もせずバイト単位で保持する: case: {}",
+            case.label
+        );
+    }
+}
+
+#[test]
+fn plan_reconcile_columns_numbers_from_zero_for_an_empty_config() {
+    let config = Config {
+        version: DEFAULT_VERSION,
+        columns: Vec::new(),
+        card_order: CardOrder::new(),
+        done_column: None,
+    };
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![
+        ("a.md", Some("Review")),
+        ("b.md", Some("Blocked")),
+    ]));
+
+    assert_eq!(column_names(&plan.new_config), vec!["Review", "Blocked"]);
+    let orders: Vec<u32> = plan
+        .new_config
+        .columns
+        .iter()
+        .map(|column| column.order)
+        .collect();
+    assert_eq!(orders, vec![0, 1]);
+    assert_eq!(
+        plan.new_config.done_column, None,
+        "追加前の解決結果が None なので凍結する値が無い"
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_is_idempotent() {
+    let config = reconcile_base_config();
+    let inputs = status_inputs(vec![("b.md", Some("Review")), ("a.md", Some("Blocked"))]);
+
+    let first = config.plan_reconcile_columns(&inputs);
+    let second = first.new_config.plan_reconcile_columns(&inputs);
+
+    assert!(second.is_noop);
+    assert_eq!(second.new_config, first.new_config);
+}
+
+#[test]
+fn plan_reconcile_columns_keeps_the_default_status_stable() {
+    let config = reconcile_base_config();
+    let before = crate::task::parse::default_status_for(&config);
+
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
+
+    assert_eq!(
+        crate::task::parse::default_status_for(&plan.new_config),
+        before
+    );
+}
+
+#[test]
+fn plan_reconcile_columns_preserves_config_invariants_for_valid_inputs() {
+    // 入力側が不変条件を満たすケースだけを対象にする。`doneColumn: "Ghost"` と
+    // `columns: []` は入力自体が既に不変条件を破っており、reconcile はそれを
+    // 修復しない（修復すると、ユーザーがこれから追加するつもりのカラム名を奪う）。
+    // それらは別テストで「維持する」ことを固定している。
+    struct Case {
+        label: &'static str,
+        config: Config,
+    }
+
+    let cases = vec![
+        Case {
+            label: "doneColumn あり",
+            config: reconcile_base_config(),
+        },
+        Case {
+            label: "doneColumn 未設定",
+            config: Config {
+                done_column: None,
+                ..reconcile_base_config()
+            },
+        },
+        Case {
+            label: "order 飛び番",
+            config: Config {
+                version: DEFAULT_VERSION,
+                columns: vec![col("A", 3), col("B", 7)],
+                card_order: CardOrder::new(),
+                done_column: None,
+            },
+        },
+    ];
+
+    for case in cases {
+        let plan = case.config.plan_reconcile_columns(&status_inputs(vec![
+            ("a.md", Some("Review")),
+            ("b.md", Some("Blocked")),
+        ]));
+        let new_config = &plan.new_config;
+
+        assert!(!new_config.columns.is_empty(), "case: {}", case.label);
+        assert_eq!(
+            validate_unique_column_names(&new_config.columns),
+            Ok(()),
+            "case: {}",
+            case.label
+        );
+        let done = new_config
+            .resolved_done_column()
+            .expect("columns 非空なら解決できる");
+        assert!(
+            new_config.has_column(done.as_str()),
+            "doneColumn が columns 内を指す: case: {}",
+            case.label
+        );
+    }
+}
