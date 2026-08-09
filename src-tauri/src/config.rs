@@ -43,7 +43,7 @@ pub use core::{
     validate_unique_column_names, write_guide_markdown_best_effort, Column, ColumnColor, Config,
     RenameTarget, UpdateCardOrderPlanError, UpdateColumnsPlan,
 };
-pub use load::{load_or_default, ConfigWriter, FsConfigWriter, LoadConfigError};
+pub use load::{load_or_default, load_persisted, ConfigWriter, FsConfigWriter, LoadConfigError};
 pub use migration::{migrate_config, MigrationError};
 
 pub use label_registry::{
