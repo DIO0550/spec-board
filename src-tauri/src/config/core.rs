@@ -562,13 +562,16 @@ fn distinct_statuses_in_path_order(
     let mut order: Vec<usize> = (0..inputs.len()).collect();
     order.sort_by(|&a, &b| inputs[a].0.cmp(&inputs[b].0));
 
-    let mut seen: HashSet<String> = HashSet::with_capacity(inputs.len());
+    // `seen` は `&str` で持つ。`name` の借用元（`inputs` または `missing_status`）は
+    // どちらも本関数より長生きするため、初出判定のためだけに所有権を取る必要がない。
+    // `HashSet<String>` にすると、採用する名前 1 件につき確保が 2 回走る。
+    let mut seen: HashSet<&str> = HashSet::with_capacity(inputs.len());
     let mut names: Vec<String> = Vec::new();
     for &i in &order {
         let Some(name) = inputs[i].1.as_deref().or(missing_status) else {
             continue;
         };
-        if seen.insert(name.to_string()) {
+        if seen.insert(name) {
             names.push(name.to_string());
         }
     }
