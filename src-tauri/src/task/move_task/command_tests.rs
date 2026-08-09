@@ -98,6 +98,14 @@ fn seed_config_with_card_order(root: &Path, entries: &[(&str, &[&str])]) {
     .expect("write config.json");
 }
 
+/// 既定 3 カラム（`Todo` / `In Progress` / `Done`）の `config.json` を置く。
+///
+/// config が無いまま open するとタスクの status からカラムが生成されるため、
+/// 既定カラム間の move を前提にするテストはその前提を明示的に置く。
+fn seed_default_config(root: &Path) {
+    seed_config_with_card_order(root, &[]);
+}
+
 /// `.spec-board/config.json` を canonical 化を挟まず生の文字列のまま置く。
 fn seed_raw_config_json(root: &Path, json: &str) {
     let dir = root.join(".spec-board");
@@ -166,6 +174,7 @@ fn cross_column_move_updates_status_on_disk() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: Todo\n---\nbody\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
     let revision_before = session_revision(&state);
@@ -410,6 +419,7 @@ fn destination_card_order_drops_paths_without_a_file_on_disk() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: Todo\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -477,6 +487,7 @@ fn empty_destination_paths_still_register_the_moved_task() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: Todo\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -545,6 +556,7 @@ fn cross_column_move_keeps_children_and_reverse_links() {
         "tasks/linker.md",
         "---\ntitle: Linker\nstatus: Todo\nlinks:\n  - tasks/parent.md\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -610,6 +622,7 @@ fn cross_column_move_clears_parse_warnings_that_no_longer_apply() {
     // status キーが無い md は scan 時に「status 欠落・既定値を使用」warning が付く。
     // 移動で status を書き込むので、この warning は残ってはならない。
     seed_md(dir.path(), "tasks/a.md", "---\ntitle: A\n---\n");
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -664,6 +677,7 @@ fn cross_column_move_keeps_parent_not_found_warning() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: Todo\nparent: tasks/missing.md\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -862,6 +876,7 @@ fn cross_column_move_registers_session_marker_and_advances_revision() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: Todo\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -930,6 +945,7 @@ fn returns_status_mismatch_when_from_column_is_stale() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: In Progress\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -1114,6 +1130,7 @@ fn config_write_failure_restores_the_original_task_md() {
     let dir = tempdir();
     let original = "---\ntitle: A\nstatus: Todo\n---\nbody\n";
     seed_md(dir.path(), "tasks/a.md", original);
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 

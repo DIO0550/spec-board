@@ -1,9 +1,9 @@
 //! `open_project` Tauri command 本体。
 //!
 //! フロントエンドから渡されたプロジェクトディレクトリを検証し、
-//! `.spec-board/config.json` の読み込み、`.md` 走査・パース、
-//! 親子関係 / 逆引きインデックスの構築、`GUIDE.md` の best-effort 書き出しを
-//! 行ったうえで `AppState` を一括更新する。
+//! `.spec-board/config.json` の読み込み（不在ならタスクの status から生成して保存）、
+//! `.md` 走査・パース、親子関係 / 逆引きインデックスの構築、`GUIDE.md` の
+//! best-effort 書き出しを行ったうえで `AppState` を一括更新する。
 //!
 //! # 構成
 //!
@@ -83,9 +83,10 @@ use std::sync::Arc;
 
 use crate::config::column_name::ColumnName;
 use crate::config::{
-    label_registry_store, load_or_default, milestone_registry_store,
-    write_guide_markdown_best_effort, Column, Config, LabelRegistry, LabelRegistryStore,
-    LoadLabelsError, LoadMilestonesError, MilestoneRegistry, MilestoneRegistryStore,
+    build_config_from_statuses, label_registry_store, load_persisted, milestone_registry_store,
+    write_guide_markdown_best_effort, Column, Config, ConfigWriter, FsConfigWriter, LabelRegistry,
+    LabelRegistryStore, LoadLabelsError, LoadMilestonesError, MilestoneRegistry,
+    MilestoneRegistryStore,
 };
 use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarning};
 use crate::project::project_root::ProjectRoot;
@@ -108,6 +109,7 @@ use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
+use spec_board_fs::config::config_io;
 use spec_board_fs::task::file_scanner::ScanError;
 use spec_board_fs::watcher::core::WatcherError;
 
@@ -249,8 +251,11 @@ pub fn open_project(
     open_project_impl_with_reporter(
         state.inner(),
         &intent,
-        &labels_store,
-        &milestones_store,
+        ProjectDataPorts {
+            labels_store: &labels_store,
+            milestones_store: &milestones_store,
+            config_writer: &FsConfigWriter,
+        },
         &watcher,
         &stop_reporter,
         &resync,
@@ -258,9 +263,21 @@ pub fn open_project(
     .map_err(|e| e.to_string())
 }
 
+/// コールドオープンが disk 上のプロジェクト資産へ触れるための注入口。
+///
+/// labels / milestones / config の 3 つは「同じ project root の disk を読み書きする
+/// 手段」という一つの関心なので、個別の引数に展開せずまとめて渡す。
+pub(crate) struct ProjectDataPorts<'a> {
+    pub(crate) labels_store: &'a dyn LabelRegistryStore,
+    pub(crate) milestones_store: &'a dyn MilestoneRegistryStore,
+    pub(crate) config_writer: &'a dyn ConfigWriter,
+}
+
 /// 既存 test helper 向けの production reporter 付き effect wrapper。
 ///
-/// 背景 resync の予約有無を検証しないテストのために、scheduler は no-op を注入する。
+/// 背景 resync の予約有無を検証しないテストのために scheduler は no-op を注入し、
+/// config の書き込みは本番と同じ `FsConfigWriter` を使う。書き込み失敗を注入したい
+/// テストは `open_project_impl_with_reporter` を直接呼ぶ。
 #[cfg(test)]
 pub(crate) fn open_project_impl<W: WatcherFactory>(
     state: &Arc<AppState>,
@@ -272,8 +289,11 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
     open_project_impl_with_reporter(
         state,
         intent,
-        labels_store,
-        milestones_store,
+        ProjectDataPorts {
+            labels_store,
+            milestones_store,
+            config_writer: &FsConfigWriter,
+        },
         watcher,
         &LogWatcherStopDiagnosticReporter,
         &NoopReactivationScheduler,
@@ -287,8 +307,7 @@ pub(crate) fn open_project_impl<W: WatcherFactory>(
 pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     state: &Arc<AppState>,
     intent: &OpenProjectIntent,
-    labels_store: &dyn LabelRegistryStore,
-    milestones_store: &dyn MilestoneRegistryStore,
+    ports: ProjectDataPorts<'_>,
     watcher: &W,
     stop_reporter: &dyn WatcherStopDiagnosticReporter,
     resync: &dyn ReactivationResyncScheduler,
@@ -310,9 +329,11 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     // take から swap までの間に同 root の並行 open が割り込めない。
     let cached = take_cached_session(state, intent.root());
     let from_cache = cached.is_some();
+    // config の bootstrap はこの中（コールドオープン側）だけで走る。
+    // キャッシュヒット経路は disk を一切触らない従来どおりの扱い。
     let prepared_session = match cached {
         Some(cached_session) => cached_session.into_prepared(),
-        None => load_cold_prepared_session(intent, labels_store, milestones_store)?,
+        None => load_cold_prepared_session(intent, ports)?,
     };
 
     // backend/channel と paused worker の構築を resident state の変更前に完了する。
@@ -321,6 +342,7 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     let candidate = prepared_session.into_session(session_id);
     let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
 
+    // bootstrap 済みの config が入っているため、GUIDE.md も生成カラムで出力される。
     if !from_cache {
         write_guide_markdown_best_effort(root, candidate.config());
     }
@@ -362,11 +384,29 @@ fn take_cached_session(state: &AppState, root: &ProjectRoot) -> Option<ProjectSe
 /// キャッシュに無い project を disk から読み、open 用の材料へ詰める。
 fn load_cold_prepared_session(
     intent: &OpenProjectIntent,
-    labels_store: &dyn LabelRegistryStore,
-    milestones_store: &dyn MilestoneRegistryStore,
+    ports: ProjectDataPorts<'_>,
 ) -> Result<PreparedProjectSession, OpenProjectError> {
-    let loaded = load_project_data(intent.as_path(), labels_store, milestones_store, &FsTaskIo)
+    let root = intent.as_path();
+    let mut loaded = load_project_data(root, ports.labels_store, ports.milestones_store, &FsTaskIo)
         .map_err(|error| map_load_project_data_error(error, intent.as_path_str()))?;
+
+    if loaded.config_absent {
+        match bootstrap_config(root, &mut loaded, ports.config_writer) {
+            // 生成 config を前提に読み直す。走査は既定 config の `default_status` で
+            // 行っており、status 未記載タスクにはその値が入っている。生成 config の
+            // 既定 status が別のカラムになると、次回のコールドオープンでそれらの
+            // タスクが別カラムへ移る。保存済み config で読み直して、以降のオープンと
+            // 同じ状態に揃える。
+            BootstrapOutcome::SavedWithNewDefaultStatus => {
+                loaded =
+                    load_project_data(root, ports.labels_store, ports.milestones_store, &FsTaskIo)
+                        .map_err(|error| {
+                            map_load_project_data_error(error, intent.as_path_str())
+                        })?;
+            }
+            BootstrapOutcome::Saved | BootstrapOutcome::NotSaved => {}
+        }
+    }
 
     Ok(PreparedProjectSession::new_with_warnings(
         intent.root().clone(),
@@ -378,6 +418,96 @@ fn load_cold_prepared_session(
     ))
 }
 
+/// config bootstrap の結果。呼び出し側がタスクの読み直しの要否を判断するために使う。
+enum BootstrapOutcome {
+    /// 生成した config を保存した。走査時と既定 status が同じなので読み直しは要らない。
+    Saved,
+    /// 生成した config を保存したが、既定 status（order 最小のカラム）が走査時と変わった。
+    SavedWithNewDefaultStatus,
+    /// 保存できなかった。既定 config のまま開き、warning を 1 件追加済み。
+    NotSaved,
+}
+
+/// config 不在のコールドオープンで、生成した config を採用・保存する。
+///
+/// 保存できたときだけ生成結果を採用する。保存に失敗した状態で生成カラムを採用すると、
+/// 次回オープンでまた既定カラムに戻り、並びが変わったように見えてしまうため。
+fn bootstrap_config(
+    root: &Path,
+    loaded: &mut LoadedProjectData,
+    writer: &dyn ConfigWriter,
+) -> BootstrapOutcome {
+    let generated = bootstrap_config_from_tasks(&loaded.tasks);
+    match persist_config(root, &generated, writer) {
+        Ok(()) => {
+            let scanned_default = default_status_for(&loaded.config);
+            let generated_default = default_status_for(&generated);
+            // 既定 status が変わっても、その値を持つタスクが 1 件も無ければ読み直しても
+            // 結果は変わらない。空プロジェクトや全タスクが status を書いている場合に
+            // 無駄な全量再読込を避ける。
+            let affects_tasks = loaded
+                .tasks
+                .values()
+                .any(|task| task.status == scanned_default);
+            loaded.config = generated;
+            if generated_default != scanned_default && affects_tasks {
+                return BootstrapOutcome::SavedWithNewDefaultStatus;
+            }
+            BootstrapOutcome::Saved
+        }
+        Err(error) => {
+            log::warn!("failed to persist bootstrapped config: {error}");
+            loaded
+                .load_warnings
+                .push(ProjectLoadWarning::config_fallback(error.to_string()));
+            // `load_project_data` が整列済みの配列を返すため、push しただけでは
+            // 末尾に 1 件ぶら下がって payload の順序規約が崩れる。
+            loaded.load_warnings = deduplicate_and_sort(std::mem::take(&mut loaded.load_warnings));
+            BootstrapOutcome::NotSaved
+        }
+    }
+}
+
+/// スキャン済みタスクの status から config を組み立てる。
+///
+/// タスクが 0 件のとき `build_config_from_statuses` は `columns: []` を返すが、
+/// カラムのないボードは開けないため、この層で既定 3 カラムに倒す
+/// （純粋関数側ではなく上位フローの責務という仕様上の切り分けに従う）。
+///
+/// `Task.status` は非 `Option` で、frontmatter に status が無いタスクはパース時に
+/// `default_status`（config 不在時は `"Todo"`）へ補完済み。この値は
+/// `build_config_from_statuses` が `None` に対して使うフォールバックと同じなので、
+/// ここで `None` へ戻す必要はない。
+fn bootstrap_config_from_tasks(tasks: &HashMap<PathBuf, Task>) -> Config {
+    if tasks.is_empty() {
+        return Config::default();
+    }
+
+    let statuses: Vec<(PathBuf, Option<String>)> = tasks
+        .iter()
+        .map(|(path, task)| (path.clone(), Some(task.status.as_str().to_owned())))
+        .collect();
+    build_config_from_statuses(&statuses)
+}
+
+/// 生成した config を `.spec-board/config.json` へ書き出す。
+///
+/// serialize 失敗も io エラーとして扱う。呼び出し側は成否だけで分岐し、
+/// 失敗理由は warning のメッセージへ載せる。
+///
+/// 不在判定（`load_persisted`）から本書き込みまでの間に **別プロセス**が
+/// `config.json` を作った場合、rename がそれを置き換える。同一プロセス内の open は
+/// writer gate で直列化されるため競合しない。この窓を塞ぐには `O_EXCL` での
+/// 新規作成に切り替える必要があるが、それでは書き込み失敗を注入できる
+/// [`ConfigWriter`] 経由の atomic write を使えず、失敗時に空ファイルが残る経路が
+/// 増える。`update_columns` / `move_task` の config 書き込みも同じ粒度の競合を
+/// 許容しているため、ここも揃える。
+fn persist_config(root: &Path, config: &Config, writer: &dyn ConfigWriter) -> std::io::Result<()> {
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    writer.write_atomic(&config_io::config_path(root), &content)
+}
+
 /// コールドオープンと reactivation resync が共有する disk 全量読込の結果。
 pub(crate) struct LoadedProjectData {
     pub(crate) config: Config,
@@ -385,6 +515,13 @@ pub(crate) struct LoadedProjectData {
     pub(crate) milestones: MilestoneRegistry,
     pub(crate) tasks: HashMap<PathBuf, Task>,
     pub(crate) load_warnings: Vec<ProjectLoadWarning>,
+    /// `.spec-board/config.json` が存在しなかったか。
+    ///
+    /// コールドオープンだけがこれを見て bootstrap を実行する。resync 経路
+    /// (`project::reactivation`) は disk へ書かないため参照しない。
+    /// 読み込みに失敗した場合（ファイルはあるが壊れている）は `false`。
+    /// 壊れた config を勝手に作り直さないため。
+    pub(crate) config_absent: bool,
 }
 
 /// 全量読込が中断した理由。config は fallback するため variant を持たない。
@@ -409,10 +546,14 @@ pub(crate) fn load_project_data(
     milestones_store: &dyn MilestoneRegistryStore,
     io: &dyn TaskIo,
 ) -> Result<LoadedProjectData, LoadProjectDataError> {
-    let (config, mut load_warnings) = match load_or_default(root) {
-        Ok(config) => (config, Vec::new()),
+    let (config, config_absent, mut load_warnings) = match load_persisted(root) {
+        Ok(Some(config)) => (config, false, Vec::new()),
+        // 不在時も default で走査する。走査に必要な `default_status` を決めるためだけの
+        // 暫定値で、bootstrap がこの後で生成 config に差し替える。
+        Ok(None) => (Config::default(), true, Vec::new()),
         Err(error) => (
             Config::default(),
+            false,
             vec![ProjectLoadWarning::config_fallback(error.to_string())],
         ),
     };
@@ -434,6 +575,7 @@ pub(crate) fn load_project_data(
         milestones,
         tasks,
         load_warnings,
+        config_absent,
     })
 }
 

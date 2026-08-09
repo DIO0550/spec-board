@@ -29,7 +29,7 @@ use thiserror::Error;
 use crate::config::core::{validate_unique_column_names, Config, DEFAULT_VERSION};
 use crate::config::migration::{migrate_config, MigrationError};
 
-/// [`load_or_default`] で発生し得るエラー。
+/// [`load_persisted`] / [`load_or_default`] で発生し得るエラー。
 ///
 /// [`ConfigIoError`] は `#[from]` で透過的に伝播し、JSON パース失敗は
 /// 本層で [`LoadConfigError::Parse`] に包んで返す
@@ -98,7 +98,7 @@ pub enum LoadConfigError {
 /// 1. **tmp パス名の unique 化**: `<dst>.tmp.{pid}.{nanos}.{counter}` 形式で
 ///    呼び出しごとに異なる名前を採用する。`counter` は process-local AtomicU64 で
 ///    fetch_add するため同一プロセス内 / 粗い時計分解能下でも一意性が保証され、
-///    同じ project_root に対する並行 `load_or_default` 呼び出しが同一の tmp ファイルを
+///    同じ project_root に対する並行 `load_persisted` 呼び出しが同一の tmp ファイルを
 ///    奪い合って干渉する race を回避できる（ベストエフォート — lockfile 自体は
 ///    本関数の範囲外）。
 /// 2. **tmp パスの sterilization**: 上記 tmp パスを一旦 `unlink` してから
@@ -289,7 +289,7 @@ const STALE_TMP_THRESHOLD_NANOS: u128 = 60 * 60 * 1_000_000_000;
 ///
 /// クラッシュ / 強制終了等で `backup_config_json` の `open(tmp)` と `rename(tmp, dst)`
 /// の間で実行が中断された場合、unique tmp 名のため後続 load では再利用 / cleanup されず
-/// `.spec-board/` に蓄積する。本関数は `load_or_default` の冒頭で呼ばれる。
+/// `.spec-board/` に蓄積する。本関数は `load_persisted` の冒頭で呼ばれる。
 ///
 /// # 安全条件
 ///
@@ -374,10 +374,10 @@ struct VersionOnly {
     version: u32,
 }
 
-/// `<project_root>/.spec-board/config.json` を読み込み、[`Config`] を返す。
+/// `<project_root>/.spec-board/config.json` を読み込み、不在の場合だけ `None` を返す。
 ///
 /// 1. `.spec-board/` ディレクトリを冪等に作成する
-/// 2. `config.json` の存在を確認し、不在なら [`Config::default`] を返す
+/// 2. `config.json` の存在を確認し、不在なら `Ok(None)` を返す
 /// 3. [`VersionOnly`] スキーマで `version` フィールドのみを `from_str` する
 ///    （JSON 構文 / 必須欠落 / 型不一致 / `u32` 範囲外を line/col 付きで検出）
 /// 4. `version` が [`DEFAULT_VERSION`] を超える場合は [`LoadConfigError::UnknownFutureVersion`]
@@ -386,13 +386,16 @@ struct VersionOnly {
 /// 6. 現行 version は `from_str::<Config>`、古い version は `from_value::<Config>` で本パース
 /// 7. `columns` が空でないこと / [`validate_unique_column_names`] でカラム名重複検証
 ///
-/// # Default を返す条件
+/// # `None` を返す条件
 ///
-/// 関数名の `_or_default` は **「`config.json` が存在しないとき」のみ** Default を
-/// 返すことを意味する。読み込み I/O の失敗 / JSON パースの失敗 / 未来 version /
-/// バックアップ失敗 / カラム名重複は `Err` として返却され、呼び出し層
-/// （Tauri コマンド層など）が必要に応じて [`Config::default`] への
-/// フォールバック判断 + 通知を行う想定
+/// `Ok(None)` は **「`config.json` が存在しないとき」だけ**を表す。「不在」と
+/// 「読めた結果がたまたま既定値と同じ内容だった」を呼び出し側が区別できるようにする
+/// ための入口であり、config 不在時にタスクの status からカラムを生成する
+/// [`crate::project::open`] の bootstrap がこの区別に依存する。
+///
+/// 読み込み I/O の失敗 / JSON パースの失敗 / 未来 version / バックアップ失敗 /
+/// カラム名重複は `Err` として返却され、呼び出し層（Tauri コマンド層など）が
+/// 必要に応じて [`Config::default`] へのフォールバック判断 + 通知を行う想定
 /// （仕様書「読み込み失敗 → デフォルト + トースト」は呼び出し層の責務として切り出す）。
 ///
 /// # Errors
@@ -405,20 +408,20 @@ struct VersionOnly {
 /// - `columns` が空 → [`LoadConfigError::EmptyColumns`]
 /// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
 ///
-/// [`LoadConfigError::MigrationFailed`] は **現状では `load_or_default` から
-/// 返されない**（`from_version > DEFAULT_VERSION` は事前に
+/// [`LoadConfigError::MigrationFailed`] は **現状では本関数から返されない**
+/// （`from_version > DEFAULT_VERSION` は事前に
 /// [`LoadConfigError::UnknownFutureVersion`] で弾かれ、`from_version < DEFAULT_VERSION`
 /// および `from_version == DEFAULT_VERSION` の経路では現行
 /// [`crate::config::migration::migrate_config`] は常に
 /// `Ok` を返すため）。バリアントは `MigrationError` の variant 追加に向けた forward
 /// compatibility のために存在し、将来 [`DEFAULT_VERSION`] を引き上げて実マイグレーション
 /// を実装したタイミングで実際に発生し得るようになる。
-pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
+pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigError> {
     config_io::ensure_spec_board_dir(project_root)?;
     cleanup_stale_backup_tmps(project_root);
     let raw = config_io::read_config_json(project_root)?;
     let Some(content) = raw else {
-        return Ok(Config::default());
+        return Ok(None);
     };
 
     let path = config_io::config_path(project_root);
@@ -490,5 +493,16 @@ pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
         );
     }
 
-    Ok(config)
+    Ok(Some(config))
+}
+
+/// `<project_root>/.spec-board/config.json` を読み込み、不在なら [`Config::default`] を返す。
+///
+/// 「不在」と「既定値」を区別する必要がある呼び出し側は [`load_persisted`] を使う。
+///
+/// # Errors
+///
+/// [`load_persisted`] と同じ。不在以外の失敗はすべてそのまま伝播する。
+pub fn load_or_default(project_root: &Path) -> Result<Config, LoadConfigError> {
+    Ok(load_persisted(project_root)?.unwrap_or_default())
 }

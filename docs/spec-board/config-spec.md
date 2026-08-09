@@ -602,7 +602,7 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 
 ### open_project の config fallback と `loadWarnings`
 
-`.spec-board/config.json` が存在しない場合は `Config::default()` を使用して正常に開き、warning は生成しない。既存 config の read / parse / validation / migration / backup に失敗した場合も `open_project` は `Config::default()` で継続し、`loadWarnings` に次の warning を 1 件追加する。
+`.spec-board/config.json` が存在しない場合はタスクの `status` からカラムを生成して `config.json` に保存し、生成した Config で開く（生成規則は「既存タスクからのカラム自動生成」節を参照）。保存に成功した場合は warning を生成しない。保存に失敗した場合は `Config::default()` で開き、`loadWarnings` に下記の `configFallback` を 1 件追加する。既存 config の read / parse / validation / migration / backup に失敗した場合も `open_project` は `Config::default()` で継続し、同じ warning を 1 件追加する（この場合は生成・保存を行わず、既存ファイルを上書きしない）。
 
 ```json
 {

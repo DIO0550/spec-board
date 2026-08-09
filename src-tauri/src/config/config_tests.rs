@@ -641,6 +641,71 @@ fn load_or_default_returns_io_err_when_project_root_missing() {
     }
 }
 
+// ───────── load_persisted ─────────
+
+#[test]
+fn load_persisted_returns_none_when_config_json_is_absent() {
+    let tmp = TempDir::new().unwrap();
+
+    let loaded = load_persisted(tmp.path()).unwrap();
+
+    assert_eq!(loaded, None);
+    assert!(tmp.path().join(".spec-board").is_dir());
+    assert!(!tmp.path().join(".spec-board").join("config.json").exists());
+}
+
+#[test]
+fn load_persisted_returns_saved_config() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join(".spec-board");
+    std::fs::create_dir(&dir).unwrap();
+    let content = r#"{
+        "version": 1,
+        "columns": [
+            { "name": "Doing", "order": 0 },
+            { "name": "Shipped", "order": 1 }
+        ],
+        "cardOrder": {
+            "Doing": [],
+            "Shipped": []
+        },
+        "doneColumn": "Shipped"
+    }"#;
+    std::fs::write(dir.join("config.json"), content).unwrap();
+
+    let config = load_persisted(tmp.path()).unwrap().expect("config");
+
+    let names: Vec<&str> = config.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, vec!["Doing", "Shipped"]);
+    assert_eq!(config.done_column.as_deref(), Some("Shipped"));
+}
+
+#[test]
+fn load_persisted_propagates_parse_error() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join(".spec-board");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("config.json"), "{not valid json").unwrap();
+
+    let err = load_persisted(tmp.path()).unwrap_err();
+
+    match err {
+        LoadConfigError::Parse { path, .. } => {
+            assert_eq!(path, dir.join("config.json"));
+        }
+        other => panic!("expected Parse error, got {other:?}"),
+    }
+}
+
+#[test]
+fn load_or_default_still_returns_default_when_absent() {
+    let tmp = TempDir::new().unwrap();
+
+    let config = load_or_default(tmp.path()).unwrap();
+
+    assert_eq!(config, Config::default());
+}
+
 // ───────── build_config_from_statuses ─────────
 
 fn col(name: &str, order: u32) -> Column {
