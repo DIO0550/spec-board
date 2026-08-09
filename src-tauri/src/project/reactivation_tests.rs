@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 use super::{run_reactivation_resync, ReactivationResyncOutcome};
-use crate::config::{label_registry_store, milestone_registry_store};
+use crate::config::{label_registry_store, milestone_registry_store, FsConfigWriter};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
@@ -85,8 +85,21 @@ fn resync(
         io,
         &label_registry_store(root),
         &milestone_registry_store(root),
+        &FsConfigWriter,
         &collecting_emit(log),
     )
+}
+
+fn write_task_md_with_status(root: &Path, rel: &str, title: &str, status: &str) {
+    let absolute = root.join(rel);
+    if let Some(parent) = absolute.parent() {
+        fs::create_dir_all(parent).expect("create parent dir");
+    }
+    fs::write(
+        &absolute,
+        format!("---\ntitle: {title}\nstatus: {status}\n---\n\nbody\n"),
+    )
+    .expect("write md");
 }
 
 /// 読み込みのたびに同一 session の commit を注入し、並行 writer との競合を再現する。
@@ -225,7 +238,9 @@ fn changed_labels_yml_is_picked_up() {
 #[test]
 fn changed_config_json_is_picked_up() {
     let dir = tempdir();
-    write_task_md(dir.path(), "task-1.md", "Task one");
+    // status は差し替え後の config が持つカラムに合わせる。未知 status を残すと
+    // reconcile が末尾にカラムを足し、config 差し替えの取り込みと混ざる。
+    write_task_md_with_status(dir.path(), "task-1.md", "Task one", "Backlog");
     let state = Arc::new(AppState::new());
     let snapshot = open_from_disk(&state, dir.path());
     write_spec_board_file(

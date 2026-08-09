@@ -765,7 +765,9 @@ fn existing_config_is_not_overwritten_by_bootstrap() {
         "cardOrder": {}
     }"#;
     write_config_json(dir.path(), config_json);
-    write_md(dir.path(), "tasks/a.md", &task_md("A", "Doing", None));
+    // status は既存カラムに合わせる。未知 status を置くと reconcile が末尾へ
+    // カラムを足すため、bootstrap による上書きの有無を切り分けられなくなる。
+    write_md(dir.path(), "tasks/a.md", &task_md("A", "Backlog", None));
     let raw = dir.path().to_str().expect("utf-8").to_string();
     let before = fs::read(dir.path().join(".spec-board").join("config.json")).expect("read config");
 
@@ -869,7 +871,7 @@ fn bootstrap_uses_default_status_for_tasks_without_status() {
 }
 
 #[test]
-fn bootstrap_runs_only_on_cold_open() {
+fn cache_hit_reopen_does_not_bootstrap_the_config_again() {
     let state = Arc::new(AppState::new());
     let dir_a = tempdir();
     let dir_b = tempdir();
@@ -887,7 +889,7 @@ fn bootstrap_runs_only_on_cold_open() {
     assert_eq!(
         calls_before_reopen,
         writer.calls(),
-        "キャッシュヒット経路では config を書き直さない"
+        "差分が無ければ config を書き直さない"
     );
 }
 

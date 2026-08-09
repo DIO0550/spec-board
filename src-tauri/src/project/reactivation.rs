@@ -15,7 +15,8 @@ use std::thread;
 use thiserror::Error;
 
 use crate::config::{
-    label_registry_store, milestone_registry_store, LabelRegistryStore, MilestoneRegistryStore,
+    label_registry_store, milestone_registry_store, ConfigWriter, FsConfigWriter,
+    LabelRegistryStore, MilestoneRegistryStore,
 };
 use crate::project::open::{load_project_data, LoadProjectDataError};
 use crate::project_session::{ProjectSessionSnapshot, SessionIdentity};
@@ -80,6 +81,7 @@ impl ReactivationResyncScheduler for TauriReactivationResyncScheduler {
                         &FsTaskIo,
                         &labels_store,
                         &milestones_store,
+                        &FsConfigWriter,
                         &emit,
                     );
                     log::debug!("reactivation resync finished: {outcome:?}");
@@ -137,19 +139,34 @@ enum ReactivationResyncError {
 /// 送られない。commit が同一 session の並行 writer（新 watcher adapter）と競合した
 /// 場合は lease を取り直して最大 3 回再試行する。一律 Superseded 扱いにすると、
 /// 直後の disk 変更取り込みが黙って失われるため。
+///
+/// `config_writer` は reconcile（未知 status のカラム追加）が config.json を
+/// 書き出すためだけに使う。追加すべきカラムが無ければ 1 度も呼ばれない。書き込みは
+/// `with_project_writer_lease_for` が保持する root 単位の writer gate の内側で
+/// 行われるので、`update_columns` / `move_task` / watcher / コールドオープンとは
+/// 直列化される。
 pub(crate) fn run_reactivation_resync(
     state: &Arc<AppState>,
     target: &SessionIdentity,
     io: &dyn TaskIo,
     labels_store: &dyn LabelRegistryStore,
     milestones_store: &dyn MilestoneRegistryStore,
+    config_writer: &dyn ConfigWriter,
     emit: &(dyn Fn(&str, serde_json::Value) + Sync),
 ) -> ReactivationResyncOutcome {
     let mut attempt = 1;
     loop {
         let result: Result<ReactivationResyncOutcome, ReactivationResyncError> = state
             .with_project_writer_lease_for(target, |snapshot| {
-                resync_under_lease(state, snapshot, io, labels_store, milestones_store, emit)
+                resync_under_lease(
+                    state,
+                    snapshot,
+                    io,
+                    labels_store,
+                    milestones_store,
+                    config_writer,
+                    emit,
+                )
             });
         let error = match result {
             Ok(outcome) => return outcome,
@@ -238,6 +255,7 @@ fn resync_under_lease(
     io: &dyn TaskIo,
     labels_store: &dyn LabelRegistryStore,
     milestones_store: &dyn MilestoneRegistryStore,
+    config_writer: &dyn ConfigWriter,
     emit: &(dyn Fn(&str, serde_json::Value) + Sync),
 ) -> Result<ReactivationResyncOutcome, ReactivationResyncError> {
     let loaded = load_project_data(
@@ -245,8 +263,12 @@ fn resync_under_lease(
         labels_store,
         milestones_store,
         io,
+        config_writer,
     )?;
 
+    // 差分判定に config を含めたまま保つこと。watcher の CAS 競合で「disk の
+    // config.json は新しいが resident config は古い」乖離が生じうるため、md に
+    // 変更が無くても config だけの差分を取り込む本経路が唯一の収束手段になる。
     let unchanged = snapshot.config() == &loaded.config
         && snapshot.labels() == &loaded.labels
         && snapshot.milestones() == &loaded.milestones

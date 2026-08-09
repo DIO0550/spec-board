@@ -1,7 +1,8 @@
 //! `open_project` Tauri command 本体。
 //!
 //! フロントエンドから渡されたプロジェクトディレクトリを検証し、
-//! `.spec-board/config.json` の読み込み（不在ならタスクの status から生成して保存）、
+//! `.spec-board/config.json` の読み込み（不在ならタスクの status から生成して保存し、
+//! 既存 config にタスクの未知 status があれば末尾カラムとして追加して保存する）、
 //! `.md` 走査・パース、親子関係 / 逆引きインデックスの構築、`GUIDE.md` の
 //! best-effort 書き出しを行ったうえで `AppState` を一括更新する。
 //!
@@ -329,8 +330,10 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     // take から swap までの間に同 root の並行 open が割り込めない。
     let cached = take_cached_session(state, intent.root());
     let from_cache = cached.is_some();
-    // config の bootstrap はこの中（コールドオープン側）だけで走る。
-    // キャッシュヒット経路は disk を一切触らない従来どおりの扱い。
+    // config の bootstrap と reconcile はこの中（コールドオープン側）で走る。
+    // キャッシュヒット経路は open の同期処理では disk を一切触らず、直後に予約する
+    // 背景 resync が同じ load_project_data を通って reconcile を担う。
+    //
     let prepared_session = match cached {
         Some(cached_session) => cached_session.into_prepared(),
         None => load_cold_prepared_session(intent, ports)?,
@@ -342,7 +345,8 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     let candidate = prepared_session.into_session(session_id);
     let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
 
-    // bootstrap 済みの config が入っているため、GUIDE.md も生成カラムで出力される。
+    // bootstrap / reconcile 済みの config が入っているため、GUIDE.md も
+    // 生成・追加されたカラムで出力される。
     if !from_cache {
         write_guide_markdown_best_effort(root, candidate.config());
     }
@@ -387,10 +391,16 @@ fn load_cold_prepared_session(
     ports: ProjectDataPorts<'_>,
 ) -> Result<PreparedProjectSession, OpenProjectError> {
     let root = intent.as_path();
-    let mut loaded = load_project_data(root, ports.labels_store, ports.milestones_store, &FsTaskIo)
-        .map_err(|error| map_load_project_data_error(error, intent.as_path_str()))?;
+    let mut loaded = load_project_data(
+        root,
+        ports.labels_store,
+        ports.milestones_store,
+        &FsTaskIo,
+        ports.config_writer,
+    )
+    .map_err(|error| map_load_project_data_error(error, intent.as_path_str()))?;
 
-    if loaded.config_absent {
+    if matches!(loaded.config_origin, ConfigOrigin::Absent) {
         match bootstrap_config(root, &mut loaded, ports.config_writer) {
             // 生成 config を前提に読み直す。走査は既定 config の `default_status` で
             // 行っており、status 未記載タスクにはその値が入っている。生成 config の
@@ -398,11 +408,14 @@ fn load_cold_prepared_session(
             // タスクが別カラムへ移る。保存済み config で読み直して、以降のオープンと
             // 同じ状態に揃える。
             BootstrapOutcome::SavedWithNewDefaultStatus => {
-                loaded =
-                    load_project_data(root, ports.labels_store, ports.milestones_store, &FsTaskIo)
-                        .map_err(|error| {
-                            map_load_project_data_error(error, intent.as_path_str())
-                        })?;
+                loaded = load_project_data(
+                    root,
+                    ports.labels_store,
+                    ports.milestones_store,
+                    &FsTaskIo,
+                    ports.config_writer,
+                )
+                .map_err(|error| map_load_project_data_error(error, intent.as_path_str()))?;
             }
             BootstrapOutcome::Saved | BootstrapOutcome::NotSaved => {}
         }
@@ -483,11 +496,72 @@ fn bootstrap_config_from_tasks(tasks: &HashMap<PathBuf, Task>) -> Config {
         return Config::default();
     }
 
-    let statuses: Vec<(PathBuf, Option<String>)> = tasks
+    build_config_from_statuses(&status_inputs_from_tasks(tasks))
+}
+
+/// スキャン済みタスクを [`build_config_from_statuses`] /
+/// [`Config::plan_reconcile_columns`] が共有する `(path, status)` 列へ詰め替える。
+///
+/// `Task.status` は非 `Option` で、frontmatter に status が無いタスクはパース時に
+/// 既定 status へ補完済みなので、ここで `None` へ戻す必要はない。
+///
+/// watcher の full rescan も同じ `HashMap<PathBuf, Task>` を持つため `pub(crate)` で
+/// 共有する（同型の helper を watcher 側に重複定義しないため）。
+pub(crate) fn status_inputs_from_tasks(
+    tasks: &HashMap<PathBuf, Task>,
+) -> Vec<(PathBuf, Option<String>)> {
+    tasks
         .iter()
         .map(|(path, task)| (path.clone(), Some(task.status.as_str().to_owned())))
-        .collect();
-    build_config_from_statuses(&statuses)
+        .collect()
+}
+
+/// reconcile の結果。呼び出し側は config の採用と warning 追加だけを判断する。
+pub(crate) enum ReconcileOutcome {
+    /// 追加すべき未知 status が無く、config.json を書かなかった。
+    Unchanged,
+    /// 追加カラムを保存できた。呼び出し側はこの `Config` を採用する。
+    Saved(Config),
+    /// 追加カラムがあったが保存できなかった。呼び出し側は旧 config のまま続行し、
+    /// この warning を 1 件積む。
+    NotSaved(ProjectLoadWarning),
+}
+
+/// 既存 config へ未知 status のカラムを追加し、差分があるときだけ保存する。
+///
+/// 保存できたときだけ結果を採用する。背景 resync と CAS 競合復旧が config.json を
+/// disk から読み直すため、保存に失敗したまま in-memory の結果を採ると直後に
+/// 巻き戻り、利用者には「一瞬カラムが出て消える」挙動に見えるため
+/// （config 不在時の bootstrap と同じ方針）。
+///
+/// タスク走査は `default_status_for(config)`（`order` 最小カラム）で行われるが、
+/// 本関数は `order` 最大 +1 に追加するので既定 status は動かない。よって bootstrap の
+/// ような「保存後にタスクを読み直す」分岐は持たない。
+fn reconcile_config(
+    root: &Path,
+    config: &Config,
+    tasks: &HashMap<PathBuf, Task>,
+    writer: &dyn ConfigWriter,
+) -> ReconcileOutcome {
+    let plan = config.plan_reconcile_columns(&status_inputs_from_tasks(tasks));
+    if plan.is_noop {
+        return ReconcileOutcome::Unchanged;
+    }
+    match persist_config(root, &plan.new_config, writer) {
+        Ok(()) => {
+            // GUIDE.md は config.json を保存できた**直後**に書く。session commit の
+            // 後ろへ回すと、commit が競合して retry へ抜けたときに GUIDE だけが
+            // 永久に古いまま残る（次の試行では config が既に保存済みで reconcile が
+            // no-op になり、書き直す機会が二度と来ない）。GUIDE は best-effort なので
+            // commit の成否と紐づける理由が無い。
+            write_guide_markdown_best_effort(root, &plan.new_config);
+            ReconcileOutcome::Saved(plan.new_config)
+        }
+        Err(error) => {
+            log::warn!("failed to persist reconciled config: {error}");
+            ReconcileOutcome::NotSaved(ProjectLoadWarning::config_fallback(error.to_string()))
+        }
+    }
 }
 
 /// 生成した config を `.spec-board/config.json` へ書き出す。
@@ -502,10 +576,34 @@ fn bootstrap_config_from_tasks(tasks: &HashMap<PathBuf, Task>) -> Config {
 /// [`ConfigWriter`] 経由の atomic write を使えず、失敗時に空ファイルが残る経路が
 /// 増える。`update_columns` / `move_task` の config 書き込みも同じ粒度の競合を
 /// 許容しているため、ここも揃える。
-fn persist_config(root: &Path, config: &Config, writer: &dyn ConfigWriter) -> std::io::Result<()> {
+pub(crate) fn persist_config(
+    root: &Path,
+    config: &Config,
+    writer: &dyn ConfigWriter,
+) -> std::io::Result<()> {
     let content = serde_json::to_string_pretty(config)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     writer.write_atomic(&config_io::config_path(root), &content)
+}
+
+/// `.spec-board/config.json` をどう手に入れたか。生成・追記の可否を分ける。
+///
+/// 3 つの経路（そのまま読めた / 不在 / 壊れていて既定値へ倒した）で書き込み方針が
+/// 異なるため、bool 1 本ではなく列挙で持つ。
+///
+/// バリアントがデータを持たないので `Copy` を derive する。`matches!` で判定した
+/// 後に `LoadedProjectData` へそのまま詰め直せないと、フィールドが move されてしまう。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConfigOrigin {
+    /// disk の config.json をそのまま読めた。reconcile の対象。
+    Persisted,
+    /// config.json が存在しなかった。bootstrap の対象で、reconcile はしない
+    /// （直後に bootstrap が config 全体を生成して置き換えるため、ここで既定
+    /// 3 カラム + 未知 status を書くと二重書き込みになる）。
+    Absent,
+    /// 読み込みに失敗して既定値へ倒した。reconcile も bootstrap もしない
+    /// （ユーザーの既存ファイルを勝手に上書きしないため）。
+    Fallback,
 }
 
 /// コールドオープンと reactivation resync が共有する disk 全量読込の結果。
@@ -515,13 +613,9 @@ pub(crate) struct LoadedProjectData {
     pub(crate) milestones: MilestoneRegistry,
     pub(crate) tasks: HashMap<PathBuf, Task>,
     pub(crate) load_warnings: Vec<ProjectLoadWarning>,
-    /// `.spec-board/config.json` が存在しなかったか。
-    ///
-    /// コールドオープンだけがこれを見て bootstrap を実行する。resync 経路
-    /// (`project::reactivation`) は disk へ書かないため参照しない。
-    /// 読み込みに失敗した場合（ファイルはあるが壊れている）は `false`。
-    /// 壊れた config を勝手に作り直さないため。
-    pub(crate) config_absent: bool,
+    /// config をどこから得たか。コールドオープンの bootstrap 判定と GUIDE.md の
+    /// 書き出し判定、本ローダ内の reconcile 判定がこれを見る。
+    pub(crate) config_origin: ConfigOrigin,
 }
 
 /// 全量読込が中断した理由。config は fallback するため variant を持たない。
@@ -540,20 +634,27 @@ pub(crate) enum LoadProjectDataError {
 /// 「reactivation resync 後の状態 = コールドオープンした場合の状態」という収束
 /// 不変条件を守るため、読み込み規則は両経路でこの関数だけに置く。片方へ書き写すと
 /// 二重管理になり、fallback や warning の扱いがすぐ食い違う。
+///
+/// 本関数は原則 disk へ書かないが、**未知 status のカラム追加（reconcile）だけは
+/// 例外**として config.json を書く。コールドオープン / キャッシュヒット後の背景
+/// resync / CAS 競合復旧のいずれもここを通るため、reconcile をここへ置けば
+/// 「どの経路で開いてもタスクがカラムから消えない」を 1 実装で満たせる。書き込むのは
+/// 追加すべきカラムが実際にあるときだけで、差分が無ければ従来どおり読み取りしか行わない。
 pub(crate) fn load_project_data(
     root: &Path,
     labels_store: &dyn LabelRegistryStore,
     milestones_store: &dyn MilestoneRegistryStore,
     io: &dyn TaskIo,
+    config_writer: &dyn ConfigWriter,
 ) -> Result<LoadedProjectData, LoadProjectDataError> {
-    let (config, config_absent, mut load_warnings) = match load_persisted(root) {
-        Ok(Some(config)) => (config, false, Vec::new()),
+    let (mut config, config_origin, mut load_warnings) = match load_persisted(root) {
+        Ok(Some(config)) => (config, ConfigOrigin::Persisted, Vec::new()),
         // 不在時も default で走査する。走査に必要な `default_status` を決めるためだけの
         // 暫定値で、bootstrap がこの後で生成 config に差し替える。
-        Ok(None) => (Config::default(), true, Vec::new()),
+        Ok(None) => (Config::default(), ConfigOrigin::Absent, Vec::new()),
         Err(error) => (
             Config::default(),
-            false,
+            ConfigOrigin::Fallback,
             vec![ProjectLoadWarning::config_fallback(error.to_string())],
         ),
     };
@@ -562,12 +663,26 @@ pub(crate) fn load_project_data(
     let default_status = default_status_for(&config);
     let report = rebuild_tasks_from_disk_with_report(root, &default_status, io)?;
     load_warnings.extend(report.warnings);
-    let load_warnings = deduplicate_and_sort(load_warnings);
-    let tasks = report
+    let tasks: HashMap<PathBuf, Task> = report
         .tasks
         .into_iter()
         .map(|task| (PathBuf::from(task.file_path.as_str()), task))
         .collect();
+
+    if matches!(config_origin, ConfigOrigin::Persisted) {
+        match reconcile_config(root, &config, &tasks, config_writer) {
+            ReconcileOutcome::Unchanged => {}
+            ReconcileOutcome::Saved(reconciled) => {
+                config = reconciled;
+            }
+            ReconcileOutcome::NotSaved(warning) => {
+                load_warnings.push(warning);
+            }
+        }
+    }
+    // reconcile の warning もここで初めて整列対象へ入る。push した順のまま返すと
+    // payload の順序規約が崩れるため、整列は reconcile より後ろに置く。
+    let load_warnings = deduplicate_and_sort(load_warnings);
 
     Ok(LoadedProjectData {
         config,
@@ -575,7 +690,7 @@ pub(crate) fn load_project_data(
         milestones,
         tasks,
         load_warnings,
-        config_absent,
+        config_origin,
     })
 }
 
