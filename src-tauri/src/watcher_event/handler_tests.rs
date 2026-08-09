@@ -957,3 +957,886 @@ impl TaskIo for ConfigSwappingIo {
         self.inner.read(path)
     }
 }
+
+// ───────── 未知 status のカラム追加（reconcile） ─────────
+
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// 常に書き込みへ失敗する `ConfigWriter`。
+struct FailingConfigWriter;
+
+impl ConfigWriter for FailingConfigWriter {
+    fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "config write denied",
+        ))
+    }
+}
+
+/// 本番と同じ書き込みを行いつつ、呼ばれた回数を数える `ConfigWriter`。
+#[derive(Default)]
+struct CountingConfigWriter {
+    calls: AtomicU32,
+}
+
+impl CountingConfigWriter {
+    fn calls(&self) -> u32 {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl ConfigWriter for CountingConfigWriter {
+    fn write_atomic(&self, dst: &Path, content: &str) -> std::io::Result<()> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        FsConfigWriter.write_atomic(dst, content)
+    }
+}
+
+/// `read` のたびに同一 session の commit を注入し、CAS 競合を再現する io。
+///
+/// 注入と同時に「retry の合間に disk が変わる」状況も作れるよう、副作用の
+/// クロージャを 1 度だけ走らせる。
+struct CommitInjectingTaskIo {
+    state: Arc<AppState>,
+    remaining: AtomicU32,
+    side_effect: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl CommitInjectingTaskIo {
+    fn new(state: Arc<AppState>, injections: u32) -> Self {
+        Self {
+            state,
+            remaining: AtomicU32::new(injections),
+            side_effect: Mutex::new(None),
+        }
+    }
+
+    fn with_side_effect(self, side_effect: Box<dyn FnOnce() + Send>) -> Self {
+        *self.side_effect.lock().expect("side effect lock") = Some(side_effect);
+        self
+    }
+
+    fn inject(&self) {
+        let consumed =
+            self.remaining
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                    remaining.checked_sub(1)
+                });
+        if consumed.is_err() {
+            return;
+        }
+        if let Some(side_effect) = self.side_effect.lock().expect("side effect lock").take() {
+            side_effect();
+        }
+        let identity = self
+            .state
+            .active_session_identity()
+            .expect("session stays open during injection");
+        self.state
+            .commit_session_write(&identity, |_| ())
+            .expect("injected commit advances the revision");
+    }
+}
+
+impl TaskIo for CommitInjectingTaskIo {
+    fn ensure_dir(&self, dir: &Path) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.ensure_dir(dir)
+    }
+
+    fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.write_new(path, bytes)
+    }
+
+    fn write_existing(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+    ) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.write_existing(path, bytes)
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.remove(path)
+    }
+
+    fn read(&self, path: &Path) -> Result<Vec<u8>, crate::task::io::TaskIoError> {
+        self.inject();
+        FsTaskIo.read(path)
+    }
+}
+
+fn task_md_with_status(title: &str, status: &str) -> String {
+    format!("---\ntitle: {title}\nstatus: {status}\n---\n\nbody\n")
+}
+
+fn config_path(root: &Path) -> PathBuf {
+    root.join(".spec-board").join("config.json")
+}
+
+fn write_config_json(root: &Path, content: &str) {
+    let dir = root.join(".spec-board");
+    std::fs::create_dir_all(&dir).expect("create .spec-board");
+    std::fs::write(dir.join("config.json"), content).expect("write config.json");
+}
+
+fn read_saved_config(root: &Path) -> crate::config::Config {
+    let raw = std::fs::read_to_string(config_path(root)).expect("config.json should exist");
+    serde_json::from_str(&raw).expect("saved config.json should parse")
+}
+
+fn read_guide(root: &Path) -> Option<String> {
+    std::fs::read_to_string(root.join(".spec-board").join("GUIDE.md")).ok()
+}
+
+fn write_guide(root: &Path, content: &str) {
+    let dir = root.join(".spec-board");
+    std::fs::create_dir_all(&dir).expect("create .spec-board");
+    std::fs::write(dir.join("GUIDE.md"), content).expect("write GUIDE.md");
+}
+
+/// `Todo(0)` / `Done(1)` の config を disk と resident session の両方へ置く。
+fn seed_base_config(state: &AppState, root: &Path) {
+    seed_config_json(
+        state,
+        root,
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1}],"cardOrder":{},"doneColumn":"Done"}"#,
+    );
+}
+
+/// 与えた JSON を disk へ書き、同じ内容を resident config としても commit する。
+fn seed_config_json(state: &AppState, root: &Path, json: &str) {
+    write_config_json(root, json);
+    let config: crate::config::Config =
+        serde_json::from_str(json).expect("seed config.json should parse");
+    commit_config(state, config);
+}
+
+fn column_names_of(config: &crate::config::Config) -> Vec<&str> {
+    config
+        .columns
+        .iter()
+        .map(|column| column.name.as_str())
+        .collect()
+}
+
+fn resident_config(state: &AppState) -> crate::config::Config {
+    state
+        .require_session_snapshot()
+        .expect("active session")
+        .config()
+        .clone()
+}
+
+#[test]
+fn an_unknown_status_creation_adds_a_column_and_emits_only_a_resync() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    let revision_before = session_revision(&state);
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    assert_eq!(1, writer.calls());
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"]
+    );
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert_eq!("rescan", entries[0].1["payload"]["reason"]);
+    let resident = resident_config(&state);
+    assert_eq!(column_names_of(&resident), vec!["Todo", "Done", "Review"]);
+    assert_eq!(
+        revision_before + 1,
+        session_revision(&state),
+        "config と task は同一 revision で差し替わる"
+    );
+    assert!(state
+        .test_tasks_snapshot()
+        .expect("readable")
+        .iter()
+        .any(|task| task.file_path == "tasks/a.md"));
+}
+
+#[test]
+fn a_known_status_creation_keeps_the_task_created_envelope_and_writes_no_config() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    assert_eq!(0, writer.calls());
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("task-created", entries[0].0);
+}
+
+#[test]
+fn a_repeated_unknown_status_writes_the_config_only_once() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    let first = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    let second = write_md(
+        dir.path(),
+        "tasks/b.md",
+        &task_md_with_status("B", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(first), &ctx).expect("handler ok");
+    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+
+    assert_eq!(1, writer.calls());
+    let entries = drain(&log);
+    assert_eq!(
+        vec!["watcher-resync-required", "task-created"],
+        entries
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn modifying_a_task_into_an_unknown_status_suppresses_the_task_updated_envelope() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
+    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("handler ok");
+    drain(&log);
+
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    handle_event(&FsEvent::Modified(abs), &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"]
+    );
+}
+
+#[test]
+fn renaming_into_an_unknown_status_emits_a_delete_then_a_resync() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let from = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
+    handle_event(&FsEvent::Created(from.clone()), &ctx).expect("handler ok");
+    drain(&log);
+    std::fs::remove_file(&from).expect("remove old path");
+    let to = write_md(
+        dir.path(),
+        "tasks/b.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Renamed { from, to }, &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(
+        vec!["task-deleted", "watcher-resync-required"],
+        entries
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"]
+    );
+}
+
+#[test]
+fn deleting_the_last_task_of_a_column_does_not_remove_the_column() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_config_json(
+        &state,
+        dir.path(),
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Review","order":1}],"cardOrder":{},"doneColumn":"Review"}"#,
+    );
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("handler ok");
+    drain(&log);
+    std::fs::remove_file(&abs).expect("remove md");
+
+    handle_event(&FsEvent::Removed(abs), &ctx).expect("handler ok");
+
+    assert_eq!(0, writer.calls());
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Review"]
+    );
+}
+
+#[test]
+fn a_full_rescan_reconciles_and_still_emits_a_single_resync() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+
+    assert_eq!(1, writer.calls());
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"]
+    );
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Review"]
+    );
+}
+
+#[test]
+fn a_failed_config_save_keeps_the_task_created_envelope_and_the_old_resident_config() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::new(FailingConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    let before = std::fs::read(config_path(dir.path())).expect("read config");
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("save failure must not fail the event");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("task-created", entries[0].0);
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done"]
+    );
+    assert_eq!(
+        before,
+        std::fs::read(config_path(dir.path())).expect("read config")
+    );
+}
+
+#[test]
+fn a_failed_config_save_still_adopts_a_newer_config_from_disk() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::new(FailingConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    // 外部エディタが Idea を足した（resident は未取り込み）状態にする。
+    write_config_json(
+        dir.path(),
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1},{"name":"Idea","order":2}],"cardOrder":{},"doneColumn":"Done"}"#,
+    );
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("save failure must not fail the event");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!(
+        "watcher-resync-required", entries[0].0,
+        "disk の内容の採否は reconcile の成否とは独立"
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Idea"]
+    );
+}
+
+#[test]
+fn a_stale_session_event_writes_no_config_and_emits_nothing() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, mut ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    ctx.session_id = SessionId::from_raw(ctx.session_id.as_u64() - 1);
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    assert_eq!(0, writer.calls());
+    assert!(drain(&log).is_empty());
+}
+
+#[test]
+fn reconcile_does_not_pollute_the_write_ignore_registry() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    drain(&log);
+    let resources = active_resources(&state);
+    assert!(
+        !resources
+            .write_ignore()
+            .unregister(config_path(dir.path()))
+            .expect("registry readable"),
+        "config.json を write_ignore へ登録すると、path フィルタで落ちる event が\
+         marker を消費できず永久に残る"
+    );
+    assert!(resources
+        .write_ignore()
+        .is_empty()
+        .expect("registry readable"));
+}
+
+#[test]
+fn an_empty_status_creates_an_empty_named_column() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "\"\""));
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", ""]
+    );
+}
+
+#[test]
+fn reconcile_refreshes_the_guide_markdown() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    drain(&log);
+    let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
+    assert!(guide.contains("- Review"));
+}
+
+#[test]
+fn adopting_a_config_from_disk_does_not_rewrite_the_guide_markdown() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    // 外部が先に Review を足した状態。resident はまだ知らない。
+    write_config_json(
+        dir.path(),
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1},{"name":"Review","order":2}],"cardOrder":{},"doneColumn":"Done"}"#,
+    );
+    let guide_before = "# ユーザーの GUIDE\n";
+    write_guide(dir.path(), guide_before);
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    assert_eq!(0, writer.calls());
+    assert_eq!(read_guide(dir.path()).as_deref(), Some(guide_before));
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!(
+        "watcher-resync-required", entries[0].0,
+        "書き込みは不要でも resident は disk へ追いつかせる"
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Review"]
+    );
+}
+
+#[test]
+fn reconcile_keeps_a_column_that_an_external_editor_added_first() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    write_config_json(
+        dir.path(),
+        r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1},{"name":"Idea","order":2}],"cardOrder":{},"doneColumn":"Done"}"#,
+    );
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    drain(&log);
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Idea", "Review"]
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Idea", "Review"]
+    );
+}
+
+#[test]
+fn reconcile_does_not_recreate_or_overwrite_an_unusable_config_file() {
+    struct Case {
+        label: &'static str,
+        replacement: Option<&'static str>,
+    }
+
+    let cases = vec![
+        Case {
+            label: "config.json が削除されている",
+            replacement: None,
+        },
+        Case {
+            label: "config.json が壊れている",
+            replacement: Some("{ not json"),
+        },
+    ];
+
+    for case in cases {
+        let dir = TempDir::new().expect("tempdir");
+        let writer = Arc::new(CountingConfigWriter::default());
+        let (state, ctx, log) = build_installed_ctx_with_config_writer(
+            dir.path(),
+            Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+        );
+        seed_base_config(&state, dir.path());
+        match case.replacement {
+            Some(content) => write_config_json(dir.path(), content),
+            None => std::fs::remove_file(config_path(dir.path())).expect("remove config.json"),
+        }
+        let abs = write_md(
+            dir.path(),
+            "tasks/a.md",
+            &task_md_with_status("A", "Review"),
+        );
+
+        handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+        assert_eq!(0, writer.calls(), "case: {}", case.label);
+        match case.replacement {
+            Some(content) => assert_eq!(
+                std::fs::read_to_string(config_path(dir.path())).expect("read config"),
+                content,
+                "case: {}",
+                case.label
+            ),
+            None => assert!(!config_path(dir.path()).exists(), "case: {}", case.label),
+        }
+        let entries = drain(&log);
+        assert_eq!(1, entries.len(), "case: {}", case.label);
+        assert_eq!("task-created", entries[0].0, "case: {}", case.label);
+    }
+}
+
+#[test]
+fn a_known_status_event_does_not_create_a_missing_config_file() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    std::fs::remove_file(config_path(dir.path())).expect("remove config.json");
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+
+    assert_eq!(0, writer.calls());
+    assert!(!config_path(dir.path()).exists());
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("task-created", entries[0].0);
+}
+
+#[test]
+fn a_modification_of_the_config_file_itself_is_ignored() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    let revision_before = session_revision(&state);
+
+    handle_event(&FsEvent::Modified(config_path(dir.path())), &ctx).expect("handler ok");
+
+    assert_eq!(0, writer.calls());
+    assert!(drain(&log).is_empty());
+    assert_eq!(revision_before, session_revision(&state));
+}
+
+#[test]
+fn a_cas_conflict_after_a_successful_save_leaves_the_disk_ahead_of_the_resident_config() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, mut ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let abs = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
+
+    handle_event(&FsEvent::Created(abs), &ctx).expect("a CAS conflict is a normal skip");
+
+    assert!(drain(&log).is_empty(), "競合時は emit しない");
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review"],
+        "config.json だけが先行する"
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done"]
+    );
+}
+
+#[test]
+fn the_next_unknown_status_event_makes_a_stale_resident_config_catch_up() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, mut ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let first = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
+    handle_event(&FsEvent::Created(first), &ctx).expect("a CAS conflict is a normal skip");
+    drain(&log);
+    ctx.io = Arc::new(FsTaskIo) as Arc<dyn TaskIo>;
+    let second = write_md(
+        dir.path(),
+        "tasks/b.md",
+        &task_md_with_status("B", "Blocked"),
+    );
+
+    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Review", "Blocked"]
+    );
+}
+
+#[test]
+fn a_known_status_event_does_not_make_a_stale_resident_config_catch_up() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, mut ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    let first = write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
+    handle_event(&FsEvent::Created(first), &ctx).expect("a CAS conflict is a normal skip");
+    drain(&log);
+    ctx.io = Arc::new(FsTaskIo) as Arc<dyn TaskIo>;
+    let second = write_md(dir.path(), "tasks/b.md", &task_md_with_status("B", "Todo"));
+
+    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!(
+        "task-created", entries[0].0,
+        "既知 status は足切りで disk を読まないため収束を早めない"
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done"]
+    );
+}
+
+#[test]
+fn a_retrying_rescan_writes_the_config_only_once_for_unchanged_input() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, mut ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
+
+    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+
+    assert_eq!(
+        1,
+        writer.calls(),
+        "2 周目は読み直した config が既に新カラムを持つので persist されない"
+    );
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Review"],
+        "書き込み 0 回の周でも resident は disk へ追いつく"
+    );
+}
+
+#[test]
+fn a_retrying_rescan_picks_up_a_status_that_appeared_between_attempts() {
+    let dir = TempDir::new().expect("tempdir");
+    let writer = Arc::new(CountingConfigWriter::default());
+    let (state, mut ctx, log) = build_installed_ctx_with_config_writer(
+        dir.path(),
+        Arc::clone(&writer) as Arc<dyn ConfigWriter + Send + Sync>,
+    );
+    seed_base_config(&state, dir.path());
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    let root = dir.path().to_path_buf();
+    ctx.io = Arc::new(
+        CommitInjectingTaskIo::new(Arc::clone(&state), 1).with_side_effect(Box::new(move || {
+            write_md(&root, "tasks/b.md", &task_md_with_status("B", "Blocked"));
+        })),
+    ) as Arc<dyn TaskIo>;
+
+    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+
+    drain(&log);
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Review", "Blocked"]
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Review", "Blocked"]
+    );
+    assert_eq!(
+        2,
+        writer.calls(),
+        "入力が周をまたいで変わった場合は取りこぼさない側を優先して 2 回保存する"
+    );
+}
+
+#[test]
+fn a_retrying_rescan_keeps_a_column_another_writer_added_between_attempts() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, mut ctx, log) = build_installed_ctx(dir.path());
+    seed_base_config(&state, dir.path());
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        &task_md_with_status("A", "Review"),
+    );
+    let root = dir.path().to_path_buf();
+    ctx.io = Arc::new(
+        CommitInjectingTaskIo::new(Arc::clone(&state), 1).with_side_effect(Box::new(move || {
+            write_config_json(
+                &root,
+                r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Done","order":1},{"name":"Idea","order":2}],"cardOrder":{},"doneColumn":"Done"}"#,
+            );
+        })),
+    ) as Arc<dyn TaskIo>;
+
+    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+
+    drain(&log);
+    assert_eq!(
+        column_names_of(&read_saved_config(dir.path())),
+        vec!["Todo", "Done", "Idea", "Review"]
+    );
+    assert_eq!(
+        column_names_of(&resident_config(&state)),
+        vec!["Todo", "Done", "Idea", "Review"]
+    );
+}
