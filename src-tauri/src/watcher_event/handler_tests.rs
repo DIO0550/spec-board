@@ -10,6 +10,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use super::{handle_event, handle_event_with_before_sequence, HandleError};
+use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, SessionId, SessionIdentity};
 use crate::state::active_project_resources::{
@@ -95,6 +96,17 @@ fn bump_session_revision(state: &AppState) {
 }
 
 fn build_installed_ctx(root: &Path) -> (Arc<crate::state::AppState>, AdapterContext, EmitLog) {
+    build_installed_ctx_with_config_writer(
+        root,
+        Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
+    )
+}
+
+/// config の書き込みだけ差し替えた ctx を作る。書き込み回数の計数と失敗注入に使う。
+fn build_installed_ctx_with_config_writer(
+    root: &Path,
+    config_writer: Arc<dyn ConfigWriter + Send + Sync>,
+) -> (Arc<crate::state::AppState>, AdapterContext, EmitLog) {
     let state = Arc::new(crate::state::AppState::new());
     let identity = install_active_session(&state, root);
     let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
@@ -111,6 +123,7 @@ fn build_installed_ctx(root: &Path) -> (Arc<crate::state::AppState>, AdapterCont
         state: Arc::clone(&state),
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
+        config_writer,
     };
     (state, ctx, log)
 }
@@ -308,6 +321,7 @@ fn event_seq_is_consumed_even_when_the_emitter_drops_the_event() {
         state: Arc::clone(&state),
         emit,
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
+        config_writer: Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
     };
     let first = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let second = write_md(dir.path(), "tasks/b.md", &task_md("B"));
@@ -424,6 +438,7 @@ fn ctx_with_io(
         state: Arc::clone(state),
         emit,
         io,
+        config_writer: Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
     };
     (ctx, log)
 }
