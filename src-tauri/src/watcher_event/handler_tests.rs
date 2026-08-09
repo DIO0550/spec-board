@@ -1,4 +1,4 @@
-//! `handle_event` の identity guard と envelope 化に対する単体テスト。
+//! `handle_change` の identity guard と envelope 化に対する単体テスト。
 //!
 //! 差分更新そのものの挙動は `watcher_event/tests.rs` が担当し、ここでは
 //! 「どの session の event として emit されるか」「連番がどう進むか」を固定する。
@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use tempfile::TempDir;
 
-use super::{handle_event, handle_event_with_before_sequence, HandleError};
+use super::{
+    changes_in_order, handle_batch, handle_change, handle_change_with_before_sequence, HandleError,
+    TaskFileChange,
+};
 use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, SessionId, SessionIdentity};
@@ -19,12 +22,22 @@ use crate::state::active_project_resources::{
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::watcher_event::{AdapterContext, EmitFn};
-use spec_board_fs::watcher::core::{FsEvent, WatcherFailure, WatcherFailureKind};
+use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
+use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
+
+/// fs 層が rename を分解した形の batch（from を removed、to を upserted）。
+fn rename_batch(from: PathBuf, to: PathBuf) -> FileChangeBatch {
+    FileChangeBatch {
+        removed: vec![from],
+        upserted: vec![to],
+        ..FileChangeBatch::default()
+    }
+}
 
 fn task_md(title: &str) -> String {
     format!("---\ntitle: {title}\nstatus: Todo\n---\n\nbody\n")
@@ -138,7 +151,7 @@ fn upsert_emits_an_envelope_carrying_the_session_identity() {
     let (_state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -163,7 +176,7 @@ fn events_from_a_stale_generation_touch_neither_the_cache_nor_the_emitter() {
     ctx.session_id = SessionId::from_raw(ctx.session_id.as_u64() - 1);
     let revision_before = session_revision(&state);
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     assert!(drain(&log).is_empty(), "旧世代は一切 emit してはならない");
     assert!(state.test_tasks_snapshot().expect("readable").is_empty());
@@ -188,7 +201,7 @@ fn same_path_reopen_makes_the_old_adapter_a_complete_no_op() {
         .event_seq
         .as_u64();
 
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("stale event is ignored");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("stale event is ignored");
 
     let snapshot_after = state.require_session_snapshot().expect("current session");
     let event_seq_after = state
@@ -219,7 +232,7 @@ fn switch_after_commit_before_sequence_consumes_no_event_seq_and_emits_nothing()
     let baseline_for_hook = Arc::clone(&baseline);
     let mut switched = false;
 
-    handle_event_with_before_sequence(&FsEvent::Created(abs), &ctx, move || {
+    handle_change_with_before_sequence(&TaskFileChange::Upserted(abs), &ctx, move || {
         assert!(!switched, "single upsert emits at most once");
         switched = true;
         install_active_session(&state_for_hook, &project_b_root);
@@ -263,7 +276,7 @@ fn watcher_mutation_acquires_the_exact_root_writer_gate_before_touching_state() 
     .join();
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
 
-    let error = handle_event(&FsEvent::Created(abs), &ctx)
+    let error = handle_change(&TaskFileChange::Upserted(abs), &ctx)
         .expect_err("poisoned writer gate must stop the watcher mutation");
 
     assert!(matches!(
@@ -281,8 +294,8 @@ fn consecutive_upserts_advance_both_revision_and_event_seq() {
     let first = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let second = write_md(dir.path(), "tasks/b.md", &task_md("B"));
 
-    handle_event(&FsEvent::Created(first), &ctx).expect("handler ok");
-    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(first), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(second), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries[0].1["eventSeq"]);
@@ -326,8 +339,8 @@ fn event_seq_is_consumed_even_when_the_emitter_drops_the_event() {
     let first = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let second = write_md(dir.path(), "tasks/b.md", &task_md("B"));
 
-    handle_event(&FsEvent::Created(first), &ctx).expect("handler ok");
-    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(first), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(second), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -342,11 +355,11 @@ fn delete_emits_an_envelope_with_the_relative_file_path_only() {
     let dir = TempDir::new().expect("tempdir");
     let (_state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed");
     drain(&log);
     std::fs::remove_file(&abs).expect("remove md");
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!("task-deleted", entries[0].0);
@@ -355,7 +368,7 @@ fn delete_emits_an_envelope_with_the_relative_file_path_only() {
     assert!(entries[0].1["payload"].get("task").is_none());
 }
 
-// ───────── FsEvent::Rescan（full reconciliation） ─────────
+// ───────── TaskFileChange::Rescan（full reconciliation） ─────────
 
 /// `read` のたびに `tasks_cache` を触って revision を進める `TaskIo`。
 ///
@@ -451,7 +464,7 @@ fn rescan_fills_an_empty_cache_from_disk_and_requests_a_single_resync() {
         write_md(dir.path(), &format!("tasks/{name}.md"), &task_md(name));
     }
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     let mut paths: Vec<String> = state
         .test_tasks_snapshot()
@@ -478,12 +491,12 @@ fn rescan_converges_a_diverged_cache_onto_the_disk_contents() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let stale = write_md(dir.path(), "tasks/stale.md", &task_md("Stale"));
-    handle_event(&FsEvent::Created(stale.clone()), &ctx).expect("seed stale");
+    handle_change(&TaskFileChange::Upserted(stale.clone()), &ctx).expect("seed stale");
     std::fs::remove_file(&stale).expect("remove stale from disk");
     write_md(dir.path(), "tasks/fresh.md", &task_md("Fresh"));
     drain(&log);
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     let paths: Vec<String> = state
         .test_tasks_snapshot()
@@ -500,7 +513,7 @@ fn resync_request_carries_only_a_reason_and_never_a_snapshot() {
     let (_state, ctx, log) = build_installed_ctx(dir.path());
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     let entries = drain(&log);
     assert_eq!(
@@ -517,7 +530,7 @@ fn rescan_envelope_reports_the_bumped_revision_as_cache_mutating() {
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let before = session_revision(&state);
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     let entries = drain(&log);
     assert_eq!(before + 1, session_revision(&state));
@@ -534,7 +547,7 @@ fn rescan_retries_the_scan_when_the_revision_moved_while_scanning() {
     let io = Arc::new(RevisionBumpingIo::new(Arc::clone(&state), 1));
     let (ctx, log) = ctx_with_io(dir.path(), &state, Arc::clone(&io) as Arc<dyn TaskIo>);
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     assert_eq!(
         2,
@@ -555,7 +568,7 @@ fn rescan_gives_up_without_committing_when_the_state_keeps_moving() {
     let io = Arc::new(RevisionBumpingIo::new(Arc::clone(&state), u32::MAX));
     let (ctx, log) = ctx_with_io(dir.path(), &state, Arc::clone(&io) as Arc<dyn TaskIo>);
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     assert_eq!(3, io.read_count(), "上限 3 回で打ち切る");
     assert!(
@@ -577,7 +590,7 @@ fn rescan_clears_the_write_ignore_registry() {
         .register(dir.path().join("tasks/self-written.md"))
         .expect("register");
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     assert!(
         active_resources(&state)
@@ -593,11 +606,11 @@ fn rescan_on_an_empty_project_empties_the_cache_and_still_requests_a_resync() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed");
     std::fs::remove_file(&abs).expect("remove md");
     drain(&log);
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     assert!(state.test_tasks_snapshot().expect("readable").is_empty());
     assert_eq!(1, drain(&log).len());
@@ -608,7 +621,7 @@ fn rescan_handles_the_already_empty_and_single_file_boundaries() {
     let empty_dir = TempDir::new().expect("tempdir");
     let (empty_state, empty_ctx, empty_log) = build_installed_ctx(empty_dir.path());
 
-    handle_event(&FsEvent::Rescan, &empty_ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &empty_ctx).expect("rescan ok");
 
     assert!(empty_state
         .test_tasks_snapshot()
@@ -620,7 +633,7 @@ fn rescan_handles_the_already_empty_and_single_file_boundaries() {
     let (single_state, single_ctx, single_log) = build_installed_ctx(single_dir.path());
     write_md(single_dir.path(), "tasks/only.md", &task_md("Only"));
 
-    handle_event(&FsEvent::Rescan, &single_ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &single_ctx).expect("rescan ok");
 
     assert_eq!(
         1,
@@ -634,12 +647,12 @@ fn rescan_failure_keeps_the_cache_and_reports_a_diagnostic_only() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    handle_event(&FsEvent::Created(abs), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("seed");
     drain(&log);
     let revision_before = session_revision(&state);
     std::fs::remove_dir_all(dir.path()).expect("remove project root");
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan reports instead of failing");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan reports instead of failing");
 
     assert_eq!(1, state.test_tasks_snapshot().expect("readable").len());
     assert_eq!(revision_before, session_revision(&state));
@@ -666,7 +679,7 @@ fn rescan_surfaces_a_poisoned_tasks_cache_as_a_handle_error() {
     })
     .join();
 
-    let error = handle_event(&FsEvent::Rescan, &ctx).expect_err("poisoned lock surfaces");
+    let error = handle_change(&TaskFileChange::Rescan, &ctx).expect_err("poisoned lock surfaces");
 
     assert!(matches!(error, HandleError::StateLock(_)));
 }
@@ -676,12 +689,12 @@ fn a_late_modify_after_a_rescan_still_lands_with_a_higher_revision() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
     let rescan_revision = session_revision(&state);
     drain(&log);
 
     write_md(dir.path(), "tasks/a.md", &task_md("A2"));
-    handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("modify ok");
 
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
@@ -694,7 +707,7 @@ fn a_late_modify_after_a_rescan_still_lands_with_a_higher_revision() {
     );
 }
 
-// ───────── FsEvent::Error（structured diagnostics） ─────────
+// ───────── TaskFileChange::Failure（structured diagnostics） ─────────
 
 fn failure(kind: WatcherFailureKind, detail: &str, paths: Vec<PathBuf>) -> WatcherFailure {
     WatcherFailure {
@@ -709,8 +722,8 @@ fn backend_failure_is_reported_as_a_watcher_diagnostic() {
     let dir = TempDir::new().expect("tempdir");
     let (_state, ctx, log) = build_installed_ctx(dir.path());
 
-    handle_event(
-        &FsEvent::Error(failure(
+    handle_change(
+        &TaskFileChange::Failure(failure(
             WatcherFailureKind::ResourceExhausted,
             "inotify watch limit reached",
             vec![dir.path().join("tasks")],
@@ -736,12 +749,12 @@ fn a_diagnostic_leaves_the_cache_and_revision_untouched() {
     let dir = TempDir::new().expect("tempdir");
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
-    handle_event(&FsEvent::Created(abs), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("seed");
     drain(&log);
     let revision_before = session_revision(&state);
 
-    handle_event(
-        &FsEvent::Error(failure(WatcherFailureKind::Io, "read error", Vec::new())),
+    handle_change(
+        &TaskFileChange::Failure(failure(WatcherFailureKind::Io, "read error", Vec::new())),
         &ctx,
     )
     .expect("handler ok");
@@ -772,8 +785,11 @@ fn every_watcher_failure_kind_maps_to_a_diagnostic_code() {
         let dir = TempDir::new().expect("tempdir");
         let (_state, ctx, log) = build_installed_ctx(dir.path());
 
-        handle_event(&FsEvent::Error(failure(kind, "detail", Vec::new())), &ctx)
-            .expect("handler ok");
+        handle_change(
+            &TaskFileChange::Failure(failure(kind, "detail", Vec::new())),
+            &ctx,
+        )
+        .expect("handler ok");
 
         let entries = drain(&log);
         assert_eq!(
@@ -808,7 +824,7 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
         "---\ntitle: NoStatus\n---\n",
     );
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
@@ -828,7 +844,7 @@ fn rescan_still_requests_a_resync_when_clearing_write_ignore_fails() {
         .write_ignore()
         .poison_lock_for_testing();
 
-    let error = handle_event(&FsEvent::Rescan, &ctx).expect_err("clear failure surfaces");
+    let error = handle_change(&TaskFileChange::Rescan, &ctx).expect_err("clear failure surfaces");
 
     let entries = drain(&log);
     assert_eq!(
@@ -864,7 +880,7 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
         "---\ntitle: NoStatus\n---\n",
     );
 
-    handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("modify ok");
 
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(
@@ -888,7 +904,7 @@ fn rescan_reresolves_the_default_status_on_every_retry() {
     let io = Arc::new(ConfigSwappingIo::new(Arc::clone(&state)));
     let (ctx, _log) = ctx_with_io(dir.path(), &state, Arc::clone(&io) as Arc<dyn TaskIo>);
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("rescan ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("rescan ok");
 
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(
@@ -1144,7 +1160,7 @@ fn an_unknown_status_creation_adds_a_column_and_emits_only_a_resync() {
     );
     let revision_before = session_revision(&state);
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     assert_eq!(1, writer.calls());
     assert_eq!(
@@ -1180,7 +1196,7 @@ fn a_known_status_creation_keeps_the_task_created_envelope_and_writes_no_config(
     seed_base_config(&state, dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     assert_eq!(0, writer.calls());
     let entries = drain(&log);
@@ -1208,8 +1224,8 @@ fn a_repeated_unknown_status_writes_the_config_only_once() {
         &task_md_with_status("B", "Review"),
     );
 
-    handle_event(&FsEvent::Created(first), &ctx).expect("handler ok");
-    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(first), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(second), &ctx).expect("handler ok");
 
     assert_eq!(1, writer.calls());
     let entries = drain(&log);
@@ -1228,7 +1244,7 @@ fn modifying_a_task_into_an_unknown_status_suppresses_the_task_updated_envelope(
     let (state, ctx, log) = build_installed_ctx(dir.path());
     seed_base_config(&state, dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("handler ok");
     drain(&log);
 
     write_md(
@@ -1236,7 +1252,7 @@ fn modifying_a_task_into_an_unknown_status_suppresses_the_task_updated_envelope(
         "tasks/a.md",
         &task_md_with_status("A", "Review"),
     );
-    handle_event(&FsEvent::Modified(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -1253,7 +1269,7 @@ fn renaming_into_an_unknown_status_emits_a_delete_then_a_resync() {
     let (state, ctx, log) = build_installed_ctx(dir.path());
     seed_base_config(&state, dir.path());
     let from = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
-    handle_event(&FsEvent::Created(from.clone()), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(from.clone()), &ctx).expect("handler ok");
     drain(&log);
     std::fs::remove_file(&from).expect("remove old path");
     let to = write_md(
@@ -1262,7 +1278,7 @@ fn renaming_into_an_unknown_status_emits_a_delete_then_a_resync() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Renamed { from, to }, &ctx).expect("handler ok");
+    handle_batch(&rename_batch(from, to), &ctx);
 
     let entries = drain(&log);
     assert_eq!(
@@ -1296,11 +1312,11 @@ fn deleting_the_last_task_of_a_column_does_not_remove_the_column() {
         "tasks/a.md",
         &task_md_with_status("A", "Review"),
     );
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("handler ok");
     drain(&log);
     std::fs::remove_file(&abs).expect("remove md");
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("handler ok");
 
     assert_eq!(0, writer.calls());
     assert_eq!(
@@ -1324,7 +1340,7 @@ fn a_full_rescan_reconciles_and_still_emits_a_single_resync() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("handler ok");
 
     assert_eq!(1, writer.calls());
     assert_eq!(
@@ -1355,7 +1371,8 @@ fn a_failed_config_save_keeps_the_task_created_envelope_and_the_old_resident_con
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("save failure must not fail the event");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx)
+        .expect("save failure must not fail the event");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -1389,7 +1406,8 @@ fn a_failed_config_save_still_adopts_a_newer_config_from_disk() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("save failure must not fail the event");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx)
+        .expect("save failure must not fail the event");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -1419,7 +1437,7 @@ fn a_stale_session_event_writes_no_config_and_emits_nothing() {
     );
     ctx.session_id = SessionId::from_raw(ctx.session_id.as_u64() - 1);
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     assert_eq!(0, writer.calls());
     assert!(drain(&log).is_empty());
@@ -1436,7 +1454,7 @@ fn reconcile_does_not_pollute_the_write_ignore_registry() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     drain(&log);
     let resources = active_resources(&state);
@@ -1461,7 +1479,7 @@ fn an_empty_status_creates_an_empty_named_column() {
     seed_base_config(&state, dir.path());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "\"\""));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -1483,7 +1501,7 @@ fn reconcile_refreshes_the_guide_markdown() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     drain(&log);
     let guide = read_guide(dir.path()).expect("GUIDE.md should exist");
@@ -1512,7 +1530,7 @@ fn adopting_a_config_from_disk_does_not_rewrite_the_guide_markdown() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     assert_eq!(0, writer.calls());
     assert_eq!(read_guide(dir.path()).as_deref(), Some(guide_before));
@@ -1543,7 +1561,7 @@ fn reconcile_keeps_a_column_that_an_external_editor_added_first() {
         &task_md_with_status("A", "Review"),
     );
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     drain(&log);
     assert_eq!(
@@ -1592,7 +1610,7 @@ fn reconcile_does_not_recreate_or_overwrite_an_unusable_config_file() {
             &task_md_with_status("A", "Review"),
         );
 
-        handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+        handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
         assert_eq!(0, writer.calls(), "case: {}", case.label);
         match case.replacement {
@@ -1622,7 +1640,7 @@ fn a_known_status_event_does_not_create_a_missing_config_file() {
     std::fs::remove_file(config_path(dir.path())).expect("remove config.json");
     let abs = write_md(dir.path(), "tasks/a.md", &task_md_with_status("A", "Todo"));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
 
     assert_eq!(0, writer.calls());
     assert!(!config_path(dir.path()).exists());
@@ -1642,7 +1660,7 @@ fn a_modification_of_the_config_file_itself_is_ignored() {
     seed_base_config(&state, dir.path());
     let revision_before = session_revision(&state);
 
-    handle_event(&FsEvent::Modified(config_path(dir.path())), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(config_path(dir.path())), &ctx).expect("handler ok");
 
     assert_eq!(0, writer.calls());
     assert!(drain(&log).is_empty());
@@ -1661,7 +1679,7 @@ fn a_cas_conflict_after_a_successful_save_leaves_the_disk_ahead_of_the_resident_
     );
     ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("a CAS conflict is a normal skip");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("a CAS conflict is a normal skip");
 
     assert!(drain(&log).is_empty(), "競合時は emit しない");
     assert_eq!(
@@ -1686,7 +1704,7 @@ fn the_next_unknown_status_event_makes_a_stale_resident_config_catch_up() {
         &task_md_with_status("A", "Review"),
     );
     ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
-    handle_event(&FsEvent::Created(first), &ctx).expect("a CAS conflict is a normal skip");
+    handle_change(&TaskFileChange::Upserted(first), &ctx).expect("a CAS conflict is a normal skip");
     drain(&log);
     ctx.io = Arc::new(FsTaskIo) as Arc<dyn TaskIo>;
     let second = write_md(
@@ -1695,7 +1713,7 @@ fn the_next_unknown_status_event_makes_a_stale_resident_config_catch_up() {
         &task_md_with_status("B", "Blocked"),
     );
 
-    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(second), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -1717,12 +1735,12 @@ fn a_known_status_event_does_not_make_a_stale_resident_config_catch_up() {
         &task_md_with_status("A", "Review"),
     );
     ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
-    handle_event(&FsEvent::Created(first), &ctx).expect("a CAS conflict is a normal skip");
+    handle_change(&TaskFileChange::Upserted(first), &ctx).expect("a CAS conflict is a normal skip");
     drain(&log);
     ctx.io = Arc::new(FsTaskIo) as Arc<dyn TaskIo>;
     let second = write_md(dir.path(), "tasks/b.md", &task_md_with_status("B", "Todo"));
 
-    handle_event(&FsEvent::Created(second), &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Upserted(second), &ctx).expect("handler ok");
 
     let entries = drain(&log);
     assert_eq!(1, entries.len());
@@ -1752,7 +1770,7 @@ fn a_retrying_rescan_writes_the_config_only_once_for_unchanged_input() {
     );
     ctx.io = Arc::new(CommitInjectingTaskIo::new(Arc::clone(&state), 1)) as Arc<dyn TaskIo>;
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("handler ok");
 
     assert_eq!(
         1,
@@ -1790,7 +1808,7 @@ fn a_retrying_rescan_picks_up_a_status_that_appeared_between_attempts() {
         })),
     ) as Arc<dyn TaskIo>;
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("handler ok");
 
     drain(&log);
     assert_eq!(
@@ -1828,7 +1846,7 @@ fn a_retrying_rescan_keeps_a_column_another_writer_added_between_attempts() {
         })),
     ) as Arc<dyn TaskIo>;
 
-    handle_event(&FsEvent::Rescan, &ctx).expect("handler ok");
+    handle_change(&TaskFileChange::Rescan, &ctx).expect("handler ok");
 
     drain(&log);
     assert_eq!(
@@ -1838,5 +1856,115 @@ fn a_retrying_rescan_keeps_a_column_another_writer_added_between_attempts() {
     assert_eq!(
         column_names_of(&resident_config(&state)),
         vec!["Todo", "Done", "Idea", "Review"]
+    );
+}
+
+// ───────── batch 展開（changes_in_order / handle_batch） ─────────
+
+#[test]
+fn changes_in_order_puts_rescan_and_failures_before_removed_and_upserted() {
+    let reported = failure(WatcherFailureKind::Io, "read error", Vec::new());
+    let batch = FileChangeBatch {
+        removed: vec![PathBuf::from("/tmp/x.md")],
+        upserted: vec![PathBuf::from("/tmp/y.md")],
+        rescan: true,
+        errors: vec![reported.clone()],
+    };
+
+    assert_eq!(
+        vec![
+            TaskFileChange::Rescan,
+            TaskFileChange::Failure(reported),
+            TaskFileChange::Removed(PathBuf::from("/tmp/x.md")),
+            TaskFileChange::Upserted(PathBuf::from("/tmp/y.md")),
+        ],
+        changes_in_order(&batch)
+    );
+}
+
+/// 指定 path の読み込みだけを失敗させる `TaskIo`。batch の 1 件が失敗しても
+/// 後続が処理されることを検証するために使う。
+struct FailingReadIo {
+    failing: PathBuf,
+}
+
+impl TaskIo for FailingReadIo {
+    fn ensure_dir(&self, dir: &Path) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.ensure_dir(dir)
+    }
+
+    fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.write_new(path, bytes)
+    }
+
+    fn write_existing(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+    ) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.write_existing(path, bytes)
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), crate::task::io::TaskIoError> {
+        FsTaskIo.remove(path)
+    }
+
+    fn read(&self, path: &Path) -> Result<Vec<u8>, crate::task::io::TaskIoError> {
+        if path == self.failing {
+            return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into());
+        }
+        FsTaskIo.read(path)
+    }
+}
+
+#[test]
+fn a_change_that_cannot_be_read_does_not_stop_the_rest_of_the_batch() {
+    let dir = TempDir::new().expect("tempdir");
+    let (_state, mut ctx, log) = build_installed_ctx(dir.path());
+    let broken = write_md(dir.path(), "tasks/broken.md", &task_md("Broken"));
+    let ok = write_md(dir.path(), "tasks/ok.md", &task_md("Ok"));
+    ctx.io = Arc::new(FailingReadIo {
+        failing: broken.clone(),
+    }) as Arc<dyn TaskIo>;
+
+    handle_batch(
+        &FileChangeBatch {
+            upserted: vec![broken, ok],
+            ..FileChangeBatch::default()
+        },
+        &ctx,
+    );
+
+    let entries = drain(&log);
+    assert_eq!(
+        vec!["task-created"],
+        entries
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        "読めなかった 1 件で batch を打ち切ってはならない"
+    );
+    assert_eq!("tasks/ok.md", entries[0].1["payload"]["task"]["filePath"]);
+}
+
+#[test]
+fn an_empty_batch_consumes_no_event_seq() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    let before = state
+        .active_session_identity()
+        .expect("session is open")
+        .version();
+
+    handle_batch(&FileChangeBatch::default(), &ctx);
+
+    assert!(drain(&log).is_empty(), "空 batch は何も emit しない");
+    assert_eq!(
+        before,
+        state
+            .active_session_identity()
+            .expect("session is open")
+            .version(),
+        "空 batch は revision も eventSeq も進めない"
     );
 }

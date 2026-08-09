@@ -1,7 +1,7 @@
 //! `watcher_event::handler` の純粋ハンドラに対する単体テスト。
 //!
 //! emit を `Vec<(String, serde_json::Value)>` push スタブに差し替え、
-//! `Watcher` を起動せずに `handle_event` を直接駆動する。
+//! `Watcher` を起動せずに `handle_change` / `handle_batch` を直接駆動する。
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use super::handler::{handle_event, run_event_loop};
+use super::handler::{handle_batch, handle_change, run_event_loop, TaskFileChange};
 use super::{AdapterContext, EmitFn};
 use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
@@ -19,12 +19,29 @@ use crate::state::active_project_resources::{
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
-use spec_board_fs::watcher::core::FsEvent;
+use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
+
+/// fs 層が rename を分解した形の batch（from を removed、to を upserted）。
+fn rename_batch(from: PathBuf, to: PathBuf) -> FileChangeBatch {
+    FileChangeBatch {
+        removed: vec![from],
+        upserted: vec![to],
+        ..FileChangeBatch::default()
+    }
+}
+
+/// 1 path の upsert だけを持つ batch。
+fn upsert_batch(path: PathBuf) -> FileChangeBatch {
+    FileChangeBatch {
+        upserted: vec![path],
+        ..FileChangeBatch::default()
+    }
+}
 
 fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
     let session_id = state.reserve_session_id().expect("reserve session ID");
@@ -120,7 +137,7 @@ fn create_event_for_new_path_emits_task_created_and_caches_task() {
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("handler should succeed");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler should succeed");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
@@ -137,12 +154,12 @@ fn modify_event_for_existing_path_emits_task_updated_and_replaces_cache_entry() 
     // 事前に Created で投入する。
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
     // 内容を更新して Modified を投入。
     write_md(dir.path(), "tasks/a.md", &task_md("A2"));
-    handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("modify ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
@@ -160,12 +177,12 @@ fn create_event_for_already_cached_path_emits_task_updated_for_atomic_save() {
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
     write_md(dir.path(), "tasks/a.md", &task_md("A2"));
     // atomic save では rename 後の to-side が Created で再通知されることがある。
-    handle_event(&FsEvent::Created(abs), &ctx).expect("create-on-existing");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("create-on-existing");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
@@ -178,21 +195,14 @@ fn rename_event_emits_deleted_for_from_and_created_for_to() {
     let state = Arc::new(AppState::new());
     let from_abs = write_md(dir.path(), "tasks/from.md", &task_md("F"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(from_abs.clone()), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(from_abs.clone()), &ctx).expect("seed");
     drain_log(&log);
 
-    // ファイルを物理的に rename してから FsEvent::Renamed を投入する。
+    // ファイルを物理的に rename してから rename 相当の batch を投入する。
     let to_abs = dir.path().join("tasks/to.md");
     std::fs::rename(&from_abs, &to_abs).expect("rename");
 
-    handle_event(
-        &FsEvent::Renamed {
-            from: from_abs,
-            to: to_abs,
-        },
-        &ctx,
-    )
-    .expect("rename ok");
+    handle_batch(&rename_batch(from_abs, to_abs), &ctx);
 
     let entries = drain_log(&log);
     assert_eq!(2, entries.len());
@@ -216,39 +226,32 @@ fn rename_event_emits_deleted_for_from_and_created_for_to() {
 }
 
 #[test]
-fn rename_with_to_already_in_cache_emits_created_not_updated() {
-    // 仕様上 Rename は「from で task-deleted、to で task-created」と定義されている。
-    // to が既存 cache にある場合でも task-updated にならず task-created が emit される
-    // ことを担保する。
+fn rename_onto_an_existing_cached_task_emits_updated_not_created() {
+    // rename は fs 層で `removed(from) + upserted(to)` に分解されるため、to 側は
+    // 「rename の宛先」という情報を持たない。emit する event 名は cache 存在だけで
+    // 決まり、既存タスクを上書きした場合は task-updated になる。
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let from_abs = write_md(dir.path(), "tasks/from.md", &task_md("F"));
     let to_abs = write_md(dir.path(), "tasks/to.md", &task_md("T"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(from_abs.clone()), &ctx).expect("seed from");
-    handle_event(&FsEvent::Created(to_abs.clone()), &ctx).expect("seed to");
+    handle_change(&TaskFileChange::Upserted(from_abs.clone()), &ctx).expect("seed from");
+    handle_change(&TaskFileChange::Upserted(to_abs.clone()), &ctx).expect("seed to");
     drain_log(&log);
 
     // ファイルシステム上は from を消して to を上書きで置き換える想定。
     std::fs::remove_file(&to_abs).ok();
     std::fs::rename(&from_abs, &to_abs).expect("rename");
 
-    handle_event(
-        &FsEvent::Renamed {
-            from: from_abs,
-            to: to_abs,
-        },
-        &ctx,
-    )
-    .expect("rename ok");
+    handle_batch(&rename_batch(from_abs, to_abs), &ctx);
 
     let entries = drain_log(&log);
-    assert_eq!(2, entries.len(), "deleted + created expected");
+    assert_eq!(2, entries.len(), "deleted + updated expected");
     assert_eq!("task-deleted", entries[0].0);
     assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
     assert_eq!(
-        "task-created", entries[1].0,
-        "to-side should always be task-created in rename"
+        "task-updated", entries[1].0,
+        "既に cache にある path への upsert は task-updated になる"
     );
     assert_eq!("tasks/to.md", entries[1].1["payload"]["task"]["filePath"]);
 }
@@ -259,21 +262,14 @@ fn rename_with_unparseable_to_emits_only_deleted_and_removes_from_cache() {
     let state = Arc::new(AppState::new());
     let from_abs = write_md(dir.path(), "tasks/from.md", &task_md("F"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(from_abs.clone()), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(from_abs.clone()), &ctx).expect("seed");
     drain_log(&log);
 
     // to-side の md は frontmatter なし → parse 失敗
     let to_abs = write_md(dir.path(), "tasks/to.md", "no frontmatter\n");
     std::fs::remove_file(&from_abs).ok();
 
-    handle_event(
-        &FsEvent::Renamed {
-            from: from_abs,
-            to: to_abs,
-        },
-        &ctx,
-    )
-    .expect("rename ok");
+    handle_batch(&rename_batch(from_abs, to_abs), &ctx);
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
@@ -293,14 +289,7 @@ fn rename_with_from_not_in_cache_does_not_emit_deleted_for_atomic_save() {
     let from_abs = dir.path().join("tasks/from.md.tmp");
     let to_abs = write_md(dir.path(), "tasks/to.md", &task_md("T"));
 
-    handle_event(
-        &FsEvent::Renamed {
-            from: from_abs,
-            to: to_abs,
-        },
-        &ctx,
-    )
-    .expect("rename ok");
+    handle_batch(&rename_batch(from_abs, to_abs), &ctx);
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "only created should fire");
@@ -319,7 +308,7 @@ fn write_ignore_consume_skips_emit_for_self_originated_create() {
         .register(&abs)
         .expect("register write_ignore");
 
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty(), "self write should not emit");
     assert!(snapshot_paths(&state).is_empty());
@@ -336,7 +325,7 @@ fn parse_failure_does_not_emit_or_mutate_cache() {
     let abs = write_md(dir.path(), "tasks/a.md", "---\n: invalid\n---\n");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -349,7 +338,7 @@ fn read_failure_does_not_emit_or_mutate_cache() {
     let abs = dir.path().join("tasks/missing.md");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Modified(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -363,7 +352,7 @@ fn path_outside_root_is_ignored() {
     let outside = write_md(other.path(), "tasks/x.md", &task_md("X"));
     let (ctx, log) = build_ctx(root.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(outside), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(outside), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -378,7 +367,7 @@ fn uppercase_md_extension_is_accepted() {
     let abs = write_md(dir.path(), "tasks/A.MD", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
@@ -394,7 +383,7 @@ fn dotfile_md_is_ignored() {
     let abs = write_md(dir.path(), "tasks/.hidden.md", &task_md("H"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -407,7 +396,7 @@ fn dot_directory_descendant_md_is_ignored() {
     let abs = write_md(dir.path(), ".git/notes.md", &task_md("Hidden"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -420,7 +409,7 @@ fn node_modules_descendant_md_is_ignored() {
     let abs = write_md(dir.path(), "node_modules/x/readme.md", &task_md("X"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -439,7 +428,7 @@ fn oversized_md_is_ignored() {
     let abs = write_md(dir.path(), "tasks/big.md", &body);
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -460,7 +449,7 @@ fn symlink_md_to_outside_root_is_ignored() {
     std::os::unix::fs::symlink(&outside, &link).expect("create symlink");
 
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(link), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(link), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -479,7 +468,7 @@ fn binary_md_with_nul_byte_is_ignored() {
     std::fs::write(&abs, bytes).expect("write");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -493,8 +482,8 @@ fn non_markdown_extension_is_ignored() {
     let cfg = write_md(dir.path(), ".spec-board/config.json", "{}");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(txt), &ctx).expect("ok");
-    handle_event(&FsEvent::Modified(cfg), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(txt), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(cfg), &ctx).expect("ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -506,12 +495,12 @@ fn removed_event_for_cached_path_emits_task_deleted_and_removes_from_cache() {
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
     std::fs::remove_file(&abs).expect("remove file");
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one task-deleted expected");
@@ -526,11 +515,11 @@ fn removed_event_payload_uses_forward_slash_relative_path() {
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/sub/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
     std::fs::remove_file(&abs).ok();
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len());
@@ -545,7 +534,7 @@ fn removed_event_for_uncached_path_does_not_emit() {
     let abs = dir.path().join("tasks/ghost.md");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -557,7 +546,7 @@ fn write_ignore_consume_skips_emit_for_self_originated_remove() {
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
     active_resources(&state)
@@ -566,7 +555,7 @@ fn write_ignore_consume_skips_emit_for_self_originated_remove() {
         .expect("register write_ignore");
 
     std::fs::remove_file(&abs).ok();
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     assert!(drain_log(&log).is_empty(), "self delete should not emit");
     assert_eq!(vec!["tasks/a.md".to_string()], snapshot_paths(&state));
@@ -583,7 +572,7 @@ fn removed_event_for_non_markdown_is_ignored() {
     let abs = write_md(dir.path(), "tasks/a.txt", "plain text");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -596,7 +585,7 @@ fn removed_event_for_dotfile_is_ignored() {
     let abs = dir.path().join(".spec-board/x.md");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -609,7 +598,7 @@ fn removed_event_for_node_modules_is_ignored() {
     let abs = dir.path().join("node_modules/x/y.md");
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Removed(abs), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(abs), &ctx).expect("removed ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -623,20 +612,20 @@ fn removed_event_for_path_outside_root_is_ignored() {
     let outside = other.path().join("tasks/x.md");
     let (ctx, log) = build_ctx(root.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Removed(outside), &ctx).expect("removed ok");
+    handle_change(&TaskFileChange::Removed(outside), &ctx).expect("removed ok");
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
 }
 
 #[test]
-fn other_variant_is_a_no_op() {
+fn empty_batch_emits_nothing() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
-    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+    write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Other(abs), &ctx).expect("ok");
+    handle_batch(&FileChangeBatch::default(), &ctx);
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());
@@ -649,7 +638,7 @@ fn task_created_payload_uses_camel_case_with_full_task() {
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_event(&FsEvent::Created(abs), &ctx).expect("ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
     let entries = drain_log(&log);
     let payload = &entries[0].1["payload"];
@@ -665,21 +654,14 @@ fn task_deleted_payload_contains_forward_slash_relative_path() {
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/sub/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed");
     drain_log(&log);
 
     let from_abs = abs;
     let to_abs = dir.path().join("tasks/sub/b.md");
     std::fs::rename(&from_abs, &to_abs).expect("rename");
 
-    handle_event(
-        &FsEvent::Renamed {
-            from: from_abs,
-            to: to_abs,
-        },
-        &ctx,
-    )
-    .expect("rename ok");
+    handle_batch(&rename_batch(from_abs, to_abs), &ctx);
 
     let entries = drain_log(&log);
     let deleted = entries
@@ -690,17 +672,17 @@ fn task_deleted_payload_contains_forward_slash_relative_path() {
 }
 
 #[test]
-fn run_event_loop_processes_multiple_events_then_exits_on_disconnect() {
+fn run_event_loop_processes_multiple_batches_then_exits_on_disconnect() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let abs_a = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let abs_b = write_md(dir.path(), "tasks/b.md", &task_md("B"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    let (tx, rx) = std::sync::mpsc::channel::<FsEvent>();
+    let (tx, rx) = std::sync::mpsc::channel::<FileChangeBatch>();
 
     let join = std::thread::spawn(move || run_event_loop(rx, ctx));
-    tx.send(FsEvent::Created(abs_a)).expect("send a");
-    tx.send(FsEvent::Created(abs_b)).expect("send b");
+    tx.send(upsert_batch(abs_a)).expect("send a");
+    tx.send(upsert_batch(abs_b)).expect("send b");
     drop(tx);
     join.join().expect("loop should exit cleanly");
 
@@ -729,7 +711,7 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
         io: Arc::new(FsTaskIo) as Arc<dyn TaskIo>,
         config_writer: Arc::new(FsConfigWriter) as Arc<dyn ConfigWriter + Send + Sync>,
     };
-    let (tx, rx) = std::sync::mpsc::channel::<FsEvent>();
+    let (tx, rx) = std::sync::mpsc::channel::<FileChangeBatch>();
 
     let join = std::thread::spawn(move || {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -737,7 +719,7 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
         }));
         result.is_err()
     });
-    tx.send(FsEvent::Created(abs)).expect("send create");
+    tx.send(upsert_batch(abs)).expect("send create");
     drop(tx);
     let panicked = join.join().expect("thread should not abort the process");
     assert!(panicked, "emit panic should be caught by catch_unwind");
@@ -776,7 +758,7 @@ fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
     let updated_body = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nupdated body\n";
     write_md(dir.path(), "tasks/a.md", updated_body);
 
-    handle_event(&FsEvent::Modified(abs_a), &ctx).expect("modify ok");
+    handle_change(&TaskFileChange::Upserted(abs_a), &ctx).expect("modify ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
@@ -812,11 +794,11 @@ fn modify_event_for_non_cycle_task_does_not_inject_parent_cycle_warning() {
 
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
-    handle_event(&FsEvent::Created(abs.clone()), &ctx).expect("seed create");
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
     drain_log(&log);
 
     write_md(dir.path(), "tasks/a.md", &task_md("A2"));
-    handle_event(&FsEvent::Modified(abs), &ctx).expect("modify ok");
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("modify ok");
 
     let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
@@ -862,7 +844,7 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
     let a_resolved = "---\ntitle: A\nstatus: Todo\n---\n\nresolved body\n";
     write_md(dir.path(), "tasks/a.md", a_resolved);
 
-    handle_event(&FsEvent::Modified(abs_a), &ctx).expect("modify ok");
+    handle_change(&TaskFileChange::Upserted(abs_a), &ctx).expect("modify ok");
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
@@ -927,14 +909,14 @@ fn watcher_created_child_is_counted_in_parent_projection() {
     let state = Arc::new(AppState::new());
     let (ctx, _log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     let parent_abs = write_md(dir.path(), "tasks/p.md", &task_md("P"));
-    handle_event(&FsEvent::Created(parent_abs), &ctx).expect("seed parent");
+    handle_change(&TaskFileChange::Upserted(parent_abs), &ctx).expect("seed parent");
     let child_abs = write_md(
         dir.path(),
         "tasks/c.md",
         &task_md_with_parent("C", "tasks/p.md"),
     );
 
-    handle_event(&FsEvent::Created(child_abs), &ctx).expect("handler should succeed");
+    handle_change(&TaskFileChange::Upserted(child_abs), &ctx).expect("handler should succeed");
 
     assert!(
         cached_children(&state, "tasks/p.md").is_empty(),
@@ -961,21 +943,21 @@ fn watcher_reparent_moves_child_between_projections() {
     let (ctx, _log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     for parent in ["tasks/p1.md", "tasks/p2.md"] {
         let abs = write_md(dir.path(), parent, &task_md("P"));
-        handle_event(&FsEvent::Created(abs), &ctx).expect("seed parent");
+        handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("seed parent");
     }
     let child_abs = write_md(
         dir.path(),
         "tasks/c.md",
         &task_md_with_parent("C", "tasks/p1.md"),
     );
-    handle_event(&FsEvent::Created(child_abs.clone()), &ctx).expect("seed child");
+    handle_change(&TaskFileChange::Upserted(child_abs.clone()), &ctx).expect("seed child");
 
     write_md(
         dir.path(),
         "tasks/c.md",
         &task_md_with_parent("C", "tasks/p2.md"),
     );
-    handle_event(&FsEvent::Modified(child_abs), &ctx).expect("handler should succeed");
+    handle_change(&TaskFileChange::Upserted(child_abs), &ctx).expect("handler should succeed");
 
     let map = projections(&state);
     assert_eq!(map["tasks/p1.md"].sub_issue_progress.total, 0);
@@ -1006,16 +988,16 @@ fn watcher_introduced_parent_cycle_terminates() {
         "tasks/a.md",
         &task_md_with_parent("A", "tasks/b.md"),
     );
-    handle_event(&FsEvent::Created(a_abs), &ctx).expect("seed a");
+    handle_change(&TaskFileChange::Upserted(a_abs), &ctx).expect("seed a");
     let b_abs = write_md(dir.path(), "tasks/b.md", &task_md("B"));
-    handle_event(&FsEvent::Created(b_abs.clone()), &ctx).expect("seed b");
+    handle_change(&TaskFileChange::Upserted(b_abs.clone()), &ctx).expect("seed b");
 
     write_md(
         dir.path(),
         "tasks/b.md",
         &task_md_with_parent("B", "tasks/a.md"),
     );
-    handle_event(&FsEvent::Modified(b_abs), &ctx).expect("handler should succeed");
+    handle_change(&TaskFileChange::Upserted(b_abs), &ctx).expect("handler should succeed");
 
     let map = projections(&state);
     assert_eq!(map["tasks/a.md"].sub_issue_progress.total, 1);
