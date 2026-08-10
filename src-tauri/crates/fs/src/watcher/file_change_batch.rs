@@ -6,14 +6,17 @@ use super::core::WatcherFailure;
 
 /// デバウンスウィンドウ 1 回分の畳み込み結果。
 ///
-/// `removed` / `upserted` はウィンドウ終了時点のファイルシステム状態を表す。
-/// 同一 path が両方に現れることはなく、各 `Vec` の中でも重複しない。順序は
-/// deadline 昇順（同点は path 昇順）で決定的。この不変条件は
-/// [`super::pending_changes::PendingChanges`] だけが本型を組み立てることで
-/// 成り立っている。フィールドを直接書き換えて生成すると崩れる。
+/// 以下は crate 内部の `PendingChanges` が組み立てた batch —— すなわち
+/// [`super::core::Watcher`] の receiver から受け取ったもの —— についてのみ
+/// 成立する契約である。フィールドはすべて `pub` で `Default` も導出して
+/// いるため、呼び出し側が値を直接組み立てれば当然どれも破れる。テスト以外
+/// で自前構築しないこと。
 ///
-/// `rescan` / `errors` は保留を追い越して送られる専用 batch でのみ立つ。
-/// このとき `removed` / `upserted` は空である。
+/// - `removed` / `upserted` はウィンドウ終了時点のファイルシステム状態を表す
+/// - 同一 path が両方に現れることはなく、各 `Vec` の中でも重複しない
+/// - 順序は deadline 昇順（同点は path 昇順）で決定的
+/// - `rescan` / `errors` は保留を追い越して送られる専用 batch でのみ立ち、
+///   そのとき `removed` / `upserted` は空である
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FileChangeBatch {
     /// ウィンドウ終了時点で存在しない path。
