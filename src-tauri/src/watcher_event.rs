@@ -1,6 +1,7 @@
-//! `spec_board_fs::watcher::core::Watcher` の `FsEvent` を読み込み、`AppState`
-//! の `tasks_cache` を差分更新したうえで `task-created` / `task-updated`
-//! / `task-deleted` を `tauri::AppHandle::emit` で配信する adapter 層。
+//! `spec_board_fs::watcher::core::Watcher` の `FileChangeBatch` を読み込み、
+//! `AppState` の `tasks_cache` を差分更新したうえで `task-created` /
+//! `task-updated` / `task-deleted` を `tauri::AppHandle::emit` で配信する
+//! adapter 層。
 //!
 //! # モジュール構成
 //!
@@ -10,8 +11,8 @@
 //! - `stage_adapter(...)`: 既に確保済みの watcher / rx から adapter thread と
 //!   handle を fallible に構築する。worker は activation latch が `Pending` の
 //!   間 park し、open swap が `Active` にするまで event を処理しない。
-//! - `handler::handle_event`: 1 件の `FsEvent` を処理する純粋関数。テストは
-//!   ここに対して書く。
+//! - `handler::handle_batch`: 1 つの `FileChangeBatch` を決定的な順序で
+//!   1 件ずつ処理する。テストはここに対して書く。
 //! - `handler::run_event_loop`: adapter スレッド本体。`Receiver::recv` を
 //!   blocking で消費し、`Disconnected` で抜ける。
 //!
@@ -50,7 +51,8 @@ use crate::state::project_key::ProjectKey;
 use crate::state::tasks_revision::TasksRevision;
 use crate::state::{AppState, AppStateError, BoxedWatcherHandle};
 use crate::task::io::{FsTaskIo, TaskIo};
-use spec_board_fs::watcher::core::{FsEvent, Watcher, WatcherError};
+use spec_board_fs::watcher::core::{Watcher, WatcherError};
+use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
 use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 
@@ -84,7 +86,7 @@ pub(crate) struct EmittingWatcherHandle {
 
 impl WatcherHandle for EmittingWatcherHandle {
     fn stop(&mut self) {
-        // (1) Watcher を drop → Receiver<FsEvent> Disconnected
+        // (1) Watcher を drop → Receiver<FileChangeBatch> Disconnected
         // (2) adapter スレッド join（recv() ループが Err で抜ける）
         // 注: stop() は冪等。AppState lock を一切取らない（deadlock 回避）。
         if let Some(w) = self.watcher.take() {
@@ -103,7 +105,9 @@ impl WatcherHandle for EmittingWatcherHandle {
 /// `Watcher::start` を試みて Watcher と Receiver を確保するだけで、adapter は
 /// まだ spawn しない。失敗時はこの段階で `WatcherError` を返し、呼び出し側は
 /// AppState を一切変更せずに `WatcherInitFailed` として伝播できる。
-pub(crate) fn prepare_watcher(root: &Path) -> Result<(Watcher, Receiver<FsEvent>), WatcherError> {
+pub(crate) fn prepare_watcher(
+    root: &Path,
+) -> Result<(Watcher, Receiver<FileChangeBatch>), WatcherError> {
     Watcher::start(root)
 }
 
@@ -117,7 +121,7 @@ pub(crate) fn stage_adapter(
     state: Arc<AppState>,
     identity: SessionIdentity,
     watcher: Watcher,
-    rx: Receiver<FsEvent>,
+    rx: Receiver<FileChangeBatch>,
 ) -> Result<StagedProjectResources, WatcherError> {
     let app_for_emit = app.clone();
     let emit: EmitFn = Box::new(move |event, payload| {
@@ -139,7 +143,7 @@ pub(crate) fn stage_adapter(
 /// 既に組み立て済みの context から paused adapter resources を stage する。
 pub(crate) fn stage_adapter_with_ctx(
     watcher: Watcher,
-    rx: Receiver<FsEvent>,
+    rx: Receiver<FileChangeBatch>,
     ctx: AdapterContext,
     identity: SessionIdentity,
 ) -> Result<StagedProjectResources, WatcherError> {
