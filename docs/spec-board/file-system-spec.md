@@ -500,17 +500,20 @@ writer gate を取得してから fresh snapshot を読み、その snapshot の
 project switch / same-path reopen で identity が変わった場合は event を破棄し、eventSeq も
 消費しない。
 
-**現時点の保証範囲（2）**: `open_project` は watcher を起動してから応答を返すため、
-「watcher 起動 → フロントエンドが購読を開始する」までの短い窓に発生した変更は、
-open 応答の snapshot にも購読にも含まれない。この欠落は**次のイベントが届いた時点で
-`eventSeq` の欠番として検知され、自動再取得で復旧する**。ただし窓の直後に一切
-イベントが発生しない場合はその変更が反映されないままになる。窓自体を無くすには
-購読の常設化または BE/FE のハンドシェイクが必要で、Issue #508 で扱う。
+**購読開始窓の保証（Issue #508）**: フロントエンドは Provider mount から
+`task-created` / `task-updated` / `task-deleted` / `watcher-resync-required` /
+`watcher-diagnostic` の 5 event を常設購読し、5 本すべての registration が完了するまで
+`open_project` を開始しない。open 開始から session baseline の commit までは parse 済み
+envelope を FIFO で保持し、commit 後に既存の identity / sequence gate を通して同期的に
+replay する。このため watcher activation 直後の単発変更と、キャッシュヒット再オープンの
+応答前に届く `watcher-resync-required` は、後続 event がなくても反映される。
 
-キャッシュヒット再オープン後の背景再スキャンが emit する `watcher-resync-required`
-にも同じ窓がある。応答直後に差分が確定した場合、フロントエンドが購読を確立する前に
-イベントが落ちることがある。これも上記と同様、**次のイベントの `eventSeq` 欠番検知で
-回収される**既知の制限として扱い、wire 契約の追加フィールドは設けない。
+open 中の queue 上限は 200 件とする。201 件目で個別 replay を破棄して overflow を latch
+し、session の commit（open 失敗時は旧 session の復元）後に既存の `get_tasks` resync を
+1 回だけ要求する。overflow 後の追加 event ごとに再取得は行わない。project / generation /
+open request token が一致しない envelope は replay せず、project 切替、same-path reopen、
+後勝ち open の間で queue を混在させない。この保証のための BE event 名・envelope field・
+IPC DTO の変更はない。
 
 `open_project` / `get_tasks` の応答には、その snapshot と**同一 domain snapshot**で
 確定した `session`（`{ projectKey, generation, revision, eventSeq }`）が含まれる。
@@ -829,6 +832,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.7 | 2026-08-11 | Issue #508: FE の 5 event 常設購読、open 前 readiness barrier、open 中 200 件 FIFO、overflow 時の 1 回 resync、後続 event 不要の反映保証を追加。BE production / wire contract は不変 | - |
 | 1.6 | 2026-08-11 | Issue #460: watcher が変更を反映する際に全 task の派生値を再構築する契約、変更対象以外も変わった場合の `watcher-resync-required` 分岐、rename 時の raw 値保持（cleanup しない）の裁定を追加。cardOrder cleanup は #507、購読開始までの窓は #508 へ切り出し | - |
 | 1.5 | 2026-08-09 | Issue #457: 未知 status のカラム追加（reconcile）を背景再スキャンでも行う契約と、その `config.json` / `GUIDE.md` 書き込みを書き込みパスセットへ登録しない理由を追加 | - |
 | 1.4 | 2026-08-06 | Issue #189: プロジェクトセッションキャッシュ（切替後の再オープンを即時応答）、背景全量再スキャンによる `watcher-resync-required`、`get_tasks` への `columns` / `doneColumn` 同梱、watcher 稼働数と再活性化時のリソース再生成、キャッシュ key の制限事項を追加 | - |
