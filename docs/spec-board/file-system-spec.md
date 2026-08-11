@@ -555,6 +555,8 @@ flowchart TD
 
 1. 旧パスのタスクに対して `task-deleted` イベントを発火
 2. 新パスのファイルを読み込み・パースし、`task-created` イベントを発火。ただし新パスが既に `tasks_cache` に登録済み（= リネームで既存タスクファイルを上書きした）の場合は `task-updated` になる。emit する event 名は cache 存在だけで決まり、リネームの宛先を無条件に `task-created` とする扱いはしない
+
+ただし 1 / 2 のそれぞれで、**変更対象以外の task の派生値も変わった場合は、その envelope が `watcher-resync-required` に置き換わる**（`task-deleted` / `task-created` は出ない）。旧パスのタスクが他タスクから参照されていた場合の 1 がこれに当たる。全量再取得へ倒す条件は「監視イベント」の表と `watcher-resync-required` の発火条件を参照。
 3. 旧パスへの `task-deleted` 処理時、他タスクの **派生値**（`children` / `reverseLinks`）から旧パス参照は消える（派生値は全件再構築されるため）。一方 frontmatter 由来の **raw 値**（`parent` / `links`）は書き換えない。値は保持され、`parentNotFound` warning と壊れたリンク表示で示される（`task-format-spec.md` の parent 解決 / links 解決の規則と同じ扱い）。BE が md を書き戻すことはない。したがって、他タスクに残っていた旧パス参照を新パスへ自動変換することもしない。新パス参照を他タスクに復元するには、外部側で当該タスクの md を編集して新パスを記述し直す必要がある
 
 delete と create は同じ writer gate 内でも別々の fresh snapshot / revision commit /
