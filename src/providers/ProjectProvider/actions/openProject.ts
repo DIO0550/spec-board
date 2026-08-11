@@ -11,7 +11,7 @@ import {
   isProjectCurrent,
   type ProjectVersion,
 } from "../concurrency";
-import type { ProjectError } from "../errors";
+import { ProjectError } from "../errors";
 import type { ProjectData } from "../reducer";
 import type { DialogOpening, OpenProjectActionDeps } from "./deps";
 
@@ -84,6 +84,7 @@ export const openProjectAction = async ({
   projectVersion,
   projectCommandQueue,
   dialogOpening,
+  watcherEventBridge,
   path: explicitPath,
   dispatch,
   onError,
@@ -114,10 +115,28 @@ export const openProjectAction = async ({
   }
 
   const openRequest = beginOpenRequest(projectVersion);
+  const readiness = await watcherEventBridge.ensureReady();
+  if (
+    !isProjectCurrent(projectVersion, projectSnapshot) ||
+    !isOpenRequestCurrent(projectVersion, openRequest)
+  ) {
+    return;
+  }
+  if (readiness.kind === "failed") {
+    onError?.(
+      ProjectError.invalidState(
+        "ファイル監視の準備に失敗しました。プロジェクトをもう一度開いてください",
+      ),
+    );
+    return;
+  }
+
+  watcherEventBridge.beginOpen(openRequest);
   dispatch({ type: "open-start", path });
 
   await enqueueProjectCommand(projectCommandQueue, async () => {
     if (!isOpenRequestCurrent(projectVersion, openRequest)) {
+      watcherEventBridge.abortOpen(openRequest);
       return;
     }
 
@@ -127,6 +146,7 @@ export const openProjectAction = async ({
       !isProjectCurrent(projectVersion, version) ||
       !isOpenRequestCurrent(projectVersion, openRequest)
     ) {
+      watcherEventBridge.abortOpen(openRequest);
       return;
     }
 
@@ -135,11 +155,13 @@ export const openProjectAction = async ({
       !isProjectCurrent(projectVersion, version) ||
       !isOpenRequestCurrent(projectVersion, openRequest)
     ) {
+      watcherEventBridge.abortOpen(openRequest);
       return;
     }
 
     if (!openResult.ok) {
       dispatch({ type: "open-fail", path, error: openResult.error });
+      watcherEventBridge.abortOpen(openRequest);
       onError?.({ kind: "tauri", error: openResult.error });
       return;
     }
@@ -149,11 +171,13 @@ export const openProjectAction = async ({
       !isProjectCurrent(projectVersion, version) ||
       !isOpenRequestCurrent(projectVersion, openRequest)
     ) {
+      watcherEventBridge.abortOpen(openRequest);
       return;
     }
 
     if (!columnsResult.ok) {
       dispatch({ type: "open-fail", path, error: columnsResult.error });
+      watcherEventBridge.abortOpen(openRequest);
       onError?.({ kind: "tauri", error: columnsResult.error });
       return;
     }
@@ -175,7 +199,9 @@ export const openProjectAction = async ({
       watcherSession: openResult.value.session,
     };
     invalidateProject(projectVersion);
-    dispatch({ type: "open-succeed", path, data });
+    watcherEventBridge.commitOpen(openRequest, openResult.value.session, () => {
+      dispatch({ type: "open-succeed", path, data });
+    });
     // load 成功イベントの場所。警告トースト発火 / 最近一覧記録など「開けた帰結」の
     // 副作用を呼び出し側へ 1 回だけ通知する（effect + ref 管理の代替）。
     onLoaded?.({ path, data });

@@ -49,13 +49,11 @@ import {
   type SyncedMarker,
   useProjectionSyncEffect,
 } from "./useProjectionSyncEffect";
-import {
-  useTaskWatcherEffects,
-  type WatcherGateRef,
-} from "./useTaskWatcherEffects";
+import { useTaskWatcherEffects } from "./useTaskWatcherEffects";
 import { useWatcherResyncEffect } from "./useWatcherResyncEffect";
 import {
   WatcherGate,
+  type WatcherGateRef,
   type WatcherGateState,
   type WatcherResyncReason,
 } from "./watcherEnvelopeGate";
@@ -193,7 +191,6 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
   );
 
   const requestResync = useWatcherResyncEffect({
-    loadedPath,
     gate: watcherGateRef as WatcherGateRef,
     projectCommandQueue: projectCommandQueueRef.current,
     projectionSynced: projectionSyncedRef,
@@ -216,8 +213,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
     [emit],
   );
 
-  useTaskWatcherEffects({
-    loadedPath,
+  const watcherEventBridge = useTaskWatcherEffects({
     session: watcherSession,
     gate: watcherGateRef as WatcherGateRef,
     requestResync,
@@ -257,6 +253,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
       projectVersion: projectVersionRef.current,
       projectCommandQueue: projectCommandQueueRef.current,
       dialogOpening: dialogOpeningRef.current,
+      watcherEventBridge,
       dispatch: store.dispatch,
       onLoaded: (event) => {
         emit({ type: "loaded", path: event.path, data: event.data });
@@ -270,12 +267,13 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
       openProject: () => openProjectAction(openDeps),
       openProjectByPath: (path) => openProjectAction({ ...openDeps, path }),
       reset: () => {
+        watcherEventBridge.reset();
         invalidateOpenRequests(projectVersionRef.current);
         invalidateProject(projectVersionRef.current);
         store.dispatch({ type: "reset" });
       },
     };
-  }, [store, emit, notifyLoadWarnings]);
+  }, [store, emit, notifyLoadWarnings, watcherEventBridge]);
 
   const taskActions = useMemo<ProjectTaskActionsContextValue>(
     () => ({

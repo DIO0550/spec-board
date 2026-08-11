@@ -1,5 +1,5 @@
 import type { WatcherSession } from "@/domains/watcher-session";
-import type { WatcherGateRef } from "../useTaskWatcherEffects";
+import type { WatcherGateRef } from "../watcherEnvelopeGate";
 import {
   WatcherGate,
   type WatcherSnapshotResult,

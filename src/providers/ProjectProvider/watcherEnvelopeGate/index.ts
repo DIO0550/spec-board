@@ -241,6 +241,9 @@ export type WatcherGateState = {
   readonly recentDiagnosticIds: readonly string[];
 };
 
+/** watcher gate の状態をProvider生涯で保持する可変ref。 */
+export type WatcherGateRef = { current: WatcherGateState };
+
 export type WatcherDiscardReason =
   /** init 前（load 完了前）に届いた */
   | "not-initialized"
