@@ -10,10 +10,11 @@
 //!
 //! # サイクル系テストの位置づけ
 //!
-//! watcher の `handle_upsert` は新規に作られた parent 循環を検出しない
-//! （full rescan まで残る）ため、`tasks_cache` が A->B->A の parent 循環を
-//! 持つ状態は実データで発生しうる。以下のサイクル / 自己参照テストは
-//! 到達可能な契約の固定であって、防御的な到達不能テストではない。
+//! `tasks_cache` に A->B->A の parent 循環が載った状態は、projection より前段で
+//! 循環が warning へ倒される（`build_children_with_warnings` が parent を None 化する）
+//! ため、通常の経路では発生しない。ただし projection は cache をそのまま受け取る
+//! 独立した計算であり、上流の不変条件に寄りかからず自力で有限停止することを
+//! 契約として固定しておく。以下のサイクル / 自己参照テストはその契約の固定。
 
 use std::path::PathBuf;
 

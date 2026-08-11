@@ -29,7 +29,11 @@ pub(crate) mod envelope;
 #[cfg(test)]
 mod envelope_fixture;
 pub(crate) mod handler;
+#[cfg(test)]
+pub(crate) mod watcher_test_support;
 
+#[cfg(test)]
+mod reconcile_tests;
 #[cfg(test)]
 mod tests;
 

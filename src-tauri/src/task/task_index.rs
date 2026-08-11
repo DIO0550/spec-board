@@ -147,26 +147,18 @@ impl Task {
     /// scan で cycle member と判定された task の正規化状態（parent=None +
     /// parentCycle warning）を、disk 由来の生の値で再構築したこの task に引き継ぐ。
     ///
-    /// effect 層（update / add_link / remove_link / watcher_event）が cache を
-    /// 差分更新する際、非 parent 変更や link 操作で循環判定が崩れないよう、直前の
-    /// cache 値が cycle member だったかどうか（`was_cycle_member`）を踏まえて
-    /// parent と warning を上書きする。判定→preserve の規則を 1 箇所に集約し、
-    /// 経路ごとの挙動差分を防ぐ。
+    /// effect 層（update / add_link / remove_link）が cache を差分更新する際、
+    /// 非 parent 変更や link 操作で循環判定が崩れないよう、直前の cache 値が
+    /// cycle member だったかどうか（`was_cycle_member`）を踏まえて parent と
+    /// warning を上書きする。判定→preserve の規則を 1 箇所に集約し、経路ごとの
+    /// 挙動差分を防ぐ。watcher 経路は派生値を全件作り直すため、この引き継ぎを
+    /// 使わない（[`TaskIndex::rebuild_with_external_change`] 参照）。
     ///
-    /// `drop_when_parent_absent` が true のとき、この task の parent が None なら
-    /// 外部編集で親参照が消えて循環が解消されたとみなし、引き継がない。watcher
-    /// 経由の disk 反映だけがこの解消判定を行い、新規循環の検出はフル再 scan に
-    /// 委ねる。それ以外の経路は disk と一致した parent を握り潰してでも cycle
-    /// 状態を維持する（false を渡す）。
-    pub fn preserve_parent_cycle_state(
-        &mut self,
-        was_cycle_member: bool,
-        drop_when_parent_absent: bool,
-    ) {
+    /// 循環の解消判定はこのメソッドの責務ではない。watcher 経路は派生値を全件
+    /// 作り直すので引き継ぎ自体が不要になり、残る呼び出し元（update / move）は
+    /// disk と一致した parent を握り潰してでも cycle 状態を維持する側にある。
+    pub fn preserve_parent_cycle_state(&mut self, was_cycle_member: bool) {
         if !was_cycle_member {
-            return;
-        }
-        if drop_when_parent_absent && self.parent.is_none() {
             return;
         }
         self.parent = None;
@@ -201,6 +193,31 @@ pub enum ParentValidationFailure {
         parent: String,
         reason: ParentHierarchyErrorReason,
     },
+}
+
+/// watcher が観測した外部由来の変更 1 件。
+///
+/// rename は fs 層で `removed(from)` + `upserted(to)` に分解されて届くため
+/// （`crates/fs/src/watcher/file_change_batch.rs`）、rename 専用の variant は持たない。
+/// `Task` は `TaskFilePath` より 1 桁大きいので、variant 間の差を埋めるために
+/// `Upserted` だけ box に載せる（enum 全体が常に `Task` 分の幅を持つのを避ける）。
+pub(crate) enum ExternalTaskChange {
+    /// 作成または更新。parse 済みの Task で同一 path の slot を差し替える。
+    Upserted(Box<Task>),
+    /// 削除。この cache key のタスクを取り除く。
+    Removed(TaskFilePath),
+}
+
+/// 外部変更を適用し、派生値を作り直した結果。
+pub(crate) struct ExternalChangeOutcome {
+    /// 派生再構築後の全タスク。cache をこれで丸ごと置き換える。
+    pub(crate) tasks: Vec<Task>,
+    /// 変更対象のタスク自身（`Upserted` のときだけ `Some`）。
+    /// emit する payload には parse 直後ではなくこちらを載せる。
+    pub(crate) changed_task: Option<Task>,
+    /// 変更対象以外に、内容が変わったタスクが 1 件以上あるか。
+    /// true のとき呼び出し側は単体 envelope ではなく resync を要求する。
+    pub(crate) other_tasks_changed: bool,
 }
 
 /// Task 集合の整合性（parent 存在 / 循環検出 / children・reverse_links 派生）を
@@ -826,9 +843,82 @@ impl TaskIndex {
     ///
     /// 循環を `Err` にせず warning に倒すのは差し替え版との違い。scan 経路では
     /// 1 箇所の循環で project 全体のロードが失敗してはならない。
-    pub(crate) fn rebuild_derived_with_warnings(self) -> Result<Self, TaskParseError> {
+    ///
+    /// 先頭で `file_path` 昇順に整列するのは、`children` / `reverse_links` の並びが
+    /// 入力順で決まるため。disk 走査順（`WalkDir`）と resident cache の `HashMap`
+    /// iteration 順は一致しないので、ここで正規化しないと「watcher 適用後 == 再 open」
+    /// が成立しない。1 段下の `build_children_with_warnings` に移すと、入力順を固定
+    /// している直呼びのテストと forest 形状の一致検証が片側だけ並び替わって壊れる。
+    pub(crate) fn rebuild_derived_with_warnings(mut self) -> Result<Self, TaskParseError> {
+        self.tasks
+            .sort_by(|a, b| a.file_path.as_str().cmp(b.file_path.as_str()));
         self.build_children_with_warnings()
             .map(Self::build_reverse_links)
+    }
+
+    /// 外部（watcher）由来の 1 件の変更を適用し、全タスクの派生値を作り直す。
+    ///
+    /// 「watcher 適用後の state == 同じ disk 状態で開き直した state」を成立させる
+    /// ため、`open_project` / full rescan と同じ [`Self::rebuild_derived_with_warnings`]
+    /// を通す。[`Self::rebuild_with_replaced`] を使わないのは、あちらが
+    /// `validate_parent_hierarchy` を通して循環を `Err` にするため。外部エディタが
+    /// 一時的に循環を作っただけでイベント処理が止まってはならないので、循環は
+    /// warning に倒す scan 経路と同じ意味論を使う。`Err` になるのは階層が深すぎる
+    /// 場合だけ。
+    ///
+    /// frontmatter 由来の `parent` / `links` は書き換えない。消えたタスクへの参照は
+    /// 値を保持したまま warning / 壊れたリンク表示に委ねる。消えるのは派生値である
+    /// `children` / `reverse_links` だけ。
+    pub(crate) fn rebuild_with_external_change(
+        self,
+        change: ExternalTaskChange,
+    ) -> Result<ExternalChangeOutcome, TaskParseError> {
+        let before = self.tasks.clone();
+        let mut values = self.tasks;
+        let target = match &change {
+            ExternalTaskChange::Upserted(task) => {
+                normalize_task_path_for_lookup(task.file_path.as_str())
+            }
+            ExternalTaskChange::Removed(path) => normalize_task_path_for_lookup(path.as_str()),
+        };
+
+        match change {
+            ExternalTaskChange::Upserted(task) => {
+                match values
+                    .iter_mut()
+                    .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
+                {
+                    Some(slot) => *slot = *task,
+                    None => values.push(*task),
+                }
+            }
+            ExternalTaskChange::Removed(_) => {
+                values.retain(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != target);
+            }
+        }
+
+        // cache の task は前回の再構築で付いた parentNotFound / parentCycle warning を
+        // 抱えたままになる（warning は append しかされない）。剥がしてから作り直さないと、
+        // 親が後から作られて解決した後も古い warning が残り、再 open 結果と食い違う。
+        for task in &mut values {
+            task.warnings
+                .retain(|warning| !is_graph_derived_warning(warning));
+        }
+
+        let tasks = Self::new(values)
+            .rebuild_derived_with_warnings()?
+            .into_tasks();
+        let changed_task = tasks
+            .iter()
+            .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
+            .cloned();
+        let other_tasks_changed = other_tasks_differ(&before, &tasks, &target);
+
+        Ok(ExternalChangeOutcome {
+            tasks,
+            changed_task,
+            other_tasks_changed,
+        })
     }
 
     /// 新規 task が指す parent 文字列を既存 task 集合に対して解決する。
@@ -1084,7 +1174,7 @@ impl TaskIndex {
         // `overwrite_preserving_derived` の cycle 引き継ぎは差し替え前の warnings を見て
         // 行われるため、warnings を入れ替えた後に parent=None + cycle warning の整合を取り直す。
         let was_cycle_member = has_parent_cycle_warning(&committed.warnings);
-        committed.preserve_parent_cycle_state(was_cycle_member, false);
+        committed.preserve_parent_cycle_state(was_cycle_member);
         cache.insert(key, committed.clone());
         Ok(committed)
     }
@@ -2093,6 +2183,35 @@ fn is_graph_derived_warning(warning: &TaskWarning) -> bool {
     )
 }
 
+/// 変更対象を除いたタスク集合が before / after で異なるかを判定する。
+///
+/// 件数の増減も差分として扱う（削除で参照元だけが残るケースを取りこぼさない）。
+/// 比較キーは `normalize_task_path_for_lookup` で、slot 引き当てと同じ基準にする。
+fn other_tasks_differ(before: &[Task], after: &[Task], target: &str) -> bool {
+    let before_map = index_excluding_target(before, target);
+    let after_map = index_excluding_target(after, target);
+    if before_map.len() != after_map.len() {
+        return true;
+    }
+    before_map
+        .iter()
+        .any(|(key, task)| after_map.get(key) != Some(task))
+}
+
+/// 変更対象を除いた task を正規化 path で引ける map にする。
+fn index_excluding_target<'a>(tasks: &'a [Task], target: &str) -> HashMap<String, &'a Task> {
+    tasks
+        .iter()
+        .map(|task| {
+            (
+                normalize_task_path_for_lookup(task.file_path.as_str()),
+                task,
+            )
+        })
+        .filter(|(key, _)| key != target)
+        .collect()
+}
+
 /// task が完了カラムに居るか。`done_column` 未解決時は常に false。
 fn is_in_done_column(task: &Task, done_column: Option<&ColumnName>) -> bool {
     done_column.is_some_and(|column| &task.status == column)
@@ -2408,7 +2527,7 @@ fn overwrite_preserving_derived(
         warnings: preserved_warnings,
         ..updated_task.clone()
     };
-    source_entry.preserve_parent_cycle_state(was_cycle_member, false);
+    source_entry.preserve_parent_cycle_state(was_cycle_member);
     source_entry.clone()
 }
 
@@ -2438,6 +2557,10 @@ mod task_index_tests;
 #[cfg(test)]
 #[path = "task_index_parent_chain_tests.rs"]
 mod task_index_parent_chain_tests;
+
+#[cfg(test)]
+#[path = "task_index_external_change_tests.rs"]
+mod task_index_external_change_tests;
 
 #[cfg(test)]
 #[path = "task_index_forest_tests.rs"]

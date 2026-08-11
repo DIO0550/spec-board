@@ -21,7 +21,7 @@ use crate::task::parse::{
 };
 use crate::task::rebuild::rebuild_tasks_from_disk_with_report;
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::Task;
+use crate::task::task_index::{ExternalChangeOutcome, ExternalTaskChange, Task, TaskIndex};
 use crate::task::warning::has_parent_cycle_warning;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
@@ -182,6 +182,52 @@ fn preflight_mutation(
     }
 }
 
+/// resident cache に循環メンバーが 1 件でも居るか。
+///
+/// 循環メンバーの `parent` は派生再構築の過程で None に上書きされて cache へ載るため、
+/// frontmatter に書かれていた本当の親は cache から失われている。つまり cache だけでは
+/// 「循環がまだ続いているか」を再計算できない。
+///
+/// 判定を「変更対象の path が循環メンバーか」に狭めてはならない。無関係な task を
+/// 更新しただけでも全件の派生値を作り直すため、失われた parent のせいで循環が再検出
+/// されず、disk には残っている循環の warning が消えてしまう。cache に循環が居る間は
+/// upsert / delete をまとめて disk 読み直し（full rescan）へ委ねる。
+fn cache_has_cycle_member(snapshot: &ProjectSessionSnapshot) -> bool {
+    snapshot
+        .tasks()
+        .values()
+        .any(|task| has_parent_cycle_warning(&task.warnings))
+}
+
+/// resident がこの path を task として抱えているなら rescan する。
+///
+/// task として読み込めなくなった md を黙って無視すると、resident には古い task が
+/// 残り、再 open 結果と食い違う。tasks と load_warnings を同じ commit で置き換えられる
+/// のは rescan だけなので、そちらへ委ねる。
+fn rescan_if_cached(
+    ctx: &AdapterContext,
+    snapshot: &ProjectSessionSnapshot,
+    rel_path: &TaskFilePath,
+    before_sequence: &mut dyn FnMut(),
+) -> Result<(), HandleError> {
+    if !snapshot.tasks().contains_key(&rel_path.as_path_buf()) {
+        return Ok(());
+    }
+    handle_rescan(ctx, before_sequence)
+}
+
+/// resident の load warnings がこの path を指しているか。
+///
+/// 指しているなら、その md を読み直した結果によって warning が消える／内容が変わる。
+/// `replace_tasks` は load_warnings を触らないため、差分反映では stale な warning が
+/// 残る。該当するイベントは rescan へ委ねる。
+fn has_load_warning_for(snapshot: &ProjectSessionSnapshot, rel_path: &TaskFilePath) -> bool {
+    snapshot
+        .load_warnings()
+        .iter()
+        .any(|warning| warning.path.as_deref() == Some(rel_path.as_str()))
+}
+
 /// scanner と同じ条件を満たす task markdown の正規化相対 path を返す。
 fn rel_md_path(abs_path: &Path, root: &Path) -> Option<TaskFilePath> {
     task_md_relative_path(abs_path, root).map(|rel| normalized_task_file_path(&rel))
@@ -222,9 +268,11 @@ fn handle_upsert(
     let Some(resources) = preflight_mutation(ctx, &snapshot)? else {
         return Ok(());
     };
-    let Some(rel_path) = rel_md_path(abs_path, ctx.project_root.as_path()) else {
+    // `.spec-board/` 配下や非 md を先に落とす。ここで落とす path は write_ignore へ
+    // 登録されないため、`unregister` より前に返さないと消費されない marker が残る。
+    let Some(lenient_path) = rel_md_path_lenient(abs_path, ctx.project_root.as_path()) else {
         log::trace!(
-            "watcher_event: skipping path excluded by task scanner: {}",
+            "watcher_event: skipping path outside the task tree: {}",
             abs_path.display()
         );
         return Ok(());
@@ -232,6 +280,22 @@ fn handle_upsert(
     if resources.write_ignore().unregister(abs_path)? {
         return Ok(());
     }
+    if cache_has_cycle_member(&snapshot) {
+        return handle_rescan(ctx, before_sequence);
+    }
+    if has_load_warning_for(&snapshot, &lenient_path) {
+        return handle_rescan(ctx, before_sequence);
+    }
+    let Some(rel_path) = rel_md_path(abs_path, ctx.project_root.as_path()) else {
+        log::trace!(
+            "watcher_event: path no longer satisfies the task scanner: {}",
+            abs_path.display()
+        );
+        // scanner の条件（サイズ・テキスト・実ファイル）を満たさなくなった md が
+        // cache に残っていると、再 open 側はその task を落とすので乖離する。
+        // tasks と load_warnings を同じ commit で置き換えられる rescan に委ねる。
+        return rescan_if_cached(ctx, &snapshot, &lenient_path, before_sequence);
+    };
 
     let bytes = match ctx.io.read(abs_path) {
         Ok(bytes) => bytes,
@@ -240,21 +304,25 @@ fn handle_upsert(
                 "watcher_event: failed to read `{}`: {err}",
                 abs_path.display()
             );
-            return Ok(());
+            // 読めない md は再 open 側で `taskReadFailed` warning になり cache から
+            // 落ちる。resident をそこへ揃えるため rescan へ委ねる。
+            return handle_rescan(ctx, before_sequence);
         }
     };
     let context = TaskParseContext {
         file_path: rel_path.as_path_buf(),
         default_status: default_status_for(snapshot.config()),
     };
-    let mut task = match task_from_markdown(&bytes, &context) {
+    let task = match task_from_markdown(&bytes, &context) {
         Ok(task) => task,
         Err(err) => {
             log::warn!(
                 "watcher_event: failed to parse `{}`: {err}",
                 abs_path.display()
             );
-            return Ok(());
+            // parse できない md は再 open 側で `frontmatterParseFailed` warning になり
+            // cache から落ちる。ここで黙って古い task を残すと乖離するので rescan へ委ねる。
+            return handle_rescan(ctx, before_sequence);
         }
     };
 
@@ -264,12 +332,31 @@ fn handle_upsert(
     } else {
         EVENT_TASK_CREATED
     };
-    let was_cycle_member = snapshot
-        .tasks()
-        .get(&cache_key)
-        .map(|previous| has_parent_cycle_warning(&previous.warnings))
-        .unwrap_or(false);
-    task.preserve_parent_cycle_state(was_cycle_member, true);
+
+    // 派生値（children / reverse_links / parentCycle・parentNotFound warning）は
+    // 変更 1 件では閉じないので、全件を作り直す。open / full rescan と同じ入口を
+    // 通すことで「watcher 適用後 == 再 open」を構造的に保証する。
+    let resident: Vec<Task> = snapshot.tasks().values().cloned().collect();
+    let reconciled = match TaskIndex::new(resident)
+        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task)))
+    {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            log::warn!(
+                "watcher_event: failed to rebuild derived state after `{}`: {err}",
+                abs_path.display()
+            );
+            // cache は触らない。full rescan が同じ状況で取る挙動に揃える。
+            return emit_diagnostic(
+                ctx,
+                &snapshot.identity(),
+                DiagnosticCode::RescanFailed,
+                "派生情報の再構築に失敗したため、変更を反映していません",
+                vec![rel_path.as_str().to_string()],
+                before_sequence,
+            );
+        }
+    };
 
     // 未知 status なら config へカラムを足してから commit する。保存できたときだけ
     // 採用するのは open と同じ方針（保存に失敗したまま resident config だけ進めると、
@@ -283,7 +370,7 @@ fn handle_upsert(
         &snapshot,
         &[(
             rel_path.as_path_buf(),
-            Some(task.status.as_str().to_owned()),
+            reconciled_status(&reconciled, &cache_key),
         )],
     );
     // `EventConfigOutcome` は `Config` を含むので `Copy` ではない。`matches!` を
@@ -292,13 +379,22 @@ fn handle_upsert(
     let next_config = outcome.into_config();
     let config_replaced = next_config.is_some();
 
+    let ExternalChangeOutcome {
+        tasks,
+        changed_task,
+        other_tasks_changed,
+    } = reconciled;
+    let next_tasks: HashMap<PathBuf, Task> = tasks
+        .into_iter()
+        .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+        .collect();
+
     let expected = snapshot.identity();
     let committed = match ctx.state.commit_session_write(&expected, move |session| {
         if let Some(config) = next_config {
             session.replace_config(config);
         }
-        session.tasks_mut().insert(cache_key, task.clone());
-        task
+        session.replace_tasks(next_tasks);
     }) {
         Ok(committed) => committed,
         Err(
@@ -309,12 +405,13 @@ fn handle_upsert(
         Err(error) => return Err(error.into()),
     };
     let committed_identity = committed.identity().clone();
-    let emitted_task = committed.value;
 
     // config を差し替えたときは task 単体の envelope を出さず、resync だけを出す。
     // 新カラムを知らない FE に task-created を先に渡しても、その task はどの列にも
     // 入れず一瞬消えたように見えるため、全量再取得へ一本化する。
-    if config_replaced {
+    // 変更対象以外の task の派生値も変わったときも同じで、単体 envelope では FE の
+    // cache が追いつかない。
+    if config_replaced || other_tasks_changed {
         return emit_compat_envelope(
             ctx,
             &committed_identity,
@@ -326,6 +423,9 @@ fn handle_upsert(
         );
     }
 
+    let Some(emitted_task) = changed_task else {
+        return Ok(());
+    };
     emit_compat_envelope(
         ctx,
         &committed_identity,
@@ -333,6 +433,23 @@ fn handle_upsert(
         TaskUpsertPayload { task: emitted_task },
         before_sequence,
     )
+}
+
+/// config reconcile へ渡す status を、再構築後の task から取り出す。
+///
+/// parse 直後の値ではなく再構築後を使うのは、循環メンバーになった task の `parent` が
+/// None に置き換わるように、派生再構築が値を変えうるため。`Upserted` は必ず slot を
+/// 持つので対象が消えることは無い。`None` を返すと reconcile は status なしとして
+/// その入力を無視するので、万一消えていてもカラムは増えない。
+fn reconciled_status(outcome: &ExternalChangeOutcome, cache_key: &Path) -> Option<String> {
+    let Some(task) = outcome.changed_task.as_ref() else {
+        log::warn!(
+            "watcher_event: reconciled task missing for {}",
+            cache_key.display()
+        );
+        return None;
+    };
+    Some(task.status.as_str().to_owned())
 }
 
 /// watcher event 起点で config をどう扱うかの結論。
@@ -464,17 +581,53 @@ fn handle_delete(
         return Ok(());
     }
 
+    if cache_has_cycle_member(&snapshot) {
+        return handle_rescan(ctx, before_sequence);
+    }
     let cache_key = rel_path.as_path_buf();
     if !snapshot.tasks().contains_key(&cache_key) {
         log::trace!(
-            "watcher_event: ignoring delete for path not in cache: {}",
+            "watcher_event: delete for path not in the task cache: {}",
             abs_path.display()
         );
+        // task ではないが load warning の対象だった場合、その warning は再 open 側で
+        // 消えるので resident も揃える必要がある。
+        if has_load_warning_for(&snapshot, &rel_path) {
+            return handle_rescan(ctx, before_sequence);
+        }
         return Ok(());
     }
+    // upsert と同じく、消えた task を参照していた側の派生値も作り直す。
+    let resident: Vec<Task> = snapshot.tasks().values().cloned().collect();
+    let reconciled = match TaskIndex::new(resident)
+        .rebuild_with_external_change(ExternalTaskChange::Removed(rel_path.clone()))
+    {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            log::warn!(
+                "watcher_event: failed to rebuild derived state after deleting `{}`: {err}",
+                abs_path.display()
+            );
+            return emit_diagnostic(
+                ctx,
+                &snapshot.identity(),
+                DiagnosticCode::RescanFailed,
+                "派生情報の再構築に失敗したため、削除を反映していません",
+                vec![rel_path.as_str().to_string()],
+                before_sequence,
+            );
+        }
+    };
+    let other_tasks_changed = reconciled.other_tasks_changed;
+    let next_tasks: HashMap<PathBuf, Task> = reconciled
+        .tasks
+        .into_iter()
+        .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+        .collect();
+
     let expected = snapshot.identity();
     let committed = match ctx.state.commit_session_write(&expected, move |session| {
-        session.tasks_mut().remove(&cache_key);
+        session.replace_tasks(next_tasks);
     }) {
         Ok(committed) => committed,
         Err(
@@ -484,6 +637,20 @@ fn handle_delete(
         ) => return Ok(()),
         Err(error) => return Err(error.into()),
     };
+
+    // 消えた task を参照していた側の派生値も変わっているときは、
+    // task-deleted 1 通では FE の cache が追いつかないので全量再取得へ倒す。
+    if other_tasks_changed {
+        return emit_compat_envelope(
+            ctx,
+            committed.identity(),
+            EVENT_RESYNC_REQUIRED,
+            ResyncRequiredPayload {
+                reason: ResyncReason::Rescan,
+            },
+            before_sequence,
+        );
+    }
 
     emit_compat_envelope(
         ctx,

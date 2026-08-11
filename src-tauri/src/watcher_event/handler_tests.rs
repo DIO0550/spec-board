@@ -21,6 +21,7 @@ use crate::state::active_project_resources::{
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
+use crate::watcher_event::watcher_test_support::{rename_batch, upserts_batch};
 use crate::watcher_event::{AdapterContext, EmitFn};
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
@@ -29,15 +30,6 @@ use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
-
-/// fs 層が rename を分解した形の batch（from を removed、to を upserted）。
-fn rename_batch(from: PathBuf, to: PathBuf) -> FileChangeBatch {
-    FileChangeBatch {
-        removed: vec![from],
-        upserted: vec![to],
-        ..FileChangeBatch::default()
-    }
-}
 
 fn task_md(title: &str) -> String {
     format!("---\ntitle: {title}\nstatus: Todo\n---\n\nbody\n")
@@ -1927,24 +1919,16 @@ fn a_change_that_cannot_be_read_does_not_stop_the_rest_of_the_batch() {
         failing: broken.clone(),
     }) as Arc<dyn TaskIo>;
 
-    handle_batch(
-        &FileChangeBatch {
-            upserted: vec![broken, ok],
-            ..FileChangeBatch::default()
-        },
-        &ctx,
-    );
+    handle_batch(&upserts_batch(vec![broken, ok]), &ctx);
 
     let entries = drain(&log);
+    let names: Vec<&str> = entries.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(
-        vec!["task-created"],
-        entries
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect::<Vec<_>>(),
-        "読めなかった 1 件で batch を打ち切ってはならない"
+        vec!["watcher-resync-required", "task-updated"],
+        names,
+        "読めなかった 1 件で batch を打ち切ってはならない（読めない md は rescan に委ねる）"
     );
-    assert_eq!("tasks/ok.md", entries[0].1["payload"]["task"]["filePath"]);
+    assert_eq!("tasks/ok.md", entries[1].1["payload"]["task"]["filePath"]);
 }
 
 #[test]
