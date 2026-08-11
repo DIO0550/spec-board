@@ -389,7 +389,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | `UnsupportedOrphanStrategy` | `unsupported orphan strategy: {strategy}` | `abort` 以外の orphanStrategy が指定された |
 | `NoProjectOpen` | `project is not opened` | プロジェクト未オープン |
 
-> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder の cleanup は watcher の reconciliation に委ねる。現在は abort strategy のみ実装済みで、clear strategy（子の parent クリア）や reverse_links 再構築は将来 Issue で対応する。
+> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder には削除済みタスクの path が残るが、board 表示は壊れない（cardOrder 未記載のタスクは末尾へ回る規則があるため）。cleanup は Issue #507 で扱う。現在は abort strategy のみ実装済みで、clear strategy（子の parent クリア）や reverse_links 再構築は将来 Issue で対応する。
 
 ---
 
@@ -460,7 +460,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
 | 稼働数 | 常にフォアグラウンドのプロジェクト 1 つ分のみ。プロジェクト切替のたびに旧 watcher を stop / join し、OS ハンドルとスレッドを解放する。キャッシュから再活性化した場合も watcher と `WriteIgnoreRegistry` は新規作成する（write-ignore は session-scoped の意味を保つため空で始まる） |
-| 監視イベント | 変更は `FileChangeBatch { removed, upserted, rescan, errors }` に畳み込まれて本体クレートへ渡る。`upserted` は読み直して `tasks_cache` を差分更新し `task-created` / `task-updated` を、`removed` は cache 登録済みパスのみ `task-deleted` を発火する（`WriteIgnoreRegistry` に登録された自前書き込み / delete はスキップ）。`rescan` は full rescan を行って `tasks_cache` を全置換し、`errors` は structured diagnostics として FE へ通知する |
+| 監視イベント | 変更は `FileChangeBatch { removed, upserted, rescan, errors }` に畳み込まれて本体クレートへ渡る。`upserted` は読み直したうえで、`removed` は cache 登録済みパスのみを対象に、**変更を反映した全 task の派生値（`children` / `reverseLinks` / parent 関連 warning）を再構築して `tasks_cache` を全置換**する（`WriteIgnoreRegistry` に登録された自前書き込み / delete はスキップ）。emit は変更対象だけが変わった場合のみ `task-created` / `task-updated` / `task-deleted` を 1 通、**変更対象以外の task の派生値も変わった場合は `watcher-resync-required` を 1 通**出す。`rescan` は full rescan を行って `tasks_cache` を全置換し、`errors` は structured diagnostics として FE へ通知する |
 | デバウンス | 後述の「デバウンス（変更バッチへの畳み込み）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
 | フロントエンドへの通知 | Tauri のイベントシステム（`emit`）を使用 |
@@ -486,7 +486,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | `task-created` | `{ task: Task }` | 新しい md ファイルが作成された | true |
 | `task-updated` | `{ task: Task }` | 既存の md ファイルが更新された | true |
 | `task-deleted` | `{ filePath: string }` | md ファイルが削除された | true |
-| `watcher-resync-required` | `{ reason: "rescan" }` | batch の `rescan` を受けて full rescan を完了した、またはキャッシュヒット再オープン後の背景再スキャンが差分を commit した。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
+| `watcher-resync-required` | `{ reason: "rescan" }` | batch の `rescan` を受けて full rescan を完了した、キャッシュヒット再オープン後の背景再スキャンが差分を commit した、変更対象以外の task の派生値も変わった、未知 status のカラムを追加した、または resident cache だけでは正しい state を再計算できず full rescan へ委ねた（循環メンバーが居る / 読めない・parse できない md / load warning の対象ファイル）。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
 | `watcher-diagnostic` | `{ code, message, paths }` | watcher backend の障害 / full rescan の失敗 | false |
 
 受信側は `projectKey` / `generation` の不一致を破棄し、`eventSeq` の欠番を検知したら
@@ -505,8 +505,7 @@ project switch / same-path reopen で identity が変わった場合は event �
 open 応答の snapshot にも購読にも含まれない。この欠落は**次のイベントが届いた時点で
 `eventSeq` の欠番として検知され、自動再取得で復旧する**。ただし窓の直後に一切
 イベントが発生しない場合はその変更が反映されないままになる。窓自体を無くすには
-購読の常設化または BE/FE のハンドシェイクが必要で、watcher reconciliation
-（Issue #460）で扱う。
+購読の常設化または BE/FE のハンドシェイクが必要で、Issue #508 で扱う。
 
 キャッシュヒット再オープン後の背景再スキャンが emit する `watcher-resync-required`
 にも同じ窓がある。応答直後に差分が確定した場合、フロントエンドが購読を確立する前に
@@ -556,7 +555,7 @@ flowchart TD
 
 1. 旧パスのタスクに対して `task-deleted` イベントを発火
 2. 新パスのファイルを読み込み・パースし、`task-created` イベントを発火。ただし新パスが既に `tasks_cache` に登録済み（= リネームで既存タスクファイルを上書きした）の場合は `task-updated` になる。emit する event 名は cache 存在だけで決まり、リネームの宛先を無条件に `task-created` とする扱いはしない
-3. 旧パスへの `task-deleted` 処理時、他タスクの `parent` / `links` / `reverseLinks` に残っていた旧パス参照は **自動的に cleanup される**（リンク切れの状態で残さない）。新パスの `task-created` では新タスク自身の frontmatter 由来の `parent` / `links` と親側 `children` の同期だけが反映されるため、他タスクに残っていた旧パス参照を新パスへ自動変換することはしない。新パス参照を他タスクに復元するには、外部側で当該タスクの md を編集して新パスを記述し直す必要がある
+3. 旧パスへの `task-deleted` 処理時、他タスクの **派生値**（`children` / `reverseLinks`）から旧パス参照は消える（派生値は全件再構築されるため）。一方 frontmatter 由来の **raw 値**（`parent` / `links`）は書き換えない。値は保持され、`parentNotFound` warning と壊れたリンク表示で示される（`task-format-spec.md` の parent 解決 / links 解決の規則と同じ扱い）。BE が md を書き戻すことはない。したがって、他タスクに残っていた旧パス参照を新パスへ自動変換することもしない。新パス参照を他タスクに復元するには、外部側で当該タスクの md を編集して新パスを記述し直す必要がある
 
 delete と create は同じ writer gate 内でも別々の fresh snapshot / revision commit /
 conditional eventSeq 採番を行い、従来どおり 2 envelope を順番に emit する。composite rename
@@ -793,6 +792,7 @@ pub enum WatcherError {
 - 拡張子フィルタ（`.md` 等）— `watcher_event::handler::rel_md_path` で root 配下の `.md` のみを処理
 - Tauri IPC 経由のフロントエンド emit（5 event の envelope 化）— `watcher_event::handler::handle_batch` + `EmittingWatcherHandle`
 - `WriteIgnoreRegistry` との統合（自己書き込み抑制）— `watcher_event::handler` 内で `unregister(abs_path)` を呼ぶ
+- 派生値の再構築（`children` / `reverseLinks` / parent 関連 warning を全 task 分作り直す）— `TaskIndex::rebuild_with_external_change` に委譲する。`open_project` / full rescan と同じ入口を通すことで、watcher 適用後の resident state が「同じ disk 状態で開き直した state」と一致することを構造的に保証する。ただし循環メンバーは cache 上で `parent` が失われているため、その path への変更だけは full rescan に委ねる
 - batch の `rescan` に対する full rescan（全 md 再走査 → `tasks_cache` 全置換 → `watcher-resync-required` 発火）— `watcher_event::handler::handle_rescan`
 - batch の `errors` の structured diagnostics 化（`WatcherFailureKind` → `watcher-diagnostic` の `code`）— `watcher_event::handler::handle_backend_failure`
 - 旧世代 watcher の event 破棄（`generation` guard）— `watcher_event::handler::handle_change` 冒頭
@@ -827,6 +827,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.6 | 2026-08-11 | Issue #460: watcher が変更を反映する際に全 task の派生値を再構築する契約、変更対象以外も変わった場合の `watcher-resync-required` 分岐、rename 時の raw 値保持（cleanup しない）の裁定を追加。cardOrder cleanup は #507、購読開始までの窓は #508 へ切り出し | - |
 | 1.5 | 2026-08-09 | Issue #457: 未知 status のカラム追加（reconcile）を背景再スキャンでも行う契約と、その `config.json` / `GUIDE.md` 書き込みを書き込みパスセットへ登録しない理由を追加 | - |
 | 1.4 | 2026-08-06 | Issue #189: プロジェクトセッションキャッシュ（切替後の再オープンを即時応答）、背景全量再スキャンによる `watcher-resync-required`、`get_tasks` への `columns` / `doneColumn` 同梱、watcher 稼働数と再活性化時のリソース再生成、キャッシュ key の制限事項を追加 | - |
 | 1.3 | 2026-08-01 | Issue #458: `open_project` / `get_tasks` の `loadWarnings`、partial success、config fallback、full rescan における warnings 置換契約を追加 | - |
