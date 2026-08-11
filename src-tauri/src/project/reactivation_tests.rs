@@ -9,9 +9,7 @@ use super::{run_reactivation_resync, ReactivationResyncOutcome};
 use crate::config::{
     label_registry_store, milestone_registry_store, Column, Config, ConfigWriter, FsConfigWriter,
 };
-use crate::project::open::open_project_impl;
-use crate::project::watcher_factory::NoopWatcherFactory;
-use crate::project::OpenProjectIntent;
+use crate::project::open_test_support::open_from_disk;
 use crate::project_session::ProjectSessionSnapshot;
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
@@ -53,25 +51,6 @@ fn write_spec_board_file(root: &Path, name: &str, content: &str) {
     let dir = root.join(".spec-board");
     fs::create_dir_all(&dir).expect("create .spec-board");
     fs::write(dir.join(name), content).expect("write .spec-board file");
-}
-
-/// tempdir の実ファイルからコールドオープンして resident session を設置する。
-fn open_from_disk(state: &Arc<AppState>, root: &Path) -> ProjectSessionSnapshot {
-    let intent = OpenProjectIntent::try_from(root.to_str().expect("utf-8 path").to_string())
-        .expect("valid intent");
-    let labels_store = label_registry_store(intent.as_path());
-    let milestones_store = milestone_registry_store(intent.as_path());
-    open_project_impl(
-        state,
-        &intent,
-        &labels_store,
-        &milestones_store,
-        &NoopWatcherFactory,
-    )
-    .expect("cold open succeeds");
-    state
-        .require_session_snapshot()
-        .expect("session is installed")
 }
 
 fn resync(
