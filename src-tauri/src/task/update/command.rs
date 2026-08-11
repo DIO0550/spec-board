@@ -114,7 +114,7 @@ fn apply_update_to_cache(
             .map(|previous| has_parent_cycle_warning(&previous.warnings))
             .unwrap_or(false);
         let mut next = outcome.updated_task.clone();
-        next.preserve_parent_cycle_state(was_cycle_member, false);
+        next.preserve_parent_cycle_state(was_cycle_member);
         cache.insert(cache_key.clone(), next.clone());
         Some(next)
     };

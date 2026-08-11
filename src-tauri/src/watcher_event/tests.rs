@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use super::handler::{handle_batch, handle_change, run_event_loop, TaskFileChange};
+use super::watcher_test_support::{rename_batch, upsert_batch};
 use super::{AdapterContext, EmitFn};
 use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
@@ -25,23 +26,6 @@ use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
 
 type EmitLog = Arc<Mutex<Vec<(String, Value)>>>;
-
-/// fs 層が rename を分解した形の batch（from を removed、to を upserted）。
-fn rename_batch(from: PathBuf, to: PathBuf) -> FileChangeBatch {
-    FileChangeBatch {
-        removed: vec![from],
-        upserted: vec![to],
-        ..FileChangeBatch::default()
-    }
-}
-
-/// 1 path の upsert だけを持つ batch。
-fn upsert_batch(path: PathBuf) -> FileChangeBatch {
-    FileChangeBatch {
-        upserted: vec![path],
-        ..FileChangeBatch::default()
-    }
-}
 
 fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
     let session_id = state.reserve_session_id().expect("reserve session ID");
@@ -257,7 +241,7 @@ fn rename_onto_an_existing_cached_task_emits_updated_not_created() {
 }
 
 #[test]
-fn rename_with_unparseable_to_emits_only_deleted_and_removes_from_cache() {
+fn rename_with_unparseable_to_emits_deleted_then_a_resync() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let from_abs = write_md(dir.path(), "tasks/from.md", &task_md("F"));
@@ -272,9 +256,13 @@ fn rename_with_unparseable_to_emits_only_deleted_and_removes_from_cache() {
     handle_batch(&rename_batch(from_abs, to_abs), &ctx);
 
     let entries = drain_log(&log);
-    assert_eq!(1, entries.len());
+    assert_eq!(2, entries.len());
     assert_eq!("task-deleted", entries[0].0);
     assert_eq!("tasks/from.md", entries[0].1["payload"]["filePath"]);
+    assert_eq!(
+        "watcher-resync-required", entries[1].0,
+        "parse できない to-side は rescan に委ねられる"
+    );
 
     assert!(snapshot_paths(&state).is_empty());
 }
@@ -319,7 +307,12 @@ fn write_ignore_consume_skips_emit_for_self_originated_create() {
 }
 
 #[test]
-fn parse_failure_does_not_emit_or_mutate_cache() {
+/// parse できない md は full rescan に委ねられる。
+///
+/// 再 open 側は同じファイルに `frontmatterParseFailed` の load warning を積んで task を
+/// 落とすため、黙って無視すると resident が乖離する。tasks と load_warnings を同じ
+/// commit で置き換えられるのは rescan だけ。
+fn parse_failure_delegates_to_a_full_rescan() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let abs = write_md(dir.path(), "tasks/a.md", "---\n: invalid\n---\n");
@@ -327,8 +320,13 @@ fn parse_failure_does_not_emit_or_mutate_cache() {
 
     handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("ok");
 
-    assert!(drain_log(&log).is_empty());
-    assert!(snapshot_paths(&state).is_empty());
+    let entries = drain_log(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("watcher-resync-required", entries[0].0);
+    assert!(
+        snapshot_paths(&state).is_empty(),
+        "parse できない md は task にならない"
+    );
 }
 
 #[test]
@@ -725,8 +723,13 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
     assert!(panicked, "emit panic should be caught by catch_unwind");
 }
 
+/// cycle member への変更は disk を読み直す full rescan に委ねられる。
+///
+/// cycle member の cache は parent を None で上書きされており、frontmatter に
+/// 書かれていた本当の親を失っている。cache だけでは循環がまだ続いているか判定
+/// できないため、判断材料を disk から取り直す。
 #[test]
-fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
+fn modify_event_for_a_cycle_member_rescans_and_recomputes_the_cycle_state() {
     use crate::task::parse::{task_from_markdown, TaskParseContext};
     use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
 
@@ -762,28 +765,37 @@ fn modify_event_preserves_parent_cycle_warning_and_parent_none() {
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
-    assert_eq!("task-updated", entries[0].0);
+    assert_eq!(
+        "watcher-resync-required", entries[0].0,
+        "full rescan なので全量再取得を要求する"
+    );
 
     let snapshot = state.test_tasks_snapshot().expect("readable");
-    let a = snapshot
-        .iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
-        .expect("A in cache");
-
-    assert!(
-        a.parent.is_none(),
-        "cycle member の parent は None のまま保持される（disk の raw parent で復活させない）"
-    );
-    assert!(
-        a.warnings.iter().any(|w| w.code == TaskWarningCode::ParentCycle
-            && w.field.as_deref() == Some("parent")),
-        "cycle member の parentCycle warning は preserve される"
-    );
-
-    let emitted = &entries[0].1["payload"]["task"];
-    assert!(
-        emitted.get("parent").is_none_or(|v| v.is_null()),
-        "emit payload も parent=None を反映する"
+    for path in ["tasks/a.md", "tasks/b.md"] {
+        let task = snapshot
+            .iter()
+            .find(|task| task.file_path.as_str() == path)
+            .unwrap_or_else(|| panic!("{path} in cache"));
+        assert!(
+            task.parent.is_none(),
+            "{path}: 循環が続いている間 parent は None 化される"
+        );
+        assert!(
+            task.warnings
+                .iter()
+                .any(|warning| warning.code == TaskWarningCode::ParentCycle
+                    && warning.field.as_deref() == Some("parent")),
+            "{path}: parentCycle warning が付く"
+        );
+    }
+    assert_eq!(
+        snapshot
+            .iter()
+            .find(|task| task.file_path.as_str() == "tasks/a.md")
+            .expect("A in cache")
+            .body,
+        "\nupdated body\n",
+        "本文の更新は取り込まれる"
     );
 }
 
@@ -848,7 +860,7 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
 
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
-    assert_eq!("task-updated", entries[0].0);
+    assert_eq!("watcher-resync-required", entries[0].0);
 
     let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
@@ -867,10 +879,20 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
         "disk 側で parent が消えた以上、parentCycle warning は維持しない"
     );
 
-    let emitted = &entries[0].1["payload"]["task"];
+    let b = snapshot
+        .iter()
+        .find(|t| t.file_path.as_str() == "tasks/b.md")
+        .expect("B in cache");
+    assert_eq!(
+        b.parent.as_ref().map(|parent| parent.as_str()),
+        Some("tasks/a.md"),
+        "循環が解けた側の parent も disk の raw 値へ戻る（cache では復元できないため rescan が要る）"
+    );
     assert!(
-        emitted.get("parent").is_none_or(|v| v.is_null()),
-        "emit payload も parent=None を反映する"
+        !b.warnings
+            .iter()
+            .any(|w| w.code == TaskWarningCode::ParentCycle),
+        "循環が解けた以上、相手側の warning も消える"
     );
 }
 
@@ -900,9 +922,6 @@ fn projections(state: &AppState) -> crate::task::projection::TaskProjectionMap {
 }
 
 /// watcher 経由で作られた子が親の projection に計上されることを固定する。
-///
-/// `handle_upsert` は親の `children` を更新しないため、projection が
-/// `Task.children` を読む実装に戻すと必ず落ちる。
 #[test]
 fn watcher_created_child_is_counted_in_parent_projection() {
     let dir = TempDir::new().expect("tempdir");
@@ -918,9 +937,10 @@ fn watcher_created_child_is_counted_in_parent_projection() {
 
     handle_change(&TaskFileChange::Upserted(child_abs), &ctx).expect("handler should succeed");
 
-    assert!(
-        cached_children(&state, "tasks/p.md").is_empty(),
-        "handle_upsert は親の children を更新しない（この前提が変わったらテストを見直す）"
+    assert_eq!(
+        cached_children(&state, "tasks/p.md"),
+        vec!["tasks/c.md".to_string()],
+        "派生値を全件作り直すので、親の children が子に追従する"
     );
     let map = projections(&state);
     assert_eq!(map["tasks/p.md"].sub_issue_progress.total, 1);
@@ -973,13 +993,13 @@ fn watcher_reparent_moves_child_between_projections() {
     );
 }
 
-/// watcher 経由で新規に作られた parent 循環でも `get_tasks_impl` が有限停止する。
+/// watcher 経由で新規に作られた parent 循環が、その場で warning に変換される。
 ///
-/// `preserve_parent_cycle_state` は「既に cycle member だった task」の状態を維持する
-/// だけで新規循環は検出しないため、cache には循環が残ったままになる。projection の
-/// visited による打ち切りが到達可能な機能であることの実証。
+/// 派生値を全件作り直すので、循環はイベント処理の時点で検出され、メンバーの
+/// `parent` は None、`parentCycle` warning つきで cache に載る。cache に循環が
+/// 残らないため、projection は親子関係を持たない状態として計算される。
 #[test]
-fn watcher_introduced_parent_cycle_terminates() {
+fn watcher_introduced_parent_cycle_becomes_a_warning() {
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
     let (ctx, _log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
@@ -999,7 +1019,25 @@ fn watcher_introduced_parent_cycle_terminates() {
     );
     handle_change(&TaskFileChange::Upserted(b_abs), &ctx).expect("handler should succeed");
 
+    let snapshot = state.test_tasks_snapshot().expect("readable");
+    for path in ["tasks/a.md", "tasks/b.md"] {
+        let task = snapshot
+            .iter()
+            .find(|task| task.file_path.as_str() == path)
+            .unwrap_or_else(|| panic!("{path} in cache"));
+        assert!(
+            task.parent.is_none(),
+            "{path}: 循環メンバーの parent は None"
+        );
+        assert!(
+            task.warnings
+                .iter()
+                .any(|warning| warning.code == crate::task::warning::TaskWarningCode::ParentCycle),
+            "{path}: parentCycle warning が付く"
+        );
+    }
+
     let map = projections(&state);
-    assert_eq!(map["tasks/a.md"].sub_issue_progress.total, 1);
-    assert_eq!(map["tasks/b.md"].sub_issue_progress.total, 1);
+    assert_eq!(map["tasks/a.md"].sub_issue_progress.total, 0);
+    assert_eq!(map["tasks/b.md"].sub_issue_progress.total, 0);
 }

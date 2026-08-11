@@ -186,9 +186,9 @@ flowchart TD
 | PL-004 | status フォールバック | `status` フィールドが未定義の場合、最初のカラムのステータスをデフォルトとして設定 |
 | PL-005 | priority 正規化 | `high` → `High`、`MEDIUM` → `Medium` のように先頭大文字に正規化 |
 | PL-006 | labels 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去 |
-| PL-007 | parent 解決 | `parent` フィールドのパスを解決し、親タスクの存在を検証。存在しない場合は `parentNotFound` warning を記録し、Task 自体は読み込み成功として扱う |
+| PL-007 | parent 解決 | `parent` フィールドのパスを解決し、親タスクの存在を検証。存在しない場合は `parentNotFound` warning を記録し、Task 自体は読み込み成功として扱う。外部編集を watcher 経由で取り込む場合も同じ扱いで、BE が `parent` の値を書き換えたり md を書き戻したりはしない |
 | PL-008 | parent 循環参照検出 | 親子関係のツリーを辿り、循環参照と深さ超過を検証する。**scan 経路（プロジェクト読み込み）**: 循環検出時は scan を継続し、ループに含まれる全 task に `parentCycle` warning を付与しつつ `parent` を `None` に置き換える。21 edge 以上の深さは `CycleOrTooDeep` パースエラー（深さ超過が循環検出より先行）。**create/update 経路**: 循環は引き続き `CycleOrTooDeep` パースエラーとして拒否する |
-| PL-009 | links 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去。存在しないパスは保持する（BE は warning を付けない。dangling 警告は FE `src/domains/broken-link` の派生判定で表示する）。`create_task` での作成時付与も同じ lenient 正規化（dedup・パス正規化・存在しないパス保持）に従う |
+| PL-009 | links 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去。存在しないパスは保持する（BE は warning を付けない。dangling 警告は FE `src/domains/broken-link` の派生判定で表示する）。`create_task` での作成時付与も同じ lenient 正規化（dedup・パス正規化・存在しないパス保持）に従う。参照先が外部削除・リネームされた場合も watcher 経路で `links` の値は書き換えず、消えるのは派生値の `reverseLinks` だけ |
 | PL-010 | links 逆引きインデックス | 全タスク読み込み後、links の逆引きインデックスを構築。双方向リンクの表示に使用 |
 | PL-011 | 子タスク収集 | 全タスク読み込み後、各タスクの `parent` を元に子タスク一覧を構築 |
 | PL-012 | 未知フィールド | フロントマターに定義外のフィールドが存在する場合、`Task.extras` に JSON 互換値として保持する |

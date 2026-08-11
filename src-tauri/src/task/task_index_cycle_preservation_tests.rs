@@ -36,7 +36,7 @@ fn has_cycle_warning(task: &Task) -> bool {
 fn preserves_parent_none_and_warning_when_was_cycle_member() {
     let mut task = task_with_parent(Some("tasks/b.md"));
 
-    task.preserve_parent_cycle_state(true, false);
+    task.preserve_parent_cycle_state(true);
 
     assert!(
         task.parent.is_none(),
@@ -49,7 +49,7 @@ fn preserves_parent_none_and_warning_when_was_cycle_member() {
 fn does_nothing_when_not_cycle_member() {
     let mut task = task_with_parent(Some("tasks/b.md"));
 
-    task.preserve_parent_cycle_state(false, false);
+    task.preserve_parent_cycle_state(false);
 
     assert_eq!(
         task.parent.as_ref().map(|p| p.as_str()),
@@ -64,7 +64,7 @@ fn does_not_duplicate_warning_when_already_present() {
     let mut task = task_with_parent(None);
     ensure_parent_cycle_warning(&mut task.warnings);
 
-    task.preserve_parent_cycle_state(true, false);
+    task.preserve_parent_cycle_state(true);
 
     let cycle_count = task
         .warnings
@@ -72,40 +72,4 @@ fn does_not_duplicate_warning_when_already_present() {
         .filter(|w| w.code == TaskWarningCode::ParentCycle)
         .count();
     assert_eq!(cycle_count, 1, "parentCycle warning は重複しない");
-}
-
-#[test]
-fn drops_preservation_when_parent_absent_and_flag_set() {
-    let mut task = task_with_parent(None);
-
-    task.preserve_parent_cycle_state(true, true);
-
-    assert!(task.parent.is_none());
-    assert!(
-        !has_cycle_warning(&task),
-        "parent が None かつ drop フラグ有効なら循環解消とみなし warning を付けない"
-    );
-}
-
-#[test]
-fn keeps_preservation_when_parent_present_even_with_flag() {
-    let mut task = task_with_parent(Some("tasks/b.md"));
-
-    task.preserve_parent_cycle_state(true, true);
-
-    assert!(
-        task.parent.is_none(),
-        "parent が Some なら drop フラグ有効でも None 化"
-    );
-    assert!(has_cycle_warning(&task), "warning も付与される");
-}
-
-#[test]
-fn does_not_inject_warning_into_non_member_even_with_flag() {
-    let mut task = task_with_parent(Some("tasks/b.md"));
-
-    task.preserve_parent_cycle_state(false, true);
-
-    assert_eq!(task.parent.as_ref().map(|p| p.as_str()), Some("tasks/b.md"));
-    assert!(!has_cycle_warning(&task));
 }

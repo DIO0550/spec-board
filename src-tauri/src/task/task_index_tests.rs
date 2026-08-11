@@ -627,19 +627,24 @@ fn rebuild_derived_with_warnings_builds_children_and_reverse_links() {
 }
 
 #[test]
-fn rebuild_derived_with_warnings_matches_the_open_project_chain() {
+fn rebuild_derived_with_warnings_does_not_depend_on_the_input_order() {
     let tasks = vec![
         task_with_links_and_parent("tasks/a.md", Some("tasks/b.md"), &["tasks/c.md"]),
         task_with_links_and_parent("tasks/b.md", None, &["tasks/a.md"]),
         task_with_links_and_parent("tasks/c.md", Some("tasks/b.md"), &[]),
     ];
+    let mut descending = tasks.clone();
+    descending.reverse();
 
-    let chained = TaskIndex::new(tasks.clone())
+    // aggregate は手動チェーンの前に file_path 昇順の整列を挟むので、昇順で与えた
+    // 手動チェーンと、降順で与えた aggregate が一致する。「入力順に依存しない」ことが
+    // 「watcher 適用後 == 再 open」の前提なので、それをこのテストで固定する。
+    let chained = TaskIndex::new(tasks)
         .build_children_with_warnings()
         .expect("no cycle")
         .build_reverse_links()
         .into_tasks();
-    let aggregated = TaskIndex::new(tasks)
+    let aggregated = TaskIndex::new(descending)
         .rebuild_derived_with_warnings()
         .expect("no cycle")
         .into_tasks();

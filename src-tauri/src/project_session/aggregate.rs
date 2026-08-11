@@ -270,7 +270,11 @@ impl ProjectSession {
         self.load_warnings = load_warnings;
     }
 
-    /// 互換adapterまたはcommit closureへtask mapの可変参照を渡す。
+    /// テスト専用。task map の可変参照を渡す。
+    ///
+    /// production の書き込み経路は差分挿入をやめて [`Self::replace_tasks`] に
+    /// 一本化されている（派生値は 1 件では閉じないため、常に全件を作り直す）。
+    #[cfg(test)]
     pub(crate) fn tasks_mut(&mut self) -> &mut HashMap<PathBuf, Task> {
         &mut self.tasks
     }
