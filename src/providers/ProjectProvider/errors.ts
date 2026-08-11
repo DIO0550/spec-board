@@ -1,4 +1,5 @@
 import type { TauriError } from "@/lib/tauri";
+import { PROJECT_SWITCHED_MESSAGE } from "./constants";
 
 /**
  * useProject hook が呼び出し側に返すエラー型。discriminated union。
@@ -8,6 +9,14 @@ import type { TauriError } from "@/lib/tauri";
 export type ProjectError =
   | { kind: "tauri"; error: TauriError }
   | { kind: "invalid-state"; message: string };
+
+/**
+ * project切替により失敗したProjectErrorかを判定する。
+ * @param error 判定対象のProjectError
+ * @returns project切替を示すinvalid-stateの場合はtrue
+ */
+export const isProjectSwitchedError = (error: ProjectError): boolean =>
+  error.kind === "invalid-state" && error.message === PROJECT_SWITCHED_MESSAGE;
 
 export const ProjectError = {
   /**

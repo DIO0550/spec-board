@@ -191,8 +191,8 @@ stateDiagram-v2
 書き込み（ミューテーション）系コマンドの失敗トーストは、各ハンドラではなく IPC ラッパ層（`invokeWrapped`）に集約して発火する。これにより失敗通知の source of truth を一本化し、握り潰し・通知の不統一・二重通知を防ぐ。
 
 - **共通トースト対象（allowlist）**: `create_task` / `update_task` / `delete_task` / `move_task` / `add_link` / `remove_link` / `update_columns` の失敗。`invokeWrapped` が「&lt;操作&gt;に失敗しました: &lt;詳細&gt;」を 1 件発火する。操作ラベルはコマンド単位で決まる（例: `update_columns` 由来はカラムの追加 / 改名 / 削除 / 並び替えのいずれでも「カラムの更新に失敗しました」に統一される）。`HAS_CHILDREN` 詳細は「子タスクが存在するため削除できません」に翻訳する。
-- **App 側の重複抑止**: App 各ハンドラは、失敗が allowlist 由来（= `invokeWrapped` が通知済み）のときだけ自前の失敗トーストを抑止する。判定は起点コマンド名を保持する `TauriError.command` に基づく。
-- **サイレント化させないもの（App 側が従来どおり通知）**: allowlist 外の tauri 失敗（`open_project` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
+- **操作フックへのエラー通知注入**: App は `onMutationError` を各操作単位フックへ注入する。callback は失敗が allowlist 由来（= `invokeWrapped` が通知済み）のときだけ上位の失敗トーストを抑止し、判定は起点コマンド名を保持する `TauriError.command` に基づく。操作固有の成功通知・rollback・retry 用の rejection は `useTaskDelete` や `useColumnRename` など各操作フックが担当する。
+- **サイレント化させないもの（注入callbackが通知）**: allowlist 外の tauri 失敗（`open_project` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
 - **成功トースト・LiveRegion アナウンス**は本一元化の影響を受けず従来どおり表示する。
 
 watcher listener の一部だけで open を続行する degraded mode は禁止する。registration readiness が成立しない限り loading へ遷移せず、`open_project` も呼ばない。
