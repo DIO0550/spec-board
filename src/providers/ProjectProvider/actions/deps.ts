@@ -3,6 +3,7 @@ import type { ProjectError } from "../errors";
 import type { ProjectAction, ProjectData } from "../reducer";
 import type { ProjectState } from "../state/projectState";
 import type { WatcherResyncReason } from "../watcherEnvelopeGate";
+import type { WatcherEventBridge } from "../watcherEventBridge";
 
 /** ディレクトリダイアログの二重オープンを防ぐための mutable フラグ。 */
 export type DialogOpening = {
@@ -41,6 +42,8 @@ export type OpenProjectActionDeps = {
   projectVersion: ProjectVersion;
   projectCommandQueue: ProjectCommandQueue;
   dialogOpening: DialogOpening;
+  /** open前readinessとopen中event配送を共有するbridge。 */
+  watcherEventBridge: WatcherEventBridge;
   /**
    * 開くプロジェクトのパス。指定時はディレクトリダイアログを開かず直接このパスを開く
    * （最近開いたプロジェクトからの再オープン用）。未指定時はダイアログで選択する。

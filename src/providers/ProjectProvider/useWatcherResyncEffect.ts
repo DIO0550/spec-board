@@ -11,7 +11,7 @@ import { ResyncGateLifecycle } from "./resyncGateLifecycle";
 import { ResyncRequests, type ResyncRequestsState } from "./resyncRequests";
 import type { ProjectState } from "./state/projectState";
 import type { ProjectionSyncedRef } from "./useProjectionSyncEffect";
-import type { WatcherGateRef } from "./useTaskWatcherEffects";
+import type { WatcherGateRef } from "./watcherEnvelopeGate";
 import {
   WatcherGate,
   type WatcherGateDecision,
@@ -80,8 +80,6 @@ const dispatchColumnsIfChanged = (
 
 /** useWatcherResyncEffect が受け取る依存。 */
 type WatcherResyncDeps = {
-  /** 現在 loaded な project path（未 loaded は null）。 */
-  loadedPath: string | null;
   /** envelope 検証状態を保持する ref。 */
   gate: WatcherGateRef;
   /** project command queue。in-flight mutation を追い越さないための read barrier。 */
@@ -145,11 +143,10 @@ type WatcherResyncDeps = {
  * marker 共有では解決しない（marker は新規発行を抑えるだけで、既に飛んでいる応答には
  * 効かない）。影響は projection のみ・次の sync で自動回復するため本 issue では扱わない。
  *
- * @param deps loadedPath / gate / queue / projectionSynced / getState / dispatch
+ * @param deps gate / queue / projectionSynced / getState / dispatch
  * @returns 再取得を要求する callback（gate の decision から呼ぶ）
  */
 export const useWatcherResyncEffect = ({
-  loadedPath,
   gate,
   projectCommandQueue,
   projectionSynced,
@@ -161,12 +158,13 @@ export const useWatcherResyncEffect = ({
 
   const requestResync = useCallback(
     (_reason: WatcherResyncReason): void => {
+      const current = getState();
       const session = gate.current.session;
-      if (loadedPath === null || session === null) {
+      if (current.kind !== "loaded" || session === null) {
         return;
       }
       const begun = ResyncRequests.begin(requestsRef.current, {
-        path: loadedPath,
+        path: current.path,
         generation: session.generation,
       });
       requestsRef.current = begun.state;
@@ -280,7 +278,6 @@ export const useWatcherResyncEffect = ({
       void runResync().catch(() => {});
     },
     [
-      loadedPath,
       gate,
       projectCommandQueue,
       projectionSynced,

@@ -2,11 +2,15 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
+import {
+  WATCHER_SESSION_FIXTURE,
+  watcherSessionFixture,
+} from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
   type OpenProjectPayload,
   openProject as openProjectInvoke,
+  TauriError,
 } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -144,6 +148,9 @@ const mountLoaded = async (strict = false) => {
   });
 };
 
+const currentStateKind = (): ProjectState["kind"] | undefined =>
+  latest?.state.kind;
+
 const currentTasks = (): Task[] => {
   const state = latest?.state;
   return state?.kind === "loaded" ? state.data.tasks : [];
@@ -212,6 +219,176 @@ const fireEnvelope = (
   fire(handlers, name, envelopeOf(payloadValue, overrides));
 };
 
+test("open pending中の単発S+1 eventを後続eventなしで反映する", async () => {
+  const { handlers } = installCaptureListen();
+  let resolveOpen!: (
+    value: Awaited<ReturnType<typeof openProjectInvoke>>,
+  ) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<Awaited<ReturnType<typeof openProjectInvoke>>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(currentStateKind()).toBe("loading");
+  fireEnvelope(handlers, "task-created", {
+    task: makeTaskPayload("tasks/b.md", "B"),
+  });
+
+  await act(async () => {
+    resolveOpen(Result.ok(payload));
+    await pending;
+  });
+
+  expect(currentTasks().map((task) => task.filePath)).toEqual([
+    "tasks/a.md",
+    "tasks/b.md",
+  ]);
+});
+
+test("open pending中の複数eventを受信順にFIFO replayする", async () => {
+  const { handlers } = installCaptureListen();
+  let resolveOpen!: (
+    value: Awaited<ReturnType<typeof openProjectInvoke>>,
+  ) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<Awaited<ReturnType<typeof openProjectInvoke>>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  fireEnvelope(handlers, "task-created", {
+    task: makeTaskPayload("tasks/b.md", "B"),
+  });
+  fireEnvelope(handlers, "task-updated", {
+    task: makeTaskPayload("tasks/b.md", "B2"),
+  });
+
+  await act(async () => {
+    resolveOpen(Result.ok(payload));
+    await pending;
+  });
+
+  expect(currentTasks().map((task) => task.title)).toEqual(["A", "B2"]);
+});
+
+test.each([
+  {
+    name: "foreign project",
+    overrides: { projectKey: "/foreign" },
+  },
+  {
+    name: "stale generation",
+    overrides: { generation: WATCHER_SESSION_FIXTURE.generation - 1 },
+  },
+])("open中の$name eventはcommit後も適用しない", async ({ overrides }) => {
+  const { handlers } = installCaptureListen();
+  let resolveOpen!: (
+    value: Awaited<ReturnType<typeof openProjectInvoke>>,
+  ) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<Awaited<ReturnType<typeof openProjectInvoke>>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  fireEnvelope(
+    handlers,
+    "task-created",
+    { task: makeTaskPayload("tasks/foreign.md", "foreign") },
+    overrides,
+  );
+
+  await act(async () => {
+    resolveOpen(Result.ok(payload));
+    await pending;
+  });
+
+  expect(currentTasks().map((task) => task.filePath)).toEqual(["tasks/a.md"]);
+});
+
+test("open失敗時は旧sessionへopen中eventをreplayする", async () => {
+  const { handlers } = installCaptureListen();
+  await mountLoaded();
+  let resolveOpen!: (
+    value: Awaited<ReturnType<typeof openProjectInvoke>>,
+  ) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<Awaited<ReturnType<typeof openProjectInvoke>>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/q") ?? Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(latest?.state.kind).toBe("loading");
+  fireEnvelope(handlers, "task-created", {
+    task: makeTaskPayload("tasks/b.md", "B"),
+  });
+
+  await act(async () => {
+    resolveOpen(Result.err(new TauriError("IO_ERROR", "open failed")));
+    await pending;
+  });
+
+  expect(latest?.state.kind).toBe("loaded");
+  expect(currentTasks().map((task) => task.filePath)).toEqual([
+    "tasks/a.md",
+    "tasks/b.md",
+  ]);
+});
+
 test("loaded 後 task-created で新 task が state に追加される", async () => {
   const { handlers } = installCaptureListen();
   await mountLoaded();
@@ -249,7 +426,10 @@ test("loadedPath と異なる path の stale handler の event は無視され�
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
       loadWarnings: [],
-      session: WATCHER_SESSION_FIXTURE,
+      session: watcherSessionFixture({
+        projectKey: "/other",
+        generation: WATCHER_SESSION_FIXTURE.generation + 1,
+      }),
       tasks: [],
       columns: ["Todo"],
       projections: new Map(),

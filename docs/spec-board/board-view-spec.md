@@ -178,6 +178,7 @@ stateDiagram-v2
 | mdファイルパースエラー | フロントマターに invalid 系の値が含まれる（対象 warning code: `invalidTitleUsedFileName` / `invalidStatusUsedDefault` / `invalidParentIgnored` / `nonStringExtraKeyIgnored` / `extraValueNotJsonCompatible`。`parentCycle` は循環バナーで別扱い、`parentNotFound` / `missing*` 系はリンク切れ・別カテゴリで対象外） | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「パースエラーが N 件あります」を 1 回表示（同一 `loadedPath` 内では再発火しない / 別 project 切替後 N >= 1 なら再発火）。加えて該当カードのタイトル行右端に赤いパースエラーアイコンを表示（リンク切れの黄アイコンと併存可） | mdファイルを手動修正 |
 | ファイル書き込み失敗 | ディスク容量不足、権限エラー | トースト通知（書き込み系コマンドは下記の一元化対象） | ファイルシステムの状態を確認 |
 | リンク切れ (プロジェクトロード時) | 開いたプロジェクトに `parent` / `links` / `children` / `reverseLinks` のいずれかが解決できないタスクが N >= 1 件含まれる | プロジェクトロード時 (state.kind が `"loaded"` に遷移したとき) に warning Toast「リンク切れが N 件あります」を 1 回表示。同一 `loadedPath` 内では再発火しない（別 project に切替後、N >= 1 なら再度 1 回発火する） | 詳細（全画面 2 ペイン）で該当 path を確認し、リンクを削除するか参照先ファイルを作成。詳細は [task-card-spec.md](./task-card-spec.md) の「エラー表示」セクション参照 |
+| watcher listener 登録失敗 | project open 前の 5 event registration のいずれかが失敗 | `open_project` を開始せず、旧 loaded 表示（未読込なら idle）を維持して「ファイル監視の準備に失敗しました。プロジェクトをもう一度開いてください」を 1 回通知 | 同じ「開く」操作を再試行。成功済み partial listener は解除済みで、次回は 5 本を再登録する |
 
 ### プロジェクト読み込み時の注意
 
@@ -193,6 +194,8 @@ stateDiagram-v2
 - **App 側の重複抑止**: App 各ハンドラは、失敗が allowlist 由来（= `invokeWrapped` が通知済み）のときだけ自前の失敗トーストを抑止する。判定は起点コマンド名を保持する `TauriError.command` に基づく。
 - **サイレント化させないもの（App 側が従来どおり通知）**: allowlist 外の tauri 失敗（`open_project` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
 - **成功トースト・LiveRegion アナウンス**は本一元化の影響を受けず従来どおり表示する。
+
+watcher listener の一部だけで open を続行する degraded mode は禁止する。registration readiness が成立しない限り loading へ遷移せず、`open_project` も呼ばない。
 
 ## アクセシビリティ
 
@@ -304,5 +307,6 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
-| 1.3 | 2026-08-01 | Issue #458: loaded board の `ProjectLoadWarnings` persistent panel、`loadWarnings` summary toast、fingerprint抑制とproject切替 isolationを追加 | - |
+| 1.5 | 2026-08-11 | Issue #508: watcher listener 登録失敗時の fail-closed、旧表示維持、1 回通知、再試行時の全 listener 再登録、degraded mode 禁止を追加 | - |
 | 1.4 | 2026-08-02 | Issue #401: タスク階層ツリーの組み立てを BE へ移管（`taskTree` payload 追加）、FE は可視集合の枝刈りのみに縮小 | - |
+| 1.3 | 2026-08-01 | Issue #458: loaded board の `ProjectLoadWarnings` persistent panel、`loadWarnings` summary toast、fingerprint抑制とproject切替 isolationを追加 | - |
