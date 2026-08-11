@@ -15,7 +15,6 @@ import {
 import { selectTaskOutcome } from "@/domains/task-selection";
 import { useLabels } from "@/hooks/useLabels";
 import { useMilestones } from "@/hooks/useMilestones";
-import type { OrphanStrategy } from "@/lib/tauri";
 import {
   type AppView,
   AppViewProvider,
@@ -24,13 +23,9 @@ import {
 import { resolveCloseTarget } from "@/providers/AppViewProvider/resolveCloseTarget";
 import { ProjectNotificationsProvider } from "@/providers/ProjectNotificationsProvider";
 import {
-  type MoveTaskParams,
-  PROJECT_SWITCHED_MESSAGE,
   type ProjectError,
   ProjectProvider,
   type ProjectState,
-  projectErrorMessage,
-  type ReorderColumnsEvent,
   useProjectColumnActions,
   useProjectSessionActions,
   useProjectState,
@@ -43,8 +38,23 @@ import {
 } from "@/providers/RecentProjectsProvider";
 import { ToastProvider, useToastDispatch } from "@/providers/ToastProvider";
 import { basenameOf } from "@/utils/path";
-import { BoardWorkspace, EmptyState, HeaderBar } from "./features/board";
-import { DetailScreen } from "./features/detail";
+import {
+  BoardWorkspace,
+  EmptyState,
+  HeaderBar,
+  useColumnAdd,
+  useColumnDelete,
+  useColumnRename,
+  useColumnReorder,
+  useTaskMove,
+} from "./features/board";
+import {
+  DetailScreen,
+  useLinkAdd,
+  useLinkRemove,
+  useTaskDelete,
+  useTaskUpdate,
+} from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen, useMilestoneMutations } from "./features/settings";
 import { AppSidebar, ThemeProvider } from "./features/shell";
@@ -200,15 +210,21 @@ const AppShell = () => {
 
   const { state } = useProjectState();
   const { openProject, openProjectByPath } = useProjectSessionActions();
-  const { createTask, updateTask, deleteTask, moveTask, addLink, removeLink } =
-    useProjectTaskActions();
+  const {
+    createTask,
+    updateTask: updateTaskAction,
+    deleteTask: deleteTaskAction,
+    moveTask: moveTaskAction,
+    addLink: addLinkAction,
+    removeLink: removeLinkAction,
+  } = useProjectTaskActions();
   const { updateColumns, reorderColumns } = useProjectColumnActions();
   const { submit: submitCreateTask } = useTaskCreate({ createTask });
 
   // 書き込み失敗の error トーストを出す共通ガード。allowlist 由来失敗は invokeWrapped が
   // 既に通知済みのため抑止し、allowlist 外 tauri / 非 tauri 失敗だけ App 側で出す
   // （サイレント化防止）。成功トースト・announce・throw は各ハンドラ側に残す。
-  const showErrorUnlessNotified = useCallback(
+  const onMutationError = useCallback(
     (error: ProjectError, message: string): void => {
       if (!wasNotifiedByInvokeWrapped(error)) {
         showToast(message, "error");
@@ -285,6 +301,67 @@ const AppShell = () => {
     () => buildTasksByNormalizedPath(tasks),
     [tasks],
   );
+
+  const handleTaskDeleted = useCallback(() => {
+    setSelectedTaskId(null);
+  }, []);
+  const handleTaskUpdate = useTaskUpdate({
+    tasks,
+    updateTask: updateTaskAction,
+    showToast,
+    onError: onMutationError,
+  });
+  const handleTaskDelete = useTaskDelete({
+    tasks,
+    deleteTask: deleteTaskAction,
+    showToast,
+    announce,
+    onError: onMutationError,
+    onPendingTaskChange: setPendingDeleteTask,
+    onDeleted: handleTaskDeleted,
+  });
+  const handleTaskDrop = useTaskMove({
+    tasks,
+    moveTask: moveTaskAction,
+    announce,
+    onError: onMutationError,
+  });
+  const handleAddColumn = useColumnAdd({
+    columns,
+    updateColumns,
+    showToast,
+    onError: onMutationError,
+  });
+  const handleRenameColumn = useColumnRename({
+    columns,
+    updateColumns,
+    showToast,
+    onError: onMutationError,
+  });
+  const handleDeleteColumn = useColumnDelete({
+    columns,
+    tasks,
+    updateColumns,
+    showToast,
+    onError: onMutationError,
+  });
+  const handleColumnReorder = useColumnReorder({
+    reorderColumns,
+    announce,
+    onError: onMutationError,
+  });
+  const handleAddLink = useLinkAdd({
+    tasks,
+    addLink: addLinkAction,
+    announce,
+    onError: onMutationError,
+  });
+  const handleRemoveLink = useLinkRemove({
+    tasks,
+    removeLink: removeLinkAction,
+    announce,
+    onError: onMutationError,
+  });
   // ボード / マイルストーンビューへ配るマイルストーンリソース（唯一の取得点）。
   // loaded path を projectKey にすることで、プロジェクト切替時に再取得され、
   // 未オープン時は idle（空）になる。
@@ -446,26 +523,6 @@ const AppShell = () => {
     navigate("milestone");
   }, [view, navigate]);
 
-  const handleTaskUpdate = useCallback(
-    async (id: string, updates: Partial<Omit<Task, "id">>) => {
-      const filePath = tasks.find((t) => t.id === id)?.filePath;
-      if (filePath === undefined) {
-        return;
-      }
-      // filePath は lookup key なので spread 順序を後置にして上書き防止
-      const result = await updateTask({ ...updates, filePath });
-      if (!result.ok) {
-        showErrorUnlessNotified(
-          result.error,
-          `タスクの更新に失敗しました: ${projectErrorMessage(result.error)}`,
-        );
-        return;
-      }
-      showToast("タスクを更新しました", "success");
-    },
-    [tasks, updateTask, showToast, showErrorUnlessNotified],
-  );
-
   const handleAddTask = useCallback(
     (columnName: string) => {
       setCreateModal({ kind: "normal", status: columnName });
@@ -475,191 +532,6 @@ const AppShell = () => {
       navigate("create");
     },
     [navigate],
-  );
-
-  const handleAddColumn = useCallback(
-    async (columnName: string): Promise<void> => {
-      // 呼び出し時点の best-effort 検証（即座の UX フィードバック）
-      if (columns.some((c) => c.name === columnName)) {
-        showToast("同じ名前のカラムが既に存在します", "error");
-        return;
-      }
-      const result = await updateColumns((current) => {
-        // queue 実行時の最新 state で再検証（先行する add で重複していたら silent skip）
-        if (current.columns.some((c) => c.name === columnName)) {
-          return null;
-        }
-        const maxOrder = current.columns.reduce(
-          (acc, c) => (c.order > acc ? c.order : acc),
-          -1,
-        );
-        return {
-          columns: [
-            ...current.columns,
-            { name: columnName, order: maxOrder + 1 },
-          ],
-        };
-      });
-      if (!result.ok) {
-        const message = projectErrorMessage(result.error);
-        showErrorUnlessNotified(
-          result.error,
-          `カラムの追加に失敗しました: ${message}`,
-        );
-        // AddColumnButton が editor を維持できるよう reject し直す
-        throw new Error(message);
-      }
-      if (!result.value.applied) {
-        // queue 内 silent skip (先行 add で同名カラムが追加済等)
-        // AddColumnButton が editor を維持してユーザに retry させる
-        const message =
-          "カラムの追加が適用されませんでした (他の操作と競合した可能性)";
-        showToast(message, "error");
-        throw new Error(message);
-      }
-      showToast("カラムを追加しました", "success");
-    },
-    [columns, updateColumns, showToast, showErrorUnlessNotified],
-  );
-
-  const handleRenameColumn = useCallback(
-    async (oldName: string, newName: string): Promise<void> => {
-      if (!columns.some((c) => c.name === oldName)) {
-        return;
-      }
-      if (columns.some((c) => c.name === newName)) {
-        showToast("同じ名前のカラムが既に存在します", "error");
-        return;
-      }
-      const result = await updateColumns((current) => {
-        if (!current.columns.some((c) => c.name === oldName)) {
-          return null;
-        }
-        if (current.columns.some((c) => c.name === newName)) {
-          return null;
-        }
-        // doneColumn が rename 対象なら新名に更新する。
-        // 該当しない場合は undefined のままで BE/reducer 側が既存値を保持する。
-        const doneColumn = current.doneColumn === oldName ? newName : undefined;
-        return {
-          columns: current.columns.map((c) =>
-            c.name === oldName ? { ...c, name: newName } : c,
-          ),
-          renames: [{ from: oldName, to: newName }],
-          doneColumn,
-        };
-      });
-      if (!result.ok) {
-        const message = projectErrorMessage(result.error);
-        showErrorUnlessNotified(
-          result.error,
-          `カラム名の変更に失敗しました: ${message}`,
-        );
-        // ColumnHeader が edit mode を維持できるよう reject し直す
-        throw new Error(message);
-      }
-      if (!result.value.applied) {
-        // queue 内 silent skip (rename 対象が消えた / 重複が発生した等)
-        // ColumnHeader が edit mode を維持してユーザに retry させる
-        const message =
-          "カラム名の変更が適用されませんでした (他の操作と競合した可能性)";
-        showToast(message, "error");
-        throw new Error(message);
-      }
-      showToast("カラム名を変更しました", "success");
-    },
-    [columns, updateColumns, showToast, showErrorUnlessNotified],
-  );
-
-  const handleDeleteColumn = useCallback(
-    async (
-      columnName: string,
-      destColumn: string | undefined,
-    ): Promise<void> => {
-      if (!columns.some((c) => c.name === columnName)) {
-        return;
-      }
-      if (columns.length <= 1) {
-        showToast("最後のカラムは削除できません", "error");
-        return;
-      }
-      if (destColumn !== undefined) {
-        if (
-          destColumn === columnName ||
-          !columns.some((c) => c.name === destColumn)
-        ) {
-          showToast("移動先カラムが不正です", "error");
-          return;
-        }
-      } else if (tasks.some((t) => t.status === columnName)) {
-        showToast("タスクが残っているため移動先カラムが必要です", "error");
-        return;
-      }
-      const result = await updateColumns((current) => {
-        if (!current.columns.some((c) => c.name === columnName)) {
-          return null;
-        }
-        if (current.columns.length <= 1) {
-          return null;
-        }
-        if (
-          destColumn !== undefined &&
-          !current.columns.some((c) => c.name === destColumn)
-        ) {
-          return null;
-        }
-        // command queue 実行までに先行 task command で対象カラムへタスクが
-        // 追加される可能性がある。destColumn 未指定で残タスクがあれば silent skip
-        // （呼び出し時点では 0 件だが、queue 実行時に 1 件以上へ増えていたケース）。
-        if (
-          destColumn === undefined &&
-          current.tasks.some((t) => t.status === columnName)
-        ) {
-          return null;
-        }
-        // doneColumn が削除対象の場合、destColumn (タスク移動先) を新 doneColumn に
-        // する。タスク 0 件削除 + destColumn 未指定の場合は残カラムの max-order を採用
-        // (FE 全体で missing doneColumn を max-order column と扱う規約に整合させる)。
-        const remainingColumns = current.columns.filter(
-          (c) => c.name !== columnName,
-        );
-        const maxOrderColumn = remainingColumns.reduce<Column | undefined>(
-          (acc, c) => (acc === undefined || c.order > acc.order ? c : acc),
-          undefined,
-        );
-        let doneColumn: string | undefined;
-        if (current.doneColumn === columnName) {
-          doneColumn = destColumn ?? maxOrderColumn?.name;
-        }
-        return {
-          columns: remainingColumns,
-          renames:
-            destColumn !== undefined
-              ? [{ from: columnName, to: destColumn }]
-              : undefined,
-          doneColumn,
-        };
-      });
-      if (!result.ok) {
-        const message = projectErrorMessage(result.error);
-        showErrorUnlessNotified(
-          result.error,
-          `カラムの削除に失敗しました: ${message}`,
-        );
-        // Column の ConfirmDialog が維持できるよう reject し直す
-        throw new Error(message);
-      }
-      if (!result.value.applied) {
-        // queue 内 silent skip (削除対象が消えた / タスク追加で destColumn 必要等)
-        // ConfirmDialog を維持してユーザに retry させる
-        const message =
-          "カラムの削除が適用されませんでした (他の操作と競合した可能性)";
-        showToast(message, "error");
-        throw new Error(message);
-      }
-      showToast("カラムを削除しました", "success");
-    },
-    [columns, tasks, updateColumns, showToast, showErrorUnlessNotified],
   );
 
   const handleCloseCreateModal = useCallback(() => {
@@ -708,227 +580,6 @@ const AppShell = () => {
   const handleCreateTask = useCallback(
     (values: TaskFormValues) => submitCreateTask(values),
     [submitCreateTask],
-  );
-
-  const handleTaskDrop = useCallback(
-    async (params: MoveTaskParams): Promise<void> => {
-      const targetTitle =
-        tasks.find((t) => t.filePath === params.taskFilePath)?.title ??
-        params.taskFilePath;
-      /**
-       * カラム間 status 変更の楽観 dispatch 直後に呼ばれる callback。
-       * 同一カラム並び替え（fromColumn === toColumn）では LiveRegion を更新しない。
-       *
-       * @param event optimistic 通知 payload
-       */
-      const onOptimisticApplied = (event: {
-        fromColumn: string;
-        toColumn: string;
-      }): void => {
-        if (event.fromColumn !== event.toColumn) {
-          announce(`「${targetTitle}」を「${event.toColumn}」に移動しました`);
-        }
-      };
-      /**
-       * カラム間 updateTask 失敗時の rollback 完了直後に呼ばれる callback。
-       * LiveRegion に「取り消しました」を流す。
-       */
-      const onRollback = (): void => {
-        announce(`「${targetTitle}」の移動を取り消しました`);
-      };
-      const result = await moveTask(params, {
-        onOptimisticApplied,
-        onRollback,
-      });
-      if (!result.ok) {
-        // move_task 失敗（allowlist 由来）は invokeWrapped が通知済み → 抑止。
-        // ガード由来の invalid-state は非 tauri のため、ここで generic を出す。
-        showErrorUnlessNotified(
-          result.error,
-          `タスクの移動に失敗しました: ${projectErrorMessage(result.error)}`,
-        );
-      }
-    },
-    [tasks, moveTask, announce, showErrorUnlessNotified],
-  );
-
-  const handleColumnReorder = useCallback(
-    async (params: {
-      fromColumnName: string;
-      toColumnName: string;
-    }): Promise<void> => {
-      /**
-       * 楽観 dispatch 直後に呼ばれる callback。LiveRegion で「N 番目に移動しました」をアナウンスする。
-       *
-       * @param event optimistic 通知 payload
-       */
-      const onOptimisticApplied = (event: ReorderColumnsEvent): void => {
-        announce(
-          `「${event.columnName}」を ${event.toIndex + 1} 番目に移動しました`,
-        );
-      };
-      /**
-       * rollback 完了直後に呼ばれる callback。LiveRegion に取り消しをアナウンスする。
-       *
-       * @param event rollback 通知 payload
-       */
-      const onRollback = (event: ReorderColumnsEvent): void => {
-        announce(`「${event.columnName}」の移動を取り消しました`);
-      };
-      const result = await reorderColumns(
-        params.fromColumnName,
-        params.toColumnName,
-        { onOptimisticApplied, onRollback },
-      );
-      if (result.ok) {
-        return;
-      }
-      // project switch (invalid-state + PROJECT_SWITCHED_MESSAGE) は reducer が
-      // 既に新 project に切替済みで、楽観 dispatch / rollback も走らないため
-      // toast を出さない（無関係なエラー通知になる）。
-      if (
-        result.error.kind === "invalid-state" &&
-        result.error.message === PROJECT_SWITCHED_MESSAGE
-      ) {
-        return;
-      }
-      // update_columns 失敗（reorderColumnsAction は updateColumns 経由）は invokeWrapped が
-      // 通知済み → 抑止。invalid-state 等の非 tauri はサイレント化を避けるため残す。
-      showErrorUnlessNotified(
-        result.error,
-        `カラムの並び替えに失敗しました: ${projectErrorMessage(result.error)}`,
-      );
-    },
-    [reorderColumns, announce, showErrorUnlessNotified],
-  );
-
-  const handleAddLink = useCallback(
-    async (sourceFilePath: string, targetFilePath: string) => {
-      const source = tasks.find((t) => t.filePath === sourceFilePath);
-      const target = tasks.find((t) => t.filePath === targetFilePath);
-      const sourceTitle = source?.title || sourceFilePath;
-      const targetTitle = target?.title || targetFilePath;
-
-      const result = await addLink({
-        filePath: sourceFilePath,
-        targetFilePath,
-      });
-
-      if (!result.ok) {
-        // project switch 由来の invalid-state は新 project に対する無関係な通知
-        // になるため toast / announce を出さない（move/delete と同方針）。
-        if (
-          result.error.kind === "invalid-state" &&
-          result.error.message === PROJECT_SWITCHED_MESSAGE
-        ) {
-          return result;
-        }
-        const message = projectErrorMessage(result.error);
-        // add_link 失敗は invokeWrapped が通知済み → 抑止。非 tauri は残す。
-        // announce（取消）は通知有無に関わらず常に残す。
-        showErrorUnlessNotified(
-          result.error,
-          `リンクの追加に失敗しました: ${message}`,
-        );
-        announce(
-          `「${sourceTitle}」への「${targetTitle}」のリンク追加を取り消しました`,
-        );
-        return result;
-      }
-
-      announce(`「${sourceTitle}」に「${targetTitle}」をリンクしました`);
-      return result;
-    },
-    [tasks, addLink, announce, showErrorUnlessNotified],
-  );
-
-  const handleRemoveLink = useCallback(
-    async (sourceFilePath: string, targetFilePath: string) => {
-      const source = tasks.find((t) => t.filePath === sourceFilePath);
-      const target = tasks.find((t) => t.filePath === targetFilePath);
-      const sourceTitle = source?.title || sourceFilePath;
-      const targetTitle = target?.title || targetFilePath;
-
-      const result = await removeLink({
-        filePath: sourceFilePath,
-        targetFilePath,
-      });
-
-      if (!result.ok) {
-        if (
-          result.error.kind === "invalid-state" &&
-          result.error.message === PROJECT_SWITCHED_MESSAGE
-        ) {
-          return result;
-        }
-        const message = projectErrorMessage(result.error);
-        // remove_link 失敗は invokeWrapped が通知済み → 抑止。非 tauri は残す。
-        // announce（取消）は通知有無に関わらず常に残す。
-        showErrorUnlessNotified(
-          result.error,
-          `リンクの削除に失敗しました: ${message}`,
-        );
-        announce(
-          `「${sourceTitle}」から「${targetTitle}」へのリンク削除を取り消しました`,
-        );
-        return result;
-      }
-
-      announce(
-        `「${sourceTitle}」から「${targetTitle}」へのリンクを削除しました`,
-      );
-      return result;
-    },
-    [tasks, removeLink, announce, showErrorUnlessNotified],
-  );
-
-  const handleTaskDelete = useCallback(
-    async (id: string, orphanStrategy?: OrphanStrategy): Promise<void> => {
-      const target = tasks.find((t) => t.id === id);
-      if (target === undefined) {
-        return;
-      }
-      const { filePath, title } = target;
-      // 楽観 dispatch で tasks から target が消える前に snapshot を保持する。
-      // pendingDeleteTask が存在する限り DetailScreen は描画を継続できる。
-      setPendingDeleteTask(target);
-
-      const result = await deleteTask({ filePath, orphanStrategy });
-
-      if (!result.ok) {
-        // rollback で tasks に target が戻るので snapshot は不要になる。
-        setPendingDeleteTask(null);
-
-        // project switch 由来の invalid-state は新 project に対する無関係な通知に
-        // なるため toast / announce を出さない (reorderColumns と同方針)。
-        // ただし useDeleteFlow は onDelete の resolve を success とみなすので、
-        // 原因を残した Error を throw して deleting → error 遷移を成立させる
-        // (UI には出ないが、useDeleteFlow.state.reason / ログ追跡で原因を保持する)。
-        // queue 直列化により通常はこの経路に乗らない防御的フォールバック。
-        if (
-          result.error.kind === "invalid-state" &&
-          result.error.message === PROJECT_SWITCHED_MESSAGE
-        ) {
-          throw new Error(PROJECT_SWITCHED_MESSAGE);
-        }
-
-        const message = projectErrorMessage(result.error);
-        // delete_task 失敗は invokeWrapped が通知済み → 抑止。非 tauri は残す。
-        // announce（取消）と throw は通知有無に関わらず常に残す。
-        showErrorUnlessNotified(
-          result.error,
-          `タスクの削除に失敗しました: ${message}`,
-        );
-        announce(`「${title}」の削除を取り消しました`);
-        throw new Error(message);
-      }
-
-      setSelectedTaskId(null);
-      setPendingDeleteTask(null);
-      showToast("タスクを削除しました", "success");
-      announce(`「${title}」を削除しました`);
-    },
-    [tasks, deleteTask, showToast, announce, showErrorUnlessNotified],
   );
 
   /**

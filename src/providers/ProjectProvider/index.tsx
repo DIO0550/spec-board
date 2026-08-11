@@ -75,7 +75,7 @@ export {
   useProjectState,
   useProjectTaskActions,
 } from "./context";
-export { ProjectError } from "./errors";
+export { isProjectSwitchedError, ProjectError } from "./errors";
 export { wasNotifiedByInvokeWrapped } from "./notifiedByInvokeWrapped";
 export { projectErrorMessage } from "./projectErrorMessage";
 export type { ProjectData } from "./reducer";
