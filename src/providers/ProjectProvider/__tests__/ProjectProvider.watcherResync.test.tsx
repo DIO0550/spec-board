@@ -277,6 +277,86 @@ afterEach(() => {
   root = null;
 });
 
+test("open中queue overflowはcommit後にget_tasksを1回だけ要求する", async () => {
+  const handlers = installCaptureListen();
+  let resolveOpen!: (
+    value: Awaited<ReturnType<typeof openProjectInvoke>>,
+  ) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<Awaited<ReturnType<typeof openProjectInvoke>>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await flush();
+
+  Array.from({ length: WATCHER_BUFFER_LIMIT + 1 }).forEach((_, index) => {
+    fire(handlers, "task-created", {
+      task: makeTaskPayload(`tasks/queued-${index}.md`, `Q${index}`),
+    });
+  });
+
+  await act(async () => {
+    resolveOpen(Result.ok(openPayload));
+    await pending;
+  });
+  await flush();
+
+  expect(getTasksMock).toHaveBeenCalledTimes(1);
+});
+
+test("queue overflowのない通常openは追加get_tasksを呼ばない", async () => {
+  installCaptureListen();
+  await mountLoaded();
+  await flush();
+
+  expect(getTasksMock).not.toHaveBeenCalled();
+});
+
+test("open response前のwatcher-resync-requiredはcommit後に再取得する", async () => {
+  const handlers = installCaptureListen();
+  let resolveOpen!: (
+    value: Awaited<ReturnType<typeof openProjectInvoke>>,
+  ) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise<Awaited<ReturnType<typeof openProjectInvoke>>>((resolve) => {
+      resolveOpen = resolve;
+    }),
+  );
+  latest = null;
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(createElement(ProjectProvider, null, createElement(Probe)));
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = latest?.openProjectByPath("/p") ?? Promise.resolve();
+  });
+  await flush();
+
+  fire(handlers, "watcher-resync-required", { reason: "rescan" });
+
+  await act(async () => {
+    resolveOpen(Result.ok(openPayload));
+    await pending;
+  });
+  await flush();
+
+  expect(getTasksMock).toHaveBeenCalledTimes(1);
+});
+
 test("watcher-resync-required は tasks と両 projection を同一 snapshot で反映する", async () => {
   const handlers = installCaptureListen();
   await mountLoaded();

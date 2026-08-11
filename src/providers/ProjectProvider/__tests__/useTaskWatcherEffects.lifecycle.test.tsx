@@ -1,14 +1,15 @@
 import { listen as listenInvoke } from "@tauri-apps/api/event";
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { watcherSessionFixture } from "@/domains/watcher-session/__tests__/fixture";
 import type { ProjectState } from "../state/projectState";
+import { useTaskWatcherEffects } from "../useTaskWatcherEffects";
 import {
-  useTaskWatcherEffects,
+  WatcherGate,
   type WatcherGateRef,
-} from "../useTaskWatcherEffects";
-import { WatcherGate, type WatcherResyncReason } from "../watcherEnvelopeGate";
+  type WatcherResyncReason,
+} from "../watcherEnvelopeGate";
 import { watcherEnvelope } from "./watcherEnvelopeHarness";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -48,7 +49,6 @@ const Harness = (props: {
   dispatch: () => void;
 }) => {
   useTaskWatcherEffects({
-    loadedPath: "/p",
     session,
     gate: props.gate,
     requestResync: props.requestResync,
@@ -166,7 +166,7 @@ test("callback の参照が変わっても resync 中の buffer とカウンタ�
   expect(gate.current.status).toBe("resyncing");
 });
 
-test("callback の参照が変わると購読は張り替えられる", async () => {
+test("callback の参照が変わっても常設購読を張り替えない", async () => {
   const gate: WatcherGateRef = { current: WatcherGate.initial };
   render(gate, {
     requestResync: vi.fn(),
@@ -183,8 +183,35 @@ test("callback の参照が変わると購読は張り替えられる", async ()
   });
   await act(async () => {});
 
+  expect(listenMock).toHaveBeenCalledTimes(5);
   for (const unlisten of firstUnlistens) {
-    expect(unlisten).toHaveBeenCalled();
+    expect(unlisten).not.toHaveBeenCalled();
+  }
+});
+
+test("StrictModeのsetup-cleanup-remountで古い購読だけを解除する", async () => {
+  const gate: WatcherGateRef = { current: WatcherGate.initial };
+  const callbacks = {
+    requestResync: vi.fn(),
+    notifyDiagnostic: vi.fn(),
+    dispatch: vi.fn(),
+  };
+  act(() => {
+    root?.render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(Harness, { gate, ...callbacks }),
+      ),
+    );
+  });
+  await act(async () => {});
+
+  expect(listenMock).toHaveBeenCalledTimes(10);
+  for (const eventUnlistens of Object.values(unlistens)) {
+    expect(eventUnlistens).toHaveLength(2);
+    expect(eventUnlistens[0]).toHaveBeenCalledTimes(1);
+    expect(eventUnlistens[1]).not.toHaveBeenCalled();
   }
 });
 

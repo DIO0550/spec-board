@@ -311,6 +311,90 @@ const openLoaded = async (probe: { latest: ProbeResult }) => {
   });
 };
 
+test("listener readiness完了前はopen_projectを開始しない", async () => {
+  const pendingRegistrations: Array<{
+    readonly resolve: (unlisten: UnlistenFnT) => void;
+  }> = [];
+  listenMock.mockImplementation(
+    () =>
+      new Promise<UnlistenFnT>((resolve) => {
+        pendingRegistrations.push({ resolve });
+      }),
+  );
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  const probe = renderHook();
+  let pending!: Promise<void>;
+
+  act(() => {
+    pending = probe.latest.openProjectByPath("/p");
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(listenMock).toHaveBeenCalledTimes(5);
+  expect(openProjectMock).not.toHaveBeenCalled();
+  expect(probe.latest.state).toEqual({ kind: "idle" });
+
+  await act(async () => {
+    pendingRegistrations.forEach((registration) => {
+      registration.resolve(vi.fn());
+    });
+    await pending;
+  });
+
+  expect(openProjectMock).toHaveBeenCalledWith({ path: "/p" });
+  expect(probe.latest.state.kind).toBe("loaded");
+});
+
+test("listener登録失敗ではopenせず、次のopenで登録を再試行できる", async () => {
+  const registrationError = new Error("listen failed");
+  const successfulUnlistens = Array.from({ length: 4 }, () => vi.fn());
+  listenMock
+    .mockRejectedValueOnce(registrationError)
+    .mockResolvedValueOnce(successfulUnlistens[0] as UnlistenFnT)
+    .mockResolvedValueOnce(successfulUnlistens[1] as UnlistenFnT)
+    .mockResolvedValueOnce(successfulUnlistens[2] as UnlistenFnT)
+    .mockResolvedValueOnce(successfulUnlistens[3] as UnlistenFnT);
+  const onError = vi.fn();
+  const probe = renderHook({ onError });
+  let failedOpen!: Promise<void>;
+
+  act(() => {
+    failedOpen = probe.latest.openProjectByPath("/p");
+  });
+  await act(async () => {
+    await failedOpen;
+  });
+
+  expect(probe.latest.state).toEqual({ kind: "idle" });
+  expect(openProjectMock).not.toHaveBeenCalled();
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onError).toHaveBeenCalledWith({
+    kind: "invalid-state",
+    message:
+      "ファイル監視の準備に失敗しました。プロジェクトをもう一度開いてください",
+  });
+  successfulUnlistens.forEach((unlisten) => {
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  listenMock.mockResolvedValue(vi.fn());
+  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
+  let retryOpen!: Promise<void>;
+  act(() => {
+    retryOpen = probe.latest.openProjectByPath("/p");
+  });
+  await act(async () => {
+    await retryOpen;
+  });
+
+  expect(listenMock).toHaveBeenCalledTimes(10);
+  expect(openProjectMock).toHaveBeenCalledTimes(1);
+  expect(probe.latest.state.kind).toBe("loaded");
+});
+
 // === openProject フロー ===
 
 test("openProject 成功 (idle → loaded)、get_columns 成功時はその columns / doneColumn を採用", async () => {
@@ -1448,16 +1532,17 @@ test("unmount で task-created の unlisten が呼ばれる", async () => {
   expect(unlistenFns[0]).toHaveBeenCalled();
 });
 
-test("mount 直後 (idle) では listen が呼ばれない", async () => {
+test("mount 直後 (idle) から 5 event の listen が登録される", async () => {
   captureListen("task-created");
   renderHook();
   await act(async () => {
     await Promise.resolve();
   });
-  expect(listenMock).not.toHaveBeenCalled();
+  expect(listenMock).toHaveBeenCalledTimes(5);
+  expect(listenMock).toHaveBeenCalledWith("task-created", expect.any(Function));
 });
 
-test("openProject 進行中 (loading) では listen が呼ばれない", async () => {
+test("openProject 進行中 (loading) も 5 event の listen を維持する", async () => {
   captureListen("task-created");
   let resolveDialog!: (r: ResultT<string | null, TauriError>) => void;
   openDirectoryDialogMock.mockReturnValueOnce(
@@ -1473,7 +1558,7 @@ test("openProject 進行中 (loading) では listen が呼ばれない", async (
   await act(async () => {
     await Promise.resolve();
   });
-  expect(listenMock).not.toHaveBeenCalled();
+  expect(listenMock).toHaveBeenCalledTimes(5);
   // teardown
   await act(async () => {
     resolveDialog(Result.ok(null));
@@ -1481,7 +1566,7 @@ test("openProject 進行中 (loading) では listen が呼ばれない", async (
   });
 });
 
-test("openProject 失敗 (error 状態) では listen が呼ばれない", async () => {
+test("openProject 失敗 (error 状態) も 5 event の listen を維持する", async () => {
   captureListen("task-created");
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
   openProjectMock.mockResolvedValueOnce(
@@ -1496,10 +1581,10 @@ test("openProject 失敗 (error 状態) では listen が呼ばれない", async
     await pending;
   });
   expect(probe.latest.state.kind).toBe("error");
-  expect(listenMock).not.toHaveBeenCalled();
+  expect(listenMock).toHaveBeenCalledTimes(5);
 });
 
-test("プロジェクト切替で旧 listen が unlisten され、新 listen が再登録される", async () => {
+test("プロジェクト切替で task-created listener を再登録しない", async () => {
   const { handlers, unlistenFns } = captureListen("task-created");
   const probe = renderHook();
   await openLoaded(probe);
@@ -1525,8 +1610,8 @@ test("プロジェクト切替で旧 listen が unlisten され、新 listen が
     await pending;
   });
 
-  expect(unlistenFns[0]).toHaveBeenCalled();
-  expect(handlers).toHaveLength(2);
+  expect(unlistenFns[0]).not.toHaveBeenCalled();
+  expect(handlers).toHaveLength(1);
 });
 
 test("open-start 直後の race: loading 中に旧 callback が発火しても previousLoaded が変化しない", async () => {
@@ -1615,15 +1700,9 @@ test("task-created の listen Promise pending 中の unmount でも解決後 Unl
     return promiseByEvent[name] ?? Promise.resolve(vi.fn());
   }) as typeof listenInvoke);
 
-  const probe = renderHook();
-  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
-  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
-  let pending!: Promise<void>;
-  act(() => {
-    pending = probe.latest.openProject();
-  });
+  renderHook();
   await act(async () => {
-    await pending;
+    await Promise.resolve();
   });
   // task-created の listen は呼ばれたが Promise はまだ pending
   expect(listenMock).toHaveBeenCalledWith("task-created", expect.any(Function));
@@ -1705,7 +1784,7 @@ test("unmount で task-updated の unlisten が呼ばれる", async () => {
   expect(unlistenFns[0]).toHaveBeenCalled();
 });
 
-test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登録される", async () => {
+test("プロジェクト切替で task-updated listener を再登録しない", async () => {
   const { handlers, unlistenFns } = captureListen("task-updated");
   const probe = renderHook();
   await openLoaded(probe);
@@ -1731,16 +1810,16 @@ test("プロジェクト切替で旧 task-updated unlisten + 新 listen が登�
     await pending;
   });
 
-  expect(unlistenFns[0]).toHaveBeenCalled();
-  expect(handlers).toHaveLength(2);
+  expect(unlistenFns[0]).not.toHaveBeenCalled();
+  expect(handlers).toHaveLength(1);
 });
 
-type ListenAbsenceCase = {
+type ListenerLifecycleCase = {
   kind: "idle" | "loading" | "error";
   setup: (probe: { latest: ProbeResult }) => Promise<() => Promise<void>>;
 };
 
-const listenAbsenceCases: ListenAbsenceCase[] = [
+const listenerLifecycleCases: ListenerLifecycleCase[] = [
   {
     kind: "idle",
     setup: async () => {
@@ -1794,15 +1873,12 @@ const listenAbsenceCases: ListenAbsenceCase[] = [
 ];
 
 test.each(
-  listenAbsenceCases,
-)("$kind 状態では task-updated の listen が呼ばれない", async ({ setup }) => {
+  listenerLifecycleCases,
+)("$kind 状態でも task-updated の listen が登録済み", async ({ setup }) => {
   captureListen("task-updated");
   const probe = renderHook({ onError: () => {} });
   const teardown = await setup(probe);
-  expect(listenMock).not.toHaveBeenCalledWith(
-    "task-updated",
-    expect.any(Function),
-  );
+  expect(listenMock).toHaveBeenCalledWith("task-updated", expect.any(Function));
   await teardown();
 });
 
@@ -1871,15 +1947,9 @@ test("task-updated の listen Promise pending 中の unmount でも解決後 Unl
     return promiseByEvent[name] ?? Promise.resolve(vi.fn());
   }) as typeof listenInvoke);
 
-  const probe = renderHook();
-  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
-  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
-  let pending!: Promise<void>;
-  act(() => {
-    pending = probe.latest.openProject();
-  });
+  renderHook();
   await act(async () => {
-    await pending;
+    await Promise.resolve();
   });
   expect(listenMock).toHaveBeenCalledWith("task-updated", expect.any(Function));
 
@@ -1957,7 +2027,7 @@ test("unmount で task-deleted の unlisten が呼ばれる", async () => {
   expect(unlistenFns[0]).toHaveBeenCalled();
 });
 
-test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登録される", async () => {
+test("プロジェクト切替で task-deleted listener を再登録しない", async () => {
   const { handlers, unlistenFns } = captureListen<{ filePath: string }>(
     "task-deleted",
   );
@@ -1985,20 +2055,17 @@ test("プロジェクト切替で旧 task-deleted unlisten + 新 listen が登�
     await pending;
   });
 
-  expect(unlistenFns[0]).toHaveBeenCalled();
-  expect(handlers).toHaveLength(2);
+  expect(unlistenFns[0]).not.toHaveBeenCalled();
+  expect(handlers).toHaveLength(1);
 });
 
 test.each(
-  listenAbsenceCases,
-)("$kind 状態では task-deleted の listen が呼ばれない", async ({ setup }) => {
+  listenerLifecycleCases,
+)("$kind 状態でも task-deleted の listen が登録済み", async ({ setup }) => {
   captureListen<{ filePath: string }>("task-deleted");
   const probe = renderHook({ onError: () => {} });
   const teardown = await setup(probe);
-  expect(listenMock).not.toHaveBeenCalledWith(
-    "task-deleted",
-    expect.any(Function),
-  );
+  expect(listenMock).toHaveBeenCalledWith("task-deleted", expect.any(Function));
   await teardown();
 });
 
@@ -2067,15 +2134,9 @@ test("task-deleted の listen Promise pending 中の unmount でも解決後 Unl
     return promiseByEvent[name] ?? Promise.resolve(vi.fn());
   }) as typeof listenInvoke);
 
-  const probe = renderHook();
-  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
-  openProjectMock.mockResolvedValueOnce(Result.ok(payload));
-  let pending!: Promise<void>;
-  act(() => {
-    pending = probe.latest.openProject();
-  });
+  renderHook();
   await act(async () => {
-    await pending;
+    await Promise.resolve();
   });
   expect(listenMock).toHaveBeenCalledWith("task-deleted", expect.any(Function));
 

@@ -2151,9 +2151,17 @@ fn open_project_impl_returns_the_same_tasks_as_the_shared_rebuild_pipeline() {
 
 // ───────── watcher session（cache install と同一トランザクション） ─────────
 
+#[derive(Debug)]
+struct ActivationObservation {
+    identity: SessionIdentity,
+    generation: ProjectGeneration,
+    event_seq: EventSeq,
+    revision: TasksRevision,
+}
+
 /// activation 後に 1 件の mutation を模す factory。
 struct EmittingOnActivationFactory {
-    completed: mpsc::Sender<()>,
+    completed: mpsc::Sender<ActivationObservation>,
 }
 
 impl WatcherFactory for EmittingOnActivationFactory {
@@ -2182,7 +2190,22 @@ impl WatcherFactory for EmittingOnActivationFactory {
                         );
                     })
                     .expect("writable");
-                completed.send(()).expect("signal activation mutation");
+                let current_identity = state
+                    .require_session_snapshot()
+                    .expect("current session snapshot")
+                    .identity();
+                let event_seq = state
+                    .next_event_seq_if_current(&current_identity)
+                    .expect("event sequence lock")
+                    .expect("post-mutation identity is current");
+                completed
+                    .send(ActivationObservation {
+                        identity: current_identity,
+                        generation: state.test_project_generation(),
+                        event_seq,
+                        revision: state.test_tasks_revision(),
+                    })
+                    .expect("signal activation mutation");
             },
             || {},
         )
@@ -2322,6 +2345,37 @@ fn post_activation_mutation_cannot_desynchronize_committed_payload() {
     assert_eq!(milestone.task_file_paths.len(), 1);
     assert_eq!(milestone.task_file_paths[0].as_str(), "tasks/a.md");
     assert!(payload.session.revision < state.test_tasks_revision());
+}
+
+#[test]
+fn first_post_activation_event_follows_the_open_payload_baseline() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    let (completed_tx, completed_rx) = mpsc::channel();
+    let factory = EmittingOnActivationFactory {
+        completed: completed_tx,
+    };
+
+    let payload = open_with(
+        Arc::clone(&state),
+        dir.path().to_str().expect("utf-8"),
+        &factory,
+    )
+    .expect("open ok");
+    let observed = completed_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("activation event");
+
+    assert_eq!(
+        payload.session.project_key.as_str(),
+        observed.identity.project_root().to_string().as_str()
+    );
+    assert_eq!(payload.session.generation, observed.generation);
+    assert_eq!(
+        payload.session.event_seq.as_u64() + 1,
+        observed.event_seq.as_u64()
+    );
+    assert!(payload.session.revision < observed.revision);
 }
 
 #[test]
