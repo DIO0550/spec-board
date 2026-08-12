@@ -101,3 +101,22 @@ test("アクティブ tab と tabpanel が aria 属性で相互参照される",
   // panel.aria-labelledby === tab.id
   expect(panel?.getAttribute("aria-labelledby")).toBe(tab?.getAttribute("id"));
 });
+
+test("ステータスと設定ファイルへ内部タブで到達できる", async () => {
+  await mountSettingsScreen();
+  const statusTab = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  ).find((tab) => tab.textContent?.includes("ステータス"));
+  await act(async () => statusTab?.click());
+  expect(container?.querySelector('[role="tabpanel"]')?.textContent).toContain(
+    "カラム定義",
+  );
+
+  const configTab = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  ).find((tab) => tab.textContent?.includes("設定ファイル"));
+  await act(async () => configTab?.click());
+  expect(container?.querySelector('[role="tabpanel"]')?.textContent).toContain(
+    "読み取り専用",
+  );
+});
