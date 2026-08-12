@@ -66,7 +66,9 @@ const rowPaddings = (): string[] =>
   );
 
 const titleButtons = (): HTMLButtonElement[] =>
-  Array.from(container?.querySelectorAll("button:not([aria-expanded])") ?? []);
+  Array.from(
+    container?.querySelectorAll("li button:not([aria-expanded])") ?? [],
+  );
 
 const toggleButtons = (): HTMLButtonElement[] =>
   Array.from(container?.querySelectorAll("button[aria-expanded]") ?? []);

@@ -111,6 +111,14 @@ const queryCard = (): HTMLElement => {
   return el as HTMLElement;
 };
 
+test("active=true は選択中カードをdata属性とaccent ringで示す", () => {
+  renderRoot({ active: true });
+
+  const card = queryCard();
+  expect(card.getAttribute("data-active")).toBe("true");
+  expect(card.className).toContain("ring-accent");
+});
+
 test("Context Value は依存不変なら同一参照（useMemo）", () => {
   const refs: (TaskCardContextValue | null)[] = [];
   const Probe = () => {

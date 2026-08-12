@@ -3,14 +3,14 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ColumnReorderHandler } from "@/features/board/components/BoardColumnProvider";
 import {
+  type UseColumnReorderOptions,
+  useColumnReorder,
+} from "@/features/board/hooks/useColumnReorder";
+import {
   PROJECT_SWITCHED_MESSAGE,
   ProjectError,
 } from "@/providers/ProjectProvider";
 import { Result } from "@/utils/result";
-import {
-  type UseColumnReorderOptions,
-  useColumnReorder,
-} from "@/features/board/hooks/useColumnReorder";
 
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;

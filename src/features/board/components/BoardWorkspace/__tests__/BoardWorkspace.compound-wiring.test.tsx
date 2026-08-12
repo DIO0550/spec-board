@@ -179,3 +179,23 @@ test("`+ 追加` クリックで onAddTask が該当 columnName で呼ばれる"
   expect(onAddTask).toHaveBeenCalledTimes(1);
   expect(onAddTask).toHaveBeenCalledWith("Todo");
 });
+
+test("5番目のロードマップタブからEpicロードマップへ到達できる", async () => {
+  renderWorkspace({
+    columns: [{ name: "Todo", order: 0 }],
+    tasks: [makeTask({ title: "Epic A" })],
+  });
+  let roadmapTab: HTMLButtonElement | null = null;
+  await vi.waitFor(() => {
+    roadmapTab =
+      container?.querySelector<HTMLButtonElement>(
+        "[role='tab'][aria-controls='board-view-panel-roadmap']",
+      ) ?? null;
+    expect(roadmapTab).not.toBeNull();
+  });
+  act(() => roadmapTab?.click());
+  await vi.waitFor(() => {
+    expect(container?.querySelector("[data-roadmap]")).not.toBeNull();
+  });
+  expect(localStorage.getItem("spec-board:viewMode")).toBe("roadmap");
+});
