@@ -5,6 +5,7 @@ type CodeViewerProps = {
   onCopy?: () => void;
   onRegenerate?: () => void;
   onOpenExternal?: () => void;
+  isRegenerating?: boolean;
 };
 
 /** @param props - 選択ファイルとaction callbacks @returns 行番号付きread-only viewer */
@@ -13,6 +14,7 @@ export const CodeViewer = ({
   onCopy,
   onRegenerate,
   onOpenExternal,
+  isRegenerating = false,
 }: CodeViewerProps) => {
   const lines = file.content.split("\n");
   const renderedLines = lines.map((line, lineIndex) => ({
@@ -43,9 +45,10 @@ export const CodeViewer = ({
             <button
               type="button"
               onClick={onRegenerate}
+              disabled={isRegenerating}
               className="h-7 rounded-md border border-border px-2.5 text-xs"
             >
-              再生成
+              {isRegenerating ? "再生成中…" : "再生成"}
             </button>
           )}
           <button

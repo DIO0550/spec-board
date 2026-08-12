@@ -46,9 +46,12 @@ const DEFAULT_FILES: readonly ConfigFileDefinition[] = [
   },
 ];
 
-type ConfigFileTabProps = {
+export type ConfigFileTabProps = {
   files?: readonly ConfigFileDefinition[];
   initialFile?: ConfigFileId;
+  status?: "loading" | "ready" | "error";
+  error?: string;
+  isRegenerating?: boolean;
   toast?: string;
   onCopy?: (id: ConfigFileId) => void;
   onRegenerate?: () => void;
@@ -60,6 +63,9 @@ type ConfigFileTabProps = {
 export const ConfigFileTab = ({
   files = DEFAULT_FILES,
   initialFile = "config",
+  status = "ready",
+  error,
+  isRegenerating = false,
   toast,
   onCopy,
   onRegenerate,
@@ -67,6 +73,23 @@ export const ConfigFileTab = ({
   onRevealFolder,
 }: ConfigFileTabProps) => {
   const [selectedId, setSelectedId] = useState<ConfigFileId>(initialFile);
+  if (status === "loading") {
+    return (
+      <p role="status" className="text-sm text-muted">
+        設定ファイルを読み込んでいます…
+      </p>
+    );
+  }
+  if (status === "error") {
+    return (
+      <p
+        role="alert"
+        className="rounded-md border border-danger bg-danger-soft p-4 text-sm text-danger"
+      >
+        設定ファイルを読み込めませんでした: {error ?? "不明なエラー"}
+      </p>
+    );
+  }
   const selected = files.find((file) => file.id === selectedId) ?? files[0];
   if (selected === undefined) {
     return <p className="text-sm text-muted">設定ファイルがありません</p>;
@@ -121,6 +144,7 @@ export const ConfigFileTab = ({
           onCopy={() => onCopy?.(selected.id)}
           onRegenerate={onRegenerate}
           onOpenExternal={() => onOpenExternal?.(selected.id)}
+          isRegenerating={isRegenerating}
         />
       </div>
       {toast !== undefined && (
@@ -129,6 +153,14 @@ export const ConfigFileTab = ({
           className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-3.5 py-2 text-xs text-background"
         >
           {toast}
+        </div>
+      )}
+      {error !== undefined && (
+        <div
+          role="alert"
+          className="rounded-md border border-danger bg-danger-soft px-3 py-2 text-xs text-danger"
+        >
+          {error}
         </div>
       )}
     </section>
