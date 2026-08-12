@@ -179,7 +179,9 @@ type Story = StoryObj<typeof LabelSettingsTab>;
 
 export const Default: Story = {};
 
-export const AllProps: Story = { args: { resource: loadedResource } };
+export const AllProps: Story = {
+  args: { resource: loadedResource, sourceSyncLabel: "たった今同期" },
+};
 
 export const EdgeCases: Story = { args: { resource: emptyResource } };
 
