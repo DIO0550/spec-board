@@ -220,6 +220,7 @@ type GetLabelsPayload = {
 - **テーブル**: 列は「ラベルチップ / 説明 / 使用数 / グループ badge / 更新 / 行アクション」。`updated` 未設定は「新規」を表示。相対時刻は「たった今 / N 分前 / N 時間前 / 昨日 / N 日前 / N週間前 / Nヶ月前 / YYYY/MM/DD」。
 - **使用数リンク**: テーブルの使用数セルは `count > 0` のときリンク（ボタン）として描画し、クリックすると board へ遷移して当該ラベルでフィルタを適用する。`count = 0` は「0 件」のプレーンテキスト（クリック不可）。
 - **使用数 live 上書き**: settings 画面に渡す `usageCounts` は、プロジェクトが loaded のときだけ FE 側で live なタスク集合から算出した値（`LabelRegistry.labelUsageCounts(tasks)`）で上書きする。loaded 未到達の間は BE 由来の `get_labels.usageCounts` をフォールバックとして維持する（瞬間的な「0 件 / 未使用」誤表示を防ぐ）。
+- **保存先 strip の同期表示**: 実リソース由来の同期ラベルが提供された場合だけ表示する。取得時刻を保持しない現在の `LabelsResource` では同期 badge を表示せず、固定の相対時刻を表示してはならない。
 - **統計ヘッダー / フッター集計**: 上部に「N 件 / M 使用中 / K 未使用」、フッターに「表示中件数 / 総数」と使用中ラベルのカラー集計（`color` 指定優先・無ければ group キー）を表示する。
 - **エクスポート**: 「⬇ エクスポート」ボタンで `@tauri-apps/plugin-dialog` の `save()` を呼び、ユーザーが選んだパスへ `export_labels` コマンドが `labels.yml` を書き出す。BE は既存 store と同じ `serde_yaml_ng::to_string` 経路で直列化するため、ディスクの labels.yml と同じ camelCase / `skip_serializing_if` 規則が適用される。ダイアログのキャンセルは no-op。空 path（`""`）は BE が `EmptyPath` で拒否し、`save()` 例外 / BE write 失敗は共通トースト経路で通知する。
 
