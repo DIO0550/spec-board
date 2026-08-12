@@ -18,3 +18,6 @@ export default meta;
 type Story = StoryObj<typeof TaskFormParent>;
 
 export const Default: Story = {};
+
+export const AllProps: Story = {};
+export const EdgeCases: Story = { args: { tasks: [], value: undefined } };

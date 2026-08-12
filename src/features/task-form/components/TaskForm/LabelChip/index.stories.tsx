@@ -20,3 +20,8 @@ export const Default: Story = {};
 export const Disabled: Story = {
   args: { disabled: true },
 };
+
+export const AllProps: Story = { ...Disabled };
+export const EdgeCases: Story = {
+  args: { label: "非常に長いラベル名".repeat(8) },
+};
