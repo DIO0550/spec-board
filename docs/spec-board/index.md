@@ -26,6 +26,8 @@ spec-board は、mdファイルという開発者にもAIエージェントに�
 - ファイルシステム監視による外部変更（AIエージェント等）のリアルタイム反映
 - 画面区分（ボード / 設定）の切り替えと、設定画面内のサブナビ（タブ）基盤
 - 設定画面でのラベルレジストリ（登録済みラベル）の CRUD 管理（作成・編集・削除・validation）
+- ボード / リスト / ツリー / カレンダー / Epic ロードマップの表示形態切替
+- 設定画面内のステータス編集・設定ファイル viewer（現段階は App 永続化 adapter 未接続の presentational UI）
 
 **対象外**:
 - GitHub Issue / PR との連携
@@ -96,7 +98,8 @@ flowchart TD
 | ProjectLoadWarning | open_project / get_tasks が返す、部分的な読み込み失敗を code / stage / path / message / recoverable で表す warning。fatal error とは区別し、loaded board の注意パネルと要約 toast に表示する |
 | ProjectSession | 現在開いている 1 project の root / SessionId / session-local Revision / config / registries / tasks を単一 snapshot として扱うバックエンド aggregate。watcher handle と write-ignore は session version で紐づく別 resource として保持する |
 | IDEシェル | ヘッダー下を「左サイドバー｜メイン」に分割した IDE 風の画面構成。サイドバー（プロジェクトスイッチャー / ファイルツリー）・ビュー切替サブバー・横断フィルタ・外観切替から成る |
-| ビュー（表示形態） | ボード領域の表示形態。ボード / リスト / ツリー / カレンダーをサブバーで切り替える |
+| ビュー（表示形態） | ボード領域の表示形態。ボード / リスト / ツリー / カレンダー / Epic ロードマップをサブバーで切り替える。選択はクライアントローカルに永続化する |
+| Epic ロードマップ | 親を持たない task を Epic として直下 child と期間 timeline に表示するボード表示形態。マイルストーン専用ビュー内の roadmap とは別機能 |
 | 外観 | テーマ（ライト / ダーク / システム）・表示密度・アクセントカラーのクライアントローカル設定。`localStorage` に永続化する |
 
 ## 変更履歴
@@ -110,3 +113,4 @@ flowchart TD
 | 1.4 | 2026-07-31 | Issue #453: backend の ProjectSession aggregate / writer gate / revision CAS / staged watcher swap を仕様化。multi-project cache (#189)、wire redesign (#465)、OwnWriteGuard (#468)、path canonicalization は対象外 | - |
 | 1.5 | 2026-08-01 | Issue #458: ProjectLoadWarning、partial success、読み込み注意パネルとwarnings通知を追加 | - |
 | 1.6 | 2026-08-01 | Issue #455/#402: TaskDocument codec、TaskPatch、preview_task_markdown の共通 renderer と full Markdown preview を追加 | - |
+| 1.7 | 2026-08-11 | Epic Roadmap view mode、Settings Status / Config 内部タブ、List / Tree / Calendar の拡張挙動を仕様一覧へ反映 | - |

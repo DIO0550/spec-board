@@ -91,13 +91,17 @@
 
 ## 作成モーダル（`MilestoneCreateModal`）
 
-入力フィールド（4 つ）:
+入力フィールド（6 つ）:
 | フィールド | 必須 | 正規化 |
 |:--|:--|:--|
 | 名前 (name) | ◯ | 送信値は無加工（config-spec の unnormalized 完全一致キー仕様に従う）。`form.name.trim()` が空のときのみ送信不可（バリデーションは trim 後判定だが送信値はトリムしない） |
 | 表示名 (title) | - | 前後空白トリム、空文字は undefined |
 | 期日 (due) | - | HTML `<input type="date">`。空文字は undefined |
+| ラベル (labels) | - | カンマ区切りを trim し、空要素を除外して optional `onLabelsChange` へ通知（`CreateMilestoneArgs` には含めない） |
+| 担当者 (assignee) | - | optional `onAssigneeChange` へ選択値を通知（`CreateMilestoneArgs` には含めない） |
 | 説明 (description) | - | 前後空白トリム、空文字は undefined |
+
+名前欄の下には入力値を小文字 kebab-case にした `milestones.yml → {slug}` preview を追従表示する。preview は保存キーの正規化ではなく、送信する `name` は従来どおり無加工とする。ラベル候補・担当者候補および変更 callback はすべて optional で、既存呼び出しとの後方互換を維持する。
 
 閉じる動線: 閉じる × ボタン / キャンセル / overlay クリック / Escape キー。
 

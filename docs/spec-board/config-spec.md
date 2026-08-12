@@ -239,6 +239,14 @@ type GetLabelsPayload = {
 - 親ディレクトリ不存在・書込権限なし等は `std::fs::write` の失敗として OS のエラー文字列を透過する。
 - write は project 外への単発書込のため resident mutation は行わないが、labels は `session_snapshot()` を 1 回取得して coherent に直列化する。保存先への `std::fs::write` は snapshot lock 解放後に実行する。
 
+### ステータス / 設定ファイルタブの FE 統合境界
+
+設定画面には `StatusSettingsTab` と `ConfigFileTab` の内部到達経路を持つ。
+
+- `StatusSettingsTab` はカラム順序、名称、完了カラム、空カラムの追加 / 削除をローカル state で編集し、保存対象を `{ columns, doneColumn }` として `onSave` に渡す。`update_columns` への変換、保存中 state、成功後の resident snapshot 再取得、失敗時 rollback は App 側 adapter の責務である。`SettingsScreen` から callback が未注入の段階では永続化を行わない。
+- `ConfigFileTab` は `config.json` / `GUIDE.md` の読み取り専用表示と copy / regenerate / external editor / reveal folder の callback 境界を持つ。現段階の `SettingsScreen` は canonical example を表示し、実ディスク読込や OS / IPC action を行わない。`GUIDE.md` の正式な生成・更新条件は本仕様「AIエージェント向けガイド（GUIDE.md）」節を引き続き source of truth とする。
+- したがって、これら 2 タブの表示が存在すること自体は `config.json` / `GUIDE.md` の永続化契約を変更しない。接続前の UI 操作を成功した書込みとして扱ってはならない。
+
 ## milestones.yml スキーマ
 
 タスク frontmatter の `milestone`（単数の自由文字列・参照キー）に対し、表示名・期日・並び順・状態などのメタ情報を一元管理する「マイルストーンマスタ定義ファイル」を `.spec-board/milestones.yml` に置く。`config.json` とは別ファイルで管理し、トップレベルの `milestones:` キー配下に定義の配列を並べる。labels.yml と同じハイブリッド構成（frontmatter 自由文字列 + yml マスタ・非破壊・暗黙許容）を踏襲する。
@@ -685,6 +693,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.5 | 2026-08-11 | Settings Status / Config 内部タブの presentational callback 境界と、未接続時に永続化しない契約を追記 | - |
 | 1.4 | 2026-08-09 | Issue #457: 既存 config への未知 status 追加（reconcile）節、GUIDE.md 更新タイミングの再整理、読み込み失敗時に GUIDE.md を書き換えない契約を追加 | - |
 | 1.3 | 2026-08-01 | Issue #458: config failure の `Config::default()` 継続、`configFallback` `loadWarnings`、registry / root fatal 境界を追加 | - |
 | 1.2 | 2026-07-31 | Issue #453: config/registry writer の project-scoped gate、session revision CAS、revision preflight、disk 後 conflict resync 契約を追加 | - |
