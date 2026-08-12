@@ -20,6 +20,10 @@ type HeaderBarProps = {
   onMilestoneClick?: () => void;
   /** 新規タスク作成ハンドラ。 */
   onNewTaskClick?: () => void;
+  /** GUIDE.mdを開くハンドラ。未指定時は導線を表示しない。 */
+  onGuideClick?: () => void;
+  /** Global Search / Command Paletteを開く。 */
+  onSearchClick?: () => void;
   /** ディレクトリ選択ハンドラ。 */
   onOpenClick: () => void;
 };
@@ -52,6 +56,8 @@ export const HeaderBar = ({
   onSettingsClick,
   onMilestoneClick,
   onNewTaskClick,
+  onGuideClick,
+  onSearchClick,
   onOpenClick,
 }: HeaderBarProps) => {
   const settingsLabel = view === "settings" ? "ボードへ戻る" : "設定";
@@ -105,6 +111,21 @@ export const HeaderBar = ({
           </span>
         )}
         <ThemeToggleButton />
+        {onSearchClick && (
+          <button
+            type="button"
+            aria-label="グローバル検索を開く"
+            onClick={onSearchClick}
+            className="spec-button"
+          >
+            検索 <kbd className="font-mono text-[10px]">⌘K</kbd>
+          </button>
+        )}
+        {onGuideClick && (
+          <button type="button" onClick={onGuideClick} className="spec-button">
+            GUIDE.md
+          </button>
+        )}
         {onMilestoneClick && (
           <button
             type="button"
