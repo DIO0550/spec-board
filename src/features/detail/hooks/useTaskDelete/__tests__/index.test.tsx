@@ -1,6 +1,11 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
+import {
+  type TaskDeleteCallback,
+  type UseTaskDeleteOptions,
+  useTaskDelete,
+} from "@/features/detail/hooks/useTaskDelete";
 import type { OrphanStrategy } from "@/lib/tauri";
 import {
   PROJECT_SWITCHED_MESSAGE,
@@ -8,11 +13,6 @@ import {
 } from "@/providers/ProjectProvider";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
-import {
-  type TaskDeleteCallback,
-  type UseTaskDeleteOptions,
-  useTaskDelete,
-} from "@/features/detail/hooks/useTaskDelete";
 
 const globalWithAct = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;

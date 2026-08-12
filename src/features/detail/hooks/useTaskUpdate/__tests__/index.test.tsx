@@ -1,14 +1,14 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { ProjectError } from "@/providers/ProjectProvider";
-import { Task } from "@/types/task";
-import { Result } from "@/utils/result";
+import type { TaskUpdateHandler } from "@/features/detail/hooks/useDetailFieldHandlers";
 import {
   type UseTaskUpdateOptions,
   useTaskUpdate,
 } from "@/features/detail/hooks/useTaskUpdate";
-import type { TaskUpdateHandler } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { ProjectError } from "@/providers/ProjectProvider";
+import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 
 const task = Task.fromPayload({
   id: "task-1",

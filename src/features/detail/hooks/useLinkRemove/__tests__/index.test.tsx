@@ -2,16 +2,16 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import {
+  type LinkRemoveCallback,
+  type UseLinkRemoveOptions,
+  useLinkRemove,
+} from "@/features/detail/hooks/useLinkRemove";
+import {
   PROJECT_SWITCHED_MESSAGE,
   ProjectError,
 } from "@/providers/ProjectProvider";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
-import {
-  type LinkRemoveCallback,
-  type UseLinkRemoveOptions,
-  useLinkRemove,
-} from "@/features/detail/hooks/useLinkRemove";
 
 const source = Task.fromPayload({
   id: "a",
@@ -73,7 +73,7 @@ test("link remove成功のResultを透過してannounceする", async () => {
       }),
     ),
   );
-  let actual;
+  let actual: Awaited<ReturnType<LinkRemoveCallback>> | undefined;
   await act(async () => {
     actual = await (latest as unknown as LinkRemoveCallback)(
       source.filePath,

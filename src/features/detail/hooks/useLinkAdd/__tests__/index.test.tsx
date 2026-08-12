@@ -2,16 +2,16 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import {
+  type LinkAddCallback,
+  type UseLinkAddOptions,
+  useLinkAdd,
+} from "@/features/detail/hooks/useLinkAdd";
+import {
   PROJECT_SWITCHED_MESSAGE,
   ProjectError,
 } from "@/providers/ProjectProvider";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
-import {
-  type LinkAddCallback,
-  type UseLinkAddOptions,
-  useLinkAdd,
-} from "@/features/detail/hooks/useLinkAdd";
 
 const source = Task.fromPayload({
   id: "a",
@@ -77,7 +77,7 @@ test("link add成功のResultを透過してannounceする", async () => {
     announce,
     onError: vi.fn(),
   });
-  let actual;
+  let actual: Awaited<ReturnType<LinkAddCallback>> | undefined;
   await act(async () => {
     actual = await callback(source.filePath, target.filePath);
   });
