@@ -14,7 +14,7 @@ export const LabelTag = ({ label }: LabelTagProps) => {
   return (
     <span
       data-testid="label-tag"
-      className="inline-flex items-center rounded border px-1.5 py-0.5 text-xs"
+      className="inline-flex items-center rounded-full border px-[7px] py-px text-[10.5px] font-medium leading-[1.5]"
       style={{ color: fg, backgroundColor: bg, borderColor: bd }}
     >
       {label}

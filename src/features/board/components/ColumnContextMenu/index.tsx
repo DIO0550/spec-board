@@ -118,7 +118,7 @@ export const ColumnContextMenu = ({
         role="menu"
         aria-label="カラム操作"
         style={{ top: pos.y, left: pos.x }}
-        className="fixed z-50 min-w-32 rounded-md border border-border bg-surface py-1 shadow-lg"
+        className="fixed z-50 min-w-48 rounded-[10px] border border-border bg-surface p-1 shadow-lg"
         data-testid="column-context-menu"
         onKeyDown={handleMenuKeyDown}
       >
@@ -130,7 +130,7 @@ export const ColumnContextMenu = ({
             onDelete();
             onClose();
           }}
-          className="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-muted disabled:hover:bg-transparent"
+          className="w-full rounded-md px-2.5 py-2 text-left text-xs font-medium text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:text-muted disabled:hover:bg-transparent"
           data-testid="column-context-menu-delete"
         >
           削除

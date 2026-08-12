@@ -9,13 +9,13 @@ export const TaskCardFooter = () => {
   const linkCount = task.links.linkedFilePaths.length;
   const { done, total } = subIssueCounts;
   return (
-    <footer className="mt-2 flex items-center gap-2 text-xs text-muted">
-      <span className="min-w-0 truncate" data-testid="task-card-id">
+    <footer className="mt-2.5 flex items-center gap-2 border-t border-border pt-2 font-mono text-[10.5px] leading-none text-muted">
+      <span className="min-w-0 flex-1 truncate" data-testid="task-card-id">
         {task.id}
       </span>
       {linkCount > 0 && (
         <span className="shrink-0" data-testid="task-card-link-count">
-          🔗 {linkCount}
+          ↗ {linkCount}
         </span>
       )}
       {total > 0 && (

@@ -16,7 +16,7 @@ export const DraftBadge = ({ draft }: DraftBadgeProps) => {
   return (
     <span
       data-testid="draft-badge"
-      className="inline-flex items-center rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600"
+      className="inline-flex shrink-0 items-center rounded-full border border-border bg-surface-muted px-1.5 py-0.5 text-[10.5px] font-medium leading-none text-muted"
     >
       下書き
     </span>

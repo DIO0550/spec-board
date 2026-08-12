@@ -1,11 +1,11 @@
 import { useCallback } from "react";
-import type { Column } from "@/types/column";
-import type { UseToastsResult } from "@/types/toast";
 import {
   type ProjectColumnActionsContextValue,
   type ProjectError,
   projectErrorMessage,
 } from "@/providers/ProjectProvider";
+import type { Column } from "@/types/column";
+import type { UseToastsResult } from "@/types/toast";
 
 export type ColumnAddCallback = (columnName: string) => Promise<void>;
 

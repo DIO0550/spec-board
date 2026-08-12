@@ -14,15 +14,18 @@ export const TaskCardHeader = () => {
   const { task, hasBrokenLink, hasParseError } = useTaskCardContext();
   const displayTitle = task.title || task.filePath;
   return (
-    <div className="flex items-center gap-1.5">
-      <DraftBadge draft={task.draft} />
+    <div className="flex items-start gap-2">
       <PriorityBadge priority={task.priority} />
-      <DueBadge due={task.due} />
-      <p data-testid="task-card-title" className="text-sm text-foreground">
+      <p
+        data-testid="task-card-title"
+        className="min-w-0 flex-1 break-words text-[13px] font-medium leading-[1.4] text-foreground"
+      >
         {displayTitle}
       </p>
+      <DraftBadge draft={task.draft} />
+      <DueBadge due={task.due} />
       {(hasBrokenLink || hasParseError) && (
-        <span className="ml-auto flex shrink-0 gap-1">
+        <span className="flex shrink-0 gap-1 pt-0.5">
           {hasBrokenLink && <WarningIcon size={14} />}
           {hasParseError && <ParseErrorIcon size={14} />}
         </span>

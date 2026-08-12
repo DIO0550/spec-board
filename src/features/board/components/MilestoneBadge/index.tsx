@@ -20,7 +20,7 @@ export const MilestoneBadge = ({ name, definition }: MilestoneBadgeProps) => {
   return (
     <span
       data-testid="milestone-badge"
-      className="inline-flex items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700"
+      className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-indigo-50 px-[7px] py-px text-[10.5px] font-medium leading-[1.5] text-indigo-700"
     >
       <span className="milestone-badge__label">{label}</span>
       {due !== undefined ? (

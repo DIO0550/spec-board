@@ -21,8 +21,10 @@ type BoardProps = {
  * @returns ボード要素
  */
 const BoardRoot = ({ children }: BoardProps) => (
-  <div className="flex h-full flex-col">
-    <div className="flex flex-1 gap-4 overflow-x-auto p-4">{children}</div>
+  <div className="flex h-full min-h-0 flex-col bg-bg print:h-auto print:overflow-visible">
+    <div className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto overflow-y-hidden p-4 print:flex-wrap print:overflow-visible print:p-0">
+      {children}
+    </div>
   </div>
 );
 

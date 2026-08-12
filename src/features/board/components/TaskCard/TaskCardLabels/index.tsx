@@ -11,7 +11,7 @@ export const TaskCardLabels = () => {
     return null;
   }
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1">
+    <div className="mt-2 flex flex-wrap gap-1">
       {task.labels.map((label) => (
         <LabelTag key={label} label={label} />
       ))}

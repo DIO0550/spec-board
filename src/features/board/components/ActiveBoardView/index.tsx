@@ -2,6 +2,7 @@ import { BoardView } from "@/features/board/components/BoardView";
 import type { BoardWorkspaceProps } from "@/features/board/components/BoardWorkspace";
 import { CalendarView } from "@/features/board/components/CalendarView";
 import { ListView } from "@/features/board/components/ListView";
+import { RoadmapView } from "@/features/board/components/RoadmapView";
 import { TreeView } from "@/features/board/components/TreeView";
 import type { BoardViewMode } from "@/features/board/hooks/useBoardViewMode";
 import type { Task } from "@/types/task";
@@ -34,7 +35,13 @@ export const ActiveBoardView = ({
   workspace,
 }: ActiveBoardViewProps) => {
   if (viewMode === "list") {
-    return <ListView tasks={filtered} onTaskClick={workspace.onTaskClick} />;
+    return (
+      <ListView
+        tasks={filtered}
+        filterActive={filterActive}
+        onTaskClick={workspace.onTaskClick}
+      />
+    );
   }
   if (viewMode === "tree") {
     return (
@@ -48,6 +55,24 @@ export const ActiveBoardView = ({
   if (viewMode === "calendar") {
     return (
       <CalendarView tasks={filtered} onTaskClick={workspace.onTaskClick} />
+    );
+  }
+  if (viewMode === "roadmap") {
+    const firstColumn = [...workspace.columns].sort(
+      (left, right) => left.order - right.order,
+    )[0];
+    return (
+      <RoadmapView
+        tasks={filtered}
+        columns={workspace.columns}
+        doneColumn={workspace.doneColumn}
+        onAddEpic={
+          firstColumn === undefined
+            ? undefined
+            : () => workspace.onAddTask(firstColumn.name)
+        }
+        onTaskClick={workspace.onTaskClick}
+      />
     );
   }
   return (

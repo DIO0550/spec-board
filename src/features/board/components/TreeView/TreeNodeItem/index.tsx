@@ -1,79 +1,253 @@
 import { memo, useState } from "react";
-import { DueBadge } from "@/components/DueBadge";
 import type { TaskTreeNode } from "@/domains/task-forest";
 import type { Task } from "@/types/task";
 
-/**
- * 1 段あたりのインデント幅（px）。
- * タスク階層ツリーは各行にバッジやタイトルなど情報量が多く、親子関係を一目で
- * 追えるよう FileTree（12px）より広い 16px を採る。
- */
 const INDENT_PER_DEPTH = 16;
+const DETAILED_RENDER_DEPTH_LIMIT = 64;
 
-type TreeNodeItemProps = {
-  /** 描画するノード（`filePath` と children のみを持つ） */
-  node: TaskTreeNode;
-  /** ルートからの深さ（ルート = 0）。ネスト構造から自明な値なので payload では運ばない。 */
-  depth: number;
-  /** raw filePath -> Task の lookup（TreeView が可視タスクから作った Map） */
-  tasksByFilePath: ReadonlyMap<string, Task>;
-  /**
-   * タスク選択ハンドラ（安定参照で渡す）。
-   * @param taskId - 選択されたタスクの ID
-   */
-  onSelect: (taskId: string) => void;
+type TreeNodeProgress = {
+  readonly done: number;
+  readonly total: number;
 };
 
-/**
- * ツリー 1 ノード（行 + 子）。折りたたみ状態をノード単位のローカル state で持つため、
- * あるノードの開閉が他ノードの再描画を引き起こさない。`memo` で props 不変時の再描画も避ける。
- * @param props - {@link TreeNodeItemProps}
- * @returns ツリーノード要素。lookup が外れた場合は `null`
- */
+type TreeNodeItemProps = {
+  node: TaskTreeNode;
+  depth: number;
+  tasksByFilePath: ReadonlyMap<string, Task>;
+  onSelect: (taskId: string) => void;
+  /** TreeView toolbarから制御する展開状態。省略時は従来どおりlocal state。 */
+  expanded?: boolean;
+  /** TreeViewが全ノードを一括制御するときの展開path集合。 */
+  expandedPaths?: ReadonlySet<string>;
+  /** controlled時の展開切替通知。 */
+  onToggle?: (filePath: string) => void;
+  /** statusごとの表示色。 */
+  accentByStatus?: ReadonlyMap<string, string>;
+  /** filePathごとの子孫進捗。 */
+  progressByFilePath?: ReadonlyMap<string, TreeNodeProgress>;
+  /** 完了status。 */
+  doneColumn?: string;
+};
+
+const FOLDER_ICON = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="size-4 shrink-0 text-accent"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+  >
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+);
+
+const DOCUMENT_ICON = (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    className="size-4 shrink-0 text-muted"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+  >
+    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+    <path d="M14 3v6h6" />
+  </svg>
+);
+
+/** table-like treeの1行と子ノード。 */
 export const TreeNodeItem = memo(
-  ({ node, depth, tasksByFilePath, onSelect }: TreeNodeItemProps) => {
-    const [collapsed, setCollapsed] = useState(false);
+  ({
+    node,
+    depth,
+    tasksByFilePath,
+    onSelect,
+    expanded,
+    expandedPaths,
+    onToggle,
+    accentByStatus,
+    progressByFilePath,
+    doneColumn = "Done",
+  }: TreeNodeItemProps) => {
+    const [locallyCollapsed, setLocallyCollapsed] = useState(false);
     const task = tasksByFilePath.get(node.filePath);
-    // 枝刈り済み forest のノードは必ず可視タスクなので通常は起こらない。
-    // 万一 lookup が外れたときは、そのノード配下ごと描画しない（children も出ない）。
     if (task === undefined) {
       return null;
     }
+
     const hasChildren = node.children.length > 0;
+    const isExpanded =
+      expandedPaths?.has(node.filePath) ?? expanded ?? !locallyCollapsed;
+    const progress = progressByFilePath?.get(node.filePath) ?? {
+      done: 0,
+      total: node.children.length,
+    };
+    const progressPercentage =
+      progress.total === 0
+        ? 0
+        : Math.round((progress.done / progress.total) * 100);
+    const accent = accentByStatus?.get(task.status) ?? "var(--color-accent)";
+    const done = task.status === doneColumn;
+
+    const handleToggle = (): void => {
+      if (onToggle !== undefined) {
+        onToggle(node.filePath);
+        return;
+      }
+      setLocallyCollapsed((current) => !current);
+    };
+
+    if (depth >= DETAILED_RENDER_DEPTH_LIMIT) {
+      return (
+        <li>
+          <div
+            data-tree-row={task.id}
+            className={`grid min-h-8 grid-cols-[minmax(280px,1.7fr)_120px_28px_200px_100px_1fr] items-center border-b border-l border-border text-xs ${
+              done ? "text-muted line-through" : "text-foreground"
+            }`}
+            style={{ paddingLeft: depth * INDENT_PER_DEPTH }}
+          >
+            <span className="flex min-w-0 items-center pr-2">
+              {hasChildren ? (
+                <button
+                  type="button"
+                  onClick={handleToggle}
+                  aria-label={isExpanded ? "折りたたむ" : "展開する"}
+                  aria-expanded={isExpanded}
+                  className="size-[18px] shrink-0 text-muted"
+                >
+                  {isExpanded ? "▾" : "▸"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onSelect(task.id)}
+                className="min-w-0 truncate text-left"
+              >
+                {task.title || task.filePath} {task.id}
+              </button>
+            </span>
+            <span className="truncate">{task.status}</span>
+            <span>{task.priority ?? "—"}</span>
+            <span className="truncate">{task.labels.join(", ") || "—"}</span>
+            <span>
+              {progress.total === 0
+                ? "—"
+                : `${progress.done}/${progress.total}`}
+            </span>
+            <code className="truncate" title={task.filePath}>
+              {task.filePath}
+            </code>
+          </div>
+          {hasChildren && isExpanded ? (
+            <ul className="border-l border-l-border/70">
+              {node.children.map((child) => (
+                <TreeNodeItem
+                  key={child.filePath}
+                  node={child}
+                  depth={depth + 1}
+                  tasksByFilePath={tasksByFilePath}
+                  onSelect={onSelect}
+                  expandedPaths={expandedPaths}
+                  onToggle={onToggle}
+                  accentByStatus={accentByStatus}
+                  progressByFilePath={progressByFilePath}
+                  doneColumn={doneColumn}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      );
+    }
 
     return (
       <li>
         <div
-          className="flex items-center gap-1 hover:bg-surface-muted"
+          data-tree-row={task.id}
+          className={`grid min-h-8 grid-cols-[minmax(280px,1.7fr)_120px_28px_200px_100px_1fr] items-center border-b border-border text-xs hover:bg-surface-muted ${
+            depth > 0 ? "border-l border-l-border" : ""
+          } ${done ? "text-muted line-through" : "text-foreground"}`}
           style={{ paddingLeft: depth * INDENT_PER_DEPTH }}
         >
-          {hasChildren ? (
+          <div className="flex min-w-0 items-center pr-2">
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={handleToggle}
+                aria-label={isExpanded ? "折りたたむ" : "展開する"}
+                aria-expanded={isExpanded}
+                className="inline-flex size-[18px] shrink-0 items-center justify-center rounded text-[10px] text-muted hover:bg-surface-muted hover:text-foreground"
+              >
+                {isExpanded ? "▾" : "▸"}
+              </button>
+            ) : (
+              <span aria-hidden="true" className="inline-block w-5 shrink-0" />
+            )}
+            {hasChildren ? FOLDER_ICON : DOCUMENT_ICON}
             <button
               type="button"
-              onClick={() => setCollapsed((prev) => !prev)}
-              aria-label={collapsed ? "展開する" : "折りたたむ"}
-              aria-expanded={!collapsed}
-              className="shrink-0 px-1 text-xs text-muted"
+              onClick={() => onSelect(task.id)}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:text-accent"
             >
-              {collapsed ? "▸" : "▾"}
+              <span className="truncate font-medium">
+                {task.title || task.filePath}
+              </span>
+              <code className="shrink-0 font-mono text-[10px] text-muted">
+                {task.id}
+              </code>
             </button>
-          ) : (
-            <span aria-hidden="true" className="inline-block w-5 shrink-0" />
-          )}
-          <button
-            type="button"
-            onClick={() => onSelect(task.id)}
-            className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-4 text-left"
+          </div>
+          <span className="flex min-w-0 items-center gap-1.5 truncate pr-2">
+            <span
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: accent }}
+            />
+            {task.status}
+          </span>
+          <span
+            className="font-mono text-[10px] text-muted"
+            title={task.priority}
           >
-            <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-              {task.title}
+            {task.priority ?? "—"}
+          </span>
+          <span className="flex min-w-0 gap-1 overflow-hidden pr-2">
+            {task.labels.length > 0
+              ? task.labels.slice(0, 2).map((label) => (
+                  <span
+                    key={label}
+                    className="truncate rounded bg-accent-soft px-1.5 py-0.5 text-[10px]"
+                  >
+                    {label}
+                  </span>
+                ))
+              : "—"}
+          </span>
+          <span className="flex items-center gap-1.5 pr-2">
+            <span
+              className="h-1.5 min-w-8 flex-1 overflow-hidden rounded bg-surface-muted"
+              style={{
+                backgroundImage: `linear-gradient(to right, var(--color-accent) 0 ${progressPercentage}%, transparent ${progressPercentage}%)`,
+              }}
+            />
+            <span className="font-mono text-[10px] text-muted">
+              {progress.total === 0
+                ? "—"
+                : `${progress.done}/${progress.total}`}
             </span>
-            <span className="shrink-0 text-xs text-muted">{task.status}</span>
-            <DueBadge due={task.due} />
-          </button>
+          </span>
+          <code
+            className="truncate pr-2 font-mono text-[10px] text-muted"
+            title={task.filePath}
+          >
+            {task.filePath}
+          </code>
         </div>
-        {hasChildren && !collapsed && (
-          <ul>
+        {hasChildren && isExpanded ? (
+          <ul
+            className={depth >= 0 ? "border-l border-l-border/70" : undefined}
+          >
             {node.children.map((child) => (
               <TreeNodeItem
                 key={child.filePath}
@@ -81,10 +255,15 @@ export const TreeNodeItem = memo(
                 depth={depth + 1}
                 tasksByFilePath={tasksByFilePath}
                 onSelect={onSelect}
+                expandedPaths={expandedPaths}
+                onToggle={onToggle}
+                accentByStatus={accentByStatus}
+                progressByFilePath={progressByFilePath}
+                doneColumn={doneColumn}
               />
             ))}
           </ul>
-        )}
+        ) : null}
       </li>
     );
   },
