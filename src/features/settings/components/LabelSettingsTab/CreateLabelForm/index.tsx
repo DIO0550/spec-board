@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { LabelColor } from "@/domains/label-color";
 import {
   LabelDraft,
@@ -69,6 +69,7 @@ export const CreateLabelForm = ({
   const previewLabel = preview.name;
   const effectiveColor = LabelColor.effective(values.color);
   const pickerColor = toPickerValue(effectiveColor ?? "");
+  const [isGroupOpen, setIsGroupOpen] = useState(false);
 
   const isEmpty =
     values.name === "" &&
@@ -84,13 +85,13 @@ export const CreateLabelForm = ({
 
   return (
     <form
-      className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded border border-border bg-surface p-4"
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
       }}
     >
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
         <span aria-hidden="true">+</span>
         {isEditing ? `「${editingName}」を編集` : "新しいラベル"}
       </div>
@@ -105,7 +106,7 @@ export const CreateLabelForm = ({
               value={values.name}
               disabled={isEditing}
               onChange={(e) => onChange("name", e.target.value)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-100"
+              className="rounded border border-border px-2 py-1 text-sm disabled:bg-surface-muted"
               placeholder="needs-design"
               aria-invalid={showMessages && nameError !== undefined}
               aria-describedby={
@@ -123,27 +124,66 @@ export const CreateLabelForm = ({
               id={descId}
               value={values.description}
               onChange={(e) => onChange("description", e.target.value)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm"
+              className="rounded border border-border px-2 py-1 text-sm"
               placeholder="デザイン待ちのタスク"
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="relative flex flex-col gap-1">
             <label htmlFor={groupId} className="text-xs text-muted">
               グループ
             </label>
-            <input
-              id={groupId}
-              list={`${groupId}-list`}
-              value={values.group}
-              onChange={(e) => onChange("group", e.target.value)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm"
-              placeholder="status"
-            />
-            <datalist id={`${groupId}-list`}>
-              {groupOptions.map((g) => (
-                <option key={g} value={g} />
-              ))}
-            </datalist>
+            <div className="relative">
+              <input
+                id={groupId}
+                role="combobox"
+                aria-haspopup="listbox"
+                aria-expanded={isGroupOpen}
+                aria-controls={`-listbox`}
+                value={values.group}
+                onFocus={() => setIsGroupOpen(true)}
+                onChange={(event) => {
+                  onChange("group", event.target.value);
+                  setIsGroupOpen(true);
+                }}
+                className="w-full rounded border border-border bg-surface-muted px-2 py-1 pr-8 text-sm text-foreground"
+                placeholder="status"
+              />
+              <button
+                type="button"
+                aria-label="グループ候補を開く"
+                onClick={() => setIsGroupOpen((open) => !open)}
+                className="absolute inset-y-0 right-0 px-2 text-text-dim"
+              >
+                ⌄
+              </button>
+            </div>
+            {isGroupOpen ? (
+              <div
+                id={`-listbox`}
+                role="listbox"
+                className="absolute top-full left-0 z-20 mt-1 w-[232px] rounded-[10px] border border-border-strong bg-surface p-1.5 shadow-lg"
+              >
+                {groupOptions.map((group) => (
+                  <button
+                    key={group}
+                    type="button"
+                    role="option"
+                    aria-selected={values.group === group}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      onChange("group", group);
+                      setIsGroupOpen(false);
+                    }}
+                    className="flex h-7 w-full items-center rounded-md px-2 text-left text-xs text-foreground hover:bg-surface-muted aria-selected:bg-accent-soft"
+                  >
+                    {group}
+                  </button>
+                ))}
+                <p className="border-t border-border px-2 pt-1.5 text-[10.5px] text-muted">
+                  入力して新しいグループを作成
+                </p>
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-xs text-muted">プレビュー</span>
@@ -168,7 +208,7 @@ export const CreateLabelForm = ({
             </span>
           </label>
           <div className="flex items-center gap-2">
-            <span className="relative inline-block h-8 w-8 shrink-0 overflow-hidden rounded-md border border-slate-300 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]">
+            <span className="relative inline-block h-8 w-8 shrink-0 overflow-hidden rounded-md border border-border shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]">
               <span
                 aria-hidden="true"
                 className="absolute inset-0"
@@ -183,7 +223,7 @@ export const CreateLabelForm = ({
                 aria-label="カラーピッカー"
               />
             </span>
-            <span className="inline-flex h-8 items-center rounded border border-slate-300 bg-white pl-2 pr-2.5">
+            <span className="inline-flex h-8 items-center rounded border border-border bg-surface pl-2 pr-2.5">
               <span
                 aria-hidden="true"
                 className="mr-px font-mono text-sm text-muted"
@@ -264,7 +304,7 @@ export const CreateLabelForm = ({
             type="button"
             onClick={onReset}
             disabled={isPending}
-            className="rounded border border-slate-300 px-3 py-1 text-sm"
+            className="rounded border border-border px-3 py-1 text-sm"
           >
             {isEditing ? "キャンセル" : "クリア"}
           </button>

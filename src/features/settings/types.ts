@@ -11,6 +11,8 @@ export type SettingsTab = {
   id: string;
   /** タブに表示するラベル文言 */
   label: string;
+  /** 任意の件数pill。 */
+  count?: number;
 };
 
 /** 1 件以上を型レベルで保証するタブ一覧（空配列を排除し selectActive の戻り値を非 null に固定）。 */

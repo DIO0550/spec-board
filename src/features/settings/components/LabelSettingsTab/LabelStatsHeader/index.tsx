@@ -24,21 +24,30 @@ export const LabelStatsHeader = ({
   onExport,
 }: LabelStatsHeaderProps) => {
   return (
-    <div className="flex items-center justify-between">
-      <h2 className="flex items-baseline gap-3 text-lg font-semibold text-slate-800">
+    <header className="flex flex-wrap items-end gap-4">
+      <h1 className="m-0 flex items-baseline gap-4 text-[22px] font-semibold text-foreground">
         ラベル
-        <span className="text-xs font-normal text-muted">
-          {total} 件 · {used} 使用中 · {unused} 未使用
+        <span className="flex gap-4 pb-1 text-xs font-normal text-muted">
+          <span>
+            <strong className="font-mono text-foreground">{total}</strong> 件
+          </span>
+          <span>
+            <strong className="font-mono text-foreground">{used}</strong> 使用中
+          </span>
+          <span>
+            <strong className="font-mono text-foreground">{unused}</strong>{" "}
+            未使用
+          </span>
         </span>
-      </h2>
+      </h1>
       <button
         type="button"
         onClick={onExport}
         disabled={isExportDisabled}
-        className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+        className="ml-auto h-7 rounded-md border border-border bg-surface-muted px-2.5 text-xs font-medium disabled:opacity-50"
       >
-        ⬇ エクスポート
+        エクスポート
       </button>
-    </div>
+    </header>
   );
 };
