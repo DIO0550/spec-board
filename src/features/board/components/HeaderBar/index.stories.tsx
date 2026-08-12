@@ -38,3 +38,7 @@ export const SettingsView: Story = {
 export const WithMilestone: Story = {
   args: { view: "board", onMilestoneClick: () => {} },
 };
+
+export const Default: Story = { ...BoardView };
+export const AllProps: Story = { ...WithMilestone };
+export const EdgeCases: Story = { ...SettingsView };

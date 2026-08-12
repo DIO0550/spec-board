@@ -20,3 +20,7 @@ export const NoProject: Story = {
 export const EmptyProject: Story = {
   args: { type: "empty-project" },
 };
+
+export const Default: Story = { ...NoProject };
+export const AllProps: Story = { ...EmptyProject };
+export const EdgeCases: Story = { ...NoProject };

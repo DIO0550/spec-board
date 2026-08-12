@@ -30,3 +30,6 @@ export const LongName: Story = {
     taskCount: 99,
   },
 };
+
+export const AllProps: Story = { ...LongName };
+export const EdgeCases: Story = { ...WithoutActions };

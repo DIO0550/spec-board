@@ -49,3 +49,7 @@ export const AllDone: Story = {
 export const WithDescendantsBeyondDirectChildren: Story = {
   args: { childRows: directChildRows, counts: { done: 3, total: 7 } },
 };
+
+export const Default: Story = { ...InProgress };
+export const AllProps: Story = { ...WithDescendantsBeyondDirectChildren };
+export const EdgeCases: Story = { ...Empty };

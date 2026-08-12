@@ -18,3 +18,7 @@ export const Short: Story = { args: { label: "bug" } };
 export const Long: Story = {
   args: { label: "long-label-name-for-overflow-test" },
 };
+
+export const Default: Story = { ...Short };
+export const AllProps: Story = { ...Long };
+export const EdgeCases: Story = { ...Long };
