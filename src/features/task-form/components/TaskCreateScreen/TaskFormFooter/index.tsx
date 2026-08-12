@@ -51,7 +51,7 @@ export const TaskFormFooter = (props: TaskFormFooterProps) => {
           disabled={!props.canSubmit || props.isSubmitting}
           data-testid="task-form-submit"
         >
-          タスクを作成
+          {props.isSubmitting ? "作成中…" : "タスクを作成"}
         </Button>
       </div>
     </div>

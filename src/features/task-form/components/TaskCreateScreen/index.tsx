@@ -261,7 +261,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
       ref={sectionRef}
       aria-label="タスク作成"
       tabIndex={-1}
-      className="grid h-full min-h-0 grid-rows-[48px_44px_1fr] bg-surface"
+      className="grid h-full min-h-0 grid-rows-[48px_44px_1fr] overflow-hidden bg-surface"
       data-testid="task-create-screen"
     >
       <TaskTopbar
@@ -273,15 +273,19 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
       />
       <TaskSubbar fileName={previewFileName} onBack={requestClose} />
       <div
+        data-testid="task-create-main"
         className={`grid min-h-0 overflow-hidden ${
           previewVisible
-            ? "grid-cols-[minmax(0,1fr)_7px_var(--preview-w)]"
+            ? "grid-cols-[minmax(0,1fr)_4px_var(--preview-w)]"
             : "grid-cols-[minmax(0,1fr)_0_0]"
         }`}
         style={{ "--preview-w": `${previewWidth}px` } as React.CSSProperties}
       >
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div
+            data-testid="task-create-form-scroll"
+            className="relative flex-1 overflow-y-auto px-8 py-6"
+          >
             <div className="mx-auto max-w-[600px]">
               <h1 className="mb-1 text-lg font-semibold text-foreground">
                 新規タスクを作成

@@ -92,7 +92,7 @@ export const PreviewResizer = (props: PreviewResizerProps) => {
     >
       <span
         aria-hidden="true"
-        className="absolute inset-y-0 left-[3px] right-[3px] bg-border group-hover:bg-accent"
+        className="absolute inset-y-0 left-[1px] right-[1px] bg-border group-hover:bg-accent"
       />
     </button>
   );
