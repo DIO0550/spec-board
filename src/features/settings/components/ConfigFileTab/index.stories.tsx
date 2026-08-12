@@ -26,6 +26,13 @@ export const AllProps: Story = {
   args: { initialFile: "guide", toast: "GUIDE.md を再生成しました" },
 };
 export const EdgeCases: Story = { args: { files: [] } };
+export const Loading: Story = { args: { status: "loading" } };
+export const ErrorState: Story = {
+  args: { status: "error", error: "config.json を読み込めませんでした" },
+};
+export const Regenerating: Story = {
+  args: { initialFile: "guide", isRegenerating: true },
+};
 export const CopyToast: Story = {
   args: { toast: "config.json をコピーしました" },
 };
