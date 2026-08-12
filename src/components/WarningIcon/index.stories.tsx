@@ -26,3 +26,6 @@ export const LargeSize: Story = {
     size: 48,
   },
 };
+
+export const AllProps: Story = { ...WithCustomLabel };
+export const EdgeCases: Story = { ...LargeSize };

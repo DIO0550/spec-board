@@ -44,3 +44,7 @@ export const Warning: Story = {
     },
   },
 };
+
+export const Default: Story = { ...Success };
+export const AllProps: Story = { ...ErrorVariant };
+export const EdgeCases: Story = { ...Warning };

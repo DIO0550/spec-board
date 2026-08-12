@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import { LabelDefinition } from "@/domains/label-definition";
 import { LabelsField } from ".";
 
@@ -42,5 +42,18 @@ export const NoSuggestions: Story = {
   args: {
     value: [],
     suggestions: [],
+  },
+};
+
+export const Default: Story = { ...Empty };
+export const AllProps: Story = { ...WithSelection };
+export const EdgeCases: Story = { ...NoSuggestions };
+
+export const Open: Story = {
+  ...WithSelection,
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByTestId("story-labels-field"),
+    );
   },
 };
