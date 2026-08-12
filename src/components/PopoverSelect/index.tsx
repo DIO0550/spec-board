@@ -198,7 +198,7 @@ export const PopoverSelect = (props: PopoverSelectProps) => {
               : `${listboxId}-option-${activeIndex}`
           }
           onKeyDown={handleListboxKeyDown}
-          className="absolute left-0 right-0 z-10 mt-1 max-h-72 max-w-[340px] overflow-y-auto rounded-lg border border-border-strong bg-panel p-1.5 shadow-lg outline-none"
+          className="absolute left-0 z-10 mt-1 w-[232px] max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-panel p-1.5 shadow-lg outline-none"
           data-testid={`${props["data-testid"]}-listbox`}
         >
           {props.options.map((option, index) => (

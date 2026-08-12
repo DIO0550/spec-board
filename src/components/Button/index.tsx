@@ -8,7 +8,7 @@ export type ButtonSize = "md" | "lg";
 
 /** 全 variant / size 共通の基底クラス。 */
 const BASE_CLASS_NAME =
-  "inline-flex items-center justify-center gap-1.5 rounded disabled:opacity-50";
+  "inline-flex items-center justify-center gap-1.5 rounded-md outline-none transition focus-visible:ring-[3px] focus-visible:ring-accent-soft focus-visible:ring-offset-1 disabled:opacity-50";
 
 const VARIANT_CLASS_NAME: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-foreground hover:brightness-95",
@@ -18,7 +18,7 @@ const VARIANT_CLASS_NAME: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASS_NAME: Record<ButtonSize, string> = {
-  md: "px-4 py-2 text-sm",
+  md: "h-[30px] px-4 py-2 text-sm",
   lg: "h-[34px] px-4 text-sm font-semibold",
 };
 

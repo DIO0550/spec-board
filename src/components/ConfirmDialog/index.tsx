@@ -87,7 +87,7 @@ export const ConfirmDialog = ({
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"
-            className="rounded px-4 py-2 text-sm text-foreground hover:bg-surface-muted disabled:opacity-50"
+            className="h-[30px] rounded-md px-4 text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft hover:bg-surface-muted disabled:opacity-50"
             data-testid="confirm-cancel-button"
             disabled={cancelDisabled}
             onClick={onCancel}
@@ -96,7 +96,7 @@ export const ConfirmDialog = ({
           </button>
           <button
             type="button"
-            className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+            className="h-[30px] rounded-md bg-red-600 px-4 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-red-300 text-white hover:bg-red-700 disabled:opacity-50"
             data-testid="confirm-confirm-button"
             disabled={confirmDisabled}
             onClick={onConfirm}
