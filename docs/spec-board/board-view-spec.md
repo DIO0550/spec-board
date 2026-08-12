@@ -127,7 +127,7 @@ stateDiagram-v2
 - **サブナビ**: タブが 1 枠でもタブ UI を表示する。WAI-ARIA Tabs のロール属性（`tablist` / `tab` / `tabpanel`、`aria-selected`、`aria-controls` / `aria-labelledby`）を付与する。タブ複数化時のキーボード操作（矢印 / Home / End・roving tabindex）は将来対応。
 - **ラベルタブ（CRUD）**: ラベルマスタの作成・編集・削除を行えるフル機能の管理タブ。各ラベルは色プレビューとともに一覧表示する（色解決規則は [label-registry-spec.md](./label-registry-spec.md) を参照）。取得失敗時はトーストを出さずタブ内のインライン文言で告知する。`labels.yml` 不在・0 件は「ラベルなし」相当の空表示とする（エラーではない）。validation 挙動の詳細は [config-spec.md](./config-spec.md) のラベル設定画面節を参照。
 - **外観タブ**: テーマ（ライト / ダーク / システム）・表示密度（標準 / コンパクト）・アクセントカラー（5 色）をセグメント選択で切り替える。選択は即時反映され、クライアントローカル（`localStorage`）に永続化する（プロジェクトの設定ファイルには保存しない）。詳細は後述の「外観（テーマ / 密度 / アクセント）」を参照。
-- **ステータスタブ**: カラムの順序・名称・完了カラムを編集し、空カラムの追加 / 削除を行う。タスクが 1 件以上残るカラムと最後の 1 カラムは削除不可。現段階の `SettingsScreen` 内部到達では編集 state と dirty / saving / saved / error 表示までを提供し、`update_columns` への永続化は `StatusSettingsTab.onSave` の App 接続後に有効になる（未接続時は presentational no-op）。
+- **ステータスタブ**: App が読み込み済み project のカラム順・色・名称、task 使用数、完了カラムを渡す。空カラムの追加 / 削除、並び替え、rename、完了カラム変更を `update_columns` で保存する。タスクが 1 件以上残るカラムと最後の 1 カラムは削除不可。保存失敗時は dirty state を維持して再試行できる。「ボードで確認」は board、「設定ファイルを見る」は設定ファイルタブへ遷移する。
 - **設定ファイルタブ**: `config.json` / 自動生成 `GUIDE.md` を切り替える読み取り専用 viewer（行番号、copy / GUIDE 再生成 / 外部エディタ / folder 表示 action）を提供する。現段階の `SettingsScreen` 内部到達は canonical example の表示であり、実ファイル読込と各 OS / IPC action は `ConfigFileTab` callback の App 接続後に有効になる（未接続時は presentational no-op）。
 - **直接到達 API**: `SettingsScreen.initialTabId` で初期タブを指定できる。未知 ID は先頭のラベルタブへフォールバックする。`onBack` が指定された場合は設定 subbar の「戻る」から呼び出す。
 
@@ -147,14 +147,14 @@ stateDiagram-v2
 メイン上部に WAI-ARIA Tabs のサブバーを置き、ボード領域の表示形態を切り替える。選択は `localStorage`（`spec-board:viewMode`）に永続化する。後述の横断フィルタは全ビュー共通で適用される。
 
 - **ボード**: 既存のカンバン（カラム + DnD）。
-- **リスト**: status section ごとに、status / priority / title・ID / labels / due / 直下子進捗 / file を table row で表示する。status / priority / title / file の header は昇順・降順を切り替えられ、行クリックで詳細を開く。`columns` を渡した場合はカラム順を使い空 section も「タスクなし」として残すが、現行 `BoardWorkspace` 接続は絞り込み済み tasks のみを渡すため、実画面では task の status 初出順・可視 status section のみとなる。
-- **ツリー**: status section + table-like columns（task / status / priority / labels / 全子孫進捗 / file）で parent/children 階層をインデント表示する。子を持つノードは個別に展開 / 折りたたみでき、toolbar の「すべて展開 / すべて折畳」でも一括変更できる。初期状態は全展開。`columns` を渡した場合はカラム順と色を使うが、現行 `BoardWorkspace` 接続は tasks / taskTree のみを渡すため、実画面の section 順は可視 root task の status 初出順となる。
+- **リスト**: status section ごとに、status / priority / title・ID / labels / due / 直下子進捗 / file を table row で表示する。status / priority / title / file の header は昇順・降順を切り替えられ、行クリックで詳細を開く。App の `columns` / `doneColumn` を使ってカラム順と完了表示を決め、空 section も「タスクなし」として残す。「+ 追加」は該当statusを初期値に作成画面へ遷移する。
+- **ツリー**: status section + table-like columns（task / status / priority / labels / 全子孫進捗 / file）で parent/children 階層をインデント表示する。子を持つノードは個別に展開 / 折りたたみでき、toolbar の「すべて展開 / すべて折畳」でも一括変更できる。初期状態は全展開。App の project 名、`columns` / `doneColumn` を使い、section 順・色・完了進捗を決める。「+ 追加」は該当statusを初期値に作成画面へ遷移する。
   - 階層構造はバックエンドが確定する（`open_project` / `get_tasks` の `taskTree`）。ノードは `{ filePath, children }` のネスト表現で、深さは構造から導出する。
   - 並び順は他ビューと同じボード表示順（カラム表示順 → カラム内 `cardOrder` → `id` 昇順）で、ルート列・兄弟列の双方に適用する。
   - 親が存在しないタスク（孤立を含む）はルート扱い。親が絞り込みで除外された場合も、その子はルートへ昇格する。
   - 親子関係が循環している場合でも、全タスクがちょうど 1 回だけ表示される。循環しているタスク自身はルート扱いになり（ルート列の中でボード表示順の位置に並ぶ）、それにぶら下がる子タスクは親の下に残る。
   - 絞り込みはツリーにも適用され、表示されるノード集合は絞り込み後の集合と一致する。
-- **カレンダー**: `due` 日付を月 42 cell grid または週 7 cell grid に配置し、前後の月 / 週への移動、今日への復帰、月 / 週切替を提供する。status filter は横断フィルタ適用後の task 集合に対する追加の一時絞り込みで、永続化しない。右 sidebar に今日、今後 21 日（期限超過の未完了を含む）、status filter、期限なし / 不正期限を表示する。日 cell は最大 3 件を表示し、超過分は「ほか N 件」に集約する。task click は共通 `onTaskClick` を呼び全画面詳細へ遷移する。
+- **カレンダー**: `due` 日付を月 42 cell grid または週 7 cell grid に配置し、前後の月 / 週への移動、今日への復帰、月 / 週切替を提供する。status filter は App の `columns[].order` 順、完了・期限超過判定は `doneColumn` を使う。右 sidebar に今日、今後 21 日（期限超過の未完了を含む）、status filter、期限なし / 不正期限を表示する。日 cell は最大 3 件を表示し、超過分は「ほか N 件」に集約する。task click は共通 `onTaskClick` を呼び全画面詳細へ遷移する。
 - **ロードマップ（Epic Roadmap）**: マイルストーン専用ビューの roadmap とは別のボード表示形態。parent が無い、または可視 task 集合内に parent が存在しない task を Epic とし、直下 child とともに横 timeline へ表示する。期間は `extras.start` → `due` → 今日の順で開始日を、`extras.end` → `due` → 開始日の順で終了日を解決し、終了日が開始日より前なら入れ替える。Epic の期間は自身と直下 child の最小開始日〜最大終了日へ拡張する。日 / 週表示単位、Epic 展開 / 折りたたみ、今日線、週末、status 色 legend、task click、先頭カラムを既定 status とする Epic 追加 actionを提供する。
 
 ### 検索 / フィルタ（MVP 採用）
@@ -165,6 +165,13 @@ stateDiagram-v2
 - **ラベル / 優先度 / ステータス**: それぞれ選択集合のいずれかに一致（OR）。空集合は無条件一致。
 - **マイルストーン**: 全件 / 未割当 / 指定マイルストーン。
 - 絞り込み後 / 全件の件数を表示し、いずれかの条件が有効なときはクリア操作を提供する。
+
+### Global Search / Command Palette
+
+- ヘッダーの検索ボタンまたは `⌘/Ctrl+K` で開き、`Escape` で閉じる。
+- タスクの title / id / filePath / labels を大文字小文字を無視して検索する。正規化済み検索索引は task 集合が変わったときだけ再構築し、palette が閉じている間は結果計算を行わない。
+- New Task / Settings / Milestone / Guide の action とタスク結果を合わせた総件数を表示する。DOM に描画する結果は先頭 50 件までとし、超過時は「N 件中 50 件を表示」と検索語による絞込案内を表示する。
+- `ArrowUp` / `ArrowDown` の選択範囲は表示中の結果内に制限し、検索結果が減った場合も `Enter` は表示中の有効な選択だけを開く。
 
 ### 外観（テーマ / 密度 / アクセント）
 
@@ -311,6 +318,8 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.8 | 2026-08-12 | Global Search / Command Palette（⌘/Ctrl+K、title/id/path/labels検索、主要画面action、キーボード選択）を追加 | - |
+| 1.7 | 2026-08-12 | HeaderBar の GUIDE.md、Calendar の日付指定タスク追加を optional callback 境界として追加（App 統合は呼び出し側の責務） | - |
 | 1.6 | 2026-08-11 | Epic Roadmap view mode、List / Tree / Calendar の実装済み操作、Settings Status / Config 内部タブと presentational integration boundary、共通 HeaderBar 契約を追記 | - |
 | 1.5 | 2026-08-11 | Issue #508: watcher listener 登録失敗時の fail-closed、旧表示維持、1 回通知、再試行時の全 listener 再登録、degraded mode 禁止を追加 | - |
 | 1.4 | 2026-08-02 | Issue #401: タスク階層ツリーの組み立てを BE へ移管（`taskTree` payload 追加）、FE は可視集合の枝刈りのみに縮小 | - |

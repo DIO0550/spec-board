@@ -243,7 +243,7 @@ type GetLabelsPayload = {
 
 設定画面には `StatusSettingsTab` と `ConfigFileTab` の内部到達経路を持つ。
 
-- `StatusSettingsTab` はカラム順序、名称、完了カラム、空カラムの追加 / 削除をローカル state で編集し、保存対象を `{ columns, doneColumn }` として `onSave` に渡す。`update_columns` への変換、保存中 state、成功後の resident snapshot 再取得、失敗時 rollback は App 側 adapter の責務である。`SettingsScreen` から callback が未注入の段階では永続化を行わない。
+- `StatusSettingsTab` は App が渡す実project columnとtask使用数を初期値に、カラム順序、名称、完了カラム、空カラムの追加 / 削除を編集する。App adapter は `{ columns, doneColumn }` を `update_columns` command（rename時は `renames` を含む）へ変換する。成功時のみdirtyを解除し、失敗時は変更を保持して再試行可能にする。
 - `ConfigFileTab` は `config.json` / `GUIDE.md` の読み取り専用表示と copy / regenerate / external editor / reveal folder の callback 境界を持つ。現段階の `SettingsScreen` は canonical example を表示し、実ディスク読込や OS / IPC action を行わない。`GUIDE.md` の正式な生成・更新条件は本仕様「AIエージェント向けガイド（GUIDE.md）」節を引き続き source of truth とする。
 - したがって、これら 2 タブの表示が存在すること自体は `config.json` / `GUIDE.md` の永続化契約を変更しない。接続前の UI 操作を成功した書込みとして扱ってはならない。
 
@@ -693,6 +693,8 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.7 | 2026-08-12 | open_config_file の固定targetへ labels を追加。viewer一覧は config/GUIDE の2件を維持し、labels.yml は外部表示専用とする | - |
+| 1.6 | 2026-08-12 | ラベル設定の「ファイルを見る」を labels.yml 外部表示用 optional callback 境界として追加 | - |
 | 1.5 | 2026-08-11 | Settings Status / Config 内部タブの presentational callback 境界と、未接続時に永続化しない契約を追記 | - |
 | 1.4 | 2026-08-09 | Issue #457: 既存 config への未知 status 追加（reconcile）節、GUIDE.md 更新タイミングの再整理、読み込み失敗時に GUIDE.md を書き換えない契約を追加 | - |
 | 1.3 | 2026-08-01 | Issue #458: config failure の `Config::default()` 継続、`configFallback` `loadWarnings`、registry / root fatal 境界を追加 | - |
