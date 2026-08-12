@@ -1,6 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import type { MilestoneDefinition } from "@/domains/milestone";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { TaskProjectionMap } from "@/domains/task-projection";
@@ -210,6 +210,7 @@ const meta: Meta<typeof MilestoneViewScreen> = {
     doneColumn: "Done",
     milestoneProjections: SAMPLE_MILESTONE_PROJECTIONS,
     taskProjections: SAMPLE_TASK_PROJECTIONS,
+    now: new Date("2026-04-15T12:00:00Z"),
   },
 };
 
@@ -219,6 +220,14 @@ type Story = StoryObj<typeof MilestoneViewScreen>;
 
 /** デザインモック準拠の標準表示。一覧モード・未選択。 */
 export const Default: Story = {};
+
+export const AllProps: Story = {
+  args: {
+    onCreateMilestone: fn(async () => true),
+    isCreating: false,
+    now: new Date("2026-04-15T12:00:00Z"),
+  },
+};
 
 /** done カラム未解決（doneColumn = undefined）— 進捗バーが非表示になる。 */
 export const WithoutDoneColumn: Story = {
@@ -279,5 +288,41 @@ export const WithCreateAction: Story = {
   args: {
     onCreateMilestone: fn(async () => true),
     isCreating: false,
+  },
+};
+
+export const ReferenceShell: Story = {
+  decorators: [
+    (Story) => (
+      <div className="h-screen overflow-hidden bg-background">
+        <header className="flex h-12 items-center border-b border-border bg-surface px-4 text-sm font-semibold">
+          spec-board{" "}
+          <span className="ml-4 font-mono text-xs text-muted">
+            payments-service · milestones.yml
+          </span>
+          <span className="ml-auto text-xs text-muted">
+            同期中 · 監視 127 files
+          </span>
+        </header>
+        <nav
+          aria-label="マイルストーン設定"
+          className="flex h-11 items-center gap-4 border-b border-border bg-surface px-4 text-xs"
+        >
+          <button type="button">戻る</button>
+          <strong>プロジェクト設定</strong>
+          <span className="ml-auto text-accent">マイルストーン</span>
+        </nav>
+        <Story />
+      </div>
+    ),
+  ],
+};
+
+export const SelectedRoadmapFullShell: Story = {
+  ...ReferenceShell,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getAllByTestId("milestone-view-row")[0]);
+    await userEvent.click(canvas.getByTestId("milestone-view-roadmap"));
   },
 };
