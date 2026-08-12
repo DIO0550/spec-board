@@ -1,5 +1,5 @@
 {
-  "reportVersion": "85777bce7234355577b266fef5fc8d62f1237bdd",
+  "reportVersion": "6ae25e637583aee21a30553e7b5a93e567ec9097",
   "maxDiffRatio": 0.002,
   "changed": 63,
   "new": 488,
@@ -5526,8 +5526,8 @@
       "name": "Default",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 55143,
-      "diffRatio": 0.059800000000000006,
+      "diffPixels": 55452,
+      "diffRatio": 0.0602,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -5552,8 +5552,8 @@
       "name": "Empty",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 30937,
-      "diffRatio": 0.0336,
+      "diffPixels": 31164,
+      "diffRatio": 0.0338,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -5578,8 +5578,8 @@
       "name": "Loaded",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 55143,
-      "diffRatio": 0.059800000000000006,
+      "diffPixels": 55452,
+      "diffRatio": 0.0602,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
