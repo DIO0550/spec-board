@@ -57,7 +57,7 @@ import {
 } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
 import { SettingsScreen, useMilestoneMutations } from "./features/settings";
-import { AppSidebar, ThemeProvider } from "./features/shell";
+import { AppSidebar, ThemeProvider, useSidebar } from "./features/shell";
 import {
   TaskCreateScreen,
   type TaskFormValues,
@@ -203,6 +203,7 @@ const resolveSelectedTask = (
  */
 const AppShell = () => {
   const { view, navigate } = useAppView();
+  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   // 配下サブツリーが toasts 配列の差し替えで再 render されないよう dispatch 専用フックを使う。
   const { showToast } = useToastDispatch();
   // sidebar 表示用の最近一覧。add と通知副作用は ProjectNotificationsProvider が担う。
@@ -553,6 +554,14 @@ const AppShell = () => {
         ).name
       : null;
 
+  const handleHeaderNewTask = useCallback(() => {
+    if (defaultCreateStatus === null) {
+      showToast("利用可能なステータスがありません", "error");
+      return;
+    }
+    handleAddTask(defaultCreateStatus);
+  }, [defaultCreateStatus, handleAddTask, showToast]);
+
   const handleAddSubIssue = useCallback(
     (parentFilePath: string) => {
       // 利用可能なステータスがなければ toast して中断（create へ遷移しない）。
@@ -663,25 +672,35 @@ const AppShell = () => {
           onClose={handleCloseCreateModal}
         />
       ) : (
-        <>
-          <HeaderBar
-            view={view}
-            onSettingsClick={handleSettingsClick}
-            onMilestoneClick={
-              state.kind === "loaded" ? handleMilestoneClick : undefined
-            }
-            onOpenClick={handleOpenClick}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <AppSidebar
+            projectName={projectName}
+            currentPath={displayedPath ?? undefined}
+            recentProjects={recentProjects}
+            tasks={tasks}
+            selectedTaskId={selectedTaskId}
+            collapsed={sidebarCollapsed}
+            onToggle={toggleSidebar}
+            onOpenProject={handleOpenClick}
+            onOpenProjectPath={handleOpenProjectPath}
+            onSelectTask={handleSidebarSelectTask}
           />
-          <div className="flex flex-1 overflow-hidden">
-            <AppSidebar
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <HeaderBar
+              view={view}
               projectName={projectName}
-              currentPath={displayedPath ?? undefined}
-              recentProjects={recentProjects}
-              tasks={tasks}
-              selectedTaskId={selectedTaskId}
-              onOpenProject={handleOpenClick}
-              onOpenProjectPath={handleOpenProjectPath}
-              onSelectTask={handleSidebarSelectTask}
+              projectPath={displayedPath ?? undefined}
+              watchedFileCount={tasks.length}
+              sidebarCollapsed={sidebarCollapsed}
+              onSidebarToggle={toggleSidebar}
+              onSettingsClick={handleSettingsClick}
+              onMilestoneClick={
+                state.kind === "loaded" ? handleMilestoneClick : undefined
+              }
+              onNewTaskClick={
+                state.kind === "loaded" ? handleHeaderNewTask : undefined
+              }
+              onOpenClick={handleOpenClick}
             />
             <main className="flex flex-1 overflow-hidden">
               {view === "settings" && (
@@ -731,7 +750,7 @@ const AppShell = () => {
                 renderMain()}
             </main>
           </div>
-        </>
+        </div>
       )}
       <LiveRegion announcement={announcement} />
     </div>

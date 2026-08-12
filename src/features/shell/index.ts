@@ -1,5 +1,6 @@
 export { AppSidebar } from "./components/AppSidebar";
 export { ThemeToggleButton } from "./components/ThemeToggleButton";
+export { useSidebar } from "./hooks/useSidebar";
 export type { ThemeContextValue } from "./hooks/useTheme";
 export { ThemeProvider, useTheme } from "./hooks/useTheme";
 export {

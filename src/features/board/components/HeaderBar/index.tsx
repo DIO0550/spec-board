@@ -1,62 +1,135 @@
 import { ThemeToggleButton } from "@/features/shell";
 import type { AppView } from "@/providers/AppViewProvider";
 
-/** ヘッダーバーの Props */
 type HeaderBarProps = {
-  /** 現在の画面区分。settings 中のみ「ボードへ戻る」表記に切替（board / detail は「設定」、既定 board） */
+  /** 現在の画面区分。 */
   view?: AppView;
-  /** 設定ボタンのクリックハンドラ */
+  /** 現在のプロジェクト名。未選択時は brand chrome を簡略表示する。 */
+  projectName?: string;
+  /** 現在のプロジェクトパス。 */
+  projectPath?: string;
+  /** 監視中のファイル数。 */
+  watchedFileCount?: number;
+  /** sidebar が折りたたまれているか。 */
+  sidebarCollapsed?: boolean;
+  /** sidebar 開閉ハンドラ。 */
+  onSidebarToggle?: () => void;
+  /** 設定ボタンのクリックハンドラ。 */
   onSettingsClick: () => void;
-  /**
-   * マイルストーンビュー切替ボタンのクリックハンドラ。
-   * 未指定（プロジェクト未オープン等）のときはボタンを表示しない。
-   */
+  /** マイルストーンビュー切替ハンドラ。 */
   onMilestoneClick?: () => void;
-  /** 「開く」ボタンのクリックハンドラ */
+  /** 新規タスク作成ハンドラ。 */
+  onNewTaskClick?: () => void;
+  /** ディレクトリ選択ハンドラ。 */
   onOpenClick: () => void;
 };
 
+const SidebarIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
 /**
- * ボード上部のヘッダーバー。
- * プロジェクト名見出しはサイドバー（ProjectSwitcher）へ集約したため持たないが、
- * テーマのライト ⇔ ダーク クイックトグルは spec（board-view-spec）に従いヘッダーに保持する。
- * 残りはビュー固有アクション（マイルストーン切替 / 設定 / 開く）を右寄せで表示する。
+ * アプリ共通の48px topbar。project breadcrumb、同期状態、主要操作を表示する。
  * @param props - {@link HeaderBarProps}
- * @returns ヘッダーバー要素
+ * @returns topbar要素
  */
 export const HeaderBar = ({
   view = "board",
+  projectName,
+  projectPath,
+  watchedFileCount = 0,
+  sidebarCollapsed = false,
+  onSidebarToggle,
   onSettingsClick,
   onMilestoneClick,
+  onNewTaskClick,
   onOpenClick,
 }: HeaderBarProps) => {
+  const settingsLabel = view === "settings" ? "ボードへ戻る" : "設定";
+  const milestoneLabel =
+    view === "milestone" ? "ボードへ戻る" : "マイルストーン";
+
   return (
-    <header className="flex items-center justify-end border-b border-border bg-surface px-4 py-2">
-      <div className="flex items-center gap-2">
+    <header className="flex h-12 shrink-0 items-center gap-4 overflow-hidden border-b border-border bg-surface px-4">
+      {sidebarCollapsed && onSidebarToggle && (
+        <button
+          type="button"
+          onClick={onSidebarToggle}
+          aria-label="サイドバーを開く"
+          aria-expanded={false}
+          className="spec-icon-button"
+        >
+          <SidebarIcon />
+        </button>
+      )}
+
+      {projectName && (
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 text-[13px] font-semibold tracking-[-0.01em]">
+            <span className="spec-brand-mark" aria-hidden="true" />
+            <span>spec-board</span>
+          </div>
+          <div className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted">
+            <span aria-hidden="true" className="text-text-dim">
+              /
+            </span>
+            <span className="font-medium text-foreground">{projectName}</span>
+            {projectPath && (
+              <>
+                <span aria-hidden="true" className="text-text-dim">
+                  ·
+                </span>
+                <span className="truncate text-text-dim" title={projectPath}>
+                  {projectPath}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {projectName && (
+          <span className="spec-sync-pill">
+            <span className="spec-sync-pulse" aria-hidden="true" />
+            同期中 · 監視 {watchedFileCount} files
+          </span>
+        )}
         <ThemeToggleButton />
         {onMilestoneClick && (
           <button
             type="button"
             onClick={onMilestoneClick}
-            className="rounded px-3 py-1.5 text-sm text-muted hover:bg-surface-muted"
+            className="spec-button"
           >
-            {view === "milestone" ? "ボードへ戻る" : "マイルストーン"}
+            {milestoneLabel}
           </button>
         )}
-        <button
-          type="button"
-          onClick={onSettingsClick}
-          className="rounded px-3 py-1.5 text-sm text-muted hover:bg-surface-muted"
-        >
-          {view === "settings" ? "ボードへ戻る" : "設定"}
+        <button type="button" onClick={onSettingsClick} className="spec-button">
+          {settingsLabel}
         </button>
-        <button
-          type="button"
-          onClick={onOpenClick}
-          className="rounded bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:brightness-95"
-        >
+        <button type="button" onClick={onOpenClick} className="spec-button">
           開く
         </button>
+        {onNewTaskClick && (
+          <button
+            type="button"
+            onClick={onNewTaskClick}
+            className="spec-button spec-button-primary"
+          >
+            <PlusIcon />
+            新規タスク
+          </button>
+        )}
       </div>
     </header>
   );

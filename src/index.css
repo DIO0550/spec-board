@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+@media print {
+  details[data-sub-issue] > ul {
+    display: block !important;
+  }
+}
+@import "./shell.css";
+
 /* z-index 階層契約（Tailwind の z-[NN] 任意値ユーティリティで各所に散在するため、
    重なり順の取り決めをここに 1 箇所だけ明文化する）:
      - 候補 popover（TaskSelect の list/empty）: z-10  … 通常コンテンツの直上に出すだけ
@@ -15,11 +22,11 @@
 	   各コンポーネントは bg-surface / text-foreground 等のユーティリティで参照し、
 	   実値は data-theme / data-accent 属性で実行時に上書きする。 */
 	--color-surface: #ffffff;
-	--color-surface-muted: #f3f4f6;
-	--color-foreground: #111827;
-	--color-muted: #6b7280;
-	--color-border: #e5e7eb;
-	--color-accent: #2563eb;
+	--color-surface-muted: #fbfbfd;
+	--color-foreground: #1f2328;
+	--color-muted: #59626e;
+	--color-border: #e3e5eb;
+	--color-accent: oklch(0.54 0.14 265);
 	--color-accent-foreground: #ffffff;
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
 
@@ -78,11 +85,19 @@
 /* ダークテーマの上書き（surface 系のみ。accent は data-accent 側で制御）。 */
 :root[data-theme="dark"] {
 	color-scheme: dark;
-	--color-surface: #1c1c1f;
-	--color-surface-muted: #27272b;
-	--color-foreground: #e5e7eb;
-	--color-muted: #9ca3af;
-	--color-border: #3f3f46;
+	--color-surface: #151b23;
+	--color-surface-muted: #101620;
+	--color-foreground: #e6edf3;
+	--color-muted: #9aa4b1;
+	--color-border: #252c36;
+	--color-panel: #151b23;
+	--color-panel-2: #101620;
+	--color-bg: #0d1117;
+	--color-border-strong: #363d48;
+	--color-text-dim: #6b7785;
+	--color-create-accent: oklch(0.72 0.14 265);
+	--color-create-accent-soft: oklch(0.28 0.05 265);
+	--color-create-accent-border: oklch(0.40 0.08 265);
 
 	/* カラムアクセント帯のダーク値（@theme のライト値を上書きしテーマ追従）。 */
 	--color-column-accent-1: #3b82f6;
@@ -136,7 +151,7 @@
 
 @layer base {
 	body {
-		background-color: var(--color-surface);
+		background-color: var(--color-bg);
 		color: var(--color-foreground);
 	}
 }

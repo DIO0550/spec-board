@@ -1,51 +1,51 @@
-/** TabNav が扱うタブ 1 件（表示用データのみ）。 */
+/** TabNav が扱うタブ 1 件。 */
 export type TabItem = {
-  /** タブ識別子（一意・DOM id に使う ASCII slug） */
+  /** タブ識別子。 */
   id: string;
-  /** タブに表示するラベル文言 */
+  /** 表示ラベル。 */
   label: string;
+  /** 任意の件数pill。 */
+  count?: number;
 };
 
 /**
- * tab ボタンの DOM id を組み立てる（tabpanel 側と共有する規約）。
- * @param prefix - 用途を区別する接頭辞（例 "board-view"）
- * @param tabId - タブ ID
- * @returns tab 要素の DOM id
+ * tab buttonのDOM idを返す。
+ * @param prefix - 用途を区別する接頭辞
+ * @param tabId - タブID
+ * @returns tab要素のDOM id
  */
 export const tabNavTabId = (prefix: string, tabId: string): string =>
   `${prefix}-tab-${tabId}`;
 
 /**
- * tabpanel の DOM id を組み立てる（描画側と共有する規約）。
+ * tabpanelのDOM idを返す。
  * @param prefix - 用途を区別する接頭辞
- * @param tabId - タブ ID
- * @returns tabpanel 要素の DOM id
+ * @param tabId - タブID
+ * @returns tabpanel要素のDOM id
  */
 export const tabNavPanelId = (prefix: string, tabId: string): string =>
   `${prefix}-panel-${tabId}`;
 
-/** TabNav の Props。 */
 type TabNavProps = {
-  /** タブ一覧（1 件でもタブ UI を表示する。配列は変更しないため readonly） */
+  /** タブ一覧。 */
   tabs: readonly TabItem[];
-  /** 現在アクティブなタブ ID */
+  /** アクティブなタブID。 */
   activeTabId: string;
-  /** DOM id / tabpanel 紐付けに使う接頭辞 */
+  /** DOM idの接頭辞。 */
   idPrefix: string;
-  /** tablist 全体の説明（任意） */
+  /** tablistの説明。 */
   ariaLabel?: string;
   /**
    * タブ選択ハンドラ。
-   * @param tabId - 選択されたタブ ID
+   * @param tabId - 選択されたタブID
    */
   onSelect: (tabId: string) => void;
 };
 
 /**
- * WAI-ARIA Tabs パターンのサブナビゲーション（汎用）。設定サブナビ・ボードの
- * ビュー切替など、複数 feature で再利用する。キーボード操作は将来対応。
+ * 44px subbarとして描画するWAI-ARIA tabs。
  * @param props - {@link TabNavProps}
- * @returns tablist 要素
+ * @returns tablist要素
  */
 export const TabNav = ({
   tabs,
@@ -53,34 +53,40 @@ export const TabNav = ({
   idPrefix,
   ariaLabel,
   onSelect,
-}: TabNavProps) => {
-  return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      className="flex gap-1 border-b border-border"
-    >
-      {tabs.map((tab) => {
-        const isActive = tab.id === activeTabId;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={tabNavTabId(idPrefix, tab.id)}
-            aria-selected={isActive}
-            aria-controls={tabNavPanelId(idPrefix, tab.id)}
-            onClick={() => onSelect(tab.id)}
-            className={
-              isActive
-                ? "border-b-2 border-accent px-3 py-2 text-sm font-medium text-foreground"
-                : "px-3 py-2 text-sm text-muted hover:bg-surface-muted"
-            }
-          >
-            {tab.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
+}: TabNavProps) => (
+  <div
+    role="tablist"
+    aria-label={ariaLabel}
+    className="flex h-11 shrink-0 items-stretch gap-0.5 overflow-x-auto border-b border-border bg-surface px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+  >
+    {tabs.map((tab) => {
+      const isActive = tab.id === activeTabId;
+      return (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          id={tabNavTabId(idPrefix, tab.id)}
+          aria-selected={isActive}
+          aria-controls={tabNavPanelId(idPrefix, tab.id)}
+          onClick={() => onSelect(tab.id)}
+          className={
+            isActive
+              ? "flex shrink-0 items-center gap-1.5 border-b-2 border-accent px-3 text-xs font-medium text-foreground"
+              : "flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-3 text-xs font-medium text-muted hover:text-foreground"
+          }
+        >
+          <span>{tab.label}</span>
+          {tab.count !== undefined && (
+            <span
+              data-tab-count
+              className="rounded-full border border-border bg-bg px-1.5 py-px font-mono text-[10.5px] leading-[1.4] text-muted"
+            >
+              {tab.count}
+            </span>
+          )}
+        </button>
+      );
+    })}
+  </div>
+);

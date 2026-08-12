@@ -1,0 +1,152 @@
+:root {
+	--font-sans: "Inter", "Noto Sans JP", -apple-system, BlinkMacSystemFont,
+		"Segoe UI", sans-serif;
+	--font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo,
+		Consolas, monospace;
+	--shell-shadow-sm: 0 1px 0 rgb(20 24 32 / 4%),
+		0 1px 2px rgb(20 24 32 / 4%);
+	--shell-shadow-md: 0 4px 12px rgb(20 24 32 / 8%),
+		0 1px 2px rgb(20 24 32 / 4%);
+	--shell-shadow-lg: 0 20px 48px rgb(20 24 32 / 18%),
+		0 4px 12px rgb(20 24 32 / 8%);
+}
+
+:root[data-theme="dark"] {
+	--shell-shadow-sm: 0 1px 0 rgb(0 0 0 / 30%);
+	--shell-shadow-md: 0 4px 12px rgb(0 0 0 / 40%);
+	--shell-shadow-lg: 0 20px 48px rgb(0 0 0 / 60%);
+}
+
+body {
+	font-family: var(--font-sans);
+	font-size: 13px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+kbd {
+	font-family: var(--font-mono);
+}
+
+.spec-stroke-icon svg,
+.spec-icon-button svg,
+.spec-button svg {
+	fill: none;
+	stroke: currentcolor;
+	stroke-width: 1.75;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.spec-brand-mark {
+	position: relative;
+	display: inline-block;
+	width: 22px;
+	height: 22px;
+	flex-shrink: 0;
+	border-radius: 6px;
+	background: linear-gradient(
+		135deg,
+		var(--color-accent),
+		oklch(0.46 0.16 290)
+	);
+}
+
+.spec-brand-mark::after {
+	position: absolute;
+	inset: 5px 11px 5px 5px;
+	border-radius: 1.5px;
+	background: rgb(255 255 255 / 85%);
+	content: "";
+}
+
+.spec-button,
+.spec-icon-button {
+	display: inline-flex;
+	height: 28px;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border: 1px solid var(--color-border);
+	border-radius: 6px;
+	background: var(--color-panel-2);
+	color: var(--color-foreground);
+	font: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background 0.1s, border-color 0.1s, box-shadow 0.1s;
+}
+
+.spec-button {
+	padding: 0 10px;
+}
+
+.spec-icon-button {
+	width: 28px;
+	padding: 0;
+}
+
+.spec-button:hover,
+.spec-icon-button:hover {
+	border-color: var(--color-border-strong);
+	background: var(--color-bg);
+}
+
+.spec-button:focus-visible,
+.spec-icon-button:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.spec-button-primary {
+	border-color: var(--color-accent);
+	background: var(--color-accent);
+	color: var(--color-accent-foreground);
+}
+
+.spec-button-primary:hover {
+	border-color: color-mix(in oklch, var(--color-accent), black 12%);
+	background: color-mix(in oklch, var(--color-accent), black 12%);
+}
+
+.spec-sync-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	border: 1px solid var(--color-border);
+	border-radius: 999px;
+	background: var(--color-panel-2);
+	color: var(--color-muted);
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+
+.spec-sync-pulse {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: oklch(0.6 0.13 155);
+	animation: shell-pulse 2s infinite;
+}
+
+@keyframes shell-pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0
+			color-mix(in oklch, oklch(0.6 0.13 155), transparent 60%);
+	}
+	50% {
+		box-shadow: 0 0 0 4px
+			color-mix(in oklch, oklch(0.6 0.13 155), transparent 90%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.spec-sync-pulse {
+		animation: none;
+	}
+}
