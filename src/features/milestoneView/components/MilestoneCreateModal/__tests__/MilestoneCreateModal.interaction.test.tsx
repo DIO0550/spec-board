@@ -211,3 +211,40 @@ test("Escape キーで onClose を呼ぶ", () => {
   });
   expect(onClose).toHaveBeenCalled();
 });
+
+test("nameの変更に追従してslug previewを更新する", () => {
+  renderModal();
+  setInputValue(
+    requireByTestId("milestone-create-name") as HTMLInputElement,
+    "Mobile Release 1.8",
+  );
+  expect(requireByTestId("milestone-create-slug").textContent).toContain(
+    "mobile-release-1-8",
+  );
+});
+
+test("optional labelsとassigneeの変更をcallbackへ通知する", () => {
+  const onLabelsChange = vi.fn();
+  const onAssigneeChange = vi.fn();
+  renderModal({
+    labelOptions: ["release", "frontend"],
+    assigneeOptions: ["mika"],
+    onLabelsChange,
+    onAssigneeChange,
+  });
+
+  setInputValue(
+    requireByTestId("milestone-create-labels") as HTMLInputElement,
+    "release, frontend",
+  );
+  const assignee = requireByTestId(
+    "milestone-create-assignee",
+  ) as HTMLSelectElement;
+  act(() => {
+    assignee.value = "mika";
+    assignee.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  expect(onLabelsChange).toHaveBeenLastCalledWith(["release", "frontend"]);
+  expect(onAssigneeChange).toHaveBeenLastCalledWith("mika");
+});
