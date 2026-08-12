@@ -16,7 +16,9 @@ import {
   createTask as createTaskInvoke,
   deleteTask as deleteTaskInvoke,
   getColumns as getColumnsInvoke,
+  getConfigFiles as getConfigFilesInvoke,
   getLabels as getLabelsInvoke,
+  getMilestones as getMilestonesInvoke,
   moveTask as moveTaskInvoke,
   type OpenProjectPayload,
   openDirectoryDialog,
@@ -38,9 +40,11 @@ vi.mock("@/lib/tauri", async () => {
     openProject: vi.fn(),
     getColumns: vi.fn(),
     getLabels: vi.fn(),
+    getMilestones: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
     deleteTask: vi.fn(),
+    getConfigFiles: vi.fn(),
     updateColumns: vi.fn(),
     moveTask: vi.fn(),
   };
@@ -54,9 +58,11 @@ const openDirectoryDialogMock = vi.mocked(openDirectoryDialog);
 const openProjectMock = vi.mocked(openProjectInvoke);
 const getColumnsMock = vi.mocked(getColumnsInvoke);
 const getLabelsMock = vi.mocked(getLabelsInvoke);
+const getMilestonesMock = vi.mocked(getMilestonesInvoke);
 const createTaskMock = vi.mocked(createTaskInvoke);
 const updateTaskMock = vi.mocked(updateTaskInvoke);
 const deleteTaskMock = vi.mocked(deleteTaskInvoke);
+const getConfigFilesMock = vi.mocked(getConfigFilesInvoke);
 const updateColumnsMock = vi.mocked(updateColumnsInvoke);
 const moveTaskMock = vi.mocked(moveTaskInvoke);
 
@@ -89,6 +95,7 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
 beforeEach(() => {
+  localStorage.removeItem("spec-board:viewMode");
   openDirectoryDialogMock.mockReset();
   openProjectMock.mockReset();
   getColumnsMock.mockReset();
@@ -107,9 +114,38 @@ beforeEach(() => {
   getLabelsMock.mockReset();
   // 設定画面のラベルタブが getLabels を読むため、既定で空一覧を返す。
   getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
+  getMilestonesMock.mockReset();
+  getMilestonesMock.mockResolvedValue(
+    Result.ok({ milestones: [], usageCounts: {} }),
+  );
   createTaskMock.mockReset();
   updateTaskMock.mockReset();
   deleteTaskMock.mockReset();
+  getConfigFilesMock.mockReset();
+  getConfigFilesMock.mockResolvedValue(
+    Result.ok({
+      files: [
+        {
+          id: "config",
+          name: "config.json",
+          path: ".spec-board/config.json",
+          badge: "fixture",
+          language: "JSON",
+          content: "{}",
+          generated: false,
+        },
+        {
+          id: "guide",
+          name: "GUIDE.md",
+          path: ".spec-board/GUIDE.md",
+          badge: "自動生成",
+          language: "Markdown",
+          content: "# GUIDE fixture",
+          generated: true,
+        },
+      ],
+    }),
+  );
   updateColumnsMock.mockReset();
   moveTaskMock.mockReset();
 });
@@ -464,8 +500,9 @@ test("AddColumnButton で重複名を入力 → updateColumns invoke は呼ば�
 // === DetailScreen 経由の updateTask / deleteTask DOM テスト ===
 
 const openDetailScreenForFirstTask = async (): Promise<void> => {
-  // TaskCard は div role="button"。最初に見つかった card をクリック
-  const card = querySelectorRequired<HTMLDivElement>('[role="button"]');
+  const card = querySelectorRequired<HTMLDivElement>(
+    '[data-testid="task-card"]',
+  );
   await act(async () => {
     card.click();
   });
@@ -942,6 +979,137 @@ test("読込→settings→board 往復で読込済み board 状態（A タスク
   expect(container?.textContent).toContain("A タスク");
 });
 
+test("読込済みsettingsは実project情報とstatusを表示し保存・戻るをAppへ接続する", async () => {
+  updateColumnsMock.mockResolvedValueOnce(Result.ok(undefined));
+  mountApp();
+  await openSuccessfully();
+  await act(async () => clickHeaderSettingsButton());
+  await flush();
+
+  const main = container?.querySelector("main");
+  expect(main?.textContent).toContain("p");
+  expect(main?.textContent).toContain("1 tasks · 1 files");
+  expect(main?.textContent).not.toContain("payments-service");
+
+  const statusTab = Array.from(
+    main?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  ).find((tab) => tab.textContent?.includes("ステータス"));
+  await act(async () => statusTab?.click());
+  const move = Array.from(
+    main?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.getAttribute("aria-label") === "Done を上へ");
+  act(() => move?.click());
+  const save = Array.from(
+    main?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent === "変更を保存");
+  await act(async () => save?.click());
+  expect(updateColumnsMock).toHaveBeenCalledTimes(1);
+
+  const back = Array.from(
+    main?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent?.includes("戻る"));
+  await act(async () => back?.click());
+  expect(container?.querySelector("main")?.textContent).toContain("A タスク");
+});
+
+test("loaded HeaderのGUIDE.mdからSettings ConfigのGUIDEを直接表示する", async () => {
+  mountApp();
+  await openSuccessfully();
+  const guide = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("header button") ?? [],
+  ).find((button) => button.textContent === "GUIDE.md");
+  await act(async () => guide?.click());
+  await flush();
+  expect(container?.querySelector("main")?.textContent).toContain(
+    "# GUIDE fixture",
+  );
+});
+
+test("loaded Calendarの日付追加から期限を初期入力したTask Createへ遷移する", async () => {
+  mountApp();
+  await openSuccessfully();
+  const calendarTab = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  ).find((tab) => tab.textContent === "カレンダー");
+  await act(async () => calendarTab?.click());
+  const add = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) =>
+    button.getAttribute("aria-label")?.endsWith("にタスクを追加"),
+  );
+  const due = add?.getAttribute("aria-label")?.slice(0, 10);
+  await act(async () => add?.click());
+  expect(
+    container?.querySelector<HTMLInputElement>('input[type="date"]')?.value,
+  ).toBe(due);
+});
+
+test("loaded Milestoneの所属taskをクリックしてDetailへ遷移する", async () => {
+  const milestoneTask = Task.fromPayload({
+    id: "a",
+    title: "A タスク",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/a.md",
+    milestone: "v1",
+  });
+  getMilestonesMock.mockResolvedValue(
+    Result.ok({
+      milestones: [
+        {
+          name: "v1",
+          title: "Version 1",
+          description: "統合fixture",
+          due: "2026-12-31",
+          state: "open",
+          order: 0,
+        },
+      ],
+      usageCounts: { v1: 1 },
+    }),
+  );
+  mountApp();
+  openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/p"));
+  openProjectMock.mockResolvedValueOnce(
+    Result.ok({
+      ...payload,
+      tasks: [milestoneTask],
+      milestoneProjections: new Map([
+        [
+          "v1",
+          {
+            done: 0,
+            total: 1,
+            taskFilePaths: [milestoneTask.filePath],
+          },
+        ],
+      ]),
+    }),
+  );
+  await act(async () => clickHeaderOpenButton());
+  await flush();
+  const milestone = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("header button") ?? [],
+  ).find((button) => button.textContent === "マイルストーン");
+  await act(async () => milestone?.click());
+  await flush();
+  const milestoneRow = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("main button") ?? [],
+  ).find((button) => button.textContent?.includes("Version 1"));
+  await act(async () => milestoneRow?.click());
+  const taskButton = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("main button") ?? [],
+  ).find((button) => button.textContent?.includes("A タスク"));
+  await act(async () => taskButton?.click());
+  expect(
+    container?.querySelector('section[aria-label="タスク詳細"]'),
+  ).not.toBeNull();
+});
+
 test("未読込（EmptyState）で settings→戻るしてもクラッシュせず EmptyState に復帰する", async () => {
   mountApp();
   await act(async () => {
@@ -1005,4 +1173,24 @@ test("settings 表示中に HeaderBar「開く」を押すと board に戻り op
   expect(tabTexts).not.toContain("ラベル");
   expect(openProjectMock).toHaveBeenCalled();
   expect(container?.textContent).toContain("A タスク");
+});
+
+test("Ctrl+Kでグローバル検索を開きEscapeで閉じる", async () => {
+  mountApp();
+  await act(async () => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+    );
+  });
+  expect(
+    container?.querySelector('[role="dialog"][aria-label="グローバル検索"]'),
+  ).not.toBeNull();
+  await act(async () => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+  });
+  expect(
+    container?.querySelector('[role="dialog"][aria-label="グローバル検索"]'),
+  ).toBeNull();
 });

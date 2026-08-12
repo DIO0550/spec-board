@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { ThemeProvider } from "@/features/shell";
 import { HeaderBar } from ".";
 
@@ -18,8 +19,10 @@ const meta: Meta<typeof HeaderBar> = {
     layout: "fullscreen",
   },
   args: {
-    onSettingsClick: () => {},
-    onOpenClick: () => {},
+    onSettingsClick: fn(),
+    onOpenClick: fn(),
+    onGuideClick: fn(),
+    onSearchClick: fn(),
   },
 };
 
@@ -40,5 +43,7 @@ export const WithMilestone: Story = {
 };
 
 export const Default: Story = { ...BoardView };
-export const AllProps: Story = { ...WithMilestone };
+export const AllProps: Story = {
+  args: { view: "board", projectName: "payments-service", onGuideClick: fn() },
+};
 export const EdgeCases: Story = { ...SettingsView };

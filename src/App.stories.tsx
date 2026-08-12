@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { type ReactNode, useEffect, useState } from "react";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { TaskForest } from "@/domains/task-forest";
 import { BoardWorkspace, HeaderBar } from "@/features/board";
 import { AppSidebar, ThemeProvider } from "@/features/shell";
@@ -10,19 +10,98 @@ import {
   initialColumns,
   initialTasks,
 } from "@/test-fixtures";
+import type { TaskPayload } from "@/types/task";
 import { App } from "./App";
 
 type TauriMockBoundaryProps = {
   children: ReactNode;
+  loadedProject?: boolean;
 };
 
-/** App が mount 時に登録する Tauri event listener を browser 内で閉じる Story 境界。 */
-const TauriMockBoundary = ({ children }: TauriMockBoundaryProps) => {
-  useState(() => {
-    mockIPC(() => undefined, { shouldMockEvents: true });
-  });
+const loadedTaskPayloads: TaskPayload[] = initialTasks.map((task) => ({
+  id: task.id,
+  title: task.title,
+  status: task.status,
+  priority: task.priority,
+  milestone: task.milestone,
+  due: task.due,
+  draft: task.draft,
+  labels: [...task.labels],
+  parent: task.hierarchy.parentFilePath,
+  links: [...task.links.linkedFilePaths],
+  children: [...task.hierarchy.childFilePaths],
+  reverseLinks: [...task.links.reverseLinkedFilePaths],
+  body: task.body,
+  filePath: task.filePath,
+  extras: task.extras,
+  warnings: task.warnings,
+}));
 
-  useEffect(() => clearMocks, []);
+/** App が mount 時に登録する Tauri event listener を browser 内で閉じる Story 境界。 */
+const TauriMockBoundary = ({
+  children,
+  loadedProject = false,
+}: TauriMockBoundaryProps) => {
+  useState(() => {
+    mockIPC(
+      (command) => {
+        if (!loadedProject) {
+          return undefined;
+        }
+        if (command === "plugin:dialog|open") {
+          return "/workspace/payments-service";
+        }
+        if (command === "open_project") {
+          return {
+            tasks: loadedTaskPayloads,
+            columns: initialColumns.map((column) => column.name),
+            projections: Object.fromEntries(
+              initialTasks.map((task) => [
+                task.filePath,
+                {
+                  subIssueProgress: { done: 0, total: 0 },
+                  isDone: task.status === "Done",
+                  childFilePaths: task.hierarchy.childFilePaths,
+                },
+              ]),
+            ),
+            milestoneProjections: {},
+            taskTree: initialTasks.map((task) => ({
+              filePath: task.filePath,
+              children: [],
+            })),
+            loadWarnings: [],
+            session: {
+              projectKey: "/workspace/payments-service",
+              generation: 1,
+              revision: 1,
+              eventSeq: 0,
+            },
+          };
+        }
+        if (command === "get_columns") {
+          return { columns: initialColumns, doneColumn: "Done" };
+        }
+        if (command === "get_labels") {
+          return { labels: [], usageCounts: {} };
+        }
+        if (command === "get_milestones") {
+          return { milestones: [], usageCounts: {} };
+        }
+        if (command === "get_config_files") {
+          return { files: [] };
+        }
+        return undefined;
+      },
+      { shouldMockEvents: true },
+    );
+  });
+  useEffect(
+    () => () => {
+      window.setTimeout(clearMocks, 0);
+    },
+    [],
+  );
 
   return children;
 };
@@ -30,8 +109,10 @@ const TauriMockBoundary = ({ children }: TauriMockBoundaryProps) => {
 const meta = {
   component: App,
   decorators: [
-    (Story) => (
-      <TauriMockBoundary>
+    (Story, context) => (
+      <TauriMockBoundary
+        loadedProject={context.parameters.loadedProject === true}
+      >
         <Story />
       </TauriMockBoundary>
     ),
@@ -51,6 +132,35 @@ export const AllProps: Story = {
 export const EdgeCases: Story = {
   globals: { theme: "light", density: "compact", accent: "amber" },
   parameters: { viewport: { defaultViewport: "compact924" } },
+};
+
+export const CommandPaletteKeyboard: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.keyboard("{Control>}k{/Control}");
+    await expect(
+      within(canvasElement).getByRole("dialog", { name: "グローバル検索" }),
+    ).toBeVisible();
+  },
+};
+
+export const LoadedProjectComposition: Story = {
+  parameters: { loadedProject: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "開く" }));
+    await waitFor(() => {
+      const todoColumn = canvasElement.querySelector(
+        '[data-testid="column-Todo"]',
+      );
+      if (todoColumn === null) {
+        throw new Error("Todo column was not rendered");
+      }
+      const card = todoColumn.querySelector('[data-testid="task-card"]');
+      if (card?.textContent?.includes("ログイン画面のバグ修正") !== true) {
+        throw new Error("Loaded project card was not rendered");
+      }
+    });
+  },
 };
 
 const compositionTaskTree = TaskForest.fromPayload(
