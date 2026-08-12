@@ -11,30 +11,16 @@ import {
 } from "@/features/milestoneView/lib/milestoneStatus";
 
 type MilestoneCardProps = {
-  /** マスタ定義 */
   def: MilestoneDefinition;
-  /** 派生表示ステータス */
   status: MilestoneDisplayStatus;
-  /** BE projection。未使用 milestone は共有 zero projection を受ける。 */
   projection: MilestoneProjection;
-  /** done column 解決済みで ratio を表示できるか。 */
   showRatio: boolean;
-  /** 選択中かどうか（accent ハロー描画） */
   selected: boolean;
-  /** カード全体クリック時に呼ばれる */
   onSelect: () => void;
-  /** 現在時刻（カウントダウン算出用・テスト差し替え用） */
   now?: Date;
 };
 
-/**
- * 単一マイルストーンのカード。3 段構成（ヘッド: 状態+タイトル+期日 / ボディ: 進捗バー /
- * フッター: 所属件数の補足）。design-source: `.ms-card`。
- *
- * 既存テストの後方互換のため `data-testid="milestone-view-row"` を付ける。
- * @param props - {@link MilestoneCardProps}
- * @returns カード要素
- */
+/** 一覧のマイルストーンカード。 */
 export const MilestoneCard = ({
   def,
   status,
@@ -48,6 +34,7 @@ export const MilestoneCard = ({
   const title = Milestone.badgeLabel(def.name, def);
   const { done, total } = projection;
   const ratio = showRatio && total > 0 ? done / total : undefined;
+  const dueLabel = formatDue(def.due);
   const isClosed = status === "closed";
 
   return (
@@ -59,48 +46,51 @@ export const MilestoneCard = ({
       aria-pressed={selected}
       onClick={onSelect}
       className={[
-        "flex w-full flex-col gap-3 rounded-[10px] border bg-surface p-4 text-left transition shadow-sm",
-        "hover:border-border",
+        "group flex w-full flex-col overflow-hidden rounded-[10px] border bg-surface text-left shadow-sm transition-all",
+        "hover:-translate-y-px hover:border-border-strong hover:shadow-md active:translate-y-0",
         selected
           ? "border-accent ring-[3px] ring-accent-soft"
           : "border-border",
-        isClosed ? "bg-surface-muted" : "",
+        isClosed ? "opacity-80" : "",
       ].join(" ")}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex w-full items-start gap-3 p-4 pb-3">
         <MilestoneStateBadge status={status} />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div className="flex items-baseline gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex flex-wrap items-baseline gap-2">
             <span
-              className={`truncate text-[15px] font-semibold ${
-                isClosed ? "text-muted" : "text-foreground"
-              }`}
+              className={`truncate text-[15px] font-semibold ${isClosed ? "text-muted" : "text-foreground"}`}
             >
               {title}
             </span>
             {def.name !== title ? (
-              <span className="shrink-0 font-mono text-[10.5px] text-muted">
+              <span className="rounded bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-accent">
                 {def.name}
               </span>
             ) : null}
           </div>
-          {def.description !== undefined && def.description.length > 0 ? (
-            <p className="line-clamp-1 text-xs text-muted">{def.description}</p>
+          {def.description ? (
+            <p className="line-clamp-2 text-xs leading-relaxed text-muted">
+              {def.description}
+            </p>
           ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          {(() => {
-            // parseDue 検証を通った日付のみ YYYY-MM-DD で表示。
-            // ISO datetime や不正値はカウントダウン側の "期日未設定" に整合させ表示しない。
-            const dueLabel = formatDue(def.due);
-            return dueLabel !== undefined ? (
-              <span className="font-mono text-xs text-muted">{dueLabel}</span>
-            ) : null;
-          })()}
+          {dueLabel ? (
+            <span className="font-mono text-[11px] text-muted">{dueLabel}</span>
+          ) : null}
           <MilestoneCountdownBadge countdown={countdown} />
         </div>
       </div>
-      <MilestoneProgressBar done={done} total={total} ratio={ratio} />
+      <div className="w-full px-4 pb-3">
+        <MilestoneProgressBar done={done} total={total} ratio={ratio} />
+      </div>
+      <footer className="flex w-full items-center border-t border-border bg-surface-muted px-4 py-2 text-[10.5px] text-text-dim">
+        <span className="font-mono">milestones.yml · {def.name}</span>
+        <span className="ml-auto font-semibold text-muted transition group-hover:text-accent">
+          詳細 →
+        </span>
+      </footer>
     </button>
   );
 };
