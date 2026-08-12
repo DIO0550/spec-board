@@ -88,6 +88,16 @@ test("backend の labels を含む frontmatter は再 stringify せず表示す�
   ).toBe("---\ntitle: 'Title: #1'\nlabels:\n- needs:review\n---");
 });
 
+test("Rendered frontmatterはkeyとvalueを構文色分けする", () => {
+  render(ready());
+  expect(
+    container?.querySelectorAll("[data-preview-frontmatter-key]").length,
+  ).toBeGreaterThan(0);
+  expect(
+    container?.querySelectorAll("[data-preview-frontmatter-value]").length,
+  ).toBeGreaterThan(0);
+});
+
 test("本文のタスクリストが Rendered で MarkdownContent により描画される", () => {
   render(ready("---\ntitle: タスク\n---\n- [ ] やること\n- [x] 完了"));
   expect(

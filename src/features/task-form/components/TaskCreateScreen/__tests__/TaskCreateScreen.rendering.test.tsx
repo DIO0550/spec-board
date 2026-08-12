@@ -115,6 +115,31 @@ test("左フォームと右プレビューの2ペインが chrome（topbar/subba
   ).toBeTruthy();
 });
 
+test("mainは左form・4px resizer・480px previewで開始する", () => {
+  render(baseProps());
+  const main = document.querySelector(
+    '[data-testid="task-create-main"]',
+  ) as HTMLElement;
+  expect(main.className).toContain(
+    "grid-cols-[minmax(0,1fr)_4px_var(--preview-w)]",
+  );
+  expect(main.style.getPropertyValue("--preview-w")).toBe("480px");
+});
+
+test("外側documentを伸ばさずフォーム本文だけをスクロールする", () => {
+  render(baseProps());
+  const screen = document.querySelector<HTMLElement>(
+    '[data-testid="task-create-screen"]',
+  );
+  const formScroll = document.querySelector<HTMLElement>(
+    '[data-testid="task-create-form-scroll"]',
+  );
+
+  expect(screen?.className).toContain("overflow-hidden");
+  expect(formScroll?.className).toContain("relative");
+  expect(formScroll?.className).toContain("overflow-y-auto");
+});
+
 test("同期バッジに watchedFileCount が「監視 N files」として表示される", () => {
   render(baseProps({ watchedFileCount: 3 }));
   expect(
