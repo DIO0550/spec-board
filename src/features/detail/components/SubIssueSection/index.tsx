@@ -119,16 +119,19 @@ export const SubIssueSection = ({
   const showChildList = rows.length > 0;
 
   return (
-    <div data-testid="sub-issue-section">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-muted">
+    <div
+      data-testid="sub-issue-section"
+      className="border-b border-border px-[18px] py-4"
+    >
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
           サブIssue {showProgress ? `(${done}/${total})` : ""}
         </span>
       </div>
       {showProgress && (
         <div className="mb-2 flex items-center gap-2">
           <div
-            className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted"
+            className="h-1.5 flex-1 overflow-hidden rounded-full border border-border bg-surface-muted"
             role="progressbar"
             aria-valuenow={percentage}
             aria-valuemin={0}
@@ -136,7 +139,7 @@ export const SubIssueSection = ({
             aria-label={`進捗 ${done}/${total}`}
           >
             <div
-              className="h-full rounded-full bg-green-500 transition-all"
+              className="h-full rounded-full bg-accent transition-[width]"
               style={{ width: `${percentage}%` }}
             />
           </div>
@@ -189,7 +192,7 @@ export const SubIssueSection = ({
       )}
       <button
         type="button"
-        className="w-full rounded border border-dashed border-border px-2 py-1 text-xs text-muted hover:border-border hover:text-foreground disabled:opacity-50"
+        className="w-full rounded-md border border-dashed border-border-strong px-2 py-1.5 text-xs font-medium text-muted hover:border-accent hover:bg-accent-soft hover:text-accent disabled:opacity-50"
         onClick={() => onAddSubIssue(parentTask.filePath)}
         data-testid="sub-issue-add-button"
       >

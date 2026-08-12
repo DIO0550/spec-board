@@ -16,12 +16,12 @@ type MarkdownBodyProps = {
 };
 
 const TEXTAREA_CLASS_NAME =
-  "w-full min-h-[12rem] resize-none overflow-y-auto rounded border border-accent px-2 py-1 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  "min-h-[14rem] w-full resize-y overflow-y-auto rounded-md border border-accent bg-surface px-3 py-2.5 font-mono text-[13px] leading-6 outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft";
 
 const DISPLAY_EDITABLE_WRAPPER_CLASS_NAME =
-  "min-h-[3rem] cursor-text rounded px-1 py-0.5 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  "min-h-[3rem] cursor-text rounded px-1 py-0.5 text-sm leading-[1.7] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft";
 
-const DISPLAY_READONLY_WRAPPER_CLASS_NAME = "space-y-4";
+const DISPLAY_READONLY_WRAPPER_CLASS_NAME = "space-y-4 text-sm leading-[1.7]";
 
 const PLACEHOLDER_CLASS_NAME = "text-sm text-muted";
 
