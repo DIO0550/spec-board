@@ -496,3 +496,24 @@ test("名前が空白のみのときは送信ボタンが disabled になる（t
   )[0] as HTMLButtonElement | undefined;
   expect(submit?.disabled).toBe(true);
 });
+
+test("ファイルを見るはsource callbackを呼ぶ", () => {
+  const onOpenSource = vi.fn();
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(LabelSettingsTab, {
+        resource: baseResource(),
+        onLabelUsageClick: vi.fn(),
+        onOpenSource,
+      }),
+    );
+  });
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (candidate) => candidate.textContent?.trim() === "ファイルを見る",
+  );
+  act(() => button?.click());
+  expect(onOpenSource).toHaveBeenCalledOnce();
+});

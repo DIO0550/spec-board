@@ -210,6 +210,7 @@ const meta: Meta<typeof MilestoneViewScreen> = {
     doneColumn: "Done",
     milestoneProjections: SAMPLE_MILESTONE_PROJECTIONS,
     taskProjections: SAMPLE_TASK_PROJECTIONS,
+    onTaskClick: fn(),
     now: new Date("2026-04-15T12:00:00Z"),
   },
 };
@@ -224,6 +225,7 @@ export const Default: Story = {};
 export const AllProps: Story = {
   args: {
     onCreateMilestone: fn(async () => true),
+    onTaskClick: fn(),
     isCreating: false,
     now: new Date("2026-04-15T12:00:00Z"),
   },

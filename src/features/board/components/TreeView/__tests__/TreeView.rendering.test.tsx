@@ -225,6 +225,7 @@ test("500 段の深いネストでも描画がスタックを溢れさせない"
   render({ tasks, taskTree: forestOf(chain) });
 
   expect(container?.querySelectorAll("li")).toHaveLength(depth);
+  expect(container?.querySelectorAll("ul")).toHaveLength(65);
   const paddings = rowPaddings();
   expect(paddings[paddings.length - 1]).toBe(`${(depth - 1) * 16}px`);
 });

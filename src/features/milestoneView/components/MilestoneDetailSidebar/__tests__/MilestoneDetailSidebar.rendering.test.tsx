@@ -1,6 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { Task } from "@/types/task";
 import { MilestoneDetailSidebar } from "..";
@@ -93,4 +93,36 @@ test("task status と異なる TaskProjection.isDone を sidebar 表示の sourc
   expect(dotClass(rows[0])).toContain("--color-ms-success");
   expect(titleClass(rows[1])).not.toContain("line-through");
   expect(dotClass(rows[1])).toContain("--color-ms-todo");
+});
+
+test("所属タスクをクリックするとtask id付きでコールバックを呼ぶ", () => {
+  const onTaskClick = vi.fn();
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(MilestoneDetailSidebar, {
+        def: { name: "M1", state: "open" },
+        status: "open",
+        projection: {
+          done: 1,
+          total: 1,
+          taskFilePaths: [statusDoneProjectionOpenTask.filePath],
+        },
+        showRatio: true,
+        tasks: [statusDoneProjectionOpenTask],
+        taskProjections,
+        onTaskClick,
+      }),
+    );
+  });
+  act(() => {
+    container
+      ?.querySelector<HTMLButtonElement>(
+        '[data-testid="milestone-sidebar-task"]',
+      )
+      ?.click();
+  });
+  expect(onTaskClick).toHaveBeenCalledWith(statusDoneProjectionOpenTask.id);
 });

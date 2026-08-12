@@ -12,6 +12,7 @@ const taskTree = TaskForest.fromPayload(
   initialTasks.map((task) => ({ filePath: task.filePath, children: [] })),
 );
 const workspace = {
+  projectName: "payments-service",
   columns: initialColumns,
   tasks: initialTasks,
   doneColumn: "Done",

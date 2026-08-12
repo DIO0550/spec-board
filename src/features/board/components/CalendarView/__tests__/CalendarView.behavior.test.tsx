@@ -76,6 +76,17 @@ test("月表示は外月日を含む42セルと320pxサイドバーを描画す�
   ).toContain("w-80");
 });
 
+test("日付セルの追加ボタンはYYYY-MM-DD付きでコールバックを呼ぶ", () => {
+  const onAddTask = vi.fn();
+  act(() => {
+    root?.render(createElement(CalendarView, { tasks: [], onAddTask }));
+  });
+  click(
+    container?.querySelector('button[aria-label="2026-04-26にタスクを追加"]'),
+  );
+  expect(onAddTask).toHaveBeenCalledWith("2026-04-26");
+});
+
 test("期限超過・完了・優先度・3件超のmoreを日付セルへ表示する", () => {
   renderCalendar([
     makeTask({
@@ -106,6 +117,31 @@ test("期限超過・完了・優先度・3件超のmoreを日付セルへ表示
     container?.querySelector('[data-task-id="done"]')?.className,
   ).toContain("line-through");
   expect(container?.textContent).toContain("+ あと 1 件");
+});
+
+test("projectの完了カラムを期限超過判定と表示順へ使う", () => {
+  act(() => {
+    root?.render(
+      createElement(CalendarView, {
+        tasks: [
+          makeTask({ id: "closed", status: "Closed", due: "2026-04-20" }),
+        ],
+        columns: [
+          { name: "Queue", order: 1 },
+          { name: "Closed", order: 0 },
+        ],
+        doneColumn: "Closed",
+      }),
+    );
+  });
+  const event = container?.querySelector('[data-task-id="closed"]');
+  expect(event?.getAttribute("data-overdue")).toBe("false");
+  expect(event?.className).toContain("line-through");
+  const filters = Array.from(
+    container?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ??
+      [],
+  ).map((input) => input.value);
+  expect(filters.slice(0, 2)).toEqual(["Closed", "Queue"]);
 });
 
 test("ステータスfilterを外すと対象eventとサイドバー予定が非表示になる", () => {

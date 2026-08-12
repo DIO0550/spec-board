@@ -223,6 +223,13 @@ test("initialStatus が status フィールド（select trigger）に反映さ�
   expect(trigger?.textContent).toContain("Done");
 });
 
+test("initialDue が期限フィールドとpreview初期値に反映される", () => {
+  render(baseProps({ initialDue: "2026-09-30" }));
+  expect(
+    document.querySelector<HTMLInputElement>('input[type="date"]')?.value,
+  ).toBe("2026-09-30");
+});
+
 test("IPC 結果の fullPath がパスプレビューに表示される", async () => {
   previewMock.mockResolvedValue(
     Result.ok({

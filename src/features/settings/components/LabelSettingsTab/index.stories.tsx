@@ -159,6 +159,7 @@ const meta: Meta<typeof LabelSettingsTab> = {
   args: {
     resource: loadedResource,
     onLabelUsageClick: fn(),
+    onOpenSource: fn(),
   },
   parameters: {
     layout: "fullscreen",

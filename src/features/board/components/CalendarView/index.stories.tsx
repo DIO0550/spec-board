@@ -106,11 +106,21 @@ const meta: Meta<typeof CalendarView> = {
   component: CalendarView,
   args: {
     tasks: designTasks,
+    columns: [
+      { name: "Backlog", order: 0 },
+      { name: "Todo", order: 1 },
+      { name: "In Progress", order: 2 },
+      { name: "In Review", order: 3 },
+      { name: "Done", order: 4 },
+    ],
+    doneColumn: "Done",
     onTaskClick: fn(),
+    onAddTask: fn(),
   },
   argTypes: {
     tasks: { control: "object" },
     onTaskClick: { control: false },
+    onAddTask: { control: false },
   },
   parameters: {
     layout: "fullscreen",
@@ -133,6 +143,7 @@ export const AllProps: Story = {
   args: {
     tasks: designTasks,
     onTaskClick: fn(),
+    onAddTask: fn(),
   },
 };
 

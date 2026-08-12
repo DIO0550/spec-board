@@ -22,6 +22,7 @@ const meta = {
     columns: initialColumns,
     projectName: "payments-service",
     doneColumn: "Done",
+    onAddTask: fn(),
     onTaskClick: fn(),
   },
   parameters: { layout: "fullscreen" },

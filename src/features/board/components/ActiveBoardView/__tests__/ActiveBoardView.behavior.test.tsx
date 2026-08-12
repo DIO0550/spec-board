@@ -149,6 +149,49 @@ test("非 board ビューへ filtered が委譲され件数分描画される", 
   });
 });
 
+test("listへ実カラム順と追加actionを委譲する", () => {
+  const onAddTask = vi.fn();
+  renderActiveBoardView({
+    viewMode: "list",
+    filtered: [makeTask({ status: "Doing" })],
+    workspace: makeWorkspace({
+      columns: [
+        { name: "Doing", order: 1 },
+        { name: "Queue", order: 0 },
+      ],
+      doneColumn: "Doing",
+      onAddTask,
+    }),
+  });
+  const add = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent?.includes("追加"));
+  act(() => add?.click());
+  expect(onAddTask).toHaveBeenCalledWith("Queue");
+});
+
+test("treeへproject名と追加actionを委譲する", () => {
+  const onAddTask = vi.fn();
+  const task = makeTask({ status: "Queue" });
+  renderActiveBoardView({
+    viewMode: "tree",
+    filtered: [task],
+    workspace: makeWorkspace({
+      projectName: "real-project",
+      columns: [{ name: "Queue", order: 0 }],
+      tasks: [task],
+      taskTree: [{ filePath: task.filePath, children: [] }],
+      onAddTask,
+    }),
+  });
+  expect(container?.textContent).toContain("real-project");
+  const add = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent?.includes("追加"));
+  act(() => add?.click());
+  expect(onAddTask).toHaveBeenCalledWith("Queue");
+});
+
 test.each(
   nonBoardCases,
 )("viewMode='$viewMode' でタスククリック時に workspace.onTaskClick(task.id) が発火する", async ({

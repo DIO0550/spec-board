@@ -120,3 +120,42 @@ test("ステータスと設定ファイルへ内部タブで到達できる", as
     "読み取り専用",
   );
 });
+
+test("ラベル定義のファイルを見るから実config resourceのlabels targetを開く", async () => {
+  const openExternal = vi.fn(async () => true);
+  const milestoneMutations = {
+    isPending: false,
+    create: vi.fn(async () => true),
+    update: vi.fn(async () => true),
+    remove: vi.fn(async () => null),
+  };
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      createElement(SettingsScreen, {
+        labels: labelsResource,
+        milestones: milestonesResource,
+        milestoneProjections: new Map(),
+        milestoneMutations,
+        onLabelUsageClick: noopUsageClick,
+        configFiles: {
+          status: "ready",
+          files: [],
+          isRegenerating: false,
+          reload: async () => {},
+          copy: async () => false,
+          regenerate: async () => false,
+          openExternal,
+          revealFolder: async () => false,
+        },
+      }),
+    );
+  });
+  const button = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((candidate) => candidate.textContent === "ファイルを見る");
+  await act(async () => button?.click());
+  expect(openExternal).toHaveBeenCalledWith("labels");
+});

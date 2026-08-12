@@ -63,3 +63,48 @@ test("タスクが残るカラムは削除できず、空カラムは削除で�
   act(() => buttonByLabel("Blocked を削除")?.click());
   expect(buttonByLabel("Blocked を削除")).toBeUndefined();
 });
+
+test("保存失敗時は変更をdirtyのまま保持して再試行できる", async () => {
+  const onSave = vi.fn(async () => false);
+  renderTab({ onSave });
+  act(() => buttonByLabel("Todo を上へ")?.click());
+  await act(async () => buttonByLabel("変更を保存")?.click());
+  expect(container?.querySelector('[role="alert"]')?.textContent).toContain(
+    "保存に失敗",
+  );
+  expect(buttonByLabel("変更を保存")?.disabled).toBe(false);
+});
+
+test("保存成功後の連続renameは直前の保存名をsourceNameにする", async () => {
+  type SaveValue = Parameters<
+    NonNullable<Parameters<typeof StatusSettingsTab>[0]["onSave"]>
+  >[0];
+  const onSave = vi.fn(async (_value: SaveValue) => true);
+  renderTab({
+    initialColumns: [
+      {
+        id: "todo",
+        sourceName: "Todo",
+        name: "Todo",
+        taskCount: 0,
+        color: "#000000",
+      },
+    ],
+    initialDoneColumn: "Todo",
+    onSave,
+  });
+  const input = container?.querySelector<HTMLInputElement>("input");
+  const setValue = (value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(input, value);
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  act(() => setValue("Doing"));
+  await act(async () => buttonByLabel("変更を保存")?.click());
+  act(() => setValue("Review"));
+  await act(async () => buttonByLabel("変更を保存")?.click());
+  expect(onSave.mock.calls[1]?.[0].columns[0]?.sourceName).toBe("Doing");
+});

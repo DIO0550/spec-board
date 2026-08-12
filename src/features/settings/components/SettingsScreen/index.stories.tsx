@@ -36,6 +36,16 @@ const meta = {
     milestoneMutations,
     onLabelUsageClick: fn(),
     onBack: fn(),
+    onStatusSave: fn(async () => true),
+    projectName: "payments-service",
+    projectPath: "/work/payments-service",
+    watchedFileCount: 1,
+    tasks: [],
+    columns: [
+      { name: "Todo", order: 0, color: "#4f6fc7" },
+      { name: "Done", order: 1, color: "#3a9b67" },
+    ],
+    doneColumn: "Done",
   },
   parameters: { layout: "fullscreen" },
   decorators: [

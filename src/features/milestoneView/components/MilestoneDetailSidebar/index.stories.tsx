@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import {
   CLOSED_MILESTONE,
   OPEN_MILESTONE,
@@ -25,6 +26,7 @@ const meta: Meta<typeof MilestoneDetailSidebar> = {
     showRatio: true,
     tasks: [],
     taskProjections: new Map(),
+    onTaskClick: fn(),
     now: STORY_NOW,
   },
 };
