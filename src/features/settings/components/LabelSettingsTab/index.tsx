@@ -35,6 +35,8 @@ type LabelSettingsTabProps = {
   onLabelUsageClick: (labelName: string) => void;
   /** labels.ymlを外部表示するコールバック。 */
   onOpenSource?: () => void;
+  /** 実リソース由来の最終同期表示。未指定時は同期badgeを表示しない。 */
+  sourceSyncLabel?: string;
 };
 
 /**
@@ -49,6 +51,7 @@ export const LabelSettingsTab = ({
   resource,
   onLabelUsageClick,
   onOpenSource,
+  sourceSyncLabel,
 }: LabelSettingsTabProps) => {
   const { labels, usageCounts, status, reload } = resource;
   const { isPending, create, update, remove } = useLabelMutations(reload);
@@ -231,10 +234,18 @@ export const LabelSettingsTab = ({
         </strong>
         <span className="text-border-strong">·</span>
         <span>ラベル定義の保存先</span>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px]">
-          <span className="size-1.5 rounded-full bg-success" />
-          12秒前に同期
-        </span>
+        {sourceSyncLabel !== undefined && (
+          <span
+            data-testid="label-sync-status"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px]"
+          >
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-success"
+            />
+            {sourceSyncLabel}
+          </span>
+        )}
         <button
           type="button"
           onClick={onOpenSource}
