@@ -36,6 +36,8 @@ const VIEW_TAB_PREFIX = "board-view";
 
 /** BoardWorkspace の Props。 */
 export type BoardWorkspaceProps = {
+  /** toolbar等に表示する実project名。 */
+  projectName?: string;
   /** カラム定義の配列 */
   columns: ColumnType[];
   /** 全タスク（絞り込み前） */
@@ -60,6 +62,8 @@ export type BoardWorkspaceProps = {
    * @param columnName - 追加対象のカラム名
    */
   onAddTask: (columnName: string) => void;
+  /** カレンダーの日付cell起点で作成する。 */
+  onAddTaskForDate?: (date: string) => void;
   /**
    * タスククリック時のコールバック。
    * @param taskId - クリックされたタスクの ID

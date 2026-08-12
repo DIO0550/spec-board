@@ -1,21 +1,28 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
+import type { Column } from "@/types/column";
+import type { Task } from "@/types/task";
+import type { UseConfigFilesResult } from "../../hooks/useConfigFiles";
 import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
 import { AppearanceSettingsTab } from "../AppearanceSettingsTab";
 import { ConfigFileTab } from "../ConfigFileTab";
 import { LabelSettingsTab } from "../LabelSettingsTab";
 import { MilestoneSettingsTab } from "../MilestoneSettingsTab";
-import { StatusSettingsTab } from "../StatusSettingsTab";
+import {
+  type StatusColumn,
+  StatusSettingsTab,
+  type StatusSettingsValue,
+} from "../StatusSettingsTab";
 import { SubNav, subNavPanelId, subNavTabId } from "../SubNav";
 
 /** 設定画面に登録するタブ一覧。 */
 const SETTINGS_TABS: NonEmptySettingsTabs = [
-  { id: "labels", label: "ラベル", count: 14 },
-  { id: "milestones", label: "マイルストーン", count: 5 },
-  { id: "statuses", label: "ステータス", count: 5 },
+  { id: "labels", label: "ラベル" },
+  { id: "milestones", label: "マイルストーン" },
+  { id: "statuses", label: "ステータス" },
   { id: "config", label: "設定ファイル" },
   { id: "appearance", label: "外観" },
 ];
@@ -36,6 +43,16 @@ type ActivePanelProps = {
    * @param labelName - クリックされたラベル名
    */
   onLabelUsageClick: (labelName: string) => void;
+  statusColumns?: readonly StatusColumn[];
+  doneColumn?: string;
+  onStatusSave?: (
+    value: StatusSettingsValue,
+    // biome-ignore lint/suspicious/noConfusingVoidType: synchronous callbacks may intentionally return void.
+  ) => boolean | void | Promise<boolean | undefined>;
+  onOpenBoard?: () => void;
+  onOpenConfig?: () => void;
+  initialConfigFile?: "config" | "guide";
+  configFiles?: UseConfigFilesResult;
 };
 
 /**
@@ -52,6 +69,13 @@ const ActivePanel = ({
   milestoneProjections,
   milestoneMutations,
   onLabelUsageClick,
+  statusColumns,
+  doneColumn,
+  onStatusSave,
+  onOpenBoard,
+  onOpenConfig,
+  initialConfigFile,
+  configFiles,
 }: ActivePanelProps): ReactNode => {
   switch (tabId) {
     case "labels":
@@ -59,6 +83,11 @@ const ActivePanel = ({
         <LabelSettingsTab
           resource={labels}
           onLabelUsageClick={onLabelUsageClick}
+          onOpenSource={
+            configFiles === undefined
+              ? undefined
+              : () => void configFiles.openExternal("labels")
+          }
         />
       );
     case "milestones":
@@ -72,9 +101,33 @@ const ActivePanel = ({
     case "appearance":
       return <AppearanceSettingsTab />;
     case "statuses":
-      return <StatusSettingsTab />;
+      return (
+        <StatusSettingsTab
+          initialColumns={statusColumns}
+          initialDoneColumn={doneColumn}
+          onSave={onStatusSave}
+          onOpenBoard={onOpenBoard}
+          onOpenConfig={onOpenConfig}
+        />
+      );
     case "config":
-      return <ConfigFileTab />;
+      if (configFiles === undefined) {
+        return <ConfigFileTab initialFile={initialConfigFile} />;
+      }
+      return (
+        <ConfigFileTab
+          files={configFiles.files}
+          initialFile={initialConfigFile}
+          status={configFiles.status}
+          error={configFiles.error}
+          isRegenerating={configFiles.isRegenerating}
+          toast={configFiles.toast}
+          onCopy={(id) => void configFiles.copy(id)}
+          onRegenerate={() => void configFiles.regenerate()}
+          onOpenExternal={(id) => void configFiles.openExternal(id)}
+          onRevealFolder={() => void configFiles.revealFolder()}
+        />
+      );
     default:
       return null;
   }
@@ -109,6 +162,20 @@ type SettingsScreenProps = {
   initialTabId?: string;
   /** 戻るaction。App未接続時はno-op。 */
   onBack?: () => void;
+  projectName?: string;
+  projectPath?: string;
+  watchedFileCount?: number;
+  tasks?: readonly Task[];
+  columns?: readonly Column[];
+  doneColumn?: string;
+  onStatusSave?: (
+    value: StatusSettingsValue,
+    // biome-ignore lint/suspicious/noConfusingVoidType: synchronous callbacks may intentionally return void.
+  ) => boolean | void | Promise<boolean | undefined>;
+  /** 設定ファイルtabで最初に選択するfile。 */
+  initialConfigFile?: "config" | "guide";
+  /** Appで生成した実config file resource。 */
+  configFiles?: UseConfigFilesResult;
 };
 
 /**
@@ -126,31 +193,54 @@ export const SettingsScreen = ({
   onLabelUsageClick,
   initialTabId = SETTINGS_TABS[0].id,
   onBack,
+  projectName,
+  watchedFileCount,
+  tasks = [],
+  columns,
+  doneColumn,
+  onStatusSave,
+  initialConfigFile,
+  configFiles: configFilesProp,
 }: SettingsScreenProps) => {
   const [activeTabId, setActiveTabId] = useState<string>(initialTabId);
-  const activeTab = SettingsTab.selectActive(SETTINGS_TABS, activeTabId);
+  const tabs = useMemo<NonEmptySettingsTabs>(
+    () => [
+      { ...SETTINGS_TABS[0], count: labels.labels.length },
+      { ...SETTINGS_TABS[1], count: milestones.milestones.length },
+      { ...SETTINGS_TABS[2], count: columns?.length ?? 0 },
+      SETTINGS_TABS[3],
+      SETTINGS_TABS[4],
+    ],
+    [labels.labels.length, milestones.milestones.length, columns?.length],
+  );
+  const activeTab = SettingsTab.selectActive(tabs, activeTabId);
+  const statusColumns = useMemo<readonly StatusColumn[] | undefined>(
+    () =>
+      columns === undefined
+        ? undefined
+        : [...columns]
+            .sort((left, right) => left.order - right.order)
+            .map((column, index) => ({
+              id: `status-${index}-${column.name}`,
+              sourceName: column.name,
+              name: column.name,
+              taskCount: tasks.filter((task) => task.status === column.name)
+                .length,
+              color: column.color ?? "oklch(0.62 0.12 235)",
+            })),
+    [columns, tasks],
+  );
 
   return (
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[48px_44px_minmax(0,1fr)] overflow-hidden bg-background">
-      <header className="flex items-center gap-4 border-b border-border bg-surface px-4">
-        <span
-          aria-hidden="true"
-          className="size-[22px] rounded-md bg-gradient-to-br from-accent to-violet-700"
-        />
-        <strong className="text-[13px]">spec-board</strong>
-        <span className="font-mono text-xs text-muted">
-          payments-service · ~/work/payments-service
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-muted px-2 py-1 text-[11.5px] text-muted">
-          <span className="size-1.5 rounded-full bg-success" /> 同期中 · 監視
-          127 files
-        </span>
-      </header>
+    <div className="grid h-full min-h-0 flex-1 grid-rows-[44px_minmax(0,1fr)] overflow-hidden bg-background">
       <SubNav
-        tabs={SETTINGS_TABS}
+        tabs={tabs}
         activeTabId={activeTab.id}
         onSelect={setActiveTabId}
         onBack={onBack}
+        projectName={projectName}
+        taskCount={tasks.length}
+        fileCount={watchedFileCount}
       />
       <div
         role="tabpanel"
@@ -165,6 +255,13 @@ export const SettingsScreen = ({
           milestoneProjections={milestoneProjections}
           milestoneMutations={milestoneMutations}
           onLabelUsageClick={onLabelUsageClick}
+          statusColumns={statusColumns}
+          doneColumn={doneColumn}
+          onStatusSave={onStatusSave}
+          onOpenBoard={onBack}
+          onOpenConfig={() => setActiveTabId("config")}
+          initialConfigFile={initialConfigFile}
+          configFiles={configFilesProp}
         />
       </div>
     </div>

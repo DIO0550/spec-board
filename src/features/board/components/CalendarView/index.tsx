@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Due } from "@/domains/due";
+import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import {
   addMonth,
@@ -40,11 +41,17 @@ type CalendarRange = "month" | "week";
 type CalendarViewProps = {
   /** 表示するタスク一覧（絞り込み済み） */
   tasks: Task[];
+  /** project設定順のstatus column。 */
+  columns?: readonly Column[];
+  /** project設定の完了status。 */
+  doneColumn?: string;
   /**
    * 日付セル内のタスククリック時のコールバック。
    * @param taskId - クリックされたタスクの ID
    */
   onTaskClick?: (taskId: string) => void;
+  /** 指定日を初期値にタスク作成を開くコールバック。 */
+  onAddTask?: (date: string) => void;
 };
 
 type CalendarCell = {
@@ -126,8 +133,21 @@ const yearMonthOf = (date: string): YearMonth => ({
 });
 
 /** @returns 既定順と未知status末尾で並べたstatus一覧 */
-const statusListOf = (tasks: readonly Task[]): string[] => {
+const statusListOf = (
+  tasks: readonly Task[],
+  columns?: readonly Column[],
+): string[] => {
   const found = new Set(tasks.map((task) => task.status));
+  if (columns !== undefined) {
+    const configured = [...columns]
+      .sort((left, right) => left.order - right.order)
+      .map((column) => column.name);
+    const configuredSet = new Set(configured);
+    return [
+      ...configured,
+      ...[...found].filter((status) => !configuredSet.has(status)).sort(),
+    ];
+  }
   const preferred = PREFERRED_STATUS_ORDER.filter((status) =>
     found.has(status),
   );
@@ -186,7 +206,13 @@ const taskFileName = (task: Task): string =>
  * @param props - CalendarView props
  * @returns calendar view
  */
-export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
+export const CalendarView = ({
+  tasks,
+  columns,
+  doneColumn = "Done",
+  onTaskClick,
+  onAddTask,
+}: CalendarViewProps) => {
   const today = Due.todayLocal();
   const [visibleMonth, setVisibleMonth] = useState<YearMonth>(() =>
     yearMonthOf(today),
@@ -214,7 +240,10 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
     };
   }, [selectedTask]);
 
-  const statuses = useMemo(() => statusListOf(tasks), [tasks]);
+  const statuses = useMemo(
+    () => statusListOf(tasks, columns),
+    [tasks, columns],
+  );
   const filteredTasks = useMemo(
     () => tasks.filter((task) => !disabledStatuses.has(task.status)),
     [disabledStatuses, tasks],
@@ -241,11 +270,11 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
           }
           const delta = daysBetween(today, due);
           return delta < 0
-            ? task.status !== "Done"
+            ? task.status !== doneColumn
             : delta > 0 && delta <= UPCOMING_DAYS;
         })
         .sort((left, right) => (left.due ?? "").localeCompare(right.due ?? "")),
-    [filteredTasks, today],
+    [filteredTasks, today, doneColumn],
   );
 
   const monthKey = [visibleMonth.year, pad2(visibleMonth.month)].join("-");
@@ -484,6 +513,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                       type="button"
                       tabIndex={-1}
                       aria-label={`${cell.date}にタスクを追加`}
+                      onClick={() => onAddTask?.(cell.date)}
                       className="ml-auto inline-flex size-[18px] items-center justify-center rounded-full text-text-dim opacity-0 hover:bg-bg hover:text-accent group-hover:opacity-100"
                     >
                       <svg
@@ -498,7 +528,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                   <div className="flex min-h-0 flex-col gap-0.5 overflow-hidden">
                     {visibleTasks.map((task) => {
                       const overdue =
-                        task.status !== "Done" &&
+                        task.status !== doneColumn &&
                         Due.isOverdue(task.due, today);
                       const milestone =
                         task.milestone === undefined
@@ -508,7 +538,9 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                         ? "border-l-red-600 bg-red-500/10"
                         : statusEventClass(task.status);
                       const done =
-                        task.status === "Done" ? "line-through opacity-60" : "";
+                        task.status === doneColumn
+                          ? "line-through opacity-60"
+                          : "";
                       return (
                         <button
                           key={task.id}
@@ -813,7 +845,7 @@ export const CalendarView = ({ tasks, onTaskClick }: CalendarViewProps) => {
                 <dd
                   className={
                     Due.isOverdue(selectedTask.due, today) &&
-                    selectedTask.status !== "Done"
+                    selectedTask.status !== doneColumn
                       ? "font-medium text-red-600"
                       : ""
                   }

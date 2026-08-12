@@ -29,6 +29,12 @@ type TreeNodeItemProps = {
   doneColumn?: string;
 };
 
+type CompactTreeFrame = {
+  readonly node: TaskTreeNode;
+  readonly depth: number;
+  readonly root: boolean;
+};
+
 const FOLDER_ICON = (
   <svg
     aria-hidden="true"
@@ -55,6 +61,123 @@ const DOCUMENT_ICON = (
     <path d="M14 3v6h6" />
   </svg>
 );
+
+/** 詳細表示上限以降の可視行を反復走査し、深いDOM入れ子を作らず描画する。 */
+const CompactTreeBranch = ({
+  node,
+  depth,
+  tasksByFilePath,
+  onSelect,
+  expanded,
+  expandedPaths,
+  onToggle,
+  progressByFilePath,
+  doneColumn = "Done",
+}: TreeNodeItemProps) => {
+  const [locallyCollapsedPaths, setLocallyCollapsedPaths] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const rows = [];
+  const pending: CompactTreeFrame[] = [{ node, depth, root: true }];
+
+  const handleToggle = (filePath: string): void => {
+    if (onToggle !== undefined) {
+      onToggle(filePath);
+      return;
+    }
+    setLocallyCollapsedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(filePath)) {
+        next.delete(filePath);
+      } else {
+        next.add(filePath);
+      }
+      return next;
+    });
+  };
+
+  while (pending.length > 0) {
+    const frame = pending.pop();
+    if (frame === undefined) {
+      continue;
+    }
+    const task = tasksByFilePath.get(frame.node.filePath);
+    if (task === undefined) {
+      continue;
+    }
+
+    const hasChildren = frame.node.children.length > 0;
+    const controlledExpanded = expandedPaths?.has(frame.node.filePath);
+    let isExpanded =
+      controlledExpanded ?? !locallyCollapsedPaths.has(frame.node.filePath);
+    if (
+      controlledExpanded === undefined &&
+      frame.root &&
+      expanded !== undefined
+    ) {
+      isExpanded = expanded;
+    }
+    const progress = progressByFilePath?.get(frame.node.filePath) ?? {
+      done: 0,
+      total: frame.node.children.length,
+    };
+    const done = task.status === doneColumn;
+
+    rows.push(
+      <li key={frame.node.filePath}>
+        <div
+          data-tree-row={task.id}
+          className={`grid min-h-8 grid-cols-[minmax(280px,1.7fr)_120px_28px_200px_100px_1fr] items-center border-b border-l border-border text-xs ${
+            done ? "text-muted line-through" : "text-foreground"
+          }`}
+          style={{ paddingLeft: frame.depth * INDENT_PER_DEPTH }}
+        >
+          <span className="flex min-w-0 items-center pr-2">
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={() => handleToggle(frame.node.filePath)}
+                aria-label={isExpanded ? "折りたたむ" : "展開する"}
+                aria-expanded={isExpanded}
+                className="size-[18px] shrink-0 text-muted"
+              >
+                {isExpanded ? "▾" : "▸"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onSelect(task.id)}
+              className="min-w-0 truncate text-left"
+            >
+              {task.title || task.filePath} {task.id}
+            </button>
+          </span>
+          <span className="truncate">{task.status}</span>
+          <span>{task.priority ?? "—"}</span>
+          <span className="truncate">{task.labels.join(", ") || "—"}</span>
+          <span>
+            {progress.total === 0 ? "—" : `${progress.done}/${progress.total}`}
+          </span>
+          <code className="truncate" title={task.filePath}>
+            {task.filePath}
+          </code>
+        </div>
+      </li>,
+    );
+
+    if (!hasChildren || !isExpanded) {
+      continue;
+    }
+    for (let index = frame.node.children.length - 1; index >= 0; index -= 1) {
+      const child = frame.node.children[index];
+      if (child !== undefined) {
+        pending.push({ node: child, depth: frame.depth + 1, root: false });
+      }
+    }
+  }
+
+  return rows;
+};
 
 /** table-like treeの1行と子ノード。 */
 export const TreeNodeItem = memo(
@@ -100,65 +223,18 @@ export const TreeNodeItem = memo(
 
     if (depth >= DETAILED_RENDER_DEPTH_LIMIT) {
       return (
-        <li>
-          <div
-            data-tree-row={task.id}
-            className={`grid min-h-8 grid-cols-[minmax(280px,1.7fr)_120px_28px_200px_100px_1fr] items-center border-b border-l border-border text-xs ${
-              done ? "text-muted line-through" : "text-foreground"
-            }`}
-            style={{ paddingLeft: depth * INDENT_PER_DEPTH }}
-          >
-            <span className="flex min-w-0 items-center pr-2">
-              {hasChildren ? (
-                <button
-                  type="button"
-                  onClick={handleToggle}
-                  aria-label={isExpanded ? "折りたたむ" : "展開する"}
-                  aria-expanded={isExpanded}
-                  className="size-[18px] shrink-0 text-muted"
-                >
-                  {isExpanded ? "▾" : "▸"}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => onSelect(task.id)}
-                className="min-w-0 truncate text-left"
-              >
-                {task.title || task.filePath} {task.id}
-              </button>
-            </span>
-            <span className="truncate">{task.status}</span>
-            <span>{task.priority ?? "—"}</span>
-            <span className="truncate">{task.labels.join(", ") || "—"}</span>
-            <span>
-              {progress.total === 0
-                ? "—"
-                : `${progress.done}/${progress.total}`}
-            </span>
-            <code className="truncate" title={task.filePath}>
-              {task.filePath}
-            </code>
-          </div>
-          {hasChildren && isExpanded ? (
-            <ul className="border-l border-l-border/70">
-              {node.children.map((child) => (
-                <TreeNodeItem
-                  key={child.filePath}
-                  node={child}
-                  depth={depth + 1}
-                  tasksByFilePath={tasksByFilePath}
-                  onSelect={onSelect}
-                  expandedPaths={expandedPaths}
-                  onToggle={onToggle}
-                  accentByStatus={accentByStatus}
-                  progressByFilePath={progressByFilePath}
-                  doneColumn={doneColumn}
-                />
-              ))}
-            </ul>
-          ) : null}
-        </li>
+        <CompactTreeBranch
+          node={node}
+          depth={depth}
+          tasksByFilePath={tasksByFilePath}
+          onSelect={onSelect}
+          expanded={expanded}
+          expandedPaths={expandedPaths}
+          onToggle={onToggle}
+          accentByStatus={accentByStatus}
+          progressByFilePath={progressByFilePath}
+          doneColumn={doneColumn}
+        />
       );
     }
 

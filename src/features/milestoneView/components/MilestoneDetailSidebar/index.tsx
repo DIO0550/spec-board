@@ -22,6 +22,8 @@ type MilestoneDetailSidebarProps = {
   showRatio: boolean;
   tasks: readonly Task[];
   taskProjections: TaskProjectionMap;
+  /** 所属タスク選択時のコールバック。 */
+  onTaskClick?: (taskId: string) => void;
   now?: Date;
 };
 
@@ -33,6 +35,7 @@ export const MilestoneDetailSidebar = ({
   showRatio,
   tasks,
   taskProjections,
+  onTaskClick,
   now,
 }: MilestoneDetailSidebarProps) => {
   if (def === undefined || status === undefined) {
@@ -132,20 +135,26 @@ export const MilestoneDetailSidebar = ({
               return (
                 <li
                   key={task.id}
-                  data-testid="milestone-sidebar-task"
-                  className="flex items-center gap-2 border-t border-border py-2 first:border-t-0"
+                  className="border-t border-border first:border-t-0"
                 >
-                  <span
-                    className={`size-2 rounded-full ${isDone ? "bg-[var(--color-ms-success)]" : "bg-[var(--color-ms-todo)]"}`}
-                  />
-                  <span className="font-mono text-[10.5px] text-muted">
-                    {task.id}
-                  </span>
-                  <span
-                    className={`min-w-0 flex-1 truncate text-xs ${isDone ? "text-muted line-through" : "text-foreground"}`}
+                  <button
+                    type="button"
+                    data-testid="milestone-sidebar-task"
+                    onClick={() => onTaskClick?.(task.id)}
+                    className="flex w-full items-center gap-2 py-2 text-left hover:bg-surface-muted"
                   >
-                    {task.title}
-                  </span>
+                    <span
+                      className={`size-2 rounded-full ${isDone ? "bg-[var(--color-ms-success)]" : "bg-[var(--color-ms-todo)]"}`}
+                    />
+                    <span className="font-mono text-[10.5px] text-muted">
+                      {task.id}
+                    </span>
+                    <span
+                      className={`min-w-0 flex-1 truncate text-xs ${isDone ? "text-muted line-through" : "text-foreground"}`}
+                    >
+                      {task.title}
+                    </span>
+                  </button>
                 </li>
               );
             })}

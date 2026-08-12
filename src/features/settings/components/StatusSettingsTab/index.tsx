@@ -29,7 +29,10 @@ type StatusSettingsTabProps = {
   initialColumns?: readonly StatusColumn[];
   initialDoneColumn?: string;
   saveState?: "idle" | "saving" | "saved" | "error";
-  onSave?: (value: StatusSettingsValue) => void;
+  onSave?: (
+    value: StatusSettingsValue,
+    // biome-ignore lint/suspicious/noConfusingVoidType: synchronous callbacks may intentionally return void.
+  ) => boolean | void | Promise<boolean | undefined>;
   onOpenBoard?: () => void;
   onOpenConfig?: () => void;
 };
@@ -53,6 +56,10 @@ export const StatusSettingsTab = ({
   const [doneColumn, setDoneColumn] = useState(initialDoneColumn);
   const [newName, setNewName] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [internalSaveState, setInternalSaveState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const currentSaveState = saveState === "idle" ? internalSaveState : saveState;
   const taskCount = useMemo(
     () => columns.reduce((sum, column) => sum + column.taskCount, 0),
     [columns],
@@ -101,6 +108,27 @@ export const StatusSettingsTab = ({
     setNewName("");
   };
 
+  const save = async (): Promise<void> => {
+    if (onSave === undefined) {
+      return;
+    }
+    setInternalSaveState("saving");
+    try {
+      const result = await onSave({ columns, doneColumn });
+      if (result === false) {
+        setInternalSaveState("error");
+        return;
+      }
+      setColumns((current) =>
+        current.map((column) => ({ ...column, sourceName: column.name })),
+      );
+      setDirty(false);
+      setInternalSaveState("saved");
+    } catch {
+      setInternalSaveState("error");
+    }
+  };
+
   return (
     <section
       className="mx-auto flex w-full max-w-[1080px] flex-col gap-4"
@@ -139,14 +167,13 @@ export const StatusSettingsTab = ({
           </button>
           <button
             type="button"
-            disabled={!dirty || saveState === "saving"}
-            onClick={() => {
-              onSave?.({ columns, doneColumn });
-              setDirty(false);
-            }}
+            disabled={
+              !dirty || currentSaveState === "saving" || onSave === undefined
+            }
+            onClick={save}
             className="h-7 rounded-md border border-accent bg-accent px-2.5 text-xs font-medium text-accent-foreground disabled:opacity-50"
           >
-            {saveState === "saving" ? "保存中…" : "変更を保存"}
+            {currentSaveState === "saving" ? "保存中…" : "変更を保存"}
           </button>
         </div>
       </header>
@@ -223,7 +250,7 @@ export const StatusSettingsTab = ({
       <p className="m-0 rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-[11.5px] text-muted">
         タスクが残っているカラムは削除できません。先にタスクを移動してください。
       </p>
-      {saveState === "saved" && (
+      {currentSaveState === "saved" && (
         <div
           role="status"
           className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-3.5 py-2 text-xs text-background"
@@ -231,7 +258,7 @@ export const StatusSettingsTab = ({
           変更を保存しました
         </div>
       )}
-      {saveState === "error" && (
+      {currentSaveState === "error" && (
         <div
           role="alert"
           className="rounded-md border border-danger bg-danger-soft px-3 py-2 text-xs text-danger"

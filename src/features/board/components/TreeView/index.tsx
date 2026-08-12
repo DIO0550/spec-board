@@ -15,6 +15,8 @@ type TreeViewProps = {
   projectName?: string;
   /** 完了status。 */
   doneColumn?: string;
+  /** status sectionからタスク作成を開始する。 */
+  onAddTask?: (columnName: string) => void;
   /** 初回描画時に子を展開するか。既定はtrue。 */
   defaultExpanded?: boolean;
 };
@@ -83,6 +85,7 @@ export const TreeView = ({
   columns,
   projectName = "タスクツリー",
   doneColumn = "Done",
+  onAddTask,
   defaultExpanded = true,
 }: TreeViewProps) => {
   const visibleFilePaths = useMemo(
@@ -222,6 +225,15 @@ export const TreeView = ({
                       {sectionRoots.length}
                     </span>
                     <span className="h-px flex-1 bg-border" />
+                    {onAddTask !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => onAddTask(column.name)}
+                        className="rounded px-2 py-1 text-[11px] font-medium text-muted hover:bg-background hover:text-foreground"
+                      >
+                        + 追加
+                      </button>
+                    )}
                   </header>
                   <ul>
                     {sectionRoots.map((node) => (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Due } from "@/domains/due";
-import { Milestone } from "@/domains/milestone";
+import { Milestone, type MilestoneDefinition } from "@/domains/milestone";
 import {
   MilestoneProjection,
   type MilestoneProjectionMap,
@@ -26,6 +26,40 @@ import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 
+/** @param value - CSV cell value @returns RFC 4180 escaped cell */
+const escapeCsvCell = (value: unknown): string => {
+  const text = value === undefined ? "" : String(value);
+  const trimmed = text.trimStart();
+  const startsWithFormula = /^[=+\-@]/.test(trimmed);
+  const safeText = startsWithFormula ? `'${text}` : text;
+  return `"${safeText.split('"').join('""')}"`;
+};
+
+/**
+ * マイルストーン定義をCSVとしてブラウザーへダウンロードする。
+ * @param milestones - 出力するマイルストーン定義
+ */
+export const downloadMilestonesCsv = (
+  milestones: readonly MilestoneDefinition[],
+): void => {
+  const rows = milestones.map((milestone) =>
+    [milestone.name, milestone.state, milestone.due, milestone.description]
+      .map(escapeCsvCell)
+      .join(","),
+  );
+  const csv = ["name,state,due,description", ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "milestones.csv";
+  try {
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */
   resource: MilestonesResource;
@@ -46,6 +80,8 @@ type MilestoneViewScreenProps = {
   onCreateMilestone?: (args: CreateMilestoneArgs) => Promise<boolean>;
   /** create が pending 中かどうか（送信ボタン disabled に使う） */
   isCreating?: boolean;
+  /** 所属タスク選択時のコールバック。 */
+  onTaskClick?: (taskId: string) => void;
   /** visual regression用の基準時刻。通常は未指定。 */
   now?: Date;
 };
@@ -70,6 +106,7 @@ export const MilestoneViewScreen = ({
   taskProjections,
   onCreateMilestone,
   isCreating = false,
+  onTaskClick,
   now: referenceNow,
 }: MilestoneViewScreenProps) => {
   const sorted = useMemo(
@@ -259,6 +296,7 @@ export const MilestoneViewScreen = ({
         </p>
         <button
           type="button"
+          onClick={() => downloadMilestonesCsv(visible)}
           className="ml-auto rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-surface-muted"
         >
           エクスポート
@@ -319,6 +357,7 @@ export const MilestoneViewScreen = ({
           showRatio={doneColumn !== undefined}
           tasks={selectedTasks}
           taskProjections={taskProjections}
+          onTaskClick={onTaskClick}
           now={now}
         />
       </div>

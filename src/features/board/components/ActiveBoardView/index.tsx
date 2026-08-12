@@ -38,7 +38,10 @@ export const ActiveBoardView = ({
     return (
       <ListView
         tasks={filtered}
+        columns={workspace.columns}
+        doneColumn={workspace.doneColumn}
         filterActive={filterActive}
+        onAddTask={workspace.onAddTask}
         onTaskClick={workspace.onTaskClick}
       />
     );
@@ -48,13 +51,23 @@ export const ActiveBoardView = ({
       <TreeView
         tasks={filtered}
         taskTree={workspace.taskTree}
+        columns={workspace.columns}
+        projectName={workspace.projectName}
+        doneColumn={workspace.doneColumn}
+        onAddTask={workspace.onAddTask}
         onTaskClick={workspace.onTaskClick}
       />
     );
   }
   if (viewMode === "calendar") {
     return (
-      <CalendarView tasks={filtered} onTaskClick={workspace.onTaskClick} />
+      <CalendarView
+        tasks={filtered}
+        columns={workspace.columns}
+        doneColumn={workspace.doneColumn}
+        onTaskClick={workspace.onTaskClick}
+        onAddTask={workspace.onAddTaskForDate}
+      />
     );
   }
   if (viewMode === "roadmap") {

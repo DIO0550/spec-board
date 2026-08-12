@@ -1,5 +1,6 @@
 import type { Dispatch, FormEvent } from "react";
 import { useCallback, useReducer } from "react";
+import { Due } from "@/domains/due";
 import { DueField } from "@/features/task-form/lib/fields/due";
 import {
   FileNameField,
@@ -21,6 +22,8 @@ import type { TaskFormValues } from "@/features/task-form/types";
 export type UseTaskFormFieldsArgs = {
   /** ステータスの初期値 */
   initialStatus: string;
+  /** 期限の初期値。 */
+  initialDue?: string;
   /** 親タスクの初期値（parentFieldVisible が true のときだけ使用） */
   initialParent?: string;
   /** 親タスクフィールドが表示されるか */
@@ -236,7 +239,7 @@ export const useTaskFormFields = (
         priority: PriorityField.initial(),
         parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
         body: "",
-        due: DueField.initial(),
+        due: Due.parse(a.initialDue) ?? DueField.initial(),
         subIssues: SubIssuesField.initial(),
         draft: false,
       },

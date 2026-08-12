@@ -30,6 +30,12 @@ type SubNavProps = {
   onSelect: (tabId: string) => void;
   /** 設定画面から戻るaction。 */
   onBack?: () => void;
+  /** 現在のproject context。 */
+  projectName?: string;
+  /** project内のtask数。 */
+  taskCount?: number;
+  /** watcherが認識したfile数。 */
+  fileCount?: number;
 };
 
 /**
@@ -43,6 +49,9 @@ export const SubNav = ({
   activeTabId,
   onSelect,
   onBack,
+  projectName,
+  taskCount,
+  fileCount,
 }: SubNavProps) => {
   return (
     <nav
@@ -57,9 +66,14 @@ export const SubNav = ({
         <span aria-hidden="true">←</span>戻る
       </button>
       <span className="shrink-0 font-mono text-[11.5px] text-text-dim">
-        · .spec-board /{" "}
+        · {projectName === undefined ? ".spec-board" : projectName} /{" "}
         <strong className="text-foreground">プロジェクト設定</strong>
       </span>
+      {(taskCount !== undefined || fileCount !== undefined) && (
+        <span className="shrink-0 font-mono text-[10.5px] text-text-dim">
+          {taskCount ?? 0} tasks · {fileCount ?? 0} files
+        </span>
+      )}
       <div
         role="tablist"
         className="ml-4 flex h-full min-w-0 flex-1 gap-0.5 overflow-x-auto"

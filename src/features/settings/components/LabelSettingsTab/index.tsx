@@ -33,6 +33,8 @@ type LabelSettingsTabProps = {
    * @param labelName - クリックされたラベル名
    */
   onLabelUsageClick: (labelName: string) => void;
+  /** labels.ymlを外部表示するコールバック。 */
+  onOpenSource?: () => void;
 };
 
 /**
@@ -46,6 +48,7 @@ type LabelSettingsTabProps = {
 export const LabelSettingsTab = ({
   resource,
   onLabelUsageClick,
+  onOpenSource,
 }: LabelSettingsTabProps) => {
   const { labels, usageCounts, status, reload } = resource;
   const { isPending, create, update, remove } = useLabelMutations(reload);
@@ -234,6 +237,7 @@ export const LabelSettingsTab = ({
         </span>
         <button
           type="button"
+          onClick={onOpenSource}
           className="text-xs font-medium text-accent hover:underline"
         >
           ファイルを見る
