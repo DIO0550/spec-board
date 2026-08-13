@@ -1,7 +1,0 @@
-import{a as e,n as t}from"./chunk-BneVvdWh.js";import{t as n}from"./iframe-CwDLpG1U.js";import{t as r}from"./jsx-runtime-Bn1Ys6_W.js";import{r as i,t as a}from"./useTheme-BktwJS9R.js";import{n as o,r as s,t as c}from"./shell-DMKarkIw.js";var l,u,d,f,p,m,h,g;t((()=>{l=e(n(),1),c(),s(),u=r(),d=({theme:e})=>{let{setTheme:t}=i();return(0,l.useLayoutEffect)(()=>{t(e)},[t,e]),(0,u.jsx)(o,{})},f={component:o,argTypes:{},decorators:[e=>(0,u.jsx)(a,{children:(0,u.jsx)(e,{})})]},p={render:()=>(0,u.jsx)(d,{theme:`light`})},m={render:()=>(0,u.jsx)(d,{theme:`system`})},h={render:()=>(0,u.jsx)(d,{theme:`dark`})},p.parameters={...p.parameters,docs:{...p.parameters?.docs,source:{originalSource:`{
-  render: () => <ThemeFixture theme="light" />
-}`,...p.parameters?.docs?.source}}},m.parameters={...m.parameters,docs:{...m.parameters?.docs,source:{originalSource:`{
-  render: () => <ThemeFixture theme="system" />
-}`,...m.parameters?.docs?.source}}},h.parameters={...h.parameters,docs:{...h.parameters?.docs,source:{originalSource:`{
-  render: () => <ThemeFixture theme="dark" />
-}`,...h.parameters?.docs?.source}}},g=[`Default`,`AllProps`,`EdgeCases`]}))();export{m as AllProps,p as Default,h as EdgeCases,g as __namedExportsOrder,f as default};
