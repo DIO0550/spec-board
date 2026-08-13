@@ -65,3 +65,6 @@ export const MultipleWarnings: Story = {
     }),
   },
 };
+
+export const AllProps: Story = { ...MultipleWarnings };
+export const EdgeCases: Story = { ...NoWarning };

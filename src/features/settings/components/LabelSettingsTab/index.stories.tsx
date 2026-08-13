@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { LabelDefinition } from "@/domains/label-definition";
 import type { LabelsResource } from "@/hooks/useLabels";
 import { LabelSettingsTab } from ".";
@@ -157,13 +158,19 @@ const meta: Meta<typeof LabelSettingsTab> = {
   component: LabelSettingsTab,
   args: {
     resource: loadedResource,
-    onLabelUsageClick: (name) => {
-      console.log("usage click", name);
-    },
+    onLabelUsageClick: fn(),
+    onOpenSource: fn(),
   },
   parameters: {
-    layout: "padded",
+    layout: "fullscreen",
   },
+  decorators: [
+    (Story) => (
+      <div className="min-h-screen bg-background px-8 py-6">
+        <Story />
+      </div>
+    ),
+  ],
 };
 
 export default meta;
@@ -171,6 +178,12 @@ export default meta;
 type Story = StoryObj<typeof LabelSettingsTab>;
 
 export const Default: Story = {};
+
+export const AllProps: Story = {
+  args: { resource: loadedResource, sourceSyncLabel: "たった今同期" },
+};
+
+export const EdgeCases: Story = { args: { resource: emptyResource } };
 
 export const Loaded: Story = {
   args: { resource: loadedResource },

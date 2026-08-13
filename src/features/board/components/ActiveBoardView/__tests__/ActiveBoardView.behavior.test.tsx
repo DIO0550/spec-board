@@ -112,9 +112,10 @@ const nonBoardCases: {
   viewMode: BoardViewMode;
   selector: string;
 }[] = [
-  { viewMode: "list", selector: "ul.divide-y" },
-  { viewMode: "tree", selector: "ul.py-2" },
+  { viewMode: "list", selector: "[data-list-scroll]" },
+  { viewMode: "tree", selector: "[data-tree-toolbar]" },
   { viewMode: "calendar", selector: "button[aria-label='前の月']" },
+  { viewMode: "roadmap", selector: "[data-roadmap]" },
 ];
 
 test.each(
@@ -131,7 +132,7 @@ test.each(
   await vi.waitFor(() => {
     expect(container?.querySelector(selector)).not.toBeNull();
   });
-  expect(container?.querySelector("section[aria-label]")).toBeNull();
+  expect(container?.querySelector("[data-testid='column-header']")).toBeNull();
 });
 
 test("非 board ビューへ filtered が委譲され件数分描画される", async () => {
@@ -144,8 +145,51 @@ test("非 board ビューへ filtered が委譲され件数分描画される", 
     workspace: makeWorkspace(),
   });
   await vi.waitFor(() => {
-    expect(container?.querySelectorAll("ul.divide-y > li").length).toBe(2);
+    expect(container?.querySelectorAll("[data-list-row]").length).toBe(2);
   });
+});
+
+test("listへ実カラム順と追加actionを委譲する", () => {
+  const onAddTask = vi.fn();
+  renderActiveBoardView({
+    viewMode: "list",
+    filtered: [makeTask({ status: "Doing" })],
+    workspace: makeWorkspace({
+      columns: [
+        { name: "Doing", order: 1 },
+        { name: "Queue", order: 0 },
+      ],
+      doneColumn: "Doing",
+      onAddTask,
+    }),
+  });
+  const add = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent?.includes("追加"));
+  act(() => add?.click());
+  expect(onAddTask).toHaveBeenCalledWith("Queue");
+});
+
+test("treeへproject名と追加actionを委譲する", () => {
+  const onAddTask = vi.fn();
+  const task = makeTask({ status: "Queue" });
+  renderActiveBoardView({
+    viewMode: "tree",
+    filtered: [task],
+    workspace: makeWorkspace({
+      projectName: "real-project",
+      columns: [{ name: "Queue", order: 0 }],
+      tasks: [task],
+      taskTree: [{ filePath: task.filePath, children: [] }],
+      onAddTask,
+    }),
+  });
+  expect(container?.textContent).toContain("real-project");
+  const add = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent?.includes("追加"));
+  act(() => add?.click());
+  expect(onAddTask).toHaveBeenCalledWith("Queue");
 });
 
 test.each(
@@ -219,4 +263,27 @@ test("board で allTasks(絞り込み前) と filtered(絞り込み後) が別�
     "[data-testid='task-card-subissue-count']",
   );
   expect(badge?.textContent).toBe("1/1");
+});
+
+test("roadmap の Epic 追加は先頭カラム名で workspace.onAddTask を通知する", async () => {
+  const onAddTask = vi.fn();
+  renderActiveBoardView({
+    viewMode: "roadmap",
+    filtered: [makeTask({ title: "Epic A" })],
+    workspace: makeWorkspace({
+      columns: [
+        { name: "Done", order: 2 },
+        { name: "Todo", order: 0 },
+      ],
+      onAddTask,
+    }),
+  });
+  await vi.waitFor(() => {
+    expect(container?.querySelector("[data-roadmap]")).not.toBeNull();
+  });
+  const addButton = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+  ).find((button) => button.textContent?.includes("Epicを追加"));
+  act(() => addButton?.click());
+  expect(onAddTask).toHaveBeenCalledWith("Todo");
 });

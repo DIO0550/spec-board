@@ -1,13 +1,15 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { PopoverSelect } from ".";
+
+const onChange = fn();
 
 const meta: Meta<typeof PopoverSelect> = {
   component: PopoverSelect,
   args: {
     label: "ステータス",
-    onChange: fn(),
+    onChange,
     disabled: false,
     "data-testid": "story-popover-select",
   },
@@ -69,5 +71,28 @@ export const Disabled: Story = {
     options: STATUS_OPTIONS,
     value: "Done",
     disabled: true,
+  },
+};
+
+export const Default: Story = { ...Status };
+export const AllProps: Story = { ...Priority };
+export const EdgeCases: Story = { ...Empty };
+
+export const Open: Story = {
+  ...Status,
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByTestId("story-popover-select"),
+    );
+  },
+};
+
+export const Interaction: Story = {
+  ...Status,
+  play: async ({ canvasElement }) => {
+    const trigger = within(canvasElement).getByTestId("story-popover-select");
+    trigger.focus();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await expect(onChange).toHaveBeenCalledWith("In Progress");
   },
 };

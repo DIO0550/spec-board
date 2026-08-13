@@ -1,5 +1,5 @@
-import { TauriError } from "@/lib/tauri";
 import { expect, test } from "vitest";
+import { TauriError } from "@/lib/tauri";
 import {
   isProjectSwitchedError,
   PROJECT_SWITCHED_MESSAGE,

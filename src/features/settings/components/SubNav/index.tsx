@@ -28,6 +28,14 @@ type SubNavProps = {
    * @param tabId - 選択されたタブ ID
    */
   onSelect: (tabId: string) => void;
+  /** 設定画面から戻るaction。 */
+  onBack?: () => void;
+  /** 現在のproject context。 */
+  projectName?: string;
+  /** project内のtask数。 */
+  taskCount?: number;
+  /** watcherが認識したfile数。 */
+  fileCount?: number;
 };
 
 /**
@@ -36,30 +44,69 @@ type SubNavProps = {
  * @param props - {@link SubNavProps}
  * @returns tablist 要素
  */
-export const SubNav = ({ tabs, activeTabId, onSelect }: SubNavProps) => {
+export const SubNav = ({
+  tabs,
+  activeTabId,
+  onSelect,
+  onBack,
+  projectName,
+  taskCount,
+  fileCount,
+}: SubNavProps) => {
   return (
-    <div role="tablist" className="flex gap-1 border-b border-border">
-      {tabs.map((tab) => {
-        const isActive = tab.id === activeTabId;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={subNavTabId(tab.id)}
-            aria-selected={isActive}
-            aria-controls={subNavPanelId(tab.id)}
-            onClick={() => onSelect(tab.id)}
-            className={
-              isActive
-                ? "border-b-2 border-accent px-3 py-2 text-sm font-medium text-foreground"
-                : "px-3 py-2 text-sm text-muted hover:bg-surface-muted"
-            }
-          >
-            {tab.label}
-          </button>
-        );
-      })}
-    </div>
+    <nav
+      className="flex min-w-0 items-center gap-3 border-b border-border bg-surface px-4 text-xs"
+      aria-label="プロジェクト設定"
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex shrink-0 items-center gap-1.5 font-medium text-muted hover:text-accent"
+      >
+        <span aria-hidden="true">←</span>戻る
+      </button>
+      <span className="shrink-0 font-mono text-[11.5px] text-text-dim">
+        · {projectName === undefined ? ".spec-board" : projectName} /{" "}
+        <strong className="text-foreground">プロジェクト設定</strong>
+      </span>
+      {(taskCount !== undefined || fileCount !== undefined) && (
+        <span className="shrink-0 font-mono text-[10.5px] text-text-dim">
+          {taskCount ?? 0} tasks · {fileCount ?? 0} files
+        </span>
+      )}
+      <div
+        role="tablist"
+        className="ml-4 flex h-full min-w-0 flex-1 gap-0.5 overflow-x-auto"
+      >
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeTabId;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={subNavTabId(tab.id)}
+              aria-selected={isActive}
+              aria-controls={subNavPanelId(tab.id)}
+              onClick={() => onSelect(tab.id)}
+              className={
+                isActive
+                  ? "h-full shrink-0 border-b-2 border-accent px-3 text-xs font-medium text-foreground"
+                  : "h-full shrink-0 border-b-2 border-transparent px-3 text-xs font-medium text-muted hover:text-foreground"
+              }
+            >
+              {tab.label}
+              {tab.count !== undefined && (
+                <span
+                  title={`${tab.count}件`}
+                  data-count={tab.count}
+                  className="ml-1.5 rounded-full border border-border bg-background px-1.5 py-0.5 font-mono text-[10.5px] text-muted after:content-[attr(data-count)]"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 };

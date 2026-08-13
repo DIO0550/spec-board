@@ -48,7 +48,11 @@ export const ColumnNameInput = ({
         {...(dndDisabled ? { "data-column-dnd-disabled": true } : {})}
       />
       {field.isDuplicate && (
-        <p id={field.errorId} className="text-xs text-red-500" role="alert">
+        <p
+          id={field.errorId}
+          className="text-[10.5px] leading-4 text-red-500"
+          role="alert"
+        >
           同じ名前のカラムが既に存在します
         </p>
       )}

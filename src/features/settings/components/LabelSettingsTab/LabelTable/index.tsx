@@ -66,8 +66,8 @@ export const LabelTable = ({
     );
   }
   return (
-    <div className="overflow-hidden rounded border border-slate-200 bg-white">
-      <div className="grid grid-cols-[140px_1fr_88px_88px_88px_72px] gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted">
+    <div className="overflow-x-auto rounded-b-lg border border-border bg-surface">
+      <div className="grid min-w-[780px] grid-cols-[240px_minmax(180px,1fr)_80px_110px_130px_56px] items-center border-b border-border bg-surface-muted px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
         <div>ラベル</div>
         <div>説明</div>
         <div>使用数</div>
@@ -82,11 +82,11 @@ export const LabelTable = ({
             <li
               key={label.name}
               data-testid="label-row"
-              className="group grid grid-cols-[140px_1fr_88px_88px_88px_72px] items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
+              className="group grid min-w-[780px] grid-cols-[240px_minmax(180px,1fr)_80px_110px_130px_56px] items-center border-b border-border px-4 py-2.5 text-[12.5px] last:border-b-0 hover:bg-surface-muted"
             >
               <div>
                 <span
-                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
                   style={resolveLabelSwatchStyle(label)}
                 >
                   <span
@@ -114,7 +114,7 @@ export const LabelTable = ({
                 )}
               </div>
               <div>
-                <span className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-muted">
+                <span className="rounded border border-border px-1.5 py-0.5 text-xs text-muted">
                   {displayGroup(label)}
                 </span>
               </div>
@@ -130,7 +130,7 @@ export const LabelTable = ({
                   title="編集"
                   disabled={isPending}
                   onClick={() => onEdit(label)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded border-none bg-transparent text-muted hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded border-none bg-transparent text-muted hover:bg-surface-muted hover:text-foreground disabled:opacity-50"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -153,7 +153,7 @@ export const LabelTable = ({
                   title="削除"
                   disabled={isPending}
                   onClick={() => onDelete(label.name)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded border-none bg-transparent text-muted hover:bg-slate-100 hover:text-red-600 disabled:opacity-50"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded border-none bg-transparent text-muted hover:bg-surface-muted hover:text-red-600 disabled:opacity-50"
                 >
                   <svg
                     viewBox="0 0 24 24"

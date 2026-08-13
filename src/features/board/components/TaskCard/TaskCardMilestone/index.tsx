@@ -11,7 +11,7 @@ export const TaskCardMilestone = () => {
     return null;
   }
   return (
-    <div className="mt-1.5 flex">
+    <div className="mt-2 flex">
       <MilestoneBadge
         name={task.milestone}
         definition={milestonesByName?.get(task.milestone)}

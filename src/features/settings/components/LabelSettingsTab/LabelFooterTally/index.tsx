@@ -33,27 +33,27 @@ export const LabelFooterTally = ({
   colorTally,
 }: LabelFooterTallyProps) => {
   return (
-    <div className="flex items-center justify-between text-xs text-muted">
+    <footer className="flex flex-wrap items-center gap-3 rounded-b-lg border border-t-0 border-border bg-surface-muted px-4 py-2.5 text-[11.5px] text-muted">
       <span>
         {shown} / {total} 件 表示中
       </span>
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
         <span>使用中のカラー</span>
         {colorTally.map((entry) => (
           <span
             key={entry.color}
-            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5"
+            className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5"
             title={entry.color}
           >
             <span
               aria-hidden="true"
-              className="inline-block h-2 w-2 rounded-full border border-slate-300"
+              className="inline-block h-2 w-2 rounded-full border border-border"
               style={{ backgroundColor: swatchBg(entry.color) }}
             />
             {entry.count}
           </span>
         ))}
       </div>
-    </div>
+    </footer>
   );
 };

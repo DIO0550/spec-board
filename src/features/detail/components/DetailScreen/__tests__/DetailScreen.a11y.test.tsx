@@ -132,14 +132,13 @@ test("削除ボタンに focus-visible リング（red）クラスを含む", ()
   expect(cls).toContain("focus-visible:ring-red-500");
 });
 
-test("md ブレークポイントの 2 ペインクラスが維持される", () => {
+test("md ブレークポイントで本文 + 340px properties の grid になる", () => {
   render(buildProps());
-  const section = getSection();
-  expect(section.className).toContain("md:flex-row");
-  const sidebarWrapper = Array.from(section.children).find((el) =>
-    el.className.includes("md:w-[360px]"),
+  const layout = document.querySelector(
+    `[data-testid="detail-layout"]`,
   ) as HTMLElement;
-  expect(sidebarWrapper).toBeTruthy();
+  expect(layout.className).toContain("md:grid-cols-[minmax(0,1fr)_340px]");
+  const sidebarWrapper = layout.lastElementChild as HTMLElement;
   expect(sidebarWrapper.className).toContain("md:border-l");
 });
 

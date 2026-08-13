@@ -77,6 +77,32 @@ test("loaded で各ラベル名が描画される", () => {
   expect(container?.textContent).toContain("priority:high");
 });
 
+test("同期情報が未提供ならsource stripに架空の同期時刻を表示しない", () => {
+  render(buildResource());
+  expect(container?.textContent).not.toContain("12秒前に同期");
+  expect(
+    container?.querySelector('[data-testid="label-sync-status"]'),
+  ).toBeNull();
+});
+
+test("同期情報が提供されたときだけsource stripに表示する", () => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(LabelSettingsTab, {
+        resource: buildResource(),
+        onLabelUsageClick: () => {},
+        sourceSyncLabel: "たった今同期",
+      }),
+    );
+  });
+  expect(
+    container.querySelector('[data-testid="label-sync-status"]')?.textContent,
+  ).toContain("たった今同期");
+});
+
 test("color が #RRGGBB のラベルはその色がインライン style に付く（マスタ色優先）", () => {
   const html = renderToStaticMarkup(
     createElement(LabelSettingsTab, {

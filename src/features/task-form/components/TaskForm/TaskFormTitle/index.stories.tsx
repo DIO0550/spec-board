@@ -39,3 +39,6 @@ export const WithForbiddenCharError: Story = {
     error: { code: "FORBIDDEN_CHAR", chars: ["<", ">"] },
   },
 };
+
+export const AllProps: Story = { ...WithForbiddenCharError };
+export const EdgeCases: Story = { ...WithTooLongError };

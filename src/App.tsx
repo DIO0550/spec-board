@@ -48,6 +48,7 @@ import {
   useColumnReorder,
   useTaskMove,
 } from "./features/board";
+import { CommandPalette } from "./features/commandPalette";
 import {
   DetailScreen,
   useLinkAdd,
@@ -56,8 +57,13 @@ import {
   useTaskUpdate,
 } from "./features/detail";
 import { MilestoneViewScreen } from "./features/milestoneView";
-import { SettingsScreen, useMilestoneMutations } from "./features/settings";
-import { AppSidebar, ThemeProvider } from "./features/shell";
+import {
+  SettingsScreen,
+  type StatusSettingsValue,
+  useConfigFiles,
+  useMilestoneMutations,
+} from "./features/settings";
+import { AppSidebar, ThemeProvider, useSidebar } from "./features/shell";
 import {
   TaskCreateScreen,
   type TaskFormValues,
@@ -87,7 +93,7 @@ type DisplayableData = {
  *   候補は親 1 件に絞られ UI 上 read-only になる。
  */
 type CreateModalState =
-  | { readonly kind: "normal"; readonly status: string }
+  | { readonly kind: "normal"; readonly status: string; readonly due?: string }
   | {
       readonly kind: "subIssue";
       readonly status: string;
@@ -203,6 +209,7 @@ const resolveSelectedTask = (
  */
 const AppShell = () => {
   const { view, navigate } = useAppView();
+  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   // 配下サブツリーが toasts 配列の差し替えで再 render されないよう dispatch 専用フックを使う。
   const { showToast } = useToastDispatch();
   // sidebar 表示用の最近一覧。add と通知副作用は ProjectNotificationsProvider が担う。
@@ -234,6 +241,7 @@ const AppShell = () => {
   );
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
   // 存在する間は selectedTask 計算の fallback として参照され、DetailScreen が
   // pending 中も描画継続できる。rollback で tasks に戻れば自然と fallback は不要になる。
@@ -374,6 +382,7 @@ const AppShell = () => {
   const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
   // ラベルリソース（settings 向けの唯一の取得点）。TaskForm は別途 useLabelList を使う。
   const labelsResource = useLabels(loadedPath ?? undefined);
+  const configFiles = useConfigFiles(loadedPath ?? undefined);
   // settings の使用数は milestone と対称に live な tasks から算出した値で上書きする。
   // ただし「プロジェクトが loaded」のときだけ。未ロードの間は BE 由来の usageCounts を
   // 維持し、ロード前の瞬間に「0 件 / 未使用」と誤表示しないようにする（loaded で 0 件は
@@ -393,6 +402,10 @@ const AppShell = () => {
   const [pendingLabelFilter, setPendingLabelFilter] = useState<string | null>(
     null,
   );
+  const [settingsEntry, setSettingsEntry] = useState<{
+    readonly tabId: string;
+    readonly configFile?: "config" | "guide";
+  }>({ tabId: "labels" });
   const handleLabelUsageClick = useCallback(
     (name: string) => {
       setPendingLabelFilter(name);
@@ -403,6 +416,44 @@ const AppShell = () => {
   const handleLabelFilterApplied = useCallback(() => {
     setPendingLabelFilter(null);
   }, []);
+  const handleStatusSave = useCallback(
+    async (value: StatusSettingsValue): Promise<boolean> => {
+      const renames = value.columns.flatMap((column) =>
+        column.sourceName !== undefined && column.sourceName !== column.name
+          ? [{ from: column.sourceName, to: column.name }]
+          : [],
+      );
+      const result = await updateColumns({
+        columns: value.columns.map((column, order) => ({
+          name: column.name,
+          order,
+          color: column.color,
+        })),
+        doneColumn: value.doneColumn,
+        ...(renames.length === 0 ? {} : { renames }),
+      });
+      if (!result.ok) {
+        onMutationError(result.error, "ステータス設定の保存に失敗しました");
+        return false;
+      }
+      showToast("ステータス設定を保存しました", "success");
+      return true;
+    },
+    [onMutationError, showToast, updateColumns],
+  );
+  const handleGuideClick = useCallback(() => {
+    setSettingsEntry({ tabId: "config", configFile: "guide" });
+    navigate("settings");
+  }, [navigate]);
+  const handleCommandSettings = useCallback(() => {
+    setSelectedTaskId(null);
+    setSettingsEntry({ tabId: "labels" });
+    navigate("settings");
+  }, [navigate]);
+  const handleCommandMilestones = useCallback(() => {
+    setSelectedTaskId(null);
+    navigate("milestone");
+  }, [navigate]);
 
   // サブIssue モードのときだけ自動セットされた親 path を取り出す（通常作成 / 閉時は undefined）。
   const subIssueParentPath =
@@ -506,6 +557,7 @@ const AppShell = () => {
     if (view === "detail") {
       setSelectedTaskId(null);
     }
+    setSettingsEntry({ tabId: "labels" });
     navigate("settings");
   }, [view, navigate]);
 
@@ -533,6 +585,22 @@ const AppShell = () => {
     },
     [navigate],
   );
+  const handleAddTaskForDate = useCallback(
+    (due: string) => {
+      const firstColumn = [...columns].sort(
+        (left, right) => left.order - right.order,
+      )[0];
+      if (firstColumn === undefined) {
+        showToast("利用可能なステータスがありません", "error");
+        return;
+      }
+      setCreateModal({ kind: "normal", status: firstColumn.name, due });
+      setReturnView("board");
+      setReturnTaskId(null);
+      navigate("create");
+    },
+    [columns, navigate, showToast],
+  );
 
   const handleCloseCreateModal = useCallback(() => {
     setCreateModal(null);
@@ -552,6 +620,14 @@ const AppShell = () => {
           column.order < lowest.order ? column : lowest,
         ).name
       : null;
+
+  const handleHeaderNewTask = useCallback(() => {
+    if (defaultCreateStatus === null) {
+      showToast("利用可能なステータスがありません", "error");
+      return;
+    }
+    handleAddTask(defaultCreateStatus);
+  }, [defaultCreateStatus, handleAddTask, showToast]);
 
   const handleAddSubIssue = useCallback(
     (parentFilePath: string) => {
@@ -611,6 +687,7 @@ const AppShell = () => {
             // 1 回適用される（key の追加はかえって seed→クリア→再 remount で seed 消失を招く
             // ので付けない）。
             columns={columns}
+            projectName={projectName}
             tasks={tasks}
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
@@ -619,6 +696,7 @@ const AppShell = () => {
             milestonesByName={milestonesResource.byName}
             milestones={milestonesResource.milestones}
             onAddTask={handleAddTask}
+            onAddTaskForDate={handleAddTaskForDate}
             onAddColumn={handleAddColumn}
             onRenameColumn={handleRenameColumn}
             onDeleteColumn={handleDeleteColumn}
@@ -655,6 +733,9 @@ const AppShell = () => {
           projectName={projectName}
           watchedFileCount={tasks.length}
           initialStatus={createModal.status}
+          initialDue={
+            createModal.kind === "normal" ? createModal.due : undefined
+          }
           parentCandidates={parentCandidates}
           existingTasks={tasks}
           initialParent={subIssueParentPath}
@@ -663,25 +744,39 @@ const AppShell = () => {
           onClose={handleCloseCreateModal}
         />
       ) : (
-        <>
-          <HeaderBar
-            view={view}
-            onSettingsClick={handleSettingsClick}
-            onMilestoneClick={
-              state.kind === "loaded" ? handleMilestoneClick : undefined
-            }
-            onOpenClick={handleOpenClick}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <AppSidebar
+            projectName={projectName}
+            currentPath={displayedPath ?? undefined}
+            recentProjects={recentProjects}
+            tasks={tasks}
+            selectedTaskId={selectedTaskId}
+            collapsed={sidebarCollapsed}
+            onToggle={toggleSidebar}
+            onOpenProject={handleOpenClick}
+            onOpenProjectPath={handleOpenProjectPath}
+            onSelectTask={handleSidebarSelectTask}
           />
-          <div className="flex flex-1 overflow-hidden">
-            <AppSidebar
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <HeaderBar
+              view={view}
               projectName={projectName}
-              currentPath={displayedPath ?? undefined}
-              recentProjects={recentProjects}
-              tasks={tasks}
-              selectedTaskId={selectedTaskId}
-              onOpenProject={handleOpenClick}
-              onOpenProjectPath={handleOpenProjectPath}
-              onSelectTask={handleSidebarSelectTask}
+              projectPath={displayedPath ?? undefined}
+              watchedFileCount={tasks.length}
+              sidebarCollapsed={sidebarCollapsed}
+              onSidebarToggle={toggleSidebar}
+              onSettingsClick={handleSettingsClick}
+              onGuideClick={
+                state.kind === "loaded" ? handleGuideClick : undefined
+              }
+              onSearchClick={() => setIsCommandPaletteOpen(true)}
+              onMilestoneClick={
+                state.kind === "loaded" ? handleMilestoneClick : undefined
+              }
+              onNewTaskClick={
+                state.kind === "loaded" ? handleHeaderNewTask : undefined
+              }
+              onOpenClick={handleOpenClick}
             />
             <main className="flex flex-1 overflow-hidden">
               {view === "settings" && (
@@ -691,6 +786,17 @@ const AppShell = () => {
                   milestoneProjections={milestoneProjections}
                   milestoneMutations={milestoneMutations}
                   onLabelUsageClick={handleLabelUsageClick}
+                  initialTabId={settingsEntry.tabId}
+                  initialConfigFile={settingsEntry.configFile}
+                  configFiles={configFiles}
+                  projectName={projectName}
+                  projectPath={displayedPath ?? undefined}
+                  watchedFileCount={tasks.length}
+                  tasks={tasks}
+                  columns={columns}
+                  doneColumn={doneColumn}
+                  onStatusSave={handleStatusSave}
+                  onBack={handleBackToBoard}
                 />
               )}
               {view === "milestone" && (
@@ -702,6 +808,7 @@ const AppShell = () => {
                   taskProjections={projections}
                   onCreateMilestone={milestoneMutations.create}
                   isCreating={milestoneMutations.isPending}
+                  onTaskClick={handleTaskClick}
                 />
               )}
               {view === "detail" && selectedTask && (
@@ -731,8 +838,18 @@ const AppShell = () => {
                 renderMain()}
             </main>
           </div>
-        </>
+        </div>
       )}
+      <CommandPalette
+        tasks={tasks}
+        isOpen={isCommandPaletteOpen}
+        onOpenChange={setIsCommandPaletteOpen}
+        onTaskSelect={handleTaskClick}
+        onNewTask={handleHeaderNewTask}
+        onSettings={handleCommandSettings}
+        onMilestones={handleCommandMilestones}
+        onGuide={handleGuideClick}
+      />
       <LiveRegion announcement={announcement} />
     </div>
   );

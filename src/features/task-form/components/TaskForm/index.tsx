@@ -37,6 +37,8 @@ type TaskFormProps = {
   columns: Column[];
   /** ステータスの初期値 */
   initialStatus: string;
+  /** 期限の初期値。 */
+  initialDue?: string;
   /** 親タスクの選択候補。未指定の場合は親タスクフィールド自体を非表示にする */
   parentCandidates?: Task[];
   /** 親タスクの初期値（サブIssue 追加時の自動設定用） */
@@ -103,6 +105,7 @@ type TaskFormProps = {
 export const TaskForm = ({
   columns,
   initialStatus,
+  initialDue,
   parentCandidates,
   initialParent,
   parentReadOnly,
@@ -130,6 +133,7 @@ export const TaskForm = ({
   const links = useLinksInput();
   const fields = useTaskFormFields({
     initialStatus,
+    initialDue,
     initialParent,
     parentFieldVisible: parentCandidates !== undefined,
     isSubmitting,

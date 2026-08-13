@@ -1,7 +1,13 @@
 import { useCallback, useState } from "react";
 
 /** ボードの表示形態一覧（サブバータブと検証の両方に使う）。 */
-export const BOARD_VIEW_MODES = ["board", "list", "tree", "calendar"] as const;
+export const BOARD_VIEW_MODES = [
+  "board",
+  "list",
+  "tree",
+  "calendar",
+  "roadmap",
+] as const;
 /** ボードの表示形態。 */
 export type BoardViewMode = (typeof BOARD_VIEW_MODES)[number];
 
@@ -47,7 +53,7 @@ export type UseBoardViewModeResult = {
 };
 
 /**
- * ボードの表示形態（board / list / tree / calendar）を保持し localStorage に永続化する。
+ * ボードの表示形態（board / list / tree / calendar / roadmap）を保持し localStorage に永続化する。
  * @returns 表示形態 state と更新ハンドラ
  */
 export const useBoardViewMode = (): UseBoardViewModeResult => {

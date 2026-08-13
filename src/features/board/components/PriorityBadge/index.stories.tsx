@@ -23,3 +23,7 @@ export const High: Story = { args: { priority: "High" } };
 export const Medium: Story = { args: { priority: "Medium" } };
 export const Low: Story = { args: { priority: "Low" } };
 export const Undefined: Story = { args: { priority: undefined } };
+
+export const Default: Story = { ...Medium };
+export const AllProps: Story = { ...High };
+export const EdgeCases: Story = { ...Undefined };

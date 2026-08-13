@@ -113,3 +113,7 @@ export const NavigationDisabled: Story = {
     onLinkClick: undefined,
   },
 };
+
+export const Default: Story = { ...WithLinks };
+export const AllProps: Story = { ...WithBothDirections };
+export const EdgeCases: Story = { ...NoLinks };

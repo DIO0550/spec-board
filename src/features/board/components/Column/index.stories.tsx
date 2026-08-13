@@ -111,3 +111,6 @@ export const ManyTasks: Story = {
 export const WithoutMenu: Story = {
   args: { onDeleteColumn: undefined, onRenameColumn: undefined },
 };
+
+export const AllProps: Story = { ...ManyTasks };
+export const EdgeCases: Story = { ...Empty };

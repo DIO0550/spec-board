@@ -33,10 +33,10 @@ export const AddColumnButton = ({ onAdd }: AddColumnButtonProps) => {
 
   if (field.isEditing) {
     return (
-      <div className="flex h-fit w-72 min-w-72 flex-col gap-1 rounded-lg bg-surface-muted p-2">
+      <div className="flex h-fit w-[260px] min-w-[260px] flex-col gap-1 rounded-[10px] border border-border bg-surface-muted p-2.5 shadow-sm">
         <ColumnNameInput
           field={field}
-          className="w-full rounded border border-accent px-2 py-1 text-sm text-foreground outline-none disabled:bg-surface-muted"
+          className="w-full rounded-md border border-accent bg-surface px-2 py-1.5 text-xs text-foreground outline-none ring-accent-soft focus:ring-[3px] disabled:bg-surface-muted"
           dataTestId="add-column-input"
           placeholder="カラム名"
         />
@@ -49,7 +49,7 @@ export const AddColumnButton = ({ onAdd }: AddColumnButtonProps) => {
       type="button"
       onClick={field.startEditing}
       aria-label="カラムを追加"
-      className="h-fit w-72 min-w-72 rounded-lg border-2 border-dashed border-border px-4 py-2 text-sm text-muted hover:border-border hover:text-foreground"
+      className="mt-1 h-11 w-[260px] min-w-[260px] rounded-[10px] border border-dashed border-border-strong px-4 text-xs font-medium text-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft"
       data-testid="add-column-button"
     >
       + カラムを追加

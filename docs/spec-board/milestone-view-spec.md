@@ -49,6 +49,8 @@
 
 フィルタ / 検索 / ソートの選択状態は画面内一時状態とし、ローカル永続化は行わない。
 
+「エクスポート」は現在のフィルタ / 検索 / ソート後のマイルストーンを `milestones.csv` として出力する。全セルを RFC 4180 の引用符形式にし、セル先頭の空白を除いた最初の文字が `=` / `+` / `-` / `@` の場合は apostrophe を付与して表計算ソフトの式としての評価を防ぐ。download 成否にかかわらず生成した Object URL は解放する。
+
 ## 一覧ビュー（list）
 
 カード (`MilestoneCard`) 縦並び。各カード:
@@ -91,13 +93,17 @@
 
 ## 作成モーダル（`MilestoneCreateModal`）
 
-入力フィールド（4 つ）:
+入力フィールド（6 つ）:
 | フィールド | 必須 | 正規化 |
 |:--|:--|:--|
 | 名前 (name) | ◯ | 送信値は無加工（config-spec の unnormalized 完全一致キー仕様に従う）。`form.name.trim()` が空のときのみ送信不可（バリデーションは trim 後判定だが送信値はトリムしない） |
 | 表示名 (title) | - | 前後空白トリム、空文字は undefined |
 | 期日 (due) | - | HTML `<input type="date">`。空文字は undefined |
+| ラベル (labels) | - | カンマ区切りを trim し、空要素を除外して optional `onLabelsChange` へ通知（`CreateMilestoneArgs` には含めない） |
+| 担当者 (assignee) | - | optional `onAssigneeChange` へ選択値を通知（`CreateMilestoneArgs` には含めない） |
 | 説明 (description) | - | 前後空白トリム、空文字は undefined |
+
+名前欄の下には入力値を小文字 kebab-case にした `milestones.yml → {slug}` preview を追従表示する。preview は保存キーの正規化ではなく、送信する `name` は従来どおり無加工とする。ラベル候補・担当者候補および変更 callback はすべて optional で、既存呼び出しとの後方互換を維持する。
 
 閉じる動線: 閉じる × ボタン / キャンセル / overlay クリック / Escape キー。
 
@@ -151,5 +157,7 @@ overlay は ConfirmDialog と同じく `<div role="presentation">` で a11y ツ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.3 | 2026-08-12 | CSVセルの式注入対策とObject URL解放要件を明記 | - |
+| 1.2 | 2026-08-12 | 表示中マイルストーンの CSV Export と、所属タスクから詳細へ遷移する taskId callback 境界を追加 | - |
 | 1.1 | 2026-07-29 | Rust resident projection を進捗・所属順・done・Settings usage の source of truth として規定 | - |
 | 1.0 | 2026-06-21 | 初版作成（PR #408 にて画面挙動を仕様化） | - |

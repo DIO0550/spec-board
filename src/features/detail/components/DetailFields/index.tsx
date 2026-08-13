@@ -98,7 +98,7 @@ const DetailFieldsRoot = ({
 const DetailFieldsStatusPriority = () => {
   const { task, columns, handlers } = useDetailFieldsContext();
   return (
-    <div className="flex gap-4">
+    <section className="grid grid-cols-1 gap-3 border-b border-border px-[18px] py-4">
       <StatusField
         value={task.status}
         columns={columns}
@@ -109,7 +109,7 @@ const DetailFieldsStatusPriority = () => {
         onChange={handlers.onPriorityChange}
       />
       <DueBadge due={task.due} />
-    </div>
+    </section>
   );
 };
 
@@ -124,13 +124,15 @@ const DetailFieldsLabels = () => {
   const labelList = useLabelList();
   const suggestions = labelList.kind === "loaded" ? labelList.labels : [];
   return (
-    <LabelsField
-      label="ラベル"
-      value={task.labels}
-      suggestions={suggestions}
-      onChange={handlers.onLabelsChange}
-      data-testid="detail-labels"
-    />
+    <div className="border-b border-border px-[18px] py-4">
+      <LabelsField
+        label="ラベル"
+        value={task.labels}
+        suggestions={suggestions}
+        onChange={handlers.onLabelsChange}
+        data-testid="detail-labels"
+      />
+    </div>
   );
 };
 
@@ -185,10 +187,13 @@ const DetailFieldsDraft = () => {
     return null;
   }
   return (
-    <div className="flex items-center gap-2" data-testid="detail-draft-field">
+    <div
+      className="flex items-center gap-2 border-b border-border px-[18px] py-4"
+      data-testid="detail-draft-field"
+    >
       <span
         data-testid="detail-draft-badge"
-        className="inline-flex items-center rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600"
+        className="inline-flex items-center rounded-full border border-border bg-surface-muted px-2 py-1 text-[10.5px] font-medium text-muted"
       >
         下書き
       </span>

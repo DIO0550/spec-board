@@ -75,6 +75,17 @@ test("▶ クリックで子タスクリストが展開される", () => {
   expect(container?.textContent).toContain("タスクB");
 });
 
+test("印刷時に子リストを強制展開するための識別子を持つ", () => {
+  render({
+    childRows: [row("c1", "タスクA", false)],
+    counts: { done: 0, total: 1 },
+  });
+
+  expect(
+    container?.querySelector("details")?.hasAttribute("data-sub-issue"),
+  ).toBe(true);
+});
+
 test("total が 0 で非表示", () => {
   render({ childRows: [], counts: { done: 0, total: 0 } });
   expect(container?.innerHTML).toBe("");

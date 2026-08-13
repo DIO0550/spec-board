@@ -66,7 +66,9 @@ const rowPaddings = (): string[] =>
   );
 
 const titleButtons = (): HTMLButtonElement[] =>
-  Array.from(container?.querySelectorAll("button:not([aria-expanded])") ?? []);
+  Array.from(
+    container?.querySelectorAll("li button:not([aria-expanded])") ?? [],
+  );
 
 const toggleButtons = (): HTMLButtonElement[] =>
   Array.from(container?.querySelectorAll("button[aria-expanded]") ?? []);
@@ -223,6 +225,7 @@ test("500 段の深いネストでも描画がスタックを溢れさせない"
   render({ tasks, taskTree: forestOf(chain) });
 
   expect(container?.querySelectorAll("li")).toHaveLength(depth);
+  expect(container?.querySelectorAll("ul")).toHaveLength(65);
   const paddings = rowPaddings();
   expect(paddings[paddings.length - 1]).toBe(`${(depth - 1) * 16}px`);
 });

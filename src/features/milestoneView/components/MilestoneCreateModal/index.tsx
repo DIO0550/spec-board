@@ -30,6 +30,14 @@ type MilestoneCreateModalProps = {
   onCreate: (args: CreateMilestoneArgs) => Promise<boolean>;
   /** 親が共有する pending 中フラグ（送信ボタン disabled に使う） */
   isPending: boolean;
+  /** Suggested labels for the optional metadata field. */
+  labelOptions?: readonly string[];
+  /** Suggested assignees for the optional metadata field. */
+  assigneeOptions?: readonly string[];
+  /** Reports the normalized comma-separated label selection. */
+  onLabelsChange?: (labels: readonly string[]) => void;
+  /** Reports the optional assignee selection. */
+  onAssigneeChange?: (assignee: string) => void;
   /** キャンセル / 成功で閉じるときに呼ばれる */
   onClose: () => void;
 };
@@ -74,12 +82,26 @@ export const MilestoneCreateModal = ({
   subtitle,
   onCreate,
   isPending,
+  labelOptions = [],
+  assigneeOptions = [],
+  onLabelsChange,
+  onAssigneeChange,
   onClose,
 }: MilestoneCreateModalProps) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const id = useId();
   const titleId = `${id}-title`;
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
+  const [isNameTouched, setIsNameTouched] = useState(false);
+  const [labels, setLabels] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const autoSlug =
+    form.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+/, "")
+      .replace(/-+$/, "") || "version-tag";
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -210,10 +232,33 @@ export const MilestoneCreateModal = ({
               autoComplete="off"
               data-testid="milestone-create-name"
               value={form.name}
+              onBlur={() => setIsNameTouched(true)}
+              aria-invalid={isNameTouched && form.name.trim() === ""}
+              aria-describedby={
+                isNameTouched && form.name.trim() === ""
+                  ? `${id}-name-error`
+                  : undefined
+              }
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="v1.7"
               className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             />
+            {isNameTouched && form.name.trim() === "" ? (
+              <span
+                id={`${id}-name-error`}
+                data-testid="milestone-create-name-error"
+                className="text-[11px] text-[var(--color-ms-danger-fg)]"
+              >
+                名前を入力してください
+              </span>
+            ) : (
+              <span
+                data-testid="milestone-create-slug"
+                className="font-mono text-[10.5px] text-muted"
+              >
+                milestones.yml → {autoSlug}
+              </span>
+            )}
           </label>
 
           <div className="grid grid-cols-[1fr_150px] gap-3">
@@ -245,6 +290,56 @@ export const MilestoneCreateModal = ({
             </label>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Labels — 任意
+              </span>
+              <input
+                data-testid="milestone-create-labels"
+                list={`${id}-labels`}
+                value={labels}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setLabels(value);
+                  onLabelsChange?.(
+                    value
+                      .split(",")
+                      .map((label) => label.trim())
+                      .filter(Boolean),
+                  );
+                }}
+                placeholder="release, frontend"
+                className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground"
+              />
+              <datalist id={`${id}-labels`}>
+                {labelOptions.map((label) => (
+                  <option key={label} value={label} />
+                ))}
+              </datalist>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Assignee — 任意
+              </span>
+              <select
+                data-testid="milestone-create-assignee"
+                value={assignee}
+                onChange={(event) => {
+                  setAssignee(event.target.value);
+                  onAssigneeChange?.(event.target.value);
+                }}
+                className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground"
+              >
+                <option value="">未割り当て</option>
+                {assigneeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
               説明 — 任意

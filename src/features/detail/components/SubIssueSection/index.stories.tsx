@@ -49,3 +49,7 @@ export const WithDescendantsBeyondDirectChildren: Story = {
     subIssueCounts: { done: 2, total: childTasks.length + 2 },
   },
 };
+
+export const Default: Story = { ...WithChildren };
+export const AllProps: Story = { ...WithDescendantsBeyondDirectChildren };
+export const EdgeCases: Story = { ...Empty };

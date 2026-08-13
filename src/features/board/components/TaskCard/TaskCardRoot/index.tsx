@@ -29,6 +29,8 @@ export type TaskCardRootProps = {
   hasBrokenLink?: boolean;
   /** 1 件でもパースエラー警告を持つかどうか */
   hasParseError?: boolean;
+  /** 選択中カードとしてaccent ringを表示する。 */
+  active?: boolean;
   /**
    * カードクリック時のコールバック
    * @param taskId クリックされたタスクの id
@@ -56,6 +58,7 @@ export const TaskCardRoot = ({
   fromColumn,
   hasBrokenLink = false,
   hasParseError = false,
+  active = false,
   onClick,
   childTasks,
   children,
@@ -142,7 +145,10 @@ export const TaskCardRoot = ({
   const draftClass = !isDragging && task.draft ? " opacity-60" : "";
   const dataDragging = isDragging ? "true" : undefined;
   const interactiveClass = onClick
-    ? " cursor-pointer hover:border-accent hover:shadow-md"
+    ? " cursor-pointer hover:-translate-y-px hover:border-border-strong hover:shadow-md focus-visible:border-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft"
+    : "";
+  const activeClass = active
+    ? " border-accent ring-2 ring-accent ring-offset-1 ring-offset-bg"
     : "";
 
   const handleClick = onClick
@@ -172,6 +178,7 @@ export const TaskCardRoot = ({
       <div
         draggable={!dndDisabled}
         data-dragging={dataDragging}
+        data-active={active ? "true" : undefined}
         data-testid="task-card"
         aria-grabbed={isDragging}
         onDragStart={handleDragStart}
@@ -180,7 +187,7 @@ export const TaskCardRoot = ({
         tabIndex={onClick ? 0 : undefined}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        className={`w-full rounded-lg border border-border bg-surface p-3 text-left shadow-sm${interactiveClass}${draggingClass}${draftClass}`}
+        className={`w-full rounded-[7px] border border-border bg-surface px-[11px] py-2.5 text-left shadow-sm transition-[border-color,box-shadow,opacity,transform] duration-100 [[data-density=compact]_&]:px-2.5 [[data-density=compact]_&]:py-2${interactiveClass}${activeClass}${draggingClass}${draftClass}`}
       >
         {children}
       </div>

@@ -24,7 +24,7 @@ export const CycleWarningBanner = (props: CycleWarningBannerProps) => {
     <div
       role="alert"
       data-testid="cycle-warning-banner"
-      className="flex items-start gap-2 rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800"
+      className="flex items-start gap-2 rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs leading-5 text-yellow-800"
     >
       <span aria-hidden="true">⚠</span>
       <span>

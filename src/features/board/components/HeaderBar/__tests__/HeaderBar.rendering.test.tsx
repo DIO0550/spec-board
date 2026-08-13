@@ -92,6 +92,35 @@ test("「開く」ボタンクリックでコールバックが呼ばれる", as
   expect(onOpenClick).toHaveBeenCalledTimes(1);
 });
 
+test("GUIDE callback指定時はGUIDE.mdボタンを表示して呼び出す", async () => {
+  const onGuideClick = vi.fn();
+  renderHeaderBar({ projectName: "demo", onGuideClick });
+  let button: HTMLButtonElement | undefined;
+  await vi.waitFor(() => {
+    button = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (candidate): candidate is HTMLButtonElement =>
+        candidate.textContent === "GUIDE.md",
+    );
+    expect(button).toBeDefined();
+  });
+  button?.click();
+  expect(onGuideClick).toHaveBeenCalledOnce();
+});
+
+test("検索callback指定時は⌘K導線を表示して呼び出す", async () => {
+  const onSearchClick = vi.fn();
+  renderHeaderBar({ projectName: "demo", onSearchClick });
+  await vi.waitFor(() => {
+    expect(
+      container?.querySelector('[aria-label="グローバル検索を開く"]'),
+    ).not.toBeNull();
+  });
+  container
+    ?.querySelector<HTMLButtonElement>('[aria-label="グローバル検索を開く"]')
+    ?.click();
+  expect(onSearchClick).toHaveBeenCalledOnce();
+});
+
 test("view 未指定（既定 board）では設定ボタンが「設定」表示", async () => {
   renderHeaderBar();
   await vi.waitFor(() => {

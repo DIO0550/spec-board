@@ -18,6 +18,7 @@
 pub mod card_order;
 pub mod clock;
 pub mod column_name;
+pub mod config_files;
 pub mod core;
 pub mod create_label;
 pub mod create_milestone;

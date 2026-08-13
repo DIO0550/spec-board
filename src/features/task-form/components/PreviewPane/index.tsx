@@ -18,6 +18,53 @@ type PreviewMode = "raw" | "rendered";
 const TAB_BASE_CLASS_NAME =
   "rounded-md px-3 py-1 text-xs font-medium text-muted aria-pressed:bg-panel aria-pressed:text-foreground aria-pressed:shadow-sm";
 
+type FrontmatterPreviewProps = {
+  /** `---` を含む frontmatter 原文。 */
+  value: string;
+};
+
+/**
+ * frontmatter原文を保持したまま、YAMLのkey/valueに表示色を付ける。
+ * @param props - {@link FrontmatterPreviewProps}
+ * @returns 構文色付きfrontmatter
+ */
+const FrontmatterPreview = ({ value }: FrontmatterPreviewProps) => {
+  const occurrenceByLine = new Map<string, number>();
+  const lines = value.split("\n").map((line) => {
+    const occurrence = (occurrenceByLine.get(line) ?? 0) + 1;
+    occurrenceByLine.set(line, occurrence);
+    return { key: `${line}\u0000${occurrence}`, line };
+  });
+  return (
+    <>
+      {lines.map(({ key, line }, index) => {
+        const match = /^([^\s:#][^:]*):(.*)$/.exec(line);
+        const lineBreak = index < lines.length - 1 ? "\n" : "";
+        if (match === null) {
+          return (
+            <span key={key} className="text-text-dim">
+              {line}
+              {lineBreak}
+            </span>
+          );
+        }
+        return (
+          <span key={key}>
+            <span data-preview-frontmatter-key className="text-indigo-700">
+              {match[1]}
+            </span>
+            <span className="text-text-dim">:</span>
+            <span data-preview-frontmatter-value className="text-emerald-700">
+              {match[2]}
+            </span>
+            {lineBreak}
+          </span>
+        );
+      })}
+    </>
+  );
+};
+
 /**
  * BE が生成した full markdown を Raw / Rendered でトグル表示するプレビューペイン。
  * Rendered 時は fence の内側を `<pre>` で上部に出し、本文のみ `MarkdownContent` で描画する。
@@ -116,7 +163,7 @@ export const PreviewPane = (props: PreviewPaneProps) => {
           className="overflow-hidden rounded-lg border border-border bg-panel"
         >
           <pre className="overflow-x-auto whitespace-pre-wrap border-b border-border bg-surface-muted p-3.5 font-mono text-xs leading-relaxed text-muted">
-            {split.frontmatter}
+            <FrontmatterPreview value={split.frontmatter} />
           </pre>
           <div className="p-4">
             <MarkdownContent body={split.body} />

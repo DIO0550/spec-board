@@ -4,41 +4,20 @@ import { MilestoneCard } from "@/features/milestoneView/components/MilestoneCard
 import type { MilestoneDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
 
 type MilestoneListProps = {
-  /** 表示するマイルストーン一覧（フィルタ済み・ソート済みを前提とする） */
   milestones: readonly MilestoneDefinition[];
-  /**
-   * 各マイルストーンの表示ステータスを返す。
-   * @param def - マイルストーン定義
-   * @returns 表示ステータス
-   */
   statusOf: (def: MilestoneDefinition) => MilestoneDisplayStatus;
-  /**
-   * 各マイルストーンの BE projection を返す。
-   * @param def - マイルストーン定義
-   * @returns projection
-   */
   projectionOf: (def: MilestoneDefinition) => MilestoneProjection;
-  /** done column 解決済みで ratio を表示できるか。 */
   showRatio: boolean;
-  /** 選択中のマイルストーン名（未選択なら undefined） */
   selectedName: string | undefined;
-  /**
-   * カードがクリックされた時に呼ばれる。
-   * @param def - クリックされたマイルストーン定義
-   */
   onSelect: (def: MilestoneDefinition) => void;
-  /** 現在時刻（カウントダウン算出用・テスト差し替え用） */
   now?: Date;
 };
 
 /**
- * フィルタ・ソート済みのマイルストーン群を縦に並べる一覧ビュー。
- * グルーピングは行わず、上位の sortMilestones の結果をそのまま並べる
- * （design ではグループ見出しもあるが、ソート結果優先で簡素化）。
- *
- * 空（フィルタ結果ゼロ）のときは説明テキストを返す。
+ * フィルタ済み一覧をOpen（overdue含む）/Closedに分けて表示する。
+ * グループ内の順序は上位のsort結果を保持する。
  * @param props - {@link MilestoneListProps}
- * @returns 一覧要素
+ * @returns グループ化した一覧
  */
 export const MilestoneList = ({
   milestones,
@@ -51,26 +30,78 @@ export const MilestoneList = ({
 }: MilestoneListProps) => {
   if (milestones.length === 0) {
     return (
-      <p className="rounded border border-dashed border-border bg-surface-muted p-6 text-center text-sm text-muted">
+      <p className="rounded-[10px] border border-dashed border-border bg-surface-muted p-8 text-center text-sm text-muted">
         条件に一致するマイルストーンがありません
       </p>
     );
   }
+
+  const open = milestones.filter(
+    (definition) => statusOf(definition) !== "closed",
+  );
+  const closed = milestones.filter(
+    (definition) => statusOf(definition) === "closed",
+  );
+
   return (
-    <ul className="flex flex-col gap-3">
-      {milestones.map((def) => (
-        <li key={def.name}>
-          <MilestoneCard
-            def={def}
-            status={statusOf(def)}
-            projection={projectionOf(def)}
-            showRatio={showRatio}
-            selected={selectedName === def.name}
-            onSelect={() => onSelect(def)}
-            now={now}
-          />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-[22px]">
+      {open.length > 0 && (
+        <section data-testid="milestone-group-open">
+          <header className="mb-2.5 flex items-center gap-2.5">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-[0.04em]">
+              <span className="size-[7px] rounded-full bg-[var(--color-ms-success)]" />
+              Open
+            </h3>
+            <span className="font-mono text-[11px] text-text-dim">
+              {open.length}
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </header>
+          <ul className="flex flex-col gap-3">
+            {open.map((definition) => (
+              <li key={definition.name}>
+                <MilestoneCard
+                  def={definition}
+                  status={statusOf(definition)}
+                  projection={projectionOf(definition)}
+                  showRatio={showRatio}
+                  selected={selectedName === definition.name}
+                  onSelect={() => onSelect(definition)}
+                  now={now}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {closed.length > 0 && (
+        <section data-testid="milestone-group-closed">
+          <header className="mb-2.5 flex items-center gap-2.5">
+            <h3 className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-[0.04em]">
+              <span className="size-[7px] rounded-full bg-text-dim" /> Closed
+            </h3>
+            <span className="font-mono text-[11px] text-text-dim">
+              {closed.length}
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </header>
+          <ul className="flex flex-col gap-3">
+            {closed.map((definition) => (
+              <li key={definition.name}>
+                <MilestoneCard
+                  def={definition}
+                  status="closed"
+                  projection={projectionOf(definition)}
+                  showRatio={showRatio}
+                  selected={selectedName === definition.name}
+                  onSelect={() => onSelect(definition)}
+                  now={now}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 };

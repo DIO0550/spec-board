@@ -1,51 +1,84 @@
 type MilestoneProgressBarProps = {
-  /** done タスク件数 */
   done: number;
-  /** 全タスク件数 */
   total: number;
-  /** done / total。doneColumn 未解決 or 所属 0 件のとき undefined */
   ratio: number | undefined;
 };
 
-/**
- * 比率（0..1）を 0-100 のパーセント整数に丸める。
- * @param ratio - 0..1 の比率
- * @returns 0..100 の整数パーセント
- */
-const toPercent = (ratio: number): number => Math.round(ratio * 100);
+const toPercent = (ratio: number): number =>
+  Math.round(Math.min(1, Math.max(0, ratio)) * 100);
 
-/**
- * 進捗バー + フッター（パーセント + 件数）の縦並びレイアウト。
- * ratio が undefined（doneColumn 未解決 or 件数 0）のときバーを描画せず、
- * フッターのみ表示する。design-source: `.ms-progress` / `.pf` 部。
- * @param props - {@link MilestoneProgressBarProps}
- * @returns 進捗バー要素
- */
+/** Done比率と未完了を3工程へ均等配分した4区分progress。 */
 export const MilestoneProgressBar = ({
   done,
   total,
   ratio,
 }: MilestoneProgressBarProps) => {
+  const percent = ratio === undefined ? undefined : toPercent(ratio);
+  const pendingPercent = percent === undefined ? 0 : (100 - percent) / 3;
   return (
-    <div className="flex flex-col gap-1.5">
-      {ratio !== undefined ? (
-        <div className="h-2 w-full overflow-hidden rounded bg-surface-muted">
-          <div
+    <div className="flex flex-col gap-2">
+      {percent !== undefined ? (
+        <div
+          data-testid="milestone-progress-segments"
+          className="flex h-2 w-full gap-px overflow-hidden rounded bg-surface-muted"
+          role="progressbar"
+          aria-label={`進捗 ${done}/${total}`}
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <span
             data-testid="milestone-progress-bar"
-            className="h-2 rounded bg-[var(--color-ms-success)]"
-            style={{ width: `${toPercent(ratio)}%` }}
+            data-segment="done"
+            className="h-full bg-[var(--color-ms-success)]"
+            style={{ width: `${percent}%` }}
+          />
+          <span
+            data-segment="review"
+            className="h-full bg-[var(--color-ms-info)]"
+            style={{ width: `${pendingPercent}%` }}
+          />
+          <span
+            data-segment="in-progress"
+            className="h-full bg-[var(--color-ms-inprog)]"
+            style={{ width: `${pendingPercent}%` }}
+          />
+          <span
+            data-segment="todo"
+            className="h-full bg-[var(--color-ms-todo)]"
+            style={{ width: `${pendingPercent}%` }}
           />
         </div>
       ) : null}
-      <div className="flex items-center gap-2">
-        {ratio !== undefined ? (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {percent !== undefined ? (
           <span className="font-mono text-sm font-semibold text-foreground">
-            {toPercent(ratio)}%
+            {percent}%
           </span>
         ) : null}
-        <span className="font-mono text-xs text-muted">
+        <span className="font-mono text-[11.5px] text-muted">
           {done} / {total} 完了
         </span>
+        {percent !== undefined ? (
+          <span className="ml-auto inline-flex flex-wrap items-center justify-end gap-x-2 text-[10px] text-text-dim">
+            <span className="inline-flex items-center gap-1">
+              <span className="size-2 rounded-sm bg-[var(--color-ms-success)]" />
+              Done
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="size-2 rounded-sm bg-[var(--color-ms-info)]" />
+              Review
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="size-2 rounded-sm bg-[var(--color-ms-inprog)]" />
+              In progress
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="size-2 rounded-sm bg-[var(--color-ms-todo)]" />
+              Todo
+            </span>
+          </span>
+        ) : null}
       </div>
     </div>
   );

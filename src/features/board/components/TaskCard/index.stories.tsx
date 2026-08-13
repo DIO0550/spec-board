@@ -171,3 +171,23 @@ export const WithMilestoneAndLabels: Story = {
     },
   },
 };
+
+export const Draft: Story = {
+  args: {
+    task: { ...baseTask, draft: true, title: "レビュー前の下書きタスク" },
+  },
+};
+
+export const LongContent: Story = {
+  args: {
+    task: {
+      ...baseTask,
+      title:
+        "狭いカラムでも複数行に折り返して内容を確認できる長いタスクタイトル",
+      labels: ["frontend", "accessibility", "needs-review", "blocked"],
+    },
+  },
+};
+
+export const AllProps: Story = { ...CompoundFull };
+export const EdgeCases: Story = { ...LongContent };

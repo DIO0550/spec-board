@@ -99,9 +99,48 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
   } = props;
 
   const hasChildren = task.hierarchy.childFilePaths.length > 0;
+  const rawAssignees = task.extras.assignees;
+  const assignees = Array.isArray(rawAssignees)
+    ? rawAssignees.filter((value): value is string => typeof value === "string")
+    : [];
 
   return (
-    <aside className="flex flex-col gap-4">
+    <aside data-testid="detail-properties" className="flex flex-col">
+      <div className="border-b border-border px-[18px] py-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
+          プロパティ
+        </h2>
+      </div>
+      <section className="border-b border-border px-[18px] py-4">
+        <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
+          担当者
+        </h3>
+        {assignees.length === 0 ? (
+          <p className="text-xs italic text-text-dim">未割り当て</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {assignees.map((assignee) => (
+              <span
+                key={assignee}
+                className="inline-flex items-center gap-2 text-[12.5px]"
+              >
+                <span className="inline-flex size-[18px] items-center justify-center rounded-full bg-accent text-[9px] font-semibold text-white">
+                  {assignee.slice(0, 2).toUpperCase()}
+                </span>
+                {assignee}
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+      {(task.due !== undefined || task.milestone !== undefined) && (
+        <section className="border-b border-border px-[18px] py-4 text-[12.5px]">
+          {task.due !== undefined && <p className="mb-2">期限 · {task.due}</p>}
+          {task.milestone !== undefined && (
+            <p>マイルストーン · {task.milestone}</p>
+          )}
+        </section>
+      )}
       {parentTask && onSelectTask && (
         <ParentLink parentTask={parentTask} onSelect={onSelectTask} />
       )}
@@ -135,14 +174,24 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
           />
         )}
       </DetailFields>
-      <button
-        type="button"
-        className="w-full rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
-        data-testid="detail-delete-button"
-        onClick={deleteFlow.requestDelete}
-      >
-        削除
-      </button>
+      <section className="border-b border-border px-[18px] py-4">
+        <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
+          ファイル
+        </h3>
+        <p className="break-all rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-[11px] text-muted">
+          {task.filePath}
+        </p>
+      </section>
+      <div className="px-[18px] py-5">
+        <button
+          type="button"
+          className="w-full rounded-md border border-red-300 bg-transparent px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
+          data-testid="detail-delete-button"
+          onClick={deleteFlow.requestDelete}
+        >
+          削除
+        </button>
+      </div>
       {deleteFlow.isOpen && (
         <ConfirmDialog
           title="タスクの削除"

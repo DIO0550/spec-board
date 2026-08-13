@@ -220,6 +220,7 @@ type GetLabelsPayload = {
 - **テーブル**: 列は「ラベルチップ / 説明 / 使用数 / グループ badge / 更新 / 行アクション」。`updated` 未設定は「新規」を表示。相対時刻は「たった今 / N 分前 / N 時間前 / 昨日 / N 日前 / N週間前 / Nヶ月前 / YYYY/MM/DD」。
 - **使用数リンク**: テーブルの使用数セルは `count > 0` のときリンク（ボタン）として描画し、クリックすると board へ遷移して当該ラベルでフィルタを適用する。`count = 0` は「0 件」のプレーンテキスト（クリック不可）。
 - **使用数 live 上書き**: settings 画面に渡す `usageCounts` は、プロジェクトが loaded のときだけ FE 側で live なタスク集合から算出した値（`LabelRegistry.labelUsageCounts(tasks)`）で上書きする。loaded 未到達の間は BE 由来の `get_labels.usageCounts` をフォールバックとして維持する（瞬間的な「0 件 / 未使用」誤表示を防ぐ）。
+- **保存先 strip の同期表示**: 実リソース由来の同期ラベルが提供された場合だけ表示する。取得時刻を保持しない現在の `LabelsResource` では同期 badge を表示せず、固定の相対時刻を表示してはならない。
 - **統計ヘッダー / フッター集計**: 上部に「N 件 / M 使用中 / K 未使用」、フッターに「表示中件数 / 総数」と使用中ラベルのカラー集計（`color` 指定優先・無ければ group キー）を表示する。
 - **エクスポート**: 「⬇ エクスポート」ボタンで `@tauri-apps/plugin-dialog` の `save()` を呼び、ユーザーが選んだパスへ `export_labels` コマンドが `labels.yml` を書き出す。BE は既存 store と同じ `serde_yaml_ng::to_string` 経路で直列化するため、ディスクの labels.yml と同じ camelCase / `skip_serializing_if` 規則が適用される。ダイアログのキャンセルは no-op。空 path（`""`）は BE が `EmptyPath` で拒否し、`save()` 例外 / BE write 失敗は共通トースト経路で通知する。
 
@@ -238,6 +239,14 @@ type GetLabelsPayload = {
   - 内部状態の lock 破損 → `"内部状態のロックが破損しました"`
 - 親ディレクトリ不存在・書込権限なし等は `std::fs::write` の失敗として OS のエラー文字列を透過する。
 - write は project 外への単発書込のため resident mutation は行わないが、labels は `session_snapshot()` を 1 回取得して coherent に直列化する。保存先への `std::fs::write` は snapshot lock 解放後に実行する。
+
+### ステータス / 設定ファイルタブの FE 統合境界
+
+設定画面には `StatusSettingsTab` と `ConfigFileTab` の内部到達経路を持つ。
+
+- `StatusSettingsTab` は App が渡す実project columnとtask使用数を初期値に、カラム順序、名称、完了カラム、空カラムの追加 / 削除を編集する。App adapter は `{ columns, doneColumn }` を `update_columns` command（rename時は `renames` を含む）へ変換する。成功時のみdirtyを解除し、失敗時は変更を保持して再試行可能にする。
+- `ConfigFileTab` は `config.json` / `GUIDE.md` の読み取り専用表示と copy / regenerate / external editor / reveal folder の callback 境界を持つ。現段階の `SettingsScreen` は canonical example を表示し、実ディスク読込や OS / IPC action を行わない。`GUIDE.md` の正式な生成・更新条件は本仕様「AIエージェント向けガイド（GUIDE.md）」節を引き続き source of truth とする。
+- したがって、これら 2 タブの表示が存在すること自体は `config.json` / `GUIDE.md` の永続化契約を変更しない。接続前の UI 操作を成功した書込みとして扱ってはならない。
 
 ## milestones.yml スキーマ
 
@@ -685,6 +694,9 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.7 | 2026-08-12 | open_config_file の固定targetへ labels を追加。viewer一覧は config/GUIDE の2件を維持し、labels.yml は外部表示専用とする | - |
+| 1.6 | 2026-08-12 | ラベル設定の「ファイルを見る」を labels.yml 外部表示用 optional callback 境界として追加 | - |
+| 1.5 | 2026-08-11 | Settings Status / Config 内部タブの presentational callback 境界と、未接続時に永続化しない契約を追記 | - |
 | 1.4 | 2026-08-09 | Issue #457: 既存 config への未知 status 追加（reconcile）節、GUIDE.md 更新タイミングの再整理、読み込み失敗時に GUIDE.md を書き換えない契約を追加 | - |
 | 1.3 | 2026-08-01 | Issue #458: config failure の `Config::default()` 継続、`configFallback` `loadWarnings`、registry / root fatal 境界を追加 | - |
 | 1.2 | 2026-07-31 | Issue #453: config/registry writer の project-scoped gate、session revision CAS、revision preflight、disk 後 conflict resync 契約を追加 | - |

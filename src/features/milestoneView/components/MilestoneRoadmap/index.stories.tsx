@@ -5,7 +5,7 @@ import type { MilestoneDefinition } from "@/domains/milestone";
 import { MilestoneRoadmap } from ".";
 
 // Visual regression は実行日で月軸と今日マーカーが変わらないよう基準時刻を固定する。
-const STORY_NOW = new Date("2026-07-30T12:00:00Z");
+const STORY_NOW = new Date("2026-04-15T12:00:00Z");
 
 /** 今月起点 8 か月の範囲に分散したサンプル定義（open / closed / overdue 混在）。 */
 const SAMPLE_MILESTONES: MilestoneDefinition[] = [
@@ -93,3 +93,6 @@ export const Empty: Story = {
     ],
   },
 };
+
+export const AllProps: Story = { ...WithSelection };
+export const EdgeCases: Story = { ...SingleMilestone };

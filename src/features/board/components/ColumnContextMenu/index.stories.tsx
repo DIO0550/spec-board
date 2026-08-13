@@ -21,3 +21,8 @@ export default meta;
 type Story = StoryObj<typeof ColumnContextMenu>;
 
 export const Default: Story = {};
+
+export const AllProps: Story = {};
+export const EdgeCases: Story = {
+  parameters: { viewport: { defaultViewport: "compact924" } },
+};

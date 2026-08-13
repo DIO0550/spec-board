@@ -2,8 +2,8 @@ import { useCallback } from "react";
 import type { TaskUpdateHandler } from "@/features/detail/hooks/useDetailFieldHandlers";
 import {
   type ProjectError,
-  projectErrorMessage,
   type ProjectTaskActionsContextValue,
+  projectErrorMessage,
 } from "@/providers/ProjectProvider";
 import type { Task } from "@/types/task";
 import type { UseToastsResult } from "@/types/toast";

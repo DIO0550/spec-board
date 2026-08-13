@@ -15,68 +15,24 @@ import { PropertiesSidebar } from "../PropertiesSidebar";
 
 /** 全画面2ペイン詳細ビューの Props */
 export type DetailScreenProps = {
-  /** 表示するタスク */
   task: Task;
-  /** 選択肢となるカラム一覧 */
   columns: Column[];
-  /** 全タスク一覧。サブIssue / Links セクションの解決に利用する */
   allTasks?: Task[];
-  /** filePath -> projection（BE 集計）。サブIssue の進捗 / 完了判定に使う */
   projections: TaskProjectionMap;
-  /**
-   * 「正規化済み Task.filePath → Task」の lookup Map。
-   * 渡された場合のみ broken link 判定を行う。
-   */
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
-  /** ボードへ戻るハンドラ（← 戻るボタン / Esc 共通） */
   onBack: () => void;
-  /**
-   * 上位モーダル（タスク作成モーダル等）の表示中フラグ。
-   * true の間は DetailScreen の Esc（戻る）を停止し、上位モーダル側の Esc と
-   * 競合（戻る誤発火）しないようにする。
-   */
   isUpperModalOpen?: boolean;
-  /**
-   * タスク更新時のコールバック
-   * @param id - 更新対象のタスクID
-   * @param updates - 更新するフィールド
-   */
   onTaskUpdate: (id: string, updates: Partial<Omit<Task, "id">>) => void;
-  /**
-   * タスク削除時のコールバック
-   * @param id - 削除対象のタスクID
-   * @param orphanStrategy - 子タスクがある場合の処理方針（子なし時は未指定）
-   */
   onDelete: (
     id: string,
     orphanStrategy?: OrphanStrategy,
   ) => void | Promise<void>;
-  /**
-   * サブIssue 追加ボタン押下時のコールバック。
-   * @param parentFilePath - 親タスクのファイルパス
-   */
   onAddSubIssue?: (parentFilePath: string) => void;
-  /**
-   * 別のタスクへ表示対象を切り替えるコールバック。
-   * @param taskId - 切り替え先タスクの id
-   */
   onSelectTask?: (taskId: string) => void;
-  /**
-   * リンク追加コールバック。
-   * @param sourceFilePath リンク元 filePath
-   * @param targetFilePath リンク先 filePath
-   * @returns invoke 結果
-   */
   onAddLink?: (
     sourceFilePath: string,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
-  /**
-   * リンク削除コールバック。
-   * @param sourceFilePath リンク元 filePath
-   * @param targetFilePath リンク先 filePath
-   * @returns invoke 結果
-   */
   onRemoveLink?: (
     sourceFilePath: string,
     targetFilePath: string,
@@ -84,12 +40,8 @@ export type DetailScreenProps = {
 };
 
 /**
- * 全画面2ペイン詳細ビュー。左=本文（DetailBody）/ 右=プロパティサイドバー（PropertiesSidebar）。
- * `<main>` を占有する feature コンポーネント（SettingsScreen 同様の全画面区分）。
- * Esc / 「← 戻る」で board へ戻る。useChildTasks / useParentTask / getBrokenLinks /
- * useDetailFieldHandlers / useDeleteFlow をコンテナとして呼び、計算済みの値・ハンドラを
- * 共通部品へ渡す。削除フロー（useDeleteFlow + orphanStrategy）の所有権はここにあり、
- * PropertiesSidebar には props で渡す。
+ * 48px app chrome直下で、44px subbarと本文/propertiesの2ペインを提供する詳細画面。
+ * 既存の更新・リンク・削除フローは各hookへ委譲し、ここでは画面構成だけを担う。
  * @param props - {@link DetailScreenProps}
  * @returns 全画面詳細ビュー要素
  */
@@ -122,9 +74,6 @@ export const DetailScreen = (props: DetailScreenProps) => {
     [task, tasksByNormalizedPath],
   );
 
-  // 削除フローの所有権はコンテナ（DetailScreen）が持つ。PropertiesSidebar は
-  // この state を props で受け取って描画するだけ。これにより子側で必要だった
-  // 「開閉のミラー通知 effect」「orphanStrategy リセット effect」が不要になる。
   const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
   const handleDelete = useCallback(() => {
     if (task.hierarchy.childFilePaths.length > 0) {
@@ -133,70 +82,130 @@ export const DetailScreen = (props: DetailScreenProps) => {
     return onDelete(task.id);
   }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
   const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
-
-  // 削除ダイアログを開く操作の起点（event handler）で orphanStrategy を初期値へ戻す。
-  // state 変化に反応する effect ではなくクリック時に同期実行するため、ダイアログが開いた
-  // 最初の render から常に "clear" が選択された状態で描画される。
   const requestDelete = useCallback(() => {
     setOrphanStrategy("clear");
     deleteFlow.requestDelete();
   }, [deleteFlow.requestDelete]);
 
-  // 削除ダイアログ または 上位モーダル（作成モーダル等）表示中は Esc（戻る）を停止し、
-  // モーダル自身の Esc と競合（戻る誤発火）しないようにする。削除ダイアログの開閉は
-  // deleteFlow.isOpen を直接参照するため、render 1 周遅れの窓が生じない。
   const escSuspended = deleteFlow.isOpen || isUpperModalOpen;
-
-  // 全画面ビュー展開時に section 自身へフォーカスを移す（ビュー先頭へ移動）。
-  // DetailScreen は modal ではなく、HeaderBar / AppSidebar が detail 区分でも常時
-  // 操作可能なため focus trap は適用しない（キーボードでヘッダ/サイドバーへ到達できるようにする）。
   const sectionRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    sectionRef.current?.focus();
-  }, []);
-
+  useEffect(() => sectionRef.current?.focus(), []);
   useEscToClose({ disabled: escSuspended, onEscape: onBack });
+
+  const taskList = allTasks ?? [];
+  const currentIndex = taskList.findIndex(
+    (candidate) => candidate.id === task.id,
+  );
+  const previousTask =
+    currentIndex > 0 ? taskList[currentIndex - 1] : undefined;
+  const nextTask = currentIndex >= 0 ? taskList[currentIndex + 1] : undefined;
+  const issuePosition = currentIndex >= 0 ? currentIndex + 1 : 1;
+  const issueTotal = taskList.length > 0 ? taskList.length : 1;
+  const fileName = task.filePath.split("/").pop() ?? task.filePath;
+
+  /**
+   * 隣接Issueへ移動する。
+   * @param target - 遷移先タスク
+   */
+  const selectAdjacentTask = (target: Task | undefined) => {
+    if (target === undefined) {
+      return;
+    }
+    onSelectTask?.(target.id);
+  };
 
   return (
     <section
       ref={sectionRef}
       tabIndex={-1}
       aria-label="タスク詳細"
-      className="flex flex-1 flex-col overflow-hidden focus:outline-none md:flex-row"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg focus:outline-none"
     >
       <h1 className="sr-only">{task.title || task.filePath}</h1>
-      <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
+      <nav
+        data-testid="detail-subbar"
+        aria-label="Issue ナビゲーション"
+        className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-border bg-surface px-4 text-xs"
+      >
         <button
           type="button"
           data-testid="detail-back-button"
-          className="mb-4 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-sm text-muted hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded px-1.5 py-1 font-medium text-muted hover:bg-surface-muted hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
           onClick={onBack}
         >
-          ← 戻る
+          ← 一覧へ戻る
         </button>
-        <DetailBody
-          task={task}
-          onTitleConfirm={(title) => onTaskUpdate(task.id, { title })}
-          onBodyConfirm={(body) => onTaskUpdate(task.id, { body })}
-        />
-      </div>
-      <div className="w-full shrink-0 overflow-y-auto border-t border-border p-4 md:w-[360px] md:border-t-0 md:border-l md:p-6">
-        <PropertiesSidebar
-          task={task}
-          columns={columns}
-          allTasks={allTasks}
-          childInfo={childInfo}
-          parentTask={parentTask}
-          brokenLinks={brokenLinks}
-          handlers={fieldHandlers}
-          onAddSubIssue={onAddSubIssue}
-          onSelectTask={onSelectTask}
-          onAddLink={onAddLink}
-          onRemoveLink={onRemoveLink}
-          deleteFlow={{ ...deleteFlow, requestDelete }}
-          orphanStrategy={orphanStrategy}
-          onOrphanStrategyChange={setOrphanStrategy}
-        />
+        <span className="font-mono text-[11.5px] text-text-dim">·</span>
+        <span className="max-w-72 truncate font-mono text-[11.5px] font-medium text-foreground">
+          {fileName}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span className="mr-1 font-mono text-[11.5px] text-muted">
+            {issuePosition} / {issueTotal}
+          </span>
+          <button
+            type="button"
+            aria-label="前のIssue"
+            disabled={previousTask === undefined || onSelectTask === undefined}
+            onClick={() => selectAdjacentTask(previousTask)}
+            className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-surface-muted text-muted hover:border-border-strong hover:text-foreground disabled:opacity-40"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="次のIssue"
+            disabled={nextTask === undefined || onSelectTask === undefined}
+            onClick={() => selectAdjacentTask(nextTask)}
+            className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-surface-muted text-muted hover:border-border-strong hover:text-foreground disabled:opacity-40"
+          >
+            ›
+          </button>
+          <button
+            type="button"
+            onClick={onBack}
+            className="ml-1 inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-surface-muted px-2.5 text-xs font-medium hover:border-border-strong hover:bg-bg"
+          >
+            × Close Issue
+          </button>
+        </div>
+      </nav>
+
+      <div
+        data-testid="detail-layout"
+        className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[minmax(0,1fr)_340px]"
+      >
+        <main className="min-h-0 overflow-y-auto px-5 py-[22px] md:px-8">
+          <div
+            data-testid="detail-content-inner"
+            className="mx-auto max-w-[820px]"
+          >
+            <DetailBody
+              task={task}
+              subIssueCounts={childInfo.subIssueCounts}
+              onTitleConfirm={(title) => onTaskUpdate(task.id, { title })}
+              onBodyConfirm={(body) => onTaskUpdate(task.id, { body })}
+            />
+          </div>
+        </main>
+        <div className="min-h-0 overflow-y-auto border-t border-border bg-surface md:border-l md:border-t-0">
+          <PropertiesSidebar
+            task={task}
+            columns={columns}
+            allTasks={allTasks}
+            childInfo={childInfo}
+            parentTask={parentTask}
+            brokenLinks={brokenLinks}
+            handlers={fieldHandlers}
+            onAddSubIssue={onAddSubIssue}
+            onSelectTask={onSelectTask}
+            onAddLink={onAddLink}
+            onRemoveLink={onRemoveLink}
+            deleteFlow={{ ...deleteFlow, requestDelete }}
+            orphanStrategy={orphanStrategy}
+            onOrphanStrategyChange={setOrphanStrategy}
+          />
+        </div>
       </div>
     </section>
   );

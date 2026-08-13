@@ -67,3 +67,7 @@ export const Multiple: Story = {
     />
   ),
 };
+
+export const Default: Story = { ...Single };
+export const AllProps: Story = { ...Multiple };
+export const EdgeCases: Story = { ...Empty };

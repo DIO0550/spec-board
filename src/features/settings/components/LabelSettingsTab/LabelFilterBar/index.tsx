@@ -93,7 +93,7 @@ export const LabelFilterBar = ({
         className={`rounded-full border px-2 py-0.5 text-xs ${
           isAllActive(groupFilter)
             ? "bg-accent text-accent-foreground"
-            : "border-slate-300"
+            : "border-border"
         }`}
       >
         すべて {totalCount}
@@ -107,7 +107,7 @@ export const LabelFilterBar = ({
           className={`rounded-full border px-2 py-0.5 text-xs ${
             isGroupActive(groupFilter, opt.group)
               ? "bg-accent text-accent-foreground"
-              : "border-slate-300"
+              : "border-border"
           }`}
         >
           {opt.group} {opt.count}
@@ -117,23 +117,25 @@ export const LabelFilterBar = ({
         ラベル名・説明で絞り込み
       </label>
       <div className="relative ml-auto">
-        <span
+        <svg
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted"
+          viewBox="0 0 24 24"
+          className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 fill-none stroke-current text-text-dim [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.75]"
         >
-          🔍
-        </span>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
         <input
           id={keywordId}
           value={keyword}
           onChange={(e) => onKeywordChange(e.target.value)}
           placeholder="ラベル名・説明で絞り込み..."
-          className="w-64 rounded-full border border-slate-300 bg-slate-50 px-2 py-1 pl-7 text-sm focus:bg-white"
+          className="w-64 rounded-full border border-border bg-surface-muted px-2 py-1 pl-7 text-sm focus:bg-surface"
         />
       </div>
       <fieldset
         id={sortId}
-        className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-0.5 text-xs"
+        className="flex items-center gap-1 rounded-full border border-border bg-surface-muted p-0.5 text-xs"
       >
         <legend className="sr-only">並び順</legend>
         {(Object.keys(SORT_LABELS) as LabelSort[]).map((key) => (
@@ -143,7 +145,9 @@ export const LabelFilterBar = ({
             onClick={() => onSortChange(key)}
             aria-pressed={sort === key}
             className={`rounded-full px-2 py-0.5 ${
-              sort === key ? "bg-white text-slate-900 shadow-sm" : "text-muted"
+              sort === key
+                ? "bg-surface text-slate-900 shadow-sm"
+                : "text-muted"
             }`}
           >
             {SORT_LABELS[key]}

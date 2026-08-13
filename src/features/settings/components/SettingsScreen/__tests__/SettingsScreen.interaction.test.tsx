@@ -101,3 +101,61 @@ test("アクティブ tab と tabpanel が aria 属性で相互参照される",
   // panel.aria-labelledby === tab.id
   expect(panel?.getAttribute("aria-labelledby")).toBe(tab?.getAttribute("id"));
 });
+
+test("ステータスと設定ファイルへ内部タブで到達できる", async () => {
+  await mountSettingsScreen();
+  const statusTab = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  ).find((tab) => tab.textContent?.includes("ステータス"));
+  await act(async () => statusTab?.click());
+  expect(container?.querySelector('[role="tabpanel"]')?.textContent).toContain(
+    "カラム定義",
+  );
+
+  const configTab = Array.from(
+    container?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  ).find((tab) => tab.textContent?.includes("設定ファイル"));
+  await act(async () => configTab?.click());
+  expect(container?.querySelector('[role="tabpanel"]')?.textContent).toContain(
+    "読み取り専用",
+  );
+});
+
+test("ラベル定義のファイルを見るから実config resourceのlabels targetを開く", async () => {
+  const openExternal = vi.fn(async () => true);
+  const milestoneMutations = {
+    isPending: false,
+    create: vi.fn(async () => true),
+    update: vi.fn(async () => true),
+    remove: vi.fn(async () => null),
+  };
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      createElement(SettingsScreen, {
+        labels: labelsResource,
+        milestones: milestonesResource,
+        milestoneProjections: new Map(),
+        milestoneMutations,
+        onLabelUsageClick: noopUsageClick,
+        configFiles: {
+          status: "ready",
+          files: [],
+          isRegenerating: false,
+          reload: async () => {},
+          copy: async () => false,
+          regenerate: async () => false,
+          openExternal,
+          revealFolder: async () => false,
+        },
+      }),
+    );
+  });
+  const button = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((candidate) => candidate.textContent === "ファイルを見る");
+  await act(async () => button?.click());
+  expect(openExternal).toHaveBeenCalledWith("labels");
+});

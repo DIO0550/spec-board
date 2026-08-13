@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Due } from "@/domains/due";
-import { Milestone } from "@/domains/milestone";
+import { Milestone, type MilestoneDefinition } from "@/domains/milestone";
 import {
   MilestoneProjection,
   type MilestoneProjectionMap,
@@ -26,6 +26,40 @@ import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 
+/** @param value - CSV cell value @returns RFC 4180 escaped cell */
+const escapeCsvCell = (value: unknown): string => {
+  const text = value === undefined ? "" : String(value);
+  const trimmed = text.trimStart();
+  const startsWithFormula = /^[=+\-@]/.test(trimmed);
+  const safeText = startsWithFormula ? `'${text}` : text;
+  return `"${safeText.split('"').join('""')}"`;
+};
+
+/**
+ * マイルストーン定義をCSVとしてブラウザーへダウンロードする。
+ * @param milestones - 出力するマイルストーン定義
+ */
+export const downloadMilestonesCsv = (
+  milestones: readonly MilestoneDefinition[],
+): void => {
+  const rows = milestones.map((milestone) =>
+    [milestone.name, milestone.state, milestone.due, milestone.description]
+      .map(escapeCsvCell)
+      .join(","),
+  );
+  const csv = ["name,state,due,description", ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "milestones.csv";
+  try {
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
 type MilestoneViewScreenProps = {
   /** マイルストーンリソース（唯一の取得点から配る） */
   resource: MilestonesResource;
@@ -46,6 +80,10 @@ type MilestoneViewScreenProps = {
   onCreateMilestone?: (args: CreateMilestoneArgs) => Promise<boolean>;
   /** create が pending 中かどうか（送信ボタン disabled に使う） */
   isCreating?: boolean;
+  /** 所属タスク選択時のコールバック。 */
+  onTaskClick?: (taskId: string) => void;
+  /** visual regression用の基準時刻。通常は未指定。 */
+  now?: Date;
 };
 
 /**
@@ -68,6 +106,8 @@ export const MilestoneViewScreen = ({
   taskProjections,
   onCreateMilestone,
   isCreating = false,
+  onTaskClick,
+  now: referenceNow,
 }: MilestoneViewScreenProps) => {
   const sorted = useMemo(
     () => Milestone.sortByOrder(resource.milestones),
@@ -110,7 +150,10 @@ export const MilestoneViewScreen = ({
     return () => clearTimeout(timer);
   }, [todayKey]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付キーが変わった時に新しい Date を再生成するため todayKey を依存に含める（body 内で参照しないが意図的）
-  const now = useMemo(() => new Date(), [todayKey]);
+  const now = useMemo(
+    () => referenceNow ?? new Date(),
+    [todayKey, referenceNow],
+  );
 
   const visible = useMemo(() => {
     const filtered = filterMilestones(sorted, { state: filter, query }, now);
@@ -217,7 +260,7 @@ export const MilestoneViewScreen = ({
   }
 
   return (
-    <div className="flex w-full flex-1 flex-col overflow-y-auto bg-surface-muted p-6">
+    <div className="mx-auto flex h-[calc(100vh-92px)] max-h-[calc(100vh-92px)] w-full max-w-[1280px] flex-1 flex-col overflow-hidden bg-surface-muted p-6">
       <header className="mb-4 flex items-baseline gap-4">
         <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
           マイルストーン
@@ -251,53 +294,61 @@ export const MilestoneViewScreen = ({
             タスク完了
           </span>
         </p>
+        <button
+          type="button"
+          onClick={() => downloadMilestonesCsv(visible)}
+          className="ml-auto rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-surface-muted"
+        >
+          エクスポート
+        </button>
         {onCreateMilestone !== undefined ? (
           <button
             type="button"
             data-testid="milestone-create-open"
             onClick={() => setIsCreateOpen(true)}
-            className="ml-auto rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:opacity-90"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:opacity-90"
           >
             + マイルストーンを追加
           </button>
         ) : null}
       </header>
 
-      <div className="mb-4">
-        <MilestoneToolbar
-          filter={filter}
-          onFilterChange={setFilter}
-          query={query}
-          onQueryChange={setQuery}
-          sort={sort}
-          onSortChange={setSort}
-          view={view}
-          onViewChange={setView}
-        />
-      </div>
-
-      <div className="flex flex-1 gap-4">
-        <div className="min-w-0 flex-1">
-          {view === "list" ? (
-            <MilestoneList
-              milestones={visible}
-              statusOf={(d) => resolveDisplayStatus(d, now)}
-              projectionOf={(d) =>
-                MilestoneProjection.findByName(milestoneProjections, d.name)
-              }
-              showRatio={doneColumn !== undefined}
-              selectedName={selectedName}
-              onSelect={(d) => setSelectedName(d.name)}
-              now={now}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="flex min-h-0 min-w-0 flex-col">
+          <div className="mb-4 shrink-0">
+            <MilestoneToolbar
+              filter={filter}
+              onFilterChange={setFilter}
+              query={query}
+              onQueryChange={setQuery}
+              sort={sort}
+              onSortChange={setSort}
+              view={view}
+              onViewChange={setView}
             />
-          ) : (
-            <MilestoneRoadmap
-              milestones={visible}
-              selectedName={selectedName}
-              onSelect={(d) => setSelectedName(d.name)}
-              now={now}
-            />
-          )}
+          </div>
+          <div className="min-h-0 overflow-y-auto pr-1">
+            {view === "list" ? (
+              <MilestoneList
+                milestones={visible}
+                statusOf={(d) => resolveDisplayStatus(d, now)}
+                projectionOf={(d) =>
+                  MilestoneProjection.findByName(milestoneProjections, d.name)
+                }
+                showRatio={doneColumn !== undefined}
+                selectedName={selectedName}
+                onSelect={(d) => setSelectedName(d.name)}
+                now={now}
+              />
+            ) : (
+              <MilestoneRoadmap
+                milestones={visible}
+                selectedName={selectedName}
+                onSelect={(d) => setSelectedName(d.name)}
+                now={now}
+              />
+            )}
+          </div>
         </div>
         <MilestoneDetailSidebar
           def={selectedDef}
@@ -306,6 +357,7 @@ export const MilestoneViewScreen = ({
           showRatio={doneColumn !== undefined}
           tasks={selectedTasks}
           taskProjections={taskProjections}
+          onTaskClick={onTaskClick}
           now={now}
         />
       </div>

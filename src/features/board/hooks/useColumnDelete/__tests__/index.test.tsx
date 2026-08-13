@@ -2,14 +2,14 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ProjectData } from "@/domains/project-data";
-import { ProjectError } from "@/providers/ProjectProvider";
-import { Task } from "@/types/task";
-import { Result } from "@/utils/result";
 import {
   type ColumnDeleteCallback,
   type UseColumnDeleteOptions,
   useColumnDelete,
 } from "@/features/board/hooks/useColumnDelete";
+import { ProjectError } from "@/providers/ProjectProvider";
+import { Task } from "@/types/task";
+import { Result } from "@/utils/result";
 
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;

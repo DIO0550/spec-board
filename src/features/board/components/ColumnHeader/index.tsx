@@ -126,7 +126,7 @@ export const ColumnHeader = ({
     // biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu / draggable are secondary triggers for mouse users; rename / menu buttons inside provide the keyboard-accessible path
     // biome-ignore lint/a11y/useKeyWithClickEvents: root onClick only consumes dragGuardRef after dragend; rename / menu buttons inside provide the keyboard-accessible path
     <div
-      className="flex items-center justify-between border-t-2 px-2 py-2"
+      className="relative flex min-h-11 items-center justify-between border-b border-border px-3 py-2.5 pl-3.5"
       style={{ borderTopColor: accentColor }}
       data-testid="column-header"
       draggable={draggable}
@@ -135,23 +135,29 @@ export const ColumnHeader = ({
       onClick={draggable ? handleRootClick : undefined}
       onContextMenu={onContextMenu}
     >
+      <span
+        aria-hidden="true"
+        data-testid="column-accent"
+        className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r-sm"
+        style={{ backgroundColor: accentColor }}
+      />
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {field.isEditing ? (
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <ColumnNameInput
               field={field}
-              className="w-full min-w-32 rounded border border-accent px-1 py-0.5 text-sm font-semibold text-foreground outline-none disabled:bg-surface-muted"
+              className="w-full min-w-32 rounded border border-accent bg-surface px-1.5 py-1 text-[12.5px] font-semibold text-foreground outline-none ring-accent-soft focus:ring-[3px] disabled:bg-surface-muted"
               dataTestId="column-rename-input"
               dndDisabled
             />
           </div>
         ) : onRename ? (
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="min-w-0 text-[12.5px] font-semibold leading-5 text-foreground">
             <button
               type="button"
               onClick={handleNameClick}
               aria-label={`${name}の名前を変更`}
-              className="rounded px-1 py-0.5 hover:bg-surface-muted"
+              className="max-w-full truncate rounded px-1 py-0.5 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
               data-column-dnd-disabled
               data-testid="column-name-button"
             >
@@ -159,9 +165,11 @@ export const ColumnHeader = ({
             </button>
           </h2>
         ) : (
-          <h2 className="text-sm font-semibold text-foreground">{name}</h2>
+          <h2 className="min-w-0 text-[12.5px] font-semibold leading-5 text-foreground">
+            {name}
+          </h2>
         )}
-        <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-muted">
+        <span className="rounded-full border border-border bg-surface px-1.5 py-0.5 font-mono text-[10.5px] leading-none text-muted">
           {taskCount}
         </span>
       </div>
@@ -172,7 +180,7 @@ export const ColumnHeader = ({
             onClick={onContextMenu}
             aria-label={`${name}のメニューを開く`}
             aria-haspopup="menu"
-            className="rounded px-2 py-1 text-sm text-muted hover:bg-surface-muted hover:text-foreground"
+            className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded px-1 text-[10.5px] font-medium leading-none text-muted hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
             data-column-dnd-disabled
             data-testid="column-menu-button"
           >
@@ -183,7 +191,7 @@ export const ColumnHeader = ({
           type="button"
           onClick={onAddClick}
           aria-label={`${name}に追加`}
-          className="rounded px-2 py-1 text-sm text-muted hover:bg-surface-muted hover:text-foreground"
+          className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded px-1 text-[10.5px] font-medium leading-none text-muted hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
           data-column-dnd-disabled
         >
           + 追加

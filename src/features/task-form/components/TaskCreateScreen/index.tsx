@@ -37,6 +37,8 @@ export type TaskCreateScreenProps = {
   columns: Column[];
   /** 初期ステータス（作成元カラム） */
   initialStatus: string;
+  /** カレンダー起点の期限初期値。 */
+  initialDue?: string;
   /** 親タスクの初期値（サブIssue 追加時の自動設定用） */
   initialParent?: string;
   /** 親タスクの選択候補。未指定なら親フィールドを表示しない。 */
@@ -70,14 +72,17 @@ export type TaskCreateScreenProps = {
  * @param initialStatus - 初期ステータス
  * @returns 空フォーム相当のプレビュー値
  */
-const buildInitialPreview = (initialStatus: string): PreviewValues => ({
+const buildInitialPreview = (
+  initialStatus: string,
+  initialDue?: string,
+): PreviewValues => ({
   title: "",
   status: initialStatus,
   priority: undefined,
   labels: [],
   parent: undefined,
   links: [],
-  due: undefined,
+  due: initialDue,
   draft: false,
   body: "",
 });
@@ -144,7 +149,7 @@ const submitFormElement = (form: HTMLFormElement | null): void => {
  * @returns 2ペイン作成画面要素
  */
 export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
-  const { onSubmit, onClose, initialStatus } = props;
+  const { onSubmit, onClose, initialStatus, initialDue } = props;
   // 全画面コンポーネントのため、toasts state 変化での再 render を避けるため dispatch のみ subscribe。
   const { showToast } = useToastDispatch();
   const sectionRef = useRef<HTMLElement>(null);
@@ -155,7 +160,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState(false);
   // プレビュー用にフォーム現在値を保持（TaskForm からの伝搬で更新）。
   const [previewValues, setPreviewValues] = useState<PreviewValues>(() =>
-    buildInitialPreview(initialStatus),
+    buildInitialPreview(initialStatus, initialDue),
   );
   // 保存先パスプレビューは TaskForm から onPathPreviewChange で受ける。
   // previewValues.fileName は onValuesChange の fileName 除外最適化で最新化されないため使わない。
@@ -261,7 +266,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
       ref={sectionRef}
       aria-label="タスク作成"
       tabIndex={-1}
-      className="grid h-full min-h-0 grid-rows-[48px_44px_1fr] bg-surface"
+      className="grid h-full min-h-0 grid-rows-[48px_44px_1fr] overflow-hidden bg-surface"
       data-testid="task-create-screen"
     >
       <TaskTopbar
@@ -273,15 +278,19 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
       />
       <TaskSubbar fileName={previewFileName} onBack={requestClose} />
       <div
+        data-testid="task-create-main"
         className={`grid min-h-0 overflow-hidden ${
           previewVisible
-            ? "grid-cols-[minmax(0,1fr)_7px_var(--preview-w)]"
+            ? "grid-cols-[minmax(0,1fr)_4px_var(--preview-w)]"
             : "grid-cols-[minmax(0,1fr)_0_0]"
         }`}
         style={{ "--preview-w": `${previewWidth}px` } as React.CSSProperties}
       >
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div
+            data-testid="task-create-form-scroll"
+            className="relative flex-1 overflow-y-auto px-8 py-6"
+          >
             <div className="mx-auto max-w-[600px]">
               <h1 className="mb-1 text-lg font-semibold text-foreground">
                 新規タスクを作成
@@ -293,6 +302,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
               <TaskForm
                 columns={props.columns}
                 initialStatus={props.initialStatus}
+                initialDue={props.initialDue}
                 initialParent={props.initialParent}
                 parentCandidates={props.parentCandidates}
                 parentReadOnly={props.parentReadOnly}

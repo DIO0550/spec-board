@@ -317,7 +317,7 @@ export const Column = ({
 
   return (
     <section
-      className="flex h-full w-72 min-w-72 flex-col rounded-lg bg-surface-muted"
+      className="flex max-h-full w-[300px] min-w-[300px] flex-col self-start overflow-hidden rounded-[10px] border border-border bg-surface-muted shadow-sm print:max-h-none print:break-inside-avoid print:overflow-visible [[data-density=compact]_&]:w-[272px] [[data-density=compact]_&]:min-w-[272px]"
       aria-label={name}
       data-testid={`column-${name}`}
       onDragOver={handleDragOver}
@@ -341,7 +341,10 @@ export const Column = ({
         onColumnDragStart={handleColumnDragStart}
         onColumnDragEnd={handleColumnDragEnd}
       />
-      <ul ref={listRef} className="flex-1 overflow-y-auto px-2 pb-2">
+      <ul
+        ref={listRef}
+        className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 print:overflow-visible [[data-density=compact]_&]:px-2 [[data-density=compact]_&]:py-1.5"
+      >
         {tasks.map((task, i) => {
           // 直下子のみのリスト。TaskCard 配下の "サブIssue" details が
           // childTasks を展開して表示するため、Provider の byPath で実体を引き当てる。
@@ -355,10 +358,10 @@ export const Column = ({
                 <li
                   data-testid="drop-placeholder"
                   aria-hidden="true"
-                  className="mb-2 h-1 rounded bg-blue-300"
+                  className="mb-2 h-1 rounded-full bg-accent shadow-[0_0_0_2px_var(--color-accent-soft)]"
                 />
               )}
-              <li data-task-card className="mb-2">
+              <li data-task-card className="mb-2 last:mb-0">
                 <TaskCard
                   task={task}
                   childTasks={childTasks}
@@ -378,7 +381,7 @@ export const Column = ({
           <li
             data-testid="drop-placeholder"
             aria-hidden="true"
-            className="mb-2 h-1 rounded bg-blue-300"
+            className="mb-2 h-1 rounded-full bg-accent shadow-[0_0_0_2px_var(--color-accent-soft)]"
           />
         )}
       </ul>

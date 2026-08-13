@@ -1,36 +1,36 @@
 import { useEffect } from "react";
 import type { ToastItem, ToastType } from "@/types/toast";
 
-/**
- * トーストの既定表示時間（ms）。
- * 短い通知文を読み切れる程度に長く、かつ次の操作を妨げない程度に短い値として 3 秒を採る。
- */
 export const TOAST_DEFAULT_DURATION_MS = 3000;
 
-const typeStyles: Record<ToastType, string> = {
-  success: "bg-green-600 text-white",
-  error: "bg-red-600 text-white",
-  warning: "bg-yellow-500 text-gray-900",
+const TYPE_STYLES: Record<
+  ToastType,
+  { frame: string; icon: string; path: string }
+> = {
+  success: {
+    frame: "bg-green-600 text-white",
+    icon: "bg-white/20",
+    path: "M5 12l4 4L19 6",
+  },
+  error: {
+    frame: "bg-red-600 text-white",
+    icon: "bg-white/20",
+    path: "M6 6l12 12M18 6L6 18",
+  },
+  warning: {
+    frame: "bg-yellow-500 text-gray-900",
+    icon: "bg-black/10",
+    path: "M12 8v5m0 3h.01",
+  },
 };
 
 type ToastProps = {
-  /** 表示するトースト */
   toast: ToastItem;
-  /**
-   * 自動クローズ時に呼ばれるコールバック
-   * @param id - 閉じるトーストの ID
-   */
   onDismiss: (id: string) => void;
-  /** 自動で閉じるまでの時間（ミリ秒）。デフォルト {@link TOAST_DEFAULT_DURATION_MS} */
   duration?: number;
 };
 
-/**
- * 単一のトーストを描画するコンポーネント。
- * duration 経過後に onDismiss を呼ぶ。
- * @param props - {@link ToastProps}
- * @returns トースト要素
- */
+/** 320px幅のicon/message/closeを持つ通知。 */
 export const Toast = ({
   toast,
   onDismiss,
@@ -41,17 +41,54 @@ export const Toast = ({
     return () => clearTimeout(timer);
   }, [toast.id, onDismiss, duration]);
 
+  const styles = TYPE_STYLES[toast.type];
   const isError = toast.type === "error";
-
   return (
     <div
       role={isError ? "alert" : "status"}
       aria-live={isError ? "assertive" : "polite"}
       data-testid={`toast-${toast.type}`}
       data-toast-id={toast.id}
-      className={`min-w-[240px] rounded-md px-4 py-2 text-sm shadow-lg ${typeStyles[toast.type]}`}
+      className={`flex w-[320px] items-start gap-3 rounded-[10px] p-3 text-sm shadow-lg ${styles.frame}`}
     >
-      {toast.message}
+      <span
+        aria-hidden="true"
+        className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${styles.icon}`}
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        >
+          <path d={styles.path} />
+        </svg>
+      </span>
+      <span className="min-w-0 flex-1 py-1 font-medium leading-5">
+        {toast.message}
+      </span>
+      <button
+        type="button"
+        aria-label="閉じる"
+        onClick={() => onDismiss(toast.id)}
+        className="rounded p-1 opacity-75 transition hover:bg-black/10 hover:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
+      >
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { userEvent, within } from "storybook/test";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskSelect } from ".";
 
@@ -75,5 +76,16 @@ export const AutoFocus: Story = {
   args: {
     autoFocus: true,
     testIdPrefix: "links-section",
+  },
+};
+
+export const AllProps: Story = { ...WithSelected };
+export const EdgeCases: Story = { ...Empty };
+
+export const Open: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByTestId("task-select-input"),
+    );
   },
 };

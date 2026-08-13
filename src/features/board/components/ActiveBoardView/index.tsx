@@ -2,6 +2,7 @@ import { BoardView } from "@/features/board/components/BoardView";
 import type { BoardWorkspaceProps } from "@/features/board/components/BoardWorkspace";
 import { CalendarView } from "@/features/board/components/CalendarView";
 import { ListView } from "@/features/board/components/ListView";
+import { RoadmapView } from "@/features/board/components/RoadmapView";
 import { TreeView } from "@/features/board/components/TreeView";
 import type { BoardViewMode } from "@/features/board/hooks/useBoardViewMode";
 import type { Task } from "@/types/task";
@@ -34,20 +35,57 @@ export const ActiveBoardView = ({
   workspace,
 }: ActiveBoardViewProps) => {
   if (viewMode === "list") {
-    return <ListView tasks={filtered} onTaskClick={workspace.onTaskClick} />;
+    return (
+      <ListView
+        tasks={filtered}
+        columns={workspace.columns}
+        doneColumn={workspace.doneColumn}
+        filterActive={filterActive}
+        onAddTask={workspace.onAddTask}
+        onTaskClick={workspace.onTaskClick}
+      />
+    );
   }
   if (viewMode === "tree") {
     return (
       <TreeView
         tasks={filtered}
         taskTree={workspace.taskTree}
+        columns={workspace.columns}
+        projectName={workspace.projectName}
+        doneColumn={workspace.doneColumn}
+        onAddTask={workspace.onAddTask}
         onTaskClick={workspace.onTaskClick}
       />
     );
   }
   if (viewMode === "calendar") {
     return (
-      <CalendarView tasks={filtered} onTaskClick={workspace.onTaskClick} />
+      <CalendarView
+        tasks={filtered}
+        columns={workspace.columns}
+        doneColumn={workspace.doneColumn}
+        onTaskClick={workspace.onTaskClick}
+        onAddTask={workspace.onAddTaskForDate}
+      />
+    );
+  }
+  if (viewMode === "roadmap") {
+    const firstColumn = [...workspace.columns].sort(
+      (left, right) => left.order - right.order,
+    )[0];
+    return (
+      <RoadmapView
+        tasks={filtered}
+        columns={workspace.columns}
+        doneColumn={workspace.doneColumn}
+        onAddEpic={
+          firstColumn === undefined
+            ? undefined
+            : () => workspace.onAddTask(firstColumn.name)
+        }
+        onTaskClick={workspace.onTaskClick}
+      />
     );
   }
   return (

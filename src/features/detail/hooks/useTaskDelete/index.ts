@@ -2,10 +2,10 @@ import { useCallback } from "react";
 import type { OrphanStrategy } from "@/lib/tauri";
 import {
   isProjectSwitchedError,
-  type ProjectError,
-  projectErrorMessage,
-  type ProjectTaskActionsContextValue,
   PROJECT_SWITCHED_MESSAGE,
+  type ProjectError,
+  type ProjectTaskActionsContextValue,
+  projectErrorMessage,
 } from "@/providers/ProjectProvider";
 import type { Task } from "@/types/task";
 import type { UseToastsResult } from "@/types/toast";

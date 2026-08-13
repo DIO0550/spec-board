@@ -28,6 +28,7 @@ const VIEW_TABS: readonly TabItem[] = [
   { id: "list", label: "リスト" },
   { id: "tree", label: "ツリー" },
   { id: "calendar", label: "カレンダー" },
+  { id: "roadmap", label: "ロードマップ" },
 ];
 
 /** サブバー / tabpanel の DOM id に使う接頭辞。 */
@@ -35,6 +36,8 @@ const VIEW_TAB_PREFIX = "board-view";
 
 /** BoardWorkspace の Props。 */
 export type BoardWorkspaceProps = {
+  /** toolbar等に表示する実project名。 */
+  projectName?: string;
   /** カラム定義の配列 */
   columns: ColumnType[];
   /** 全タスク（絞り込み前） */
@@ -59,6 +62,8 @@ export type BoardWorkspaceProps = {
    * @param columnName - 追加対象のカラム名
    */
   onAddTask: (columnName: string) => void;
+  /** カレンダーの日付cell起点で作成する。 */
+  onAddTaskForDate?: (date: string) => void;
   /**
    * タスククリック時のコールバック。
    * @param taskId - クリックされたタスクの ID
@@ -120,7 +125,7 @@ const collectLabels = (tasks: Task[]): string[] => {
 
 /**
  * ボード領域のワークスペース。サブバー（ビュー切替）と横断フィルタを備え、
- * board / list / tree / calendar の各ビューへ絞り込み済みタスクを供給する。
+ * board / list / tree / calendar / roadmap の各ビューへ絞り込み済みタスクを供給する。
  * @param props - {@link BoardWorkspaceProps}
  * @returns ワークスペース要素
  */
@@ -198,13 +203,15 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
 
   return (
     <div className="flex h-full flex-col">
-      <TabNav
-        tabs={VIEW_TABS}
-        activeTabId={viewMode}
-        idPrefix={VIEW_TAB_PREFIX}
-        ariaLabel="ボードの表示形態"
-        onSelect={(tabId) => setViewMode(tabId as BoardViewMode)}
-      />
+      <div className="contents print:hidden">
+        <TabNav
+          tabs={VIEW_TABS}
+          activeTabId={viewMode}
+          idPrefix={VIEW_TAB_PREFIX}
+          ariaLabel="ボードの表示形態"
+          onSelect={(tabId) => setViewMode(tabId as BoardViewMode)}
+        />
+      </div>
       <TaskFilterBar
         criteria={criteria}
         onChange={setCriteria}

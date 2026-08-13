@@ -48,9 +48,9 @@ const toggleValue = <T,>(list: readonly T[], value: T): T[] => {
  */
 const chipClass = (isActive: boolean): string => {
   if (isActive) {
-    return "rounded-full border border-accent bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-foreground";
+    return "rounded-full border border-accent-border bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-foreground";
   }
-  return "rounded-full border border-border px-2.5 py-0.5 text-xs text-muted hover:bg-surface-muted";
+  return "rounded-full border border-border bg-surface px-2.5 py-0.5 text-xs text-muted hover:border-border-strong hover:bg-bg";
 };
 
 /**
@@ -71,7 +71,7 @@ export const TaskFilterBar = ({
   totalCount,
 }: TaskFilterBarProps) => {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-2">
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border bg-panel-2 px-4 py-2 print:hidden">
       <input
         type="search"
         value={criteria.keyword}
@@ -80,7 +80,7 @@ export const TaskFilterBar = ({
         }
         placeholder="タスクを検索…"
         aria-label="タスクを検索"
-        className="min-w-40 rounded border border-border bg-surface px-2 py-1 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
+        className="h-7 min-w-60 rounded-md border border-border bg-bg px-2.5 text-xs text-foreground placeholder:text-text-dim focus:border-accent focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent-soft"
       />
 
       <fieldset className="flex items-center gap-1 border-0 p-0">
@@ -161,7 +161,7 @@ export const TaskFilterBar = ({
         <button
           type="button"
           onClick={onClear}
-          className="rounded px-2 py-0.5 text-xs text-accent hover:bg-surface-muted"
+          className="rounded-md px-2 py-1 text-xs text-accent hover:bg-bg"
         >
           クリア
         </button>

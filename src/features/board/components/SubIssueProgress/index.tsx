@@ -31,13 +31,21 @@ const StatusIcon = ({ isDone }: StatusIconProps) => {
 
   if (isDone) {
     return (
-      <span className="text-green-600" role="img" aria-label={label}>
+      <span
+        className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm bg-green-100 text-[10px] font-bold text-green-700"
+        role="img"
+        aria-label={label}
+      >
         ✓
       </span>
     );
   }
   return (
-    <span className="text-muted" role="img" aria-label={label}>
+    <span
+      className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm border border-border-strong text-[9px] text-muted"
+      role="img"
+      aria-label={label}
+    >
       ○
     </span>
   );
@@ -63,26 +71,33 @@ export const SubIssueProgress = ({
   const percentage = TaskProjection.percentage(counts);
 
   return (
-    <div className="mt-2">
+    <div className="mt-2.5">
       <details
+        data-sub-issue
+        className="group"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
-          <span aria-hidden="true">▶</span>
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-[10.5px] font-medium text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <span
+            aria-hidden="true"
+            className="text-[8px] transition-transform group-open:rotate-90"
+          >
+            ▶
+          </span>
           <span>サブIssue</span>
         </summary>
-        <ul className="mt-1 ml-4 space-y-0.5 text-xs text-foreground">
+        <ul className="ml-3.5 mt-1.5 space-y-1 text-[10.5px] leading-4 text-foreground">
           {childRows.map((row) => (
-            <li key={row.key} className="flex items-center gap-1.5">
+            <li key={row.key} className="flex min-w-0 items-center gap-1.5">
               <StatusIcon isDone={row.isDone} />
-              <span>{row.label}</span>
+              <span className="min-w-0 truncate">{row.label}</span>
             </li>
           ))}
         </ul>
       </details>
       <div
-        className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-muted"
+        className="mt-1.5 h-1 overflow-hidden rounded-full border border-border bg-surface-muted"
         role="progressbar"
         aria-valuenow={percentage}
         aria-valuemin={0}
@@ -90,7 +105,7 @@ export const SubIssueProgress = ({
         aria-label={`進捗 ${counts.done}/${counts.total}`}
       >
         <div
-          className="h-full rounded-full bg-green-500 transition-all"
+          className="h-full rounded-full bg-green-500 transition-[width]"
           style={{ width: `${percentage}%` }}
         />
       </div>

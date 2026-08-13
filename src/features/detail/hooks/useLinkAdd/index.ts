@@ -2,8 +2,8 @@ import { useCallback } from "react";
 import {
   isProjectSwitchedError,
   type ProjectError,
-  projectErrorMessage,
   type ProjectTaskActionsContextValue,
+  projectErrorMessage,
 } from "@/providers/ProjectProvider";
 import type { Task } from "@/types/task";
 

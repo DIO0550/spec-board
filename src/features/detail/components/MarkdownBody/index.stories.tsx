@@ -54,3 +54,7 @@ export const EditableWithContent: Story = {
     onConfirm: () => {},
   },
 };
+
+export const Default: Story = { ...Heading };
+export const AllProps: Story = { ...CodeBlock };
+export const EdgeCases: Story = { ...Empty };

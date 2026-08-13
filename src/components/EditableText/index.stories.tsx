@@ -37,3 +37,6 @@ export const WithAriaLabel: Story = {
     ariaLabel: "ボード名",
   },
 };
+
+export const AllProps: Story = { ...WithAriaLabel };
+export const EdgeCases: Story = { ...LongText };

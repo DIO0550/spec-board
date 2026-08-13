@@ -45,3 +45,6 @@ export const WithDataAttribute: Story = {
     "data-testid": "button-sample",
   },
 };
+
+export const AllProps: Story = { ...WithDataAttribute };
+export const EdgeCases: Story = { ...Disabled };

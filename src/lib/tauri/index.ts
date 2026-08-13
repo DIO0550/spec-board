@@ -14,6 +14,17 @@ export type {
   UpdateColumnsParams,
 } from "./columnCommands/types";
 export { updateColumns } from "./columnCommands/updateColumns";
+export { getConfigFiles } from "./configFileCommands/getConfigFiles";
+export { openConfigFile } from "./configFileCommands/openConfigFile";
+export { regenerateGuide } from "./configFileCommands/regenerateGuide";
+export { revealConfigFolder } from "./configFileCommands/revealConfigFolder";
+export type {
+  ConfigFileId,
+  ConfigFilePayload,
+  GetConfigFilesPayload,
+  OpenConfigFileArgs,
+  OpenConfigFileTarget,
+} from "./configFileCommands/types";
 // dialog
 export { openDirectoryDialog } from "./dialog/openDirectoryDialog";
 export { saveFileDialog } from "./dialog/saveFileDialog";

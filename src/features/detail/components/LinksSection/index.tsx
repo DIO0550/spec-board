@@ -155,13 +155,15 @@ export const LinksSection = (props: LinksSectionProps) => {
     <section
       data-testid="links-section"
       aria-label="関連タスク"
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-2 border-b border-border px-[18px] py-4"
     >
-      <h3 className="text-sm font-medium text-foreground">関連タスク</h3>
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
+        関連タスク
+      </h3>
       <ul
         data-testid="links-section-linked"
         aria-label="関連リンク先（このタスクから他のタスクへのリンク）"
-        className="flex flex-col gap-1 text-sm text-foreground"
+        className="flex flex-col gap-1 text-xs text-foreground"
       >
         {props.task.links.linkedFilePaths.map((p, i) => {
           const isBroken = props.brokenLinkPaths?.has(p) ?? false;
@@ -230,7 +232,7 @@ export const LinksSection = (props: LinksSectionProps) => {
       <ul
         data-testid="links-section-reverse"
         aria-label="関連リンク元（他のタスクからこのタスクへの逆リンク）"
-        className="flex flex-col gap-1 text-sm text-muted"
+        className="flex flex-col gap-1 text-xs text-muted"
       >
         {props.task.links.reverseLinkedFilePaths.map((p, i) => {
           const isBroken = props.brokenReverseLinkPaths?.has(p) ?? false;
@@ -292,7 +294,7 @@ export const LinksSection = (props: LinksSectionProps) => {
           onClick={() => setIsOpen(true)}
           disabled={isBusy}
           data-testid="links-section-add-button"
-          className="self-start rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-muted disabled:opacity-50"
+          className="self-start rounded-md border border-border px-2 py-1.5 text-xs font-medium text-foreground hover:border-border-strong hover:bg-surface-muted disabled:opacity-50"
         >
           + リンク追加
         </button>

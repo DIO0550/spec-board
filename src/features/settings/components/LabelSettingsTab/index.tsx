@@ -33,6 +33,10 @@ type LabelSettingsTabProps = {
    * @param labelName - クリックされたラベル名
    */
   onLabelUsageClick: (labelName: string) => void;
+  /** labels.ymlを外部表示するコールバック。 */
+  onOpenSource?: () => void;
+  /** 実リソース由来の最終同期表示。未指定時は同期badgeを表示しない。 */
+  sourceSyncLabel?: string;
 };
 
 /**
@@ -46,6 +50,8 @@ type LabelSettingsTabProps = {
 export const LabelSettingsTab = ({
   resource,
   onLabelUsageClick,
+  onOpenSource,
+  sourceSyncLabel,
 }: LabelSettingsTabProps) => {
   const { labels, usageCounts, status, reload } = resource;
   const { isPending, create, update, remove } = useLabelMutations(reload);
@@ -209,7 +215,10 @@ export const LabelSettingsTab = ({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <section
+      className="mx-auto flex w-full max-w-[1080px] flex-col gap-3.5"
+      aria-label="ラベル設定"
+    >
       <LabelStatsHeader
         total={stats.total}
         used={stats.used}
@@ -219,6 +228,32 @@ export const LabelSettingsTab = ({
           void handleExport();
         }}
       />
+      <div className="flex flex-wrap items-center gap-2.5 rounded-md border border-border bg-surface px-3.5 py-2 text-xs text-muted">
+        <strong className="font-mono text-[11.5px] text-foreground">
+          .spec-board/labels.yml
+        </strong>
+        <span className="text-border-strong">·</span>
+        <span>ラベル定義の保存先</span>
+        {sourceSyncLabel !== undefined && (
+          <span
+            data-testid="label-sync-status"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px]"
+          >
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-success"
+            />
+            {sourceSyncLabel}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onOpenSource}
+          className="text-xs font-medium text-accent hover:underline"
+        >
+          ファイルを見る
+        </button>
+      </div>
       <CreateLabelForm
         values={form}
         editingName={editingName}
@@ -257,6 +292,6 @@ export const LabelSettingsTab = ({
         total={labels.length}
         colorTally={colorTally}
       />
-    </div>
+    </section>
   );
 };

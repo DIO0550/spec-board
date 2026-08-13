@@ -114,48 +114,64 @@ export const AppearanceSettingsTab = () => {
   const { appearance, setTheme, setDensity, setAccent } = useTheme();
 
   return (
-    <div className="flex max-w-lg flex-col gap-6">
-      <OptionFieldset<ThemeMode>
-        legend="テーマ"
-        options={THEME_MODES}
-        value={appearance.theme}
-        labelOf={(option) => THEME_LABELS[option]}
-        onSelect={setTheme}
-      />
+    <section
+      className="mx-auto flex w-full max-w-[1080px] flex-col gap-6"
+      aria-labelledby="appearance-settings-title"
+    >
+      <header>
+        <h1
+          id="appearance-settings-title"
+          className="m-0 text-[22px] font-semibold text-foreground"
+        >
+          外観
+        </h1>
+        <p className="mt-1 max-w-[68ch] text-[12.5px] text-muted">
+          テーマ、表示密度、アクセントカラーは選択と同時にプレビューへ反映され、この端末に保存されます。
+        </p>
+      </header>
+      <div className="flex max-w-lg flex-col gap-6 rounded-lg border border-border bg-surface p-5">
+        <OptionFieldset<ThemeMode>
+          legend="テーマ"
+          options={THEME_MODES}
+          value={appearance.theme}
+          labelOf={(option) => THEME_LABELS[option]}
+          onSelect={setTheme}
+        />
 
-      <OptionFieldset<Density>
-        legend="表示密度"
-        options={DENSITIES}
-        value={appearance.density}
-        labelOf={(option) => DENSITY_LABELS[option]}
-        onSelect={setDensity}
-      />
+        <OptionFieldset<Density>
+          legend="表示密度"
+          options={DENSITIES}
+          value={appearance.density}
+          labelOf={(option) => DENSITY_LABELS[option]}
+          onSelect={setDensity}
+        />
 
-      <fieldset className="flex flex-col gap-2 border-0 p-0">
-        <legend className="mb-2 text-sm font-semibold text-foreground">
-          アクセント
-        </legend>
-        <div className="flex flex-wrap gap-1">
-          {ACCENTS.map((accent) => (
-            <button
-              key={accent}
-              type="button"
-              aria-pressed={accent === appearance.accent}
-              onClick={() => setAccent(accent)}
-              className={`flex items-center gap-1.5 ${segmentClass(
-                accent === appearance.accent,
-              )}`}
-            >
-              <span
-                aria-hidden="true"
-                className="size-3 rounded-full"
-                style={{ backgroundColor: ACCENT_HEX[accent] }}
-              />
-              {ACCENT_LABELS[accent]}
-            </button>
-          ))}
-        </div>
-      </fieldset>
-    </div>
+        <fieldset className="flex flex-col gap-2 border-0 p-0">
+          <legend className="mb-2 text-sm font-semibold text-foreground">
+            アクセント
+          </legend>
+          <div className="flex flex-wrap gap-1">
+            {ACCENTS.map((accent) => (
+              <button
+                key={accent}
+                type="button"
+                aria-pressed={accent === appearance.accent}
+                onClick={() => setAccent(accent)}
+                className={`flex items-center gap-1.5 ${segmentClass(
+                  accent === appearance.accent,
+                )}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-3 rounded-full"
+                  style={{ backgroundColor: ACCENT_HEX[accent] }}
+                />
+                {ACCENT_LABELS[accent]}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+    </section>
   );
 };

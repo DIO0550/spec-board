@@ -210,15 +210,15 @@ test("links の broken 要素に WarningIcon が出る", () => {
   expect(row?.querySelector('[data-testid="warning-icon"]')).not.toBeNull();
 });
 
-test("狭幅は縦積み・md 以上は横2ペイン（左ペインに padding クラス）", () => {
+test("狭幅は1列・md以上は本文とpropertiesの2列gridになる", () => {
   render(buildProps());
-  const section = document.querySelector(
-    'section[aria-label="タスク詳細"]',
+  const layout = document.querySelector(
+    "[data-testid=detail-layout]",
   ) as HTMLElement;
-  expect(section.className).toContain("flex-col");
-  expect(section.className).toContain("md:flex-row");
-  const leftPane = Array.from(section.children).find((el) =>
-    el.className.includes("md:p-6"),
+  expect(layout.className).toContain("grid-cols-1");
+  expect(layout.className).toContain("md:grid-cols-[minmax(0,1fr)_340px]");
+  const content = document.querySelector(
+    "[data-testid=detail-content-inner]",
   ) as HTMLElement;
-  expect(leftPane).toBeTruthy();
+  expect(content.className).toContain("max-w-[820px]");
 });
