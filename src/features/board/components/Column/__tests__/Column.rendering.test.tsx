@@ -188,3 +188,18 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
     expect(container?.textContent).toContain("1/3");
   });
 });
+
+test("カラム下部に「タスクを追加」ボタンが表示される", async () => {
+  const onAddTask = vi.fn();
+  render({ column: { name: "Todo", onAddTask } });
+  await vi.waitFor(() => {
+    const button = container?.querySelector<HTMLButtonElement>(
+      '[data-testid="column-add-task-button"]',
+    );
+    expect(button?.textContent).toBe("タスクを追加");
+  });
+  container
+    ?.querySelector<HTMLButtonElement>('[data-testid="column-add-task-button"]')
+    ?.click();
+  expect(onAddTask).toHaveBeenCalledWith("Todo");
+});

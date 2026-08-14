@@ -87,7 +87,7 @@ const mountSettingsScreen = async () => {
 test("既定タブ labels の tabpanel と SubNav の tab が描画される", async () => {
   await mountSettingsScreen();
   const tab = container?.querySelector('[role="tab"]');
-  expect(tab?.textContent).toBe("ラベル");
+  expect(tab?.textContent).toBe("ラベル0");
   const panel = container?.querySelector('[role="tabpanel"]');
   expect(panel).not.toBeNull();
 });

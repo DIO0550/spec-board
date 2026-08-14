@@ -199,3 +199,29 @@ test("5番目のロードマップタブからEpicロードマップへ到達で
   });
   expect(localStorage.getItem("spec-board:viewMode")).toBe("roadmap");
 });
+
+test("参照デザインのsubbarに検索と折りたたみ式フィルタ導線を表示する", async () => {
+  renderWorkspace({
+    columns: [{ name: "Todo", order: 0 }],
+    tasks: [makeTask()],
+  });
+
+  const search = container?.querySelector(
+    '[data-testid="board-filter-search"]',
+  );
+  const filterButton = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="board-filter-toggle"]',
+  );
+  expect(search).not.toBeNull();
+  expect(filterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).toBeNull();
+
+  act(() => filterButton?.click());
+
+  expect(filterButton?.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).not.toBeNull();
+});

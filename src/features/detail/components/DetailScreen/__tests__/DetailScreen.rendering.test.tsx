@@ -216,7 +216,7 @@ test("狭幅は1列・md以上は本文とpropertiesの2列gridになる", () =>
     "[data-testid=detail-layout]",
   ) as HTMLElement;
   expect(layout.className).toContain("grid-cols-1");
-  expect(layout.className).toContain("md:grid-cols-[minmax(0,1fr)_340px]");
+  expect(layout.className).toContain("md:grid-cols-[minmax(0,1fr)_320px]");
   const content = document.querySelector(
     "[data-testid=detail-content-inner]",
   ) as HTMLElement;

@@ -47,7 +47,7 @@ const renderHook = (hookOptions: UseColumnAddOptions): ColumnAddCallback => {
   return (...args) => (latest as ColumnAddCallback)(...args);
 };
 
-test("column add成功で末尾orderを採番する", async () => {
+test("column add成功で末尾orderと既存doneColumnを引き継ぐ", async () => {
   let builder: ((current: ProjectData) => unknown) | null = null;
   const updateColumns = vi.fn(async (input) => {
     builder = input as typeof builder;
@@ -64,7 +64,7 @@ test("column add成功で末尾orderを採番する", async () => {
     onError: vi.fn(),
   });
 
-  await act(async () => callback("Review"));
+  await act(async () => callback(" Review "));
 
   expect(
     (builder as unknown as (current: ProjectData) => unknown)({
@@ -72,6 +72,7 @@ test("column add成功で末尾orderを採番する", async () => {
         { name: "Todo", order: 0 },
         { name: "Done", order: 2 },
       ],
+      doneColumn: "Done",
     } as unknown as ProjectData),
   ).toEqual({
     columns: [
@@ -79,6 +80,7 @@ test("column add成功で末尾orderを採番する", async () => {
       { name: "Done", order: 2 },
       { name: "Review", order: 3 },
     ],
+    doneColumn: "Done",
   });
   expect(showToast).toHaveBeenCalledWith("カラムを追加しました", "success");
 });
@@ -133,4 +135,19 @@ test("column add errorを通知してrejectする", async () => {
     error,
     "カラムの追加に失敗しました: 失敗",
   );
+});
+
+test("空白だけのcolumn addはIPCを呼ばず入力エラーにする", async () => {
+  const updateColumns = vi.fn();
+  const showToast = vi.fn();
+  const callback = renderHook({
+    columns: [],
+    updateColumns,
+    showToast,
+    onError: vi.fn(),
+  });
+
+  await expect(callback("   ")).rejects.toThrow("カラム名を入力してください");
+  expect(updateColumns).not.toHaveBeenCalled();
+  expect(showToast).toHaveBeenCalledWith("カラム名を入力してください", "error");
 });

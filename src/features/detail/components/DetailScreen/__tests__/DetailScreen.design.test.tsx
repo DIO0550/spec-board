@@ -27,7 +27,7 @@ const task = Task.fromPayload({
   filePath: "tasks/issue-detail.md",
 });
 
-test("44px subbarと820px本文・340px propertiesの2ペインを表示する", () => {
+test("44px subbarと820px本文・320px propertiesの2ペインを表示する", () => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -50,7 +50,7 @@ test("44px subbarと820px本文・340px propertiesの2ペインを表示する",
   ).toContain("h-11");
   expect(
     container.querySelector('[data-testid="detail-layout"]')?.className,
-  ).toContain("md:grid-cols-[minmax(0,1fr)_340px]");
+  ).toContain("md:grid-cols-[minmax(0,1fr)_320px]");
   expect(
     container.querySelector('[data-testid="detail-content-inner"]')?.className,
   ).toContain("max-w-[820px]");

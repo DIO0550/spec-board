@@ -205,3 +205,9 @@ test("高速入力で stale 応答が破棄され最新のみ反映される", a
 
   expect(captured.current).toEqual(pathPayload("second.md"));
 });
+test("空のIPC応答では pending を維持する", async () => {
+  mockPreview.mockResolvedValue(Result.ok(null as never));
+
+  const result = await mount(defaultArgs);
+  expect(result?.kind).toBe("pending");
+});
