@@ -62,7 +62,7 @@ export const MilestoneDetailSidebar = ({
             <p className="font-mono text-[10.5px] text-muted">{def.name}</p>
           </div>
           <span className="font-mono text-[10.5px] font-medium text-text-dim">
-            {def.name.startsWith("v") ? def.name + ".0" : def.name}
+            {def.name.startsWith("v") ? `${def.name}.0` : def.name}
           </span>
         </header>
         <div className="p-3.5">
