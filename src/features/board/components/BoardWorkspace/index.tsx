@@ -275,7 +275,10 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
   }, []);
 
   return (
-    <div data-board-view={viewMode} className="flex h-full min-w-0 flex-1 flex-col">
+    <div
+      data-board-view={viewMode}
+      className="flex h-full min-w-0 flex-1 flex-col"
+    >
       <div className="contents print:hidden">
         <TabNav
           tabs={viewTabs}
