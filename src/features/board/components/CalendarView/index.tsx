@@ -350,10 +350,14 @@ export const CalendarView = ({
 
   return (
     <section
+      data-board-calendar
       aria-label="タスクカレンダー"
       className="flex h-full min-h-[36rem] min-w-0 flex-col overflow-hidden bg-bg text-foreground"
     >
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-panel px-4">
+      <header
+        data-board-calendar-toolbar
+        className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-panel px-4"
+      >
         <button
           type="button"
           onClick={showToday}

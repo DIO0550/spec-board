@@ -27,8 +27,8 @@ type TaskFormFooterProps = {
  */
 export const TaskFormFooter = (props: TaskFormFooterProps) => {
   return (
-    <div className="flex shrink-0 border-t border-border bg-panel px-8 py-3">
-      <div className="mx-auto flex w-full max-w-[600px] items-center gap-2">
+    <div className="flex shrink-0 border-t border-border bg-panel px-8 py-3.5">
+      <div className="mx-auto flex w-full max-w-[720px] items-center gap-2">
         <span
           className="mr-auto inline-flex items-center gap-1.5 text-[11.5px] text-text-dim"
           data-testid="task-form-save-meta"

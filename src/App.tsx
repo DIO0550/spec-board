@@ -63,7 +63,12 @@ import {
   useConfigFiles,
   useMilestoneMutations,
 } from "./features/settings";
-import { AppSidebar, ThemeProvider, useSidebar } from "./features/shell";
+import {
+  AppSidebar,
+  ThemeProvider,
+  useSidebar,
+  useTheme,
+} from "./features/shell";
 import {
   TaskCreateScreen,
   type TaskFormValues,
@@ -212,6 +217,10 @@ const AppShell = () => {
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebar();
   // 配下サブツリーが toasts 配列の差し替えで再 render されないよう dispatch 専用フックを使う。
   const { showToast } = useToastDispatch();
+  const { appearance, setDensity } = useTheme();
+  const toggleDensity = useCallback(() => {
+    setDensity(appearance.density === "compact" ? "comfortable" : "compact");
+  }, [appearance.density, setDensity]);
   // sidebar 表示用の最近一覧。add と通知副作用は ProjectNotificationsProvider が担う。
   const { projects: recentProjects } = useRecentProjects();
 
@@ -561,6 +570,27 @@ const AppShell = () => {
     navigate("settings");
   }, [view, navigate]);
 
+  /** HeaderBar のラベルアイコンからラベル設定タブを開く。 */
+  const handleLabelsClick = useCallback(() => {
+    if (view === "detail") {
+      setSelectedTaskId(null);
+    }
+    setSettingsEntry({ tabId: "labels" });
+    navigate("settings");
+  }, [view, navigate]);
+
+  /** 設定サブナビから対象画面へ遷移する。 */
+  const handleSettingsTab = useCallback(
+    (tabId: string) => {
+      if (tabId === "milestones") {
+        navigate("milestone");
+        return;
+      }
+      setSettingsEntry({ tabId });
+      navigate("settings");
+    },
+    [navigate],
+  );
   // HeaderBar マイルストーン切替。milestone 中なら board へ戻す。detail から来た場合は
   // 選択を解除する（detail と milestone は排他）。プロジェクト未オープン時は
   // HeaderBar 側でボタン自体を非表示にするため、本ハンドラは loaded 前提で配線する。
@@ -702,9 +732,12 @@ const AppShell = () => {
             onDeleteColumn={handleDeleteColumn}
             onTaskClick={handleTaskClick}
             onTaskDrop={handleTaskDrop}
+            onDensityToggle={toggleDensity}
+            density={appearance.density}
             onColumnReorder={handleColumnReorder}
             initialLabelFilter={pendingLabelFilter}
             onLabelFilterApplied={handleLabelFilterApplied}
+            onGuideClick={handleGuideClick}
           />
           {tasks.length === 0 && (
             <div className="pointer-events-none absolute inset-x-0 top-12 flex justify-center">
@@ -767,7 +800,9 @@ const AppShell = () => {
               onSidebarToggle={toggleSidebar}
               onSettingsClick={handleSettingsClick}
               onGuideClick={
-                state.kind === "loaded" ? handleGuideClick : undefined
+                view !== "board" && state.kind === "loaded"
+                  ? handleGuideClick
+                  : undefined
               }
               onSearchClick={() => setIsCommandPaletteOpen(true)}
               onMilestoneClick={
@@ -777,6 +812,7 @@ const AppShell = () => {
                 state.kind === "loaded" ? handleHeaderNewTask : undefined
               }
               onOpenClick={handleOpenClick}
+              onLabelsClick={handleLabelsClick}
             />
             <main className="flex flex-1 overflow-hidden">
               {view === "settings" && (
@@ -793,6 +829,7 @@ const AppShell = () => {
                   projectPath={displayedPath ?? undefined}
                   watchedFileCount={tasks.length}
                   tasks={tasks}
+                  onSettingsTab={handleSettingsTab}
                   columns={columns}
                   doneColumn={doneColumn}
                   onStatusSave={handleStatusSave}
@@ -809,6 +846,11 @@ const AppShell = () => {
                   onCreateMilestone={milestoneMutations.create}
                   isCreating={milestoneMutations.isPending}
                   onTaskClick={handleTaskClick}
+                  projectName={projectName}
+                  labelCount={settingsLabelsResource.labels.length}
+                  statusCount={columns.length}
+                  onBack={handleBackToBoard}
+                  onSettingsTab={handleSettingsTab}
                 />
               )}
               {view === "detail" && selectedTask && (

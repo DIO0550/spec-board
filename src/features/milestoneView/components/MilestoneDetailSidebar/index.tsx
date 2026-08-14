@@ -32,7 +32,6 @@ export const MilestoneDetailSidebar = ({
   def,
   status,
   projection,
-  showRatio,
   tasks,
   taskProjections,
   onTaskClick,
@@ -53,51 +52,85 @@ export const MilestoneDetailSidebar = ({
       ? Math.round((projection.done / projection.total) * 100)
       : 0;
   return (
-    <aside className="hidden max-h-full w-[360px] shrink-0 flex-col gap-3 overflow-y-auto min-[900px]:flex">
-      <section className="rounded-[10px] border border-border bg-surface p-4 shadow-sm">
-        <header className="mb-4 flex items-start gap-3">
-          <MilestoneStateBadge status={status} />
+    <aside className="hidden max-h-full w-[360px] shrink-0 flex-col gap-3.5 overflow-y-auto min-[900px]:flex">
+      <section className="overflow-hidden rounded-[10px] border border-border bg-surface shadow-sm">
+        <header className="flex items-baseline gap-2 border-b border-border px-3.5 py-3 text-[11px] font-semibold text-muted">
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-[15px] font-semibold text-foreground">
               {title}
             </h3>
             <p className="font-mono text-[10.5px] text-muted">{def.name}</p>
           </div>
-          <MilestoneCountdownBadge countdown={countdown} />
+          <span className="font-mono text-[10.5px] font-medium text-text-dim">
+            {def.name.startsWith("v") ? def.name + ".0" : def.name}
+          </span>
         </header>
-        <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2.5 border-t border-border pt-3 text-xs">
-          <dt className="text-muted">状態</dt>
-          <dd>{displayStatusLabel(status)}</dd>
-          <dt className="text-muted">期日</dt>
-          <dd className="font-mono">{due ?? "未設定"}</dd>
-          <dt className="text-muted">進捗</dt>
-          <dd className="font-mono">
-            {projection
-              ? `${projection.done} / ${projection.total}${showRatio ? ` (${percent}%)` : ""}`
-              : "—"}
-          </dd>
-          <dt className="text-muted">ソース</dt>
-          <dd className="font-mono text-[10.5px]">milestones.yml</dd>
-        </dl>
-        {def.description ? (
-          <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted">
-            {def.description}
-          </p>
-        ) : null}
+        <div className="p-3.5">
+          <dl className="grid grid-cols-[90px_1fr] items-center gap-x-3.5 gap-y-2 text-xs">
+            <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">
+              状態
+            </dt>
+            <dd className="flex items-center gap-1.5">
+              <MilestoneStateBadge status={status} />
+              <span>{displayStatusLabel(status)}</span>
+            </dd>
+            <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">
+              期日
+            </dt>
+            <dd className="flex items-center gap-2">
+              <code className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11.5px]">
+                {due ?? "未設定"}
+              </code>
+              <MilestoneCountdownBadge countdown={countdown} />
+            </dd>
+            <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">
+              作成
+            </dt>
+            <dd>
+              <code className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11.5px]">
+                {def.updated ?? "—"}
+              </code>
+            </dd>
+            <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">
+              スラッグ
+            </dt>
+            <dd>
+              <code className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11.5px]">
+                {def.name
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "-")
+                  .replace(/^-|-$/g, "")}
+              </code>
+            </dd>
+            <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">
+              ラベル
+            </dt>
+            <dd>
+              <span className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted">
+                milestone
+              </span>
+            </dd>
+          </dl>
+          {def.description ? (
+            <p className="mt-3.5 border-t border-border pt-3.5 text-xs leading-relaxed text-foreground">
+              {def.description}
+            </p>
+          ) : null}
+        </div>
       </section>
       <section
         data-testid="milestone-burndown"
         className="rounded-[10px] border border-border bg-surface p-4 shadow-sm"
       >
-        <header className="mb-3 flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wider text-muted">
+        <header className="mb-3 flex items-center justify-between border-b border-border pb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
           <span>Burndown</span>
           <span className="font-mono normal-case">{percent}% complete</span>
         </header>
         <svg
           role="img"
           aria-label="バーンダウンチャート"
-          viewBox="0 0 320 88"
-          className="h-[88px] w-full overflow-visible"
+          viewBox="0 0 320 140"
+          className="h-[140px] w-full overflow-visible"
         >
           <path
             d="M0 8 L320 80"
@@ -120,8 +153,11 @@ export const MilestoneDetailSidebar = ({
         </svg>
       </section>
       <section className="rounded-[10px] border border-border bg-surface p-4 shadow-sm">
-        <header className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
-          所属タスク（{tasks.length}）
+        <header className="mb-2 flex items-center gap-2 border-b border-border pb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
+          <span>タスク</span>
+          <span className="ml-auto font-mono font-medium normal-case text-text-dim">
+            {tasks.length}
+          </span>
         </header>
         {tasks.length === 0 ? (
           <p className="text-xs text-muted">タスクなし</p>
@@ -165,8 +201,8 @@ export const MilestoneDetailSidebar = ({
         data-testid="milestone-sidebar-activity"
         className="rounded-[10px] border border-border bg-surface p-4 shadow-sm"
       >
-        <header className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
-          Activity
+        <header className="mb-2 border-b border-border pb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
+          最近のアクティビティ
         </header>
         <p className="flex gap-2 text-xs text-muted">
           <span className="mt-1 size-2 shrink-0 rounded-full bg-accent" />

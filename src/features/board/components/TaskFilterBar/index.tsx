@@ -26,6 +26,8 @@ type TaskFilterBarProps = {
   filteredCount: number;
   /** 絞り込み前の総件数 */
   totalCount: number;
+  /** 検索欄を描画するか。subbarに検索欄を移したworkspaceではfalse。 */
+  showSearch?: boolean;
 };
 
 /**
@@ -68,20 +70,26 @@ export const TaskFilterBar = ({
   milestones,
   isActive,
   filteredCount,
+  showSearch = true,
   totalCount,
 }: TaskFilterBarProps) => {
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border bg-panel-2 px-4 py-2 print:hidden">
-      <input
-        type="search"
-        value={criteria.keyword}
-        onChange={(event) =>
-          onChange({ ...criteria, keyword: event.target.value })
-        }
-        placeholder="タスクを検索…"
-        aria-label="タスクを検索"
-        className="h-7 min-w-60 rounded-md border border-border bg-bg px-2.5 text-xs text-foreground placeholder:text-text-dim focus:border-accent focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent-soft"
-      />
+    <div
+      data-testid="task-filter-panel"
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border bg-panel-2 px-4 py-2 print:hidden"
+    >
+      {showSearch && (
+        <input
+          type="search"
+          value={criteria.keyword}
+          onChange={(event) =>
+            onChange({ ...criteria, keyword: event.target.value })
+          }
+          placeholder="タスクを検索…"
+          aria-label="タスクを検索"
+          className="h-7 min-w-60 rounded-md border border-border bg-bg px-2.5 text-xs text-foreground placeholder:text-text-dim focus:border-accent focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent-soft"
+        />
+      )}
 
       <fieldset className="flex items-center gap-1 border-0 p-0">
         <legend className="sr-only">優先度で絞り込み</legend>

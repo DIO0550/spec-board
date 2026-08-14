@@ -145,8 +145,79 @@ kbd {
 	}
 }
 
+[data-board-view="calendar"] [data-board-trailing],
+[data-board-view="roadmap"] [data-board-trailing] {
+	display: none;
+}
+
+[data-board-view="calendar"] [data-board-calendar],
+[data-board-view="roadmap"] [data-roadmap] {
+	position: relative;
+	margin-top: -44px;
+	height: calc(100% + 44px);
+	background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.spec-sync-pulse {
 		animation: none;
 	}
+}
+[data-board-view="calendar"] [data-board-calendar-toolbar],
+[data-board-view="roadmap"] [data-roadmap-controlbar] {
+	position: relative;
+	z-index: 3;
+	padding-left: clamp(16px, 52%, 560px);
+	background: transparent;
+	pointer-events: none;
+}
+[data-board-view="calendar"] [data-board-calendar-toolbar] > *,
+[data-board-view="roadmap"] [data-roadmap-controlbar] > * {
+	pointer-events: auto;
+}
+
+.spec-header-hidden-control {
+	display: none !important;
+}
+
+.spec-header-brand-name-hidden {
+	display: none;
+}
+
+.spec-settings-screen {
+	background: var(--color-bg);
+}
+
+.spec-settings-screen .spec-settings-panel {
+	padding: 24px 32px 56px;
+	background: var(--color-bg);
+}
+
+.spec-settings-screen [data-settings-tab="appearance"] {
+	display: none;
+}
+[data-board-view="roadmap"] [data-roadmap-legendbar] {
+	position: relative;
+	z-index: 2;
+}
+
+.spec-milestone-frame .spec-milestone-page {
+	width: 100%;
+	max-width: none;
+	height: 100%;
+	max-height: none;
+	min-height: 0;
+	padding: 24px 32px 60px;
+	overflow-y: auto;
+	background: var(--color-bg);
+}
+
+.spec-milestone-frame .spec-milestone-grid {
+	width: min(100%, 1280px);
+	margin-inline: auto;
+	gap: 24px;
+}
+
+.spec-ms-advanced-control {
+	display: none !important;
 }

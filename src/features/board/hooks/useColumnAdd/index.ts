@@ -16,6 +16,23 @@ export type UseColumnAddOptions = {
   onError: (error: ProjectError, message: string) => void;
 };
 
+/** Rustのu32 orderへ安全にシリアライズできる最大値。 */
+const MAX_COLUMN_ORDER = 2 ** 32 - 1;
+
+/**
+ * 最新stateのcolumnsから追加カラムのorderを採番する。
+ * 異常な最大値でもu32の範囲を越えないよう飽和させる。
+ * @param columns - 採番対象のカラム
+ * @returns 新しいカラムへ割り当てるorder
+ */
+const nextColumnOrder = (columns: readonly Column[]): number => {
+  const maxOrder = columns.reduce(
+    (value, column) => Math.max(value, column.order),
+    -1,
+  );
+  return Math.min(maxOrder + 1, MAX_COLUMN_ORDER);
+};
+
 /**
  * column追加callbackを生成する。
  *
@@ -30,24 +47,32 @@ export const useColumnAdd = ({
 }: UseColumnAddOptions): ColumnAddCallback =>
   useCallback(
     async (columnName) => {
-      if (columns.some((column) => column.name === columnName)) {
+      const normalizedName = columnName.trim();
+      if (normalizedName.length === 0) {
+        const message = "カラム名を入力してください";
+        showToast(message, "error");
+        throw new Error(message);
+      }
+      if (columns.some((column) => column.name === normalizedName)) {
         showToast("同じ名前のカラムが既に存在します", "error");
         return;
       }
 
       const result = await updateColumns((current) => {
-        if (current.columns.some((column) => column.name === columnName)) {
+        if (current.columns.some((column) => column.name === normalizedName)) {
           return null;
         }
-        const maxOrder = current.columns.reduce(
-          (value, column) => Math.max(value, column.order),
-          -1,
-        );
+        const nextColumns = [
+          ...current.columns,
+          { name: normalizedName, order: nextColumnOrder(current.columns) },
+        ];
+        const doneColumn = current.doneColumn;
         return {
-          columns: [
-            ...current.columns,
-            { name: columnName, order: maxOrder + 1 },
-          ],
+          columns: nextColumns,
+          ...(doneColumn !== undefined &&
+          nextColumns.some((column) => column.name === doneColumn)
+            ? { doneColumn }
+            : {}),
         };
       });
       if (!result.ok) {

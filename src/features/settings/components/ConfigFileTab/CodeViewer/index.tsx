@@ -60,7 +60,7 @@ export const CodeViewer = ({
           </button>
         </div>
       </header>
-      <pre className="m-0 max-h-[calc(100vh-320px)] overflow-auto font-mono text-xs leading-7">
+      <pre className="m-0 max-h-[calc(100vh-320px)] overflow-auto font-mono text-xs leading-[1.75]">
         {renderedLines.map((line) => (
           <span
             key={line.id}

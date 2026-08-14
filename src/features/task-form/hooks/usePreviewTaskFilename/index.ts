@@ -8,6 +8,15 @@ export type UsePreviewTaskFilenameArgs = {
   parentFilePath: string | undefined;
 };
 
+const isPreviewTaskFilenamePayload = (
+  value: unknown,
+): value is PreviewTaskFilenamePayload => {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const kind = (value as { kind?: unknown }).kind;
+  return kind === "path" || kind === "invalid" || kind === "pending";
+};
 /**
  * BE の `preview_task_filename` IPC を呼び出し、保存先パスプレビューを返すフック。
  * stale 応答の破棄は `requestIdRef` 世代 ID パターンで行う。
@@ -34,7 +43,7 @@ export const usePreviewTaskFilename = (
       if (requestIdRef.current !== currentId) {
         return;
       }
-      if (res.ok) {
+      if (res.ok && isPreviewTaskFilenamePayload(res.value)) {
         setResult(res.value);
       }
     };

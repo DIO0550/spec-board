@@ -119,7 +119,8 @@ export const DetailScreen = (props: DetailScreenProps) => {
       ref={sectionRef}
       tabIndex={-1}
       aria-label="タスク詳細"
-      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg focus:outline-none"
+      data-detail-screen
+      className="spec-detail-screen flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg focus:outline-none"
     >
       <h1 className="sr-only">{task.title || task.filePath}</h1>
       <nav
@@ -173,9 +174,9 @@ export const DetailScreen = (props: DetailScreenProps) => {
 
       <div
         data-testid="detail-layout"
-        className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[minmax(0,1fr)_340px]"
+        className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[minmax(0,1fr)_320px]"
       >
-        <main className="min-h-0 overflow-y-auto px-5 py-[22px] md:px-8">
+        <main className="min-h-0 overflow-y-auto px-8 py-[22px]">
           <div
             data-testid="detail-content-inner"
             className="mx-auto max-w-[820px]"

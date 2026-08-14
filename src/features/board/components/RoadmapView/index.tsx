@@ -307,7 +307,10 @@ export const RoadmapView = ({
       style={roadmapStyle}
       className="flex h-full min-h-0 w-full flex-col bg-surface"
     >
-      <header className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-2">
+      <header
+        data-roadmap-controlbar
+        className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 py-0"
+      >
         <fieldset
           aria-label="ロードマップ表示単位"
           className="flex rounded-md border border-border p-0.5"
@@ -335,7 +338,13 @@ export const RoadmapView = ({
         >
           ＋ Epicを追加
         </button>
-        <div className="ml-auto flex flex-wrap items-center gap-3">
+      </header>
+
+      <div
+        data-roadmap-legendbar
+        className="flex h-9 shrink-0 items-center border-b border-border bg-surface px-4"
+      >
+        <div className="ml-auto flex items-center gap-4">
           {columns.map((column, index) => (
             <span
               key={column.name}
@@ -355,8 +364,7 @@ export const RoadmapView = ({
             </span>
           ))}
         </div>
-      </header>
-
+      </div>
       <div data-roadmap-scroll className="min-h-0 flex-1 overflow-auto">
         <div className="min-w-max">
           <div className="sticky top-0 z-20 grid grid-cols-[var(--roadmap-left-width)_auto] bg-surface shadow-sm">

@@ -22,6 +22,7 @@ import {
   sortMilestones,
 } from "@/features/milestoneView/lib/listOps";
 import { resolveDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
+import { SubNav } from "@/features/settings";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 import type { Task } from "@/types/task";
@@ -34,6 +35,13 @@ const escapeCsvCell = (value: unknown): string => {
   const safeText = startsWithFormula ? `'${text}` : text;
   return `"${safeText.split('"').join('""')}"`;
 };
+
+const MILESTONE_SETTINGS_TABS = [
+  { id: "labels", label: "ラベル" },
+  { id: "milestones", label: "マイルストーン" },
+  { id: "statuses", label: "ステータス" },
+  { id: "config", label: "設定ファイル" },
+] as const;
 
 /**
  * マイルストーン定義をCSVとしてブラウザーへダウンロードする。
@@ -84,6 +92,16 @@ type MilestoneViewScreenProps = {
   onTaskClick?: (taskId: string) => void;
   /** visual regression用の基準時刻。通常は未指定。 */
   now?: Date;
+  /** デザインシェルに表示するプロジェクト名。未指定なら埋め込み表示。 */
+  projectName?: string;
+  /** 設定サブナビのラベル件数。 */
+  labelCount?: number;
+  /** 設定サブナビのステータス件数。 */
+  statusCount?: number;
+  /** 設定サブナビの戻る操作。 */
+  onBack?: () => void;
+  /** 設定サブナビから他の設定タブへ移動する操作。 */
+  onSettingsTab?: (tabId: string) => void;
 };
 
 /**
@@ -108,6 +126,11 @@ export const MilestoneViewScreen = ({
   isCreating = false,
   onTaskClick,
   now: referenceNow,
+  projectName,
+  labelCount,
+  statusCount,
+  onBack,
+  onSettingsTab,
 }: MilestoneViewScreenProps) => {
   const sorted = useMemo(
     () => Milestone.sortByOrder(resource.milestones),
@@ -117,13 +140,21 @@ export const MilestoneViewScreen = ({
   const [query, setQuery] = useState("");
   // milestones.yml で定義された order を尊重した既定順序を初期値にする。
   // Milestone.sortByOrder() の結果を listOps の安定ソートが保つ。
-  const [sort, setSort] = useState<SortKey>("order");
+  const [sort, setSort] = useState<SortKey>("due");
   const [view, setView] = useState<ViewMode>("list");
   const [selectedName, setSelectedName] = useState<string | undefined>(
-    undefined,
+    () => sorted[0]?.name,
   );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
+  useEffect(() => {
+    setSelectedName((current) =>
+      current !== undefined &&
+      sorted.some((milestone) => milestone.name === current)
+        ? current
+        : sorted[0]?.name,
+    );
+  }, [sorted]);
   // 今日の日付キー (YYYY-MM-DD)。日付がまたぐと変わり、それを依存配列に入れることで
   // overdue 判定を含む派生値 (visible / stats) を当日内ではメモ化したまま日付変更時に
   // 強制再計算する。
@@ -166,6 +197,15 @@ export const MilestoneViewScreen = ({
   }, [sorted, filter, query, sort, milestoneProjections, doneColumn, now]);
 
   const stats = useMemo(() => groupByDisplayStatus(sorted, now), [sorted, now]);
+  const settingsTabs = useMemo(
+    () => [
+      { ...MILESTONE_SETTINGS_TABS[0], count: labelCount },
+      { ...MILESTONE_SETTINGS_TABS[1], count: sorted.length },
+      { ...MILESTONE_SETTINGS_TABS[2], count: statusCount },
+      MILESTONE_SETTINGS_TABS[3],
+    ],
+    [labelCount, sorted.length, statusCount],
+  );
   const taskCounts = useMemo(
     () => MilestoneProjection.sum(milestoneProjections),
     [milestoneProjections],
@@ -259,116 +299,163 @@ export const MilestoneViewScreen = ({
     );
   }
 
+  const hasSettingsShell = projectName !== undefined;
+  const settingsNavigation = hasSettingsShell ? (
+    <SubNav
+      tabs={settingsTabs}
+      activeTabId="milestones"
+      onSelect={(tabId) => {
+        if (tabId !== "milestones") {
+          onSettingsTab?.(tabId);
+        }
+      }}
+      onBack={onBack}
+      projectName={projectName}
+    />
+  ) : null;
+
   return (
-    <div className="mx-auto flex h-[calc(100vh-92px)] max-h-[calc(100vh-92px)] w-full max-w-[1280px] flex-1 flex-col overflow-hidden bg-surface-muted p-6">
-      <header className="mb-4 flex items-baseline gap-4">
-        <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
-          マイルストーン
-        </h2>
-        <p
-          className="flex items-baseline gap-3 text-xs text-muted"
-          data-testid="milestone-view-stats"
-        >
-          <span>
-            <span className="font-mono font-semibold text-foreground">
-              {stats.open.length}
-            </span>{" "}
-            オープン
-          </span>
-          <span>
-            <span className="font-mono font-semibold text-foreground">
-              {stats.closed.length}
-            </span>{" "}
-            クローズ
-          </span>
-          <span className="text-[var(--color-ms-danger-fg)]">
-            <span className="font-mono font-semibold">
-              {stats.overdue.length}
-            </span>{" "}
-            期限超過
-          </span>
-          <span>
-            <span className="font-mono font-semibold text-foreground">
-              {taskCounts.done}/{taskCounts.total}
-            </span>{" "}
-            タスク完了
-          </span>
-        </p>
-        <button
-          type="button"
-          onClick={() => downloadMilestonesCsv(visible)}
-          className="ml-auto rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-surface-muted"
-        >
-          エクスポート
-        </button>
-        {onCreateMilestone !== undefined ? (
-          <button
-            type="button"
-            data-testid="milestone-create-open"
-            onClick={() => setIsCreateOpen(true)}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:opacity-90"
-          >
-            + マイルストーンを追加
-          </button>
-        ) : null}
-      </header>
+    <div
+      className={
+        hasSettingsShell
+          ? "spec-milestone-frame grid h-full min-h-0 grid-rows-[44px_minmax(0,1fr)] overflow-hidden bg-background"
+          : "contents"
+      }
+    >
+      {settingsNavigation}
+      <div
+        data-testid="milestone-view-screen"
+        className="spec-milestone-page mx-auto flex min-h-0 w-full max-w-[1280px] flex-1 flex-col overflow-y-auto bg-surface-muted p-6"
+      >
+        <div className="spec-milestone-grid grid w-full max-w-[1280px] grid-cols-1 items-start gap-6 min-[1081px]:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0">
+            <header className="mb-1 flex flex-wrap items-end gap-4">
+              <h2 className="text-[22px] font-semibold tracking-tight text-foreground">
+                マイルストーン
+              </h2>
+              <p
+                className="flex flex-wrap items-baseline gap-4 pb-1 text-xs text-muted"
+                data-testid="milestone-view-stats"
+              >
+                <span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {stats.open.length}
+                  </span>{" "}
+                  オープン
+                </span>
+                <span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {stats.closed.length}
+                  </span>{" "}
+                  クローズ
+                </span>
+                <span className="text-[var(--color-ms-danger-fg)]">
+                  <span className="font-mono font-semibold">
+                    {stats.overdue.length}
+                  </span>{" "}
+                  期限超過
+                </span>
+                <span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {taskCounts.done}/{taskCounts.total}
+                  </span>{" "}
+                  タスク完了
+                </span>
+              </p>
+              <div className="ml-auto flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadMilestonesCsv(visible)}
+                  className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-surface-muted"
+                >
+                  エクスポート
+                </button>
+                {onCreateMilestone !== undefined ? (
+                  <button
+                    type="button"
+                    data-testid="milestone-create-open"
+                    onClick={() => setIsCreateOpen(true)}
+                    className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:opacity-90"
+                  >
+                    + マイルストーンを追加
+                  </button>
+                ) : null}
+              </div>
+            </header>
+            {isCreateOpen &&
+            onCreateMilestone !== undefined &&
+            hasSettingsShell ? (
+              <MilestoneCreateModal
+                inline
+                onCreate={onCreateMilestone}
+                isPending={isCreating}
+                onClose={() => setIsCreateOpen(false)}
+              />
+            ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex min-h-0 min-w-0 flex-col">
-          <div className="mb-4 shrink-0">
-            <MilestoneToolbar
-              filter={filter}
-              onFilterChange={setFilter}
-              query={query}
-              onQueryChange={setQuery}
-              sort={sort}
-              onSortChange={setSort}
-              view={view}
-              onViewChange={setView}
-            />
-          </div>
-          <div className="min-h-0 overflow-y-auto pr-1">
-            {view === "list" ? (
-              <MilestoneList
-                milestones={visible}
-                statusOf={(d) => resolveDisplayStatus(d, now)}
-                projectionOf={(d) =>
-                  MilestoneProjection.findByName(milestoneProjections, d.name)
-                }
-                showRatio={doneColumn !== undefined}
-                selectedName={selectedName}
-                onSelect={(d) => setSelectedName(d.name)}
-                now={now}
+            <div className="mb-3.5">
+              <MilestoneToolbar
+                filter={filter}
+                filterCounts={{
+                  all: sorted.length,
+                  open: stats.open.length,
+                  overdue: stats.overdue.length,
+                  closed: stats.closed.length,
+                }}
+                onFilterChange={setFilter}
+                query={query}
+                onQueryChange={setQuery}
+                sort={sort}
+                onSortChange={setSort}
+                view={view}
+                onViewChange={setView}
               />
-            ) : (
-              <MilestoneRoadmap
-                milestones={visible}
-                selectedName={selectedName}
-                onSelect={(d) => setSelectedName(d.name)}
-                now={now}
-              />
-            )}
+            </div>
+            <div className="pr-1">
+              {view === "list" ? (
+                <MilestoneList
+                  milestones={visible}
+                  statusOf={(d) => resolveDisplayStatus(d, now)}
+                  projectionOf={(d) =>
+                    MilestoneProjection.findByName(milestoneProjections, d.name)
+                  }
+                  showRatio={doneColumn !== undefined}
+                  selectedName={selectedName}
+                  onSelect={(d) => setSelectedName(d.name)}
+                  now={now}
+                />
+              ) : (
+                <MilestoneRoadmap
+                  milestones={visible}
+                  selectedName={selectedName}
+                  onSelect={(d) => setSelectedName(d.name)}
+                  now={now}
+                />
+              )}
+            </div>
           </div>
+          <MilestoneDetailSidebar
+            def={selectedDef}
+            status={selectedStatus}
+            projection={selectedProjection}
+            showRatio={doneColumn !== undefined}
+            tasks={selectedTasks}
+            taskProjections={taskProjections}
+            onTaskClick={onTaskClick}
+            now={now}
+          />
         </div>
-        <MilestoneDetailSidebar
-          def={selectedDef}
-          status={selectedStatus}
-          projection={selectedProjection}
-          showRatio={doneColumn !== undefined}
-          tasks={selectedTasks}
-          taskProjections={taskProjections}
-          onTaskClick={onTaskClick}
-          now={now}
-        />
-      </div>
 
-      {isCreateOpen && onCreateMilestone !== undefined ? (
-        <MilestoneCreateModal
-          onCreate={onCreateMilestone}
-          isPending={isCreating}
-          onClose={() => setIsCreateOpen(false)}
-        />
-      ) : null}
+        {isCreateOpen &&
+        onCreateMilestone !== undefined &&
+        !hasSettingsShell ? (
+          <MilestoneCreateModal
+            onCreate={onCreateMilestone}
+            isPending={isCreating}
+            onClose={() => setIsCreateOpen(false)}
+          />
+        ) : null}
+      </div>
     </div>
   );
 };

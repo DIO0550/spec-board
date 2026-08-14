@@ -162,6 +162,8 @@ type SettingsScreenProps = {
   initialTabId?: string;
   /** 戻るaction。App未接続時はno-op。 */
   onBack?: () => void;
+  /** マイルストーン選択時に専用ビューへ遷移するコールバック。 */
+  onSettingsTab?: (tabId: string) => void;
   projectName?: string;
   projectPath?: string;
   watchedFileCount?: number;
@@ -201,6 +203,7 @@ export const SettingsScreen = ({
   onStatusSave,
   initialConfigFile,
   configFiles: configFilesProp,
+  onSettingsTab,
 }: SettingsScreenProps) => {
   const [activeTabId, setActiveTabId] = useState<string>(initialTabId);
   const tabs = useMemo<NonEmptySettingsTabs>(
@@ -232,11 +235,17 @@ export const SettingsScreen = ({
   );
 
   return (
-    <div className="grid h-full min-h-0 flex-1 grid-rows-[44px_minmax(0,1fr)] overflow-hidden bg-background">
+    <div className="spec-settings-screen grid h-full min-h-0 flex-1 grid-rows-[44px_minmax(0,1fr)] overflow-hidden bg-background">
       <SubNav
         tabs={tabs}
         activeTabId={activeTab.id}
-        onSelect={setActiveTabId}
+        onSelect={(tabId) => {
+          if (tabId === "milestones" && onSettingsTab !== undefined) {
+            onSettingsTab(tabId);
+            return;
+          }
+          setActiveTabId(tabId);
+        }}
         onBack={onBack}
         projectName={projectName}
         taskCount={tasks.length}
@@ -246,7 +255,7 @@ export const SettingsScreen = ({
         role="tabpanel"
         id={subNavPanelId(activeTab.id)}
         aria-labelledby={subNavTabId(activeTab.id)}
-        className="min-h-0 overflow-auto px-8 py-6 pb-14"
+        className="spec-settings-panel min-h-0 overflow-auto px-8 py-6 pb-14"
       >
         <ActivePanel
           tabId={activeTab.id}
