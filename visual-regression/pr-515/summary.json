@@ -1,5 +1,5 @@
 {
-  "reportVersion": "a43148ba02b63e492c72b4dc6ef3c9b9c431d3b7",
+  "reportVersion": "57a548c529cd7ffe65e8ac1aaa45f5c9ad942c55",
   "maxDiffRatio": 0.002,
   "changed": 99,
   "new": 0,
@@ -66,7 +66,7 @@
       "name": "Loaded Project Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 25527,
+      "diffPixels": 25531,
       "diffRatio": 0.0277,
       "hasExpected": true,
       "hasActual": true,
@@ -273,12 +273,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--comfortable",
@@ -3887,12 +3887,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--empty",
