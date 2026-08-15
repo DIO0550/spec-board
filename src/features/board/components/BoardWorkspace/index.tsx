@@ -210,6 +210,12 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
   const isFilterPanelUnavailable =
     viewMode === "calendar" || viewMode === "roadmap";
   const isFilterPanelVisible = isFilterOpen && !isFilterPanelUnavailable;
+  useEffect(() => {
+    if (!isFilterPanelUnavailable) {
+      return;
+    }
+    setIsFilterOpen(false);
+  }, [isFilterPanelUnavailable]);
   const viewTabs = useMemo(
     () => buildViewTabs(tasks.length, onGuideClick !== undefined),
     [tasks.length, onGuideClick],
