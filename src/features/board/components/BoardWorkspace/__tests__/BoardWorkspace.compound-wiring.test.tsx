@@ -214,6 +214,7 @@ test("参照デザインのsubbarに検索と折りたたみ式フィルタ導�
   );
   expect(search).not.toBeNull();
   expect(filterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(filterButton?.getAttribute("aria-controls")).toBeNull();
   expect(
     container?.querySelector('[data-testid="task-filter-panel"]'),
   ).toBeNull();
@@ -221,6 +222,7 @@ test("参照デザインのsubbarに検索と折りたたみ式フィルタ導�
   act(() => filterButton?.click());
 
   expect(filterButton?.getAttribute("aria-expanded")).toBe("true");
+  expect(filterButton?.getAttribute("aria-controls")).toBe("task-filter-panel");
   const filterPanel = container?.querySelector<HTMLElement>(
     '[data-testid="task-filter-panel"]',
   );
