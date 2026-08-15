@@ -143,7 +143,10 @@ export const SubNav = ({
                   : "inline-flex h-full shrink-0 items-center gap-1.5 border-b-2 border-transparent px-3 text-xs font-medium text-muted hover:text-foreground"
               }
             >
-              <span aria-hidden="true" className="text-text-dim">
+              <span
+                aria-hidden="true"
+                className="spec-stroke-icon text-text-dim"
+              >
                 <SubNavIcon tabId={tab.id} />
               </span>
               {tab.label}
