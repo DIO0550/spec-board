@@ -212,6 +212,15 @@ test("空のIPC応答では pending を維持する", async () => {
   expect(result?.kind).toBe("pending");
 });
 
+test("path取得後の不正なIPC応答では pending に戻る", async () => {
+  mockPreview.mockResolvedValueOnce(Result.ok(pathPayload("hello.md")));
+  await mount(defaultArgs);
+
+  mockPreview.mockResolvedValueOnce(Result.ok({ kind: "path" } as never));
+  const result = await rerender({ ...defaultArgs, title: "Changed" });
+  expect(result?.kind).toBe("pending");
+});
+
 test.each([
   { kind: "path" },
   { kind: "invalid" },
