@@ -2,11 +2,11 @@ import { expect, test } from "vitest";
 import { LabelRegistry } from "@/domains/label-registry";
 import { resolveLabelSwatchStyle } from "@/features/settings/lib/labelSettings/swatch";
 
-test("color が指定されているとき backgroundColor だけ採用する", () => {
-  const style = resolveLabelSwatchStyle({ name: "bug", color: "#ef4444" });
-  expect(style.backgroundColor).toBe("#ef4444");
-  // color 指定時は group/name 由来の fg/bd は使わない
-  expect(style.color).toBeUndefined();
+test("暗い color が指定されているとき白文字と背景色を採用する", () => {
+  const style = resolveLabelSwatchStyle({ name: "bug", color: "#1f2937" });
+  expect(style.backgroundColor).toBe("#1f2937");
+  expect(style.color).toBe("#ffffff");
+  // color 指定時は group/name 由来の borderColor は使わない
   expect(style.borderColor).toBeUndefined();
 });
 
