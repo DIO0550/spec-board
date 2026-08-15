@@ -90,3 +90,11 @@ test("タブアイコンのラッパーに stroke 表示用クラスが付く", 
 
   expect(iconWrapper?.className).toContain("spec-stroke-icon");
 });
+
+test("外観タブにプラス記号ではなく太陽アイコンを描画する", () => {
+  renderSubNav({ tabs: [tabB], activeTabId: "appearance" });
+  const icon = container?.querySelector(`#${subNavTabId("appearance")} svg`);
+
+  expect(icon?.querySelector('circle[r="4"]')).not.toBeNull();
+  expect(icon?.querySelector("path")?.getAttribute("d")).toContain("M12 2v2");
+});
