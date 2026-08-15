@@ -18,6 +18,8 @@ export type UseColumnAddOptions = {
 
 /** Rustのu32 orderへ安全にシリアライズできる最大値。 */
 const MAX_COLUMN_ORDER = 2 ** 32 - 1;
+const COLUMN_ORDER_LIMIT_MESSAGE =
+  "カラムを追加できません: カラムの並び順上限に達しています";
 
 /**
  * 最新stateのcolumnsから追加カラムのorderを採番する。
@@ -59,6 +61,10 @@ export const useColumnAdd = ({
       if (columns.some((column) => column.name === normalizedName)) {
         showToast("同じ名前のカラムが既に存在します", "error");
         return;
+      }
+      if (nextColumnOrder(columns) === null) {
+        showToast(COLUMN_ORDER_LIMIT_MESSAGE, "error");
+        throw new Error(COLUMN_ORDER_LIMIT_MESSAGE);
       }
 
       const result = await updateColumns((current) => {
