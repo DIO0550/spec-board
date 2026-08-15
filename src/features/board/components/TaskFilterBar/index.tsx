@@ -76,6 +76,7 @@ export const TaskFilterBar = ({
   return (
     <div
       data-testid="task-filter-panel"
+      id="task-filter-panel"
       className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border bg-panel-2 px-4 py-2 print:hidden"
     >
       {showSearch && (

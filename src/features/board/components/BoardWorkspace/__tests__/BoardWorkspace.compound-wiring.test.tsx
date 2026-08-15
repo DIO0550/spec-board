@@ -221,7 +221,9 @@ test("参照デザインのsubbarに検索と折りたたみ式フィルタ導�
   act(() => filterButton?.click());
 
   expect(filterButton?.getAttribute("aria-expanded")).toBe("true");
-  expect(
-    container?.querySelector('[data-testid="task-filter-panel"]'),
-  ).not.toBeNull();
+  const filterPanel = container?.querySelector<HTMLElement>(
+    '[data-testid="task-filter-panel"]',
+  );
+  expect(filterPanel).not.toBeNull();
+  expect(filterPanel?.id).toBe("task-filter-panel");
 });
