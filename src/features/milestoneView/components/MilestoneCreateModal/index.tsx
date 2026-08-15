@@ -100,6 +100,14 @@ export const MilestoneCreateModal = ({
   const [labels, setLabels] = useState("");
   const [assignee, setAssignee] = useState("");
   const autoSlug = milestoneSlug(form.name);
+  const dialogA11yProps = inline
+    ? {}
+    : {
+        role: "dialog" as const,
+        "aria-modal": true,
+        "aria-labelledby": titleId,
+        tabIndex: -1,
+      };
 
   useEffect(() => {
     if (inline) {
@@ -161,10 +169,7 @@ export const MilestoneCreateModal = ({
       />
       <div
         ref={dialogRef}
-        role="dialog"
-        aria-modal={inline ? undefined : true}
-        aria-labelledby={titleId}
-        tabIndex={-1}
+        {...dialogA11yProps}
         data-testid="milestone-create-modal"
         className={
           inline
