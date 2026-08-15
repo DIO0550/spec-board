@@ -7,6 +7,7 @@ import {
 } from "@/domains/task-projection";
 import { MilestoneCountdownBadge } from "@/features/milestoneView/components/MilestoneCountdownBadge";
 import { MilestoneStateBadge } from "@/features/milestoneView/components/MilestoneStateBadge";
+import { milestoneSlug } from "@/features/milestoneView/lib/milestoneSlug";
 import {
   displayStatusLabel,
   formatDue,
@@ -51,6 +52,7 @@ export const MilestoneDetailSidebar = ({
   const versionLabel = /^v\d+\.\d+$/.test(def.name)
     ? `${def.name}.0`
     : def.name;
+  const slug = milestoneSlug(def.name);
   const percent =
     projection !== undefined && projection.total > 0
       ? Math.round((projection.done / projection.total) * 100)
@@ -100,10 +102,7 @@ export const MilestoneDetailSidebar = ({
             </dt>
             <dd>
               <code className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11.5px]">
-                {def.name
-                  .toLowerCase()
-                  .replace(/[^a-z0-9]+/g, "-")
-                  .replace(/^-|-$/g, "")}
+                {slug}
               </code>
             </dd>
             <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">

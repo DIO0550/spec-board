@@ -2,6 +2,7 @@
 // で実装する。a11y ツリーへインタラクティブ要素を露出させないためで、Escape /
 // 閉じる × ボタンでキーボード経路は別途確保している。
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { milestoneSlug } from "@/features/milestoneView/lib/milestoneSlug";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 
 /** モーダル内フォームの入力値（全て文字列で保持し、送信時に正規化する）。 */
@@ -98,13 +99,7 @@ export const MilestoneCreateModal = ({
   const [isNameTouched, setIsNameTouched] = useState(false);
   const [labels, setLabels] = useState("");
   const [assignee, setAssignee] = useState("");
-  const autoSlug =
-    form.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+/, "")
-      .replace(/-+$/, "") || "version-tag";
+  const autoSlug = milestoneSlug(form.name);
 
   useEffect(() => {
     dialogRef.current?.focus();
