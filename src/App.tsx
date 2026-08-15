@@ -827,7 +827,6 @@ const AppShell = () => {
                   configFiles={configFiles}
                   projectName={projectName}
                   projectPath={displayedPath ?? undefined}
-                  watchedFileCount={tasks.length}
                   tasks={tasks}
                   onSettingsTab={handleSettingsTab}
                   columns={columns}

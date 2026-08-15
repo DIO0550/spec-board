@@ -77,10 +77,6 @@ type SubNavProps = {
   onBack?: () => void;
   /** 現在のproject context。 */
   projectName?: string;
-  /** project内のtask数。 */
-  taskCount?: number;
-  /** watcherが認識したfile数。 */
-  fileCount?: number;
 };
 
 /**

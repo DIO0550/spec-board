@@ -166,7 +166,6 @@ type SettingsScreenProps = {
   onSettingsTab?: (tabId: string) => void;
   projectName?: string;
   projectPath?: string;
-  watchedFileCount?: number;
   tasks?: readonly Task[];
   columns?: readonly Column[];
   doneColumn?: string;
@@ -196,7 +195,6 @@ export const SettingsScreen = ({
   initialTabId = SETTINGS_TABS[0].id,
   onBack,
   projectName,
-  watchedFileCount,
   tasks = [],
   columns,
   doneColumn,
@@ -248,8 +246,6 @@ export const SettingsScreen = ({
         }}
         onBack={onBack}
         projectName={projectName}
-        taskCount={tasks.length}
-        fileCount={watchedFileCount}
       />
       <div
         role="tabpanel"
