@@ -141,6 +141,11 @@ export const SubNav = ({
               id={subNavTabId(tab.id)}
               aria-selected={isActive}
               aria-controls={subNavPanelId(tab.id)}
+              aria-label={
+                tab.count === undefined
+                  ? undefined
+                  : `${tab.label} ${tab.count}件`
+              }
               data-settings-tab={tab.id}
               onClick={() => onSelect(tab.id)}
               className={
@@ -156,6 +161,11 @@ export const SubNav = ({
                 <SubNavIcon tabId={tab.id} />
               </span>
               {tab.label}
+              {tab.count !== undefined && (
+                <span aria-hidden="true" className="sr-only">
+                  {" "}
+                </span>
+              )}
               {tab.count !== undefined && (
                 <span
                   title={`${tab.count}件`}
