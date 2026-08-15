@@ -48,7 +48,7 @@
 | タスクの追加 | カラムヘッダーの追加アイコン、またはカラム下部の「タスクを追加」 | 対象カラムを初期ステータスにした全画面 2 ペイン作成ビューを表示する | 作成後はボードビュー |
 | タスクのステータス変更 | カードをドラッグして別カラムにドロップ | `move_task` IPC を 1 回呼び出す。BE が frontmatter `status` の更新、移動元カラム `cardOrder` からの除去、移動先カラム `cardOrder` の設定を単一コマンド内でまとめて行う | - |
 | カラム内のカード並び替え | カードをドラッグして同一カラム内でドロップ | カラム間移動と同じ `move_task` IPC を 1 回呼び出す（`fromColumn === toColumn` のため status は変更されず `cardOrder` のみ更新される）。カード表示順は `.spec-board/config.json` の `cardOrder` に永続化する（[config-spec.md](./config-spec.md) 参照）。並び順に変化が無い場合は IPC を呼ばない。永続化した並びは reopen 時に `open_project` の payload 順として復元される（rehydration） | - |
-| カラムの追加 | 「+ カラムを追加」ボタンクリック | カラム名入力フィールドを表示。入力確定で新カラムを追加 | - |
+| カラムの追加 | 「+ カラムを追加」ボタンクリック | カラム名入力フィールドを表示。入力確定で新カラムを追加する。`order` の上限（u32 最大値）に達している場合は追加を適用しない | - |
 | カラム名の編集 | カラムヘッダーのステータス名をクリック | インライン編集モードに切り替わり、ステータス名を変更可能。該当するタスクのmdファイルも一括更新 | - |
 | カラムの削除 | カラムヘッダーの右クリックメニュー | 確認ダイアログを表示。カラム内にタスクがある場合は移動先カラムをドロップダウンで選択させ、全タスクの `status` を一括更新してから削除。タスクがない場合はそのまま削除 | - |
 | カラムの並び替え | カラムヘッダーをドラッグして別カラム上にドロップ | ColumnHeader を `draggable=true` のハンドルとし、HTML5 ネイティブ DnD（独自 MIME `application/x-spec-board-column`、payload は `columnName` 文字列）で並び替える。drop 確定時に表示順（`order` 昇順）上で `fromColumnName` / `toColumnName` を index に再解決し、全カラムの `order` を 0-origin 連番に正規化して `update_columns` IPC を呼ぶ。楽観 dispatch（`columns-replaced`）→ 失敗時 rollback dispatch を行い、`aria-live="polite"` のライブリージョンに楽観適用直後 `「{カラム名}」を {移動先 index+1} 番目に移動しました`、`update_columns` 失敗時 `「{カラム名}」の移動を取り消しました` をアナウンスする。同位置ドロップ / 1 カラムのみ / `fromColumnName` が queue 待ち中に削除された場合は副作用ゼロ（IPC / dispatch / アナウンスを一切行わない）。子 rename / メニュー / +追加 ボタン上での dragstart は `data-column-dnd-disabled` 属性 + 最外殻 dragstart で `event.preventDefault()` により中止し、元の click 動作のみが発火する | - |
@@ -110,7 +110,7 @@ stateDiagram-v2
   - **ステータス / 優先度の popover select**: `<select>` ではなく色付き swatch + chevron の trigger と `role="listbox"` の popover（option は `role="option"`）。trigger クリック / ArrowDown / Enter で開き、クリックまたは ArrowUp/Down・Home/End で選択（端は循環）、Esc / 外側クリックで閉じる。popover を開いている間の Esc は capture フェーズで捕捉して画面の破棄確認へ伝播させず、閉じている間は画面の Esc を妨げない。ステータスの swatch 色はボードのカラム色帯と同一の accent 解決、優先度は High=赤 / Medium=黄 / Low=青（カードの優先度バッジと同配色）+「なし」。
   - **ラベルの popover 複数選択（GitHub 風）**: trigger（選択済みを背景色付きバッジで表示 / 未選択は「ラベルを選択…」）をクリックで popover を開き、検索欄で `labels.yml` 由来の既存ラベルを絞り込み（大文字小文字を無視した部分一致）、option のトグルで複数選択する（選択中は ✓）。既存に無い検索語は「作成」候補または検索欄 Enter でその場作成して選択する。IME 変換確定の Enter では作成しない。バッジ色は `labels.yml` の `color`（#RRGGBB）を `color-mix` で淡い背景 + 濃い文字に変換（優先度バッジと同様の塗り）、未設定時は中立グレー。popover を開いている間の Esc は capture フェーズで画面の破棄確認へ伝播させず、外側クリックでも閉じる。`labels.yml` 不在・取得失敗時は既存候補なし（新規作成のみ可）。
   - **Markdown ツールバー**: 説明欄上部に見出し / 太字 / 斜体 ｜ 引用 / コード / リンク ｜ 箇条書きリスト / 番号付きリスト / タスクリストの 9 ボタン（区切りで 3 グループ）。行プレフィックス系とインライン囲み（太字 / 斜体 / コード）は選択範囲に適用し（適用済みならトグルで剥がす）、リンクは `[選択]()` を生成して URL 入力位置へカーソルを移す。適用後も選択範囲を復元する。
-  - **保存先パスプレビュー**: ファイル名欄直下に保存先フルパス（衝突回避の連番サフィックス適用後の想定ファイル名）を表示する。無効入力時は警告表示に切り替わる。
+  - **保存先パスプレビュー**: ファイル名欄直下に保存先フルパス（衝突回避の連番サフィックス適用後の想定ファイル名）を表示する。無効入力時は警告表示に切り替わる。IPC が成功しても戻り値の形が不正な場合は `pending` に戻し、直前の有効なパス表示を残さない。
   - **ライブプレビュー操作**: 右ペインはレンダリング / Raw 切替に加え、最終 Markdown の UTF-8 バイト長表示、折りたたみ（topbar トグル / プレビュー内の閉じるボタン）、ドラッグハンドルによる幅変更（下限 340px / 上限 viewport 幅の 62%）、保存先ファイル名のフッター表示を持つ。
   - **下部固定フッター**: 左に validation ヒント（タイトル未入力時「タイトルを入力してください」/ 入力済み「保存先: {相対パス}」）、右にキャンセルと「タスクを作成」。作成ボタンはタイトル未入力時 disabled で、フォーム外配置のため `formRef` 経由の `requestSubmit`（⌘Enter と同一経路）で送信する。
   - **同期ステータスバッジ**: topbar に「監視 N files」を表示する（N は読み込み済みタスク総数の流用。watcher の実監視ファイル数を BE→FE 配線することはしない）。
@@ -129,7 +129,7 @@ stateDiagram-v2
 
 - **サブナビ**: タブが 1 枠でもタブ UI を表示する。WAI-ARIA Tabs のロール属性（`tablist` / `tab` / `tabpanel`、`aria-selected`、`aria-controls` / `aria-labelledby`）を付与する。タブ複数化時のキーボード操作（矢印 / Home / End・roving tabindex）は将来対応。
 - **ラベルタブ（CRUD）**: ラベルマスタの作成・編集・削除を行えるフル機能の管理タブ。各ラベルは色プレビューとともに一覧表示する（色解決規則は [label-registry-spec.md](./label-registry-spec.md) を参照）。取得失敗時はトーストを出さずタブ内のインライン文言で告知する。`labels.yml` 不在・0 件は「ラベルなし」相当の空表示とする（エラーではない）。validation 挙動の詳細は [config-spec.md](./config-spec.md) のラベル設定画面節を参照。
-- **外観設定**: テーマ（ライト / ダーク / システム）・表示密度（標準 / コンパクト）・アクセントカラー（5 色）の内部設定 API は保持するが、設計chromeの設定サブナビには外観タブを表示しない。設定値は従来どおりクライアントローカル（`localStorage`）に永続化する。
+- **外観設定**: テーマ（ライト / ダーク / システム）・表示密度（標準 / コンパクト）・アクセントカラー（5 色）の内部設定 API は保持する。設計chromeの設定サブナビでは外観タブを通常表示しないが、`SettingsScreen.initialTabId="appearance"` で直接到達した場合は選択中タブとして表示し、`aria-labelledby` の参照先を維持する。設定値は従来どおりクライアントローカル（`localStorage`）に永続化する。
 - **ステータスタブ**: App が読み込み済み project のカラム順・色・名称、task 使用数、完了カラムを渡す。空カラムの追加 / 削除、並び替え、rename、完了カラム変更を `update_columns` で保存する。タスクが 1 件以上残るカラムと最後の 1 カラムは削除不可。保存失敗時は dirty state を維持して再試行できる。「ボードで確認」は board、「設定ファイルを見る」は設定ファイルタブへ遷移する。
 - **設定ファイルタブ**: `config.json` / 自動生成 `GUIDE.md` を切り替える読み取り専用 viewer（行番号、copy / GUIDE 再生成 / 外部エディタ / folder 表示 action）を提供する。現段階の `SettingsScreen` 内部到達は canonical example の表示であり、実ファイル読込と各 OS / IPC action は `ConfigFileTab` callback の App 接続後に有効になる（未接続時は presentational no-op）。
 - **直接到達 API**: `SettingsScreen.initialTabId` で初期タブを指定できる。未知 ID は先頭のラベルタブへフォールバックする。`onBack` が指定された場合は設定 subbar の「戻る」から呼び出す。
