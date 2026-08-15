@@ -48,6 +48,9 @@ export const MilestoneDetailSidebar = ({
   const title = Milestone.badgeLabel(def.name, def);
   const countdown = resolveCountdown(def, now);
   const due = formatDue(def.due);
+  const versionLabel = /^v\d+\.\d+$/.test(def.name)
+    ? `${def.name}.0`
+    : def.name;
   const percent =
     projection !== undefined && projection.total > 0
       ? Math.round((projection.done / projection.total) * 100)
@@ -63,7 +66,7 @@ export const MilestoneDetailSidebar = ({
             <p className="font-mono text-[10.5px] text-muted">{def.name}</p>
           </div>
           <span className="font-mono text-[10.5px] font-medium text-text-dim">
-            {def.name.startsWith("v") ? `${def.name}.0` : def.name}
+            {versionLabel}
           </span>
         </header>
         <div className="p-3.5">
