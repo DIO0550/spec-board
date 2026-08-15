@@ -94,7 +94,7 @@ export const AppSidebar = ({
         </span>
         <span className="spec-sidebar-workspace-name">spec-board</span>
         <span className="spec-sidebar-workspace-meta">
-          {projectCount} projects
+          {projectCount} {projectCount === 1 ? "project" : "projects"}
         </span>
         <button
           type="button"
