@@ -137,6 +137,14 @@ test("resident projection は zero・unknown・特殊名を含む件数と進捗
   ).toContain("1 / 1 完了");
 });
 
+test("初期状態はマイルストーン未選択で詳細プレースホルダを表示する", () => {
+  const view = renderScreen("Done");
+
+  expect(view.textContent).toContain(
+    "マイルストーンを選択すると詳細を表示します",
+  );
+});
+
 test("done column 未解決でも projection の done/total は表示し ratio だけ隠す", () => {
   const view = renderScreen(undefined);
 
