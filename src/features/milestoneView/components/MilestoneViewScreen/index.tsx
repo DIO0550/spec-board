@@ -299,7 +299,8 @@ export const MilestoneViewScreen = ({
     );
   }
 
-  const hasSettingsShell = projectName !== undefined;
+  const hasSettingsShell =
+    projectName !== undefined && onSettingsTab !== undefined;
   const settingsNavigation = hasSettingsShell ? (
     <SubNav
       tabs={settingsTabs}
