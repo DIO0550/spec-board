@@ -11,11 +11,21 @@ export type UsePreviewTaskFilenameArgs = {
 const isPreviewTaskFilenamePayload = (
   value: unknown,
 ): value is PreviewTaskFilenamePayload => {
-  if (value === null || typeof value !== "object") {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
-  const kind = (value as { kind?: unknown }).kind;
-  return kind === "path" || kind === "invalid" || kind === "pending";
+  const payload = value as Record<string, unknown>;
+  if (payload.kind === "path") {
+    return (
+      typeof payload.fileName === "string" &&
+      typeof payload.relPath === "string" &&
+      typeof payload.fullPath === "string"
+    );
+  }
+  if (payload.kind === "invalid") {
+    return typeof payload.error === "string";
+  }
+  return payload.kind === "pending";
 };
 /**
  * BE の `preview_task_filename` IPC を呼び出し、保存先パスプレビューを返すフック。

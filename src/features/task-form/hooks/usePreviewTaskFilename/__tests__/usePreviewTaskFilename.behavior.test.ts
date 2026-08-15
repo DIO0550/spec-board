@@ -211,3 +211,14 @@ test("空のIPC応答では pending を維持する", async () => {
   const result = await mount(defaultArgs);
   expect(result?.kind).toBe("pending");
 });
+
+test.each([
+  { kind: "path" },
+  { kind: "invalid" },
+])("必須項目が欠けた %o のIPC応答では pending を維持する", async (payload) => {
+  mockPreview.mockResolvedValue(Result.ok(payload as never));
+
+  const result = await mount(defaultArgs);
+
+  expect(result?.kind).toBe("pending");
+});
