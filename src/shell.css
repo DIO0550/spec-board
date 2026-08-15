@@ -221,3 +221,335 @@ kbd {
 .spec-ms-advanced-control {
 	display: none !important;
 }
+
+
+/* Project explorer: dimensions and rhythm follow docs/design/spec-board/project-explorer.css. */
+.spec-sidebar {
+  width: 248px;
+  font-size: 13px;
+  background: var(--color-panel-2);
+}
+
+.spec-sidebar svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spec-sidebar-workspace {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 8px;
+}
+
+.spec-sidebar-workspace-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+}
+
+.spec-sidebar-workspace-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--color-foreground);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spec-sidebar-workspace-meta {
+  flex-shrink: 0;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.spec-sidebar-collapse {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-dim);
+}
+
+.spec-sidebar-collapse:hover {
+  border: 0;
+  background: var(--color-bg);
+  color: var(--color-foreground);
+}
+
+.spec-sidebar:hover .spec-sidebar-collapse {
+  opacity: 1;
+}
+
+.spec-sidebar-divider {
+  height: 1px;
+  flex-shrink: 0;
+  margin: 0 12px;
+  background: var(--color-border);
+}
+
+.spec-sidebar-group {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.spec-sidebar-group.is-collapsed .spec-sidebar-group-body {
+  display: none;
+}
+
+.spec-sidebar-group-header {
+  display: flex;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 4px 12px 4px 8px;
+  color: var(--color-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.spec-sidebar-group-header:hover {
+  background: var(--color-bg);
+}
+
+.spec-sidebar-group-toggle {
+  display: flex;
+  width: 100%;
+  height: 16px;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.spec-sidebar-group-twisty {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+}
+
+.spec-sidebar-group-twisty svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.1s;
+}
+
+.spec-sidebar-group-twisty.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+
+.spec-sidebar-group-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spec-sidebar-group-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.spec-sidebar-group-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.spec-sidebar-group-body::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background: var(--color-border);
+}
+
+.spec-file-tree,
+.spec-file-tree-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spec-file-tree-row {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding-right: 8px;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+}
+
+.spec-file-tree-row:hover {
+  background: var(--color-bg);
+}
+
+.spec-file-tree-row.is-active {
+  background: color-mix(in oklch, var(--color-accent), transparent 86%);
+}
+
+:root[data-theme="dark"] .spec-file-tree-row.is-active {
+  background: color-mix(in oklch, var(--color-accent), transparent 70%);
+}
+
+.spec-file-tree-twisty {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-muted);
+}
+
+.spec-file-tree-twisty.is-empty {
+  visibility: hidden;
+}
+
+.spec-file-tree-twisty-icon {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.1s;
+}
+
+.spec-file-tree-twisty.is-expanded .spec-file-tree-twisty-icon {
+  transform: rotate(90deg);
+}
+
+.spec-file-tree-twisty.is-collapsed .spec-file-tree-twisty-icon {
+  transform: rotate(0deg);
+}
+
+.spec-file-tree-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.spec-file-tree-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.spec-file-tree-icon.folder {
+  color: oklch(0.65 0.13 75);
+}
+
+.spec-file-tree-icon.folder svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+:root[data-theme="dark"] .spec-file-tree-icon.folder {
+  color: oklch(0.78 0.14 75);
+}
+
+.spec-file-tree-icon-markdown {
+  color: oklch(0.55 0.13 235);
+}
+
+:root[data-theme="dark"] .spec-file-tree-icon-markdown {
+  color: oklch(0.72 0.14 235);
+}
+
+.spec-file-tree-icon-json {
+  color: oklch(0.62 0.14 65);
+}
+
+.spec-file-tree-icon-config {
+  color: var(--color-muted);
+}
+
+.spec-file-tree-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.spec-file-tree-status {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.spec-file-tree-status-progress {
+  color: oklch(0.62 0.14 65);
+}
+
+.spec-file-tree-status-done {
+  color: oklch(0.55 0.13 155);
+}
+
+:root[data-theme="dark"] .spec-file-tree-status-progress {
+  color: oklch(0.78 0.14 65);
+}
+
+:root[data-theme="dark"] .spec-file-tree-status-done {
+  color: oklch(0.72 0.14 155);
+}
+
+.spec-file-tree-empty {
+  padding: 4px 8px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.spec-project-switcher-chevron {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+}
+
+.spec-project-switcher-chevron svg {
+  width: 14px;
+  height: 14px;
+}
