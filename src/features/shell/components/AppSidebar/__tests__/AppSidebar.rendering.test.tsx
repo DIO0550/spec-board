@@ -76,6 +76,7 @@ test("Explorerのグループ見出しは開閉状態と大文字のproject名�
 
   expect(groupHeader?.textContent).toContain("PAYMENTS-SERVICE");
   expect(groupToggle?.getAttribute("aria-expanded")).toBe("true");
+  expect(groupToggle?.getAttribute("aria-label")).toBeNull();
 });
 
 test("Explorerのグループ見出しclickでタスクツリーを折りたためる", () => {
