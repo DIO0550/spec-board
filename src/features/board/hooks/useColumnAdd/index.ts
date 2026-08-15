@@ -59,8 +59,9 @@ export const useColumnAdd = ({
         throw new Error(message);
       }
       if (columns.some((column) => column.name === normalizedName)) {
-        showToast("同じ名前のカラムが既に存在します", "error");
-        return;
+        const message = "同じ名前のカラムが既に存在します";
+        showToast(message, "error");
+        throw new Error(message);
       }
       if (nextColumnOrder(columns) === null) {
         showToast(COLUMN_ORDER_LIMIT_MESSAGE, "error");
