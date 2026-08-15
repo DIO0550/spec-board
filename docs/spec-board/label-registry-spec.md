@@ -111,13 +111,13 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 
 設定画面のラベルタブ（[board-view-spec.md](./board-view-spec.md) 参照）は、ラベルマスタ定義 `LabelDefinition`（`name` / `group?` / `color?` 等）1 件ごとにスワッチ色を以下の優先順位で解決する。
 
-1. **`color`（マスタ定義色・最優先）**: `#RRGGBB` 形式の単色が定義されていれば、その単色をスワッチに適用する。
+1. **`color`（マスタ定義色・最優先）**: `#RRGGBB` 形式の単色が定義されていれば、その単色をスワッチに適用する。文字色は `LabelColor.contrastForeground` で背景とのコントラスト比が高い白または黒を選ぶ。
 2. **`group`（明示グループ）**: `color` が無く `group` が**定義されていれば**（空文字 `""` も「定義済み」として扱う）、`LabelRegistry.tokensForGroup(group)` の `ColorTokens` を適用する。`name` の prefix からグループを導出する `tokensForLabel` ではなく、明示された `group` を優先する。空文字は `tokensForGroup("")` が既定（default 群）色へ正規化するため、name 由来の色にはフォールバックしない。
 3. **`name`（prefix 由来・フォールバック）**: `color` も `group` も無ければ `LabelRegistry.tokensForLabel(name)`（`name` の prefix からグループを導出）を適用する。
 
 スワッチへの適用規則:
 
-- **単色 `#RRGGBB`**: その単色を `backgroundColor` にバインドする。
+- **単色 `#RRGGBB`**: その単色を `backgroundColor` にバインドし、`LabelColor.contrastForeground` の結果を `color` にバインドする。不正な色は黒文字へフォールバックする。
 - **`ColorTokens`（`group` / `name` 経路）**: `LabelTag` と同様に `color`（`fg`）/ `backgroundColor`（`bg`）/ `borderColor`（`bd`）にバインドする。`dot` は小丸インジケータ用の予約トークンで本タブでは未使用。
 
 いずれも CSS 変数を作らずインライン `style` にバインドする。`color` の値が不正・欠落している場合は省略され、上記 2→3 の既定色解決にフォールバックする。
@@ -128,12 +128,13 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 |:--------|:-----|:-----|
 | `LabelGroup` | 型 | `"type" \| "priority" \| "area" \| "status" \| "default" \| (string & {})` |
 | `ColorTokens` | 型 | `{ fg, bg, bd, dot }`（すべて oklch 文字列、readonly） |
+| `LabelColor.contrastForeground(background)` | 関数 | 背景（`#RRGGBB`）に対してコントラスト比が高い白／黒の文字色を返す（不正値は黒） |
 | `LabelRegistry.PALETTE` | 定数 | 10 色パレット（index 0..9） |
 | `LabelRegistry.parseGroup(label)` | 関数 | ラベル文字列 → `LabelGroup` |
 | `LabelRegistry.tokensForGroup(group)` | 関数 | グループ → `ColorTokens`（未正規化入力も内部で正規化） |
 | `LabelRegistry.tokensForLabel(label)` | 関数 | ラベル文字列 → `ColorTokens`（`parseGroup` → `tokensForGroup` の合成） |
 
-すべての関数は純粋・同期で throw せず、同一入力に対して同一参照の `ColorTokens` を返す。
+`LabelRegistry` の関数はすべて純粋・同期で throw せず、同一入力に対して同一参照の `ColorTokens` を返す。`LabelColor.contrastForeground` も純粋・同期で throw しない。
 
 ## 将来拡張
 
@@ -152,3 +153,4 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 |:-----------|:-----|:---------|:-------|
 | 1.0 | 2026-05-31 | 初版作成 | - |
 | 1.1 | 2026-05-31 | 設定画面ラベルタブの色解決優先順位（color → group → name）とスワッチ適用規則を追記 | - |
+| 1.2 | 2026-08-15 | カスタム色スウォッチの文字色を背景とのコントラスト比で白／黒に自動選択する規則を追記 | - |
