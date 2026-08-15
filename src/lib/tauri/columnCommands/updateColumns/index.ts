@@ -12,4 +12,4 @@ import type { UpdateColumnsParams } from "../types";
 export const updateColumns = (
   params: UpdateColumnsParams,
 ): Promise<Result<void, TauriError>> =>
-  invokeWrapped<void>("update_columns", params);
+  invokeWrapped<void>("update_columns", { args: params });
