@@ -163,7 +163,7 @@ export const SubNav = ({
               </span>
               {tab.label}
               {tab.count !== undefined && (
-                <span aria-hidden="true" className="sr-only">
+                <span aria-hidden="true" className="hidden">
                   {" "}
                 </span>
               )}
