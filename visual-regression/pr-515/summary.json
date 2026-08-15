@@ -1,21 +1,21 @@
 {
-  "reportVersion": "57a548c529cd7ffe65e8ac1aaa45f5c9ad942c55",
+  "reportVersion": "7d908e7a192deae3e90ebbdca4a0f23e2097b602",
   "maxDiffRatio": 0.002,
-  "changed": 99,
+  "changed": 116,
   "new": 0,
   "deleted": 0,
-  "passed": 532,
-  "failed": 99,
+  "passed": 515,
+  "failed": 116,
   "results": [
     {
       "story": "app--all-props",
       "id": "app--all-props",
       "title": "App",
       "name": "All Props",
-      "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 425,
-      "diffRatio": 0.0005,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2910,
+      "diffRatio": 0.0032,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -25,10 +25,10 @@
       "id": "app--command-palette-keyboard",
       "title": "App",
       "name": "Command Palette Keyboard",
-      "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 486,
-      "diffRatio": 0.0005,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2939,
+      "diffRatio": 0.0032,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -38,10 +38,10 @@
       "id": "app--default",
       "title": "App",
       "name": "Default",
-      "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 403,
-      "diffRatio": 0.0004,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2741,
+      "diffRatio": 0.003,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -51,10 +51,10 @@
       "id": "app--edge-cases",
       "title": "App",
       "name": "Edge Cases",
-      "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 345,
-      "diffRatio": 0.0004,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2470,
+      "diffRatio": 0.0027,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -66,8 +66,8 @@
       "name": "Loaded Project Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 25531,
-      "diffRatio": 0.0277,
+      "diffPixels": 31532,
+      "diffRatio": 0.0342,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -79,8 +79,8 @@
       "name": "Shell Board Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 25506,
-      "diffRatio": 0.0277,
+      "diffPixels": 30852,
+      "diffRatio": 0.0335,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -1716,12 +1716,12 @@
       "title": "features/board/components/ActiveBoardView",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 601,
+      "diffRatio": 0.0007000000000000001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-activeboardview--default",
@@ -2144,65 +2144,65 @@
       "id": "features-board-components-calendarview--all-props",
       "title": "features/board/components/CalendarView",
       "name": "All Props",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 5281,
+      "diffRatio": 0.005699999999999999,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-calendarview--compact-detail",
       "id": "features-board-components-calendarview--compact-detail",
       "title": "features/board/components/CalendarView",
       "name": "Compact Detail",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 3969,
+      "diffRatio": 0.0043,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-calendarview--default",
       "id": "features-board-components-calendarview--default",
       "title": "features/board/components/CalendarView",
       "name": "Default",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 5281,
+      "diffRatio": 0.005699999999999999,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-calendarview--detail-open",
       "id": "features-board-components-calendarview--detail-open",
       "title": "features/board/components/CalendarView",
       "name": "Detail Open",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 3969,
+      "diffRatio": 0.0043,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-calendarview--edge-cases",
       "id": "features-board-components-calendarview--edge-cases",
       "title": "features/board/components/CalendarView",
       "name": "Edge Cases",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 5319,
+      "diffRatio": 0.0058,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-calendarview--empty",
@@ -2210,25 +2210,25 @@
       "title": "features/board/components/CalendarView",
       "name": "Empty",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 601,
+      "diffRatio": 0.0007000000000000001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-calendarview--week",
       "id": "features-board-components-calendarview--week",
       "title": "features/board/components/CalendarView",
       "name": "Week",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 4027,
+      "diffRatio": 0.0044,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-column--all-props",
@@ -2717,12 +2717,12 @@
       "title": "features/board/components/ListView",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 152,
+      "diffRatio": 0.0002,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-listview--default",
@@ -3432,12 +3432,12 @@
       "title": "features/board/components/TaskCard/TaskCardHeader",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-taskcard-taskcardheader--default",
@@ -4030,12 +4030,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 12,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailfields--default",
@@ -4043,12 +4043,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 12,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailfields--edge-cases",
@@ -4056,12 +4056,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 12,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailscreen--all-props",
@@ -4070,7 +4070,7 @@
       "name": "All Props",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 27217,
+      "diffPixels": 27207,
       "diffRatio": 0.029500000000000002,
       "hasExpected": true,
       "hasActual": true,
@@ -4083,7 +4083,7 @@
       "name": "Broken And Warnings",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 28843,
+      "diffPixels": 28833,
       "diffRatio": 0.0313,
       "hasExpected": true,
       "hasActual": true,
@@ -4096,7 +4096,7 @@
       "name": "Default",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 27217,
+      "diffPixels": 27207,
       "diffRatio": 0.029500000000000002,
       "hasExpected": true,
       "hasActual": true,
@@ -4109,7 +4109,7 @@
       "name": "Draft",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 27498,
+      "diffPixels": 27488,
       "diffRatio": 0.0298,
       "hasExpected": true,
       "hasActual": true,
@@ -4446,12 +4446,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 13,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-propertiessidebar--default",
@@ -4459,12 +4459,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 13,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-propertiessidebar--delete-confirmation",
@@ -4472,12 +4472,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Delete Confirmation",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 11,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-propertiessidebar--edge-cases",
@@ -4485,12 +4485,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 13,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-subissuesection--all-props",
@@ -6213,91 +6213,91 @@
       "id": "features-shell-components-appsidebar--all-props",
       "title": "features/shell/components/AppSidebar",
       "name": "All Props",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 4293,
+      "diffRatio": 0.004699999999999999,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-appsidebar--default",
       "id": "features-shell-components-appsidebar--default",
       "title": "features/shell/components/AppSidebar",
       "name": "Default",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 4293,
+      "diffRatio": 0.004699999999999999,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-appsidebar--edge-cases",
       "id": "features-shell-components-appsidebar--edge-cases",
       "title": "features/shell/components/AppSidebar",
       "name": "Edge Cases",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 5195,
+      "diffRatio": 0.005600000000000001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-appsidebar--empty",
       "id": "features-shell-components-appsidebar--empty",
       "title": "features/shell/components/AppSidebar",
       "name": "Empty",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2338,
+      "diffRatio": 0.0025,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-filetree--all-props",
       "id": "features-shell-components-filetree--all-props",
       "title": "features/shell/components/FileTree",
       "name": "All Props",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2970,
+      "diffRatio": 0.0032,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-filetree--default",
       "id": "features-shell-components-filetree--default",
       "title": "features/shell/components/FileTree",
       "name": "Default",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2970,
+      "diffRatio": 0.0032,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-filetree--edge-cases",
       "id": "features-shell-components-filetree--edge-cases",
       "title": "features/shell/components/FileTree",
       "name": "Edge Cases",
-      "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPixels": 2093,
+      "diffRatio": 0.0023,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-filetree--empty",
@@ -6318,12 +6318,12 @@
       "title": "features/shell/components/FileTree/FileNodeItem",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1136,
+      "diffRatio": 0.0012,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-filetree-filenodeitem--default",
@@ -6331,12 +6331,12 @@
       "title": "features/shell/components/FileTree/FileNodeItem",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 405,
+      "diffRatio": 0.0004,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-filetree-filenodeitem--edge-cases",
@@ -6344,12 +6344,12 @@
       "title": "features/shell/components/FileTree/FileNodeItem",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 663,
+      "diffRatio": 0.0007000000000000001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-projectswitcher--all-props",
@@ -6357,12 +6357,12 @@
       "title": "features/shell/components/ProjectSwitcher",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 5,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-projectswitcher--default",
@@ -6370,12 +6370,12 @@
       "title": "features/shell/components/ProjectSwitcher",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 5,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-projectswitcher--edge-cases",
@@ -6383,12 +6383,12 @@
       "title": "features/shell/components/ProjectSwitcher",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 5,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-projectswitcher--empty",
@@ -6396,12 +6396,12 @@
       "title": "features/shell/components/ProjectSwitcher",
       "name": "Empty",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 5,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-shell-components-themetogglebutton--all-props",
