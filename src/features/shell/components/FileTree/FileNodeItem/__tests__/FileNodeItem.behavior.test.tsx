@@ -246,11 +246,17 @@ test("同一位置で file→dir に切り替えても Hooks 順序が崩れず�
 });
 
 test.each([
-  { status: "In Progress", marker: "●", className: "progress" },
-  { status: "Done", marker: "✓", className: "done" },
+  {
+    status: "In Progress",
+    marker: "●",
+    label: "進行中",
+    className: "progress",
+  },
+  { status: "Done", marker: "✓", label: "完了", className: "done" },
 ])("status=$status の file row は状態マークを表示する", ({
   status,
   marker,
+  label,
   className,
 }) => {
   render({
@@ -262,7 +268,10 @@ test.each([
   const statusMark = container?.querySelector(
     `.spec-file-tree-status-${className}`,
   );
-  expect(statusMark?.textContent).toBe(marker);
+  expect(statusMark?.querySelector('[aria-hidden="true"]')?.textContent).toBe(
+    marker,
+  );
+  expect(fileButton()?.querySelector(".sr-only")?.textContent).toBe(label);
 });
 
 test("file row はExplorerのMarkdownアイコンと22px行構造を持つ", () => {
