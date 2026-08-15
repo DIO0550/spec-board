@@ -54,6 +54,7 @@ export const usePreviewTaskFilename = (
         return;
       }
       if (!res.ok) {
+        setResult({ kind: "pending" });
         return;
       }
       setResult(
