@@ -43,6 +43,7 @@ test("展開時は248px幅のプロジェクトexplorerを表示する", () => {
   const sidebar = container?.querySelector("aside");
   expect(sidebar?.className).toContain("w-[248px]");
   expect(sidebar?.textContent).toContain("spec-board");
+  expect(sidebar?.textContent).toContain("1 projects");
   expect(sidebar?.textContent).toContain("payments-service");
 });
 
@@ -65,4 +66,35 @@ test("閉じるボタンで外部toggleを呼ぶ", () => {
   });
 
   expect(onToggle).toHaveBeenCalledTimes(1);
+});
+
+test("Explorerのグループ見出しは開閉状態と大文字のproject名を持つ", () => {
+  renderSidebar({ collapsed: false });
+
+  const groupHeader = container?.querySelector(".spec-sidebar-group-header");
+  const groupToggle = groupHeader?.querySelector("button");
+
+  expect(groupHeader?.textContent).toContain("PAYMENTS-SERVICE");
+  expect(groupToggle?.getAttribute("aria-expanded")).toBe("true");
+});
+
+test("Explorerのグループ見出しclickでタスクツリーを折りたためる", () => {
+  renderSidebar({ collapsed: false });
+
+  const groupHeader = container?.querySelector(".spec-sidebar-group-header");
+  const groupToggle = groupHeader?.querySelector("button");
+
+  act(() => {
+    groupToggle?.click();
+  });
+
+  expect(groupToggle?.getAttribute("aria-expanded")).toBe("false");
+  expect(container?.querySelector(".spec-sidebar-group-body")).toBeNull();
+
+  act(() => {
+    groupToggle?.click();
+  });
+
+  expect(groupToggle?.getAttribute("aria-expanded")).toBe("true");
+  expect(container?.querySelector(".spec-sidebar-group-body")).not.toBeNull();
 });
