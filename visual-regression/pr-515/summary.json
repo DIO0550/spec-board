@@ -1,5 +1,5 @@
 {
-  "reportVersion": "facec577e37142c3419f97649267de2576d57f79",
+  "reportVersion": "9005ecce5ba4458af843a6d6f3de85173c3ca817",
   "maxDiffRatio": 0.002,
   "changed": 115,
   "new": 0,
@@ -66,7 +66,7 @@
       "name": "Loaded Project Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 31510,
+      "diffPixels": 31520,
       "diffRatio": 0.0342,
       "hasExpected": true,
       "hasActual": true,
@@ -273,12 +273,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 2,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--comfortable",
@@ -5071,8 +5071,8 @@
       "name": "All Props",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 3073,
-      "diffRatio": 0.0033,
+      "diffPixels": 2978,
+      "diffRatio": 0.0032,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -5084,8 +5084,8 @@
       "name": "Default",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 3421,
-      "diffRatio": 0.0037,
+      "diffPixels": 3281,
+      "diffRatio": 0.0036,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -5097,8 +5097,8 @@
       "name": "Edge Cases",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 3883,
-      "diffRatio": 0.0042,
+      "diffPixels": 3733,
+      "diffRatio": 0.0040999999999999995,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
