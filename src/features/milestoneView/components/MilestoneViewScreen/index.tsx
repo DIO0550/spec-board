@@ -142,9 +142,7 @@ export const MilestoneViewScreen = ({
   // 期日が同値の要素は、Milestone.sortByOrder() 済みの入力順を安定ソートで保つ。
   const [sort, setSort] = useState<SortKey>("due");
   const [view, setView] = useState<ViewMode>("list");
-  const [selectedName, setSelectedName] = useState<string | undefined>(
-    () => sorted[0]?.name,
-  );
+  const [selectedName, setSelectedName] = useState<string | undefined>();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -152,7 +150,7 @@ export const MilestoneViewScreen = ({
       current !== undefined &&
       sorted.some((milestone) => milestone.name === current)
         ? current
-        : sorted[0]?.name,
+        : undefined,
     );
   }, [sorted]);
   // 今日の日付キー (YYYY-MM-DD)。日付がまたぐと変わり、それを依存配列に入れることで
