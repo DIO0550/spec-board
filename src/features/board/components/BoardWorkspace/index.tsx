@@ -207,6 +207,9 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
   } = props;
   const { viewMode, setViewMode } = useBoardViewMode();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const isFilterPanelUnavailable =
+    viewMode === "calendar" || viewMode === "roadmap";
+  const isFilterPanelVisible = isFilterOpen && !isFilterPanelUnavailable;
   const viewTabs = useMemo(
     () => buildViewTabs(tasks.length, onGuideClick !== undefined),
     [tasks.length, onGuideClick],
@@ -325,7 +328,9 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
               <button
                 type="button"
                 data-testid="board-filter-toggle"
-                aria-controls="task-filter-panel"
+                aria-controls={
+                  isFilterPanelVisible ? "task-filter-panel" : undefined
+                }
                 aria-expanded={isFilterOpen}
                 onClick={() => setIsFilterOpen((open) => !open)}
                 className={
@@ -380,7 +385,7 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
           }
         />
       </div>
-      {isFilterOpen && viewMode !== "calendar" && viewMode !== "roadmap" && (
+      {isFilterPanelVisible && (
         <TaskFilterBar
           criteria={criteria}
           onChange={setCriteria}
