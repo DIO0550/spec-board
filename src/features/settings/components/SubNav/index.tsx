@@ -124,7 +124,8 @@ export const SubNav = ({
         </button>
       )}
       <span className="shrink-0 font-mono text-[11.5px] text-text-dim">
-        · {projectName === undefined ? ".spec-board" : projectName} /{" "}
+        {onBack !== undefined ? "· " : ""}
+        {projectName === undefined ? ".spec-board" : projectName} /{" "}
         <strong className="text-foreground">プロジェクト設定</strong>
       </span>
       <div
