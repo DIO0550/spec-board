@@ -138,8 +138,8 @@ export const MilestoneViewScreen = ({
   );
   const [filter, setFilter] = useState<StateFilter>("all");
   const [query, setQuery] = useState("");
-  // milestones.yml で定義された order を尊重した既定順序を初期値にする。
-  // Milestone.sortByOrder() の結果を listOps の安定ソートが保つ。
+  // 初期値は期日順にする。
+  // 期日が同値の要素は、Milestone.sortByOrder() 済みの入力順を安定ソートで保つ。
   const [sort, setSort] = useState<SortKey>("due");
   const [view, setView] = useState<ViewMode>("list");
   const [selectedName, setSelectedName] = useState<string | undefined>(
