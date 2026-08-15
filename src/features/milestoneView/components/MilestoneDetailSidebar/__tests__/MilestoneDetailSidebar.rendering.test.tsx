@@ -149,3 +149,30 @@ test("最終更新日時を更新ラベルで表示する", () => {
   );
   expect(updatedLabel?.nextElementSibling?.textContent).toContain("2026-08-15");
 });
+
+test("showRatio=false のとき進捗率と実績線を表示しない", () => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(MilestoneDetailSidebar, {
+        def: { name: "M1", state: "open" },
+        status: "open",
+        projection: { done: 1, total: 2, taskFilePaths: [] },
+        showRatio: false,
+        tasks: [],
+        taskProjections: new Map(),
+      }),
+    );
+  });
+
+  const burndown = container?.querySelector(
+    '[data-testid="milestone-burndown"]',
+  );
+  expect(burndown?.textContent).not.toContain("50% complete");
+  expect(
+    burndown?.querySelector('path[stroke="var(--color-accent)"]'),
+  ).toBeNull();
+  expect(burndown?.querySelector("circle")).toBeNull();
+});
