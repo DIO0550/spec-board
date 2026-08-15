@@ -181,7 +181,7 @@ stateDiagram-v2
 ### 外観（テーマ / 密度 / アクセント）
 
 - **テーマ**: ライト / ダーク / システム。`system` は OS の配色設定（`prefers-color-scheme`）に追従し、OS 設定の変化にもリアルタイムで追従する。
-- **表示密度**: 標準 / コンパクト（ルート `font-size` を切り替えて余白・文字サイズを一括スケール）。
+- **表示密度**: 標準 / コンパクト（ルート `font-size` を切り替えて余白・文字サイズを一括スケール）。標準は `17px`、コンパクトは `16px` を基準とし、本文の既定文字サイズは `14px` とする。
 - **アクセント**: 5 色（ブルー / バイオレット / グリーン / アンバー / ローズ）。
 - 実装はセマンティックな CSS 変数トークン（surface / foreground / muted / border / accent ほか）を `documentElement` の `data-theme` / `data-density` / `data-accent` 属性で実行時に切り替える方式。設定は外観設定タブで行うほか、ヘッダーにライト ⇔ ダークのクイックトグルを置く。
 - 設定はクライアントローカル（`localStorage`: `spec-board:appearance`）に保存する。
