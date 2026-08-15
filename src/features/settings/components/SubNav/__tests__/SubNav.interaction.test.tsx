@@ -74,3 +74,12 @@ test("タブ 2 枠で role=tab が 2 個描画される（前方互換）", () =
   const tabs = container?.querySelectorAll('[role="tab"]') ?? [];
   expect(tabs.length).toBe(2);
 });
+
+test("タブアイコンのラッパーに stroke 表示用クラスが付く", () => {
+  renderSubNav({ tabs: [tabA] });
+  const iconWrapper = container?.querySelector(
+    `#${subNavTabId("labels")} > span`,
+  );
+
+  expect(iconWrapper?.className).toContain("spec-stroke-icon");
+});
