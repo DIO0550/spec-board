@@ -47,7 +47,7 @@ const renderHook = (hookOptions: UseColumnAddOptions): ColumnAddCallback => {
   return (...args) => (latest as ColumnAddCallback)(...args);
 };
 
-test("column add成功で末尾orderを採番する", async () => {
+test("column add成功で末尾orderと既存doneColumnを引き継ぐ", async () => {
   let builder: ((current: ProjectData) => unknown) | null = null;
   const updateColumns = vi.fn(async (input) => {
     builder = input as typeof builder;
@@ -64,7 +64,7 @@ test("column add成功で末尾orderを採番する", async () => {
     onError: vi.fn(),
   });
 
-  await act(async () => callback("Review"));
+  await act(async () => callback(" Review "));
 
   expect(
     (builder as unknown as (current: ProjectData) => unknown)({
@@ -72,6 +72,7 @@ test("column add成功で末尾orderを採番する", async () => {
         { name: "Todo", order: 0 },
         { name: "Done", order: 2 },
       ],
+      doneColumn: "Done",
     } as unknown as ProjectData),
   ).toEqual({
     columns: [
@@ -79,8 +80,59 @@ test("column add成功で末尾orderを採番する", async () => {
       { name: "Done", order: 2 },
       { name: "Review", order: 3 },
     ],
+    doneColumn: "Done",
   });
   expect(showToast).toHaveBeenCalledWith("カラムを追加しました", "success");
+});
+
+test("最新stateで重複・order上限に到達したbuilderはno-opを返す", async () => {
+  let builder: ((current: ProjectData) => unknown) | null = null;
+  const updateColumns = vi.fn(async (input) => {
+    builder = input as typeof builder;
+    return Result.ok({ applied: true });
+  });
+  const callback = renderHook({
+    columns: [],
+    updateColumns,
+    showToast: vi.fn(),
+    onError: vi.fn(),
+  });
+
+  await act(async () => callback("Review"));
+  const build = builder as unknown as (current: ProjectData) => unknown;
+
+  expect(
+    build({
+      columns: [{ name: "Review", order: 0 }],
+    } as unknown as ProjectData),
+  ).toBeNull();
+  expect(
+    build({
+      columns: [{ name: "Limit", order: 2 ** 32 - 1 }],
+    } as unknown as ProjectData),
+  ).toBeNull();
+});
+
+test("最大order到達時は専用エラーで追加を拒否する", async () => {
+  const maxOrder = 2 ** 32 - 1;
+  const updateColumns = vi.fn();
+
+  const showToast = vi.fn();
+  const callback = renderHook({
+    columns: [{ name: "Limit", order: maxOrder }],
+    updateColumns,
+    showToast,
+    onError: vi.fn(),
+  });
+
+  await expect(callback("Review")).rejects.toThrow(
+    "カラムを追加できません: カラムの並び順上限に達しています",
+  );
+  expect(updateColumns).not.toHaveBeenCalled();
+  expect(showToast).toHaveBeenCalledWith(
+    "カラムを追加できません: カラムの並び順上限に達しています",
+    "error",
+  );
 });
 
 test("重複columnは即時拒否する", async () => {
@@ -92,7 +144,9 @@ test("重複columnは即時拒否する", async () => {
     showToast,
     onError: vi.fn(),
   });
-  await callback("Review");
+  await expect(callback("Review")).rejects.toThrow(
+    "同じ名前のカラムが既に存在します",
+  );
   expect(updateColumns).not.toHaveBeenCalled();
   expect(showToast).toHaveBeenCalledWith(
     "同じ名前のカラムが既に存在します",
@@ -133,4 +187,19 @@ test("column add errorを通知してrejectする", async () => {
     error,
     "カラムの追加に失敗しました: 失敗",
   );
+});
+
+test("空白だけのcolumn addはIPCを呼ばず入力エラーにする", async () => {
+  const updateColumns = vi.fn();
+  const showToast = vi.fn();
+  const callback = renderHook({
+    columns: [],
+    updateColumns,
+    showToast,
+    onError: vi.fn(),
+  });
+
+  await expect(callback("   ")).rejects.toThrow("カラム名を入力してください");
+  expect(updateColumns).not.toHaveBeenCalled();
+  expect(showToast).toHaveBeenCalledWith("カラム名を入力してください", "error");
 });

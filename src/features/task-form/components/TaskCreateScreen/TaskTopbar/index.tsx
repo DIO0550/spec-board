@@ -25,7 +25,7 @@ export const TaskTopbar = (props: TaskTopbarProps) => {
     <div className="flex h-12 items-center gap-4 border-b border-border bg-panel px-4">
       <div className="flex items-center gap-2 text-[13px] font-semibold">
         <span className="size-[22px] shrink-0 rounded-md bg-gradient-to-br from-create-accent to-create-accent-border" />
-        <span>spec-board</span>
+        <span className="sr-only">spec-board</span>
       </div>
       <div className="flex items-center gap-1.5 font-mono text-xs text-muted">
         <span className="text-text-dim">/</span>
@@ -55,7 +55,15 @@ export const TaskTopbar = (props: TaskTopbarProps) => {
           disabled
           className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-panel-2 text-muted disabled:opacity-50"
         >
-          ⌕
+          <svg
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 24 24"
+            className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.75]"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m16.5 16.5 4 4" />
+          </svg>
         </button>
         <button
           type="button"
@@ -63,7 +71,7 @@ export const TaskTopbar = (props: TaskTopbarProps) => {
           title="プレビューを開閉"
           aria-pressed={props.previewVisible}
           onClick={props.onTogglePreview}
-          className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-panel-2 text-muted hover:border-border-strong aria-pressed:border-create-accent-border aria-pressed:bg-create-accent-soft aria-pressed:text-create-accent"
+          className="spec-header-hidden-control inline-flex size-7 items-center justify-center rounded-md border border-border bg-panel-2 text-muted hover:border-border-strong aria-pressed:border-create-accent-border aria-pressed:bg-create-accent-soft aria-pressed:text-create-accent"
           data-testid="task-topbar-preview-toggle"
         >
           ▦

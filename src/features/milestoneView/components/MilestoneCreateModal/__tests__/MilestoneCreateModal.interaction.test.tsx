@@ -248,3 +248,21 @@ test("optional labelsとassigneeの変更をcallbackへ通知する", () => {
   expect(onLabelsChange).toHaveBeenLastCalledWith(["release", "frontend"]);
   expect(onAssigneeChange).toHaveBeenLastCalledWith("mika");
 });
+
+test("inline表示ではdialog本体へautofocusしない", () => {
+  renderModal({ inline: true });
+  const dialog = requireByTestId("milestone-create-modal");
+
+  expect(document.activeElement).not.toBe(dialog);
+  expect(dialog.getAttribute("role")).toBeNull();
+  expect(dialog.getAttribute("aria-modal")).toBeNull();
+  expect(dialog.getAttribute("aria-labelledby")).toBeNull();
+});
+
+test("通常表示ではdialogとしてmodal属性を付与する", () => {
+  renderModal();
+  const dialog = requireByTestId("milestone-create-modal");
+
+  expect(dialog.getAttribute("role")).toBe("dialog");
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+});

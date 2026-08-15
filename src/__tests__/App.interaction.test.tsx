@@ -938,7 +938,7 @@ test("HeaderBar「設定」click で SettingsScreen（SubNav/ラベルタブ）�
   await flush();
   expect(container?.querySelector('[role="tablist"]')).not.toBeNull();
   const tab = container?.querySelector('[role="tab"]');
-  expect(tab?.textContent).toBe("ラベル");
+  expect(tab?.textContent).toBe("ラベル 0");
 });
 
 test("settings 表示中の「ボードへ戻る」click で board（EmptyState）に復帰する", async () => {
@@ -988,7 +988,7 @@ test("読込済みsettingsは実project情報とstatusを表示し保存・戻�
 
   const main = container?.querySelector("main");
   expect(main?.textContent).toContain("p");
-  expect(main?.textContent).toContain("1 tasks · 1 files");
+  expect(container?.querySelector("header")?.textContent).toContain("1 files");
   expect(main?.textContent).not.toContain("payments-service");
 
   const statusTab = Array.from(
@@ -1016,7 +1016,7 @@ test("loaded HeaderのGUIDE.mdからSettings ConfigのGUIDEを直接表示する
   mountApp();
   await openSuccessfully();
   const guide = Array.from(
-    container?.querySelectorAll<HTMLButtonElement>("header button") ?? [],
+    container?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
   ).find((button) => button.textContent === "GUIDE.md");
   await act(async () => guide?.click());
   await flush();

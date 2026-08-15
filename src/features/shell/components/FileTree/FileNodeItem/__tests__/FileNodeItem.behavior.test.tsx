@@ -146,7 +146,10 @@ test("dir ノードは展開状態でトグルと子 ul を描画する", () => 
 
   const [toggle] = toggleButtons();
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(toggle.textContent).toContain("▾");
+  expect(toggle.querySelector(".spec-file-tree-twisty-icon")).not.toBeNull();
+  expect(
+    toggle.querySelector(".spec-file-tree-icon-folder svg"),
+  ).not.toBeNull();
   expect(container?.textContent).toContain("child.md");
 });
 
@@ -161,7 +164,9 @@ test("dir トグル click で折りたたみ・再 click で復帰する", () =>
   click(toggleButtons()[0]);
   const collapsed = toggleButtons()[0];
   expect(collapsed.getAttribute("aria-expanded")).toBe("false");
-  expect(collapsed.textContent).toContain("▸");
+  expect(
+    collapsed.querySelector(".spec-file-tree-twisty.is-collapsed"),
+  ).not.toBeNull();
   expect(container?.textContent).not.toContain("child.md");
 
   click(collapsed);
@@ -173,14 +178,20 @@ test("dir トグル click で折りたたみ・再 click で復帰する", () =>
 test.each([
   { depth: 0, expected: "0px" },
   { depth: 3, expected: "36px" },
-])("depth=$depth のとき paddingLeft が $expected", ({ depth, expected }) => {
+])("depth=$depth のとき twisty の marginLeft が $expected", ({
+  depth,
+  expected,
+}) => {
   render({
     node: fileNode(createTask(), "task.md"),
     depth,
     onSelect: vi.fn(),
   });
 
-  expect(fileButton()?.style.paddingLeft).toBe(expected);
+  expect(
+    fileButton()?.querySelector<HTMLElement>(".spec-file-tree-twisty")?.style
+      .marginLeft,
+  ).toBe(expected);
 });
 
 test("空 dir でもトグルボタンが描画される（リーフ扱いにならない）", () => {
@@ -232,4 +243,50 @@ test("同一位置で file→dir に切り替えても Hooks 順序が崩れず�
 
   expect(toggleButtons()).toHaveLength(1);
   expect(container?.textContent).toContain("y.md");
+});
+
+test.each([
+  {
+    status: "In Progress",
+    marker: "●",
+    label: "進行中",
+    className: "progress",
+  },
+  { status: "Done", marker: "✓", label: "完了", className: "done" },
+])("status=$status の file row は状態マークを表示する", ({
+  status,
+  marker,
+  label,
+  className,
+}) => {
+  render({
+    node: fileNode(createTask({ status }), "task.md"),
+    depth: 0,
+    onSelect: vi.fn(),
+  });
+
+  const statusMark = container?.querySelector(
+    `.spec-file-tree-status-${className}`,
+  );
+  expect(statusMark?.querySelector('[aria-hidden="true"]')?.textContent).toBe(
+    marker,
+  );
+  expect(fileButton()?.querySelector(".sr-only")?.textContent).toBe(label);
+});
+
+test("file row はExplorerのMarkdownアイコンと22px行構造を持つ", () => {
+  render({
+    node: fileNode(createTask(), "task.md"),
+    depth: 0,
+    onSelect: vi.fn(),
+  });
+
+  const row = fileButton();
+  expect(row?.className).toContain("spec-file-tree-row");
+  expect(
+    row?.querySelector(".spec-file-tree-icon-markdown svg"),
+  ).not.toBeNull();
+  expect(row?.querySelector(".spec-file-tree-name")?.textContent).toBe(
+    "task.md",
+  );
 });

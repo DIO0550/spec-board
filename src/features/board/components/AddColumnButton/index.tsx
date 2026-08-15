@@ -2,6 +2,19 @@ import { useInlineColumnNameInput } from "@/features/board/hooks/useInlineColumn
 import { useBoardColumn } from "../BoardColumnProvider";
 import { ColumnNameInput } from "../ColumnNameInput";
 
+const PlusIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="size-3.5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+  >
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
 /** AddColumnButton の Props */
 type AddColumnButtonProps = {
   /**
@@ -49,10 +62,13 @@ export const AddColumnButton = ({ onAdd }: AddColumnButtonProps) => {
       type="button"
       onClick={field.startEditing}
       aria-label="カラムを追加"
-      className="mt-1 h-11 w-[260px] min-w-[260px] rounded-[10px] border border-dashed border-border-strong px-4 text-xs font-medium text-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft"
+      className="mt-1 inline-flex h-11 w-[260px] min-w-[260px] items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-border-strong px-4 text-xs font-medium text-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft"
       data-testid="add-column-button"
     >
-      + カラムを追加
+      <PlusIcon />
+      <span>
+        <span className="sr-only">+ </span>カラムを追加
+      </span>
     </button>
   );
 };

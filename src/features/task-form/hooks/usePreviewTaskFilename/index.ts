@@ -8,6 +8,25 @@ export type UsePreviewTaskFilenameArgs = {
   parentFilePath: string | undefined;
 };
 
+const isPreviewTaskFilenamePayload = (
+  value: unknown,
+): value is PreviewTaskFilenamePayload => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const payload = value as Record<string, unknown>;
+  if (payload.kind === "path") {
+    return (
+      typeof payload.fileName === "string" &&
+      typeof payload.relPath === "string" &&
+      typeof payload.fullPath === "string"
+    );
+  }
+  if (payload.kind === "invalid") {
+    return typeof payload.error === "string";
+  }
+  return payload.kind === "pending";
+};
 /**
  * BE の `preview_task_filename` IPC を呼び出し、保存先パスプレビューを返すフック。
  * stale 応答の破棄は `requestIdRef` 世代 ID パターンで行う。
@@ -34,9 +53,15 @@ export const usePreviewTaskFilename = (
       if (requestIdRef.current !== currentId) {
         return;
       }
-      if (res.ok) {
-        setResult(res.value);
+      if (!res.ok) {
+        setResult({ kind: "pending" });
+        return;
       }
+      setResult(
+        isPreviewTaskFilenamePayload(res.value)
+          ? res.value
+          : { kind: "pending" },
+      );
     };
     void fetch();
   }, [args.title, args.explicitFilename, args.parentFilePath]);

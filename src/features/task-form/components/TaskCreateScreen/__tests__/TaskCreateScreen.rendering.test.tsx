@@ -113,9 +113,10 @@ test("左フォームと右プレビューの2ペインが chrome（topbar/subba
   expect(
     document.querySelector('[data-testid="task-form-save-meta"]'),
   ).toBeTruthy();
+  expect(document.body.textContent).toContain("⌘ / Ctrl + Enter で保存");
 });
 
-test("mainは左form・4px resizer・480px previewで開始する", () => {
+test("mainは左form・4px resizer・420px previewで開始する", () => {
   render(baseProps());
   const main = document.querySelector(
     '[data-testid="task-create-main"]',
@@ -123,7 +124,7 @@ test("mainは左form・4px resizer・480px previewで開始する", () => {
   expect(main.className).toContain(
     "grid-cols-[minmax(0,1fr)_4px_var(--preview-w)]",
   );
-  expect(main.style.getPropertyValue("--preview-w")).toBe("480px");
+  expect(main.style.getPropertyValue("--preview-w")).toBe("420px");
 });
 
 test("外側documentを伸ばさずフォーム本文だけをスクロールする", () => {

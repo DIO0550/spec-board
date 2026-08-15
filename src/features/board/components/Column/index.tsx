@@ -18,6 +18,19 @@ import { ColumnHeader } from "../ColumnHeader";
 import { TaskCard } from "../TaskCard";
 import { computeHoverIndex } from "./dragHover";
 
+const PlusIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="size-3.5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+  >
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
 /** 個別カラムの Props */
 type ColumnProps = {
   /** ステータス名 */
@@ -385,6 +398,18 @@ export const Column = ({
           />
         )}
       </ul>
+      <div className="shrink-0 px-2.5 pb-2.5">
+        <button
+          type="button"
+          onClick={() => onAddTask(name)}
+          aria-label={`${name}にタスクを追加`}
+          data-testid="column-add-task-button"
+          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border-strong bg-transparent text-xs font-medium text-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+        >
+          <PlusIcon />
+          タスクを追加
+        </button>
+      </div>
       {menuPos && (
         <ColumnContextMenu
           x={menuPos.x}

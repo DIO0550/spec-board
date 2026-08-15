@@ -5,6 +5,19 @@ import { useInlineColumnNameInput } from "@/features/board/hooks/useInlineColumn
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/mime";
 import { ColumnNameInput } from "../ColumnNameInput";
 
+const PlusIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="size-3.5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+  >
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
 /** カラムヘッダーの Props */
 type ColumnHeaderProps = {
   /** ステータス名 */
@@ -194,7 +207,8 @@ export const ColumnHeader = ({
           className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded px-1 text-[10.5px] font-medium leading-none text-muted hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
           data-column-dnd-disabled
         >
-          + 追加
+          <PlusIcon />
+          <span className="sr-only">+ 追加</span>
         </button>
       </div>
     </div>

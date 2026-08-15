@@ -84,16 +84,18 @@ export const LabelFilterBar = ({
   const keywordId = useId();
   const sortId = useId();
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-muted">グループ</span>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">
+        グループ
+      </span>
       <button
         type="button"
         onClick={() => onGroupChange({ kind: "all" })}
         aria-pressed={isAllActive(groupFilter)}
         className={`rounded-full border px-2 py-0.5 text-xs ${
           isAllActive(groupFilter)
-            ? "bg-accent text-accent-foreground"
-            : "border-border"
+            ? "border-accent bg-accent-soft text-foreground"
+            : "border-border bg-background text-muted hover:border-accent"
         }`}
       >
         すべて {totalCount}
@@ -106,17 +108,18 @@ export const LabelFilterBar = ({
           aria-pressed={isGroupActive(groupFilter, opt.group)}
           className={`rounded-full border px-2 py-0.5 text-xs ${
             isGroupActive(groupFilter, opt.group)
-              ? "bg-accent text-accent-foreground"
-              : "border-border"
+              ? "border-accent bg-accent-soft text-foreground"
+              : "border-border bg-background text-muted hover:border-accent"
           }`}
         >
           {opt.group} {opt.count}
         </button>
       ))}
+      <span aria-hidden="true" className="mx-1 h-4 w-px bg-border-strong" />
       <label htmlFor={keywordId} className="sr-only">
         ラベル名・説明で絞り込み
       </label>
-      <div className="relative ml-auto">
+      <div className="relative flex min-w-[200px] max-w-[360px] flex-1">
         <svg
           aria-hidden="true"
           viewBox="0 0 24 24"
@@ -130,12 +133,12 @@ export const LabelFilterBar = ({
           value={keyword}
           onChange={(e) => onKeywordChange(e.target.value)}
           placeholder="ラベル名・説明で絞り込み..."
-          className="w-64 rounded-full border border-border bg-surface-muted px-2 py-1 pl-7 text-sm focus:bg-surface"
+          className="w-full rounded-md border border-border bg-background px-2 py-1 pl-7 text-xs focus:bg-surface"
         />
       </div>
       <fieldset
         id={sortId}
-        className="flex items-center gap-1 rounded-full border border-border bg-surface-muted p-0.5 text-xs"
+        className="flex items-center gap-1 rounded-md border border-border bg-background p-0.5 text-xs"
       >
         <legend className="sr-only">並び順</legend>
         {(Object.keys(SORT_LABELS) as LabelSort[]).map((key) => (
@@ -144,7 +147,7 @@ export const LabelFilterBar = ({
             type="button"
             onClick={() => onSortChange(key)}
             aria-pressed={sort === key}
-            className={`rounded-full px-2 py-0.5 ${
+            className={`rounded px-2 py-0.5 ${
               sort === key
                 ? "bg-surface text-slate-900 shadow-sm"
                 : "text-muted"

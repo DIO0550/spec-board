@@ -1,17 +1,19 @@
 # マイルストーン専用ビュー仕様
 
-> **バージョン**: 1.1
+> **バージョン**: 1.4
 > **作成日**: 2026-06-21
 > **ステータス**: 下書き
 
 ## 概要
 
-マイルストーン専用ビュー（画面区分 `milestone`）の UI 仕様を定義する。ヘッダーの「マイルストーン」ボタン (`onMilestoneClick`) 起点で開かれ、フィルタ・検索・ソート・一覧⇔ロードマップ切替・追加モーダルを提供する。
+マイルストーン専用ビュー（画面区分 `milestone`）の UI 仕様を定義する。プロジェクト設定サブナビの「マイルストーン」から開かれ、状態フィルタ・検索・ソート・一覧⇔ロードマップ切替・インライン作成フォームを提供する。
 
 ボードビューおよびマイルストーン設定タブ（`MilestoneSettingsTab`）との関係:
 - マイルストーン一覧の取得は唯一の取得点 `useMilestones` リソースに委譲する（ボードビュー / マイルストーン設定タブと共有）。
 - 作成 mutation は `useMilestoneMutations`（設定タブと同フック）を共有し、どちらの画面から作成しても `reload` で同期する。
 - live な進捗・所属順・完了判定は、`open_project` / `get_tasks` が同一 task snapshot から返す Rust projection を唯一の source of truth とする。definition metadata 用の `useMilestones` と live projection は別データとして受け渡す。
+- App の canonical な遷移先は `MilestoneViewScreen` で、設定サブナビ（ラベル / マイルストーン / ステータス / 設定ファイル）を共通表示する。旧 `MilestoneSettingsTab` は設定タブの直接利用・既存 API 互換のために保持する。
+- 画面は 48px topbar + 44px 設定 subbar の下に、左右 `minmax(0, 1fr) 360px` の 2 カラムを配置する。ページ余白は 24px 32px 60px、最大幅は 1280px とする。
 
 ## Projection と表示の source of truth
 
@@ -33,8 +35,8 @@
 1. **ヘッダー**: タイトル「マイルストーン」+ 統計（オープン / クローズ / 期限超過 / タスク完了数）+ 右端「+ マイルストーンを追加」ボタン。
 2. **ツールバー**: 状態フィルタ pills + 検索 input + ソート + 一覧/ロードマップ切替。
 3. **メインビュー**: 一覧 (`MilestoneList`) または ロードマップ (`MilestoneRoadmap`)。
-4. **右サイドバー**: 選択中マイルストーンの詳細（メタ情報 + 所属タスク一覧）。`lg` 以上の幅でのみ表示。
-5. **作成モーダル**: 「+ マイルストーンを追加」押下で開く中央モーダル。
+4. **右サイドバー**: 選択中マイルストーンのメタ情報、バーンダウン、所属タスク、最近のアクティビティ。幅 1081px 以上で表示する。
+5. **作成フォーム**: 「+ マイルストーンを追加」押下で左カラム直下にインライン表示する。設定シェルを持たない単体利用では後方互換の中央モーダルとして表示する。
 
 `onCreateMilestone` props が渡されないとき（プレビュー / 閲覧専用モード）はヘッダーの追加ボタンを非表示にする。空状態（マイルストーン 0 件）でも `onCreateMilestone` 指定時はヘッダー + 「+ 最初のマイルストーンを作成」CTA を出して空からの作成導線を保つ。
 
@@ -42,9 +44,9 @@
 
 | 機能 | 値 | 挙動 |
 |:--|:--|:--|
-| 状態フィルタ pills | `all` / `open` / `overdue` / `closed` | 単一選択。`open` は overdue を含まず純粋 open のみ（overdue は専用 pill で分離） |
+| 状態フィルタ pills | `all` / `open` / `closed`（内部値として `overdue` も保持） | 単一選択。設計画面では「すべて / オープン / クローズ」と件数を表示し、期限超過は統計と派生状態で扱う |
 | 検索 | 任意文字列 | `title` / `name` に対する部分一致（大小文字無視）。前後空白は内部でトリム |
-| ソート | `order` / `due` / `progress` / `name` | 単一選択。初期値は `order`（milestones.yml の `order` 設定を尊重した既定順序を保持）。`due` 未設定や projection の `total=0` は末尾送り。done column 未解決時は全 ratio を比較不能として入力順を保つ |
+| ソート | `order` / `due` / `progress` / `name` | 単一選択。設計画面の初期値は `due`（期日順）で、表示は「期日順 / 進捗順 / 名前順」。`order` は内部互換として保持する。`due` 未設定や projection の `total=0` は末尾送り。done column 未解決時は全 ratio を比較不能として入力順を保つ |
 | ビュー切替 | `list` / `roadmap` | 切替時に選択中マイルストーンは保持 |
 
 フィルタ / 検索 / ソートの選択状態は画面内一時状態とし、ローカル永続化は行わない。
@@ -80,9 +82,12 @@
 - 状態バッジ + タイトル + name
 - 状態（日本語ラベル: オープン / クローズ / 期限超過）
 - 期日（`YYYY-MM-DD`）+ カウントダウンバッジ
-- milestone projection のタスク完了数 (`done / total`) + 進捗率%
+- milestone projection のタスク完了数 (`done / total`) + 進捗率%（バーンダウンの完了率にも表示）
 - 説明
+- 作成日、スラッグ、ラベルのメタ情報
+- バーンダウン（理想線 / 実績線 / 今日マーカー）
 - `taskFilePaths` 順の所属タスク一覧（id + title）
+- 最近のアクティビティ
 - done 表示は task の status 文字列を再解釈せず、同一 snapshot の `TaskProjection.isDone` が true のとき打ち消し線にする
 
 未選択時は「マイルストーンを選択すると詳細を表示します」のプレースホルダ。
@@ -91,7 +96,7 @@
 
 `MilestoneSettingsTab` の「使用 N」表示と削除確認メッセージは、どちらも `MilestoneProjection.findByName(...).total` を使う。`get_milestones.usageCounts` は IPC 互換および backend の削除 guard のため維持するが、live 表示の source にはしない。これにより task mutation 後も画面 reload なしで一覧・サイドバー・Settings の件数が同じ resident snapshot に揃う。
 
-## 作成モーダル（`MilestoneCreateModal`）
+## 作成フォーム / モーダル（`MilestoneCreateModal`）
 
 入力フィールド（6 つ）:
 | フィールド | 必須 | 正規化 |
@@ -103,7 +108,10 @@
 | 担当者 (assignee) | - | optional `onAssigneeChange` へ選択値を通知（`CreateMilestoneArgs` には含めない） |
 | 説明 (description) | - | 前後空白トリム、空文字は undefined |
 
-名前欄の下には入力値を小文字 kebab-case にした `milestones.yml → {slug}` preview を追従表示する。preview は保存キーの正規化ではなく、送信する `name` は従来どおり無加工とする。ラベル候補・担当者候補および変更 callback はすべて optional で、既存呼び出しとの後方互換を維持する。
+名前欄の下には入力値を trim して小文字 kebab-case にした `milestones.yml → {slug}` preview を追従表示する。英数字が残らない場合は `version-tag` を表示する。preview は保存キーの正規化ではなく、送信する `name` は従来どおり無加工とする。ラベル候補・担当者候補および変更 callback はすべて optional で、既存呼び出しとの後方互換を維持する。
+
+設定画面の左カラムへ埋め込む `inline` 表示は通常のページ内フォームとして扱い、ルート要素に `role="dialog"` / `aria-modal` を付与しない。設定シェルを持たない単体利用の中央表示では `role="dialog"` と `aria-modal="true"` を付与する。
+
 
 閉じる動線: 閉じる × ボタン / キャンセル / overlay クリック / Escape キー。
 
@@ -149,7 +157,7 @@ overlay は ConfirmDialog と同じく `<div role="presentation">` で a11y ツ�
 
 ## 関連仕様
 
-- [board-view-spec.md](./board-view-spec.md) — 画面区分 `milestone` への切替（ヘッダー「マイルストーン」ボタン）
+- [board-view-spec.md](./board-view-spec.md) — 設定サブナビから画面区分 `milestone` へ切り替える共通chrome
 - [config-spec.md](./config-spec.md) — `.spec-board/milestones.yml` のスキーマ、`name` が unnormalized 完全一致キーである旨
 - [task-format-spec.md](./task-format-spec.md) — タスク frontmatter の `milestone` フィールド
 
@@ -157,6 +165,7 @@ overlay は ConfirmDialog と同じく `<div role="presentation">` で a11y ツ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.4 | 2026-08-14 | 設計HTMLに合わせて設定サブナビ、ページ寸法、ツールバー、右詳細、インライン作成フォームを仕様化 | - |
 | 1.3 | 2026-08-12 | CSVセルの式注入対策とObject URL解放要件を明記 | - |
 | 1.2 | 2026-08-12 | 表示中マイルストーンの CSV Export と、所属タスクから詳細へ遷移する taskId callback 境界を追加 | - |
 | 1.1 | 2026-07-29 | Rust resident projection を進捗・所属順・done・Settings usage の source of truth として規定 | - |

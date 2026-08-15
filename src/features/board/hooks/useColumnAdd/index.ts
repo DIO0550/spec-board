@@ -16,6 +16,29 @@ export type UseColumnAddOptions = {
   onError: (error: ProjectError, message: string) => void;
 };
 
+/** Rustのu32 orderへ安全にシリアライズできる最大値。 */
+const MAX_COLUMN_ORDER = 2 ** 32 - 1;
+const COLUMN_ORDER_LIMIT_MESSAGE =
+  "カラムを追加できません: カラムの並び順上限に達しています";
+const DUPLICATE_COLUMN_MESSAGE = "同じ名前のカラムが既に存在します";
+
+/**
+ * 最新stateのcolumnsから追加カラムのorderを採番する。
+ * u32の最大値に到達している場合は追加を中止する。
+ * @param columns - 採番対象のカラム
+ * @returns 新しいカラムへ割り当てるorder。上限到達時はnull。
+ */
+const nextColumnOrder = (columns: readonly Column[]): number | null => {
+  const maxOrder = columns.reduce(
+    (value, column) => Math.max(value, column.order),
+    -1,
+  );
+  if (maxOrder >= MAX_COLUMN_ORDER) {
+    return null;
+  }
+  return maxOrder + 1;
+};
+
 /**
  * column追加callbackを生成する。
  *
@@ -30,24 +53,41 @@ export const useColumnAdd = ({
 }: UseColumnAddOptions): ColumnAddCallback =>
   useCallback(
     async (columnName) => {
-      if (columns.some((column) => column.name === columnName)) {
-        showToast("同じ名前のカラムが既に存在します", "error");
-        return;
+      const normalizedName = columnName.trim();
+      if (normalizedName.length === 0) {
+        const message = "カラム名を入力してください";
+        showToast(message, "error");
+        throw new Error(message);
+      }
+      if (columns.some((column) => column.name === normalizedName)) {
+        const message = DUPLICATE_COLUMN_MESSAGE;
+        showToast(message, "error");
+        throw new Error(message);
+      }
+      if (nextColumnOrder(columns) === null) {
+        showToast(COLUMN_ORDER_LIMIT_MESSAGE, "error");
+        throw new Error(COLUMN_ORDER_LIMIT_MESSAGE);
       }
 
       const result = await updateColumns((current) => {
-        if (current.columns.some((column) => column.name === columnName)) {
+        if (current.columns.some((column) => column.name === normalizedName)) {
           return null;
         }
-        const maxOrder = current.columns.reduce(
-          (value, column) => Math.max(value, column.order),
-          -1,
-        );
+        const nextOrder = nextColumnOrder(current.columns);
+        if (nextOrder === null) {
+          return null;
+        }
+        const nextColumns = [
+          ...current.columns,
+          { name: normalizedName, order: nextOrder },
+        ];
+        const doneColumn = current.doneColumn;
         return {
-          columns: [
-            ...current.columns,
-            { name: columnName, order: maxOrder + 1 },
-          ],
+          columns: nextColumns,
+          ...(doneColumn !== undefined &&
+          nextColumns.some((column) => column.name === doneColumn)
+            ? { doneColumn }
+            : {}),
         };
       });
       if (!result.ok) {

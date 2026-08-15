@@ -2,6 +2,7 @@
 // で実装する。a11y ツリーへインタラクティブ要素を露出させないためで、Escape /
 // 閉じる × ボタンでキーボード経路は別途確保している。
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { milestoneSlug } from "@/features/milestoneView/lib/milestoneSlug";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 
 /** モーダル内フォームの入力値（全て文字列で保持し、送信時に正規化する）。 */
@@ -40,6 +41,8 @@ type MilestoneCreateModalProps = {
   onAssigneeChange?: (assignee: string) => void;
   /** キャンセル / 成功で閉じるときに呼ばれる */
   onClose: () => void;
+  /** 設計画面の左カラム内へ埋め込む場合に true。 */
+  inline?: boolean;
 };
 
 /**
@@ -87,6 +90,7 @@ export const MilestoneCreateModal = ({
   onLabelsChange,
   onAssigneeChange,
   onClose,
+  inline = false,
 }: MilestoneCreateModalProps) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -95,17 +99,22 @@ export const MilestoneCreateModal = ({
   const [isNameTouched, setIsNameTouched] = useState(false);
   const [labels, setLabels] = useState("");
   const [assignee, setAssignee] = useState("");
-  const autoSlug =
-    form.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+/, "")
-      .replace(/-+$/, "") || "version-tag";
+  const autoSlug = milestoneSlug(form.name);
+  const dialogA11yProps = inline
+    ? {}
+    : {
+        role: "dialog" as const,
+        "aria-modal": true,
+        "aria-labelledby": titleId,
+        tabIndex: -1,
+      };
 
   useEffect(() => {
+    if (inline) {
+      return;
+    }
     dialogRef.current?.focus();
-  }, []);
+  }, [inline]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,17 +160,22 @@ export const MilestoneCreateModal = ({
       <div
         role="presentation"
         data-testid="milestone-create-overlay"
-        className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[2px]"
+        className={
+          inline
+            ? "hidden"
+            : "fixed inset-0 z-[60] bg-black/40 backdrop-blur-[2px]"
+        }
         onClick={isPending ? undefined : onClose}
       />
       <div
         ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
+        {...dialogA11yProps}
         data-testid="milestone-create-modal"
-        className="fixed top-1/2 left-1/2 z-[70] w-[560px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
+        className={
+          inline
+            ? "mb-3.5 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-sm"
+            : "fixed top-1/2 left-1/2 z-[70] w-[560px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
+        }
       >
         <header className="flex items-center gap-3 border-b border-border px-5 py-3">
           <span
@@ -188,7 +202,7 @@ export const MilestoneCreateModal = ({
               id={titleId}
               className="text-[14.5px] font-semibold text-foreground"
             >
-              マイルストーンを追加
+              {inline ? "新しいマイルストーン" : "マイルストーンを追加"}
             </h2>
             {subtitle !== undefined ? (
               <span className="truncate font-mono text-[11px] text-muted">
@@ -240,7 +254,7 @@ export const MilestoneCreateModal = ({
                   : undefined
               }
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="v1.7"
+              placeholder={inline ? "例: v1.7 — 通知センター" : "v1.7"}
               className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
             />
             {isNameTouched && form.name.trim() === "" ? (
@@ -264,7 +278,7 @@ export const MilestoneCreateModal = ({
           <div className="grid grid-cols-[1fr_150px] gap-3">
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                表示名
+                {inline ? "バージョンタグ" : "表示名"}
               </span>
               <input
                 type="text"
@@ -272,7 +286,7 @@ export const MilestoneCreateModal = ({
                 data-testid="milestone-create-title"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="通知センター"
+                placeholder={inline ? "v1.7.0" : "通知センター"}
                 className="rounded-md border border-border bg-surface-muted px-2 py-1.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
               />
             </label>
@@ -290,7 +304,7 @@ export const MilestoneCreateModal = ({
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className={inline ? "hidden" : "grid grid-cols-2 gap-3"}>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Labels — 任意
@@ -345,7 +359,7 @@ export const MilestoneCreateModal = ({
               説明 — 任意
             </span>
             <textarea
-              rows={3}
+              rows={inline ? 2 : 3}
               data-testid="milestone-create-description"
               value={form.description}
               onChange={(e) =>
@@ -358,7 +372,16 @@ export const MilestoneCreateModal = ({
 
           <footer className="-mx-5 -mb-4 mt-2 flex items-center justify-between gap-2 border-t border-border bg-surface-muted px-5 py-3">
             <span className="font-mono text-[11px] text-muted">
-              作成時に <code>milestones.yml</code> へ追記
+              {inline ? (
+                <>
+                  スラッグは <code>{autoSlug}</code> として自動生成 · タスクの{" "}
+                  <code>milestone: {form.name.trim() || "v1.7"}</code> で参照
+                </>
+              ) : (
+                <>
+                  作成時に <code>milestones.yml</code> へ追記
+                </>
+              )}
             </span>
             <div className="flex items-center gap-2">
               <button

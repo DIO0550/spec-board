@@ -39,7 +39,6 @@ const meta = {
     onStatusSave: fn(async () => true),
     projectName: "payments-service",
     projectPath: "/work/payments-service",
-    watchedFileCount: 1,
     tasks: [],
     columns: [
       { name: "Todo", order: 0, color: "#4f6fc7" },

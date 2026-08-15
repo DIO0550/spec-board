@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RecentProject } from "@/providers/RecentProjectsProvider";
 import type { Task } from "@/types/task";
 import { useSidebar } from "../../hooks/useSidebar";
@@ -46,6 +47,12 @@ const CollapseIcon = () => (
   </svg>
 );
 
+const GroupChevronIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);
+
 /**
  * 全高248px幅のproject explorer。controlled / uncontrolled双方で折りたためる。
  * @param props - {@link AppSidebarProps}
@@ -66,31 +73,40 @@ export const AppSidebar = ({
   const internalSidebar = useSidebar();
   const isCollapsed = collapsed ?? internalSidebar.collapsed;
   const handleToggle = onToggle ?? internalSidebar.toggle;
+  const [groupCollapsed, setGroupCollapsed] = useState(false);
+
+  const projectPaths = new Set(recentProjects.map((project) => project.path));
+  if (currentPath !== undefined) {
+    projectPaths.add(currentPath);
+  }
+  const projectCount = projectPaths.size;
+  const groupName = (projectName ?? "プロジェクト未選択").toUpperCase();
 
   if (isCollapsed) {
     return null;
   }
 
   return (
-    <aside className="group/sidebar flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r border-border bg-panel-2">
-      <div className="flex shrink-0 items-center gap-2 px-3.5 pt-2.5 pb-2">
-        <span className="shrink-0 text-muted spec-stroke-icon">
+    <aside className="spec-sidebar group/sidebar flex h-full w-[248px] shrink-0 flex-col overflow-hidden border-r border-border bg-panel-2">
+      <div className="spec-sidebar-workspace">
+        <span className="spec-sidebar-workspace-icon spec-stroke-icon">
           <WorkspaceIcon />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-          spec-board
+        <span className="spec-sidebar-workspace-name">spec-board</span>
+        <span className="spec-sidebar-workspace-meta">
+          {projectCount} {projectCount === 1 ? "project" : "projects"}
         </span>
         <button
           type="button"
           onClick={handleToggle}
           aria-label="サイドバーを閉じる"
           aria-expanded={true}
-          className="spec-icon-button opacity-0 group-hover/sidebar:opacity-100 focus-visible:opacity-100"
+          className="spec-sidebar-collapse spec-icon-button opacity-0 group-hover/sidebar:opacity-100 focus-visible:opacity-100"
         >
           <CollapseIcon />
         </button>
       </div>
-      <div className="mx-3 h-px shrink-0 bg-border" />
+      <div className="spec-sidebar-divider" />
       <ProjectSwitcher
         projectName={projectName}
         currentPath={currentPath}
@@ -98,25 +114,40 @@ export const AppSidebar = ({
         onOpenProject={onOpenProject}
         onOpenProjectPath={onOpenProjectPath}
       />
-      <section className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-6 shrink-0 items-center gap-1 px-2 text-[11px] font-bold tracking-[0.04em] text-foreground uppercase">
-          <span aria-hidden="true" className="text-muted">
-            ▾
-          </span>
-          <span className="min-w-0 flex-1 truncate">
-            {projectName ?? "プロジェクト未選択"}
-          </span>
-          <span className="font-mono text-[10px] font-medium text-text-dim">
-            {tasks.length}
-          </span>
+      <section
+        className={[
+          "spec-sidebar-group",
+          groupCollapsed ? "is-collapsed" : "is-expanded",
+        ].join(" ")}
+      >
+        <div className="spec-sidebar-group-header">
+          <button
+            type="button"
+            onClick={() => setGroupCollapsed((previous) => !previous)}
+            aria-expanded={!groupCollapsed}
+            className="spec-sidebar-group-toggle"
+          >
+            <span
+              aria-hidden="true"
+              className={[
+                "spec-sidebar-group-twisty",
+                groupCollapsed ? "is-collapsed" : "is-expanded",
+              ].join(" ")}
+            >
+              <GroupChevronIcon />
+            </span>
+            <span className="spec-sidebar-group-name">{groupName}</span>
+          </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <FileTree
-            tasks={tasks}
-            selectedTaskId={selectedTaskId}
-            onSelectTask={onSelectTask}
-          />
-        </div>
+        {!groupCollapsed && (
+          <div className="spec-sidebar-group-body">
+            <FileTree
+              tasks={tasks}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={onSelectTask}
+            />
+          </div>
+        )}
       </section>
     </aside>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type TabItem,
   TabNav,
@@ -22,13 +22,72 @@ import type { ColumnReorderHandler } from "../BoardColumnProvider";
 import type { MilestonesByName } from "../TaskCard";
 import { TaskFilterBar } from "../TaskFilterBar";
 
+type ViewIconKind =
+  | "board"
+  | "list"
+  | "tree"
+  | "calendar"
+  | "roadmap"
+  | "guide";
+
+const ViewIcon = ({ kind }: { kind: ViewIconKind }) => (
+  <svg
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="size-3.5"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    {kind === "board" && (
+      <>
+        <rect x="3" y="4" width="5" height="16" rx="1" />
+        <rect x="10" y="4" width="5" height="10" rx="1" />
+        <rect x="17" y="4" width="4" height="14" rx="1" />
+      </>
+    )}
+    {kind === "list" && <path d="M3 6h18M3 12h18M3 18h18" />}
+    {kind === "tree" && (
+      <>
+        <rect x="4" y="6" width="4" height="4" />
+        <path d="M10 6h10M4 14h4v4H4zM10 16h10" />
+      </>
+    )}
+    {kind === "calendar" && (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+      </>
+    )}
+    {kind === "roadmap" && <path d="M3 7h6M3 12h12M3 17h9M21 7l-3 3 3 3" />}
+    {kind === "guide" && <path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h6" />}
+  </svg>
+);
 /** ビュー切替タブの定義（表示形態 ID と表示名）。 */
-const VIEW_TABS: readonly TabItem[] = [
-  { id: "board", label: "ボード" },
-  { id: "list", label: "リスト" },
-  { id: "tree", label: "ツリー" },
-  { id: "calendar", label: "カレンダー" },
-  { id: "roadmap", label: "ロードマップ" },
+const buildViewTabs = (
+  taskCount: number,
+  includeGuide: boolean,
+): readonly TabItem[] => [
+  {
+    id: "board",
+    label: "ボード",
+    icon: <ViewIcon kind="board" />,
+    count: taskCount,
+  },
+  {
+    id: "list",
+    label: "一覧",
+    icon: <ViewIcon kind="list" />,
+    count: taskCount,
+  },
+  { id: "tree", label: "ツリー", icon: <ViewIcon kind="tree" /> },
+  { id: "calendar", label: "カレンダー", icon: <ViewIcon kind="calendar" /> },
+  { id: "roadmap", label: "ロードマップ", icon: <ViewIcon kind="roadmap" /> },
+  ...(includeGuide
+    ? [{ id: "guide", label: "GUIDE.md", icon: <ViewIcon kind="guide" /> }]
+    : []),
 ];
 
 /** サブバー / tabpanel の DOM id に使う接頭辞。 */
@@ -106,6 +165,12 @@ export type BoardWorkspaceProps = {
    * 親（App）はこのコールバックで `pendingLabelFilter` を null へ戻し、残留を防ぐ。
    */
   onLabelFilterApplied?: () => void;
+  /** GUIDE.mdタブを選択したときの設定画面遷移。 */
+  onGuideClick?: () => void;
+  /** サブバーの表示密度トグル。 */
+  onDensityToggle?: () => void;
+  /** 現在の表示密度。 */
+  density?: "comfortable" | "compact";
 };
 
 /**
@@ -135,9 +200,26 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
     columns,
     milestones,
     initialLabelFilter,
+    onDensityToggle,
+    density = "comfortable",
     onLabelFilterApplied,
+    onGuideClick,
   } = props;
   const { viewMode, setViewMode } = useBoardViewMode();
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const isFilterPanelUnavailable =
+    viewMode === "calendar" || viewMode === "roadmap";
+  const isFilterPanelVisible = isFilterOpen && !isFilterPanelUnavailable;
+  useEffect(() => {
+    if (!isFilterPanelUnavailable) {
+      return;
+    }
+    setIsFilterOpen(false);
+  }, [isFilterPanelUnavailable]);
+  const viewTabs = useMemo(
+    () => buildViewTabs(tasks.length, onGuideClick !== undefined),
+    [tasks.length, onGuideClick],
+  );
 
   const availableLabels = useMemo(() => collectLabels(tasks), [tasks]);
   const statuses = useMemo(
@@ -202,31 +284,131 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      data-board-view={viewMode}
+      className="flex h-full min-w-0 flex-1 flex-col"
+    >
       <div className="contents print:hidden">
         <TabNav
-          tabs={VIEW_TABS}
+          tabs={viewTabs}
           activeTabId={viewMode}
           idPrefix={VIEW_TAB_PREFIX}
           ariaLabel="ボードの表示形態"
-          onSelect={(tabId) => setViewMode(tabId as BoardViewMode)}
+          onSelect={(tabId) => {
+            if (tabId === "guide") {
+              onGuideClick?.();
+              return;
+            }
+            setViewMode(tabId as BoardViewMode);
+          }}
+          trailing={
+            <div
+              data-board-trailing
+              className="flex min-w-0 items-center gap-2"
+            >
+              <label className="flex h-7 min-w-[220px] max-w-[280px] items-center gap-1.5 rounded-md border border-border bg-bg px-2 text-xs text-text-dim focus-within:border-accent focus-within:bg-surface">
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m16.5 16.5 4 4" />
+                </svg>
+                <input
+                  type="search"
+                  value={criteria.keyword}
+                  onChange={(event) =>
+                    setCriteria({ ...criteria, keyword: event.target.value })
+                  }
+                  placeholder="タスクをフィルタ…"
+                  aria-label="タスクをフィルタ"
+                  data-testid="board-filter-search"
+                  className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-text-dim"
+                />
+                <kbd className="font-mono text-[10px] text-text-dim">⌘K</kbd>
+              </label>
+              <button
+                type="button"
+                data-testid="board-filter-toggle"
+                aria-controls={
+                  isFilterPanelVisible ? "task-filter-panel" : undefined
+                }
+                aria-expanded={isFilterPanelVisible}
+                onClick={() => setIsFilterOpen((open) => !open)}
+                className={
+                  isFilterPanelVisible || isActive
+                    ? "spec-button border-accent text-foreground"
+                    : "spec-button"
+                }
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="size-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path d="M3 6h18M6 12h12M10 18h4" />
+                </svg>
+                フィルタ
+                {isActive && (
+                  <span className="font-mono text-[10px]">
+                    {filtered.length}/{tasks.length}
+                  </span>
+                )}
+              </button>
+              {onDensityToggle && (
+                <button
+                  type="button"
+                  data-testid="board-density-toggle"
+                  aria-label={
+                    density === "compact"
+                      ? "表示密度を標準に戻す"
+                      : "表示密度をコンパクトにする"
+                  }
+                  title="表示密度"
+                  onClick={onDensityToggle}
+                  className="spec-icon-button"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="size-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M3 6h18M3 12h18M3 18h18" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          }
         />
       </div>
-      <TaskFilterBar
-        criteria={criteria}
-        onChange={setCriteria}
-        onClear={clear}
-        availableLabels={availableLabels}
-        statuses={statuses}
-        milestones={milestones ?? []}
-        isActive={isActive}
-        filteredCount={filtered.length}
-        totalCount={tasks.length}
-      />
+      {isFilterPanelVisible && (
+        <TaskFilterBar
+          criteria={criteria}
+          onChange={setCriteria}
+          onClear={clear}
+          availableLabels={availableLabels}
+          statuses={statuses}
+          milestones={milestones ?? []}
+          isActive={isActive}
+          filteredCount={filtered.length}
+          totalCount={tasks.length}
+          showSearch={false}
+        />
+      )}
       {/* 各タブの aria-controls が常に有効な id を指すよう、tabpanel 要素は全ビュー分を
           描画する。非アクティブは hidden で隠し、中身（ビュー本体）はアクティブ時のみ
           レンダーして無駄な走査・描画を避ける。 */}
-      {VIEW_TABS.map((tab) => {
+      {viewTabs.map((tab) => {
         const isActiveTab = tab.id === viewMode;
         return (
           <div

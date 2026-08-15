@@ -27,7 +27,7 @@ import { TaskTopbar } from "./TaskTopbar";
 type PreviewValues = PreviewTaskMarkdownParams;
 
 /** プレビュー幅の既定値（px）。 */
-const DEFAULT_PREVIEW_WIDTH = 480;
+const DEFAULT_PREVIEW_WIDTH = 420;
 
 /** パス未確定時に subbar / pv-foot に出すフォールバックファイル名。 */
 const FALLBACK_FILE_NAME = "new-issue.md";
@@ -167,7 +167,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const [pathPreview, setPathPreview] = useState<PreviewTaskFilenamePayload>({
     kind: "pending",
   });
-  // プレビューの表示/折りたたみと幅（既定 480、clamp は PreviewResizer の computePreviewWidth）。
+  // プレビューの表示/折りたたみと幅（既定 420、clamp は PreviewResizer の computePreviewWidth）。
   const [previewVisible, setPreviewVisible] = useState(true);
   const [previewWidth, setPreviewWidth] = useState(DEFAULT_PREVIEW_WIDTH);
 
@@ -289,9 +289,9 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
         <div className="flex min-h-0 flex-col overflow-hidden">
           <div
             data-testid="task-create-form-scroll"
-            className="relative flex-1 overflow-y-auto px-8 py-6"
+            className="relative flex-1 overflow-y-auto px-8 pb-8 pt-7"
           >
-            <div className="mx-auto max-w-[600px]">
+            <div className="mx-auto max-w-[720px]">
               <h1 className="mb-1 text-lg font-semibold text-foreground">
                 新規タスクを作成
               </h1>

@@ -4,6 +4,7 @@ export {
 } from "./components/ConfigFileTab";
 export { SettingsScreen } from "./components/SettingsScreen";
 export type { StatusSettingsValue } from "./components/StatusSettingsTab";
+export { SubNav } from "./components/SubNav";
 export {
   type ConfigFilesStatus,
   type UseConfigFilesResult,

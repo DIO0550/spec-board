@@ -38,6 +38,13 @@ const renderSubNav = (props: Partial<Parameters<typeof SubNav>[0]> = {}) => {
     );
   });
 };
+test("onBack未指定時は戻るボタンを描画しない", () => {
+  renderSubNav();
+  const backButton = Array.from(
+    container?.querySelectorAll("button") ?? [],
+  ).find((button) => button.textContent?.includes("戻る"));
+  expect(backButton).toBeUndefined();
+});
 
 test("タブが 1 枠でも role=tab の button が tablist 配下に 1 個描画される", () => {
   renderSubNav({ tabs: [tabA] });
@@ -73,4 +80,38 @@ test("タブ 2 枠で role=tab が 2 個描画される（前方互換）", () =
   renderSubNav({ tabs: [tabA, tabB], activeTabId: "labels" });
   const tabs = container?.querySelectorAll('[role="tab"]') ?? [];
   expect(tabs.length).toBe(2);
+});
+
+test("タブアイコンのラッパーに stroke 表示用クラスが付く", () => {
+  renderSubNav({ tabs: [tabA] });
+  const iconWrapper = container?.querySelector(
+    `#${subNavTabId("labels")} > span`,
+  );
+
+  expect(iconWrapper?.className).toContain("spec-stroke-icon");
+});
+
+test("外観タブにプラス記号ではなく太陽アイコンを描画する", () => {
+  renderSubNav({ tabs: [tabB], activeTabId: "appearance" });
+  const icon = container?.querySelector(`#${subNavTabId("appearance")} svg`);
+
+  expect(icon?.querySelector('circle[r="4"]')).not.toBeNull();
+  expect(icon?.querySelector("path")?.getAttribute("d")).toContain("M12 2v2");
+});
+
+test("件数pillのDOMテキストとアクセシブル名を空白で区切る", () => {
+  const countTab = { ...tabA, count: 0 };
+  renderSubNav({ tabs: [countTab] });
+  const tab = container?.querySelector(`#${subNavTabId("labels")}`);
+
+  expect(tab?.textContent).toContain("ラベル 0");
+  expect(tab?.getAttribute("aria-label")).toBe("ラベル 0件");
+});
+
+test("戻る操作がない場合はパンくず先頭の区切りを表示しない", () => {
+  renderSubNav({ projectName: "payments-service" });
+  const breadcrumb = container?.querySelector("nav > span");
+
+  expect(breadcrumb?.textContent).toContain("payments-service /");
+  expect(breadcrumb?.textContent).not.toContain("· payments-service");
 });

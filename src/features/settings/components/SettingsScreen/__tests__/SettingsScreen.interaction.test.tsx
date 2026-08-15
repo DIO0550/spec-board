@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { ThemeProvider } from "@/features/shell/hooks/useTheme";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { getLabels } from "@/lib/tauri";
@@ -58,26 +59,31 @@ afterEach(() => {
 
 // milestoneMutations は App が hoist 保持する prop になったため、テストでも
 // フックを呼ぶ薄い Harness を挟んで本物のインスタンスを注入する。
-const Harness = () => {
+const Harness = ({ initialTabId }: { initialTabId?: string }) => {
   const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
-  return createElement(SettingsScreen, {
-    labels: labelsResource,
-    milestones: milestonesResource,
-    milestoneProjections: new Map(),
-    milestoneMutations,
-    onLabelUsageClick: noopUsageClick,
-  });
+  return createElement(
+    ThemeProvider,
+    null,
+    createElement(SettingsScreen, {
+      labels: labelsResource,
+      milestones: milestonesResource,
+      milestoneProjections: new Map(),
+      milestoneMutations,
+      initialTabId,
+      onLabelUsageClick: noopUsageClick,
+    }),
+  );
 };
 
 /**
  * SettingsScreen をマウントするヘルパー
  */
-const mountSettingsScreen = async () => {
+const mountSettingsScreen = async (initialTabId?: string) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(createElement(Harness));
+    root?.render(createElement(Harness, { initialTabId }));
   });
   await act(async () => {
     await Promise.resolve();
@@ -87,9 +93,17 @@ const mountSettingsScreen = async () => {
 test("既定タブ labels の tabpanel と SubNav の tab が描画される", async () => {
   await mountSettingsScreen();
   const tab = container?.querySelector('[role="tab"]');
-  expect(tab?.textContent).toBe("ラベル");
+  expect(tab?.textContent).toBe("ラベル 0");
   const panel = container?.querySelector('[role="tabpanel"]');
   expect(panel).not.toBeNull();
+});
+
+test("initialTabId=appearanceでも選択中タブとtabpanelが相互参照される", async () => {
+  await mountSettingsScreen("appearance");
+  const tab = container?.querySelector('[data-settings-tab="appearance"]');
+  const panel = container?.querySelector('[role="tabpanel"]');
+  expect(tab?.getAttribute("aria-selected")).toBe("true");
+  expect(panel?.getAttribute("aria-labelledby")).toBe(tab?.getAttribute("id"));
 });
 
 test("アクティブ tab と tabpanel が aria 属性で相互参照される", async () => {

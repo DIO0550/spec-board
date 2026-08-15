@@ -199,3 +199,69 @@ test("5番目のロードマップタブからEpicロードマップへ到達で
   });
   expect(localStorage.getItem("spec-board:viewMode")).toBe("roadmap");
 });
+
+test("参照デザインのsubbarに検索と折りたたみ式フィルタ導線を表示する", async () => {
+  renderWorkspace({
+    columns: [{ name: "Todo", order: 0 }],
+    tasks: [makeTask()],
+  });
+
+  const search = container?.querySelector(
+    '[data-testid="board-filter-search"]',
+  );
+  const filterButton = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="board-filter-toggle"]',
+  );
+  expect(search).not.toBeNull();
+  expect(filterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(filterButton?.getAttribute("aria-controls")).toBeNull();
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).toBeNull();
+
+  act(() => filterButton?.click());
+
+  expect(filterButton?.getAttribute("aria-expanded")).toBe("true");
+  expect(filterButton?.getAttribute("aria-controls")).toBe("task-filter-panel");
+  const filterPanel = container?.querySelector<HTMLElement>(
+    '[data-testid="task-filter-panel"]',
+  );
+  expect(filterPanel).not.toBeNull();
+  expect(filterPanel?.id).toBe("task-filter-panel");
+  const roadmapTab = container?.querySelector<HTMLButtonElement>(
+    "[role='tab'][aria-controls='board-view-panel-roadmap']",
+  );
+  expect(roadmapTab).not.toBeNull();
+  act(() => roadmapTab?.click());
+  await vi.waitFor(() => {
+    expect(container?.querySelector("[data-roadmap]")).not.toBeNull();
+  });
+  const roadmapFilterButton = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="board-filter-toggle"]',
+  );
+  expect(roadmapFilterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(roadmapFilterButton?.getAttribute("aria-controls")).toBeNull();
+  expect(roadmapFilterButton?.className).not.toContain("border-accent");
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).toBeNull();
+
+  const boardTab = container?.querySelector<HTMLButtonElement>(
+    "[role='tab'][aria-controls='board-view-panel-board']",
+  );
+  expect(boardTab).not.toBeNull();
+  act(() => boardTab?.click());
+  await vi.waitFor(() => {
+    expect(
+      container?.querySelector("[data-board-view='board']"),
+    ).not.toBeNull();
+  });
+  const boardFilterButton = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="board-filter-toggle"]',
+  );
+  expect(boardFilterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(boardFilterButton?.getAttribute("aria-controls")).toBeNull();
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).toBeNull();
+});

@@ -14,6 +14,8 @@ type MilestoneToolbarProps = {
    * @param next - 新しい状態フィルタ値
    */
   onFilterChange: (next: StateFilter) => void;
+  /** 表示するフィルター件数。 */
+  filterCounts?: Partial<Record<StateFilter, number>>;
   /** 検索クエリ（部分一致・空文字で全件） */
   query: string;
   /**
@@ -42,7 +44,7 @@ const FILTERS: readonly { value: StateFilter; label: string }[] = [
   { value: "all", label: "すべて" },
   { value: "open", label: "オープン" },
   { value: "overdue", label: "期限超過" },
-  { value: "closed", label: "クローズ済" },
+  { value: "closed", label: "クローズ" },
 ];
 
 /** ソート選択肢。 */
@@ -54,11 +56,37 @@ const SORTS: readonly { value: SortKey; label: string }[] = [
 ];
 
 /** ビュー切替（list / roadmap）の選択肢。 */
-const VIEWS: readonly { value: ViewMode; label: string; icon: string }[] = [
-  { value: "list", label: "一覧", icon: "≡" },
-  { value: "roadmap", label: "ロードマップ", icon: "▦" },
+const VIEWS: readonly { value: ViewMode; label: string }[] = [
+  { value: "list", label: "一覧" },
+  { value: "roadmap", label: "ロードマップ" },
 ];
 
+type ViewIconProps = {
+  view: ViewMode;
+};
+
+const ViewIcon = ({ view }: ViewIconProps) => {
+  if (view === "list") {
+    return (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.75]"
+      >
+        <path d="M3 6h18M3 12h18M3 18h18" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="size-3.5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.75]"
+    >
+      <path d="M3 7h6M3 12h12M3 17h9M21 7l-3 3 3 3" />
+    </svg>
+  );
+};
 /**
  * マイルストーン画面のツールバー。フィルター pills + 検索 + ソート + ビュー切替。
  * design-source: `.toolbar`（ms-static-list/roadmap 共通）。
@@ -67,6 +95,7 @@ const VIEWS: readonly { value: ViewMode; label: string; icon: string }[] = [
  */
 export const MilestoneToolbar = ({
   filter,
+  filterCounts,
   onFilterChange,
   query,
   onQueryChange,
@@ -76,7 +105,10 @@ export const MilestoneToolbar = ({
   onViewChange,
 }: MilestoneToolbarProps) => {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">
+        状態
+      </span>
       <div className="flex items-center gap-1">
         {FILTERS.map((f) => {
           const active = filter === f.value;
@@ -88,32 +120,51 @@ export const MilestoneToolbar = ({
               aria-pressed={active}
               onClick={() => onFilterChange(f.value)}
               className={[
-                "rounded-full border px-3 py-1 text-xs transition",
+                "rounded-full border px-2 py-0.5 text-[11px] transition",
+                f.value === "overdue" ? "spec-ms-advanced-control" : "",
                 active
                   ? "border-accent bg-accent-soft text-foreground"
-                  : "border-transparent text-muted hover:border-border",
-              ].join(" ")}
+                  : "border-border bg-background text-muted hover:border-accent",
+              ]
+                .filter(Boolean)
+                .join(" ")}
             >
               {f.label}
+              {filterCounts !== undefined && (
+                <>
+                  {" "}
+                  <span className="font-mono text-[10.5px] opacity-60">
+                    {filterCounts[f.value] ?? 0}
+                  </span>
+                </>
+              )}
             </button>
           );
         })}
       </div>
 
-      <label className="ml-auto flex items-center gap-2 rounded-md border border-border bg-surface-muted px-2 py-1 text-xs text-muted focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft">
-        <span aria-hidden="true">🔍</span>
+      <span aria-hidden="true" className="mx-1 h-4 w-px bg-border-strong" />
+      <label className="flex min-w-[200px] max-w-[360px] flex-1 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1 text-xs text-muted focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-soft">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          className="size-3.5 shrink-0 fill-none stroke-current text-text-dim [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.75]"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
         <input
           type="search"
           data-testid="milestone-search-input"
           aria-label="マイルストーンを検索"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="マイルストーンを検索"
-          className="w-44 bg-transparent text-foreground outline-none placeholder:text-muted"
+          placeholder="マイルストーン名・説明で絞り込み..."
+          className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted"
         />
       </label>
 
-      <div className="flex items-center gap-1 rounded-md border border-border bg-surface-muted p-0.5">
+      <div className="flex items-center gap-1 rounded-md border border-border bg-background p-0.5">
         {SORTS.map((s) => {
           const active = sort === s.value;
           return (
@@ -124,7 +175,8 @@ export const MilestoneToolbar = ({
               aria-pressed={active}
               onClick={() => onSortChange(s.value)}
               className={[
-                "rounded px-2 py-1 text-xs transition",
+                "rounded px-2.5 py-1 text-xs transition",
+                s.value === "order" ? "spec-ms-advanced-control" : "",
                 active
                   ? "bg-surface text-foreground shadow-sm"
                   : "text-muted hover:text-foreground",
@@ -136,7 +188,7 @@ export const MilestoneToolbar = ({
         })}
       </div>
 
-      <div className="flex items-center gap-1 rounded-md border border-border bg-surface-muted p-0.5">
+      <div className="flex items-center gap-1 rounded-md border border-border bg-background p-0.5">
         {VIEWS.map((v) => {
           const active = view === v.value;
           return (
@@ -154,7 +206,7 @@ export const MilestoneToolbar = ({
                   : "text-muted hover:text-foreground",
               ].join(" ")}
             >
-              {v.icon}
+              <ViewIcon view={v.value} />
             </button>
           );
         })}

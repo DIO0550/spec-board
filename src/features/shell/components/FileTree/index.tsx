@@ -34,11 +34,11 @@ export const FileTree = ({
   );
 
   if (roots.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted">タスクがありません</p>;
+    return <p className="spec-file-tree-empty">タスクがありません</p>;
   }
 
   return (
-    <ul className="flex flex-col">
+    <ul className="spec-file-tree">
       {roots.map((node) => (
         <FileNodeItem
           key={

@@ -40,7 +40,7 @@ export const TaskSubbar = (props: TaskSubbarProps) => {
         <span className="rounded border border-border bg-bg px-1.5 py-px font-mono text-[10.5px] text-muted">
           Enter
         </span>{" "}
-        で作成 ·{" "}
+        で保存 ·{" "}
         <span className="rounded border border-border bg-bg px-1.5 py-px font-mono text-[10.5px] text-muted">
           Esc
         </span>{" "}

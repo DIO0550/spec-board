@@ -85,7 +85,7 @@ export const CreateLabelForm = ({
 
   return (
     <form
-      className="flex flex-col gap-3 rounded border border-border bg-surface p-4"
+      className="flex flex-col gap-3 rounded-lg border border-accent-border bg-surface px-5 py-4"
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
@@ -96,7 +96,7 @@ export const CreateLabelForm = ({
         {isEditing ? `「${editingName}」を編集` : "新しいラベル"}
       </div>
       <fieldset disabled={isPending} className="contents">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_200px_180px]">
           <div className="flex flex-col gap-1">
             <label htmlFor={nameId} className="text-xs text-muted">
               名前

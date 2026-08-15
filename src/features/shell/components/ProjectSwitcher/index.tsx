@@ -63,8 +63,10 @@ export const ProjectSwitcher = ({
         <span className="min-w-0 flex-1 truncate text-left font-semibold">
           {name}
         </span>
-        <span aria-hidden="true" className="text-text-dim">
-          ⌄
+        <span aria-hidden="true" className="spec-project-switcher-chevron">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </span>
       </button>
 
