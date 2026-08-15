@@ -228,4 +228,21 @@ test("参照デザインのsubbarに検索と折りたたみ式フィルタ導�
   );
   expect(filterPanel).not.toBeNull();
   expect(filterPanel?.id).toBe("task-filter-panel");
+  const roadmapTab = container?.querySelector<HTMLButtonElement>(
+    "[role='tab'][aria-controls='board-view-panel-roadmap']",
+  );
+  expect(roadmapTab).not.toBeNull();
+  act(() => roadmapTab?.click());
+  await vi.waitFor(() => {
+    expect(container?.querySelector("[data-roadmap]")).not.toBeNull();
+  });
+  const roadmapFilterButton = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="board-filter-toggle"]',
+  );
+  expect(roadmapFilterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(roadmapFilterButton?.getAttribute("aria-controls")).toBeNull();
+  expect(roadmapFilterButton?.className).not.toContain("border-accent");
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).toBeNull();
 });
