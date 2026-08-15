@@ -43,8 +43,19 @@ test("展開時は248px幅のプロジェクトexplorerを表示する", () => {
   const sidebar = container?.querySelector("aside");
   expect(sidebar?.className).toContain("w-[248px]");
   expect(sidebar?.textContent).toContain("spec-board");
-  expect(sidebar?.textContent).toContain("1 projects");
+  expect(sidebar?.textContent).toContain("1 project");
   expect(sidebar?.textContent).toContain("payments-service");
+});
+
+test("複数のプロジェクト件数はprojectsと表示する", () => {
+  renderSidebar({
+    currentPath: undefined,
+    recentProjects: [
+      { path: "/work/one", name: "one" },
+      { path: "/work/two", name: "two" },
+    ],
+  });
+  expect(container?.textContent).toContain("2 projects");
 });
 
 test("折りたたみ時はrailを残さずsidebarを描画しない", () => {
