@@ -113,6 +113,7 @@ test("左フォームと右プレビューの2ペインが chrome（topbar/subba
   expect(
     document.querySelector('[data-testid="task-form-save-meta"]'),
   ).toBeTruthy();
+  expect(document.body.textContent).toContain("⌘ / Ctrl + Enter で保存");
 });
 
 test("mainは左form・4px resizer・420px previewで開始する", () => {
