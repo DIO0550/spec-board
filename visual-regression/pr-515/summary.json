@@ -1,5 +1,5 @@
 {
-  "reportVersion": "056022dd856ee929823b57850ee6525bd1930b24",
+  "reportVersion": "da652d4c8c3947c1b65f32181dd8efb8524d5ff8",
   "maxDiffRatio": 0.002,
   "changed": 115,
   "new": 0,
@@ -27,7 +27,7 @@
       "name": "Command Palette Keyboard",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 2923,
+      "diffPixels": 2939,
       "diffRatio": 0.0032,
       "hasExpected": true,
       "hasActual": true,
@@ -66,7 +66,7 @@
       "name": "Loaded Project Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 31532,
+      "diffPixels": 31547,
       "diffRatio": 0.0342,
       "hasExpected": true,
       "hasActual": true,
@@ -79,7 +79,7 @@
       "name": "Shell Board Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 30852,
+      "diffPixels": 30867,
       "diffRatio": 0.0335,
       "hasExpected": true,
       "hasActual": true,
@@ -274,8 +274,8 @@
       "name": "All Props",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 2,
-      "diffRatio": 0,
+      "diffPixels": 127,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 127,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -299,12 +299,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Compact",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 127,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--dark",
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 127,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -325,12 +325,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 127,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--edge-cases",
@@ -338,12 +338,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 126,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--focus",
@@ -351,12 +351,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Focus",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 127,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-confirmdialog--all-props",
@@ -1313,12 +1313,12 @@
       "title": "components/TabNav",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 60,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-tabnav--default",
@@ -1326,12 +1326,12 @@
       "title": "components/TabNav",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 60,
+      "diffRatio": 0.0001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-tabnav--edge-cases",
@@ -1339,12 +1339,12 @@
       "title": "components/TabNav",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 180,
+      "diffRatio": 0.0002,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-tabnav--empty",
@@ -1378,12 +1378,12 @@
       "title": "components/TaskSelect",
       "name": "Auto Focus",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 14,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-taskselect--default",
@@ -2094,8 +2094,8 @@
       "name": "All Props",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 14046,
-      "diffRatio": 0.0152,
+      "diffPixels": 14061,
+      "diffRatio": 0.015300000000000001,
       "hasExpected": true,
       "hasActual": true,
       "hasDiff": true
@@ -2107,7 +2107,7 @@
       "name": "Default",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 15956,
+      "diffPixels": 15971,
       "diffRatio": 0.0173,
       "hasExpected": true,
       "hasActual": true,
@@ -2120,7 +2120,7 @@
       "name": "Edge Cases",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 3492,
+      "diffPixels": 3505,
       "diffRatio": 0.0038,
       "hasExpected": true,
       "hasActual": true,
@@ -2133,7 +2133,7 @@
       "name": "Empty",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 7260,
+      "diffPixels": 7273,
       "diffRatio": 0.0079,
       "hasExpected": true,
       "hasActual": true,
@@ -6774,7 +6774,7 @@
       "name": "Labels Popover Open",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 30331,
+      "diffPixels": 30315,
       "diffRatio": 0.0329,
       "hasExpected": true,
       "hasActual": true,
