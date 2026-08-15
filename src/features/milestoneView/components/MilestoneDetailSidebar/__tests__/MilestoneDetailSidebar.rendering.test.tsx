@@ -150,6 +150,29 @@ test("最終更新日時を更新ラベルで表示する", () => {
   expect(updatedLabel?.nextElementSibling?.textContent).toContain("2026-08-15");
 });
 
+test("スラッグ表示は作成フォームと同じfallbackを使う", () => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(MilestoneDetailSidebar, {
+        def: { name: "!!!", state: "open" },
+        status: "open",
+        projection: { done: 0, total: 0, taskFilePaths: [] },
+        showRatio: false,
+        tasks: [],
+        taskProjections: new Map(),
+      }),
+    );
+  });
+
+  const slugLabel = Array.from(container.querySelectorAll("dt")).find(
+    (label) => label.textContent?.trim() === "スラッグ",
+  );
+  expect(slugLabel?.nextElementSibling?.textContent).toBe("version-tag");
+});
+
 test("showRatio=false のとき進捗率と実績線を表示しない", () => {
   container = document.createElement("div");
   document.body.appendChild(container);
