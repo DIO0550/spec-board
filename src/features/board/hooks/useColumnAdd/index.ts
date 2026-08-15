@@ -71,11 +71,11 @@ export const useColumnAdd = ({
 
       const result = await updateColumns((current) => {
         if (current.columns.some((column) => column.name === normalizedName)) {
-          throw new Error(DUPLICATE_COLUMN_MESSAGE);
+          return null;
         }
         const nextOrder = nextColumnOrder(current.columns);
         if (nextOrder === null) {
-          throw new Error(COLUMN_ORDER_LIMIT_MESSAGE);
+          return null;
         }
         const nextColumns = [
           ...current.columns,
