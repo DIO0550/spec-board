@@ -172,7 +172,7 @@ test("parentFilePath 変更で IPC 再取得される", async () => {
   expect(mockPreview).toHaveBeenCalledTimes(2);
 });
 
-test("IPC エラー時は直前の結果を維持する", async () => {
+test("IPC エラー時は古いパス表示をpendingへ戻す", async () => {
   mockPreview.mockResolvedValueOnce(Result.ok(pathPayload("hello.md")));
   await mount(defaultArgs);
 
@@ -180,7 +180,7 @@ test("IPC エラー時は直前の結果を維持する", async () => {
     Result.err({ code: "UNKNOWN", message: "fail" } as never),
   );
   const result = await rerender({ ...defaultArgs, title: "Changed" });
-  expect(result?.kind).toBe("path");
+  expect(result?.kind).toBe("pending");
 });
 
 test("高速入力で stale 応答が破棄され最新のみ反映される", async () => {
