@@ -1,5 +1,5 @@
 {
-  "reportVersion": "da652d4c8c3947c1b65f32181dd8efb8524d5ff8",
+  "reportVersion": "9ccc6c3f74044f8847f777265f26f18b9c50ff69",
   "maxDiffRatio": 0.002,
   "changed": 115,
   "new": 0,
@@ -66,7 +66,7 @@
       "name": "Loaded Project Composition",
       "status": "changed",
       "reason": "pixel-diff",
-      "diffPixels": 31547,
+      "diffPixels": 31499,
       "diffRatio": 0.0342,
       "hasExpected": true,
       "hasActual": true,
@@ -1378,12 +1378,12 @@
       "title": "components/TaskSelect",
       "name": "Auto Focus",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 14,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-taskselect--default",
