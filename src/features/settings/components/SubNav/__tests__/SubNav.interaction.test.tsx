@@ -107,3 +107,11 @@ test("件数pillのDOMテキストとアクセシブル名を空白で区切る"
   expect(tab?.textContent).toContain("ラベル 0");
   expect(tab?.getAttribute("aria-label")).toBe("ラベル 0件");
 });
+
+test("戻る操作がない場合はパンくず先頭の区切りを表示しない", () => {
+  renderSubNav({ projectName: "payments-service" });
+  const breadcrumb = container?.querySelector("nav > span");
+
+  expect(breadcrumb?.textContent).toContain("payments-service /");
+  expect(breadcrumb?.textContent).not.toContain("· payments-service");
+});
