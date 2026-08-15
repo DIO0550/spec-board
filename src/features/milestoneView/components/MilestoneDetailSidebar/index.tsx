@@ -84,7 +84,7 @@ export const MilestoneDetailSidebar = ({
               <MilestoneCountdownBadge countdown={countdown} />
             </dd>
             <dt className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted">
-              作成
+              更新
             </dt>
             <dd>
               <code className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11.5px]">

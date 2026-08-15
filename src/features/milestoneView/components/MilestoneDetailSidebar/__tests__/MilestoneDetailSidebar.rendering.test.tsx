@@ -126,3 +126,26 @@ test("所属タスクをクリックするとtask id付きでコールバック�
   });
   expect(onTaskClick).toHaveBeenCalledWith(statusDoneProjectionOpenTask.id);
 });
+
+test("最終更新日時を更新ラベルで表示する", () => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(MilestoneDetailSidebar, {
+        def: { name: "M1", state: "open", updated: "2026-08-15" },
+        status: "open",
+        projection: { done: 0, total: 0, taskFilePaths: [] },
+        showRatio: true,
+        tasks: [],
+        taskProjections: new Map(),
+      }),
+    );
+  });
+
+  const updatedLabel = Array.from(container.querySelectorAll("dt")).find(
+    (label) => label.textContent?.trim() === "更新",
+  );
+  expect(updatedLabel?.nextElementSibling?.textContent).toContain("2026-08-15");
+});
