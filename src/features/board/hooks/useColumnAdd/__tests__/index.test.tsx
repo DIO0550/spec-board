@@ -85,6 +85,34 @@ test("column add成功で末尾orderと既存doneColumnを引き継ぐ", async (
   expect(showToast).toHaveBeenCalledWith("カラムを追加しました", "success");
 });
 
+test("最新stateで重複・order上限に到達したbuilderは専用エラーを投げる", async () => {
+  let builder: ((current: ProjectData) => unknown) | null = null;
+  const updateColumns = vi.fn(async (input) => {
+    builder = input as typeof builder;
+    return Result.ok({ applied: true });
+  });
+  const callback = renderHook({
+    columns: [],
+    updateColumns,
+    showToast: vi.fn(),
+    onError: vi.fn(),
+  });
+
+  await act(async () => callback("Review"));
+  const build = builder as unknown as (current: ProjectData) => unknown;
+
+  expect(() =>
+    build({
+      columns: [{ name: "Review", order: 0 }],
+    } as unknown as ProjectData),
+  ).toThrow("同じ名前のカラムが既に存在します");
+  expect(() =>
+    build({
+      columns: [{ name: "Limit", order: 2 ** 32 - 1 }],
+    } as unknown as ProjectData),
+  ).toThrow("カラムを追加できません: カラムの並び順上限に達しています");
+});
+
 test("最大order到達時は専用エラーで追加を拒否する", async () => {
   const maxOrder = 2 ** 32 - 1;
   const updateColumns = vi.fn();
