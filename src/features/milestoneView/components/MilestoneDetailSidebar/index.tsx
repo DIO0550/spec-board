@@ -39,7 +39,7 @@ export const MilestoneDetailSidebar = ({
 }: MilestoneDetailSidebarProps) => {
   if (def === undefined || status === undefined) {
     return (
-      <aside className="hidden min-h-64 max-h-full w-[360px] shrink-0 rounded-[10px] border border-dashed border-border bg-surface p-6 text-center text-sm text-muted min-[900px]:flex min-[900px]:items-center min-[900px]:justify-center">
+      <aside className="hidden min-h-64 max-h-full w-[360px] shrink-0 rounded-[10px] border border-dashed border-border bg-surface p-6 text-center text-sm text-muted min-[1081px]:flex min-[1081px]:items-center min-[1081px]:justify-center">
         マイルストーンを選択すると詳細を表示します
       </aside>
     );
@@ -52,7 +52,7 @@ export const MilestoneDetailSidebar = ({
       ? Math.round((projection.done / projection.total) * 100)
       : 0;
   return (
-    <aside className="hidden max-h-full w-[360px] shrink-0 flex-col gap-3.5 overflow-y-auto min-[900px]:flex">
+    <aside className="hidden max-h-full w-[360px] shrink-0 flex-col gap-3.5 overflow-y-auto min-[1081px]:flex">
       <section className="overflow-hidden rounded-[10px] border border-border bg-surface shadow-sm">
         <header className="flex items-baseline gap-2 border-b border-border px-3.5 py-3 text-[11px] font-semibold text-muted">
           <div className="min-w-0 flex-1">
