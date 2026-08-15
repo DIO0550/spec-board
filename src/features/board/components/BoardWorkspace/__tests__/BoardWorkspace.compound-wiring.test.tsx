@@ -245,4 +245,23 @@ test("参照デザインのsubbarに検索と折りたたみ式フィルタ導�
   expect(
     container?.querySelector('[data-testid="task-filter-panel"]'),
   ).toBeNull();
+
+  const boardTab = container?.querySelector<HTMLButtonElement>(
+    "[role='tab'][aria-controls='board-view-panel-board']",
+  );
+  expect(boardTab).not.toBeNull();
+  act(() => boardTab?.click());
+  await vi.waitFor(() => {
+    expect(
+      container?.querySelector("[data-board-view='board']"),
+    ).not.toBeNull();
+  });
+  const boardFilterButton = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="board-filter-toggle"]',
+  );
+  expect(boardFilterButton?.getAttribute("aria-expanded")).toBe("false");
+  expect(boardFilterButton?.getAttribute("aria-controls")).toBeNull();
+  expect(
+    container?.querySelector('[data-testid="task-filter-panel"]'),
+  ).toBeNull();
 });
