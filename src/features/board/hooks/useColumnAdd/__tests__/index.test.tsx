@@ -116,7 +116,9 @@ test("重複columnは即時拒否する", async () => {
     showToast,
     onError: vi.fn(),
   });
-  await callback("Review");
+  await expect(callback("Review")).rejects.toThrow(
+    "同じ名前のカラムが既に存在します",
+  );
   expect(updateColumns).not.toHaveBeenCalled();
   expect(showToast).toHaveBeenCalledWith(
     "同じ名前のカラムが既に存在します",
