@@ -32,6 +32,7 @@ export const MilestoneDetailSidebar = ({
   def,
   status,
   projection,
+  showRatio,
   tasks,
   taskProjections,
   onTaskClick,
@@ -124,7 +125,9 @@ export const MilestoneDetailSidebar = ({
       >
         <header className="mb-3 flex items-center justify-between border-b border-border pb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted">
           <span>Burndown</span>
-          <span className="font-mono normal-case">{percent}% complete</span>
+          {showRatio && (
+            <span className="font-mono normal-case">{percent}% complete</span>
+          )}
         </header>
         <svg
           role="img"
@@ -138,18 +141,22 @@ export const MilestoneDetailSidebar = ({
             stroke="var(--color-border)"
             strokeDasharray="4 4"
           />
-          <path
-            d={`M0 8 C72 18, 128 34, ${192 + percent} ${50 + percent / 4} S280 76, 320 80`}
-            fill="none"
-            stroke="var(--color-accent)"
-            strokeWidth="2.5"
-          />
-          <circle
-            cx={Math.min(312, 192 + percent)}
-            cy={Math.min(78, 50 + percent / 4)}
-            r="4"
-            fill="var(--color-accent)"
-          />
+          {showRatio && (
+            <>
+              <path
+                d={`M0 8 C72 18, 128 34, ${192 + percent} ${50 + percent / 4} S280 76, 320 80`}
+                fill="none"
+                stroke="var(--color-accent)"
+                strokeWidth="2.5"
+              />
+              <circle
+                cx={Math.min(312, 192 + percent)}
+                cy={Math.min(78, 50 + percent / 4)}
+                r="4"
+                fill="var(--color-accent)"
+              />
+            </>
+          )}
         </svg>
       </section>
       <section className="rounded-[10px] border border-border bg-surface p-4 shadow-sm">
