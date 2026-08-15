@@ -125,7 +125,6 @@ export const AppSidebar = ({
             type="button"
             onClick={() => setGroupCollapsed((previous) => !previous)}
             aria-expanded={!groupCollapsed}
-            aria-label="タスクツリーを折りたたむ"
             className="spec-sidebar-group-toggle"
           >
             <span
