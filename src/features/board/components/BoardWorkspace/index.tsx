@@ -331,10 +331,10 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
                 aria-controls={
                   isFilterPanelVisible ? "task-filter-panel" : undefined
                 }
-                aria-expanded={isFilterOpen}
+                aria-expanded={isFilterPanelVisible}
                 onClick={() => setIsFilterOpen((open) => !open)}
                 className={
-                  isFilterOpen || isActive
+                  isFilterPanelVisible || isActive
                     ? "spec-button border-accent text-foreground"
                     : "spec-button"
                 }
