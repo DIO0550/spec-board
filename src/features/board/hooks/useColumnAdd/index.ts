@@ -20,6 +20,7 @@ export type UseColumnAddOptions = {
 const MAX_COLUMN_ORDER = 2 ** 32 - 1;
 const COLUMN_ORDER_LIMIT_MESSAGE =
   "カラムを追加できません: カラムの並び順上限に達しています";
+const DUPLICATE_COLUMN_MESSAGE = "同じ名前のカラムが既に存在します";
 
 /**
  * 最新stateのcolumnsから追加カラムのorderを採番する。
@@ -59,7 +60,7 @@ export const useColumnAdd = ({
         throw new Error(message);
       }
       if (columns.some((column) => column.name === normalizedName)) {
-        const message = "同じ名前のカラムが既に存在します";
+        const message = DUPLICATE_COLUMN_MESSAGE;
         showToast(message, "error");
         throw new Error(message);
       }
@@ -70,11 +71,11 @@ export const useColumnAdd = ({
 
       const result = await updateColumns((current) => {
         if (current.columns.some((column) => column.name === normalizedName)) {
-          return null;
+          throw new Error(DUPLICATE_COLUMN_MESSAGE);
         }
         const nextOrder = nextColumnOrder(current.columns);
         if (nextOrder === null) {
-          return null;
+          throw new Error(COLUMN_ORDER_LIMIT_MESSAGE);
         }
         const nextColumns = [
           ...current.columns,
