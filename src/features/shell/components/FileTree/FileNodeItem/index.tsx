@@ -166,15 +166,18 @@ export const FileNodeItem = memo(
               {node.name}
             </span>
             {statusMark !== null && (
-              <span
-                className={[
-                  "spec-file-tree-status",
-                  ["spec-file-tree-status-", statusMark.kind].join(""),
-                ].join(" ")}
-                title={statusMark.label}
-              >
-                {statusMark.symbol}
-              </span>
+              <>
+                <span
+                  className={[
+                    "spec-file-tree-status",
+                    ["spec-file-tree-status-", statusMark.kind].join(""),
+                  ].join(" ")}
+                  title={statusMark.label}
+                >
+                  <span aria-hidden="true">{statusMark.symbol}</span>
+                </span>
+                <span className="sr-only">{statusMark.label}</span>
+              </>
             )}
           </button>
         </li>
