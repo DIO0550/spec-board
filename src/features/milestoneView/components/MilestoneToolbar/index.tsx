@@ -129,10 +129,15 @@ export const MilestoneToolbar = ({
                 .filter(Boolean)
                 .join(" ")}
             >
-              {f.label}{" "}
-              <span className="font-mono text-[10.5px] opacity-60">
-                {filterCounts?.[f.value] ?? 0}
-              </span>
+              {f.label}
+              {filterCounts !== undefined && (
+                <>
+                  {" "}
+                  <span className="font-mono text-[10.5px] opacity-60">
+                    {filterCounts[f.value] ?? 0}
+                  </span>
+                </>
+              )}
             </button>
           );
         })}
