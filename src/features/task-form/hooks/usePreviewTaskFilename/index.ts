@@ -53,9 +53,14 @@ export const usePreviewTaskFilename = (
       if (requestIdRef.current !== currentId) {
         return;
       }
-      if (res.ok && isPreviewTaskFilenamePayload(res.value)) {
-        setResult(res.value);
+      if (!res.ok) {
+        return;
       }
+      setResult(
+        isPreviewTaskFilenamePayload(res.value)
+          ? res.value
+          : { kind: "pending" },
+      );
     };
     void fetch();
   }, [args.title, args.explicitFilename, args.parentFilePath]);
