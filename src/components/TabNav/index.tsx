@@ -60,12 +60,12 @@ export const TabNav = ({
   onSelect,
   trailing,
 }: TabNavProps) => (
-  <div
-    role="tablist"
-    aria-label={ariaLabel}
-    className="flex h-11 shrink-0 items-stretch gap-0.5 overflow-hidden border-b border-border bg-surface px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-  >
-    <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+  <div className="flex h-11 shrink-0 items-stretch gap-0.5 overflow-hidden border-b border-border bg-surface px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className="flex h-11 min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         return (
