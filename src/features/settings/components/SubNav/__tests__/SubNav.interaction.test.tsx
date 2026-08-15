@@ -38,6 +38,13 @@ const renderSubNav = (props: Partial<Parameters<typeof SubNav>[0]> = {}) => {
     );
   });
 };
+test("onBack未指定時は戻るボタンを描画しない", () => {
+  renderSubNav();
+  const backButton = Array.from(
+    container?.querySelectorAll("button") ?? [],
+  ).find((button) => button.textContent?.includes("戻る"));
+  expect(backButton).toBeUndefined();
+});
 
 test("タブが 1 枠でも role=tab の button が tablist 配下に 1 個描画される", () => {
   renderSubNav({ tabs: [tabA] });
