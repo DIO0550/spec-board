@@ -101,22 +101,24 @@ export const SubNav = ({
       className="flex min-w-0 items-center gap-3 border-b border-border bg-surface px-4 text-xs"
       aria-label="プロジェクト設定"
     >
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex shrink-0 items-center gap-1.5 font-medium text-muted hover:text-accent"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          className="size-3.5 fill-none stroke-current stroke-[1.75]"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {onBack !== undefined && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex shrink-0 items-center gap-1.5 font-medium text-muted hover:text-accent"
         >
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        戻る
-      </button>
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="size-3.5 fill-none stroke-current stroke-[1.75]"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          戻る
+        </button>
+      )}
       <span className="shrink-0 font-mono text-[11.5px] text-text-dim">
         · {projectName === undefined ? ".spec-board" : projectName} /{" "}
         <strong className="text-foreground">プロジェクト設定</strong>
