@@ -102,8 +102,11 @@ export const MilestoneCreateModal = ({
   const autoSlug = milestoneSlug(form.name);
 
   useEffect(() => {
+    if (inline) {
+      return;
+    }
     dialogRef.current?.focus();
-  }, []);
+  }, [inline]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
