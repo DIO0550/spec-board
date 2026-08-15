@@ -193,7 +193,7 @@ kbd {
 	background: var(--color-bg);
 }
 
-.spec-settings-screen [data-settings-tab="appearance"] {
+.spec-settings-screen [data-settings-tab="appearance"]:not([aria-selected="true"]) {
 	display: none;
 }
 [data-board-view="roadmap"] [data-roadmap-legendbar] {
