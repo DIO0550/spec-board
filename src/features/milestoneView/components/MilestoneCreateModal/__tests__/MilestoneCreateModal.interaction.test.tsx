@@ -248,3 +248,10 @@ test("optional labelsとassigneeの変更をcallbackへ通知する", () => {
   expect(onLabelsChange).toHaveBeenLastCalledWith(["release", "frontend"]);
   expect(onAssigneeChange).toHaveBeenLastCalledWith("mika");
 });
+
+test("inline表示ではdialog本体へautofocusしない", () => {
+  renderModal({ inline: true });
+  const dialog = requireByTestId("milestone-create-modal");
+
+  expect(document.activeElement).not.toBe(dialog);
+});
