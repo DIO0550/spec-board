@@ -110,6 +110,8 @@
 
 名前欄の下には入力値を trim して小文字 kebab-case にした `milestones.yml → {slug}` preview を追従表示する。英数字が残らない場合は `version-tag` を表示する。preview は保存キーの正規化ではなく、送信する `name` は従来どおり無加工とする。ラベル候補・担当者候補および変更 callback はすべて optional で、既存呼び出しとの後方互換を維持する。
 
+設定画面の左カラムへ埋め込む `inline` 表示は通常のページ内フォームとして扱い、ルート要素に `role="dialog"` / `aria-modal` を付与しない。設定シェルを持たない単体利用の中央表示では `role="dialog"` と `aria-modal="true"` を付与する。
+
 
 閉じる動線: 閉じる × ボタン / キャンセル / overlay クリック / Escape キー。
 
