@@ -938,7 +938,7 @@ test("HeaderBar「設定」click で SettingsScreen（SubNav/ラベルタブ）�
   await flush();
   expect(container?.querySelector('[role="tablist"]')).not.toBeNull();
   const tab = container?.querySelector('[role="tab"]');
-  expect(tab?.textContent).toBe("ラベル0");
+  expect(tab?.textContent).toBe("ラベル 0");
 });
 
 test("settings 表示中の「ボードへ戻る」click で board（EmptyState）に復帰する", async () => {

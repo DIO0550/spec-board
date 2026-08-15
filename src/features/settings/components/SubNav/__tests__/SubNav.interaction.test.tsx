@@ -98,3 +98,12 @@ test("外観タブにプラス記号ではなく太陽アイコンを描画す�
   expect(icon?.querySelector('circle[r="4"]')).not.toBeNull();
   expect(icon?.querySelector("path")?.getAttribute("d")).toContain("M12 2v2");
 });
+
+test("件数pillのDOMテキストとアクセシブル名を空白で区切る", () => {
+  const countTab = { ...tabA, count: 0 };
+  renderSubNav({ tabs: [countTab] });
+  const tab = container?.querySelector(`#${subNavTabId("labels")}`);
+
+  expect(tab?.textContent).toContain("ラベル 0");
+  expect(tab?.getAttribute("aria-label")).toBe("ラベル 0件");
+});
