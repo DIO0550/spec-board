@@ -176,3 +176,30 @@ test("showRatio=false のとき進捗率と実績線を表示しない", () => {
   ).toBeNull();
   expect(burndown?.querySelector("circle")).toBeNull();
 });
+
+test.each([
+  ["v1.7", "v1.7.0"],
+  ["v1.7.0", "v1.7.0"],
+  ["release", "release"],
+])("バージョン名を表示用ラベルへ整形する", (name, expected) => {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(MilestoneDetailSidebar, {
+        def: { name, state: "open" },
+        status: "open",
+        projection: { done: 0, total: 0, taskFilePaths: [] },
+        showRatio: true,
+        tasks: [],
+        taskProjections: new Map(),
+      }),
+    );
+  });
+
+  const versionLabel = container?.querySelector(
+    "aside > section:first-of-type > header > span:last-child",
+  );
+  expect(versionLabel?.textContent?.trim()).toBe(expected);
+});
