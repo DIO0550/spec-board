@@ -21,16 +21,19 @@ const MAX_COLUMN_ORDER = 2 ** 32 - 1;
 
 /**
  * 最新stateのcolumnsから追加カラムのorderを採番する。
- * 異常な最大値でもu32の範囲を越えないよう飽和させる。
+ * u32の最大値に到達している場合は追加を中止する。
  * @param columns - 採番対象のカラム
- * @returns 新しいカラムへ割り当てるorder
+ * @returns 新しいカラムへ割り当てるorder。上限到達時はnull。
  */
-const nextColumnOrder = (columns: readonly Column[]): number => {
+const nextColumnOrder = (columns: readonly Column[]): number | null => {
   const maxOrder = columns.reduce(
     (value, column) => Math.max(value, column.order),
     -1,
   );
-  return Math.min(maxOrder + 1, MAX_COLUMN_ORDER);
+  if (maxOrder >= MAX_COLUMN_ORDER) {
+    return null;
+  }
+  return maxOrder + 1;
 };
 
 /**
@@ -62,9 +65,13 @@ export const useColumnAdd = ({
         if (current.columns.some((column) => column.name === normalizedName)) {
           return null;
         }
+        const nextOrder = nextColumnOrder(current.columns);
+        if (nextOrder === null) {
+          return null;
+        }
         const nextColumns = [
           ...current.columns,
-          { name: normalizedName, order: nextColumnOrder(current.columns) },
+          { name: normalizedName, order: nextOrder },
         ];
         const doneColumn = current.doneColumn;
         return {
