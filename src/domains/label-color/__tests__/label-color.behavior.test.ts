@@ -14,6 +14,19 @@ test("isValid は不正な値を false にする", () => {
   expect(LabelColor.isValid("7860b5")).toBe(false);
 });
 
+test.each([
+  ["暗い背景", "#1f2937", "#ffffff"],
+  ["白文字と黒文字の境界より暗い背景", "#666666", "#ffffff"],
+  ["白文字と黒文字の境界より明るい背景", "#777777", "#000000"],
+  ["明るい背景", "#fbbf24", "#000000"],
+])("contrastForeground は%sに高いコントラストの文字色を返す", (_label, background, expected) => {
+  expect(LabelColor.contrastForeground(background)).toBe(expected);
+});
+
+test("contrastForeground は不正な色では既存表示と同じ黒文字へフォールバックする", () => {
+  expect(LabelColor.contrastForeground("#not-a-hex")).toBe("#000000");
+});
+
 test("isValid は小文字化しない（大文字 HEX をそのまま判定）", () => {
   expect(LabelColor.isValid("#AABBCC")).toBe(true);
 });

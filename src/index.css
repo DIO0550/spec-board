@@ -80,6 +80,7 @@
    ライト配色に揃える（light/dark の両方で color-scheme を明示する）。 */
 :root {
 	color-scheme: light;
+	font-size: 17px;
 }
 
 /* ダークテーマの上書き（surface 系のみ。accent は data-accent 側で制御）。 */
@@ -146,7 +147,7 @@
 
 /* 表示密度。rem ベースの Tailwind 余白・文字サイズを root font-size で一括スケールする。 */
 :root[data-density="compact"] {
-	font-size: 14px;
+	font-size: 16px;
 }
 
 @layer base {
