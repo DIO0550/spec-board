@@ -17,6 +17,17 @@ test("color が無く group がある場合は group トークンを使う", () 
   expect(style.backgroundColor).toBe(tokens.bg);
   expect(style.borderColor).toBe(tokens.bd);
 });
+test("不正な color は明示 group のトークンへフォールバックする", () => {
+  const style = resolveLabelSwatchStyle({
+    name: "fallback",
+    group: "type",
+    color: "#not-a-hex",
+  });
+  const tokens = LabelRegistry.tokensForGroup("type");
+  expect(style.color).toBe(tokens.fg);
+  expect(style.backgroundColor).toBe(tokens.bg);
+  expect(style.borderColor).toBe(tokens.bd);
+});
 
 test("color/group が無い場合は name から解決する", () => {
   const style = resolveLabelSwatchStyle({ name: "priority:high" });
