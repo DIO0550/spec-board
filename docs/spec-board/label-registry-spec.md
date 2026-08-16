@@ -111,14 +111,14 @@ const { fg, bg, bd } = LabelRegistry.tokensForLabel(label);
 
 設定画面のラベルタブ（[board-view-spec.md](./board-view-spec.md) 参照）は、ラベルマスタ定義 `LabelDefinition`（`name` / `group?` / `color?` 等）1 件ごとにスワッチ色を以下の優先順位で解決する。
 
-1. **`color`（マスタ定義色・最優先）**: `#RRGGBB` 形式の単色が定義されていれば、その単色をスワッチに適用する。文字色は `LabelColor.contrastForeground` で背景とのコントラスト比が高い白または黒を選ぶ。
-2. **`group`（明示グループ）**: `color` が無く `group` が**定義されていれば**（空文字 `""` も「定義済み」として扱う）、`LabelRegistry.tokensForGroup(group)` の `ColorTokens` を適用する。`name` の prefix からグループを導出する `tokensForLabel` ではなく、明示された `group` を優先する。空文字は `tokensForGroup("")` が既定（default 群）色へ正規化するため、name 由来の色にはフォールバックしない。
-3. **`name`（prefix 由来・フォールバック）**: `color` も `group` も無ければ `LabelRegistry.tokensForLabel(name)`（`name` の prefix からグループを導出）を適用する。
+1. **`color`（マスタ定義色・最優先）**: 妥当な `#RRGGBB` 形式の単色が定義されていれば、その単色をスワッチに適用する。文字色は `LabelColor.contrastForeground` で背景とのコントラスト比が高い白または黒を選ぶ。
+2. **`group`（明示グループ）**: `color` が未定義または不正で、`group` が**定義されていれば**（空文字 `""` も「定義済み」として扱う）、`LabelRegistry.tokensForGroup(group)` の `ColorTokens` を適用する。`name` の prefix からグループを導出する `tokensForLabel` ではなく、明示された `group` を優先する。空文字は `tokensForGroup("")` が既定（default 群）色へ正規化するため、name 由来の色にはフォールバックしない。
+3. **`name`（prefix 由来・フォールバック）**: `color` が未定義または不正で、`group` も無ければ `LabelRegistry.tokensForLabel(name)`（`name` の prefix からグループを導出）を適用する。
 
 スワッチへの適用規則:
 
-- **単色 `#RRGGBB`**: その単色を `backgroundColor` にバインドし、`LabelColor.contrastForeground` の結果を `color` にバインドする。不正な色は黒文字へフォールバックする。
-- **`ColorTokens`（`group` / `name` 経路）**: `LabelTag` と同様に `color`（`fg`）/ `backgroundColor`（`bg`）/ `borderColor`（`bd`）にバインドする。`dot` は小丸インジケータ用の予約トークンで本タブでは未使用。
+- **単色 `#RRGGBB`**: 妥当な単色だけを `backgroundColor` にバインドし、`LabelColor.contrastForeground` の結果を `color` にバインドする。
+- **`ColorTokens`（`group` / `name` 経路）**: `color` が未定義または不正な場合は、`LabelTag` と同様に `color`（`fg`）/ `backgroundColor`（`bg`）/ `borderColor`（`bd`）にバインドする。`dot` は小丸インジケータ用の予約トークンで本タブでは未使用。
 
 いずれも CSS 変数を作らずインライン `style` にバインドする。`color` の値が不正・欠落している場合は省略され、上記 2→3 の既定色解決にフォールバックする。
 
