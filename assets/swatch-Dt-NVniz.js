@@ -1,1 +1,0 @@
-import{n as e}from"./chunk-BneVvdWh.js";import{n as t,t as n}from"./label-registry-DC5IyAij.js";var r,i=e((()=>{t(),r=e=>{if(e.color)return{backgroundColor:e.color};let t=n.tokensForGroup(n.effectiveGroup(e));return{color:t.fg,backgroundColor:t.bg,borderColor:t.bd}}}));export{r as n,i as t};
