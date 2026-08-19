@@ -18,6 +18,7 @@ pub mod preview_filename;
 pub mod preview_markdown;
 pub mod projection;
 pub mod rebuild;
+pub(crate) mod relocate;
 pub mod remove_link;
 pub mod reverse_links;
 pub(crate) mod session_write;

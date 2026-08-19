@@ -27,18 +27,12 @@ use crate::state::AppState;
 use crate::task::frontmatter;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::extract_string_extra;
+use crate::task::relocate::{move_md_file, RelocateError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::TaskIndex;
 
 /// `.spec-board/` 配下のアーカイブ置き場ディレクトリ名。
 const ARCHIVE_DIR_NAME: &str = "archive";
-
-/// 移動先ファイル名の連番リトライ上限。
-///
-/// 同名アーカイブの衝突は「同じ相対パスのタスクを作り直して再アーカイブした」
-/// 場合にしか起きないため、実運用でこの上限に届くことはない（届いた場合は
-/// 異常系としてエラーにする）。
-const DESTINATION_RETRY_LIMIT: u32 = 100;
 
 /// アーカイブ済みタスク 1 件分の payload。
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -114,13 +108,10 @@ pub(crate) fn archive_task_impl(
         let registered_paths = vec![abs.clone()];
         resources.write_ignore().register(&abs)?;
 
-        if let Err(error) = move_out_of_tasks_tree(
-            io,
-            &abs,
-            &archive_destination(project_root.as_path(), &rel_path),
-        ) {
+        let destination = archive_destination(project_root.as_path(), &rel_path);
+        if let Err(error) = move_md_file(io, &abs, &destination) {
             cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
-            return Err(error);
+            return Err(archive_move_error(error, &abs, &destination));
         }
 
         commit_or_resync_under_lease(
@@ -141,74 +132,15 @@ fn archive_destination(project_root: &Path, rel_path: &Path) -> PathBuf {
     archive_dir(project_root).join(rel_path)
 }
 
-/// `src` を `dest` へ移動する（read → 排他 write → remove の合成）。
-///
-/// `dest` が既に存在する場合はファイル名へ `-2` からの連番を付けて空きを探す。
-/// TaskIo port（read / write_new / remove / ensure_dir）の合成で実現し、
-/// rename 専用メソッドをポートに増やさない（InMemoryTaskIo など全実装への
-/// 波及を避けるため）。
-fn move_out_of_tasks_tree(
-    io: &dyn TaskIo,
-    src: &Path,
-    dest: &Path,
-) -> Result<(), ArchiveTaskCommandError> {
-    let bytes = match io.read(src) {
-        Ok(bytes) => bytes,
-        Err(crate::task::io::TaskIoError::Io(source))
-            if source.kind() == std::io::ErrorKind::NotFound =>
-        {
-            return Err(ArchiveTaskError::FileNotFound(src.to_path_buf()).into());
+/// [`RelocateError`] を archive 側のエラーへ写像する。
+fn archive_move_error(error: RelocateError, src: &Path, dest: &Path) -> ArchiveTaskCommandError {
+    match error {
+        RelocateError::SourceNotFound => ArchiveTaskError::FileNotFound(src.to_path_buf()).into(),
+        RelocateError::DestinationUnavailable => {
+            ArchiveTaskError::DestinationUnavailable(dest.to_path_buf()).into()
         }
-        Err(error) => return Err(error.into()),
-    };
-    if let Some(parent) = dest.parent() {
-        io.ensure_dir(parent)?;
+        RelocateError::Io(io_error) => io_error.into(),
     }
-    write_new_with_numbered_retry(io, dest, &bytes)
-        .map_err(|_| ArchiveTaskError::DestinationUnavailable(dest.to_path_buf()))?;
-    io.remove(src)?;
-    Ok(())
-}
-
-/// 排他作成が `AlreadyExists` で失敗する間、`-2` からの連番を付けて空きを探す。
-///
-/// # Errors
-///
-/// 連番が [`DESTINATION_RETRY_LIMIT`] に達しても空きが無い場合、または
-/// `AlreadyExists` 以外の I/O エラーが出た場合。
-fn write_new_with_numbered_retry(
-    io: &dyn TaskIo,
-    dest: &Path,
-    bytes: &[u8],
-) -> Result<PathBuf, crate::task::io::TaskIoError> {
-    let mut candidate = dest.to_path_buf();
-    let mut suffix = 2_u32;
-    loop {
-        match io.write_new(&candidate, bytes) {
-            Ok(()) => return Ok(candidate),
-            Err(crate::task::io::TaskIoError::Io(source))
-                if source.kind() == std::io::ErrorKind::AlreadyExists
-                    && suffix <= DESTINATION_RETRY_LIMIT =>
-            {
-                candidate = numbered_candidate(dest, suffix);
-                suffix += 1;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
-/// `foo.md` に対する `foo-2.md` のような連番候補パスを組み立てる。
-fn numbered_candidate(dest: &Path, suffix: u32) -> PathBuf {
-    let stem = dest
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("task");
-    let ext = dest
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("md");
-    dest.with_file_name(format!("{stem}-{suffix}.{ext}"))
 }
 
 /// `get_archived_tasks` Tauri command 薄層。
@@ -297,21 +229,16 @@ pub(crate) fn unarchive_task_impl(
     let src = archive_destination(project_root.as_path(), &rel_path);
     let dest = project_root.as_path().join(&rel_path);
 
-    let bytes = match io.read(&src) {
-        Ok(bytes) => bytes,
-        Err(crate::task::io::TaskIoError::Io(source))
-            if source.kind() == std::io::ErrorKind::NotFound =>
-        {
+    let restored_abs = match move_md_file(io, &src, &dest) {
+        Ok(path) => path,
+        Err(RelocateError::SourceNotFound) => {
             return Err(UnarchiveTaskError::FileNotFound(src).into());
         }
-        Err(error) => return Err(error.into()),
+        Err(RelocateError::DestinationUnavailable) => {
+            return Err(UnarchiveTaskError::DestinationUnavailable(dest).into());
+        }
+        Err(RelocateError::Io(io_error)) => return Err(io_error.into()),
     };
-    if let Some(parent) = dest.parent() {
-        io.ensure_dir(parent)?;
-    }
-    let restored_abs = write_new_with_numbered_retry(io, &dest, &bytes)
-        .map_err(|_| UnarchiveTaskError::DestinationUnavailable(dest.clone()))?;
-    io.remove(&src)?;
 
     let restored_rel = restored_abs
         .strip_prefix(project_root.as_path())
