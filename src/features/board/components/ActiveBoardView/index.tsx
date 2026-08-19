@@ -105,6 +105,7 @@ export const ActiveBoardView = ({
       onAddColumn={workspace.onAddColumn}
       onRenameColumn={workspace.onRenameColumn}
       onDeleteColumn={workspace.onDeleteColumn}
+      onArchiveColumnTasks={workspace.onArchiveColumnTasks}
     />
   );
 };

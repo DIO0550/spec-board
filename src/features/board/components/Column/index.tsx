@@ -75,6 +75,13 @@ type ColumnProps = {
     columnName: string,
     destColumn: string | undefined,
   ) => void | Promise<void>;
+  /**
+   * 完了カラムの「タスクをまとめてアーカイブ」確定時のコールバック。
+   * 未指定の場合、または自カラムが完了カラムでない場合はメニュー項目を出さない。
+   * 第 1 引数として自カラム名を素通しで渡す。
+   * @param columnName - 自カラム名
+   */
+  onArchiveColumnTasks?: (columnName: string) => void;
 };
 
 /**
@@ -91,6 +98,7 @@ export const Column = ({
   onTaskClick,
   onRenameColumn,
   onDeleteColumn,
+  onArchiveColumnTasks,
 }: ColumnProps) => {
   const card = useBoardCard();
   const col = useBoardColumn();
@@ -421,6 +429,11 @@ export const Column = ({
           y={menuPos.y}
           canDelete={canDeleteEffective}
           onDelete={handleDeleteClick}
+          onArchiveTasks={
+            onArchiveColumnTasks !== undefined && card.isDoneColumn(name)
+              ? () => onArchiveColumnTasks(name)
+              : undefined
+          }
           onClose={handleMenuClose}
         />
       )}

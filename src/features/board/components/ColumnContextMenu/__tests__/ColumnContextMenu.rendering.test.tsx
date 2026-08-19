@@ -78,3 +78,56 @@ test("指定座標にメニューが配置される", () => {
   expect(menu?.style.left).toBe("100px");
   expect(menu?.style.top).toBe("200px");
 });
+
+test("onArchiveTasks 指定時は「タスクをまとめてアーカイブ」項目を表示する", async () => {
+  render({
+    x: 0,
+    y: 0,
+    canDelete: true,
+    onDelete: vi.fn(),
+    onArchiveTasks: vi.fn(),
+    onClose: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(
+      container?.querySelector("[data-testid='column-context-menu-archive']"),
+    ).not.toBeNull();
+  });
+});
+
+test("onArchiveTasks 未指定ではアーカイブ項目を表示しない", async () => {
+  render({ x: 0, y: 0, canDelete: true, onDelete: vi.fn(), onClose: vi.fn() });
+  await vi.waitFor(() => {
+    expect(
+      container?.querySelector("[data-testid='column-context-menu']"),
+    ).not.toBeNull();
+  });
+  expect(
+    container?.querySelector("[data-testid='column-context-menu-archive']"),
+  ).toBeNull();
+});
+
+test("アーカイブ項目クリックで onArchiveTasks と onClose が呼ばれる", async () => {
+  const onArchiveTasks = vi.fn();
+  const onClose = vi.fn();
+  render({
+    x: 0,
+    y: 0,
+    canDelete: true,
+    onDelete: vi.fn(),
+    onArchiveTasks,
+    onClose,
+  });
+  let item: HTMLButtonElement | null = null;
+  await vi.waitFor(() => {
+    item = container?.querySelector<HTMLButtonElement>(
+      "[data-testid='column-context-menu-archive']",
+    ) as HTMLButtonElement | null;
+    expect(item).not.toBeNull();
+  });
+  act(() => {
+    (item as HTMLButtonElement | null)?.click();
+  });
+  expect(onArchiveTasks).toHaveBeenCalledTimes(1);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});

@@ -4,6 +4,7 @@ export { HeaderBar } from "./components/HeaderBar";
 export type { RoadmapViewProps } from "./components/RoadmapView";
 export { RoadmapView } from "./components/RoadmapView";
 export { useColumnAdd } from "./hooks/useColumnAdd";
+export { useColumnArchive } from "./hooks/useColumnArchive";
 export { useColumnDelete } from "./hooks/useColumnDelete";
 export { useColumnRename } from "./hooks/useColumnRename";
 export { useColumnReorder } from "./hooks/useColumnReorder";
