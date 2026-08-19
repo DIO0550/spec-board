@@ -395,7 +395,12 @@ export const archiveTaskAction = (
       return Result.err(ProjectError.tauri(result.error));
     }
 
-    deps.dispatch({ type: "task-deleted", filePath: params.filePath });
+    // 確定 dispatch は楽観 dispatch を skip した経路のみ。`applyTaskDeleted` は
+    // 対象が既に無くても tasks を作り直すため、二重 dispatch すると参照が毎回
+    // 変わり、bulk アーカイブで不要な再レンダー・projection 再同期を誘発する。
+    if (!hasTarget) {
+      deps.dispatch({ type: "task-deleted", filePath: params.filePath });
+    }
     return Result.ok(undefined);
   });
 };

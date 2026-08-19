@@ -37,7 +37,15 @@ const orderChildrenFirst = (tasks: readonly Task[]): Task[] => {
     }
     return depth;
   };
-  return [...tasks].sort((left, right) => depthOf(right) - depthOf(left));
+  // sort の comparator 内で毎回親チェーンを辿らないよう、深さは 1 回だけ計算する。
+  const depthByFilePath = new Map(
+    tasks.map((task) => [task.filePath, depthOf(task)]),
+  );
+  return [...tasks].sort(
+    (left, right) =>
+      (depthByFilePath.get(right.filePath) ?? 0) -
+      (depthByFilePath.get(left.filePath) ?? 0),
+  );
 };
 
 /**
