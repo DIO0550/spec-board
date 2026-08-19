@@ -18,25 +18,28 @@ test("invoke が 'delete_task' という command 名で呼ばれる", async () =
 test("filePath のみ渡した場合、invoke 引数に orphanStrategy キーが含まれない", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
   await deleteTask({ filePath: "tasks/x.md" });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect(Object.keys(args)).toEqual(["filePath"]);
+  const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect(Object.keys(payload.args)).toEqual(["filePath"]);
 });
 
 test("orphanStrategy='abort' は camelCase キーで渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
   await deleteTask({ filePath: "tasks/x.md", orphanStrategy: "abort" });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("delete_task", {
-    filePath: "tasks/x.md",
-    orphanStrategy: "abort",
+    args: { filePath: "tasks/x.md", orphanStrategy: "abort" },
   });
 });
 
 test("orphanStrategy: undefined の明示指定は undefined のまま渡る（ラッパで削らない）", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
   await deleteTask({ filePath: "tasks/x.md", orphanStrategy: undefined });
-  const args = vi.mocked(invoke).mock.calls[0]?.[1] as Record<string, unknown>;
-  expect("orphanStrategy" in args).toBe(true);
-  expect(args.orphanStrategy).toBeUndefined();
+  const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
+    args: Record<string, unknown>;
+  };
+  expect("orphanStrategy" in payload.args).toBe(true);
+  expect(payload.args.orphanStrategy).toBeUndefined();
 });
 
 test("成功時は Result.ok(undefined) を返す", async () => {
