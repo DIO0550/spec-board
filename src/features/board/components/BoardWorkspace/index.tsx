@@ -8,6 +8,7 @@ import {
 import type { TaskForest } from "@/domains/task-forest";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
+import { useSavedFilters } from "@/features/board/hooks/useSavedFilters";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -19,6 +20,7 @@ import { useTaskFilter } from "../../hooks/useTaskFilter";
 // 型 import は export 化した BoardWorkspaceProps が参照するため残す（削除すると build が落ちる）。
 import type { TaskDropHandler } from "../BoardCardProvider";
 import type { ColumnReorderHandler } from "../BoardColumnProvider";
+import { SavedFilterMenu } from "../SavedFilterMenu";
 import type { MilestonesByName } from "../TaskCard";
 import { TaskFilterBar } from "../TaskFilterBar";
 
@@ -97,6 +99,8 @@ const VIEW_TAB_PREFIX = "board-view";
 export type BoardWorkspaceProps = {
   /** toolbar等に表示する実project名。 */
   projectName?: string;
+  /** プロジェクトの絶対パス（保存済みフィルタの storage キー。未 open は undefined） */
+  projectPath?: string;
   /** カラム定義の配列 */
   columns: ColumnType[];
   /** 全タスク（絞り込み前） */
@@ -199,6 +203,7 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
     tasks,
     columns,
     milestones,
+    projectPath,
     initialLabelFilter,
     onDensityToggle,
     density = "comfortable",
@@ -244,6 +249,7 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
         : undefined,
     [initialLabelFilter],
   );
+  const savedFilters = useSavedFilters(projectPath);
   const { criteria, setCriteria, clear, filtered, isActive } = useTaskFilter(
     tasks,
     filterOptions,
@@ -331,6 +337,14 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
                 />
                 <kbd className="font-mono text-[10px] text-text-dim">⌘K</kbd>
               </label>
+              <SavedFilterMenu
+                filters={savedFilters.filters}
+                isFilterActive={isActive}
+                criteria={criteria}
+                onApply={setCriteria}
+                onSave={savedFilters.save}
+                onRemove={savedFilters.remove}
+              />
               <button
                 type="button"
                 data-testid="board-filter-toggle"
