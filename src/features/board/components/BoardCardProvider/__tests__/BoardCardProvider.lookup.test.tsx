@@ -234,3 +234,23 @@ test("tasksInColumn は存在しない column 名で空配列固定参照を返�
   expect(first).toEqual([]);
   expect(first).toBe(second);
 });
+
+test("totalCountInColumn はフィルタ非適用の allTasks から status 一致件数を返す", () => {
+  const all = [
+    makeTask({ filePath: "tasks/a.md", status: "Todo" }),
+    makeTask({ filePath: "tasks/b.md", status: "Todo" }),
+    makeTask({ filePath: "tasks/c.md", status: "Done" }),
+  ];
+  // tasks（フィルタ後）を 1 件に絞っても、総件数は allTasks 基準で変わらない。
+  const probe = mountProbe({ tasks: [all[0] as Task], allTasks: all });
+  expect(probe.latest.totalCountInColumn("Todo")).toBe(2);
+  expect(probe.latest.totalCountInColumn("Done")).toBe(1);
+});
+
+test("totalCountInColumn は該当タスクのないカラムで 0 を返す", () => {
+  const probe = mountProbe({
+    tasks: [],
+    allTasks: [makeTask({ filePath: "tasks/a.md", status: "Todo" })],
+  });
+  expect(probe.latest.totalCountInColumn("Empty")).toBe(0);
+});

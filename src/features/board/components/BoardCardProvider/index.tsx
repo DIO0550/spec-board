@@ -149,6 +149,13 @@ export type BoardCardApi = {
    */
   tasksInColumn: (columnName: string) => readonly Task[];
 
+  /**
+   * フィルタ非適用の allTasks から status 一致件数を返す（WIP 超過判定用）。
+   * `tasksInColumn` はフィルタ後の tasks ベースなので、絞り込み中の超過判定には使えない。
+   * @param columnName 対象カラム名
+   */
+  totalCountInColumn: (columnName: string) => number;
+
   /** name → マイルストーン定義 Map（TaskCardContext 互換のため生 Map を公開） */
   milestonesByName: MilestonesByName;
   /** 正規化済み filePath → Task の lookup Map（broken link 判定で参照） */
@@ -357,6 +364,15 @@ export const BoardCardProvider = ({
     [tasksByStatus],
   );
 
+  const totalCountInColumn = useCallback(
+    (columnName: string): number =>
+      allTasks.reduce(
+        (count, task) => (task.status === columnName ? count + 1 : count),
+        0,
+      ),
+    [allTasks],
+  );
+
   const api = useMemo<BoardCardApi>(
     () => ({
       isDragging,
@@ -374,6 +390,7 @@ export const BoardCardProvider = ({
       descendantCount,
       isDone,
       tasksInColumn,
+      totalCountInColumn,
       milestonesByName: safeMilestonesByName,
       tasksByNormalizedPath,
     }),
@@ -393,6 +410,7 @@ export const BoardCardProvider = ({
       descendantCount,
       isDone,
       tasksInColumn,
+      totalCountInColumn,
       safeMilestonesByName,
       tasksByNormalizedPath,
     ],
