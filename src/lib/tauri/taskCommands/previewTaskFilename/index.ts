@@ -14,4 +14,6 @@ import type {
 export const previewTaskFilename = (
   params: PreviewTaskFilenameParams,
 ): Promise<Result<PreviewTaskFilenamePayload, TauriError>> =>
-  invokeWrapped<PreviewTaskFilenamePayload>("preview_task_filename", params);
+  invokeWrapped<PreviewTaskFilenamePayload>("preview_task_filename", {
+    args: params,
+  });
