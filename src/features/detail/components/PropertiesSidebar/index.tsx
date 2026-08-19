@@ -214,7 +214,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
           message={
             hasChildren
               ? `「${task.title || task.filePath}」を削除しますか？子タスクが ${task.hierarchy.childFilePaths.length} 件あります。`
-              : `「${task.title || task.filePath}」を削除しますか？この操作は取り消せません。`
+              : `「${task.title || task.filePath}」を削除しますか？削除したタスクは設定のゴミ箱から復元できます。`
           }
           confirmLabel={deleteFlow.isBusy ? "削除中…" : "削除"}
           confirmDisabled={deleteFlow.isBusy}

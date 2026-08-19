@@ -257,6 +257,42 @@ export type UnarchiveTaskPayload = {
   restoredFilePath: string;
 };
 
+/** restore_trashed_task 引数。 */
+export type RestoreTrashedTaskParams = {
+  /** 復元対象のゴミ箱内相対パス（削除時の元パス） */
+  filePath: string;
+};
+
+/** purge_trashed_task 引数。 */
+export type PurgeTrashedTaskParams = {
+  /** 完全削除対象のゴミ箱内相対パス */
+  filePath: string;
+};
+
+/** ゴミ箱内タスク 1 件分の payload。 */
+export type TrashedTaskPayload = {
+  /** ゴミ箱内相対パス（= 削除時の元 project_root 相対パス） */
+  filePath: string;
+  /** frontmatter title（読めない場合はファイル名 stem） */
+  title: string;
+  /** frontmatter status（読めない場合は省略） */
+  status?: string;
+  /** 削除日時（RFC 3339 / UTC。取得できない場合は省略） */
+  deletedAt?: string;
+};
+
+/** get_trashed_tasks 戻り値ペイロード。 */
+export type GetTrashedTasksPayload = {
+  /** ゴミ箱内タスク一覧（パス昇順） */
+  tasks: TrashedTaskPayload[];
+};
+
+/** restore_trashed_task 戻り値ペイロード。 */
+export type RestoreTrashedTaskPayload = {
+  /** 実際に復元された project_root 相対パス（衝突時は連番付き） */
+  restoredFilePath: string;
+};
+
 /** タスクテンプレート 1 件分の payload（get_task_templates 応答）。 */
 export type TaskTemplatePayload = {
   /** テンプレート名（拡張子を除いたファイル名） */

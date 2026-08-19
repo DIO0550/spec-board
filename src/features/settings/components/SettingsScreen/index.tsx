@@ -18,6 +18,7 @@ import {
   type StatusSettingsValue,
 } from "../StatusSettingsTab";
 import { SubNav, subNavPanelId, subNavTabId } from "../SubNav";
+import { TrashSettingsTab } from "../TrashSettingsTab";
 
 /** 設定画面に登録するタブ一覧。 */
 const SETTINGS_TABS: NonEmptySettingsTabs = [
@@ -25,6 +26,7 @@ const SETTINGS_TABS: NonEmptySettingsTabs = [
   { id: "milestones", label: "マイルストーン" },
   { id: "statuses", label: "ステータス" },
   { id: "archive", label: "アーカイブ" },
+  { id: "trash", label: "ゴミ箱" },
   { id: "config", label: "設定ファイル" },
   { id: "appearance", label: "外観" },
 ];
@@ -104,6 +106,8 @@ const ActivePanel = ({
       return <AppearanceSettingsTab />;
     case "archive":
       return <ArchiveSettingsTab />;
+    case "trash":
+      return <TrashSettingsTab />;
     case "statuses":
       return (
         <StatusSettingsTab
@@ -216,6 +220,7 @@ export const SettingsScreen = ({
       SETTINGS_TABS[3],
       SETTINGS_TABS[4],
       SETTINGS_TABS[5],
+      SETTINGS_TABS[6],
     ],
     [labels.labels.length, milestones.milestones.length, columns?.length],
   );
