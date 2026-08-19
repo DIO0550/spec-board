@@ -4,10 +4,12 @@ import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
 import { usePreviewTaskMarkdown } from "@/features/task-form/hooks/usePreviewTaskMarkdown";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
+import { useTaskTemplates } from "@/features/task-form/hooks/useTaskTemplates";
 import type { TaskFormValues } from "@/features/task-form/types";
 import type {
   PreviewTaskFilenamePayload,
   PreviewTaskMarkdownParams,
+  TaskTemplatePayload,
 } from "@/lib/tauri/taskCommands/types";
 import {
   type ProjectError,
@@ -28,6 +30,26 @@ type PreviewValues = PreviewTaskMarkdownParams;
 
 /** プレビュー幅の既定値（px）。 */
 const DEFAULT_PREVIEW_WIDTH = 420;
+
+/**
+ * テンプレートの status 初期値を解決する。存在しないカラム名は流し込まず、
+ * 作成元カラム（fallback）を維持する。
+ * @param template - 適用中のテンプレート（未適用は null）
+ * @param columns - 現在のカラム一覧
+ * @param fallback - テンプレート未適用・不一致時に使う初期ステータス
+ * @returns TaskForm へ渡す初期ステータス
+ */
+const templateStatus = (
+  template: TaskTemplatePayload | null,
+  columns: Column[],
+  fallback: string,
+): string => {
+  if (template?.status === undefined) {
+    return fallback;
+  }
+  const status = template.status;
+  return columns.some((column) => column.name === status) ? status : fallback;
+};
 
 /** パス未確定時に subbar / pv-foot に出すフォールバックファイル名。 */
 const FALLBACK_FILE_NAME = "new-issue.md";
@@ -167,12 +189,53 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
   const [pathPreview, setPathPreview] = useState<PreviewTaskFilenamePayload>({
     kind: "pending",
   });
+  // テンプレート一覧と適用状態。適用は TaskForm の key remount で反映する
+  // （useTaskFormFields は mount 後 props 不変前提のため、動的 sync ではなく remount）。
+  const templates = useTaskTemplates();
+  const [appliedTemplate, setAppliedTemplate] =
+    useState<TaskTemplatePayload | null>(null);
+  // dirty 中のテンプレート切替は上書き確認を挟む。確認待ちの選択を保持する。
+  // 「テンプレートなし」への切替（template: null）も確認対象のため、外側 null
+  // （確認待ちなし）と区別できるようラッパーで包む。
+  const [pendingTemplate, setPendingTemplate] = useState<{
+    template: TaskTemplatePayload | null;
+  } | null>(null);
   // プレビューの表示/折りたたみと幅（既定 420、clamp は PreviewResizer の computePreviewWidth）。
   const [previewVisible, setPreviewVisible] = useState(true);
   const [previewWidth, setPreviewWidth] = useState(DEFAULT_PREVIEW_WIDTH);
 
   const previewFileName = previewFileNameLabel(pathPreview);
   const previewMarkdown = usePreviewTaskMarkdown(previewValues);
+
+  /**
+   * テンプレート選択の確定処理。フォームを remount して初期値を流し込む。
+   * @param template - 適用するテンプレート（null はテンプレートなしへ戻す）
+   */
+  const applyTemplate = useCallback(
+    (template: TaskTemplatePayload | null): void => {
+      setAppliedTemplate(template);
+      setPendingTemplate(null);
+    },
+    [],
+  );
+
+  /**
+   * テンプレート選択の変更要求。入力済みの内容があるときは確認を挟む。
+   * @param template - 選択されたテンプレート（null はテンプレートなし）
+   */
+  const requestTemplate = useCallback(
+    (template: TaskTemplatePayload | null): void => {
+      if (submittingRef.current) {
+        return;
+      }
+      if (isDirty) {
+        setPendingTemplate({ template });
+        return;
+      }
+      applyTemplate(template);
+    },
+    [isDirty, applyTemplate],
+  );
 
   const handleSubmit = useCallback(
     async (values: TaskFormValues) => {
@@ -292,17 +355,58 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
             className="relative flex-1 overflow-y-auto px-8 pb-8 pt-7"
           >
             <div className="mx-auto max-w-[720px]">
-              <h1 className="mb-1 text-lg font-semibold text-foreground">
-                新規タスクを作成
-              </h1>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <h1 className="text-lg font-semibold text-foreground">
+                  新規タスクを作成
+                </h1>
+                {templates.kind === "loaded" &&
+                  templates.templates.length > 0 && (
+                    <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted">
+                      テンプレート
+                      <select
+                        aria-label="テンプレート"
+                        data-testid="task-template-select"
+                        value={appliedTemplate?.name ?? ""}
+                        disabled={isSubmitting}
+                        onChange={(event) => {
+                          const name = event.target.value;
+                          const selected =
+                            templates.templates.find(
+                              (template) => template.name === name,
+                            ) ?? null;
+                          requestTemplate(selected);
+                        }}
+                        className="h-7 rounded border border-border bg-surface px-2 text-xs text-foreground"
+                      >
+                        <option value="">なし</option>
+                        {templates.templates.map((template) => (
+                          <option key={template.name} value={template.name}>
+                            {template.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+              </div>
               <p className="mb-5 text-xs leading-relaxed text-muted">
                 入力した内容は Markdown
                 ファイルとして保存されます。フロントマターにメタ情報が書き込まれます。
               </p>
               <TaskForm
+                key={appliedTemplate?.name ?? "no-template"}
                 columns={props.columns}
-                initialStatus={props.initialStatus}
-                initialDue={props.initialDue}
+                initialStatus={templateStatus(
+                  appliedTemplate,
+                  props.columns,
+                  props.initialStatus,
+                )}
+                initialTitle={appliedTemplate?.title}
+                initialPriority={appliedTemplate?.priority}
+                initialLabels={appliedTemplate?.labels}
+                initialLinks={appliedTemplate?.links}
+                initialBody={appliedTemplate?.body}
+                initialDraft={appliedTemplate?.draft}
+                initialDue={appliedTemplate?.due ?? props.initialDue}
                 initialParent={props.initialParent}
                 parentCandidates={props.parentCandidates}
                 parentReadOnly={props.parentReadOnly}
@@ -342,6 +446,15 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
           confirmLabel="破棄する"
           onConfirm={onClose}
           onCancel={() => setIsDiscardDialogOpen(false)}
+        />
+      )}
+      {pendingTemplate !== null && (
+        <ConfirmDialog
+          title="テンプレートを適用しますか？"
+          message="入力中の内容はテンプレートの内容で上書きされます。"
+          confirmLabel="適用する"
+          onConfirm={() => applyTemplate(pendingTemplate.template)}
+          onCancel={() => setPendingTemplate(null)}
         />
       )}
     </section>

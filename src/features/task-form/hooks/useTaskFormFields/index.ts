@@ -1,6 +1,7 @@
 import type { Dispatch, FormEvent } from "react";
 import { useCallback, useReducer } from "react";
 import { Due } from "@/domains/due";
+import type { Priority } from "@/domains/priority";
 import { DueField } from "@/features/task-form/lib/fields/due";
 import {
   FileNameField,
@@ -20,8 +21,16 @@ import type { TaskFormValues } from "@/features/task-form/types";
 
 /** useTaskFormFields の引数 */
 export type UseTaskFormFieldsArgs = {
+  /** タイトルの初期値（テンプレート適用用）。 */
+  initialTitle?: string;
   /** ステータスの初期値 */
   initialStatus: string;
+  /** 優先度の初期値（テンプレート適用用）。 */
+  initialPriority?: Priority;
+  /** 本文の初期値（テンプレート適用用）。 */
+  initialBody?: string;
+  /** 下書きフラグの初期値（テンプレート適用用）。 */
+  initialDraft?: boolean;
   /** 期限の初期値。 */
   initialDue?: string;
   /** 親タスクの初期値（parentFieldVisible が true のときだけ使用） */
@@ -215,7 +224,8 @@ const reducer = (state: FieldsState, action: FieldsAction): FieldsState => {
  * バリデーション / 初期値 / 正規化は各 Field モジュール（TitleField / FileNameField /
  * PriorityField / ParentField）に委譲し、ここでは reducer の配線と submit のみを担う。
  *
- * **前提**: `parentFieldVisible` / `initialParent` は mount 後に変化しないこと。これらの値は
+ * **前提**: `parentFieldVisible` / `initialParent` と `initialTitle` / `initialPriority` /
+ * `initialBody` / `initialDraft`（テンプレート適用用）は mount 後に変化しないこと。これらの値は
  * useReducer の初期化関数でのみ参照され、mount 後の変化に追従する useEffect は持たない。
  * 現行の呼び出し元（`TaskCreateScreen` 経由で `App.tsx` が `view === "create"` で
  * 条件レンダーする）では、作成画面を開くたびに新 hook インスタンスが mount されるため
@@ -233,15 +243,15 @@ export const useTaskFormFields = (
     args,
     (a): FieldsState => ({
       values: {
-        title: TitleField.initial(),
+        title: a.initialTitle ?? TitleField.initial(),
         fileName: FileNameField.initial(),
         status: a.initialStatus,
-        priority: PriorityField.initial(),
+        priority: a.initialPriority ?? PriorityField.initial(),
         parent: ParentField.initial(a.parentFieldVisible, a.initialParent),
-        body: "",
+        body: a.initialBody ?? "",
         due: Due.parse(a.initialDue) ?? DueField.initial(),
         subIssues: SubIssuesField.initial(),
-        draft: false,
+        draft: a.initialDraft ?? false,
       },
       errors: {},
       fileNameDirty: false,

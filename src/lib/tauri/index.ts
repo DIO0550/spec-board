@@ -62,6 +62,7 @@ export { updateMilestone } from "./milestoneCommands/updateMilestone";
 export { createTask } from "./taskCommands/createTask";
 export { deleteTask } from "./taskCommands/deleteTask";
 export { getTasks } from "./taskCommands/getTasks";
+export { getTaskTemplates } from "./taskCommands/getTaskTemplates";
 export { moveTask } from "./taskCommands/moveTask";
 export { openProject } from "./taskCommands/openProject";
 export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
