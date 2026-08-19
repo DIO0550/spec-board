@@ -25,6 +25,8 @@ pub struct TemplateFile {
 ///   プロジェクトを正常系として扱う）。
 /// - `.md` 以外の拡張子・サブディレクトリ・symlink はテンプレートとして扱わず無視する
 ///   （`.spec-board/` 配下の他ファイル I/O が symlink を拒否するのと同じ安全側の方針）。
+/// - `templates/` ディレクトリ自体が symlink の場合もテンプレートなしとして扱う
+///   （symlink 先の外部ディレクトリを辿らない）。
 ///
 /// # Errors
 ///
@@ -32,7 +34,18 @@ pub struct TemplateFile {
 /// - 対象 `.md` ファイルの読み込み（`read_to_string`）に失敗した場合
 pub fn read_template_files(project_root: &Path) -> Result<Vec<TemplateFile>, ConfigIoError> {
     let templates_dir = templates_dir_path(project_root);
-    if !templates_dir.is_dir() {
+    // `is_dir()` は symlink を辿るため、`templates/` 自体が symlink だと
+    // `.spec-board/` 外の Markdown を読めてしまう。symlink_metadata で判定し、
+    // symlink ディレクトリは「テンプレート置き場なし」として扱う
+    // （配下の symlink ファイルを無視するのと同じ安全側の方針）。
+    let metadata = match std::fs::symlink_metadata(&templates_dir) {
+        Ok(metadata) => metadata,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Vec::new());
+        }
+        Err(source) => return Err(io_error(templates_dir, source)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Ok(Vec::new());
     }
 

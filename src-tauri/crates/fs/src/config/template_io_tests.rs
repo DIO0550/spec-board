@@ -84,3 +84,22 @@ fn read_template_files_ignores_symlinked_md_files() {
         .collect();
     assert_eq!(names, vec!["real"]);
 }
+
+#[cfg(unix)]
+#[test]
+fn read_template_files_ignores_symlinked_templates_directory() {
+    let dir = tempdir();
+    let outside = dir.path().join("outside-templates");
+    fs::create_dir_all(&outside).expect("create outside dir");
+    fs::write(outside.join("external.md"), "external body").expect("write external");
+    fs::create_dir_all(dir.path().join(".spec-board")).expect("create spec-board dir");
+    std::os::unix::fs::symlink(&outside, templates_dir_path(dir.path()))
+        .expect("symlink templates dir");
+
+    let templates = read_template_files(dir.path()).expect("should succeed");
+
+    assert!(
+        templates.is_empty(),
+        "symlinked templates dir must be ignored"
+    );
+}
