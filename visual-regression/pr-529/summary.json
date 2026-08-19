@@ -1,5 +1,5 @@
 {
-  "reportVersion": "bddd63f8343b467f831968151592fcc26a1c8fed",
+  "reportVersion": "e6477bdaaac2e06985b7faeaccc767f90ee35e52",
   "maxDiffRatio": 0.002,
   "changed": 9,
   "new": 0,
@@ -26,12 +26,12 @@
       "title": "App",
       "name": "Command Palette Keyboard",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "app--default",
@@ -300,7 +300,7 @@
       "name": "Compact",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 2,
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
