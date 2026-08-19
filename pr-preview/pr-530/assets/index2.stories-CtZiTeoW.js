@@ -1,5 +1,0 @@
-import{n as e}from"./chunk-BneVvdWh.js";import{t}from"./jsx-runtime-Bn1Ys6_W.js";import{t as n}from"./useTheme-B22DGZEn.js";import{t as r}from"./shell-CYuJLp-2.js";import{n as i,t as a}from"./AppearanceSettingsTab-Cb4bUOgc.js";var o,s,c,l,u,d;e((()=>{r(),i(),o=t(),s={component:a,decorators:[e=>(0,o.jsx)(n,{children:(0,o.jsx)(`div`,{className:`min-h-screen bg-background p-8`,children:(0,o.jsx)(e,{})})})],parameters:{layout:`fullscreen`}},c={},l={},u={decorators:[e=>(0,o.jsx)(`div`,{className:`w-[320px]`,children:(0,o.jsx)(e,{})})]},c.parameters={...c.parameters,docs:{...c.parameters?.docs,source:{originalSource:`{}`,...c.parameters?.docs?.source}}},l.parameters={...l.parameters,docs:{...l.parameters?.docs,source:{originalSource:`{}`,...l.parameters?.docs?.source}}},u.parameters={...u.parameters,docs:{...u.parameters?.docs,source:{originalSource:`{
-  decorators: [Story => <div className="w-[320px]">
-        <Story />
-      </div>]
-}`,...u.parameters?.docs?.source}}},d=[`Default`,`AllProps`,`EdgeCases`]}))();export{l as AllProps,c as Default,u as EdgeCases,d as __namedExportsOrder,s as default};
