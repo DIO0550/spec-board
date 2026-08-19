@@ -25,6 +25,20 @@ const DEFAULT_COLUMNS: readonly StatusColumn[] = [
   { id: "done", name: "Done", taskCount: 3, color: "oklch(0.60 0.13 155)" },
 ];
 
+/**
+ * 保存前に WIP 上限を正規化する。1 未満の値は「制限なし」（undefined）へ倒す。
+ * 入力中は 0 等の中間値を保持したまま編集できるよう、正規化は保存時にだけ行う。
+ * @param column - 正規化対象のカラム
+ * @returns wipLimit を正規化したカラム
+ */
+const normalizeColumnWipLimit = (column: StatusColumn): StatusColumn => {
+  if (column.wipLimit !== undefined && column.wipLimit >= 1) {
+    return column;
+  }
+  const { wipLimit: _dropped, ...rest } = column;
+  return rest;
+};
+
 type StatusSettingsTabProps = {
   initialColumns?: readonly StatusColumn[];
   initialDoneColumn?: string;
@@ -114,7 +128,10 @@ export const StatusSettingsTab = ({
     }
     setInternalSaveState("saving");
     try {
-      const result = await onSave({ columns, doneColumn });
+      const result = await onSave({
+        columns: columns.map(normalizeColumnWipLimit),
+        doneColumn,
+      });
       if (result === false) {
         setInternalSaveState("error");
         return;
@@ -212,6 +229,13 @@ export const StatusSettingsTab = ({
             setDoneColumn(name);
           }
         }}
+        onWipLimitChange={(id, wipLimit) =>
+          updateColumns(
+            columns.map((column) =>
+              column.id === id ? { ...column, wipLimit } : column,
+            ),
+          )
+        }
         onMove={move}
         onDoneChange={(name) => {
           setDoneColumn(name);

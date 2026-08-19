@@ -6,6 +6,8 @@ export type StatusColumn = {
   name: string;
   taskCount: number;
   color: string;
+  /** WIP 上限（1 以上の整数）。未指定は制限なし。 */
+  wipLimit?: number;
 };
 
 /** 保存callbackへ渡すステータス設定。 */

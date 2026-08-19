@@ -3,7 +3,7 @@ import { fn } from "storybook/test";
 import { StatusColumnTable } from ".";
 
 const columns = [
-  { id: "todo", name: "Todo", taskCount: 4, color: "#466abf" },
+  { id: "todo", name: "Todo", taskCount: 4, color: "#466abf", wipLimit: 5 },
   { id: "done", name: "Done", taskCount: 0, color: "#14874e" },
 ];
 const meta = {
@@ -12,6 +12,7 @@ const meta = {
     columns,
     doneColumn: "Done",
     onNameChange: fn(),
+    onWipLimitChange: fn(),
     onMove: fn(),
     onDoneChange: fn(),
     onDelete: fn(),

@@ -437,6 +437,7 @@ const AppShell = () => {
           name: column.name,
           order,
           color: column.color,
+          ...(column.wipLimit !== undefined && { wipLimit: column.wipLimit }),
         })),
         doneColumn: value.doneColumn,
         ...(renames.length === 0 ? {} : { renames }),
