@@ -223,6 +223,40 @@ export type PreviewTaskFilenamePayload =
   | { kind: "invalid"; error: string }
   | { kind: "pending" };
 
+/** archive_task 引数。 */
+export type ArchiveTaskParams = {
+  /** アーカイブ対象タスクのファイルパス */
+  filePath: string;
+};
+
+/** unarchive_task 引数。 */
+export type UnarchiveTaskParams = {
+  /** 復元対象のアーカイブ内相対パス（アーカイブ時の元パス） */
+  filePath: string;
+};
+
+/** アーカイブ済みタスク 1 件分の payload。 */
+export type ArchivedTaskPayload = {
+  /** アーカイブ内相対パス（= アーカイブ時の元 project_root 相対パス） */
+  filePath: string;
+  /** frontmatter title（読めない場合はファイル名 stem） */
+  title: string;
+  /** frontmatter status（読めない場合は省略） */
+  status?: string;
+};
+
+/** get_archived_tasks 戻り値ペイロード。 */
+export type GetArchivedTasksPayload = {
+  /** アーカイブ済みタスク一覧（パス昇順） */
+  tasks: ArchivedTaskPayload[];
+};
+
+/** unarchive_task 戻り値ペイロード。 */
+export type UnarchiveTaskPayload = {
+  /** 実際に復元された project_root 相対パス（衝突時は連番付き） */
+  restoredFilePath: string;
+};
+
 /** タスクテンプレート 1 件分の payload（get_task_templates 応答）。 */
 export type TaskTemplatePayload = {
   /** テンプレート名（拡張子を除いたファイル名） */

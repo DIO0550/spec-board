@@ -59,8 +59,10 @@ export type {
   UpdateMilestoneArgs,
 } from "./milestoneCommands/types";
 export { updateMilestone } from "./milestoneCommands/updateMilestone";
+export { archiveTask } from "./taskCommands/archiveTask";
 export { createTask } from "./taskCommands/createTask";
 export { deleteTask } from "./taskCommands/deleteTask";
+export { getArchivedTasks } from "./taskCommands/getArchivedTasks";
 export { getTasks } from "./taskCommands/getTasks";
 export { getTaskTemplates } from "./taskCommands/getTaskTemplates";
 export { moveTask } from "./taskCommands/moveTask";
@@ -68,8 +70,11 @@ export { openProject } from "./taskCommands/openProject";
 export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
 export { previewTaskMarkdown } from "./taskCommands/previewTaskMarkdown";
 export type {
+  ArchivedTaskPayload,
+  ArchiveTaskParams,
   CreateTaskParams,
   DeleteTaskParams,
+  GetArchivedTasksPayload,
   GetTasksPayload,
   MoveTaskParams,
   OpenProjectParams,
@@ -79,8 +84,11 @@ export type {
   TaskForestPayload,
   TaskProjectionPayload,
   TaskProjectionsPayload,
+  UnarchiveTaskParams,
+  UnarchiveTaskPayload,
   UpdateTaskParams,
 } from "./taskCommands/types";
+export { unarchiveTask } from "./taskCommands/unarchiveTask";
 export { updateTask } from "./taskCommands/updateTask";
 
 // tauriError

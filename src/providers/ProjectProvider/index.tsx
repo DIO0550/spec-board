@@ -19,6 +19,7 @@ import { openProjectAction } from "./actions/openProject";
 import { removeLinkAction } from "./actions/removeLink";
 import { reorderColumnsAction } from "./actions/reorderColumns";
 import {
+  archiveTaskAction,
   createTaskAction,
   deleteTaskAction,
   updateTaskAction,
@@ -280,6 +281,7 @@ export const ProjectProvider = ({ children }: ProjectProviderProps) => {
       createTask: (params) => createTaskAction(taskDeps, params),
       updateTask: (params) => updateTaskAction(taskDeps, params),
       deleteTask: (params) => deleteTaskAction(taskDeps, params),
+      archiveTask: (params) => archiveTaskAction(taskDeps, params),
       moveTask: (params, callbacks) =>
         moveTaskAction(taskDeps, params, callbacks),
       addLink: (params) => addLinkAction(taskDeps, params),
