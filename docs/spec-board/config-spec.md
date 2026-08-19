@@ -21,8 +21,10 @@ project-root/
 │   ├── labels.yml                           # ラベルマスタ定義（説明・グループ・色などのメタ情報。後述「labels.yml スキーマ」節）
 │   ├── milestones.yml                       # マイルストーンマスタ定義（表示名・期日・並び順・状態などのメタ情報。後述「milestones.yml スキーマ」節）
 │   ├── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
-│   └── templates/                           # タスクテンプレート置き場（任意。後述「タスクテンプレート」節）
-│       └── *.md
+│   ├── templates/                           # タスクテンプレート置き場（任意。後述「タスクテンプレート」節）
+│   │   └── *.md
+│   └── archive/                             # アーカイブ済みタスク置き場（後述「タスクアーカイブ」節）
+│       └── <元の相対パス>.md
 └── tasks/
     └── ...
 ```
@@ -373,6 +375,35 @@ lenient には **2 つの軸**がある（labels.yml が「lenient なのは col
 - `parent` はテンプレートから返さない（親は作成画面の文脈＝サブ Issue 経路が決める）
 
 作成画面での適用挙動（選択 UI・上書き確認・status フォールバック）は [task-card-spec.md](./task-card-spec.md) を参照。
+
+## タスクアーカイブ（.spec-board/archive/）
+
+完了したタスクをファイルとして保持したままボード・走査対象から外すため、タスク md を `.spec-board/archive/` 配下へ移動する。移動先はアーカイブ時の project_root 相対パスをそのままミラーする（例: `tasks/foo.md` → `.spec-board/archive/tasks/foo.md`）。`.spec-board/` 配下は task scanner / watcher の走査対象外のため、移動した時点で再オープンしてもタスクとして読み込まれない。
+
+### コマンド
+
+| コマンド | 引数 | 戻り値 |
+|:--------|:-----|:-------|
+| `archive_task` | `{ filePath }` | なし |
+| `get_archived_tasks` | なし | `{ tasks: { filePath, title, status? }[] }`（アーカイブ内相対パス昇順） |
+| `unarchive_task` | `{ filePath }`（アーカイブ内相対パス） | `{ restoredFilePath }` |
+
+### archive_task
+
+- delete_task と同じ writer lease + resident commit 経路を通り、resident cache から除去してボードへ即時反映する（FE の cache 反映も削除と同じ task-deleted 意味論）
+- **子タスクを持つタスクはアーカイブできない**（delete_task の abort 契約と同型。先に子を処理する）
+- 移動先に同名ファイルが既にある場合はファイル名へ `-2` からの連番を付けて回避する
+- 自前 write として write-ignore を登録するため、元パスの削除 event は watcher で抑止される
+
+### get_archived_tasks
+
+- プロジェクト未オープン・`archive/` 不在は空一覧
+- frontmatter が読めないファイルも一覧に載せる（title はファイル名 stem へフォールバック、status は省略）。アーカイブは復元のための一覧であり、壊れた md を隠すと復元手段ごと失われるため除外しない
+
+### unarchive_task
+
+- アーカイブ内相対パスの位置（= 元の場所）へファイルを書き戻す。復元先に同名ファイルがある場合は `-2` からの連番で回避し、実際の復元先パスを返す
+- **resident cache は変更せず、write-ignore も登録しない**。復元ファイルは watcher が通常の外部作成として拾い、再オープンと同じ経路でボードへ反映される（反映は watcher の集約分だけ遅延する）
 
 ## 設定の初期化
 
