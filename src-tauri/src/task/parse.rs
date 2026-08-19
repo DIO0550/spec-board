@@ -258,7 +258,10 @@ fn warning(code: TaskWarningCode, field: Option<&str>, message: &str) -> TaskWar
     }
 }
 
-fn extract_string_extra(extras: &serde_yaml_ng::Mapping, key: &str) -> Result<Option<String>, ()> {
+pub(crate) fn extract_string_extra(
+    extras: &serde_yaml_ng::Mapping,
+    key: &str,
+) -> Result<Option<String>, ()> {
     let Some(value) = extras.get(key) else {
         return Ok(None);
     };
