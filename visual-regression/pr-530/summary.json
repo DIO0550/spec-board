@@ -1,5 +1,5 @@
 {
-  "reportVersion": "391e124d52504cd394d551edda9d57304f30d20e",
+  "reportVersion": "e13f3a2bce2d5543635c43f5362343875d181ab0",
   "maxDiffRatio": 0.002,
   "changed": 9,
   "new": 0,
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -299,12 +299,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Compact",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--dark",
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -325,12 +325,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--edge-cases",
@@ -338,12 +338,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--focus",
@@ -7150,12 +7150,12 @@
       "title": "features/task-form/components/TaskForm",
       "name": "Filled",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 17,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskform--submitting",
