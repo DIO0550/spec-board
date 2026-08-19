@@ -82,7 +82,9 @@ export const StatusColumnTable = ({
           aria-label={`${column.name} の WIP 上限`}
           placeholder="—"
           onChange={(event) => {
-            const parsed = Number.parseInt(event.target.value, 10);
+            // parseInt だと 2.5 が 2 に化けて入力と state がズレる。数値のまま
+            // 保持し、非整数を「制限なし」へ倒すのは保存時の正規化に任せる。
+            const parsed = event.target.valueAsNumber;
             onWipLimitChange(
               column.id,
               Number.isNaN(parsed) ? undefined : parsed,

@@ -364,13 +364,18 @@ export const BoardCardProvider = ({
     [tasksByStatus],
   );
 
+  // 呼び出しごとの全件走査を避けるため、allTasks 変更時に 1 回だけ集計する。
+  const totalCountsByStatus = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of allTasks) {
+      counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
+    }
+    return counts;
+  }, [allTasks]);
+
   const totalCountInColumn = useCallback(
-    (columnName: string): number =>
-      allTasks.reduce(
-        (count, task) => (task.status === columnName ? count + 1 : count),
-        0,
-      ),
-    [allTasks],
+    (columnName: string): number => totalCountsByStatus.get(columnName) ?? 0,
+    [totalCountsByStatus],
   );
 
   const api = useMemo<BoardCardApi>(

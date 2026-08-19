@@ -26,13 +26,18 @@ const DEFAULT_COLUMNS: readonly StatusColumn[] = [
 ];
 
 /**
- * 保存前に WIP 上限を正規化する。1 未満の値は「制限なし」（undefined）へ倒す。
+ * 保存前に WIP 上限を正規化する。1 未満・非整数の値は「制限なし」（undefined）へ倒す
+ * （BE の lenient 契約と同じ値域）。
  * 入力中は 0 等の中間値を保持したまま編集できるよう、正規化は保存時にだけ行う。
  * @param column - 正規化対象のカラム
  * @returns wipLimit を正規化したカラム
  */
 const normalizeColumnWipLimit = (column: StatusColumn): StatusColumn => {
-  if (column.wipLimit !== undefined && column.wipLimit >= 1) {
+  if (
+    column.wipLimit !== undefined &&
+    Number.isInteger(column.wipLimit) &&
+    column.wipLimit >= 1
+  ) {
     return column;
   }
   const { wipLimit: _dropped, ...rest } = column;

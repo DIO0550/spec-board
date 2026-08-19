@@ -93,6 +93,19 @@ test("WIP 上限を空にして保存すると wipLimit は undefined になる"
   expect(value.columns[0]?.wipLimit).toBeUndefined();
 });
 
+test("非整数の WIP 上限入力は保存時に undefined へ倒れる", () => {
+  const onSave = vi.fn();
+  renderTab({ onSave });
+  const input = inputByLabel("Todo の WIP 上限");
+  act(() => setInputValue(input as HTMLInputElement, "2.5"));
+  act(() => buttonByLabel("変更を保存")?.click());
+  const value = onSave.mock.calls[0]?.[0];
+  const todo = value.columns.find(
+    (column: { name: string }) => column.name === "Todo",
+  );
+  expect(todo?.wipLimit).toBeUndefined();
+});
+
 test("0 以下の WIP 上限入力は保存時に undefined へ倒れる", () => {
   const onSave = vi.fn();
   renderTab({ onSave });
