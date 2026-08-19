@@ -20,7 +20,9 @@ project-root/
 │   ├── config.json.bak.tmp.{pid}.{nanos}.{counter}  # backup 書き出し中の一時ファイル（rename で `.bak` に昇格／load 冒頭に閾値超過の orphan は cleanup）
 │   ├── labels.yml                           # ラベルマスタ定義（説明・グループ・色などのメタ情報。後述「labels.yml スキーマ」節）
 │   ├── milestones.yml                       # マイルストーンマスタ定義（表示名・期日・並び順・状態などのメタ情報。後述「milestones.yml スキーマ」節）
-│   └── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
+│   ├── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
+│   └── templates/                           # タスクテンプレート置き場（任意。後述「タスクテンプレート」節）
+│       └── *.md
 └── tasks/
     └── ...
 ```
@@ -346,6 +348,32 @@ lenient には **2 つの軸**がある（labels.yml が「lenient なのは col
 - `name` / `title` / `description` / `state` / `due` / `updated` は文字列型を strict に検証する（型不一致は load エラー）。`order` のみ数値型 + lenient フォールバック。
 - マスタの定義順は payload でそのまま保持する（並べ替えない）。`order` による並びは表示層の責務とする。
 
+## タスクテンプレート（.spec-board/templates/）
+
+`.spec-board/templates/*.md` にタスクの雛形を置くと、タスク作成画面のテンプレートとして選択できる。雛形は通常のタスクと同じフロントマター形式（[task-format-spec.md](./task-format-spec.md)）で書き、専用の記法は導入しない。人間と AI エージェントが同じ置き場・同じ形式で雛形を共有することを目的とする。
+
+### 配置・読み込み
+
+- `templates/` ディレクトリは任意。存在しない場合は「テンプレートなし」として正常に扱う（エラーにしない）
+- 直下の `*.md` のみをテンプレートとして扱う。`.md` 以外の拡張子・サブディレクトリ・symlink は無視する
+- テンプレート名は拡張子を除いたファイル名。一覧はテンプレート名の昇順で返す
+- `templates/` 配下のファイルはタスクとしては扱われない（task scanner の走査対象は `tasks/` 配下のみで、`.spec-board/` は対象外）
+
+### `get_task_templates` コマンド
+
+| コマンド | 引数 | 戻り値 |
+|:--------|:-----|:-------|
+| `get_task_templates` | なし | `{ templates: TaskTemplate[] }` |
+
+`TaskTemplate` は `{ name, title?, status?, priority?, labels, milestone?, links, due?, draft, body }`（camelCase）。フィールドの解釈はタスクのフロントマターと同じ lenient 契約に従う（不正な `priority` は未指定、単一文字列の `labels` は 1 要素配列、`draft` は `true` のみ真、など）。
+
+- プロジェクト未オープン時は空一覧を返す
+- frontmatter の YAML が壊れているテンプレートは一覧から除外する（作成フローを止めない）
+- frontmatter ブロックを持たないテンプレートは全文を `body` として返す
+- `parent` はテンプレートから返さない（親は作成画面の文脈＝サブ Issue 経路が決める）
+
+作成画面での適用挙動（選択 UI・上書き確認・status フォールバック）は [task-card-spec.md](./task-card-spec.md) を参照。
+
 ## 設定の初期化
 
 ### 初回オープン時の振る舞い
@@ -486,6 +514,12 @@ links:（任意）
 - ファイルは `.md` 拡張子で作成してください
 - `.spec-board/` ディレクトリ内のファイルは編集しないでください
 - `parent` に指定するパスはプロジェクトルートからの相対パスです
+
+## タスクテンプレート
+
+- `.spec-board/templates/*.md` にタスクの雛形を置くと、タスク作成画面のテンプレートとして選択できます
+- 雛形は通常のタスクと同じフロントマター形式で書きます（`templates/` 配下のファイルはタスクとしては扱われません）
+- `.spec-board/templates/` 配下は上記ルールの例外として自由に追加・編集して構いません
 ```
 
 上記は default config の生成例である。実際の GUIDE.md 生成では、テンプレート内の `status:` 例は `columns[].order` 昇順で最初の `columns[].name` を raw 出力する。
@@ -494,7 +528,7 @@ links:（任意）
 
 保存対象の `config.json` では `columns: []` は load 時に拒否されるが、Markdown 文字列生成用の純粋関数は `columns: []` 入力でも panic せず文字列を返す。この場合、テンプレート内の `status:` 例は `Todo` にフォールバックし、「有効なステータス値」見出し直下には bullet を出力せず空行を 1 つ置く。
 
-生成される Markdown 文字列は、タイトル、テンプレート、有効なステータス値、ルールの順序で決定論的に構成され、末尾改行を含む。
+生成される Markdown 文字列は、タイトル、テンプレート、有効なステータス値、ルール、タスクテンプレートの順序で決定論的に構成され、末尾改行を含む。
 
 ### 更新タイミング
 
