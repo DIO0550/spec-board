@@ -64,9 +64,9 @@ export const CommandPalette = ({
     if (!isOpen) {
       return [];
     }
-    const normalized = query.trim().toLocaleLowerCase();
+    const normalized = query.trim().toLowerCase();
     const actions = ACTIONS.filter((action) =>
-      action.label.toLocaleLowerCase().includes(normalized),
+      action.label.toLowerCase().includes(normalized),
     );
     const taskEntries = searchTaskIndex(taskSearchIndex, query).map(
       (match): PaletteEntry => ({

@@ -49,11 +49,11 @@ export const createTaskSearchIndex = (
 ): TaskSearchEntry[] =>
   tasks.map((task) => ({
     task,
-    title: task.title.toLocaleLowerCase(),
-    id: task.id.toLocaleLowerCase(),
-    labels: task.labels.map((label) => label.toLocaleLowerCase()),
-    filePath: task.filePath.toLocaleLowerCase(),
-    body: task.body.toLocaleLowerCase(),
+    title: task.title.toLowerCase(),
+    id: task.id.toLowerCase(),
+    labels: task.labels.map((label) => label.toLowerCase()),
+    filePath: task.filePath.toLowerCase(),
+    body: task.body.toLowerCase(),
   }));
 
 /**
@@ -63,7 +63,7 @@ export const createTaskSearchIndex = (
  */
 const tokenize = (query: string): string[] =>
   query
-    .toLocaleLowerCase()
+    .toLowerCase()
     .split(/[\s　]+/)
     .filter((token) => token.length > 0);
 
