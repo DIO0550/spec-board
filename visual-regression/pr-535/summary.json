@@ -1,11 +1,11 @@
 {
-  "reportVersion": "12f6e86365de65c5ebef0104e89601e8ba45b5c5",
+  "reportVersion": "d3ce2bcc705c4a7a88e9df8234d70da7ce33987e",
   "maxDiffRatio": 0.002,
-  "changed": 9,
+  "changed": 0,
   "new": 0,
   "deleted": 0,
-  "passed": 622,
-  "failed": 9,
+  "passed": 631,
+  "failed": 0,
   "results": [
     {
       "story": "app--all-props",
@@ -26,12 +26,12 @@
       "title": "App",
       "name": "Command Palette Keyboard",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 540,
-      "diffRatio": 0.0006,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "app--default",
@@ -274,7 +274,7 @@
       "name": "All Props",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 1,
+      "diffPixels": 2,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
@@ -287,7 +287,7 @@
       "name": "Comfortable",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 1,
+      "diffPixels": 2,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
@@ -300,7 +300,7 @@
       "name": "Compact",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 2,
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -339,7 +339,7 @@
       "name": "Edge Cases",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 1,
+      "diffPixels": 2,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
@@ -351,12 +351,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Focus",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 2,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-confirmdialog--all-props",
@@ -1716,12 +1716,12 @@
       "title": "features/board/components/ActiveBoardView",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 608,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-activeboardview--default",
@@ -2144,65 +2144,65 @@
       "id": "features-board-components-calendarview--all-props",
       "title": "features/board/components/CalendarView",
       "name": "All Props",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 4958,
-      "diffRatio": 0.0054,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-calendarview--compact-detail",
       "id": "features-board-components-calendarview--compact-detail",
       "title": "features/board/components/CalendarView",
       "name": "Compact Detail",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 4933,
-      "diffRatio": 0.0054,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-calendarview--default",
       "id": "features-board-components-calendarview--default",
       "title": "features/board/components/CalendarView",
       "name": "Default",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 4958,
-      "diffRatio": 0.0054,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-calendarview--detail-open",
       "id": "features-board-components-calendarview--detail-open",
       "title": "features/board/components/CalendarView",
       "name": "Detail Open",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 4933,
-      "diffRatio": 0.0054,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-calendarview--edge-cases",
       "id": "features-board-components-calendarview--edge-cases",
       "title": "features/board/components/CalendarView",
       "name": "Edge Cases",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 5011,
-      "diffRatio": 0.0054,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-calendarview--empty",
@@ -2210,25 +2210,25 @@
       "title": "features/board/components/CalendarView",
       "name": "Empty",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 608,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-calendarview--week",
       "id": "features-board-components-calendarview--week",
       "title": "features/board/components/CalendarView",
       "name": "Week",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 3546,
-      "diffRatio": 0.0038,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-column--all-props",
@@ -2717,12 +2717,12 @@
       "title": "features/board/components/ListView",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 128,
-      "diffRatio": 0.0001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-listview--default",
@@ -3432,12 +3432,12 @@
       "title": "features/board/components/TaskCard/TaskCardHeader",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 18,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-board-components-taskcard-taskcardheader--default",
@@ -3861,12 +3861,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 524,
-      "diffRatio": 0.0006,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--default",
@@ -3887,12 +3887,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 524,
-      "diffRatio": 0.0006,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--empty",
@@ -3926,12 +3926,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Open",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 524,
-      "diffRatio": 0.0006,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-brokenparentrow--all-props",
@@ -4030,12 +4030,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 647,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailfields--default",
@@ -4043,12 +4043,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 647,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailfields--edge-cases",
@@ -4056,12 +4056,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 645,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailscreen--all-props",
@@ -4069,12 +4069,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailscreen--broken-and-warnings",
@@ -4082,12 +4082,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "Broken And Warnings",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailscreen--default",
@@ -4095,12 +4095,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailscreen--draft",
@@ -4108,12 +4108,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "Draft",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-detailscreen--edge-cases",
@@ -4446,12 +4446,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-propertiessidebar--default",
@@ -4459,12 +4459,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-propertiessidebar--delete-confirmation",
@@ -4472,12 +4472,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Delete Confirmation",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 605,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-propertiessidebar--edge-cases",
@@ -4485,12 +4485,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 683,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-detail-components-subissuesection--all-props",
@@ -5902,12 +5902,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1333,
-      "diffRatio": 0.0014000000000000002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--appearance-accent-fixed",
@@ -5915,12 +5915,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Appearance Accent Fixed",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1204,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--appearance-dark-compact",
@@ -5928,12 +5928,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Appearance Dark Compact",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1073,
-      "diffRatio": 0.0012,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--config-copy",
@@ -5941,12 +5941,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Config Copy",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--config-file",
@@ -5954,12 +5954,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Config File",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--config-guide-selected",
@@ -5967,12 +5967,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Config Guide Selected",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--config-open-external",
@@ -5980,12 +5980,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Config Open External",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--config-regenerate",
@@ -5993,12 +5993,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Config Regenerate",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--config-reveal-folder",
@@ -6006,12 +6006,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Config Reveal Folder",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--default",
@@ -6019,12 +6019,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 673,
-      "diffRatio": 0.0007000000000000001,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--edge-cases",
@@ -6032,12 +6032,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1184,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-settingsscreen--status",
@@ -6045,12 +6045,12 @@
       "title": "features/settings/components/SettingsScreen",
       "name": "Status",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1333,
-      "diffRatio": 0.0014000000000000002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab--all-props",
@@ -6058,12 +6058,12 @@
       "title": "features/settings/components/StatusSettingsTab",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1041,
-      "diffRatio": 0.0011,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab--default",
@@ -6071,12 +6071,12 @@
       "title": "features/settings/components/StatusSettingsTab",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1041,
-      "diffRatio": 0.0011,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab--dirty",
@@ -6084,12 +6084,12 @@
       "title": "features/settings/components/StatusSettingsTab",
       "name": "Dirty",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1205,
-      "diffRatio": 0.0013,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab--edge-cases",
@@ -6097,12 +6097,12 @@
       "title": "features/settings/components/StatusSettingsTab",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 496,
-      "diffRatio": 0.0005,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab--error-state",
@@ -6110,12 +6110,12 @@
       "title": "features/settings/components/StatusSettingsTab",
       "name": "Error",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1006,
-      "diffRatio": 0.0011,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab--saving",
@@ -6123,51 +6123,51 @@
       "title": "features/settings/components/StatusSettingsTab",
       "name": "Saving",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1041,
-      "diffRatio": 0.0011,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab-statuscolumntable--all-props",
       "id": "features-settings-components-statussettingstab-statuscolumntable--all-props",
       "title": "features/settings/components/StatusSettingsTab/StatusColumnTable",
       "name": "All Props",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 4312,
-      "diffRatio": 0.004699999999999999,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab-statuscolumntable--default",
       "id": "features-settings-components-statussettingstab-statuscolumntable--default",
       "title": "features/settings/components/StatusSettingsTab/StatusColumnTable",
       "name": "Default",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 3596,
-      "diffRatio": 0.0039000000000000003,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-statussettingstab-statuscolumntable--edge-cases",
       "id": "features-settings-components-statussettingstab-statuscolumntable--edge-cases",
       "title": "features/settings/components/StatusSettingsTab/StatusColumnTable",
       "name": "Edge Cases",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 3241,
-      "diffRatio": 0.0034999999999999996,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-settings-components-subnav--all-props",
@@ -6682,12 +6682,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--collapsed",
@@ -6695,12 +6695,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Collapsed",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--default",
@@ -6708,12 +6708,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--edge-cases",
@@ -6721,12 +6721,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--empty-project",
@@ -6734,12 +6734,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Empty Project",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--error-state",
@@ -6747,12 +6747,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Error",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--filled",
@@ -6773,12 +6773,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
@@ -6812,12 +6812,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Resized",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--status-popover-open",
@@ -6825,12 +6825,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Status Popover Open",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--sub-issue",
@@ -6838,12 +6838,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Sub Issue",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--submitting",
@@ -6851,12 +6851,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Submitting",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 144,
-      "diffRatio": 0.0002,
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen-previewresizer--all-props",
@@ -7150,12 +7150,12 @@
       "title": "features/task-form/components/TaskForm",
       "name": "Filled",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 17,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-task-form-components-taskform--submitting",
