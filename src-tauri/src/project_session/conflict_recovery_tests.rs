@@ -101,6 +101,7 @@ fn config_with_default_status(status: &str) -> Config {
             name: ColumnName::from_lenient(status),
             order: 0,
             color: None,
+            wip_limit: None,
         }],
         card_order: CardOrder::default(),
         done_column: None,

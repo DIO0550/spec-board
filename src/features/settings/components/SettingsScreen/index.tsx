@@ -228,6 +228,7 @@ export const SettingsScreen = ({
               taskCount: tasks.filter((task) => task.status === column.name)
                 .length,
               color: column.color ?? "oklch(0.62 0.12 235)",
+              wipLimit: column.wipLimit,
             })),
     [columns, tasks],
   );

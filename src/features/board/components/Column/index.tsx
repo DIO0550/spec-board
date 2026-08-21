@@ -42,6 +42,8 @@ type ColumnProps = {
    * フォールバック色決定に必須のため、呼び出し側（Board）は表示順インデックスを渡す。
    */
   order: number;
+  /** カラムの WIP 上限（1 以上）。未指定なら上限表示・超過判定を行わない。 */
+  wipLimit?: number;
   /**
    * 「+ 追加」ボタンクリック時のコールバック。
    * 第 1 引数として自カラム名を素通しで渡す。
@@ -84,6 +86,7 @@ export const Column = ({
   name,
   color,
   order,
+  wipLimit,
   onAddTask,
   onTaskClick,
   onRenameColumn,
@@ -340,6 +343,8 @@ export const Column = ({
       <ColumnHeader
         name={name}
         taskCount={tasks.length}
+        totalTaskCount={card.totalCountInColumn(name)}
+        wipLimit={wipLimit}
         color={color}
         order={order}
         onAddClick={() => onAddTask(name)}

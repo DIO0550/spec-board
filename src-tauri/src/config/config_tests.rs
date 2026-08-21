@@ -13,16 +13,19 @@ fn default_returns_spec_baseline_columns_and_done_column() {
                 name: "Todo".into(),
                 order: 0,
                 color: None,
+                wip_limit: None,
             },
             Column {
                 name: "In Progress".into(),
                 order: 1,
                 color: None,
+                wip_limit: None,
             },
             Column {
                 name: "Done".into(),
                 order: 2,
                 color: None,
+                wip_limit: None,
             },
         ]
     );
@@ -39,16 +42,19 @@ fn columns_in_display_order_sorts_by_order_not_by_array_position() {
                 name: "Done".into(),
                 order: 2,
                 color: None,
+                wip_limit: None,
             },
             Column {
                 name: "Todo".into(),
                 order: 0,
                 color: None,
+                wip_limit: None,
             },
             Column {
                 name: "In Progress".into(),
                 order: 1,
                 color: None,
+                wip_limit: None,
             },
         ],
         card_order: CardOrder::default(),
@@ -98,6 +104,7 @@ fn roundtrip_spec_example_json() {
             name: "Todo".into(),
             order: 0,
             color: None,
+            wip_limit: None,
         }
     );
     assert_eq!(parsed.card_order.get("Todo").unwrap().len(), 2);
@@ -113,6 +120,7 @@ fn column_roundtrip() {
                 name: "Todo".into(),
                 order: 0,
                 color: None,
+                wip_limit: None,
             },
         ),
         (
@@ -121,6 +129,7 @@ fn column_roundtrip() {
                 name: "In Progress".into(),
                 order: 1,
                 color: None,
+                wip_limit: None,
             },
         ),
     ];
@@ -186,6 +195,7 @@ fn field_names_are_camel_case_in_json() {
             name: "Todo".into(),
             order: 0,
             color: None,
+            wip_limit: None,
         }],
         card_order: card_order_of(vec![("Todo", vec!["tasks/a.md"])]),
         done_column: Some("Todo".into()),
@@ -284,6 +294,7 @@ fn resolved_done_column_parametrized() {
             name: name.into(),
             order,
             color: None,
+            wip_limit: None,
         }
     }
 
@@ -713,6 +724,7 @@ fn col(name: &str, order: u32) -> Column {
         name: name.into(),
         order,
         color: None,
+        wip_limit: None,
     }
 }
 
@@ -1769,9 +1781,73 @@ fn serialize_omits_column_color_when_none() {
         name: "Todo".into(),
         order: 0,
         color: None,
+        wip_limit: None,
     };
     let serialized = serde_json::to_string(&col).unwrap();
     assert_eq!(serialized, r#"{"name":"Todo","order":0}"#);
+}
+
+#[test]
+fn wip_limit_from_count_rejects_zero_and_accepts_positive() {
+    let cases = [
+        (0_u32, None),
+        (1_u32, Some(1_u32)),
+        (25_u32, Some(25_u32)),
+        (u32::MAX, Some(u32::MAX)),
+    ];
+    for (raw, expected) in cases {
+        assert_eq!(
+            WipLimit::from_count(raw).map(|limit| limit.as_count()),
+            expected,
+            "from_count({raw})"
+        );
+    }
+}
+
+#[test]
+fn column_deserialize_accepts_positive_wip_limit() {
+    let col: Column = serde_json::from_str(r#"{"name":"Todo","order":0,"wipLimit":3}"#).unwrap();
+    assert_eq!(col.wip_limit.map(|limit| limit.as_count()), Some(3));
+}
+
+#[test]
+fn column_deserialize_lenient_invalid_wip_limit_becomes_none() {
+    let cases = [
+        r#"{"name":"Todo","order":0,"wipLimit":0}"#,
+        r#"{"name":"Todo","order":0,"wipLimit":-2}"#,
+        r#"{"name":"Todo","order":0,"wipLimit":2.5}"#,
+        r#"{"name":"Todo","order":0,"wipLimit":"3"}"#,
+        r#"{"name":"Todo","order":0,"wipLimit":null}"#,
+        r#"{"name":"Todo","order":0,"wipLimit":true}"#,
+        r#"{"name":"Todo","order":0,"wipLimit":4294967296}"#,
+    ];
+    for json in cases {
+        let col: Column = serde_json::from_str(json).unwrap();
+        assert_eq!(col.wip_limit, None, "{json}");
+    }
+}
+
+#[test]
+fn column_roundtrip_preserves_wip_limit() {
+    let json = r#"{"name":"Todo","order":0,"wipLimit":5}"#;
+    let col: Column = serde_json::from_str(json).unwrap();
+    let serialized = serde_json::to_string(&col).unwrap();
+    assert_eq!(serialized, json);
+}
+
+#[test]
+fn rename_preserves_column_wip_limit() {
+    let columns = vec![Column {
+        name: "Todo".into(),
+        order: 0,
+        color: None,
+        wip_limit: WipLimit::from_count(4),
+    }];
+    let mut rename_map = HashMap::new();
+    rename_map.insert("Todo".to_string(), "Backlog".to_string());
+    let renamed = apply_renames_to_columns(&columns, &rename_map);
+    assert_eq!(renamed[0].name.as_str(), "Backlog");
+    assert_eq!(renamed[0].wip_limit.map(|limit| limit.as_count()), Some(4));
 }
 
 #[test]
@@ -1780,6 +1856,7 @@ fn rename_preserves_column_color() {
         name: "Todo".into(),
         order: 0,
         color: ColumnColor::from_hex("#1a2b3c"),
+        wip_limit: None,
     }];
     let mut rename_map = HashMap::new();
     rename_map.insert("Todo".to_string(), "Backlog".to_string());
@@ -2334,6 +2411,7 @@ fn plan_reconcile_columns_keeps_existing_columns_and_card_order_untouched() {
                 name: "Todo".into(),
                 order: 0,
                 color: ColumnColor::from_hex("#abcdef"),
+                wip_limit: None,
             },
             col("Done", 1),
         ],

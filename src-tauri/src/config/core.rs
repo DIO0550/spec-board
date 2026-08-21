@@ -90,6 +90,44 @@ impl ColumnColor {
     }
 }
 
+/// カラムの WIP 上限（仕掛かりタスク数の上限）。1 以上の整数のみを保持する。
+///
+/// `Deserialize` は derive せず、フィールド側の関連関数 [`WipLimit::deserialize_opt`]
+/// 経由でのみ生成する（不正値を `None` に倒すため）。`ColumnColor` と同じ lenient
+/// 契約で、超過してもボード操作は拒否しない（表示上の警告にだけ使う）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct WipLimit(u32);
+
+impl WipLimit {
+    /// 1 以上の値のみ受理する。0 は「制限なし」ではなく不正値として `None`。
+    pub fn from_count(raw: u32) -> Option<Self> {
+        if raw == 0 {
+            return None;
+        }
+        Some(Self(raw))
+    }
+
+    /// 保持している上限値を返す。
+    pub fn as_count(&self) -> u32 {
+        self.0
+    }
+
+    /// `wipLimit` フィールドの lenient deserialize。`serde_json::Value` で一旦受け、
+    /// 「整数かつ 1..=u32::MAX」のみ `Some(WipLimit)`、それ以外（0 / 負数 / 小数 /
+    /// 文字列 / null）は `None` に倒す。**エラーにしない**。
+    fn deserialize_opt<'de, D>(de: D) -> Result<Option<WipLimit>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(de)?;
+        Ok(value
+            .as_u64()
+            .and_then(|count| u32::try_from(count).ok())
+            .and_then(WipLimit::from_count))
+    }
+}
+
 /// カラム（ステータス）定義。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
@@ -105,6 +143,15 @@ pub struct Column {
         skip_serializing_if = "Option::is_none"
     )]
     pub color: Option<ColumnColor>,
+    /// カラムの WIP 上限（任意）。1 以上の整数のみ保持し、不正・欠落時は `None`。
+    /// `None` のときは serialize で `wipLimit` キーごと省略する。
+    #[serde(
+        default,
+        rename = "wipLimit",
+        deserialize_with = "WipLimit::deserialize_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub wip_limit: Option<WipLimit>,
 }
 
 /// プロジェクト初回オープン時のデフォルト、および config 読み込み失敗時の
@@ -128,6 +175,7 @@ impl Default for Config {
                 name: ColumnName::from_lenient(*name),
                 order: i as u32,
                 color: None,
+                wip_limit: None,
             })
             .collect();
         let done_column = DEFAULT_COLUMN_NAMES
@@ -504,6 +552,7 @@ impl Config {
                 name: name.clone(),
                 order: next_order,
                 color: None,
+                wip_limit: None,
             });
             added_columns.push(name);
             next_order = next_order.saturating_add(1);
@@ -652,6 +701,7 @@ pub(crate) fn apply_renames_to_columns(
                 name: ColumnName::from_lenient(new_name),
                 order: c.order,
                 color: c.color.clone(),
+                wip_limit: c.wip_limit,
             },
             None => c.clone(),
         })
@@ -838,6 +888,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
             name: ColumnName::from_lenient(name),
             order: i as u32,
             color: None,
+            wip_limit: None,
         })
         .collect();
     let done_column = columns.last().map(|c| c.name.clone());

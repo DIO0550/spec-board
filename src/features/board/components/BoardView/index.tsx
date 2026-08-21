@@ -104,6 +104,7 @@ export const BoardView = ({
             name={col.name}
             color={col.color}
             order={index}
+            wipLimit={col.wipLimit}
             onAddTask={onAddTask}
             onTaskClick={onTaskClick}
             onRenameColumn={onRenameColumn}

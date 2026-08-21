@@ -6,4 +6,6 @@ export type Column = {
   order: number;
   /** `#rrggbb` 形式のアクセント色。不正・欠落時は省略され、表示層がフォールバックパレットを適用する */
   color?: string;
+  /** WIP 上限（1 以上の整数）。不正・欠落時は省略され、表示層は上限表示・超過判定を行わない */
+  wipLimit?: number;
 };

@@ -25,6 +25,7 @@ fn col(name: &str, order: u32) -> Column {
         name: ColumnName::from_lenient(name),
         order,
         color: None,
+        wip_limit: None,
     }
 }
 
@@ -294,6 +295,7 @@ fn column_in_args_deserializes_from_camel_case_name() {
         name: ColumnName::from_lenient("In Progress"),
         order: 1,
         color: None,
+        wip_limit: None,
     };
     assert_eq!(columns[0], expected);
 }
@@ -888,16 +890,19 @@ fn e2e_columns_reorder_writes_config_json_and_guide_md() {
             name: ColumnName::from_lenient("Done"),
             order: 0,
             color: None,
+            wip_limit: None,
         },
         Column {
             name: ColumnName::from_lenient("Doing"),
             order: 1,
             color: None,
+            wip_limit: None,
         },
         Column {
             name: ColumnName::from_lenient("Todo"),
             order: 2,
             color: None,
+            wip_limit: None,
         },
     ];
     update_columns_impl(
@@ -1726,16 +1731,19 @@ fn e2e_combined_columns_renames_done_column_applied_in_order() {
             name: ColumnName::from_lenient("To Do"),
             order: 0,
             color: None,
+            wip_limit: None,
         },
         Column {
             name: ColumnName::from_lenient("In Review"),
             order: 1,
             color: None,
+            wip_limit: None,
         },
         Column {
             name: ColumnName::from_lenient("Done"),
             order: 2,
             color: None,
+            wip_limit: None,
         },
     ];
 

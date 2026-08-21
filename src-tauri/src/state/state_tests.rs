@@ -47,6 +47,7 @@ fn sample_config() -> Config {
             name: "Todo".into(),
             order: 0,
             color: None,
+            wip_limit: None,
         }],
         card_order: CardOrder::default(),
         done_column: None,

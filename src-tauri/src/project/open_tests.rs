@@ -1392,16 +1392,19 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
                 name: "Z".into(),
                 order: 2,
                 color: None,
+                wip_limit: None,
             },
             Column {
                 name: "A".into(),
                 order: 0,
                 color: None,
+                wip_limit: None,
             },
             Column {
                 name: "M".into(),
                 order: 1,
                 color: None,
+                wip_limit: None,
             },
         ],
         card_order: CardOrder::default(),
@@ -1953,6 +1956,7 @@ fn task_projection_semantics_do_not_depend_on_input_order() {
             name: "Todo".into(),
             order: 0,
             color: None,
+            wip_limit: None,
         }],
         card_order: CardOrder::from_raw_map(BTreeMap::from([(
             "Todo".to_string(),
@@ -3107,17 +3111,20 @@ fn reconcile_keeps_user_column_order_and_card_order() {
             Column {
                 name: "Alpha".into(),
                 order: 2,
-                color: None
+                color: None,
+                wip_limit: None,
             },
             Column {
                 name: "Beta".into(),
                 order: 0,
-                color: None
+                color: None,
+                wip_limit: None,
             },
             Column {
                 name: "Gamma".into(),
                 order: 1,
-                color: None
+                color: None,
+                wip_limit: None,
             },
         ]
     );
@@ -3474,11 +3481,13 @@ fn a_column_deleted_by_update_columns_comes_back_at_the_tail() {
                     name: "Todo".into(),
                     order: 0,
                     color: None,
+                    wip_limit: None,
                 },
                 Column {
                     name: "Done".into(),
                     order: 2,
                     color: None,
+                    wip_limit: None,
                 },
             ]),
             done_column: None,

@@ -36,7 +36,7 @@ project-root/
   "version": 1,
   "columns": [
     { "name": "Todo", "order": 0, "color": "#2563eb" },
-    { "name": "In Progress", "order": 1 },
+    { "name": "In Progress", "order": 1, "wipLimit": 3 },
     { "name": "Done", "order": 2 }
   ],
   "cardOrder": {
@@ -57,6 +57,7 @@ project-root/
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順）。u32 の有限な非負整数として扱い、新規追加時に最大値へ到達している場合は追加を適用しない |
 | columns[].color | `string` | いいえ | なし（フォールバックパレット） | カラムヘッダー上端アクセント帯の `#RRGGBB` 色。不正形式・型不一致・欠落・`null` は lenient に「色なし」へ倒す（後述）。`None` 時は serialize で `color` キーごと省略され、既定値の適用は FE 表示層の責務 |
+| columns[].wipLimit | `number` | いいえ | なし（制限なし） | カラムの WIP 上限（1 以上の整数）。0・負数・小数・型不一致・欠落・`null` は lenient に「制限なし」へ倒す（後述）。`None` 時は serialize で `wipLimit` キーごと省略される。超過してもボード操作は拒否せず、FE がヘッダーで警告表示にのみ使う |
 | cardOrder | `Record<string, string[]>` | はい | `{}` | カラム名をキー、そのカラム内のタスクファイルパスの配列を値とする。配列順がカード表示順 |
 | doneColumn | `string` | いいえ | 最後のカラム名 | 「完了」として扱うカラム名。サブIssue進捗バーの完了判定に使用 |
 
@@ -66,12 +67,20 @@ project-root/
 - カラム名の重複は不可
 - `order` は連番である必要はないが、昇順でソートして表示に使用する。FE の新規カラム追加は現在の最大値 + 1 を採番し、u32 最大値に到達している場合は重複 order を作らず中止する
 - `color` はカラムヘッダー上端のアクセント帯に使う任意の色。設定済みのカラムは reorder / rename を行っても `color` が保持される
+- `wipLimit` はカラムの WIP 上限（任意）。設定済みのカラムは reorder / rename を行っても `wipLimit` が保持される。ステータス未記載タスクの自動追従（reconcile）や config 生成（bootstrap）で追加されるカラムは `wipLimit` なしで作られる
 
 #### color の lenient 解釈
 
 - `color` は `#RRGGBB`（`#` + 16 進 6 桁）のみ妥当とみなし、妥当な場合のみ色として保持する。大文字は小文字へ正規化する（`#ABCDEF` → `#abcdef`）。
 - 不正形式（`"red"` / `"#12345"` 等）・型不一致（数値 `123`）・欠落・`null` はエラーにせず「色なし」へ倒す。payload では `color` を省略し、フォールバックパレット（`order` index ベースのテーマトークン）の適用は FE 表示層の責務とする。
 - `color` 未設定（`None`）のカラムを serialize すると `color` キーは出力されない（`skip_serializing_if`）。これにより既存 `config.json` を reorder / rename で書き戻しても `color` キーは付与されず、差分が生じない。
+
+#### wipLimit の lenient 解釈
+
+- `wipLimit` は 1 以上の整数のみ妥当とみなし、妥当な場合のみ上限として保持する。
+- `0`・負数・小数（`2.5`）・型不一致（`"3"` / `true`）・`u32` 超過・欠落・`null` はエラーにせず「制限なし」へ倒す。
+- `wipLimit` 未設定（`None`）のカラムを serialize すると `wipLimit` キーは出力されない（`skip_serializing_if`）。
+- 上限はあくまで表示上の警告に使う値であり、超過状態でもタスク作成・移動などのボード操作は拒否されない。
 
 ### cardOrder
 
