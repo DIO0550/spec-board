@@ -112,6 +112,45 @@ test("normalizeSavedFilters は criteria の欠損・不正フィールドを既
   ]);
 });
 
+test.each([
+  ["未知の kind", { kind: "oops" }],
+  ["milestone だが name が数値", { kind: "milestone", name: 123 }],
+  ["milestone だが name 欠損", { kind: "milestone" }],
+  ["配列", ["milestone"]],
+  ["null", null],
+])("milestone が union として不正なら「全件」へ倒れる: %s", (_label, milestone) => {
+  const normalized = normalizeSavedFilters([
+    { name: "broken-milestone", criteria: { milestone } },
+  ]);
+  expect(normalized[0]?.criteria.milestone).toEqual(
+    EMPTY_TASK_FILTER.milestone,
+  );
+});
+
+test.each([
+  ["all", { kind: "all" }],
+  ["unassigned", { kind: "unassigned" }],
+  ["milestone + name", { kind: "milestone", name: "v1.0" }],
+])("milestone が許容 union なら保持される: %s", (_label, milestone) => {
+  const normalized = normalizeSavedFilters([
+    { name: "valid-milestone", criteria: { milestone } },
+  ]);
+  expect(normalized[0]?.criteria.milestone).toEqual(milestone);
+});
+
+test("name は trim して復元され、trim 後に同名なら重複排除される", () => {
+  const normalized = normalizeSavedFilters([
+    {
+      name: "  spaced  ",
+      criteria: { ...EMPTY_TASK_FILTER, keyword: "first" },
+    },
+    { name: "spaced", criteria: { ...EMPTY_TASK_FILTER, keyword: "second" } },
+  ]);
+  expect(normalized).toHaveLength(1);
+  expect(normalized[0]?.name).toBe("spaced");
+  expect(normalized[0]?.criteria.keyword).toBe("first");
+});
+
 test("同名エントリは先勝ちで重複排除される", () => {
   const normalized = normalizeSavedFilters([
     { name: "dup", criteria: { ...EMPTY_TASK_FILTER, keyword: "first" } },
