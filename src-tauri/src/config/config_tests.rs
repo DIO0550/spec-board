@@ -456,10 +456,14 @@ fn generate_guide_markdown_has_stable_section_order_and_trailing_newline() {
     let template_pos = guide.find("## テンプレート").unwrap();
     let statuses_pos = guide.find("## 有効なステータス値").unwrap();
     let rules_pos = guide.find("## ルール").unwrap();
+    let task_templates_pos = guide.find("## タスクテンプレート").unwrap();
     assert!(title_pos < template_pos);
     assert!(template_pos < statuses_pos);
     assert!(statuses_pos < rules_pos);
-    assert!(guide.ends_with("- `parent` に指定するパスはプロジェクトルートからの相対パスです\n"));
+    assert!(rules_pos < task_templates_pos);
+    assert!(guide.ends_with(
+        "- `.spec-board/templates/` 配下は上記ルールの例外として自由に追加・編集して構いません\n"
+    ));
 }
 
 // ───────── write_guide_markdown_best_effort ─────────

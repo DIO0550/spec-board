@@ -223,6 +223,36 @@ export type PreviewTaskFilenamePayload =
   | { kind: "invalid"; error: string }
   | { kind: "pending" };
 
+/** タスクテンプレート 1 件分の payload（get_task_templates 応答）。 */
+export type TaskTemplatePayload = {
+  /** テンプレート名（拡張子を除いたファイル名） */
+  name: string;
+  /** タイトル初期値（任意） */
+  title?: string;
+  /** ステータス初期値（任意。存在しないカラム名の可能性があるため適用側で検証する） */
+  status?: string;
+  /** 優先度初期値（任意） */
+  priority?: Priority;
+  /** ラベル初期値 */
+  labels: string[];
+  /** マイルストーン参照キー（任意） */
+  milestone?: string;
+  /** 関連タスク（links）初期値 */
+  links: string[];
+  /** 期限初期値（任意・raw 文字列。検証は適用側の Due.parse に委ねる） */
+  due?: string;
+  /** 下書きフラグ初期値 */
+  draft: boolean;
+  /** 本文初期値（Markdown） */
+  body: string;
+};
+
+/** get_task_templates 戻り値ペイロード。 */
+export type GetTaskTemplatesPayload = {
+  /** テンプレート一覧（テンプレート名昇順） */
+  templates: TaskTemplatePayload[];
+};
+
 /** 子タスクが存在する場合の処理方針。 */
 export type OrphanStrategy = "clear" | "abort";
 

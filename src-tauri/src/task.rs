@@ -25,6 +25,7 @@ pub mod task_file_name;
 pub mod task_file_path;
 pub mod task_index;
 pub mod task_title;
+pub mod templates;
 pub mod update;
 pub mod warning;
 #[cfg(test)]

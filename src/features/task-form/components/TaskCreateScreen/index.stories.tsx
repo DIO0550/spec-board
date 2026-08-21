@@ -45,6 +45,22 @@ const TauriPreviewMockBoundary = ({
           fullPath: "/workspace/payments-service/tasks/new-issue.md",
         };
       }
+      if (command === "get_task_templates") {
+        return {
+          templates: [
+            {
+              name: "bug-report",
+              title: "バグ報告",
+              status: "Todo",
+              priority: "High",
+              labels: ["bug"],
+              links: [],
+              draft: false,
+              body: "## 再現手順\n\n1. ",
+            },
+          ],
+        };
+      }
       if (command === "preview_task_markdown") {
         return "---\ntitle: New issue\nstatus: Todo\n---\n";
       }

@@ -37,6 +37,18 @@ type TaskFormProps = {
   columns: Column[];
   /** ステータスの初期値 */
   initialStatus: string;
+  /** タイトルの初期値（テンプレート適用用。mount 後不変・変更時は key で remount する） */
+  initialTitle?: string;
+  /** 優先度の初期値（テンプレート適用用） */
+  initialPriority?: Priority;
+  /** ラベルの初期値（テンプレート適用用） */
+  initialLabels?: string[];
+  /** 関連タスク（links）の初期値（テンプレート適用用） */
+  initialLinks?: string[];
+  /** 本文の初期値（テンプレート適用用） */
+  initialBody?: string;
+  /** 下書きフラグの初期値（テンプレート適用用） */
+  initialDraft?: boolean;
   /** 期限の初期値。 */
   initialDue?: string;
   /** 親タスクの選択候補。未指定の場合は親タスクフィールド自体を非表示にする */
@@ -105,6 +117,12 @@ type TaskFormProps = {
 export const TaskForm = ({
   columns,
   initialStatus,
+  initialTitle,
+  initialPriority,
+  initialLabels,
+  initialLinks,
+  initialBody,
+  initialDraft,
   initialDue,
   parentCandidates,
   initialParent,
@@ -121,7 +139,7 @@ export const TaskForm = ({
   onPathPreviewChange,
   renderActionsInline = true,
 }: TaskFormProps) => {
-  const labels = useLabelsInput();
+  const labels = useLabelsInput(initialLabels);
   // ラベルマスタ由来のサジェスト候補（name + 色）。loading / error 時は候補なし
   //（その場合は popover 内での新規作成のみ可能）。
   const labelList = useLabelList();
@@ -130,9 +148,13 @@ export const TaskForm = ({
     [labelList],
   );
   // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
-  const links = useLinksInput();
+  const links = useLinksInput(initialLinks);
   const fields = useTaskFormFields({
     initialStatus,
+    initialTitle,
+    initialPriority,
+    initialBody,
+    initialDraft,
     initialDue,
     initialParent,
     parentFieldVisible: parentCandidates !== undefined,

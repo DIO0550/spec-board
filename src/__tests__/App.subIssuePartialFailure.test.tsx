@@ -151,6 +151,7 @@ const makeInvoke =
       get_milestones: () =>
         Promise.resolve({ milestones: [], usageCounts: {} }),
       get_labels: () => Promise.resolve({ labels: [] }),
+      get_task_templates: () => Promise.resolve({ templates: [] }),
       preview_task_filename: () => Promise.resolve({ kind: "pending" }),
       preview_task_markdown: () =>
         Promise.resolve("---\ntitle: Preview\nstatus: Todo\n---\n"),
