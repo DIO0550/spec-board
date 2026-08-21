@@ -51,6 +51,7 @@
 | カラムの追加 | 「+ カラムを追加」ボタンクリック | カラム名入力フィールドを表示。入力確定で新カラムを追加する。最新 state で同名または `order` 上限（u32 最大値）を検出した場合は競合として no-op（`update_columns` IPC を呼ばず、追加失敗トースト）にする | - |
 | カラム名の編集 | カラムヘッダーのステータス名をクリック | インライン編集モードに切り替わり、ステータス名を変更可能。該当するタスクのmdファイルも一括更新 | - |
 | カラムの削除 | カラムヘッダーの右クリックメニュー | 確認ダイアログを表示。カラム内にタスクがある場合は移動先カラムをドロップダウンで選択させ、全タスクの `status` を一括更新してから削除。タスクがない場合はそのまま削除 | - |
+| 完了タスクの一括アーカイブ | 完了カラム（doneColumn）ヘッダーの右クリックメニュー「タスクをまとめてアーカイブ」 | カラム内の全タスクを 1 件ずつ直列に `archive_task` へ送る。同一カラム内で完結する親子は子から順に送って 1 パスで成功させ、カラム外に子が残る親などの失敗は該当タスクだけスキップして続行する。結果は成功 / 失敗件数の toast で要約する。メニュー項目は完了カラムにのみ表示する | - |
 | カラムの並び替え | カラムヘッダーをドラッグして別カラム上にドロップ | ColumnHeader を `draggable=true` のハンドルとし、HTML5 ネイティブ DnD（独自 MIME `application/x-spec-board-column`、payload は `columnName` 文字列）で並び替える。drop 確定時に表示順（`order` 昇順）上で `fromColumnName` / `toColumnName` を index に再解決し、全カラムの `order` を 0-origin 連番に正規化して `update_columns` IPC を呼ぶ。楽観 dispatch（`columns-replaced`）→ 失敗時 rollback dispatch を行い、`aria-live="polite"` のライブリージョンに楽観適用直後 `「{カラム名}」を {移動先 index+1} 番目に移動しました`、`update_columns` 失敗時 `「{カラム名}」の移動を取り消しました` をアナウンスする。同位置ドロップ / 1 カラムのみ / `fromColumnName` が queue 待ち中に削除された場合は副作用ゼロ（IPC / dispatch / アナウンスを一切行わない）。子 rename / メニュー / +追加 ボタン上での dragstart は `data-column-dnd-disabled` 属性 + 最外殻 dragstart で `event.preventDefault()` により中止し、元の click 動作のみが発火する | - |
 
 ## 状態管理

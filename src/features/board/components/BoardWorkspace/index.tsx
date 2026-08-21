@@ -145,6 +145,8 @@ export type BoardWorkspaceProps = {
    * @param destColumn - タスクの移動先カラム名
    */
   onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
+  /** 完了カラムの一括アーカイブ確定時のコールバック（board 表示形態のみで有効） */
+  onArchiveColumnTasks?: (columnName: string) => void;
   /**
    * タスク drop 時のコールバック。Provider 側で sync / async を吸収する。
    */

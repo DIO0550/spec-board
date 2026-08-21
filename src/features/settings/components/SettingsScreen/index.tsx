@@ -8,6 +8,7 @@ import type { UseConfigFilesResult } from "../../hooks/useConfigFiles";
 import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
 import { AppearanceSettingsTab } from "../AppearanceSettingsTab";
+import { ArchiveSettingsTab } from "../ArchiveSettingsTab";
 import { ConfigFileTab } from "../ConfigFileTab";
 import { LabelSettingsTab } from "../LabelSettingsTab";
 import { MilestoneSettingsTab } from "../MilestoneSettingsTab";
@@ -23,6 +24,7 @@ const SETTINGS_TABS: NonEmptySettingsTabs = [
   { id: "labels", label: "ラベル" },
   { id: "milestones", label: "マイルストーン" },
   { id: "statuses", label: "ステータス" },
+  { id: "archive", label: "アーカイブ" },
   { id: "config", label: "設定ファイル" },
   { id: "appearance", label: "外観" },
 ];
@@ -100,6 +102,8 @@ const ActivePanel = ({
       );
     case "appearance":
       return <AppearanceSettingsTab />;
+    case "archive":
+      return <ArchiveSettingsTab />;
     case "statuses":
       return (
         <StatusSettingsTab
@@ -211,6 +215,7 @@ export const SettingsScreen = ({
       { ...SETTINGS_TABS[2], count: columns?.length ?? 0 },
       SETTINGS_TABS[3],
       SETTINGS_TABS[4],
+      SETTINGS_TABS[5],
     ],
     [labels.labels.length, milestones.milestones.length, columns?.length],
   );

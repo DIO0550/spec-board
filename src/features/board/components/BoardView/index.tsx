@@ -56,6 +56,8 @@ type BoardViewProps = {
    * @param destColumn - タスクの移動先カラム名
    */
   onDeleteColumn?: (columnName: string, destColumn: string | undefined) => void;
+  /** 完了カラムの一括アーカイブ確定時のコールバック（Board.Column へ素通し） */
+  onArchiveColumnTasks?: (columnName: string) => void;
 };
 
 /**
@@ -82,6 +84,7 @@ export const BoardView = ({
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
+  onArchiveColumnTasks,
 }: BoardViewProps) => {
   const ordered = [...columns].sort((a, b) => a.order - b.order);
   return (
@@ -109,6 +112,7 @@ export const BoardView = ({
             onTaskClick={onTaskClick}
             onRenameColumn={onRenameColumn}
             onDeleteColumn={onDeleteColumn}
+            onArchiveColumnTasks={onArchiveColumnTasks}
           />
         ))}
         {onAddColumn && <Board.AddColumn onAdd={onAddColumn} />}

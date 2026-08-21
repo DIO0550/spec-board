@@ -43,6 +43,7 @@ import {
   EmptyState,
   HeaderBar,
   useColumnAdd,
+  useColumnArchive,
   useColumnDelete,
   useColumnRename,
   useColumnReorder,
@@ -230,6 +231,7 @@ const AppShell = () => {
     createTask,
     updateTask: updateTaskAction,
     deleteTask: deleteTaskAction,
+    archiveTask: archiveTaskAction,
     moveTask: moveTaskAction,
     addLink: addLinkAction,
     removeLink: removeLinkAction,
@@ -336,6 +338,25 @@ const AppShell = () => {
     onError: onMutationError,
     onPendingTaskChange: setPendingDeleteTask,
     onDeleted: handleTaskDeleted,
+  });
+  // detail 画面からの個別アーカイブ。アーカイブは復元可能なため確認ダイアログは
+  // 挟まず、成功時は対象タスクが消えた detail に留まらないよう board へ戻る。
+  const handleTaskArchive = useCallback(
+    async (task: Task): Promise<void> => {
+      const result = await archiveTaskAction({ filePath: task.filePath });
+      if (!result.ok) {
+        onMutationError(result.error, "タスクのアーカイブに失敗しました");
+        return;
+      }
+      showToast("タスクをアーカイブしました", "success");
+      navigate("board");
+    },
+    [archiveTaskAction, onMutationError, showToast, navigate],
+  );
+  const handleArchiveColumnTasks = useColumnArchive({
+    tasks,
+    archiveTask: archiveTaskAction,
+    showToast,
   });
   const handleTaskDrop = useTaskMove({
     tasks,
@@ -731,6 +752,7 @@ const AppShell = () => {
             onAddColumn={handleAddColumn}
             onRenameColumn={handleRenameColumn}
             onDeleteColumn={handleDeleteColumn}
+            onArchiveColumnTasks={handleArchiveColumnTasks}
             onTaskClick={handleTaskClick}
             onTaskDrop={handleTaskDrop}
             onDensityToggle={toggleDensity}
@@ -867,6 +889,7 @@ const AppShell = () => {
                   onBack={handleBackToBoard}
                   onTaskUpdate={handleTaskUpdate}
                   onDelete={handleTaskDelete}
+                  onArchive={handleTaskArchive}
                   onAddSubIssue={handleAddSubIssue}
                   onSelectTask={handleSelectTask}
                   onAddLink={handleAddLink}

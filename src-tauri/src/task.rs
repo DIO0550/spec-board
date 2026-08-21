@@ -1,4 +1,5 @@
 pub mod add_link;
+pub mod archive;
 pub mod children;
 pub mod create;
 pub mod delete;

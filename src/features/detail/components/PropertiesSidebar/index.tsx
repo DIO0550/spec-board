@@ -32,6 +32,11 @@ export type PropertiesSidebarProps = {
    * 削除ボタン押下 / ConfirmDialog の開閉・確定・キャンセルに利用する。
    */
   deleteFlow: UseDeleteFlowResult;
+  /**
+   * アーカイブボタン押下時のコールバック。未指定ならボタンを表示しない。
+   * アーカイブは復元可能な操作のため、削除と違い確認ダイアログは挟まない。
+   */
+  onArchive?: () => void;
   /** 子タスクがある場合の削除方針（clear / abort）。子なし時は無視される */
   orphanStrategy: OrphanStrategy;
   /**
@@ -90,6 +95,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
     brokenLinks,
     handlers,
     deleteFlow,
+    onArchive,
     orphanStrategy,
     onOrphanStrategyChange,
     onAddSubIssue,
@@ -182,7 +188,17 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
           {task.filePath}
         </p>
       </section>
-      <div className="px-[18px] py-5">
+      <div className="flex flex-col gap-2 px-[18px] py-5">
+        {onArchive && (
+          <button
+            type="button"
+            className="w-full rounded-md border border-border bg-transparent px-4 py-2 text-xs font-medium text-foreground hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-1"
+            data-testid="detail-archive-button"
+            onClick={onArchive}
+          >
+            アーカイブ
+          </button>
+        )}
         <button
           type="button"
           className="w-full rounded-md border border-red-300 bg-transparent px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1"
