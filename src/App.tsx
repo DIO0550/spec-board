@@ -740,6 +740,7 @@ const AppShell = () => {
             // ので付けない）。
             columns={columns}
             projectName={projectName}
+            projectPath={loadedPath ?? undefined}
             tasks={tasks}
             tasksByNormalizedPath={tasksByNormalizedPath}
             doneColumn={doneColumn}
