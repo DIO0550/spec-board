@@ -29,6 +29,32 @@ const stringArrayOf = (value: unknown): string[] =>
     : [];
 
 /**
+ * 未知の入力を {@link TaskFilterCriteria.milestone} に正規化する。
+ *
+ * `kind` が許容 union（all / unassigned / milestone + string name）に一致する場合のみ
+ * 採用し、それ以外（未知 kind / name 型不正 / 非オブジェクト）は「全件」へ倒す。
+ * `matchesMilestone` は all / unassigned 以外をすべて「指定マイルストーン」として
+ * 扱うため、未知 kind をそのまま通すと全件が除外される隠れフィルタになる。
+ * @param value - 永続化から復元した任意の値
+ * @returns 正規化済みの milestone フィルタ
+ */
+const normalizeMilestoneFilter = (
+  value: unknown,
+): TaskFilterCriteria["milestone"] => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return EMPTY_TASK_FILTER.milestone;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.kind === "all" || record.kind === "unassigned") {
+    return { kind: record.kind };
+  }
+  if (record.kind === "milestone" && typeof record.name === "string") {
+    return { kind: "milestone", name: record.name };
+  }
+  return EMPTY_TASK_FILTER.milestone;
+};
+
+/**
  * 未知の入力を TaskFilterCriteria に正規化する。
  * 欠損・型不一致のフィールドは既定値（絞り込みなし）に落とす。
  * @param value - 永続化から復元した任意の値
@@ -39,12 +65,6 @@ const normalizeCriteria = (value: unknown): TaskFilterCriteria => {
     return EMPTY_TASK_FILTER;
   }
   const record = value as Record<string, unknown>;
-  const milestone = record.milestone;
-  const isMilestoneFilter =
-    typeof milestone === "object" &&
-    milestone !== null &&
-    !Array.isArray(milestone) &&
-    typeof (milestone as Record<string, unknown>).kind === "string";
   return {
     keyword:
       typeof record.keyword === "string"
@@ -56,15 +76,15 @@ const normalizeCriteria = (value: unknown): TaskFilterCriteria => {
       return parsed === undefined ? [] : [parsed];
     }),
     statuses: stringArrayOf(record.statuses),
-    milestone: isMilestoneFilter
-      ? (milestone as TaskFilterCriteria["milestone"])
-      : EMPTY_TASK_FILTER.milestone,
+    milestone: normalizeMilestoneFilter(record.milestone),
   };
 };
 
 /**
  * 未知の入力を SavedFilter 配列に正規化する。
- * name が文字列でない・空のエントリは捨てる。同名は先勝ちで重複排除する。
+ * name が文字列でない・trim 後に空のエントリは捨て、trim 済み name で
+ * 先勝ち重複排除する（保存側も trim 済み name を使うため、前後空白付きの
+ * 値が混入しても「見た目が同じ別エントリ」や上書き不能が起きない）。
  * @param value - 永続化から復元した任意の値
  * @returns 正規化済みの保存済みフィルタ一覧
  */
@@ -79,15 +99,16 @@ export const normalizeSavedFilters = (value: unknown): SavedFilter[] => {
       continue;
     }
     const record = item as Record<string, unknown>;
-    if (typeof record.name !== "string" || record.name.trim() === "") {
+    if (typeof record.name !== "string") {
       continue;
     }
-    if (seen.has(record.name)) {
+    const name = record.name.trim();
+    if (name === "" || seen.has(name)) {
       continue;
     }
-    seen.add(record.name);
+    seen.add(name);
     filters.push({
-      name: record.name,
+      name,
       criteria: normalizeCriteria(record.criteria),
     });
   }
