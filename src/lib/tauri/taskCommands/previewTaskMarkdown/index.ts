@@ -11,4 +11,4 @@ import type { PreviewTaskMarkdownParams } from "../types";
 export const previewTaskMarkdown = (
   params: PreviewTaskMarkdownParams,
 ): Promise<Result<string, TauriError>> =>
-  invokeWrapped<string>("preview_task_markdown", params);
+  invokeWrapped<string>("preview_task_markdown", { args: params });

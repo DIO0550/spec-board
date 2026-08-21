@@ -11,4 +11,4 @@ import type { DeleteTaskParams } from "../types";
 export const deleteTask = (
   params: DeleteTaskParams,
 ): Promise<Result<void, TauriError>> =>
-  invokeWrapped<void>("delete_task", params);
+  invokeWrapped<void>("delete_task", { args: params });
