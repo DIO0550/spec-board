@@ -42,7 +42,7 @@ pub use card_order::CardOrder;
 pub use core::{
     build_config_from_statuses, generate_guide_markdown, generate_guide_markdown_for_columns,
     validate_unique_column_names, write_guide_markdown_best_effort, Column, ColumnColor, Config,
-    ReconcileColumnsPlan, RenameTarget, UpdateCardOrderPlanError, UpdateColumnsPlan,
+    ReconcileColumnsPlan, RenameTarget, UpdateCardOrderPlanError, UpdateColumnsPlan, WipLimit,
 };
 pub use load::{load_or_default, load_persisted, ConfigWriter, FsConfigWriter, LoadConfigError};
 pub use migration::{migrate_config, MigrationError};

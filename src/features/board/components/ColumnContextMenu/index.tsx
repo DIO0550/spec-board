@@ -11,6 +11,11 @@ type ColumnContextMenuProps = {
   canDelete: boolean;
   /** 「削除」項目クリック時のコールバック */
   onDelete: () => void;
+  /**
+   * 「タスクをまとめてアーカイブ」項目クリック時のコールバック。
+   * 未指定の場合は項目自体を表示しない（完了カラム以外を想定）。
+   */
+  onArchiveTasks?: () => void;
   /** メニューを閉じるコールバック（外側クリック・Esc・項目選択後） */
   onClose: () => void;
 };
@@ -31,7 +36,7 @@ const getFocusableMenuItems = (menu: HTMLDivElement | null): HTMLElement[] => {
 
 /**
  * カラムヘッダーの右クリック時に表示されるコンテキストメニュー。
- * 現時点では「削除」項目のみを提供する。
+ * 「削除」と、完了カラム向けの「タスクをまとめてアーカイブ」（optional）を提供する。
  * @param props - {@link ColumnContextMenuProps}
  * @returns コンテキストメニュー要素
  */
@@ -40,6 +45,7 @@ export const ColumnContextMenu = ({
   y,
   canDelete,
   onDelete,
+  onArchiveTasks,
   onClose,
 }: ColumnContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -122,6 +128,20 @@ export const ColumnContextMenu = ({
         data-testid="column-context-menu"
         onKeyDown={handleMenuKeyDown}
       >
+        {onArchiveTasks && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onArchiveTasks();
+              onClose();
+            }}
+            className="w-full rounded-md px-2.5 py-2 text-left text-xs font-medium text-foreground hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+            data-testid="column-context-menu-archive"
+          >
+            タスクをまとめてアーカイブ
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"

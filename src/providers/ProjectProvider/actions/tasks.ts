@@ -1,4 +1,6 @@
 import {
+  type ArchiveTaskParams,
+  archiveTask as archiveTaskInvoke,
   type CreateTaskParams,
   createTask as createTaskInvoke,
   type DeleteTaskParams,
@@ -339,6 +341,67 @@ export const updateTaskAction = (
       task: result.value,
     });
     return Result.ok(result.value);
+  });
+};
+
+/**
+ * 現在の active project の task をアーカイブし、成功時に reducer へ反映する。
+ *
+ * board / cache から見た効果は削除と同じ（task-deleted）で、rollback も
+ * `deleteTaskAction` と同じ ProjectData snapshot 復元方式を使う。
+ *
+ * @param deps task action に必要な queue / version / state / dispatch 依存
+ * @param params archive_task に渡すパラメータ
+ * @returns アーカイブ結果または ProjectError
+ */
+export const archiveTaskAction = (
+  deps: TaskActionDeps,
+  params: ArchiveTaskParams,
+): Promise<ResultT<void, ProjectError>> => {
+  const preflight = ensureLoaded<void>(deps);
+  if (!preflight.ok) {
+    return Promise.resolve(preflight);
+  }
+
+  const version = deps.projectVersion.current;
+  return enqueueProjectCommand(deps.projectCommandQueue, async () => {
+    if (
+      !ProjectState.canAcceptDataCommand(deps.getState()) ||
+      !isProjectCurrent(deps.projectVersion, version)
+    ) {
+      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+    }
+
+    // rollback 用 snapshot（削除と同じ理由で ProjectData 単位で採取する）。
+    const snapshot = ProjectState.visibleData(deps.getState());
+    const hasTarget =
+      snapshot !== null &&
+      snapshot.tasks.some((t) => t.filePath === params.filePath);
+
+    if (hasTarget) {
+      deps.dispatch({ type: "task-deleted", filePath: params.filePath });
+    }
+
+    const result = await archiveTaskInvoke(params);
+
+    if (!isProjectCurrent(deps.projectVersion, version)) {
+      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+    }
+
+    if (!result.ok) {
+      if (hasTarget && snapshot !== null) {
+        deps.dispatch({ type: "state-replaced", data: snapshot });
+      }
+      return Result.err(ProjectError.tauri(result.error));
+    }
+
+    // 確定 dispatch は楽観 dispatch を skip した経路のみ。`applyTaskDeleted` は
+    // 対象が既に無くても tasks を作り直すため、二重 dispatch すると参照が毎回
+    // 変わり、bulk アーカイブで不要な再レンダー・projection 再同期を誘発する。
+    if (!hasTarget) {
+      deps.dispatch({ type: "task-deleted", filePath: params.filePath });
+    }
+    return Result.ok(undefined);
   });
 };
 

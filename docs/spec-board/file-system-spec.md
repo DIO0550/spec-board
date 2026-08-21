@@ -15,7 +15,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | `get_tasks` | 現在のプロジェクト内の全タスクと task / milestone の集計 projection を取得 |
 | `create_task` | 新規タスクのmdファイルを作成 |
 | `update_task` | 既存タスクのmdファイルを更新 |
-| `delete_task` | タスクのmdファイルを削除 |
+| `delete_task` | タスクのmdファイルを削除（ディスク上は `.spec-board/trash/` へのソフトデリート。[config-spec.md](./config-spec.md) 「ゴミ箱」節） |
 | `get_columns` | カラム設定を取得（[config-spec.md](./config-spec.md) 参照） |
 | `get_labels` | ラベルマスタ定義を取得（[config-spec.md](./config-spec.md) 「labels.yml スキーマ」参照） |
 | `update_columns` | カラム設定を更新（[config-spec.md](./config-spec.md) 参照） |

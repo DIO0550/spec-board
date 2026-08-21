@@ -27,6 +27,9 @@ spec-board は、mdファイルという開発者にもAIエージェントに�
 - 画面区分（ボード / 設定）の切り替えと、設定画面内のサブナビ（タブ）基盤
 - 設定画面でのラベルレジストリ（登録済みラベル）の CRUD 管理（作成・編集・削除・validation）
 - ボード / リスト / ツリー / カレンダー / Epic ロードマップの表示形態切替
+- タスクテンプレート（`.spec-board/templates/*.md` を作成画面の雛形として選択・適用）
+- タスクアーカイブ（`.spec-board/archive/` への退避・一覧・復元。ボードと走査対象から除外）
+- 削除のソフトデリート（`.spec-board/trash/` へのゴミ箱移動・一覧・復元・完全削除）
 - 設定画面内のステータス編集・設定ファイル viewer（現段階は App 永続化 adapter 未接続の presentational UI）
 
 **対象外**:
@@ -114,3 +117,4 @@ flowchart TD
 | 1.5 | 2026-08-01 | Issue #458: ProjectLoadWarning、partial success、読み込み注意パネルとwarnings通知を追加 | - |
 | 1.6 | 2026-08-01 | Issue #455/#402: TaskDocument codec、TaskPatch、preview_task_markdown の共通 renderer と full Markdown preview を追加 | - |
 | 1.7 | 2026-08-11 | Epic Roadmap view mode、Settings Status / Config 内部タブ、List / Tree / Calendar の拡張挙動を仕様一覧へ反映 | - |
+| 1.8 | 2026-08-19 | Issue #524: カラム WIP 上限（wipLimit）/ Issue #523: タスクテンプレート（.spec-board/templates/）/ Issue #521: タスクアーカイブ（.spec-board/archive/）/ Issue #522: 削除のゴミ箱化（.spec-board/trash/）を追加 | - |

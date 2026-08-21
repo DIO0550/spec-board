@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import type { ProjectLoadWarning } from "@/domains/project-load-warning";
 import type { WatcherDiagnostic } from "@/domains/watcher-diagnostic";
 import type {
+  ArchiveTaskParams,
   CreateTaskParams,
   DeleteTaskParams,
   UpdateTaskParams,
@@ -68,6 +69,14 @@ export type ProjectTaskActionsContextValue = {
    */
   deleteTask: (
     params: DeleteTaskParams,
+  ) => Promise<ResultT<void, ProjectError>>;
+  /**
+   * task を `.spec-board/archive/` へアーカイブし、成功時に state へ反映する。
+   * @param params アーカイブパラメータ
+   * @returns 成否を表す Result または ProjectError
+   */
+  archiveTask: (
+    params: ArchiveTaskParams,
   ) => Promise<ResultT<void, ProjectError>>;
   /**
    * task のカラム間移動 / カラム内並び替えを単一 entry point で受け付ける。

@@ -700,6 +700,7 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::conf
                 name: (*name).into(),
                 order: index as u32,
                 color: None,
+                wip_limit: None,
             })
             .collect(),
         card_order: order,

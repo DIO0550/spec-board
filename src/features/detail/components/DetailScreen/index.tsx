@@ -27,6 +27,11 @@ export type DetailScreenProps = {
     id: string,
     orphanStrategy?: OrphanStrategy,
   ) => void | Promise<void>;
+  /**
+   * アーカイブ確定時のコールバック。未指定ならアーカイブボタンを表示しない。
+   * @param task - アーカイブ対象タスク
+   */
+  onArchive?: (task: Task) => void | Promise<void>;
   onAddSubIssue?: (parentFilePath: string) => void;
   onSelectTask?: (taskId: string) => void;
   onAddLink?: (
@@ -55,6 +60,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
     onBack,
     onTaskUpdate,
     onDelete,
+    onArchive,
     onAddSubIssue,
     onSelectTask,
     onAddLink,
@@ -203,6 +209,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
             onAddLink={onAddLink}
             onRemoveLink={onRemoveLink}
             deleteFlow={{ ...deleteFlow, requestDelete }}
+            onArchive={onArchive ? () => onArchive(task) : undefined}
             orphanStrategy={orphanStrategy}
             onOrphanStrategyChange={setOrphanStrategy}
           />

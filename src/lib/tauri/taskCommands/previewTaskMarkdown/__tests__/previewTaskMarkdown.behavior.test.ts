@@ -27,10 +27,9 @@ test("invoke が preview_task_markdown command と full draft DTO を受け取�
 
   const result = await previewTaskMarkdown(PARAMS);
 
-  expect(vi.mocked(invoke)).toHaveBeenCalledWith(
-    "preview_task_markdown",
-    PARAMS,
-  );
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("preview_task_markdown", {
+    args: PARAMS,
+  });
   expect(result).toEqual({
     ok: true,
     value: "---\ntitle: Task\n---\n本文",

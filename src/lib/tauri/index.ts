@@ -59,27 +59,45 @@ export type {
   UpdateMilestoneArgs,
 } from "./milestoneCommands/types";
 export { updateMilestone } from "./milestoneCommands/updateMilestone";
+export { archiveTask } from "./taskCommands/archiveTask";
 export { createTask } from "./taskCommands/createTask";
 export { deleteTask } from "./taskCommands/deleteTask";
+export { emptyTrash } from "./taskCommands/emptyTrash";
+export { getArchivedTasks } from "./taskCommands/getArchivedTasks";
 export { getTasks } from "./taskCommands/getTasks";
+export { getTaskTemplates } from "./taskCommands/getTaskTemplates";
+export { getTrashedTasks } from "./taskCommands/getTrashedTasks";
 export { moveTask } from "./taskCommands/moveTask";
 export { openProject } from "./taskCommands/openProject";
 export { previewTaskFilename } from "./taskCommands/previewTaskFilename";
 export { previewTaskMarkdown } from "./taskCommands/previewTaskMarkdown";
+export { purgeTrashedTask } from "./taskCommands/purgeTrashedTask";
+export { restoreTrashedTask } from "./taskCommands/restoreTrashedTask";
 export type {
+  ArchivedTaskPayload,
+  ArchiveTaskParams,
   CreateTaskParams,
   DeleteTaskParams,
+  GetArchivedTasksPayload,
   GetTasksPayload,
+  GetTrashedTasksPayload,
   MoveTaskParams,
   OpenProjectParams,
   OpenProjectPayload,
   OrphanStrategy,
   PreviewTaskMarkdownParams,
+  PurgeTrashedTaskParams,
+  RestoreTrashedTaskParams,
+  RestoreTrashedTaskPayload,
   TaskForestPayload,
   TaskProjectionPayload,
   TaskProjectionsPayload,
+  TrashedTaskPayload,
+  UnarchiveTaskParams,
+  UnarchiveTaskPayload,
   UpdateTaskParams,
 } from "./taskCommands/types";
+export { unarchiveTask } from "./taskCommands/unarchiveTask";
 export { updateTask } from "./taskCommands/updateTask";
 
 // tauriError

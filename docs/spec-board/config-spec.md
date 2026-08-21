@@ -20,7 +20,13 @@ project-root/
 │   ├── config.json.bak.tmp.{pid}.{nanos}.{counter}  # backup 書き出し中の一時ファイル（rename で `.bak` に昇格／load 冒頭に閾値超過の orphan は cleanup）
 │   ├── labels.yml                           # ラベルマスタ定義（説明・グループ・色などのメタ情報。後述「labels.yml スキーマ」節）
 │   ├── milestones.yml                       # マイルストーンマスタ定義（表示名・期日・並び順・状態などのメタ情報。後述「milestones.yml スキーマ」節）
-│   └── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
+│   ├── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
+│   ├── templates/                           # タスクテンプレート置き場（任意。後述「タスクテンプレート」節）
+│   │   └── *.md
+│   ├── archive/                             # アーカイブ済みタスク置き場（後述「タスクアーカイブ」節）
+│   │   └── <元の相対パス>.md
+│   └── trash/                               # 削除済みタスクのゴミ箱（後述「ゴミ箱」節）
+│       └── <元の相対パス>.md
 └── tasks/
     └── ...
 ```
@@ -36,7 +42,7 @@ project-root/
   "version": 1,
   "columns": [
     { "name": "Todo", "order": 0, "color": "#2563eb" },
-    { "name": "In Progress", "order": 1 },
+    { "name": "In Progress", "order": 1, "wipLimit": 3 },
     { "name": "Done", "order": 2 }
   ],
   "cardOrder": {
@@ -57,6 +63,7 @@ project-root/
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順）。u32 の有限な非負整数として扱い、新規追加時に最大値へ到達している場合は追加を適用しない |
 | columns[].color | `string` | いいえ | なし（フォールバックパレット） | カラムヘッダー上端アクセント帯の `#RRGGBB` 色。不正形式・型不一致・欠落・`null` は lenient に「色なし」へ倒す（後述）。`None` 時は serialize で `color` キーごと省略され、既定値の適用は FE 表示層の責務 |
+| columns[].wipLimit | `number` | いいえ | なし（制限なし） | カラムの WIP 上限（1 以上の整数）。0・負数・小数・型不一致・欠落・`null` は lenient に「制限なし」へ倒す（後述）。`None` 時は serialize で `wipLimit` キーごと省略される。超過してもボード操作は拒否せず、FE がヘッダーで警告表示にのみ使う |
 | cardOrder | `Record<string, string[]>` | はい | `{}` | カラム名をキー、そのカラム内のタスクファイルパスの配列を値とする。配列順がカード表示順 |
 | doneColumn | `string` | いいえ | 最後のカラム名 | 「完了」として扱うカラム名。サブIssue進捗バーの完了判定に使用 |
 
@@ -66,12 +73,20 @@ project-root/
 - カラム名の重複は不可
 - `order` は連番である必要はないが、昇順でソートして表示に使用する。FE の新規カラム追加は現在の最大値 + 1 を採番し、u32 最大値に到達している場合は重複 order を作らず中止する
 - `color` はカラムヘッダー上端のアクセント帯に使う任意の色。設定済みのカラムは reorder / rename を行っても `color` が保持される
+- `wipLimit` はカラムの WIP 上限（任意）。設定済みのカラムは reorder / rename を行っても `wipLimit` が保持される。ステータス未記載タスクの自動追従（reconcile）や config 生成（bootstrap）で追加されるカラムは `wipLimit` なしで作られる
 
 #### color の lenient 解釈
 
 - `color` は `#RRGGBB`（`#` + 16 進 6 桁）のみ妥当とみなし、妥当な場合のみ色として保持する。大文字は小文字へ正規化する（`#ABCDEF` → `#abcdef`）。
 - 不正形式（`"red"` / `"#12345"` 等）・型不一致（数値 `123`）・欠落・`null` はエラーにせず「色なし」へ倒す。payload では `color` を省略し、フォールバックパレット（`order` index ベースのテーマトークン）の適用は FE 表示層の責務とする。
 - `color` 未設定（`None`）のカラムを serialize すると `color` キーは出力されない（`skip_serializing_if`）。これにより既存 `config.json` を reorder / rename で書き戻しても `color` キーは付与されず、差分が生じない。
+
+#### wipLimit の lenient 解釈
+
+- `wipLimit` は 1 以上の整数のみ妥当とみなし、妥当な場合のみ上限として保持する。
+- `0`・負数・小数（`2.5`）・型不一致（`"3"` / `true`）・`u32` 超過・欠落・`null` はエラーにせず「制限なし」へ倒す。
+- `wipLimit` 未設定（`None`）のカラムを serialize すると `wipLimit` キーは出力されない（`skip_serializing_if`）。
+- 上限はあくまで表示上の警告に使う値であり、超過状態でもタスク作成・移動などのボード操作は拒否されない。
 
 ### cardOrder
 
@@ -337,6 +352,79 @@ lenient には **2 つの軸**がある（labels.yml が「lenient なのは col
 - `name` / `title` / `description` / `state` / `due` / `updated` は文字列型を strict に検証する（型不一致は load エラー）。`order` のみ数値型 + lenient フォールバック。
 - マスタの定義順は payload でそのまま保持する（並べ替えない）。`order` による並びは表示層の責務とする。
 
+## タスクテンプレート（.spec-board/templates/）
+
+`.spec-board/templates/*.md` にタスクの雛形を置くと、タスク作成画面のテンプレートとして選択できる。雛形は通常のタスクと同じフロントマター形式（[task-format-spec.md](./task-format-spec.md)）で書き、専用の記法は導入しない。人間と AI エージェントが同じ置き場・同じ形式で雛形を共有することを目的とする。
+
+### 配置・読み込み
+
+- `templates/` ディレクトリは任意。存在しない場合は「テンプレートなし」として正常に扱う（エラーにしない）
+- 直下の `*.md` のみをテンプレートとして扱う。`.md` 以外の拡張子・サブディレクトリ・symlink は無視する
+- テンプレート名は拡張子を除いたファイル名。一覧はテンプレート名の昇順で返す
+- `templates/` 配下のファイルはタスクとしては扱われない（task scanner の走査対象は `tasks/` 配下のみで、`.spec-board/` は対象外）
+
+### `get_task_templates` コマンド
+
+| コマンド | 引数 | 戻り値 |
+|:--------|:-----|:-------|
+| `get_task_templates` | なし | `{ templates: TaskTemplate[] }` |
+
+`TaskTemplate` は `{ name, title?, status?, priority?, labels, milestone?, links, due?, draft, body }`（camelCase）。フィールドの解釈はタスクのフロントマターと同じ lenient 契約に従う（不正な `priority` は未指定、単一文字列の `labels` は 1 要素配列、`draft` は `true` のみ真、など）。
+
+- プロジェクト未オープン時は空一覧を返す
+- frontmatter の YAML が壊れているテンプレートは一覧から除外する（作成フローを止めない）
+- frontmatter ブロックを持たないテンプレートは全文を `body` として返す
+- `parent` はテンプレートから返さない（親は作成画面の文脈＝サブ Issue 経路が決める）
+
+作成画面での適用挙動（選択 UI・上書き確認・status フォールバック）は [task-card-spec.md](./task-card-spec.md) を参照。
+
+## タスクアーカイブ（.spec-board/archive/）
+
+完了したタスクをファイルとして保持したままボード・走査対象から外すため、タスク md を `.spec-board/archive/` 配下へ移動する。移動先はアーカイブ時の project_root 相対パスをそのままミラーする（例: `tasks/foo.md` → `.spec-board/archive/tasks/foo.md`）。`.spec-board/` 配下は task scanner / watcher の走査対象外のため、移動した時点で再オープンしてもタスクとして読み込まれない。
+
+### コマンド
+
+| コマンド | 引数 | 戻り値 |
+|:--------|:-----|:-------|
+| `archive_task` | `{ filePath }` | なし |
+| `get_archived_tasks` | なし | `{ tasks: { filePath, title, status? }[] }`（アーカイブ内相対パス昇順） |
+| `unarchive_task` | `{ filePath }`（アーカイブ内相対パス） | `{ restoredFilePath }` |
+
+### archive_task
+
+- delete_task と同じ writer lease + resident commit 経路を通り、resident cache から除去してボードへ即時反映する（FE の cache 反映も削除と同じ task-deleted 意味論）
+- **子タスクを持つタスクはアーカイブできない**（delete_task の abort 契約と同型。先に子を処理する）
+- 移動先に同名ファイルが既にある場合はファイル名へ `-2` からの連番を付けて回避する
+- 自前 write として write-ignore を登録するため、元パスの削除 event は watcher で抑止される
+
+### get_archived_tasks
+
+- プロジェクト未オープン・`archive/` 不在は空一覧
+- frontmatter が読めないファイルも一覧に載せる（title はファイル名 stem へフォールバック、status は省略）。アーカイブは復元のための一覧であり、壊れた md を隠すと復元手段ごと失われるため除外しない
+
+### unarchive_task
+
+- アーカイブ内相対パスの位置（= 元の場所）へファイルを書き戻す。復元先に同名ファイルがある場合は `-2` からの連番で回避し、実際の復元先パスを返す
+- **resident cache は変更せず、write-ignore も登録しない**。復元ファイルは watcher が通常の外部作成として拾い、再オープンと同じ経路でボードへ反映される（反映は watcher の集約分だけ遅延する）
+
+## ゴミ箱（.spec-board/trash/）
+
+`delete_task` はディスク上ではタスク md を即時削除せず、`.spec-board/trash/` へ移動する（ソフトデリート）。移動先は削除時の project_root 相対パスをそのままミラーする。resident cache / board からは従来どおり即時に消え、`.spec-board/` 配下は走査対象外のため再オープンしてもタスクとして読み込まれない。移動先に同名ファイルがある場合は `-2` からの連番で回避する。
+
+### コマンド
+
+| コマンド | 引数 | 戻り値 |
+|:--------|:-----|:-------|
+| `get_trashed_tasks` | なし | `{ tasks: { filePath, title, status?, deletedAt? }[] }`（ゴミ箱内相対パス昇順） |
+| `restore_trashed_task` | `{ filePath }`（ゴミ箱内相対パス） | `{ restoredFilePath }` |
+| `purge_trashed_task` | `{ filePath }` | なし（1 件を完全削除。復元不可） |
+| `empty_trash` | なし | なし（ゴミ箱ディレクトリごと完全削除。不在時は no-op） |
+
+- `deletedAt` はゴミ箱内ファイルの更新時刻（RFC 3339 / UTC）から導出する。ゴミ箱への移動は read → 排他 write の合成なので、書き込んだ時刻＝削除時刻になる。取得できない場合はキーを省略する
+- `restore_trashed_task` は unarchive_task と同じく resident cache を変更せず、復元ファイルの取り込みを watcher の外部作成検知に委ねる（反映は watcher の集約分だけ遅延する）。復元先に同名ファイルがある場合は `-2` からの連番で回避し、実際の復元先パスを返す
+- frontmatter が読めないファイルも一覧に載せる（title はファイル名 stem へフォールバック）。復元手段を失わせないため除外しない
+- 保持期間による自動掃除は行わない（明示的な `purge_trashed_task` / `empty_trash` のみ）
+
 ## 設定の初期化
 
 ### 初回オープン時の振る舞い
@@ -477,6 +565,12 @@ links:（任意）
 - ファイルは `.md` 拡張子で作成してください
 - `.spec-board/` ディレクトリ内のファイルは編集しないでください
 - `parent` に指定するパスはプロジェクトルートからの相対パスです
+
+## タスクテンプレート
+
+- `.spec-board/templates/*.md` にタスクの雛形を置くと、タスク作成画面のテンプレートとして選択できます
+- 雛形は通常のタスクと同じフロントマター形式で書きます（`templates/` 配下のファイルはタスクとしては扱われません）
+- `.spec-board/templates/` 配下は上記ルールの例外として自由に追加・編集して構いません
 ```
 
 上記は default config の生成例である。実際の GUIDE.md 生成では、テンプレート内の `status:` 例は `columns[].order` 昇順で最初の `columns[].name` を raw 出力する。
@@ -485,7 +579,7 @@ links:（任意）
 
 保存対象の `config.json` では `columns: []` は load 時に拒否されるが、Markdown 文字列生成用の純粋関数は `columns: []` 入力でも panic せず文字列を返す。この場合、テンプレート内の `status:` 例は `Todo` にフォールバックし、「有効なステータス値」見出し直下には bullet を出力せず空行を 1 つ置く。
 
-生成される Markdown 文字列は、タイトル、テンプレート、有効なステータス値、ルールの順序で決定論的に構成され、末尾改行を含む。
+生成される Markdown 文字列は、タイトル、テンプレート、有効なステータス値、ルール、タスクテンプレートの順序で決定論的に構成され、末尾改行を含む。
 
 ### 更新タイミング
 

@@ -24,6 +24,13 @@ type ColumnHeaderProps = {
   name: string;
   /** カラム内のタスク件数 */
   taskCount: number;
+  /**
+   * フィルタ非適用のカラム内総タスク件数（WIP 超過判定用）。
+   * 未指定時は taskCount で判定する。バッジの表示件数は常に taskCount。
+   */
+  totalTaskCount?: number;
+  /** カラムの WIP 上限（1 以上）。未指定なら上限表示・超過判定を行わない。 */
+  wipLimit?: number;
   /** ヘッダー上端アクセント帯の色（`#rrggbb`）。未指定・不正時はフォールバックパレット。 */
   color?: string;
   /**
@@ -74,6 +81,8 @@ type ColumnHeaderProps = {
 export const ColumnHeader = ({
   name,
   taskCount,
+  totalTaskCount,
+  wipLimit,
   color,
   order,
   onAddClick,
@@ -134,6 +143,10 @@ export const ColumnHeader = ({
   };
 
   const accentColor = ColumnColor.resolveAccent(color, order);
+  // 超過判定はフィルタ非適用の総件数で行う。表示中の絞り込み件数で判定すると、
+  // フィルタを掛けただけで警告が消えて WIP 制限の意味がなくなる。
+  const wipCount = totalTaskCount ?? taskCount;
+  const wipExceeded = wipLimit !== undefined && wipCount > wipLimit;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: onContextMenu / draggable are secondary triggers for mouse users; rename / menu buttons inside provide the keyboard-accessible path
@@ -182,8 +195,21 @@ export const ColumnHeader = ({
             {name}
           </h2>
         )}
-        <span className="rounded-full border border-border bg-surface px-1.5 py-0.5 font-mono text-[10.5px] leading-none text-muted">
-          {taskCount}
+        <span
+          data-testid="column-task-count"
+          data-wip-exceeded={wipExceeded ? "true" : undefined}
+          title={
+            wipExceeded
+              ? `WIP上限超過（全${wipCount}件 / 上限${wipLimit}件）`
+              : undefined
+          }
+          className={
+            wipExceeded
+              ? "rounded-full border border-danger bg-danger-soft px-1.5 py-0.5 font-mono text-[10.5px] leading-none text-danger"
+              : "rounded-full border border-border bg-surface px-1.5 py-0.5 font-mono text-[10.5px] leading-none text-muted"
+          }
+        >
+          {wipLimit === undefined ? taskCount : `${taskCount}/${wipLimit}`}
         </span>
       </div>
       <div className="flex items-center gap-1">

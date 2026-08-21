@@ -4,6 +4,12 @@ type StatusColumnTableProps = {
   columns: readonly StatusColumn[];
   doneColumn: string;
   onNameChange: (id: string, name: string) => void;
+  /**
+   * WIP 上限入力の変更通知。空・数値でない入力は undefined として通知する。
+   * @param id - 対象カラム ID
+   * @param wipLimit - 入力された上限（未入力は undefined）
+   */
+  onWipLimitChange: (id: string, wipLimit: number | undefined) => void;
   onMove: (id: string, direction: -1 | 1) => void;
   onDoneChange: (name: string) => void;
   onDelete: (id: string) => void;
@@ -18,6 +24,7 @@ export const StatusColumnTable = ({
   columns,
   doneColumn,
   onNameChange,
+  onWipLimitChange,
   onMove,
   onDoneChange,
   onDelete,
@@ -29,14 +36,15 @@ export const StatusColumnTable = ({
         ドラッグ、または ↑ ↓ で並び替え
       </span>
     </div>
-    <div className="grid grid-cols-[26px_30px_minmax(160px,1fr)_96px_132px_84px] items-center gap-3 border-b border-border bg-surface-muted px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+    <div className="grid grid-cols-[26px_30px_minmax(160px,1fr)_96px_88px_132px_84px] items-center gap-3 border-b border-border bg-surface-muted px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
       <span /> <span>順</span> <span>カラム名</span> <span>タスク</span>
-      <span>完了カラム</span> <span className="sr-only">操作</span>
+      <span>WIP上限</span> <span>完了カラム</span>{" "}
+      <span className="sr-only">操作</span>
     </div>
     {columns.map((column, index) => (
       <div
         key={column.id}
-        className="grid grid-cols-[26px_30px_minmax(160px,1fr)_96px_132px_84px] items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0 hover:bg-surface-muted"
+        className="grid grid-cols-[26px_30px_minmax(160px,1fr)_96px_88px_132px_84px] items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0 hover:bg-surface-muted"
       >
         <span
           aria-hidden="true"
@@ -66,6 +74,24 @@ export const StatusColumnTable = ({
         >
           {column.taskCount} 件
         </span>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={column.wipLimit ?? ""}
+          aria-label={`${column.name} の WIP 上限`}
+          placeholder="—"
+          onChange={(event) => {
+            // parseInt だと 2.5 が 2 に化けて入力と state がズレる。数値のまま
+            // 保持し、非整数を「制限なし」へ倒すのは保存時の正規化に任せる。
+            const parsed = event.target.valueAsNumber;
+            onWipLimitChange(
+              column.id,
+              Number.isNaN(parsed) ? undefined : parsed,
+            );
+          }}
+          className="h-7 w-full rounded border border-transparent bg-transparent px-2 font-mono text-xs hover:border-border focus:border-accent focus:bg-surface focus:outline-none"
+        />
         <label className="flex items-center gap-2 text-[11.5px] text-muted">
           <input
             type="radio"

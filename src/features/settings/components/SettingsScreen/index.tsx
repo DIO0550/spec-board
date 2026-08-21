@@ -8,6 +8,7 @@ import type { UseConfigFilesResult } from "../../hooks/useConfigFiles";
 import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
 import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
 import { AppearanceSettingsTab } from "../AppearanceSettingsTab";
+import { ArchiveSettingsTab } from "../ArchiveSettingsTab";
 import { ConfigFileTab } from "../ConfigFileTab";
 import { LabelSettingsTab } from "../LabelSettingsTab";
 import { MilestoneSettingsTab } from "../MilestoneSettingsTab";
@@ -17,12 +18,15 @@ import {
   type StatusSettingsValue,
 } from "../StatusSettingsTab";
 import { SubNav, subNavPanelId, subNavTabId } from "../SubNav";
+import { TrashSettingsTab } from "../TrashSettingsTab";
 
 /** 設定画面に登録するタブ一覧。 */
 const SETTINGS_TABS: NonEmptySettingsTabs = [
   { id: "labels", label: "ラベル" },
   { id: "milestones", label: "マイルストーン" },
   { id: "statuses", label: "ステータス" },
+  { id: "archive", label: "アーカイブ" },
+  { id: "trash", label: "ゴミ箱" },
   { id: "config", label: "設定ファイル" },
   { id: "appearance", label: "外観" },
 ];
@@ -100,6 +104,10 @@ const ActivePanel = ({
       );
     case "appearance":
       return <AppearanceSettingsTab />;
+    case "archive":
+      return <ArchiveSettingsTab />;
+    case "trash":
+      return <TrashSettingsTab />;
     case "statuses":
       return (
         <StatusSettingsTab
@@ -211,6 +219,8 @@ export const SettingsScreen = ({
       { ...SETTINGS_TABS[2], count: columns?.length ?? 0 },
       SETTINGS_TABS[3],
       SETTINGS_TABS[4],
+      SETTINGS_TABS[5],
+      SETTINGS_TABS[6],
     ],
     [labels.labels.length, milestones.milestones.length, columns?.length],
   );
@@ -228,6 +238,7 @@ export const SettingsScreen = ({
               taskCount: tasks.filter((task) => task.status === column.name)
                 .length,
               color: column.color ?? "oklch(0.62 0.12 235)",
+              wipLimit: column.wipLimit,
             })),
     [columns, tasks],
   );

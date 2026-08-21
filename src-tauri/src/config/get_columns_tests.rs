@@ -8,6 +8,7 @@ fn column(name: &str, order: u32) -> Column {
         name: ColumnName::from(name),
         order,
         color: None,
+        wip_limit: None,
     }
 }
 

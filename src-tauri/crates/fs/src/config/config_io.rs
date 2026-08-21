@@ -29,7 +29,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
 
-const SPEC_BOARD_DIR: &str = ".spec-board";
+/// プロジェクト直下の設定ディレクトリ名。`template_io` と共有する。
+pub(super) const SPEC_BOARD_DIR: &str = ".spec-board";
 const CONFIG_FILE_NAME: &str = "config.json";
 const GUIDE_MARKDOWN_FILE_NAME: &str = "GUIDE.md";
 /// `.spec-board/labels.yml`（ラベルマスタ定義）のファイル名。

@@ -223,6 +223,106 @@ export type PreviewTaskFilenamePayload =
   | { kind: "invalid"; error: string }
   | { kind: "pending" };
 
+/** archive_task 引数。 */
+export type ArchiveTaskParams = {
+  /** アーカイブ対象タスクのファイルパス */
+  filePath: string;
+};
+
+/** unarchive_task 引数。 */
+export type UnarchiveTaskParams = {
+  /** 復元対象のアーカイブ内相対パス（アーカイブ時の元パス） */
+  filePath: string;
+};
+
+/** アーカイブ済みタスク 1 件分の payload。 */
+export type ArchivedTaskPayload = {
+  /** アーカイブ内相対パス（= アーカイブ時の元 project_root 相対パス） */
+  filePath: string;
+  /** frontmatter title（読めない場合はファイル名 stem） */
+  title: string;
+  /** frontmatter status（読めない場合は省略） */
+  status?: string;
+};
+
+/** get_archived_tasks 戻り値ペイロード。 */
+export type GetArchivedTasksPayload = {
+  /** アーカイブ済みタスク一覧（パス昇順） */
+  tasks: ArchivedTaskPayload[];
+};
+
+/** unarchive_task 戻り値ペイロード。 */
+export type UnarchiveTaskPayload = {
+  /** 実際に復元された project_root 相対パス（衝突時は連番付き） */
+  restoredFilePath: string;
+};
+
+/** restore_trashed_task 引数。 */
+export type RestoreTrashedTaskParams = {
+  /** 復元対象のゴミ箱内相対パス（削除時の元パス） */
+  filePath: string;
+};
+
+/** purge_trashed_task 引数。 */
+export type PurgeTrashedTaskParams = {
+  /** 完全削除対象のゴミ箱内相対パス */
+  filePath: string;
+};
+
+/** ゴミ箱内タスク 1 件分の payload。 */
+export type TrashedTaskPayload = {
+  /** ゴミ箱内相対パス（= 削除時の元 project_root 相対パス） */
+  filePath: string;
+  /** frontmatter title（読めない場合はファイル名 stem） */
+  title: string;
+  /** frontmatter status（読めない場合は省略） */
+  status?: string;
+  /** 削除日時（RFC 3339 / UTC。取得できない場合は省略） */
+  deletedAt?: string;
+};
+
+/** get_trashed_tasks 戻り値ペイロード。 */
+export type GetTrashedTasksPayload = {
+  /** ゴミ箱内タスク一覧（パス昇順） */
+  tasks: TrashedTaskPayload[];
+};
+
+/** restore_trashed_task 戻り値ペイロード。 */
+export type RestoreTrashedTaskPayload = {
+  /** 実際に復元された project_root 相対パス（衝突時は連番付き） */
+  restoredFilePath: string;
+};
+
+/** タスクテンプレート 1 件分の payload（get_task_templates 応答）。 */
+export type TaskTemplatePayload = {
+  /** テンプレート名（拡張子を除いたファイル名） */
+  name: string;
+  /** タイトル初期値（任意） */
+  title?: string;
+  /** ステータス初期値（任意。存在しないカラム名の可能性があるため適用側で検証する） */
+  status?: string;
+  /** 優先度初期値（任意） */
+  priority?: Priority;
+  /** ラベル初期値 */
+  labels: string[];
+  /** マイルストーン参照キー（任意） */
+  milestone?: string;
+  /** 関連タスク（links）初期値 */
+  links: string[];
+  /** 期限初期値（任意・raw 文字列。検証は適用側の Due.parse に委ねる） */
+  due?: string;
+  /** 下書きフラグ初期値 */
+  draft: boolean;
+  /** 本文初期値（Markdown） */
+  body: string;
+};
+
+/** get_task_templates 戻り値ペイロード。 */
+export type GetTaskTemplatesPayload = {
+  /** テンプレート一覧（テンプレート名昇順） */
+  templates: TaskTemplatePayload[];
+};
+
 /** 子タスクが存在する場合の処理方針。 */
 export type OrphanStrategy = "clear" | "abort";
 
