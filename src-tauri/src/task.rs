@@ -18,6 +18,7 @@ pub mod preview_filename;
 pub mod preview_markdown;
 pub mod projection;
 pub mod rebuild;
+pub(crate) mod relocate;
 pub mod remove_link;
 pub mod reverse_links;
 pub(crate) mod session_write;
@@ -27,6 +28,7 @@ pub mod task_file_path;
 pub mod task_index;
 pub mod task_title;
 pub mod templates;
+pub mod trash;
 pub mod update;
 pub mod warning;
 #[cfg(test)]

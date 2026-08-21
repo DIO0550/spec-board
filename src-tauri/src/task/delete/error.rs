@@ -29,6 +29,9 @@ pub enum DeleteTaskError {
     FileNotFound(PathBuf),
     #[error("unsupported orphan strategy: {0}")]
     UnsupportedOrphanStrategy(String),
+    /// ゴミ箱への退避先の空き名を確保できなかった（連番リトライ上限到達）。
+    #[error("ゴミ箱への退避先を確保できませんでした: {}", .0.display())]
+    TrashDestinationUnavailable(PathBuf),
 }
 
 /// IPC command の全エラー経路。

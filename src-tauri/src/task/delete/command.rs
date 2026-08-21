@@ -7,8 +7,10 @@ use super::error::{DeleteTaskCommandError, DeleteTaskError};
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
+use crate::task::relocate::{move_md_file, RelocateError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_index::TaskIndex;
+use crate::task::trash::command::trash_destination;
 
 /// `delete_task` Tauri command 薄層。
 ///
@@ -19,6 +21,10 @@ pub fn delete_task(state: State<'_, Arc<AppState>>, args: DeleteTaskArgs) -> Res
 }
 
 /// `delete_task` の effect 層本体（テスト境界）。
+///
+/// 「削除」はディスク上では `.spec-board/trash/` への移動（ソフトデリート）で、
+/// resident cache / board からは従来どおり即時に消える。復元系のコマンドは
+/// `task::trash` を参照。
 pub(crate) fn delete_task_impl(
     state: &AppState,
     io: &dyn TaskIo,
@@ -42,13 +48,20 @@ pub(crate) fn delete_task_impl(
         let registered_paths = vec![abs.clone()];
         resources.write_ignore().register(&abs)?;
 
-        if let Err(error) = io.remove(&abs) {
+        // 削除は即時の remove ではなく `.spec-board/trash/` へのソフトデリート。
+        // 誤操作からの復旧手段（設定 > ゴミ箱 の復元）を残すため、md をミラー
+        // 相対パスで退避する。`.spec-board/` 配下は scanner / watcher の対象外
+        // なので、ボード・再オープンから見える挙動は従来の削除と同じ。
+        let destination = trash_destination(project_root.as_path(), &rel_path);
+        if let Err(error) = move_md_file(io, &abs, &destination) {
             cleanup_registered_write_ignores(resources.write_ignore(), &registered_paths);
-            let crate::task::io::TaskIoError::Io(ref source) = error;
-            if source.kind() == std::io::ErrorKind::NotFound {
-                return Err(DeleteTaskError::FileNotFound(abs).into());
-            }
-            return Err(error.into());
+            return Err(match error {
+                RelocateError::SourceNotFound => DeleteTaskError::FileNotFound(abs).into(),
+                RelocateError::DestinationUnavailable => {
+                    DeleteTaskError::TrashDestinationUnavailable(destination).into()
+                }
+                RelocateError::Io(io_error) => io_error.into(),
+            });
         }
 
         commit_or_resync_under_lease(

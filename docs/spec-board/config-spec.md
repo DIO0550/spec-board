@@ -23,7 +23,9 @@ project-root/
 │   ├── GUIDE.md                             # AIエージェント向けフォーマットガイド（自動生成）
 │   ├── templates/                           # タスクテンプレート置き場（任意。後述「タスクテンプレート」節）
 │   │   └── *.md
-│   └── archive/                             # アーカイブ済みタスク置き場（後述「タスクアーカイブ」節）
+│   ├── archive/                             # アーカイブ済みタスク置き場（後述「タスクアーカイブ」節）
+│   │   └── <元の相対パス>.md
+│   └── trash/                               # 削除済みタスクのゴミ箱（後述「ゴミ箱」節）
 │       └── <元の相対パス>.md
 └── tasks/
     └── ...
@@ -404,6 +406,24 @@ lenient には **2 つの軸**がある（labels.yml が「lenient なのは col
 
 - アーカイブ内相対パスの位置（= 元の場所）へファイルを書き戻す。復元先に同名ファイルがある場合は `-2` からの連番で回避し、実際の復元先パスを返す
 - **resident cache は変更せず、write-ignore も登録しない**。復元ファイルは watcher が通常の外部作成として拾い、再オープンと同じ経路でボードへ反映される（反映は watcher の集約分だけ遅延する）
+
+## ゴミ箱（.spec-board/trash/）
+
+`delete_task` はディスク上ではタスク md を即時削除せず、`.spec-board/trash/` へ移動する（ソフトデリート）。移動先は削除時の project_root 相対パスをそのままミラーする。resident cache / board からは従来どおり即時に消え、`.spec-board/` 配下は走査対象外のため再オープンしてもタスクとして読み込まれない。移動先に同名ファイルがある場合は `-2` からの連番で回避する。
+
+### コマンド
+
+| コマンド | 引数 | 戻り値 |
+|:--------|:-----|:-------|
+| `get_trashed_tasks` | なし | `{ tasks: { filePath, title, status?, deletedAt? }[] }`（ゴミ箱内相対パス昇順） |
+| `restore_trashed_task` | `{ filePath }`（ゴミ箱内相対パス） | `{ restoredFilePath }` |
+| `purge_trashed_task` | `{ filePath }` | なし（1 件を完全削除。復元不可） |
+| `empty_trash` | なし | なし（ゴミ箱ディレクトリごと完全削除。不在時は no-op） |
+
+- `deletedAt` はゴミ箱内ファイルの更新時刻（RFC 3339 / UTC）から導出する。ゴミ箱への移動は read → 排他 write の合成なので、書き込んだ時刻＝削除時刻になる。取得できない場合はキーを省略する
+- `restore_trashed_task` は unarchive_task と同じく resident cache を変更せず、復元ファイルの取り込みを watcher の外部作成検知に委ねる（反映は watcher の集約分だけ遅延する）。復元先に同名ファイルがある場合は `-2` からの連番で回避し、実際の復元先パスを返す
+- frontmatter が読めないファイルも一覧に載せる（title はファイル名 stem へフォールバック）。復元手段を失わせないため除外しない
+- 保持期間による自動掃除は行わない（明示的な `purge_trashed_task` / `empty_trash` のみ）
 
 ## 設定の初期化
 
