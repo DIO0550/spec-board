@@ -1,11 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Task } from "@/types/task";
-import { createTaskSearchIndex, searchTaskIndex } from "../../lib/searchTasks";
+import {
+  createTaskSearchIndex,
+  searchTaskIndex,
+  type TaskSearchMatchField,
+} from "../../lib/searchTasks";
 
 type CommandActionId = "new-task" | "settings" | "milestones" | "guide";
 type PaletteEntry =
-  | { kind: "task"; task: Task }
+  | {
+      kind: "task";
+      task: Task;
+      /** 一致フィールド（空クエリの全件表示では undefined） */
+      matchField?: TaskSearchMatchField;
+      /** 本文一致時の一致箇所抜粋 */
+      excerpt?: string;
+    }
   | { kind: "action"; id: CommandActionId; label: string; hint: string };
+
+/** 一致フィールドの表示ラベル（タイトル一致は自明のためバッジを出さない）。 */
+const MATCH_FIELD_LABEL: Partial<Record<TaskSearchMatchField, string>> = {
+  id: "ID",
+  label: "ラベル",
+  filePath: "パス",
+  body: "本文",
+};
 
 export type CommandPaletteProps = {
   tasks: readonly Task[];
@@ -45,12 +64,17 @@ export const CommandPalette = ({
     if (!isOpen) {
       return [];
     }
-    const normalized = query.trim().toLocaleLowerCase();
+    const normalized = query.trim().toLowerCase();
     const actions = ACTIONS.filter((action) =>
-      action.label.toLocaleLowerCase().includes(normalized),
+      action.label.toLowerCase().includes(normalized),
     );
     const taskEntries = searchTaskIndex(taskSearchIndex, query).map(
-      (task): PaletteEntry => ({ kind: "task", task }),
+      (match): PaletteEntry => ({
+        kind: "task",
+        task: match.task,
+        matchField: match.field,
+        excerpt: match.excerpt,
+      }),
     );
     return [...actions, ...taskEntries];
   }, [isOpen, query, taskSearchIndex]);
@@ -159,7 +183,7 @@ export const CommandPalette = ({
                 onOpenChange(false);
               }
             }}
-            placeholder="タスク、コマンドを検索…"
+            placeholder="タスク・本文、コマンドを検索…"
             className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
           <kbd className="rounded border border-border bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] text-muted">
@@ -178,9 +202,16 @@ export const CommandPalette = ({
           ) : (
             visibleEntries.map((entry, index) => {
               const label =
-                entry.kind === "task" ? entry.task.title : entry.label;
+                entry.kind === "task"
+                  ? entry.task.title || entry.task.filePath
+                  : entry.label;
               const hint =
                 entry.kind === "task" ? entry.task.filePath : entry.hint;
+              const matchBadge =
+                entry.kind === "task" && entry.matchField !== undefined
+                  ? MATCH_FIELD_LABEL[entry.matchField]
+                  : undefined;
+              const excerpt = entry.kind === "task" ? entry.excerpt : undefined;
               return (
                 <button
                   id={`command-entry-${index}`}
@@ -192,12 +223,30 @@ export const CommandPalette = ({
                   aria-selected={index === activeIndex}
                   onMouseEnter={() => setSelectedIndex(index)}
                   onClick={() => selectEntry(entry)}
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm aria-selected:bg-accent/10 aria-selected:text-accent"
+                  className="flex w-full flex-col gap-0.5 rounded-md px-3 py-2 text-left text-sm aria-selected:bg-accent/10 aria-selected:text-accent"
                 >
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
-                  <span className="max-w-[46%] truncate font-mono text-[10.5px] text-muted">
-                    {hint}
+                  <span className="flex w-full items-center gap-3">
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                    {matchBadge !== undefined && (
+                      <span
+                        className="shrink-0 rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] leading-none text-muted"
+                        data-testid="command-entry-match-field"
+                      >
+                        {matchBadge}
+                      </span>
+                    )}
+                    <span className="max-w-[46%] truncate font-mono text-[10.5px] text-muted">
+                      {hint}
+                    </span>
                   </span>
+                  {excerpt !== undefined && (
+                    <span
+                      className="w-full truncate text-[11px] text-muted"
+                      data-testid="command-entry-excerpt"
+                    >
+                      {excerpt}
+                    </span>
+                  )}
                 </button>
               );
             })

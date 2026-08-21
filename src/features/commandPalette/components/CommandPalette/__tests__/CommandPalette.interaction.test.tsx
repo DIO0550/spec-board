@@ -150,3 +150,53 @@ test("絞り込みで結果数が減ったとき選択位置を表示範囲へ�
 
   expect(callbacks.onTaskSelect).toHaveBeenCalledWith("SB-0");
 });
+
+test("本文一致の結果には「本文」バッジと一致箇所の抜粋が表示される", () => {
+  const bodyTask = Task.fromPayload({
+    id: "SB-99",
+    title: "Watcher 調整",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "resync のバックオフを見直す",
+    filePath: "tasks/watcher.md",
+  });
+  renderPalette({ tasks: [bodyTask] });
+  const input = container?.querySelector<HTMLInputElement>('[role="combobox"]');
+  act(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    valueSetter?.call(input, "バックオフ");
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  expect(
+    container?.querySelector("[data-testid='command-entry-match-field']")
+      ?.textContent,
+  ).toBe("本文");
+  expect(
+    container?.querySelector("[data-testid='command-entry-excerpt']")
+      ?.textContent,
+  ).toContain("バックオフ");
+});
+
+test("タイトル一致の結果には一致フィールドバッジを表示しない", () => {
+  renderPalette();
+  const input = container?.querySelector<HTMLInputElement>('[role="combobox"]');
+  act(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    valueSetter?.call(input, "keyboard");
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  expect(
+    container?.querySelector("[data-testid='command-entry-match-field']"),
+  ).toBeNull();
+});
