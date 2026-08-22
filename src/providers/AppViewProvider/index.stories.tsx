@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { type AppView, AppViewProvider, useAppView } from ".";

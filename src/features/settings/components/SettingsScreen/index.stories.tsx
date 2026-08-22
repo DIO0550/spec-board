@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
 import { LabelDefinition } from "@/domains/label-definition";

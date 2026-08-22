@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { type ReactNode, useEffect, useState } from "react";

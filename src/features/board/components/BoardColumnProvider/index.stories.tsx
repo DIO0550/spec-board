@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { initialColumns, initialTasks } from "@/test-fixtures";

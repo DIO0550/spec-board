@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ProjectProvider, useProjectSessionActions, useProjectState } from ".";
 

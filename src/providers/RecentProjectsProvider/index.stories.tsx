@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { RECENT_PROJECTS_STORAGE_KEY } from "@/hooks/useRecentProjects/helpers";

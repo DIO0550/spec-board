@@ -1,3 +1,4 @@
+// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo } from "react";
 import { userEvent, within } from "storybook/test";
