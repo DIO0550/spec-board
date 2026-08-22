@@ -1,9 +1,9 @@
-// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { initialColumns, initialTasks } from "@/test-fixtures";
 import { BoardColumnProvider, useBoardColumn } from ".";
 
+/** @returns Provider が配る column の値をそのまま並べて確認する検証用コンポーネント */
 const ColumnProviderHarness = () => {
   const column = useBoardColumn();
   return (

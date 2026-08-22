@@ -1,4 +1,3 @@
-// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { buildProjectionsFixture, initialTasks } from "@/test-fixtures";
@@ -20,6 +19,7 @@ const meta = {
     fromColumn: task.status,
     childTasks: children,
     onClick: fn(),
+    /** Root 配下へ既定で差し込むサブコンポーネント一式。 */
     children: (
       <>
         <TaskCardHeader />

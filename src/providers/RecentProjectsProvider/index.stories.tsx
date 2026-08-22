@@ -1,4 +1,3 @@
-// @jsdoc-rules-disable
 import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { RECENT_PROJECTS_STORAGE_KEY } from "@/hooks/useRecentProjects/helpers";
@@ -80,6 +79,10 @@ export const AllProps: Story = {
       "/workspace/design-system",
     ]),
   ],
+  /**
+   * 履歴へ追加した直後の状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "履歴へ追加" }),

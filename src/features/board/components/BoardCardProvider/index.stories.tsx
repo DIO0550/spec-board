@@ -1,4 +1,3 @@
-// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { buildProjectionsFixture, initialTasks } from "@/test-fixtures";
@@ -6,6 +5,7 @@ import { TaskCard } from "../TaskCard";
 import { BoardCardProvider } from ".";
 
 const task = initialTasks[0];
+/** Provider 配下で 1 枚のカードを描く既定の children。 */
 const children = (
   <div className="w-72">
     <TaskCard task={task} fromColumn={task.status} onClick={fn()} />
@@ -39,6 +39,7 @@ export const EdgeCases: Story = {
     tasks: [],
     allTasks: [],
     projections: buildProjectionsFixture([], "Done"),
+    /** タスクが 0 件のときに Provider 配下へ描く children。 */
     children: (
       <p className="text-sm text-muted">Provider内にタスクがありません</p>
     ),

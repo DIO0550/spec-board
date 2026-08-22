@@ -1,4 +1,3 @@
-// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { type ReactNode, useEffect, useState } from "react";
@@ -136,6 +135,10 @@ export const EdgeCases: Story = {
 };
 
 export const CommandPaletteKeyboard: Story = {
+  /**
+   * Ctrl+K でコマンドパレットが開くことを操作で確認する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.keyboard("{Control>}k{/Control}");
     await expect(
@@ -146,6 +149,11 @@ export const CommandPaletteKeyboard: Story = {
 
 export const LoadedProjectComposition: Story = {
   parameters: { loadedProject: true },
+  /**
+   * プロジェクトを開いてボードが描画されるまでを操作で再現する。
+   * @param context - story の描画コンテキスト
+   * @throws Todo カラムまたは読み込み済みカードが描画されないとき
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "開く" }));
@@ -169,6 +177,7 @@ const compositionTaskTree = TaskForest.fromPayload(
 );
 
 export const ShellBoardComposition: Story = {
+  /** @returns サイドバーとボードを組み合わせた画面全体 */
   render: () => (
     <ThemeProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-bg">

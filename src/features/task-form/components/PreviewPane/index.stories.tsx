@@ -1,4 +1,3 @@
-// @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
 import { TauriError } from "@/lib/tauri";
@@ -61,6 +60,10 @@ export const Empty: Story = {
   },
 };
 export const Raw: Story = {
+  /**
+   * Raw 表示へ切り替えた状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "Raw" }),
