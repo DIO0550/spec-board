@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { ColumnColor } from "@/domains/column-color";
 import { Due } from "@/domains/due";
 import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -162,29 +163,15 @@ const statusListOf = (
   return [...preferred, ...extra];
 };
 
-/** @returns statusに対応するevent配色class */
-const statusEventClass = (status: string): string => {
-  const styles: Record<string, string> = {
-    Backlog: "border-l-zinc-400 bg-zinc-500/10",
-    Todo: "border-l-blue-600 bg-blue-500/10",
-    "In Progress": "border-l-amber-500 bg-amber-500/10",
-    "In Review": "border-l-violet-500 bg-violet-500/10",
-    Done: "border-l-green-600 bg-green-500/10",
-  };
-  return styles[status] ?? "border-l-slate-400 bg-slate-500/10";
-};
-
-/** @returns statusに対応するdot配色class */
-const statusDotClass = (status: string): string => {
-  const styles: Record<string, string> = {
-    Backlog: "bg-zinc-400",
-    Todo: "bg-blue-600",
-    "In Progress": "bg-amber-500",
-    "In Review": "bg-violet-500",
-    Done: "bg-green-600",
-  };
-  return styles[status] ?? "bg-slate-400";
-};
+/**
+ * status accent を 10% 濃度で敷く event 背景クラス。
+ *
+ * Tailwind はソースを静的にスキャンするため、この文字列は必ずリテラルのまま
+ * 保持する（連結や補間で組み立てるとクラスが CSS へ出力されない）。
+ * 参照する custom property は event 側の inline style で必ず設定する。
+ */
+const STATUS_ACCENT_BG_CLASS =
+  "bg-[color-mix(in_srgb,var(--calendar-event-accent)_10%,transparent)]";
 
 /** @returns priorityに対応するdot配色class */
 const priorityDotClass = (priority: Task["priority"]): string => {
@@ -244,6 +231,19 @@ export const CalendarView = ({
     () => statusListOf(tasks, columns),
     [tasks, columns],
   );
+  // 色の index には config の生 order 値ではなく statuses の表示順を使う。
+  // order は非連番でもよく、生値をそのまま使うとパレット参照が飛ぶため。
+  const accentByStatus = useMemo(() => {
+    const colorByName = new Map(
+      (columns ?? []).map((column) => [column.name, column.color]),
+    );
+    return new Map(
+      statuses.map((status, index) => [
+        status,
+        ColumnColor.resolveAccent(colorByName.get(status), index),
+      ]),
+    );
+  }, [columns, statuses]);
   const filteredTasks = useMemo(
     () => tasks.filter((task) => !disabledStatuses.has(task.status)),
     [disabledStatuses, tasks],
@@ -284,6 +284,18 @@ export const CalendarView = ({
       : cells[0]?.date.split("-").join("/") +
         " – " +
         cells[cells.length - 1]?.date.split("-").join("/");
+
+  /**
+   * status に対応する accent 色を返す。
+   * event / dot は tasks 由来の status を渡すため引き当てに失敗しないが、凡例だけは
+   * doneColumn（既定値 "Done"）を渡すので、その名前のカラムもタスクも無い
+   * プロジェクトでは引き当てに失敗する。カラムパレットの色を返すと「先頭カラムと
+   * 同じ status」に見えてしまうため、カラム系列とは別系統の中立色へ倒す。
+   * @param status - 色を引く status（タスクの status か doneColumn）
+   * @returns CSS の色値（hex か `var(...)` トークン）
+   */
+  const accentOf = (status: string): string =>
+    accentByStatus.get(status) ?? "var(--color-accent)";
 
   /** task選択時にcompact detailを開き、既存callbackも呼ぶ。 */
   const selectTask = (task: Task) => {
@@ -534,13 +546,26 @@ export const CalendarView = ({
                       const overdue =
                         task.status !== doneColumn &&
                         Due.isOverdue(task.due, today);
+                      // inline style は常に class に勝つため、期限超過の赤を潰さないよう
+                      // status 由来の色は期限超過以外の event にだけ載せる。
+                      const usesStatusAccent = !overdue;
                       const milestone =
                         task.milestone === undefined
                           ? "border-l-2"
-                          : "border-l-0 bg-accent-soft font-medium";
+                          : "border-l-0 font-medium";
                       const eventState = overdue
                         ? "border-l-red-600 bg-red-500/10"
-                        : statusEventClass(task.status);
+                        : "";
+                      const accent = accentOf(task.status);
+                      const statusAccent = usesStatusAccent
+                        ? STATUS_ACCENT_BG_CLASS
+                        : "";
+                      const accentStyle = usesStatusAccent
+                        ? ({
+                            "--calendar-event-accent": accent,
+                            borderLeftColor: accent,
+                          } as CSSProperties)
+                        : undefined;
                       const done =
                         task.status === doneColumn
                           ? "line-through opacity-60"
@@ -554,10 +579,12 @@ export const CalendarView = ({
                           data-overdue={overdue}
                           onClick={() => selectTask(task)}
                           title={task.title}
+                          style={accentStyle}
                           className={[
                             "flex w-full items-center gap-1 overflow-hidden rounded-[3px] px-1 py-0.5 text-left text-[10.5px] leading-tight hover:brightness-95",
                             milestone,
                             eventState,
+                            statusAccent,
                             done,
                           ].join(" ")}
                         >
@@ -624,10 +651,10 @@ export const CalendarView = ({
                     </span>
                     <span className="mt-1 flex items-center gap-1.5 text-[10px] text-text-dim">
                       <span
-                        className={[
-                          "size-1.5 rounded-full",
-                          statusDotClass(task.status),
-                        ].join(" ")}
+                        data-status-dot="today"
+                        data-status={task.status}
+                        className="size-1.5 rounded-full"
+                        style={{ backgroundColor: accentOf(task.status) }}
                       />
                       {task.status} · {taskFileName(task)}
                     </span>
@@ -686,10 +713,10 @@ export const CalendarView = ({
                       </span>
                       <span className="mt-1 flex items-center gap-1.5 text-[10px] text-text-dim">
                         <span
-                          className={[
-                            "size-1.5 rounded-full",
-                            statusDotClass(task.status),
-                          ].join(" ")}
+                          data-status-dot="upcoming"
+                          data-status={task.status}
+                          className="size-1.5 rounded-full"
+                          style={{ backgroundColor: accentOf(task.status) }}
                         />
                         {overdue
                           ? `${Math.abs(delta)}日 遅延`
@@ -722,10 +749,10 @@ export const CalendarView = ({
                       className="size-3.5 accent-accent"
                     />
                     <span
-                      className={[
-                        "size-2.5 rounded-[3px]",
-                        statusDotClass(status),
-                      ].join(" ")}
+                      data-status-dot="filter"
+                      data-status={status}
+                      className="size-2.5 rounded-[3px]"
+                      style={{ backgroundColor: accentOf(status) }}
                     />
                     <span className="flex-1 text-xs">{status}</span>
                     <span className="font-mono text-[10px] text-text-dim">
@@ -777,7 +804,11 @@ export const CalendarView = ({
                 期限当日
               </span>
               <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg px-2 py-0.5 text-[10px] text-muted">
-                <span className="size-1.5 rounded-full bg-green-600" />
+                <span
+                  data-legend-dot="done"
+                  className="size-1.5 rounded-full"
+                  style={{ backgroundColor: accentOf(doneColumn) }}
+                />
                 完了
               </span>
             </div>
@@ -832,10 +863,10 @@ export const CalendarView = ({
                 </dt>
                 <dd className="flex items-center gap-2">
                   <span
-                    className={[
-                      "size-2 rounded-full",
-                      statusDotClass(selectedTask.status),
-                    ].join(" ")}
+                    data-status-dot="detail"
+                    data-status={selectedTask.status}
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: accentOf(selectedTask.status) }}
                   />
                   {selectedTask.status}
                 </dd>
