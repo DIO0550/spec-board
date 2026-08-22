@@ -65,6 +65,10 @@ type ViewIconProps = {
   view: ViewMode;
 };
 
+/**
+ * @param props - 表示するビューモード
+ * @returns ビュー切替のアイコン
+ */
 const ViewIcon = ({ view }: ViewIconProps) => {
   if (view === "list") {
     return (

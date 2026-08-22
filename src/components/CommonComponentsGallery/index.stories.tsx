@@ -13,6 +13,7 @@ const labelClassName =
 const inputClassName =
   "h-[30px] rounded-md border border-border bg-background px-2.5 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-accent-soft";
 
+/** @returns 共通コンポーネントを一覧表示するギャラリー */
 const CommonComponentsGallery = () => (
   <main className="min-h-screen bg-background p-6 text-foreground">
     <header className="mb-5">
@@ -266,21 +267,28 @@ export const EdgeCases: Story = {
   ],
 };
 export const Comfortable: Story = {
+  /** 余白広めの density で表示する。 */
   play: async () => {
     document.documentElement.dataset.density = "comfortable";
   },
 };
 export const Compact: Story = {
+  /** 余白狭めの density で表示する。 */
   play: async () => {
     document.documentElement.dataset.density = "compact";
   },
 };
 export const Dark: Story = {
+  /** dark テーマで表示する。 */
   play: async () => {
     document.documentElement.dataset.theme = "dark";
   },
 };
 export const Focus: Story = {
+  /**
+   * フォーカスリングの見え方を確認するため、ボタンへフォーカスを当てる。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.tab();

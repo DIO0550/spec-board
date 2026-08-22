@@ -12,6 +12,11 @@ export type UseTaskUpdateOptions = {
   tasks: readonly Task[];
   updateTask: ProjectTaskActionsContextValue["updateTask"];
   showToast: UseToastsResult["showToast"];
+  /**
+   * 更新失敗を画面へ伝えるcallback。
+   * @param error - 失敗の内容
+   * @param message - 利用者向けのメッセージ
+   */
   onError: (error: ProjectError, message: string) => void;
 };
 

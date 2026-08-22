@@ -26,6 +26,10 @@ const TYPE_STYLES: Record<
 
 type ToastProps = {
   toast: ToastItem;
+  /**
+   * トーストを閉じるcallback。
+   * @param id - 閉じるトーストの ID
+   */
   onDismiss: (id: string) => void;
   duration?: number;
 };

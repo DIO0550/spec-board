@@ -46,7 +46,11 @@ const DAY_WIDTH = 28;
 const WEEK_WIDTH = 16;
 const DEFAULT_RANGE_DAYS = 27;
 
-/** YYYY-MM-DD を UTC 日付へ変換する。不正値は undefined。 */
+/**
+ * YYYY-MM-DD を UTC 日付へ変換する。
+ * @param value - 変換対象の値
+ * @returns UTC の Date。不正値なら undefined
+ */
 const parseDate = (value: unknown): Date | undefined => {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return undefined;
@@ -55,14 +59,26 @@ const parseDate = (value: unknown): Date | undefined => {
   return Number.isNaN(date.getTime()) ? undefined : date;
 };
 
-/** Date を YYYY-MM-DD にする。 */
+/**
+ * @param date - 変換元の Date
+ * @returns YYYY-MM-DD 形式の文字列
+ */
 const dateKey = (date: Date): string => date.toISOString().slice(0, 10);
 
-/** 指定日数を加えた新しい Date を返す。 */
+/**
+ * @param date - 基準の Date
+ * @param days - 加算する日数（負値も可）
+ * @returns 指定日数を加えた新しい Date
+ */
 const addDays = (date: Date, days: number): Date =>
   new Date(date.getTime() + days * DAY_MS);
 
-/** タスクの開始日と終了日を frontmatter 互換フィールドから解決する。 */
+/**
+ * タスクの開始日と終了日を frontmatter 互換フィールドから解決する。
+ * @param task - 対象タスク
+ * @param fallback - 日付が解決できないときに使う既定日
+ * @returns 開始日と終了日を備えたタスク
+ */
 const resolveDates = (task: Task, fallback: Date): DatedTask => {
   const extraStart = parseDate(task.extras.start);
   const extraEnd = parseDate(task.extras.end);
@@ -109,7 +125,11 @@ const buildEpics = (
   });
 };
 
-/** 日付範囲をヘッダー描画用の配列にする。 */
+/**
+ * @param start - 範囲の開始日
+ * @param end - 範囲の終了日
+ * @returns ヘッダー描画用の日付配列
+ */
 const buildDays = (start: Date, end: Date): RoadmapDay[] => {
   const length = Math.max(
     1,
@@ -127,7 +147,10 @@ const buildDays = (start: Date, end: Date): RoadmapDay[] => {
   });
 };
 
-/** 月ごとの連続区間にまとめる。 */
+/**
+ * @param days - まとめ対象の日付配列
+ * @returns 月ごとの連続区間（ラベルと日数）
+ */
 const buildMonths = (days: RoadmapDay[]) => {
   const months: { key: string; label: string; length: number }[] = [];
   for (const day of days) {
@@ -146,7 +169,11 @@ const buildMonths = (days: RoadmapDay[]) => {
   return months;
 };
 
-/** UI 用の短い期間表記。 */
+/**
+ * @param start - 期間の開始日
+ * @param end - 期間の終了日
+ * @returns UI 用の短い期間表記
+ */
 const formatRange = (start: Date, end: Date): string =>
   `${start.getUTCMonth() + 1}/${start.getUTCDate()} – ${end.getUTCMonth() + 1}/${end.getUTCDate()}`;
 
@@ -157,7 +184,10 @@ type TimelineBarProps = {
   onTaskClick?: (taskId: string) => void;
 };
 
-/** task の期間バー。 */
+/**
+ * @param props - バーに描く期間・配色・クリックcallback
+ * @returns task の期間バー
+ */
 const TimelineBar = ({
   item,
   rangeStart,
@@ -195,7 +225,10 @@ type TimelineGridProps = {
   children?: React.ReactNode;
 };
 
-/** weekend・today・日次罫線を共有する timeline cell。 */
+/**
+ * @param props - 日付配列と今日の日付キー、重ねる子要素
+ * @returns weekend・today・日次罫線を共有する timeline cell
+ */
 const TimelineGrid = ({ days, todayKey, children }: TimelineGridProps) => (
   <div
     className="relative border-b border-border"

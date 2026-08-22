@@ -8,7 +8,10 @@ type ProjectConsumerProps = {
   visualState: VisualProjectState;
 };
 
-/** Providerのcontextと主要session actionを目視するconsumer harness。 */
+/**
+ * Providerのcontextと主要session actionを目視するconsumer harness。
+ * @param props - 目視したい非同期遷移の状態
+ */
 const ProjectConsumer = ({ visualState }: ProjectConsumerProps) => {
   const { state } = useProjectState();
   const { reset } = useProjectSessionActions();
@@ -61,7 +64,10 @@ const ProjectConsumer = ({ visualState }: ProjectConsumerProps) => {
 
 type ProjectProviderHarnessProps = ProjectConsumerProps;
 
-/** Storyのconsumerを実ProjectProviderへ接続するharness。 */
+/**
+ * Storyのconsumerを実ProjectProviderへ接続するharness。
+ * @param props - consumerへそのまま渡す props
+ */
 const ProjectProviderHarness = (props: ProjectProviderHarnessProps) => (
   <ProjectProvider>
     <ProjectConsumer {...props} />

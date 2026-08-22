@@ -39,6 +39,10 @@ export const CopyToast: Story = {
 export const GuideSelected: Story = { args: { initialFile: "guide" } };
 export const Regenerate: Story = {
   args: { initialFile: "guide" },
+  /**
+   * 再生成ボタンを押した直後の状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "再生成" }),
@@ -47,6 +51,10 @@ export const Regenerate: Story = {
 };
 export const CopyAction: Story = {
   args: { initialFile: "guide" },
+  /**
+   * コピーボタンを押した直後の状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "コピー" }),
@@ -55,6 +63,10 @@ export const CopyAction: Story = {
 };
 export const OpenExternal: Story = {
   args: { initialFile: "guide" },
+  /**
+   * 外部エディタで開くボタンを押した直後の状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "外部エディタで開く" }),
@@ -62,6 +74,10 @@ export const OpenExternal: Story = {
   },
 };
 export const RevealFolder: Story = {
+  /**
+   * フォルダを開くボタンを押した直後の状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "フォルダを開く" }),

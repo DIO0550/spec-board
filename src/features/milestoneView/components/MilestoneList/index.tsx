@@ -5,10 +5,22 @@ import type { MilestoneDisplayStatus } from "@/features/milestoneView/lib/milest
 
 type MilestoneListProps = {
   milestones: readonly MilestoneDefinition[];
+  /**
+   * マイルストーンの表示ステータスを引く。
+   * @param def - 対象のマイルストーン定義
+   */
   statusOf: (def: MilestoneDefinition) => MilestoneDisplayStatus;
+  /**
+   * マイルストーンの進捗集計を引く。
+   * @param def - 対象のマイルストーン定義
+   */
   projectionOf: (def: MilestoneDefinition) => MilestoneProjection;
   showRatio: boolean;
   selectedName: string | undefined;
+  /**
+   * カードを選択したときのcallback。
+   * @param def - 選択されたマイルストーン定義
+   */
   onSelect: (def: MilestoneDefinition) => void;
   now?: Date;
 };

@@ -4,6 +4,10 @@ import type { ConfigFileDefinition, ConfigFileId } from "../types";
 type ConfigFileListProps = {
   files: readonly ConfigFileDefinition[];
   selectedId: ConfigFileId;
+  /**
+   * 設定ファイルを選択したときのcallback。
+   * @param id - 選択された設定ファイルの ID
+   */
   onSelect: (id: ConfigFileId) => void;
 };
 

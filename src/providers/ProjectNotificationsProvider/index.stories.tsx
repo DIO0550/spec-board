@@ -12,12 +12,23 @@ import { ProjectNotificationsProvider } from ".";
 
 type EventsHarness = {
   value: {
+    /**
+     * eventの購読を開始する。
+     * @param listener - eventを受け取るcallback
+     */
     subscribe: (listener: (event: ProjectEvent) => void) => () => void;
   };
+  /**
+   * 購読中のlistenerへeventを配る。
+   * @param event - 配信するevent
+   */
   emit: (event: ProjectEvent) => void;
 };
 
-/** ProjectNotificationsProviderへ実イベントを渡せるStory専用event harness。 */
+/**
+ * ProjectNotificationsProviderへ実イベントを渡せるStory専用event harness。
+ * @returns Providerへ渡す value と、story から発火させる emit
+ */
 const createEventsHarness = (): EventsHarness => {
   const listeners = new Set<(event: ProjectEvent) => void>();
   return {
@@ -41,7 +52,10 @@ type NotificationConsumerProps = {
   emit: EventsHarness["emit"];
 };
 
-/** 通知副作用で更新されるtoast/recentの状態を目視するconsumer。 */
+/**
+ * 通知副作用で更新されるtoast/recentの状態を目視するconsumer。
+ * @param props - eventを発火させる emit
+ */
 const NotificationConsumer = ({ emit }: NotificationConsumerProps) => {
   const { toasts } = useToastState();
   const { projects } = useRecentProjects();
@@ -125,6 +139,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const AllProps: Story = {
+  /**
+   * 監視warningを発火させ、toastが出た状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "監視warning" }),
@@ -132,6 +150,10 @@ export const AllProps: Story = {
   },
 };
 export const EdgeCases: Story = {
+  /**
+   * 監視warningとopen errorを続けて発火させた状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "監視warning" }));

@@ -70,9 +70,22 @@ export const useTaskWatcherEffects = (
     bridgeRef.current = createWatcherEventBridge({
       register: registerListener,
       gate: deps.gate,
+      /** @returns 最新のproject state */
       getState: () => depsRef.current.getState(),
+      /**
+       * 最新のdispatchへ委譲する。
+       * @param action - 適用するaction
+       */
       dispatch: (action) => depsRef.current.dispatch(action),
+      /**
+       * 再同期を要求する。
+       * @param reason - 再同期が必要になった理由
+       */
       requestResync: (reason) => depsRef.current.requestResync(reason),
+      /**
+       * watcher由来の診断を通知する。
+       * @param diagnostic - 通知する診断情報
+       */
       notifyDiagnostic: (diagnostic) =>
         depsRef.current.notifyDiagnostic(diagnostic),
     });

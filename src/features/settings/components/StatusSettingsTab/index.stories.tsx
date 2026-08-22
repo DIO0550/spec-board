@@ -35,6 +35,10 @@ export const EdgeCases: Story = {
 export const Saving: Story = { args: { saveState: "saving" } };
 
 export const Dirty: Story = {
+  /**
+   * 新しいカラム名を入力し、未保存の変更がある状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.type(
       within(canvasElement).getByRole("textbox", { name: "新しいカラム名" }),

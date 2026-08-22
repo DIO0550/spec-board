@@ -4,6 +4,10 @@ type SubNavIconProps = {
   tabId: string;
 };
 
+/**
+ * @param props - 表示対象のタブ ID
+ * @returns 設定タブに対応するアイコン
+ */
 const SubNavIcon = ({ tabId }: SubNavIconProps) => {
   if (tabId === "labels") {
     return (

@@ -64,6 +64,7 @@ const getStatusMark = (status: string): StatusMark | null => {
   return null;
 };
 
+/** @returns 子の開閉を示すシェブロンアイコン */
 const ChevronIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -74,12 +75,14 @@ const ChevronIcon = () => (
   </svg>
 );
 
+/** @returns ディレクトリ用のフォルダアイコン */
 const FolderIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h3.8l2 2h9.2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />
   </svg>
 );
 
+/** @returns Markdown ファイル用のアイコン */
 const MarkdownIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <rect x="3" y="5" width="18" height="14" rx="1.5" />
@@ -87,12 +90,14 @@ const MarkdownIcon = () => (
   </svg>
 );
 
+/** @returns JSON ファイル用のアイコン */
 const JsonIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M8 4c-2 0-3 1-3 3v3c0 1-1 2-2 2 1 0 2 1 2 2v3c0 2 1 3 3 3M16 4c2 0 3 1 3 3v3c0 1 1 2 2 2-1 0-2 1-2 2v3c0 2-1 3-3 3" />
   </svg>
 );
 
+/** @returns 設定ファイル用のアイコン */
 const ConfigIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
@@ -104,6 +109,10 @@ type FileIconProps = {
   kind: FileIconKind;
 };
 
+/**
+ * @param props - ファイル種別
+ * @returns 種別に対応するファイルアイコン
+ */
 const FileIcon = ({ kind }: FileIconProps) => {
   const icon =
     kind === "markdown" ? (

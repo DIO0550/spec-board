@@ -18,6 +18,7 @@ const meta = {
   component: ColumnNameInput,
   args: {
     field: {
+      /** @returns 入力要素へ渡す props */
       getInputProps: () => inputProps,
       isDuplicate: false,
       errorId: "column-name-error",
@@ -36,6 +37,7 @@ export const AllProps: Story = {
 export const EdgeCases: Story = {
   args: {
     field: {
+      /** @returns 既存カラムと重複する値を入れた props */
       getInputProps: () => ({ ...inputProps, value: "Todo" }),
       isDuplicate: true,
       errorId: "duplicate-column-error",

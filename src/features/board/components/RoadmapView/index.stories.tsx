@@ -3,6 +3,10 @@ import { fn, userEvent, within } from "storybook/test";
 import { Task, type TaskPayload } from "@/types/task";
 import { RoadmapView } from ".";
 
+/**
+ * @param overrides - 既定値を上書きするフィールド
+ * @returns story 用の Task
+ */
 const makeTask = (overrides: Partial<TaskPayload>): Task =>
   Task.fromPayload({
     id: "task",
@@ -137,6 +141,10 @@ export const Empty: Story = {
 };
 
 export const Week: Story = {
+  /**
+   * 週表示へ切り替えた状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "週" }),
@@ -147,6 +155,10 @@ export const Week: Story = {
 export const ScrollSticky: Story = {
   args: { tasks: scrollEpics },
   parameters: { viewport: { defaultViewport: "compact924" } },
+  /**
+   * 横スクロール時にヘッダーが固定されることを確認するためスクロールさせる。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const scroll = canvasElement.querySelector<HTMLElement>(
       "[data-roadmap-scroll]",

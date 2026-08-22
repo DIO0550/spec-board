@@ -75,6 +75,10 @@ export const EdgeCases: Story = {
 export const Status: Story = { args: { initialTabId: "statuses" } };
 export const ConfigFile: Story = { args: { initialTabId: "config" } };
 
+/**
+ * 設定ファイルタブで GUIDE.md を選択する。
+ * @param canvasElement - story の描画先要素
+ */
 const selectGuide = async (canvasElement: HTMLElement) => {
   await userEvent.click(
     within(canvasElement).getByRole("tab", { name: /GUIDE\.md/ }),
@@ -83,10 +87,18 @@ const selectGuide = async (canvasElement: HTMLElement) => {
 
 export const ConfigGuideSelected: Story = {
   args: { initialTabId: "config" },
+  /**
+   * GUIDE.md を選択した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => selectGuide(canvasElement),
 };
 export const ConfigRegenerate: Story = {
   args: { initialTabId: "config" },
+  /**
+   * GUIDE.md を選び、再生成ボタンを押した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await selectGuide(canvasElement);
     await userEvent.click(
@@ -96,6 +108,10 @@ export const ConfigRegenerate: Story = {
 };
 export const ConfigCopy: Story = {
   args: { initialTabId: "config" },
+  /**
+   * GUIDE.md を選び、コピーボタンを押した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await selectGuide(canvasElement);
     await userEvent.click(
@@ -105,6 +121,10 @@ export const ConfigCopy: Story = {
 };
 export const ConfigOpenExternal: Story = {
   args: { initialTabId: "config" },
+  /**
+   * GUIDE.md を選び、外部エディタで開くボタンを押した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await selectGuide(canvasElement);
     await userEvent.click(
@@ -114,6 +134,10 @@ export const ConfigOpenExternal: Story = {
 };
 export const ConfigRevealFolder: Story = {
   args: { initialTabId: "config" },
+  /**
+   * フォルダを開くボタンを押した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "フォルダを開く" }),
@@ -122,6 +146,10 @@ export const ConfigRevealFolder: Story = {
 };
 export const AppearanceDarkCompact: Story = {
   args: { initialTabId: "appearance" },
+  /**
+   * ダーク・コンパクト・バイオレットを選んだ外観設定を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "ダーク" }));
@@ -131,6 +159,10 @@ export const AppearanceDarkCompact: Story = {
 };
 export const AppearanceAccentFixed: Story = {
   args: { initialTabId: "appearance" },
+  /**
+   * ライト・標準・ローズを選んだ外観設定を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "ライト" }));

@@ -29,11 +29,23 @@ const MATCH_FIELD_LABEL: Partial<Record<TaskSearchMatchField, string>> = {
 export type CommandPaletteProps = {
   tasks: readonly Task[];
   isOpen: boolean;
+  /**
+   * パレットの開閉を親へ伝える。
+   * @param open - 開いた状態にするなら true
+   */
   onOpenChange: (open: boolean) => void;
+  /**
+   * 検索結果のタスクを選んだときのcallback。
+   * @param taskId - 選択されたタスクの ID
+   */
   onTaskSelect: (taskId: string) => void;
+  /** タスク作成コマンドを選んだときのcallback。 */
   onNewTask: () => void;
+  /** 設定コマンドを選んだときのcallback。 */
   onSettings: () => void;
+  /** マイルストーンコマンドを選んだときのcallback。 */
   onMilestones: () => void;
+  /** GUIDE 表示コマンドを選んだときのcallback。 */
   onGuide: () => void;
 };
 

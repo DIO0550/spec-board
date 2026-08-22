@@ -8,6 +8,7 @@ import {
 import { Board } from "../Board";
 import { BoardProviders } from ".";
 
+/** Provider 配下へ差し込むボード本体。 */
 const board = (
   <Board>
     {initialColumns.map((column, index) => (

@@ -1,6 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
+import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { CalendarView } from ".";
 
@@ -190,3 +191,36 @@ export const Week: Story = {
 };
 
 export const DetailOpen: Story = { ...CompactDetail, name: "Detail Open" };
+
+const japaneseColumns: Column[] = [
+  { name: "未着手", order: 0, color: "#1a2b3c" },
+  { name: "進行中", order: 1 },
+  { name: "レビュー中", order: 2, color: "#c2410c" },
+  { name: "完了", order: 3, color: "#15803d" },
+];
+
+// designTasks の英語 status をそのまま渡すと全件が config 外扱いになり、
+// config の color が反映される様子が見えない。この story 専用に status だけを
+// 日本語へ差し替えたタスクを作る（designTasks は他 story と共有のため変更しない）。
+const japaneseTasks = designTasks.map((task, index) =>
+  makeTask({
+    id: task.id,
+    title: task.title,
+    status: japaneseColumns[index % japaneseColumns.length].name,
+    priority: task.priority,
+    milestone: task.milestone,
+    due: task.due,
+    labels: [...task.labels],
+    filePath: task.filePath,
+  }),
+);
+
+export const JapaneseColumns: Story = {
+  args: {
+    tasks: japaneseTasks,
+    columns: japaneseColumns,
+    doneColumn: "完了",
+    onTaskClick: fn(),
+    onAddTask: fn(),
+  },
+};

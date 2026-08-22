@@ -13,6 +13,11 @@ export type UseColumnAddOptions = {
   columns: readonly Column[];
   updateColumns: ProjectColumnActionsContextValue["updateColumns"];
   showToast: UseToastsResult["showToast"];
+  /**
+   * カラム追加の失敗を画面へ伝えるcallback。
+   * @param error - 失敗の内容
+   * @param message - 利用者向けのメッセージ
+   */
   onError: (error: ProjectError, message: string) => void;
 };
 

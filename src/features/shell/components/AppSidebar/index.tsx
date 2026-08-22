@@ -34,6 +34,7 @@ type AppSidebarProps = {
   onSelectTask: (taskId: string) => void;
 };
 
+/** @returns ワークスペース見出しのアイコン */
 const WorkspaceIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-[18px]">
     <path d="M3 7l9-4 9 4-9 4-9-4z" />
@@ -41,12 +42,14 @@ const WorkspaceIcon = () => (
   </svg>
 );
 
+/** @returns サイドバーを畳むボタンのアイコン */
 const CollapseIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-[15px]">
     <path d="M15 6l-6 6 6 6" />
   </svg>
 );
 
+/** @returns グループの開閉を示すシェブロンアイコン */
 const GroupChevronIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M9 6l6 6-6 6" />

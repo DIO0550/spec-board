@@ -53,6 +53,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const AllProps: Story = {
+  /**
+   * success / warning / error を並べて表示した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "success" }));
@@ -61,6 +65,10 @@ export const AllProps: Story = {
   },
 };
 export const EdgeCases: Story = {
+  /**
+   * 長文のtoastを表示した状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "long" }),

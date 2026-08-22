@@ -4,6 +4,10 @@ type MilestoneProgressBarProps = {
   ratio: number | undefined;
 };
 
+/**
+ * @param ratio - 0〜1 の比率（範囲外は丸める）
+ * @returns 0〜100 のパーセント値
+ */
 const toPercent = (ratio: number): number =>
   Math.round(Math.min(1, Math.max(0, ratio)) * 100);
 

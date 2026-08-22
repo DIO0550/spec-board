@@ -50,6 +50,10 @@ export const EdgeCases: Story = {
   },
 };
 export const GroupOpen: Story = {
+  /**
+   * グループ選択を開いた状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("combobox", { name: "グループ" }),
@@ -57,6 +61,10 @@ export const GroupOpen: Story = {
   },
 };
 export const ColorOpen: Story = {
+  /**
+   * カラープリセットを選び、入力へフォーカスした状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "プリセット purple" }),
@@ -67,6 +75,7 @@ export const ColorOpen: Story = {
   },
 };
 export const Dark: Story = {
+  /** dark テーマで表示する。 */
   play: async () => {
     document.documentElement.dataset.theme = "dark";
   },

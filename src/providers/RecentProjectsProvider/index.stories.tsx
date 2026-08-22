@@ -79,6 +79,10 @@ export const AllProps: Story = {
       "/workspace/design-system",
     ]),
   ],
+  /**
+   * 履歴へ追加した直後の状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "履歴へ追加" }),

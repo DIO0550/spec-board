@@ -48,6 +48,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const AllProps: Story = {
+  /**
+   * detail ビューへ切り替えた状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "detail" }),
@@ -55,6 +59,10 @@ export const AllProps: Story = {
   },
 };
 export const EdgeCases: Story = {
+  /**
+   * settings から create へ続けて切り替えた状態を再現する。
+   * @param context - story の描画コンテキスト
+   */
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "settings" }));

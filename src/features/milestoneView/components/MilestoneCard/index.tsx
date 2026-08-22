@@ -16,6 +16,7 @@ type MilestoneCardProps = {
   projection: MilestoneProjection;
   showRatio: boolean;
   selected: boolean;
+  /** カードを選択したときのcallback。 */
   onSelect: () => void;
   now?: Date;
 };

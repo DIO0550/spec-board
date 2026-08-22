@@ -19,9 +19,23 @@ export type UseTaskDeleteOptions = {
   tasks: readonly Task[];
   deleteTask: ProjectTaskActionsContextValue["deleteTask"];
   showToast: UseToastsResult["showToast"];
+  /**
+   * 操作結果をスクリーンリーダーへ通知する。
+   * @param message - 読み上げる文言
+   */
   announce: (message: string) => void;
+  /**
+   * 操作の失敗を画面へ伝えるcallback。
+   * @param error - 失敗の内容
+   * @param message - 利用者向けのメッセージ
+   */
   onError: (error: ProjectError, message: string) => void;
+  /**
+   * 削除確認中のタスクを親へ伝える。
+   * @param task - 確認中のタスク。確認を閉じたときは null
+   */
   onPendingTaskChange: (task: Task | null) => void;
+  /** 削除完了後に呼ばれるcallback。 */
   onDeleted: () => void;
 };
 

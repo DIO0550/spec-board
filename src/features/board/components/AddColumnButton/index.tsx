@@ -2,6 +2,7 @@ import { useInlineColumnNameInput } from "@/features/board/hooks/useInlineColumn
 import { useBoardColumn } from "../BoardColumnProvider";
 import { ColumnNameInput } from "../ColumnNameInput";
 
+/** @returns 追加ボタンのプラスアイコン */
 const PlusIcon = () => (
   <svg
     viewBox="0 0 24 24"
