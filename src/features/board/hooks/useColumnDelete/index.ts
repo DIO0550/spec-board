@@ -23,9 +23,20 @@ export type UseColumnDeleteOptions = {
   tasks: readonly Task[];
   updateColumns: ProjectColumnActionsContextValue["updateColumns"];
   showToast: UseToastsResult["showToast"];
+  /**
+   * 操作の失敗を画面へ伝えるcallback。
+   * @param error - 失敗の内容
+   * @param message - 利用者向けのメッセージ
+   */
   onError: (error: ProjectError, message: string) => void;
 };
 
+/**
+ * @param current - 更新前のプロジェクト状態
+ * @param columnName - 削除するカラム名
+ * @param destColumn - 残タスクの移送先カラム名（無ければ undefined）
+ * @returns updateColumns へ渡す更新内容。適用不能なら null
+ */
 const buildColumnDeleteCommand = (
   current: ProjectData,
   columnName: string,

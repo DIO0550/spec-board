@@ -3,6 +3,11 @@ import type { StatusColumn } from "../types";
 type StatusColumnTableProps = {
   columns: readonly StatusColumn[];
   doneColumn: string;
+  /**
+   * カラム名入力の変更通知。
+   * @param id - 対象カラム ID
+   * @param name - 入力されたカラム名
+   */
   onNameChange: (id: string, name: string) => void;
   /**
    * WIP 上限入力の変更通知。空・数値でない入力は undefined として通知する。
@@ -10,8 +15,21 @@ type StatusColumnTableProps = {
    * @param wipLimit - 入力された上限（未入力は undefined）
    */
   onWipLimitChange: (id: string, wipLimit: number | undefined) => void;
+  /**
+   * カラムの並び替え通知。
+   * @param id - 対象カラム ID
+   * @param direction - 上へ移動なら -1、下へ移動なら 1
+   */
   onMove: (id: string, direction: -1 | 1) => void;
+  /**
+   * 完了カラムの変更通知。
+   * @param name - 完了として扱うカラム名
+   */
   onDoneChange: (name: string) => void;
+  /**
+   * カラム削除の要求通知。
+   * @param id - 削除するカラム ID
+   */
   onDelete: (id: string) => void;
 };
 

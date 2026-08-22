@@ -14,6 +14,10 @@ type TreeNodeItemProps = {
   node: TaskTreeNode;
   depth: number;
   tasksByFilePath: ReadonlyMap<string, Task>;
+  /**
+   * ノードを選択したときのcallback。
+   * @param taskId - 選択されたタスクの ID
+   */
   onSelect: (taskId: string) => void;
   /** TreeView toolbarから制御する展開状態。省略時は従来どおりlocal state。 */
   expanded?: boolean;
@@ -35,6 +39,7 @@ type CompactTreeFrame = {
   readonly root: boolean;
 };
 
+/** 子を持つノードに使うフォルダアイコン。 */
 const FOLDER_ICON = (
   <svg
     aria-hidden="true"
@@ -48,6 +53,7 @@ const FOLDER_ICON = (
   </svg>
 );
 
+/** 子を持たないノードに使うドキュメントアイコン。 */
 const DOCUMENT_ICON = (
   <svg
     aria-hidden="true"
@@ -213,6 +219,7 @@ export const TreeNodeItem = memo(
     const accent = accentByStatus?.get(task.status) ?? "var(--color-accent)";
     const done = task.status === doneColumn;
 
+    /** 展開状態を切り替える。制御されている場合は親へ委譲する。 */
     const handleToggle = (): void => {
       if (onToggle !== undefined) {
         onToggle(node.filePath);

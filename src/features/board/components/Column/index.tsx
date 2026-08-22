@@ -18,6 +18,7 @@ import { ColumnHeader } from "../ColumnHeader";
 import { TaskCard } from "../TaskCard";
 import { computeHoverIndex } from "./dragHover";
 
+/** @returns カラムへタスクを追加するプラスアイコン */
 const PlusIcon = () => (
   <svg
     viewBox="0 0 24 24"

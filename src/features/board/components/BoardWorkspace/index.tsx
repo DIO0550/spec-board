@@ -32,6 +32,10 @@ type ViewIconKind =
   | "roadmap"
   | "guide";
 
+/**
+ * @param props - 表示するビューの種類
+ * @returns ビュー切替タブのアイコン
+ */
 const ViewIcon = ({ kind }: { kind: ViewIconKind }) => (
   <svg
     viewBox="0 0 24 24"

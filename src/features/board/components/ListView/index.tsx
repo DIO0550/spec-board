@@ -28,6 +28,10 @@ type ListViewProps = {
 const TABLE_GRID =
   "grid-cols-[28px_96px_28px_minmax(220px,1fr)_220px_140px_140px_96px]";
 
+/**
+ * @param task - 順位づけするタスク
+ * @returns High から順に小さくなる優先度の並び順
+ */
 const priorityRank = (task: Task): number => {
   if (task.priority === "High") {
     return 0;
@@ -41,6 +45,12 @@ const priorityRank = (task: Task): number => {
   return 3;
 };
 
+/**
+ * @param left - 比較元のタスク
+ * @param right - 比較先のタスク
+ * @param key - 並び替えに使う列
+ * @returns localeCompare と同じ符号を持つ比較結果
+ */
 const compareTasks = (left: Task, right: Task, key: SortKey): number => {
   if (key === "priority") {
     return priorityRank(left) - priorityRank(right);
@@ -54,6 +64,12 @@ const compareTasks = (left: Task, right: Task, key: SortKey): number => {
   return left.title.localeCompare(right.title, "ja");
 };
 
+/**
+ * @param task - 集計対象のタスク
+ * @param tasksByFilePath - filePath をキーにしたタスク索引
+ * @param doneColumn - 完了とみなす status
+ * @returns 子タスクの完了数と総数
+ */
 const progressOf = (
   task: Task,
   tasksByFilePath: ReadonlyMap<string, Task>,
@@ -73,9 +89,17 @@ type SortButtonProps = {
   sortKey: SortKey;
   activeKey: SortKey;
   direction: SortDirection;
+  /**
+   * 見出しクリックで並び替えを要求するcallback。
+   * @param key - 並び替えに使う列
+   */
   onSort: (key: SortKey) => void;
 };
 
+/**
+ * @param props - 見出しラベルと並び替え状態
+ * @returns 並び替えを切り替える見出しボタン
+ */
 const SortButton = ({
   label,
   sortKey,

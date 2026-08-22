@@ -5,6 +5,7 @@ import { useInlineColumnNameInput } from "@/features/board/hooks/useInlineColumn
 import { COLUMN_DRAG_MIME_TYPE } from "../Board/mime";
 import { ColumnNameInput } from "../ColumnNameInput";
 
+/** @returns カラムヘッダーの追加プラスアイコン */
 const PlusIcon = () => (
   <svg
     viewBox="0 0 24 24"

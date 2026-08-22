@@ -7,7 +7,11 @@ import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 
-/** Story用Taskを生成する。 */
+/**
+ * Story用Taskを生成する。
+ * @param overrides - 既定値を上書きするフィールド
+ * @returns Story 用の Task
+ */
 export const makeDetailTask = (overrides: Partial<TaskPayload> = {}): Task =>
   Task.fromPayload({
     id: "issue-7",
@@ -61,6 +65,10 @@ export const detailHandlers: DetailFieldHandlers = {
 export const detailChildInfo: UseChildTasksResult = {
   childTasks: [childTask],
   subIssueCounts: { done: 1, total: 2 },
+  /**
+   * 子タスクが完了しているかを返す。
+   * @param filePath - 判定する子タスクの filePath
+   */
   isDone: (filePath) => filePath === childTask.filePath,
 };
 
@@ -79,5 +87,7 @@ export const idleDeleteFlow: UseDeleteFlowResult = {
   confirmDelete: fn(),
 };
 
+/** @returns 常に成功する link 追加のダミー実装 */
 export const noopAddLink = async () => Result.ok(detailTask);
+/** @returns 常に成功する link 削除のダミー実装 */
 export const noopRemoveLink = async () => Result.ok(detailTask);

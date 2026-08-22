@@ -30,6 +30,7 @@ type HeaderBarProps = {
   onOpenClick: () => void;
 };
 
+/** @returns サイドバー開閉ボタンのアイコン */
 const SidebarIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
     <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -37,12 +38,14 @@ const SidebarIcon = () => (
   </svg>
 );
 
+/** @returns タスク作成ボタンのプラスアイコン */
 const PlusIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
     <path d="M12 5v14M5 12h14" />
   </svg>
 );
 
+/** @returns 検索ボタンの虫眼鏡アイコン */
 const SearchIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
     <circle cx="11" cy="11" r="7" />
@@ -50,6 +53,7 @@ const SearchIcon = () => (
   </svg>
 );
 
+/** @returns 設定ボタンの歯車アイコン */
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
     <circle cx="12" cy="12" r="3" />
@@ -57,6 +61,7 @@ const SettingsIcon = () => (
   </svg>
 );
 
+/** @returns ラベル設定ボタンのタグアイコン */
 const LabelIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
     <path d="m20.6 13.4-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z" />
@@ -64,6 +69,7 @@ const LabelIcon = () => (
   </svg>
 );
 
+/** @returns プロジェクトを開くボタンのフォルダアイコン */
 const FolderIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
     <path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />

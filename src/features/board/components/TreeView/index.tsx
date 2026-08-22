@@ -23,6 +23,10 @@ type TreeViewProps = {
 
 type Progress = { readonly done: number; readonly total: number };
 
+/**
+ * @param roots - 走査するツリーの根
+ * @returns 子を持つノードの filePath 集合
+ */
 const collectExpandablePaths = (roots: TaskForest): Set<string> => {
   const result = new Set<string>();
   const stack = [...roots];
@@ -39,6 +43,12 @@ const collectExpandablePaths = (roots: TaskForest): Set<string> => {
   return result;
 };
 
+/**
+ * @param roots - 集計対象のツリー
+ * @param tasksByFilePath - filePath をキーにしたタスク索引
+ * @param doneColumn - 完了とみなす status
+ * @returns filePath ごとの完了数と総数
+ */
 const buildProgress = (
   roots: TaskForest,
   tasksByFilePath: ReadonlyMap<string, Task>,

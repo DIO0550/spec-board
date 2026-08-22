@@ -17,13 +17,29 @@ export type UseConfigFilesResult = {
   error?: string;
   toast?: string;
   isRegenerating: boolean;
+  /** 設定ファイル一覧を取得し直す。 */
   reload: () => Promise<void>;
+  /**
+   * 設定ファイルの内容をクリップボードへコピーする。
+   * @param id - コピーする設定ファイルの ID
+   */
   copy: (id: ConfigFileId) => Promise<boolean>;
+  /** GUIDE.md を再生成する。 */
   regenerate: () => Promise<boolean>;
+  /**
+   * 設定ファイルを OS 既定のアプリケーションで開く。
+   * @param target - 開く対象の設定ファイル
+   */
   openExternal: (target: OpenConfigFileTarget) => Promise<boolean>;
+  /** `.spec-board` フォルダを OS のファイラで表示する。 */
   revealFolder: () => Promise<boolean>;
 };
 
+/**
+ * 設定ファイル一覧の取得と、コピー・再生成・外部起動の操作をまとめるフック。
+ * @param projectKey - プロジェクトの識別子。変化したら一覧を取得し直す
+ * @returns 一覧の取得状態と操作callback
+ */
 export const useConfigFiles = (projectKey?: string): UseConfigFilesResult => {
   const [status, setStatus] = useState<ConfigFilesStatus>("loading");
   const [files, setFiles] = useState<readonly ConfigFilePayload[]>([]);

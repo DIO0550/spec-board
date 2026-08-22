@@ -17,6 +17,10 @@ import {
 /** 単一のwatcher event listenerを登録する外部依存。 */
 export type WatcherListenerRegistration = (
   eventName: string,
+  /**
+   * event payloadを受け取るhandler。
+   * @param payload - 受信した生のpayload
+   */
   handler: (payload: unknown) => void,
 ) => Promise<UnlistenFn>;
 
@@ -60,6 +64,7 @@ export type WatcherEventBridge = {
   readonly commitOpen: (
     openRequest: number,
     session: WatcherSession,
+    /** loaded stateを同期commitするcallback。 */
     commitLoaded: () => void,
   ) => void;
   /**
@@ -116,6 +121,7 @@ type ActiveOpen = {
   readonly overflowed: boolean;
 };
 
+/** @returns 登録が停止済みであることを示すError */
 const stoppedRegistrationError = (): Error =>
   new Error("watcher listener registration was stopped");
 
@@ -221,7 +227,10 @@ export const createWatcherEventBridge = (
     });
   };
 
-  /** 全listenerのregistrationを一度だけ開始する。 */
+  /**
+   * 全listenerのregistrationを一度だけ開始する。
+   * @returns 登録結果のPromise（2回目以降は同じPromise）
+   */
   const ensureReady = (): Promise<WatcherListenerReadiness> => {
     if (registrationPromise !== null) {
       return registrationPromise;
@@ -241,7 +250,10 @@ export const createWatcherEventBridge = (
     activeOpen = null;
   };
 
-  /** mount時に登録を先行開始し、cleanupを返す。 */
+  /**
+   * mount時に登録を先行開始する。
+   * @returns unmount時に呼ぶcleanup
+   */
   const start = (): (() => void) => {
     void ensureReady();
     return stop;
@@ -261,7 +273,10 @@ export const createWatcherEventBridge = (
     });
   };
 
-  /** open中bufferingを新しいrequest tokenで開始する。 */
+  /**
+   * open中bufferingを新しいrequest tokenで開始する。
+   * @param openRequest - open request世代
+   */
   const beginOpen = (openRequest: number): void => {
     activeOpen = {
       token: openRequest,
@@ -274,6 +289,7 @@ export const createWatcherEventBridge = (
   const commitOpen = (
     openRequest: number,
     session: WatcherSession,
+    /** loaded stateを同期commitするcallback。 */
     commitLoaded: () => void,
   ): void => {
     if (activeOpen?.token !== openRequest) {
@@ -286,7 +302,10 @@ export const createWatcherEventBridge = (
     replay(completed);
   };
 
-  /** open失敗後、復元済みstateと旧gateへqueueをreplayする。 */
+  /**
+   * open失敗後、復元済みstateと旧gateへqueueをreplayする。
+   * @param openRequest - 中断するopen request世代
+   */
   const abortOpen = (openRequest: number): void => {
     if (activeOpen?.token !== openRequest) {
       return;

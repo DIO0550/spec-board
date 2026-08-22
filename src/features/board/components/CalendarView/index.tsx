@@ -62,29 +62,45 @@ type CalendarCell = {
   readonly weekday: number;
 };
 
-/** @returns 数値を2桁へゼロ埋めした文字列 */
+/**
+ * @param value - ゼロ埋めする数値
+ * @returns 数値を2桁へゼロ埋めした文字列
+ */
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 
-/** @returns Dateのローカル日付文字列 */
+/**
+ * @param date - 変換元の Date
+ * @returns Dateのローカル日付文字列
+ */
 const toDateString = (date: Date): string =>
   [date.getFullYear(), pad2(date.getMonth() + 1), pad2(date.getDate())].join(
     "-",
   );
 
-/** @returns YYYY-MM-DDをローカル正午として解釈したDate */
+/**
+ * @param date - YYYY-MM-DD 形式の日付文字列
+ * @returns YYYY-MM-DDをローカル正午として解釈したDate
+ */
 const fromDateString = (date: string): Date => {
   const [year, month, day] = date.split("-").map(Number);
   return new Date(year, month - 1, day, 12);
 };
 
-/** @returns 基準日にdelta日を加えた日付文字列 */
+/**
+ * @param date - 基準になる日付文字列
+ * @param delta - 加算する日数（負値も可）
+ * @returns 基準日にdelta日を加えた日付文字列
+ */
 const addDays = (date: string, delta: number): string => {
   const next = fromDateString(date);
   next.setDate(next.getDate() + delta);
   return toDateString(next);
 };
 
-/** @returns 月表示用の外月日を含む42セル */
+/**
+ * @param visibleMonth - 表示中の年月
+ * @returns 月表示用の外月日を含む42セル
+ */
 const buildMonthCells = (visibleMonth: YearMonth): CalendarCell[] => {
   const first = new Date(visibleMonth.year, visibleMonth.month - 1, 1, 12);
   first.setDate(first.getDate() - first.getDay());
@@ -100,7 +116,10 @@ const buildMonthCells = (visibleMonth: YearMonth): CalendarCell[] => {
   });
 };
 
-/** @returns anchorDateを含む日曜始まりの7セル */
+/**
+ * @param anchorDate - 週に含めたい基準日
+ * @returns anchorDateを含む日曜始まりの7セル
+ */
 const buildWeekCells = (anchorDate: string): CalendarCell[] => {
   const first = fromDateString(anchorDate);
   first.setDate(first.getDate() - first.getDay());
@@ -116,7 +135,11 @@ const buildWeekCells = (anchorDate: string): CalendarCell[] => {
   });
 };
 
-/** @returns to - fromの日数 */
+/**
+ * @param from - 起点の日付文字列
+ * @param to - 終点の日付文字列
+ * @returns to - fromの日数
+ */
 const daysBetween = (from: string, to: string): number => {
   const [fromYear, fromMonth, fromDay] = from.split("-").map(Number);
   const [toYear, toMonth, toDay] = to.split("-").map(Number);
@@ -127,13 +150,20 @@ const daysBetween = (from: string, to: string): number => {
   );
 };
 
-/** @returns 日付文字列が属する年月 */
+/**
+ * @param date - 判定する日付文字列
+ * @returns 日付文字列が属する年月
+ */
 const yearMonthOf = (date: string): YearMonth => ({
   year: Number(date.slice(0, 4)),
   month: Number(date.slice(5, 7)),
 });
 
-/** @returns 既定順と未知status末尾で並べたstatus一覧 */
+/**
+ * @param tasks - 対象タスク一覧
+ * @param columns - project設定順のstatus column（未指定可）
+ * @returns 既定順と未知status末尾で並べたstatus一覧
+ */
 const statusListOf = (
   tasks: readonly Task[],
   columns?: readonly Column[],
@@ -173,7 +203,10 @@ const statusListOf = (
 const STATUS_ACCENT_BG_CLASS =
   "bg-[color-mix(in_srgb,var(--calendar-event-accent)_10%,transparent)]";
 
-/** @returns priorityに対応するdot配色class */
+/**
+ * @param priority - タスクの優先度
+ * @returns priorityに対応するdot配色class
+ */
 const priorityDotClass = (priority: Task["priority"]): string => {
   if (priority === "High") {
     return "bg-red-600";
@@ -184,7 +217,10 @@ const priorityDotClass = (priority: Task["priority"]): string => {
   return priority === "Low" ? "bg-blue-500" : "";
 };
 
-/** @returns taskのファイル名 */
+/**
+ * @param task - 対象タスク
+ * @returns taskのファイル名
+ */
 const taskFileName = (task: Task): string =>
   task.filePath.split("/").pop() ?? task.filePath;
 

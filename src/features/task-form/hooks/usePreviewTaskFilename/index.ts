@@ -8,6 +8,11 @@ export type UsePreviewTaskFilenameArgs = {
   parentFilePath: string | undefined;
 };
 
+/**
+ * IPC の戻り値が想定した形をしているかを判定する。
+ * @param value - 検査する IPC 応答
+ * @returns プレビュー payload として扱えるなら true
+ */
 const isPreviewTaskFilenamePayload = (
   value: unknown,
 ): value is PreviewTaskFilenamePayload => {

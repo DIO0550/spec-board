@@ -20,9 +20,20 @@ export type DetailScreenProps = {
   allTasks?: Task[];
   projections: TaskProjectionMap;
   tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** 一覧へ戻るcallback。 */
   onBack: () => void;
   isUpperModalOpen?: boolean;
+  /**
+   * タスクの部分更新を要求するcallback。
+   * @param id - 更新するタスクの ID
+   * @param updates - 変更するフィールド
+   */
   onTaskUpdate: (id: string, updates: Partial<Omit<Task, "id">>) => void;
+  /**
+   * タスク削除を要求するcallback。
+   * @param id - 削除するタスクの ID
+   * @param orphanStrategy - 子タスクの扱い方
+   */
   onDelete: (
     id: string,
     orphanStrategy?: OrphanStrategy,
