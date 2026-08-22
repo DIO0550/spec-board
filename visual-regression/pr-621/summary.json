@@ -1,5 +1,5 @@
 {
-  "reportVersion": "3fef0345b8460cfce7efe77a89bf5cdad3ebdcf4",
+  "reportVersion": "28aa1ba9576e1644d44ab4d5ed43747549fef124",
   "maxDiffRatio": 0.002,
   "changed": 6,
   "new": 1,
@@ -3900,12 +3900,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-commandpalette-components-commandpalette--empty",
