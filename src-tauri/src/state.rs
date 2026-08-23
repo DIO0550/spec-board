@@ -213,7 +213,9 @@ pub(crate) struct OpenSwap {
 ///
 /// 全フィールドは private。caller は公開アクセサを通じてのみ操作できる。
 ///
-/// ```compile_fail
+/// identity検証なしの採番APIは公開しない。
+///
+/// ```compile_fail,E0599
 /// use spec_board_lib::state::AppState;
 ///
 /// let state = AppState::new();
