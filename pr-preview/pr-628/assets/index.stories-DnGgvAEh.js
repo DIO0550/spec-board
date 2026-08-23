@@ -1,0 +1,7 @@
+import{n as e}from"./chunk-BneVvdWh.js";import{t}from"./jsx-runtime-Bn1Ys6_W.js";import{n,t as r}from"./PreviewResizer-z44Adxrz.js";var i,a,o,s,c,l,u;e((()=>{n(),i=t(),{fn:a}=__STORYBOOK_MODULE_TEST__,o={component:r,args:{onWidthChange:a()},decorators:[e=>(0,i.jsxs)(`div`,{className:`grid h-96 grid-cols-[1fr_4px_480px] bg-panel`,children:[(0,i.jsx)(`div`,{}),(0,i.jsx)(e,{}),(0,i.jsx)(`div`,{className:`bg-panel-2`})]})]},s={},c={},l={decorators:[e=>(0,i.jsxs)(`div`,{className:`grid h-40 grid-cols-[1fr_4px_340px]`,children:[(0,i.jsx)(`div`,{}),(0,i.jsx)(e,{}),(0,i.jsx)(`div`,{className:`bg-panel-2`})]})]},s.parameters={...s.parameters,docs:{...s.parameters?.docs,source:{originalSource:`{}`,...s.parameters?.docs?.source}}},c.parameters={...c.parameters,docs:{...c.parameters?.docs,source:{originalSource:`{}`,...c.parameters?.docs?.source}}},l.parameters={...l.parameters,docs:{...l.parameters?.docs,source:{originalSource:`{
+  decorators: [Story => <div className="grid h-40 grid-cols-[1fr_4px_340px]">
+        <div />
+        <Story />
+        <div className="bg-panel-2" />
+      </div>]
+}`,...l.parameters?.docs?.source}}},u=[`Default`,`AllProps`,`EdgeCases`]}))();export{c as AllProps,s as Default,l as EdgeCases,u as __namedExportsOrder,o as default};
