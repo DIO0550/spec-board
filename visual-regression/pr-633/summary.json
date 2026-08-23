@@ -26,12 +26,12 @@
       "title": "App",
       "name": "Command Palette Keyboard",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "app--default",
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -351,12 +351,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Focus",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-confirmdialog--all-props",
@@ -3926,12 +3926,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Keyboard",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--open",
@@ -6786,12 +6786,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
