@@ -270,17 +270,29 @@ impl MilestoneDefinition {
 
 /// マイルストーンの開閉状態を表す値オブジェクト。
 ///
-/// `open` / `closed` は既知バリアント、未知の文字列値は `Other` で保持する（値 lenient・
-/// 前方互換）。`LabelColor` / `LabelGroup` の VO パターンに倣い `Deserialize` は derive
-/// せず、フィールド側の関連関数 [`MilestoneState::deserialize_opt`] 経由で生成する。
-/// `Serialize` は `as_str` を文字列として出力する。
-#[derive(Debug, Clone, PartialEq)]
+/// `open` / `closed` は完全一致する既知バリアント、未知の文字列値は `Other` で raw の
+/// まま保持する（値 lenient・前方互換）。空文字だけは未指定として扱う。raw 文字列の分類は
+/// [`MilestoneState::from_lenient`] に集約し、`Serialize` は `as_str` を文字列として出力する。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MilestoneState {
     Open,
     Closed,
     /// 未知の文字列値（`open` / `closed` 以外）。前方互換のため保持する。
-    Other(String),
+    Other(OtherState),
 }
+
+/// 予約語以外のマイルストーン状態をrawのまま保持する値オブジェクト。
+///
+/// raw文字列からの直接構築は公開せず、必ず [`MilestoneState::from_lenient`] で予約語と
+/// 空文字を分類する。
+///
+/// ```compile_fail,E0423
+/// use spec_board_lib::config::OtherState;
+///
+/// let _state = OtherState("frozen".to_string());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtherState(String);
 
 impl MilestoneState {
     /// 保持している状態文字列を返す。
@@ -288,18 +300,21 @@ impl MilestoneState {
         match self {
             MilestoneState::Open => "open",
             MilestoneState::Closed => "closed",
-            MilestoneState::Other(s) => s.as_str(),
+            MilestoneState::Other(state) => state.0.as_str(),
         }
     }
 
-    /// 文字列を値 lenient で `MilestoneState` へ変換する（未知値も `Other` で保持）。
-    /// CRUD コマンドの `Option<String>` Args から `.map(...)` で合成して使う。
-    pub fn from_lenient(raw: impl Into<String>) -> MilestoneState {
+    /// 文字列を値 lenient で `MilestoneState` へ変換する。
+    ///
+    /// 完全一致する空文字は `None`、小文字の `open` / `closed` は既知variant、それ以外は
+    /// 空白・大文字小文字を正規化せず [`OtherState`] に保持する。
+    pub fn from_lenient(raw: impl Into<String>) -> Option<MilestoneState> {
         let s = raw.into();
         match s.as_str() {
-            "open" => MilestoneState::Open,
-            "closed" => MilestoneState::Closed,
-            _ => MilestoneState::Other(s),
+            "" => None,
+            "open" => Some(MilestoneState::Open),
+            "closed" => Some(MilestoneState::Closed),
+            _ => Some(MilestoneState::Other(OtherState(s))),
         }
     }
 
@@ -312,13 +327,7 @@ impl MilestoneState {
     {
         match serde_yaml_ng::Value::deserialize(de)? {
             serde_yaml_ng::Value::Null => Ok(None),
-            serde_yaml_ng::Value::String(s) => {
-                if s.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(MilestoneState::from_lenient(s)))
-                }
-            }
+            serde_yaml_ng::Value::String(s) => Ok(MilestoneState::from_lenient(s)),
             other => Err(serde::de::Error::custom(format!(
                 "expected a string, found {}",
                 yaml_value_type(&other)

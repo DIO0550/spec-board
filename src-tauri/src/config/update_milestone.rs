@@ -52,10 +52,7 @@ impl From<UpdateMilestoneArgs> for UpdateMilestoneIntent {
             description: args.description.filter(|s| !s.is_empty()),
             due: args.due.filter(|s| !s.is_empty()),
             order: args.order,
-            state: args
-                .state
-                .filter(|s| !s.is_empty())
-                .map(MilestoneState::from_lenient),
+            state: args.state.and_then(MilestoneState::from_lenient),
         }
     }
 }

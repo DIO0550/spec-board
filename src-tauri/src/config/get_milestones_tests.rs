@@ -5,7 +5,7 @@ use crate::task::canonical_task_path::CanonicalTaskPath;
 use std::path::Path;
 
 use super::{get_milestones_impl, GetMilestonesError, GetMilestonesPayload};
-use crate::config::{MilestoneDefinition, MilestoneRegistry};
+use crate::config::{MilestoneDefinition, MilestoneRegistry, MilestoneState};
 use crate::state::{AppState, AppStateError};
 use crate::task::task_index::Task;
 
@@ -121,11 +121,13 @@ fn no_project_open_display_matches_contract() {
 
 #[test]
 fn payload_serializes_camel_case() {
+    let mut milestone = definition("v0.3");
+    milestone.state = MilestoneState::from_lenient("frozen");
     let payload = GetMilestonesPayload {
-        milestones: vec![definition("v0.3")],
+        milestones: vec![milestone],
         usage_counts: std::collections::HashMap::new(),
     };
     let json = serde_json::to_value(&payload).expect("serialize");
     assert!(json.get("usageCounts").is_some());
-    assert!(json.get("milestones").is_some());
+    assert_eq!(json["milestones"][0]["state"], "frozen");
 }

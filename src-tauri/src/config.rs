@@ -58,7 +58,7 @@ pub use label_registry::{
 pub use milestone_registry::{
     milestone_registry_store, DeleteMilestonePlanError, LoadMilestonesError, MilestoneDefinition,
     MilestoneRegistry, MilestoneRegistryStore, MilestoneState, MilestoneValidationError,
-    SaveMilestonesError, UpdateMilestoneIntent, UpdateMilestonePlanError,
+    OtherState, SaveMilestonesError, UpdateMilestoneIntent, UpdateMilestonePlanError,
 };
 
 // テスト（`config_tests` / `label_registry_tests` / `milestone_registry_tests`）は

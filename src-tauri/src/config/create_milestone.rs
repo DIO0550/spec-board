@@ -52,11 +52,8 @@ impl From<CreateMilestoneArgs> for MilestoneDefinition {
             description: args.description.filter(|s| !s.is_empty()),
             due: args.due.filter(|s| !s.is_empty()),
             order: args.order,
-            // 空文字は None（未指定）に倒してから from_lenient（空文字を Other("") にしない）。
-            state: args
-                .state
-                .filter(|s| !s.is_empty())
-                .map(MilestoneState::from_lenient),
+            // state の空・予約語・未知値分類はドメインの唯一の入口へ委譲する。
+            state: args.state.and_then(MilestoneState::from_lenient),
             // updated は plan_create_milestone が clock でセットする。
             updated: None,
         }

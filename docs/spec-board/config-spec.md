@@ -337,7 +337,9 @@ type MilestoneProjectionsDto = {
 lenient には **2 つの軸**がある（labels.yml が「lenient なのは color のみ」と単軸で語るのに対し、milestones は型と値で層が分かれる点に注意）。
 
 - **型レベルの lenient（`order` のみ）**: `order` が型不一致（文字列など）・小数・負数・`null` の場合はエラーにせず未指定（並び順なし）に倒す。有効値は有限の非負整数のみ。文字列フィールドはこの型 lenient の対象外で文字列型を strict に検証する。
-- **値レベルの lenient（`state`）**: `state` は文字列型としては strict に検証するが、**未知の文字列値**（`open` / `closed` 以外）もエラーにせず保持する。表示層が既定（`open` 相当）にフォールバックする。文字列以外の型（数値 / bool / mapping 等）が来た場合は load エラー。
+- **値レベルの lenient（`state`）**: `state` は文字列型としては strict に検証する。予約語は完全一致する小文字の `open` / `closed` だけであり、空文字 `""` は未指定として扱う。それ以外の未知値は、空白のみ・前後空白付き・case 違いを含めて正規化せず raw 文字列のまま保持する。表示層は未知値を既定（`open` 相当）へフォールバックする。文字列以外の型（数値 / bool / mapping 等）が来た場合は load エラー。
+- **in-memory invariant**: Rust ドメインでは未知値をprivateな rawを持つ `OtherState` として保持し、rawからの分類は `MilestoneState::from_lenient` だけが行う。YAML deserializeとcreate / update adapterもこの入口を直接利用するため、空文字や予約語を `Other` として構築できない。
+- **roundtrip / 互換**: 未知の `state` は保存後の再読み込みでも同じraw値と分類を保つ。`state` のwire / disk表現は従来どおり文字列であり、既存のYAML型不一致を含むエラー分類・表示文字列も変更しない。
 - `due` / `updated` は形式（ISO 8601 等）を検証せず文字列のまま保持する（型は strict に文字列を要求）。
 - 任意文字列フィールド（`title` / `description`）の空文字 `""` は未指定として `None` に正規化する（trim はしない。labels.yml の `group` 空文字正規化に倣う。`name` の空文字のみ拒否対象）。
 - frontmatter `milestone` 値がマスタ未定義の場合は警告を出さず素通しする（暗黙許容・非破壊。「name 一意性の検証」節と区別）。
@@ -800,6 +802,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.11 | 2026-08-23 | Issue #598: MilestoneState の予約語完全一致、空文字の未指定化、unknown raw保持、in-memory構築不変条件とroundtrip / wire / error互換契約を明記 | - |
 | 1.10 | 2026-08-23 | Issue #597: SchemaVersion の CURRENT 限定、Config.version 非公開、raw load / migration 境界と wire / disk / error 互換契約を明記 | - |
 | 1.9 | 2026-08-23 | Issue #600: LabelRegistry / MilestoneRegistry の検証済み構築・immutable 定義参照と、wire / disk / error 互換契約を明記 | - |
 | 1.8 | 2026-08-23 | Issue #594: domain → resources の段階 guard、closure-scoped writer lease、同一 thread 再入の fail-fast typed error と RAII marker 解除契約を追加 | - |
