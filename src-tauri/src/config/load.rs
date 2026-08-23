@@ -485,7 +485,6 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
         }
     })?;
 
-    let config = config.classify_column_names_after_validation();
     let (config, changed) = config.normalize_card_order();
     if changed {
         log::warn!(
@@ -494,7 +493,7 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
         );
     }
 
-    Ok(Some(config))
+    Ok(Some(config.classify_column_names_after_validation()))
 }
 
 /// `<project_root>/.spec-board/config.json` を読み込み、不在なら [`Config::default`] を返す。

@@ -774,6 +774,37 @@ fn load_persisted_classifies_names_without_changing_wire_values() {
 }
 
 #[test]
+fn load_persisted_classifies_card_order_keys_after_cross_column_deduplication() {
+    let tmp = TempDir::new().unwrap();
+    write_config(
+        &tmp,
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Doing", "order": 1 }
+            ],
+            "cardOrder": {
+                "Todo": ["tasks/shared.md"],
+                "Doing": ["tasks/shared.md"]
+            }
+        }"#,
+    );
+
+    let config = load_persisted(tmp.path()).unwrap().expect("config");
+
+    assert_eq!(
+        column_paths(&config.card_order, "Todo"),
+        ["tasks/shared.md"]
+    );
+    assert_eq!(
+        column_paths(&config.card_order, "Doing"),
+        Vec::<&str>::new()
+    );
+    assert!(config.card_order.keys().all(ColumnName::is_validated));
+}
+
+#[test]
 fn load_persisted_classifies_names_after_migration() {
     let tmp = TempDir::new().unwrap();
     write_config(
