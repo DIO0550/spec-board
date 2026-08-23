@@ -29,6 +29,7 @@ use crate::config::{
 };
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::move_task::args::MoveTaskArgs;
@@ -242,8 +243,8 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
     let config_content = serde_json::to_string_pretty(&next_config)?;
 
     let mut next_tasks = snapshot.tasks().clone();
-    let returned =
-        TaskIndex::commit_move_into_cache(&mut next_tasks, &intent.file_path, &updated_task)?;
+    let moved_key = CanonicalTaskPath::from_path(&intent.file_path);
+    let returned = TaskIndex::commit_move_into_cache(&mut next_tasks, &moved_key, &updated_task)?;
     let registered_paths = vec![abs.to_path_buf()];
     resources.write_ignore().register(abs)?;
     if let Err(error) = io.write_existing(abs, file_content.as_bytes()) {

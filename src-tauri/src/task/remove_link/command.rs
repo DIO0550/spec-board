@@ -2,13 +2,14 @@
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use tauri::State;
 
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::remove_link::args::RemoveLinkArgs;
@@ -101,12 +102,13 @@ pub(crate) fn remove_link_impl(
 
 /// planned link削除をcloned task mapへ適用する。
 fn apply_remove_link_to_cache(
-    cache: &mut HashMap<PathBuf, Task>,
+    cache: &mut HashMap<CanonicalTaskPath, Task>,
     source_rel: &Path,
     target_normalized: &str,
     updated_task: &Task,
 ) -> Result<Task, RemoveLinkCommandError> {
-    TaskIndex::commit_remove_link_into_cache(cache, source_rel, target_normalized, updated_task)
+    let source_key = CanonicalTaskPath::from_path(source_rel);
+    TaskIndex::commit_remove_link_into_cache(cache, &source_key, target_normalized, updated_task)
         .map_err(Into::into)
 }
 

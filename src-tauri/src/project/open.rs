@@ -105,6 +105,7 @@ use crate::state::active_project_resources::{
 };
 use crate::state::watcher_session::WatcherSession;
 use crate::state::{AppState, AppStateError, OpenSwapError};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
@@ -509,7 +510,7 @@ fn bootstrap_config(
 /// `default_status`（config 不在時は `"Todo"`）へ補完済み。この値は
 /// `build_config_from_statuses` が `None` に対して使うフォールバックと同じなので、
 /// ここで `None` へ戻す必要はない。
-fn bootstrap_config_from_tasks(tasks: &HashMap<PathBuf, Task>) -> Config {
+fn bootstrap_config_from_tasks(tasks: &HashMap<CanonicalTaskPath, Task>) -> Config {
     if tasks.is_empty() {
         return Config::default();
     }
@@ -523,14 +524,14 @@ fn bootstrap_config_from_tasks(tasks: &HashMap<PathBuf, Task>) -> Config {
 /// `Task.status` は非 `Option` で、frontmatter に status が無いタスクはパース時に
 /// 既定 status へ補完済みなので、ここで `None` へ戻す必要はない。
 ///
-/// watcher の full rescan も同じ `HashMap<PathBuf, Task>` を持つため `pub(crate)` で
+/// watcher の full rescan も同じ `HashMap<CanonicalTaskPath, Task>` を持つため `pub(crate)` で
 /// 共有する（同型の helper を watcher 側に重複定義しないため）。
 pub(crate) fn status_inputs_from_tasks(
-    tasks: &HashMap<PathBuf, Task>,
+    tasks: &HashMap<CanonicalTaskPath, Task>,
 ) -> Vec<(PathBuf, Option<String>)> {
     tasks
         .iter()
-        .map(|(path, task)| (path.clone(), Some(task.status.as_str().to_owned())))
+        .map(|(path, task)| (path.as_path_buf(), Some(task.status.as_str().to_owned())))
         .collect()
 }
 
@@ -558,7 +559,7 @@ pub(crate) enum ReconcileOutcome {
 fn reconcile_config(
     root: &Path,
     config: &Config,
-    tasks: &HashMap<PathBuf, Task>,
+    tasks: &HashMap<CanonicalTaskPath, Task>,
     writer: &dyn ConfigWriter,
 ) -> ReconcileOutcome {
     let plan = config.plan_reconcile_columns(&status_inputs_from_tasks(tasks));
@@ -629,7 +630,7 @@ pub(crate) struct LoadedProjectData {
     pub(crate) config: Config,
     pub(crate) labels: LabelRegistry,
     pub(crate) milestones: MilestoneRegistry,
-    pub(crate) tasks: HashMap<PathBuf, Task>,
+    pub(crate) tasks: HashMap<CanonicalTaskPath, Task>,
     pub(crate) load_warnings: Vec<ProjectLoadWarning>,
     /// config をどこから得たか。コールドオープンの bootstrap 判定と GUIDE.md の
     /// 書き出し判定、本ローダ内の reconcile 判定がこれを見る。
@@ -681,10 +682,10 @@ pub(crate) fn load_project_data(
     let default_status = default_status_for(&config);
     let report = rebuild_tasks_from_disk_with_report(root, &default_status, io)?;
     load_warnings.extend(report.warnings);
-    let tasks: HashMap<PathBuf, Task> = report
+    let tasks: HashMap<CanonicalTaskPath, Task> = report
         .tasks
         .into_iter()
-        .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+        .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
         .collect();
 
     if matches!(config_origin, ConfigOrigin::Persisted) {

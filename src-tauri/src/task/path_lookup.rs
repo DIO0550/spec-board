@@ -6,12 +6,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::path_normalization::{has_windows_drive_prefix, normalize_path_parts};
 use crate::task::task_index::Task;
 
 pub(super) fn normalize_task_path_for_lookup(path: &str) -> String {
-    let path_text = path.replace('\\', "/");
-    normalize_path_parts(&path_text, true)
+    CanonicalTaskPath::new(path).into_string()
 }
 
 pub(super) fn normalize_parent_path_for_lookup(parent: &str) -> Option<String> {

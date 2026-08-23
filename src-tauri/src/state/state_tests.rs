@@ -4,7 +4,6 @@ use super::active_project_resources::{
 use super::{AppState, AppStateError, BoxedWatcherHandle, OpenSwapError, ResourceAccessError};
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
@@ -17,6 +16,7 @@ use crate::config::{
 };
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, ProjectSession, SessionIdentity};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::task_index::Task;
 
 fn sample_task(id: &str, file_path: &str) -> Task {
@@ -80,7 +80,11 @@ fn sample_milestones() -> MilestoneRegistry {
     }
 }
 
-fn candidate_for(state: &AppState, root: &str, tasks: HashMap<PathBuf, Task>) -> ProjectSession {
+fn candidate_for(
+    state: &AppState,
+    root: &str,
+    tasks: HashMap<CanonicalTaskPath, Task>,
+) -> ProjectSession {
     let session_id = state.reserve_session_id().expect("reserve test session ID");
     PreparedProjectSession::new(
         ProjectRoot::try_from_str(root).expect("valid test root"),
@@ -101,7 +105,11 @@ fn staged_for(identity: SessionIdentity) -> StagedProjectResources {
     )
 }
 
-fn swap_session(state: &AppState, root: &str, tasks: HashMap<PathBuf, Task>) -> super::OpenSwap {
+fn swap_session(
+    state: &AppState,
+    root: &str,
+    tasks: HashMap<CanonicalTaskPath, Task>,
+) -> super::OpenSwap {
     let candidate = candidate_for(state, root, tasks);
     let staged = staged_for(candidate.identity());
     state
@@ -202,9 +210,10 @@ fn session_commit_updates_domain_and_resource_revision_together() {
 
     let committed = state
         .commit_session(&expected, |session| {
-            session
-                .tasks_mut()
-                .insert(PathBuf::from("tasks/a.md"), sample_task("a", "tasks/a.md"));
+            session.tasks_mut().insert(
+                CanonicalTaskPath::new("tasks/a.md"),
+                sample_task("a", "tasks/a.md"),
+            );
         })
         .expect("matching commit succeeds");
 
@@ -254,7 +263,7 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
                     .commit_session(&expected, |session| {
                         session
                             .tasks_mut()
-                            .insert(PathBuf::from(path), sample_task(id, path));
+                            .insert(CanonicalTaskPath::new(path), sample_task(id, path));
                     })
                     .expect("serialized commit");
             })
@@ -268,8 +277,12 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
 
     let snapshot = state.require_session_snapshot().expect("final snapshot");
     assert_eq!(2, snapshot.tasks().len());
-    assert!(snapshot.tasks().contains_key(&PathBuf::from("tasks/a.md")));
-    assert!(snapshot.tasks().contains_key(&PathBuf::from("tasks/b.md")));
+    assert!(snapshot
+        .tasks()
+        .contains_key(&CanonicalTaskPath::new("tasks/a.md")));
+    assert!(snapshot
+        .tasks()
+        .contains_key(&CanonicalTaskPath::new("tasks/b.md")));
     assert_eq!(2, snapshot.version().revision.as_u64());
 }
 

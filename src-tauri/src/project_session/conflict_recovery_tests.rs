@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -23,6 +23,7 @@ use crate::state::active_project_resources::{
     pending_activation_state, StagedProjectResources, WatcherActivation,
 };
 use crate::state::{AppState, BoxedWatcherHandle, CommitSessionError, SessionWriteError};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::FsTaskIo;
 use crate::task::task_index::Task;
 
@@ -170,7 +171,7 @@ fn open_session(
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<PathBuf, Task>,
+    tasks: HashMap<CanonicalTaskPath, Task>,
 ) -> ProjectSessionSnapshot {
     let session_id = state.reserve_session_id().expect("reserve session ID");
     let candidate = PreparedProjectSession::new(root, config, labels, milestones, tasks)
@@ -231,7 +232,7 @@ fn task_resync_keeps_session_id_and_commits_all_rebuilt_tasks_once() {
         labels("resident-label"),
         milestones("resident-milestone"),
         HashMap::from([(
-            PathBuf::from("stale.md"),
+            CanonicalTaskPath::new("stale.md"),
             sample_task("stale.md", "Stale resident"),
         )]),
     );
@@ -255,7 +256,9 @@ fn task_resync_keeps_session_id_and_commits_all_rebuilt_tasks_once() {
     assert_eq!(1, recovered.tasks().len());
     assert_eq!(
         "Fresh from disk",
-        recovered.tasks()[Path::new("fresh.md")].title.as_str()
+        recovered.tasks()[&CanonicalTaskPath::new("fresh.md")]
+            .title
+            .as_str()
     );
 }
 
@@ -298,7 +301,7 @@ fn config_and_tasks_resync_uses_reloaded_config_for_missing_task_status() {
     assert_eq!(recovered_config, *recovered.config());
     assert_eq!(
         ColumnName::from_lenient("Review"),
-        recovered.tasks()[Path::new("fresh.md")].status
+        recovered.tasks()[&CanonicalTaskPath::new("fresh.md")].status
     );
     assert_eq!(2, recovered.version().revision.as_u64());
 }
@@ -538,7 +541,7 @@ fn config_and_task_scan_failure_leaves_every_current_aggregate_field_unchanged()
         labels("resident-label"),
         milestones("resident-milestone"),
         HashMap::from([(
-            PathBuf::from("resident.md"),
+            CanonicalTaskPath::new("resident.md"),
             sample_task("resident.md", "Resident"),
         )]),
     );

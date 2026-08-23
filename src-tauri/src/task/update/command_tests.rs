@@ -12,6 +12,7 @@ use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
 use crate::state::AppState;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::create::error::ContentRejectReason;
 use crate::task::io::FsTaskIo;
 use crate::task::task_index::ParentHierarchyErrorReason;
@@ -801,4 +802,68 @@ fn update_task_revision_exhausted_performs_zero_task_io() {
     );
     assert_eq!(0, session_write_ignore_len(&state));
     assert_eq!(u64::MAX, session_revision(&state).as_u64());
+}
+#[test]
+fn update_task_with_dot_prefixed_path_updates_canonical_entry() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_for("./tasks/a.md");
+    args.status = Some("Doing".into());
+
+    let task = update_task_impl(&state, &FsTaskIo, args).expect("dot prefix resolves");
+    assert_eq!(task.status.as_str(), "Doing");
+
+    let snapshot = state
+        .require_session_snapshot()
+        .expect("resident snapshot after update");
+    assert_eq!(1, snapshot.tasks().len());
+    assert_eq!(
+        "Doing",
+        snapshot
+            .tasks()
+            .get(&CanonicalTaskPath::new("tasks/a.md"))
+            .expect("canonical entry")
+            .status
+            .as_str()
+    );
+}
+
+#[test]
+fn update_task_full_rebuild_keeps_canonical_keys() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    // parent 変更は needs_full_rebuild 経路を通り、cache を組み直す。
+    let mut args = args_for("tasks/child.md");
+    args.parent = Some("tasks/parent.md".into());
+    update_task_impl(&state, &FsTaskIo, args).expect("parent change rebuilds the cache");
+
+    let snapshot = state
+        .require_session_snapshot()
+        .expect("resident snapshot after rebuild");
+    assert_eq!(2, snapshot.tasks().len());
+    for (cache_key, task) in snapshot.tasks() {
+        assert_eq!(
+            &CanonicalTaskPath::from_file_path(&task.file_path),
+            cache_key
+        );
+    }
 }

@@ -1,5 +1,6 @@
 pub mod add_link;
 pub mod archive;
+pub mod canonical_task_path;
 pub mod children;
 pub mod create;
 pub mod delete;

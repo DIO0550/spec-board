@@ -19,6 +19,7 @@ use crate::state::active_project_resources::{
     pending_activation_state, StagedProjectResources, WatcherActivation,
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
@@ -63,7 +64,7 @@ fn insert_task(state: &AppState, task: crate::task::task_index::Task) {
         .commit_session_write(&snapshot.identity(), move |session| {
             session
                 .tasks_mut()
-                .insert(task.file_path.as_path_buf(), task);
+                .insert(CanonicalTaskPath::from_file_path(&task.file_path), task);
         })
         .expect("insert test task");
 }

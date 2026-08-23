@@ -5,7 +5,7 @@
 //! 標準 fs API への直接呼び出しは持たず、すべての I/O は `TaskIo` ポート経由で行う。
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use tauri::State;
@@ -15,6 +15,7 @@ use super::error::CreateTaskCommandError;
 use crate::config::column_name::ColumnName;
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
@@ -80,11 +81,11 @@ pub(crate) fn create_task_impl(
 
 /// generated contentをTaskへ変換し、cloned task mapへ差分追加したcommit planを返す。
 fn plan_cache_insert(
-    tasks: &HashMap<PathBuf, Task>,
+    tasks: &HashMap<CanonicalTaskPath, Task>,
     content: &TaskContent,
     rel_path: &Path,
     status: ColumnName,
-) -> Result<(HashMap<PathBuf, Task>, Task), CreateTaskCommandError> {
+) -> Result<(HashMap<CanonicalTaskPath, Task>, Task), CreateTaskCommandError> {
     let document = TaskDocument::parse(content.as_bytes())?;
     let context = crate::task::parse::TaskParseContext {
         file_path: rel_path.to_path_buf(),

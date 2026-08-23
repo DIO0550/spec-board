@@ -461,7 +461,7 @@ fn payload_session_revision_refers_to_the_returned_tasks() {
     state
         .commit_session_write(&identity, |session| {
             session.tasks_mut().insert(
-                std::path::PathBuf::from("tasks/b.md"),
+                crate::task::canonical_task_path::CanonicalTaskPath::new("tasks/b.md"),
                 first.tasks[0].clone(),
             );
         })
@@ -605,11 +605,11 @@ fn cache_holding_a_parent_cycle_from_watcher_upsert_still_succeeds() {
     state
         .test_update_tasks(|tasks| {
             tasks.insert(
-                std::path::PathBuf::from("tasks/x.md"),
+                crate::task::canonical_task_path::CanonicalTaskPath::new("tasks/x.md"),
                 cyclic("tasks/x.md", "tasks/y.md"),
             );
             tasks.insert(
-                std::path::PathBuf::from("tasks/y.md"),
+                crate::task::canonical_task_path::CanonicalTaskPath::new("tasks/y.md"),
                 cyclic("tasks/y.md", "tasks/x.md"),
             );
         })

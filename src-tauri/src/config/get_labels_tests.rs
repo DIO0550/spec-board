@@ -1,6 +1,6 @@
 //! `get_labels_impl` のユニットテスト。
 
-use std::path::PathBuf;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 
 use super::{get_labels_impl, GetLabelsError, GetLabelsPayload};
 use crate::config::{LabelColor, LabelDefinition, LabelGroup, LabelRegistry};
@@ -43,7 +43,7 @@ fn set_tasks(state: &AppState, tasks: Vec<Task>) {
     let cache = tasks
         .into_iter()
         .enumerate()
-        .map(|(i, t)| (PathBuf::from(format!("{i}.md")), t))
+        .map(|(i, t)| (CanonicalTaskPath::new(&format!("{i}.md")), t))
         .collect();
     state.test_replace_tasks(cache).expect("writable");
 }
