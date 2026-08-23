@@ -1,5 +1,5 @@
 {
-  "reportVersion": "47dcfdf4d438174d4072c1576cc9476bb35bbc3b",
+  "reportVersion": "94c6c7a716ef6b35c7c350343c223f8a466542c0",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -300,7 +300,7 @@
       "name": "Compact",
       "status": "passed",
       "reason": "within-threshold",
-      "diffPixels": 2,
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -351,12 +351,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Focus",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-confirmdialog--all-props",
@@ -6786,12 +6786,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
