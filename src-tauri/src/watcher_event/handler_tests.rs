@@ -259,13 +259,7 @@ fn watcher_mutation_acquires_the_exact_root_writer_gate_before_touching_state() 
     let (state, ctx, log) = build_installed_ctx(dir.path());
     let root = crate::project::project_root::ProjectRoot::from_path_buf(dir.path().to_path_buf())
         .expect("valid project root");
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let poison = Arc::clone(&gate);
-    let _ = std::thread::spawn(move || {
-        let _guard = poison.lock().expect("writer gate");
-        panic!("poison watcher writer gate");
-    })
-    .join();
+    state.poison_writer_gate_for_test(&root);
     let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
 
     let error = handle_change(&TaskFileChange::Upserted(abs), &ctx)

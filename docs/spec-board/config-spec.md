@@ -717,6 +717,8 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 に従う。
 
 - 同じ exact raw `ProjectRoot` の writer は command 種別をまたいで 1 本の gate に直列化する。gate 待機後に fresh snapshot を読み直すため、先行 writer の config/registry/task 更新を後発 writer が保持する
+- writer gate は closure-scoped API でだけ取得し、raw gate/guard を command へ返さない。同一 thread の lease 再入は同じ root／別 root とも待機せず `WriterLeaseReentrant` typed error にし、RAII marker は operation error、early return、panic unwind で必ず解除する
+- resident pair は raw Mutex を所有する private lock module で domain guard を先に取得し、その guard を消費して resources guard へ進む段階 API だけを使う。resources 単独参照と background cache は guard を返さない値 API とする
 - project switch と same-path reopen は root + SessionId の pre-gate identity 検証で disk I/O 前に拒否し、resident commit は full SessionId + Revision CAS で行う
 - resident validation / target 解決後、store load、task disk read、write-ignore 登録、disk writeより先に revision increment を checked preflight する。revision 枯渇時は disk/store I/O ゼロで session と marker を不変に保つ
 - disk write 成功後に同じ session の revision conflict が判明した場合、同じ非 reentrant gate を再取得せず、operation と同じ injected task I/O / config loader / registry store で current disk state を再読込して CAS resync する
@@ -788,6 +790,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.8 | 2026-08-23 | Issue #594: domain → resources の段階 guard、closure-scoped writer lease、同一 thread 再入の fail-fast typed error と RAII marker 解除契約を追加 | - |
 | 1.7 | 2026-08-12 | open_config_file の固定targetへ labels を追加。viewer一覧は config/GUIDE の2件を維持し、labels.yml は外部表示専用とする | - |
 | 1.6 | 2026-08-12 | ラベル設定の「ファイルを見る」を labels.yml 外部表示用 optional callback 境界として追加 | - |
 | 1.5 | 2026-08-11 | Settings Status / Config 内部タブの presentational callback 境界と、未接続時に永続化しない契約を追記 | - |

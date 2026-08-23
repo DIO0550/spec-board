@@ -119,15 +119,15 @@ fn handle_change_with_sequence_hook(
     ctx: &AdapterContext,
     before_sequence: &mut dyn FnMut(),
 ) -> Result<(), HandleError> {
-    let gate = ctx.state.writer_gate(&ctx.project_root)?;
-    let _writer = ctx.state.lock_writer_gate(gate.as_ref())?;
-
-    match change {
-        TaskFileChange::Rescan => handle_rescan(ctx, before_sequence),
-        TaskFileChange::Failure(failure) => handle_backend_failure(failure, ctx, before_sequence),
-        TaskFileChange::Removed(path) => handle_delete(path, ctx, before_sequence),
-        TaskFileChange::Upserted(path) => handle_upsert(path, ctx, before_sequence),
-    }
+    ctx.state
+        .with_project_root_writer_lease(&ctx.project_root, || match change {
+            TaskFileChange::Rescan => handle_rescan(ctx, before_sequence),
+            TaskFileChange::Failure(failure) => {
+                handle_backend_failure(failure, ctx, before_sequence)
+            }
+            TaskFileChange::Removed(path) => handle_delete(path, ctx, before_sequence),
+            TaskFileChange::Upserted(path) => handle_upsert(path, ctx, before_sequence),
+        })?
 }
 
 /// active session がこの adapter の stable root + SessionId と一致する snapshot を返す。

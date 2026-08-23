@@ -167,12 +167,8 @@ fn open_swap_replaces_at_most_one_active_resource_set() {
     assert_eq!(
         second.snapshot.version(),
         state
-            .resources
-            .lock()
-            .expect("resource lock")
-            .as_ref()
+            .active_resource_version_for_test()
             .expect("active resources")
-            .version()
     );
 }
 
@@ -248,24 +244,18 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
             let state = Arc::clone(&state);
             let start = Arc::clone(&start);
             thread::spawn(move || {
-                let target = state.active_session_identity().expect("active target");
-                let gate = state
-                    .writer_gate(target.project_root())
-                    .expect("writer gate");
                 start.wait();
-                let _lease = state.lock_writer_gate(gate.as_ref()).expect("writer lease");
-                let snapshot = state.require_session_snapshot().expect("fresh snapshot");
-                snapshot
-                    .ensure_same_session(&target)
-                    .expect("same open session remains active");
-                let expected = snapshot.identity();
                 state
-                    .commit_session(&expected, |session| {
-                        session
-                            .tasks_mut()
-                            .insert(CanonicalTaskPath::new(path), sample_task(id, path));
+                    .with_project_writer_lease(|_, snapshot| {
+                        let expected = snapshot.identity();
+                        state.commit_session_write(&expected, |session| {
+                            session
+                                .tasks_mut()
+                                .insert(CanonicalTaskPath::new(path), sample_task(id, path));
+                        })?;
+                        Ok::<_, super::SessionWriteError>(())
                     })
-                    .expect("serialized commit");
+                    .expect("serialized writer");
             })
         })
         .collect();
@@ -302,16 +292,8 @@ fn target_lookup_before_same_path_reopen_is_rejected_before_side_effects() {
             .expect("first session target");
         writer_ready.wait();
         writer_reopened.wait();
-        let gate = writer_state
-            .writer_gate(target.project_root())
-            .expect("writer gate");
-        let _lease = writer_state
-            .lock_writer_gate(gate.as_ref())
-            .expect("writer lease");
         writer_state
-            .require_session_snapshot()
-            .expect("fresh snapshot")
-            .ensure_same_session(&target)
+            .with_project_writer_lease_for(&target, |_| Ok::<_, super::SessionWriteError>(()))
     });
 
     target_ready.wait();
@@ -322,6 +304,9 @@ fn target_lookup_before_same_path_reopen_is_rejected_before_side_effects() {
         .join()
         .expect("writer thread")
         .expect_err("reopen must invalidate the old target");
+    let super::SessionWriteError::Conflict(conflict) = conflict else {
+        panic!("expected session conflict, got {conflict:?}");
+    };
     assert_ne!(
         conflict.expected.version().session_id,
         conflict.actual.expect("new session").version().session_id
@@ -331,56 +316,110 @@ fn target_lookup_before_same_path_reopen_is_rejected_before_side_effects() {
 #[test]
 fn holding_project_a_gate_does_not_block_project_b_gate() {
     let state = Arc::new(AppState::new());
-    let gate_a = state
-        .writer_gate(&ProjectRoot::try_from_str("/tmp/project-a").unwrap())
-        .expect("gate A");
-    let _lease_a = state.lock_writer_gate(gate_a.as_ref()).expect("lease A");
+    let root_a = ProjectRoot::try_from_str("/tmp/project-a").unwrap();
     let start = Arc::new(Barrier::new(2));
     let worker_state = Arc::clone(&state);
     let worker_start = Arc::clone(&start);
 
     let worker = thread::spawn(move || {
-        let gate_b = worker_state
-            .writer_gate(&ProjectRoot::try_from_str("/tmp/project-b").unwrap())
-            .expect("gate B");
-        worker_start.wait();
-        let acquired = gate_b.try_lock().is_ok();
-        acquired
+        worker_state
+            .with_project_root_writer_lease(
+                &ProjectRoot::try_from_str("/tmp/project-b").unwrap(),
+                || {
+                    worker_start.wait();
+                },
+            )
+            .expect("project B lease");
     });
 
-    start.wait();
-    assert!(worker.join().expect("project B worker"));
+    state
+        .with_project_root_writer_lease(&root_a, || {
+            start.wait();
+            worker.join().expect("project B worker");
+        })
+        .expect("project A lease");
 }
 
 #[test]
 fn poisoned_writer_gate_is_reported_as_typed_error() {
     let state = AppState::new();
-    let gate = state
-        .writer_gate(&ProjectRoot::try_from_str("/tmp/project-a").unwrap())
-        .expect("writer gate");
-    let poison = Arc::clone(&gate);
-    let _ = thread::spawn(move || {
-        let _guard = poison.lock().expect("lock before poison");
-        panic!("poison writer gate");
-    })
-    .join();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").unwrap();
+    state.poison_writer_gate_for_test(&root);
 
     assert_eq!(
         AppStateError::WriterGatePoisoned,
         state
-            .lock_writer_gate(gate.as_ref())
+            .with_project_root_writer_lease(&root, || ())
             .expect_err("poison must be typed")
     );
+}
+
+#[test]
+fn same_root_writer_lease_reentry_fails_without_waiting() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid root");
+
+    let nested = state
+        .with_project_root_writer_lease(&root, || {
+            state.with_project_root_writer_lease(&root, || ())
+        })
+        .expect("outer lease succeeds");
+
+    assert_eq!(Err(AppStateError::WriterLeaseReentrant), nested);
+}
+
+#[test]
+fn different_root_writer_lease_reentry_fails_without_waiting() {
+    let state = AppState::new();
+    let first = ProjectRoot::try_from_str("/tmp/project-a").expect("valid first root");
+    let second = ProjectRoot::try_from_str("/tmp/project-b").expect("valid second root");
+
+    let nested = state
+        .with_project_root_writer_lease(&first, || {
+            state.with_project_root_writer_lease(&second, || ())
+        })
+        .expect("outer lease succeeds");
+
+    assert_eq!(Err(AppStateError::WriterLeaseReentrant), nested);
+}
+
+#[test]
+fn writer_lease_marker_is_released_after_panic() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid root");
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = state.with_project_root_writer_lease(&root, || {
+            panic!("operation panic");
+        });
+    }));
+    assert!(panic.is_err());
+
+    state
+        .with_project_root_writer_lease(&root, || ())
+        .expect("marker must be released during unwind");
+}
+
+#[test]
+fn writer_lease_marker_is_released_after_operation_error() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid root");
+
+    let operation: Result<(), &str> = state
+        .with_project_root_writer_lease(&root, || Err("operation failed"))
+        .expect("lease acquisition succeeds");
+    assert_eq!(Err("operation failed"), operation);
+
+    state
+        .with_project_root_writer_lease(&root, || ())
+        .expect("marker must be released after the closure returns");
 }
 
 #[test]
 fn poisoned_resource_lock_is_reported_without_returning_partial_access() {
     let state = Arc::new(AppState::new());
     let opened = swap_session(&state, "/tmp/project-a", HashMap::new());
-    poison_mutex(Arc::clone(&state), |state| {
-        let _guard = state.resources.lock().expect("lock before poison");
-        panic!("poison resources");
-    });
+    poison_mutex(Arc::clone(&state), AppState::poison_resources_for_test);
 
     assert_eq!(
         ResourceAccessError::State(AppStateError::ResourceLockPoisoned),
@@ -554,5 +593,5 @@ fn identity_mismatch_rejects_open_swap_before_replacing_domain() {
 
     assert!(matches!(error, OpenSwapError::IdentityMismatch { .. }));
     assert!(state.session_snapshot().expect("domain lock").is_none());
-    assert!(state.resources.lock().expect("resource lock").is_none());
+    assert!(state.active_resource_version_for_test().is_none());
 }
