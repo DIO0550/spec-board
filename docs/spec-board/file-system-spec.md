@@ -306,10 +306,11 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
    - `priority` は `High` / `Medium` / `Low` に ASCII 大小文字非区別で正規化、`Some` だけ書き出す（無効値 / 空文字 / 未指定は frontmatter から省略）
    - `labels` は空配列なら省略
    - `parent` は解決済み Task の `file_path` 文字列をそのまま書き出す
-6. **書き込み + canonical cache 置換**:
-   - watcher 起動状態でのみ `write_ignore` レジストリに自前 write path を登録 → 監視 thread 側で `task-created` IPC emit を抑止
-   - 書き込み成功後、新規 parse-only candidate と既存全 task を canonical resolver に通し、`children` / `reverseLinks` / graph warning を全件再計算して `tasks_cache` を一括置換
-   - 既存 cache 内で dangling parent / links が新規 Task を参照していた場合も、この全件再計算で `parentNotFound` warning の除去と新規 Task 側の `children` / `reverseLinks` への反映を同時に行う
+6. **I/O前resolution plan + 書き込み + commit**:
+   - 新規parse-only candidateと既存全taskをcanonical resolverへ通し、`children` / `reverseLinks` / graph warningを全件再計算した`ResolvedTaskSet`と戻り値をdisk I/O前に確定する
+   - 既存cache内でdangling parent / linksが新規Taskを参照していた場合も、このresolution planで`parentNotFound` warningの除去と新規Task側の`children` / `reverseLinks`への反映を同時に行う
+   - directory確保後、watcher起動状態にかかわらず`write_ignore`へ自前write pathを登録し、`create_new`で書き込む
+   - 書き込み成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
 7. **戻り値**: 挿入後の Task（`children` / `reverseLinks` 解決済み）
 
 ### preview_task_filename IPC
@@ -345,21 +346,17 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | body | `String` | いいえ | Markdown本文 |
 
 **振る舞い**:
-1. 対象ファイルを読み込み、フロントマターをパース
-2. 渡されたフィールドのみを更新（未指定フィールドは変更しない）
-3. `parent` が変更される場合、循環参照がないことを検証
-4. フロントマター + 本文を再構成して書き出し
-5. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
-6. 書き込み後は `parent` の変更有無にかかわらず全 task を canonical resolver に通し、派生値と graph warning を全件再計算して resident cache を一括置換
+1. exact project rootのwriter lease内でsnapshotを確定し、session identity / active resourcesをpreflightする
+2. 対象ファイルを読み込み、`TaskDocument`としてパースする
+3. 渡されたフィールドだけを`TaskPatch`で更新する（未指定フィールドは変更しない）。`parent`変更時は`Vec<ParsedTask>`に対象candidateを反映し、`ResolvedTaskSet::validate_strict`で循環/深さを検証する
+4. documentをrenderして更新candidateを作り、resident全taskとcanonical resolverへ通す。`ResolvedTaskSet`、戻り値、書き込み内容を変更I/O前に確定する
+5. watcher起動状態にかかわらず`write_ignore`へ対象pathを登録し、ファイルを書き込む
+6. 書き込み成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+7. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
 
-> Implementation notes (2026-05-16): parent 循環検証は
-> `task_index::validate_parent_hierarchy` / `validate_chain_from_parent` で行う。
-> `create_task` / `update_task` command は本ドキュメントの振る舞いを実装済み。
-> dangling parent 解決による cycle / too-deep は `validate_parent_hierarchy` を
-> augmented snapshot に対して呼ぶことで検出する。`update_task` は部分マージ更新
-> （未指定フィールドは変更しない）で、`parent` が変更される場合のみ augmented
-> strict 検証を実行する。これは書き込み後に常に実行する canonical full resolver とは
-> 別の I/O 前 validation である。
+> Implementation notes (2026-05-16): `update_task`は部分マージ更新で、`parent`変更時だけ
+> `ResolvedTaskSet::validate_strict`によるI/O前strict検証を追加する。strict検証の有無とは別に、
+> 全更新でwrite前にcanonical resolverを実行し、resolved resident planを完成させる。
 
 ---
 
@@ -378,17 +375,18 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 1. `filePath` を `InputTaskPath` で正規化し、空文字・非 `.md`・`..` を含むパスは `InvalidPath` エラーを返す
 2. cache（`TaskIndex`）上で対象タスクの存在を確認し、見つからなければ `FileNotFound` エラーを返す
 3. 子タスクが存在する場合、`HasChildren` エラーを返却し削除を中止する（abort strategy）
-4. watcher 起動中は `WriteIgnoreRegistry` に削除対象パスを登録し、watcher 側の重複処理を抑止する
-5. `TaskIo::remove` でファイルを物理削除する
-6. 対象を除いた全 task を canonical resolver に通し、消えた task に由来する `children` / `reverseLinks` を除去して `tasks_cache` を一括置換する。frontmatter の raw `parent` / `links` は変更しない
-7. `Ok(())` を返却する
+4. 対象を除いた全taskをcanonical resolverへ通し、消えたtask由来の`children` / `reverseLinks`を除去した`ResolvedTaskSet`をdisk変更前に確定する。frontmatterのraw `parent` / `links`は変更しない
+5. watcher起動状態にかかわらず`WriteIgnoreRegistry`へ削除対象pathを登録する
+6. 対象mdを`.spec-board/trash/`の同じ相対pathへ移動する（ソフトデリート）。移動失敗時はmarkerを解除し、既存error分類を維持する
+7. 移動成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+8. `Ok(())` を返却する
 
 **エラー**:
 
 | エラー | Display 文字列パターン | 条件 |
 |:------|:---------------------|:-----|
 | `InvalidPath` | `invalid path: {raw}`（空文字時は `invalid path: empty`） | 空文字・非 `.md`・不正パス |
-| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない、またはファイル物理削除時に disk 上に存在しない |
+| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない、またはtrashへの移動時にsourceがdisk上に存在しない |
 | `HasChildren` | `task has children: {path} (children: ...)` | 子タスクが 1 件以上存在する |
 | `UnsupportedOrphanStrategy` | `unsupported orphan strategy: {strategy}` | `abort` 以外の orphanStrategy が指定された |
 | `NoProjectOpen` | `project is not opened` | プロジェクト未オープン |

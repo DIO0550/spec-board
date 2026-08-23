@@ -30,17 +30,15 @@ effect 層から見れば「ファイル書き込みと cache mutate をやる�
 `source_existing` を clone して詰めただけだが、effect 層が「noop なので
 IPC 戻り値に何を返せばよいか」を考えなくて済むようにする目的。`add_link` と同じ。
 
-## なぜ重複登録を `retain` で全削除する設計にしたか
+## なぜTaskDocumentのtyped patchで重複を全削除するか
 
 `add_link` 側は「すでに含まれていれば NoOp」なので、本来は同じ target が複数
 登録される状況は起こらないはずだが、外部の手書き編集や過去仕様時代のファイル
-など、現実には重複が混入している可能性がある。`remove_link` は
-
-- `frontmatter.links.retain(|l| normalize(...) != Some(target_norm))`
-
-で完全一致するエントリを **すべて** 除去する。Set 化してから 1 件除く設計に
+など、現実には重複が混入している可能性がある。`remove_link`は`TaskDocument::links()`を
+走査し、normalize結果がtargetと異なる要素だけを新しい`Vec<String>`へ集め、
+`TaskPatch { links: Patch::Set(..) }`として適用する。完全一致するエントリをすべて除去するため、Set 化してから 1 件除く設計に
 すると、表記揺れの正規化形は集約されても元の表記が失われるため、テキストとして
-読みやすい状態を保ちたい場合に表記情報を残せない。`retain` ベースなら、削除
+読みやすい状態を保ちたい場合に表記情報を残せない。filter + cloneなら、削除
 対象以外の要素は原文表記のまま保持される。重複登録の掃除も同時に行えるので、
 副次的なメンテナンス効果も得られる。
 
