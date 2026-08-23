@@ -11,6 +11,7 @@ use crate::config::UpdateCardOrderPlanError;
 use crate::project_session::{RevisionExhausted, SessionConflict};
 use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::create::error::ContentRejectReason;
+use crate::task::parse::TaskParseError;
 use crate::task::task_content::TaskContentError;
 use spec_board_fs::config::config_io::ConfigIoError;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
@@ -111,6 +112,9 @@ pub enum MoveTaskCommandError {
 
     #[error(transparent)]
     ResourceConflict(#[from] SessionResourceConflict),
+
+    #[error(transparent)]
+    Resolution(#[from] TaskParseError),
 }
 
 impl From<SessionWriteError> for MoveTaskCommandError {

@@ -258,13 +258,14 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
     let next_tasks = TaskIndex::new(snapshot.tasks().values().cloned().collect())
         .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
             Box::new(updated_task),
-        ))
-        .expect("moving a task between columns cannot invalidate the parent hierarchy")
+        ))?
         .tasks;
     let returned = next_tasks
         .get(&moved_key)
         .cloned()
-        .expect("moved task remains after canonical resolution");
+        .ok_or_else(|| MoveTaskError::TaskVanished {
+            path: moved_key.as_str().to_string(),
+        })?;
     let registered_paths = vec![abs.to_path_buf()];
     resources.write_ignore().register(abs)?;
     if let Err(error) = io.write_existing(abs, file_content.as_bytes()) {
