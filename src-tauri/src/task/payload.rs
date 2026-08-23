@@ -64,7 +64,7 @@ impl From<&Task> for TaskPayload {
             reverse_links: task.reverse_links().to_vec(),
             body: task.body().to_owned(),
             extras: task.extras().clone(),
-            warnings: task.warnings().to_vec(),
+            warnings: task.warnings(),
         }
     }
 }

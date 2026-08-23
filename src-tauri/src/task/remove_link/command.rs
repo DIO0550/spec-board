@@ -67,21 +67,17 @@ pub(crate) fn remove_link_impl(
         let outcome = index
             .plan_remove_link(project_root.as_path(), intent, &existing_source, parsed)
             .map_err(RemoveLinkCommandError::Validation)?;
-        let (updated_task, file_content, target_normalized) = match outcome {
+        let (updated_task, file_content) = match outcome {
             RemoveLinkOutcome::NoOp { existing_task } => return Ok(existing_task),
             RemoveLinkOutcome::Write {
                 updated_task,
                 file_content,
-                target_normalized,
-            } => (updated_task, file_content, target_normalized),
+                ..
+            } => (updated_task, file_content),
         };
 
-        let (next_tasks, returned) = apply_remove_link_to_cache(
-            snapshot.tasks(),
-            &source_rel,
-            &target_normalized,
-            &updated_task,
-        )?;
+        let (next_tasks, returned) =
+            apply_remove_link_to_cache(snapshot.tasks(), &source_rel, &updated_task)?;
         let registered_paths = vec![source_abs.clone()];
         resources.write_ignore().register(&source_abs)?;
         if let Err(error) = io.write_existing(&source_abs, file_content.as_bytes()) {
@@ -109,7 +105,6 @@ pub(crate) fn remove_link_impl(
 fn apply_remove_link_to_cache(
     cache: &HashMap<CanonicalTaskPath, Task>,
     source_rel: &Path,
-    target_normalized: &str,
     updated_task: &ParsedTask,
 ) -> Result<(ResolvedTaskSet, Task), RemoveLinkCommandError> {
     let source_key = CanonicalTaskPath::from_path(source_rel);
@@ -132,7 +127,6 @@ fn apply_remove_link_to_cache(
             path: source_key.as_str().to_string(),
         })
         .map_err(RemoveLinkCommandError::from)?;
-    let _ = target_normalized;
     Ok((resolved, returned))
 }
 

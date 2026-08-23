@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use serde_json::json;
 
-use super::{ParentHierarchyErrorReason, ParentValidationFailure, Task, TaskIndex};
+use super::{
+    ParentHierarchyErrorReason, ParentValidationFailure, ParsedTaskBuilder, Task, TaskIndex,
+};
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
 use crate::task::payload::TaskPayload;
 use crate::task::task_file_path::TaskFilePath;
@@ -303,19 +305,17 @@ fn sorted_by_id_sorts_random_order_ascending() {
 
 #[test]
 fn sorted_by_id_preserves_input_order_for_duplicate_ids() {
-    let first = task_from(
-        "---\ntitle: first\nstatus: Todo\n---\n",
-        "tasks/dup.md",
-    );
-    let second = task_from(
-        "---\ntitle: second\nstatus: Todo\n---\n",
-        "tasks/dup.md",
-    );
+    let first = ParsedTaskBuilder::new("tasks/dup.md")
+        .title("first")
+        .resolve();
+    let second = ParsedTaskBuilder::new("tasks/dup.md")
+        .title("second")
+        .resolve();
     let tasks = vec![first, second];
     let result = TaskIndex::new(tasks).sorted_by_id();
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0].title, "first");
-    assert_eq!(result[1].title, "second");
+    assert_eq!(result[0].title().as_str(), "first");
+    assert_eq!(result[1].title().as_str(), "second");
 }
 
 #[test]

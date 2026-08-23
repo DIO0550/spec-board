@@ -46,13 +46,11 @@ fn removes_single_existing_link() {
         RemoveLinkOutcome::Write {
             updated_task,
             file_content,
-            target_normalized,
         } => {
             assert!(
                 !file_content.contains("links:"),
                 "links key should be removed when last entry is dropped, got {file_content:?}"
             );
-            assert_eq!(target_normalized, "tasks/b.md");
             assert!(
                 updated_task.links.is_empty(),
                 "links should be empty, got {:?}",

@@ -1768,7 +1768,6 @@ impl TaskIndex {
         Ok(RemoveLinkOutcome::Write {
             updated_task,
             file_content,
-            target_normalized: target_norm,
         })
     }
 
@@ -2003,8 +2002,7 @@ pub(crate) enum AddLinkOutcome {
     Write {
         updated_task: ParsedTask,
         file_content: String,
-        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path
-        /// （`normalize_link_path_for_lookup` の出力形）。
+        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path。
         target_normalized: String,
     },
     NoOp {
@@ -2023,9 +2021,6 @@ pub(crate) enum RemoveLinkOutcome {
     Write {
         updated_task: ParsedTask,
         file_content: String,
-        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path
-        /// （`normalize_link_path_for_lookup` の出力形）。
-        target_normalized: String,
     },
     NoOp {
         /// IPC 戻り値に使う既存 source の現在状態（plan_remove_link に渡された
