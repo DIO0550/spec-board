@@ -238,7 +238,7 @@ fn load_unknown_state_value_is_preserved_as_other() {
         .expect("load ok");
     assert_eq!(
         registry.definitions()[0].state,
-        Some(MilestoneState::Other("frozen".to_string()))
+        MilestoneState::from_lenient("frozen")
     );
 }
 
@@ -472,40 +472,40 @@ fn serialize_keeps_milestones_wire_shape() {
 fn save_preserves_unknown_state_value() {
     let tmp = TempDir::new().unwrap();
     let mut m = definition("v0.3");
-    m.state = Some(MilestoneState::Other("frozen".to_string()));
+    m.state = MilestoneState::from_lenient("frozen");
     let registry = MilestoneRegistry::try_new(vec![m]).expect("valid registry");
     let store = milestone_registry_store(tmp.path());
     store.save(&registry).expect("save ok");
     let loaded = store.load().expect("load ok");
-    assert_eq!(
-        loaded.definitions()[0].state,
-        Some(MilestoneState::Other("frozen".to_string()))
-    );
+    assert_eq!(loaded, registry);
 }
 
 // ───────── MilestoneState ─────────
 
 #[test]
-fn milestone_state_from_lenient_maps_known_and_unknown() {
-    assert_eq!(MilestoneState::from_lenient("open"), MilestoneState::Open);
+fn milestone_state_from_lenient_treats_exact_empty_as_unspecified() {
+    assert_eq!(MilestoneState::from_lenient(""), None);
+}
+
+#[test]
+fn milestone_state_from_lenient_maps_exact_lowercase_reserved_words() {
     assert_eq!(
-        MilestoneState::from_lenient("closed"),
-        MilestoneState::Closed
+        MilestoneState::from_lenient("open"),
+        Some(MilestoneState::Open)
     );
     assert_eq!(
-        MilestoneState::from_lenient("frozen"),
-        MilestoneState::Other("frozen".to_string())
+        MilestoneState::from_lenient("closed"),
+        Some(MilestoneState::Closed)
     );
 }
 
 #[test]
-fn milestone_state_as_str_roundtrips() {
-    assert_eq!(MilestoneState::Open.as_str(), "open");
-    assert_eq!(MilestoneState::Closed.as_str(), "closed");
-    assert_eq!(
-        MilestoneState::Other("frozen".to_string()).as_str(),
-        "frozen"
-    );
+fn milestone_state_from_lenient_preserves_other_raw_values() {
+    for raw in ["frozen", "Open", " open", "closed ", "   "] {
+        let state = MilestoneState::from_lenient(raw).expect("non-empty state");
+        assert!(matches!(state, MilestoneState::Other(_)), "raw: {raw:?}");
+        assert_eq!(state.as_str(), raw);
+    }
 }
 
 // ───────── format 抽象（trait モック） ─────────

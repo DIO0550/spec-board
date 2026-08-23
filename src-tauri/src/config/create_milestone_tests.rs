@@ -120,7 +120,7 @@ fn from_args_unknown_state_is_other() {
     let mut a = args("v0.3");
     a.state = Some("frozen".to_string());
     let def = MilestoneDefinition::from(a);
-    assert_eq!(def.state, Some(MilestoneState::Other("frozen".to_string())));
+    assert_eq!(def.state, MilestoneState::from_lenient("frozen"));
 }
 
 #[test]
