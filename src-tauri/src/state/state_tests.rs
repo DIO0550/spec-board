@@ -186,7 +186,6 @@ fn session_commit_updates_domain_and_resource_revision_together() {
             session.replace_tasks(
                 crate::task::task_index::ResolvedTaskSet::resolve_lenient(vec![
                     ParsedTaskBuilder::new("tasks/a.md")
-                        .id("a")
                         .title("title-a")
                         .build(),
                 ])
@@ -239,7 +238,6 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
                                 .collect();
                             candidates.push(
                                 ParsedTaskBuilder::new(path)
-                                    .id(id)
                                     .title(format!("title-{id}"))
                                     .build(),
                             );

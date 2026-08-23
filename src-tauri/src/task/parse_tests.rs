@@ -38,7 +38,6 @@ fn minimum_frontmatter_generates_task() {
         "tasks/fix-bug.md",
     );
 
-    assert_eq!(task.id, "tasks/fix-bug.md");
     assert_eq!(task.file_path, "tasks/fix-bug.md");
     assert_eq!(task.title, "Fix bug");
     assert_eq!(task.status, "Doing");
@@ -268,7 +267,6 @@ fn task_file_path_payload_is_relative_and_uses_forward_slashes() {
     for (input_path, expected_path) in cases {
         let task = task_from("---\ntitle: Fix bug\nstatus: Todo\n---\n", input_path);
 
-        assert_eq!(task.id, expected_path);
         assert_eq!(task.file_path, expected_path);
     }
 }

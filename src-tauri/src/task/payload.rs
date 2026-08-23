@@ -80,7 +80,7 @@ mod tests {
     use super::TaskPayload;
     use crate::task::canonical_task_path::CanonicalTaskPath;
     use crate::task::parse::{task_from_markdown, TaskParseContext};
-    use crate::task::task_index::ResolvedTaskSet;
+    use crate::task::task_index::{ParsedTaskBuilder, ResolvedTaskSet};
     use crate::task::warning::TaskWarningCode;
 
     #[test]
@@ -131,5 +131,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["missingTitleUsedFileName", "parentNotFound"]
         );
+    }
+
+    #[test]
+    fn owned_and_borrowed_payload_derive_wire_id_from_canonical_file_path() {
+        let task = ParsedTaskBuilder::new("tasks/canonical.md").resolve();
+
+        let borrowed = TaskPayload::from(&task);
+        let owned = TaskPayload::from(task);
+
+        assert_eq!(owned, borrowed);
+        assert_eq!(
+            serde_json::to_vec(&owned).expect("owned payload serializes"),
+            serde_json::to_vec(&borrowed).expect("borrowed payload serializes")
+        );
+        assert_eq!(borrowed.id.as_str(), "tasks/canonical.md");
+        assert_eq!(borrowed.file_path.as_str(), "tasks/canonical.md");
+        assert_eq!(owned.id.as_str(), "tasks/canonical.md");
+        assert_eq!(owned.file_path.as_str(), "tasks/canonical.md");
     }
 }
