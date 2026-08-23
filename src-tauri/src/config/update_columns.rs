@@ -23,6 +23,7 @@ use crate::config::{
 };
 use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
 use crate::state::{AppState, AppStateError, SessionWriteError};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::{Patch, TaskDocument, TaskDocumentError, TaskPatch};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
@@ -213,7 +214,7 @@ pub(crate) fn update_columns_impl_with_loader(
         let project_root = snapshot.project_root().as_path().to_path_buf();
         let mut next_tasks = snapshot.tasks().clone();
         for target in &plan.rename_targets {
-            let rel = PathBuf::from(target.rel_path.as_str());
+            let rel = CanonicalTaskPath::new(target.rel_path.as_str());
             if let Some(task) = next_tasks.get_mut(&rel) {
                 task.status = ColumnName::from_lenient(&target.new_status);
             }

@@ -2,13 +2,14 @@
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use tauri::State;
 
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
@@ -93,11 +94,11 @@ pub(crate) fn update_task_impl(
 
 /// planned updateをcloned task mapへ適用し、commit後の戻り値を作る。
 fn apply_update_to_cache(
-    cache: &mut HashMap<PathBuf, Task>,
+    cache: &mut HashMap<CanonicalTaskPath, Task>,
     rel_path: &Path,
     outcome: &UpdateTaskOutcome,
 ) -> Result<Task, UpdateTaskCommandError> {
-    let cache_key = rel_path.to_path_buf();
+    let cache_key = CanonicalTaskPath::from_path(rel_path);
     let returned = if outcome.needs_full_rebuild {
         let values = cache.values().cloned().collect();
         let index = TaskIndex::new(values)
@@ -105,7 +106,7 @@ fn apply_update_to_cache(
             .map_err(UpdateTaskError::from)?;
         cache.clear();
         for task in index.into_tasks() {
-            cache.insert(PathBuf::from(task.file_path.as_str()), task);
+            cache.insert(CanonicalTaskPath::from_file_path(&task.file_path), task);
         }
         cache.get(&cache_key).cloned()
     } else {
@@ -120,7 +121,7 @@ fn apply_update_to_cache(
     };
 
     returned.ok_or(UpdateTaskCommandError::Validation(
-        UpdateTaskError::FileNotFound(cache_key),
+        UpdateTaskError::FileNotFound(cache_key.as_path_buf()),
     ))
 }
 

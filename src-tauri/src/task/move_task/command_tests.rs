@@ -18,6 +18,7 @@ use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::{SessionIdentity, SessionRevision};
 use crate::state::AppState;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
@@ -1206,7 +1207,7 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         .expect("resident snapshot before exhaustion");
     let status_before = resident_before
         .tasks()
-        .get(Path::new("tasks/a.md"))
+        .get(&CanonicalTaskPath::new("tasks/a.md"))
         .expect("resident task before exhaustion")
         .status
         .clone();
@@ -1255,7 +1256,7 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         .expect("resident snapshot after rejection");
     assert_eq!(
         status_before,
-        resident_after.tasks()[Path::new("tasks/a.md")].status
+        resident_after.tasks()[&CanonicalTaskPath::new("tasks/a.md")].status
     );
     assert_eq!(card_order_before, resident_after.config().card_order);
 }

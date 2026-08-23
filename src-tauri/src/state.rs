@@ -58,6 +58,8 @@ use crate::state::project_writer_gates::ProjectWriterGates;
 use crate::state::tasks_revision::TasksRevision;
 use crate::state::watcher_session::WatcherSession;
 #[cfg(test)]
+use crate::task::canonical_task_path::CanonicalTaskPath;
+#[cfg(test)]
 use crate::task::task_index::Task;
 
 /// `tauri::Builder::manage` に渡すために `'static` を含む trait object 型。
@@ -605,7 +607,7 @@ impl AppState {
         let root = ProjectRoot::from_path_buf(root.to_path_buf()).expect("valid test project root");
         let tasks = tasks
             .into_iter()
-            .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+            .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
             .collect();
         let session_id = self
             .reserve_session_id()
@@ -754,7 +756,7 @@ impl AppState {
 
     pub(crate) fn test_replace_tasks(
         &self,
-        cache: std::collections::HashMap<PathBuf, Task>,
+        cache: std::collections::HashMap<CanonicalTaskPath, Task>,
     ) -> Result<(), AppStateError> {
         let identity = self.test_session_identity();
         self.commit_session(&identity, |session| session.replace_tasks(cache))
@@ -774,7 +776,7 @@ impl AppState {
 
     pub(crate) fn test_update_tasks<F, R>(&self, f: F) -> Result<R, AppStateError>
     where
-        F: FnOnce(&mut std::collections::HashMap<PathBuf, Task>) -> R,
+        F: FnOnce(&mut std::collections::HashMap<CanonicalTaskPath, Task>) -> R,
     {
         let identity = self.test_session_identity();
         let mut result = None;

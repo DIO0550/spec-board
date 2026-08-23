@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::column_name::ColumnName;
 use crate::config::{Column, Config};
 use crate::task::add_link::error::AddLinkError;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
 use crate::task::delete::error::DeleteTaskError;
@@ -985,16 +986,18 @@ impl TaskIndex {
     /// 差分追加: 新規 Task を cache に挿入し、親 `children` と link 先
     /// `reverse_links` を局所更新する。
     pub(crate) fn insert_new_task_into_cache(
-        cache: &mut HashMap<PathBuf, Task>,
+        cache: &mut HashMap<CanonicalTaskPath, Task>,
         mut new_task: Task,
     ) -> Task {
-        let key = PathBuf::from(new_task.file_path.as_str());
-        let new_normalized = normalize_task_path_for_lookup(new_task.file_path.as_str());
+        let key = CanonicalTaskPath::from_file_path(&new_task.file_path);
+        // (C) (D) の incoming 判定は `normalize_*_for_lookup` の戻り値（String）と
+        // 突き合わせるため、canonical キーの文字列表現を保持する。
+        let new_normalized = key.as_str().to_string();
 
         // (A) outgoing: 親があれば親の children に append
         if let Some(parent_ref) = new_task.parent.as_ref() {
             if let Some(pn) = normalize_parent_path_for_lookup(parent_ref.as_str()) {
-                if let Some(parent_task) = find_task_mut(cache, &pn) {
+                if let Some(parent_task) = cache.get_mut(&CanonicalTaskPath::new(&pn)) {
                     parent_task.children.push(new_task.file_path.clone());
                 }
             }
@@ -1009,7 +1012,7 @@ impl TaskIndex {
             if !seen_link_targets.insert(normalized.clone()) {
                 continue;
             }
-            if let Some(target_task) = find_task_mut(cache, &normalized) {
+            if let Some(target_task) = cache.get_mut(&CanonicalTaskPath::new(&normalized)) {
                 target_task.reverse_links.push(new_task.file_path.clone());
             }
         }
@@ -1080,28 +1083,29 @@ impl TaskIndex {
     /// 4. target の `reverse_links` に source を append する（既に push 済みなら
     ///    冪等に skip）。
     pub(crate) fn commit_add_link_into_cache(
-        cache: &mut HashMap<PathBuf, Task>,
-        source_key: &Path,
+        cache: &mut HashMap<CanonicalTaskPath, Task>,
+        source_key: &CanonicalTaskPath,
         target_normalized: &str,
         updated_task: &Task,
     ) -> Result<Task, AddLinkError> {
-        let key = source_key.to_path_buf();
-        if !cache.contains_key(&key) {
+        let target_key = CanonicalTaskPath::new(target_normalized);
+        if !cache.contains_key(source_key) {
             return Err(AddLinkError::SourceVanished {
-                path: source_key.to_string_lossy().into_owned(),
+                path: source_key.as_str().to_string(),
             });
         }
-        if find_task_by_normalized(cache, target_normalized).is_none() {
+        if !cache.contains_key(&target_key) {
             return Err(AddLinkError::TargetVanished {
                 path: target_normalized.to_string(),
             });
         }
 
-        let returned_task = overwrite_preserving_derived(cache, &key, updated_task);
+        let returned_task = overwrite_preserving_derived(cache, source_key, updated_task);
 
         // target の reverse_links に source を append。既に push 済みなら冪等に skip。
-        let target_task =
-            find_task_mut(cache, target_normalized).expect("target presence verified above");
+        let target_task = cache
+            .get_mut(&target_key)
+            .expect("target presence verified above");
         if !target_task
             .reverse_links
             .iter()
@@ -1113,21 +1117,6 @@ impl TaskIndex {
         }
 
         Ok(returned_task)
-    }
-
-    /// `find_by_path` と同じ正規化比較で、**cache の実際の key** も返す。
-    ///
-    /// mutate する呼び出し側は必ずこちらを使う。`Task::file_path` から key を組み直すと、
-    /// cache の実 key が `./tasks/a.md` で `file_path` が `tasks/a.md` のように表記が
-    /// 異なる場合に「検索は当たったが `get_mut` は外れる」不整合になる。
-    fn find_entry_in_cache<'a>(
-        cache: &'a HashMap<PathBuf, Task>,
-        key: &Path,
-    ) -> Option<(&'a PathBuf, &'a Task)> {
-        let target = normalize_task_path_for_lookup(&key.to_string_lossy());
-        cache
-            .iter()
-            .find(|(_, task)| normalize_task_path_for_lookup(task.file_path.as_str()) == target)
     }
 
     /// 移動後の `updated_task` を cache に反映し、IPC 戻り値となる `Task` を返す。
@@ -1144,19 +1133,15 @@ impl TaskIndex {
     /// （`ParentNotFound` / `ParentCycle`）は単一 task の md からは再導出できないため、
     /// cache 側から引き継ぐ。
     pub(crate) fn commit_move_into_cache(
-        cache: &mut HashMap<PathBuf, Task>,
-        moved_key: &Path,
+        cache: &mut HashMap<CanonicalTaskPath, Task>,
+        moved_key: &CanonicalTaskPath,
         updated_task: &Task,
     ) -> Result<Task, MoveTaskError> {
-        // 引き当ては表記揺れを吸収する正規化比較で行い、cache が実際に持っている key を
-        // 使って mutate する（`Task::file_path` から key を組み直すと、表記が違うだけで
-        // 「検索は当たったのに get_mut は外れる」不整合になる）。
-        let Some((matched_key, previous)) = Self::find_entry_in_cache(cache, moved_key) else {
+        let Some(previous) = cache.get(moved_key) else {
             return Err(MoveTaskError::TaskVanished {
-                path: moved_key.to_string_lossy().into_owned(),
+                path: moved_key.as_str().to_string(),
             });
         };
-        let key = matched_key.clone();
         let graph_warnings: Vec<TaskWarning> = previous
             .warnings
             .iter()
@@ -1164,7 +1149,7 @@ impl TaskIndex {
             .cloned()
             .collect();
 
-        let mut committed = overwrite_preserving_derived(cache, &key, updated_task);
+        let mut committed = overwrite_preserving_derived(cache, moved_key, updated_task);
         committed.warnings = updated_task
             .warnings
             .iter()
@@ -1175,7 +1160,9 @@ impl TaskIndex {
         // 行われるため、warnings を入れ替えた後に parent=None + cycle warning の整合を取り直す。
         let was_cycle_member = has_parent_cycle_warning(&committed.warnings);
         committed.preserve_parent_cycle_state(was_cycle_member);
-        cache.insert(key, committed.clone());
+        // move は frontmatter の status のみ書き換えファイル自体は動かさないため、
+        // `updated_task.file_path` ではなく移動前の `moved_key` の位置に上書きする。
+        cache.insert(moved_key.clone(), committed.clone());
         Ok(committed)
     }
 
@@ -1199,23 +1186,22 @@ impl TaskIndex {
     ///    self-link（source == target）のケースでは source 自身の reverse_links が
     ///    retain されるため、戻り値は target update 後に cache から再取得する。
     pub(crate) fn commit_remove_link_into_cache(
-        cache: &mut HashMap<PathBuf, Task>,
-        source_key: &Path,
+        cache: &mut HashMap<CanonicalTaskPath, Task>,
+        source_key: &CanonicalTaskPath,
         target_normalized: &str,
         updated_task: &Task,
     ) -> Result<Task, RemoveLinkError> {
-        let key = source_key.to_path_buf();
-        if !cache.contains_key(&key) {
+        if !cache.contains_key(source_key) {
             return Err(RemoveLinkError::SourceVanished {
-                path: source_key.to_string_lossy().into_owned(),
+                path: source_key.as_str().to_string(),
             });
         }
 
-        overwrite_preserving_derived(cache, &key, updated_task);
+        overwrite_preserving_derived(cache, source_key, updated_task);
 
         // target の reverse_links から source を除去。cache に target が存在しない
         // 場合は orphan link 掃除のユースケースを許容するため fail にせず skip する。
-        if let Some(target_task) = find_task_mut(cache, target_normalized) {
+        if let Some(target_task) = cache.get_mut(&CanonicalTaskPath::new(target_normalized)) {
             target_task
                 .reverse_links
                 .retain(|p| p != &updated_task.file_path);
@@ -1224,7 +1210,7 @@ impl TaskIndex {
         // self-link では上の retain が source 自身の reverse_links を縮めるため、
         // 戻り値は target update 後の最新値を cache から再取得する。
         let returned_task = cache
-            .get(&key)
+            .get(source_key)
             .expect("source presence verified above")
             .clone();
         Ok(returned_task)
@@ -2510,8 +2496,8 @@ fn push_parent_not_found(task: &mut Task) {
 /// 呼び出し側は `key` が cache に存在することを事前に検証している前提。上書き後の
 /// source エントリの clone を返す。
 fn overwrite_preserving_derived(
-    cache: &mut HashMap<PathBuf, Task>,
-    key: &PathBuf,
+    cache: &mut HashMap<CanonicalTaskPath, Task>,
+    key: &CanonicalTaskPath,
     updated_task: &Task,
 ) -> Task {
     let source_entry = cache
@@ -2529,25 +2515,6 @@ fn overwrite_preserving_derived(
     };
     source_entry.preserve_parent_cycle_state(was_cycle_member);
     source_entry.clone()
-}
-
-fn find_task_mut<'a>(
-    cache: &'a mut HashMap<PathBuf, Task>,
-    normalized: &str,
-) -> Option<&'a mut Task> {
-    cache.get_mut(&PathBuf::from(normalized))
-}
-
-/// cache から `normalized` 一致の `Task` を immutable で引き当てる helper。
-///
-/// `find_task_mut` の immutable 版。link commit で mutate 前の事前検証（target 存在
-/// 確認）に使う。複数 `&mut` を同時に取れない `HashMap` の制約下で「検証 → mutate」の
-/// 2 段構成を可能にする。
-fn find_task_by_normalized<'a>(
-    cache: &'a HashMap<PathBuf, Task>,
-    normalized: &str,
-) -> Option<&'a Task> {
-    cache.get(&PathBuf::from(normalized))
 }
 
 #[cfg(test)]

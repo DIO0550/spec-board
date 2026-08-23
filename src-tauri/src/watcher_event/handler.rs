@@ -16,6 +16,7 @@ use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarningStage
 use crate::project::open::{persist_config, status_inputs_from_tasks};
 use crate::project_session::{ProjectSessionSnapshot, SessionIdentity};
 use crate::state::{AppStateError, ResourceAccessError, SessionResourceAccess, SessionWriteError};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::parse::{
     default_status_for, normalized_task_file_path, task_from_markdown, TaskParseContext,
 };
@@ -210,7 +211,10 @@ fn rescan_if_cached(
     rel_path: &TaskFilePath,
     before_sequence: &mut dyn FnMut(),
 ) -> Result<(), HandleError> {
-    if !snapshot.tasks().contains_key(&rel_path.as_path_buf()) {
+    if !snapshot
+        .tasks()
+        .contains_key(&CanonicalTaskPath::from_file_path(rel_path))
+    {
         return Ok(());
     }
     handle_rescan(ctx, before_sequence)
@@ -326,7 +330,7 @@ fn handle_upsert(
         }
     };
 
-    let cache_key = PathBuf::from(task.file_path.as_str());
+    let cache_key = CanonicalTaskPath::from_file_path(&task.file_path);
     let event_name = if snapshot.tasks().contains_key(&cache_key) {
         EVENT_TASK_UPDATED
     } else {
@@ -384,9 +388,9 @@ fn handle_upsert(
         changed_task,
         other_tasks_changed,
     } = reconciled;
-    let next_tasks: HashMap<PathBuf, Task> = tasks
+    let next_tasks: HashMap<CanonicalTaskPath, Task> = tasks
         .into_iter()
-        .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+        .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
         .collect();
 
     let expected = snapshot.identity();
@@ -441,12 +445,12 @@ fn handle_upsert(
 /// None に置き換わるように、派生再構築が値を変えうるため。`Upserted` は必ず slot を
 /// 持つので対象が消えることは無い。`None` を返すと reconcile は status なしとして
 /// その入力を無視するので、万一消えていてもカラムは増えない。
-fn reconciled_status(outcome: &ExternalChangeOutcome, cache_key: &Path) -> Option<String> {
+fn reconciled_status(
+    outcome: &ExternalChangeOutcome,
+    cache_key: &CanonicalTaskPath,
+) -> Option<String> {
     let Some(task) = outcome.changed_task.as_ref() else {
-        log::warn!(
-            "watcher_event: reconciled task missing for {}",
-            cache_key.display()
-        );
+        log::warn!("watcher_event: reconciled task missing for {cache_key}");
         return None;
     };
     Some(task.status.as_str().to_owned())
@@ -584,7 +588,7 @@ fn handle_delete(
     if cache_has_cycle_member(&snapshot) {
         return handle_rescan(ctx, before_sequence);
     }
-    let cache_key = rel_path.as_path_buf();
+    let cache_key = CanonicalTaskPath::from_file_path(&rel_path);
     if !snapshot.tasks().contains_key(&cache_key) {
         log::trace!(
             "watcher_event: delete for path not in the task cache: {}",
@@ -619,10 +623,10 @@ fn handle_delete(
         }
     };
     let other_tasks_changed = reconciled.other_tasks_changed;
-    let next_tasks: HashMap<PathBuf, Task> = reconciled
+    let next_tasks: HashMap<CanonicalTaskPath, Task> = reconciled
         .tasks
         .into_iter()
-        .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+        .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
         .collect();
 
     let expected = snapshot.identity();
@@ -709,12 +713,12 @@ fn handle_rescan(
             .collect::<Vec<_>>();
         load_warnings.extend(report.warnings);
         let load_warnings = deduplicate_and_sort(load_warnings);
-        let cache: HashMap<PathBuf, Task> = report
+        let cache: HashMap<CanonicalTaskPath, Task> = report
             .tasks
             .into_iter()
-            .map(|task| (PathBuf::from(task.file_path.as_str()), task))
+            .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
             .collect();
-        // cache は open 側と同じ `HashMap<PathBuf, Task>` なので、詰め替えは
+        // cache は open 側と同じ `HashMap<CanonicalTaskPath, Task>` なので、詰め替えは
         // `status_inputs_from_tasks` をそのまま使う（同型の helper を watcher 側に
         // 作らない）。
         //

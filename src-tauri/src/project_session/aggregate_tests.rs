@@ -6,6 +6,7 @@ use crate::config::column_name::ColumnName;
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
 use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::parse::{task_from_markdown, TaskParseContext};
 use crate::task::task_index::Task;
 
@@ -37,7 +38,7 @@ fn loaded_state_returns_all_domain_values_from_one_snapshot() {
         },
     )
     .expect("valid task");
-    let tasks = HashMap::from([(PathBuf::from("tasks/aggregate.md"), task)]);
+    let tasks = HashMap::from([(CanonicalTaskPath::new("tasks/aggregate.md"), task)]);
     let state = ProjectState::Loaded(
         PreparedProjectSession::new(
             root.clone(),
@@ -209,7 +210,7 @@ fn into_prepared_keeps_domain_data_and_restarts_revision_from_initial() {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        HashMap::from([(PathBuf::from("tasks/aggregate.md"), sample_task())]),
+        HashMap::from([(CanonicalTaskPath::new("tasks/aggregate.md"), sample_task())]),
         vec![ProjectLoadWarning::config_fallback(
             "broken config".to_string(),
         )],

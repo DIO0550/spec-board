@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use serde_json::json;
 
 use super::{ParentHierarchyErrorReason, ParentValidationFailure, Task, TaskIndex};
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::warning::{TaskWarning, TaskWarningCode};
@@ -57,12 +58,18 @@ fn parent_chain_with_edge_count(edge_count: usize) -> Vec<Task> {
     tasks
 }
 
-fn cache_from(tasks: Vec<Task>) -> HashMap<PathBuf, Task> {
+fn cache_from(tasks: Vec<Task>) -> HashMap<CanonicalTaskPath, Task> {
     let mut cache = HashMap::new();
     for task in tasks {
-        cache.insert(PathBuf::from(task.file_path.as_str()), task);
+        cache.insert(CanonicalTaskPath::from_file_path(&task.file_path), task);
     }
     cache
+}
+
+/// テストから cache を引くための短縮 helper。生文字列を `Borrow` で素通しさせない
+/// ため、必ず VO のコンストラクタを経由する。
+fn key(path: &str) -> CanonicalTaskPath {
+    CanonicalTaskPath::new(path)
 }
 
 #[test]
@@ -263,7 +270,7 @@ fn insert_new_task_into_empty_cache_adds_one_entry() {
     assert!(returned.children.is_empty());
     assert!(returned.reverse_links.is_empty());
     assert_eq!(returned.file_path, "tasks/new.md");
-    assert!(cache.contains_key(&PathBuf::from("tasks/new.md")));
+    assert!(cache.contains_key(&key("tasks/new.md")));
 }
 
 #[test]
@@ -274,7 +281,7 @@ fn insert_new_task_appends_to_parent_children_when_parent_exists() {
 
     TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
 
-    let updated_parent = cache.get(&PathBuf::from("tasks/parent.md")).unwrap();
+    let updated_parent = cache.get(&key("tasks/parent.md")).unwrap();
     assert_eq!(
         vec![TaskFilePath::from("tasks/child.md")],
         updated_parent.children
@@ -289,7 +296,7 @@ fn insert_new_task_appends_to_target_reverse_links_when_link_exists() {
 
     TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
 
-    let updated_target = cache.get(&PathBuf::from("tasks/target.md")).unwrap();
+    let updated_target = cache.get(&key("tasks/target.md")).unwrap();
     assert_eq!(
         vec![TaskFilePath::from("tasks/source.md")],
         updated_target.reverse_links
@@ -308,7 +315,7 @@ fn insert_new_task_appends_target_reverse_link_only_once_for_duplicate_targets()
 
     TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
 
-    let updated_target = cache.get(&PathBuf::from("tasks/target.md")).unwrap();
+    let updated_target = cache.get(&key("tasks/target.md")).unwrap();
     assert_eq!(
         vec![TaskFilePath::from("tasks/source.md")],
         updated_target.reverse_links,
@@ -325,7 +332,7 @@ fn insert_new_task_resolves_incoming_parent_into_new_task_children() {
     let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
 
     assert_eq!(vec![TaskFilePath::from("tasks/a.md")], returned.children);
-    let cached_new = cache.get(&PathBuf::from("tasks/new.md")).unwrap();
+    let cached_new = cache.get(&key("tasks/new.md")).unwrap();
     assert_eq!(vec![TaskFilePath::from("tasks/a.md")], cached_new.children);
 }
 
@@ -371,7 +378,7 @@ fn insert_new_task_dedups_repeated_link_target_into_single_reverse_link() {
 
     TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
 
-    let updated_target = cache.get(&PathBuf::from("tasks/target.md")).unwrap();
+    let updated_target = cache.get(&key("tasks/target.md")).unwrap();
     assert_eq!(
         vec![TaskFilePath::from("tasks/source.md")],
         updated_target.reverse_links,
@@ -391,7 +398,7 @@ fn insert_new_task_appends_to_existing_children_at_end_regardless_of_lex_order()
     let new_task = task_with_parent("tasks/a-child.md", "tasks/zzz-parent.md");
     TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
 
-    let parent_now = cache.get(&PathBuf::from("tasks/zzz-parent.md")).unwrap();
+    let parent_now = cache.get(&key("tasks/zzz-parent.md")).unwrap();
     assert_eq!(
         vec![
             TaskFilePath::from("tasks/m-child.md"),

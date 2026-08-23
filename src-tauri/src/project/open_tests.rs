@@ -2189,7 +2189,9 @@ impl WatcherFactory for EmittingOnActivationFactory {
                 state
                     .test_update_tasks(|cache| {
                         cache.insert(
-                            std::path::PathBuf::from("tasks/spawned.md"),
+                            crate::task::canonical_task_path::CanonicalTaskPath::new(
+                                "tasks/spawned.md",
+                            ),
                             sample_spawned_task(),
                         );
                     })

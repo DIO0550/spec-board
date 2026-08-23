@@ -1,13 +1,13 @@
 //! ProjectSession aggregateとcoherent snapshot。
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use thiserror::Error;
 
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
 use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::task_index::Task;
 
 use super::{RevisionExhausted, SessionId, SessionRevision};
@@ -137,7 +137,7 @@ pub struct PreparedProjectSession {
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<PathBuf, Task>,
+    tasks: HashMap<CanonicalTaskPath, Task>,
     load_warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -148,7 +148,7 @@ impl PreparedProjectSession {
         config: Config,
         labels: LabelRegistry,
         milestones: MilestoneRegistry,
-        tasks: HashMap<PathBuf, Task>,
+        tasks: HashMap<CanonicalTaskPath, Task>,
     ) -> Self {
         Self::new_with_warnings(root, config, labels, milestones, tasks, Vec::new())
     }
@@ -159,7 +159,7 @@ impl PreparedProjectSession {
         config: Config,
         labels: LabelRegistry,
         milestones: MilestoneRegistry,
-        tasks: HashMap<PathBuf, Task>,
+        tasks: HashMap<CanonicalTaskPath, Task>,
         load_warnings: Vec<ProjectLoadWarning>,
     ) -> Self {
         Self {
@@ -197,7 +197,7 @@ pub struct ProjectSession {
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<PathBuf, Task>,
+    tasks: HashMap<CanonicalTaskPath, Task>,
     load_warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -256,14 +256,14 @@ impl ProjectSession {
     }
 
     /// 互換adapterまたはcommit closureがtask mapを差し替える。
-    pub(crate) fn replace_tasks(&mut self, tasks: HashMap<PathBuf, Task>) {
+    pub(crate) fn replace_tasks(&mut self, tasks: HashMap<CanonicalTaskPath, Task>) {
         self.tasks = tasks;
     }
 
     /// task map と load warnings を同じ session commit で置き換える。
     pub(crate) fn replace_tasks_and_load_warnings(
         &mut self,
-        tasks: HashMap<PathBuf, Task>,
+        tasks: HashMap<CanonicalTaskPath, Task>,
         load_warnings: Vec<ProjectLoadWarning>,
     ) {
         self.tasks = tasks;
@@ -275,7 +275,7 @@ impl ProjectSession {
     /// production の書き込み経路は差分挿入をやめて [`Self::replace_tasks`] に
     /// 一本化されている（派生値は 1 件では閉じないため、常に全件を作り直す）。
     #[cfg(test)]
-    pub(crate) fn tasks_mut(&mut self) -> &mut HashMap<PathBuf, Task> {
+    pub(crate) fn tasks_mut(&mut self) -> &mut HashMap<CanonicalTaskPath, Task> {
         &mut self.tasks
     }
 
@@ -332,7 +332,7 @@ pub struct ProjectSessionSnapshot {
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<PathBuf, Task>,
+    tasks: HashMap<CanonicalTaskPath, Task>,
     load_warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -364,7 +364,7 @@ impl ProjectSessionSnapshot {
     }
 
     /// snapshotのtask mapを返す。
-    pub fn tasks(&self) -> &HashMap<PathBuf, Task> {
+    pub fn tasks(&self) -> &HashMap<CanonicalTaskPath, Task> {
         &self.tasks
     }
 
