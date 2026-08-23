@@ -17,6 +17,8 @@ use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::io::FsTaskIo;
+use crate::task::parse::TaskParseError;
+use crate::task::task_index::ParentHierarchyErrorReason;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
 };
@@ -42,6 +44,20 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
     let abs = root.join(rel);
     fs::create_dir_all(abs.parent().unwrap()).unwrap();
     fs::write(&abs, content).unwrap();
+}
+
+fn seed_valid_parent_chain(root: &Path) {
+    for index in 0..20 {
+        seed_md(
+            root,
+            &format!("tasks/B{index}.md"),
+            &format!(
+                "---\ntitle: B{index}\nstatus: Todo\nparent: tasks/B{}.md\n---\n",
+                index + 1
+            ),
+        );
+    }
+    seed_md(root, "tasks/B20.md", "---\ntitle: B20\nstatus: Todo\n---\n");
 }
 
 fn args_for(source: &str, target: &str) -> AddLinkArgs {
@@ -272,6 +288,57 @@ fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"
     );
+}
+
+#[test]
+fn add_link_external_too_deep_returns_typed_error_without_side_effects() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_valid_parent_chain(root);
+    seed_md(
+        root,
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        root,
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let externally_deepened: &[u8] =
+        b"---\ntitle: Source\nstatus: Todo\nparent: tasks/B0.md\n---\nexternal body\n";
+    let source_path = root.join("tasks/source.md");
+    fs::write(&source_path, externally_deepened).expect("externally deepen source parent");
+    let resident_before = state.test_tasks_snapshot().expect("resident snapshot");
+    let revision_before = session_revision(&state);
+
+    let error = add_link_impl(
+        &state,
+        &FsTaskIo,
+        args_for("tasks/source.md", "tasks/target.md"),
+    )
+    .expect_err("21-edge parent chain must return a typed resolution error");
+
+    assert!(matches!(
+        error,
+        AddLinkCommandError::Resolution(TaskParseError::CycleOrTooDeep {
+            reason: ParentHierarchyErrorReason::TooDeep,
+            ..
+        })
+    ));
+    assert_eq!(
+        externally_deepened,
+        fs::read(&source_path).expect("read source")
+    );
+    assert_eq!(
+        resident_before,
+        state.test_tasks_snapshot().expect("resident snapshot")
+    );
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]

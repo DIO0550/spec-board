@@ -22,7 +22,8 @@ use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
-use crate::task::task_index::TaskIndex;
+use crate::task::parse::TaskParseError;
+use crate::task::task_index::{ParentHierarchyErrorReason, TaskIndex};
 use crate::task::warning::TaskWarningCode;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
@@ -49,6 +50,20 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
     let abs = root.join(rel);
     fs::create_dir_all(abs.parent().expect("has parent")).expect("create dirs");
     fs::write(abs, content).expect("write md");
+}
+
+fn seed_valid_parent_chain(root: &Path) {
+    for index in 0..20 {
+        seed_md(
+            root,
+            &format!("tasks/B{index}.md"),
+            &format!(
+                "---\ntitle: B{index}\nstatus: Todo\nparent: tasks/B{}.md\n---\n",
+                index + 1
+            ),
+        );
+    }
+    seed_md(root, "tasks/B20.md", "---\ntitle: B20\nstatus: Todo\n---\n");
 }
 
 /// 指定カラムの並びを `&str` の Vec として取り出す。キーが無ければ空 Vec。
@@ -164,6 +179,41 @@ impl ConfigWriter for FailingConfigWriter {
     fn write_atomic(&self, _dst: &Path, _content: &str) -> std::io::Result<()> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Err(std::io::Error::other("injected config write failure"))
+    }
+}
+
+#[derive(Default)]
+struct WriteCountingTaskIo {
+    write_calls: AtomicUsize,
+}
+
+impl WriteCountingTaskIo {
+    fn write_calls(&self) -> usize {
+        self.write_calls.load(Ordering::SeqCst)
+    }
+}
+
+impl TaskIo for WriteCountingTaskIo {
+    fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
+        FsTaskIo.ensure_dir(dir)
+    }
+
+    fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        self.write_calls.fetch_add(1, Ordering::SeqCst);
+        FsTaskIo.write_new(path, bytes)
+    }
+
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        self.write_calls.fetch_add(1, Ordering::SeqCst);
+        FsTaskIo.write_existing(path, bytes)
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
+        FsTaskIo.remove(path)
+    }
+
+    fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
+        FsTaskIo.read(path)
     }
 }
 
@@ -1191,6 +1241,76 @@ fn config_write_failure_unregisters_the_self_write_marker() {
     )
     .expect_err("config write should fail");
 
+    assert_eq!(0, session_write_ignore_len(&state));
+}
+
+#[test]
+fn cross_column_move_external_too_deep_returns_typed_error_without_side_effects() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_valid_parent_chain(root);
+    seed_md(
+        root,
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\n---\n",
+    );
+    seed_default_config(root);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, root);
+
+    let externally_deepened: &[u8] =
+        b"---\ntitle: Source\nstatus: Todo\nparent: tasks/B0.md\n---\nexternal body\n";
+    let source_path = root.join("tasks/source.md");
+    fs::write(&source_path, externally_deepened).expect("externally deepen source parent");
+    let config_path = root.join(".spec-board/config.json");
+    let config_disk_before = fs::read(&config_path).expect("read config");
+    let resident_tasks_before = state.test_tasks_snapshot().expect("resident tasks");
+    let resident_config_before = state.test_config().expect("config lock").expect("config");
+    let revision_before = session_revision(&state);
+    let task_io = WriteCountingTaskIo::default();
+    let config_writer = FailingConfigWriter::default();
+
+    let error = move_task_impl_with_config_io(
+        &state,
+        &task_io,
+        &config_writer,
+        &load_or_default,
+        make_args(
+            &state,
+            "tasks/source.md",
+            "Todo",
+            "Done",
+            &["tasks/source.md"],
+        ),
+    )
+    .expect_err("21-edge parent chain must return a typed resolution error");
+
+    assert!(matches!(
+        error,
+        MoveTaskCommandError::Resolution(TaskParseError::CycleOrTooDeep {
+            reason: ParentHierarchyErrorReason::TooDeep,
+            ..
+        })
+    ));
+    assert_eq!(0, task_io.write_calls(), "TaskIo write must not be reached");
+    assert_eq!(0, config_writer.calls(), "ConfigWriter must not be reached");
+    assert_eq!(
+        externally_deepened,
+        fs::read(&source_path).expect("read source")
+    );
+    assert_eq!(
+        config_disk_before,
+        fs::read(config_path).expect("read config")
+    );
+    assert_eq!(
+        resident_tasks_before,
+        state.test_tasks_snapshot().expect("resident tasks")
+    );
+    assert_eq!(
+        resident_config_before,
+        state.test_config().expect("config lock").expect("config")
+    );
+    assert_eq!(revision_before, session_revision(&state));
     assert_eq!(0, session_write_ignore_len(&state));
 }
 
