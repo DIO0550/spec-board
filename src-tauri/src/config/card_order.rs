@@ -92,6 +92,21 @@ impl CardOrder {
         self.0.is_empty()
     }
 
+    /// 検証済み Config へ採用する全キーを strict/lenient に分類する。
+    pub(crate) fn classify_column_names_after_validation(self) -> Self {
+        Self(
+            self.0
+                .into_iter()
+                .map(|(name, paths)| {
+                    (
+                        ColumnName::classify_after_validation(name.into_string()),
+                        paths,
+                    )
+                })
+                .collect(),
+        )
+    }
+
     /// 指定カラムの並びを `paths` で置き換える。
     /// canonical 化と同一カラム内 dedupe は本メソッドが行うため、
     /// 呼び出し側は事前に重複除去をしなくてよい。
@@ -131,9 +146,9 @@ fn canonical_unique<S: AsRef<str>>(paths: &[S]) -> Vec<TaskFilePath> {
 }
 
 impl Serialize for CardOrder {
-    /// 内部 `BTreeMap` へ委譲する。`ColumnName` / `TaskFilePath` はどちらも
-    /// `#[serde(transparent)]` で String として出るため、JSON 表現は
-    /// 旧 `BTreeMap<String, Vec<String>>` と完全に一致する。既存プロジェクトの
+    /// 内部 `BTreeMap` へ委譲する。`ColumnName` の manual string Serialize と
+    /// `TaskFilePath` の `#[serde(transparent)]` により、JSON 表現は旧
+    /// `BTreeMap<String, Vec<String>>` と完全に一致する。既存プロジェクトの
     /// `config.json` に無意味な差分を出さないための制約。
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)

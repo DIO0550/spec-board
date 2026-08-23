@@ -109,7 +109,7 @@ pub(crate) fn default_status_for(config: &Config) -> ColumnName {
         .columns
         .iter()
         .min_by_key(|column| column.order)
-        .map(|column| column.name.clone())
+        .map(|column| ColumnName::from_lenient(column.name.as_str()))
         .unwrap_or_else(|| ColumnName::from_lenient(""))
 }
 
@@ -152,7 +152,7 @@ fn extract_status(
                 Some("status"),
                 "status is invalid; default status was used",
             ));
-            context.default_status.clone()
+            ColumnName::from_lenient(context.default_status.as_str())
         }
         Ok(None) => {
             warnings.push(warning(
@@ -160,7 +160,7 @@ fn extract_status(
                 Some("status"),
                 "status is missing; default status was used",
             ));
-            context.default_status.clone()
+            ColumnName::from_lenient(context.default_status.as_str())
         }
     }
 }

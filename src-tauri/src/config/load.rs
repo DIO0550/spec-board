@@ -485,6 +485,7 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
         }
     })?;
 
+    let config = config.classify_column_names_after_validation();
     let (config, changed) = config.normalize_card_order();
     if changed {
         log::warn!(

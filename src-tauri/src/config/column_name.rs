@@ -8,12 +8,20 @@
 use std::fmt;
 use std::ops::Deref;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
-#[serde(transparent)]
-pub struct ColumnName(String);
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ValidationState {
+    Lenient,
+    Validated,
+}
+
+#[derive(Clone)]
+pub struct ColumnName {
+    value: String,
+    state: ValidationState,
+}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ColumnNameError {
@@ -27,24 +35,83 @@ impl ColumnName {
         if value.is_empty() {
             return Err(ColumnNameError::Empty);
         }
-        Ok(Self(value.to_string()))
+        Ok(Self {
+            value: value.to_string(),
+            state: ValidationState::Validated,
+        })
     }
 
     /// lenient: 既存 `Column.name: String` の挙動互換用。
     pub fn from_lenient<S: Into<String>>(value: S) -> Self {
-        Self(value.into())
+        Self {
+            value: value.into(),
+            state: ValidationState::Lenient,
+        }
+    }
+
+    /// 検証済みの config 名を strict constructor に通して分類する。
+    /// exact empty は既存互換の lenient 値として保持する。
+    pub(crate) fn classify_after_validation<S: Into<String>>(value: S) -> Self {
+        let value = value.into();
+        let classified = Self::try_from_str(&value)
+            .unwrap_or_else(|ColumnNameError::Empty| Self::from_lenient(value));
+        debug_assert!(classified.is_validated() || classified.is_empty());
+        classified
+    }
+
+    #[must_use]
+    pub(crate) fn is_validated(&self) -> bool {
+        self.state == ValidationState::Validated
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.value
     }
 
     pub fn into_string(self) -> String {
-        self.0
+        self.value
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.value.is_empty()
+    }
+}
+
+impl fmt::Debug for ColumnName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ColumnName").field(&self.value).finish()
+    }
+}
+
+impl PartialEq for ColumnName {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for ColumnName {}
+
+impl PartialOrd for ColumnName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ColumnName {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl std::hash::Hash for ColumnName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.value, state);
+    }
+}
+
+impl Serialize for ColumnName {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.value.serialize(serializer)
     }
 }
 
@@ -55,11 +122,11 @@ impl<'de> serde::Deserialize<'de> for ColumnName {
 }
 
 /// `BTreeMap<ColumnName, _>` / `HashMap<ColumnName, _>` を `&str` のまま引けるようにする。
-/// `PartialEq` / `Ord` / `Hash` はいずれも内部 `String` に対する derive なので、
-/// 借用元と借用先で比較・ハッシュが一致するという `Borrow` の要求を満たす。
+/// `PartialEq` / `Ord` / `Hash` の manual 実装はいずれも raw `String` だけへ委譲し、
+/// 借用元と借用先で比較・順序・ハッシュが一致するという `Borrow` の要求を満たす。
 impl std::borrow::Borrow<str> for ColumnName {
     fn borrow(&self) -> &str {
-        &self.0
+        &self.value
     }
 }
 
@@ -77,13 +144,13 @@ impl From<String> for ColumnName {
 
 impl fmt::Display for ColumnName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.value)
     }
 }
 
 impl AsRef<str> for ColumnName {
     fn as_ref(&self) -> &str {
-        &self.0
+        &self.value
     }
 }
 
@@ -91,37 +158,37 @@ impl Deref for ColumnName {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.value
     }
 }
 
 impl PartialEq<&str> for ColumnName {
     fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
+        self.value == *other
     }
 }
 
 impl PartialEq<ColumnName> for &str {
     fn eq(&self, other: &ColumnName) -> bool {
-        *self == other.0
+        *self == other.value
     }
 }
 
 impl PartialEq<ColumnName> for str {
     fn eq(&self, other: &ColumnName) -> bool {
-        self == other.0
+        self == other.value
     }
 }
 
 impl PartialEq<String> for ColumnName {
     fn eq(&self, other: &String) -> bool {
-        &self.0 == other
+        &self.value == other
     }
 }
 
 impl PartialEq<ColumnName> for String {
     fn eq(&self, other: &ColumnName) -> bool {
-        self == &other.0
+        self == &other.value
     }
 }
 
