@@ -78,6 +78,8 @@ DDD の Aggregate は「不変条件を一緒に守るべきオブジェクト�
 | `Task` | 1 タスクの不変条件（id == file_path、warnings は parse 由来） | `src/task/index.rs` |
 | `TaskIndex` | タスク集合の整合性（parent 存在、循環検出、children / reverse_links 派生） | `src/task/index.rs` |
 | `Config` | カラム集合と done_column の整合性、card_order の clean | `src/config.rs` |
+| `LabelRegistry` | ラベル定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/label_registry.rs` |
+| `MilestoneRegistry` | マイルストーン定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/milestone_registry.rs` |
 | `AppState` | 全 Mutex の lock 取得順序契約 | `src/state.rs` |
 
 Aggregate 境界の引き方の指針:
@@ -91,6 +93,14 @@ Aggregate 境界の引き方の指針:
      という一連の処理を 1 つのメソッドにまとめる。これにより、外部から
      見た不変条件（「children は parent からの逆引きで派生したものである」）
      が破られにくくなる。
+   - `LabelRegistry` / `MilestoneRegistry` は内部 `Vec` を private にし、公開の
+     `try_new(Vec<Definition>)` が集合不変条件を検証する。外部には
+     `definitions() -> &[Definition]` の immutable view だけを返し、テスト fixture も
+     production と同じ構築経路を使う。空の `Default` は不変条件を満たす。
+   - 両 registry の `Deserialize` は private raw DTO を受けてから `try_new` を通す。
+     store は raw DTO の構文エラーを `Parse`、構築時の不変条件違反を既存の
+     `Validation` に分類する。これにより serde derive や struct literal から
+     aggregate invariant を迂回できず、同時に YAML / IPC の外部形状を維持する。
 3. **Aggregate を跨ぐ参照は VO の値で行う**
    - 例として、Aggregate `AppState` から `Task` を引くキーには将来的に VO
      `TaskFilePath` を使う形が望ましい。`Task` 自身を `AppState` の中に持つ
