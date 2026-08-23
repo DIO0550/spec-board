@@ -246,10 +246,12 @@ watcher の `eventSeq` gap または full rescan 通知から復旧する場合�
 
 `AppState` の resident domain は `Idle | Loaded(ProjectSession)` を単一 Mutex で保持する。`ProjectSession` は exact raw `ProjectRoot`、process 内で一意な `SessionId`、session-local `SessionRevision`、config、labels、milestones、tasks を一体として所有する。watcher handle と `WriteIgnoreRegistry` は cache 対象になり得る domain から分離し、同じ `SessionVersion { SessionId, SessionRevision }` を持つ active resources として最大 1 組だけ保持する。
 
+raw domain/resources/background Mutex は private な lock owner module だけが所有する。domain lock を取得した `DomainGuard` を消費しなければ resources lock を取得できず、resident pair の取得順序は domain → resources に型で固定される。resources の単独参照は identity 検証と `Arc<WriteIgnoreRegistry>` clone を lock owner 内で完結させる値 API、background cache は take/stash の値 API だけを公開し、いずれも raw guard を caller へ返さない。
+
 mutation と watcher event は次の protocol を使う。
 
 1. gate 取得前に対象の root / SessionId を控える。
-2. exact raw `ProjectRoot` ごとの writer gate を取得する。同一 root は直列化し、別 root は互いに待たない。
+2. exact raw `ProjectRoot` ごとの writer gate を closure-scoped API で取得する。同一 root は直列化し、別 root は異なる thread で互いに待たない。raw gate/guard は caller へ公開しない。同一 thread が lease 内から writer lease を再取得した場合は、同じ root／別 root のどちらも待機せず `WriterLeaseReentrant` typed error を返す。thread-local marker は RAII で管理し、operation error、early return、panic unwind のいずれでも解除する。
 3. gate 取得後に fresh snapshot を読み、root + SessionId を再検証する。待機中の正常な revision 進行は許可するが、project switch と same-path reopen は disk I/O 前に typed conflict として拒否する。
 4. resident validation と target 解決を副作用なしで行い、revision の checked increment と active resource identity を preflight する。`u64::MAX` なら disk/store read・write-ignore 登録・disk write を行わない。
 5. 必要な disk I/O を行った後、snapshot の full SessionId + Revision で resident mutation を CAS commit する。成功 commit だけが revision を 1 増やす。
@@ -260,7 +262,7 @@ open は target root の同じ gate を使う。swap 後は gate と state locks
 
 reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` / `get_milestones` / `export_labels` の各 command で `session_snapshot()` を 1 回だけ読み、異なる revision の field を混在させない。
 
-フォアグラウンドの session とは別に、`AppState` は退避済み session を `ProjectRoot` をキーにしたバックグラウンドキャッシュ（`HashMap<ProjectRoot, ProjectSession>`）で保持する。このキャッシュは leaf lock として扱い、domain lock / resources lock と同時には取得しない（open フロー内で単独取得のみ）。したがって既存の lock 取得順序契約（domain → resources、writer gate は外側）は変わらない。
+フォアグラウンドの session とは別に、`AppState` は退避済み session を `ProjectRoot` をキーにしたバックグラウンドキャッシュ（`HashMap<ProjectRoot, ProjectSession>`）で保持する。このキャッシュは lock owner 内の take/stash 値 API で単独取得し、background guard を外へ出さない。resident identity の読取後に background cache を取得する処理も guard を入れ子にしないため、domain → resources の段階 API と独立した leaf lock である。
 
 - キャッシュへの退避は swap で押し出された session に対して行い、writer gate と全 state lock を解放した後に実行する。
 - 同一 root のエントリが既にある場合は `SessionId` が大きい方を残す。`SessionId` はプロセス内で単調増加するため、並行 open で退避順序が逆転しても常に最新の session が勝つ。
@@ -832,6 +834,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.8 | 2026-08-23 | Issue #594: raw resident Mutex を private lock owner へ封じ、domain → resources の段階 guard、background/resources の値 API、closure-scoped writer lease と同一 thread 再入の fail-fast typed error を仕様化 | - |
 | 1.7 | 2026-08-11 | Issue #508: FE の 5 event 常設購読、open 前 readiness barrier、open 中 200 件 FIFO、overflow 時の 1 回 resync、後続 event 不要の反映保証を追加。BE production / wire contract は不変 | - |
 | 1.6 | 2026-08-11 | Issue #460: watcher が変更を反映する際に全 task の派生値を再構築する契約、変更対象以外も変わった場合の `watcher-resync-required` 分岐、rename 時の raw 値保持（cleanup しない）の裁定を追加。cardOrder cleanup は #507、購読開始までの窓は #508 へ切り出し | - |
 | 1.5 | 2026-08-09 | Issue #457: 未知 status のカラム追加（reconcile）を背景再スキャンでも行う契約と、その `config.json` / `GUIDE.md` 書き込みを書き込みパスセットへ登録しない理由を追加 | - |
