@@ -82,6 +82,24 @@ fn impl_put_replaces_all_fields_and_keeps_name() {
 }
 
 #[test]
+fn impl_put_preserves_unknown_state_raw_value() {
+    let tmp = TempDir::new().unwrap();
+    let state = opened_state(tmp.path(), registry(vec![existing_full()]));
+
+    let mut a = args("v0.3");
+    a.state = Some(" Closed ".to_string());
+    update_milestone_impl(&state, a, &fixed_clock()).expect("update ok");
+
+    let on_disk = milestone_registry_store(tmp.path()).load().expect("load");
+    let milestone_state = on_disk.definitions()[0]
+        .state
+        .as_ref()
+        .expect("state is preserved");
+    assert!(matches!(milestone_state, MilestoneState::Other(_)));
+    assert_eq!(milestone_state.as_str(), " Closed ");
+}
+
+#[test]
 fn impl_put_clears_unspecified_optionals() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(tmp.path(), registry(vec![existing_full()]));

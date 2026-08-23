@@ -243,6 +243,26 @@ fn load_unknown_state_value_is_preserved_as_other() {
 }
 
 #[test]
+fn load_case_and_whitespace_state_values_are_preserved_as_other() {
+    for raw in ["Open", " open", "closed ", "   "] {
+        let tmp = TempDir::new().unwrap();
+        write_milestones_yml(
+            tmp.path(),
+            &format!("milestones:\n  - name: v0.3\n    state: {raw:?}\n"),
+        );
+        let registry = milestone_registry_store(tmp.path())
+            .load()
+            .expect("load ok");
+        let state = registry.definitions()[0]
+            .state
+            .as_ref()
+            .expect("non-empty state");
+        assert!(matches!(state, MilestoneState::Other(_)), "raw: {raw:?}");
+        assert_eq!(state.as_str(), raw);
+    }
+}
+
+#[test]
 fn load_non_string_state_is_parse_error() {
     let tmp = TempDir::new().unwrap();
     write_milestones_yml(tmp.path(), "milestones:\n  - name: v0.3\n    state: 5\n");

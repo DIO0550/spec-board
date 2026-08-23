@@ -131,6 +131,18 @@ fn from_args_known_state_is_normalized() {
     assert_eq!(def.state, Some(MilestoneState::Closed));
 }
 
+#[test]
+fn from_args_case_and_whitespace_state_is_preserved() {
+    for raw in ["Open", " closed ", "   "] {
+        let mut a = args("v0.3");
+        a.state = Some(raw.to_string());
+        let def = MilestoneDefinition::from(a);
+        let state = def.state.expect("non-empty state");
+        assert!(matches!(state, MilestoneState::Other(_)), "raw: {raw:?}");
+        assert_eq!(state.as_str(), raw);
+    }
+}
+
 // ───────── create_milestone_impl（effect 層） ─────────
 
 #[test]
