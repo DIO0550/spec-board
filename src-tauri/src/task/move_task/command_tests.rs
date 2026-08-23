@@ -1564,7 +1564,8 @@ fn same_column_card_order_conflict_leaves_disk_revision_and_io_untouched() {
 #[test]
 fn first_move_into_a_column_without_card_order_entry_succeeds() {
     // 一度も並び替えていないカラムは cardOrder にエントリ自体が無い。期待値が
-    // cardOrder の生値（= 無い）ではなく board 表示順（id 昇順）と照合されることで、
+    // cardOrder の生値（= 無い）ではなく board 表示順（canonical filePath 昇順）と
+    // 照合されることで、
     // 初回移動が拒否されない。
     let dir = tempdir();
     seed_md(

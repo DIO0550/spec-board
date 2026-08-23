@@ -43,11 +43,17 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | path | `String` | プロジェクトディレクトリの絶対パス |
 
 **戻り値**:
+
+`tasks[*].id` と `tasks[*].filePath` は wire 互換のため両方を維持し、scanner が
+正規化した同一の canonical project root 相対 path を返す。resident `Task` は
+`filePath` だけを identity として保持する。
+
 ```json
 {
   "tasks": [
     {
-      "id": "ファイルパス（プロジェクトルートからの相対パス）",
+      "id": "tasks/fix-bug.md",
+      "filePath": "tasks/fix-bug.md",
       "title": "タスクタイトル",
       "status": "Todo",
       "priority": "Medium",
@@ -57,7 +63,6 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
       "children": ["tasks/child-1.md", "tasks/child-2.md"],
       "reverseLinks": ["tasks/other-task.md"],
       "body": "Markdown本文",
-      "filePath": "tasks/fix-bug.md",
       "extras": { "estimate": 3 },
       "warnings": [
         {
@@ -159,7 +164,7 @@ watcher の full rescan が成功した場合は、その rescan report の warn
 
 > `columns` / `doneColumn` を同梱するのは、フロントエンドが resync でカラム定義も取り直せるようにするため。`tasks` の並びは backend の config に従うので、カラムだけ据え置くと board が「並びは新しいがカラムは古い」状態で固定される。`get_columns` を別に呼ぶ形にすると、2 つの読み取りの間に走った commit をまたいで revision が混在するため、**同じ snapshot の `Config` から導出**して 1 応答で返す。プロジェクト未 open のときは `columns` が空配列、`doneColumn` は `null`。
 
-> `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → `id` 昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ `id` 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。`milestoneProjections[*].taskFilePaths` も、この `tasks` を milestone ごとに絞り込んだ順序と一致する。`config` が `None` の場合のみ `TaskIndex::sorted_by_id` にフォールバックし、`tasks` / `taskFilePaths` ともに `id` 昇順とする。この場合は完了カラムも解決できないため `done` は 0。
+> `tasks` の並び順は `open_project` と**完全に同一**（カラム表示順 → `cardOrder` → canonical `filePath`〔= wire `id`〕昇順）。フロントエンドは配列順をそのまま表示順に使うため、片方だけ path 昇順にすると watcher の full rescan / イベント欠落からの復旧のたびに DnD で決めた並びが崩れる。並び順の決定は `TaskIndex::sorted_by_board_order` 1 箇所に集約する。`milestoneProjections[*].taskFilePaths` も、この `tasks` を milestone ごとに絞り込んだ順序と一致する。`config` が `None` の場合のみ `TaskIndex::sorted_by_id` にフォールバックし、`tasks` / `taskFilePaths` ともに canonical `filePath` 昇順とする。この場合は完了カラムも解決できないため `done` は 0。
 
 ```json
 {
@@ -215,7 +220,7 @@ watcher イベント検証の baseline（`revision` と `eventSeq` の両方）�
 |:----------|:-----|
 | `total` | その milestone が割り当てられた task 件数 |
 | `done` | 対象 task のうち、snapshot の config から解決した完了カラムに居る件数。完了カラムを解決できない場合は 0 |
-| `taskFilePaths` | 対象 task の `filePath`。payload の `tasks` と同じ board order（config が `None` なら id 順） |
+| `taskFilePaths` | 対象 task の canonical `filePath`。payload の `tasks` と同じ board order（config が `None` なら `filePath` 順） |
 
 `milestone: null` と空文字は未割当として map に含めない。空でない名称は milestone registry に未定義でも raw 値を key として保持し、task 集合を 1 回走査して `total` / `done` / `taskFilePaths` を同時に集計する。`taskFilePaths` 自体は集計中に sort せず、command 層が先に tasks を payload 順へ sort してから `TaskIndex` を再構築することで順序を保証する。百分率は payload に含めない。
 
@@ -838,6 +843,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.10 | 2026-08-23 | Issue #602: resident Task の canonical filePath identity、wire id/filePath 同値、path sort と wire/disk/error 互換を明記 | - |
 | 1.9 | 2026-08-23 | Issue #601: open / mutation / watcher / rescan / conflict recovery を canonical full resolver に統一し、resolved Task 集合だけを resident state に格納する型境界、raw/effective parent、path 昇順の派生値、wire/disk/error 互換を明記 | - |
 | 1.8 | 2026-08-23 | Issue #594: raw resident Mutex を private lock owner へ封じ、domain → resources の段階 guard、background/resources の値 API、closure-scoped writer lease と同一 thread 再入の fail-fast typed error を仕様化 | - |
 | 1.7 | 2026-08-11 | Issue #508: FE の 5 event 常設購読、open 前 readiness barrier、open 中 200 件 FIFO、overflow 時の 1 回 resync、後続 event 不要の反映保証を追加。BE production / wire contract は不変 | - |

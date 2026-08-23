@@ -7,6 +7,13 @@
 
 spec-board で管理するタスクのmdファイルフォーマットを定義する。YAMLフロントマターにタスクのメタデータを記述し、本文にタスクの詳細説明をMarkdown形式で記述する。
 
+### タスク識別子
+
+バックエンドの resident `Task` は、scanner が正規化した project root 相対の
+`filePath` を唯一の identity として保持する。IPC payload は後方互換のため `id` と
+`filePath` の両フィールドを従来の順序・型で返すが、両方とも常に同じ canonical path
+である。フロントエンドの `Task.id` と既存 wire / disk / error 形状は変更しない。
+
 ## ファイルフォーマット
 
 ### 全体構造
@@ -417,4 +424,5 @@ create / update の strict parent 検証は I/O より前に従来どおり実�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.2 | 2026-08-23 | Issue #602: resident Task の identity を canonical filePath の単一保存とし、wire id/filePath の同値・形状互換を明記 | - |
 | 1.1 | 2026-08-23 | Issue #601: parse-only candidate と resolved resident Task の型境界、raw/effective parent、warning 分離、全 mutation の canonical full resolver、path 昇順の派生値、出力専用 IPC projection と wire/disk/error 互換契約を明記 | - |

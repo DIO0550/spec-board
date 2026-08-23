@@ -72,7 +72,6 @@ pub(crate) fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Pa
         .collect();
 
     ParsedTask {
-        id: file_path.clone(),
         file_path,
         title,
         status,

@@ -1767,7 +1767,7 @@ fn payload_tasks_follow_saved_card_order_within_each_column() {
     write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
     write_md(dir.path(), "tasks/b.md", &task_md("B", "Todo", None));
     write_md(dir.path(), "tasks/c.md", &task_md("C", "Todo", None));
-    // 保存済みの並びは id 昇順とは逆。id 順で返してしまうと復元されない。
+    // 保存済みの並びは canonical filePath 昇順とは逆。path 順で返すと復元されない。
     write_config_json(
         dir.path(),
         r#"{
@@ -1788,7 +1788,7 @@ fn payload_tasks_follow_saved_card_order_within_each_column() {
 }
 
 #[test]
-fn payload_tasks_absent_from_card_order_come_after_listed_ones_by_id() {
+fn payload_tasks_absent_from_card_order_come_after_listed_ones_by_file_path() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
     write_md(dir.path(), "tasks/a.md", &task_md("A", "Todo", None));
@@ -2030,8 +2030,9 @@ fn open_and_get_tasks_milestone_paths_match_the_exact_board_order() {
     );
 }
 
-/// `open_project` と `get_tasks` は同じ board 表示順（カラム順 → cardOrder → id 順）
-/// で返す。FE は配列順をそのまま表示順に使うため、片方が id 順だと watcher の
+/// `open_project` と `get_tasks` は同じ board 表示順（カラム順 → cardOrder →
+/// canonical filePath 順）で返す。FE は配列順をそのまま表示順に使うため、片方が
+/// path 順だと watcher の
 /// full rescan / gap 復旧のたびに DnD で決めた並びが崩れる。
 #[test]
 fn open_and_get_tasks_return_the_same_board_order() {
@@ -2059,9 +2060,9 @@ fn open_and_get_tasks_return_the_same_board_order() {
     assert_eq!(open_ids, get_ids);
 }
 
-/// `cardOrder` が id 昇順と食い違う並びでも `get_tasks` がその並びを返す。
+/// `cardOrder` が canonical filePath 昇順と食い違う並びでも `get_tasks` がその並びを返す。
 #[test]
-fn get_tasks_preserves_a_card_order_that_differs_from_id_order() {
+fn get_tasks_preserves_a_card_order_that_differs_from_file_path_order() {
     let state = Arc::new(AppState::new());
     let dir = tempdir();
     let config_json = r#"{
@@ -3471,7 +3472,7 @@ fn a_column_deleted_by_update_columns_comes_back_at_the_tail() {
     assert_eq!(
         review_task_ids,
         vec!["tasks/a.md", "tasks/b.md"],
-        "cardOrder が無いカラムは id 昇順で並ぶ"
+        "cardOrder が無いカラムは canonical filePath 昇順で並ぶ"
     );
 }
 

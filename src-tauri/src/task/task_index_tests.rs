@@ -80,6 +80,17 @@ fn task_serializes_path_fields_and_warning_codes_as_camel_case() {
 }
 
 #[test]
+fn task_id_is_a_computed_alias_of_canonical_file_path() {
+    let task = task_from(
+        "---\ntitle: Fix bug\nstatus: Todo\n---\n",
+        "./tasks\\fix-bug.md",
+    );
+
+    assert_eq!(task.id(), task.file_path());
+    assert_eq!(task.id().as_str(), "tasks/fix-bug.md");
+}
+
+#[test]
 fn parent_not_found_warning_code_serializes_as_camel_case() {
     let warning = TaskWarning {
         code: TaskWarningCode::ParentNotFound,
@@ -304,7 +315,7 @@ fn sorted_by_id_sorts_random_order_ascending() {
 }
 
 #[test]
-fn sorted_by_id_preserves_input_order_for_duplicate_ids() {
+fn sorted_by_id_preserves_input_order_for_duplicate_file_paths() {
     let first = ParsedTaskBuilder::new("tasks/dup.md")
         .title("first")
         .resolve();
@@ -483,7 +494,7 @@ fn sorted_by_board_order_orders_by_column_then_card_order() {
 }
 
 #[test]
-fn sorted_by_board_order_appends_unlisted_tasks_by_id() {
+fn sorted_by_board_order_appends_unlisted_tasks_by_file_path() {
     let config = board_config(&["Todo"], &[("Todo", &["tasks/c.md"])]);
     let tasks = vec![
         task_with_status("tasks/b.md", "Todo"),
@@ -531,7 +542,7 @@ fn board_order_of_column_returns_card_order_sequence_when_all_tasks_are_listed()
 }
 
 #[test]
-fn board_order_of_column_appends_unlisted_tasks_by_id() {
+fn board_order_of_column_appends_unlisted_tasks_by_file_path() {
     let config = board_config(&["Todo"], &[("Todo", &["tasks/c.md"])]);
     let index = TaskIndex::new(vec![
         task_with_status("tasks/b.md", "Todo"),
@@ -545,7 +556,7 @@ fn board_order_of_column_appends_unlisted_tasks_by_id() {
 }
 
 #[test]
-fn board_order_of_column_falls_back_to_id_order_when_column_has_no_card_order_entry() {
+fn board_order_of_column_falls_back_to_file_path_order_without_card_order_entry() {
     let config = board_config(&["Todo"], &[]);
     let index = TaskIndex::new(vec![
         task_with_status("tasks/b.md", "Todo"),
