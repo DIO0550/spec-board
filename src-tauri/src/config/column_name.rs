@@ -32,11 +32,16 @@ pub enum ColumnNameError {
 impl ColumnName {
     /// strict コンストラクタ。空文字を拒否する。
     pub fn try_from_str(value: &str) -> Result<Self, ColumnNameError> {
+        Self::try_from_string(value.to_string())
+    }
+
+    /// 所有済みの文字列を再確保せずstrict検証する内部コンストラクタ。
+    fn try_from_string(value: String) -> Result<Self, ColumnNameError> {
         if value.is_empty() {
             return Err(ColumnNameError::Empty);
         }
         Ok(Self {
-            value: value.to_string(),
+            value,
             state: ValidationState::Validated,
         })
     }
@@ -52,9 +57,8 @@ impl ColumnName {
     /// 検証済みの config 名を strict constructor に通して分類する。
     /// exact empty は既存互換の lenient 値として保持する。
     pub(crate) fn classify_after_validation<S: Into<String>>(value: S) -> Self {
-        let value = value.into();
-        let classified = Self::try_from_str(&value)
-            .unwrap_or_else(|ColumnNameError::Empty| Self::from_lenient(value));
+        let classified = Self::try_from_string(value.into())
+            .unwrap_or_else(|ColumnNameError::Empty| Self::from_lenient(""));
         debug_assert!(classified.is_validated() || classified.is_empty());
         classified
     }
