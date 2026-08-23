@@ -24,9 +24,14 @@ pub struct CanonicalTaskPath(String);
 impl CanonicalTaskPath {
     /// 唯一の正規化コンストラクタ。
     ///
-    /// 入力の表記（`./tasks/a.md` / `tasks\a.md` / `tasks/./a.md` / `C:tasks/a.md`）に
+    /// 入力の表記（`./tasks/a.md` / `tasks\a.md` / `tasks/./a.md` / `C:/tasks/a.md`）に
     /// 関わらず、同じ canonical 表記 `tasks/a.md` を返す。冪等であり、既に canonical な
     /// 文字列を渡しても値は変わらない。
+    ///
+    /// drive prefix の除去は先頭セグメントがちょうど `C:` の形のときだけ働く。
+    /// `C:tasks/a.md` は先頭セグメントが `C:tasks` なので畳まれず、そのまま残る
+    /// （`path_normalization::is_drive_letter_segment`）。Unix で正規ディレクトリ名に
+    /// なりうる `notes:` を誤削除しないための境界であり、本 VO でも据え置いている。
     ///
     /// @param raw 正規化前の path 文字列。
     /// @returns canonical 表記だけを保持する `CanonicalTaskPath`。
