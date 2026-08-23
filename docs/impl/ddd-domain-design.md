@@ -200,7 +200,9 @@ PartialEq` のみ。
 state tag は raw 値の出所情報であって値同一性ではない。`Serialize` / `Eq` / `Ord` /
 `Hash` / `Borrow` / `Display` / `Debug` は raw `String` だけを使うため、state の違いは
 JSON、config.json、ログ文字列、membership、done 判定、Map / Set key に現れない。
-state と struct field は private で、外部 caller は `Validated` を直接生成できない。
+state tag と struct field は private で、外部 caller は state を任意指定できない。
+`Validated` は public strict constructor (`try_from_str`) または crate 内の
+検証後分類経路でのみ生成される。
 
 ---
 
