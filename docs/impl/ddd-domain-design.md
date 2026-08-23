@@ -63,7 +63,7 @@ VO のコンストラクタを 2 系統用意している。
 `Deserialize` も大半の VO で custom 実装にしている。derive Deserialize は
 内部 `String` を素通しで復元してしまい strict 不変条件を迂回するため、
 代わりに `from_lenient` を呼ぶ実装に統一している。strict 検証が必要な経路
-（scanner 由来の id / file_path など）では明示的に `from_relative_path` /
+（scanner 由来の canonical `file_path` など）では明示的に `from_relative_path` /
 `try_from_str` を呼ぶことで担保する。
 
 ---
@@ -75,12 +75,17 @@ DDD の Aggregate は「不変条件を一緒に守るべきオブジェクト�
 
 | Aggregate Root | 責務 | 場所 |
 |:--|:--|:--|
-| `Task` | 1 タスクの不変条件（id == file_path、warnings は parse 由来） | `src/task/index.rs` |
-| `TaskIndex` | タスク集合の整合性（parent 存在、循環検出、children / reverse_links 派生） | `src/task/index.rs` |
+| `Task` | 1 タスクの不変条件（canonical file_path を唯一の identity とし、warnings は parse / graph 由来） | `src/task/task_index.rs` |
+| `TaskIndex` | タスク集合の整合性（parent 存在、循環検出、children / reverse_links 派生） | `src/task/task_index.rs` |
 | `Config` | 現行schema version、カラム集合と done_column の整合性、card_order の clean | `src/config/core.rs` |
 | `LabelRegistry` | ラベル定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/label_registry.rs` |
 | `MilestoneRegistry` | マイルストーン定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/milestone_registry.rs` |
 | `AppState` | 全 Mutex の lock 取得順序契約 | `src/state.rs` |
+
+`Task::id()` は保存フィールドではなく canonical `file_path` の参照を返す computed
+alias である。出力専用 `TaskPayload` へ変換するときだけ、従来の wire 契約を守るため
+`id` と `filePath` の両方へ同じ canonical path を投影する。JSON のフィールド順・型、
+disk 形状、既存エラーは変更しない。
 
 Aggregate 境界の引き方の指針:
 
@@ -125,8 +130,8 @@ Aggregate 境界の引き方の指針:
 │  ┌──────────────────────────────────┐    ┌──────────────────────────────┐    │
 │  │  Aggregate: Task (AR)            │    │  Aggregate: Config (AR)       │    │
 │  │  ┌────────────────────────────┐  │    │  ┌────────────────────────┐   │    │
-│  │  │ id          : TaskFilePath │  │    │  │ version  : SchemaVersion│   │    │
-│  │  │ file_path   : TaskFilePath │  │    │  │ columns  : Vec<Column>  │   │    │
+│  │  │ file_path   : TaskFilePath │  │    │  │ version  : SchemaVersion│   │    │
+│  │  │ id()        : &TaskFilePath│  │    │  │ columns  : Vec<Column>  │   │    │
 │  │  │ title       : TaskTitle    │  │    │  │ card_order : CardOrder  │   │    │
 │  │  │ status      : ColumnName   │  │    │  │ done_column: Option<    │   │    │
 │  │  │ parent      : Option<      │  │    │  │              ColumnName>│   │    │
@@ -245,7 +250,8 @@ open_project_impl(state, root: &ProjectRoot)
    ↓
 HashMap<PathBuf, Task> を AppState.tasks_cache に commit
    （tasks_cache のキーは本リファクタでは PathBuf 据置 — §8 参照。
-    payload に詰め直す Task 内では `id` / `file_path` は TaskFilePath VO）
+    Task 内では canonical `file_path` だけを TaskFilePath VO として保持し、
+    payload projection が互換用 `id` / `filePath` を同じ値から生成する）
    ↓
 OpenProjectPayload { tasks: Vec<Task>, columns: Vec<ColumnName> }
    ↓ (ColumnName の文字列 Serialize により JSON 形状不変)

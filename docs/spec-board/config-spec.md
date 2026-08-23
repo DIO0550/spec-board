@@ -320,7 +320,7 @@ type MilestoneProjectionsDto = {
 ```
 
 - `total` はその raw milestone 名を持つタスク件数、`done` はそのうち解決済み done column と `status` が完全一致するタスク件数。
-- `taskFilePaths` は所属タスクの raw `filePath` を payload の `tasks` と同じ順序で保持する。通常はカラム表示順 → `cardOrder` → `id` 昇順であり、`get_tasks` で config が存在しない場合のみ `id` 昇順へフォールバックする。
+- `taskFilePaths` は所属タスクの canonical `filePath` を payload の `tasks` と同じ順序で保持する。通常はカラム表示順 → `cardOrder` → canonical `filePath`（= wire `id`）昇順であり、`get_tasks` で config が存在しない場合のみ canonical `filePath` 昇順へフォールバックする。
 - frontmatter の `milestone` が未指定（Rust の `None`）または空文字 `""` のタスクは projection から除外する。空白のみを含む名前を含め、空でない値は trim・大文字小文字変換をせず raw 値のまま完全一致キーとして扱う。
 - `milestones.yml` に未定義の暗黙名、および `__proto__` / `constructor` / `toString` のような特殊名も lossless にキーとして保持する。FE は wire object を `Map` に変換して参照し、object prototype に依存したキーアクセスを行わない。
 - 所属タスクがないマスタ定義は map に entry を持たない。FE は未登録名を `{ done: 0, total: 0, taskFilePaths: [] }` として表示する。全タスクが未割当の場合、wire 値は空 object `{}`。
@@ -495,7 +495,7 @@ flowchart TD
 - **追加位置**: 既存カラム列の**末尾**（`order` の最大値 + 1 から連番）。
 - **追加順の決定論が及ぶ範囲**: 「path 昇順の初出順」（「カラム順序と `doneColumn` の採用規則」節と同じ走査規則）は、**1 回の走査でまとめて評価した status 集合の中でのみ**成立する。オープンと全量再スキャンは全タスクを 1 度に評価するのでこの規則どおりになるが、**ファイル監視は 1 件ずつ評価するため、複数の未知 status が別々のイベントで届いた場合の追加順はイベント到着順になる**。どちらの経路でも「未知 status は必ず末尾に追加される」ことは変わらない。
 - **`order` の飽和**: `order` が `u32` の上限に達している異常な config では採番が飽和し、新カラムが既存カラムと同じ `order` を持つ。この場合の表示順は `order` 昇順の**安定ソート**に従い、`columns` 配列で後ろにある新カラムが末尾に残る。
-- **既存カラムの不変性**: 既存カラムの `name` / `order` / `color` と `cardOrder` は一切変更しない。新カラムは `cardOrder` にエントリを持たないため、そのカラムのタスクは `id` 昇順で並ぶ。
+- **既存カラムの不変性**: 既存カラムの `name` / `order` / `color` と `cardOrder` は一切変更しない。新カラムは `cardOrder` にエントリを持たないため、そのカラムのタスクは canonical `filePath`（= wire `id`）昇順で並ぶ。
 - **`doneColumn`**: 既存値を維持する（`columns` に存在しない値が設定されていても**修復しない**。reconcile の責務は未知 status のカラム追加であって不正な config の是正ではなく、勝手に直すとユーザーが後から追加するつもりのカラム名を奪う）。ただし `doneColumn` 未設定（省略）の config にカラムを追加するときは、追加**前**の解決結果（`order` 最大のカラム名）を `doneColumn` として明示的に確定させる。未設定時の解決規則が末尾カラムを指すため、確定させないと追加した新カラムが完了カラムに化けてしまう。`columns` が空の config では確定させる値が無いため未設定のままとする。
 - **status の正規化**: 行わない（「入力 status の正規化責務」節と同じ規約）。空文字 `""` / 空白のみ `" "` / 前後空白付き `"  Todo  "` はそのままカラム名になり、大文字小文字違いは別カラムとして追加される。
 - **差分が無ければ `config.json` を書かない**。同じ入力に対する再オープンは冪等で、同じ `columns` / `order` / `doneColumn` を返す。
@@ -691,7 +691,7 @@ links:（任意）
 
 **戻り値**: 移動後の `Task`（同一カラム並び替えでは `status` 不変の既存 `Task`）。`cardOrder` は返さず、FE は楽観更新した並びをそのまま確定する。
 
-本コマンドが保存した `cardOrder` は、次回の `open_project` が payload の `tasks` を「カラムの表示順 → そのカラムの `cardOrder` の並び → `id` 昇順」で返すことで表示順として復元される。
+本コマンドが保存した `cardOrder` は、次回の `open_project` が payload の `tasks` を「カラムの表示順 → そのカラムの `cardOrder` の並び → canonical `filePath`（= wire `id`）昇順」で返すことで表示順として復元される。
 
 **振る舞い**:
 1. `fromColumn` / `toColumn` のいずれかが `columns[]` に存在しない場合は何も書き込まず拒否する（エラー文字列: `カラムが見つかりません: {columnName}`）
@@ -802,6 +802,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.12 | 2026-08-23 | Issue #602: Task identity の canonical filePath 単一化と、cardOrder / projection の path 順・wire id/filePath・disk/error 互換を明記 | - |
 | 1.11 | 2026-08-23 | Issue #598: MilestoneState の予約語完全一致、空文字の未指定化、unknown raw保持、in-memory構築不変条件とroundtrip / wire / error互換契約を明記 | - |
 | 1.10 | 2026-08-23 | Issue #597: SchemaVersion の CURRENT 限定、Config.version 非公開、raw load / migration 境界と wire / disk / error 互換契約を明記 | - |
 | 1.9 | 2026-08-23 | Issue #600: LabelRegistry / MilestoneRegistry の検証済み構築・immutable 定義参照と、wire / disk / error 互換契約を明記 | - |
