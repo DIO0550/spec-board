@@ -193,9 +193,14 @@ impl Default for Config {
 impl Config {
     /// 検証済み Config の全カラム名を strict/lenient 状態へ分類する。
     pub(crate) fn classify_column_names_after_validation(mut self) -> Self {
-        for column in &mut self.columns {
-            column.name = ColumnName::classify_after_validation(column.name.as_str());
-        }
+        self.columns = self
+            .columns
+            .into_iter()
+            .map(|column| Column {
+                name: ColumnName::classify_after_validation(column.name.into_string()),
+                ..column
+            })
+            .collect();
         self.card_order = self.card_order.classify_column_names_after_validation();
         self.done_column = self
             .done_column
