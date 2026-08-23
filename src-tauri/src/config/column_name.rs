@@ -32,6 +32,9 @@ pub enum ColumnNameError {
 impl ColumnName {
     /// strict コンストラクタ。空文字を拒否する。
     pub fn try_from_str(value: &str) -> Result<Self, ColumnNameError> {
+        if value.is_empty() {
+            return Err(ColumnNameError::Empty);
+        }
         Self::try_from_string(value.to_string())
     }
 
