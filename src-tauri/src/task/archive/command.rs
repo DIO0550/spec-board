@@ -102,9 +102,9 @@ pub(crate) fn archive_task_impl(
             .into());
         }
 
-        let resolved = index
-            .rebuild_with_external_change(ExternalTaskChange::Removed(archived_file_path.clone()))
-            .expect("archiving a task cannot deepen a previously resolved parent chain");
+        let resolved = index.rebuild_with_external_change(ExternalTaskChange::Removed(
+            archived_file_path.clone(),
+        ))?;
         let next_tasks = resolved.tasks;
         let resources = state.preflight_session_write(snapshot)?;
         let registered_paths = vec![abs.clone()];
