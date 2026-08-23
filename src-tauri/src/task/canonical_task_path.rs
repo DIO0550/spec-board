@@ -12,6 +12,7 @@
 //! `path_lookup` は `Task` に依存するため、そちらを呼ぶと VO が Aggregate に
 //! 依存する責務逆転になる。
 
+use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -36,7 +37,13 @@ impl CanonicalTaskPath {
     /// @param raw 正規化前の path 文字列。
     /// @returns canonical 表記だけを保持する `CanonicalTaskPath`。
     pub fn new(raw: &str) -> Self {
-        let path_text = raw.replace('\\', "/");
+        // cache キー生成は scan の全 task 分と watcher event ごとに走る。`replace` は
+        // 置換対象が無くても String を確保するため、backslash を含むときだけ払う。
+        let path_text = if raw.contains('\\') {
+            Cow::Owned(raw.replace('\\', "/"))
+        } else {
+            Cow::Borrowed(raw)
+        };
         Self(normalize_path_parts(&path_text, true))
     }
 
