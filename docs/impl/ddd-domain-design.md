@@ -182,12 +182,27 @@ Aggregate 境界の引き方の指針:
 | `TaskTitle` | `task::value_objects` | `String` | 空文字不可（whitespace-only は valid） | あり（frontmatter 由来の whitespace-only を保持） |
 | `TaskFileName` | `task::value_objects` | `String` | 空文字不可 / `/` `\\` 含まず / `.md` 拡張子 | なし（永続化対象外） |
 | `Label` | `task::value_objects` | `String` | 空文字不可 | あり（lenient deserialize 用） |
-| `ColumnName` | `config::value_objects` | `String` | 空文字不可 | あり（config.json 由来の前後空白 / 空文字を保持） |
+| `ColumnName` | `config::value_objects` | `String` + private state tag | 空文字不可 | あり（serde / IPC / frontmatter 境界の raw 値を保持） |
 | `ProjectRoot` | `project::value_objects` | `PathBuf` | 空文字不可（実在性は別途検証） | なし（Tauri command 引数で `try_from_str` 明示） |
 
 Map / Set のキーになる `TaskFilePath` / `ColumnName` のみ `PartialOrd, Ord`
 を付与している（`BTreeMap` のキー、ソート用）。それ以外の VO は `Hash, Eq,
 PartialEq` のみ。
+
+`ColumnName` は raw 文字列に加えて `Lenient` / `Validated` の private state tag を持つ。
+`try_from_str` は exact empty (`""`) だけを拒否し、空白のみや前後空白付きの値は
+正規化せず `Validated` として保持する。serde deserialize、`From`、frontmatter 由来の
+`Task.status` は `Lenient` で受け、config load の columns 非空・完全一致重複検査後に
+`columns[].name` / `doneColumn` / `cardOrder` key を分類する。空文字だけは互換性のため
+`Lenient` のまま残る。default、既存タスクからの bootstrap、reconcile、
+`update_columns` の採用結果も同じ分類 helper を通る。
+
+state tag は raw 値の出所情報であって値同一性ではない。`Serialize` / `Eq` / `Ord` /
+`Hash` / `Borrow` / `Display` / `Debug` は raw `String` だけを使うため、state の違いは
+JSON、config.json、ログ文字列、membership、done 判定、Map / Set key に現れない。
+state tag と struct field は private で、外部 caller は state を任意指定できない。
+`Validated` は public strict constructor (`try_from_str`) または crate 内の
+検証後分類経路でのみ生成される。
 
 ---
 
@@ -218,7 +233,7 @@ HashMap<PathBuf, Task> を AppState.tasks_cache に commit
     payload に詰め直す Task 内では `id` / `file_path` は TaskFilePath VO）
    ↓
 OpenProjectPayload { tasks: Vec<Task>, columns: Vec<ColumnName> }
-   ↓ (#[serde(transparent)] により JSON 形状不変)
+   ↓ (ColumnName の文字列 Serialize により JSON 形状不変)
 FE: { tasks: [...], columns: ["Todo", "In Progress", "Done"] }
 ```
 
@@ -390,4 +405,3 @@ constructor で強制するように吸収した（不正値が型レベルで c
 - **`TaskContent::try_new`**: smart constructor パターン。invalid な値で構築する
   経路を構造的に塞ぐ。`build_task_content(&args, parent)?` の結果をそのまま
   `file.write_all(content.as_bytes())` に渡せる。
-

@@ -172,7 +172,7 @@ impl Default for Config {
             .iter()
             .enumerate()
             .map(|(i, name)| Column {
-                name: ColumnName::from_lenient(*name),
+                name: ColumnName::classify_after_validation(*name),
                 order: i as u32,
                 color: None,
                 wip_limit: None,
@@ -180,7 +180,7 @@ impl Default for Config {
             .collect();
         let done_column = DEFAULT_COLUMN_NAMES
             .last()
-            .map(|s| ColumnName::from_lenient(*s));
+            .map(|s| ColumnName::classify_after_validation(*s));
         Self {
             version: DEFAULT_VERSION,
             columns,
@@ -191,6 +191,23 @@ impl Default for Config {
 }
 
 impl Config {
+    /// 検証済み Config の全カラム名を strict/lenient 状態へ分類する。
+    pub(crate) fn classify_column_names_after_validation(mut self) -> Self {
+        self.columns = self
+            .columns
+            .into_iter()
+            .map(|column| Column {
+                name: ColumnName::classify_after_validation(column.name.into_string()),
+                ..column
+            })
+            .collect();
+        self.card_order = self.card_order.classify_column_names_after_validation();
+        self.done_column = self
+            .done_column
+            .map(|name| ColumnName::classify_after_validation(name.into_string()));
+        self
+    }
+
     /// `done_column` の解決結果を返す。
     ///
     /// - `done_column` が `Some(_)` ならその参照をそのまま返す
@@ -363,7 +380,8 @@ impl Config {
                 columns: candidate_columns,
                 card_order: new_card_order,
                 done_column: new_done,
-            },
+            }
+            .classify_column_names_after_validation(),
             rename_targets,
             is_noop: false,
         })
@@ -471,7 +489,7 @@ impl Config {
 
         let mut next = self.clone();
         next.card_order.set_column(&column_name, &retained);
-        Ok(next)
+        Ok(next.classify_column_names_after_validation())
     }
 
     /// 既存 columns に無い status を末尾カラムとして追加する純粋計算。
@@ -547,7 +565,7 @@ impl Config {
             .map_or(0, |max| max.saturating_add(1));
         let mut added_columns: Vec<ColumnName> = Vec::with_capacity(added.len());
         for name in added {
-            let name = ColumnName::from_lenient(name);
+            let name = ColumnName::classify_after_validation(name);
             columns.push(Column {
                 name: name.clone(),
                 order: next_order,
@@ -566,7 +584,8 @@ impl Config {
                 // キーを要求しないため、これで不変条件は保たれる。
                 card_order: self.card_order.clone(),
                 done_column: frozen_done_column,
-            },
+            }
+            .classify_column_names_after_validation(),
             added_columns,
             is_noop: false,
         }
@@ -889,7 +908,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         .into_iter()
         .enumerate()
         .map(|(i, name)| Column {
-            name: ColumnName::from_lenient(name),
+            name: ColumnName::classify_after_validation(name),
             order: i as u32,
             color: None,
             wip_limit: None,

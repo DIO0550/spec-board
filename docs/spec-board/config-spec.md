@@ -522,6 +522,9 @@ flowchart TD
 - `columns` 内のカラム名は load 時に完全一致で重複検査される。重複が見つかれば `DuplicateColumnName` を `Err` として返す（呼び出し層のフォールバック挙動は[エラーハンドリング](#エラーハンドリング)を参照）。
 - 大文字小文字違い（例: `"Todo"` vs `"todo"`）は別カラム扱い（`build_config_from_statuses` と同規約）。
 - カラム名は値そのものを完全一致比較する。空文字 `""` / 空白のみ `" "` / 前後空白付き `"  Todo  "` も**未正規化のまま**受理し、distinct であれば許容する（`trim` 等の正規化責務は呼び出し層）。空文字 / 空白を別エラーとして拒否する仕様は本Issue 範囲外。
+- `ColumnName` は serde 境界では `Lenient` として raw 文字列を受ける。現行 version と migration の両経路で、columns 非空・完全一致重複検査が成功した後、`columns[].name` / `doneColumn` / `cardOrder` key の非空値を `Validated` へ分類する。`doneColumn` や `cardOrder` key が `columns` に存在しない場合も load 時には削除・拒否せず、非空なら同様に分類する。
+- strict 判定は `value.is_empty()` のみであり、`""` だけは互換性のため `Lenient` fallback として保持する。`" "` と `"  Todo  "` は raw bytes を変えず `Validated` になる。default、既存タスクからの自動生成、reconcile、`update_columns` で採用した Config も同じ分類規則を使う。一方、frontmatter / IPC 境界から得る `Task.status` は `Lenient` のまま保持する。
+- state tag は JSON / disk schema に含めず、raw 文字列だけを serialize する。比較・順序・hash・membership・done 判定も raw 文字列だけに基づくため、分類前後で wire 値、cardOrder key 順、エラー variant / 表示文字列は変わらない。保存して再度開いても同じ raw 値と分類結果になる。
 
 ## AIエージェント向けガイド（GUIDE.md）
 
