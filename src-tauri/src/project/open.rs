@@ -118,7 +118,8 @@ use spec_board_fs::watcher::core::WatcherError;
 
 /// `open_project` コマンドのペイロード。
 ///
-/// `tasks` は board 表示順（カラム表示順 → カラム内 `cardOrder` → `id` 昇順）で、
+/// `tasks` は board 表示順（カラム表示順 → カラム内 `cardOrder` → canonical
+/// `filePath`（wire `id`）昇順）で、
 /// `columns` は `Config::columns` の `order` 昇順で `name` を抜き出す。
 /// 並び順の決定は `TaskIndex::sorted_by_board_order` に集約し、`get_tasks` と揃える。
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -856,11 +857,12 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 ///
 /// `columns` は `Config::columns` の `order` 昇順 sort 後に `name` を抽出する。
 ///
-/// `tasks` は「カラムの表示順 → そのカラムの保存済み `cardOrder` の並び → `id` 昇順」で
-/// sort する。FE はカラムごとに `tasks` を filter して表示順に使うため、この並べ替えが
-/// 「再オープンしても DnD で決めた並びが復元される」ための rehydration になる。
-/// `cardOrder` に載っていないタスク（新規追加された md 等）は、そのカラムの末尾へ
-/// `id` 昇順で並ぶ（`cardOrder` の「記載されていないタスクは末尾に追加」ルール）。
+/// `tasks` は「カラムの表示順 → そのカラムの保存済み `cardOrder` の並び → canonical
+/// `filePath`（wire `id`）昇順」で sort する。FE はカラムごとに `tasks` を filter して
+/// 表示順に使うため、この並べ替えが「再オープンしても DnD で決めた並びが復元される」
+/// ための rehydration になる。`cardOrder` に載っていないタスク（新規追加された md 等）は、
+/// そのカラムの末尾へ canonical `filePath` 昇順で並ぶ（`cardOrder` の
+/// 「記載されていないタスクは末尾に追加」ルール）。
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
 fn build_payload(snapshot: ProjectSessionSnapshot, session: WatcherSession) -> OpenProjectPayload {
     let tasks = snapshot.tasks().values().cloned().collect();

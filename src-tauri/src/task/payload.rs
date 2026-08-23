@@ -49,7 +49,7 @@ pub struct TaskPayload {
 impl From<&Task> for TaskPayload {
     fn from(task: &Task) -> Self {
         Self {
-            id: task.id().clone(),
+            id: task.file_path().clone(),
             file_path: task.file_path().clone(),
             title: task.title().clone(),
             status: task.status().clone(),

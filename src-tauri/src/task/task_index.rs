@@ -107,7 +107,6 @@ pub(crate) struct TaskViewProjection {
 /// fieldはprivateで、parse-onlyな状態や偽の派生値を外部から構築できない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Task {
-    id: TaskFilePath,
     file_path: TaskFilePath,
     title: TaskTitle,
     status: ColumnName,
@@ -159,7 +158,6 @@ impl DerivedTaskState {
 impl From<Task> for crate::task::payload::TaskPayload {
     fn from(task: Task) -> Self {
         let Task {
-            id,
             file_path,
             title,
             status,
@@ -181,6 +179,7 @@ impl From<Task> for crate::task::payload::TaskPayload {
                     raw_parent: _,
                 },
         } = task;
+        let id = file_path.clone();
         crate::task::payload::TaskPayload {
             id,
             file_path,
@@ -212,7 +211,6 @@ impl From<Task> for crate::task::payload::TaskPayload {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParsedTask {
-    pub(crate) id: TaskFilePath,
     pub(crate) file_path: TaskFilePath,
     pub(crate) title: TaskTitle,
     pub(crate) status: ColumnName,
@@ -233,7 +231,6 @@ impl ParsedTask {
         let raw_parent = self.parent.clone();
         let derived = DerivedTaskState::new(raw_parent);
         Task {
-            id: self.id,
             file_path: self.file_path,
             title: self.title,
             status: self.status,
@@ -341,7 +338,6 @@ impl ParsedTaskBuilder {
         let file_path = file_path.into();
         Self {
             task: ParsedTask {
-                id: file_path.clone(),
                 file_path,
                 title: TaskTitle::from_lenient("Task"),
                 status: ColumnName::from_lenient("Todo"),
@@ -357,11 +353,6 @@ impl ParsedTaskBuilder {
                 parse_warnings: Vec::new(),
             },
         }
-    }
-
-    pub(crate) fn id(mut self, id: impl Into<TaskFilePath>) -> Self {
-        self.task.id = id.into();
-        self
     }
 
     pub(crate) fn title(mut self, title: impl Into<TaskTitle>) -> Self {
@@ -399,8 +390,9 @@ impl ParsedTaskBuilder {
 }
 
 impl Task {
+    /// wire互換のtask ID。canonical `file_path`のcomputed aliasである。
     pub fn id(&self) -> &TaskFilePath {
-        &self.id
+        &self.file_path
     }
 
     pub fn file_path(&self) -> &TaskFilePath {
@@ -470,7 +462,6 @@ impl Task {
 
     pub(crate) fn to_parsed_task(&self) -> ParsedTask {
         ParsedTask {
-            id: self.id.clone(),
             file_path: self.file_path.clone(),
             title: self.title.clone(),
             status: self.status.clone(),
@@ -987,29 +978,28 @@ impl TaskIndex {
         progress
     }
 
-    /// aggregate が保持する `Task` を `id` 昇順に並べた `Vec<Task>` を返す。
+    /// aggregate が保持する `Task` をcanonical `file_path`（= wire `id`）昇順に並べる。
     ///
     /// board へ返す通常経路は [`Self::sorted_by_board_order`] であり、本メソッドは
     /// **`Config` を解決できない場合のフォールバック**（project 未オープンなど）に使う。
-    /// `Vec::sort_by` は安定ソートのため、同一 `id` の `Task` が混入した場合は入力順を
-    /// 保持する。aggregate を再利用しない読み取り用途のため `self` を消費する。
+    /// `Vec::sort_by` は安定ソートのため、同一 `file_path` の `Task` が混入した場合は
+    /// 入力順を保持する。aggregate を再利用しない読み取り用途のため `self` を消費する。
     pub fn sorted_by_id(self) -> Vec<Task> {
         let mut tasks = self.into_tasks();
-        tasks.sort_by(|a, b| a.id.cmp(&b.id));
+        tasks.sort_by(|a, b| a.file_path.cmp(&b.file_path));
         tasks
     }
 
-    /// board の表示順（カラム表示順 → カラム内 `cardOrder` の並び → `id` 昇順）で
-    /// `Task` を並べ替えて返す。
+    /// board の表示順（カラム表示順 → `cardOrder` → canonical `file_path` 昇順）で返す。
     ///
     /// FE はカラムごとに `tasks` を filter して**配列順をそのまま表示順**に使うため、
     /// この並べ替えが「再オープンしても DnD で決めた並びが復元される」ための
     /// rehydration になる。`open_project` と `get_tasks` の両方が同じ入口を通ることで、
-    /// full rescan / gap 復旧のたびに並びが id 順へ崩れるのを防ぐ。
+    /// full rescan / gap 復旧のたびに並びがpath順へ崩れるのを防ぐ。
     ///
     /// `cardOrder` に載っていないタスク（新規追加された md 等）はそのカラムの末尾へ
-    /// `id` 昇順で並ぶ。`columns` のいずれにも一致しない `status` のタスクは全カラムの
-    /// 後ろへ回す。
+    /// canonical `file_path`（= wire `id`）昇順で並ぶ。`columns` のいずれにも一致しない
+    /// `status` のタスクは全カラムの後ろへ回す。
     pub fn sorted_by_board_order(self, config: &Config) -> Vec<Task> {
         let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
         sorted_columns.sort_by_key(|column| column.order);
@@ -1025,7 +1015,7 @@ impl TaskIndex {
         // 繰り返される。key は 1 task につき 1 回だけ計算する。
         tasks.sort_by_cached_key(|task| {
             let (rank, position) = card_sort_key(task, config, &column_rank, unknown_column_rank);
-            (rank, position, task.id.clone())
+            (rank, position, task.file_path.clone())
         });
         tasks
     }
@@ -1033,9 +1023,9 @@ impl TaskIndex {
     /// 指定カラムの board 表示順を file_path 列として返す。
     ///
     /// `config.card_order` の生値ではなく「実際に board へ表示される順」を返す。
-    /// cardOrder に載っているタスクはその順、載っていないタスクは末尾へ `id` 昇順で
-    /// 並ぶ。cardOrder の生値と比較すると、一度も並び替えていないカラム（エントリ
-    /// 自体が無い）への移動が必ず不一致になってしまう。
+    /// cardOrder に載っているタスクはその順、載っていないタスクは末尾へcanonical
+    /// `file_path`（= wire `id`）昇順で並ぶ。cardOrder の生値と比較すると、一度も
+    /// 並び替えていないカラムへの移動が必ず不一致になってしまう。
     ///
     /// `card_sort_key` を再利用しないのは、あちらが全カラム対象の
     /// `(カラム順位, カラム内順位)` を返す設計で、呼び出し側に `column_rank` の
@@ -1050,7 +1040,7 @@ impl TaskIndex {
             .collect();
         members.sort_by_cached_key(|task| {
             let position = card_position_in_column(config, column, task.file_path.as_str());
-            (position, task.id.clone())
+            (position, task.file_path.clone())
         });
         members
             .into_iter()
@@ -2336,7 +2326,6 @@ fn build_provisional_task(
         .map(|link| TaskFilePath::from_lenient(link.clone()))
         .collect();
     ParsedTask {
-        id: file_path.clone(),
         file_path,
         title: intent.title.clone(),
         status: intent.status.clone(),
@@ -2607,7 +2596,7 @@ mod task_index_plan_preview_filename_tests;
 /// `task` の (カラム表示順, カラム内 cardOrder 位置) を返す。
 ///
 /// `cardOrder` に載っていない場合の位置は `usize::MAX` とし、同カラムの記載済み
-/// タスクより後ろに回す（同順内の tie-break は呼び出し側が `id` で行う）。
+/// タスクより後ろに回す（同順内のtie-breakはcanonical `file_path`で行う）。
 fn card_sort_key(
     task: &Task,
     config: &Config,
@@ -2626,7 +2615,7 @@ fn card_sort_key(
 /// `file_path` の、指定カラムの cardOrder における位置を返す。
 ///
 /// cardOrder に載っていない（またはカラムのエントリ自体が無い）場合は `usize::MAX`
-/// とし、記載済みタスクより後ろに回す（同順位の tie-break は呼び出し側が `id` で行う）。
+/// とし、記載済みタスクより後ろに回す（同順位のtie-breakはcanonical `file_path`）。
 /// `card_sort_key` と `TaskIndex::board_order_of_column` の双方がこの規則を共有する。
 fn card_position_in_column(config: &Config, column: &str, file_path: &str) -> usize {
     config

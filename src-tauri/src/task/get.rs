@@ -5,7 +5,7 @@
 //! commit された state を消費する後続 API としての位置付け。
 //!
 //! 並び順の契約は `open_project` と同一（カラム表示順 → カラム内 `cardOrder` →
-//! `id` 昇順）で、`TaskIndex::sorted_by_board_order` に集約する。FE は watcher の
+//! canonical `filePath`（wire `id`）昇順）で、`TaskIndex::sorted_by_board_order` に集約する。FE は watcher の
 //! full rescan / gap 復旧でこの応答を board へ反映するため、`open_project` と
 //! 並びが食い違うと復旧のたびに DnD で決めた順序が壊れる。
 //!
