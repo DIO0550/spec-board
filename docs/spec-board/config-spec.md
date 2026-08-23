@@ -58,7 +58,7 @@ project-root/
 
 | フィールド | 型 | 必須 | デフォルト | 説明 |
 |:----------|:---|:-----|:----------|:-----|
-| version | `number` | はい | `1` | 設定ファイルのスキーマバージョン。将来のマイグレーションに使用 |
+| version | `number` | はい | `1` | 設定ファイルのスキーマバージョン。wire / disk では従来どおり数値であり、将来のマイグレーションに使用 |
 | columns | `Column[]` | はい | `[Todo, In Progress, Done]`（`Config::default` baseline） | カラム（ステータス）定義の配列。**最低 1 つのカラムが必須**であり、`columns: []` は load 時に `EmptyColumns` エラーで拒否される（[エラーハンドリング](#エラーハンドリング) 参照） |
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順）。u32 の有限な非負整数として扱い、新規追加時に最大値へ到達している場合は追加を適用しない |
@@ -515,10 +515,13 @@ flowchart TD
 
 これらは **`load_or_default` の戻り値**としての契約を述べる。アプリ起動時のユーザー体験（デフォルト + トースト）はこれを受け取った**呼び出し層（Tauri コマンド / アプリシェル）の責務**であり、後述「[エラーハンドリング](#エラーハンドリング)」のテーブルにフォールバック挙動を集約する。
 
-- 読み込んだ `version` が現行サポート範囲（`DEFAULT_VERSION = 1`）を超える場合は `UnknownFutureVersion` エラーを `Err` として返す。
+- 現行サポートversionは `SchemaVersion::CURRENT = 1` とする。`SchemaVersion` はprivateな `u32` を持つVOで、正規化済み `Config` はこの現行値だけを保持する。`Config::new(columns, cardOrder, doneColumn)` も常に現行値を設定し、callerが任意のversionを注入する経路は公開しない。
+- JSON上の `version` は引き続き数値としてserializeするため、wire / disk形状は `"version": 1` のまま変わらない。
+- load境界はまずprivateなraw adapter `VersionOnly { version: u32 }` で値を先読みする。legacy / futureのraw数値を扱えるのはこのadapterとmigration境界だけであり、読み込んだ `version` が `SchemaVersion::CURRENT` を超える場合は `UnknownFutureVersion` エラーを `Err` として返す。
+- 現行versionのJSONはraw文字列から `Config` へ直接deserializeし、元のline / columnを持つ `Parse` 分類を維持する。`Config` / `SchemaVersion` の直接deserializeは現行値だけを受理し、legacy / future値によるnormalized aggregateの構築を拒否する。
 - `load_or_default` は冒頭で `<root>/.spec-board/config.json.bak.tmp.*` の orphan を best-effort で削除する（クラッシュ等で `open(tmp)` と `rename(tmp, dst)` の間で中断された残骸を後続 load で清掃する）。安全条件として: (1) `.spec-board/` 自体が symlink の場合は走査自体を skip して外部ディレクトリの巻き込み削除を防ぐ、(2) tmp 名末尾の `{nanos}` を読み、現在時刻との差が **1 時間以上** の orphan のみを削除対象とし、同一 / 別プロセスで進行中の concurrent load が作った直近の live tmp は温存する。
 - 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。**書き出し戦略**: ① 呼び出しごとに unique な tmp パス（`config.json.bak.tmp.{pid}.{nanos}.{counter}`、`counter` は process-local AtomicU64）を組み立て（同一プロセス内・粗い時計分解能環境でも collision を防ぎつつ並行 load 干渉を回避）、② その tmp パスを `unlink`（symlink / hard link のリンク先や inode は破壊せずディレクトリエントリだけ除去）してから `O_CREAT | O_EXCL` 相当（`OpenOptions::create_new(true)`）で完全に新しい inode を atomic に作成し、③ その fresh inode に raw コンテンツを書き込み、④ atomic `rename(<tmp>, config.json.bak)` でディレクトリエントリだけを差し替える。これにより tmp が事前に外部ファイルへ **symlink / hard link** されていても、`.bak` が外部ファイルへ hard link されていても、いずれの inode も truncate されずプロジェクト外のファイル上書きを防げる。書き出し前に追加で `<root>/.spec-board/` ディレクトリと `config.json.bak` の leaf の双方が symlink でないことを確認し、いずれかが symlink の場合は `BackupFailed` を返して書き出しを拒否する（多重防御）。いずれもベストエフォート防御であり、`<root>` 自身およびそれ以上の ancestor の symlink / hard link、本チェックと write / rename の間に発生する TOCTOU race、ロックレスでの並行 load 完全制御は **本Issue 範囲外**（lockfile / project-root 内制限の導入は別Issue で扱う）。
-- マイグレーション結果は呼び出し側に返る `Config.version` が常に `DEFAULT_VERSION` に正規化される。本Issue（骨格段階）では `config.json` への永続化は行わないため、古い `version` のファイルが残っている限り、毎回の load で backup + migrate 経路を通る。
+- マイグレーションはraw `u32` を受け、JSON Valueの `version` を `SchemaVersion::CURRENT` の数値へ書き換えてから `Config` にdeserializeする。呼び出し側に返る `Config::version()` は常に `SchemaVersion::CURRENT` となる。本Issue（骨格段階）では `config.json` への永続化は行わないため、古い `version` のファイルが残っている限り、毎回の load で backup + migrate 経路を通る。
 - `version` フィールドの欠落 / 型不一致（文字列など）/ `u32` 範囲外は通常の JSON パースエラー（`Parse`）として扱う。
 
 #### カラム名重複の検証
@@ -763,7 +766,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 | エラーケース | 発生条件 | バックエンド戻り値 | 呼び出し層の振る舞い | ログレベル |
 |:------------|:---------|:------------------|:-------------------|:----------|
 | JSON パース失敗 | JSON 構文エラー、必須フィールド欠落、`version` の型不一致 / `u32` 範囲外 | `LoadConfigError::Parse` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
-| 未来 version 検出 | `version > DEFAULT_VERSION` | `LoadConfigError::UnknownFutureVersion` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知）（アプリの更新案内を含む） | ERROR |
+| 未来 version 検出 | `version > SchemaVersion::CURRENT` | `LoadConfigError::UnknownFutureVersion` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知）（アプリの更新案内を含む） | ERROR |
 | カラム名重複 | `columns` 内に同一名のカラムが存在 | `LoadConfigError::DuplicateColumnName` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
 | 空カラム | `columns: []` (spec の「最低1つのカラムが必要」違反) | `LoadConfigError::EmptyColumns` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
 | マイグレーション失敗（**本Issue 時点では到達不能**: 詳細は表下注を参照） | `migrate_config` が `MigrationError` を返す | `LoadConfigError::MigrationFailed` | `Config::default()` で `open_project` を継続し、`configFallback` の `loadWarnings` を返す（FE は件数を warning toast で通知） | ERROR |
@@ -772,8 +775,8 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 > **`MigrationFailed` の到達可能性について**
 >
-> 本Issue（骨格段階）時点では `load_or_default` 経由で `LoadConfigError::MigrationFailed` は実際には返らない。`from_version > DEFAULT_VERSION` は `UnknownFutureVersion` で先に弾かれ、`from_version <= DEFAULT_VERSION` の経路では現行 `migrate_config` は常に `Ok` を返すため。
-> バリアントは `MigrationError` の variant 追加に向けた forward compatibility のために存在し、将来 `DEFAULT_VERSION` を引き上げて実マイグレーションを実装したタイミングで実際に発生し得るようになる。本Issue 時点の caller は `MigrationFailed` 経路を実装しなくてよい（match の網羅性のためにダミーアームを書く程度で十分）。
+> 本Issue（骨格段階）時点では `load_or_default` 経由で `LoadConfigError::MigrationFailed` は実際には返らない。`from_version > SchemaVersion::CURRENT` は `UnknownFutureVersion` で先に弾かれ、現行version以下の経路では現行 `migrate_config` は常に `Ok` を返すため。
+> バリアントは `MigrationError` の variant 追加に向けた forward compatibility のために存在し、将来 `SchemaVersion::CURRENT` を引き上げて実マイグレーションを実装したタイミングで実際に発生し得るようになる。本Issue 時点の caller は `MigrationFailed` 経路を実装しなくてよい（match の網羅性のためにダミーアームを書く程度で十分）。
 
 ### load_or_default 以外のフロー
 
@@ -797,6 +800,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.10 | 2026-08-23 | Issue #597: SchemaVersion の CURRENT 限定、Config.version 非公開、raw load / migration 境界と wire / disk / error 互換契約を明記 | - |
 | 1.9 | 2026-08-23 | Issue #600: LabelRegistry / MilestoneRegistry の検証済み構築・immutable 定義参照と、wire / disk / error 互換契約を明記 | - |
 | 1.8 | 2026-08-23 | Issue #594: domain → resources の段階 guard、closure-scoped writer lease、同一 thread 再入の fail-fast typed error と RAII marker 解除契約を追加 | - |
 | 1.7 | 2026-08-12 | open_config_file の固定targetへ labels を追加。viewer一覧は config/GUIDE の2件を維持し、labels.yml は外部表示専用とする | - |

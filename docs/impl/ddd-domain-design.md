@@ -77,7 +77,7 @@ DDD の Aggregate は「不変条件を一緒に守るべきオブジェクト�
 |:--|:--|:--|
 | `Task` | 1 タスクの不変条件（id == file_path、warnings は parse 由来） | `src/task/index.rs` |
 | `TaskIndex` | タスク集合の整合性（parent 存在、循環検出、children / reverse_links 派生） | `src/task/index.rs` |
-| `Config` | カラム集合と done_column の整合性、card_order の clean | `src/config.rs` |
+| `Config` | 現行schema version、カラム集合と done_column の整合性、card_order の clean | `src/config/core.rs` |
 | `LabelRegistry` | ラベル定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/label_registry.rs` |
 | `MilestoneRegistry` | マイルストーン定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/milestone_registry.rs` |
 | `AppState` | 全 Mutex の lock 取得順序契約 | `src/state.rs` |
@@ -101,6 +101,10 @@ Aggregate 境界の引き方の指針:
      store は raw DTO の構文エラーを `Parse`、構築時の不変条件違反を既存の
      `Validation` に分類する。これにより serde derive や struct literal から
      aggregate invariant を迂回できず、同時に YAML / IPC の外部形状を維持する。
+   - `Config.version` はprivateな `SchemaVersion` VOで、`Config::new` と
+     `Config::default` は常に `SchemaVersion::CURRENT` を設定する。legacy / futureの
+     raw `u32` はload adapterとmigrationだけが扱い、normalized `Config` の
+     `Deserialize` はCURRENT以外を拒否する。
 3. **Aggregate を跨ぐ参照は VO の値で行う**
    - 例として、Aggregate `AppState` から `Task` を引くキーには将来的に VO
      `TaskFilePath` を使う形が望ましい。`Task` 自身を `AppState` の中に持つ
@@ -121,7 +125,7 @@ Aggregate 境界の引き方の指針:
 │  ┌──────────────────────────────────┐    ┌──────────────────────────────┐    │
 │  │  Aggregate: Task (AR)            │    │  Aggregate: Config (AR)       │    │
 │  │  ┌────────────────────────────┐  │    │  ┌────────────────────────┐   │    │
-│  │  │ id          : TaskFilePath │  │    │  │ version  : u32          │   │    │
+│  │  │ id          : TaskFilePath │  │    │  │ version  : SchemaVersion│   │    │
 │  │  │ file_path   : TaskFilePath │  │    │  │ columns  : Vec<Column>  │   │    │
 │  │  │ title       : TaskTitle    │  │    │  │ card_order : CardOrder  │   │    │
 │  │  │ status      : ColumnName   │  │    │  │ done_column: Option<    │   │    │
@@ -165,9 +169,9 @@ Aggregate 境界の引き方の指針:
 │  │   - TaskFileName  (newtype String)│    └──────────────────────────────┘    │
 │  │   - Label         (newtype String)│                                        │
 │  │   - ColumnName    (newtype String)│    ┌──────────────────────────────┐    │
-│  │   - ProjectRoot   (newtype PathBuf)│    │  ProjectRoot (VO)             │    │
-│  └──────────────────────────────────┘    │   - newtype PathBuf           │    │
-│                                          └──────────────────────────────┘    │
+│  │   - SchemaVersion (private u32)    │    │  ProjectRoot (VO)             │    │
+│  │   - ProjectRoot   (newtype PathBuf)│    │   - newtype PathBuf           │    │
+│  └──────────────────────────────────┘    └──────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ 依存方向 (本体 → sub-crate)
@@ -193,6 +197,7 @@ Aggregate 境界の引き方の指針:
 | `TaskFileName` | `task::value_objects` | `String` | 空文字不可 / `/` `\\` 含まず / `.md` 拡張子 | なし（永続化対象外） |
 | `Label` | `task::value_objects` | `String` | 空文字不可 | あり（lenient deserialize 用） |
 | `ColumnName` | `config::value_objects` | `String` + private state tag | 空文字不可 | あり（serde / IPC / frontmatter 境界の raw 値を保持） |
+| `SchemaVersion` | `config::schema_version` | private `u32` | `CURRENT` と完全一致する値だけを保持。DeserializeもCURRENT以外を拒否 | なし（legacy / future raw値はload adapterのみ） |
 | `ProjectRoot` | `project::value_objects` | `PathBuf` | 空文字不可（実在性は別途検証） | なし（Tauri command 引数で `try_from_str` 明示） |
 
 Map / Set のキーになる `TaskFilePath` / `ColumnName` のみ `PartialOrd, Ord`
