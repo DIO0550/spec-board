@@ -16,6 +16,8 @@ use crate::state::AppState;
 use crate::task::create::args::CreateTaskArgs;
 use crate::task::create::create_task_impl;
 use crate::task::io::FsTaskIo;
+use crate::task::task_index::Task;
+use crate::task::warning::TaskWarningCode;
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
@@ -62,6 +64,11 @@ fn unarchive_args(file_path: &str) -> UnarchiveTaskArgs {
     }
 }
 
+fn sorted_tasks(mut tasks: Vec<Task>) -> Vec<Task> {
+    tasks.sort_by(|left, right| left.file_path().as_str().cmp(right.file_path().as_str()));
+    tasks
+}
+
 // ---------------------------------------------------------------------------
 // archive_task
 // ---------------------------------------------------------------------------
@@ -87,6 +94,87 @@ fn archive_moves_file_into_archive_and_removes_from_cache() {
     assert!(archived.exists(), "archived copy should exist");
     let snap = state.test_tasks_snapshot().expect("snapshot");
     assert!(snap.is_empty(), "cache should be empty");
+}
+
+#[test]
+fn archive_reresolves_survivors_identically_to_cold_reopen() {
+    let dir = tempdir();
+    fs::create_dir_all(dir.path().join("tasks")).expect("mkdir tasks");
+    fs::write(
+        dir.path().join("tasks/source.md"),
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    )
+    .expect("write source");
+    fs::write(
+        dir.path().join("tasks/target.md"),
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    )
+    .expect("write target");
+    fs::write(
+        dir.path().join("tasks/parent.md"),
+        "---\ntitle: Parent\nstatus: Todo\n---\n",
+    )
+    .expect("write parent");
+    fs::write(
+        dir.path().join("tasks/child.md"),
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\n---\n",
+    )
+    .expect("write child");
+    fs::write(
+        dir.path().join("tasks/orphan.md"),
+        "---\ntitle: Orphan\nstatus: Todo\nparent: tasks/missing.md\n---\n",
+    )
+    .expect("write orphan");
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    let before = state.test_tasks_snapshot().expect("snapshot");
+    let target = before
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/target.md")
+        .expect("target");
+    assert_eq!(
+        target
+            .reverse_links()
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        ["tasks/source.md"]
+    );
+
+    archive_task_impl(&state, &FsTaskIo, archive_args("tasks/source.md")).expect("archive source");
+
+    let hot = sorted_tasks(state.test_tasks_snapshot().expect("hot snapshot"));
+    let target = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/target.md")
+        .expect("target");
+    assert!(target.reverse_links().is_empty());
+    let parent = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/parent.md")
+        .expect("parent");
+    assert_eq!(
+        parent
+            .children()
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        ["tasks/child.md"]
+    );
+    let orphan = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/orphan.md")
+        .expect("orphan");
+    assert!(orphan
+        .warnings()
+        .iter()
+        .any(|warning| warning.code == TaskWarningCode::ParentNotFound));
+
+    let reopened = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&reopened), dir.path());
+    let cold = sorted_tasks(reopened.test_tasks_snapshot().expect("cold snapshot"));
+    assert_eq!(hot, cold);
 }
 
 #[test]

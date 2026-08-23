@@ -19,6 +19,7 @@ use crate::state::AppState;
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::FsTaskIo;
 use crate::task::task_index::{ParsedTaskBuilder, Task};
+use crate::task::warning::TaskWarningCode;
 
 fn col(name: &str, order: u32) -> Column {
     Column {
@@ -62,6 +63,11 @@ fn task(path: &str, status: &str) -> Task {
         .title("t")
         .status(status)
         .resolve()
+}
+
+fn sorted_tasks(mut tasks: Vec<Task>) -> Vec<Task> {
+    tasks.sort_by(|left, right| left.file_path().as_str().cmp(right.file_path().as_str()));
+    tasks
 }
 
 fn rename(from: &str, to: &str) -> ColumnRename {
@@ -1045,6 +1051,111 @@ fn e2e_renames_updates_md_status_and_tasks_cache() {
     let on_disk = read_config_json(dir.path());
     assert!(on_disk.columns.iter().any(|c| c.name.as_str() == "To Do"));
     assert!(!on_disk.columns.iter().any(|c| c.name.as_str() == "Todo"));
+}
+
+#[test]
+fn e2e_rename_reresolves_all_tasks_identically_to_cold_reopen() {
+    let dir = tempdir();
+    write_initial_config(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Doing", "order": 1 }
+            ],
+            "cardOrder": {},
+            "doneColumn": "Doing"
+        }"#,
+    );
+    write_md(
+        dir.path(),
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Doing\n---\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Doing\nparent: tasks/parent.md\n---\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/orphan.md",
+        "---\ntitle: Orphan\nstatus: Todo\nparent: tasks/missing.md\n---\n",
+    );
+
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+    update_columns_impl(
+        &state,
+        &FsTaskIo,
+        &FsConfigWriter,
+        UpdateColumnsArgs {
+            renames: Some(vec![rename("Todo", "Backlog")]),
+            ..Default::default()
+        },
+    )
+    .expect("rename");
+
+    let hot = sorted_tasks(state.test_tasks_snapshot().expect("hot snapshot"));
+    let source = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/source.md")
+        .expect("source");
+    assert_eq!(source.status().as_str(), "Backlog");
+    let target = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/target.md")
+        .expect("target");
+    assert_eq!(target.status().as_str(), "Doing");
+    assert_eq!(
+        target
+            .reverse_links()
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        ["tasks/source.md"]
+    );
+    let parent = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/parent.md")
+        .expect("parent");
+    assert_eq!(
+        parent
+            .children()
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        ["tasks/child.md"]
+    );
+    let child = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/child.md")
+        .expect("child");
+    assert_eq!(child.status().as_str(), "Doing");
+    let orphan = hot
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/orphan.md")
+        .expect("orphan");
+    assert!(orphan
+        .warnings()
+        .iter()
+        .any(|warning| warning.code == TaskWarningCode::ParentNotFound));
+
+    let reopened = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&reopened), dir.path());
+    let cold = sorted_tasks(reopened.test_tasks_snapshot().expect("cold snapshot"));
+    assert_eq!(hot, cold);
 }
 
 #[test]

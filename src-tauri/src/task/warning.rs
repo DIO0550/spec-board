@@ -39,8 +39,8 @@ pub fn has_parent_cycle_warning(warnings: &[TaskWarning]) -> bool {
 
 /// `warnings` 配列に `ParentCycle` (field=`parent`) が既存なら何もせず、
 /// 無ければ追加する共通 helper。message / field の文言を 1 箇所に集約することで
-/// scan 経路 (`task_index::mark_cycle_members`) と update 経路
-/// (`task::update::command::commit_cache`) の間で表記揺れが起きないようにする。
+/// canonical resolver が open / mutation / watcher / rescan の全経路で使うため、
+/// 経路間で表記揺れが起きないようにする。
 pub fn ensure_parent_cycle_warning(warnings: &mut Vec<TaskWarning>) {
     if has_parent_cycle_warning(warnings) {
         return;

@@ -1131,13 +1131,13 @@ impl TaskIndex {
             .map(Self::build_reverse_links)
     }
 
-    /// 外部（watcher）由来の 1 件の変更を適用し、全タスクの派生値を作り直す。
+    /// 1 件の変更を適用し、全タスクの派生値を作り直す。
     ///
     /// 「watcher 適用後の state == 同じ disk 状態で開き直した state」を成立させる
-    /// ため、`open_project` / full rescan と同じ [`Self::rebuild_derived_with_warnings`]
-    /// を通す。外部エディタが一時的に循環を作っただけでイベント処理が止まっては
-    /// ならないので、循環は warning に倒す scan 経路と同じ意味論を使う。`Err` に
-    /// なるのは階層が深すぎる場合だけ。
+    /// ため、create / update / delete / archive / move / link mutation / watcher が
+    /// `open_project` / full rescan と同じ [`Self::rebuild_derived_with_warnings`] を通す。
+    /// lenient resolver では循環を warning に倒し、`Err` になるのは階層が深すぎる
+    /// 場合だけ。create / update の strict validation はこの処理より前に行う。
     ///
     /// frontmatter 由来の `parent` / `links` は書き換えない。消えたタスクへの参照は
     /// 値を保持したまま warning / 壊れたリンク表示に委ねる。消えるのは派生値である
