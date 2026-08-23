@@ -212,6 +212,15 @@ pub(crate) struct OpenSwap {
 /// `state: tauri::State<'_, AppState>` として注入する。
 ///
 /// 全フィールドは private。caller は公開アクセサを通じてのみ操作できる。
+///
+/// identity検証なしの採番APIは公開しない。
+///
+/// ```compile_fail,E0599
+/// use spec_board_lib::state::AppState;
+///
+/// let state = AppState::new();
+/// let _ = state.next_event_seq();
+/// ```
 pub struct AppState {
     locks: StateLocks,
     writer_gates: ProjectWriterGates,
@@ -534,11 +543,6 @@ impl AppState {
         session: ProjectSession,
     ) -> Result<(), AppStateError> {
         self.locks.stash_background_session(session)
-    }
-
-    /// emit 直前に 1 つ消費して新しい連番を返す。
-    pub fn next_event_seq(&self) -> EventSeq {
-        EventSeq::from_raw(self.event_seq.fetch_add(1, Ordering::SeqCst) + 1)
     }
 
     /// openのfallible load/stage前にdomain→resources lockを副作用なく検証する。
