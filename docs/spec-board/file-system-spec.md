@@ -113,11 +113,11 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | ディレクトリではない | 指定パスがディレクトリでない（通常ファイル等） | `ディレクトリではありません: {path}` |
 | アクセス権限なし | 読み取り権限がない | `ディレクトリにアクセスできません: {path}` |
 | 内部状態の lock 破損 | project domain / active resources / writer gate の Mutex が poison 状態 | `内部状態のロックが破損しました` |
-| スキャン致命エラー | root の metadata/read_dir、hierarchy 循環/深さ超過など | `io scan failed: {message}` |
+| スキャン致命エラー | root の metadata/read_dir、parent hierarchy の20段超過（`TooDeep`）など。循環は致命エラーにせず `parentCycle` warning として継続 | `io scan failed: {message}` |
 | config 読み込み失敗 | `config.json` が壊れている等 | `Config::default()` で継続し、`loadWarnings` に `configFallback` を含める |
 | ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}` |
 
-> 個別 md ファイルの fs::read 失敗、task_from_markdown のパース失敗、scanner の per-entry 失敗は recoverable な load warning として payload の loadWarnings に含め、該当ファイルを skip して残りのタスクで処理を継続する。root metadata/read_dir、hierarchy、labels/milestones、watcher/session 初期化、lock は従来どおり fatal とし、コマンド全体を失敗させる。
+> 個別 md ファイルの fs::read 失敗、task_from_markdown のパース失敗、scanner の per-entry 失敗は recoverable な load warning として payload の loadWarnings に含め、該当ファイルを skip して残りのタスクで処理を継続する。root metadata/read_dir、hierarchy の `TooDeep`、labels/milestones、watcher/session 初期化、lock は fatal とし、コマンド全体を失敗させる。parent循環は `parentCycle` warning として継続する。
 >
 > ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側 `TauriError.PATTERNS` には watcher 初期化失敗の個別分類がないため `UNKNOWN` 分類になる。
 

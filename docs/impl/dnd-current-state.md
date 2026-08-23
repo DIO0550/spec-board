@@ -56,7 +56,7 @@ flowchart TD
 
 | ファイル | 行数 | 役割 |
 |:--|--:|:--|
-| `src-tauri/src/task/update/command.rs` | 134 | `update_task` IPC + effect 層 (write_ignore + plan_update + write + commit_cache) |
+| `src-tauri/src/task/update/command.rs` | 134 | `update_task` IPC + effect 層（writer lease + preflight + plan_update + canonical resolver + write + ResolvedTaskSet commit） |
 | `src-tauri/src/task/update/args.rs` | 88 | UpdateTaskArgs → UpdateTaskIntent 変換、filePath を project_root 相対化 + lexical 正規化 |
 | `src-tauri/src/task/task_index.rs` | 937 | TaskIndex aggregate。うち `plan_update` (L341-451) と parent_changed / hierarchy 検証 |
 | `src-tauri/src/state.rs` | 〜300 | AppState、write_ignore registry 受け渡し |
@@ -213,18 +213,19 @@ await updateCardOrder
 ## 4. BE 側で起きること（updateTask）
 
 ```
-update_task IPC (command.rs:24-83)
-  ├─ AppState から project_root / write_ignore / cache を取得 (lock の空き確認も含む)
+update_task IPC (command.rs)
+  ├─ exact project rootのwriter leaseを取得し、immutable session snapshotを確定
   ├─ UpdateTaskArgs → UpdateTaskIntent（filePath が絶対パスなら project_root を strip して相対化し、lexical 正規化）
   ├─ tasks_snapshot から existing_task を引く
   │
+  ├─ session identity / active resourcesをpreflight
   ├─ FileIO::read で frontmatter + body をパース
   │
   ├─ TaskIndex::plan_update (task_index.rs:341-451)
   │    ├─ status / title / priority / labels / parent / body を frontmatter に反映
   │    ├─ parent_changed = ?  ← lookup-normalized で表記揺れ吸収して新旧比較
   │    │    （None / Some("") 削除 / Some(path) 変更で分岐式が3層）
-  │    ├─ parent_changed なら validate_parent_hierarchy で全体再検証
+  │    ├─ parent_changed ならVec<ParsedTask>を組み、ResolvedTaskSet::validate_strictで全体再検証
   │    ├─ frontmatter を serialize → TaskContent VO で妥当性チェック
   │    └─ UpdateTaskOutcome { updated_task: ParsedTask, file_content }
   │
@@ -232,7 +233,7 @@ update_task IPC (command.rs:24-83)
   ├─ canonical full resolverでparent warning / effective parent / children / reverseLinksを全件再計算
   │    └─ resolver通過証明のResolvedTaskSetと返却対象TaskをI/O前に確定
   │
-  ├─ watcher_active なら write_ignore.register(&abs)  ← 自前 write を watcher に無視させる
+  ├─ write_ignore.register(&abs)  ← watcher有無によらず自前write markerを予約
   │
   ├─ FileIO::write_existing(&abs, file_content)
   │    └─ 書き込み失敗時のみ write_ignore.unregister(&abs) して early return
@@ -245,14 +246,14 @@ update_task IPC (command.rs:24-83)
 
 ```mermaid
 flowchart TD
-    IN([update_task IPC]) --> CHK["state.check_tasks_cache_lock<br/>+ write_ignore.is_empty"]
-    CHK --> ARG["UpdateTaskArgs<br/>→ UpdateTaskIntent<br/>(filePath 相対化 + lexical 正規化)"]
+    IN([update_task IPC]) --> LEASE["state.with_project_writer_lease<br/>exact root単位で直列化 + snapshot確定"]
+    LEASE --> ARG["UpdateTaskArgs<br/>→ UpdateTaskIntent<br/>(filePath 相対化 + lexical 正規化)"]
     ARG --> SNAP["tasks_snapshot から<br/>existing_task を引く"]
-    SNAP --> READ["FileIO::read<br/>(frontmatter + body)"]
-    READ --> PU["TaskIndex::plan_update<br/>frontmatter 反映<br/>+ parent_changed 判定<br/>+ validate_parent_hierarchy"]
-    PU --> WA{"watcher_active?"}
-    WA -->|true| REG["write_ignore.register(abs)"]
-    WA -->|false| WRITE
+    SNAP --> PREFLIGHT["state.preflight_session_write<br/>identity / resources検証"]
+    PREFLIGHT --> READ["FileIO::read<br/>(frontmatter + body)"]
+    READ --> PU["TaskIndex::plan_update<br/>frontmatter 反映 + parent_changed判定<br/>+ Vec&lt;ParsedTask&gt;でvalidate_strict"]
+    PU --> RESOLVE["全ParsedTask candidateを<br/>canonical resolverへ通す<br/>(I/O write前)"]
+    RESOLVE --> REG["write_ignore.register(abs)<br/>(常に予約)"]
     REG --> WRITE["FileIO::write_existing"]
     WRITE --> WR{"write 結果?"}
     WR -->|失敗| UNREG["write_ignore.unregister(abs)<br/>(失敗時のみ)"]

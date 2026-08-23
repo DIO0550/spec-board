@@ -65,44 +65,28 @@ push する値は `normalize_relative_path_for_input` を通した正規化形�
 入力が `tasks\\b.md` のようなバックスラッシュ表記でも、ディスクには必ず
 forward-slash の `tasks/b.md` 形で書き戻したいため。
 
-## lock 取得順 + write_ignore register → write → unregister の理由
+## writer lease + write_ignore register → write → commit の理由
 
-`AppState` のロック順は `project_path → config → tasks_cache → watcher_handle
-→ write_ignore` で固定されている（`src-tauri/src/state.rs` のモジュール
-コメント参照）。`add_link_impl` も同じ順番で各 accessor を呼ぶ。
+`add_link_impl` は exact project root のwriter lease内でimmutable session snapshotを取り、
+`preflight_session_write`でidentityとactive resourcesを確認してからread/planへ進む。
+これにより同じprojectへのmutationを直列化し、snapshotとcommitの境界を揃える。
 
-watcher が install されているとき、`io.write_existing` で source ファイルを
-書き換えると、自前 write が watcher event として戻ってきて FE に通知される
-おそれがある。それを抑止するために、書き込み前に `write_ignore.register`
-で source path を予約し、write が成功したらそのまま entry を残す
+`io.write_existing` で source ファイルを書き換える前に、watcherのinstall状態に
+かかわらず`write_ignore.register`でsource pathを予約する。writeが成功したらentryを残し
 （watcher event の handler 側が `unregister` で取り除いて消費する）。write が失敗した場合は
 即 `unregister` で entry を回収して、放置しないようにする。これは
 `update_task_impl` と同型で、既存パターンを踏襲している。
 
-## cache commit の "検証 → mutate" 2 段構成
+## cache commit はcanonical full resolverの結果だけを受け取る
 
-snapshot を取り出してから `with_tasks_cache_mut` の closure 内で実際に
-mutate するまでの間に、別コマンドが cache を書き換える可能性がある
-（snapshot は clone 後すぐ lock を解放する）。closure に入った時点で
-source / target が cache 上に残っているとは限らない。
+planが返す`updated_task`はparse-onlyな`ParsedTask`であり、そのままresident cacheや
+IPCへ出さない。effect層はsnapshotの全resolved Taskをraw parent付きcandidateへ戻し、
+sourceを`updated_task`へ置換してcanonical full resolverへ渡す。resolverは
+parent warning / effective parent / `children` / `reverse_links`を全件、file path昇順で
+再導出し、通過証明の`ResolvedTaskSet`と返却用source TaskをI/O前に確定する。
 
-愚直にやると「source は cache にあるので書き換えたが、target が消えて
-いた」みたいに source だけ部分更新される事態が起こり得る。これを防ぐため、
-closure の冒頭で
-
-1. source の cache key 存在確認
-2. target を `find_task_by_normalized`（immutable 借用）で確認
-
-の 2 段の存在確認を先にやり、両方そろっていることを確認してから初めて
-mutate に入る。`HashMap` から 2 つの `&mut` を同時には取れないので、
-（1）（2）はあくまで読み取り、その後 `cache.get_mut` で source を、
-`find_task_mut_by_normalized` で target を取り直して書き換える。
-
-source 側に書き戻す `Task` は `task_from_parsed` 由来で `children` と
-`reverse_links` が空になっている。これらは cache の派生フィールドであって
-parser の責務ではないため、cache 既存値で覆い直す。`std::mem::take` で
-旧エントリから抜き取って、struct update syntax で再構築している。
-
-target 側は `reverse_links` に source の `TaskFilePath` を append するだけ。
-万が一すでに含まれていた場合に 2 重 push しないよう、`any(|p| p == ...)`
-で先にチェックしてから push する。
+resolver前にはsnapshot上のsource / target存在を両方確認する。これにより
+sourceだけを書き換える部分更新を防ぎつつ、targetの`reverse_links`を手動appendせず、
+sourceの`links`をsource of truthとして全件再計算できる。disk write成功後は
+`commit_or_resync_under_lease`がidentityを再検証し、`ResolvedTaskSet`でsession cacheを
+一括置換する。競合時は同じdiskからresyncし、局所field保持やin-place mutateは行わない。

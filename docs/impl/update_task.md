@@ -43,13 +43,14 @@ scalar / labels / body / title / status / priorityだけの更新でも省略し
 
 `validate_with_new_task` は新規追加用 API。既存 task を `push` する前提なので、
 update では対象 task が 2 件混ざってしまう（自分と「新規追加版」）。代わりに
-「対象 task を `preliminary_task` に置換した `Vec<Task>` を作って
-`TaskIndex::new(values).validate_parent_hierarchy()`」を呼ぶ。
+resident taskをraw parentを含む`Vec<ParsedTask>`へ戻し、対象candidateを
+`preliminary_task`へ置換して`ResolvedTaskSet::validate_strict(values)`を呼ぶ。
+これによりresolver前のcandidateをresident `Task`として組み立てずにstrict検証できる。
 
 ### parent 存在チェックを別途行う理由
 
-`validate_parent_hierarchy` は parent が cache に無いとき warning を追加するだけで
-エラーにしない。これは scan 時 / 編集時の "parent が後から追加される" ユースケースを
+`ResolvedTaskSet::validate_strict` が内部で使うhierarchy検証は、parent が cache に無いときwarningを追加するだけで
+エラーにしない。これはcanonical resolverで "parent が後から追加される" ユースケースを
 壊さないため。一方 update_task は「指定された parent が見つからないなら明示エラー」が
 spec 上望ましい。そこで plan_update 内で `resolve_parent_for_new_task` を使い、
 `./` プレフィックスや `\` 含み path も create と同じ基準で正規化して一致検索を行う。
