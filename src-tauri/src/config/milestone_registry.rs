@@ -27,18 +27,42 @@ fn yaml_value_type(value: &serde_yaml_ng::Value) -> &'static str {
 }
 
 /// マイルストーンマスタの集約ルート。
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MilestoneRegistry {
-    /// マイルストーン定義の配列。`milestones: null` / 欠落 / 空配列はいずれも空 Vec へ。
+    /// 検証済み定義。wire / disk 上では従来どおり `milestones` 配列として出力する。
+    #[serde(rename = "milestones")]
+    definitions: Vec<MilestoneDefinition>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawMilestoneRegistry {
     #[serde(
         default,
         deserialize_with = "MilestoneRegistry::deserialize_milestones"
     )]
-    pub milestones: Vec<MilestoneDefinition>,
+    milestones: Vec<MilestoneDefinition>,
 }
 
 impl MilestoneRegistry {
+    /// マイルストーン定義を検証して registry を構築する。
+    ///
+    /// 空文字の名前と完全一致する重複名を拒否し、空白・大文字小文字・定義順は
+    /// 正規化せず保持する。
+    pub fn try_new(
+        definitions: Vec<MilestoneDefinition>,
+    ) -> Result<Self, MilestoneValidationError> {
+        let registry = Self { definitions };
+        registry.validate()?;
+        Ok(registry)
+    }
+
+    /// 保持しているマイルストーン定義を定義順のまま返す。
+    pub fn definitions(&self) -> &[MilestoneDefinition] {
+        &self.definitions
+    }
+
     /// `milestones:` フィールドの lenient deserialize（`null` でも空 Vec に倒す）。
     fn deserialize_milestones<'de, D>(de: D) -> Result<Vec<MilestoneDefinition>, D::Error>
     where
@@ -50,8 +74,8 @@ impl MilestoneRegistry {
 
     /// マスタ整合性を検証する。`name` 空拒否（trim しない）+ 完全一致重複検出。
     fn validate(&self) -> Result<(), MilestoneValidationError> {
-        let mut seen: HashSet<&str> = HashSet::with_capacity(self.milestones.len());
-        for milestone in &self.milestones {
+        let mut seen: HashSet<&str> = HashSet::with_capacity(self.definitions.len());
+        for milestone in &self.definitions {
             if milestone.name.is_empty() {
                 return Err(MilestoneValidationError::EmptyMilestoneName);
             }
@@ -72,10 +96,9 @@ impl MilestoneRegistry {
         clock: &dyn Clock,
     ) -> Result<MilestoneRegistry, MilestoneValidationError> {
         definition.updated = Some(clock.now_iso8601());
-        let mut next = self.clone();
-        next.milestones.push(definition);
-        next.validate()?;
-        Ok(next)
+        let mut definitions = self.definitions.clone();
+        definitions.push(definition);
+        Self::try_new(definitions)
     }
 
     /// 既存マイルストーンの metadata を更新した新 registry を返す（副作用なし）。
@@ -93,7 +116,7 @@ impl MilestoneRegistry {
         }
         let mut next = self.clone();
         let slot = next
-            .milestones
+            .definitions
             .iter_mut()
             .find(|m| m.name == intent.name)
             .ok_or_else(|| UpdateMilestonePlanError::NotFound {
@@ -106,8 +129,7 @@ impl MilestoneRegistry {
         slot.order = intent.order;
         slot.state = intent.state;
         slot.updated = Some(clock.now_iso8601());
-        next.validate()?;
-        Ok(next)
+        Ok(Self::try_new(next.definitions)?)
     }
 
     /// 指定 `name` のマイルストーンを削除した新 registry を返す（副作用なし）。不在なら
@@ -116,15 +138,25 @@ impl MilestoneRegistry {
         &self,
         target_name: &str,
     ) -> Result<MilestoneRegistry, DeleteMilestonePlanError> {
-        let exists = self.milestones.iter().any(|m| m.name == target_name);
+        let exists = self.definitions.iter().any(|m| m.name == target_name);
         if !exists {
             return Err(DeleteMilestonePlanError::NotFound {
                 name: target_name.to_string(),
             });
         }
         let mut next = self.clone();
-        next.milestones.retain(|m| m.name != target_name);
+        next.definitions.retain(|m| m.name != target_name);
         Ok(next)
+    }
+}
+
+impl<'de> Deserialize<'de> for MilestoneRegistry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawMilestoneRegistry::deserialize(deserializer)?;
+        Self::try_new(raw.milestones).map_err(serde::de::Error::custom)
     }
 }
 
@@ -414,11 +446,10 @@ impl MilestoneRegistryStore for YamlMilestoneRegistryStore {
             return Ok(MilestoneRegistry::default());
         }
         let path = self.dir.file_path(MILESTONES_FILE_NAME)?;
-        let registry = serde_yaml_ng::from_str::<Option<MilestoneRegistry>>(&content)
+        let raw = serde_yaml_ng::from_str::<Option<RawMilestoneRegistry>>(&content)
             .map_err(|source| LoadMilestonesError::Parse { path, source })?
             .unwrap_or_default();
-        registry.validate()?;
-        Ok(registry)
+        Ok(MilestoneRegistry::try_new(raw.milestones)?)
     }
 
     fn save(&self, registry: &MilestoneRegistry) -> Result<(), SaveMilestonesError> {

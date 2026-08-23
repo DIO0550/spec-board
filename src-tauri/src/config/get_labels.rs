@@ -89,7 +89,7 @@ pub(crate) fn get_labels_impl(state: &AppState) -> Result<GetLabelsPayload, GetL
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
     let usage_counts = TaskIndex::new(tasks).label_usage_counts();
     Ok(GetLabelsPayload {
-        labels: snapshot.labels().labels.clone(),
+        labels: snapshot.labels().definitions().to_vec(),
         usage_counts,
     })
 }

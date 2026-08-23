@@ -246,11 +246,13 @@ impl ProjectSession {
     }
 
     /// 互換adapterまたはcommit closureがlabel registryを差し替える。
+    /// セッション内のラベルを、検証済みの registry で置き換える。
     pub(crate) fn replace_labels(&mut self, labels: LabelRegistry) {
         self.labels = labels;
     }
 
     /// 互換adapterまたはcommit closureがmilestone registryを差し替える。
+    /// セッション内のマイルストーンを、検証済みの registry で置き換える。
     pub(crate) fn replace_milestones(&mut self, milestones: MilestoneRegistry) {
         self.milestones = milestones;
     }

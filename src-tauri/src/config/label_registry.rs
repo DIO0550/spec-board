@@ -18,16 +18,37 @@ use crate::config::clock::Clock;
 ///
 /// 将来 `version` 等のメタを同階層に追加しやすい構造にしてある。`labels:` キー欠落 /
 /// `labels: null` / 空配列のいずれも空 `Vec`（= 全ラベル暗黙扱い）に正規化する。
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LabelRegistry {
-    /// ラベル定義の配列。lenient deserialize は Label 固有のロジックなので
-    /// module free function ではなく aggregate の関連関数に紐づける。
+    /// 検証済みラベル定義。wire / disk 上では従来どおり `labels` 配列として出力する。
+    #[serde(rename = "labels")]
+    definitions: Vec<LabelDefinition>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawLabelRegistry {
     #[serde(default, deserialize_with = "LabelRegistry::deserialize_labels")]
-    pub labels: Vec<LabelDefinition>,
+    labels: Vec<LabelDefinition>,
 }
 
 impl LabelRegistry {
+    /// ラベル定義を検証して registry を構築する。
+    ///
+    /// 空文字の名前と完全一致する重複名を拒否し、空白・大文字小文字・定義順は
+    /// 正規化せず保持する。
+    pub fn try_new(definitions: Vec<LabelDefinition>) -> Result<Self, LabelValidationError> {
+        let registry = Self { definitions };
+        registry.validate()?;
+        Ok(registry)
+    }
+
+    /// 保持しているラベル定義を定義順のまま返す。
+    pub fn definitions(&self) -> &[LabelDefinition] {
+        &self.definitions
+    }
+
     /// `labels:` フィールドの lenient deserialize。`null`（YAML の `~` / キー単独）でも
     /// 空 `Vec` に倒す（`#[serde(default)]` だけでは `labels: null` が Vec の deserialize で
     /// 落ちるため）。Label 固有ロジックなので aggregate の関連関数として保持する。
@@ -46,8 +67,8 @@ impl LabelRegistry {
     /// 検証のみ行う。ドメイン不変条件なので aggregate に同居させる。load / save 双方が
     /// `#[from]` で自エラーへ持ち上げる。
     fn validate(&self) -> Result<(), LabelValidationError> {
-        let mut seen: HashSet<&str> = HashSet::with_capacity(self.labels.len());
-        for label in &self.labels {
+        let mut seen: HashSet<&str> = HashSet::with_capacity(self.definitions.len());
+        for label in &self.definitions {
             if label.name.is_empty() {
                 return Err(LabelValidationError::EmptyLabelName);
             }
@@ -71,10 +92,9 @@ impl LabelRegistry {
         clock: &dyn Clock,
     ) -> Result<LabelRegistry, LabelValidationError> {
         definition.updated = Some(clock.now_iso8601());
-        let mut next = self.clone();
-        next.labels.push(definition);
-        next.validate()?;
-        Ok(next)
+        let mut definitions = self.definitions.clone();
+        definitions.push(definition);
+        Self::try_new(definitions)
     }
 
     /// 既存ラベルの metadata を更新した新 registry を返す（副作用なし）。
@@ -92,7 +112,7 @@ impl LabelRegistry {
         }
         let mut next = self.clone();
         let slot = next
-            .labels
+            .definitions
             .iter_mut()
             .find(|l| l.name == intent.name)
             .ok_or_else(|| UpdateLabelPlanError::NotFound {
@@ -103,8 +123,7 @@ impl LabelRegistry {
         slot.group = intent.group;
         slot.color = intent.color;
         slot.updated = Some(clock.now_iso8601());
-        next.validate()?;
-        Ok(next)
+        Ok(Self::try_new(next.definitions)?)
     }
 
     /// 指定 `name` のラベルを削除した新 registry を返す（副作用なし）。不在なら `NotFound`。
@@ -112,15 +131,25 @@ impl LabelRegistry {
         &self,
         target_name: &str,
     ) -> Result<LabelRegistry, DeleteLabelPlanError> {
-        let exists = self.labels.iter().any(|l| l.name == target_name);
+        let exists = self.definitions.iter().any(|l| l.name == target_name);
         if !exists {
             return Err(DeleteLabelPlanError::NotFound {
                 name: target_name.to_string(),
             });
         }
         let mut next = self.clone();
-        next.labels.retain(|l| l.name != target_name);
+        next.definitions.retain(|l| l.name != target_name);
         Ok(next)
+    }
+}
+
+impl<'de> Deserialize<'de> for LabelRegistry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawLabelRegistry::deserialize(deserializer)?;
+        Self::try_new(raw.labels).map_err(serde::de::Error::custom)
     }
 }
 
@@ -410,11 +439,10 @@ impl LabelRegistryStore for YamlLabelRegistryStore {
         }
         let path = self.dir.file_path(LABELS_FILE_NAME)?;
         // Option で受けることで、コメントのみ / `---`（null ドキュメント）も None → Default に倒す。
-        let registry = serde_yaml_ng::from_str::<Option<LabelRegistry>>(&content)
+        let raw = serde_yaml_ng::from_str::<Option<RawLabelRegistry>>(&content)
             .map_err(|source| LoadLabelsError::Parse { path, source })?
             .unwrap_or_default();
-        registry.validate()?;
-        Ok(registry)
+        Ok(LabelRegistry::try_new(raw.labels)?)
     }
 
     fn save(&self, registry: &LabelRegistry) -> Result<(), SaveLabelsError> {
