@@ -25,18 +25,19 @@ patch を当て、`frontmatter::serialize(&Parsed)` で書き戻すので raw �
 で構築している限り発生しない）。このため effect 層と error 型に Serialize variant を
 持たせる必要がない。
 
-### parent 変更時の cache 再構築フロー
+### 更新後の canonical cache 再構築フロー
 
-`needs_full_rebuild=true` の場合のみ、effect 層は以下を行う:
+effect 層は更新フィールドにかかわらず以下を行う:
 
-1. cache の values をすべて `Vec<Task>` に集める
-2. 対象 task を `outcome.updated_task` に置換
-3. `TaskIndex::new(values).validate_parent_hierarchy().build_children().build_reverse_links()`
-4. cache を clear して再構築結果で再挿入
-5. 再構築後の対象 Task を取り直して返す
+1. resident cache の全 Task を、disk由来のraw parentを含む`ParsedTask` candidateへ戻す
+2. 対象candidateを`UpdateTaskOutcome.updated_task`で置換する
+3. candidate全件をcanonical resolverへ通し、parent warning、effective parent、`children`、`reverse_links`をfile path昇順で再計算する
+4. 書き込み成功後、resolver通過証明である`ResolvedTaskSet`でcacheを一括置換する
+5. 再構築後の対象Taskを取り直して返す
 
-scalar / labels / body / title / status / priority の単独更新では再構築しない。
-これらの変更は他タスクの `children` / `reverse_links` に影響しないため。
+parent変更時のstrict hierarchy検証はI/O前のvalidationとして残すが、cacheの派生値再構築は
+scalar / labels / body / title / status / priorityだけの更新でも省略しない。これによりコマンド直後と
+同じdisk状態で再openした結果を一致させる。
 
 ### `validate_with_new_task` ではなく `validate_parent_hierarchy` を使う理由
 
@@ -83,9 +84,9 @@ warning を再生成する。warning の source of truth は parser 側に集約
 
 ### `task_from_parsed` 再走の意図
 
-`build_patched_task` で得た中間 Task は parent 変更時の hierarchy 検証用に使うのみ。
-最終的に返却する `updated_task` は `Parsed { frontmatter, body }` を
-`task_from_parsed` に通し直して構築する。これにより:
+`build_patched_task` で得た中間 `ParsedTask` は parent 変更時の hierarchy 検証用に使う。
+`UpdateTaskOutcome.updated_task` も `Parsed { frontmatter, body }` を
+`task_from_parsed` に通し直したcandidateであり、effect層が全件resolverへ渡して最終Taskを得る。これにより:
 
 - 空 title → `invalidTitleUsedFileName` warning が再生成される
 - typed フィールド（priority / labels / links 等）が parser の最新ロジックで再抽出される
