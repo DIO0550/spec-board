@@ -2,9 +2,9 @@
 //!
 //! カラムの追加・削除・並び替え・名前変更・完了カラム変更を 1 コマンドで処理する。
 //! コア計算は `Config::plan_update_columns` aggregate method に集約し、
-//! effect 層 `update_columns_impl` で md 一括書き換え（トランザクション的ロールバック付き）
-//! → `config.json` atomic write → `AppState` commit → `tasks_cache` in-place 更新
-//! → GUIDE.md 再生成、の順で適用する。
+//! effect層`update_columns_impl`でI/O前に全Task candidateをresolveして`ResolvedTaskSet`を
+//! 確定し、md一括書き換え（トランザクション的ロールバック付き）→`config.json` atomic
+//! write→resolved session commit（競合時resync）→GUIDE.md再生成、の順で適用する。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

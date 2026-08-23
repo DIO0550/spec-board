@@ -1,9 +1,11 @@
 //! Task aggregate ドメイン。
 //!
-//! `Task` entity と `TaskIndex` aggregate root を同居させる。`TaskIndex` の
-//! 不変条件（parent 存在 / 親チェーンに循環なし / 親チェーン深さ ≤ MAX）と
-//! それを検証するロジックは、DDD 戦術的パターンに従い aggregate root の責務
-//! としてこのファイルに集約する（独立した「validation」ファイルは作らない）。
+//! `Task` entityと`TaskIndex` aggregate rootを同居させる。resident `Task`は必ず
+//! canonical resolverを通過し、effective parent / children / reverse links / graph warningが
+//! 同じ全件snapshotから導出済みである。dangling parentとcycleはraw参照を保持したまま
+//! warningへ倒し、cycle memberのeffective parentだけを`None`にする。create/updateの
+//! I/O前strict validationはcycle/TooDeepを拒否する別境界であり、これらの検証・導出を
+//! aggregate rootの責務としてこのファイルに集約する。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -100,11 +102,9 @@ pub(crate) struct TaskViewProjection {
     pub(crate) task_tree: TaskForest,
 }
 
-/// resolver前のcandidateはcrate外から参照できず、IPC型として使えない。
+/// canonical resolverを通過したresident / query用のTask entity。
 ///
-/// ```compile_fail,E0603
-/// use spec_board_lib::task::task_index::ParsedTask;
-/// ```
+/// fieldはprivateで、parse-onlyな状態や偽の派生値を外部から構築できない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Task {
     id: TaskFilePath,
@@ -122,9 +122,8 @@ pub struct Task {
     draft: bool,
     links: Vec<TaskFilePath>,
     body: String,
-    /// Task struct の typed フィールド（title / status / priority / labels / parent /
-    /// links）に該当しない frontmatter キーをそのまま保持する。FE 側で表示・編集される
-    /// 拡張メタデータ（例: `assignee`, `due_date` 等）。
+    /// raw round-tripに必要なfrontmatter値を保持する。Taskのtyped viewにも投影するdueと、
+    /// 未定義の拡張metadata（例: `assignee`, `due_date`等）を含む。
     /// key 順序を JSON シリアライズで安定させるため `BTreeMap` を採用。
     extras: BTreeMap<String, serde_json::Value>,
     parse_warnings: Vec<TaskWarning>,
@@ -207,6 +206,10 @@ impl From<Task> for crate::task::payload::TaskPayload {
 ///
 /// IPC serialize と resident session への格納はできず、必ず [`ResolvedTaskSet`] の
 /// resolver を通して [`Task`] へ変換する。
+///
+/// ```compile_fail,E0603
+/// use spec_board_lib::task::task_index::ParsedTask;
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParsedTask {
     pub(crate) id: TaskFilePath,
@@ -548,10 +551,10 @@ pub enum ParentValidationFailure {
     },
 }
 
-/// watcher が観測した外部由来の変更 1 件。
+/// watcher取込とmutation commandがcanonical resolverへ渡すcandidate変更1件。
 ///
-/// rename は fs 層で `removed(from)` + `upserted(to)` に分解されて届くため
-/// （`crates/fs/src/watcher/file_change_batch.rs`）、rename 専用の variant は持たない。
+/// watcherのrenameはfs層で`removed(from)` + `upserted(to)`へ分解され、mutationも
+/// 書き込み前planを同じupsert/removeで表すため、rename専用variantは持たない。
 /// `ParsedTask` は `TaskFilePath` より大きいため、variant 間の差を抑える目的で
 /// `Upserted` だけ box に載せる。
 pub(crate) enum ExternalTaskChange {
@@ -561,7 +564,7 @@ pub(crate) enum ExternalTaskChange {
     Removed(TaskFilePath),
 }
 
-/// 外部変更を適用し、派生値を作り直した結果。
+/// watcher / mutationのcandidate変更を適用し、派生値を作り直した結果。
 pub(crate) struct ExternalChangeOutcome {
     /// 派生再構築後の全タスク。cache をこれで丸ごと置き換える。
     pub(crate) tasks: ResolvedTaskSet,
@@ -573,8 +576,8 @@ pub(crate) struct ExternalChangeOutcome {
     pub(crate) other_tasks_changed: bool,
 }
 
-/// Task 集合の整合性（parent 存在 / 循環検出 / children・reverse_links 派生）を
-/// 守る Aggregate。不変条件の検証メソッドを集約する。
+/// Task集合のstrict parent検証と、dangling/cycleをwarningへ倒すlenient resolution、
+/// children / reverse_links派生を集約するAggregate。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskIndex {
     tasks: Vec<Task>,
@@ -1533,33 +1536,6 @@ impl TaskIndex {
         })
     }
 
-    /// タスク移動の計算を行う pure aggregate method。
-    ///
-    /// 呼び出し前提:
-    ///
-    /// - `existing` は effect 層が cache snapshot から `intent.file_path` で
-    ///   引き当て済みの `&Task`。
-    /// - `existing_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
-    ///   `into_parsed`で取り出したcodec内部値。
-    ///
-    /// 振る舞い（検証は status 照合 → 並び照合 → 書き込み計画の順）:
-    ///
-    /// 1. cache 上の `existing.status` と、md から解決した実効 status の**両方**が
-    ///    `intent.from_column` と一致することを要求し、外れていれば `StatusMismatch`
-    ///    で reject する。同一カラム並び替えでも先に検証するため、stale な状態の
-    ///    まま cardOrder だけが書き換わることはない。md の実効 status は `status:` が
-    ///    文字列で読めればその値、欠落 / 非文字列なら `scan_default_status`
-    ///    （scan 時に割り当てられる既定値。決定は Config のドメインなので effect 層が解決）。
-    /// 2. 移動先カラムの board 表示順が `intent.expected_to_column_order` と一致する
-    ///    ことを要求し、外れていれば `CardOrderConflict` で reject する。同一カラム
-    ///    並び替えも対象（宛先＝移動元なので期待値は移動前の自分を含む並び）。
-    /// 3. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
-    /// 4. それ以外は frontmatter の `status` を `to_column` に書き換え、
-    ///    serialize 済み `file_content` と再構築した `updated_task` を返す。
-    ///
-    /// cardOrder の**書き込み内容**は Config 側のドメインのため本メソッドでは扱わない。
-    /// effect 層が `Config::plan_update_card_order` を呼んで別途計算する（`config` は
-    /// 並び照合の読み取りにのみ使う）。
     /// 移動先カラムの並びが FE の前提と一致するかを検証する。
     ///
     /// 一致しない場合は「他の変更が先に入っている」ことを意味するため、
@@ -1582,6 +1558,33 @@ impl TaskIndex {
         })
     }
 
+    /// タスク移動の計算を行う pure aggregate method。
+    ///
+    /// 呼び出し前提:
+    ///
+    /// - `existing` は effect 層が cache snapshot から `intent.file_path` で
+    ///   引き当て済みの resolved `&Task`。
+    /// - `existing_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
+    ///
+    /// 振る舞い（検証は status 照合 → 並び照合 → 書き込み計画の順）:
+    ///
+    /// 1. cache 上の `existing.status` と、md から解決した実効 status の**両方**が
+    ///    `intent.from_column` と一致することを要求し、外れていれば `StatusMismatch`
+    ///    で reject する。同一カラム並び替えでも先に検証するため、stale な状態の
+    ///    まま cardOrder だけが書き換わることはない。md の実効 status は `status:` が
+    ///    文字列で読めればその値、欠落 / 非文字列なら `scan_default_status`
+    ///    （scan 時に割り当てられる既定値。決定は Config のドメインなので effect 層が解決）。
+    /// 2. 移動先カラムの board 表示順が `intent.expected_to_column_order` と一致する
+    ///    ことを要求し、外れていれば `CardOrderConflict` で reject する。同一カラム
+    ///    並び替えも対象（宛先＝移動元なので期待値は移動前の自分を含む並び）。
+    /// 3. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
+    /// 4. それ以外は`TaskDocument`のstatusへtyped patchを適用し、scanner eligibility
+    ///    検証済み`file_content`とparse-only `updated_task` candidateを返す。
+    ///
+    /// cardOrder の**書き込み内容**は Config 側のドメインのため本メソッドでは扱わない。
+    /// effect 層が `Config::plan_update_card_order` を呼んで別途計算する（`config` は
+    /// 並び照合の読み取りにのみ使う）。
     pub(crate) fn plan_move(
         &self,
         intent: &MoveTaskIntent,
@@ -1865,8 +1868,9 @@ impl TaskIndex {
         })
     }
 
-    /// 削除対象 task の全子 task について、parent キーを除去した new file_content と
-    /// 更新後 Task を計算する pure aggregate method。I/O / 時計 / 乱数に依存しない。
+    /// 削除対象taskの全子についてparent keyを除去したfile contentと、更新後の
+    /// parse-only `ParsedTask` candidateを計算するpure aggregate method。
+    /// I/O / 時計 / 乱数に依存しない。
     #[cfg_attr(
         not(test),
         expect(

@@ -341,9 +341,11 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | title | `String` | いいえ | タスクタイトル |
 | status | `String` | いいえ | ステータス |
 | priority | `String` | いいえ | 優先度 |
+| milestone | `String` | いいえ | マイルストーン（空文字で解除、未指定で保持） |
 | labels | `Vec<String>` | いいえ | ラベル一覧 |
 | parent | `String` | いいえ | 親タスクのファイルパス（空文字で親を解除） |
 | body | `String` | いいえ | Markdown本文 |
+| draft | `boolean` | いいえ | 下書き状態（`true`でdraft化、`false`で解除、未指定で保持） |
 
 **振る舞い**:
 1. exact project rootのwriter lease内でsnapshotを確定し、session identity / active resourcesをpreflightする

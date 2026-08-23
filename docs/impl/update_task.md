@@ -58,8 +58,10 @@ spec 上望ましい。そこで plan_update 内で `resolve_parent_for_new_task
 
 ### `TaskContent::try_new(String)` を使う理由
 
-`TaskContent::try_new` は `String` を受け取る（`&[u8]` ではない）。serialize の
-結果 `String` をそのまま渡せるため、追加のアロケーションも as_bytes 変換も不要。
+`TaskContent::try_new`は`String`の所有権を受け取る一方、同じrender結果を
+`UpdateTaskOutcome.file_content`にも保持する必要がある。このため現実装は
+`serialized.clone()`をvalidation VOへ渡し、元の`String`を書き込み計画に残す。
+scanner eligibilityと実際の書き込み内容が同一文字列であることを優先した意図的なcloneである。
 
 ### `From<TaskParseError>` / `From<TaskContentError>` を入れた理由
 

@@ -348,7 +348,7 @@ parent: tasks/search-ui.md
 
 既存タスクの frontmatter / body を部分的に上書きする IPC コマンド。
 
-入力: `{ filePath, title?, status?, priority?, labels?, parent?, body? }`
+入力: `{ filePath, title?, status?, priority?, milestone?, labels?, parent?, body?, draft? }`
 
 ### マージ規則
 
@@ -357,6 +357,8 @@ parent: tasks/search-ui.md
   （内部実装は `TaskDocument::parse` に読み込み、`TaskPatch` を適用して `TaskDocument::render` で書き戻す）
 - `parent: ""` で親解除（frontmatter から `parent` キーを除去）
 - `labels: []` で全ラベル削除
+- `milestone: ""` でマイルストーンを解除し、非空文字列で設定する。未指定なら保持する
+- `draft: true` でdraft化、`draft: false`で解除する。未指定なら保持する
 - `priority: None` は不変。**priority 自体を「なし」にする操作は本コマンドではサポートしない**
 - **title 変更時もファイル名は不変**（rename はしない）
 - 空 title 指定は許可される。書き戻し後の Task 再 parse で `invalidTitleUsedFileName` warning が乗る
@@ -391,7 +393,7 @@ create / update の strict parent 検証は I/O より前に従来どおり実�
 - `Some(path)`（非空）: 検証は以下の順序で実行する:
   1. **parent 存在チェック** — `parent_changed` の真偽に関わらず、最初に cache から該当 task を引き当てる。存在しなければ `parent not found: <path>` を返す。
   2. **正規化等価判定** — 正規化済みパス（`./tasks/p.md` / `tasks\p.md` などの表記揺れを吸収する lookup key）が既存 parent と等価なら `parent_changed=false` として hierarchy 検証はスキップする。
-  3. **hierarchy 検証** — 正規化等価でない場合のみ `parent_changed=true` となり、対象 task を patch した暫定状態で全タスクの parent チェーンを `validate_parent_hierarchy` により再検証する。
+  3. **hierarchy 検証** — 正規化等価でない場合のみ`parent_changed=true`となり、対象をpatchした`Vec<ParsedTask>`を`ResolvedTaskSet::validate_strict`へ渡す。strict検証後のresident構築は全mutation共通のcanonical resolverを通る。
 
 検証に失敗した場合は `parent validation: <file_path> (<reason>)` を返し、ファイル書き込みおよび cache 更新は行わない。`reason` は循環検出 (`Cycle`) または 20 段超過 (`TooDeep`) のいずれか。
 

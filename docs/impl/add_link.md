@@ -54,12 +54,10 @@ spec が「逆引きで済ませる」と決めているので、無理に双方
 
 ## `links` をTaskDocumentのtyped patchで更新し、`extras`経由は使わない
 
-`Frontmatter` には `priority` / `labels` / `links` の 3 つだけ typed フィールド
-があり、残りの YAML key は `extras` (`serde_yaml_ng::Mapping`) に出現順で
-ぶら下がっている。`build_mapping`（`frontmatter::serialize` の中で呼ばれる）は
-`title → status → priority → labels → parent → links → 残り extras` という
-固定順で出力するため、`links` キーを `extras` 経由で扱うと型と順序の両方が
-壊れる。そこで`TaskDocument::links()`から現在値を`Vec<String>`として取り出し、
+`TaskDocument`はtitle / status / priority / milestone / labels / parent / links / draft /
+due / bodyをtyped `TaskPatch`として扱い、codecが既知keyを固定順、未知keyをextrasの
+順序でrenderする。`links`をraw extrasとして直接操作すると、このtyped更新契約と
+出力順の両方を壊す。そこで`TaskDocument::links()`から現在値を`Vec<String>`として取り出し、
 正規化済みtargetを追加したうえで`TaskPatch { links: Patch::Set(..) }`を適用する。
 
 追加する値は `normalize_relative_path_for_input` を通した正規化形にしてある。

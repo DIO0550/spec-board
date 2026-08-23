@@ -11,7 +11,8 @@
 `add_link.md` と同じ理由で、表記揺れを吸収する `normalize_link_path_for_lookup`
 は `pub(super)` 可視性で task ドメインに閉じている。effect 層から重複検出を
 やりたくなると path_lookup の可視性を緩めることになり、設計意図が壊れる。
-だから target を `retain` で除去する判定は aggregate method 内に集約してある。
+だから`TaskDocument::links()`をfilterし、`TaskPatch`で除去する判定はaggregate method内に
+集約してある。
 
 `plan_create` / `plan_update` / `plan_add_link` で既に踏襲されているスタイルで、
 user feedback memory `spec-board-aggregate-method` でも矯正されている方針なので、

@@ -21,10 +21,8 @@ flowchart TD
     MTA --> SNAP["MoveSnapshot (snapshot VO)<br/>+ MoveExecution (effect 層)"]
     SNAP --> UT["updateTask IPC"]
     SNAP --> UCO["updateCardOrder IPC"]
-    UT --> UTI["update_task_impl<br/>(BE)<br/>writer lease → preflight<br/>→ read → plan_update"]
-    UTI --> PU["TaskDocument patch<br/>parent_changedなら<br/>Vec&lt;ParsedTask&gt;でstrict validation"]
-    PU --> RES["全ParsedTask candidates<br/>→ canonical resolver<br/>→ ResolvedTaskSet"]
-    RES --> WRITE["write_ignoreを無条件register<br/>→ write_existing<br/>→ session commit / conflict resync"]
+    UT --> UTI["update_task_impl<br/>(BE)<br/>read → plan_update<br/>→ write_ignore.register<br/>→ write_existing<br/>(unregister は write 失敗時のみ)"]
+    UTI --> PU["TaskIndex::plan_update<br/>parent_changed なら<br/>validate_parent_hierarchy"]
     UCO -.BE 未実装.-> UCOBE["config.json の cardOrder を<br/>更新する想定"]
     SNAP --> DISP["ProjectAction dispatch<br/>楽観 / 確定 / rollback x1〜3 段"]
     DISP --> LR["LiveRegion で<br/>screen reader へ announce"]
@@ -58,7 +56,7 @@ flowchart TD
 
 | ファイル | 行数 | 役割 |
 |:--|--:|:--|
-| `src-tauri/src/task/update/command.rs` | 134 | `update_task` IPC + effect 層（writer lease + preflight + plan_update + canonical resolver + write + ResolvedTaskSet commit） |
+| `src-tauri/src/task/update/command.rs` | 134 | `update_task` IPC + effect 層 (write_ignore + plan_update + write + commit_cache) |
 | `src-tauri/src/task/update/args.rs` | 88 | UpdateTaskArgs → UpdateTaskIntent 変換、filePath を project_root 相対化 + lexical 正規化 |
 | `src-tauri/src/task/task_index.rs` | 937 | TaskIndex aggregate。うち `plan_update` (L341-451) と parent_changed / hierarchy 検証 |
 | `src-tauri/src/state.rs` | 〜300 | AppState、write_ignore registry 受け渡し |
@@ -215,52 +213,48 @@ await updateCardOrder
 ## 4. BE 側で起きること（updateTask）
 
 ```
-update_task IPC (command.rs)
-  ├─ exact project rootのwriter leaseを取得し、immutable session snapshotを確定
+update_task IPC (command.rs:24-83)
+  ├─ AppState から project_root / write_ignore / cache を取得 (lock の空き確認も含む)
   ├─ UpdateTaskArgs → UpdateTaskIntent（filePath が絶対パスなら project_root を strip して相対化し、lexical 正規化）
   ├─ tasks_snapshot から existing_task を引く
   │
-  ├─ session identity / active resourcesをpreflight
   ├─ FileIO::read で frontmatter + body をパース
   │
   ├─ TaskIndex::plan_update (task_index.rs:341-451)
   │    ├─ status / title / priority / labels / parent / body を frontmatter に反映
   │    ├─ parent_changed = ?  ← lookup-normalized で表記揺れ吸収して新旧比較
   │    │    （None / Some("") 削除 / Some(path) 変更で分岐式が3層）
-  │    ├─ parent_changed ならVec<ParsedTask>を組み、ResolvedTaskSet::validate_strictで全体再検証
+  │    ├─ parent_changed なら validate_parent_hierarchy で全体再検証
   │    ├─ frontmatter を serialize → TaskContent VO で妥当性チェック
-  │    └─ UpdateTaskOutcome { updated_task: ParsedTask, file_content }
+  │    └─ UpdateTaskOutcome { updated_task, file_content, needs_full_rebuild }
+  │       └─ needs_full_rebuild は **parent change** のときだけ true（status 変更だけでは false）
   │
-  ├─ resident全TaskをParsedTask candidateへ戻し、対象をupdated_taskへ置換
-  ├─ canonical full resolverでparent warning / effective parent / children / reverseLinksを全件再計算
-  │    └─ resolver通過証明のResolvedTaskSetと返却対象TaskをI/O前に確定
-  │
-  ├─ write_ignore.register(&abs)  ← watcher有無によらず自前write markerを予約
+  ├─ watcher_active なら write_ignore.register(&abs)  ← 自前 write を watcher に無視させる
   │
   ├─ FileIO::write_existing(&abs, file_content)
   │    └─ 書き込み失敗時のみ write_ignore.unregister(&abs) して early return
   │       （success path では呼び出し側では解除せず、watcher 側が write_ignore.unregister で消費する設計）
   │
-  └─ commit session（ResolvedTaskSetでtask cacheを一括置換）
+  └─ commit_cache (needs_full_rebuild=true のときだけ TaskIndex を rebuild)
 ```
 
 #### update_task の write_ignore タイミング
 
 ```mermaid
 flowchart TD
-    IN([update_task IPC]) --> LEASE["state.with_project_writer_lease<br/>exact root単位で直列化 + snapshot確定"]
-    LEASE --> ARG["UpdateTaskArgs<br/>→ UpdateTaskIntent<br/>(filePath 相対化 + lexical 正規化)"]
+    IN([update_task IPC]) --> CHK["state.check_tasks_cache_lock<br/>+ write_ignore.is_empty"]
+    CHK --> ARG["UpdateTaskArgs<br/>→ UpdateTaskIntent<br/>(filePath 相対化 + lexical 正規化)"]
     ARG --> SNAP["tasks_snapshot から<br/>existing_task を引く"]
-    SNAP --> PREFLIGHT["state.preflight_session_write<br/>identity / resources検証"]
-    PREFLIGHT --> READ["FileIO::read<br/>(frontmatter + body)"]
-    READ --> PU["TaskIndex::plan_update<br/>frontmatter 反映 + parent_changed判定<br/>+ Vec&lt;ParsedTask&gt;でvalidate_strict"]
-    PU --> RESOLVE["全ParsedTask candidateを<br/>canonical resolverへ通す<br/>(I/O write前)"]
-    RESOLVE --> REG["write_ignore.register(abs)<br/>(常に予約)"]
+    SNAP --> READ["FileIO::read<br/>(frontmatter + body)"]
+    READ --> PU["TaskIndex::plan_update<br/>frontmatter 反映<br/>+ parent_changed 判定<br/>+ validate_parent_hierarchy"]
+    PU --> WA{"watcher_active?"}
+    WA -->|true| REG["write_ignore.register(abs)"]
+    WA -->|false| WRITE
     REG --> WRITE["FileIO::write_existing"]
     WRITE --> WR{"write 結果?"}
     WR -->|失敗| UNREG["write_ignore.unregister(abs)<br/>(失敗時のみ)"]
     UNREG --> ERR([Result.err])
-    WR -->|成功| CC["commit session<br/>(ResolvedTaskSetで<br/>task cacheを全件置換)"]
+    WR -->|成功| CC["commit_cache<br/>(needs_full_rebuild=true なら<br/>TaskIndex を full rebuild)"]
     CC --> OK([Result.ok updated_task])
 
     WATCHER([fs watcher]) -.write event 検知.-> CONSUME{"write_ignore に<br/>登録あり?"}
@@ -300,7 +294,7 @@ flowchart TD
 | 6 | `LiveRegion/index.tsx:35-40` | 同文言再 announce のために id 奇数で zero-width-space を付け外し | SR 実装差吸収の hack |
 | 7 | `App.tsx:401-441` | onOptimisticApplied / onRollback を組んで moveTask に注入 | UI 通知と reducer dispatch を疎結合にした副作用。callback 例外は moveTask 内 safeCallback で握り潰し |
 | 8 | `update/command.rs` + `write_ignore` | 自前 write を watcher に無視させる register。success path では呼び出し側で解除せず watcher 側が `unregister` で消費、write 失敗時のみ呼び出し側で `unregister` | 自前 write → watcher → IPC → reducer の自己発火ループを切る必要があるが、register / 消費 / 失敗時 unregister の責務が両側に分散して読み解きにくい |
-| 9 | `task_index.rs` plan_update + `update/command.rs` | parent_changed 判定 (3 分岐) + lookup-normalized + I/O前strict hierarchy検証。更新後はフィールド種別にかかわらずParsedTask candidate全件をcanonical resolverへ通し、ResolvedTaskSetでcacheを一括置換 | moveを含むmutation直後と再open後の派生状態を一致させるため、statusだけの変更でも全件resolverを省略しない |
+| 9 | `task_index.rs:341-451` plan_update | parent_changed 判定 (3 分岐) + lookup-normalized + 全体 hierarchy 再検証 + needs_full_rebuild (parent_changed のみで true) | move では status しか変えないが、共通 update 経路に乗っているため parent 関連の重いロジックも通る（move 経由なら needs_full_rebuild は常に false） |
 | 10 | docs と実装の乖離 | `docs/impl/dnd-board.md` は「楽観 UI 採用しない / 2 IPC」と書いてあるが現状は「楽観 UI 採用 + 2 IPC + 3 段 rollback」 | 設計判断の history が更新されておらず、現状の根拠が読めない |
 
 ---

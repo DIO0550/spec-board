@@ -1,7 +1,9 @@
 //! Task markdown の document/codec 境界。
 //!
-//! YAML の `Mapping` と `Parsed` はこのモジュールと `frontmatter` に閉じ込め、
-//! command は typed な draft と patch を扱い、既存 aggregate の内部互換入力は document へ直ちに wrap する。
+//! YAMLの`Mapping`はこのモジュールと`frontmatter`に閉じ込める。`Parsed`はIPCや
+//! resident sessionへは出さず、task domain内部で既存aggregateへ渡すcodec互換入力として
+//! `into_parsed`で受け渡す。commandはdisk bytesをまず`TaskDocument`へparseし、更新は
+//! typed draft / patch APIで行う。
 
 use thiserror::Error;
 
