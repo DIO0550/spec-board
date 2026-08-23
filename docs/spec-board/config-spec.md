@@ -176,6 +176,8 @@ labels:
 - `name` はマスタ内で完全一致・一意。重複が見つかれば load 時に拒否し、`open_project` は `labels load failed (parse)` として失敗する。
 - `name` が空文字 `""` の定義も load 時に拒否する（`labels load failed (parse)`）。空白のみ `"   "` は trim しない方針のため許容する（未正規化）。
 - ここでの「一意性 / 空拒否」はマスタ定義 `labels.yml` 自身に対する制約であり、**frontmatter の未定義ラベル**（labels.yml に存在しないラベル名）は警告なく暗黙許容する点と区別する。
+- Rust ドメイン上の `LabelRegistry` は定義配列を非公開で保持し、空の既定値または検証を通過した構築経路からのみ生成する。YAML 読み込み、直接 deserialize、create / update の各経路はいずれも同じ空名・完全一致重複検証を通るため、検証前の配列を registry として公開しない。定義の参照は immutable であり、定義順を変更しない。
+- この内部構築制約は永続化・IPC 形状を変更しない。`labels:` 配列、欠落 / `null` の空レジストリ化、未知フィールド、各 lenient フィールド、既存の load エラー文字列は従来どおりとする。
 
 ### スキーマの前方互換
 
@@ -345,6 +347,8 @@ lenient には **2 つの軸**がある（labels.yml が「lenient なのは col
 - `name` はマスタ内で完全一致・一意。重複が見つかれば load 時に拒否する（labels.yml の `labels load failed (parse)` に倣い、`milestones load failed (parse)` とする）。
 - `name` が空文字 `""` の定義も load 時に拒否する。空白のみ `"   "` は trim しない方針のため許容する（未正規化）。
 - ここでの「一意性 / 空拒否」はマスタ定義 `milestones.yml` 自身に対する制約であり、**frontmatter の未定義マイルストーン値**は警告なく暗黙許容する点と区別する。
+- Rust ドメイン上の `MilestoneRegistry` は定義配列を非公開で保持し、空の既定値または検証を通過した構築経路からのみ生成する。YAML 読み込み、直接 deserialize、create / update の各経路はいずれも同じ空名・完全一致重複検証を通るため、検証前の配列を registry として公開しない。定義の参照は immutable であり、定義順を変更しない。
+- この内部構築制約は永続化・IPC 形状を変更しない。`milestones:` 配列、欠落 / `null` の空レジストリ化、未知フィールド、各 lenient フィールド、既存の load エラー文字列は従来どおりとする。
 
 ### スキーマの前方互換
 
@@ -793,6 +797,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.9 | 2026-08-23 | Issue #600: LabelRegistry / MilestoneRegistry の検証済み構築・immutable 定義参照と、wire / disk / error 互換契約を明記 | - |
 | 1.8 | 2026-08-23 | Issue #594: domain → resources の段階 guard、closure-scoped writer lease、同一 thread 再入の fail-fast typed error と RAII marker 解除契約を追加 | - |
 | 1.7 | 2026-08-12 | open_config_file の固定targetへ labels を追加。viewer一覧は config/GUIDE の2件を維持し、labels.yml は外部表示専用とする | - |
 | 1.6 | 2026-08-12 | ラベル設定の「ファイルを見る」を labels.yml 外部表示用 optional callback 境界として追加 | - |

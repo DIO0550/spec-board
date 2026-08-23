@@ -34,6 +34,10 @@ fn label(
     }
 }
 
+fn registry(definitions: Vec<LabelDefinition>) -> LabelRegistry {
+    LabelRegistry::try_new(definitions).expect("valid registry")
+}
+
 fn intent(
     name: &str,
     description: Option<&str>,
@@ -73,12 +77,10 @@ fn opened_state(root: &Path, registry: LabelRegistry) -> AppState {
 
 #[test]
 fn plan_updates_existing_label_fields() {
-    let registry = LabelRegistry {
-        labels: vec![
-            label("bug", Some("old"), Some("type"), Some("#111111")),
-            label("feat", None, None, None),
-        ],
-    };
+    let registry = registry(vec![
+        label("bug", Some("old"), Some("type"), Some("#111111")),
+        label("feat", None, None, None),
+    ]);
     let next = registry
         .plan_update_label(
             intent("bug", Some("new"), Some("kind"), Some("#222222")),
@@ -86,36 +88,41 @@ fn plan_updates_existing_label_fields() {
         )
         .expect("update ok");
 
-    let bug = next.labels.iter().find(|l| l.name == "bug").unwrap();
+    let bug = next.definitions().iter().find(|l| l.name == "bug").unwrap();
     assert_eq!(bug.description.as_deref(), Some("new"));
     assert_eq!(bug.group.as_ref().map(LabelGroup::as_str), Some("kind"));
     assert_eq!(bug.color.as_ref().map(LabelColor::as_str), Some("#222222"));
     // 他ラベルは不変。
-    let feat = next.labels.iter().find(|l| l.name == "feat").unwrap();
+    let feat = next
+        .definitions()
+        .iter()
+        .find(|l| l.name == "feat")
+        .unwrap();
     assert!(feat.description.is_none());
 }
 
 #[test]
 fn plan_refreshes_updated_from_clock() {
-    let registry = LabelRegistry {
-        labels: vec![label("bug", None, None, None)],
-    };
+    let registry = registry(vec![label("bug", None, None, None)]);
     let next = registry
         .plan_update_label(intent("bug", None, None, None), &fixed_clock())
         .expect("update ok");
-    assert_eq!(next.labels[0].updated.as_deref(), Some(FIXED_NOW));
+    assert_eq!(next.definitions()[0].updated.as_deref(), Some(FIXED_NOW));
 }
 
 #[test]
 fn plan_clears_optional_when_unset() {
     // PUT セマンティクス: 未指定フィールドは既存値をクリアする。
-    let registry = LabelRegistry {
-        labels: vec![label("bug", Some("old"), Some("type"), Some("#111111"))],
-    };
+    let registry = registry(vec![label(
+        "bug",
+        Some("old"),
+        Some("type"),
+        Some("#111111"),
+    )]);
     let next = registry
         .plan_update_label(intent("bug", None, None, None), &fixed_clock())
         .expect("update ok");
-    let bug = &next.labels[0];
+    let bug = &next.definitions()[0];
     assert!(bug.description.is_none());
     assert!(bug.group.is_none());
     assert!(bug.color.is_none());
@@ -123,9 +130,7 @@ fn plan_clears_optional_when_unset() {
 
 #[test]
 fn plan_rejects_unknown_name() {
-    let registry = LabelRegistry {
-        labels: vec![label("bug", None, None, None)],
-    };
+    let registry = registry(vec![label("bug", None, None, None)]);
     let err = registry
         .plan_update_label(intent("ghost", None, None, None), &fixed_clock())
         .expect_err("unknown rejected");
@@ -147,9 +152,7 @@ fn impl_updates_and_persists() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        LabelRegistry {
-            labels: vec![label("bug", Some("old"), None, None)],
-        },
+        registry(vec![label("bug", Some("old"), None, None)]),
     );
 
     let mut a = args("bug");
@@ -157,10 +160,10 @@ fn impl_updates_and_persists() {
     update_label_impl(&state, a, &fixed_clock()).expect("update ok");
 
     let on_disk = label_registry_store(tmp.path()).load().expect("load");
-    assert_eq!(on_disk.labels[0].description.as_deref(), Some("new"));
-    assert_eq!(on_disk.labels[0].updated.as_deref(), Some(FIXED_NOW));
+    assert_eq!(on_disk.definitions()[0].description.as_deref(), Some("new"));
+    assert_eq!(on_disk.definitions()[0].updated.as_deref(), Some(FIXED_NOW));
     let in_mem = state.test_labels().expect("labels").expect("some");
-    assert_eq!(in_mem.labels[0].description.as_deref(), Some("new"));
+    assert_eq!(in_mem.definitions()[0].description.as_deref(), Some("new"));
 }
 
 #[test]
@@ -180,12 +183,7 @@ fn from_app_state_error_maps_to_state_lock_poisoned() {
 #[test]
 fn impl_no_commit_on_unknown_name() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        LabelRegistry {
-            labels: vec![label("bug", None, None, None)],
-        },
-    );
+    let state = opened_state(tmp.path(), registry(vec![label("bug", None, None, None)]));
 
     let err = update_label_impl(&state, args("ghost"), &fixed_clock()).expect_err("unknown");
     assert!(matches!(err, UpdateLabelError::Plan(_)));
@@ -216,14 +214,13 @@ fn fixture_identity_cases_survive_update_path() {
     use crate::config::label_name_fixture::load_fixture;
     let f = load_fixture();
     for case in &f.identity_cases {
-        let mut reg = LabelRegistry::default();
-        reg.labels.push(LabelDefinition {
+        let reg = registry(vec![LabelDefinition {
             name: case.name.clone(),
             description: None,
             group: None,
             color: None,
             updated: None,
-        });
+        }]);
         let intent = UpdateLabelIntent {
             name: case.name.clone(),
             description: Some("updated desc".to_string()),
@@ -239,7 +236,7 @@ fn fixture_identity_cases_survive_update_path() {
         );
         let updated_reg = result.unwrap();
         let found = updated_reg
-            .labels
+            .definitions()
             .iter()
             .find(|l| l.name == case.name)
             .expect("label should exist after update");

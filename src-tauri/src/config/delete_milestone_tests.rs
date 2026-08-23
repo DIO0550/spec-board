@@ -28,6 +28,10 @@ fn definition(name: &str) -> MilestoneDefinition {
     }
 }
 
+fn registry(definitions: Vec<MilestoneDefinition>) -> MilestoneRegistry {
+    MilestoneRegistry::try_new(definitions).expect("valid registry")
+}
+
 fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
     Task {
         draft: false,
@@ -72,9 +76,7 @@ fn impl_deletes_and_returns_usage_count() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3")],
-        },
+        registry(vec![definition("v0.3")]),
         vec![
             task_with_milestone("a", Some("v0.3")),
             task_with_milestone("b", Some("v0.3")),
@@ -86,21 +88,15 @@ fn impl_deletes_and_returns_usage_count() {
     assert_eq!(payload, DeleteMilestonePayload { usage_count: 3 });
 
     let on_disk = milestone_registry_store(tmp.path()).load().expect("load");
-    assert!(on_disk.milestones.iter().all(|m| m.name != "v0.3"));
+    assert!(on_disk.definitions().iter().all(|m| m.name != "v0.3"));
     let in_mem = state.test_milestones().expect("milestones").expect("some");
-    assert!(in_mem.milestones.iter().all(|m| m.name != "v0.3"));
+    assert!(in_mem.definitions().iter().all(|m| m.name != "v0.3"));
 }
 
 #[test]
 fn impl_zero_usage_for_unused_milestone() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3")],
-        },
-        Vec::new(),
-    );
+    let state = opened_state(tmp.path(), registry(vec![definition("v0.3")]), Vec::new());
 
     let payload = delete_milestone_impl(&state, args("v0.3")).expect("delete ok");
     assert_eq!(payload.usage_count, 0);
@@ -111,9 +107,7 @@ fn impl_does_not_touch_task_frontmatter() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3")],
-        },
+        registry(vec![definition("v0.3")]),
         vec![task_with_milestone("a", Some("v0.3"))],
     );
 
@@ -128,13 +122,7 @@ fn impl_does_not_touch_task_frontmatter() {
 #[test]
 fn impl_no_commit_on_unknown_name() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3")],
-        },
-        Vec::new(),
-    );
+    let state = opened_state(tmp.path(), registry(vec![definition("v0.3")]), Vec::new());
 
     let err = delete_milestone_impl(&state, args("ghost")).expect_err("unknown");
     assert!(matches!(
@@ -142,7 +130,7 @@ fn impl_no_commit_on_unknown_name() {
         DeleteMilestoneError::Plan(DeleteMilestonePlanError::NotFound { .. })
     ));
     let in_mem = state.test_milestones().expect("milestones").expect("some");
-    assert!(in_mem.milestones.iter().any(|m| m.name == "v0.3"));
+    assert!(in_mem.definitions().iter().any(|m| m.name == "v0.3"));
     assert!(!tmp
         .path()
         .join(".spec-board")

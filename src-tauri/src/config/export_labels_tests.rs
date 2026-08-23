@@ -36,9 +36,8 @@ fn args(path: &str) -> ExportLabelsArgs {
 #[test]
 fn writes_yaml_to_specified_path() {
     let tmp = TempDir::new().unwrap();
-    let registry = LabelRegistry {
-        labels: vec![definition("bug"), definition("feat")],
-    };
+    let registry = LabelRegistry::try_new(vec![definition("bug"), definition("feat")])
+        .expect("valid registry");
     let state = opened_state(tmp.path(), registry.clone());
 
     let target = tmp.path().join("exported.yml");
@@ -55,7 +54,7 @@ fn writes_yaml_to_specified_path() {
 #[test]
 fn writes_empty_registry_as_empty_labels() {
     let tmp = TempDir::new().unwrap();
-    let registry = LabelRegistry { labels: vec![] };
+    let registry = LabelRegistry::default();
     let state = opened_state(tmp.path(), registry.clone());
 
     let target = tmp.path().join("empty.yml");

@@ -99,8 +99,8 @@ fn plan_appends_new_label() {
     let next = registry
         .plan_create_label(definition("bug"), &fixed_clock())
         .expect("create ok");
-    assert_eq!(next.labels.len(), 1);
-    assert_eq!(next.labels[0].name, "bug");
+    assert_eq!(next.definitions().len(), 1);
+    assert_eq!(next.definitions()[0].name, "bug");
 }
 
 #[test]
@@ -108,18 +108,16 @@ fn plan_sets_updated_from_clock() {
     let next = LabelRegistry::default()
         .plan_create_label(definition("bug"), &fixed_clock())
         .expect("create ok");
-    assert_eq!(next.labels[0].updated.as_deref(), Some(FIXED_NOW));
+    assert_eq!(next.definitions()[0].updated.as_deref(), Some(FIXED_NOW));
 }
 
 #[test]
 fn plan_preserves_existing_labels() {
-    let registry = LabelRegistry {
-        labels: vec![definition("feat")],
-    };
+    let registry = LabelRegistry::try_new(vec![definition("feat")]).expect("valid registry");
     let next = registry
         .plan_create_label(definition("bug"), &fixed_clock())
         .expect("create ok");
-    let names: Vec<&str> = next.labels.iter().map(|l| l.name.as_str()).collect();
+    let names: Vec<&str> = next.definitions().iter().map(|l| l.name.as_str()).collect();
     assert_eq!(names, vec!["feat", "bug"]);
 }
 
@@ -128,7 +126,7 @@ fn plan_allows_optional_fields_unset() {
     let next = LabelRegistry::default()
         .plan_create_label(definition("bug"), &fixed_clock())
         .expect("create ok");
-    let label = &next.labels[0];
+    let label = &next.definitions()[0];
     assert!(label.description.is_none());
     assert!(label.group.is_none());
     assert!(label.color.is_none());
@@ -136,9 +134,7 @@ fn plan_allows_optional_fields_unset() {
 
 #[test]
 fn plan_rejects_duplicate_name() {
-    let registry = LabelRegistry {
-        labels: vec![definition("bug")],
-    };
+    let registry = LabelRegistry::try_new(vec![definition("bug")]).expect("valid registry");
     let err = registry
         .plan_create_label(definition("bug"), &fixed_clock())
         .expect_err("duplicate rejected");
@@ -204,12 +200,12 @@ fn impl_creates_label_and_persists() {
 
     // disk へ反映。
     let on_disk = label_registry_store(tmp.path()).load().expect("load");
-    assert_eq!(on_disk.labels.len(), 1);
-    assert_eq!(on_disk.labels[0].name, "bug");
-    assert_eq!(on_disk.labels[0].updated.as_deref(), Some(FIXED_NOW));
+    assert_eq!(on_disk.definitions().len(), 1);
+    assert_eq!(on_disk.definitions()[0].name, "bug");
+    assert_eq!(on_disk.definitions()[0].updated.as_deref(), Some(FIXED_NOW));
     // in-memory へ commit。
     let in_mem = state.test_labels().expect("labels").expect("some");
-    assert_eq!(in_mem.labels.len(), 1);
+    assert_eq!(in_mem.definitions().len(), 1);
 }
 
 #[test]
@@ -272,7 +268,7 @@ fn disk_success_conflict_resync_uses_the_same_injected_label_store() {
     assert_eq!(
         vec!["bug"],
         labels
-            .labels
+            .definitions()
             .iter()
             .map(|label| label.name.as_str())
             .collect::<Vec<_>>()
@@ -300,16 +296,14 @@ fn impl_no_commit_on_duplicate_name() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        LabelRegistry {
-            labels: vec![definition("bug")],
-        },
+        LabelRegistry::try_new(vec![definition("bug")]).expect("valid registry"),
     );
 
     let err = create_label_impl(&state, args("bug"), &fixed_clock()).expect_err("duplicate");
     assert!(matches!(err, CreateLabelError::Validation(_)));
     // in-memory は変化しない（1 件のまま）。
     let in_mem = state.test_labels().expect("labels").expect("some");
-    assert_eq!(in_mem.labels.len(), 1);
+    assert_eq!(in_mem.definitions().len(), 1);
     // labels.yml は書き込まれていない。
     assert!(!tmp.path().join(".spec-board").join("labels.yml").exists());
 }
@@ -349,14 +343,14 @@ fn fixture_duplicate_pairs_reject_only_exact_matches() {
     use crate::config::label_name_fixture::load_fixture;
     let f = load_fixture();
     for pair in &f.duplicate_pairs {
-        let mut reg = LabelRegistry::default();
-        reg.labels.push(LabelDefinition {
+        let reg = LabelRegistry::try_new(vec![LabelDefinition {
             name: pair.existing.clone(),
             description: None,
             group: None,
             color: None,
             updated: None,
-        });
+        }])
+        .expect("fixture existing label is valid");
         let result = reg.plan_create_label(
             LabelDefinition {
                 name: pair.candidate.clone(),

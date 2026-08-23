@@ -110,29 +110,27 @@ fn config_with_default_status(status: &str) -> Config {
 }
 
 fn labels(name: &str) -> LabelRegistry {
-    LabelRegistry {
-        labels: vec![LabelDefinition {
-            name: name.to_string(),
-            description: None,
-            group: None,
-            color: None,
-            updated: None,
-        }],
-    }
+    LabelRegistry::try_new(vec![LabelDefinition {
+        name: name.to_string(),
+        description: None,
+        group: None,
+        color: None,
+        updated: None,
+    }])
+    .expect("valid registry")
 }
 
 fn milestones(name: &str) -> MilestoneRegistry {
-    MilestoneRegistry {
-        milestones: vec![MilestoneDefinition {
-            name: name.to_string(),
-            title: None,
-            description: None,
-            due: None,
-            order: None,
-            state: None,
-            updated: None,
-        }],
-    }
+    MilestoneRegistry::try_new(vec![MilestoneDefinition {
+        name: name.to_string(),
+        title: None,
+        description: None,
+        due: None,
+        order: None,
+        state: None,
+        updated: None,
+    }])
+    .expect("valid registry")
 }
 
 fn sample_task(path: &str, title: &str) -> Task {

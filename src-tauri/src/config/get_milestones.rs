@@ -78,7 +78,7 @@ pub(crate) fn get_milestones_impl(
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
     let usage_counts = TaskIndex::new(tasks).milestone_usage_counts();
     Ok(GetMilestonesPayload {
-        milestones: snapshot.milestones().milestones.clone(),
+        milestones: snapshot.milestones().definitions().to_vec(),
         usage_counts,
     })
 }

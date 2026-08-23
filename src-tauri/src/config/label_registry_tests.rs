@@ -14,6 +14,58 @@ fn write_labels_yml(root: &std::path::Path, content: &str) {
     std::fs::write(dir.join("labels.yml"), content).expect("write labels.yml");
 }
 
+fn definition(name: &str) -> LabelDefinition {
+    LabelDefinition {
+        name: name.to_string(),
+        description: None,
+        group: None,
+        color: None,
+        updated: None,
+    }
+}
+
+#[test]
+fn try_new_rejects_empty_and_exact_duplicate_names() {
+    let empty = LabelRegistry::try_new(vec![definition("")]).unwrap_err();
+    assert_eq!(empty, LabelValidationError::EmptyLabelName);
+
+    let duplicate = LabelRegistry::try_new(vec![definition("bug"), definition("bug")]).unwrap_err();
+    assert_eq!(
+        duplicate,
+        LabelValidationError::DuplicateLabelName {
+            name: "bug".to_string(),
+        }
+    );
+}
+
+#[test]
+fn try_new_preserves_whitespace_case_and_definition_order() {
+    let registry = LabelRegistry::try_new(vec![
+        definition("   "),
+        definition("Bug"),
+        definition("bug"),
+        definition(" bug "),
+    ])
+    .expect("similar but non-identical names are valid");
+
+    let names: Vec<&str> = registry
+        .definitions()
+        .iter()
+        .map(|definition| definition.name.as_str())
+        .collect();
+    assert_eq!(names, vec!["   ", "Bug", "bug", " bug "]);
+}
+
+#[test]
+fn direct_deserialize_rejects_invalid_registry() {
+    let empty = serde_yaml_ng::from_str::<LabelRegistry>("labels:\n  - name: \"\"\n");
+    assert!(empty.is_err());
+
+    let duplicate =
+        serde_yaml_ng::from_str::<LabelRegistry>("labels:\n  - name: bug\n  - name: bug\n");
+    assert!(duplicate.is_err());
+}
+
 // ───────── load: 正常系 ─────────
 
 #[test]
@@ -27,8 +79,8 @@ fn load_parses_definitions_with_all_fields() {
     let store = label_registry_store(tmp.path());
     let registry = store.load().expect("load ok");
 
-    assert_eq!(registry.labels.len(), 1);
-    let label = &registry.labels[0];
+    assert_eq!(registry.definitions().len(), 1);
+    let label = &registry.definitions()[0];
     assert_eq!(label.name, "bug");
     assert_eq!(label.description.as_deref(), Some("バグ報告"));
     assert_eq!(label.group.as_ref().map(LabelGroup::as_str), Some("type"));
@@ -45,8 +97,8 @@ fn load_name_only_label_leaves_optional_fields_none() {
     write_labels_yml(tmp.path(), "labels:\n  - name: enhancement\n");
 
     let registry = label_registry_store(tmp.path()).load().expect("load ok");
-    assert_eq!(registry.labels.len(), 1);
-    let label = &registry.labels[0];
+    assert_eq!(registry.definitions().len(), 1);
+    let label = &registry.definitions()[0];
     assert_eq!(label.name, "enhancement");
     assert!(label.description.is_none());
     assert!(label.group.is_none());
@@ -63,7 +115,11 @@ fn load_preserves_definition_order() {
     );
 
     let registry = label_registry_store(tmp.path()).load().expect("load ok");
-    let names: Vec<&str> = registry.labels.iter().map(|l| l.name.as_str()).collect();
+    let names: Vec<&str> = registry
+        .definitions()
+        .iter()
+        .map(|l| l.name.as_str())
+        .collect();
     assert_eq!(names, vec!["zebra", "apple", "mango"]);
 }
 
@@ -76,8 +132,8 @@ fn load_ignores_unknown_keys() {
     );
 
     let registry = label_registry_store(tmp.path()).load().expect("load ok");
-    assert_eq!(registry.labels.len(), 1);
-    assert_eq!(registry.labels[0].name, "bug");
+    assert_eq!(registry.definitions().len(), 1);
+    assert_eq!(registry.definitions()[0].name, "bug");
 }
 
 // ───────── load: 空相当 → Default ─────────
@@ -89,7 +145,7 @@ fn load_absent_file_returns_default() {
 
     let registry = label_registry_store(tmp.path()).load().expect("load ok");
     assert_eq!(registry, LabelRegistry::default());
-    assert!(registry.labels.is_empty());
+    assert!(registry.definitions().is_empty());
 }
 
 #[test]
@@ -109,7 +165,7 @@ fn load_empty_variants_normalize_to_default() {
         let registry = label_registry_store(tmp.path())
             .load()
             .unwrap_or_else(|e| panic!("{desc}: load 失敗 {e}"));
-        assert!(registry.labels.is_empty(), "{desc}: 空 Vec を期待");
+        assert!(registry.definitions().is_empty(), "{desc}: 空 Vec を期待");
     }
 }
 
@@ -124,7 +180,10 @@ fn load_valid_quoted_color_is_some() {
     );
     let registry = label_registry_store(tmp.path()).load().expect("load ok");
     assert_eq!(
-        registry.labels[0].color.as_ref().map(LabelColor::as_str),
+        registry.definitions()[0]
+            .color
+            .as_ref()
+            .map(LabelColor::as_str),
         Some("#1A2B3C")
     );
 }
@@ -135,7 +194,7 @@ fn load_unquoted_color_is_treated_as_yaml_comment_and_becomes_none() {
     // `color: #1A2B3C` は `#` 以降コメント扱い → 値 null → None
     write_labels_yml(tmp.path(), "labels:\n  - name: bug\n    color: #1A2B3C\n");
     let registry = label_registry_store(tmp.path()).load().expect("load ok");
-    assert!(registry.labels[0].color.is_none());
+    assert!(registry.definitions()[0].color.is_none());
 }
 
 #[test]
@@ -155,7 +214,7 @@ fn load_invalid_color_values_fall_back_to_none() {
             .load()
             .unwrap_or_else(|e| panic!("color lenient であるべき: {content:?} -> {e}"));
         assert!(
-            registry.labels[0].color.is_none(),
+            registry.definitions()[0].color.is_none(),
             "不正 color は None: {content:?}"
         );
     }
@@ -240,7 +299,7 @@ fn load_whitespace_only_name_is_allowed() {
     let registry = label_registry_store(tmp.path())
         .load()
         .expect("空白のみ name は許容（未正規化）");
-    assert_eq!(registry.labels[0].name, "   ");
+    assert_eq!(registry.definitions()[0].name, "   ");
 }
 
 // ───────── save ─────────
@@ -248,24 +307,23 @@ fn load_whitespace_only_name_is_allowed() {
 #[test]
 fn save_then_load_roundtrips_registry() {
     let tmp = TempDir::new().unwrap();
-    let registry = LabelRegistry {
-        labels: vec![
-            LabelDefinition {
-                name: "bug".to_string(),
-                description: Some("バグ".to_string()),
-                group: LabelGroup::from_lenient("type"),
-                color: LabelColor::from_hex("#D73A4A"),
-                updated: Some("2026-05-30T00:00:00Z".to_string()),
-            },
-            LabelDefinition {
-                name: "enhancement".to_string(),
-                description: None,
-                group: None,
-                color: None,
-                updated: None,
-            },
-        ],
-    };
+    let registry = LabelRegistry::try_new(vec![
+        LabelDefinition {
+            name: "bug".to_string(),
+            description: Some("バグ".to_string()),
+            group: LabelGroup::from_lenient("type"),
+            color: LabelColor::from_hex("#D73A4A"),
+            updated: Some("2026-05-30T00:00:00Z".to_string()),
+        },
+        LabelDefinition {
+            name: "enhancement".to_string(),
+            description: None,
+            group: None,
+            color: None,
+            updated: None,
+        },
+    ])
+    .expect("valid registry");
 
     let store = label_registry_store(tmp.path());
     store.save(&registry).expect("save ok");
@@ -274,38 +332,11 @@ fn save_then_load_roundtrips_registry() {
 }
 
 #[test]
-fn save_rejects_inconsistent_registry() {
-    let tmp = TempDir::new().unwrap();
-    let registry = LabelRegistry {
-        labels: vec![
-            LabelDefinition {
-                name: "dup".to_string(),
-                description: None,
-                group: None,
-                color: None,
-                updated: None,
-            },
-            LabelDefinition {
-                name: "dup".to_string(),
-                description: None,
-                group: None,
-                color: None,
-                updated: None,
-            },
-        ],
-    };
-    let err = label_registry_store(tmp.path())
-        .save(&registry)
-        .unwrap_err();
-    assert!(
-        matches!(
-            err,
-            SaveLabelsError::Validation(LabelValidationError::DuplicateLabelName { .. })
-        ),
-        "got {err:?}"
-    );
-    // 検証で弾くため labels.yml は書き出されない
-    assert!(!tmp.path().join(".spec-board/labels.yml").exists());
+fn serialize_keeps_labels_wire_shape() {
+    let registry = LabelRegistry::try_new(vec![definition("bug")]).expect("valid registry");
+
+    let value = serde_json::to_value(registry).expect("serialize registry");
+    assert_eq!(value, serde_json::json!({ "labels": [{ "name": "bug" }] }));
 }
 
 // ───────── format 抽象（trait モック） ─────────
@@ -326,15 +357,14 @@ impl LabelRegistryStore for MockStore {
 
 #[test]
 fn store_can_be_mocked_via_trait_object() {
-    let registry = LabelRegistry {
-        labels: vec![LabelDefinition {
-            name: "mocked".to_string(),
-            description: None,
-            group: None,
-            color: None,
-            updated: None,
-        }],
-    };
+    let registry = LabelRegistry::try_new(vec![LabelDefinition {
+        name: "mocked".to_string(),
+        description: None,
+        group: None,
+        color: None,
+        updated: None,
+    }])
+    .expect("valid registry");
     let store = MockStore {
         registry: registry.clone(),
     };
@@ -375,23 +405,25 @@ fn fixture_schema_invariants_hold() {
 fn fixture_identity_cases_survive_save_then_load() {
     let tmp = TempDir::new().expect("tmp");
     let store = label_registry_store(tmp.path());
-    let mut reg = LabelRegistry::default();
     let f = load_fixture();
-    for case in &f.identity_cases {
-        let def = LabelDefinition {
+    let definitions = f
+        .identity_cases
+        .iter()
+        .map(|case| LabelDefinition {
             name: case.name.clone(),
             description: None,
             group: None,
             color: None,
             updated: None,
-        };
-        reg.labels.push(def);
-    }
+        })
+        .collect();
+    let reg = LabelRegistry::try_new(definitions).expect("fixture definitions are valid");
     store.save(&reg).expect("save");
     let loaded = store.load().expect("load");
     for (i, case) in f.identity_cases.iter().enumerate() {
         assert_eq!(
-            loaded.labels[i].name, case.name,
+            loaded.definitions()[i].name,
+            case.name,
             "round-trip failed for case '{}'",
             case.id
         );

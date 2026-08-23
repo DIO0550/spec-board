@@ -23,6 +23,10 @@ fn definition(name: &str) -> LabelDefinition {
     }
 }
 
+fn registry(definitions: Vec<LabelDefinition>) -> LabelRegistry {
+    LabelRegistry::try_new(definitions).expect("valid registry")
+}
+
 fn task_with_labels(id: &str, labels: &[&str]) -> Task {
     Task {
         draft: false,
@@ -66,19 +70,15 @@ fn opened_state(root: &Path, registry: LabelRegistry, tasks: Vec<Task>) -> AppSt
 
 #[test]
 fn plan_removes_label() {
-    let registry = LabelRegistry {
-        labels: vec![definition("bug"), definition("feat")],
-    };
+    let registry = registry(vec![definition("bug"), definition("feat")]);
     let next = registry.plan_delete_label("bug").expect("delete ok");
-    let names: Vec<&str> = next.labels.iter().map(|l| l.name.as_str()).collect();
+    let names: Vec<&str> = next.definitions().iter().map(|l| l.name.as_str()).collect();
     assert_eq!(names, vec!["feat"]);
 }
 
 #[test]
 fn plan_rejects_unknown_name() {
-    let registry = LabelRegistry {
-        labels: vec![definition("bug")],
-    };
+    let registry = registry(vec![definition("bug")]);
     let err = registry
         .plan_delete_label("ghost")
         .expect_err("unknown rejected");
@@ -90,21 +90,15 @@ fn plan_rejects_unknown_name() {
 #[test]
 fn impl_deletes_and_persists_with_zero_usage() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        LabelRegistry {
-            labels: vec![definition("bug")],
-        },
-        Vec::new(),
-    );
+    let state = opened_state(tmp.path(), registry(vec![definition("bug")]), Vec::new());
 
     let payload = delete_label_impl(&state, args("bug")).expect("delete ok");
     assert_eq!(payload, DeleteLabelPayload { usage_count: 0 });
 
     let on_disk = label_registry_store(tmp.path()).load().expect("load");
-    assert!(on_disk.labels.iter().all(|l| l.name != "bug"));
+    assert!(on_disk.definitions().iter().all(|l| l.name != "bug"));
     let in_mem = state.test_labels().expect("labels").expect("some");
-    assert!(in_mem.labels.iter().all(|l| l.name != "bug"));
+    assert!(in_mem.definitions().iter().all(|l| l.name != "bug"));
 }
 
 #[test]
@@ -112,9 +106,7 @@ fn impl_returns_pre_delete_usage_count() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        LabelRegistry {
-            labels: vec![definition("bug")],
-        },
+        registry(vec![definition("bug")]),
         vec![
             task_with_labels("a", &["bug"]),
             task_with_labels("b", &["bug"]),
@@ -125,7 +117,7 @@ fn impl_returns_pre_delete_usage_count() {
     // 2 タスクで使用中でも削除は実行され、削除前の件数を返す。
     assert_eq!(payload.usage_count, 2);
     let on_disk = label_registry_store(tmp.path()).load().expect("load");
-    assert!(on_disk.labels.iter().all(|l| l.name != "bug"));
+    assert!(on_disk.definitions().iter().all(|l| l.name != "bug"));
 }
 
 #[test]
@@ -133,9 +125,7 @@ fn impl_usage_count_counts_task_not_occurrences() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        LabelRegistry {
-            labels: vec![definition("bug")],
-        },
+        registry(vec![definition("bug")]),
         vec![
             task_with_labels("a", &["bug", "bug"]),
             task_with_labels("b", &["bug"]),
@@ -152,9 +142,7 @@ fn impl_does_not_touch_task_frontmatter() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        LabelRegistry {
-            labels: vec![definition("bug")],
-        },
+        registry(vec![definition("bug")]),
         vec![task_with_labels("a", &["bug"])],
     );
 
@@ -186,19 +174,13 @@ fn from_app_state_error_maps_to_state_lock_poisoned() {
 #[test]
 fn impl_no_commit_on_unknown_name() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        LabelRegistry {
-            labels: vec![definition("bug")],
-        },
-        Vec::new(),
-    );
+    let state = opened_state(tmp.path(), registry(vec![definition("bug")]), Vec::new());
 
     let err = delete_label_impl(&state, args("ghost")).expect_err("unknown");
     assert!(matches!(err, DeleteLabelError::Plan(_)));
     // in-memory は bug を保持。
     let in_mem = state.test_labels().expect("labels").expect("some");
-    assert!(in_mem.labels.iter().any(|l| l.name == "bug"));
+    assert!(in_mem.definitions().iter().any(|l| l.name == "bug"));
     // disk は書き換わっていない。
     assert!(!tmp.path().join(".spec-board").join("labels.yml").exists());
 }

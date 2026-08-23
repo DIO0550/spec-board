@@ -55,15 +55,14 @@ fn existing_full() -> MilestoneDefinition {
     }
 }
 
+fn registry(definitions: Vec<MilestoneDefinition>) -> MilestoneRegistry {
+    MilestoneRegistry::try_new(definitions).expect("valid registry")
+}
+
 #[test]
 fn impl_put_replaces_all_fields_and_keeps_name() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![existing_full()],
-        },
-    );
+    let state = opened_state(tmp.path(), registry(vec![existing_full()]));
 
     let mut a = args("v0.3");
     a.title = Some("新タイトル".to_string());
@@ -73,7 +72,7 @@ fn impl_put_replaces_all_fields_and_keeps_name() {
     update_milestone_impl(&state, a, &fixed_clock()).expect("update ok");
 
     let on_disk = milestone_registry_store(tmp.path()).load().expect("load");
-    let m = &on_disk.milestones[0];
+    let m = &on_disk.definitions()[0];
     assert_eq!(m.name, "v0.3", "name は維持");
     assert_eq!(m.title.as_deref(), Some("新タイトル"));
     assert_eq!(m.due.as_deref(), Some("2026-08-31"));
@@ -85,18 +84,13 @@ fn impl_put_replaces_all_fields_and_keeps_name() {
 #[test]
 fn impl_put_clears_unspecified_optionals() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![existing_full()],
-        },
-    );
+    let state = opened_state(tmp.path(), registry(vec![existing_full()]));
 
     // すべて未指定で送る（name のみ）→ optional は全クリア（PUT）。
     update_milestone_impl(&state, args("v0.3"), &fixed_clock()).expect("update ok");
 
     let on_disk = milestone_registry_store(tmp.path()).load().expect("load");
-    let m = &on_disk.milestones[0];
+    let m = &on_disk.definitions()[0];
     assert!(m.title.is_none());
     assert!(m.description.is_none());
     assert!(m.due.is_none());
@@ -107,12 +101,7 @@ fn impl_put_clears_unspecified_optionals() {
 #[test]
 fn impl_returns_not_found_for_unknown_name() {
     let tmp = TempDir::new().unwrap();
-    let state = opened_state(
-        tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![existing_full()],
-        },
-    );
+    let state = opened_state(tmp.path(), registry(vec![existing_full()]));
 
     let err = update_milestone_impl(&state, args("v9.9"), &fixed_clock()).expect_err("not found");
     assert!(matches!(

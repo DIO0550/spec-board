@@ -55,29 +55,27 @@ fn sample_config() -> Config {
 }
 
 fn sample_labels() -> LabelRegistry {
-    LabelRegistry {
-        labels: vec![LabelDefinition {
-            name: "bug".to_string(),
-            description: None,
-            group: None,
-            color: None,
-            updated: None,
-        }],
-    }
+    LabelRegistry::try_new(vec![LabelDefinition {
+        name: "bug".to_string(),
+        description: None,
+        group: None,
+        color: None,
+        updated: None,
+    }])
+    .expect("valid registry")
 }
 
 fn sample_milestones() -> MilestoneRegistry {
-    MilestoneRegistry {
-        milestones: vec![MilestoneDefinition {
-            name: "v0.3".to_string(),
-            title: None,
-            description: None,
-            due: None,
-            order: None,
-            state: None,
-            updated: None,
-        }],
-    }
+    MilestoneRegistry::try_new(vec![MilestoneDefinition {
+        name: "v0.3".to_string(),
+        title: None,
+        description: None,
+        due: None,
+        order: None,
+        state: None,
+        updated: None,
+    }])
+    .expect("valid registry")
 }
 
 fn candidate_for(
