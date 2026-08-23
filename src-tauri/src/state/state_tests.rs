@@ -355,6 +355,67 @@ fn poisoned_writer_gate_is_reported_as_typed_error() {
 }
 
 #[test]
+fn same_root_writer_lease_reentry_fails_without_waiting() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid root");
+
+    let nested = state
+        .with_project_root_writer_lease(&root, || {
+            state.with_project_root_writer_lease(&root, || ())
+        })
+        .expect("outer lease succeeds");
+
+    assert_eq!(Err(AppStateError::WriterLeaseReentrant), nested);
+}
+
+#[test]
+fn different_root_writer_lease_reentry_fails_without_waiting() {
+    let state = AppState::new();
+    let first = ProjectRoot::try_from_str("/tmp/project-a").expect("valid first root");
+    let second = ProjectRoot::try_from_str("/tmp/project-b").expect("valid second root");
+
+    let nested = state
+        .with_project_root_writer_lease(&first, || {
+            state.with_project_root_writer_lease(&second, || ())
+        })
+        .expect("outer lease succeeds");
+
+    assert_eq!(Err(AppStateError::WriterLeaseReentrant), nested);
+}
+
+#[test]
+fn writer_lease_marker_is_released_after_panic() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid root");
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = state.with_project_root_writer_lease(&root, || {
+            panic!("operation panic");
+        });
+    }));
+    assert!(panic.is_err());
+
+    state
+        .with_project_root_writer_lease(&root, || ())
+        .expect("marker must be released during unwind");
+}
+
+#[test]
+fn writer_lease_marker_is_released_after_operation_error() {
+    let state = AppState::new();
+    let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid root");
+
+    let operation: Result<(), &str> = state
+        .with_project_root_writer_lease(&root, || Err("operation failed"))
+        .expect("lease acquisition succeeds");
+    assert_eq!(Err("operation failed"), operation);
+
+    state
+        .with_project_root_writer_lease(&root, || ())
+        .expect("marker must be released after the closure returns");
+}
+
+#[test]
 fn poisoned_resource_lock_is_reported_without_returning_partial_access() {
     let state = Arc::new(AppState::new());
     let opened = swap_session(&state, "/tmp/project-a", HashMap::new());
