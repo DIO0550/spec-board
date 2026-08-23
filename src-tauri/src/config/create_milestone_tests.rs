@@ -141,11 +141,11 @@ fn impl_creates_and_persists_with_updated() {
     create_milestone_impl(&state, args("v0.3"), &fixed_clock()).expect("create ok");
 
     let on_disk = milestone_registry_store(tmp.path()).load().expect("load");
-    assert_eq!(on_disk.milestones.len(), 1);
-    assert_eq!(on_disk.milestones[0].name, "v0.3");
-    assert_eq!(on_disk.milestones[0].updated.as_deref(), Some(FIXED_NOW));
+    assert_eq!(on_disk.definitions().len(), 1);
+    assert_eq!(on_disk.definitions()[0].name, "v0.3");
+    assert_eq!(on_disk.definitions()[0].updated.as_deref(), Some(FIXED_NOW));
     let in_mem = state.test_milestones().expect("milestones").expect("some");
-    assert_eq!(in_mem.milestones.len(), 1);
+    assert_eq!(in_mem.definitions().len(), 1);
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn disk_success_conflict_resync_uses_the_same_injected_milestone_store() {
     assert_eq!(
         vec!["v0.3"],
         milestones
-            .milestones
+            .definitions()
             .iter()
             .map(|milestone| milestone.name.as_str())
             .collect::<Vec<_>>()
@@ -235,16 +235,14 @@ fn impl_no_commit_on_duplicate_name() {
     let tmp = TempDir::new().unwrap();
     let state = opened_state(
         tmp.path(),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3")],
-        },
+        MilestoneRegistry::try_new(vec![definition("v0.3")]).expect("valid registry"),
     );
 
     let err = create_milestone_impl(&state, args("v0.3"), &fixed_clock()).expect_err("duplicate");
     assert!(matches!(err, CreateMilestoneError::Validation(_)));
     // in-memory は 1 件のまま・disk write されない。
     let in_mem = state.test_milestones().expect("milestones").expect("some");
-    assert_eq!(in_mem.milestones.len(), 1);
+    assert_eq!(in_mem.definitions().len(), 1);
     assert!(!tmp
         .path()
         .join(".spec-board")
@@ -260,7 +258,7 @@ fn impl_no_commit_on_empty_name() {
     let err = create_milestone_impl(&state, args(""), &fixed_clock()).expect_err("empty name");
     assert!(matches!(err, CreateMilestoneError::Validation(_)));
     let in_mem = state.test_milestones().expect("milestones").expect("some");
-    assert!(in_mem.milestones.is_empty());
+    assert!(in_mem.definitions().is_empty());
 }
 
 #[test]

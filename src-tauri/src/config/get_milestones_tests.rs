@@ -21,6 +21,10 @@ fn definition(name: &str) -> MilestoneDefinition {
     }
 }
 
+fn registry(definitions: Vec<MilestoneDefinition>) -> MilestoneRegistry {
+    MilestoneRegistry::try_new(definitions).expect("valid registry")
+}
+
 fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
     Task {
         draft: false,
@@ -63,9 +67,7 @@ fn opened_state(root: &Path, registry: MilestoneRegistry, tasks: Vec<Task>) -> A
 fn returns_list_and_usage_counts() {
     let state = opened_state(
         Path::new("/tmp/p"),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3"), definition("v0.4")],
-        },
+        registry(vec![definition("v0.3"), definition("v0.4")]),
         vec![
             task_with_milestone("a", Some("v0.3")),
             task_with_milestone("b", Some("v0.3")),
@@ -82,9 +84,7 @@ fn returns_list_and_usage_counts() {
 fn unassigned_and_undefined_values() {
     let state = opened_state(
         Path::new("/tmp/p"),
-        MilestoneRegistry {
-            milestones: vec![definition("v0.3")],
-        },
+        registry(vec![definition("v0.3")]),
         vec![
             task_with_milestone("a", None),
             task_with_milestone("b", Some("undefined-ms")),

@@ -1508,7 +1508,11 @@ fn open_commits_labels_from_labels_yml() {
         .test_labels()
         .expect("readable")
         .expect("labels committed");
-    let names: Vec<&str> = registry.labels.iter().map(|l| l.name.as_str()).collect();
+    let names: Vec<&str> = registry
+        .definitions()
+        .iter()
+        .map(|l| l.name.as_str())
+        .collect();
     assert_eq!(names, vec!["bug", "enhancement"]);
 }
 
@@ -1525,7 +1529,7 @@ fn open_without_labels_yml_commits_empty_registry() {
         .test_labels()
         .expect("readable")
         .expect("labels committed (default)");
-    assert!(registry.labels.is_empty());
+    assert!(registry.definitions().is_empty());
 }
 
 #[test]
@@ -1584,7 +1588,7 @@ fn reopen_into_project_without_labels_yml_resets_labels_to_empty() {
             .test_labels()
             .expect("readable")
             .expect("some")
-            .labels
+            .definitions()
             .len()
     );
 
@@ -1596,7 +1600,7 @@ fn reopen_into_project_without_labels_yml_resets_labels_to_empty() {
         .test_labels()
         .expect("readable")
         .expect("some")
-        .labels
+        .definitions()
         .is_empty());
 }
 
@@ -1650,7 +1654,7 @@ fn open_commits_milestones_from_milestones_yml() {
         .expect("readable")
         .expect("milestones committed");
     let names: Vec<&str> = registry
-        .milestones
+        .definitions()
         .iter()
         .map(|m| m.name.as_str())
         .collect();
@@ -1670,7 +1674,7 @@ fn open_without_milestones_yml_commits_empty_registry() {
         .test_milestones()
         .expect("readable")
         .expect("milestones committed (default)");
-    assert!(registry.milestones.is_empty());
+    assert!(registry.definitions().is_empty());
 }
 
 #[test]
@@ -1734,7 +1738,7 @@ fn open_commits_config_labels_and_milestones_together() {
             .test_labels()
             .expect("readable")
             .expect("some")
-            .labels
+            .definitions()
             .len()
     );
     assert_eq!(
@@ -1743,7 +1747,7 @@ fn open_commits_config_labels_and_milestones_together() {
             .test_milestones()
             .expect("readable")
             .expect("some")
-            .milestones
+            .definitions()
             .len()
     );
 }
@@ -1762,7 +1766,7 @@ fn reopen_into_project_without_milestones_yml_resets_to_empty() {
             .test_milestones()
             .expect("readable")
             .expect("some")
-            .milestones
+            .definitions()
             .len()
     );
 
@@ -1773,7 +1777,7 @@ fn reopen_into_project_without_milestones_yml_resets_to_empty() {
         .test_milestones()
         .expect("readable")
         .expect("some")
-        .milestones
+        .definitions()
         .is_empty());
 }
 
@@ -2895,7 +2899,7 @@ fn same_root_reopen_stays_cold() {
             .test_labels()
             .expect("readable")
             .expect("labels loaded")
-            .labels
+            .definitions()
             .len()
     );
     fs::remove_file(dir.path().join(".spec-board/labels.yml")).expect("remove labels.yml");
@@ -2906,7 +2910,7 @@ fn same_root_reopen_stays_cold() {
         .test_labels()
         .expect("readable")
         .expect("labels loaded")
-        .labels
+        .definitions()
         .is_empty());
 }
 

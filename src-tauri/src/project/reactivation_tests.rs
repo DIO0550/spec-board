@@ -263,7 +263,7 @@ fn changed_labels_yml_is_picked_up() {
     write_task_md(dir.path(), "task-1.md", "Task one");
     let state = Arc::new(AppState::new());
     let snapshot = open_from_disk(&state, dir.path());
-    assert!(snapshot.labels().labels.is_empty());
+    assert!(snapshot.labels().definitions().is_empty());
     write_spec_board_file(dir.path(), "labels.yml", "labels:\n  - name: bug\n");
     let log: EmitLog = Arc::new(Mutex::new(Vec::new()));
 
@@ -275,8 +275,8 @@ fn changed_labels_yml_is_picked_up() {
         .expect("session stays open")
         .labels()
         .clone();
-    assert_eq!(1, labels.labels.len());
-    assert_eq!("bug", labels.labels[0].name);
+    assert_eq!(1, labels.definitions().len());
+    assert_eq!("bug", labels.definitions()[0].name);
 }
 
 #[test]

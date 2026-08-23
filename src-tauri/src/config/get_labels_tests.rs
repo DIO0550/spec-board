@@ -18,6 +18,10 @@ fn label(name: &str, color: Option<&str>) -> LabelDefinition {
     }
 }
 
+fn registry(definitions: Vec<LabelDefinition>) -> LabelRegistry {
+    LabelRegistry::try_new(definitions).expect("valid registry")
+}
+
 fn task_with_labels(id: &str, labels: &[&str]) -> Task {
     Task {
         draft: false,
@@ -71,19 +75,17 @@ fn returns_empty_payload_when_registry_is_empty() {
 #[test]
 fn returns_labels_preserving_definition_order() {
     let state = AppState::new();
-    let registry = LabelRegistry {
-        labels: vec![
-            label("zebra", Some("#111111")),
-            label("apple", None),
-            label("mango", Some("#222222")),
-        ],
-    };
+    let registry = registry(vec![
+        label("zebra", Some("#111111")),
+        label("apple", None),
+        label("mango", Some("#222222")),
+    ]);
     state
         .test_replace_labels(Some(registry.clone()))
         .expect("writable");
 
     let payload = get_labels_impl(&state).expect("正常系");
-    assert_eq!(payload.labels, registry.labels);
+    assert_eq!(payload.labels, registry.definitions());
     let names: Vec<&str> = payload.labels.iter().map(|l| l.name.as_str()).collect();
     assert_eq!(names, vec!["zebra", "apple", "mango"]);
 }
@@ -91,15 +93,13 @@ fn returns_labels_preserving_definition_order() {
 #[test]
 fn returns_all_fields_in_payload() {
     let state = AppState::new();
-    let registry = LabelRegistry {
-        labels: vec![LabelDefinition {
-            name: "bug".to_string(),
-            description: Some("バグ".to_string()),
-            group: LabelGroup::from_lenient("type"),
-            color: LabelColor::from_hex("#D73A4A"),
-            updated: Some("2026-05-30T00:00:00Z".to_string()),
-        }],
-    };
+    let registry = registry(vec![LabelDefinition {
+        name: "bug".to_string(),
+        description: Some("バグ".to_string()),
+        group: LabelGroup::from_lenient("type"),
+        color: LabelColor::from_hex("#D73A4A"),
+        updated: Some("2026-05-30T00:00:00Z".to_string()),
+    }]);
     state.test_replace_labels(Some(registry)).expect("writable");
 
     let payload = get_labels_impl(&state).expect("正常系");
@@ -118,9 +118,7 @@ fn returns_all_fields_in_payload() {
 fn usage_counts_empty_when_no_task_uses_labels() {
     let state = AppState::new();
     state
-        .test_replace_labels(Some(LabelRegistry {
-            labels: vec![label("bug", None)],
-        }))
+        .test_replace_labels(Some(registry(vec![label("bug", None)])))
         .expect("writable");
     set_tasks(&state, Vec::new());
 
@@ -132,9 +130,10 @@ fn usage_counts_empty_when_no_task_uses_labels() {
 fn usage_counts_counts_matching_task_labels() {
     let state = AppState::new();
     state
-        .test_replace_labels(Some(LabelRegistry {
-            labels: vec![label("bug", None), label("feat", None)],
-        }))
+        .test_replace_labels(Some(registry(vec![
+            label("bug", None),
+            label("feat", None),
+        ])))
         .expect("writable");
     set_tasks(
         &state,
@@ -154,9 +153,7 @@ fn usage_counts_counts_matching_task_labels() {
 fn duplicate_label_within_task_counts_once() {
     let state = AppState::new();
     state
-        .test_replace_labels(Some(LabelRegistry {
-            labels: vec![label("bug", None)],
-        }))
+        .test_replace_labels(Some(registry(vec![label("bug", None)])))
         .expect("writable");
     set_tasks(&state, vec![task_with_labels("a", &["bug", "bug"])]);
 
@@ -169,9 +166,7 @@ fn implicit_label_appears_in_counts_not_in_labels() {
     let state = AppState::new();
     // registry には bug のみ定義。タスクは registry 未定義の "impl" を使う。
     state
-        .test_replace_labels(Some(LabelRegistry {
-            labels: vec![label("bug", None)],
-        }))
+        .test_replace_labels(Some(registry(vec![label("bug", None)])))
         .expect("writable");
     set_tasks(&state, vec![task_with_labels("a", &["impl"])]);
 
