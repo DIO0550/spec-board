@@ -850,6 +850,11 @@
     "name": "Empty"
   },
   {
+    "id": "features-board-components-calendarview--japanese-columns",
+    "title": "features/board/components/CalendarView",
+    "name": "Japanese Columns"
+  },
+  {
     "id": "features-board-components-calendarview--week",
     "title": "features/board/components/CalendarView",
     "name": "Week"
