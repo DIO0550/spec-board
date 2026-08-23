@@ -1,5 +1,5 @@
 {
-  "reportVersion": "af6f24e60e3148e33bc02571f79eedb01e27a358",
+  "reportVersion": "b169022742d4c768cb86024196904a61625a351b",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -6773,12 +6773,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Filled",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 18,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-task-form-components-taskcreatescreen--labels-popover-open",
@@ -6786,12 +6786,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
