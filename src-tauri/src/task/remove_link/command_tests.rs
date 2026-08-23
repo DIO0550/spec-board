@@ -247,7 +247,7 @@ fn errors_parse_failed_on_broken_frontmatter() {
     let dir = tempdir();
     // まず正常な frontmatter で seed → open_project で cache に乗せる。
     // その後ディスク側の source の frontmatter delimiter を欠落させ、
-    // remove_link_impl の io.read + frontmatter::parse_bytes の経路で
+    // remove_link_impl のio.read + TaskDocument::parse(...).into_parsed()経路で
     // ParseFailed を確実に発火させる。
     seed_md(
         dir.path(),
@@ -285,8 +285,8 @@ fn self_link_removal_returns_updated_reverse_links() {
     // self-link（source == target）の境界ケース: 手書き frontmatter で a.md
     // 自身を links に持つ状態を作る。remove_link 実行後、disk / cache の
     // a.md は links が空になり、reverse_links からも自分自身が除去される。
-    // 戻り値の Task が cache と一致することを検証する（commit_cache 内で
-    // target update 後に cache から再取得する設計の回帰テスト）。
+    // 戻り値のTaskがcacheと一致することを検証する（canonical resolverで
+    // 全件再導出したResolvedTaskSetをsessionへcommitする設計の回帰テスト）。
     let dir = tempdir();
     seed_md(
         dir.path(),

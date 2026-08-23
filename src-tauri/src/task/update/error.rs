@@ -23,12 +23,12 @@ pub enum UpdateTaskError {
     #[error("file not found: {}", .0.display())]
     FileNotFound(PathBuf),
     /// 既存ファイル parse 失敗（frontmatter 不在 / 構文エラー）。
-    /// `frontmatter::parse_bytes` が `Ok(None)` を返した場合もこれにマップする。
+    /// `TaskDocument::parse`の`NotTask` / `Frontmatter`を文字列化してここへマップする。
     #[error("parse failed: {0}")]
     ParseFailed(String),
     /// 指定された parent が cache に見つからない。
-    /// validate_parent_hierarchy は不在を warning にするだけのため、
-    /// plan_update 内で明示的に検出してこの variant を返す。
+    /// `ResolvedTaskSet::validate_strict`内部のhierarchy検証は不在をwarningにするだけのため、
+    /// plan_update内で明示的に検出してこのvariantを返す。
     #[error("parent not found: {path}")]
     ParentNotFound { path: String },
     /// parent チェーンが循環している、あるいは深さ上限を超えている。

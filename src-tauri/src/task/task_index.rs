@@ -1539,7 +1539,8 @@ impl TaskIndex {
     ///
     /// - `existing` は effect 層が cache snapshot から `intent.file_path` で
     ///   引き当て済みの `&Task`。
-    /// - `existing_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    /// - `existing_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
     ///
     /// 振る舞い（検証は status 照合 → 並び照合 → 書き込み計画の順）:
     ///
@@ -2091,13 +2092,14 @@ pub struct CreateTaskOutcome {
 
 /// `TaskIndex::plan_clear_children_of` への入力。
 ///
-/// effect 層（`delete_task` IPC コマンド）が `io.read` + `frontmatter::parse_bytes`
-/// で事前に取得した子 task 1 件分の (path, Parsed) ペア。
+/// 将来のeffect層が`io.read` + `TaskDocument::parse`し、`into_parsed`で取り出す
+/// 子task 1件分の(path, Parsed)ペア。
 pub(crate) struct ClearChildrenInput {
     /// プロジェクトルート相対 path（`children_paths_of` の出力をそのまま使う想定）。
     pub path: PathBuf,
-    /// `frontmatter::parse_bytes` で得た Parsed。
-    /// frontmatter が無い md は effect 層側で別エラーに変換し、本関数には到達させない。
+    /// `TaskDocument::into_parsed`で得たcodec内部のParsed。
+    /// frontmatterが無いmdは`TaskDocument::parse`のerrorとしてeffect層で変換し、
+    /// 本関数には到達させない。
     pub parsed: Parsed,
 }
 

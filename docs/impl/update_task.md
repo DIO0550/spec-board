@@ -14,16 +14,16 @@ aggregate（`task::task_index::TaskIndex::plan_update`）に閉じ込める。ef
 `Task` 構造体は raw frontmatter を保持しない（typed フィールドの抽出と warning
 生成だけで成立する）。一方で update_task では「ファイル書き戻し時に未知 key /
 `links` / YAML 値型 / 出現順を保持する」必要があるため、effect 層は
-`io.read` → `frontmatter::parse_bytes` で `Parsed { frontmatter, body }` を取り、
-それをそのまま `plan_update` に渡す。`plan_update` は `Parsed` の mut copy に対して
-patch を当て、`frontmatter::serialize(&Parsed)` で書き戻すので raw 情報が損なわれない。
+`io.read` → `TaskDocument::parse` → `into_parsed` でcodec内部の
+`Parsed { frontmatter, body }` を取り、それを`plan_update`に渡す。`plan_update`は
+`TaskDocument::from_parsed`でdocumentへ戻し、`TaskPatch`を適用して`render`するため、
+raw情報を損なわずに書き戻せる。
 
 ### なぜ `UpdateTaskError::Serialize` を持たないのか
 
-`frontmatter::serialize(&Parsed) -> String` は YAML 構文として常に成功する純粋関数
-（内部で `serde_yaml_ng::to_string` が失敗するケースは `Parsed` を `parse_bytes` 由来
-で構築している限り発生しない）。このため effect 層と error 型に Serialize variant を
-持たせる必要がない。
+serializeは`TaskDocument::render`のcodec境界に閉じ、失敗は既存の
+`UpdateTaskError::DocumentRender`へ写像する。このためeffect層とerror型に
+frontmatter固有のSerialize variantを持たせる必要がない。
 
 ### 更新後の canonical cache 再構築フロー
 
@@ -39,7 +39,7 @@ parent変更時のstrict hierarchy検証はI/O前のvalidationとして残すが
 scalar / labels / body / title / status / priorityだけの更新でも省略しない。これによりコマンド直後と
 同じdisk状態で再openした結果を一致させる。
 
-### `validate_with_new_task` ではなく `validate_parent_hierarchy` を使う理由
+### `validate_with_new_task` ではなく `ResolvedTaskSet::validate_strict` を使う理由
 
 `validate_with_new_task` は新規追加用 API。既存 task を `push` する前提なので、
 update では対象 task が 2 件混ざってしまう（自分と「新規追加版」）。代わりに
@@ -63,7 +63,7 @@ spec 上望ましい。そこで plan_update 内で `resolve_parent_for_new_task
 
 ### `From<TaskParseError>` / `From<TaskContentError>` を入れた理由
 
-`validate_parent_hierarchy` の戻り値は `Result<TaskIndex, TaskParseError>` であり、
+`ResolvedTaskSet::validate_strict` の戻り値は `Result<(), TaskParseError>` であり、
 `TaskContent::try_new` の戻り値は `Result<_, TaskContentError>`。それぞれ
 `UpdateTaskError` への変換を `From` で書いておくことで、`plan_update` 内の
 `?` 演算子と `.map_err(UpdateTaskError::from)` だけでエラー経路を畳み込める。
@@ -80,14 +80,15 @@ symlink を含むレイアウトはまれであり、lexical 正規化（`..` �
 frontmatter parser は `extras.title` が空文字のとき
 `invalidTitleUsedFileName` warning を吐き、ファイル名を fallback title として使う。
 update_task で空 title を弾くと「既存ファイルに空 title が書かれていた場合」と
-仕様が乖離する。本コマンドは空 title 自体を許可し、`task_from_parsed` を再走させて
-warning を再生成する。warning の source of truth は parser 側に集約する。
+仕様が乖離する。本コマンドは空 title 自体を許可し、
+`TaskDocument::to_parsed_task`を通してwarningを再生成する。warningのsource of truthは
+parser側に集約する。
 
-### `task_from_parsed` 再走の意図
+### `TaskDocument::to_parsed_task` 再走の意図
 
 `build_patched_task` で得た中間 `ParsedTask` は parent 変更時の hierarchy 検証用に使う。
-`UpdateTaskOutcome.updated_task` も `Parsed { frontmatter, body }` を
-`task_from_parsed` に通し直したcandidateであり、effect層が全件resolverへ渡して最終Taskを得る。これにより:
+`UpdateTaskOutcome.updated_task`もdocumentを`to_parsed_task`へ通したcandidateであり、
+effect層が全件resolverへ渡して最終Taskを得る。これにより:
 
 - 空 title → `invalidTitleUsedFileName` warning が再生成される
 - typed フィールド（priority / labels / links 等）が parser の最新ロジックで再抽出される
