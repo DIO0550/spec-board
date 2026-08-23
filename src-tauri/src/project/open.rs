@@ -319,56 +319,40 @@ pub(crate) fn open_project_impl_with_reporter<W: WatcherFactory>(
     validate_directory(root, raw_path)?;
     check_app_state_locks(state)?;
 
-    let target_gate = state.writer_gate(intent.root())?;
-    let open_guard = state.lock_writer_gate(target_gate.as_ref())?;
+    let (swap, from_cache) = state.with_project_root_writer_lease(intent.root(), || {
+        // キャッシュヒット時は disk 走査・parse・GUIDE 書き出しを一切行わず、保持して
+        // いた session data を新しい identity で再活性化する。取り出したエントリは
+        // 以降の失敗（watcher prepare / stage / swap）でも再 stash しない。
+        let cached = take_cached_session(state, intent.root());
+        let from_cache = cached.is_some();
+        let (prepared_session, cold_config_origin) = match cached {
+            Some(cached_session) => (cached_session.into_prepared(), None),
+            None => {
+                let (prepared, origin) = load_cold_prepared_session(intent, ports)?;
+                (prepared, Some(origin))
+            }
+        };
 
-    // キャッシュヒット時は disk 走査・parse・GUIDE 書き出しを一切行わず、保持して
-    // いた session data を新しい identity で再活性化する。取り出したエントリは
-    // 以降の失敗（watcher prepare / stage / swap）でも再 stash しない。次回の open が
-    // コールド経路になるだけで、stale なデータを返す危険はないため。
-    //
-    // take は writer gate の内側で行う。gate が同一 root の open を直列化するので、
-    // take から swap までの間に同 root の並行 open が割り込めない。
-    let cached = take_cached_session(state, intent.root());
-    let from_cache = cached.is_some();
-    // config の bootstrap と reconcile はこの中（コールドオープン側）で走る。
-    // キャッシュヒット経路は open の同期処理では disk を一切触らず、直後に予約する
-    // 背景 resync が同じ load_project_data を通って reconcile を担う。
-    //
-    // `None` はキャッシュヒット（disk を読んでいないので config の由来が無い）を表す。
-    let (prepared_session, cold_config_origin) = match cached {
-        Some(cached_session) => (cached_session.into_prepared(), None),
-        None => {
-            let (prepared, origin) = load_cold_prepared_session(intent, ports)?;
-            (prepared, Some(origin))
+        // backend/channel と paused worker の構築を resident state の変更前に完了する。
+        let prepared_watcher = watcher.prepare(root)?;
+        let session_id = state.reserve_session_id()?;
+        let candidate = prepared_session.into_session(session_id);
+        let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
+
+        if matches!(
+            cold_config_origin,
+            Some(ConfigOrigin::Persisted | ConfigOrigin::Absent)
+        ) {
+            write_guide_markdown_best_effort(root, candidate.config());
         }
-    };
 
-    // backend/channel と paused worker の構築を resident state の変更前に完了する。
-    let prepared_watcher = watcher.prepare(root)?;
-    let session_id = state.reserve_session_id()?;
-    let candidate = prepared_session.into_session(session_id);
-    let staged = watcher.stage_paused(prepared_watcher, state, candidate.identity())?;
+        let swap = state
+            .swap_open(candidate, staged)
+            .map_err(map_open_swap_error)?;
+        Ok::<_, OpenProjectError>((swap, from_cache))
+    })??;
 
-    // GUIDE.md は「config を読めた」または「不在から生成できた」コールドオープンで
-    // だけ書き直す。bootstrap 済み / reconcile 済みの config が入っているため、
-    // 生成・追加されたカラムもそのまま出力される。
-    //
-    // 読み込みに失敗して既定値へ倒れた場合は書かない。実際のカラムは disk の
-    // config.json に残っているのに、既定 3 カラムの一覧で GUIDE を上書きすると、
-    // AI エージェントへ実在しない status 値を案内することになるため。
-    if matches!(
-        cold_config_origin,
-        Some(ConfigOrigin::Persisted | ConfigOrigin::Absent)
-    ) {
-        write_guide_markdown_best_effort(root, candidate.config());
-    }
-
-    let swap = state
-        .swap_open(candidate, staged)
-        .map_err(map_open_swap_error)?;
-    drop(open_guard);
-
+    // writer lease と全 state lock を解放してから旧 session/resources を処理する。
     if let Some(displaced_session) = swap.displaced_session {
         if let Err(error) = state.stash_background_session(displaced_session) {
             log::warn!("failed to stash displaced project session: {error}");

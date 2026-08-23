@@ -6,30 +6,29 @@
 //!
 //! # Lock 取得順序
 //!
-//! 複数フィールドの lock を同時に取得する場合は、必ず以下の順序で取得すること。
-//! AB-BA デッドロックを防ぐための運用規約である。
+//! raw domain/resources/background mutex は private `state::locks` module だけが所有する。
+//! domain と resources の同時取得は `DomainGuard::lock_resources(self)` でしか行えず、
+//! domain → resources の順序を型で固定する。background cache と resources の単独参照は
+//! guard を返さない値 API だけを公開する。
 //!
-//! domain lock → resources lock の順序を全 commit/swap で固定する。writer gate は
-//! domain/resource lock の外側で取得し、disk I/O 中に state lock を保持しない。
-//!
-//! `background_sessions` lock は leaf lock として扱う。**保持している間は他の lock を
-//! 一切取得しない**（writer gate の内側で取得することは許容する）。この規約により
-//! 既存の取得順序契約へ参加させずに済み、lock 循環が構造的に発生しない。
+//! writer gate も closure-scoped API だけを公開し、raw gate/guard を caller へ返さない。
+//! 同一 thread の再入は root に関係なく typed error で即時拒否し、RAII marker を panic
+//! と early return のどちらでも解除する。
 //!
 //! # フィールドカプセル化
 //!
-//! `AppState` の `Mutex` フィールドはすべて private にしてある。
+//! `AppState` は raw `Mutex` フィールドを持たず、private lock owner を経由する。
 //! 公開アクセサを通すことで以下を保証する。
 //!
 //! - domain/resources の poison を typed error に変換する。
 //! - resources は active session version を検証してから session-scoped registry を返す。
 //! - watcher の停止・join は resources swap 後かつ AppState lock 外で行う。
 
-use std::collections::HashMap;
 #[cfg(test)]
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+#[cfg(test)]
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -51,6 +50,7 @@ pub(crate) use crate::state::active_project_resources::SessionResourceAccess;
 pub use crate::state::active_project_resources::SessionResourceConflict;
 use crate::state::active_project_resources::{ActiveProjectResources, StagedProjectResources};
 use crate::state::event_seq::EventSeq;
+use crate::state::locks::StateLocks;
 #[cfg(test)]
 use crate::state::project_generation::ProjectGeneration;
 use crate::state::project_writer_gates::ProjectWriterGates;
@@ -89,6 +89,9 @@ pub enum AppStateError {
     /// project 固有 writer gate の `Mutex` が poison 状態にある。
     #[error("project writer gate lock poisoned")]
     WriterGatePoisoned,
+    /// 同一 thread が writer lease 内から別の writer lease へ再入した。
+    #[error("project writer lease is not reentrant")]
+    WriterLeaseReentrant,
 }
 
 /// session-scoped resourcesの取得失敗。
@@ -210,11 +213,7 @@ pub(crate) struct OpenSwap {
 ///
 /// 全フィールドは private。caller は公開アクセサを通じてのみ操作できる。
 pub struct AppState {
-    domain: Mutex<ProjectState>,
-    resources: Mutex<Option<ActiveProjectResources>>,
-    /// フォアグラウンドから退避した project session。プロセス終了まで保持する
-    /// （上限なし。LRU / close_project は本 issue のスコープ外）。
-    background_sessions: Mutex<HashMap<ProjectRoot, ProjectSession>>,
+    locks: StateLocks,
     writer_gates: ProjectWriterGates,
     /// 次に予約するprocess内一意なsession ID。
     next_session_id: AtomicU64,
@@ -235,9 +234,7 @@ impl AppState {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            domain: Mutex::new(ProjectState::Idle),
-            resources: Mutex::new(None),
-            background_sessions: Mutex::new(HashMap::new()),
+            locks: StateLocks::new(),
             writer_gates: ProjectWriterGates::new(),
             next_session_id: AtomicU64::new(1),
             event_seq: AtomicU64::new(0),
@@ -248,7 +245,7 @@ impl AppState {
     ///
     /// project未open時は[`AppStateError::NoProjectOpen`]を返す。
     pub fn require_session_snapshot(&self) -> Result<ProjectSessionSnapshot, AppStateError> {
-        let guard = lock_domain(&self.domain)?;
+        let guard = self.locks.lock_domain()?;
         guard.snapshot().map_err(|err| match err {
             ProjectSessionStateError::NoProjectOpen => AppStateError::NoProjectOpen,
         })
@@ -258,7 +255,7 @@ impl AppState {
     ///
     /// project未openは正常な`None`であり、domain lock poisonだけがerrorになる。
     pub fn session_snapshot(&self) -> Result<Option<ProjectSessionSnapshot>, AppStateError> {
-        let guard = lock_domain(&self.domain)?;
+        let guard = self.locks.lock_domain()?;
         match &*guard {
             ProjectState::Idle => Ok(None),
             ProjectState::Loaded(session) => Ok(Some(session.snapshot())),
@@ -267,7 +264,7 @@ impl AppState {
 
     /// 現在のproject session identityを返す。
     pub fn active_session_identity(&self) -> Result<SessionIdentity, AppStateError> {
-        let guard = lock_domain(&self.domain)?;
+        let guard = self.locks.lock_domain()?;
         match &*guard {
             ProjectState::Idle => Err(AppStateError::NoProjectOpen),
             ProjectState::Loaded(session) => Ok(session.identity()),
@@ -297,19 +294,16 @@ impl AppState {
         )
     }
 
-    /// exact ProjectRootに対応するwriter gateを返す。
+    /// exact-root writer lease を保持した closure を実行する。
     ///
-    /// pathのcanonicalizeは行わず、sessionが保持するraw rootをそのままkeyにする。
-    pub(crate) fn writer_gate(&self, root: &ProjectRoot) -> Result<Arc<Mutex<()>>, AppStateError> {
-        self.writer_gates.gate_for(root)
-    }
-
-    /// project固有writer gateを取得し、poisonをtyped errorへ変換する。
-    pub(crate) fn lock_writer_gate<'a>(
+    /// raw gate と guard は caller へ公開せず、同一 thread の再入を root に関係なく
+    /// [`AppStateError::WriterLeaseReentrant`] として即時拒否する。
+    pub(crate) fn with_project_root_writer_lease<T>(
         &self,
-        gate: &'a Mutex<()>,
-    ) -> Result<MutexGuard<'a, ()>, AppStateError> {
-        gate.lock().map_err(|_| AppStateError::WriterGatePoisoned)
+        root: &ProjectRoot,
+        operation: impl FnOnce() -> T,
+    ) -> Result<T, AppStateError> {
+        self.writer_gates.with_lease(root, operation)
     }
 
     /// current projectのexact-root writer leaseを保持したままoperationを実行する。
@@ -344,24 +338,22 @@ impl AppState {
     where
         E: From<SessionWriteError>,
     {
-        let gate = self
-            .writer_gate(target.project_root())
-            .map_err(SessionWriteError::from)
-            .map_err(E::from)?;
-        let _writer = self
-            .lock_writer_gate(&gate)
-            .map_err(SessionWriteError::from)
-            .map_err(E::from)?;
-        let snapshot = self
-            .require_session_snapshot()
-            .map_err(SessionWriteError::from)
-            .map_err(E::from)?;
-        snapshot
-            .ensure_same_session(target)
-            .map_err(SessionWriteError::from)
-            .map_err(E::from)?;
+        let result = self
+            .with_project_root_writer_lease(target.project_root(), || {
+                let snapshot = self
+                    .require_session_snapshot()
+                    .map_err(SessionWriteError::from)
+                    .map_err(E::from)?;
+                snapshot
+                    .ensure_same_session(target)
+                    .map_err(SessionWriteError::from)
+                    .map_err(E::from)?;
 
-        operation(&snapshot)
+                operation(&snapshot)
+            })
+            .map_err(SessionWriteError::from)
+            .map_err(E::from)?;
+        result
     }
 
     /// revision枯渇をresource取得より先に検証し、session-scoped accessを返す。
@@ -395,14 +387,7 @@ impl AppState {
         &self,
         expected: SessionVersion,
     ) -> Result<SessionResourceAccess, ResourceAccessError> {
-        let resources = lock_resources(&self.resources)?;
-        let Some(active) = resources.as_ref() else {
-            return Err(SessionResourceConflict::new(expected, None).into());
-        };
-        if active.version() != expected {
-            return Err(SessionResourceConflict::new(expected, Some(active.version())).into());
-        }
-        Ok(active.session_access())
+        self.locks.resources_for(expected)
     }
 
     /// expected identityとactive resourcesが一致するときだけresident stateをcommitする。
@@ -414,23 +399,31 @@ impl AppState {
         expected: &SessionIdentity,
         apply: impl FnOnce(&mut ProjectSession) -> T,
     ) -> Result<SessionCommit<T>, CommitSessionError> {
-        let mut domain = lock_domain(&self.domain)?;
+        let domain = self.locks.lock_domain()?;
         domain
             .ensure_identity(expected)
             .map_err(ProjectSessionCommitError::from)?;
 
-        let mut resources = lock_resources(&self.resources)?;
-        let Some(active) = resources.as_mut() else {
+        let mut resident = domain.lock_resources()?;
+        let Some(actual_version) = resident
+            .resources()
+            .as_ref()
+            .map(ActiveProjectResources::version)
+        else {
             return Err(SessionResourceConflict::new(expected.version(), None).into());
         };
-        if active.version() != expected.version() {
+        if actual_version != expected.version() {
             return Err(
-                SessionResourceConflict::new(expected.version(), Some(active.version())).into(),
+                SessionResourceConflict::new(expected.version(), Some(actual_version)).into(),
             );
         }
 
-        let committed = domain.commit(expected, apply)?;
-        active.update_version(committed.version());
+        let committed = resident.domain_mut().commit(expected, apply)?;
+        resident
+            .resources_mut()
+            .as_mut()
+            .expect("validated active resources remain present")
+            .update_version(committed.version());
         Ok(committed)
     }
 
@@ -442,7 +435,7 @@ impl AppState {
         &self,
         expected: &SessionIdentity,
     ) -> Result<Option<EventSeq>, AppStateError> {
-        let domain = lock_domain(&self.domain)?;
+        let domain = self.locks.lock_domain()?;
         if domain.active_identity().as_ref() != Some(expected) {
             return Ok(None);
         }
@@ -460,20 +453,17 @@ impl AppState {
         candidate: ProjectSession,
         staged: StagedProjectResources,
     ) -> Result<OpenSwap, OpenSwapError> {
-        let mut domain = self
-            .domain
-            .lock()
+        let domain = self
+            .locks
+            .lock_domain()
             .map_err(|_| OpenSwapError::DomainLockPoisoned)?;
-        let mut resources = self
-            .resources
-            .lock()
+        let mut resident = domain
+            .lock_resources()
             .map_err(|_| OpenSwapError::ResourceLockPoisoned)?;
 
         let candidate_identity = candidate.identity();
         if staged.identity() != &candidate_identity {
             let staged_identity = staged.identity().clone();
-            drop(resources);
-            drop(domain);
             return Err(OpenSwapError::IdentityMismatch {
                 candidate: candidate_identity,
                 staged: staged_identity,
@@ -484,7 +474,7 @@ impl AppState {
         let watcher_session = self.watcher_session_for_snapshot(&snapshot);
         let (ready, activation) = staged.into_ready_parts();
 
-        let previous = std::mem::replace(&mut *domain, ProjectState::Loaded(candidate));
+        let previous = std::mem::replace(resident.domain_mut(), ProjectState::Loaded(candidate));
         // 同一rootのreopenで押し出されたsessionは退避対象にしない。cacheへ残すと、
         // 次の同一root openが「コールドで読み直す」契約を破って過去のデータを返す。
         let displaced_session = match previous {
@@ -496,7 +486,7 @@ impl AppState {
             }
             ProjectState::Loaded(session) => Some(session),
         };
-        let displaced_resources = resources.replace(ready);
+        let displaced_resources = resident.resources_mut().replace(ready);
         activation.activate();
 
         Ok(OpenSwap {
@@ -522,11 +512,10 @@ impl AppState {
     ) -> Result<Option<ProjectSession>, AppStateError> {
         // resident の読み取りと cache lock は入れ子にしない（leaf lock を保つ）。
         let resident = {
-            let domain = lock_domain(&self.domain)?;
+            let domain = self.locks.lock_domain()?;
             domain.active_identity()
         };
-        let mut cache = lock_background_sessions(&self.background_sessions)?;
-        let Some(cached) = cache.remove(root) else {
+        let Some(cached) = self.locks.take_background_session(root)? else {
             return Ok(None);
         };
         if is_superseded_by_resident(resident.as_ref(), &cached) {
@@ -544,22 +533,7 @@ impl AppState {
         &self,
         session: ProjectSession,
     ) -> Result<(), AppStateError> {
-        use std::collections::hash_map::Entry;
-
-        let root = session.identity().project_root().clone();
-        let mut cache = lock_background_sessions(&self.background_sessions)?;
-        match cache.entry(root) {
-            Entry::Vacant(entry) => {
-                entry.insert(session);
-            }
-            Entry::Occupied(mut entry) => {
-                let existing_id = entry.get().version().session_id;
-                if existing_id < session.version().session_id {
-                    entry.insert(session);
-                }
-            }
-        }
-        Ok(())
+        self.locks.stash_background_session(session)
     }
 
     /// emit 直前に 1 つ消費して新しい連番を返す。
@@ -573,16 +547,33 @@ impl AppState {
     /// 使えなくてもコールドオープンで機能を継続できる。probeに含めると一度poisonした
     /// 時点で以後のopenが恒久的に失敗し、プロセス再起動でしか復旧できなくなる。
     pub(crate) fn check_open_locks(&self) -> Result<(), AppStateError> {
-        let _domain = lock_domain(&self.domain)?;
-        let _resources = lock_resources(&self.resources)?;
+        let domain = self.locks.lock_domain()?;
+        let _resident = domain.lock_resources()?;
         Ok(())
     }
 
     /// テストからbackground session cacheのlockをpoisonさせる。
     #[cfg(test)]
     pub(crate) fn poison_background_sessions_for_test(&self) {
-        let _guard = self.background_sessions.lock();
-        panic!("poison background session cache");
+        self.locks.poison_background_sessions_for_test();
+    }
+
+    /// test から active resources lock を poison する。
+    #[cfg(test)]
+    pub(crate) fn poison_resources_for_test(&self) {
+        self.locks.poison_resources_for_test();
+    }
+
+    /// test から exact-root writer gate を poison する。
+    #[cfg(test)]
+    pub(crate) fn poison_writer_gate_for_test(&self, root: &ProjectRoot) {
+        self.writer_gates.poison_gate_for_test(root);
+    }
+
+    /// test assertion 用に active resource version を値として返す。
+    #[cfg(test)]
+    pub(crate) fn active_resource_version_for_test(&self) -> Option<SessionVersion> {
+        self.locks.active_resource_version_for_test()
     }
 
     /// unit test用にcoherentなdomain/resources一式をinstallする。
@@ -634,17 +625,18 @@ impl AppState {
     /// writer境界テスト用にdomain/resourcesのrevisionを同時に差し替える。
     #[cfg(test)]
     pub(crate) fn seed_session_revision_for_test(&self, revision: SessionRevision) {
-        let mut domain = self.domain.lock().expect("test domain lock");
-        let mut resources = self.resources.lock().expect("test resources lock");
-        let ProjectState::Loaded(session) = &mut *domain else {
+        let domain = self.locks.lock_domain().expect("test domain lock");
+        let mut resident = domain.lock_resources().expect("test resources lock");
+        let ProjectState::Loaded(session) = resident.domain_mut() else {
             panic!("test project must be installed before seeding revision");
         };
-        let Some(active) = resources.as_mut() else {
-            panic!("test resources must be installed before seeding revision");
-        };
-
         session.seed_revision_for_test(revision);
-        active.update_version(session.version());
+        let version = session.version();
+        resident
+            .resources_mut()
+            .as_mut()
+            .expect("test resources must be installed before seeding revision")
+            .update_version(version);
     }
 }
 
@@ -692,10 +684,10 @@ impl AppState {
 
     pub(crate) fn test_set_project_root(&self, path: Option<PathBuf>) -> Result<(), AppStateError> {
         let Some(path) = path else {
-            let mut domain = lock_domain(&self.domain)?;
-            let mut resources = lock_resources(&self.resources)?;
-            *domain = ProjectState::Idle;
-            *resources = None;
+            let domain = self.locks.lock_domain()?;
+            let mut resident = domain.lock_resources()?;
+            *resident.domain_mut() = ProjectState::Idle;
+            *resident.resources_mut() = None;
             return Ok(());
         };
 
@@ -807,11 +799,6 @@ impl AppState {
     }
 }
 
-/// project domain lock専用helper。poisonをtyped errorへ変換する。
-fn lock_domain(m: &Mutex<ProjectState>) -> Result<MutexGuard<'_, ProjectState>, AppStateError> {
-    m.lock().map_err(|_| AppStateError::DomainLockPoisoned)
-}
-
 /// cacheエントリが同じrootのresident sessionに追い越されているかを判定する。
 fn is_superseded_by_resident(resident: Option<&SessionIdentity>, cached: &ProjectSession) -> bool {
     let Some(resident) = resident else {
@@ -822,27 +809,10 @@ fn is_superseded_by_resident(resident: Option<&SessionIdentity>, cached: &Projec
         && resident.version().session_id >= cached_identity.version().session_id
 }
 
-/// background sessions lock専用helper。poisonをtyped errorへ変換する。
-fn lock_background_sessions(
-    cache: &Mutex<HashMap<ProjectRoot, ProjectSession>>,
-) -> Result<MutexGuard<'_, HashMap<ProjectRoot, ProjectSession>>, AppStateError> {
-    cache
-        .lock()
-        .map_err(|_| AppStateError::BackgroundSessionsLockPoisoned)
-}
-
-/// active resources lock専用helper。poisonをtyped errorへ変換する。
-fn lock_resources(
-    resources: &Mutex<Option<ActiveProjectResources>>,
-) -> Result<MutexGuard<'_, Option<ActiveProjectResources>>, AppStateError> {
-    resources
-        .lock()
-        .map_err(|_| AppStateError::ResourceLockPoisoned)
-}
-
 pub(crate) mod active_project_resources;
 pub mod change_id;
 pub mod event_seq;
+mod locks;
 pub mod project_generation;
 pub mod project_key;
 mod project_writer_gates;

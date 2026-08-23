@@ -237,16 +237,17 @@ fn task_resync_keeps_session_id_and_commits_all_rebuilt_tasks_once() {
         )]),
     );
     let conflict = stale_revision_conflict(&state, &initial.identity());
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &conflict,
-        ResyncSource::Tasks { task_io: &FsTaskIo },
-    )
-    .expect("same-session task resync");
+    state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::Tasks { task_io: &FsTaskIo },
+            )
+        })
+        .expect("write lease")
+        .expect("same-session task resync");
 
     let recovered = state.require_session_snapshot().expect("snapshot");
     assert_eq!(initial.version().session_id, recovered.version().session_id);
@@ -283,19 +284,20 @@ fn config_and_tasks_resync_uses_reloaded_config_for_missing_task_status() {
     let conflict = stale_revision_conflict(&state, &initial.identity());
     let recovered_config = config_with_default_status("Review");
     let loader = |_root: &Path| Ok(recovered_config.clone());
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &conflict,
-        ResyncSource::ConfigAndTasks {
-            task_io: &FsTaskIo,
-            load_config: &loader,
-        },
-    )
-    .expect("same-session config and task resync");
+    state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::ConfigAndTasks {
+                    task_io: &FsTaskIo,
+                    load_config: &loader,
+                },
+            )
+        })
+        .expect("write lease")
+        .expect("same-session config and task resync");
 
     let recovered = state.require_session_snapshot().expect("snapshot");
     assert_eq!(recovered_config, *recovered.config());
@@ -321,33 +323,32 @@ fn registry_resync_variants_replace_only_the_requested_registry() {
     );
     let first_conflict = stale_revision_conflict(&state, &initial.identity());
     let labels_store = StubLabelStore::new(labels("disk-label"));
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &first_conflict,
-        ResyncSource::Labels {
-            store: &labels_store,
-        },
-    )
-    .expect("label resync");
-    let after_labels = state.require_session_snapshot().expect("snapshot");
-    let second_conflict = stale_revision_conflict(&state, &after_labels.identity());
     let milestones_store = StubMilestoneStore {
         loaded: milestones("disk-milestone"),
     };
-
-    resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &second_conflict,
-        ResyncSource::Milestones {
-            store: &milestones_store,
-        },
-    )
-    .expect("milestone resync");
+    state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &first_conflict,
+                ResyncSource::Labels {
+                    store: &labels_store,
+                },
+            )?;
+            let after_labels = state.require_session_snapshot().expect("snapshot");
+            let second_conflict = stale_revision_conflict(&state, &after_labels.identity());
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &second_conflict,
+                ResyncSource::Milestones {
+                    store: &milestones_store,
+                },
+            )
+        })
+        .expect("write lease")
+        .expect("registry resync");
 
     let recovered = state.require_session_snapshot().expect("snapshot");
     assert_eq!(labels("disk-label"), *recovered.labels());
@@ -378,16 +379,17 @@ fn same_path_reopen_is_rejected_before_disk_load_and_keeps_current() {
     );
     let conflict = conflict_after_switch(&state, &first.identity());
     let store = StubLabelStore::new(labels("must-not-load"));
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    let error = resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &conflict,
-        ResyncSource::Labels { store: &store },
-    )
-    .expect_err("reopen must reject recovery");
+    let error = state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::Labels { store: &store },
+            )
+        })
+        .expect("write lease")
+        .expect_err("reopen must reject recovery");
 
     let ResyncError::Session(rejected) = error else {
         panic!("expected session rejection, got {error:?}");
@@ -427,16 +429,17 @@ fn cross_project_conflict_is_rejected_before_disk_load_and_keeps_current() {
     );
     let conflict = conflict_after_switch(&state, &first.identity());
     let store = StubLabelStore::new(labels("must-not-load"));
-    let gate = state.writer_gate(&first_root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    let error = resync_if_same_project_under_lease(
-        &state,
-        &first_root,
-        &conflict,
-        ResyncSource::Labels { store: &store },
-    )
-    .expect_err("cross-project conflict must reject recovery");
+    let error = state
+        .with_project_root_writer_lease(&first_root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &first_root,
+                &conflict,
+                ResyncSource::Labels { store: &store },
+            )
+        })
+        .expect("write lease")
+        .expect_err("cross-project conflict must reject recovery");
 
     assert!(matches!(error, ResyncError::Session(_)));
     assert_eq!(0, store.load_calls());
@@ -468,16 +471,17 @@ fn raw_path_alias_is_rejected_as_a_different_exact_root_before_disk_load() {
     let conflict = stale_revision_conflict(&state, &initial.identity());
     let before = state.require_session_snapshot().expect("snapshot");
     let store = StubLabelStore::new(labels("must-not-load"));
-    let gate = state.writer_gate(&alias_root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    let error = resync_if_same_project_under_lease(
-        &state,
-        &alias_root,
-        &conflict,
-        ResyncSource::Labels { store: &store },
-    )
-    .expect_err("raw alias must not share an exact-root lease");
+    let error = state
+        .with_project_root_writer_lease(&alias_root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &alias_root,
+                &conflict,
+                ResyncSource::Labels { store: &store },
+            )
+        })
+        .expect("write lease")
+        .expect_err("raw alias must not share an exact-root lease");
 
     assert!(matches!(error, ResyncError::Session(_)));
     assert_eq!(0, store.load_calls());
@@ -508,16 +512,17 @@ fn revision_progress_during_disk_load_wins_and_recovered_value_is_not_applied() 
         concurrent: labels("concurrent"),
         loaded: labels("must-not-apply"),
     };
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    let error = resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &conflict,
-        ResyncSource::Labels { store: &store },
-    )
-    .expect_err("fresh full identity CAS must reject revision progress");
+    let error = state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::Labels { store: &store },
+            )
+        })
+        .expect("write lease")
+        .expect_err("fresh full identity CAS must reject revision progress");
 
     assert!(matches!(
         error,
@@ -549,19 +554,20 @@ fn config_and_task_scan_failure_leaves_every_current_aggregate_field_unchanged()
     let before = state.require_session_snapshot().expect("snapshot");
     let recovered_config = config_with_default_status("Review");
     let loader = |_root: &Path| Ok(recovered_config.clone());
-    let gate = state.writer_gate(&root).expect("writer gate");
-    let _guard = state.lock_writer_gate(gate.as_ref()).expect("write lease");
-
-    let error = resync_if_same_project_under_lease(
-        &state,
-        &root,
-        &conflict,
-        ResyncSource::ConfigAndTasks {
-            task_io: &FsTaskIo,
-            load_config: &loader,
-        },
-    )
-    .expect_err("missing root scan must fail");
+    let error = state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::ConfigAndTasks {
+                    task_io: &FsTaskIo,
+                    load_config: &loader,
+                },
+            )
+        })
+        .expect("write lease")
+        .expect_err("missing root scan must fail");
 
     assert!(matches!(error, ResyncError::Tasks(_)));
     assert_same_snapshot(
