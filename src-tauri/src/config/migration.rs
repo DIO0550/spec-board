@@ -32,7 +32,8 @@ pub enum MigrationError {
 /// - `from_version == SchemaVersion::CURRENT` のときは入力 `value` をそのまま返す（素通し）。
 /// - `from_version < SchemaVersion::CURRENT` かつ `value` が JSON Object のときは骨格実装として
 ///   **他フィールドを変更せず `value["version"]` のみ現行versionに書き換えて返す**。
-///   これにより load 後の [`crate::config::Config::version`] が現行値に正規化される。
+///   これにより load 後の [`Config::version()`](crate::config::Config::version) の戻り値が
+///   現行値に正規化される。
 /// - `from_version < SchemaVersion::CURRENT` かつ `value` が JSON Object **以外**（純粋関数として
 ///   単独利用された場合のみ起こり得る）のときは正規化対象が無いため `value` をそのまま返す。
 ///   この経路は実マイグレーション実装時に [`MigrationError`] バリアント追加で厳格化する想定。
