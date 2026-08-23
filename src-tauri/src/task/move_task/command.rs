@@ -260,12 +260,13 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
             Box::new(updated_task),
         ))?
         .tasks;
-    let returned = next_tasks
-        .get(&moved_key)
-        .cloned()
-        .ok_or_else(|| MoveTaskError::TaskVanished {
-            path: moved_key.as_str().to_string(),
-        })?;
+    let returned =
+        next_tasks
+            .get(&moved_key)
+            .cloned()
+            .ok_or_else(|| MoveTaskError::TaskVanished {
+                path: moved_key.as_str().to_string(),
+            })?;
     let registered_paths = vec![abs.to_path_buf()];
     resources.write_ignore().register(abs)?;
     if let Err(error) = io.write_existing(abs, file_content.as_bytes()) {

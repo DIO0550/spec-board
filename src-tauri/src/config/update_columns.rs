@@ -26,6 +26,7 @@ use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::{Patch, TaskDocument, TaskDocumentError, TaskPatch};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
+use crate::task::parse::TaskParseError;
 use spec_board_fs::config::config_io;
 use spec_board_fs::watcher::write_ignore::{WriteIgnoreError, WriteIgnoreRegistry};
 
@@ -128,6 +129,8 @@ pub enum UpdateColumnsError {
     },
     #[error(transparent)]
     SessionWrite(SessionWriteError),
+    #[error(transparent)]
+    TaskResolution(#[from] TaskParseError),
 }
 
 impl From<AppStateError> for UpdateColumnsError {
@@ -231,8 +234,7 @@ pub(crate) fn update_columns_impl_with_loader(
                 )
             })
             .collect();
-        let next_tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)
-            .expect("column rename preserves the resolved parent hierarchy");
+        let next_tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)?;
 
         // resident plan完成後、disk read/marker/writeより先にrevisionをpreflightする。
         let resources = state.preflight_session_write(snapshot)?;

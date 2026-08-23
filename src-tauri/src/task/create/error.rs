@@ -10,6 +10,7 @@ use crate::project_session::{RevisionExhausted, SessionConflict};
 use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::TaskIoError;
+use crate::task::parse::TaskParseError;
 use crate::task::task_file_name::TaskFileNameError;
 use crate::task::task_index::{ParentHierarchyErrorReason, ParentValidationFailure};
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
@@ -81,6 +82,10 @@ pub enum CreateTaskCommandError {
     RevisionExhausted(#[from] RevisionExhausted),
     #[error(transparent)]
     ResourceConflict(#[from] SessionResourceConflict),
+    #[error(transparent)]
+    Resolution(#[from] TaskParseError),
+    #[error("created task vanished after canonical resolution: {path}")]
+    CreatedTaskVanished { path: String },
 }
 
 impl From<SessionWriteError> for CreateTaskCommandError {

@@ -104,12 +104,12 @@ fn plan_cache_insert(
         .map(Task::to_parsed_task)
         .chain(std::iter::once(task))
         .collect();
-    let resolved = ResolvedTaskSet::resolve_lenient(candidates)
-        .expect("validated create cannot deepen the resolved parent hierarchy");
-    let created_task = resolved
-        .get(&created_path)
-        .cloned()
-        .expect("created candidate remains after canonical resolution");
+    let resolved = ResolvedTaskSet::resolve_lenient(candidates)?;
+    let created_task = resolved.get(&created_path).cloned().ok_or_else(|| {
+        CreateTaskCommandError::CreatedTaskVanished {
+            path: created_path.as_str().to_string(),
+        }
+    })?;
     Ok((resolved, created_task))
 }
 
