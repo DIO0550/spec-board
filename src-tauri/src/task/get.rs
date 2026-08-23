@@ -27,8 +27,9 @@ use serde::Serialize;
 use tauri::State;
 use thiserror::Error;
 
+use super::payload::TaskPayload;
 use super::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
-use super::task_index::{Task, TaskIndex};
+use super::task_index::TaskIndex;
 use crate::config::column_name::ColumnName;
 use crate::config::Column;
 use crate::project::load_warning::ProjectLoadWarning;
@@ -43,7 +44,7 @@ use crate::state::{AppState, AppStateError};
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTasksPayload {
-    pub tasks: Vec<Task>,
+    pub tasks: Vec<TaskPayload>,
     /// board 表示順のカラム定義。`get_columns` と同じ導出規則。
     ///
     /// `tasks` と**同一 snapshot の `Config`** から導出することが必須。別 IPC で
@@ -127,7 +128,7 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
     let config = snapshot.config();
     let view = TaskIndex::project_board_view(tasks, config);
     Ok(GetTasksPayload {
-        tasks: view.tasks,
+        tasks: view.tasks.into_iter().map(TaskPayload::from).collect(),
         columns: config.columns_in_display_order(),
         done_column: config.resolved_done_column().cloned(),
         projections: view.projections,

@@ -9,7 +9,7 @@ use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::relocate::{move_md_file, RelocateError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::TaskIndex;
+use crate::task::task_index::{ExternalTaskChange, TaskIndex};
 use crate::task::trash::command::trash_destination;
 
 /// `delete_task` Tauri command 薄層。
@@ -38,12 +38,13 @@ pub(crate) fn delete_task_impl(
         let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
         let deleted_file_path = index
             .find_by_path(&rel_path)
-            .map(|task| task.file_path.clone())
+            .map(|task| task.file_path().clone())
             .ok_or_else(|| DeleteTaskError::FileNotFound(abs.clone()))?;
         index.plan_delete_abort(&rel_path.to_string_lossy())?;
 
-        let mut next_tasks = snapshot.tasks().clone();
-        next_tasks.retain(|_, task| task.file_path != deleted_file_path);
+        let resolved = index
+            .rebuild_with_external_change(ExternalTaskChange::Removed(deleted_file_path.clone()))?;
+        let next_tasks = resolved.tasks;
         let resources = state.preflight_session_write(snapshot)?;
         let registered_paths = vec![abs.clone()];
         resources.write_ignore().register(&abs)?;

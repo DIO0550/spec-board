@@ -17,6 +17,8 @@ use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::io::FsTaskIo;
+use crate::task::parse::TaskParseError;
+use crate::task::task_index::ParentHierarchyErrorReason;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
 };
@@ -44,6 +46,20 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
     fs::write(&abs, content).unwrap();
 }
 
+fn seed_valid_parent_chain(root: &Path) {
+    for index in 0..20 {
+        seed_md(
+            root,
+            &format!("tasks/B{index}.md"),
+            &format!(
+                "---\ntitle: B{index}\nstatus: Todo\nparent: tasks/B{}.md\n---\n",
+                index + 1
+            ),
+        );
+    }
+    seed_md(root, "tasks/B20.md", "---\ntitle: B20\nstatus: Todo\n---\n");
+}
+
 fn args_for(source: &str, target: &str) -> AddLinkArgs {
     AddLinkArgs {
         source_file_path: source.to_string(),
@@ -68,8 +84,8 @@ fn add_link_writes_file_and_updates_cache_on_success() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
-    assert_eq!(task.file_path, "tasks/a.md");
-    assert!(task.links.iter().any(|p| p.as_str() == "tasks/b.md"));
+    assert_eq!(task.file_path().as_str(), "tasks/a.md");
+    assert!(task.links().iter().any(|p| p.as_str() == "tasks/b.md"));
 
     let on_disk = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
     assert!(on_disk.contains("links:"));
@@ -78,14 +94,14 @@ fn add_link_writes_file_and_updates_cache_on_success() {
     let snap = state.test_tasks_snapshot().expect("snapshot");
     let a = snap
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("a");
-    assert!(a.links.iter().any(|p| p.as_str() == "tasks/b.md"));
+    assert!(a.links().iter().any(|p| p.as_str() == "tasks/b.md"));
     let b = snap
         .iter()
-        .find(|t| t.file_path == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("b");
-    assert!(b.reverse_links.iter().any(|p| p.as_str() == "tasks/a.md"));
+    assert!(b.reverse_links().iter().any(|p| p.as_str() == "tasks/a.md"));
 }
 
 #[test]
@@ -136,8 +152,8 @@ fn add_link_returns_source_task_on_noop() {
 
     let returned = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md"))
         .expect("noop returns Ok");
-    assert_eq!(returned.file_path, "tasks/a.md");
-    assert!(returned.links.iter().any(|p| p.as_str() == "tasks/b.md"));
+    assert_eq!(returned.file_path().as_str(), "tasks/a.md");
+    assert!(returned.links().iter().any(|p| p.as_str() == "tasks/b.md"));
 }
 
 #[test]
@@ -234,7 +250,8 @@ fn add_link_registers_session_write_ignore_and_advances_revision() {
 }
 
 /// scan で cycle member とマークされた source task に add_link しても、
-/// cache 上の `parent=None` と `parentCycle` warning が崩れないこと。
+/// cache 上のeffective `parent=None` と `parentCycle` warning が崩れず、raw parentは
+/// 次のresolverへ引き継がれること。
 #[test]
 fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
     use crate::task::warning::TaskWarningCode;
@@ -261,16 +278,67 @@ fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
         .expect("add_link should succeed");
 
     assert!(
-        returned.parent.is_none(),
-        "cycle source must keep parent=None"
+        returned.parent().is_none(),
+        "cycle source must keep effective parent=None"
     );
     assert!(
         returned
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"
     );
+}
+
+#[test]
+fn add_link_external_too_deep_returns_typed_error_without_side_effects() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_valid_parent_chain(root);
+    seed_md(
+        root,
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        root,
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let externally_deepened: &[u8] =
+        b"---\ntitle: Source\nstatus: Todo\nparent: tasks/B0.md\n---\nexternal body\n";
+    let source_path = root.join("tasks/source.md");
+    fs::write(&source_path, externally_deepened).expect("externally deepen source parent");
+    let resident_before = state.test_tasks_snapshot().expect("resident snapshot");
+    let revision_before = session_revision(&state);
+
+    let error = add_link_impl(
+        &state,
+        &FsTaskIo,
+        args_for("tasks/source.md", "tasks/target.md"),
+    )
+    .expect_err("21-edge parent chain must return a typed resolution error");
+
+    assert!(matches!(
+        error,
+        AddLinkCommandError::Resolution(TaskParseError::CycleOrTooDeep {
+            reason: ParentHierarchyErrorReason::TooDeep,
+            ..
+        })
+    ));
+    assert_eq!(
+        externally_deepened,
+        fs::read(&source_path).expect("read source")
+    );
+    assert_eq!(
+        resident_before,
+        state.test_tasks_snapshot().expect("resident snapshot")
+    );
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]

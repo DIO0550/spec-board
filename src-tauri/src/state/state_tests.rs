@@ -17,28 +17,7 @@ use crate::config::{
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, ProjectSession, SessionIdentity};
 use crate::task::canonical_task_path::CanonicalTaskPath;
-use crate::task::task_index::Task;
-
-fn sample_task(id: &str, file_path: &str) -> Task {
-    Task {
-        draft: false,
-        id: id.into(),
-        file_path: file_path.into(),
-        title: format!("title-{id}").into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
-}
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn sample_config() -> Config {
     Config::new(
@@ -88,7 +67,8 @@ fn candidate_for(
         sample_config(),
         sample_labels(),
         sample_milestones(),
-        tasks,
+        crate::task::task_index::ResolvedTaskSet::reresolve(tasks.into_values())
+            .expect("fixture tasks resolve"),
     )
     .into_session(session_id)
 }
@@ -203,9 +183,14 @@ fn session_commit_updates_domain_and_resource_revision_together() {
 
     let committed = state
         .commit_session(&expected, |session| {
-            session.tasks_mut().insert(
-                CanonicalTaskPath::new("tasks/a.md"),
-                sample_task("a", "tasks/a.md"),
+            session.replace_tasks(
+                crate::task::task_index::ResolvedTaskSet::resolve_lenient(vec![
+                    ParsedTaskBuilder::new("tasks/a.md")
+                        .id("a")
+                        .title("title-a")
+                        .build(),
+                ])
+                .expect("fixture candidates resolve"),
             );
         })
         .expect("matching commit succeeds");
@@ -246,9 +231,24 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
                     .with_project_writer_lease(|_, snapshot| {
                         let expected = snapshot.identity();
                         state.commit_session_write(&expected, |session| {
-                            session
-                                .tasks_mut()
-                                .insert(CanonicalTaskPath::new(path), sample_task(id, path));
+                            let mut candidates: Vec<_> = session
+                                .snapshot()
+                                .tasks()
+                                .values()
+                                .map(Task::to_parsed_task)
+                                .collect();
+                            candidates.push(
+                                ParsedTaskBuilder::new(path)
+                                    .id(id)
+                                    .title(format!("title-{id}"))
+                                    .build(),
+                            );
+                            session.replace_tasks(
+                                crate::task::task_index::ResolvedTaskSet::resolve_lenient(
+                                    candidates,
+                                )
+                                .expect("fixture candidates resolve"),
+                            );
                         })?;
                         Ok::<_, super::SessionWriteError>(())
                     })

@@ -2,9 +2,9 @@
 //!
 //! カラムの追加・削除・並び替え・名前変更・完了カラム変更を 1 コマンドで処理する。
 //! コア計算は `Config::plan_update_columns` aggregate method に集約し、
-//! effect 層 `update_columns_impl` で md 一括書き換え（トランザクション的ロールバック付き）
-//! → `config.json` atomic write → `AppState` commit → `tasks_cache` in-place 更新
-//! → GUIDE.md 再生成、の順で適用する。
+//! effect層`update_columns_impl`でI/O前に全Task candidateをresolveして`ResolvedTaskSet`を
+//! 確定し、md一括書き換え（トランザクション的ロールバック付き）→`config.json` atomic
+//! write→resolved session commit（競合時resync）→GUIDE.md再生成、の順で適用する。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,7 +16,6 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::config::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Config, ConfigWriter, FsConfigWriter,
     LoadConfigError, RenameTarget,
@@ -27,6 +26,7 @@ use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::{Patch, TaskDocument, TaskDocumentError, TaskPatch};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
+use crate::task::parse::TaskParseError;
 use spec_board_fs::config::config_io;
 use spec_board_fs::watcher::write_ignore::{WriteIgnoreError, WriteIgnoreRegistry};
 
@@ -129,6 +129,8 @@ pub enum UpdateColumnsError {
     },
     #[error(transparent)]
     SessionWrite(SessionWriteError),
+    #[error(transparent)]
+    TaskResolution(#[from] TaskParseError),
 }
 
 impl From<AppStateError> for UpdateColumnsError {
@@ -212,13 +214,27 @@ pub(crate) fn update_columns_impl_with_loader(
         }
 
         let project_root = snapshot.project_root().as_path().to_path_buf();
-        let mut next_tasks = snapshot.tasks().clone();
-        for target in &plan.rename_targets {
-            let rel = CanonicalTaskPath::new(target.rel_path.as_str());
-            if let Some(task) = next_tasks.get_mut(&rel) {
-                task.status = ColumnName::from_lenient(&target.new_status);
-            }
-        }
+        let renamed_statuses: HashMap<CanonicalTaskPath, &str> = plan
+            .rename_targets
+            .iter()
+            .map(|target| {
+                (
+                    CanonicalTaskPath::new(target.rel_path.as_str()),
+                    target.new_status.as_str(),
+                )
+            })
+            .collect();
+        let candidates = snapshot
+            .tasks()
+            .iter()
+            .map(|(path, task)| {
+                renamed_statuses.get(path).map_or_else(
+                    || task.to_parsed_task(),
+                    |status| task.with_status_candidate(status),
+                )
+            })
+            .collect();
+        let next_tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)?;
 
         // resident plan完成後、disk read/marker/writeより先にrevisionをpreflightする。
         let resources = state.preflight_session_write(snapshot)?;

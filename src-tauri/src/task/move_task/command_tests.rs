@@ -22,7 +22,8 @@ use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
-use crate::task::task_index::TaskIndex;
+use crate::task::parse::TaskParseError;
+use crate::task::task_index::{ParentHierarchyErrorReason, TaskIndex};
 use crate::task::warning::TaskWarningCode;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
@@ -49,6 +50,20 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
     let abs = root.join(rel);
     fs::create_dir_all(abs.parent().expect("has parent")).expect("create dirs");
     fs::write(abs, content).expect("write md");
+}
+
+fn seed_valid_parent_chain(root: &Path) {
+    for index in 0..20 {
+        seed_md(
+            root,
+            &format!("tasks/B{index}.md"),
+            &format!(
+                "---\ntitle: B{index}\nstatus: Todo\nparent: tasks/B{}.md\n---\n",
+                index + 1
+            ),
+        );
+    }
+    seed_md(root, "tasks/B20.md", "---\ntitle: B20\nstatus: Todo\n---\n");
 }
 
 /// 指定カラムの並びを `&str` の Vec として取り出す。キーが無ければ空 Vec。
@@ -167,6 +182,41 @@ impl ConfigWriter for FailingConfigWriter {
     }
 }
 
+#[derive(Default)]
+struct WriteCountingTaskIo {
+    write_calls: AtomicUsize,
+}
+
+impl WriteCountingTaskIo {
+    fn write_calls(&self) -> usize {
+        self.write_calls.load(Ordering::SeqCst)
+    }
+}
+
+impl TaskIo for WriteCountingTaskIo {
+    fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
+        FsTaskIo.ensure_dir(dir)
+    }
+
+    fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        self.write_calls.fetch_add(1, Ordering::SeqCst);
+        FsTaskIo.write_new(path, bytes)
+    }
+
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        self.write_calls.fetch_add(1, Ordering::SeqCst);
+        FsTaskIo.write_existing(path, bytes)
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
+        FsTaskIo.remove(path)
+    }
+
+    fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
+        FsTaskIo.read(path)
+    }
+}
+
 #[test]
 fn cross_column_move_updates_status_on_disk() {
     let dir = tempdir();
@@ -187,7 +237,7 @@ fn cross_column_move_updates_status_on_disk() {
     )
     .expect("move should succeed");
 
-    assert_eq!(task.status.as_str(), "Done");
+    assert_eq!(task.status().as_str(), "Done");
 
     let content = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read md");
     assert!(content.contains("status: Done"), "{content}");
@@ -292,7 +342,7 @@ fn same_column_reorder_leaves_task_md_untouched() {
     )
     .expect("reorder should succeed");
 
-    assert_eq!(task.status.as_str(), "Todo");
+    assert_eq!(task.status().as_str(), "Todo");
     assert_eq!(
         fs::read_to_string(dir.path().join("tasks/a.md")).expect("read md"),
         original
@@ -400,7 +450,7 @@ fn same_column_noop_does_not_advance_revision_or_register_marker() {
     )
     .expect("identical reorder is a no-op");
 
-    assert_eq!("Todo", task.status.as_str());
+    assert_eq!("Todo", task.status().as_str());
     assert_eq!(revision_before, session_revision(&state));
     assert_eq!(0, session_write_ignore_len(&state));
     assert_eq!(
@@ -576,7 +626,7 @@ fn cross_column_move_keeps_children_and_reverse_links() {
 
     assert_eq!(
         returned
-            .children
+            .children()
             .iter()
             .map(|p| p.as_str())
             .collect::<Vec<_>>(),
@@ -585,7 +635,7 @@ fn cross_column_move_keeps_children_and_reverse_links() {
     );
     assert_eq!(
         returned
-            .reverse_links
+            .reverse_links()
             .iter()
             .map(|p| p.as_str())
             .collect::<Vec<_>>(),
@@ -597,11 +647,11 @@ fn cross_column_move_keeps_children_and_reverse_links() {
         .test_tasks_snapshot()
         .expect("lock")
         .into_iter()
-        .find(|t| t.file_path.as_str() == "tasks/parent.md")
+        .find(|t| t.file_path().as_str() == "tasks/parent.md")
         .expect("parent stays in cache");
     assert_eq!(
         cached
-            .children
+            .children()
             .iter()
             .map(|p| p.as_str())
             .collect::<Vec<_>>(),
@@ -609,7 +659,7 @@ fn cross_column_move_keeps_children_and_reverse_links() {
     );
     assert_eq!(
         cached
-            .reverse_links
+            .reverse_links()
             .iter()
             .map(|p| p.as_str())
             .collect::<Vec<_>>(),
@@ -631,15 +681,15 @@ fn cross_column_move_clears_parse_warnings_that_no_longer_apply() {
         .test_tasks_snapshot()
         .expect("lock")
         .into_iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("seeded task");
     assert!(
         before
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::MissingStatusUsedDefault),
         "前提: 移動前は status 欠落 warning が付いている: {:?}",
-        before.warnings
+        before.warnings()
     );
 
     let returned = move_task_impl(
@@ -651,20 +701,20 @@ fn cross_column_move_clears_parse_warnings_that_no_longer_apply() {
 
     assert!(
         !returned
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::MissingStatusUsedDefault),
         "status を書き込んだので欠落 warning は消えるべき: {:?}",
-        returned.warnings
+        returned.warnings()
     );
     let cached = state
         .test_tasks_snapshot()
         .expect("lock")
         .into_iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("task stays in cache");
     assert!(!cached
-        .warnings
+        .warnings()
         .iter()
         .any(|w| w.code == TaskWarningCode::MissingStatusUsedDefault));
 }
@@ -691,11 +741,11 @@ fn cross_column_move_keeps_parent_not_found_warning() {
 
     assert!(
         returned
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentNotFound),
         "graph 由来 warning は引き継がれるべき: {:?}",
-        returned.warnings
+        returned.warnings()
     );
 }
 
@@ -768,9 +818,9 @@ fn disk_success_conflict_returns_typed_error_and_resyncs_same_session() {
         .test_tasks_snapshot()
         .expect("resident tasks")
         .into_iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("resynced task");
-    assert_eq!("Done", cached.status.as_str());
+    assert_eq!("Done", cached.status().as_str());
     let resident_config = state
         .test_config()
         .expect("resident config lock")
@@ -828,9 +878,9 @@ fn config_writer_failure_rolls_back_md_cleans_marker_and_keeps_revision() {
         .test_tasks_snapshot()
         .expect("resident tasks")
         .into_iter()
-        .find(|task| task.file_path.as_str() == "tasks/a.md")
+        .find(|task| task.file_path().as_str() == "tasks/a.md")
         .expect("resident task");
-    assert_eq!("Todo", resident.status.as_str());
+    assert_eq!("Todo", resident.status().as_str());
 }
 
 #[test]
@@ -1195,6 +1245,76 @@ fn config_write_failure_unregisters_the_self_write_marker() {
 }
 
 #[test]
+fn cross_column_move_external_too_deep_returns_typed_error_without_side_effects() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_valid_parent_chain(root);
+    seed_md(
+        root,
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\n---\n",
+    );
+    seed_default_config(root);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, root);
+
+    let externally_deepened: &[u8] =
+        b"---\ntitle: Source\nstatus: Todo\nparent: tasks/B0.md\n---\nexternal body\n";
+    let source_path = root.join("tasks/source.md");
+    fs::write(&source_path, externally_deepened).expect("externally deepen source parent");
+    let config_path = root.join(".spec-board/config.json");
+    let config_disk_before = fs::read(&config_path).expect("read config");
+    let resident_tasks_before = state.test_tasks_snapshot().expect("resident tasks");
+    let resident_config_before = state.test_config().expect("config lock").expect("config");
+    let revision_before = session_revision(&state);
+    let task_io = WriteCountingTaskIo::default();
+    let config_writer = FailingConfigWriter::default();
+
+    let error = move_task_impl_with_config_io(
+        &state,
+        &task_io,
+        &config_writer,
+        &load_or_default,
+        make_args(
+            &state,
+            "tasks/source.md",
+            "Todo",
+            "Done",
+            &["tasks/source.md"],
+        ),
+    )
+    .expect_err("21-edge parent chain must return a typed resolution error");
+
+    assert!(matches!(
+        error,
+        MoveTaskCommandError::Resolution(TaskParseError::CycleOrTooDeep {
+            reason: ParentHierarchyErrorReason::TooDeep,
+            ..
+        })
+    ));
+    assert_eq!(0, task_io.write_calls(), "TaskIo write must not be reached");
+    assert_eq!(0, config_writer.calls(), "ConfigWriter must not be reached");
+    assert_eq!(
+        externally_deepened,
+        fs::read(&source_path).expect("read source")
+    );
+    assert_eq!(
+        config_disk_before,
+        fs::read(config_path).expect("read config")
+    );
+    assert_eq!(
+        resident_tasks_before,
+        state.test_tasks_snapshot().expect("resident tasks")
+    );
+    assert_eq!(
+        resident_config_before,
+        state.test_config().expect("config lock").expect("config")
+    );
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
+}
+
+#[test]
 fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
     let dir = tempdir();
     let original_md = "---\ntitle: A\nstatus: Todo\n---\nbody\n";
@@ -1209,7 +1329,7 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         .tasks()
         .get(&CanonicalTaskPath::new("tasks/a.md"))
         .expect("resident task before exhaustion")
-        .status
+        .status()
         .clone();
     let card_order_before = resident_before.config().card_order.clone();
     let config_path = dir.path().join(".spec-board").join("config.json");
@@ -1256,7 +1376,7 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         .expect("resident snapshot after rejection");
     assert_eq!(
         status_before,
-        resident_after.tasks()[&CanonicalTaskPath::new("tasks/a.md")].status
+        *resident_after.tasks()[&CanonicalTaskPath::new("tasks/a.md")].status()
     );
     assert_eq!(card_order_before, resident_after.config().card_order);
 }
@@ -1317,9 +1437,9 @@ fn card_order_conflict_leaves_task_md_and_config_json_untouched() {
         .test_tasks_snapshot()
         .expect("resident tasks")
         .into_iter()
-        .find(|task| task.file_path.as_str() == "tasks/a.md")
+        .find(|task| task.file_path().as_str() == "tasks/a.md")
         .expect("resident task");
-    assert_eq!("Todo", resident.status.as_str());
+    assert_eq!("Todo", resident.status().as_str());
 }
 
 #[test]
@@ -1478,7 +1598,7 @@ fn first_move_into_a_column_without_card_order_entry_succeeds() {
     )
     .expect("cardOrder 未登録のカラムへの初回移動は成功するべき");
 
-    assert_eq!("Done", task.status.as_str());
+    assert_eq!("Done", task.status().as_str());
 }
 
 #[test]
@@ -1526,7 +1646,7 @@ fn unrelated_reorder_in_the_source_column_does_not_reject_the_move() {
     )
     .expect("移動元カラムの無関係な並び替えでは拒否されないべき");
 
-    assert_eq!("Done", task.status.as_str());
+    assert_eq!("Done", task.status().as_str());
 }
 
 #[test]

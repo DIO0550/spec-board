@@ -17,6 +17,8 @@ use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::io::FsTaskIo;
+use crate::task::parse::TaskParseError;
+use crate::task::task_index::ParentHierarchyErrorReason;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
 };
@@ -44,6 +46,20 @@ fn seed_md(root: &Path, rel: &str, content: &str) {
     fs::write(&abs, content).unwrap();
 }
 
+fn seed_valid_parent_chain(root: &Path) {
+    for index in 0..20 {
+        seed_md(
+            root,
+            &format!("tasks/B{index}.md"),
+            &format!(
+                "---\ntitle: B{index}\nstatus: Todo\nparent: tasks/B{}.md\n---\n",
+                index + 1
+            ),
+        );
+    }
+    seed_md(root, "tasks/B20.md", "---\ntitle: B20\nstatus: Todo\n---\n");
+}
+
 fn args_for(source: &str, target: &str) -> RemoveLinkArgs {
     RemoveLinkArgs {
         source_file_path: source.to_string(),
@@ -69,11 +85,11 @@ fn removes_link_from_disk_and_cache() {
 
     let task =
         remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
-    assert_eq!(task.file_path, "tasks/a.md");
+    assert_eq!(task.file_path().as_str(), "tasks/a.md");
     assert!(
-        task.links.is_empty(),
+        task.links().is_empty(),
         "links should be empty, got {:?}",
-        task.links
+        task.links()
     );
 
     let on_disk = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
@@ -85,9 +101,9 @@ fn removes_link_from_disk_and_cache() {
     let snap = state.test_tasks_snapshot().expect("snapshot");
     let a = snap
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("a");
-    assert!(a.links.is_empty());
+    assert!(a.links().is_empty());
 }
 
 #[test]
@@ -110,11 +126,11 @@ fn removes_reverse_link_on_target() {
     let snap_before = state.test_tasks_snapshot().expect("snap");
     let b_before = snap_before
         .iter()
-        .find(|t| t.file_path == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("b");
     assert!(
         b_before
-            .reverse_links
+            .reverse_links()
             .iter()
             .any(|p| p.as_str() == "tasks/a.md"),
         "precondition: b.reverse_links should contain a"
@@ -125,15 +141,15 @@ fn removes_reverse_link_on_target() {
     let snap_after = state.test_tasks_snapshot().expect("snap");
     let b_after = snap_after
         .iter()
-        .find(|t| t.file_path == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("b");
     assert!(
         !b_after
-            .reverse_links
+            .reverse_links()
             .iter()
             .any(|p| p.as_str() == "tasks/a.md"),
         "b.reverse_links should drop a, got {:?}",
-        b_after.reverse_links
+        b_after.reverse_links()
     );
 }
 
@@ -210,7 +226,7 @@ fn succeeds_when_target_missing_from_cache() {
         args_for("tasks/a.md", "tasks/missing.md"),
     )
     .expect("orphan link removal should succeed");
-    assert!(task.links.is_empty());
+    assert!(task.links().is_empty());
 
     let on_disk = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
     assert!(
@@ -247,7 +263,7 @@ fn errors_parse_failed_on_broken_frontmatter() {
     let dir = tempdir();
     // まず正常な frontmatter で seed → open_project で cache に乗せる。
     // その後ディスク側の source の frontmatter delimiter を欠落させ、
-    // remove_link_impl の io.read + frontmatter::parse_bytes の経路で
+    // remove_link_impl のio.read + TaskDocument::parse(...).into_parsed()経路で
     // ParseFailed を確実に発火させる。
     seed_md(
         dir.path(),
@@ -285,8 +301,8 @@ fn self_link_removal_returns_updated_reverse_links() {
     // self-link（source == target）の境界ケース: 手書き frontmatter で a.md
     // 自身を links に持つ状態を作る。remove_link 実行後、disk / cache の
     // a.md は links が空になり、reverse_links からも自分自身が除去される。
-    // 戻り値の Task が cache と一致することを検証する（commit_cache 内で
-    // target update 後に cache から再取得する設計の回帰テスト）。
+    // 戻り値のTaskがcacheと一致することを検証する（canonical resolverで
+    // 全件再導出したResolvedTaskSetをsessionへcommitする設計の回帰テスト）。
     let dir = tempdir();
     seed_md(
         dir.path(),
@@ -298,23 +314,24 @@ fn self_link_removal_returns_updated_reverse_links() {
 
     let returned =
         remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/a.md")).expect("ok");
-    assert!(returned.links.is_empty());
+    assert!(returned.links().is_empty());
     assert!(
         !returned
-            .reverse_links
+            .reverse_links()
             .iter()
             .any(|p| p.as_str() == "tasks/a.md"),
         "self-link returned task should not contain itself in reverse_links: {:?}",
-        returned.reverse_links
+        returned.reverse_links()
     );
 
     let snap = state.test_tasks_snapshot().expect("snap");
     let a = snap
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("a");
     assert_eq!(
-        returned.reverse_links, a.reverse_links,
+        returned.reverse_links(),
+        a.reverse_links(),
         "returned task reverse_links must match cache state"
     );
 }
@@ -371,16 +388,66 @@ fn remove_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
         .expect("remove_link should succeed");
 
     assert!(
-        returned.parent.is_none(),
-        "cycle source must keep parent=None"
+        returned.parent().is_none(),
+        "cycle source must keep effective parent=None"
     );
     assert!(
         returned
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"
     );
+}
+
+#[test]
+fn remove_link_external_too_deep_returns_typed_error_without_side_effects() {
+    let dir = tempdir();
+    let root = dir.path();
+    seed_valid_parent_chain(root);
+    seed_md(
+        root,
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    );
+    seed_md(
+        root,
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), root);
+
+    let externally_deepened: &[u8] = b"---\ntitle: Source\nstatus: Todo\nparent: tasks/B0.md\nlinks:\n  - tasks/target.md\n---\nexternal body\n";
+    let source_path = root.join("tasks/source.md");
+    fs::write(&source_path, externally_deepened).expect("externally deepen source parent");
+    let resident_before = state.test_tasks_snapshot().expect("resident snapshot");
+    let revision_before = session_revision(&state);
+
+    let error = remove_link_impl(
+        &state,
+        &FsTaskIo,
+        args_for("tasks/source.md", "tasks/target.md"),
+    )
+    .expect_err("21-edge parent chain must return a typed resolution error");
+
+    assert!(matches!(
+        error,
+        RemoveLinkCommandError::Resolution(TaskParseError::CycleOrTooDeep {
+            reason: ParentHierarchyErrorReason::TooDeep,
+            ..
+        })
+    ));
+    assert_eq!(
+        externally_deepened,
+        fs::read(&source_path).expect("read source")
+    );
+    assert_eq!(
+        resident_before,
+        state.test_tasks_snapshot().expect("resident snapshot")
+    );
+    assert_eq!(revision_before, session_revision(&state));
+    assert_eq!(0, session_write_ignore_len(&state));
 }
 
 #[test]

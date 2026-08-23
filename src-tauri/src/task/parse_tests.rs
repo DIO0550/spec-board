@@ -7,7 +7,7 @@ use super::{task_from_markdown, task_from_parsed, TaskParseContext, TaskParseErr
 use crate::task::frontmatter::{Frontmatter, Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::Task;
+use crate::task::task_index::ParsedTask;
 use crate::task::warning::{TaskWarning, TaskWarningCode};
 
 fn context(path: &str) -> TaskParseContext {
@@ -17,7 +17,7 @@ fn context(path: &str) -> TaskParseContext {
     }
 }
 
-fn task_from(input: &str, path: &str) -> Task {
+fn task_from(input: &str, path: &str) -> ParsedTask {
     task_from_markdown(input.as_bytes(), &context(path)).unwrap()
 }
 
@@ -46,11 +46,9 @@ fn minimum_frontmatter_generates_task() {
     assert_eq!(task.labels, Vec::<Label>::new());
     assert_eq!(task.parent, None);
     assert_eq!(task.links, Vec::<TaskFilePath>::new());
-    assert_eq!(task.children, Vec::<TaskFilePath>::new());
-    assert_eq!(task.reverse_links, Vec::<TaskFilePath>::new());
     assert_eq!(task.body, "");
     assert_eq!(task.extras, BTreeMap::new());
-    assert_eq!(task.warnings, Vec::<TaskWarning>::new());
+    assert_eq!(task.parse_warnings, Vec::<TaskWarning>::new());
 }
 
 #[test]
@@ -72,7 +70,7 @@ fn missing_title_uses_file_name_fallback_with_warning() {
 
     assert_eq!(task.title, "fix login");
     assert_eq!(
-        task.warnings,
+        task.parse_warnings,
         vec![TaskWarning {
             code: TaskWarningCode::MissingTitleUsedFileName,
             field: Some("title".into()),
@@ -92,7 +90,7 @@ fn invalid_title_uses_file_name_fallback_with_warning() {
         let task = task_from(input, "tasks/fix-login.md");
         assert_eq!(task.title, "fix login", "{label}");
         assert_eq!(
-            task.warnings,
+            task.parse_warnings,
             vec![TaskWarning {
                 code: TaskWarningCode::InvalidTitleUsedFileName,
                 field: Some("title".into()),
@@ -109,7 +107,7 @@ fn missing_status_uses_default_with_warning() {
 
     assert_eq!(task.status, "Todo");
     assert_eq!(
-        task.warnings,
+        task.parse_warnings,
         vec![TaskWarning {
             code: TaskWarningCode::MissingStatusUsedDefault,
             field: Some("status".into()),
@@ -127,7 +125,7 @@ fn invalid_status_uses_default_with_warning() {
 
     assert_eq!(task.status, "Todo");
     assert_eq!(
-        task.warnings,
+        task.parse_warnings,
         vec![TaskWarning {
             code: TaskWarningCode::InvalidStatusUsedDefault,
             field: Some("status".into()),
@@ -168,7 +166,7 @@ fn parent_is_reflected_when_string_and_ignored_when_missing_or_invalid() {
     assert_eq!(missing_parent_task.parent, None);
     assert_eq!(invalid_parent_task.parent, None);
     assert_eq!(
-        invalid_parent_task.warnings,
+        invalid_parent_task.parse_warnings,
         vec![TaskWarning {
             code: TaskWarningCode::InvalidParentIgnored,
             field: Some("parent".into()),
@@ -207,7 +205,7 @@ fn non_string_extra_key_is_excluded_with_warning() {
 
     assert_eq!(task.extras, BTreeMap::new());
     assert_eq!(
-        task.warnings,
+        task.parse_warnings,
         vec![TaskWarning {
             code: TaskWarningCode::NonStringExtraKeyIgnored,
             field: None,
@@ -238,7 +236,7 @@ fn json_incompatible_extra_value_is_excluded_with_warning() {
 
     assert_eq!(task.extras, BTreeMap::new());
     assert_eq!(
-        task.warnings,
+        task.parse_warnings,
         vec![TaskWarning {
             code: TaskWarningCode::ExtraValueNotJsonCompatible,
             field: Some("tagged".into()),
@@ -313,8 +311,8 @@ fn milestone_absent_is_none() {
     assert_eq!(task.milestone, None);
 }
 
-fn has_invalid_due_warning(task: &Task) -> bool {
-    task.warnings
+fn has_invalid_due_warning(task: &ParsedTask) -> bool {
+    task.parse_warnings
         .iter()
         .any(|w| w.code == TaskWarningCode::InvalidDue && w.field.as_deref() == Some("due"))
 }

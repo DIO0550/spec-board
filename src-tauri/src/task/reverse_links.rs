@@ -23,7 +23,7 @@ pub(super) fn build_reverse_links(mut tasks: Vec<Task>) -> Vec<Task> {
 
 fn clear_reverse_links(tasks: &mut [Task]) {
     for task in tasks {
-        task.reverse_links.clear();
+        task.clear_reverse_links_for_resolver();
     }
 }
 
@@ -32,13 +32,11 @@ fn append_reverse_links_from_source(
     tasks: &mut [Task],
     task_index: &HashMap<String, usize>,
 ) {
-    let source_file_path = tasks[source_index].file_path.clone();
-    let target_indices = reverse_link_target_indices(&tasks[source_index].links, task_index);
+    let source_file_path = tasks[source_index].file_path().clone();
+    let target_indices = reverse_link_target_indices(tasks[source_index].links(), task_index);
 
     for target_index in target_indices {
-        tasks[target_index]
-            .reverse_links
-            .push(source_file_path.clone());
+        tasks[target_index].push_reverse_link_for_resolver(source_file_path.clone());
     }
 }
 

@@ -11,7 +11,8 @@
 `add_link.md` と同じ理由で、表記揺れを吸収する `normalize_link_path_for_lookup`
 は `pub(super)` 可視性で task ドメインに閉じている。effect 層から重複検出を
 やりたくなると path_lookup の可視性を緩めることになり、設計意図が壊れる。
-だから target を `retain` で除去する判定は aggregate method 内に集約してある。
+だから`TaskDocument::links()`をfilterし、`TaskPatch`で除去する判定はaggregate method内に
+集約してある。
 
 `plan_create` / `plan_update` / `plan_add_link` で既に踏襲されているスタイルで、
 user feedback memory `spec-board-aggregate-method` でも矯正されている方針なので、
@@ -30,17 +31,15 @@ effect 層から見れば「ファイル書き込みと cache mutate をやる�
 `source_existing` を clone して詰めただけだが、effect 層が「noop なので
 IPC 戻り値に何を返せばよいか」を考えなくて済むようにする目的。`add_link` と同じ。
 
-## なぜ重複登録を `retain` で全削除する設計にしたか
+## なぜTaskDocumentのtyped patchで重複を全削除するか
 
 `add_link` 側は「すでに含まれていれば NoOp」なので、本来は同じ target が複数
 登録される状況は起こらないはずだが、外部の手書き編集や過去仕様時代のファイル
-など、現実には重複が混入している可能性がある。`remove_link` は
-
-- `frontmatter.links.retain(|l| normalize(...) != Some(target_norm))`
-
-で完全一致するエントリを **すべて** 除去する。Set 化してから 1 件除く設計に
+など、現実には重複が混入している可能性がある。`remove_link`は`TaskDocument::links()`を
+走査し、normalize結果がtargetと異なる要素だけを新しい`Vec<String>`へ集め、
+`TaskPatch { links: Patch::Set(..) }`として適用する。完全一致するエントリをすべて除去するため、Set 化してから 1 件除く設計に
 すると、表記揺れの正規化形は集約されても元の表記が失われるため、テキストとして
-読みやすい状態を保ちたい場合に表記情報を残せない。`retain` ベースなら、削除
+読みやすい状態を保ちたい場合に表記情報を残せない。filter + cloneなら、削除
 対象以外の要素は原文表記のまま保持される。重複登録の掃除も同時に行えるので、
 副次的なメンテナンス効果も得られる。
 
@@ -68,53 +67,38 @@ target 側を書き換える設計にすると watcher event の自己書き込�
 orphan link を消す手段が IPC 経由で失われてしまう。
 
 aggregate `plan_remove_link` は target が aggregate に存在するかを照会しない。
-effect 層の `commit_cache` でも target が cache にあれば `reverse_links` から
-source を除去するが、target が見つからない場合は `if let Some(...)` の else 経路で
-何もせず skip する（fail にしない）。
+effect層もtarget不在を失敗にせず、sourceの更新candidateを含む全件をcanonical resolverへ
+渡す。targetが存在すればsourceの削除後`links`から`reverse_links`が再導出され、存在しなければ
+該当する派生値が作られないだけである。
 
-## lock 取得順 + write_ignore register → write → unregister の理由
+## writer lease + write_ignore register → write → commit の理由
 
-`add_link.md` と同じ。`AppState` のロック順 `project_path → config →
-tasks_cache → watcher_handle → write_ignore` に従い、`remove_link_impl` も
-同じ順番で各 accessor を呼ぶ。
+`add_link.md` と同じく、exact project rootのwriter lease内でimmutable snapshotを取り、
+`preflight_session_write`でidentityとactive resourcesを確認してからread/planへ進む。
 
-watcher install 済みの場合は書き込み前に `write_ignore.register` で source path
-を予約し、write 成功後はそのまま entry を残す（watcher event の handler 側が
-`unregister` で取り除いて消費する）。`io.write_existing` が失敗した場合は即 `unregister` で entry を
-回収する。`commit_cache` が `SourceVanished` で失敗した場合も同様に
-`unregister` してから返す（disk への write は完了しているため、watcher event を
-通常経路で処理して cache を disk に追従させる必要がある）。`add_link_impl` /
-`update_task_impl` と同型のパターン。
+書き込み前はwatcherのinstall状態にかかわらず`write_ignore.register`でsource pathを
+予約し、write成功後はentryを残す（watcher event handlerが`unregister`で消費する）。
+`io.write_existing`失敗時は即座にentryを回収する。commit競合時は
+`commit_or_resync_under_lease`がdiskからresyncし、失敗時のmarker cleanupも担う。
 
-## cache commit の "検証 → mutate" 構成
+## cache commit はcanonical full resolverの結果だけを受け取る
 
-`add_link` の `commit_cache` は source と target の **両方** の存在を先に確認
-してから mutate していたが、`remove_link` では target を検証不要にしたため
-**source の存在確認だけ** を冒頭で行う。
+planの`updated_task`はparse-onlyな`ParsedTask`である。effect層はsourceの存在だけを
+snapshot上で確認し、全resident Taskをraw parent付きcandidateへ戻してsourceを置換する。
+canonical full resolverがparent warning / effective parent / `children` / `reverse_links`を
+file path昇順で全件再導出し、I/O前に`ResolvedTaskSet`と返却用source Taskを確定する。
 
-```rust
-if !cache.contains_key(&source_key) {
-    return Err(RemoveLinkError::SourceVanished { ... });
-}
-```
-
-source を確認してから `cache.get_mut(&source_key)` で取り直して上書きする。
-`task_from_parsed` 由来の updated_task は `children` / `reverse_links` /
-`warnings` が空（または再生成）になっているので、cache 既存値を `std::mem::take`
-で抜き取って struct update syntax で詰め直す。`add_link` と同じ手順。
-
-target 側は `find_task_mut_by_normalized` で取り直して `reverse_links.retain(|p|
-p != &updated.file_path)` で source への逆引きを除去する。`add_link` 側が
-`push` だったのに対し、こちらは `retain`。cache に target が居なければ何もしない。
+disk write成功後は`commit_or_resync_under_lease`がidentityを再検証し、resolver通過済み集合で
+session cacheを一括置換する。既存の`children` / `reverse_links` / warningを局所的にretainしたり、
+targetをin-place mutateしたりしないため、command直後のstateは同じdiskを再openした結果と一致する。
 
 ## NoOp 経路の特徴
 
 `RemoveLinkOutcome::NoOp` の場合、effect 層は
 
-- `is_watcher_installed` も呼ばない
 - `write_ignore.register` もしない
 - `io.write_existing` もしない
-- `commit_cache` もしない
+- canonical resolver / session commit もしない
 
 ので、cache / disk / watcher の状態は完全に不変。テスト
 `noop_when_link_not_present` で「write_ignore に slot が増えていない」ことを

@@ -2,29 +2,16 @@
 
 use std::collections::HashSet;
 
-use super::{Task, TaskIndex};
+use super::{ParsedTaskBuilder, Task, TaskIndex};
 use crate::config::column_name::ColumnName;
 use crate::task::task_file_path::TaskFilePath;
 
 fn task_with_milestone(id: &str, status: &str, milestone: Option<&str>) -> Task {
-    Task {
-        draft: false,
-        id: id.into(),
-        file_path: id.into(),
-        title: format!("title-{id}").into(),
-        status: status.into(),
-        priority: None,
-        milestone: milestone.map(str::to_owned),
-        due: None,
-        labels: Vec::new(),
-        parent: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(id)
+        .title(format!("title-{id}"))
+        .status(status)
+        .milestone(milestone.map(str::to_owned))
+        .resolve()
 }
 
 #[test]

@@ -26,7 +26,9 @@ fn context(path: &str) -> TaskParseContext {
 }
 
 fn task_from(input: &str, path: &str) -> Task {
-    task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(input.as_bytes(), &context(path)).unwrap(),
+    )
 }
 
 fn task_with_parent(path: &str, parent: &str) -> Task {

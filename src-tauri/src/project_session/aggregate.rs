@@ -8,7 +8,7 @@ use crate::config::{Config, LabelRegistry, MilestoneRegistry};
 use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
 use crate::task::canonical_task_path::CanonicalTaskPath;
-use crate::task::task_index::Task;
+use crate::task::task_index::{ResolvedTaskSet, Task};
 
 use super::{RevisionExhausted, SessionId, SessionRevision};
 
@@ -143,23 +143,24 @@ pub struct PreparedProjectSession {
 
 impl PreparedProjectSession {
     /// 既存loaderが返したvalid valuesを一組にまとめる。
-    pub fn new(
+    #[cfg(test)]
+    pub(crate) fn new(
         root: ProjectRoot,
         config: Config,
         labels: LabelRegistry,
         milestones: MilestoneRegistry,
-        tasks: HashMap<CanonicalTaskPath, Task>,
+        tasks: ResolvedTaskSet,
     ) -> Self {
         Self::new_with_warnings(root, config, labels, milestones, tasks, Vec::new())
     }
 
     /// load warning を伴う open 用の prepared session を作る。
-    pub fn new_with_warnings(
+    pub(crate) fn new_with_warnings(
         root: ProjectRoot,
         config: Config,
         labels: LabelRegistry,
         milestones: MilestoneRegistry,
-        tasks: HashMap<CanonicalTaskPath, Task>,
+        tasks: ResolvedTaskSet,
         load_warnings: Vec<ProjectLoadWarning>,
     ) -> Self {
         Self {
@@ -167,7 +168,7 @@ impl PreparedProjectSession {
             config,
             labels,
             milestones,
-            tasks,
+            tasks: tasks.into_map(),
             load_warnings,
         }
     }
@@ -256,27 +257,18 @@ impl ProjectSession {
     }
 
     /// 互換adapterまたはcommit closureがtask mapを差し替える。
-    pub(crate) fn replace_tasks(&mut self, tasks: HashMap<CanonicalTaskPath, Task>) {
-        self.tasks = tasks;
+    pub(crate) fn replace_tasks(&mut self, tasks: ResolvedTaskSet) {
+        self.tasks = tasks.into_map();
     }
 
     /// task map と load warnings を同じ session commit で置き換える。
     pub(crate) fn replace_tasks_and_load_warnings(
         &mut self,
-        tasks: HashMap<CanonicalTaskPath, Task>,
+        tasks: ResolvedTaskSet,
         load_warnings: Vec<ProjectLoadWarning>,
     ) {
-        self.tasks = tasks;
+        self.tasks = tasks.into_map();
         self.load_warnings = load_warnings;
-    }
-
-    /// テスト専用。task map の可変参照を渡す。
-    ///
-    /// production の書き込み経路は差分挿入をやめて [`Self::replace_tasks`] に
-    /// 一本化されている（派生値は 1 件では閉じないため、常に全件を作り直す）。
-    #[cfg(test)]
-    pub(crate) fn tasks_mut(&mut self) -> &mut HashMap<CanonicalTaskPath, Task> {
-        &mut self.tasks
     }
 
     /// writer境界テスト用にsession-local revisionを直接設定する。
@@ -301,7 +293,8 @@ impl ProjectSession {
             self.config,
             self.labels,
             self.milestones,
-            self.tasks,
+            ResolvedTaskSet::reresolve(self.tasks.into_values())
+                .expect("cached session tasks were resolved before storage"),
             self.load_warnings,
         )
     }

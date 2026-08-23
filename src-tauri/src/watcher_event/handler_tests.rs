@@ -52,7 +52,7 @@ fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
         Default::default(),
         Default::default(),
         Default::default(),
-        Default::default(),
+        crate::task::task_index::ResolvedTaskSet::default(),
     )
     .into_session(session_id);
     let identity = candidate.identity();
@@ -456,7 +456,7 @@ fn rescan_fills_an_empty_cache_from_disk_and_requests_a_single_resync() {
         .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
-        .map(|task| task.file_path.into_string())
+        .map(|task| task.file_path().as_str().to_owned())
         .collect();
     paths.sort();
     assert_eq!(
@@ -488,7 +488,7 @@ fn rescan_converges_a_diverged_cache_onto_the_disk_contents() {
         .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
-        .map(|task| task.file_path.into_string())
+        .map(|task| task.file_path().as_str().to_owned())
         .collect();
     assert_eq!(vec!["tasks/fresh.md".to_string()], paths);
 }
@@ -684,7 +684,7 @@ fn a_late_modify_after_a_rescan_still_lands_with_a_higher_revision() {
 
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
-    assert_eq!("A2", tasks[0].title);
+    assert_eq!("A2", tasks[0].title());
     assert!(rescan_revision < session_revision(&state));
     let entries = drain(&log);
     assert!(
@@ -816,7 +816,7 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
     assert_eq!(1, tasks.len());
     assert_eq!(
         "Backlog",
-        tasks[0].status.as_str(),
+        tasks[0].status().as_str(),
         "spawn 時に焼き込んだ既定 status を使うと reopen 時と結果が食い違う"
     );
 }
@@ -871,7 +871,7 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(
         "Backlog",
-        tasks[0].status.as_str(),
+        tasks[0].status().as_str(),
         "rescan で復旧した既定 status が後続の Modified で spawn 時の値に戻ってはならない"
     );
 }
@@ -895,7 +895,7 @@ fn rescan_reresolves_the_default_status_on_every_retry() {
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(
         "Backlog",
-        tasks[0].status.as_str(),
+        tasks[0].status().as_str(),
         "再走査は各試行で現在の config から既定 status を解決する"
     );
 }
@@ -1168,7 +1168,7 @@ fn an_unknown_status_creation_adds_a_column_and_emits_only_a_resync() {
         .test_tasks_snapshot()
         .expect("readable")
         .iter()
-        .any(|task| task.file_path == "tasks/a.md"));
+        .any(|task| task.file_path().as_str() == "tasks/a.md"));
 }
 
 #[test]

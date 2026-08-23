@@ -14,7 +14,9 @@ fn context(path: &str) -> TaskParseContext {
 }
 
 fn task_from(input: &str, path: &str) -> Task {
-    task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(input.as_bytes(), &context(path)).unwrap(),
+    )
 }
 
 fn task_with_parent(path: &str, parent: &str) -> Task {
@@ -52,7 +54,7 @@ fn build_children_adds_child_file_path_to_parent() {
     let tasks = build_children(tasks).unwrap();
 
     assert_eq!(
-        tasks[0].children,
+        tasks[0].children(),
         vec![TaskFilePath::from("tasks/child.md")]
     );
 }
@@ -68,7 +70,7 @@ fn build_children_adds_child_file_paths_to_parent_in_input_order() {
     let tasks = build_children(tasks).unwrap();
 
     assert_eq!(
-        tasks[0].children,
+        tasks[0].children(),
         vec![
             "tasks/child-a.md".to_string(),
             "tasks/child-b.md".to_string(),
@@ -86,28 +88,23 @@ fn build_children_adds_child_when_parent_appears_later() {
     let tasks = build_children(tasks).unwrap();
 
     assert_eq!(
-        tasks[1].children,
+        tasks[1].children(),
         vec![TaskFilePath::from("tasks/child.md")]
     );
 }
 
 #[test]
-fn build_children_clears_existing_children_before_recalculation() {
-    let mut parent = task_without_parent("tasks/parent.md");
-    parent.children = vec![
-        "tasks/stale.md".into(),
-        "tasks/child.md".into(),
-        "tasks/child.md".into(),
-    ];
+fn build_children_recalculation_is_idempotent() {
     let tasks = vec![
-        parent,
+        task_without_parent("tasks/parent.md"),
         task_with_parent("tasks/child.md", "tasks/parent.md"),
     ];
 
     let tasks = build_children(tasks).unwrap();
+    let tasks = build_children(tasks).unwrap();
 
     assert_eq!(
-        tasks[0].children,
+        tasks[0].children(),
         vec![TaskFilePath::from("tasks/child.md")]
     );
 }
@@ -122,7 +119,7 @@ fn build_children_matches_parent_with_dot_prefix() {
     let tasks = build_children(tasks).unwrap();
 
     assert_eq!(
-        tasks[0].children,
+        tasks[0].children(),
         vec![TaskFilePath::from("tasks/child.md")]
     );
 }
@@ -137,7 +134,7 @@ fn build_children_matches_parent_with_backslash_separator() {
     let tasks = build_children(tasks).unwrap();
 
     assert_eq!(
-        tasks[0].children,
+        tasks[0].children(),
         vec![TaskFilePath::from("tasks/child.md")]
     );
 }
@@ -151,8 +148,8 @@ fn build_children_keeps_missing_parent_warning_without_child_append() {
 
     let tasks = build_children(tasks).unwrap();
 
-    assert!(tasks[0].children.is_empty());
-    assert!(tasks[1].warnings.iter().any(|warning| {
+    assert!(tasks[0].children().is_empty());
+    assert!(tasks[1].warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
@@ -163,20 +160,19 @@ fn build_children_ignores_empty_absolute_and_drive_prefix_parent_for_child_appen
     let cases = ["", "/tasks/parent.md", "C:\\tasks\\parent.md"];
 
     for parent in cases {
-        let mut child = task_without_parent("tasks/child.md");
-        child.parent = Some(parent.into());
-        let tasks = vec![task_without_parent("tasks/parent.md"), child];
+        let tasks = vec![
+            task_without_parent("tasks/parent.md"),
+            task_with_parent("tasks/child.md", parent),
+        ];
 
         let tasks = build_children(tasks).unwrap();
 
-        assert!(tasks[0].children.is_empty(), "{parent}");
-        assert!(
-            tasks[1].warnings.iter().any(|warning| {
-                warning.code == TaskWarningCode::ParentNotFound
-                    && warning.field.as_deref() == Some("parent")
-            }),
-            "{parent}"
-        );
+        assert!(tasks[0].children().is_empty(), "{parent}");
+        let has_missing_warning = tasks[1].warnings().iter().any(|warning| {
+            warning.code == TaskWarningCode::ParentNotFound
+                && warning.field.as_deref() == Some("parent")
+        });
+        assert_eq!(has_missing_warning, !parent.is_empty(), "{parent}");
     }
 }
 

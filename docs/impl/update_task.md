@@ -14,41 +14,43 @@ aggregate（`task::task_index::TaskIndex::plan_update`）に閉じ込める。ef
 `Task` 構造体は raw frontmatter を保持しない（typed フィールドの抽出と warning
 生成だけで成立する）。一方で update_task では「ファイル書き戻し時に未知 key /
 `links` / YAML 値型 / 出現順を保持する」必要があるため、effect 層は
-`io.read` → `frontmatter::parse_bytes` で `Parsed { frontmatter, body }` を取り、
-それをそのまま `plan_update` に渡す。`plan_update` は `Parsed` の mut copy に対して
-patch を当て、`frontmatter::serialize(&Parsed)` で書き戻すので raw 情報が損なわれない。
+`io.read` → `TaskDocument::parse` → `into_parsed` でcodec内部の
+`Parsed { frontmatter, body }` を取り、それを`plan_update`に渡す。`plan_update`は
+`TaskDocument::from_parsed`でdocumentへ戻し、`TaskPatch`を適用して`render`するため、
+raw情報を損なわずに書き戻せる。
 
 ### なぜ `UpdateTaskError::Serialize` を持たないのか
 
-`frontmatter::serialize(&Parsed) -> String` は YAML 構文として常に成功する純粋関数
-（内部で `serde_yaml_ng::to_string` が失敗するケースは `Parsed` を `parse_bytes` 由来
-で構築している限り発生しない）。このため effect 層と error 型に Serialize variant を
-持たせる必要がない。
+serializeは`TaskDocument::render`のcodec境界に閉じ、失敗は既存の
+`UpdateTaskError::DocumentRender`へ写像する。このためeffect層とerror型に
+frontmatter固有のSerialize variantを持たせる必要がない。
 
-### parent 変更時の cache 再構築フロー
+### 更新後の canonical cache 再構築フロー
 
-`needs_full_rebuild=true` の場合のみ、effect 層は以下を行う:
+effect 層は更新フィールドにかかわらず以下を行う:
 
-1. cache の values をすべて `Vec<Task>` に集める
-2. 対象 task を `outcome.updated_task` に置換
-3. `TaskIndex::new(values).validate_parent_hierarchy().build_children().build_reverse_links()`
-4. cache を clear して再構築結果で再挿入
-5. 再構築後の対象 Task を取り直して返す
+1. resident cache の全 Task を、disk由来のraw parentを含む`ParsedTask` candidateへ戻す
+2. 対象candidateを`UpdateTaskOutcome.updated_task`で置換する
+3. candidate全件をcanonical resolverへ通し、parent warning、effective parent、`children`、`reverse_links`をfile path昇順で再計算する
+4. 書き込み成功後、resolver通過証明である`ResolvedTaskSet`でcacheを一括置換する
+5. 再構築後の対象Taskを取り直して返す
 
-scalar / labels / body / title / status / priority の単独更新では再構築しない。
-これらの変更は他タスクの `children` / `reverse_links` に影響しないため。
+parent変更時のstrict hierarchy検証はI/O前のvalidationとして残すが、cacheの派生値再構築は
+scalar / labels / body / title / status / priorityだけの更新でも省略しない。これによりコマンド直後と
+同じdisk状態で再openした結果を一致させる。
 
-### `validate_with_new_task` ではなく `validate_parent_hierarchy` を使う理由
+### `validate_with_new_task` ではなく `ResolvedTaskSet::validate_strict` を使う理由
 
 `validate_with_new_task` は新規追加用 API。既存 task を `push` する前提なので、
 update では対象 task が 2 件混ざってしまう（自分と「新規追加版」）。代わりに
-「対象 task を `preliminary_task` に置換した `Vec<Task>` を作って
-`TaskIndex::new(values).validate_parent_hierarchy()`」を呼ぶ。
+resident taskをraw parentを含む`Vec<ParsedTask>`へ戻し、対象candidateを
+`preliminary_task`へ置換して`ResolvedTaskSet::validate_strict(values)`を呼ぶ。
+これによりresolver前のcandidateをresident `Task`として組み立てずにstrict検証できる。
 
 ### parent 存在チェックを別途行う理由
 
-`validate_parent_hierarchy` は parent が cache に無いとき warning を追加するだけで
-エラーにしない。これは scan 時 / 編集時の "parent が後から追加される" ユースケースを
+`ResolvedTaskSet::validate_strict` が内部で使うhierarchy検証は、parent が cache に無いときwarningを追加するだけで
+エラーにしない。これはcanonical resolverで "parent が後から追加される" ユースケースを
 壊さないため。一方 update_task は「指定された parent が見つからないなら明示エラー」が
 spec 上望ましい。そこで plan_update 内で `resolve_parent_for_new_task` を使い、
 `./` プレフィックスや `\` 含み path も create と同じ基準で正規化して一致検索を行う。
@@ -56,12 +58,14 @@ spec 上望ましい。そこで plan_update 内で `resolve_parent_for_new_task
 
 ### `TaskContent::try_new(String)` を使う理由
 
-`TaskContent::try_new` は `String` を受け取る（`&[u8]` ではない）。serialize の
-結果 `String` をそのまま渡せるため、追加のアロケーションも as_bytes 変換も不要。
+`TaskContent::try_new`は`String`の所有権を受け取る一方、同じrender結果を
+`UpdateTaskOutcome.file_content`にも保持する必要がある。このため現実装は
+`serialized.clone()`をvalidation VOへ渡し、元の`String`を書き込み計画に残す。
+scanner eligibilityと実際の書き込み内容が同一文字列であることを優先した意図的なcloneである。
 
 ### `From<TaskParseError>` / `From<TaskContentError>` を入れた理由
 
-`validate_parent_hierarchy` の戻り値は `Result<TaskIndex, TaskParseError>` であり、
+`ResolvedTaskSet::validate_strict` の戻り値は `Result<(), TaskParseError>` であり、
 `TaskContent::try_new` の戻り値は `Result<_, TaskContentError>`。それぞれ
 `UpdateTaskError` への変換を `From` で書いておくことで、`plan_update` 内の
 `?` 演算子と `.map_err(UpdateTaskError::from)` だけでエラー経路を畳み込める。
@@ -78,14 +82,15 @@ symlink を含むレイアウトはまれであり、lexical 正規化（`..` �
 frontmatter parser は `extras.title` が空文字のとき
 `invalidTitleUsedFileName` warning を吐き、ファイル名を fallback title として使う。
 update_task で空 title を弾くと「既存ファイルに空 title が書かれていた場合」と
-仕様が乖離する。本コマンドは空 title 自体を許可し、`task_from_parsed` を再走させて
-warning を再生成する。warning の source of truth は parser 側に集約する。
+仕様が乖離する。本コマンドは空 title 自体を許可し、
+`TaskDocument::to_parsed_task`を通してwarningを再生成する。warningのsource of truthは
+parser側に集約する。
 
-### `task_from_parsed` 再走の意図
+### `TaskDocument::to_parsed_task` 再走の意図
 
-`build_patched_task` で得た中間 Task は parent 変更時の hierarchy 検証用に使うのみ。
-最終的に返却する `updated_task` は `Parsed { frontmatter, body }` を
-`task_from_parsed` に通し直して構築する。これにより:
+`build_patched_task` で得た中間 `ParsedTask` は parent 変更時の hierarchy 検証用に使う。
+`UpdateTaskOutcome.updated_task`もdocumentを`to_parsed_task`へ通したcandidateであり、
+effect層が全件resolverへ渡して最終Taskを得る。これにより:
 
 - 空 title → `invalidTitleUsedFileName` warning が再生成される
 - typed フィールド（priority / labels / links 等）が parser の最新ロジックで再抽出される

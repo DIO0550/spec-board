@@ -31,7 +31,9 @@ fn task_with(file_path: &str, parent: Option<&str>, links: &[&str]) -> Task {
         }
     }
     markdown.push_str("---\n");
-    task_from_markdown(markdown.as_bytes(), &context(file_path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(markdown.as_bytes(), &context(file_path)).unwrap(),
+    )
 }
 
 /// 指定 path の task を outcome から引き当てる。
@@ -46,8 +48,12 @@ fn removed(file_path: &str) -> ExternalTaskChange {
     ExternalTaskChange::Removed(TaskFilePath::from(file_path.to_string()))
 }
 
+fn upserted(task: Task) -> ExternalTaskChange {
+    ExternalTaskChange::Upserted(Box::new(task.to_parsed_task()))
+}
+
 fn has_warning(task: &Task, code: TaskWarningCode) -> bool {
-    task.warnings.iter().any(|warning| warning.code == code)
+    task.warnings().iter().any(|warning| warning.code == code)
 }
 
 fn paths_of(tasks: &[Task]) -> Vec<&str> {
@@ -63,21 +69,17 @@ fn reparenting_moves_the_child_between_the_two_parents() {
     ]);
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/a.md",
-            Some("tasks/c.md"),
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/a.md", Some("tasks/c.md"), &[])))
         .expect("reparenting must not fail");
 
     assert!(
         task_by_path(&outcome.tasks, "tasks/b.md")
-            .children
+            .children()
             .is_empty(),
         "旧親の children から子が消える"
     );
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/c.md").children.len(),
+        task_by_path(&outcome.tasks, "tasks/c.md").children().len(),
         1,
         "新親の children に子が入る"
     );
@@ -94,7 +96,7 @@ fn body_only_upsert_leaves_the_other_tasks_untouched() {
         task_with("tasks/b.md", None, &[]),
     ]);
 
-    let mut edited = task_with("tasks/a.md", None, &[]);
+    let mut edited = task_with("tasks/a.md", None, &[]).to_parsed_task();
     edited.body = "更新後の本文".to_string();
 
     let outcome = index
@@ -123,15 +125,11 @@ fn adding_a_link_grows_the_reverse_links_of_the_target() {
     ]);
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/a.md",
-            None,
-            &["tasks/d.md"],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/a.md", None, &["tasks/d.md"])))
         .expect("adding a link must not fail");
 
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/d.md").reverse_links,
+        task_by_path(&outcome.tasks, "tasks/d.md").reverse_links(),
         vec![TaskFilePath::from("tasks/a.md")],
     );
     assert!(outcome.other_tasks_changed);
@@ -147,15 +145,11 @@ fn removing_a_link_shrinks_the_reverse_links_of_the_target() {
     .expect("initial derive");
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/a.md",
-            None,
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/a.md", None, &[])))
         .expect("removing a link must not fail");
 
     assert!(task_by_path(&outcome.tasks, "tasks/d.md")
-        .reverse_links
+        .reverse_links()
         .is_empty());
     assert!(outcome.other_tasks_changed);
 }
@@ -165,16 +159,12 @@ fn upserting_an_unknown_path_adds_the_task() {
     let index = TaskIndex::new(vec![task_with("tasks/b.md", None, &[])]);
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/a.md",
-            Some("tasks/b.md"),
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/a.md", Some("tasks/b.md"), &[])))
         .expect("adding a task must not fail");
 
     assert_eq!(outcome.tasks.len(), 2);
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/b.md").children,
+        task_by_path(&outcome.tasks, "tasks/b.md").children(),
         vec![TaskFilePath::from("tasks/a.md")],
     );
 }
@@ -194,7 +184,7 @@ fn removing_a_referenced_task_shrinks_the_derived_values_of_the_referrer() {
 
     assert_eq!(paths_of(&outcome.tasks), vec!["tasks/b.md"]);
     assert!(task_by_path(&outcome.tasks, "tasks/b.md")
-        .children
+        .children()
         .is_empty());
     assert!(
         outcome.changed_task.is_none(),
@@ -225,11 +215,7 @@ fn removing_an_unreferenced_task_leaves_the_other_tasks_untouched() {
 #[test]
 fn upserting_into_an_empty_index_adds_the_only_task() {
     let outcome = TaskIndex::new(Vec::new())
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/a.md",
-            None,
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/a.md", None, &[])))
         .expect("upsert into empty index must not fail");
 
     assert_eq!(outcome.tasks.len(), 1);
@@ -249,16 +235,16 @@ fn removing_the_only_task_empties_the_index() {
 #[test]
 fn the_rebuilt_tasks_are_sorted_by_file_path() {
     let index = TaskIndex::new(vec![
-        task_with("tasks/c.md", Some("tasks/b.md"), &[]),
+        task_with("tasks/c.md", Some("tasks/b.md"), &["tasks/b.md"]),
         task_with("tasks/b.md", None, &[]),
     ]);
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
+        .rebuild_with_external_change(upserted(task_with(
             "tasks/a.md",
             Some("tasks/b.md"),
-            &[],
-        ))))
+            &["tasks/b.md"],
+        )))
         .expect("upsert must not fail");
 
     assert_eq!(
@@ -267,12 +253,20 @@ fn the_rebuilt_tasks_are_sorted_by_file_path() {
         "入力 Vec の順ではなく file_path 昇順で返す"
     );
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/b.md").children,
+        task_by_path(&outcome.tasks, "tasks/b.md").children(),
         vec![
             TaskFilePath::from("tasks/a.md"),
             TaskFilePath::from("tasks/c.md"),
         ],
         "children の並びも入力順に依存しない"
+    );
+    assert_eq!(
+        task_by_path(&outcome.tasks, "tasks/b.md").reverse_links(),
+        vec![
+            TaskFilePath::from("tasks/a.md"),
+            TaskFilePath::from("tasks/c.md"),
+        ],
+        "reverse_links の並びも入力順に依存しない"
     );
 }
 
@@ -286,16 +280,12 @@ fn creating_a_cycle_yields_warnings_instead_of_an_error() {
     .expect("initial derive");
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/b.md",
-            Some("tasks/a.md"),
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/b.md", Some("tasks/a.md"), &[])))
         .expect("外部編集で循環ができてもイベント処理は止まらない");
 
     for path in ["tasks/a.md", "tasks/b.md"] {
         let task = task_by_path(&outcome.tasks, path);
-        assert!(task.parent.is_none(), "{path} の parent は None 化される");
+        assert!(task.parent().is_none(), "{path} の parent は None 化される");
         assert!(
             has_warning(task, TaskWarningCode::ParentCycle),
             "{path} に parentCycle warning が付く"
@@ -313,11 +303,7 @@ fn breaking_a_cycle_clears_the_warnings() {
     .expect("initial derive");
 
     let outcome = cyclic
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/a.md",
-            None,
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/a.md", None, &[])))
         .expect("breaking a cycle must not fail");
 
     for path in ["tasks/a.md", "tasks/b.md"] {
@@ -345,11 +331,7 @@ fn creating_the_missing_parent_clears_the_stale_warning() {
     );
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "tasks/b.md",
-            None,
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("tasks/b.md", None, &[])))
         .expect("creating the parent must not fail");
 
     assert!(
@@ -370,16 +352,16 @@ fn a_missing_parent_keeps_the_raw_value_and_adds_a_warning() {
     let index = TaskIndex::new(vec![task_with("tasks/a.md", None, &[])]);
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
+        .rebuild_with_external_change(upserted(task_with(
             "tasks/a.md",
             Some("tasks/missing.md"),
             &[],
-        ))))
+        )))
         .expect("a missing parent must not fail");
 
     let task = task_by_path(&outcome.tasks, "tasks/a.md");
     assert_eq!(
-        task.parent.as_ref().map(TaskFilePath::as_str),
+        task.parent().map(TaskFilePath::as_str),
         Some("tasks/missing.md"),
         "frontmatter の raw 値は書き換えない"
     );
@@ -405,7 +387,7 @@ fn links_to_a_removed_task_are_kept_as_raw_values() {
         vec![TaskFilePath::from("tasks/d.md")],
         "消えた task への links は値として残る"
     );
-    assert!(referrer.reverse_links.is_empty());
+    assert!(referrer.reverse_links().is_empty());
 }
 
 #[test]
@@ -413,11 +395,7 @@ fn a_path_spelled_differently_replaces_the_existing_slot() {
     let index = TaskIndex::new(vec![task_with("tasks/a.md", None, &[])]);
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task_with(
-            "./tasks/a.md",
-            None,
-            &[],
-        ))))
+        .rebuild_with_external_change(upserted(task_with("./tasks/a.md", None, &[])))
         .expect("upsert must not fail");
 
     assert_eq!(
@@ -440,8 +418,7 @@ fn a_parent_chain_deeper_than_the_limit_is_rejected() {
     tasks.push(task_with("tasks/30.md", None, &[]));
     let last = tasks.pop().expect("last task");
 
-    let result = TaskIndex::new(tasks)
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(last)));
+    let result = TaskIndex::new(tasks).rebuild_with_external_change(upserted(last));
 
     assert!(
         result.is_err(),

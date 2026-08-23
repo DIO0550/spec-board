@@ -113,11 +113,11 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | ディレクトリではない | 指定パスがディレクトリでない（通常ファイル等） | `ディレクトリではありません: {path}` |
 | アクセス権限なし | 読み取り権限がない | `ディレクトリにアクセスできません: {path}` |
 | 内部状態の lock 破損 | project domain / active resources / writer gate の Mutex が poison 状態 | `内部状態のロックが破損しました` |
-| スキャン致命エラー | root の metadata/read_dir、hierarchy 循環/深さ超過など | `io scan failed: {message}` |
+| スキャン致命エラー | root の metadata/read_dir、parent hierarchy の20段超過（`TooDeep`）など。循環は致命エラーにせず `parentCycle` warning として継続 | `io scan failed: {message}` |
 | config 読み込み失敗 | `config.json` が壊れている等 | `Config::default()` で継続し、`loadWarnings` に `configFallback` を含める |
 | ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}` |
 
-> 個別 md ファイルの fs::read 失敗、task_from_markdown のパース失敗、scanner の per-entry 失敗は recoverable な load warning として payload の loadWarnings に含め、該当ファイルを skip して残りのタスクで処理を継続する。root metadata/read_dir、hierarchy、labels/milestones、watcher/session 初期化、lock は従来どおり fatal とし、コマンド全体を失敗させる。
+> 個別 md ファイルの fs::read 失敗、task_from_markdown のパース失敗、scanner の per-entry 失敗は recoverable な load warning として payload の loadWarnings に含め、該当ファイルを skip して残りのタスクで処理を継続する。root metadata/read_dir、hierarchy の `TooDeep`、labels/milestones、watcher/session 初期化、lock は fatal とし、コマンド全体を失敗させる。parent循環は `parentCycle` warning として継続する。
 >
 > ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側 `TauriError.PATTERNS` には watcher 初期化失敗の個別分類がないため `UNKNOWN` 分類になる。
 
@@ -306,10 +306,11 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
    - `priority` は `High` / `Medium` / `Low` に ASCII 大小文字非区別で正規化、`Some` だけ書き出す（無効値 / 空文字 / 未指定は frontmatter から省略）
    - `labels` は空配列なら省略
    - `parent` は解決済み Task の `file_path` 文字列をそのまま書き出す
-6. **書き込み + cache 差分更新**:
-   - watcher 起動状態でのみ `write_ignore` レジストリに自前 write path を登録 → 監視 thread 側で `task-created` IPC emit を抑止
-   - 書き込み成功後、`tasks_cache` に新規 Task を挿入し、親の `children` および link 先の `reverse_links` を差分更新
-   - 既存 cache 内で dangling parent / links が新規 Task を参照していた場合、新規 Task 側の `children` / `reverse_links` にも反映
+6. **I/O前resolution plan + 書き込み + commit**:
+   - 新規parse-only candidateと既存全taskをcanonical resolverへ通し、`children` / `reverseLinks` / graph warningを全件再計算した`ResolvedTaskSet`と戻り値をdisk I/O前に確定する
+   - 既存cache内でdangling parent / linksが新規Taskを参照していた場合も、このresolution planで`parentNotFound` warningの除去と新規Task側の`children` / `reverseLinks`への反映を同時に行う
+   - directory確保後、watcher起動状態にかかわらず`write_ignore`へ自前write pathを登録し、`create_new`で書き込む
+   - 書き込み成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
 7. **戻り値**: 挿入後の Task（`children` / `reverseLinks` 解決済み）
 
 ### preview_task_filename IPC
@@ -340,24 +341,24 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | title | `String` | いいえ | タスクタイトル |
 | status | `String` | いいえ | ステータス |
 | priority | `String` | いいえ | 優先度 |
+| milestone | `String` | いいえ | マイルストーン（空文字で解除、未指定で保持） |
 | labels | `Vec<String>` | いいえ | ラベル一覧 |
 | parent | `String` | いいえ | 親タスクのファイルパス（空文字で親を解除） |
 | body | `String` | いいえ | Markdown本文 |
+| draft | `boolean` | いいえ | 下書き状態（`true`でdraft化、`false`で解除、未指定で保持） |
 
 **振る舞い**:
-1. 対象ファイルを読み込み、フロントマターをパース
-2. 渡されたフィールドのみを更新（未指定フィールドは変更しない）
-3. `parent` が変更される場合、循環参照がないことを検証
-4. フロントマター + 本文を再構成して書き出し
-5. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
+1. exact project rootのwriter lease内でsnapshotを確定し、session identity / active resourcesをpreflightする
+2. 対象ファイルを読み込み、`TaskDocument`としてパースする
+3. 渡されたフィールドだけを`TaskPatch`で更新する（未指定フィールドは変更しない）。`parent`変更時は`Vec<ParsedTask>`に対象candidateを反映し、`ResolvedTaskSet::validate_strict`で循環/深さを検証する
+4. documentをrenderして更新candidateを作り、resident全taskとcanonical resolverへ通す。`ResolvedTaskSet`、戻り値、書き込み内容を変更I/O前に確定する
+5. watcher起動状態にかかわらず`write_ignore`へ対象pathを登録し、ファイルを書き込む
+6. 書き込み成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+7. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
 
-> Implementation notes (2026-05-16): parent 循環検証は
-> `task_index::validate_parent_hierarchy` / `validate_chain_from_parent` で行う。
-> `create_task` / `update_task` command は本ドキュメントの振る舞いを実装済み。
-> dangling parent 解決による cycle / too-deep は `validate_parent_hierarchy` を
-> augmented snapshot に対して呼ぶことで検出する。`update_task` は部分マージ更新
-> （未指定フィールドは変更しない）で、`parent` が変更される場合のみ augmented
-> 検証を実行する。
+> Implementation notes (2026-05-16): `update_task`は部分マージ更新で、`parent`変更時だけ
+> `ResolvedTaskSet::validate_strict`によるI/O前strict検証を追加する。strict検証の有無とは別に、
+> 全更新でwrite前にcanonical resolverを実行し、resolved resident planを完成させる。
 
 ---
 
@@ -376,22 +377,23 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 1. `filePath` を `InputTaskPath` で正規化し、空文字・非 `.md`・`..` を含むパスは `InvalidPath` エラーを返す
 2. cache（`TaskIndex`）上で対象タスクの存在を確認し、見つからなければ `FileNotFound` エラーを返す
 3. 子タスクが存在する場合、`HasChildren` エラーを返却し削除を中止する（abort strategy）
-4. watcher 起動中は `WriteIgnoreRegistry` に削除対象パスを登録し、watcher 側の重複処理を抑止する
-5. `TaskIo::remove` でファイルを物理削除する
-6. `tasks_cache` から対象タスクを除去する
-7. `Ok(())` を返却する
+4. 対象を除いた全taskをcanonical resolverへ通し、消えたtask由来の`children` / `reverseLinks`を除去した`ResolvedTaskSet`をdisk変更前に確定する。frontmatterのraw `parent` / `links`は変更しない
+5. watcher起動状態にかかわらず`WriteIgnoreRegistry`へ削除対象pathを登録する
+6. 対象mdを`.spec-board/trash/`の同じ相対pathへ移動する（ソフトデリート）。移動失敗時はmarkerを解除し、既存error分類を維持する
+7. 移動成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+8. `Ok(())` を返却する
 
 **エラー**:
 
 | エラー | Display 文字列パターン | 条件 |
 |:------|:---------------------|:-----|
 | `InvalidPath` | `invalid path: {raw}`（空文字時は `invalid path: empty`） | 空文字・非 `.md`・不正パス |
-| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない、またはファイル物理削除時に disk 上に存在しない |
+| `FileNotFound` | `file not found: {abs_path}` | cache に対象タスクが存在しない、またはtrashへの移動時にsourceがdisk上に存在しない |
 | `HasChildren` | `task has children: {path} (children: ...)` | 子タスクが 1 件以上存在する |
 | `UnsupportedOrphanStrategy` | `unsupported orphan strategy: {strategy}` | `abort` 以外の orphanStrategy が指定された |
 | `NoProjectOpen` | `project is not opened` | プロジェクト未オープン |
 
-> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder には削除済みタスクの path が残るが、board 表示は壊れない（cardOrder 未記載のタスクは末尾へ回る規則があるため）。cleanup は Issue #507 で扱う。現在は abort strategy のみ実装済みで、clear strategy（子の parent クリア）や reverse_links 再構築は将来 Issue で対応する。
+> `delete_task` command は `create_task` / `update_task` と同じ lock 取得順序契約・write_ignore パターン・effect 層構成に従う。CardOrder には削除済みタスクの path が残るが、board 表示は壊れない（cardOrder 未記載のタスクは末尾へ回る規則があるため）。cleanup は Issue #507 で扱う。現在は abort strategy のみ実装済みで、clear strategy（子の parent クリア）は将来対応する。`reverseLinks` は削除直後の canonical resolver で再構築済みになる。
 
 ---
 
@@ -410,6 +412,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 1. 両ファイルの存在を確認
 2. リンク元タスクのフロントマター `links` に `targetFilePath` を追加
 3. 既にリンクが存在する場合は何もしない
+4. 追加した場合は全 task を canonical resolver に通し、target を含む `reverseLinks` を全件再計算して resident cache を一括置換
 
 ---
 
@@ -426,6 +429,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 
 **振る舞い**:
 1. リンク元タスクのフロントマター `links` から `targetFilePath` を削除
+2. 削除した場合は全 task を canonical resolver に通し、target を含む `reverseLinks` を全件再計算して resident cache を一括置換
 
 ---
 
@@ -488,7 +492,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | `task-created` | `{ task: Task }` | 新しい md ファイルが作成された | true |
 | `task-updated` | `{ task: Task }` | 既存の md ファイルが更新された | true |
 | `task-deleted` | `{ filePath: string }` | md ファイルが削除された | true |
-| `watcher-resync-required` | `{ reason: "rescan" }` | batch の `rescan` を受けて full rescan を完了した、キャッシュヒット再オープン後の背景再スキャンが差分を commit した、変更対象以外の task の派生値も変わった、未知 status のカラムを追加した、または resident cache だけでは正しい state を再計算できず full rescan へ委ねた（循環メンバーが居る / 読めない・parse できない md / load warning の対象ファイル）。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
+| `watcher-resync-required` | `{ reason: "rescan" }` | batch の `rescan` を受けて full rescan を完了した、キャッシュヒット再オープン後の背景再スキャンが差分を commit した、変更対象以外の task の派生値も変わった、未知 status のカラムを追加した、または変更対象を読めない・parse できない / load warning 対象で disk 全体からの再構築が必要になった。循環メンバーは raw `parent` を resident cache に保持するため、循環だけを理由に full rescan へ委ねない。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
 | `watcher-diagnostic` | `{ code, message, paths }` | watcher backend の障害 / full rescan の失敗 | false |
 
 受信側は `projectKey` / `generation` の不一致を破棄し、`eventSeq` の欠番を検知したら
@@ -799,7 +803,7 @@ pub enum WatcherError {
 - 拡張子フィルタ（`.md` 等）— `watcher_event::handler::rel_md_path` で root 配下の `.md` のみを処理
 - Tauri IPC 経由のフロントエンド emit（5 event の envelope 化）— `watcher_event::handler::handle_batch` + `EmittingWatcherHandle`
 - `WriteIgnoreRegistry` との統合（自己書き込み抑制）— `watcher_event::handler` 内で `unregister(abs_path)` を呼ぶ
-- 派生値の再構築（`children` / `reverseLinks` / parent 関連 warning を全 task 分作り直す）— `TaskIndex::rebuild_with_external_change` に委譲する。`open_project` / full rescan と同じ入口を通すことで、watcher 適用後の resident state が「同じ disk 状態で開き直した state」と一致することを構造的に保証する。ただし循環メンバーは cache 上で `parent` が失われているため、その path への変更だけは full rescan に委ねる
+- 派生値の再構築（`children` / `reverseLinks` / parent 関連 warning を全 task 分作り直す）— parse-only candidate を canonical full resolver に渡す。`open_project` / mutation / full rescan と同じ入口を通すことで、watcher 適用後の resident state が「同じ disk 状態で開き直した state」と一致することを構造的に保証する。循環時も disk 由来の raw `parent` を resident state に保持し、IPC に出す effective `parent` だけを `None` にするため、無関係な差分 upsert 後も循環状態を再計算できる
 - batch の `rescan` に対する full rescan（全 md 再走査 → `tasks_cache` 全置換 → `watcher-resync-required` 発火）— `watcher_event::handler::handle_rescan`
 - batch の `errors` の structured diagnostics 化（`WatcherFailureKind` → `watcher-diagnostic` の `code`）— `watcher_event::handler::handle_backend_failure`
 - 旧世代 watcher の event 破棄（`generation` guard）— `watcher_event::handler::handle_change` 冒頭
@@ -834,6 +838,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.9 | 2026-08-23 | Issue #601: open / mutation / watcher / rescan / conflict recovery を canonical full resolver に統一し、resolved Task 集合だけを resident state に格納する型境界、raw/effective parent、path 昇順の派生値、wire/disk/error 互換を明記 | - |
 | 1.8 | 2026-08-23 | Issue #594: raw resident Mutex を private lock owner へ封じ、domain → resources の段階 guard、background/resources の値 API、closure-scoped writer lease と同一 thread 再入の fail-fast typed error を仕様化 | - |
 | 1.7 | 2026-08-11 | Issue #508: FE の 5 event 常設購読、open 前 readiness barrier、open 中 200 件 FIFO、overflow 時の 1 回 resync、後続 event 不要の反映保証を追加。BE production / wire contract は不変 | - |
 | 1.6 | 2026-08-11 | Issue #460: watcher が変更を反映する際に全 task の派生値を再構築する契約、変更対象以外も変わった場合の `watcher-resync-required` 分岐、rename 時の raw 値保持（cleanup しない）の裁定を追加。cardOrder cleanup は #507、購読開始までの窓は #508 へ切り出し | - |

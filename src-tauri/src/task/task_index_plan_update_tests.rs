@@ -2,11 +2,12 @@
 //!
 //! AppState / TaskIo / fs::* に依存せず、すべて in-memory で完結する。
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::{ParentHierarchyErrorReason, Task, TaskIndex, UpdateTaskIntent};
-use crate::config::column_name::ColumnName;
+use super::{
+    ParentHierarchyErrorReason, ParsedTaskBuilder, ResolvedTaskSet, Task, TaskIndex,
+    UpdateTaskIntent,
+};
 use crate::task::create::error::ContentRejectReason;
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed, Priority};
 use crate::task::parse::TaskParseError;
@@ -17,25 +18,16 @@ use crate::task::update::error::UpdateTaskError;
 use crate::task::warning::TaskWarningCode;
 
 fn make_task(file_path: &str, parent: Option<&str>) -> Task {
-    let fp = TaskFilePath::from_lenient(file_path);
-    Task {
-        draft: false,
-        id: fp.clone(),
-        file_path: fp,
-        title: "T".into(),
-        status: ColumnName::from_lenient("Todo"),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: parent.map(TaskFilePath::from_lenient),
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: BTreeMap::new(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(file_path)
+        .title("T")
+        .parent(parent.map(TaskFilePath::from_lenient))
+        .resolve()
+}
+
+fn resolve_tasks(tasks: Vec<Task>) -> Vec<Task> {
+    ResolvedTaskSet::reresolve(tasks)
+        .expect("fixture candidates resolve")
+        .into_tasks()
 }
 
 fn parsed_from_md(md: &str) -> Parsed {
@@ -75,7 +67,6 @@ fn plan_update_status_only_changes_status_line_only() {
 
     assert!(outcome.file_content.contains("status: Doing"));
     assert!(outcome.file_content.contains("title: A"));
-    assert!(!outcome.needs_full_rebuild);
     assert_eq!(outcome.updated_task.status.as_str(), "Doing");
 }
 
@@ -190,7 +181,6 @@ fn plan_update_title_changes_frontmatter_title_only_file_path_unchanged() {
 
     assert!(outcome.file_content.contains("title: New Title"));
     assert_eq!(outcome.updated_task.file_path, "tasks/a.md");
-    assert!(!outcome.needs_full_rebuild);
 }
 
 #[test]
@@ -208,13 +198,13 @@ fn plan_update_empty_title_re_runs_parser_and_emits_invalid_title_warning() {
 
     let has_warning = outcome
         .updated_task
-        .warnings
+        .parse_warnings
         .iter()
         .any(|w| w.code == TaskWarningCode::InvalidTitleUsedFileName);
     assert!(
         has_warning,
         "expected invalidTitleUsedFileName warning, got {:?}",
-        outcome.updated_task.warnings
+        outcome.updated_task.parse_warnings
     );
 }
 
@@ -290,7 +280,7 @@ fn plan_update_preserves_boolean_unknown_key() {
 }
 
 #[test]
-fn plan_update_with_no_parent_change_returns_no_rebuild_flag() {
+fn plan_update_with_no_parent_change_succeeds() {
     let task = make_task("tasks/a.md", Some("tasks/p.md"));
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: tasks/p.md\n---\n");
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
@@ -298,17 +288,15 @@ fn plan_update_with_no_parent_change_returns_no_rebuild_flag() {
     let mut intent = empty_intent("tasks/a.md");
     intent.parent = Some("tasks/p.md".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
-
-    assert!(!outcome.needs_full_rebuild);
 }
 
 #[test]
 fn plan_update_same_parent_with_dot_prefix_is_not_treated_as_change() {
     // 既存 parent="tasks/p.md" の task に、./tasks/p.md（同一 task を指す表記揺れ）
-    // を渡しても needs_full_rebuild=false を返すこと。
+    // を渡しても同じ親として受理すること。
     let task = make_task("tasks/a.md", Some("tasks/p.md"));
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: tasks/p.md\n---\n");
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
@@ -316,13 +304,9 @@ fn plan_update_same_parent_with_dot_prefix_is_not_treated_as_change() {
     let mut intent = empty_intent("tasks/a.md");
     intent.parent = Some("./tasks/p.md".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
-    assert!(
-        !outcome.needs_full_rebuild,
-        "lexically equivalent parent should not trigger rebuild"
-    );
 }
 
 #[test]
@@ -334,17 +318,13 @@ fn plan_update_same_parent_with_backslash_separator_is_not_treated_as_change() {
     let mut intent = empty_intent("tasks/a.md");
     intent.parent = Some("tasks\\p.md".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
-    assert!(
-        !outcome.needs_full_rebuild,
-        "backslash separator pointing to same task should not trigger rebuild"
-    );
 }
 
 #[test]
-fn plan_update_parent_added_returns_needs_full_rebuild() {
+fn plan_update_parent_added_writes_parent() {
     let task = make_task("tasks/a.md", None);
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\n---\n");
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
@@ -356,12 +336,11 @@ fn plan_update_parent_added_returns_needs_full_rebuild() {
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
 
-    assert!(outcome.needs_full_rebuild);
     assert!(outcome.file_content.contains("parent: tasks/p.md"));
 }
 
 #[test]
-fn plan_update_parent_cleared_with_empty_string_returns_needs_full_rebuild() {
+fn plan_update_parent_cleared_with_empty_string_removes_parent() {
     let task = make_task("tasks/a.md", Some("tasks/p.md"));
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: tasks/p.md\n---\n");
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
@@ -373,7 +352,6 @@ fn plan_update_parent_cleared_with_empty_string_returns_needs_full_rebuild() {
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
 
-    assert!(outcome.needs_full_rebuild);
     assert!(!outcome.file_content.contains("parent:"));
 }
 
@@ -407,10 +385,9 @@ fn plan_update_resolves_parent_with_dot_prefix_via_normalization() {
     let mut intent = empty_intent("tasks/a.md");
     intent.parent = Some("./tasks/p.md".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
-    assert!(outcome.needs_full_rebuild);
 }
 
 #[test]
@@ -422,10 +399,9 @@ fn plan_update_resolves_parent_with_backslash_separator_via_normalization() {
     let mut intent = empty_intent("tasks/a.md");
     intent.parent = Some("tasks\\p.md".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ok");
-    assert!(outcome.needs_full_rebuild);
 }
 
 #[test]
@@ -642,16 +618,16 @@ fn plan_update_returns_root_relative_file_path_in_updated_task() {
 }
 
 // `intent.parent = None` のとき、cache 側に独立循環があっても
-// hierarchy 検証はスキップされ、`needs_full_rebuild=false` で返ること。
-// `TaskIndex::new` は validation を走らせない契約を利用して
-// 不正状態の cache を直接構築できる。
+// strict hierarchy 検証はスキップされること。
+// fixture のcycleはproduction同様にresolverへ通し、raw parentを保持したresolved
+// Task集合からquery用TaskIndexを組み立てる。
 #[test]
 fn plan_update_with_no_parent_change_skips_hierarchy_validation() {
-    let tasks = vec![
+    let tasks = resolve_tasks(vec![
         make_task("tasks/x.md", Some("tasks/y.md")),
         make_task("tasks/y.md", Some("tasks/x.md")),
         make_task("tasks/a.md", None),
-    ];
+    ]);
     let task = tasks
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -663,13 +639,9 @@ fn plan_update_with_no_parent_change_skips_hierarchy_validation() {
     let mut intent = empty_intent("tasks/a.md");
     intent.status = Some("Doing".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("validation should be skipped when parent is unchanged");
-    assert!(
-        !outcome.needs_full_rebuild,
-        "parent unchanged → no full rebuild"
-    );
 }
 
 // 既存 parent と正規化等価な値を渡しても `parent_changed=false` でスキップされ、
@@ -677,12 +649,12 @@ fn plan_update_with_no_parent_change_skips_hierarchy_validation() {
 // との差分: 独立循環を含む cache でも結果が変わらないことの観測）。
 #[test]
 fn plan_update_normalized_equal_parent_skips_hierarchy_validation() {
-    let tasks = vec![
+    let tasks = resolve_tasks(vec![
         make_task("tasks/x.md", Some("tasks/y.md")),
         make_task("tasks/y.md", Some("tasks/x.md")),
         make_task("tasks/p.md", None),
         make_task("tasks/a.md", Some("tasks/p.md")),
-    ];
+    ]);
     let task = tasks
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -694,13 +666,9 @@ fn plan_update_normalized_equal_parent_skips_hierarchy_validation() {
     let mut intent = empty_intent("tasks/a.md");
     intent.parent = Some("./tasks/p.md".to_string());
 
-    let outcome = index
+    index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("normalized-equal parent must skip hierarchy validation");
-    assert!(
-        !outcome.needs_full_rebuild,
-        "normalized-equal parent → no rebuild, independent cycle stays hidden"
-    );
 }
 
 // 非祖先・非子孫 subtree への parent 接続が許可されること
@@ -728,7 +696,6 @@ fn plan_update_sibling_parent_change_is_allowed() {
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("cross-subtree reparent must be allowed");
-    assert!(outcome.needs_full_rebuild);
     assert!(outcome.file_content.contains("parent: tasks/c.md"));
 }
 
@@ -755,22 +722,20 @@ fn plan_update_reparent_to_ancestor_is_allowed() {
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
         .expect("ancestor reparent (grandparent) must not be treated as cycle");
-    assert!(outcome.needs_full_rebuild);
     assert!(outcome.file_content.contains("parent: tasks/c.md"));
 }
 
 // 親解除 (`Some("")`) でも `parent_changed=true` のとき hierarchy 検証が全タスクを走り、
 // 独立循環が検出されることを Err 期待で観測する
-// （既存 `plan_update_parent_cleared_with_empty_string_returns_needs_full_rebuild` は
-// 循環なし cache で `needs_full_rebuild=true` を確認するのみ）。
+// （既存の親解除テストは循環なし cache で書き出しだけを確認する）。
 #[test]
 fn plan_update_parent_removal_to_empty_string_triggers_hierarchy_validation() {
-    let tasks = vec![
+    let tasks = resolve_tasks(vec![
         make_task("tasks/x.md", Some("tasks/y.md")),
         make_task("tasks/y.md", Some("tasks/x.md")),
         make_task("tasks/a.md", Some("tasks/b.md")),
         make_task("tasks/b.md", None),
-    ];
+    ]);
     let task = tasks
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")
@@ -797,12 +762,12 @@ fn plan_update_parent_removal_to_empty_string_triggers_hierarchy_validation() {
 // （副次的検出の挙動を固定化）。
 #[test]
 fn plan_update_detects_independent_cycle_in_cache_when_parent_changes() {
-    let tasks = vec![
+    let tasks = resolve_tasks(vec![
         make_task("tasks/x.md", Some("tasks/y.md")),
         make_task("tasks/y.md", Some("tasks/x.md")),
         make_task("tasks/a.md", None),
         make_task("tasks/b.md", None),
-    ];
+    ]);
     let task = tasks
         .iter()
         .find(|t| t.file_path.as_str() == "tasks/a.md")

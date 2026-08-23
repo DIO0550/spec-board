@@ -1,6 +1,5 @@
 use super::*;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
@@ -47,7 +46,7 @@ fn coherent_snapshot_converts_to_existing_wire_shape() {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        crate::task::task_index::ResolvedTaskSet::default(),
     )
     .into_session(SessionId::from_raw(9))
     .snapshot();

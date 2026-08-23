@@ -1,15 +1,15 @@
 //! Task aggregate ドメイン。
 //!
-//! `Task` entity と `TaskIndex` aggregate root を同居させる。`TaskIndex` の
-//! 不変条件（parent 存在 / 親チェーンに循環なし / 親チェーン深さ ≤ MAX）と
-//! それを検証するロジックは、DDD 戦術的パターンに従い aggregate root の責務
-//! としてこのファイルに集約する（独立した「validation」ファイルは作らない）。
+//! `Task` entityと`TaskIndex` aggregate rootを同居させる。resident `Task`は必ず
+//! canonical resolverを通過し、effective parent / children / reverse links / graph warningが
+//! 同じ全件snapshotから導出済みである。dangling parentとcycleはraw参照を保持したまま
+//! warningへ倒し、cycle memberのeffective parentだけを`None`にする。create/updateの
+//! I/O前strict validationはcycle/TooDeepを拒否する別境界であり、これらの検証・導出を
+//! aggregate rootの責務としてこのファイルに集約する。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
-
-use serde::{Deserialize, Serialize};
 
 use crate::config::column_name::ColumnName;
 use crate::config::{Column, Config};
@@ -40,9 +40,7 @@ use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_title::TaskTitle;
 use crate::task::update::error::UpdateTaskError;
-use crate::task::warning::{
-    ensure_parent_cycle_warning, has_parent_cycle_warning, TaskWarning, TaskWarningCode,
-};
+use crate::task::warning::{ensure_parent_cycle_warning, TaskWarning, TaskWarningCode};
 
 /// 親チェーンを辿る際に許容する最大深さ。
 ///
@@ -104,66 +102,423 @@ pub(crate) struct TaskViewProjection {
     pub(crate) task_tree: TaskForest,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// canonical resolverを通過したresident / query用のTask entity。
+///
+/// fieldはprivateで、parse-onlyな状態や偽の派生値を外部から構築できない。
+#[derive(Debug, Clone, PartialEq)]
 pub struct Task {
-    pub id: TaskFilePath,
-    pub file_path: TaskFilePath,
-    pub title: TaskTitle,
-    pub status: ColumnName,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<Priority>,
+    id: TaskFilePath,
+    file_path: TaskFilePath,
+    title: TaskTitle,
+    status: ColumnName,
+    priority: Option<Priority>,
     /// マイルストーン参照キー（単数の自由文字列）。未割当時は `None`。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub milestone: Option<String>,
-    pub labels: Vec<Label>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent: Option<TaskFilePath>,
+    milestone: Option<String>,
+    labels: Vec<Label>,
     /// 期限（`YYYY-MM-DD`）を表す `Due` VO。検証は parse 時に行い、不正でも原文を保持する。
     /// 表示用の typed フィールド（透過シリアライズで文字列）だが、round-trip 保持は extras 側が担う。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due: Option<Due>,
+    due: Option<Due>,
     /// 下書きフラグ。false のときは payload にキーを出力しない（旧 FE との互換維持）。
-    #[serde(skip_serializing_if = "is_false", default)]
-    pub draft: bool,
-    pub links: Vec<TaskFilePath>,
-    pub children: Vec<TaskFilePath>,
-    pub reverse_links: Vec<TaskFilePath>,
-    pub body: String,
-    /// Task struct の typed フィールド（title / status / priority / labels / parent /
-    /// links）に該当しない frontmatter キーをそのまま保持する。FE 側で表示・編集される
-    /// 拡張メタデータ（例: `assignee`, `due_date` 等）。
+    draft: bool,
+    links: Vec<TaskFilePath>,
+    body: String,
+    /// raw round-tripに必要なfrontmatter値を保持する。Taskのtyped viewにも投影するdueと、
+    /// 未定義の拡張metadata（例: `assignee`, `due_date`等）を含む。
     /// key 順序を JSON シリアライズで安定させるため `BTreeMap` を採用。
-    pub extras: BTreeMap<String, serde_json::Value>,
-    pub warnings: Vec<TaskWarning>,
+    extras: BTreeMap<String, serde_json::Value>,
+    parse_warnings: Vec<TaskWarning>,
+    derived: DerivedTaskState,
 }
 
-/// `skip_serializing_if` は `fn(&bool) -> bool` を要求するため専用 helper を置く
-/// （`std::ops::Not::not` は値渡しのため直接指定できない）。
-fn is_false(v: &bool) -> bool {
-    !*v
+/// resolver が Task 集合全体から確定する非公開状態。
+///
+/// `raw_parent` は disk 再構築用、`effective_parent` は cycle 正規化後の wire 値。
+/// parse warningはTask本体とParsedTaskに残し、graph warningだけをここに保持する。
+#[derive(Debug, Clone, PartialEq)]
+struct DerivedTaskState {
+    raw_parent: Option<TaskFilePath>,
+    effective_parent: Option<TaskFilePath>,
+    children: Vec<TaskFilePath>,
+    reverse_links: Vec<TaskFilePath>,
+    graph_warnings: Vec<TaskWarning>,
+}
+
+impl DerivedTaskState {
+    fn new(raw_parent: Option<TaskFilePath>) -> Self {
+        let effective_parent = raw_parent.clone();
+        Self {
+            raw_parent,
+            effective_parent,
+            children: Vec::new(),
+            reverse_links: Vec::new(),
+            graph_warnings: Vec::new(),
+        }
+    }
+}
+
+impl From<Task> for crate::task::payload::TaskPayload {
+    fn from(task: Task) -> Self {
+        let Task {
+            id,
+            file_path,
+            title,
+            status,
+            priority,
+            milestone,
+            labels,
+            due,
+            draft,
+            links,
+            body,
+            extras,
+            parse_warnings,
+            derived:
+                DerivedTaskState {
+                    effective_parent,
+                    children,
+                    reverse_links,
+                    graph_warnings,
+                    raw_parent: _,
+                },
+        } = task;
+        crate::task::payload::TaskPayload {
+            id,
+            file_path,
+            title,
+            status,
+            priority,
+            milestone,
+            labels,
+            parent: effective_parent,
+            due,
+            draft,
+            links,
+            children,
+            reverse_links,
+            body,
+            extras,
+            warnings: parse_warnings.into_iter().chain(graph_warnings).collect(),
+        }
+    }
+}
+
+/// Markdown/frontmatter の parse だけが完了した task candidate。
+///
+/// IPC serialize と resident session への格納はできず、必ず [`ResolvedTaskSet`] の
+/// resolver を通して [`Task`] へ変換する。
+///
+/// ```compile_fail,E0603
+/// use spec_board_lib::task::task_index::ParsedTask;
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ParsedTask {
+    pub(crate) id: TaskFilePath,
+    pub(crate) file_path: TaskFilePath,
+    pub(crate) title: TaskTitle,
+    pub(crate) status: ColumnName,
+    pub(crate) priority: Option<Priority>,
+    pub(crate) milestone: Option<String>,
+    pub(crate) labels: Vec<Label>,
+    pub(crate) parent: Option<TaskFilePath>,
+    pub(crate) due: Option<Due>,
+    pub(crate) draft: bool,
+    pub(crate) links: Vec<TaskFilePath>,
+    pub(crate) body: String,
+    pub(crate) extras: BTreeMap<String, serde_json::Value>,
+    pub(crate) parse_warnings: Vec<TaskWarning>,
+}
+
+impl ParsedTask {
+    fn into_unresolved_task(self) -> Task {
+        let raw_parent = self.parent.clone();
+        let derived = DerivedTaskState::new(raw_parent);
+        Task {
+            id: self.id,
+            file_path: self.file_path,
+            title: self.title,
+            status: self.status,
+            priority: self.priority,
+            milestone: self.milestone,
+            labels: self.labels,
+            due: self.due,
+            draft: self.draft,
+            links: self.links,
+            body: self.body,
+            extras: self.extras,
+            parse_warnings: self.parse_warnings,
+            derived,
+        }
+    }
+}
+
+/// canonical resolver を通過した task 集合。
+///
+/// field を公開せず、session/cache の replace 境界が parse-only candidate を受理しない
+/// ことを型で保証する。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct ResolvedTaskSet {
+    tasks: Vec<Task>,
+}
+
+impl ResolvedTaskSet {
+    pub(crate) fn resolve_lenient(tasks: Vec<ParsedTask>) -> Result<Self, TaskParseError> {
+        let tasks = tasks
+            .into_iter()
+            .map(ParsedTask::into_unresolved_task)
+            .collect();
+        let tasks = TaskIndex::new(tasks)
+            .rebuild_derived_with_warnings()?
+            .into_tasks();
+        Ok(Self { tasks })
+    }
+
+    fn validate_strict(tasks: Vec<ParsedTask>) -> Result<(), TaskParseError> {
+        TaskIndex::new(
+            tasks
+                .into_iter()
+                .map(ParsedTask::into_unresolved_task)
+                .collect(),
+        )
+        .validate_parent_hierarchy()
+        .map(|_| ())
+    }
+
+    pub(crate) fn into_tasks(self) -> Vec<Task> {
+        self.tasks
+    }
+
+    pub(crate) fn into_map(self) -> HashMap<CanonicalTaskPath, Task> {
+        self.tasks
+            .into_iter()
+            .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
+            .collect()
+    }
+
+    pub(crate) fn get(&self, path: &CanonicalTaskPath) -> Option<&Task> {
+        self.tasks
+            .iter()
+            .find(|task| CanonicalTaskPath::from_file_path(task.file_path()) == *path)
+    }
+
+    /// resident taskをdisk由来candidateへ戻し、canonical resolverを再実行する。
+    pub(crate) fn reresolve(tasks: impl IntoIterator<Item = Task>) -> Result<Self, TaskParseError> {
+        Self::resolve_lenient(
+            tasks
+                .into_iter()
+                .map(|task| task.to_parsed_task())
+                .collect(),
+        )
+    }
+}
+
+#[cfg(test)]
+impl std::ops::Deref for ResolvedTaskSet {
+    type Target = [Task];
+
+    fn deref(&self) -> &Self::Target {
+        &self.tasks
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_parsed_for_test(task: ParsedTask) -> Task {
+    ResolvedTaskSet::resolve_lenient(vec![task])
+        .expect("fixture candidate should resolve")
+        .into_tasks()
+        .into_iter()
+        .next()
+        .expect("single fixture candidate should remain")
+}
+
+#[cfg(test)]
+pub(crate) struct ParsedTaskBuilder {
+    task: ParsedTask,
+}
+
+#[cfg(test)]
+impl ParsedTaskBuilder {
+    pub(crate) fn new(file_path: impl Into<TaskFilePath>) -> Self {
+        let file_path = file_path.into();
+        Self {
+            task: ParsedTask {
+                id: file_path.clone(),
+                file_path,
+                title: TaskTitle::from_lenient("Task"),
+                status: ColumnName::from_lenient("Todo"),
+                priority: None,
+                milestone: None,
+                labels: Vec::new(),
+                parent: None,
+                due: None,
+                draft: false,
+                links: Vec::new(),
+                body: String::new(),
+                extras: BTreeMap::new(),
+                parse_warnings: Vec::new(),
+            },
+        }
+    }
+
+    pub(crate) fn id(mut self, id: impl Into<TaskFilePath>) -> Self {
+        self.task.id = id.into();
+        self
+    }
+
+    pub(crate) fn title(mut self, title: impl Into<TaskTitle>) -> Self {
+        self.task.title = title.into();
+        self
+    }
+
+    pub(crate) fn status(mut self, status: impl Into<ColumnName>) -> Self {
+        self.task.status = status.into();
+        self
+    }
+
+    pub(crate) fn milestone(mut self, milestone: Option<String>) -> Self {
+        self.task.milestone = milestone;
+        self
+    }
+
+    pub(crate) fn labels(mut self, labels: Vec<Label>) -> Self {
+        self.task.labels = labels;
+        self
+    }
+
+    pub(crate) fn parent(mut self, parent: Option<TaskFilePath>) -> Self {
+        self.task.parent = parent;
+        self
+    }
+
+    pub(crate) fn build(self) -> ParsedTask {
+        self.task
+    }
+
+    pub(crate) fn resolve(self) -> Task {
+        resolve_parsed_for_test(self.build())
+    }
 }
 
 impl Task {
-    /// scan で cycle member と判定された task の正規化状態（parent=None +
-    /// parentCycle warning）を、disk 由来の生の値で再構築したこの task に引き継ぐ。
-    ///
-    /// effect 層（update / add_link / remove_link）が cache を差分更新する際、
-    /// 非 parent 変更や link 操作で循環判定が崩れないよう、直前の cache 値が
-    /// cycle member だったかどうか（`was_cycle_member`）を踏まえて parent と
-    /// warning を上書きする。判定→preserve の規則を 1 箇所に集約し、経路ごとの
-    /// 挙動差分を防ぐ。watcher 経路は派生値を全件作り直すため、この引き継ぎを
-    /// 使わない（[`TaskIndex::rebuild_with_external_change`] 参照）。
-    ///
-    /// 循環の解消判定はこのメソッドの責務ではない。watcher 経路は派生値を全件
-    /// 作り直すので引き継ぎ自体が不要になり、残る呼び出し元（update / move）は
-    /// disk と一致した parent を握り潰してでも cycle 状態を維持する側にある。
-    pub fn preserve_parent_cycle_state(&mut self, was_cycle_member: bool) {
-        if !was_cycle_member {
-            return;
+    pub fn id(&self) -> &TaskFilePath {
+        &self.id
+    }
+
+    pub fn file_path(&self) -> &TaskFilePath {
+        &self.file_path
+    }
+
+    pub fn title(&self) -> &TaskTitle {
+        &self.title
+    }
+
+    pub fn status(&self) -> &ColumnName {
+        &self.status
+    }
+
+    pub fn priority(&self) -> Option<Priority> {
+        self.priority
+    }
+
+    pub fn milestone(&self) -> Option<&str> {
+        self.milestone.as_deref()
+    }
+
+    pub fn labels(&self) -> &[Label] {
+        &self.labels
+    }
+
+    /// cycle 時は `None` に正規化された wire 上の effective parent。
+    pub fn parent(&self) -> Option<&TaskFilePath> {
+        self.derived.effective_parent.as_ref()
+    }
+
+    pub fn due(&self) -> Option<&Due> {
+        self.due.as_ref()
+    }
+
+    pub fn is_draft(&self) -> bool {
+        self.draft
+    }
+
+    pub fn links(&self) -> &[TaskFilePath] {
+        &self.links
+    }
+
+    pub fn children(&self) -> &[TaskFilePath] {
+        &self.derived.children
+    }
+
+    pub fn reverse_links(&self) -> &[TaskFilePath] {
+        &self.derived.reverse_links
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn extras(&self) -> &BTreeMap<String, serde_json::Value> {
+        &self.extras
+    }
+
+    pub fn warnings(&self) -> Vec<TaskWarning> {
+        self.parse_warnings
+            .iter()
+            .chain(&self.derived.graph_warnings)
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn to_parsed_task(&self) -> ParsedTask {
+        ParsedTask {
+            id: self.id.clone(),
+            file_path: self.file_path.clone(),
+            title: self.title.clone(),
+            status: self.status.clone(),
+            priority: self.priority,
+            milestone: self.milestone.clone(),
+            labels: self.labels.clone(),
+            parent: self.derived.raw_parent.clone(),
+            due: self.due.clone(),
+            draft: self.draft,
+            links: self.links.clone(),
+            body: self.body.clone(),
+            extras: self.extras.clone(),
+            parse_warnings: self.parse_warnings.clone(),
         }
-        self.parent = None;
-        ensure_parent_cycle_warning(&mut self.warnings);
+    }
+
+    pub(crate) fn with_status_candidate(&self, status: &str) -> ParsedTask {
+        let mut task = self.to_parsed_task();
+        task.status = ColumnName::from_lenient(status);
+        task
+    }
+
+    pub(in crate::task) fn clear_children_for_resolver(&mut self) {
+        self.derived.children.clear();
+    }
+
+    pub(in crate::task) fn push_child_for_resolver(&mut self, child: TaskFilePath) {
+        self.derived.children.push(child);
+    }
+
+    pub(in crate::task) fn clear_reverse_links_for_resolver(&mut self) {
+        self.derived.reverse_links.clear();
+    }
+
+    pub(in crate::task) fn push_reverse_link_for_resolver(&mut self, source: TaskFilePath) {
+        self.derived.reverse_links.push(source);
+    }
+
+    fn mark_parent_cycle_for_resolver(&mut self) {
+        self.derived.effective_parent = None;
+        ensure_parent_cycle_warning(&mut self.derived.graph_warnings);
+    }
+
+    fn reset_graph_for_resolver(&mut self) {
+        self.derived.effective_parent = self.derived.raw_parent.clone();
+        self.derived.children.clear();
+        self.derived.reverse_links.clear();
+        self.derived.graph_warnings.clear();
     }
 }
 
@@ -196,23 +551,23 @@ pub enum ParentValidationFailure {
     },
 }
 
-/// watcher が観測した外部由来の変更 1 件。
+/// watcher取込とmutation commandがcanonical resolverへ渡すcandidate変更1件。
 ///
-/// rename は fs 層で `removed(from)` + `upserted(to)` に分解されて届くため
-/// （`crates/fs/src/watcher/file_change_batch.rs`）、rename 専用の variant は持たない。
-/// `Task` は `TaskFilePath` より 1 桁大きいので、variant 間の差を埋めるために
-/// `Upserted` だけ box に載せる（enum 全体が常に `Task` 分の幅を持つのを避ける）。
+/// watcherのrenameはfs層で`removed(from)` + `upserted(to)`へ分解され、mutationも
+/// 書き込み前planを同じupsert/removeで表すため、rename専用variantは持たない。
+/// `ParsedTask` は `TaskFilePath` より大きいため、variant 間の差を抑える目的で
+/// `Upserted` だけ box に載せる。
 pub(crate) enum ExternalTaskChange {
-    /// 作成または更新。parse 済みの Task で同一 path の slot を差し替える。
-    Upserted(Box<Task>),
+    /// 作成または更新。parse-only candidateで同一 path のslotを差し替える。
+    Upserted(Box<ParsedTask>),
     /// 削除。この cache key のタスクを取り除く。
     Removed(TaskFilePath),
 }
 
-/// 外部変更を適用し、派生値を作り直した結果。
+/// watcher / mutationのcandidate変更を適用し、派生値を作り直した結果。
 pub(crate) struct ExternalChangeOutcome {
     /// 派生再構築後の全タスク。cache をこれで丸ごと置き換える。
-    pub(crate) tasks: Vec<Task>,
+    pub(crate) tasks: ResolvedTaskSet,
     /// 変更対象のタスク自身（`Upserted` のときだけ `Some`）。
     /// emit する payload には parse 直後ではなくこちらを載せる。
     pub(crate) changed_task: Option<Task>,
@@ -221,19 +576,19 @@ pub(crate) struct ExternalChangeOutcome {
     pub(crate) other_tasks_changed: bool,
 }
 
-/// Task 集合の整合性（parent 存在 / 循環検出 / children・reverse_links 派生）を
-/// 守る Aggregate。不変条件の検証メソッドを集約する。
+/// Task集合のstrict parent検証と、dangling/cycleをwarningへ倒すlenient resolution、
+/// children / reverse_links派生を集約するAggregate。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskIndex {
     tasks: Vec<Task>,
 }
 
 impl TaskIndex {
-    pub fn new(tasks: Vec<Task>) -> Self {
+    pub(crate) fn new(tasks: Vec<Task>) -> Self {
         Self { tasks }
     }
 
-    pub fn into_tasks(self) -> Vec<Task> {
+    pub(crate) fn into_tasks(self) -> Vec<Task> {
         self.tasks
     }
 
@@ -310,12 +665,10 @@ impl TaskIndex {
 
     /// 全タスク分の projection（子孫進捗 / 完了判定 / 直接子）をまとめて作る。
     ///
-    /// **親子関係の入力は `Task.parent` であり `Task.children` ではない**。
-    /// `tasks_cache` 上の `children` は、watcher の upsert（`task_from_parsed` が
-    /// `children: Vec::new()` を返し、親側も更新されない）と、`parent` を変えない
-    /// `update_task`（`commit_cache` の `needs_full_rebuild == false` 経路）で
-    /// 古くなる。`parent` は常に disk の frontmatter 由来で最新なので、projection は
-    /// 毎回 `parent` から children adjacency を組み直す。
+    /// **親子関係の入力は effective `Task.parent` であり `Task.children` ではない**。
+    /// production の resident Task は canonical resolver が両方を同期済みにするが、
+    /// projection 自身も入力の `parent` から adjacency を組み直し、派生値同士を
+    /// 参照しない純粋な query として保つ。
     ///
     /// 集計は task 集合そのものから導出されるため、`plan_*`（write 系の意図 →
     /// outcome）ではなく `label_usage_counts` と同じ `&self` query として公開する。
@@ -329,10 +682,9 @@ impl TaskIndex {
     /// - `done_column` が `None` のとき `is_done` は常に false・done は 0
     /// - `child_file_paths` は `file_path` 昇順
     ///
-    /// サイクル打ち切りは**防御的実装ではなく必須機能**である。watcher の
-    /// `handle_upsert` は新しく作られた parent 循環を検出しない（`update_task`
-    /// 経由の parent 変更は `validate_parent_hierarchy` が弾く）ため、
-    /// `tasks_cache` が parent 循環を保持した状態は実データで発生しうる。
+    /// production の resident Task では resolver が cycle member の effective parent を
+    /// `None` にする。ここでも cycle を打ち切るのは、query を直接組み立てる単体テストや
+    /// 将来の adapter が不完全な入力を渡しても無限走査しないための防御である。
     ///
     /// **計算量の契約**: lookup index と children adjacency の構築は本 method
     /// 1 呼び出しにつき各 1 回だけ（`children_paths_of` を task 数ぶん呼ぶ O(N^2)
@@ -397,7 +749,7 @@ impl TaskIndex {
     ) -> Vec<Vec<usize>> {
         let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); self.tasks.len()];
         for (child_index, task) in self.tasks.iter().enumerate() {
-            let Some(parent) = task.parent.as_ref() else {
+            let Some(parent) = task.parent() else {
                 continue;
             };
             let Some(parent_norm) = normalize_parent_path_for_lookup(parent.as_str()) else {
@@ -421,16 +773,14 @@ impl TaskIndex {
     /// board 表示順）。
     ///
     /// **root になるのは「親を持たない task」と「閉路そのもののメンバ全員」**。
-    /// 閉路にぶら下がるだけの子孫は親配下に残す。この規則は scan 経路の
-    /// `build_children_with_warnings` → `mark_cycle_members` が閉路メンバ全員の
-    /// `parent` を `None` 化するのと同じ木の形になるよう合わせたもの。片方だけ
+    /// 閉路にぶら下がるだけの子孫は親配下に残す。この規則は canonical resolver が
+    /// 閉路メンバ全員の effective `parent` を `None` 化するのと同じ木の形になるよう
+    /// 合わせたもの。片方だけ
     /// 「閉路の先頭 1 件が root で残りはその子」にすると、同じ循環データが
-    /// scan 経路（`open_project` / full rescan）と watcher の差分 upsert 経路とで
-    /// 違う形に描画されてしまう。
+    /// resolver 前後で違う形に描画されてしまう。
     ///
-    /// **cycle 打ち切りは必須機能**。scan 経路は上記のとおり `parent` を `None` 化
-    /// 済みで届くが、watcher の差分 upsert は新規循環を検出しないため、cache が
-    /// 循環を保持したままこの query に到達しうる（`project_all` の doc と同じ理由）。
+    /// production resident は resolver 済みだが、直接入力に対する query 自体の有限性も
+    /// 保つため cycle 判定を持つ（`project_all` の doc と同じ理由）。
     ///
     /// 到達可能性を別に計算しないのは、root 候補以外は親を辿れば必ず root 候補に
     /// 行き着くため（親を持ち閉路にも乗らない task の親チェーンは、有限長で
@@ -540,9 +890,8 @@ impl TaskIndex {
     /// **明示 stack による反復で書く**。理由は 2 つ:
     /// 1. `task_index.rs` の既存 DFS（`collect_descendant_progress` 等）がすべて反復で、
     ///    このファイルの流儀に揃える。
-    /// 2. 親チェーンの深さ上限 `MAX_PARENT_DEPTH` は `build_children_with_warnings` の
-    ///    検証経路にしか無く、この query は watcher 差分 upsert 由来の未検証 cache からも
-    ///    呼ばれうる。再帰にすると深さが呼び出しスタックの限界に直結する。
+    /// 2. production resident は resolver で深さ検証済みだが、この query を直接使う
+    ///    テスト入力にも再帰深度を依存させない。
     fn build_forest_node(
         &self,
         root_index: usize,
@@ -730,14 +1079,14 @@ impl TaskIndex {
         })
     }
 
-    /// scan 経路用。親チェーンに循環が含まれる場合は Err を返さず、ループ内の
-    /// 全 task に `parentCycle` warning を付けて `parent = None` に置き換える
-    /// ことで scan 全体を継続させる。親チェーンの深さが `MAX_PARENT_DEPTH` を
-    /// 超える (TooDeep) 場合のみ既存どおり `Err` を返す。
+    /// lenient resolver用。親チェーンに循環が含まれる場合は Err を返さず、ループ内の
+    /// 全 task に `parentCycle` warning を付けてeffective `parent = None` にすることで
+    /// 全体を継続させる。raw parentは保持する。親チェーンの深さが
+    /// `MAX_PARENT_DEPTH` を超える (TooDeep) 場合のみ `Err` を返す。
     ///
     /// 既存 `build_children` と同様、最初に `validate_parent_existence` を
     /// 実行して `ParentNotFound` warning を従来通り付与する。children 構築は
-    /// 循環ノードを `parent = None` 化した後に行うため、cycle member は
+    /// 循環ノードのeffective `parent` を `None` 化した後に行うため、cycle member は
     /// children 逆引きから自然に除外される。
     pub fn build_children_with_warnings(mut self) -> Result<Self, TaskParseError> {
         self.tasks = validate_parent_existence(self.tasks);
@@ -785,13 +1134,12 @@ impl TaskIndex {
             if !normalized_paths.contains(&task_norm) {
                 continue;
             }
-            ensure_parent_cycle_warning(&mut task.warnings);
-            task.parent = None;
+            task.mark_parent_cycle_for_resolver();
         }
     }
 
     /// children を逆引きで構築するが、parent chain の hierarchy 検証は行わない。
-    /// `build_children_with_warnings` が cycle member を `parent = None` 化した
+    /// `build_children_with_warnings` が cycle member のeffective `parent` を `None` 化した
     /// 後に呼び、cycle が children 逆引きで再構築されないことを呼び出し側で保証する。
     fn build_children_links_only(self) -> Self {
         let mut tasks = self.tasks;
@@ -810,40 +1158,15 @@ impl TaskIndex {
         }
     }
 
-    /// `replaced` で同一 path の slot を差し替え（無ければ末尾に追加）たうえで、
-    /// parent hierarchy 検証 → `children` 再構築 → `reverse_links` 再構築までを
-    /// 一括で行う aggregate メソッド。
-    ///
-    /// parent 変更を伴う `update_task` の cache full-rebuild 手順を aggregate に
-    /// 集約することが目的。slot 差し替えの引き当ては `find_by_path` と同じ
-    /// `normalize_task_path_for_lookup` 基準で行い、表記揺れがあっても同一 task を
-    /// 差し替える（raw string 比較で重複 slot を作らない）。
-    pub(crate) fn rebuild_with_replaced(self, replaced: Task) -> Result<Self, TaskParseError> {
-        let mut values = self.tasks;
-        let target = normalize_task_path_for_lookup(replaced.file_path.as_str());
-        match values
-            .iter_mut()
-            .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
-        {
-            Some(slot) => *slot = replaced,
-            None => values.push(replaced),
-        }
-        Self::new(values)
-            .validate_parent_hierarchy()?
-            .build_children()
-            .map(Self::build_reverse_links)
-    }
-
     /// disk 全体から作り直した `Task` 集合に対し、parent hierarchy 検証
     /// （循環は warning として task に残す）→ `children` 再構築 →
     /// `reverse_links` 再構築までを一括で行う aggregate メソッド。
     ///
-    /// [`Self::rebuild_with_replaced`] の「1 件差し替え」に対する「全件入れ替え」版。
-    /// `open_project`（初回ロード）と `watcher_event`（full rescan）が同じ入口を
-    /// 通ることで、派生値の構築順序が片側だけずれることを構造的に防ぐ。
+    /// `open_project`（初回ロード）、各 mutation、`watcher_event` が同じ全件 resolver
+    /// を通ることで、派生値の構築順序が経路ごとにずれることを構造的に防ぐ。
     ///
-    /// 循環を `Err` にせず warning に倒すのは差し替え版との違い。scan 経路では
-    /// 1 箇所の循環で project 全体のロードが失敗してはならない。
+    /// 循環を `Err` にせず warning に倒し、1 箇所の循環でproject全体のロードや
+    /// mutation後の再解決を失敗させない。
     ///
     /// 先頭で `file_path` 昇順に整列するのは、`children` / `reverse_links` の並びが
     /// 入力順で決まるため。disk 走査順（`WalkDir`）と resident cache の `HashMap`
@@ -857,15 +1180,13 @@ impl TaskIndex {
             .map(Self::build_reverse_links)
     }
 
-    /// 外部（watcher）由来の 1 件の変更を適用し、全タスクの派生値を作り直す。
+    /// 1 件の変更を適用し、全タスクの派生値を作り直す。
     ///
     /// 「watcher 適用後の state == 同じ disk 状態で開き直した state」を成立させる
-    /// ため、`open_project` / full rescan と同じ [`Self::rebuild_derived_with_warnings`]
-    /// を通す。[`Self::rebuild_with_replaced`] を使わないのは、あちらが
-    /// `validate_parent_hierarchy` を通して循環を `Err` にするため。外部エディタが
-    /// 一時的に循環を作っただけでイベント処理が止まってはならないので、循環は
-    /// warning に倒す scan 経路と同じ意味論を使う。`Err` になるのは階層が深すぎる
-    /// 場合だけ。
+    /// ため、create / update / delete / archive / move / link mutation / watcher が
+    /// `open_project` / full rescan と同じ [`Self::rebuild_derived_with_warnings`] を通す。
+    /// lenient resolver では循環を warning に倒し、`Err` になるのは階層が深すぎる
+    /// 場合だけ。create / update の strict validation はこの処理より前に行う。
     ///
     /// frontmatter 由来の `parent` / `links` は書き換えない。消えたタスクへの参照は
     /// 値を保持したまま warning / 壊れたリンク表示に委ねる。消えるのは派生値である
@@ -875,7 +1196,11 @@ impl TaskIndex {
         change: ExternalTaskChange,
     ) -> Result<ExternalChangeOutcome, TaskParseError> {
         let before = self.tasks.clone();
-        let mut values = self.tasks;
+        let mut candidates: Vec<ParsedTask> = self
+            .tasks
+            .into_iter()
+            .map(|task| task.to_parsed_task())
+            .collect();
         let target = match &change {
             ExternalTaskChange::Upserted(task) => {
                 normalize_task_path_for_lookup(task.file_path.as_str())
@@ -885,35 +1210,27 @@ impl TaskIndex {
 
         match change {
             ExternalTaskChange::Upserted(task) => {
-                match values
+                match candidates
                     .iter_mut()
                     .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
                 {
                     Some(slot) => *slot = *task,
-                    None => values.push(*task),
+                    None => candidates.push(*task),
                 }
             }
             ExternalTaskChange::Removed(_) => {
-                values.retain(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != target);
+                candidates
+                    .retain(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != target);
             }
         }
 
-        // cache の task は前回の再構築で付いた parentNotFound / parentCycle warning を
-        // 抱えたままになる（warning は append しかされない）。剥がしてから作り直さないと、
-        // 親が後から作られて解決した後も古い warning が残り、再 open 結果と食い違う。
-        for task in &mut values {
-            task.warnings
-                .retain(|warning| !is_graph_derived_warning(warning));
-        }
-
-        let tasks = Self::new(values)
-            .rebuild_derived_with_warnings()?
-            .into_tasks();
+        let tasks = ResolvedTaskSet::resolve_lenient(candidates)?;
         let changed_task = tasks
+            .tasks
             .iter()
             .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
             .cloned();
-        let other_tasks_changed = other_tasks_differ(&before, &tasks, &target);
+        let other_tasks_changed = other_tasks_differ(&before, &tasks.tasks, &target);
 
         Ok(ExternalChangeOutcome {
             tasks,
@@ -958,15 +1275,15 @@ impl TaskIndex {
     }
 
     /// 既存 task 集合に new_task を仮想的に追加した状態で hierarchy を検証する。
-    pub fn validate_with_new_task(
+    fn validate_with_new_task(
         &self,
-        new_task: &Task,
+        new_task: &ParsedTask,
         raw_parent_input: Option<&str>,
     ) -> Result<(), ParentValidationFailure> {
-        let mut augmented: Vec<Task> = self.tasks.clone();
+        let mut augmented: Vec<ParsedTask> = self.tasks.iter().map(Task::to_parsed_task).collect();
         augmented.push(new_task.clone());
-        match validate_parent_hierarchy(augmented) {
-            Ok(_) => Ok(()),
+        match ResolvedTaskSet::validate_strict(augmented) {
+            Ok(()) => Ok(()),
             Err(TaskParseError::CycleOrTooDeep { reason, .. }) => {
                 Err(ParentValidationFailure::ChainInvalid {
                     parent: raw_parent_input.unwrap_or("").to_string(),
@@ -981,239 +1298,6 @@ impl TaskIndex {
                 })
             }
         }
-    }
-
-    /// 差分追加: 新規 Task を cache に挿入し、親 `children` と link 先
-    /// `reverse_links` を局所更新する。
-    pub(crate) fn insert_new_task_into_cache(
-        cache: &mut HashMap<CanonicalTaskPath, Task>,
-        mut new_task: Task,
-    ) -> Task {
-        let key = CanonicalTaskPath::from_file_path(&new_task.file_path);
-        // (C) (D) の incoming 判定は `normalize_*_for_lookup` の戻り値（String）と
-        // 突き合わせるため、canonical キーの文字列表現を保持する。
-        let new_normalized = key.as_str().to_string();
-
-        // (A) outgoing: 親があれば親の children に append
-        if let Some(parent_ref) = new_task.parent.as_ref() {
-            if let Some(pn) = normalize_parent_path_for_lookup(parent_ref.as_str()) {
-                if let Some(parent_task) = cache.get_mut(&CanonicalTaskPath::new(&pn)) {
-                    parent_task.children.push(new_task.file_path.clone());
-                }
-            }
-        }
-
-        // (B) outgoing: links 先 task の reverse_links に append（重複 target 除外）
-        let mut seen_link_targets: HashSet<String> = HashSet::new();
-        for link in new_task.links.clone() {
-            let Some(normalized) = normalize_link_path_for_lookup(link.as_str()) else {
-                continue;
-            };
-            if !seen_link_targets.insert(normalized.clone()) {
-                continue;
-            }
-            if let Some(target_task) = cache.get_mut(&CanonicalTaskPath::new(&normalized)) {
-                target_task.reverse_links.push(new_task.file_path.clone());
-            }
-        }
-
-        let mut existing_sorted: Vec<&Task> = cache.values().collect();
-        existing_sorted.sort_by(|a, b| a.file_path.cmp(&b.file_path));
-
-        // (C) incoming parent
-        for existing in &existing_sorted {
-            let Some(parent_ref) = existing.parent.as_ref() else {
-                continue;
-            };
-            let Some(pn) = normalize_parent_path_for_lookup(parent_ref.as_str()) else {
-                continue;
-            };
-            if pn == new_normalized {
-                new_task.children.push(existing.file_path.clone());
-            }
-        }
-
-        // (D) incoming links
-        for existing in &existing_sorted {
-            let mut seen_in_source: HashSet<String> = HashSet::new();
-            for link in &existing.links {
-                let Some(ln) = normalize_link_path_for_lookup(link.as_str()) else {
-                    continue;
-                };
-                if !seen_in_source.insert(ln.clone()) {
-                    continue;
-                }
-                if ln == new_normalized {
-                    new_task.reverse_links.push(existing.file_path.clone());
-                    break;
-                }
-            }
-        }
-
-        cache.insert(key, new_task.clone());
-        new_task
-    }
-
-    /// `add_link` の cache commit を行う差分更新 aggregate メソッド。
-    ///
-    /// snapshot 取得から本メソッド呼出までの間に他コマンドが cache を変更すると、
-    /// ディスクは更新済みなのに source / target のいずれかが cache から消えている
-    /// ケースが起こり得る。source / target 両方の存在を **先に確認** してから
-    /// mutate に入り、`TargetVanished` 時に source だけ書き換わる部分更新を防ぐ。
-    ///
-    /// 派生フィールド（children / reverse_links / warnings）の保持マージ、cycle
-    /// member の `parent=None` 維持判定、target の `reverse_links` への append は
-    /// aggregate の不変条件であり、この内部に閉じ込める。
-    ///
-    /// 振る舞い:
-    ///
-    /// 1. source が cache に無ければ `SourceVanished`、target が無ければ
-    ///    `TargetVanished` を返す（どちらも mutate 前に確認）。
-    /// 2. source エントリの派生フィールド（children / reverse_links / warnings）は
-    ///    既存値を保持しつつ、parse 由来フィールドのみ `updated_task` で上書きする。
-    ///    `task_from_parsed` は children / reverse_links を空で返し downstream の
-    ///    派生 warning も再生成しないが、add_link は parent / title / status /
-    ///    labels / extras を一切変更せず links のみ追加するため、warnings は既存値の
-    ///    保持で正しい状態が維持される。
-    /// 3. parent は通常 `updated_task` 側（disk と一致した値）を採用するが、既存
-    ///    cache が ParentCycle warning を持つ場合に限り cache 側の `parent=None` を
-    ///    維持する。scan で循環判定されたノードの cycle 状態を link 追加程度の操作で
-    ///    崩さないため。ファイル本体が外部編集で変わった場合は watcher 再 scan で
-    ///    再判定される。
-    /// 4. target の `reverse_links` に source を append する（既に push 済みなら
-    ///    冪等に skip）。
-    pub(crate) fn commit_add_link_into_cache(
-        cache: &mut HashMap<CanonicalTaskPath, Task>,
-        source_key: &CanonicalTaskPath,
-        target_normalized: &str,
-        updated_task: &Task,
-    ) -> Result<Task, AddLinkError> {
-        let target_key = CanonicalTaskPath::new(target_normalized);
-        if !cache.contains_key(source_key) {
-            return Err(AddLinkError::SourceVanished {
-                path: source_key.as_str().to_string(),
-            });
-        }
-        if !cache.contains_key(&target_key) {
-            return Err(AddLinkError::TargetVanished {
-                path: target_normalized.to_string(),
-            });
-        }
-
-        let returned_task = overwrite_preserving_derived(cache, source_key, updated_task);
-
-        // target の reverse_links に source を append。既に push 済みなら冪等に skip。
-        let target_task = cache
-            .get_mut(&target_key)
-            .expect("target presence verified above");
-        if !target_task
-            .reverse_links
-            .iter()
-            .any(|p| p == &updated_task.file_path)
-        {
-            target_task
-                .reverse_links
-                .push(updated_task.file_path.clone());
-        }
-
-        Ok(returned_task)
-    }
-
-    /// 移動後の `updated_task` を cache に反映し、IPC 戻り値となる `Task` を返す。
-    ///
-    /// `updated_task` は disk の frontmatter から再構築されているため `children` /
-    /// `reverse_links` が空になっている。status 変更はこの 2 つの派生値に影響しないので、
-    /// `add_link` / `remove_link` と同じく既存 cache 側の値を保持する（保持しないと、
-    /// 親タスクを移動した瞬間に子一覧や被リンクが画面から消える）。
-    ///
-    /// `warnings` は逆に **`updated_task` 側を採用する**。move は frontmatter の
-    /// `status` を書き換えるため、`MissingStatusUsedDefault` などの parse 由来 warning は
-    /// 書き込み後の内容で再判定した値が正しい（cache 側を丸ごと保持すると、status を
-    /// 補ったのに「status 欠落」の警告が残り続ける）。ただし graph 由来の warning
-    /// （`ParentNotFound` / `ParentCycle`）は単一 task の md からは再導出できないため、
-    /// cache 側から引き継ぐ。
-    pub(crate) fn commit_move_into_cache(
-        cache: &mut HashMap<CanonicalTaskPath, Task>,
-        moved_key: &CanonicalTaskPath,
-        updated_task: &Task,
-    ) -> Result<Task, MoveTaskError> {
-        let Some(previous) = cache.get(moved_key) else {
-            return Err(MoveTaskError::TaskVanished {
-                path: moved_key.as_str().to_string(),
-            });
-        };
-        let graph_warnings: Vec<TaskWarning> = previous
-            .warnings
-            .iter()
-            .filter(|w| is_graph_derived_warning(w))
-            .cloned()
-            .collect();
-
-        let mut committed = overwrite_preserving_derived(cache, moved_key, updated_task);
-        committed.warnings = updated_task
-            .warnings
-            .iter()
-            .cloned()
-            .chain(graph_warnings)
-            .collect();
-        // `overwrite_preserving_derived` の cycle 引き継ぎは差し替え前の warnings を見て
-        // 行われるため、warnings を入れ替えた後に parent=None + cycle warning の整合を取り直す。
-        let was_cycle_member = has_parent_cycle_warning(&committed.warnings);
-        committed.preserve_parent_cycle_state(was_cycle_member);
-        // move は frontmatter の status のみ書き換えファイル自体は動かさないため、
-        // `updated_task.file_path` ではなく移動前の `moved_key` の位置に上書きする。
-        cache.insert(moved_key.clone(), committed.clone());
-        Ok(committed)
-    }
-
-    /// `remove_link` の cache commit を行う差分更新 aggregate メソッド。
-    ///
-    /// snapshot 取得から本メソッド呼出までの間に他コマンドが cache を変更すると、
-    /// source が cache から消えていることがある。先に source の存在確認をしてから
-    /// mutate に入る。target は cache に存在しなくても fail にしない（dangling link
-    /// 掃除を許容するため、`commit_add_link_into_cache` と異なる）。
-    ///
-    /// 振る舞い:
-    ///
-    /// 1. source が cache に無ければ `SourceVanished` を返す。
-    /// 2. source エントリの派生フィールド（children / reverse_links / warnings）を
-    ///    保持しつつ parse 由来フィールドのみ `updated_task` で上書きする。remove_link
-    ///    は parent / title / status / labels / extras を変更せず links を縮めるだけの
-    ///    ため、warnings は既存値の保持で正しい状態が維持される。cycle member の
-    ///    `parent=None` 維持判定は add_link と同様。
-    /// 3. target が cache に存在すれば、その `reverse_links` から source を除去する。
-    ///    存在しない場合は orphan link 掃除のユースケースを許容して skip する。
-    ///    self-link（source == target）のケースでは source 自身の reverse_links が
-    ///    retain されるため、戻り値は target update 後に cache から再取得する。
-    pub(crate) fn commit_remove_link_into_cache(
-        cache: &mut HashMap<CanonicalTaskPath, Task>,
-        source_key: &CanonicalTaskPath,
-        target_normalized: &str,
-        updated_task: &Task,
-    ) -> Result<Task, RemoveLinkError> {
-        if !cache.contains_key(source_key) {
-            return Err(RemoveLinkError::SourceVanished {
-                path: source_key.as_str().to_string(),
-            });
-        }
-
-        overwrite_preserving_derived(cache, source_key, updated_task);
-
-        // target の reverse_links から source を除去。cache に target が存在しない
-        // 場合は orphan link 掃除のユースケースを許容するため fail にせず skip する。
-        if let Some(target_task) = cache.get_mut(&CanonicalTaskPath::new(target_normalized)) {
-            target_task
-                .reverse_links
-                .retain(|p| p != &updated_task.file_path);
-        }
-
-        // self-link では上の retain が source 自身の reverse_links を縮めるため、
-        // 戻り値は target update 後の最新値を cache から再取得する。
-        let returned_task = cache
-            .get(source_key)
-            .expect("source presence verified above")
-            .clone();
-        Ok(returned_task)
     }
 
     /// 新規 task 作成の **planning** を行う aggregate メソッド。
@@ -1326,22 +1410,23 @@ impl TaskIndex {
         }
     }
 
-    /// 既存 Task と raw `Parsed`（frontmatter + body）から、書き込むべき file_content
-    /// と更新後 Task を計算する純粋関数。I/O / 時計 / 乱数に依存しない。
+    /// 既存 Task と`TaskDocument`から取り出したraw `Parsed`を使い、書き込むべき
+    /// file_contentと更新後のparse-only candidateを計算する純粋関数。
+    /// I/O / 時計 / 乱数に依存しない。
     ///
     /// 呼び出し側（effect 層）は事前に以下を済ませてから本関数を呼ぶ:
     ///
     /// - `io.read` で existing bytes 取得
-    /// - `frontmatter::parse_bytes` で `Parsed` を取得（`None` ならエラーに変換）
+    /// - `TaskDocument::parse`でdocumentを構築し、`into_parsed`で`Parsed`を取得
     /// - cache から既存 Task を取得
     ///
     /// 検証順序:
     ///
     /// 1. parent 存在チェック（cache key 探索）→ なければ `ParentNotFound`
-    /// 2. parent 置換後の `Vec<Task>` に対して `validate_parent_hierarchy`
+    /// 2. parent置換後の`Vec<ParsedTask>`に対して`ResolvedTaskSet::validate_strict`
     /// 3. patch 適用 + `TaskDocument::render` で `String` を構築
     /// 4. `TaskContent::try_new(String)` で eligibility 検証
-    /// 5. `task_from_parsed` を呼び直して updated_task を再構築し warning を再生成
+    /// 5. `TaskDocument::to_parsed_task`でupdated candidateを再構築しwarningを再生成
     pub(crate) fn plan_update(
         &self,
         _project_root: &Path,
@@ -1352,15 +1437,14 @@ impl TaskIndex {
         let mut document = TaskDocument::from_parsed(existing_parsed);
         let parent_changed = match &intent.parent {
             None => false,
-            Some(s) if s.is_empty() => document.has_extra("parent") || existing.parent.is_some(),
+            Some(s) if s.is_empty() => document.has_extra("parent") || existing.parent().is_some(),
             Some(s) => {
                 // 正規化済み lookup key で比較する。raw string equality だと
                 // `./tasks/p.md` / `tasks\p.md` 等の表記揺れで同一 task を指していても
-                // changed と誤判定し、不要な full rebuild と非正規形での書き戻しを招く。
+                // changed と誤判定し、不要な strict validation と非正規形での書き戻しを招く。
                 let new_normalized = normalize_parent_path_for_lookup(s);
                 let existing_normalized = existing
-                    .parent
-                    .as_ref()
+                    .parent()
                     .and_then(|p| normalize_parent_path_for_lookup(p.as_str()));
                 new_normalized != existing_normalized
             }
@@ -1420,7 +1504,8 @@ impl TaskIndex {
 
         if parent_changed {
             let preliminary_task = build_patched_task(existing, &intent);
-            let mut values: Vec<Task> = self.as_slice().to_vec();
+            let mut values: Vec<ParsedTask> =
+                self.as_slice().iter().map(Task::to_parsed_task).collect();
             let target_key = intent.file_path.to_string_lossy();
             if let Some(slot) = values
                 .iter_mut()
@@ -1430,9 +1515,7 @@ impl TaskIndex {
             } else {
                 values.push(preliminary_task);
             }
-            TaskIndex::new(values)
-                .validate_parent_hierarchy()
-                .map_err(UpdateTaskError::from)?;
+            ResolvedTaskSet::validate_strict(values).map_err(UpdateTaskError::from)?;
         }
 
         let serialized = document
@@ -1445,41 +1528,14 @@ impl TaskIndex {
             file_path: existing.file_path.as_path_buf(),
             default_status: existing.status.clone(),
         };
-        let updated_task = document.to_task(&context);
+        let updated_task = document.to_parsed_task(&context);
 
         Ok(UpdateTaskOutcome {
             updated_task,
             file_content: serialized,
-            needs_full_rebuild: parent_changed,
         })
     }
 
-    /// タスク移動の計算を行う pure aggregate method。
-    ///
-    /// 呼び出し前提:
-    ///
-    /// - `existing` は effect 層が cache snapshot から `intent.file_path` で
-    ///   引き当て済みの `&Task`。
-    /// - `existing_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
-    ///
-    /// 振る舞い（検証は status 照合 → 並び照合 → 書き込み計画の順）:
-    ///
-    /// 1. cache 上の `existing.status` と、md から解決した実効 status の**両方**が
-    ///    `intent.from_column` と一致することを要求し、外れていれば `StatusMismatch`
-    ///    で reject する。同一カラム並び替えでも先に検証するため、stale な状態の
-    ///    まま cardOrder だけが書き換わることはない。md の実効 status は `status:` が
-    ///    文字列で読めればその値、欠落 / 非文字列なら `scan_default_status`
-    ///    （scan 時に割り当てられる既定値。決定は Config のドメインなので effect 層が解決）。
-    /// 2. 移動先カラムの board 表示順が `intent.expected_to_column_order` と一致する
-    ///    ことを要求し、外れていれば `CardOrderConflict` で reject する。同一カラム
-    ///    並び替えも対象（宛先＝移動元なので期待値は移動前の自分を含む並び）。
-    /// 3. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
-    /// 4. それ以外は frontmatter の `status` を `to_column` に書き換え、
-    ///    serialize 済み `file_content` と再構築した `updated_task` を返す。
-    ///
-    /// cardOrder の**書き込み内容**は Config 側のドメインのため本メソッドでは扱わない。
-    /// effect 層が `Config::plan_update_card_order` を呼んで別途計算する（`config` は
-    /// 並び照合の読み取りにのみ使う）。
     /// 移動先カラムの並びが FE の前提と一致するかを検証する。
     ///
     /// 一致しない場合は「他の変更が先に入っている」ことを意味するため、
@@ -1502,6 +1558,33 @@ impl TaskIndex {
         })
     }
 
+    /// タスク移動の計算を行う pure aggregate method。
+    ///
+    /// 呼び出し前提:
+    ///
+    /// - `existing` は effect 層が cache snapshot から `intent.file_path` で
+    ///   引き当て済みの resolved `&Task`。
+    /// - `existing_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
+    ///
+    /// 振る舞い（検証は status 照合 → 並び照合 → 書き込み計画の順）:
+    ///
+    /// 1. cache 上の `existing.status` と、md から解決した実効 status の**両方**が
+    ///    `intent.from_column` と一致することを要求し、外れていれば `StatusMismatch`
+    ///    で reject する。同一カラム並び替えでも先に検証するため、stale な状態の
+    ///    まま cardOrder だけが書き換わることはない。md の実効 status は `status:` が
+    ///    文字列で読めればその値、欠落 / 非文字列なら `scan_default_status`
+    ///    （scan 時に割り当てられる既定値。決定は Config のドメインなので effect 層が解決）。
+    /// 2. 移動先カラムの board 表示順が `intent.expected_to_column_order` と一致する
+    ///    ことを要求し、外れていれば `CardOrderConflict` で reject する。同一カラム
+    ///    並び替えも対象（宛先＝移動元なので期待値は移動前の自分を含む並び）。
+    /// 3. `from_column == to_column` なら `SameColumn` を返す。task md は変更しない。
+    /// 4. それ以外は`TaskDocument`のstatusへtyped patchを適用し、scanner eligibility
+    ///    検証済み`file_content`とparse-only `updated_task` candidateを返す。
+    ///
+    /// cardOrder の**書き込み内容**は Config 側のドメインのため本メソッドでは扱わない。
+    /// effect 層が `Config::plan_update_card_order` を呼んで別途計算する（`config` は
+    /// 並び照合の読み取りにのみ使う）。
     pub(crate) fn plan_move(
         &self,
         intent: &MoveTaskIntent,
@@ -1550,7 +1633,7 @@ impl TaskIndex {
             file_path: existing.file_path.as_path_buf(),
             default_status: existing.status.clone(),
         };
-        let updated_task = document.to_task(&context);
+        let updated_task = document.to_parsed_task(&context);
 
         Ok(MoveTaskOutcome::CrossColumn {
             updated_task,
@@ -1565,7 +1648,8 @@ impl TaskIndex {
     ///
     /// - `source_existing` は effect 層が cache snapshot から `intent.source` で
     ///   引き当て済みの `&Task`（snapshot に無ければ effect 層が早期 `SourceNotFound`）。
-    /// - `source_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    /// - `source_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
     ///
     /// 振る舞い:
     ///
@@ -1573,9 +1657,10 @@ impl TaskIndex {
     /// 2. 同一 path への self-link は `SelfLink` で reject。
     /// 3. target が aggregate に存在しなければ `TargetNotFound`。
     /// 4. `source.links` に target が既に含まれていれば `NoOp` を返す（表記揺れ吸収）。
-    /// 5. それ以外は `links` 末尾に正規化済み相対 path を push し、`TaskDocument::render`
-    ///    で書き戻し用文字列を作る。`TaskContent::try_new` で scanner eligible 検証も行う。
-    /// 6. `task_from_parsed` で `updated_task` を再構築して `Write` Outcome を返す。
+    /// 5. それ以外は現在のlinksを`Vec<String>`へ取り出して正規化済み相対pathを追加し、
+    ///    `TaskPatch { links: Patch::Set(..) }`をdocumentへ適用する。
+    /// 6. `TaskDocument::render`と`TaskContent::try_new`で書き戻し内容を検証し、
+    ///    `TaskDocument::to_parsed_task`でupdated candidateを作って`Write`を返す。
     pub(crate) fn plan_add_link(
         &self,
         _project_root: &Path,
@@ -1645,7 +1730,7 @@ impl TaskIndex {
             file_path: source_existing.file_path.as_path_buf(),
             default_status: source_existing.status.clone(),
         };
-        let updated_task = document.to_task(&context);
+        let updated_task = document.to_parsed_task(&context);
 
         Ok(AddLinkOutcome::Write {
             updated_task,
@@ -1661,25 +1746,25 @@ impl TaskIndex {
     ///
     /// - `source_existing` は effect 層が cache snapshot から `intent.source` で
     ///   引き当て済みの `&Task`。
-    /// - `source_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    /// - `source_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
     ///
     /// 振る舞い:
     ///
     /// 1. source / target を lookup 用に正規化する。失敗時は `SourceNotFound` /
     ///    `InvalidTargetPath` を返す（args 段階で reject 済みなので通常到達不可）。
-    /// 2. `source_parsed.frontmatter.links` を走査し、normalize 結果が target_norm と
-    ///    完全一致する要素を **すべて** 除去する。表記揺れで重複登録されている場合は
-    ///    一括で掃除される。
+    /// 2. `TaskDocument::links`を走査し、normalize結果がtarget_normと完全一致する
+    ///    要素をすべて除いた`Vec<String>`を作る。表記揺れの重複も一括で掃除する。
     /// 3. 1 件も除去されなければ `NoOp { existing_task }` を返す（冪等成功）。
-    /// 4. 除去ありなら `TaskDocument::render` で書き戻し用 string を生成し、
-    ///    `TaskContent::try_new` で scanner eligible 検証、`task_from_parsed` で
-    ///    `updated_task` を再構築して `Write` Outcome を返す。
+    /// 4. 除去ありなら`TaskPatch { links: Patch::Set(..) }`をdocumentへ適用し、
+    ///    `TaskDocument::render` / `TaskContent::try_new`で検証する。
+    ///    `TaskDocument::to_parsed_task`でupdated candidateを作って`Write`を返す。
     ///
     /// add_link との差分: target が aggregate に存在するかは検証しない（dangling
     /// link 掃除のユースケースを許容する）。self-link チェックも不要（src/tgt が
     /// 同一の場合、もとから links に含まれていれば NoOp ではなく Write になり
-    /// 1 件除去されるだけ）。parent / children 不変条件は links 削除では影響しないため
-    /// 検証しない。
+    /// 1 件除去されるだけ）。parentを変更しないためI/O前strict validationは不要だが、
+    /// effect層は全candidateをcanonical resolverへ通して派生値を再計算する。
     pub(crate) fn plan_remove_link(
         &self,
         _project_root: &Path,
@@ -1731,12 +1816,11 @@ impl TaskIndex {
             file_path: source_existing.file_path.as_path_buf(),
             default_status: source_existing.status.clone(),
         };
-        let updated_task = document.to_task(&context);
+        let updated_task = document.to_parsed_task(&context);
 
         Ok(RemoveLinkOutcome::Write {
             updated_task,
             file_content,
-            target_normalized: target_norm,
         })
     }
 
@@ -1758,7 +1842,7 @@ impl TaskIndex {
             // 子としてすり抜けさせないため。
             .filter(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != deleted_norm)
             .filter_map(|t| {
-                let parent = t.parent.as_ref()?;
+                let parent = t.parent()?;
                 let parent_norm = normalize_parent_path_for_lookup(parent.as_str())?;
                 (parent_norm == deleted_norm).then(|| PathBuf::from(t.file_path.as_str()))
             })
@@ -1784,8 +1868,9 @@ impl TaskIndex {
         })
     }
 
-    /// 削除対象 task の全子 task について、parent キーを除去した new file_content と
-    /// 更新後 Task を計算する pure aggregate method。I/O / 時計 / 乱数に依存しない。
+    /// 削除対象taskの全子についてparent keyを除去したfile contentと、更新後の
+    /// parse-only `ParsedTask` candidateを計算するpure aggregate method。
+    /// I/O / 時計 / 乱数に依存しない。
     #[cfg_attr(
         not(test),
         expect(
@@ -1835,7 +1920,7 @@ impl TaskIndex {
                 file_path: path.clone(),
                 default_status,
             };
-            let updated_task = document.to_task(&context);
+            let updated_task = document.to_parsed_task(&context);
 
             entries.push(ClearedChildEntry {
                 path,
@@ -1858,12 +1943,6 @@ impl TaskIndex {
         self.tasks
             .iter()
             .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
-    }
-}
-
-impl From<Vec<Task>> for TaskIndex {
-    fn from(tasks: Vec<Task>) -> Self {
-        Self::new(tasks)
     }
 }
 
@@ -1917,10 +1996,8 @@ pub struct UpdateTaskIntent {
 /// `TaskIndex::plan_update` の計算結果。effect 層が消費する。
 #[derive(Debug)]
 pub struct UpdateTaskOutcome {
-    pub updated_task: Task,
+    pub(crate) updated_task: ParsedTask,
     pub file_content: String,
-    /// parent が変化した場合のみ true。effect 層は TaskIndex を再構築する。
-    pub needs_full_rebuild: bool,
 }
 
 /// `move_task` IPC 境界から domain に渡される移動意図。
@@ -1946,7 +2023,7 @@ pub(crate) struct MoveTaskIntent {
 pub(crate) enum MoveTaskOutcome {
     /// カラム間移動: status 変更あり。task md の書き込みが必要。
     CrossColumn {
-        updated_task: Task,
+        updated_task: ParsedTask,
         file_content: String,
     },
     /// 同一カラム並び替え: task 自体は変わらない。cardOrder のみ更新する。
@@ -1977,10 +2054,9 @@ pub struct RemoveLinkIntent {
 #[derive(Debug)]
 pub(crate) enum AddLinkOutcome {
     Write {
-        updated_task: Task,
+        updated_task: ParsedTask,
         file_content: String,
-        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path
-        /// （`normalize_link_path_for_lookup` の出力形）。
+        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path。
         target_normalized: String,
     },
     NoOp {
@@ -1997,11 +2073,8 @@ pub(crate) enum AddLinkOutcome {
 #[derive(Debug)]
 pub(crate) enum RemoveLinkOutcome {
     Write {
-        updated_task: Task,
+        updated_task: ParsedTask,
         file_content: String,
-        /// effect 層が cache 上の target エントリを引くための正規化済み相対 path
-        /// （`normalize_link_path_for_lookup` の出力形）。
-        target_normalized: String,
     },
     NoOp {
         /// IPC 戻り値に使う既存 source の現在状態（plan_remove_link に渡された
@@ -2023,13 +2096,14 @@ pub struct CreateTaskOutcome {
 
 /// `TaskIndex::plan_clear_children_of` への入力。
 ///
-/// effect 層（`delete_task` IPC コマンド）が `io.read` + `frontmatter::parse_bytes`
-/// で事前に取得した子 task 1 件分の (path, Parsed) ペア。
+/// 将来のeffect層が`io.read` + `TaskDocument::parse`し、`into_parsed`で取り出す
+/// 子task 1件分の(path, Parsed)ペア。
 pub(crate) struct ClearChildrenInput {
     /// プロジェクトルート相対 path（`children_paths_of` の出力をそのまま使う想定）。
     pub path: PathBuf,
-    /// `frontmatter::parse_bytes` で得た Parsed。
-    /// frontmatter が無い md は effect 層側で別エラーに変換し、本関数には到達させない。
+    /// `TaskDocument::into_parsed`で得たcodec内部のParsed。
+    /// frontmatterが無いmdは`TaskDocument::parse`のerrorとしてeffect層で変換し、
+    /// 本関数には到達させない。
     pub parsed: Parsed,
 }
 
@@ -2058,8 +2132,8 @@ pub(crate) struct ClearChildrenOutcome {
 pub(crate) struct ClearedChildEntry {
     /// 入力 `ClearChildrenInput::path` をそのまま保持。
     pub path: PathBuf,
-    /// `task_from_parsed` で再構築済みの新 Task（effect 層が cache に書き戻す）。
-    pub updated_task: Task,
+    /// document から再parseした candidate（effect 層が resolver に渡す）。
+    pub updated_task: ParsedTask,
     /// `TaskDocument::render` 出力（effect 層が `io.write_existing` で書き戻す）。
     pub file_content: String,
 }
@@ -2153,22 +2227,6 @@ fn join_rel_path(target_dir: &Path, filename: &TaskFileName) -> PathBuf {
     }
 }
 
-/// `plan_update` で parent 変更を検証する際の置換用 Task を作る。
-///
-/// 最終的に返却される Task は `task_from_parsed` 再走の結果に置き換わるため、
-/// ここでは循環/深さ検証に必要なフィールド（特に `parent`）だけ正しく埋まっていればよい。
-/// task 集合のグラフ構造から導出される warning かを判定する。
-///
-/// これらは単一 task の md だけからは再導出できないため、md 由来で再構築した `Task` に
-/// 引き継ぐ必要がある。それ以外（title / status / due / extras の parse 由来）は
-/// 書き込み後の内容で再判定した値が正しい。
-fn is_graph_derived_warning(warning: &TaskWarning) -> bool {
-    matches!(
-        warning.code,
-        TaskWarningCode::ParentNotFound | TaskWarningCode::ParentCycle
-    )
-}
-
 /// 変更対象を除いたタスク集合が before / after で異なるかを判定する。
 ///
 /// 件数の増減も差分として扱う（削除で参照元だけが残るケースを取りこぼさない）。
@@ -2214,8 +2272,8 @@ fn ensure_status_matches(intent: &MoveTaskIntent, actual: &str) -> Result<(), Mo
     })
 }
 
-fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {
-    let mut task = existing.clone();
+fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> ParsedTask {
+    let mut task = existing.to_parsed_task();
     if let Some(title) = &intent.title {
         task.title = TaskTitle::from_lenient(title.clone());
     }
@@ -2229,11 +2287,12 @@ fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> Task {
             .collect();
     }
     if let Some(parent) = &intent.parent {
-        if parent.is_empty() {
-            task.parent = None;
+        let parent = if parent.is_empty() {
+            None
         } else {
-            task.parent = Some(TaskFilePath::from_lenient(parent.clone()));
-        }
+            Some(TaskFilePath::from_lenient(parent.clone()))
+        };
+        task.parent = parent;
     }
     if let Some(body) = &intent.body {
         task.body = format!("\n{body}");
@@ -2263,20 +2322,20 @@ fn normalize_create_links(raw_links: &[String]) -> Vec<String> {
     normalized
 }
 
-/// augmented hierarchy 検証用に最低限のフィールドだけ埋めた Task を作る。
+/// augmented hierarchy 検証用に最低限のフィールドだけ埋めた candidate を作る。
 fn build_provisional_task(
     rel_path: &Path,
     intent: &CreateTaskIntent,
     resolved_parent_path: Option<&str>,
     normalized_links: &[String],
-) -> Task {
+) -> ParsedTask {
     let file_path = TaskFilePath::from_lenient(rel_path.to_string_lossy().replace('\\', "/"));
     let parent = resolved_parent_path.map(TaskFilePath::from_lenient);
     let links = normalized_links
         .iter()
         .map(|link| TaskFilePath::from_lenient(link.clone()))
         .collect();
-    Task {
+    ParsedTask {
         id: file_path.clone(),
         file_path,
         title: intent.title.clone(),
@@ -2285,14 +2344,12 @@ fn build_provisional_task(
         milestone: None,
         draft: intent.draft,
         labels: Vec::new(),
-        parent,
         due: None,
         links,
-        children: Vec::new(),
-        reverse_links: Vec::new(),
         body: String::new(),
         extras: BTreeMap::new(),
-        warnings: Vec::new(),
+        parse_warnings: Vec::new(),
+        parent,
     }
 }
 
@@ -2307,6 +2364,9 @@ fn build_provisional_task(
 // ---------------------------------------------------------------------------
 
 pub(super) fn validate_parent_existence(mut tasks: Vec<Task>) -> Vec<Task> {
+    for task in &mut tasks {
+        task.reset_graph_for_resolver();
+    }
     let task_paths = task_path_index(&tasks);
 
     for task in &mut tasks {
@@ -2395,7 +2455,7 @@ fn validate_parent_chain(
 }
 
 fn append_parent_not_found_warning(task: &mut Task, task_paths: &HashSet<String>) {
-    let Some(parent) = &task.parent else {
+    let Some(parent) = task.parent() else {
         return;
     };
 
@@ -2469,7 +2529,7 @@ fn walk_parent_chain_collecting_cycle(
 }
 
 fn push_parent_not_found(task: &mut Task) {
-    let already_exists = task.warnings.iter().any(|warning| {
+    let already_exists = task.derived.graph_warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     });
@@ -2477,44 +2537,11 @@ fn push_parent_not_found(task: &mut Task) {
         return;
     }
 
-    task.warnings.push(TaskWarning {
+    task.derived.graph_warnings.push(TaskWarning {
         code: TaskWarningCode::ParentNotFound,
         field: Some("parent".to_string()),
         message: "parent task was not found".to_string(),
     });
-}
-
-/// link commit 共通の source エントリ上書きロジック。
-///
-/// cache 上の既存 source エントリから派生フィールド（children / reverse_links /
-/// warnings）を退避し、parse 由来フィールドのみ `updated_task` で上書きする。
-/// parent は通常 `updated_task` 側を採用するが、既存 cache が ParentCycle warning を
-/// 持つ場合に限り cache 側の `parent=None`（cycle 状態）を維持する。cycle 状態の
-/// 引き継ぎ判定・preserve は `Task::preserve_parent_cycle_state` に一元化されており、
-/// ここではその呼び出しに委譲する。
-///
-/// 呼び出し側は `key` が cache に存在することを事前に検証している前提。上書き後の
-/// source エントリの clone を返す。
-fn overwrite_preserving_derived(
-    cache: &mut HashMap<CanonicalTaskPath, Task>,
-    key: &CanonicalTaskPath,
-    updated_task: &Task,
-) -> Task {
-    let source_entry = cache
-        .get_mut(key)
-        .expect("source presence verified by caller");
-    let was_cycle_member = has_parent_cycle_warning(&source_entry.warnings);
-    let preserved_children = std::mem::take(&mut source_entry.children);
-    let preserved_reverse = std::mem::take(&mut source_entry.reverse_links);
-    let preserved_warnings = std::mem::take(&mut source_entry.warnings);
-    *source_entry = Task {
-        children: preserved_children,
-        reverse_links: preserved_reverse,
-        warnings: preserved_warnings,
-        ..updated_task.clone()
-    };
-    source_entry.preserve_parent_cycle_state(was_cycle_member);
-    source_entry.clone()
 }
 
 #[cfg(test)]
@@ -2564,10 +2591,6 @@ mod task_index_clear_children_tests;
 #[cfg(test)]
 #[path = "task_index_plan_delete_abort_tests.rs"]
 mod task_index_plan_delete_abort_tests;
-
-#[cfg(test)]
-#[path = "task_index_cycle_preservation_tests.rs"]
-mod task_index_cycle_preservation_tests;
 
 #[cfg(test)]
 #[path = "task_index_plan_add_link_tests.rs"]

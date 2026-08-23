@@ -5,7 +5,8 @@ use super::{
     validate_parent_hierarchy, ParentHierarchyErrorReason, Task, TaskIndex,
 };
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
-use crate::task::warning::{TaskWarning, TaskWarningCode};
+use crate::task::task_file_path::TaskFilePath;
+use crate::task::warning::TaskWarningCode;
 
 fn context(path: &str) -> TaskParseContext {
     TaskParseContext {
@@ -15,7 +16,9 @@ fn context(path: &str) -> TaskParseContext {
 }
 
 fn task_from(input: &str, path: &str) -> Task {
-    task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(input.as_bytes(), &context(path)).unwrap(),
+    )
 }
 
 fn task_with_parent(path: &str, parent: &str) -> Task {
@@ -54,9 +57,9 @@ fn parent_existence_validation_does_not_warn_when_parent_is_missing_or_existing(
         ),
     ]);
 
-    assert!(tasks[0].warnings.is_empty());
+    assert!(tasks[0].warnings().is_empty());
     assert!(tasks[2]
-        .warnings
+        .warnings()
         .iter()
         .all(|warning| warning.code != TaskWarningCode::ParentNotFound));
 }
@@ -68,8 +71,11 @@ fn missing_parent_adds_warning_without_dropping_task_or_parent_value() {
         "tasks/child.md",
     )]);
 
-    assert_eq!(tasks[0].parent, Some("tasks/missing.md".into()));
-    assert!(tasks[0].warnings.iter().any(|warning| {
+    assert_eq!(
+        tasks[0].parent().map(TaskFilePath::as_str),
+        Some("tasks/missing.md")
+    );
+    assert!(tasks[0].warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
@@ -82,8 +88,8 @@ fn empty_parent_adds_warning_without_normalizing_parent_value() {
         "tasks/child.md",
     )]);
 
-    assert_eq!(tasks[0].parent, Some(String::new().into()));
-    assert!(tasks[0].warnings.iter().any(|warning| {
+    assert_eq!(tasks[0].parent().map(TaskFilePath::as_str), Some(""));
+    assert!(tasks[0].warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
@@ -102,15 +108,15 @@ fn parent_existence_validation_warns_each_task_and_keeps_existing_warnings() {
         ),
     ]);
 
-    assert!(tasks[0].warnings.iter().any(|warning| {
+    assert!(tasks[0].warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
     assert!(tasks[1]
-        .warnings
+        .warnings()
         .iter()
         .any(|warning| warning.code == TaskWarningCode::InvalidTitleUsedFileName));
-    assert!(tasks[1].warnings.iter().any(|warning| {
+    assert!(tasks[1].warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
@@ -118,19 +124,13 @@ fn parent_existence_validation_warns_each_task_and_keeps_existing_warnings() {
 
 #[test]
 fn parent_existence_validation_does_not_duplicate_parent_not_found_warning() {
-    let mut task = task_from(
+    let task = task_from(
         "---\ntitle: Child\nstatus: Todo\nparent: tasks/missing.md\n---\n",
         "tasks/child.md",
     );
-    task.warnings.push(TaskWarning {
-        code: TaskWarningCode::ParentNotFound,
-        field: Some("parent".into()),
-        message: "parent task was not found".to_string(),
-    });
-
     let tasks = validate_parent_existence(vec![task]);
     let warning_count = tasks[0]
-        .warnings
+        .warnings()
         .iter()
         .filter(|warning| {
             warning.code == TaskWarningCode::ParentNotFound
@@ -149,7 +149,7 @@ fn self_parent_is_treated_as_existing_parent() {
     )]);
 
     assert!(tasks[0]
-        .warnings
+        .warnings()
         .iter()
         .all(|warning| warning.code != TaskWarningCode::ParentNotFound));
 }
@@ -210,8 +210,11 @@ fn missing_parent_keeps_warning_without_cycle_error() {
         validate_parent_hierarchy(vec![task_with_parent("tasks/child.md", "tasks/missing.md")])
             .unwrap();
 
-    assert_eq!(tasks[0].parent, Some("tasks/missing.md".into()));
-    assert!(tasks[0].warnings.iter().any(|warning| {
+    assert_eq!(
+        tasks[0].parent().map(TaskFilePath::as_str),
+        Some("tasks/missing.md")
+    );
+    assert!(tasks[0].warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
@@ -261,7 +264,7 @@ fn parent_lookup_accepts_separator_and_current_directory_variations() {
 
         assert!(
             tasks[1]
-                .warnings
+                .warnings()
                 .iter()
                 .all(|warning| warning.code != TaskWarningCode::ParentNotFound),
             "{parent}"
@@ -283,7 +286,7 @@ fn parent_lookup_rejects_absolute_or_drive_prefixed_parent_paths() {
         ]);
 
         assert!(
-            tasks[1].warnings.iter().any(|warning| {
+            tasks[1].warnings().iter().any(|warning| {
                 warning.code == TaskWarningCode::ParentNotFound
                     && warning.field.as_deref() == Some("parent")
             }),
@@ -362,7 +365,7 @@ fn task_by_path<'a>(tasks: &'a [Task], path: &str) -> &'a Task {
 }
 
 fn has_parent_cycle_warning(task: &Task) -> bool {
-    task.warnings.iter().any(|warning| {
+    task.warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
     })
 }
@@ -380,13 +383,16 @@ fn build_children_with_warnings_keeps_parent_when_no_cycle() {
     let tasks = index.into_tasks();
 
     let child = task_by_path(&tasks, "tasks/child.md");
-    assert_eq!(child.parent, Some("tasks/parent.md".into()));
+    assert_eq!(
+        child.parent().map(TaskFilePath::as_str),
+        Some("tasks/parent.md")
+    );
     assert!(!has_parent_cycle_warning(child));
     let parent = task_by_path(&tasks, "tasks/parent.md");
     assert!(!has_parent_cycle_warning(parent));
     // children も build される
     assert_eq!(
-        parent.children,
+        parent.children(),
         vec!["tasks/child.md".to_string()],
         "non-cycle parent should still gain its child"
     );
@@ -402,12 +408,15 @@ fn build_children_with_warnings_keeps_parent_not_found_warning() {
     let tasks = index.into_tasks();
 
     let child = task_by_path(&tasks, "tasks/child.md");
-    assert!(child.warnings.iter().any(|warning| {
+    assert!(child.warnings().iter().any(|warning| {
         warning.code == TaskWarningCode::ParentNotFound
             && warning.field.as_deref() == Some("parent")
     }));
     // parent_not_found のままで parent は保持されている
-    assert_eq!(child.parent, Some("tasks/missing.md".into()));
+    assert_eq!(
+        child.parent().map(TaskFilePath::as_str),
+        Some("tasks/missing.md")
+    );
     assert!(!has_parent_cycle_warning(child));
 }
 
@@ -422,9 +431,9 @@ fn build_children_with_warnings_marks_self_loop_as_cycle() {
 
     let a = task_by_path(&tasks, "tasks/a.md");
     assert!(has_parent_cycle_warning(a), "self loop must add warning");
-    assert_eq!(a.parent, None, "self loop must clear parent");
+    assert_eq!(a.parent(), None, "self loop must clear parent");
     assert!(
-        a.children.is_empty(),
+        a.children().is_empty(),
         "self loop should not become its own child"
     );
 }
@@ -445,10 +454,10 @@ fn build_children_with_warnings_marks_two_node_cycle() {
     let b = task_by_path(&tasks, "tasks/b.md");
     assert!(has_parent_cycle_warning(a));
     assert!(has_parent_cycle_warning(b));
-    assert_eq!(a.parent, None);
-    assert_eq!(b.parent, None);
-    assert!(a.children.is_empty());
-    assert!(b.children.is_empty());
+    assert_eq!(a.parent(), None);
+    assert_eq!(b.parent(), None);
+    assert!(a.children().is_empty());
+    assert!(b.children().is_empty());
 }
 
 #[test]
@@ -470,7 +479,7 @@ fn build_children_with_warnings_marks_three_node_cycle() {
             has_parent_cycle_warning(task),
             "{path} should have parentCycle warning"
         );
-        assert_eq!(task.parent, None, "{path} should have parent cleared");
+        assert_eq!(task.parent(), None, "{path} should have parent cleared");
     }
 }
 
@@ -498,8 +507,8 @@ fn build_children_with_warnings_excludes_tail_from_cycle() {
         "D is only a tail and must not be flagged"
     );
     assert_eq!(
-        d.parent,
-        Some("tasks/a.md".into()),
+        d.parent().map(TaskFilePath::as_str),
+        Some("tasks/a.md"),
         "D's parent must be kept"
     );
 }
@@ -538,7 +547,7 @@ fn build_children_with_warnings_keeps_existing_warning_when_adding_cycle() {
 
     let a = task_by_path(&tasks, "tasks/a.md");
     assert!(
-        a.warnings
+        a.warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::InvalidTitleUsedFileName),
         "pre-existing warning must be preserved"
@@ -548,13 +557,15 @@ fn build_children_with_warnings_keeps_existing_warning_when_adding_cycle() {
 
 #[test]
 fn build_children_with_warnings_does_not_duplicate_cycle_warning() {
-    let mut task_a = task_with_parent("tasks/a.md", "tasks/b.md");
-    task_a.warnings.push(TaskWarning {
-        code: TaskWarningCode::ParentCycle,
-        field: Some("parent".into()),
-        message: "parent chain forms a cycle".to_string(),
-    });
-    let tasks = vec![task_a, task_with_parent("tasks/b.md", "tasks/a.md")];
+    let tasks = vec![
+        task_with_parent("tasks/a.md", "tasks/b.md"),
+        task_with_parent("tasks/b.md", "tasks/a.md"),
+    ];
+
+    let tasks = TaskIndex::new(tasks)
+        .build_children_with_warnings()
+        .expect("cycle should be normalized")
+        .into_tasks();
 
     let index = TaskIndex::new(tasks)
         .build_children_with_warnings()
@@ -563,7 +574,7 @@ fn build_children_with_warnings_does_not_duplicate_cycle_warning() {
 
     let a = task_by_path(&tasks, "tasks/a.md");
     let cycle_count = a
-        .warnings
+        .warnings()
         .iter()
         .filter(|w| w.code == TaskWarningCode::ParentCycle && w.field.as_deref() == Some("parent"))
         .count();

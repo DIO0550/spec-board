@@ -278,12 +278,14 @@ fn resync_under_lease(
         return Ok(ReactivationResyncOutcome::Unchanged);
     }
 
+    let tasks = crate::task::task_index::ResolvedTaskSet::reresolve(loaded.tasks.values().cloned())
+        .expect("loaded reactivation tasks passed the canonical resolver");
     state.preflight_session_write(snapshot)?;
     let committed = state.commit_session_write(&snapshot.identity(), move |session| {
         session.replace_config(loaded.config);
         session.replace_labels(loaded.labels);
         session.replace_milestones(loaded.milestones);
-        session.replace_tasks_and_load_warnings(loaded.tasks, loaded.load_warnings);
+        session.replace_tasks_and_load_warnings(tasks, loaded.load_warnings);
     })?;
     emit_envelope_if_current(
         state,

@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::project_session::{RevisionExhausted, SessionConflict};
 use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::io::TaskIoError;
+use crate::task::parse::TaskParseError;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
 /// aggregate validation + command 層 validation のエラー。
@@ -64,6 +65,8 @@ pub enum ArchiveTaskCommandError {
     RevisionExhausted(#[from] RevisionExhausted),
     #[error(transparent)]
     ResourceConflict(#[from] SessionResourceConflict),
+    #[error(transparent)]
+    Resolution(#[from] TaskParseError),
 }
 
 impl From<SessionWriteError> for ArchiveTaskCommandError {

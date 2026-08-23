@@ -23,7 +23,6 @@ use crate::task::parse::{
 use crate::task::rebuild::rebuild_tasks_from_disk_with_report;
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::{ExternalChangeOutcome, ExternalTaskChange, Task, TaskIndex};
-use crate::task::warning::has_parent_cycle_warning;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
@@ -183,23 +182,6 @@ fn preflight_mutation(
     }
 }
 
-/// resident cache に循環メンバーが 1 件でも居るか。
-///
-/// 循環メンバーの `parent` は派生再構築の過程で None に上書きされて cache へ載るため、
-/// frontmatter に書かれていた本当の親は cache から失われている。つまり cache だけでは
-/// 「循環がまだ続いているか」を再計算できない。
-///
-/// 判定を「変更対象の path が循環メンバーか」に狭めてはならない。無関係な task を
-/// 更新しただけでも全件の派生値を作り直すため、失われた parent のせいで循環が再検出
-/// されず、disk には残っている循環の warning が消えてしまう。cache に循環が居る間は
-/// upsert / delete をまとめて disk 読み直し（full rescan）へ委ねる。
-fn cache_has_cycle_member(snapshot: &ProjectSessionSnapshot) -> bool {
-    snapshot
-        .tasks()
-        .values()
-        .any(|task| has_parent_cycle_warning(&task.warnings))
-}
-
 /// resident がこの path を task として抱えているなら rescan する。
 ///
 /// task として読み込めなくなった md を黙って無視すると、resident には古い task が
@@ -283,9 +265,6 @@ fn handle_upsert(
     };
     if resources.write_ignore().unregister(abs_path)? {
         return Ok(());
-    }
-    if cache_has_cycle_member(&snapshot) {
-        return handle_rescan(ctx, before_sequence);
     }
     if has_load_warning_for(&snapshot, &lenient_path) {
         return handle_rescan(ctx, before_sequence);
@@ -388,17 +367,12 @@ fn handle_upsert(
         changed_task,
         other_tasks_changed,
     } = reconciled;
-    let next_tasks: HashMap<CanonicalTaskPath, Task> = tasks
-        .into_iter()
-        .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
-        .collect();
-
     let expected = snapshot.identity();
     let committed = match ctx.state.commit_session_write(&expected, move |session| {
         if let Some(config) = next_config {
             session.replace_config(config);
         }
-        session.replace_tasks(next_tasks);
+        session.replace_tasks(tasks);
     }) {
         Ok(committed) => committed,
         Err(
@@ -434,7 +408,9 @@ fn handle_upsert(
         ctx,
         &committed_identity,
         event_name,
-        TaskUpsertPayload { task: emitted_task },
+        TaskUpsertPayload {
+            task: emitted_task.into(),
+        },
         before_sequence,
     )
 }
@@ -453,7 +429,7 @@ fn reconciled_status(
         log::warn!("watcher_event: reconciled task missing for {cache_key}");
         return None;
     };
-    Some(task.status.as_str().to_owned())
+    Some(task.status().as_str().to_owned())
 }
 
 /// watcher event 起点で config をどう扱うかの結論。
@@ -585,9 +561,6 @@ fn handle_delete(
         return Ok(());
     }
 
-    if cache_has_cycle_member(&snapshot) {
-        return handle_rescan(ctx, before_sequence);
-    }
     let cache_key = CanonicalTaskPath::from_file_path(&rel_path);
     if !snapshot.tasks().contains_key(&cache_key) {
         log::trace!(
@@ -623,11 +596,7 @@ fn handle_delete(
         }
     };
     let other_tasks_changed = reconciled.other_tasks_changed;
-    let next_tasks: HashMap<CanonicalTaskPath, Task> = reconciled
-        .tasks
-        .into_iter()
-        .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
-        .collect();
+    let next_tasks = reconciled.tasks;
 
     let expected = snapshot.identity();
     let committed = match ctx.state.commit_session_write(&expected, move |session| {
@@ -716,8 +685,11 @@ fn handle_rescan(
         let cache: HashMap<CanonicalTaskPath, Task> = report
             .tasks
             .into_iter()
-            .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
+            .map(|task| (CanonicalTaskPath::from_file_path(task.file_path()), task))
             .collect();
+        let resolved_tasks =
+            crate::task::task_index::ResolvedTaskSet::reresolve(cache.values().cloned())
+                .expect("full rescan report passed the canonical resolver");
         // cache は open 側と同じ `HashMap<CanonicalTaskPath, Task>` なので、詰め替えは
         // `status_inputs_from_tasks` をそのまま使う（同型の helper を watcher 側に
         // 作らない）。
@@ -734,7 +706,7 @@ fn handle_rescan(
             if let Some(config) = next_config {
                 session.replace_config(config);
             }
-            session.replace_tasks_and_load_warnings(cache, load_warnings);
+            session.replace_tasks_and_load_warnings(resolved_tasks, load_warnings);
         }) {
             Ok(committed) => RescanCommit::Committed(committed.identity().clone()),
             Err(SessionWriteError::Conflict(conflict)) => {

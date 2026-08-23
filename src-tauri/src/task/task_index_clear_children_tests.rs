@@ -20,7 +20,9 @@ fn context(path: &str) -> TaskParseContext {
 }
 
 fn task_from(input: &str, path: &str) -> Task {
-    task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(input.as_bytes(), &context(path)).unwrap(),
+    )
 }
 
 fn task_with_parent(path: &str, parent: &str) -> Task {
@@ -139,11 +141,7 @@ fn children_paths_of_excludes_self_under_path_notation_variance() {
     // 異常データ: 削除対象自身が自分自身を parent として持つ。
     // raw 文字列比較だと `t.file_path = "tasks/p.md"` と `deleted_path = "./tasks/p.md"`
     // で自己除外をすり抜けて自分が子に出てしまうため、正規化比較で防ぐ。
-    let mut self_referential = task_with_parent("tasks/p.md", "tasks/p.md");
-    // parent をあえて表記揺れに変えて、正規化比較で同一視されることを確認する。
-    self_referential.parent = Some(crate::task::task_file_path::TaskFilePath::from_lenient(
-        "./tasks/p.md",
-    ));
+    let self_referential = task_with_parent("tasks/p.md", "./tasks/p.md");
 
     let index = TaskIndex::new(vec![self_referential]);
 

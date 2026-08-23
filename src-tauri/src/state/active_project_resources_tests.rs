@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, TryRecvError};
@@ -24,7 +23,7 @@ fn session_identity(session_id: u64) -> SessionIdentity {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        crate::task::task_index::ResolvedTaskSet::default(),
     )
     .into_session(SessionId::from_raw(session_id))
     .identity()

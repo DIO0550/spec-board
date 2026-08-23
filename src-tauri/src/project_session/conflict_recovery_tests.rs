@@ -25,7 +25,7 @@ use crate::state::active_project_resources::{
 use crate::state::{AppState, BoxedWatcherHandle, CommitSessionError, SessionWriteError};
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::FsTaskIo;
-use crate::task::task_index::Task;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 use super::{resync_if_same_project_under_lease, ResyncError, ResyncSource};
 
@@ -133,24 +133,7 @@ fn milestones(name: &str) -> MilestoneRegistry {
 }
 
 fn sample_task(path: &str, title: &str) -> Task {
-    Task {
-        draft: false,
-        id: path.into(),
-        file_path: path.into(),
-        title: title.into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(path).title(title).resolve()
 }
 
 fn staged_for(identity: SessionIdentity) -> StagedProjectResources {
@@ -171,6 +154,8 @@ fn open_session(
     tasks: HashMap<CanonicalTaskPath, Task>,
 ) -> ProjectSessionSnapshot {
     let session_id = state.reserve_session_id().expect("reserve session ID");
+    let tasks = crate::task::task_index::ResolvedTaskSet::reresolve(tasks.into_values())
+        .expect("fixture tasks resolve");
     let candidate = PreparedProjectSession::new(root, config, labels, milestones, tasks)
         .into_session(session_id);
     let staged = staged_for(candidate.identity());
@@ -255,7 +240,7 @@ fn task_resync_keeps_session_id_and_commits_all_rebuilt_tasks_once() {
     assert_eq!(
         "Fresh from disk",
         recovered.tasks()[&CanonicalTaskPath::new("fresh.md")]
-            .title
+            .title()
             .as_str()
     );
 }
@@ -300,7 +285,7 @@ fn config_and_tasks_resync_uses_reloaded_config_for_missing_task_status() {
     assert_eq!(recovered_config, *recovered.config());
     assert_eq!(
         ColumnName::from_lenient("Review"),
-        recovered.tasks()[&CanonicalTaskPath::new("fresh.md")].status
+        *recovered.tasks()[&CanonicalTaskPath::new("fresh.md")].status()
     );
     assert_eq!(2, recovered.version().revision.as_u64());
 }

@@ -178,7 +178,7 @@ impl WatcherFactory for CountingFactory {
             move || {
                 let snapshot = state.test_tasks_snapshot().expect("new session readable");
                 assert_eq!(1, snapshot.len());
-                assert_eq!("tasks/a.md", snapshot[0].file_path);
+                assert_eq!("tasks/a.md", snapshot[0].file_path());
                 stop_calls.fetch_add(1, Ordering::SeqCst);
             },
         )
@@ -302,7 +302,7 @@ impl WatcherFactory for IdentityMismatchFactory {
             Config::default(),
             crate::config::LabelRegistry::default(),
             crate::config::MilestoneRegistry::default(),
-            std::collections::HashMap::new(),
+            crate::task::task_index::ResolvedTaskSet::default(),
         )
         .into_session(wrong_id)
         .identity();
@@ -926,7 +926,7 @@ fn updates_app_state_fields_on_success() {
     assert_eq!(vec!["Todo"], column_names);
     let snapshot = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, snapshot.len());
-    assert_eq!("tasks/a.md", snapshot[0].file_path);
+    assert_eq!("tasks/a.md", snapshot[0].file_path());
     let identity = state.active_session_identity().expect("active session");
     let resources = state
         .resources_for(identity.version())
@@ -1183,7 +1183,7 @@ fn tasks_cache_uses_path_buf_keys_from_file_path() {
     let snapshot = state.test_tasks_snapshot().expect("readable");
     let mut paths: Vec<String> = snapshot
         .iter()
-        .map(|t| t.file_path.as_str().to_string())
+        .map(|t| t.file_path().as_str().to_string())
         .collect();
     paths.sort();
     assert_eq!(
@@ -1404,29 +1404,14 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         CardOrder::default(),
         None,
     );
-    let task_b = Task {
-        draft: false,
-        id: "b.md".into(),
-        file_path: "b.md".into(),
-        title: "B".into(),
-        status: "A".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    };
-    let task_a = Task {
-        id: "a.md".into(),
-        file_path: "a.md".into(),
-        ..task_b.clone()
-    };
+    let task_b = crate::task::task_index::ParsedTaskBuilder::new("b.md")
+        .title("B")
+        .status("A")
+        .resolve();
+    let task_a = crate::task::task_index::ParsedTaskBuilder::new("a.md")
+        .title("B")
+        .status("A")
+        .resolve();
 
     let payload = super::build_payload_from_parts(vec![task_b, task_a], &cfg, zero_session());
 
@@ -1855,24 +1840,10 @@ fn payload_tasks_are_grouped_by_column_display_order() {
 /// `build_payload` を直接叩くテスト用の Task。`children` は空のまま渡し、
 /// projection が `parent` 由来であることを fixture 側で担保する。
 fn sample_task_with_parent(file_path: &str, parent: Option<&str>) -> Task {
-    Task {
-        draft: false,
-        id: file_path.into(),
-        file_path: file_path.into(),
-        title: "T".into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: parent.map(Into::into),
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    crate::task::task_index::ParsedTaskBuilder::new(file_path)
+        .title("T")
+        .parent(parent.map(Into::into))
+        .resolve()
 }
 
 /// 親 1 / 子 2（うち 1 件が Done）の 3 カラム構成プロジェクトを open する。
@@ -2142,9 +2113,12 @@ fn open_project_impl_returns_the_same_tasks_as_the_shared_rebuild_pipeline() {
         &crate::task::io::FsTaskIo,
     )
     .expect("rebuild ok");
-    let mut from_open: Vec<Task> = payload.tasks;
+    let mut from_open = payload.tasks;
     from_open.sort_by(|a, b| a.file_path.cmp(&b.file_path));
-    let mut from_rebuild = rebuilt;
+    let mut from_rebuild: Vec<crate::task::payload::TaskPayload> = rebuilt
+        .into_iter()
+        .map(crate::task::payload::TaskPayload::from)
+        .collect();
     from_rebuild.sort_by(|a, b| a.file_path.cmp(&b.file_path));
 
     assert_eq!(from_rebuild, from_open);
@@ -2184,13 +2158,8 @@ impl WatcherFactory for EmittingOnActivationFactory {
             identity,
             move || {
                 state
-                    .test_update_tasks(|cache| {
-                        cache.insert(
-                            crate::task::canonical_task_path::CanonicalTaskPath::new(
-                                "tasks/spawned.md",
-                            ),
-                            sample_spawned_task(),
-                        );
+                    .test_update_parsed_tasks(|candidates| {
+                        candidates.push(sample_spawned_task());
                     })
                     .expect("writable");
                 let current_identity = state
@@ -2251,25 +2220,11 @@ impl WatcherFactory for GenerationProbeFactory {
     }
 }
 
-fn sample_spawned_task() -> Task {
-    Task {
-        draft: false,
-        id: "tasks/spawned.md".into(),
-        file_path: "tasks/spawned.md".into(),
-        title: "Spawned".into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: Some("v1".to_owned()),
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+fn sample_spawned_task() -> crate::task::task_index::ParsedTask {
+    crate::task::task_index::ParsedTaskBuilder::new("tasks/spawned.md")
+        .title("Spawned")
+        .milestone(Some("v1".to_owned()))
+        .build()
 }
 
 fn open_with(
