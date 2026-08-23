@@ -43,8 +43,7 @@ pub(crate) fn delete_task_impl(
         index.plan_delete_abort(&rel_path.to_string_lossy())?;
 
         let resolved = index
-            .rebuild_with_external_change(ExternalTaskChange::Removed(deleted_file_path.clone()))
-            .expect("removing a task cannot deepen a previously resolved parent chain");
+            .rebuild_with_external_change(ExternalTaskChange::Removed(deleted_file_path.clone()))?;
         let next_tasks = resolved.tasks;
         let resources = state.preflight_session_write(snapshot)?;
         let registered_paths = vec![abs.clone()];
