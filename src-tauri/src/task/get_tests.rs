@@ -79,7 +79,7 @@ fn poisoned_tasks_cache_still_returns_state_lock_poisoned() {
     let state = Arc::new(AppState::new());
     let poison_target = Arc::clone(&state);
     let join = std::thread::spawn(move || {
-        let _ = poison_target.test_update_tasks(|_| panic!("poison tasks_cache"));
+        let _ = poison_target.test_update_parsed_tasks(|_| panic!("poison tasks_cache"));
     })
     .join();
     assert!(join.is_err());
@@ -453,16 +453,26 @@ fn payload_session_revision_refers_to_the_returned_tasks() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path().to_str().expect("utf-8"));
     let first = get_tasks_impl(&state).expect("get ok");
-
     // cache を 1 件増やしてから再取得すると、revision も一緒に進む。
     let identity = state
         .active_session_identity()
         .expect("active session identity");
     state
         .commit_session_write(&identity, |session| {
-            session.tasks_mut().insert(
-                crate::task::canonical_task_path::CanonicalTaskPath::new("tasks/b.md"),
-                first.tasks[0].clone(),
+            let mut candidates: Vec<_> = session
+                .snapshot()
+                .tasks()
+                .values()
+                .map(crate::task::task_index::Task::to_parsed_task)
+                .collect();
+            candidates.push(
+                crate::task::task_index::ParsedTaskBuilder::new("tasks/b.md")
+                    .title("B")
+                    .build(),
+            );
+            session.replace_tasks(
+                crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)
+                    .expect("fixture candidates resolve"),
             );
         })
         .expect("writable");
@@ -589,8 +599,7 @@ fn cache_holding_a_parent_cycle_from_watcher_upsert_still_succeeds() {
     let raw = dir.path().to_str().expect("utf-8").to_string();
     open_with_noop(Arc::clone(&state), &raw);
 
-    // watcher の差分 upsert は新規循環を検出しないため、`mark_cycle_members` を
-    // 通っていない循環が cache に残る経路を直接再現する。
+    // parse-only循環fixtureをcanonical resolverへ渡し、residentにはresolved Taskだけを置く。
     let cyclic = |path: &str, parent: &str| {
         let context = crate::task::parse::TaskParseContext {
             file_path: std::path::PathBuf::from(path),
@@ -603,16 +612,10 @@ fn cache_holding_a_parent_cycle_from_watcher_upsert_still_succeeds() {
         .expect("fixture markdown should parse")
     };
     state
-        .test_update_tasks(|tasks| {
-            tasks.insert(
-                crate::task::canonical_task_path::CanonicalTaskPath::new("tasks/x.md"),
-                cyclic("tasks/x.md", "tasks/y.md"),
-            );
-            tasks.insert(
-                crate::task::canonical_task_path::CanonicalTaskPath::new("tasks/y.md"),
-                cyclic("tasks/y.md", "tasks/x.md"),
-            );
-        })
+        .test_replace_parsed_tasks(vec![
+            cyclic("tasks/x.md", "tasks/y.md"),
+            cyclic("tasks/y.md", "tasks/x.md"),
+        ])
         .expect("update tasks cache");
 
     let payload = get_tasks_impl(&state).expect("get_tasks should succeed even with a cycle");

@@ -19,7 +19,9 @@ fn context(path: &str) -> TaskParseContext {
 }
 
 fn task_from(input: &str, path: &str) -> Task {
-    task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(input.as_bytes(), &context(path)).unwrap(),
+    )
 }
 
 fn task_with_parent(path: &str, parent: &str) -> Task {
@@ -155,11 +157,7 @@ fn plan_delete_abort_resolves_normalized_parent_with_backslash() {
 #[test]
 fn plan_delete_abort_does_not_treat_self_as_own_child() {
     // 削除対象自身が自分自身を parent に持つ異常データでも自己除外される。
-    let mut self_referential = task_with_parent("tasks/p.md", "tasks/p.md");
-    // parent を表記揺れに変えて、正規化比較での自己除外も effective か確認。
-    self_referential.parent = Some(crate::task::task_file_path::TaskFilePath::from_lenient(
-        "./tasks/p.md",
-    ));
+    let self_referential = task_with_parent("tasks/p.md", "./tasks/p.md");
 
     let index = TaskIndex::new(vec![self_referential]);
 

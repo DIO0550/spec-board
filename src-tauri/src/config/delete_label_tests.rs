@@ -11,7 +11,7 @@ use crate::config::{
 use crate::config::{Config, MilestoneRegistry};
 use crate::state::{AppState, AppStateError};
 use crate::task::label::Label;
-use crate::task::task_index::Task;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn definition(name: &str) -> LabelDefinition {
     LabelDefinition {
@@ -28,24 +28,10 @@ fn registry(definitions: Vec<LabelDefinition>) -> LabelRegistry {
 }
 
 fn task_with_labels(id: &str, labels: &[&str]) -> Task {
-    Task {
-        draft: false,
-        id: id.into(),
-        file_path: id.into(),
-        title: format!("title-{id}").into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: labels.iter().map(|l| Label::from(*l)).collect(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(id)
+        .title(format!("title-{id}"))
+        .labels(labels.iter().map(|label| Label::from(*label)).collect())
+        .resolve()
 }
 
 fn args(name: &str) -> DeleteLabelArgs {
@@ -151,7 +137,7 @@ fn impl_does_not_touch_task_frontmatter() {
     // tasks_cache のラベルは変化しない。
     let tasks = state.test_tasks_snapshot().expect("tasks");
     assert_eq!(tasks.len(), 1);
-    assert!(tasks[0].labels.iter().any(|l| l.as_str() == "bug"));
+    assert!(tasks[0].labels().iter().any(|l| l.as_str() == "bug"));
 }
 
 #[test]

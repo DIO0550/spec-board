@@ -600,10 +600,8 @@ impl AppState {
         use crate::state::active_project_resources::{pending_activation_state, WatcherActivation};
 
         let root = ProjectRoot::from_path_buf(root.to_path_buf()).expect("valid test project root");
-        let tasks = tasks
-            .into_iter()
-            .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
-            .collect();
+        let tasks = crate::task::task_index::ResolvedTaskSet::reresolve(tasks)
+            .expect("test fixture tasks should resolve");
         let session_id = self
             .reserve_session_id()
             .expect("test session ID must remain available");
@@ -755,7 +753,24 @@ impl AppState {
         cache: std::collections::HashMap<CanonicalTaskPath, Task>,
     ) -> Result<(), AppStateError> {
         let identity = self.test_session_identity();
-        self.commit_session(&identity, |session| session.replace_tasks(cache))
+        let tasks = crate::task::task_index::ResolvedTaskSet::reresolve(cache.into_values())
+            .expect("test fixture tasks should resolve");
+        self.commit_session(&identity, |session| session.replace_tasks(tasks))
+            .map_err(|error| match error {
+                CommitSessionError::State(error) => error,
+                _ => AppStateError::LockPoisoned,
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn test_replace_parsed_tasks(
+        &self,
+        candidates: Vec<crate::task::task_index::ParsedTask>,
+    ) -> Result<(), AppStateError> {
+        let tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)
+            .expect("test fixture candidates should resolve");
+        let identity = self.test_session_identity();
+        self.commit_session(&identity, |session| session.replace_tasks(tasks))
             .map_err(|error| match error {
                 CommitSessionError::State(error) => error,
                 _ => AppStateError::LockPoisoned,
@@ -770,14 +785,23 @@ impl AppState {
             .unwrap_or_default())
     }
 
-    pub(crate) fn test_update_tasks<F, R>(&self, f: F) -> Result<R, AppStateError>
+    pub(crate) fn test_update_parsed_tasks<F, R>(&self, f: F) -> Result<R, AppStateError>
     where
-        F: FnOnce(&mut std::collections::HashMap<CanonicalTaskPath, Task>) -> R,
+        F: FnOnce(&mut Vec<crate::task::task_index::ParsedTask>) -> R,
     {
         let identity = self.test_session_identity();
         let mut result = None;
         self.commit_session(&identity, |session| {
-            result = Some(f(session.tasks_mut()));
+            let mut candidates = session
+                .snapshot()
+                .tasks()
+                .values()
+                .map(Task::to_parsed_task)
+                .collect();
+            result = Some(f(&mut candidates));
+            let tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)
+                .expect("test fixture candidates should resolve");
+            session.replace_tasks(tasks);
         })
         .map_err(|error| match error {
             CommitSessionError::State(error) => error,

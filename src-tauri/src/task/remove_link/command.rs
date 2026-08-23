@@ -12,15 +12,21 @@ use crate::state::AppState;
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
+use crate::task::payload::TaskPayload;
 use crate::task::remove_link::args::RemoveLinkArgs;
 use crate::task::remove_link::error::{RemoveLinkCommandError, RemoveLinkError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::{RemoveLinkOutcome, Task, TaskIndex};
+use crate::task::task_index::{ParsedTask, RemoveLinkOutcome, ResolvedTaskSet, Task, TaskIndex};
 
 /// `remove_link` Tauri command 薄層。
 #[tauri::command]
-pub fn remove_link(state: State<'_, Arc<AppState>>, args: RemoveLinkArgs) -> Result<Task, String> {
-    remove_link_impl(state.inner().as_ref(), &FsTaskIo, args).map_err(|e| e.to_string())
+pub fn remove_link(
+    state: State<'_, Arc<AppState>>,
+    args: RemoveLinkArgs,
+) -> Result<TaskPayload, String> {
+    remove_link_impl(state.inner().as_ref(), &FsTaskIo, args)
+        .map(TaskPayload::from)
+        .map_err(|e| e.to_string())
 }
 
 /// effect 層本体（テスト境界）。
@@ -70,9 +76,8 @@ pub(crate) fn remove_link_impl(
             } => (updated_task, file_content, target_normalized),
         };
 
-        let mut next_tasks = snapshot.tasks().clone();
-        let returned = apply_remove_link_to_cache(
-            &mut next_tasks,
+        let (next_tasks, returned) = apply_remove_link_to_cache(
+            snapshot.tasks(),
             &source_rel,
             &target_normalized,
             &updated_task,
@@ -102,14 +107,33 @@ pub(crate) fn remove_link_impl(
 
 /// planned link削除をcloned task mapへ適用する。
 fn apply_remove_link_to_cache(
-    cache: &mut HashMap<CanonicalTaskPath, Task>,
+    cache: &HashMap<CanonicalTaskPath, Task>,
     source_rel: &Path,
     target_normalized: &str,
-    updated_task: &Task,
-) -> Result<Task, RemoveLinkCommandError> {
+    updated_task: &ParsedTask,
+) -> Result<(ResolvedTaskSet, Task), RemoveLinkCommandError> {
     let source_key = CanonicalTaskPath::from_path(source_rel);
-    TaskIndex::commit_remove_link_into_cache(cache, &source_key, target_normalized, updated_task)
-        .map_err(Into::into)
+    if !cache.contains_key(&source_key) {
+        return Err(RemoveLinkError::SourceVanished {
+            path: source_key.as_str().to_string(),
+        }
+        .into());
+    }
+    let resolved = TaskIndex::new(cache.values().cloned().collect())
+        .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
+            Box::new(updated_task.clone()),
+        ))
+        .expect("removing a link cannot invalidate the resolved parent hierarchy")
+        .tasks;
+    let returned = resolved
+        .get(&source_key)
+        .cloned()
+        .ok_or_else(|| RemoveLinkError::SourceVanished {
+            path: source_key.as_str().to_string(),
+        })
+        .map_err(RemoveLinkCommandError::from)?;
+    let _ = target_normalized;
+    Ok((resolved, returned))
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::{CreateTaskIntent, ParentHierarchyErrorReason, Task, TaskIndex};
+use super::{CreateTaskIntent, ParentHierarchyErrorReason, ParsedTaskBuilder, Task, TaskIndex};
 use crate::config::column_name::ColumnName;
 use crate::task::create::error::{ContentRejectReason, CreateTaskError};
 use crate::task::frontmatter::Priority;
@@ -29,25 +29,10 @@ fn intent_with(title: &str, parent: Option<&str>) -> CreateTaskIntent {
 }
 
 fn task_with(file_path: &str, parent: Option<&str>) -> Task {
-    let fp = TaskFilePath::from_lenient(file_path);
-    Task {
-        draft: false,
-        id: fp.clone(),
-        file_path: fp,
-        title: "T".into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: parent.map(TaskFilePath::from_lenient),
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(file_path)
+        .title("T")
+        .parent(parent.map(TaskFilePath::from_lenient))
+        .resolve()
 }
 
 #[test]

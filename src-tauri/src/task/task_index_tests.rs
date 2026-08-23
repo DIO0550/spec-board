@@ -1,14 +1,10 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde_json::json;
 
 use super::{ParentHierarchyErrorReason, ParentValidationFailure, Task, TaskIndex};
-use crate::task::add_link::error::AddLinkError;
-use crate::task::canonical_task_path::CanonicalTaskPath;
-use crate::task::move_task::error::MoveTaskError;
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
-use crate::task::remove_link::error::RemoveLinkError;
+use crate::task::payload::TaskPayload;
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::warning::{TaskWarning, TaskWarningCode};
 
@@ -20,7 +16,9 @@ fn context(path: &str) -> TaskParseContext {
 }
 
 fn task_from(input: &str, path: &str) -> Task {
-    task_from_markdown(input.as_bytes(), &context(path)).unwrap()
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(input.as_bytes(), &context(path)).unwrap(),
+    )
 }
 
 fn task_with_parent(path: &str, parent: &str) -> Task {
@@ -61,20 +59,6 @@ fn parent_chain_with_edge_count(edge_count: usize) -> Vec<Task> {
     tasks
 }
 
-fn cache_from(tasks: Vec<Task>) -> HashMap<CanonicalTaskPath, Task> {
-    let mut cache = HashMap::new();
-    for task in tasks {
-        cache.insert(CanonicalTaskPath::from_file_path(&task.file_path), task);
-    }
-    cache
-}
-
-/// テストから cache を引くための短縮 helper。生文字列を `Borrow` で素通しさせない
-/// ため、必ず VO のコンストラクタを経由する。
-fn key(path: &str) -> CanonicalTaskPath {
-    CanonicalTaskPath::new(path)
-}
-
 #[test]
 fn task_serializes_path_fields_and_warning_codes_as_camel_case() {
     let task = task_from(
@@ -82,7 +66,7 @@ fn task_serializes_path_fields_and_warning_codes_as_camel_case() {
         "tasks/fix-bug.md",
     );
 
-    let json_value = serde_json::to_value(task).unwrap();
+    let json_value = serde_json::to_value(TaskPayload::from(task)).unwrap();
 
     assert_eq!(json_value["filePath"], json!("tasks/fix-bug.md"));
     assert_eq!(json_value["reverseLinks"], json!([]));
@@ -119,52 +103,10 @@ fn task_index_build_children_via_aggregate() {
         .iter()
         .find(|t| t.file_path == "tasks/parent.md")
         .unwrap();
-    assert_eq!(parent.children, vec![TaskFilePath::from("tasks/child.md")]);
-}
-
-#[test]
-fn rebuild_with_replaced_replaces_slot_and_rebuilds_derived_fields() {
-    // 既存 child は parent 未指定。replaced で parent を付けると children 逆引きが再構築される。
-    let tasks = vec![
-        task_without_parent("tasks/child.md"),
-        task_without_parent("tasks/parent.md"),
-    ];
-    let replaced = task_with_parent("tasks/child.md", "tasks/parent.md");
-
-    let rebuilt = TaskIndex::new(tasks)
-        .rebuild_with_replaced(replaced)
-        .unwrap();
-    let result = rebuilt.into_tasks();
-
-    let parent = result
-        .iter()
-        .find(|t| t.file_path == "tasks/parent.md")
-        .unwrap();
-    assert_eq!(parent.children, vec![TaskFilePath::from("tasks/child.md")]);
-}
-
-#[test]
-fn rebuild_with_replaced_appends_when_no_matching_slot() {
-    let tasks = vec![task_without_parent("tasks/a.md")];
-    let replaced = task_without_parent("tasks/b.md");
-
-    let rebuilt = TaskIndex::new(tasks)
-        .rebuild_with_replaced(replaced)
-        .unwrap();
-    let result = rebuilt.into_tasks();
-
-    assert_eq!(result.len(), 2);
-    assert!(result.iter().any(|t| t.file_path == "tasks/b.md"));
-}
-
-#[test]
-fn rebuild_with_replaced_propagates_hierarchy_error() {
-    let tasks = vec![task_with_parent("tasks/a.md", "tasks/b.md")];
-    // replaced で b → a の親を張ると a ↔ b の循環になる。
-    let replaced = task_with_parent("tasks/b.md", "tasks/a.md");
-
-    let result = TaskIndex::new(tasks).rebuild_with_replaced(replaced);
-    assert!(matches!(result, Err(TaskParseError::CycleOrTooDeep { .. })));
+    assert_eq!(
+        parent.children(),
+        vec![TaskFilePath::from("tasks/child.md")]
+    );
 }
 
 #[test]
@@ -225,7 +167,7 @@ fn find_by_path_returns_none_for_missing() {
 #[test]
 fn task_json_byte_level_round_trip() {
     let json = r#"{"id":"tasks/foo.md","filePath":"tasks/foo.md","title":"Fix bug","status":"Doing","priority":"High","labels":["bug","api"],"parent":"tasks/parent.md","links":["tasks/related.md"],"children":["tasks/child.md"],"reverseLinks":["tasks/source.md"],"body":"description","extras":{},"warnings":[]}"#;
-    let parsed: Task = serde_json::from_str(json).unwrap();
+    let parsed: TaskPayload = serde_json::from_str(json).unwrap();
     let serialized = serde_json::to_string(&parsed).unwrap();
     assert_eq!(serialized, json);
 }
@@ -233,7 +175,7 @@ fn task_json_byte_level_round_trip() {
 #[test]
 fn task_json_round_trip_omits_none_optional_fields() {
     let json = r#"{"id":"tasks/foo.md","filePath":"tasks/foo.md","title":"Fix bug","status":"Doing","labels":[],"links":[],"children":[],"reverseLinks":[],"body":"","extras":{},"warnings":[]}"#;
-    let parsed: Task = serde_json::from_str(json).unwrap();
+    let parsed: TaskPayload = serde_json::from_str(json).unwrap();
     let serialized = serde_json::to_string(&parsed).unwrap();
     assert_eq!(serialized, json);
 }
@@ -245,7 +187,7 @@ fn task_serializes_due_as_string_when_present() {
         "tasks/t.md",
     );
 
-    let json_value = serde_json::to_value(task).unwrap();
+    let json_value = serde_json::to_value(TaskPayload::from(task)).unwrap();
 
     assert_eq!(json_value["due"], json!("2026-06-30"));
 }
@@ -254,215 +196,12 @@ fn task_serializes_due_as_string_when_present() {
 fn task_omits_due_when_absent() {
     let task = task_from("---\ntitle: T\nstatus: Todo\n---\n", "tasks/t.md");
 
-    let json_value = serde_json::to_value(task).unwrap();
+    let json_value = serde_json::to_value(TaskPayload::from(task)).unwrap();
 
     assert!(
         json_value.get("due").is_none(),
         "due should be omitted when None"
     );
-}
-
-#[test]
-fn insert_new_task_into_empty_cache_adds_one_entry() {
-    let mut cache = HashMap::new();
-    let new_task = task_without_parent("tasks/new.md");
-
-    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task.clone());
-
-    assert_eq!(1, cache.len());
-    assert!(returned.children.is_empty());
-    assert!(returned.reverse_links.is_empty());
-    assert_eq!(returned.file_path, "tasks/new.md");
-    assert!(cache.contains_key(&key("tasks/new.md")));
-}
-
-#[test]
-fn insert_new_task_appends_to_parent_children_when_parent_exists() {
-    let parent = task_without_parent("tasks/parent.md");
-    let mut cache = cache_from(vec![parent]);
-    let new_task = task_with_parent("tasks/child.md", "tasks/parent.md");
-
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    let updated_parent = cache.get(&key("tasks/parent.md")).unwrap();
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/child.md")],
-        updated_parent.children
-    );
-}
-
-#[test]
-fn insert_new_task_appends_to_target_reverse_links_when_link_exists() {
-    let target = task_without_parent("tasks/target.md");
-    let mut cache = cache_from(vec![target]);
-    let new_task = task_with_links_and_parent("tasks/source.md", None, &["tasks/target.md"]);
-
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    let updated_target = cache.get(&key("tasks/target.md")).unwrap();
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        updated_target.reverse_links
-    );
-}
-
-#[test]
-fn insert_new_task_appends_target_reverse_link_only_once_for_duplicate_targets() {
-    let target = task_without_parent("tasks/target.md");
-    let mut cache = cache_from(vec![target]);
-    let new_task = task_with_links_and_parent(
-        "tasks/source.md",
-        None,
-        &["tasks/target.md", "tasks/target.md"],
-    );
-
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    let updated_target = cache.get(&key("tasks/target.md")).unwrap();
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        updated_target.reverse_links,
-        "duplicate targets must append reverse link only once"
-    );
-}
-
-#[test]
-fn insert_new_task_resolves_incoming_parent_into_new_task_children() {
-    let existing = task_with_parent("tasks/a.md", "tasks/new.md");
-    let mut cache = cache_from(vec![existing]);
-    let new_task = task_without_parent("tasks/new.md");
-
-    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    assert_eq!(vec![TaskFilePath::from("tasks/a.md")], returned.children);
-    let cached_new = cache.get(&key("tasks/new.md")).unwrap();
-    assert_eq!(vec![TaskFilePath::from("tasks/a.md")], cached_new.children);
-}
-
-#[test]
-fn insert_new_task_resolves_incoming_links_into_new_task_reverse_links() {
-    let existing = task_with_links_and_parent("tasks/source.md", None, &["tasks/new.md"]);
-    let mut cache = cache_from(vec![existing]);
-    let new_task = task_without_parent("tasks/new.md");
-
-    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        returned.reverse_links
-    );
-}
-
-#[test]
-fn insert_new_task_leaves_cache_unchanged_when_parent_and_links_dangling() {
-    let mut cache = HashMap::new();
-    let new_task = task_with_links_and_parent(
-        "tasks/new.md",
-        Some("tasks/missing-parent.md"),
-        &["tasks/missing-link.md"],
-    );
-
-    let returned = TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    assert_eq!(1, cache.len(), "only new_task inserted");
-    assert!(returned.children.is_empty());
-    assert!(returned.reverse_links.is_empty());
-}
-
-#[test]
-fn insert_new_task_dedups_repeated_link_target_into_single_reverse_link() {
-    let target = task_without_parent("tasks/target.md");
-    let mut cache = cache_from(vec![target]);
-    let mut new_task = task_without_parent("tasks/source.md");
-    new_task.links = vec![
-        TaskFilePath::from("tasks/target.md"),
-        TaskFilePath::from("tasks/target.md"),
-    ];
-
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    let updated_target = cache.get(&key("tasks/target.md")).unwrap();
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        updated_target.reverse_links,
-        "duplicate link target should produce only one reverse_link"
-    );
-}
-
-#[test]
-fn insert_new_task_appends_to_existing_children_at_end_regardless_of_lex_order() {
-    let parent = task_without_parent("tasks/zzz-parent.md");
-    let mut a = task_with_parent("tasks/m-child.md", "tasks/zzz-parent.md");
-    a.children = Vec::new();
-    let mut parent_pre = parent;
-    parent_pre.children = vec![TaskFilePath::from("tasks/m-child.md")];
-    let mut cache = cache_from(vec![parent_pre, a]);
-
-    let new_task = task_with_parent("tasks/a-child.md", "tasks/zzz-parent.md");
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    let parent_now = cache.get(&key("tasks/zzz-parent.md")).unwrap();
-    assert_eq!(
-        vec![
-            TaskFilePath::from("tasks/m-child.md"),
-            TaskFilePath::from("tasks/a-child.md"),
-        ],
-        parent_now.children,
-        "new child should be appended at end, not lex-sorted"
-    );
-}
-
-#[test]
-fn insert_new_task_matches_full_rebuild_with_build_children_and_build_reverse_links() {
-    let existing = vec![
-        task_with_links_and_parent("tasks/a.md", Some("tasks/new.md"), &["tasks/new.md"]),
-        task_without_parent("tasks/b.md"),
-        task_with_links_and_parent("tasks/c.md", None, &["tasks/new.md", "tasks/b.md"]),
-    ];
-    let new_task = task_with_links_and_parent("tasks/new.md", Some("tasks/b.md"), &["tasks/c.md"]);
-
-    let prebuilt = TaskIndex::new(existing.clone())
-        .build_children()
-        .expect("no cycle")
-        .build_reverse_links()
-        .into_tasks();
-    let mut cache = cache_from(prebuilt);
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task.clone());
-    let mut diff_tasks: Vec<Task> = cache.values().cloned().collect();
-    diff_tasks.sort_by(|a, b| a.file_path.cmp(&b.file_path));
-
-    let mut all = existing.clone();
-    all.push(new_task);
-    let rebuilt = TaskIndex::new(all)
-        .build_children()
-        .expect("no cycle")
-        .build_reverse_links()
-        .into_tasks();
-    let mut full_tasks = rebuilt;
-    full_tasks.sort_by(|a, b| a.file_path.cmp(&b.file_path));
-
-    assert_eq!(full_tasks.len(), diff_tasks.len());
-    for (a, b) in full_tasks.iter().zip(diff_tasks.iter()) {
-        assert_eq!(a.file_path, b.file_path);
-        let mut a_children = a.children.clone();
-        let mut b_children = b.children.clone();
-        a_children.sort();
-        b_children.sort();
-        assert_eq!(
-            a_children, b_children,
-            "children for {} mismatched (as set)",
-            a.file_path
-        );
-        let mut a_rl = a.reverse_links.clone();
-        let mut b_rl = b.reverse_links.clone();
-        a_rl.sort();
-        b_rl.sort();
-        assert_eq!(
-            a_rl, b_rl,
-            "reverse_links for {} mismatched (as set)",
-            a.file_path
-        );
-    }
 }
 
 #[test]
@@ -487,7 +226,7 @@ fn validate_parent_for_new_task_ok_cases() {
         ),
     ];
     for (parent, tasks, label) in cases {
-        let result = TaskIndex::from(tasks).validate_new_parent(parent);
+        let result = TaskIndex::new(tasks).validate_new_parent(parent);
         assert!(result.is_ok(), "{label}: {result:?}");
     }
 }
@@ -509,7 +248,7 @@ fn validate_parent_for_new_task_not_found_cases() {
         ("tasks/a.md", Vec::new(), "empty existing tasks"),
     ];
     for (parent, tasks, label) in cases {
-        let result = TaskIndex::from(tasks).validate_new_parent(Some(parent));
+        let result = TaskIndex::new(tasks).validate_new_parent(Some(parent));
         assert_eq!(
             result,
             Err(ParentValidationFailure::NotFound {
@@ -564,10 +303,14 @@ fn sorted_by_id_sorts_random_order_ascending() {
 
 #[test]
 fn sorted_by_id_preserves_input_order_for_duplicate_ids() {
-    let mut first = task_without_parent("tasks/dup.md");
-    first.title = "first".into();
-    let mut second = task_without_parent("tasks/dup.md");
-    second.title = "second".into();
+    let first = task_from(
+        "---\ntitle: first\nstatus: Todo\n---\n",
+        "tasks/dup.md",
+    );
+    let second = task_from(
+        "---\ntitle: second\nstatus: Todo\n---\n",
+        "tasks/dup.md",
+    );
     let tasks = vec![first, second];
     let result = TaskIndex::new(tasks).sorted_by_id();
     assert_eq!(result.len(), 2);
@@ -598,7 +341,7 @@ fn validate_parent_for_new_task_cycle_or_too_deep_cases() {
         ),
     ];
     for (parent, tasks, expected_reason, label) in cases {
-        let result = TaskIndex::from(tasks).validate_new_parent(Some(parent));
+        let result = TaskIndex::new(tasks).validate_new_parent(Some(parent));
         assert_eq!(
             result,
             Err(ParentValidationFailure::ChainInvalid {
@@ -632,8 +375,8 @@ fn rebuild_derived_with_warnings_builds_children_and_reverse_links() {
         .iter()
         .find(|task| task.file_path == "tasks/parent.md")
         .expect("parent present");
-    assert_eq!(vec!["tasks/child.md".to_string()], parent.children);
-    assert_eq!(vec!["tasks/child.md".to_string()], parent.reverse_links);
+    assert_eq!(vec!["tasks/child.md".to_string()], parent.children());
+    assert_eq!(vec!["tasks/child.md".to_string()], parent.reverse_links());
 }
 
 #[test]
@@ -675,9 +418,9 @@ fn rebuild_derived_with_warnings_marks_cycles_as_warnings_instead_of_failing() {
         .into_tasks();
 
     for task in &rebuilt {
-        assert_eq!(None, task.parent);
+        assert_eq!(None, task.parent());
         assert!(task
-            .warnings
+            .warnings()
             .iter()
             .any(|warning| warning.code == TaskWarningCode::ParentCycle));
     }
@@ -966,220 +709,4 @@ fn project_board_view_returns_empty_outputs_for_no_tasks() {
     assert!(view.projections.is_empty());
     assert!(view.milestone_projections.is_empty());
     assert!(view.task_tree.is_empty());
-}
-#[test]
-fn insert_new_task_appends_to_parent_children_when_parent_ref_has_dot_prefix() {
-    let parent = task_without_parent("tasks/parent.md");
-    let mut cache = cache_from(vec![parent]);
-    let new_task = task_with_parent("tasks/child.md", "./tasks/parent.md");
-
-    TaskIndex::insert_new_task_into_cache(&mut cache, new_task);
-
-    let updated_parent = cache.get(&key("tasks/parent.md")).unwrap();
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/child.md")],
-        updated_parent.children
-    );
-}
-
-#[test]
-fn commit_move_into_cache_overwrites_entry_at_moved_key() {
-    let mut cache = cache_from(vec![task_without_parent("tasks/a.md")]);
-    let mut updated = task_without_parent("tasks/a.md");
-    updated.status = "Doing".into();
-
-    let returned = TaskIndex::commit_move_into_cache(&mut cache, &key("tasks/a.md"), &updated)
-        .expect("move commits when the entry exists");
-
-    assert_eq!("Doing", returned.status.as_str());
-    assert_eq!(1, cache.len());
-    assert_eq!(
-        "Doing",
-        cache.get(&key("tasks/a.md")).unwrap().status.as_str()
-    );
-}
-
-#[test]
-fn commit_move_into_cache_resolves_dot_prefixed_moved_key() {
-    let mut cache = cache_from(vec![task_without_parent("tasks/a.md")]);
-    let mut updated = task_without_parent("tasks/a.md");
-    updated.status = "Doing".into();
-
-    let returned = TaskIndex::commit_move_into_cache(&mut cache, &key("./tasks/a.md"), &updated)
-        .expect("dot-prefixed key resolves to the canonical entry");
-
-    assert_eq!("Doing", returned.status.as_str());
-    assert_eq!(1, cache.len());
-    assert_eq!(
-        "Doing",
-        cache.get(&key("tasks/a.md")).unwrap().status.as_str()
-    );
-}
-
-#[test]
-fn commit_move_into_cache_returns_task_vanished_for_unknown_path() {
-    let mut cache = cache_from(vec![task_without_parent("tasks/a.md")]);
-    let updated = task_without_parent("tasks/missing.md");
-
-    let error = TaskIndex::commit_move_into_cache(&mut cache, &key("tasks/missing.md"), &updated)
-        .expect_err("a path absent from the cache cannot be moved");
-
-    assert!(matches!(
-        error,
-        MoveTaskError::TaskVanished { ref path } if path == "tasks/missing.md"
-    ));
-}
-
-#[test]
-fn commit_add_link_into_cache_updates_source_and_target() {
-    let source = task_without_parent("tasks/source.md");
-    let target = task_without_parent("tasks/target.md");
-    let mut cache = cache_from(vec![source, target]);
-    let updated_source = task_with_links_and_parent("tasks/source.md", None, &["tasks/target.md"]);
-
-    let returned = TaskIndex::commit_add_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "tasks/target.md",
-        &updated_source,
-    )
-    .expect("both source and target are present");
-
-    assert_eq!(vec![TaskFilePath::from("tasks/target.md")], returned.links);
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        cache.get(&key("tasks/target.md")).unwrap().reverse_links
-    );
-}
-
-#[test]
-fn commit_add_link_into_cache_resolves_dot_prefixed_target() {
-    let source = task_without_parent("tasks/source.md");
-    let target = task_without_parent("tasks/target.md");
-    let mut cache = cache_from(vec![source, target]);
-    let updated_source =
-        task_with_links_and_parent("tasks/source.md", None, &["./tasks/target.md"]);
-
-    TaskIndex::commit_add_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "./tasks/target.md",
-        &updated_source,
-    )
-    .expect("dot-prefixed target resolves to the canonical entry");
-
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        cache.get(&key("tasks/target.md")).unwrap().reverse_links
-    );
-}
-
-#[test]
-fn commit_add_link_into_cache_returns_source_vanished() {
-    let mut cache = cache_from(vec![task_without_parent("tasks/target.md")]);
-    let updated_source = task_with_links_and_parent("tasks/source.md", None, &["tasks/target.md"]);
-
-    let error = TaskIndex::commit_add_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "tasks/target.md",
-        &updated_source,
-    )
-    .expect_err("a source absent from the cache cannot gain a link");
-
-    assert!(matches!(
-        error,
-        AddLinkError::SourceVanished { ref path } if path == "tasks/source.md"
-    ));
-    assert!(cache
-        .get(&key("tasks/target.md"))
-        .unwrap()
-        .reverse_links
-        .is_empty());
-}
-
-#[test]
-fn commit_add_link_into_cache_returns_target_vanished() {
-    let mut cache = cache_from(vec![task_without_parent("tasks/source.md")]);
-    let updated_source = task_with_links_and_parent("tasks/source.md", None, &["tasks/target.md"]);
-
-    let error = TaskIndex::commit_add_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "tasks/target.md",
-        &updated_source,
-    )
-    .expect_err("a target absent from the cache cannot receive a reverse link");
-
-    assert!(matches!(
-        error,
-        AddLinkError::TargetVanished { ref path } if path == "tasks/target.md"
-    ));
-    // TargetVanished は mutate 前に判定されるため source も書き換わらない。
-    assert!(cache.get(&key("tasks/source.md")).unwrap().links.is_empty());
-}
-
-#[test]
-fn commit_remove_link_into_cache_resolves_dot_prefixed_target() {
-    let source = task_with_links_and_parent("tasks/source.md", None, &["tasks/target.md"]);
-    let mut target = task_without_parent("tasks/target.md");
-    target.reverse_links = vec![TaskFilePath::from("tasks/source.md")];
-    let mut cache = cache_from(vec![source, target]);
-    let updated_source = task_without_parent("tasks/source.md");
-
-    TaskIndex::commit_remove_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "./tasks/target.md",
-        &updated_source,
-    )
-    .expect("dot-prefixed target resolves to the canonical entry");
-
-    assert!(cache
-        .get(&key("tasks/target.md"))
-        .unwrap()
-        .reverse_links
-        .is_empty());
-}
-
-#[test]
-fn commit_remove_link_into_cache_returns_source_vanished() {
-    let mut target = task_without_parent("tasks/target.md");
-    target.reverse_links = vec![TaskFilePath::from("tasks/source.md")];
-    let mut cache = cache_from(vec![target]);
-    let updated_source = task_without_parent("tasks/source.md");
-
-    let error = TaskIndex::commit_remove_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "tasks/target.md",
-        &updated_source,
-    )
-    .expect_err("a source absent from the cache cannot drop a link");
-
-    assert!(matches!(
-        error,
-        RemoveLinkError::SourceVanished { ref path } if path == "tasks/source.md"
-    ));
-    assert_eq!(
-        vec![TaskFilePath::from("tasks/source.md")],
-        cache.get(&key("tasks/target.md")).unwrap().reverse_links
-    );
-}
-
-#[test]
-fn commit_remove_link_into_cache_skips_missing_target() {
-    let source = task_with_links_and_parent("tasks/source.md", None, &["tasks/gone.md"]);
-    let mut cache = cache_from(vec![source]);
-    let updated_source = task_without_parent("tasks/source.md");
-
-    let returned = TaskIndex::commit_remove_link_into_cache(
-        &mut cache,
-        &key("tasks/source.md"),
-        "tasks/gone.md",
-        &updated_source,
-    )
-    .expect("a dangling link is cleaned up without failing");
-
-    assert!(returned.links.is_empty());
 }

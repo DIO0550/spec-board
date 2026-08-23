@@ -39,7 +39,9 @@ fn task(file_path: &str, status: &str, parent: Option<&str>) -> Task {
         file_path: PathBuf::from(file_path),
         default_status: ColumnName::from("Todo"),
     };
-    task_from_markdown(markdown.as_bytes(), &context).expect("fixture markdown should parse")
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(markdown.as_bytes(), &context).expect("fixture markdown should parse"),
+    )
 }
 
 fn done(name: &str) -> ColumnName {
@@ -99,27 +101,9 @@ fn derives_children_from_parent_even_when_children_field_is_empty() {
         task("tasks/c.md", "Todo", Some("tasks/p.md")),
     ];
     assert!(
-        tasks.iter().all(|task| task.children.is_empty()),
+        tasks.iter().all(|task| task.children().is_empty()),
         "fixture は children を空のまま渡す前提"
     );
-
-    let map = project(tasks, None);
-
-    assert_eq!(progress_of(&map, "tasks/p.md").total, 1);
-    assert_eq!(child_paths_of(&map, "tasks/p.md"), vec!["tasks/c.md"]);
-}
-
-/// `Task.children` に実在しない path を詰めても結果が変わらないことを固定する。
-/// 「たまたま読まれていないだけ」の実装だと落ちる。
-#[test]
-fn ignores_stale_children_field_contents() {
-    let mut parent = task("tasks/p.md", "Todo", None);
-    parent.children = vec![
-        "tasks/ghost1.md".into(),
-        "tasks/ghost2.md".into(),
-        "tasks/ghost3.md".into(),
-    ];
-    let tasks = vec![parent, task("tasks/c.md", "Todo", Some("tasks/p.md"))];
 
     let map = project(tasks, None);
 

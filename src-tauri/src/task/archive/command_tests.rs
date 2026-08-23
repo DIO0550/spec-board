@@ -73,17 +73,17 @@ fn archive_moves_file_into_archive_and_removes_from_cache() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     assert!(abs.exists());
 
-    archive_task_impl(&state, &FsTaskIo, archive_args(task.file_path.as_str()))
+    archive_task_impl(&state, &FsTaskIo, archive_args(task.file_path().as_str()))
         .expect("archive should succeed");
 
     assert!(!abs.exists(), "original file should be moved away");
     let archived = dir
         .path()
         .join(".spec-board/archive")
-        .join(task.file_path.as_str());
+        .join(task.file_path().as_str());
     assert!(archived.exists(), "archived copy should exist");
     let snap = state.test_tasks_snapshot().expect("snapshot");
     assert!(snap.is_empty(), "cache should be empty");
@@ -97,10 +97,10 @@ fn archive_rejects_task_with_children_and_keeps_everything() {
 
     let parent = create_task_impl(&state, &FsTaskIo, create_args("Parent")).expect("create");
     let mut child_args = create_args("Child");
-    child_args.parent = Some(parent.file_path.as_str().to_string());
+    child_args.parent = Some(parent.file_path().as_str().to_string());
     create_task_impl(&state, &FsTaskIo, child_args).expect("create child");
 
-    let result = archive_task_impl(&state, &FsTaskIo, archive_args(parent.file_path.as_str()));
+    let result = archive_task_impl(&state, &FsTaskIo, archive_args(parent.file_path().as_str()));
 
     assert!(matches!(
         result,
@@ -108,7 +108,7 @@ fn archive_rejects_task_with_children_and_keeps_everything() {
             ArchiveTaskError::HasChildren { .. }
         ))
     ));
-    assert!(dir.path().join(parent.file_path.as_str()).exists());
+    assert!(dir.path().join(parent.file_path().as_str()).exists());
     let snap = state.test_tasks_snapshot().expect("snapshot");
     assert_eq!(snap.len(), 2, "cache should be unchanged");
 }
@@ -150,16 +150,16 @@ fn archive_collision_appends_numbered_suffix() {
     let archived = dir
         .path()
         .join(".spec-board/archive")
-        .join(task.file_path.as_str());
+        .join(task.file_path().as_str());
     fs::create_dir_all(archived.parent().expect("parent")).expect("mkdir");
     fs::write(&archived, "already archived").expect("seed collision");
 
-    archive_task_impl(&state, &FsTaskIo, archive_args(task.file_path.as_str()))
+    archive_task_impl(&state, &FsTaskIo, archive_args(task.file_path().as_str()))
         .expect("archive should succeed with numbered suffix");
 
     let numbered = archived.with_file_name(format!(
         "{}-2.md",
-        Path::new(task.file_path.as_str())
+        Path::new(task.file_path().as_str())
             .file_stem()
             .and_then(|stem| stem.to_str())
             .expect("stem")
@@ -201,9 +201,9 @@ fn get_archived_tasks_lists_archived_entries_sorted_with_title_and_status() {
 
     let beta = create_task_impl(&state, &FsTaskIo, create_args("Beta")).expect("create");
     let alpha = create_task_impl(&state, &FsTaskIo, create_args("Alpha")).expect("create");
-    archive_task_impl(&state, &FsTaskIo, archive_args(beta.file_path.as_str()))
+    archive_task_impl(&state, &FsTaskIo, archive_args(beta.file_path().as_str()))
         .expect("archive beta");
-    archive_task_impl(&state, &FsTaskIo, archive_args(alpha.file_path.as_str()))
+    archive_task_impl(&state, &FsTaskIo, archive_args(alpha.file_path().as_str()))
         .expect("archive alpha");
 
     let payload = get_archived_tasks_impl(&state).expect("should succeed");
@@ -212,12 +212,12 @@ fn get_archived_tasks_lists_archived_entries_sorted_with_title_and_status() {
         payload.tasks,
         vec![
             ArchivedTaskPayload {
-                file_path: alpha.file_path.as_str().to_string(),
+                file_path: alpha.file_path().as_str().to_string(),
                 title: "Alpha".to_string(),
                 status: Some("Todo".to_string()),
             },
             ArchivedTaskPayload {
-                file_path: beta.file_path.as_str().to_string(),
+                file_path: beta.file_path().as_str().to_string(),
                 title: "Beta".to_string(),
                 status: Some("Todo".to_string()),
             },
@@ -255,7 +255,7 @@ fn unarchive_moves_file_back_and_keeps_cache_untouched() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
     archive_task_impl(&state, &FsTaskIo, archive_args(&rel)).expect("archive");
 
     let payload = unarchive_task_impl(&state, &FsTaskIo, unarchive_args(&rel)).expect("unarchive");
@@ -278,7 +278,7 @@ fn unarchive_collision_restores_with_numbered_suffix() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
     archive_task_impl(&state, &FsTaskIo, archive_args(&rel)).expect("archive");
     // 復元先に同名ファイルを作って衝突させる。
     fs::write(dir.path().join(&rel), "occupied").expect("seed collision");

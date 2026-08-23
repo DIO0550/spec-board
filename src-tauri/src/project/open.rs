@@ -108,6 +108,7 @@ use crate::state::{AppState, AppStateError, OpenSwapError};
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::{default_status_for, TaskParseError};
+use crate::task::payload::TaskPayload;
 use crate::task::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksError};
 use crate::task::task_index::{Task, TaskIndex};
@@ -123,7 +124,7 @@ use spec_board_fs::watcher::core::WatcherError;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenProjectPayload {
-    pub tasks: Vec<Task>,
+    pub tasks: Vec<TaskPayload>,
     pub columns: Vec<ColumnName>,
     /// filePath -> projection。初期表示時点で FE が集計を持てるよう同梱する。
     pub projections: TaskProjectionMap,
@@ -427,7 +428,8 @@ fn load_cold_prepared_session(
             loaded.config,
             loaded.labels,
             loaded.milestones,
-            loaded.tasks,
+            crate::task::task_index::ResolvedTaskSet::reresolve(loaded.tasks.into_values())
+                .expect("loaded project tasks passed the canonical resolver"),
             loaded.load_warnings,
         ),
         origin,
@@ -464,7 +466,7 @@ fn bootstrap_config(
             let affects_tasks = loaded
                 .tasks
                 .values()
-                .any(|task| task.status == scanned_default);
+                .any(|task| task.status() == &scanned_default);
             loaded.config = generated;
             if generated_default != scanned_default && affects_tasks {
                 return BootstrapOutcome::SavedWithNewDefaultStatus;
@@ -515,7 +517,7 @@ pub(crate) fn status_inputs_from_tasks(
 ) -> Vec<(PathBuf, Option<String>)> {
     tasks
         .iter()
-        .map(|(path, task)| (path.as_path_buf(), Some(task.status.as_str().to_owned())))
+        .map(|(path, task)| (path.as_path_buf(), Some(task.status().as_str().to_owned())))
         .collect()
 }
 
@@ -669,7 +671,7 @@ pub(crate) fn load_project_data(
     let tasks: HashMap<CanonicalTaskPath, Task> = report
         .tasks
         .into_iter()
-        .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
+        .map(|task| (CanonicalTaskPath::from_file_path(task.file_path()), task))
         .collect();
 
     if matches!(config_origin, ConfigOrigin::Persisted) {
@@ -838,8 +840,8 @@ fn map_load_milestones_error(err: LoadMilestonesError) -> OpenProjectError {
 
 /// `TaskParseError` を `ScanFailed` に詰め直す。
 ///
-/// `build_children` は `validate_parent_hierarchy` 経由で `CycleOrTooDeep` のみ
-/// Err として返すため、本層では他 variant を考慮しなくてよい。
+/// lenient rebuild は循環をwarningへ倒すため、ここへ届くhierarchy errorは
+/// `CycleOrTooDeep` のうち `TooDeep` だけである。
 /// `ScanFailed` の Display は `"io scan failed: {message}"` なので、ここで
 /// 改めて "io" を埋め込むと最終文字列が "io scan failed: io ..." と二重に
 /// なるため、`err.to_string()` をそのまま埋め込む。FE 正規表現 `\bio\b` は
@@ -892,7 +894,7 @@ fn build_payload_from_parts_with_warnings(
         .map(|column| column.name.clone())
         .collect();
     OpenProjectPayload {
-        tasks: view.tasks,
+        tasks: view.tasks.into_iter().map(TaskPayload::from).collect(),
         columns,
         projections: view.projections,
         milestone_projections: view.milestone_projections,

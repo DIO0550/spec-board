@@ -29,25 +29,10 @@ fn args_with_parent(title: &str, parent: &str) -> PreviewTaskFilenameArgs {
 }
 
 fn task_at(file_path: &str, parent: Option<&str>) -> Task {
-    let fp = TaskFilePath::from_lenient(file_path);
-    Task {
-        draft: false,
-        id: fp.clone(),
-        file_path: fp,
-        title: "T".into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: parent.map(TaskFilePath::from_lenient),
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(file_path)
+        .title("T")
+        .parent(parent.map(TaskFilePath::from_lenient))
+        .resolve()
 }
 
 // --- 正常系 ---

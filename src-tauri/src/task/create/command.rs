@@ -18,16 +18,22 @@ use crate::state::AppState;
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
+use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_content::TaskContent;
-use crate::task::task_index::{CreateTaskIntent, Task, TaskIndex};
+use crate::task::task_index::{CreateTaskIntent, ResolvedTaskSet, Task, TaskIndex};
 
 /// `create_task` Tauri command 薄層。
 ///
 /// `create_task_impl` を呼び、エラーは Display 文字列化して FE へ返す。
 #[tauri::command]
-pub fn create_task(state: State<'_, Arc<AppState>>, args: CreateTaskArgs) -> Result<Task, String> {
-    create_task_impl(state.inner(), &FsTaskIo, args).map_err(|e| e.to_string())
+pub fn create_task(
+    state: State<'_, Arc<AppState>>,
+    args: CreateTaskArgs,
+) -> Result<TaskPayload, String> {
+    create_task_impl(state.inner(), &FsTaskIo, args)
+        .map(TaskPayload::from)
+        .map_err(|e| e.to_string())
 }
 
 /// `create_task` の effect 層本体（テスト境界）。
@@ -79,22 +85,32 @@ pub(crate) fn create_task_impl(
     })
 }
 
-/// generated contentをTaskへ変換し、cloned task mapへ差分追加したcommit planを返す。
+/// generated contentをcandidateへ変換し、全件resolver済みのcommit planを返す。
 fn plan_cache_insert(
     tasks: &HashMap<CanonicalTaskPath, Task>,
     content: &TaskContent,
     rel_path: &Path,
     status: ColumnName,
-) -> Result<(HashMap<CanonicalTaskPath, Task>, Task), CreateTaskCommandError> {
+) -> Result<(ResolvedTaskSet, Task), CreateTaskCommandError> {
     let document = TaskDocument::parse(content.as_bytes())?;
     let context = crate::task::parse::TaskParseContext {
         file_path: rel_path.to_path_buf(),
         default_status: status,
     };
-    let task = document.to_task(&context);
-    let mut next_tasks = tasks.clone();
-    let created_task = TaskIndex::insert_new_task_into_cache(&mut next_tasks, task);
-    Ok((next_tasks, created_task))
+    let task = document.to_parsed_task(&context);
+    let created_path = CanonicalTaskPath::from_file_path(&task.file_path);
+    let candidates = tasks
+        .values()
+        .map(Task::to_parsed_task)
+        .chain(std::iter::once(task))
+        .collect();
+    let resolved = ResolvedTaskSet::resolve_lenient(candidates)
+        .expect("validated create cannot deepen the resolved parent hierarchy");
+    let created_task = resolved
+        .get(&created_path)
+        .cloned()
+        .expect("created candidate remains after canonical resolution");
+    Ok((resolved, created_task))
 }
 
 #[cfg(test)]

@@ -60,7 +60,7 @@ fn create_task_writes_md_and_inserts_into_cache_for_empty_project() {
     let args = args_with_title("Fix Login Bug");
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    assert_eq!(task.file_path, "tasks/fix-login-bug.md");
+    assert_eq!(task.file_path().as_str(), "tasks/fix-login-bug.md");
     let abs = dir.path().join("tasks/fix-login-bug.md");
     assert!(abs.exists(), "md file should be written");
     let content = fs::read_to_string(&abs).expect("read");
@@ -69,7 +69,7 @@ fn create_task_writes_md_and_inserts_into_cache_for_empty_project() {
 
     let snap = state.test_tasks_snapshot().expect("snapshot");
     assert_eq!(1, snap.len());
-    assert_eq!("tasks/fix-login-bug.md", snap[0].file_path);
+    assert_eq!("tasks/fix-login-bug.md", snap[0].file_path());
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn create_task_with_priority_and_labels_and_body_renders_full_frontmatter() {
     };
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     let content = fs::read_to_string(&abs).expect("read");
     assert!(content.contains("priority: High"));
     assert!(content.contains("- bug"));
@@ -128,18 +128,18 @@ fn create_task_under_parent_places_into_parent_dir_and_updates_children() {
     };
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    assert_eq!(task.file_path, "issues/82/child-task.md");
+    assert_eq!(task.file_path().as_str(), "issues/82/child-task.md");
     let abs = dir.path().join("issues/82/child-task.md");
     assert!(abs.exists());
 
     let snap = state.test_tasks_snapshot().expect("snapshot");
     let parent_task = snap
         .iter()
-        .find(|t| t.file_path == "issues/82/parent.md")
+        .find(|t| t.file_path().as_str() == "issues/82/parent.md")
         .expect("parent in cache");
     assert!(
         parent_task
-            .children
+            .children()
             .iter()
             .any(|c| c.as_str() == "issues/82/child-task.md"),
         "child should be appended to parent.children",
@@ -173,9 +173,9 @@ fn create_task_normalizes_raw_parent_path_to_resolved_dir() {
         };
         let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
         assert!(
-            task.file_path.as_str().starts_with("tasks/"),
+            task.file_path().as_str().starts_with("tasks/"),
             "raw parent {raw} should resolve to tasks/, got {}",
-            task.file_path
+            task.file_path()
         );
     }
 }
@@ -189,7 +189,7 @@ fn create_task_collision_appends_suffix() {
     create_task_impl(&state, &FsTaskIo, args_with_title("Foo")).expect("first");
     let second = create_task_impl(&state, &FsTaskIo, args_with_title("Foo")).expect("second");
 
-    assert_eq!(second.file_path, "tasks/foo-1.md");
+    assert_eq!(second.file_path().as_str(), "tasks/foo-1.md");
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn create_task_registers_session_write_ignore_and_advances_revision() {
     let before = session_revision(&state);
 
     let task = create_task_impl(&state, &FsTaskIo, args_with_title("Watched")).expect("create");
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     assert!(abs.exists());
     assert_eq!(1, session_write_ignore_len(&state));
     assert_eq!(
@@ -405,7 +405,7 @@ fn create_task_with_links_writes_links_into_md() {
     args.links = vec!["tasks/a.md".into()];
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     let content = fs::read_to_string(&abs).expect("read");
     assert!(content.contains("links:"));
     assert!(content.contains("- tasks/a.md"));
@@ -420,7 +420,7 @@ fn create_task_without_links_omits_links_key() {
     let task =
         create_task_impl(&state, &FsTaskIo, args_with_title("No Links")).expect("create succeeds");
 
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     let content = fs::read_to_string(&abs).expect("read");
     assert!(!content.contains("links:"), "links key must be omitted");
 }
@@ -435,7 +435,7 @@ fn create_task_keeps_dangling_link_and_succeeds() {
     args.links = vec!["tasks/ghost.md".into()];
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds despite dangling");
 
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     let content = fs::read_to_string(&abs).expect("read");
     assert!(content.contains("- tasks/ghost.md"));
 }
@@ -450,7 +450,7 @@ fn create_task_dedups_links_before_writing() {
     args.links = vec!["./tasks/a.md".into(), "tasks/a.md".into()];
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     let content = fs::read_to_string(&abs).expect("read");
     assert_eq!(
         content.matches("- tasks/a.md").count(),
@@ -474,19 +474,19 @@ fn create_task_with_existing_target_updates_reverse_links_in_cache() {
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
     // 返却タスクの links に target を含む。
-    assert!(task.links.iter().any(|l| l.as_str() == "tasks/target.md"));
+    assert!(task.links().iter().any(|l| l.as_str() == "tasks/target.md"));
 
     // cache 内 target の reverse_links に作成タスク path が追加される。
     let snap = state.test_tasks_snapshot().expect("snapshot");
     let target_task = snap
         .iter()
-        .find(|t| t.file_path == "tasks/target.md")
+        .find(|t| t.file_path().as_str() == "tasks/target.md")
         .expect("target in cache");
     assert!(
         target_task
-            .reverse_links
+            .reverse_links()
             .iter()
-            .any(|r| r.as_str() == task.file_path.as_str()),
+            .any(|r| r.as_str() == task.file_path().as_str()),
         "source path must be appended to target.reverse_links",
     );
 }
@@ -501,7 +501,7 @@ fn create_task_with_explicit_file_name_writes_md() {
     args.file_name = Some("custom.md".into());
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    assert_eq!("tasks/custom.md", task.file_path.as_str());
+    assert_eq!("tasks/custom.md", task.file_path().as_str());
     let abs = dir.path().join("tasks/custom.md");
     assert!(abs.exists());
     let content = fs::read_to_string(&abs).unwrap();
@@ -523,7 +523,7 @@ fn create_task_with_duplicate_explicit_file_name_appends_suffix() {
     second.file_name = Some("custom.md".into());
     let task = create_task_impl(&state, &FsTaskIo, second).expect("second create succeeds");
 
-    assert_eq!("tasks/custom-1.md", task.file_path.as_str());
+    assert_eq!("tasks/custom-1.md", task.file_path().as_str());
     assert!(dir.path().join("tasks/custom-1.md").exists());
     // 既存ファイルは上書きされない。
     assert_eq!(
@@ -560,9 +560,9 @@ fn create_task_with_due_writes_due_into_md_and_payload() {
     args.due = Some("2026-07-01".into());
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    let content = fs::read_to_string(dir.path().join(task.file_path().as_str())).unwrap();
     assert!(content.contains("due: 2026-07-01"));
-    assert_eq!(Some("2026-07-01"), task.due.as_ref().map(|d| d.as_str()));
+    assert_eq!(Some("2026-07-01"), task.due().as_ref().map(|d| d.as_str()));
 }
 
 #[test]
@@ -574,9 +574,9 @@ fn create_task_without_due_omits_due_key() {
     let task =
         create_task_impl(&state, &FsTaskIo, args_with_title("No Due Task")).expect("succeeds");
 
-    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    let content = fs::read_to_string(dir.path().join(task.file_path().as_str())).unwrap();
     assert!(!content.contains("due:"));
-    assert!(task.due.is_none());
+    assert!(task.due().is_none());
 }
 
 #[test]
@@ -589,9 +589,9 @@ fn create_task_with_draft_writes_draft_into_md_and_payload() {
     args.draft = true;
     let task = create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
 
-    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    let content = fs::read_to_string(dir.path().join(task.file_path().as_str())).unwrap();
     assert!(content.contains("draft: true"));
-    assert!(task.draft);
+    assert!(task.is_draft());
 }
 
 #[test]
@@ -603,9 +603,9 @@ fn create_task_without_draft_omits_draft_key() {
     let task =
         create_task_impl(&state, &FsTaskIo, args_with_title("Normal Task")).expect("succeeds");
 
-    let content = fs::read_to_string(dir.path().join(task.file_path.as_str())).unwrap();
+    let content = fs::read_to_string(dir.path().join(task.file_path().as_str())).unwrap();
     assert!(!content.contains("draft:"));
-    assert!(!task.draft);
+    assert!(!task.is_draft());
 }
 
 #[test]

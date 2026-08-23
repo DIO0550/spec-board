@@ -35,14 +35,20 @@ use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
 use crate::task::parse::default_status_for;
+use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::{MoveTaskIntent, MoveTaskOutcome, Task, TaskIndex};
 
 /// `move_task` Tauri command 薄層。
 #[tauri::command]
-pub fn move_task(state: State<'_, Arc<AppState>>, args: MoveTaskArgs) -> Result<Task, String> {
-    move_task_impl(state.inner().as_ref(), &FsTaskIo, args).map_err(|e| e.to_string())
+pub fn move_task(
+    state: State<'_, Arc<AppState>>,
+    args: MoveTaskArgs,
+) -> Result<TaskPayload, String> {
+    move_task_impl(state.inner().as_ref(), &FsTaskIo, args)
+        .map(TaskPayload::from)
+        .map_err(|e| e.to_string())
 }
 
 /// effect 層本体（既存テスト境界）。
@@ -78,10 +84,10 @@ pub(crate) fn move_task_impl_with_config_io(
             .ok_or_else(|| MoveTaskCommandError::TaskNotFound {
                 path: rel_path.to_string_lossy().into_owned(),
             })?;
-        if existing.status.as_str() != intent.from_column {
+        if existing.status().as_str() != intent.from_column {
             return Err(MoveTaskError::StatusMismatch {
                 expected: intent.from_column.clone(),
-                actual: existing.status.as_str().to_string(),
+                actual: existing.status().as_str().to_string(),
             }
             .into());
         }
@@ -176,7 +182,7 @@ fn commit_same_column_move(args: SameColumnMove<'_>) -> Result<Task, MoveTaskCom
         config,
         target_root.as_path(),
         intent,
-        existing_task.file_path.as_str(),
+        existing_task.file_path().as_str(),
     )?;
     if &next_config == config {
         return Ok(existing_task);
@@ -214,7 +220,7 @@ struct CrossColumnMove<'a> {
     intent: &'a MoveTaskIntent,
     abs: &'a Path,
     original_bytes: &'a [u8],
-    updated_task: Task,
+    updated_task: crate::task::task_index::ParsedTask,
     file_content: String,
 }
 
@@ -242,9 +248,23 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
         plan_destination_card_order(&next_config, target_root.as_path(), intent, moved_file_path)?;
     let config_content = serde_json::to_string_pretty(&next_config)?;
 
-    let mut next_tasks = snapshot.tasks().clone();
     let moved_key = CanonicalTaskPath::from_path(&intent.file_path);
-    let returned = TaskIndex::commit_move_into_cache(&mut next_tasks, &moved_key, &updated_task)?;
+    if !snapshot.tasks().contains_key(&moved_key) {
+        return Err(crate::task::move_task::error::MoveTaskError::TaskVanished {
+            path: moved_key.as_str().to_string(),
+        }
+        .into());
+    }
+    let next_tasks = TaskIndex::new(snapshot.tasks().values().cloned().collect())
+        .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
+            Box::new(updated_task),
+        ))
+        .expect("moving a task between columns cannot invalidate the parent hierarchy")
+        .tasks;
+    let returned = next_tasks
+        .get(&moved_key)
+        .cloned()
+        .expect("moved task remains after canonical resolution");
     let registered_paths = vec![abs.to_path_buf()];
     resources.write_ignore().register(abs)?;
     if let Err(error) = io.write_existing(abs, file_content.as_bytes()) {

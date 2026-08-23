@@ -6,7 +6,7 @@ use super::{get_labels_impl, GetLabelsError, GetLabelsPayload};
 use crate::config::{LabelColor, LabelDefinition, LabelGroup, LabelRegistry};
 use crate::state::{AppState, AppStateError};
 use crate::task::label::Label;
-use crate::task::task_index::Task;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn label(name: &str, color: Option<&str>) -> LabelDefinition {
     LabelDefinition {
@@ -23,24 +23,10 @@ fn registry(definitions: Vec<LabelDefinition>) -> LabelRegistry {
 }
 
 fn task_with_labels(id: &str, labels: &[&str]) -> Task {
-    Task {
-        draft: false,
-        id: id.into(),
-        file_path: id.into(),
-        title: format!("title-{id}").into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: labels.iter().map(|l| Label::from(*l)).collect(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(id)
+        .title(format!("title-{id}"))
+        .labels(labels.iter().map(|label| Label::from(*label)).collect())
+        .resolve()
 }
 
 fn set_tasks(state: &AppState, tasks: Vec<Task>) {

@@ -69,11 +69,11 @@ fn removes_link_from_disk_and_cache() {
 
     let task =
         remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
-    assert_eq!(task.file_path, "tasks/a.md");
+    assert_eq!(task.file_path().as_str(), "tasks/a.md");
     assert!(
-        task.links.is_empty(),
+        task.links().is_empty(),
         "links should be empty, got {:?}",
-        task.links
+        task.links()
     );
 
     let on_disk = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
@@ -85,9 +85,9 @@ fn removes_link_from_disk_and_cache() {
     let snap = state.test_tasks_snapshot().expect("snapshot");
     let a = snap
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("a");
-    assert!(a.links.is_empty());
+    assert!(a.links().is_empty());
 }
 
 #[test]
@@ -110,11 +110,11 @@ fn removes_reverse_link_on_target() {
     let snap_before = state.test_tasks_snapshot().expect("snap");
     let b_before = snap_before
         .iter()
-        .find(|t| t.file_path == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("b");
     assert!(
         b_before
-            .reverse_links
+            .reverse_links()
             .iter()
             .any(|p| p.as_str() == "tasks/a.md"),
         "precondition: b.reverse_links should contain a"
@@ -125,15 +125,15 @@ fn removes_reverse_link_on_target() {
     let snap_after = state.test_tasks_snapshot().expect("snap");
     let b_after = snap_after
         .iter()
-        .find(|t| t.file_path == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("b");
     assert!(
         !b_after
-            .reverse_links
+            .reverse_links()
             .iter()
             .any(|p| p.as_str() == "tasks/a.md"),
         "b.reverse_links should drop a, got {:?}",
-        b_after.reverse_links
+        b_after.reverse_links()
     );
 }
 
@@ -210,7 +210,7 @@ fn succeeds_when_target_missing_from_cache() {
         args_for("tasks/a.md", "tasks/missing.md"),
     )
     .expect("orphan link removal should succeed");
-    assert!(task.links.is_empty());
+    assert!(task.links().is_empty());
 
     let on_disk = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
     assert!(
@@ -298,23 +298,24 @@ fn self_link_removal_returns_updated_reverse_links() {
 
     let returned =
         remove_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/a.md")).expect("ok");
-    assert!(returned.links.is_empty());
+    assert!(returned.links().is_empty());
     assert!(
         !returned
-            .reverse_links
+            .reverse_links()
             .iter()
             .any(|p| p.as_str() == "tasks/a.md"),
         "self-link returned task should not contain itself in reverse_links: {:?}",
-        returned.reverse_links
+        returned.reverse_links()
     );
 
     let snap = state.test_tasks_snapshot().expect("snap");
     let a = snap
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("a");
     assert_eq!(
-        returned.reverse_links, a.reverse_links,
+        returned.reverse_links(),
+        a.reverse_links(),
         "returned task reverse_links must match cache state"
     );
 }
@@ -371,12 +372,12 @@ fn remove_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
         .expect("remove_link should succeed");
 
     assert!(
-        returned.parent.is_none(),
-        "cycle source must keep parent=None"
+        returned.parent().is_none(),
+        "cycle source must keep effective parent=None"
     );
     assert!(
         returned
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"

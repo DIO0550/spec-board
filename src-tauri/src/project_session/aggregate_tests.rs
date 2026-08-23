@@ -30,14 +30,16 @@ fn loaded_state_returns_all_domain_values_from_one_snapshot() {
     let config = Config::default();
     let labels = LabelRegistry::default();
     let milestones = MilestoneRegistry::default();
-    let task = task_from_markdown(
-        b"---\ntitle: Aggregate task\nstatus: Todo\n---\nbody\n",
-        &TaskParseContext {
-            file_path: PathBuf::from("tasks/aggregate.md"),
-            default_status: ColumnName::from_lenient("Todo"),
-        },
-    )
-    .expect("valid task");
+    let task = crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(
+            b"---\ntitle: Aggregate task\nstatus: Todo\n---\nbody\n",
+            &TaskParseContext {
+                file_path: PathBuf::from("tasks/aggregate.md"),
+                default_status: ColumnName::from_lenient("Todo"),
+            },
+        )
+        .expect("valid task"),
+    );
     let tasks = HashMap::from([(CanonicalTaskPath::new("tasks/aggregate.md"), task)]);
     let state = ProjectState::Loaded(
         PreparedProjectSession::new(
@@ -45,7 +47,8 @@ fn loaded_state_returns_all_domain_values_from_one_snapshot() {
             config.clone(),
             labels.clone(),
             milestones.clone(),
-            tasks.clone(),
+            crate::task::task_index::ResolvedTaskSet::reresolve(tasks.clone().into_values())
+                .expect("fixture tasks resolve"),
         )
         .into_session(SessionId::from_raw(41)),
     );
@@ -210,7 +213,8 @@ fn into_prepared_keeps_domain_data_and_restarts_revision_from_initial() {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        HashMap::from([(CanonicalTaskPath::new("tasks/aggregate.md"), sample_task())]),
+        crate::task::task_index::ResolvedTaskSet::reresolve([sample_task()])
+            .expect("fixture tasks resolve"),
         vec![ProjectLoadWarning::config_fallback(
             "broken config".to_string(),
         )],
@@ -239,14 +243,16 @@ fn into_prepared_keeps_domain_data_and_restarts_revision_from_initial() {
 }
 
 fn sample_task() -> Task {
-    task_from_markdown(
-        b"---\ntitle: Aggregate task\nstatus: Todo\n---\nbody\n",
-        &TaskParseContext {
-            file_path: PathBuf::from("tasks/aggregate.md"),
-            default_status: ColumnName::from_lenient("Todo"),
-        },
+    crate::task::task_index::resolve_parsed_for_test(
+        task_from_markdown(
+            b"---\ntitle: Aggregate task\nstatus: Todo\n---\nbody\n",
+            &TaskParseContext {
+                file_path: PathBuf::from("tasks/aggregate.md"),
+                default_status: ColumnName::from_lenient("Todo"),
+            },
+        )
+        .expect("valid task"),
     )
-    .expect("valid task")
 }
 
 fn assert_same_snapshot(
@@ -276,7 +282,7 @@ fn prepared_session(session_id: u64) -> super::ProjectSession {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        crate::task::task_index::ResolvedTaskSet::default(),
     )
     .into_session(SessionId::from_raw(session_id))
 }

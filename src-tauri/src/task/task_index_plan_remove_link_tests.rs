@@ -2,34 +2,13 @@
 //!
 //! AppState / TaskIo / fs::* に依存せず、すべて in-memory で完結する。
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::{RemoveLinkIntent, RemoveLinkOutcome, Task, TaskIndex};
-use crate::config::column_name::ColumnName;
+use super::{ParsedTaskBuilder, RemoveLinkIntent, RemoveLinkOutcome, Task, TaskIndex};
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed};
-use crate::task::task_file_path::TaskFilePath;
 
 fn make_task(file_path: &str) -> Task {
-    let fp = TaskFilePath::from_lenient(file_path);
-    Task {
-        draft: false,
-        id: fp.clone(),
-        file_path: fp,
-        title: "T".into(),
-        status: ColumnName::from_lenient("Todo"),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: BTreeMap::new(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(file_path).title("T").resolve()
 }
 
 fn parsed_from_md(md: &str) -> Parsed {

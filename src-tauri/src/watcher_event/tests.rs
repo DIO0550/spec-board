@@ -19,7 +19,6 @@ use crate::state::active_project_resources::{
     pending_activation_state, StagedProjectResources, WatcherActivation,
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
-use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
@@ -35,7 +34,7 @@ fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
         Default::default(),
         Default::default(),
         Default::default(),
-        Default::default(),
+        crate::task::task_index::ResolvedTaskSet::default(),
     )
     .into_session(session_id);
     let identity = candidate.identity();
@@ -58,15 +57,15 @@ fn active_resources(state: &AppState) -> SessionResourceAccess {
         .expect("matching active resources")
 }
 
-fn insert_task(state: &AppState, task: crate::task::task_index::Task) {
+fn replace_parsed_tasks(state: &AppState, tasks: Vec<crate::task::task_index::ParsedTask>) {
+    let tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(tasks)
+        .expect("fixture candidates should resolve");
     let snapshot = state.require_session_snapshot().expect("active session");
     state
         .commit_session_write(&snapshot.identity(), move |session| {
-            session
-                .tasks_mut()
-                .insert(CanonicalTaskPath::from_file_path(&task.file_path), task);
+            session.replace_tasks(tasks);
         })
-        .expect("insert test task");
+        .expect("replace test tasks");
 }
 
 fn build_ctx(root: PathBuf, state: Arc<AppState>) -> (AdapterContext, EmitLog) {
@@ -105,7 +104,7 @@ fn snapshot_paths(state: &AppState) -> Vec<String> {
         .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
-        .map(|t| t.file_path.into_string())
+        .map(|t| t.file_path().as_str().to_owned())
         .collect();
     paths.sort();
     paths
@@ -153,7 +152,7 @@ fn modify_event_for_existing_path_emits_task_updated_and_replaces_cache_entry() 
 
     let tasks = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, tasks.len());
-    assert_eq!("A2", tasks[0].title);
+    assert_eq!("A2", tasks[0].title());
 }
 
 #[test]
@@ -724,15 +723,11 @@ fn adapter_thread_with_panicking_emit_does_not_crash_test_thread() {
     assert!(panicked, "emit panic should be caught by catch_unwind");
 }
 
-/// cycle member への変更は disk を読み直す full rescan に委ねられる。
-///
-/// cycle member の cache は parent を None で上書きされており、frontmatter に
-/// 書かれていた本当の親を失っている。cache だけでは循環がまだ続いているか判定
-/// できないため、判断材料を disk から取り直す。
+/// cycle member への変更もresidentのraw parentから通常resolverで再計算できる。
 #[test]
-fn modify_event_for_a_cycle_member_rescans_and_recomputes_the_cycle_state() {
+fn modify_event_for_a_cycle_member_uses_resident_raw_parent() {
     use crate::task::parse::{task_from_markdown, TaskParseContext};
-    use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
+    use crate::task::warning::TaskWarningCode;
 
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
@@ -741,22 +736,25 @@ fn modify_event_for_a_cycle_member_rescans_and_recomputes_the_cycle_state() {
     // disk 上は A.md / B.md が相互参照する循環構成。
     let a_body = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nbody\n";
     let abs_a = write_md(dir.path(), "tasks/a.md", a_body);
-    write_md(
-        dir.path(),
-        "tasks/b.md",
-        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n\nbody\n",
-    );
+    let b_body = "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n\nbody\n";
+    write_md(dir.path(), "tasks/b.md", b_body);
 
-    // scan 経路（build_children_with_warnings）通過後の状態を cache に直接セット:
-    // A は cycle member として parent=None + parentCycle warning を持つ。
-    let parse_ctx = TaskParseContext {
+    // scan と同じ canonical resolver を通した循環構成を cache にセットする。
+    let a_parse_ctx = TaskParseContext {
         file_path: PathBuf::from("tasks/a.md"),
         default_status: "Todo".into(),
     };
-    let mut seeded = task_from_markdown(a_body.as_bytes(), &parse_ctx).expect("parse seed");
-    seeded.parent = None;
-    ensure_parent_cycle_warning(&mut seeded.warnings);
-    insert_task(&state, seeded);
+    let b_parse_ctx = TaskParseContext {
+        file_path: PathBuf::from("tasks/b.md"),
+        default_status: "Todo".into(),
+    };
+    replace_parsed_tasks(
+        &state,
+        vec![
+            task_from_markdown(a_body.as_bytes(), &a_parse_ctx).expect("parse A seed"),
+            task_from_markdown(b_body.as_bytes(), &b_parse_ctx).expect("parse B seed"),
+        ],
+    );
 
     // 外部編集で A.md の本文を更新したものとする（parent は disk 上もそのまま）。
     let updated_body = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nupdated body\n";
@@ -767,22 +765,22 @@ fn modify_event_for_a_cycle_member_rescans_and_recomputes_the_cycle_state() {
     let entries = drain_log(&log);
     assert_eq!(1, entries.len(), "one emit expected");
     assert_eq!(
-        "watcher-resync-required", entries[0].0,
-        "full rescan なので全量再取得を要求する"
+        "task-updated", entries[0].0,
+        "変更対象以外のresolved stateが同じなら通常eventを返す"
     );
 
     let snapshot = state.test_tasks_snapshot().expect("readable");
     for path in ["tasks/a.md", "tasks/b.md"] {
         let task = snapshot
             .iter()
-            .find(|task| task.file_path.as_str() == path)
+            .find(|task| task.file_path().as_str() == path)
             .unwrap_or_else(|| panic!("{path} in cache"));
         assert!(
-            task.parent.is_none(),
+            task.parent().is_none(),
             "{path}: 循環が続いている間 parent は None 化される"
         );
         assert!(
-            task.warnings
+            task.warnings()
                 .iter()
                 .any(|warning| warning.code == TaskWarningCode::ParentCycle
                     && warning.field.as_deref() == Some("parent")),
@@ -792,9 +790,9 @@ fn modify_event_for_a_cycle_member_rescans_and_recomputes_the_cycle_state() {
     assert_eq!(
         snapshot
             .iter()
-            .find(|task| task.file_path.as_str() == "tasks/a.md")
+            .find(|task| task.file_path().as_str() == "tasks/a.md")
             .expect("A in cache")
-            .body,
+            .body(),
         "\nupdated body\n",
         "本文の更新は取り込まれる"
     );
@@ -816,10 +814,10 @@ fn modify_event_for_non_cycle_task_does_not_inject_parent_cycle_warning() {
     let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
         .iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("A in cache");
     assert!(
-        !a.warnings
+        !a.warnings()
             .iter()
             .any(|w| w.code == crate::task::warning::TaskWarningCode::ParentCycle),
         "非 cycle task に parentCycle warning が混入してはならない"
@@ -829,7 +827,7 @@ fn modify_event_for_non_cycle_task_does_not_inject_parent_cycle_warning() {
 #[test]
 fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
     use crate::task::parse::{task_from_markdown, TaskParseContext};
-    use crate::task::warning::{ensure_parent_cycle_warning, TaskWarningCode};
+    use crate::task::warning::TaskWarningCode;
 
     let dir = TempDir::new().expect("tempdir");
     let state = Arc::new(AppState::new());
@@ -838,20 +836,24 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
     let a_initial = "---\ntitle: A\nstatus: Todo\nparent: tasks/b.md\n---\n\nbody\n";
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
     let abs_a = write_md(dir.path(), "tasks/a.md", a_initial);
-    write_md(
-        dir.path(),
-        "tasks/b.md",
-        "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n\nbody\n",
-    );
+    let b_body = "---\ntitle: B\nstatus: Todo\nparent: tasks/a.md\n---\n\nbody\n";
+    write_md(dir.path(), "tasks/b.md", b_body);
 
-    let parse_ctx = TaskParseContext {
+    let a_parse_ctx = TaskParseContext {
         file_path: PathBuf::from("tasks/a.md"),
         default_status: "Todo".into(),
     };
-    let mut seeded = task_from_markdown(a_initial.as_bytes(), &parse_ctx).expect("parse seed");
-    seeded.parent = None;
-    ensure_parent_cycle_warning(&mut seeded.warnings);
-    insert_task(&state, seeded);
+    let b_parse_ctx = TaskParseContext {
+        file_path: PathBuf::from("tasks/b.md"),
+        default_status: "Todo".into(),
+    };
+    replace_parsed_tasks(
+        &state,
+        vec![
+            task_from_markdown(a_initial.as_bytes(), &a_parse_ctx).expect("parse A seed"),
+            task_from_markdown(b_body.as_bytes(), &b_parse_ctx).expect("parse B seed"),
+        ],
+    );
 
     // ユーザーが外部編集で A.md から parent を除去して循環を解消した。
     let a_resolved = "---\ntitle: A\nstatus: Todo\n---\n\nresolved body\n";
@@ -866,15 +868,15 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
     let snapshot = state.test_tasks_snapshot().expect("readable");
     let a = snapshot
         .iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("A in cache");
 
     assert!(
-        a.parent.is_none(),
+        a.parent().is_none(),
         "disk 側で parent を消した結果がそのまま反映される"
     );
     assert!(
-        !a.warnings
+        !a.warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "disk 側で parent が消えた以上、parentCycle warning は維持しない"
@@ -882,15 +884,15 @@ fn modify_event_drops_parent_cycle_warning_when_disk_parent_is_removed() {
 
     let b = snapshot
         .iter()
-        .find(|t| t.file_path.as_str() == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("B in cache");
     assert_eq!(
-        b.parent.as_ref().map(|parent| parent.as_str()),
+        b.parent().as_ref().map(|parent| parent.as_str()),
         Some("tasks/a.md"),
-        "循環が解けた側の parent も disk の raw 値へ戻る（cache では復元できないため rescan が要る）"
+        "residentのraw parentから相手側のeffective parentも復元される"
     );
     assert!(
-        !b.warnings
+        !b.warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "循環が解けた以上、相手側の warning も消える"
@@ -908,11 +910,11 @@ fn cached_children(state: &AppState, file_path: &str) -> Vec<String> {
         .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
-        .find(|task| task.file_path == file_path)
+        .find(|task| task.file_path().as_str() == file_path)
         .unwrap_or_else(|| panic!("cached task {file_path}"))
-        .children
-        .into_iter()
-        .map(|path| path.into_string())
+        .children()
+        .iter()
+        .map(|path| path.as_str().to_owned())
         .collect()
 }
 
@@ -1024,14 +1026,14 @@ fn watcher_introduced_parent_cycle_becomes_a_warning() {
     for path in ["tasks/a.md", "tasks/b.md"] {
         let task = snapshot
             .iter()
-            .find(|task| task.file_path.as_str() == path)
+            .find(|task| task.file_path().as_str() == path)
             .unwrap_or_else(|| panic!("{path} in cache"));
         assert!(
-            task.parent.is_none(),
+            task.parent().is_none(),
             "{path}: 循環メンバーの parent は None"
         );
         assert!(
-            task.warnings
+            task.warnings()
                 .iter()
                 .any(|warning| warning.code == crate::task::warning::TaskWarningCode::ParentCycle),
             "{path}: parentCycle warning が付く"

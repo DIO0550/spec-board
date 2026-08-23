@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::task::frontmatter::{self, Frontmatter, FrontmatterError, Parsed, Priority};
 use crate::task::parse::TaskParseContext;
-use crate::task::task_index::Task;
+use crate::task::task_index::ParsedTask;
 
 /// patch field の 3 状態。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -127,8 +127,8 @@ impl TaskDocument {
         Ok(())
     }
 
-    /// document を Task entity へ変換する。
-    pub fn to_task(&self, context: &TaskParseContext) -> Task {
+    /// document を parse-only candidate へ変換する。
+    pub(crate) fn to_parsed_task(&self, context: &TaskParseContext) -> ParsedTask {
         crate::task::parse::task_from_parsed(self.parsed.clone(), context)
     }
 

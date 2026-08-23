@@ -2,37 +2,19 @@
 //!
 //! AppState / TaskIo / fs::* に依存せず、すべて in-memory で完結する。
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use super::{MoveTaskIntent, MoveTaskOutcome, Task, TaskIndex};
-use crate::config::column_name::ColumnName;
+use super::{MoveTaskIntent, MoveTaskOutcome, ParsedTaskBuilder, Task, TaskIndex};
 use crate::config::{CardOrder, Config};
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed, Priority};
 use crate::task::label::Label;
 use crate::task::move_task::error::MoveTaskError;
-use crate::task::task_file_path::TaskFilePath;
 
 fn make_task(file_path: &str, status: &str) -> Task {
-    let fp = TaskFilePath::from_lenient(file_path);
-    Task {
-        draft: false,
-        id: fp.clone(),
-        file_path: fp,
-        title: "T".into(),
-        status: ColumnName::from_lenient(status),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: BTreeMap::new(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(file_path)
+        .title("T")
+        .status(status)
+        .resolve()
 }
 
 fn parsed_from_md(md: &str) -> Parsed {

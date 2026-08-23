@@ -68,7 +68,7 @@ fn delete_moves_file_into_trash_mirror() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
 
     delete_task_impl(&state, &FsTaskIo, delete_args(&rel)).expect("delete");
 
@@ -86,7 +86,7 @@ fn get_trashed_tasks_lists_deleted_entries_with_deleted_at() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
     delete_task_impl(&state, &FsTaskIo, delete_args(&rel)).expect("delete");
 
     let payload = get_trashed_tasks_impl(&state).expect("should succeed");
@@ -119,7 +119,7 @@ fn restore_moves_file_back_and_keeps_cache_untouched() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
     delete_task_impl(&state, &FsTaskIo, delete_args(&rel)).expect("delete");
 
     let payload = restore_trashed_task_impl(
@@ -149,7 +149,7 @@ fn restore_collision_restores_with_numbered_suffix() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
     delete_task_impl(&state, &FsTaskIo, delete_args(&rel)).expect("delete");
     fs::write(dir.path().join(&rel), "occupied").expect("seed collision");
 
@@ -202,7 +202,7 @@ fn purge_removes_single_trash_entry() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, create_args("Target")).expect("create");
-    let rel = task.file_path.as_str().to_string();
+    let rel = task.file_path().as_str().to_string();
     delete_task_impl(&state, &FsTaskIo, delete_args(&rel)).expect("delete");
 
     purge_trashed_task_impl(
@@ -242,8 +242,8 @@ fn empty_trash_removes_all_entries_and_is_idempotent() {
 
     let alpha = create_task_impl(&state, &FsTaskIo, create_args("Alpha")).expect("create");
     let beta = create_task_impl(&state, &FsTaskIo, create_args("Beta")).expect("create");
-    delete_task_impl(&state, &FsTaskIo, delete_args(alpha.file_path.as_str())).expect("delete");
-    delete_task_impl(&state, &FsTaskIo, delete_args(beta.file_path.as_str())).expect("delete");
+    delete_task_impl(&state, &FsTaskIo, delete_args(alpha.file_path().as_str())).expect("delete");
+    delete_task_impl(&state, &FsTaskIo, delete_args(beta.file_path().as_str())).expect("delete");
 
     empty_trash_impl(&state).expect("empty");
     assert!(!dir.path().join(".spec-board/trash").exists());

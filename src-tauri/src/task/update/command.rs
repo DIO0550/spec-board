@@ -12,16 +12,21 @@ use crate::state::AppState;
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
+use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::{Task, TaskIndex, UpdateTaskOutcome};
+use crate::task::task_index::{ExternalTaskChange, Task, TaskIndex, UpdateTaskOutcome};
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
-use crate::task::warning::has_parent_cycle_warning;
 
 /// `update_task` Tauri command 薄層。
 #[tauri::command]
-pub fn update_task(state: State<'_, Arc<AppState>>, args: UpdateTaskArgs) -> Result<Task, String> {
-    update_task_impl(state.inner().as_ref(), &FsTaskIo, args).map_err(|e| e.to_string())
+pub fn update_task(
+    state: State<'_, Arc<AppState>>,
+    args: UpdateTaskArgs,
+) -> Result<TaskPayload, String> {
+    update_task_impl(state.inner().as_ref(), &FsTaskIo, args)
+        .map(TaskPayload::from)
+        .map_err(|e| e.to_string())
 }
 
 /// effect 層本体（テスト境界）。
@@ -67,8 +72,7 @@ pub(crate) fn update_task_impl(
             .plan_update(project_root.as_path(), intent, &existing_task, parsed)
             .map_err(UpdateTaskCommandError::Validation)?;
 
-        let mut next_tasks = snapshot.tasks().clone();
-        let returned = apply_update_to_cache(&mut next_tasks, &rel_path, &outcome)?;
+        let (next_tasks, returned) = apply_update_to_cache(snapshot.tasks(), &rel_path, &outcome)?;
         let registered_paths = vec![abs.clone()];
         resources.write_ignore().register(&abs)?;
         if let Err(error) = io.write_existing(&abs, outcome.file_content.as_bytes()) {
@@ -94,35 +98,22 @@ pub(crate) fn update_task_impl(
 
 /// planned updateをcloned task mapへ適用し、commit後の戻り値を作る。
 fn apply_update_to_cache(
-    cache: &mut HashMap<CanonicalTaskPath, Task>,
+    cache: &HashMap<CanonicalTaskPath, Task>,
     rel_path: &Path,
     outcome: &UpdateTaskOutcome,
-) -> Result<Task, UpdateTaskCommandError> {
+) -> Result<(crate::task::task_index::ResolvedTaskSet, Task), UpdateTaskCommandError> {
     let cache_key = CanonicalTaskPath::from_path(rel_path);
-    let returned = if outcome.needs_full_rebuild {
-        let values = cache.values().cloned().collect();
-        let index = TaskIndex::new(values)
-            .rebuild_with_replaced(outcome.updated_task.clone())
-            .map_err(UpdateTaskError::from)?;
-        cache.clear();
-        for task in index.into_tasks() {
-            cache.insert(CanonicalTaskPath::from_file_path(&task.file_path), task);
-        }
-        cache.get(&cache_key).cloned()
-    } else {
-        let was_cycle_member = cache
-            .get(&cache_key)
-            .map(|previous| has_parent_cycle_warning(&previous.warnings))
-            .unwrap_or(false);
-        let mut next = outcome.updated_task.clone();
-        next.preserve_parent_cycle_state(was_cycle_member);
-        cache.insert(cache_key.clone(), next.clone());
-        Some(next)
-    };
+    let resolved = TaskIndex::new(cache.values().cloned().collect())
+        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(
+            outcome.updated_task.clone(),
+        )))
+        .map_err(UpdateTaskError::from)?;
+    let returned = resolved.tasks.get(&cache_key).cloned();
 
-    returned.ok_or(UpdateTaskCommandError::Validation(
+    let returned = returned.ok_or(UpdateTaskCommandError::Validation(
         UpdateTaskError::FileNotFound(cache_key.as_path_buf()),
-    ))
+    ))?;
+    Ok((resolved.tasks, returned))
 }
 
 #[cfg(test)]

@@ -59,7 +59,7 @@ pub(crate) fn normalize_relative_path_for_input(raw: &str) -> Option<String> {
 pub(super) fn task_path_index(tasks: &[Task]) -> HashSet<String> {
     tasks
         .iter()
-        .map(|task| normalize_task_path_for_lookup(task.file_path.as_str()))
+        .map(|task| normalize_task_path_for_lookup(task.file_path().as_str()))
         .collect()
 }
 
@@ -68,9 +68,8 @@ pub(super) fn parent_lookup_index(tasks: &[Task]) -> HashMap<String, Option<Stri
         .iter()
         .map(|task| {
             (
-                normalize_task_path_for_lookup(task.file_path.as_str()),
-                task.parent
-                    .as_ref()
+                normalize_task_path_for_lookup(task.file_path().as_str()),
+                task.parent()
                     .and_then(|p| normalize_parent_path_for_lookup(p.as_str())),
             )
         })
@@ -83,7 +82,7 @@ pub(super) fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
         .enumerate()
         .map(|(index, task)| {
             (
-                normalize_task_path_for_lookup(task.file_path.as_str()),
+                normalize_task_path_for_lookup(task.file_path().as_str()),
                 index,
             )
         })
@@ -92,7 +91,7 @@ pub(super) fn task_lookup_index(tasks: &[Task]) -> HashMap<String, usize> {
 
 pub(super) fn clear_children(tasks: &mut [Task]) {
     for task in tasks {
-        task.children.clear();
+        task.clear_children_for_resolver();
     }
 }
 
@@ -101,10 +100,9 @@ pub(super) fn append_child_to_parent(
     tasks: &mut [Task],
     parent_index: &HashMap<String, usize>,
 ) {
-    let child_file_path = tasks[child_index].file_path.clone();
+    let child_file_path = tasks[child_index].file_path().clone();
     let Some(parent_path) = tasks[child_index]
-        .parent
-        .as_ref()
+        .parent()
         .and_then(|p| normalize_parent_path_for_lookup(p.as_str()))
     else {
         return;
@@ -114,6 +112,5 @@ pub(super) fn append_child_to_parent(
         return;
     };
 
-    let children = &mut tasks[parent_task_index].children;
-    children.push(child_file_path);
+    tasks[parent_task_index].push_child_for_resolver(child_file_path);
 }

@@ -68,8 +68,8 @@ fn add_link_writes_file_and_updates_cache_on_success() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md")).expect("ok");
-    assert_eq!(task.file_path, "tasks/a.md");
-    assert!(task.links.iter().any(|p| p.as_str() == "tasks/b.md"));
+    assert_eq!(task.file_path().as_str(), "tasks/a.md");
+    assert!(task.links().iter().any(|p| p.as_str() == "tasks/b.md"));
 
     let on_disk = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
     assert!(on_disk.contains("links:"));
@@ -78,14 +78,14 @@ fn add_link_writes_file_and_updates_cache_on_success() {
     let snap = state.test_tasks_snapshot().expect("snapshot");
     let a = snap
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("a");
-    assert!(a.links.iter().any(|p| p.as_str() == "tasks/b.md"));
+    assert!(a.links().iter().any(|p| p.as_str() == "tasks/b.md"));
     let b = snap
         .iter()
-        .find(|t| t.file_path == "tasks/b.md")
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
         .expect("b");
-    assert!(b.reverse_links.iter().any(|p| p.as_str() == "tasks/a.md"));
+    assert!(b.reverse_links().iter().any(|p| p.as_str() == "tasks/a.md"));
 }
 
 #[test]
@@ -136,8 +136,8 @@ fn add_link_returns_source_task_on_noop() {
 
     let returned = add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md"))
         .expect("noop returns Ok");
-    assert_eq!(returned.file_path, "tasks/a.md");
-    assert!(returned.links.iter().any(|p| p.as_str() == "tasks/b.md"));
+    assert_eq!(returned.file_path().as_str(), "tasks/a.md");
+    assert!(returned.links().iter().any(|p| p.as_str() == "tasks/b.md"));
 }
 
 #[test]
@@ -234,7 +234,8 @@ fn add_link_registers_session_write_ignore_and_advances_revision() {
 }
 
 /// scan で cycle member とマークされた source task に add_link しても、
-/// cache 上の `parent=None` と `parentCycle` warning が崩れないこと。
+/// cache 上のeffective `parent=None` と `parentCycle` warning が崩れず、raw parentは
+/// 次のresolverへ引き継がれること。
 #[test]
 fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
     use crate::task::warning::TaskWarningCode;
@@ -261,12 +262,12 @@ fn add_link_on_cycle_source_preserves_parent_none_and_cycle_warning() {
         .expect("add_link should succeed");
 
     assert!(
-        returned.parent.is_none(),
-        "cycle source must keep parent=None"
+        returned.parent().is_none(),
+        "cycle source must keep effective parent=None"
     );
     assert!(
         returned
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "cycle source must keep parentCycle warning"

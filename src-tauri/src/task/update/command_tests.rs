@@ -73,7 +73,7 @@ fn update_status_only_writes_file_and_updates_cache() {
     args.status = Some("Doing".into());
 
     let task = update_task_impl(&state, &FsTaskIo, args).expect("ok");
-    assert_eq!(task.status.as_str(), "Doing");
+    assert_eq!(task.status().as_str(), "Doing");
 
     let content = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read");
     assert!(content.contains("status: Doing"));
@@ -94,7 +94,7 @@ fn update_title_keeps_file_path_unchanged() {
     args.title = Some("New Title".into());
 
     let task = update_task_impl(&state, &FsTaskIo, args).expect("ok");
-    assert_eq!(task.file_path, "tasks/a.md");
+    assert_eq!(task.file_path().as_str(), "tasks/a.md");
     assert!(dir.path().join("tasks/a.md").exists());
     let content = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert!(content.contains("title: New Title"));
@@ -115,13 +115,13 @@ fn update_empty_title_is_accepted_and_warns_invalid_title() {
     args.title = Some(String::new());
 
     let task = update_task_impl(&state, &FsTaskIo, args).expect("ok");
-    assert_eq!(task.file_path, "tasks/a.md");
+    assert_eq!(task.file_path().as_str(), "tasks/a.md");
     assert!(
-        task.warnings
+        task.warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::InvalidTitleUsedFileName),
         "expected invalidTitleUsedFileName warning, got {:?}",
-        task.warnings
+        task.warnings()
     );
 }
 
@@ -164,6 +164,40 @@ fn update_body_only_replaces_body_in_file() {
     let content = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert!(content.contains("brand new body"));
     assert!(!content.contains("old body"));
+}
+
+#[test]
+fn update_non_parent_field_rebuilds_reverse_links_and_graph_warnings() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Todo\nparent: tasks/missing.md\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_for("tasks/target.md");
+    args.title = Some("Updated target".into());
+
+    let returned = update_task_impl(&state, &FsTaskIo, args).expect("update");
+    assert_eq!(
+        returned.reverse_links(),
+        vec!["tasks/source.md".to_string()],
+        "non-parent update must match reopen-derived reverse links"
+    );
+    assert!(
+        returned
+            .warnings()
+            .iter()
+            .any(|warning| warning.code == TaskWarningCode::ParentNotFound),
+        "non-parent update must preserve resolver-produced graph warnings"
+    );
 }
 
 #[test]
@@ -243,14 +277,14 @@ fn update_parent_rebuilds_children_in_cache() {
     args.parent = Some("tasks/p.md".into());
 
     let returned = update_task_impl(&state, &FsTaskIo, args).expect("ok");
-    assert_eq!(returned.file_path, "tasks/a.md");
+    assert_eq!(returned.file_path().as_str(), "tasks/a.md");
 
     let snap = state.test_tasks_snapshot().unwrap();
     let parent = snap
         .iter()
-        .find(|t| t.file_path == "tasks/p.md")
+        .find(|t| t.file_path().as_str() == "tasks/p.md")
         .expect("parent in cache");
-    assert!(parent.children.iter().any(|c| c.as_str() == "tasks/a.md"));
+    assert!(parent.children().iter().any(|c| c.as_str() == "tasks/a.md"));
 }
 
 #[test]
@@ -280,10 +314,16 @@ fn update_parent_change_removes_from_old_parent_and_adds_to_new() {
     let _ = update_task_impl(&state, &FsTaskIo, args).expect("ok");
 
     let snap = state.test_tasks_snapshot().unwrap();
-    let p1 = snap.iter().find(|t| t.file_path == "tasks/p1.md").unwrap();
-    let p2 = snap.iter().find(|t| t.file_path == "tasks/p2.md").unwrap();
-    assert!(!p1.children.iter().any(|c| c.as_str() == "tasks/a.md"));
-    assert!(p2.children.iter().any(|c| c.as_str() == "tasks/a.md"));
+    let p1 = snap
+        .iter()
+        .find(|t| t.file_path().as_str() == "tasks/p1.md")
+        .unwrap();
+    let p2 = snap
+        .iter()
+        .find(|t| t.file_path().as_str() == "tasks/p2.md")
+        .unwrap();
+    assert!(!p1.children().iter().any(|c| c.as_str() == "tasks/a.md"));
+    assert!(p2.children().iter().any(|c| c.as_str() == "tasks/a.md"));
 }
 
 #[test]
@@ -308,8 +348,11 @@ fn update_parent_clear_removes_from_parent_children() {
     let _ = update_task_impl(&state, &FsTaskIo, args).expect("ok");
 
     let snap = state.test_tasks_snapshot().unwrap();
-    let p = snap.iter().find(|t| t.file_path == "tasks/p.md").unwrap();
-    assert!(p.children.is_empty());
+    let p = snap
+        .iter()
+        .find(|t| t.file_path().as_str() == "tasks/p.md")
+        .unwrap();
+    assert!(p.children().is_empty());
 }
 
 #[test]
@@ -548,14 +591,14 @@ fn update_descendant_cycle_is_rejected_without_filesystem_change() {
     let after_snapshot = state.test_tasks_snapshot().unwrap();
     let before_a_task = before_snapshot
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("before a");
     let after_a_task = after_snapshot
         .iter()
-        .find(|t| t.file_path == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .expect("after a");
-    assert_eq!(before_a_task.parent, after_a_task.parent);
-    assert_eq!(before_a_task.children, after_a_task.children);
+    assert_eq!(before_a_task.parent(), after_a_task.parent());
+    assert_eq!(before_a_task.children(), after_a_task.children());
 }
 
 // 21 edge chain (C → B0 → ... → B20) を E2E で `TooDeep` として拒否し、
@@ -605,13 +648,13 @@ fn update_chain_too_deep_is_rejected_without_filesystem_change() {
     let after_snapshot = state.test_tasks_snapshot().unwrap();
     let before_c_task = before_snapshot
         .iter()
-        .find(|t| t.file_path == "tasks/C.md")
+        .find(|t| t.file_path().as_str() == "tasks/C.md")
         .expect("before C");
     let after_c_task = after_snapshot
         .iter()
-        .find(|t| t.file_path == "tasks/C.md")
+        .find(|t| t.file_path().as_str() == "tasks/C.md")
         .expect("after C");
-    assert_eq!(before_c_task.parent, after_c_task.parent);
+    assert_eq!(before_c_task.parent(), after_c_task.parent());
 }
 
 #[test]
@@ -630,7 +673,7 @@ fn update_task_registers_session_write_ignore_and_advances_revision() {
     args.status = Some("Doing".into());
     let updated = update_task_impl(&state, &FsTaskIo, args).expect("update ok");
 
-    assert_eq!("Doing", updated.status.as_str());
+    assert_eq!("Doing", updated.status().as_str());
     assert_eq!(1, session_write_ignore_len(&state));
     assert_eq!(
         before.as_u64() + 1,
@@ -640,7 +683,8 @@ fn update_task_registers_session_write_ignore_and_advances_revision() {
 }
 
 /// scan 経路で循環判定された task のタイトルを更新しても、
-/// 次の cache snapshot で parentCycle warning と parent=None が保持されること。
+/// 次の cache snapshot で parentCycle warning とeffective parent=Noneが保持され、
+/// residentのraw parentから循環を再計算できること。
 #[test]
 fn update_title_on_cycle_task_preserves_parent_cycle_warning() {
     let dir = tempdir();
@@ -660,10 +704,13 @@ fn update_title_on_cycle_task_preserves_parent_cycle_warning() {
     open_with_noop(Arc::clone(&state), root);
 
     let before = state.test_tasks_snapshot().unwrap();
-    let before_a = before.iter().find(|t| t.file_path == "tasks/a.md").unwrap();
-    assert!(before_a.parent.is_none());
+    let before_a = before
+        .iter()
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
+        .unwrap();
+    assert!(before_a.parent().is_none());
     assert!(before_a
-        .warnings
+        .warnings()
         .iter()
         .any(|w| w.code == TaskWarningCode::ParentCycle));
 
@@ -671,24 +718,27 @@ fn update_title_on_cycle_task_preserves_parent_cycle_warning() {
     args.title = Some("Renamed".into());
 
     let updated = update_task_impl(&state, &FsTaskIo, args).expect("update title ok");
-    assert_eq!(updated.title.as_str(), "Renamed");
+    assert_eq!(updated.title().as_str(), "Renamed");
     assert!(
-        updated.parent.is_none(),
-        "parent should remain None on cycle task after non-parent update"
+        updated.parent().is_none(),
+        "effective parent should remain None on cycle task after non-parent update"
     );
     assert!(
         updated
-            .warnings
+            .warnings()
             .iter()
             .any(|w| w.code == TaskWarningCode::ParentCycle),
         "parentCycle warning must be preserved after non-parent update"
     );
 
     let after = state.test_tasks_snapshot().unwrap();
-    let after_b = after.iter().find(|t| t.file_path == "tasks/b.md").unwrap();
-    assert!(after_b.parent.is_none());
+    let after_b = after
+        .iter()
+        .find(|t| t.file_path().as_str() == "tasks/b.md")
+        .unwrap();
+    assert!(after_b.parent().is_none());
     assert!(after_b
-        .warnings
+        .warnings()
         .iter()
         .any(|w| w.code == TaskWarningCode::ParentCycle));
 }
@@ -715,20 +765,17 @@ fn update_body_on_cycle_task_preserves_parent_cycle_warning() {
     args.body = Some("new body".into());
 
     let updated = update_task_impl(&state, &FsTaskIo, args).expect("update body ok");
-    assert!(updated.parent.is_none());
+    assert!(updated.parent().is_none());
     assert!(updated
-        .warnings
+        .warnings()
         .iter()
         .any(|w| w.code == TaskWarningCode::ParentCycle));
 }
 
-// ───────── projection の cache 鮮度（`Task.children` 非依存の実証） ─────────
+// ───────── canonical resolver 後の projection 鮮度 ─────────
 
-/// parent を変えない `update_task`（`needs_full_rebuild == false` 経路）を通しても
-/// 親の projection が保たれることを固定する。
-///
-/// `commit_cache` はこの経路で対象 task の `children` を空で上書きする。projection が
-/// `Task.children` を読む実装に戻すと total が 0 になって落ちる。
+/// canonical resolverが非parent変更でもresidentのchildrenを再構築し、親の
+/// projectionを保つことを固定する。
 #[test]
 fn non_parent_update_keeps_parent_projection_counts() {
     let dir = tempdir();
@@ -758,11 +805,15 @@ fn non_parent_update_keeps_parent_projection_counts() {
         .test_tasks_snapshot()
         .expect("readable")
         .into_iter()
-        .find(|task| task.file_path == "tasks/p.md")
+        .find(|task| task.file_path().as_str() == "tasks/p.md")
         .expect("cached parent");
-    assert!(
-        cached_parent.children.is_empty(),
-        "非 parent 変更の commit_cache は children を空で上書きする（前提が変わったら見直す）"
+    assert_eq!(
+        cached_parent
+            .children()
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["tasks/c1.md", "tasks/c2.md"]
     );
 
     let payload = crate::task::get::get_tasks_impl(&state).expect("get_tasks");
@@ -818,7 +869,7 @@ fn update_task_with_dot_prefixed_path_updates_canonical_entry() {
     args.status = Some("Doing".into());
 
     let task = update_task_impl(&state, &FsTaskIo, args).expect("dot prefix resolves");
-    assert_eq!(task.status.as_str(), "Doing");
+    assert_eq!(task.status().as_str(), "Doing");
 
     let snapshot = state
         .require_session_snapshot()
@@ -830,13 +881,13 @@ fn update_task_with_dot_prefixed_path_updates_canonical_entry() {
             .tasks()
             .get(&CanonicalTaskPath::new("tasks/a.md"))
             .expect("canonical entry")
-            .status
+            .status()
             .as_str()
     );
 }
 
 #[test]
-fn update_task_full_rebuild_keeps_canonical_keys() {
+fn update_task_canonical_resolver_keeps_canonical_keys() {
     let dir = tempdir();
     seed_md(
         dir.path(),
@@ -851,7 +902,7 @@ fn update_task_full_rebuild_keeps_canonical_keys() {
     let state = Arc::new(AppState::new());
     open_with_noop(Arc::clone(&state), dir.path());
 
-    // parent 変更は needs_full_rebuild 経路を通り、cache を組み直す。
+    // parent 変更後も全件をcanonical resolverへ通してcacheを組み直す。
     let mut args = args_for("tasks/child.md");
     args.parent = Some("tasks/parent.md".into());
     update_task_impl(&state, &FsTaskIo, args).expect("parent change rebuilds the cache");
@@ -862,7 +913,7 @@ fn update_task_full_rebuild_keeps_canonical_keys() {
     assert_eq!(2, snapshot.tasks().len());
     for (cache_key, task) in snapshot.tasks() {
         assert_eq!(
-            &CanonicalTaskPath::from_file_path(&task.file_path),
+            &CanonicalTaskPath::from_file_path(task.file_path()),
             cache_key
         );
     }

@@ -160,7 +160,7 @@ fn preview_with_parent_resolves_dir() {
     let args = PreviewTaskFilenameArgs {
         title: "Child".to_string(),
         explicit_filename: None,
-        parent_file_path: Some(parent.file_path.as_str().to_string()),
+        parent_file_path: Some(parent.file_path().as_str().to_string()),
     };
     let result = preview_task_filename_impl(&state, args).unwrap();
     match result {

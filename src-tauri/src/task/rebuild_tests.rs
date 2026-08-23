@@ -27,7 +27,7 @@ fn task_md(title: &str) -> String {
 fn sorted_paths(tasks: &[Task]) -> Vec<String> {
     let mut paths: Vec<String> = tasks
         .iter()
-        .map(|task| task.file_path.as_str().to_string())
+        .map(|task| task.file_path().as_str().to_string())
         .collect();
     paths.sort();
     paths
@@ -47,10 +47,10 @@ fn returns_tasks_with_children_and_reverse_links_from_multiple_md_files() {
 
     let parent = tasks
         .iter()
-        .find(|task| task.file_path == "tasks/parent.md")
+        .find(|task| task.file_path().as_str() == "tasks/parent.md")
         .expect("parent present");
-    assert_eq!(vec!["tasks/child.md".to_string()], parent.children);
-    assert_eq!(vec!["tasks/child.md".to_string()], parent.reverse_links);
+    assert_eq!(vec!["tasks/child.md".to_string()], parent.children());
+    assert_eq!(vec!["tasks/child.md".to_string()], parent.reverse_links());
 }
 
 #[test]

@@ -16,7 +16,6 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::config::column_name::ColumnName;
 use crate::config::{
     load_or_default, write_guide_markdown_best_effort, Config, ConfigWriter, FsConfigWriter,
     LoadConfigError, RenameTarget,
@@ -212,13 +211,28 @@ pub(crate) fn update_columns_impl_with_loader(
         }
 
         let project_root = snapshot.project_root().as_path().to_path_buf();
-        let mut next_tasks = snapshot.tasks().clone();
-        for target in &plan.rename_targets {
-            let rel = CanonicalTaskPath::new(target.rel_path.as_str());
-            if let Some(task) = next_tasks.get_mut(&rel) {
-                task.status = ColumnName::from_lenient(&target.new_status);
-            }
-        }
+        let renamed_statuses: HashMap<CanonicalTaskPath, &str> = plan
+            .rename_targets
+            .iter()
+            .map(|target| {
+                (
+                    CanonicalTaskPath::new(target.rel_path.as_str()),
+                    target.new_status.as_str(),
+                )
+            })
+            .collect();
+        let candidates = snapshot
+            .tasks()
+            .iter()
+            .map(|(path, task)| {
+                renamed_statuses.get(path).map_or_else(
+                    || task.to_parsed_task(),
+                    |status| task.with_status_candidate(status),
+                )
+            })
+            .collect();
+        let next_tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)
+            .expect("column rename preserves the resolved parent hierarchy");
 
         // resident plan完成後、disk read/marker/writeより先にrevisionをpreflightする。
         let resources = state.preflight_session_write(snapshot)?;

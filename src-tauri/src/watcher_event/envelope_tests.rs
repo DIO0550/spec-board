@@ -1,26 +1,9 @@
 use super::*;
 
-use crate::task::task_index::Task;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn sample_task() -> Task {
-    Task {
-        draft: false,
-        id: "tasks/a.md".into(),
-        file_path: "tasks/a.md".into(),
-        title: "A".into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new("tasks/a.md").title("A").resolve()
 }
 
 fn project_key() -> ProjectKey {
@@ -34,7 +17,7 @@ fn upsert_envelope() -> WatcherEnvelope<TaskUpsertPayload> {
         TasksRevision::from_raw(42),
         EventSeq::from_raw(17),
         TaskUpsertPayload {
-            task: sample_task(),
+            task: sample_task().into(),
         },
     )
 }

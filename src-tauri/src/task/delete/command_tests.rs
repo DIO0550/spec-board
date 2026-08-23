@@ -36,6 +36,12 @@ fn open_with_noop(state: Arc<AppState>, path: &Path) {
     .expect("open should succeed");
 }
 
+fn seed_md(root: &Path, relative: &str, content: &str) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().expect("task parent")).expect("create task directory");
+    fs::write(path, content).expect("seed task");
+}
+
 fn args_with_title(title: &str) -> CreateTaskArgs {
     CreateTaskArgs {
         draft: false,
@@ -70,10 +76,10 @@ fn delete_childless_task_removes_file_and_cache() {
     open_with_noop(Arc::clone(&state), dir.path());
 
     let task = create_task_impl(&state, &FsTaskIo, args_with_title("Target")).expect("create");
-    let abs = dir.path().join(task.file_path.as_str());
+    let abs = dir.path().join(task.file_path().as_str());
     assert!(abs.exists());
 
-    delete_task_impl(&state, &FsTaskIo, delete_args(task.file_path.as_str())).expect("delete");
+    delete_task_impl(&state, &FsTaskIo, delete_args(task.file_path().as_str())).expect("delete");
 
     assert!(!abs.exists(), "file should be removed");
     let snap = state.test_tasks_snapshot().expect("snapshot");
@@ -90,13 +96,71 @@ fn delete_task_leaves_other_tasks_in_cache() {
     let t2 = create_task_impl(&state, &FsTaskIo, args_with_title("Two")).expect("create 2");
     let t3 = create_task_impl(&state, &FsTaskIo, args_with_title("Three")).expect("create 3");
 
-    delete_task_impl(&state, &FsTaskIo, delete_args(t2.file_path.as_str())).expect("delete");
+    delete_task_impl(&state, &FsTaskIo, delete_args(t2.file_path().as_str())).expect("delete");
 
     let snap = state.test_tasks_snapshot().expect("snapshot");
     assert_eq!(2, snap.len());
-    assert!(snap.iter().any(|t| t.file_path == t1.file_path));
-    assert!(snap.iter().any(|t| t.file_path == t3.file_path));
-    assert!(!snap.iter().any(|t| t.file_path == t2.file_path));
+    assert!(snap.iter().any(|t| t.file_path() == t1.file_path()));
+    assert!(snap.iter().any(|t| t.file_path() == t3.file_path()));
+    assert!(!snap.iter().any(|t| t.file_path() == t2.file_path()));
+}
+
+#[test]
+fn delete_child_rebuilds_parent_children() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    delete_task_impl(&state, &FsTaskIo, delete_args("tasks/child.md")).expect("delete child");
+
+    let snap = state.test_tasks_snapshot().expect("snapshot");
+    let parent = snap
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/parent.md")
+        .expect("parent remains");
+    assert!(
+        parent.children().is_empty(),
+        "delete must match reopen-derived children"
+    );
+}
+
+#[test]
+fn delete_link_source_rebuilds_target_reverse_links() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    delete_task_impl(&state, &FsTaskIo, delete_args("tasks/source.md")).expect("delete source");
+
+    let snap = state.test_tasks_snapshot().expect("snapshot");
+    let target = snap
+        .iter()
+        .find(|task| task.file_path().as_str() == "tasks/target.md")
+        .expect("target remains");
+    assert!(
+        target.reverse_links().is_empty(),
+        "delete must match reopen-derived reverse links"
+    );
 }
 
 #[test]

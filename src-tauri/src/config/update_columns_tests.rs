@@ -18,9 +18,7 @@ use crate::project_session::SessionRevision;
 use crate::state::AppState;
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::FsTaskIo;
-use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::Task;
-use crate::task::task_title::TaskTitle;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn col(name: &str, order: u32) -> Column {
     Column {
@@ -60,24 +58,10 @@ fn column_paths<'a>(card_order: &'a CardOrder, column: &str) -> Vec<&'a str> {
 }
 
 fn task(path: &str, status: &str) -> Task {
-    Task {
-        draft: false,
-        id: TaskFilePath::from_lenient(path),
-        file_path: TaskFilePath::from_lenient(path),
-        title: TaskTitle::from_lenient("t"),
-        status: ColumnName::from_lenient(status),
-        priority: None,
-        milestone: None,
-        labels: Vec::new(),
-        parent: None,
-        due: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: BTreeMap::new(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(path)
+        .title("t")
+        .status(status)
+        .resolve()
 }
 
 fn rename(from: &str, to: &str) -> ColumnRename {
@@ -1054,9 +1038,9 @@ fn e2e_renames_updates_md_status_and_tasks_cache() {
     let snapshot = state.test_tasks_snapshot().unwrap();
     let a = snapshot
         .iter()
-        .find(|t| t.file_path.as_str() == "tasks/a.md")
+        .find(|t| t.file_path().as_str() == "tasks/a.md")
         .unwrap();
-    assert_eq!(a.status.as_str(), "To Do");
+    assert_eq!(a.status().as_str(), "To Do");
 
     let on_disk = read_config_json(dir.path());
     assert!(on_disk.columns.iter().any(|c| c.name.as_str() == "To Do"));
@@ -1448,7 +1432,7 @@ fn fault_rewrite_fails_at_index_2_rolls_back_first_two_files() {
 
     let snap = state.test_tasks_snapshot().unwrap();
     for t in &snap {
-        assert_eq!(t.status.as_str(), "Todo");
+        assert_eq!(t.status().as_str(), "Todo");
     }
 }
 
@@ -1564,7 +1548,7 @@ fn fault_config_write_fails_after_all_md_rewritten_rolls_back_all_md() {
     // cache 未更新
     let snap = state.test_tasks_snapshot().unwrap();
     for t in &snap {
-        assert_eq!(t.status.as_str(), "Todo");
+        assert_eq!(t.status().as_str(), "Todo");
     }
 }
 
@@ -1953,7 +1937,7 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
     );
     let mut paths: Vec<String> = snap
         .iter()
-        .map(|t| t.file_path.as_str().to_string())
+        .map(|t| t.file_path().as_str().to_string())
         .collect();
     paths.sort();
     assert_eq!(
@@ -1961,6 +1945,6 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
         vec!["tasks/a.md".to_string(), "tasks/b.md".to_string()],
     );
     for t in &snap {
-        assert_eq!(t.status.as_str(), "Todo");
+        assert_eq!(t.status().as_str(), "Todo");
     }
 }

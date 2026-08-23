@@ -22,7 +22,7 @@ use crate::state::event_seq::EventSeq;
 use crate::state::project_generation::ProjectGeneration;
 use crate::state::project_key::ProjectKey;
 use crate::state::tasks_revision::TasksRevision;
-use crate::task::task_index::Task;
+use crate::task::payload::TaskPayload;
 
 /// event 名の定数。FE と共有する外部契約なので 1 箇所に集約する。
 pub(crate) const EVENT_TASK_CREATED: &str = "task-created";
@@ -43,7 +43,8 @@ pub(crate) trait EnvelopePayload {
 }
 
 /// 全 watcher event 共通の外枠。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WatcherEnvelope<P> {
     pub(crate) project_key: ProjectKey,
@@ -58,10 +59,11 @@ pub(crate) struct WatcherEnvelope<P> {
 }
 
 /// `task-created` / `task-updated` の payload。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TaskUpsertPayload {
-    pub(crate) task: Task,
+    pub(crate) task: TaskPayload,
 }
 
 /// `task-deleted` の payload。

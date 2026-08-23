@@ -15,7 +15,7 @@ use crate::task::frontmatter::{parse_bytes, FrontmatterError, Parsed, TYPED_KEYS
 use crate::task::label::Label;
 use crate::task::path_normalization::normalize_path_parts;
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::{ParentHierarchyErrorReason, Task};
+use crate::task::task_index::{ParentHierarchyErrorReason, ParsedTask};
 use crate::task::task_title::TaskTitle;
 use crate::task::warning::{TaskWarning, TaskWarningCode};
 
@@ -39,10 +39,10 @@ pub enum TaskParseError {
 }
 
 /// Markdown bytes と parse context から Task を生成する。
-pub fn task_from_markdown(
+pub(crate) fn task_from_markdown(
     input: &[u8],
     context: &TaskParseContext,
-) -> Result<Task, TaskParseError> {
+) -> Result<ParsedTask, TaskParseError> {
     let Some(parsed) = parse_bytes(input)? else {
         return Err(TaskParseError::NotTask);
     };
@@ -50,7 +50,7 @@ pub fn task_from_markdown(
 }
 
 /// Parsed frontmatter と parse context から Task を生成する。
-pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
+pub(crate) fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> ParsedTask {
     let mut warnings = Vec::new();
     let title = extract_title(&parsed, context, &mut warnings);
     let status = extract_status(&parsed, context, &mut warnings);
@@ -71,7 +71,7 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         .map(TaskFilePath::from_lenient)
         .collect();
 
-    Task {
+    ParsedTask {
         id: file_path.clone(),
         file_path,
         title,
@@ -83,11 +83,9 @@ pub fn task_from_parsed(parsed: Parsed, context: &TaskParseContext) -> Task {
         parent,
         due,
         links,
-        children: Vec::new(),
-        reverse_links: Vec::new(),
         body: parsed.body,
         extras,
-        warnings,
+        parse_warnings: warnings,
     }
 }
 

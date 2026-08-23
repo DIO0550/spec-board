@@ -7,7 +7,7 @@ use std::path::Path;
 use super::{get_milestones_impl, GetMilestonesError, GetMilestonesPayload};
 use crate::config::{MilestoneDefinition, MilestoneRegistry, MilestoneState};
 use crate::state::{AppState, AppStateError};
-use crate::task::task_index::Task;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn definition(name: &str) -> MilestoneDefinition {
     MilestoneDefinition {
@@ -26,24 +26,10 @@ fn registry(definitions: Vec<MilestoneDefinition>) -> MilestoneRegistry {
 }
 
 fn task_with_milestone(id: &str, milestone: Option<&str>) -> Task {
-    Task {
-        draft: false,
-        id: id.into(),
-        file_path: id.into(),
-        title: format!("title-{id}").into(),
-        status: "Todo".into(),
-        priority: None,
-        milestone: milestone.map(str::to_owned),
-        due: None,
-        labels: Vec::new(),
-        parent: None,
-        links: Vec::new(),
-        children: Vec::new(),
-        reverse_links: Vec::new(),
-        body: String::new(),
-        extras: Default::default(),
-        warnings: Vec::new(),
-    }
+    ParsedTaskBuilder::new(id)
+        .title(format!("title-{id}"))
+        .milestone(milestone.map(str::to_owned))
+        .resolve()
 }
 
 fn opened_state(root: &Path, registry: MilestoneRegistry, tasks: Vec<Task>) -> AppState {

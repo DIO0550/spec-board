@@ -29,7 +29,7 @@ use crate::project::load_warning::{
 };
 use crate::task::io::TaskIo;
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
-use crate::task::task_index::{Task, TaskIndex};
+use crate::task::task_index::{ParsedTask, ResolvedTaskSet, Task};
 
 /// [`rebuild_tasks_from_disk`] の失敗理由。
 #[derive(Debug, thiserror::Error)]
@@ -59,7 +59,8 @@ pub fn rebuild_tasks_from_disk(
 /// root 配下を再走査して task と、走査・read・parse の warning を再構築する。
 ///
 /// 個々の md の read / parse 失敗は warning に変換して skip し、全体は成功させる。
-/// scan root の失敗と親チェーンの深さ超過・循環だけは従来どおり Err になる。
+/// scan root の失敗と親チェーンの深さ超過だけは Err になる。循環は
+/// `parentCycle` warning と effective parent の `None` 化で継続する。
 pub fn rebuild_tasks_from_disk_with_report(
     root: &Path,
     default_status: &ColumnName,
@@ -73,9 +74,7 @@ pub fn rebuild_tasks_from_disk_with_report(
         .collect();
     let (tasks, task_warnings) = collect_tasks(root, &scan.items, default_status, io);
     warnings.extend(task_warnings);
-    let tasks = TaskIndex::new(tasks)
-        .rebuild_derived_with_warnings()?
-        .into_tasks();
+    let tasks = ResolvedTaskSet::resolve_lenient(tasks)?.into_tasks();
 
     Ok(TaskRebuildReport {
         tasks,
@@ -106,7 +105,7 @@ fn collect_tasks(
     md_paths: &[PathBuf],
     default_status: &ColumnName,
     io: &dyn TaskIo,
-) -> (Vec<Task>, Vec<ProjectLoadWarning>) {
+) -> (Vec<ParsedTask>, Vec<ProjectLoadWarning>) {
     let mut tasks = Vec::with_capacity(md_paths.len());
     let mut warnings = Vec::new();
     for rel_path in md_paths {

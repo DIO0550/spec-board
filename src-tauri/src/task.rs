@@ -15,6 +15,7 @@ pub mod move_task;
 pub mod parse;
 pub mod path_lookup;
 pub(crate) mod path_normalization;
+pub mod payload;
 pub mod preview_filename;
 pub mod preview_markdown;
 pub mod projection;

@@ -386,10 +386,10 @@ impl Config {
 
         let mut rename_targets: Vec<RenameTarget> = Vec::new();
         for task in tasks {
-            let status_str = task.status.as_str();
+            let status_str = task.status().as_str();
             if let Some(new_status) = rename_map.get(status_str) {
                 rename_targets.push(RenameTarget {
-                    rel_path: task.file_path.clone(),
+                    rel_path: task.file_path().clone(),
                     old_status: status_str.to_string(),
                     new_status: new_status.clone(),
                 });
