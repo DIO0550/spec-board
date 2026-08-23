@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::column_name::ColumnName;
 
 // ───────── Default ─────────
 
@@ -31,6 +32,20 @@ fn default_returns_spec_baseline_columns_and_done_column() {
     );
     assert!(c.card_order.is_empty());
     assert_eq!(c.done_column.as_deref(), Some("Done"));
+}
+
+#[test]
+fn default_classifies_all_non_empty_config_names_as_validated() {
+    let config = Config::default();
+
+    assert!(config
+        .columns
+        .iter()
+        .all(|column| column.name.is_validated()));
+    assert!(config
+        .done_column
+        .as_ref()
+        .is_some_and(ColumnName::is_validated));
 }
 
 #[test]
@@ -696,6 +711,106 @@ fn load_persisted_returns_saved_config() {
 }
 
 #[test]
+fn load_persisted_classifies_names_without_changing_wire_values() {
+    let tmp = TempDir::new().unwrap();
+    let source = serde_json::json!({
+        "version": 1,
+        "columns": [
+            { "name": "", "order": 0 },
+            { "name": " ", "order": 1 },
+            { "name": "  Todo  ", "order": 2 }
+        ],
+        "cardOrder": {
+            "": ["tasks/empty.md"],
+            " ": ["tasks/space.md"],
+            "  Todo  ": ["tasks/todo.md"],
+            "Ghost": ["tasks/ghost.md"]
+        },
+        "doneColumn": "Ghost"
+    });
+    let path = write_config(&tmp, &serde_json::to_string(&source).unwrap());
+
+    let first = load_persisted(tmp.path()).unwrap().expect("config");
+
+    assert_eq!(
+        first
+            .columns
+            .iter()
+            .map(|column| (column.name.as_str(), column.name.is_validated()))
+            .collect::<Vec<_>>(),
+        vec![("", false), (" ", true), ("  Todo  ", true)]
+    );
+    assert_eq!(
+        first
+            .card_order
+            .keys()
+            .map(|name| (name.as_str(), name.is_validated()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("", false),
+            (" ", true),
+            ("  Todo  ", true),
+            ("Ghost", true)
+        ]
+    );
+    let done_column = first.done_column.as_ref().expect("unknown doneColumn kept");
+    assert_eq!(done_column.as_str(), "Ghost");
+    assert!(done_column.is_validated());
+    assert_eq!(serde_json::to_value(&first).unwrap(), source);
+
+    std::fs::write(&path, serde_json::to_string(&first).unwrap()).unwrap();
+    let reopened = load_persisted(tmp.path())
+        .unwrap()
+        .expect("reopened config");
+    assert_eq!(reopened, first);
+    assert_eq!(
+        reopened
+            .columns
+            .iter()
+            .map(|column| column.name.is_validated())
+            .collect::<Vec<_>>(),
+        vec![false, true, true]
+    );
+}
+
+#[test]
+fn load_persisted_classifies_names_after_migration() {
+    let tmp = TempDir::new().unwrap();
+    write_config(
+        &tmp,
+        r#"{
+            "version": 0,
+            "columns": [
+                { "name": "", "order": 0 },
+                { "name": " ", "order": 1 },
+                { "name": "  Todo  ", "order": 2 }
+            ],
+            "cardOrder": { "Ghost": ["tasks/ghost.md"] },
+            "doneColumn": "Ghost"
+        }"#,
+    );
+
+    let config = load_persisted(tmp.path())
+        .unwrap()
+        .expect("migrated config");
+
+    assert_eq!(config.version, DEFAULT_VERSION);
+    assert_eq!(
+        config
+            .columns
+            .iter()
+            .map(|column| column.name.is_validated())
+            .collect::<Vec<_>>(),
+        vec![false, true, true]
+    );
+    assert!(config.card_order.keys().all(ColumnName::is_validated));
+    assert!(config
+        .done_column
+        .as_ref()
+        .is_some_and(ColumnName::is_validated));
+}
+
+#[test]
 fn load_persisted_propagates_parse_error() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path().join(".spec-board");
@@ -893,6 +1008,27 @@ fn build_config_from_statuses_defensive_sort_normalizes_input_order() {
         vec![col("X", 0), col("Y", 1)],
         "path 昇順で X が先になる"
     );
+}
+
+#[test]
+fn build_config_from_statuses_classifies_adopted_names() {
+    let config = build_config_from_statuses(&[
+        (pb("a.md"), Some("".into())),
+        (pb("b.md"), Some(" ".into())),
+        (pb("c.md"), Some("  Todo  ".into())),
+    ]);
+
+    assert_eq!(
+        config
+            .columns
+            .iter()
+            .map(|column| (column.name.as_str(), column.name.is_validated()))
+            .collect::<Vec<_>>(),
+        vec![("", false), (" ", true), ("  Todo  ", true)]
+    );
+    let done_column = config.done_column.as_ref().expect("done column");
+    assert_eq!(done_column.as_str(), "  Todo  ");
+    assert!(done_column.is_validated());
 }
 
 // ───────── migrate_config ─────────
@@ -1919,6 +2055,28 @@ fn plan_update_card_order_inserts_new_entry_for_known_column() {
 }
 
 #[test]
+fn plan_update_card_order_classifies_all_names_in_the_adopted_config() {
+    let mut config = card_order_base_config();
+    config.card_order.set_column("Todo", &["old.md"]);
+    let existing: HashSet<String> = ["x.md".to_string()].into_iter().collect();
+
+    let next = config
+        .plan_update_card_order(
+            "In Progress".to_string(),
+            vec!["x.md".to_string()],
+            &existing,
+        )
+        .expect("known column should succeed");
+
+    assert!(next.columns.iter().all(|column| column.name.is_validated()));
+    assert!(next
+        .done_column
+        .as_ref()
+        .is_some_and(ColumnName::is_validated));
+    assert!(next.card_order.keys().all(ColumnName::is_validated));
+}
+
+#[test]
 fn plan_update_card_order_rejects_unknown_column_without_mutation() {
     let config = card_order_base_config();
     let existing: HashSet<String> = HashSet::new();
@@ -2617,6 +2775,30 @@ fn plan_reconcile_columns_keeps_status_strings_unnormalized() {
             case.label
         );
     }
+}
+
+#[test]
+fn plan_reconcile_columns_classifies_the_adopted_config_names() {
+    let config = reconcile_base_config();
+    let plan = config.plan_reconcile_columns(&status_inputs(vec![
+        ("a.md", Some("")),
+        ("b.md", Some(" ")),
+        ("c.md", Some("  Todo  ")),
+    ]));
+
+    assert_eq!(
+        plan.added_columns
+            .iter()
+            .map(|name| (name.as_str(), name.is_validated()))
+            .collect::<Vec<_>>(),
+        vec![("", false), (" ", true), ("  Todo  ", true)]
+    );
+    assert!(plan.new_config.columns[0].name.is_validated());
+    assert!(plan
+        .new_config
+        .done_column
+        .as_ref()
+        .is_some_and(ColumnName::is_validated));
 }
 
 #[test]

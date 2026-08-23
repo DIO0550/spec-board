@@ -137,6 +137,22 @@ fn invalid_status_uses_default_with_warning() {
 }
 
 #[test]
+fn task_status_stays_lenient_at_the_frontmatter_boundary() {
+    let strict_default = crate::config::column_name::ColumnName::try_from_str("Todo").unwrap();
+    let context = TaskParseContext {
+        file_path: PathBuf::from("tasks/fix-bug.md"),
+        default_status: strict_default,
+    };
+
+    let explicit =
+        task_from_markdown(b"---\ntitle: Fix bug\nstatus: Doing\n---\n", &context).unwrap();
+    let fallback = task_from_markdown(b"---\ntitle: Fix bug\n---\n", &context).unwrap();
+
+    assert!(!explicit.status.is_validated());
+    assert!(!fallback.status.is_validated());
+}
+
+#[test]
 fn parent_is_reflected_when_string_and_ignored_when_missing_or_invalid() {
     let parent_task = task_from(
         "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\n---\n",

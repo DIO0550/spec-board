@@ -623,6 +623,43 @@ fn plan_unknown_done_column_returns_unknown_done_column_error() {
 }
 
 #[test]
+fn plan_update_columns_classifies_all_adopted_config_names() {
+    let config = config_with_card_order(
+        vec![col("Todo", 0)],
+        Some("Todo"),
+        BTreeMap::from([("Todo".to_string(), vec!["tasks/a.md".to_string()])]),
+    );
+    let args = UpdateColumnsArgs {
+        columns: Some(vec![col("", 0), col(" ", 1), col("  Todo  ", 2)]),
+        done_column: Some("  Todo  ".into()),
+        renames: Some(vec![rename("Todo", "  Todo  ")]),
+    };
+
+    let plan = config
+        .plan_update_columns(&args, &[])
+        .expect("valid update");
+
+    assert_eq!(
+        plan.new_config
+            .columns
+            .iter()
+            .map(|column| (column.name.as_str(), column.name.is_validated()))
+            .collect::<Vec<_>>(),
+        vec![("", false), (" ", true), ("  Todo  ", true)]
+    );
+    assert!(plan
+        .new_config
+        .done_column
+        .as_ref()
+        .is_some_and(ColumnName::is_validated));
+    assert!(plan
+        .new_config
+        .card_order
+        .keys()
+        .all(ColumnName::is_validated));
+}
+
+#[test]
 fn plan_done_column_pointing_to_removed_column_returns_unknown_done_column_error() {
     let config = config_with(vec![col("Todo", 0), col("Done", 1)], Some("Done"));
     let args = UpdateColumnsArgs {
