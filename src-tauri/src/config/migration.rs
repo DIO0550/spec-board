@@ -1,18 +1,18 @@
 //! `config.json` の `version` マイグレーションフック。
 //!
 //! 現状は骨格段階で、`version` フィールドの正規化のみを行う。実フィールド変換は
-//! [`crate::config::core::DEFAULT_VERSION`] を将来引き上げるタイミングで追加する。
+//! [`crate::config::SchemaVersion::CURRENT`] を将来引き上げるタイミングで追加する。
 
-use crate::config::core::DEFAULT_VERSION;
+use crate::config::SchemaVersion;
 use thiserror::Error;
 
 /// [`migrate_config`] で発生し得るエラー。
 ///
-/// 現状は `from_version` が [`DEFAULT_VERSION`] を超える場合のみ報告する。
-/// 将来 `DEFAULT_VERSION` を引き上げるタイミングで variant を追加する。
+/// 現状は `from_version` が [`SchemaVersion::CURRENT`] を超える場合のみ報告する。
+/// 将来の現行versionを引き上げるタイミングで variant を追加する。
 #[derive(Debug, PartialEq, Error)]
 pub enum MigrationError {
-    /// `from_version` が [`DEFAULT_VERSION`] より大きく、対応するマイグレーション経路が存在しない。
+    /// `from_version` が [`SchemaVersion::CURRENT`] より大きく、対応するマイグレーション経路が存在しない。
     #[error("unsupported migration from version {0}")]
     UnsupportedFromVersion(u32),
 }
@@ -29,31 +29,32 @@ pub enum MigrationError {
 ///
 /// # 挙動
 ///
-/// - `from_version == DEFAULT_VERSION` のときは入力 `value` をそのまま返す（素通し）。
-/// - `from_version < DEFAULT_VERSION` かつ `value` が JSON Object のときは骨格実装として
-///   **他フィールドを変更せず `value["version"]` のみ [`DEFAULT_VERSION`] に書き換えて返す**。
-///   これにより load 後の `Config::version` が一貫して [`DEFAULT_VERSION`] に正規化される。
-/// - `from_version < DEFAULT_VERSION` かつ `value` が JSON Object **以外**（純粋関数として
+/// - `from_version == SchemaVersion::CURRENT` のときは入力 `value` をそのまま返す（素通し）。
+/// - `from_version < SchemaVersion::CURRENT` かつ `value` が JSON Object のときは骨格実装として
+///   **他フィールドを変更せず `value["version"]` のみ現行versionに書き換えて返す**。
+///   これにより load 後の [`crate::config::Config::version`] が現行値に正規化される。
+/// - `from_version < SchemaVersion::CURRENT` かつ `value` が JSON Object **以外**（純粋関数として
 ///   単独利用された場合のみ起こり得る）のときは正規化対象が無いため `value` をそのまま返す。
 ///   この経路は実マイグレーション実装時に [`MigrationError`] バリアント追加で厳格化する想定。
-/// - `from_version > DEFAULT_VERSION` は通常 [`crate::config::load::load_or_default`] 側で
+/// - `from_version > SchemaVersion::CURRENT` は通常 [`crate::config::load::load_or_default`] 側で
 ///   `LoadConfigError::UnknownFutureVersion` により早期に弾かれるが、純粋関数単独利用時の
 ///   防御として [`MigrationError::UnsupportedFromVersion`] を返す。
 ///
-/// 将来 [`DEFAULT_VERSION`] を引き上げる際に `match from_version` の各アームへ実フィールド
+/// 将来の現行versionを引き上げる際に `match from_version` の各アームへ実フィールド
 /// 変換ロジックを追加する。
 ///
 /// # Errors
 ///
-/// - `from_version` が `DEFAULT_VERSION` より大きい場合 → [`MigrationError::UnsupportedFromVersion`]（純粋関数として単独呼び出しされたときの防御。通常は [`crate::config::load::load_or_default`] 側で `LoadConfigError::UnknownFutureVersion` により先に弾かれる）
+/// - `from_version` が現行versionより大きい場合 → [`MigrationError::UnsupportedFromVersion`]（純粋関数として単独呼び出しされたときの防御。通常は [`crate::config::load::load_or_default`] 側で `LoadConfigError::UnknownFutureVersion` により先に弾かれる）
 pub fn migrate_config(
     value: serde_json::Value,
     from_version: u32,
 ) -> Result<serde_json::Value, MigrationError> {
-    if from_version > DEFAULT_VERSION {
+    let current_version = SchemaVersion::CURRENT.as_u32();
+    if from_version > current_version {
         return Err(MigrationError::UnsupportedFromVersion(from_version));
     }
-    if from_version == DEFAULT_VERSION {
+    if from_version == current_version {
         return Ok(value);
     }
 
@@ -61,7 +62,7 @@ pub fn migrate_config(
     if let serde_json::Value::Object(ref mut map) = migrated {
         map.insert(
             "version".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(DEFAULT_VERSION)),
+            serde_json::Value::Number(serde_json::Number::from(current_version)),
         );
     }
     Ok(migrated)

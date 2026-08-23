@@ -9,6 +9,7 @@
 //!   GUIDE.md 生成・`update_columns` 純粋計算・`build_config_from_statuses` 等のドメインロジック
 //! - [`card_order`] — `cardOrder` の newtype `CardOrder`（canonical パス + 同一カラム内一意）
 //! - [`migration`] — `config.json` の `version` マイグレーションフック
+//! - [`schema_version`] — 正規化済み設定が保持する現行スキーマバージョン VO
 //! - [`load`] — `.spec-board/config.json` の読み込みと低レベル atomic write インフラ
 //! - [`label_registry`] — ラベルマスタ（`labels.yml`）のドメイン型・aggregate・永続化
 //! - [`milestone_registry`] — マイルストーンマスタ（`milestones.yml`）のドメイン型・aggregate・永続化
@@ -32,6 +33,7 @@ pub mod label_registry;
 pub mod load;
 pub mod migration;
 pub mod milestone_registry;
+pub mod schema_version;
 pub mod update_columns;
 pub mod update_label;
 pub mod update_milestone;
@@ -46,6 +48,7 @@ pub use core::{
 };
 pub use load::{load_or_default, load_persisted, ConfigWriter, FsConfigWriter, LoadConfigError};
 pub use migration::{migrate_config, MigrationError};
+pub use schema_version::SchemaVersion;
 
 pub use label_registry::{
     label_registry_store, DeleteLabelPlanError, LabelColor, LabelDefinition, LabelGroup,
@@ -62,7 +65,7 @@ pub use milestone_registry::{
 // 本親モジュールの子として `super::*` 経由でコア型・crate 内部 helper・標準 import を
 // 解決するため、それらをモジュールスコープへ取り込む。
 #[cfg(test)]
-use core::{apply_renames_to_columns, format_guide_write_warning, DEFAULT_VERSION};
+use core::{apply_renames_to_columns, format_guide_write_warning};
 #[cfg(test)]
 use load::write_atomic_to_path;
 #[cfg(test)]
