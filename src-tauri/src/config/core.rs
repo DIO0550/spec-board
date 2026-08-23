@@ -23,6 +23,7 @@ use thiserror::Error;
 
 use crate::config::card_order::CardOrder;
 use crate::config::column_name::ColumnName;
+use crate::config::schema_version::SchemaVersion;
 use crate::config::update_columns::{ColumnRename, UpdateColumnsArgs, UpdateColumnsError};
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::Task;
@@ -38,11 +39,20 @@ use spec_board_fs::config::config_io::write_guide_markdown;
 /// [`Config::default`] は spec の初回オープン時 / 読み込み失敗時のフォールバックに
 /// 使われる想定で、`Todo` / `In Progress` / `Done` の 3 カラムと `done_column = "Done"`
 /// を含むベースラインを返す（`config-spec.md` 「設定の初期化」「エラーハンドリング」節）。
+///
+/// 正規化済み設定のversionは現行値だけを保持し、callerによる差し替えを許可しない。
+///
+/// ```compile_fail,E0616
+/// use spec_board_lib::config::Config;
+///
+/// let config = Config::default();
+/// let _ = config.version;
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     /// 設定ファイルのスキーマバージョン。
-    pub version: u32,
+    version: SchemaVersion,
     /// カラム定義の配列。順序は `Column::order` 昇順で表示する想定（ソートは呼び出し側）。
     pub columns: Vec<Column>,
     /// カラム名 → そのカラム内のタスクファイルパス配列。空 `{}` を許容。
@@ -52,8 +62,6 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done_column: Option<ColumnName>,
 }
-
-pub(crate) const DEFAULT_VERSION: u32 = 1;
 
 /// `#rrggbb` 形式のカラムアクセント色 VO。constructor で形式を強制し、
 /// 大文字を小文字へ正規化して保持する（`#ABCDEF` → `#abcdef`）。
@@ -181,16 +189,30 @@ impl Default for Config {
         let done_column = DEFAULT_COLUMN_NAMES
             .last()
             .map(|s| ColumnName::classify_after_validation(*s));
-        Self {
-            version: DEFAULT_VERSION,
-            columns,
-            card_order: CardOrder::new(),
-            done_column,
-        }
+        Self::new(columns, CardOrder::new(), done_column)
     }
 }
 
 impl Config {
+    /// 現行スキーマバージョンの設定を構築する。
+    pub fn new(
+        columns: Vec<Column>,
+        card_order: CardOrder,
+        done_column: Option<ColumnName>,
+    ) -> Self {
+        Self {
+            version: SchemaVersion::CURRENT,
+            columns,
+            card_order,
+            done_column,
+        }
+    }
+
+    /// 正規化済み設定が保持する現行スキーマバージョンを返す。
+    pub const fn version(&self) -> SchemaVersion {
+        self.version
+    }
+
     /// 検証済み Config の全カラム名を strict/lenient 状態へ分類する。
     pub(crate) fn classify_column_names_after_validation(mut self) -> Self {
         self.columns = self
@@ -375,13 +397,8 @@ impl Config {
         }
 
         Ok(UpdateColumnsPlan {
-            new_config: Config {
-                version: self.version,
-                columns: candidate_columns,
-                card_order: new_card_order,
-                done_column: new_done,
-            }
-            .classify_column_names_after_validation(),
+            new_config: Config::new(candidate_columns, new_card_order, new_done)
+                .classify_column_names_after_validation(),
             rename_targets,
             is_noop: false,
         })
@@ -577,14 +594,13 @@ impl Config {
         }
 
         ReconcileColumnsPlan {
-            new_config: Config {
-                version: self.version,
+            new_config: Config::new(
                 columns,
                 // 新カラムは cardOrder にエントリを持たない。CardOrder は全カラム分の
                 // キーを要求しないため、これで不変条件は保たれる。
-                card_order: self.card_order.clone(),
-                done_column: frozen_done_column,
-            }
+                self.card_order.clone(),
+                frozen_done_column,
+            )
             .classify_column_names_after_validation(),
             added_columns,
             is_noop: false,
@@ -894,12 +910,7 @@ links:（任意）\n\
 /// ```
 pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Config {
     if inputs.is_empty() {
-        return Config {
-            version: DEFAULT_VERSION,
-            columns: Vec::new(),
-            card_order: CardOrder::new(),
-            done_column: None,
-        };
+        return Config::new(Vec::new(), CardOrder::new(), None);
     }
 
     let names = distinct_statuses_in_path_order(inputs, Some(DEFAULT_COLUMN_NAMES[0]));
@@ -916,12 +927,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
         .collect();
     let done_column = columns.last().map(|c| c.name.clone());
 
-    Config {
-        version: DEFAULT_VERSION,
-        columns,
-        card_order: CardOrder::new(),
-        done_column,
-    }
+    Config::new(columns, CardOrder::new(), done_column)
 }
 
 /// `Config::columns` のカラム名重複を検証する純粋関数。

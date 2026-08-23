@@ -701,9 +701,8 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::conf
     for (column, paths) in card_order {
         order.set_column(column, paths);
     }
-    Config {
-        version: 1,
-        columns: columns
+    Config::new(
+        columns
             .iter()
             .enumerate()
             .map(|(index, name)| Column {
@@ -713,9 +712,9 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::conf
                 wip_limit: None,
             })
             .collect(),
-        card_order: order,
-        done_column: None,
-    }
+        order,
+        None,
+    )
 }
 
 fn task_with_status(path: &str, status: &str) -> Task {

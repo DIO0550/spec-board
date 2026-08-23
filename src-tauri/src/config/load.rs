@@ -26,8 +26,9 @@ use serde::Deserialize;
 use spec_board_fs::config::config_io::{self, ConfigIoError};
 use thiserror::Error;
 
-use crate::config::core::{validate_unique_column_names, Config, DEFAULT_VERSION};
+use crate::config::core::{validate_unique_column_names, Config};
 use crate::config::migration::{migrate_config, MigrationError};
+use crate::config::schema_version::SchemaVersion;
 
 /// [`load_persisted`] / [`load_or_default`] で発生し得るエラー。
 ///
@@ -380,7 +381,7 @@ struct VersionOnly {
 /// 2. `config.json` の存在を確認し、不在なら `Ok(None)` を返す
 /// 3. [`VersionOnly`] スキーマで `version` フィールドのみを `from_str` する
 ///    （JSON 構文 / 必須欠落 / 型不一致 / `u32` 範囲外を line/col 付きで検出）
-/// 4. `version` が [`DEFAULT_VERSION`] を超える場合は [`LoadConfigError::UnknownFutureVersion`]
+/// 4. `version` が [`SchemaVersion::CURRENT`] を超える場合は [`LoadConfigError::UnknownFutureVersion`]
 /// 5. `version` が古い場合は `<root>/.spec-board/config.json.bak` を作成し
 ///    [`crate::config::migration::migrate_config`] を適用する
 /// 6. 現行 version は `from_str::<Config>`、古い version は `from_value::<Config>` で本パース
@@ -409,12 +410,11 @@ struct VersionOnly {
 /// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
 ///
 /// [`LoadConfigError::MigrationFailed`] は **現状では本関数から返されない**
-/// （`from_version > DEFAULT_VERSION` は事前に
-/// [`LoadConfigError::UnknownFutureVersion`] で弾かれ、`from_version < DEFAULT_VERSION`
-/// および `from_version == DEFAULT_VERSION` の経路では現行
+/// （`from_version > SchemaVersion::CURRENT` は事前に
+/// [`LoadConfigError::UnknownFutureVersion`] で弾かれ、現行version以下の経路では
 /// [`crate::config::migration::migrate_config`] は常に
 /// `Ok` を返すため）。バリアントは `MigrationError` の variant 追加に向けた forward
-/// compatibility のために存在し、将来 [`DEFAULT_VERSION`] を引き上げて実マイグレーション
+/// compatibility のために存在し、将来 [`SchemaVersion::CURRENT`] を引き上げて実マイグレーション
 /// を実装したタイミングで実際に発生し得るようになる。
 pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigError> {
     config_io::ensure_spec_board_dir(project_root)?;
@@ -437,11 +437,12 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
             source,
         })?;
 
-    if from_version > DEFAULT_VERSION {
+    let current_version = SchemaVersion::CURRENT.as_u32();
+    if from_version > current_version {
         return Err(LoadConfigError::UnknownFutureVersion {
             path: path.clone(),
             found: from_version,
-            supported: DEFAULT_VERSION,
+            supported: current_version,
         });
     }
 
@@ -451,7 +452,7 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
     // 古い version の場合は `migrate_config` が `Value` を書き換える必要があるため
     // やむを得ず `from_value` を経由する（line/col 情報は失われるが、migrate 経路では
     // ユーザーが直接編集する想定が薄いため許容）。
-    let config: Config = if from_version == DEFAULT_VERSION {
+    let config: Config = if from_version == current_version {
         serde_json::from_str(&content).map_err(|source| LoadConfigError::Parse {
             path: path.clone(),
             source,

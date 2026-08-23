@@ -96,17 +96,16 @@ impl MilestoneRegistryStore for StubMilestoneStore {
 }
 
 fn config_with_default_status(status: &str) -> Config {
-    Config {
-        version: 1,
-        columns: vec![Column {
+    Config::new(
+        vec![Column {
             name: ColumnName::from_lenient(status),
             order: 0,
             color: None,
             wip_limit: None,
         }],
-        card_order: CardOrder::default(),
-        done_column: None,
-    }
+        CardOrder::default(),
+        None,
+    )
 }
 
 fn labels(name: &str) -> LabelRegistry {

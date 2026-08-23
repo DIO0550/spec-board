@@ -793,17 +793,16 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
     // spawn 時点の既定は "Todo"。カラム更新で先頭が "Backlog" に変わった状況を作る。
     commit_config(
         &state,
-        crate::config::Config {
-            version: 1,
-            columns: vec![crate::config::Column {
+        crate::config::Config::new(
+            vec![crate::config::Column {
                 name: "Backlog".into(),
                 order: 0,
                 color: None,
                 wip_limit: None,
             }],
-            card_order: Default::default(),
-            done_column: None,
-        },
+            Default::default(),
+            None,
+        ),
     );
     write_md(
         dir.path(),
@@ -850,17 +849,16 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
     let (state, ctx, _log) = build_installed_ctx(dir.path());
     commit_config(
         &state,
-        crate::config::Config {
-            version: 1,
-            columns: vec![crate::config::Column {
+        crate::config::Config::new(
+            vec![crate::config::Column {
                 name: "Backlog".into(),
                 order: 0,
                 color: None,
                 wip_limit: None,
             }],
-            card_order: Default::default(),
-            done_column: None,
-        },
+            Default::default(),
+            None,
+        ),
     );
     let abs = write_md(
         dir.path(),
@@ -946,17 +944,16 @@ impl TaskIo for ConfigSwappingIo {
             *swapped = true;
             commit_config(
                 &self.state,
-                crate::config::Config {
-                    version: 1,
-                    columns: vec![crate::config::Column {
+                crate::config::Config::new(
+                    vec![crate::config::Column {
                         name: "Backlog".into(),
                         order: 0,
                         color: None,
                         wip_limit: None,
                     }],
-                    card_order: Default::default(),
-                    done_column: None,
-                },
+                    Default::default(),
+                    None,
+                ),
             );
         }
         self.inner.read(path)
