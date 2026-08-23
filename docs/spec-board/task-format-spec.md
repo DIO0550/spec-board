@@ -94,7 +94,7 @@ links:
 - 多階層のネストが可能（親→子→孫→...）。ただしネストの深さは最大20階層まで（超過時はパースエラー）
 - 指定されたファイルが存在しない場合、警告を表示しフィールドは保持
 - 循環参照（A→B→A）の扱い:
-  - **scan 経路（プロジェクト読み込み）**: scan を継続し、ループに含まれる全 task に `parentCycle` warning を付与しつつ `parent` を `None` に置き換える。ファイル本体の YAML `parent:` キーは変更しない（ユーザーが手で修正できるよう原文を残す）
+  - **scan 経路（プロジェクト読み込み）**: scan を継続し、ループに含まれる全 task に `parentCycle` warning を付与する。disk 再構築用の raw `parent` は原文のまま保持し、IPC に出す effective `parent` だけを `None` にする。ファイル本体の YAML `parent:` キーは変更しない（ユーザーが手で修正できるよう原文を残す）
   - **create / update 経路**: 従来通り `CycleOrTooDeep` パースエラーとして拒否
 
 #### links
@@ -106,7 +106,7 @@ links:
 - 壊れたリンク（target が tasks に存在しない）の関連タスク行クリックは完全 no-op（announce / 追加 UI フィードバックなし）。警告アイコン表示の実装有無は別 Issue で扱う（本仕様は撤回せず据え置く）
 - Tauri command `add_link({ sourceFilePath, targetFilePath })` で `links` への追加が可能。同じ target がすでに含まれる場合は noop（書き込みもキャッシュ更新も行わない）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する）
 - Tauri command `remove_link({ sourceFilePath, targetFilePath })` で `links` から target の完全一致エントリを **すべて** 取り除く（パス表記揺れは正規化して吸収）。最後の 1 件を消した場合は `links:` キーごと消える。target がすでに含まれていない場合は冪等な no-op として成功を返す（書き込みもキャッシュ更新も行わない）。target タスクが削除済みで存在しなくても source の `links` からの除去は実行する（dangling link 掃除の用途を兼ねる）。リンク先（target）のフロントマターは書き換えない（双方向リンクは表示時の逆引きで実現する点は `add_link` と同じ）
-- Tauri command `create_task` の `links`（任意・省略時は空配列）で、**作成時点で関連タスクを付与**できる。BE は **lenient 正規化**のみを行う: 空・絶対パス・Windows drive prefix のエントリは除外し、表記揺れ（`./tasks/a.md` と `tasks/a.md`）を正規化して重複を除去する（先勝ち）。**存在しないパスや parent と同一パスは reject せず保持する**（作成は成功する）。self/parent を候補から除外する責務は作成フォームのピッカー（`buildCreateLinkCandidates`）が担い、BE は除外しない。正規化後の `links` が空なら `links:` キーは出力しない。作成時に実在 target を指定した場合、target 側の逆引き（reverse link）はキャッシュ上で局所更新され、再 open 不要で関連タスクとして表示される。
+- Tauri command `create_task` の `links`（任意・省略時は空配列）で、**作成時点で関連タスクを付与**できる。BE は **lenient 正規化**のみを行う: 空・絶対パス・Windows drive prefix のエントリは除外し、表記揺れ（`./tasks/a.md` と `tasks/a.md`）を正規化して重複を除去する（先勝ち）。**存在しないパスや parent と同一パスは reject せず保持する**（作成は成功する）。self/parent を候補から除外する責務は作成フォームのピッカー（`buildCreateLinkCandidates`）が担い、BE は除外しない。正規化後の `links` が空なら `links:` キーは出力しない。作成時に実在 target を指定した場合、canonical full resolver が全 task の逆引き（reverse link）を再構築するため、再 open 不要で関連タスクとして表示される。
 - 作成フォームで links を選択後に parent を別タスクへ変更しても、**選択済みの links は自動削除しない**。`buildCreateLinkCandidates` は以後その task を追加候補から除外するだけで、選択済み chip はユーザーが明示的に × を押すまで残る。
 
 #### due
@@ -187,7 +187,7 @@ flowchart TD
 | PL-005 | priority 正規化 | `high` → `High`、`MEDIUM` → `Medium` のように先頭大文字に正規化 |
 | PL-006 | labels 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去 |
 | PL-007 | parent 解決 | `parent` フィールドのパスを解決し、親タスクの存在を検証。存在しない場合は `parentNotFound` warning を記録し、Task 自体は読み込み成功として扱う。外部編集を watcher 経由で取り込む場合も同じ扱いで、BE が `parent` の値を書き換えたり md を書き戻したりはしない |
-| PL-008 | parent 循環参照検出 | 親子関係のツリーを辿り、循環参照と深さ超過を検証する。**scan 経路（プロジェクト読み込み）**: 循環検出時は scan を継続し、ループに含まれる全 task に `parentCycle` warning を付与しつつ `parent` を `None` に置き換える。21 edge 以上の深さは `CycleOrTooDeep` パースエラー（深さ超過が循環検出より先行）。**create/update 経路**: 循環は引き続き `CycleOrTooDeep` パースエラーとして拒否する |
+| PL-008 | parent 循環参照検出 | 親子関係のツリーを辿り、循環参照と深さ超過を検証する。**scan 経路（プロジェクト読み込み）**: 循環検出時は scan を継続し、ループに含まれる全 task に `parentCycle` warning を付与する。raw `parent` は保持し、effective `parent` のみ `None` にする。21 edge 以上の深さは `CycleOrTooDeep` パースエラー（深さ超過が循環検出より先行）。**create/update 経路**: 循環は引き続き `CycleOrTooDeep` パースエラーとして拒否する |
 | PL-009 | links 正規化 | 文字列が渡された場合は単一要素の配列に変換。重複を除去。存在しないパスは保持する（BE は warning を付けない。dangling 警告は FE `src/domains/broken-link` の派生判定で表示する）。`create_task` での作成時付与も同じ lenient 正規化（dedup・パス正規化・存在しないパス保持）に従う。参照先が外部削除・リネームされた場合も watcher 経路で `links` の値は書き換えず、消えるのは派生値の `reverseLinks` だけ |
 | PL-010 | links 逆引きインデックス | 全タスク読み込み後、links の逆引きインデックスを構築。双方向リンクの表示に使用 |
 | PL-011 | 子タスク収集 | 全タスク読み込み後、各タスクの `parent` を元に子タスク一覧を構築 |
@@ -196,7 +196,10 @@ flowchart TD
 
 ### Task 変換時の補足
 
-- Rust / Tauri IPC の task payload は `parent` / `children` / `links` / `reverseLinks` を top-level に持つ flat な JSON とする
+- Markdown/YAML の読み込み直後は parse-only candidate とし、resident session/cache には canonical resolver を通過した Task 集合だけを格納する。parse-only candidate と resident Task は IPC serialize / deserialize の対象にしない
+- canonical resolver は全 task を `filePath` 昇順に正規化してから、parent 検証、`children`、`reverseLinks`、graph warning を全件再計算する。したがって `children` / `reverseLinks` の配列順も参照元 task の `filePath` 昇順で安定する
+- parser が生成した warning と graph resolver が生成した `parentNotFound` / `parentCycle` warning は内部で分離して保持し、IPC では parser warning → graph warning の順に連結する
+- Rust / Tauri IPC の task payload は出力専用の projection であり、`parent` / `children` / `links` / `reverseLinks` を top-level に持つ従来どおりの flat camelCase JSON とする。キー順、`Option` の省略、`draft: false` の省略を含む wire 形状は変更しない
 - フロントエンド domain の `Task` は IPC payload を `TaskPayload` として受け取った後、`hierarchy.parentFilePath` / `hierarchy.childFilePaths` と `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に変換して保持する
 - `title` が未定義の場合はファイル名（拡張子除去、ハイフンをスペースに変換）を fallback とし、`missingTitleUsedFileName` warning を付与する
 - `title` が空文字または文字列以外の場合はファイル名 fallback とし、`invalidTitleUsedFileName` warning を付与する
@@ -206,7 +209,7 @@ flowchart TD
 - `parent` が文字列だが読み込み済み Task の `file_path` に存在しない場合は、値を保持したまま `parentNotFound` warning を付与する
 - `parent` の存在検証では比較時のみ `\` と `./` を軽量正規化する。先頭 `/` または Windows drive prefix 付きの値は相対パス仕様外として `parentNotFound` warning を付与する
 - 自己参照 `parent` は存在する Task として扱い、循環検出は PL-008 で扱う
-- scan 時に親チェーンが循環している場合、ループに含まれる全 task に `parentCycle` warning を付与し、各 task の `parent` を `None` に置き換える。ファイル本体の YAML `parent:` キーは変更しない（ユーザーが手で修正できるよう原文を残す）
+- scan 時に親チェーンが循環している場合、ループに含まれる全 task に `parentCycle` warning を付与する。各 task の raw `parent` は保持し、IPC に投影する effective `parent` のみ `None` にする。ファイル本体の YAML `parent:` キーは変更しない（ユーザーが手で修正できるよう原文を残す）
 - `extras` の非文字列 key は除外し、`nonStringExtraKeyIgnored` warning を付与する
 - `extras` の JSON 非互換 value は除外し、`extraValueNotJsonCompatible` warning を付与する
 - `due` がキー無し・空文字の場合は期限なし（`None`）として扱い、warning は付与しない
@@ -219,7 +222,7 @@ flowchart TD
 | code | field | 条件 | 挙動 |
 |:--|:--|:--|:--|
 | `parentNotFound` | `parent` | `parent` が文字列だが、読み込み済み Task の `file_path` に存在しない | `parent` 値は保持し、Task の `warnings` に追加する |
-| `parentCycle` | `parent` | scan 時に親チェーンが循環している（自己参照含む）と検出された | ループに含まれる全 task の `warnings` に追加し、各 task の `parent` を `None` に置き換える（ファイル本体の YAML は無変更） |
+| `parentCycle` | `parent` | scan 時に親チェーンが循環している（自己参照含む）と検出された | ループに含まれる全 task の `warnings` に追加し、effective `parent` を `None` にする。raw `parent` とファイル本体の YAML は無変更 |
 | `invalidDue` | `due` | `due` が `YYYY-MM-DD` として解釈できない、または文字列以外 | 原文は保持する（非破壊）。Task の `warnings` に追加するが、parse-error バナー・カードのエラーアイコンの対象には**含めない** |
 
 ## シリアライズ仕様
@@ -373,13 +376,15 @@ update_task は `filePath` で識別し、**ファイル移動は一切行わな
 - `parent validation: <file_path> (<reason>)` — 親チェーン循環 / 深度超過
 - `content not scanner eligible: <reason>` — 更新後 body が 1 MiB 超 / NUL 含む
 
-### parent 変更時の cache 再構築
+### mutation 後の resident Task 再構築
 
-`parent` フィールドが変化した場合のみ TaskIndex 全体を再構築し、
-`validate_parent_hierarchy` + `build_children` + `build_reverse_links` を実行する。
-title / status / priority / labels / body 単独の更新では再構築しない。
+create / update / delete / archive / move / add_link / remove_link / update_columns は、
+変更後の全 parse-only candidate を canonical resolver に通し、`children` / `reverseLinks` /
+graph warning を全件再計算してから resident Task 集合を一括置換する。コマンド直後の状態は、
+同じ disk 状態を再 open した状態と一致する。wire / disk 形状と既存エラー文字列は変更しない。
 
-`parent` フィールドの「変化」は `intent.parent` の値に応じて以下のように判定する:
+create / update の strict parent 検証は I/O より前に従来どおり実行する。`parent` フィールドの
+「変化」は `intent.parent` の値に応じて以下のように判定する:
 
 - `None`: parent は変更されない（`parent_changed=false`）。hierarchy 検証はスキップする（全タスク走査の O(N) コストを回避）。
 - `Some("")`: parent を解除する。既存 parent が存在する、または frontmatter から `parent` キーが除去された場合に `parent_changed=true` となり hierarchy 検証を実行する（親解除なので構造的に循環は発生しないが、不正データの早期検出のため検証は走る）。
@@ -405,3 +410,9 @@ title / status / priority / labels / body 単独の更新では再構築しな�
 - [file-system-spec.md](./file-system-spec.md) - ファイルの読み書き・監視の実装仕様
 - [task-card-spec.md](./task-card-spec.md) - パースされたデータの表示仕様
 - [board-view-spec.md](./board-view-spec.md) - ステータスとカラムの対応関係
+
+## 変更履歴
+
+| バージョン | 日付 | 変更内容 | 変更者 |
+|:-----------|:-----|:---------|:-------|
+| 1.1 | 2026-08-23 | Issue #601: parse-only candidate と resolved resident Task の型境界、raw/effective parent、warning 分離、全 mutation の canonical full resolver、path 昇順の派生値、出力専用 IPC projection と wire/disk/error 互換契約を明記 | - |
