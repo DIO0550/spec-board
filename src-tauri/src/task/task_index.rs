@@ -157,6 +157,52 @@ impl DerivedTaskState {
     }
 }
 
+impl From<Task> for crate::task::payload::TaskPayload {
+    fn from(task: Task) -> Self {
+        let Task {
+            id,
+            file_path,
+            title,
+            status,
+            priority,
+            milestone,
+            labels,
+            due,
+            draft,
+            links,
+            body,
+            extras,
+            parse_warnings,
+            derived:
+                DerivedTaskState {
+                    effective_parent,
+                    children,
+                    reverse_links,
+                    graph_warnings,
+                    raw_parent: _,
+                },
+        } = task;
+        crate::task::payload::TaskPayload {
+            id,
+            file_path,
+            title,
+            status,
+            priority,
+            milestone,
+            labels,
+            parent: effective_parent,
+            due,
+            draft,
+            links,
+            children,
+            reverse_links,
+            body,
+            extras,
+            warnings: parse_warnings.into_iter().chain(graph_warnings).collect(),
+        }
+    }
+}
+
 /// Markdown/frontmatter の parse だけが完了した task candidate。
 ///
 /// IPC serialize と resident session への格納はできず、必ず [`ResolvedTaskSet`] の
@@ -1361,22 +1407,23 @@ impl TaskIndex {
         }
     }
 
-    /// 既存 Task と raw `Parsed`（frontmatter + body）から、書き込むべき file_content
-    /// と更新後 Task を計算する純粋関数。I/O / 時計 / 乱数に依存しない。
+    /// 既存 Task と`TaskDocument`から取り出したraw `Parsed`を使い、書き込むべき
+    /// file_contentと更新後のparse-only candidateを計算する純粋関数。
+    /// I/O / 時計 / 乱数に依存しない。
     ///
     /// 呼び出し側（effect 層）は事前に以下を済ませてから本関数を呼ぶ:
     ///
     /// - `io.read` で existing bytes 取得
-    /// - `frontmatter::parse_bytes` で `Parsed` を取得（`None` ならエラーに変換）
+    /// - `TaskDocument::parse`でdocumentを構築し、`into_parsed`で`Parsed`を取得
     /// - cache から既存 Task を取得
     ///
     /// 検証順序:
     ///
     /// 1. parent 存在チェック（cache key 探索）→ なければ `ParentNotFound`
-    /// 2. parent 置換後の `Vec<Task>` に対して `validate_parent_hierarchy`
+    /// 2. parent置換後の`Vec<ParsedTask>`に対して`ResolvedTaskSet::validate_strict`
     /// 3. patch 適用 + `TaskDocument::render` で `String` を構築
     /// 4. `TaskContent::try_new(String)` で eligibility 検証
-    /// 5. `task_from_parsed` を呼び直して updated_task を再構築し warning を再生成
+    /// 5. `TaskDocument::to_parsed_task`でupdated candidateを再構築しwarningを再生成
     pub(crate) fn plan_update(
         &self,
         _project_root: &Path,
@@ -1391,7 +1438,7 @@ impl TaskIndex {
             Some(s) => {
                 // 正規化済み lookup key で比較する。raw string equality だと
                 // `./tasks/p.md` / `tasks\p.md` 等の表記揺れで同一 task を指していても
-                // changed と誤判定し、不要な full rebuild と非正規形での書き戻しを招く。
+                // changed と誤判定し、不要な strict validation と非正規形での書き戻しを招く。
                 let new_normalized = normalize_parent_path_for_lookup(s);
                 let existing_normalized = existing
                     .parent()
@@ -1597,7 +1644,8 @@ impl TaskIndex {
     ///
     /// - `source_existing` は effect 層が cache snapshot から `intent.source` で
     ///   引き当て済みの `&Task`（snapshot に無ければ effect 層が早期 `SourceNotFound`）。
-    /// - `source_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    /// - `source_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
     ///
     /// 振る舞い:
     ///
@@ -1605,9 +1653,10 @@ impl TaskIndex {
     /// 2. 同一 path への self-link は `SelfLink` で reject。
     /// 3. target が aggregate に存在しなければ `TargetNotFound`。
     /// 4. `source.links` に target が既に含まれていれば `NoOp` を返す（表記揺れ吸収）。
-    /// 5. それ以外は `links` 末尾に正規化済み相対 path を push し、`TaskDocument::render`
-    ///    で書き戻し用文字列を作る。`TaskContent::try_new` で scanner eligible 検証も行う。
-    /// 6. `task_from_parsed` で `updated_task` を再構築して `Write` Outcome を返す。
+    /// 5. それ以外は現在のlinksを`Vec<String>`へ取り出して正規化済み相対pathを追加し、
+    ///    `TaskPatch { links: Patch::Set(..) }`をdocumentへ適用する。
+    /// 6. `TaskDocument::render`と`TaskContent::try_new`で書き戻し内容を検証し、
+    ///    `TaskDocument::to_parsed_task`でupdated candidateを作って`Write`を返す。
     pub(crate) fn plan_add_link(
         &self,
         _project_root: &Path,
@@ -1693,25 +1742,25 @@ impl TaskIndex {
     ///
     /// - `source_existing` は effect 層が cache snapshot から `intent.source` で
     ///   引き当て済みの `&Task`。
-    /// - `source_parsed` は effect 層が `io.read` + `frontmatter::parse_bytes` 済み。
+    /// - `source_parsed` はeffect層が`io.read` + `TaskDocument::parse`し、
+    ///   `into_parsed`で取り出したcodec内部値。
     ///
     /// 振る舞い:
     ///
     /// 1. source / target を lookup 用に正規化する。失敗時は `SourceNotFound` /
     ///    `InvalidTargetPath` を返す（args 段階で reject 済みなので通常到達不可）。
-    /// 2. `source_parsed.frontmatter.links` を走査し、normalize 結果が target_norm と
-    ///    完全一致する要素を **すべて** 除去する。表記揺れで重複登録されている場合は
-    ///    一括で掃除される。
+    /// 2. `TaskDocument::links`を走査し、normalize結果がtarget_normと完全一致する
+    ///    要素をすべて除いた`Vec<String>`を作る。表記揺れの重複も一括で掃除する。
     /// 3. 1 件も除去されなければ `NoOp { existing_task }` を返す（冪等成功）。
-    /// 4. 除去ありなら `TaskDocument::render` で書き戻し用 string を生成し、
-    ///    `TaskContent::try_new` で scanner eligible 検証、`task_from_parsed` で
-    ///    `updated_task` を再構築して `Write` Outcome を返す。
+    /// 4. 除去ありなら`TaskPatch { links: Patch::Set(..) }`をdocumentへ適用し、
+    ///    `TaskDocument::render` / `TaskContent::try_new`で検証する。
+    ///    `TaskDocument::to_parsed_task`でupdated candidateを作って`Write`を返す。
     ///
     /// add_link との差分: target が aggregate に存在するかは検証しない（dangling
     /// link 掃除のユースケースを許容する）。self-link チェックも不要（src/tgt が
     /// 同一の場合、もとから links に含まれていれば NoOp ではなく Write になり
-    /// 1 件除去されるだけ）。parent / children 不変条件は links 削除では影響しないため
-    /// 検証しない。
+    /// 1 件除去されるだけ）。parentを変更しないためI/O前strict validationは不要だが、
+    /// effect層は全candidateをcanonical resolverへ通して派生値を再計算する。
     pub(crate) fn plan_remove_link(
         &self,
         _project_root: &Path,

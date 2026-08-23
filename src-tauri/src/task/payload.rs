@@ -69,12 +69,6 @@ impl From<&Task> for TaskPayload {
     }
 }
 
-impl From<Task> for TaskPayload {
-    fn from(task: Task) -> Self {
-        Self::from(&task)
-    }
-}
-
 fn is_false(value: &bool) -> bool {
     !*value
 }
@@ -104,11 +98,19 @@ mod tests {
             .expect("missing parent is a recoverable graph warning");
         let task = tasks
             .get(&CanonicalTaskPath::new("tasks/a.md"))
-            .expect("resolved task");
-        let payload = TaskPayload::from(task);
+            .expect("resolved task")
+            .clone();
+        let borrowed = TaskPayload::from(&task);
+        let owned = TaskPayload::from(task);
+
+        assert_eq!(owned, borrowed);
+        assert_eq!(
+            serde_json::to_vec(&owned).expect("owned payload serializes"),
+            serde_json::to_vec(&borrowed).expect("borrowed payload serializes")
+        );
 
         assert_eq!(
-            payload
+            owned
                 .warnings
                 .iter()
                 .map(|warning| &warning.code)
@@ -119,7 +121,7 @@ mod tests {
             ]
         );
 
-        let value = serde_json::to_value(payload).expect("payload serializes");
+        let value = serde_json::to_value(owned).expect("payload serializes");
         assert_eq!(
             value["warnings"]
                 .as_array()

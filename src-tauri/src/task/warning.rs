@@ -29,8 +29,8 @@ pub struct TaskWarning {
 }
 
 /// `warnings` 配列に `ParentCycle` (field=`parent`) が含まれているかを判定する
-/// 共通 helper。`watcher_event` / `update` / `add_link` / `remove_link` の
-/// 各経路で同じ判定が必要になるため、ここに集約することで条件のズレを防ぐ。
+/// helper。canonical resolver内の[`ensure_parent_cycle_warning`]が、同じgraph warningを
+/// 重複追加しないために使用する。
 pub fn has_parent_cycle_warning(warnings: &[TaskWarning]) -> bool {
     warnings.iter().any(|warning| {
         warning.code == TaskWarningCode::ParentCycle && warning.field.as_deref() == Some("parent")
