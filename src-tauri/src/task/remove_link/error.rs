@@ -10,6 +10,7 @@ use thiserror::Error;
 use crate::project_session::{RevisionExhausted, SessionConflict};
 use crate::state::{AppStateError, SessionResourceConflict, SessionWriteError};
 use crate::task::io::TaskIoError;
+use crate::task::parse::TaskParseError;
 use crate::task::task_content::TaskContentError;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreError;
 
@@ -55,6 +56,8 @@ pub enum RemoveLinkCommandError {
     RevisionExhausted(#[from] RevisionExhausted),
     #[error(transparent)]
     ResourceConflict(#[from] SessionResourceConflict),
+    #[error(transparent)]
+    Resolution(#[from] TaskParseError),
 }
 
 impl From<SessionWriteError> for RemoveLinkCommandError {

@@ -117,8 +117,7 @@ fn apply_remove_link_to_cache(
     let resolved = TaskIndex::new(cache.values().cloned().collect())
         .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
             Box::new(updated_task.clone()),
-        ))
-        .expect("removing a link cannot invalidate the resolved parent hierarchy")
+        ))?
         .tasks;
     let returned = resolved
         .get(&source_key)
