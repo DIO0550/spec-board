@@ -1,4 +1,35 @@
 use super::*;
+
+#[test]
+fn schema_version_current_exposes_the_wire_number() {
+    let version = SchemaVersion::CURRENT;
+
+    assert_eq!(version.as_u32(), 1);
+    assert_eq!(serde_json::to_string(&version).unwrap(), "1");
+    assert_eq!(serde_json::from_str::<SchemaVersion>("1").unwrap(), version);
+}
+
+#[test]
+fn schema_version_deserialize_rejects_every_non_current_number() {
+    for raw in ["0", "2", "4294967295"] {
+        assert!(serde_json::from_str::<SchemaVersion>(raw).is_err(), "{raw}");
+    }
+}
+
+#[test]
+fn config_deserialize_rejects_legacy_and_future_versions_without_adapter() {
+    for version in [0, 2] {
+        let raw = format!(r#"{{"version":{version},"columns":[],"cardOrder":{{}}}}"#);
+        assert!(serde_json::from_str::<Config>(&raw).is_err(), "{version}");
+    }
+}
+
+#[test]
+fn config_new_always_constructs_the_current_schema_version() {
+    let config = Config::new(Vec::new(), CardOrder::new(), None);
+
+    assert_eq!(config.version(), SchemaVersion::CURRENT);
+}
 use crate::config::column_name::ColumnName;
 
 // ───────── Default ─────────
@@ -6,7 +37,7 @@ use crate::config::column_name::ColumnName;
 #[test]
 fn default_returns_spec_baseline_columns_and_done_column() {
     let c = Config::default();
-    assert_eq!(c.version, 1);
+    assert_eq!(c.version(), SchemaVersion::CURRENT);
     assert_eq!(
         c.columns,
         vec![
@@ -50,9 +81,8 @@ fn default_classifies_all_non_empty_config_names_as_validated() {
 
 #[test]
 fn columns_in_display_order_sorts_by_order_not_by_array_position() {
-    let config = Config {
-        version: 1,
-        columns: vec![
+    let config = Config::new(
+        vec![
             Column {
                 name: "Done".into(),
                 order: 2,
@@ -72,9 +102,9 @@ fn columns_in_display_order_sorts_by_order_not_by_array_position() {
                 wip_limit: None,
             },
         ],
-        card_order: CardOrder::default(),
-        done_column: None,
-    };
+        CardOrder::default(),
+        None,
+    );
 
     let ordered = config.columns_in_display_order();
 
@@ -111,7 +141,7 @@ fn roundtrip_spec_example_json() {
     let reparsed: Config = serde_json::from_value(value).unwrap();
     assert_eq!(parsed, reparsed);
 
-    assert_eq!(parsed.version, 1);
+    assert_eq!(parsed.version(), SchemaVersion::CURRENT);
     assert_eq!(parsed.columns.len(), 3);
     assert_eq!(
         parsed.columns[0],
@@ -184,10 +214,8 @@ fn parses_with_done_column_null() {
 
 #[test]
 fn serialize_omits_done_column_when_none() {
-    let c = Config {
-        done_column: None,
-        ..Config::default()
-    };
+    let default = Config::default();
+    let c = Config::new(default.columns, default.card_order, None);
     let v = serde_json::to_value(&c).unwrap();
     let obj = v.as_object().unwrap();
     assert!(
@@ -204,17 +232,16 @@ fn serialize_omits_done_column_when_none() {
 
 #[test]
 fn field_names_are_camel_case_in_json() {
-    let c = Config {
-        version: 1,
-        columns: vec![Column {
+    let c = Config::new(
+        vec![Column {
             name: "Todo".into(),
             order: 0,
             color: None,
             wip_limit: None,
         }],
-        card_order: card_order_of(vec![("Todo", vec!["tasks/a.md"])]),
-        done_column: Some("Todo".into()),
-    };
+        card_order_of(vec![("Todo", vec!["tasks/a.md"])]),
+        Some("Todo".into()),
+    );
     let v = serde_json::to_value(&c).unwrap();
     let obj = v.as_object().unwrap();
     assert!(obj.contains_key("version"));
@@ -234,12 +261,7 @@ fn card_order_keys_are_serialized_in_sorted_order() {
         ("Todo", vec!["tasks/a.md"]),
         ("In Progress", vec!["tasks/b.md"]),
     ]);
-    let c = Config {
-        version: 1,
-        columns: vec![],
-        card_order,
-        done_column: None,
-    };
+    let c = Config::new(vec![], card_order, None);
 
     let json = serde_json::to_string(&c).unwrap();
     let done_pos = json.find("\"Done\"").unwrap();
@@ -262,7 +284,7 @@ fn unknown_fields_are_ignored() {
         "futureFlag": "ignored"
     }"#;
     let parsed: Config = serde_json::from_str(json_in).unwrap();
-    assert_eq!(parsed.version, 1);
+    assert_eq!(parsed.version(), SchemaVersion::CURRENT);
     assert!(parsed.columns.is_empty());
     assert!(parsed.card_order.is_empty());
     assert_eq!(parsed.done_column, None);
@@ -366,12 +388,11 @@ fn resolved_done_column_parametrized() {
     ];
 
     for case in cases {
-        let cfg = Config {
-            version: 1,
-            columns: case.columns,
-            card_order: CardOrder::new(),
-            done_column: case.done_column.map(Into::into),
-        };
+        let cfg = Config::new(
+            case.columns,
+            CardOrder::new(),
+            case.done_column.map(Into::into),
+        );
         assert_eq!(
             cfg.resolved_done_column().map(|c| c.as_str()),
             case.expected,
@@ -486,12 +507,11 @@ fn generate_guide_markdown_has_stable_section_order_and_trailing_newline() {
 #[test]
 fn write_guide_markdown_best_effort_writes_config_guide_markdown() {
     let tmp = TempDir::new().unwrap();
-    let config = Config {
-        version: 1,
-        columns: vec![col("Review", 1), col("Backlog", 0)],
-        card_order: CardOrder::new(),
-        done_column: Some("Review".into()),
-    };
+    let config = Config::new(
+        vec![col("Review", 1), col("Backlog", 0)],
+        CardOrder::new(),
+        Some("Review".into()),
+    );
 
     write_guide_markdown_best_effort(tmp.path(), &config);
 
@@ -508,12 +528,7 @@ fn write_guide_markdown_best_effort_overwrites_existing_guide() {
     std::fs::create_dir(&dir).unwrap();
     let guide_path = dir.join("GUIDE.md");
     std::fs::write(&guide_path, "old").unwrap();
-    let config = Config {
-        version: 1,
-        columns: vec![],
-        card_order: CardOrder::new(),
-        done_column: None,
-    };
+    let config = Config::new(vec![], CardOrder::new(), None);
 
     write_guide_markdown_best_effort(tmp.path(), &config);
 
@@ -636,7 +651,7 @@ fn load_or_default_parses_existing_config_json() {
     std::fs::write(dir.join("config.json"), content).unwrap();
 
     let cfg = load_or_default(tmp.path()).unwrap();
-    assert_eq!(cfg.version, 1);
+    assert_eq!(cfg.version(), SchemaVersion::CURRENT);
     assert_eq!(cfg.columns.len(), 2);
     assert_eq!(cfg.done_column, None);
     // done_column が無くても resolved_done_column は末尾カラムを返す
@@ -825,7 +840,7 @@ fn load_persisted_classifies_names_after_migration() {
         .unwrap()
         .expect("migrated config");
 
-    assert_eq!(config.version, DEFAULT_VERSION);
+    assert_eq!(config.version(), SchemaVersion::CURRENT);
     assert_eq!(
         config
             .columns
@@ -1005,7 +1020,12 @@ fn build_config_from_statuses_parametrized() {
 
     for case in cases {
         let cfg = build_config_from_statuses(&case.inputs);
-        assert_eq!(cfg.version, 1, "case: {}", case.label);
+        assert_eq!(
+            cfg.version(),
+            SchemaVersion::CURRENT,
+            "case: {}",
+            case.label
+        );
         assert_eq!(cfg.columns, case.expected_columns, "case: {}", case.label);
         assert_eq!(
             cfg.done_column.as_deref(),
@@ -1065,24 +1085,22 @@ fn build_config_from_statuses_classifies_adopted_names() {
 // ───────── migrate_config ─────────
 
 #[test]
-fn migrate_config_passthrough_when_from_version_equals_default() {
+fn migrate_config_passthrough_when_from_version_equals_current() {
     let value = serde_json::json!({
-        "version": DEFAULT_VERSION,
+        "version": SchemaVersion::CURRENT.as_u32(),
         "columns": [],
         "cardOrder": {},
     });
-    let migrated = migrate_config(value.clone(), DEFAULT_VERSION).unwrap();
+    let migrated = migrate_config(value.clone(), SchemaVersion::CURRENT.as_u32()).unwrap();
     assert_eq!(migrated, value);
 }
 
 #[test]
 fn migrate_config_returns_unsupported_for_future_version() {
     let value = serde_json::json!({});
-    let err = migrate_config(value, DEFAULT_VERSION + 1).unwrap_err();
-    assert_eq!(
-        err,
-        MigrationError::UnsupportedFromVersion(DEFAULT_VERSION + 1)
-    );
+    let future = SchemaVersion::CURRENT.as_u32() + 1;
+    let err = migrate_config(value, future).unwrap_err();
+    assert_eq!(err, MigrationError::UnsupportedFromVersion(future));
 }
 
 #[test]
@@ -1119,14 +1137,14 @@ fn migrate_config_passes_through_non_object_for_older_input() {
         let migrated = migrate_config(case.value.clone(), 0).expect(case.label);
         assert_eq!(
             migrated, case.value,
-            "case `{}`: non-object input must pass through unchanged for from_version < DEFAULT_VERSION",
+            "case `{}`: non-object input must pass through unchanged for legacy version",
             case.label
         );
     }
 }
 
 #[test]
-fn migrate_config_rewrites_version_to_default_for_older_input() {
+fn migrate_config_rewrites_version_to_current_for_older_input() {
     let value = serde_json::json!({
         "version": 0,
         "columns": [{ "name": "Todo", "order": 0 }],
@@ -1137,7 +1155,7 @@ fn migrate_config_rewrites_version_to_default_for_older_input() {
         .get("version")
         .and_then(serde_json::Value::as_u64)
         .expect("version must remain present after migration");
-    assert_eq!(version, u64::from(DEFAULT_VERSION));
+    assert_eq!(version, u64::from(SchemaVersion::CURRENT.as_u32()));
     // 他フィールドは温存される
     assert_eq!(
         migrated.get("columns"),
@@ -1156,12 +1174,12 @@ fn migrate_config_parametrized() {
 
     let cases: Vec<Case> = vec![
         Case {
-            label: "from_version 0 (older) -> Ok with version=DEFAULT",
+            label: "from_version 0 (older) -> Ok with version=CURRENT",
             from_version: 0,
             expect_ok: true,
         },
         Case {
-            label: "from_version 1 (default) -> Ok passthrough",
+            label: "from_version 1 (current) -> Ok passthrough",
             from_version: 1,
             expect_ok: true,
         },
@@ -1192,8 +1210,8 @@ fn migrate_config_parametrized() {
                     .unwrap_or_else(|| panic!("case `{}`: version missing", case.label));
                 assert_eq!(
                     v,
-                    u64::from(DEFAULT_VERSION),
-                    "case `{}`: version must be normalized to DEFAULT_VERSION",
+                    u64::from(SchemaVersion::CURRENT.as_u32()),
+                    "case `{}`: version must be normalized to CURRENT",
                     case.label
                 );
             }
@@ -1286,12 +1304,11 @@ fn validate_unique_column_names_treats_whitespace_variants_as_distinct() {
 
 #[test]
 fn has_column_returns_true_when_column_exists() {
-    let config = Config {
-        version: 1,
-        columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
-        card_order: CardOrder::new(),
-        done_column: None,
-    };
+    let config = Config::new(
+        vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+        CardOrder::new(),
+        None,
+    );
     assert!(config.has_column("Todo"));
     assert!(config.has_column("In Progress"));
     assert!(config.has_column("Done"));
@@ -1299,24 +1316,14 @@ fn has_column_returns_true_when_column_exists() {
 
 #[test]
 fn has_column_returns_false_when_column_missing() {
-    let config = Config {
-        version: 1,
-        columns: vec![col("Todo", 0), col("Done", 1)],
-        card_order: CardOrder::new(),
-        done_column: None,
-    };
+    let config = Config::new(vec![col("Todo", 0), col("Done", 1)], CardOrder::new(), None);
     assert!(!config.has_column("Doing"));
     assert!(!config.has_column(""));
 }
 
 #[test]
 fn has_column_returns_false_when_case_differs() {
-    let config = Config {
-        version: 1,
-        columns: vec![col("Todo", 0)],
-        card_order: CardOrder::new(),
-        done_column: None,
-    };
+    let config = Config::new(vec![col("Todo", 0)], CardOrder::new(), None);
     assert!(!config.has_column("todo"));
     assert!(!config.has_column("TODO"));
     assert!(config.has_column("Todo"));
@@ -1352,7 +1359,7 @@ fn load_or_default_rejects_future_version() {
             supported,
         } => {
             assert_eq!(found, 999);
-            assert_eq!(supported, DEFAULT_VERSION);
+            assert_eq!(supported, SchemaVersion::CURRENT.as_u32());
             assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
         }
         other => panic!("expected UnknownFutureVersion, got {other:?}"),
@@ -1378,7 +1385,7 @@ fn load_or_default_creates_backup_and_normalizes_version_for_older_config() {
         bak_content, content,
         "backup must contain the original (pre-migration) raw content"
     );
-    assert_eq!(cfg.version, DEFAULT_VERSION);
+    assert_eq!(cfg.version(), SchemaVersion::CURRENT);
 }
 
 #[test]
@@ -1395,8 +1402,8 @@ fn load_or_default_consecutive_loads_normalize_version_consistently() {
 
     let cfg1 = load_or_default(tmp.path()).unwrap();
     let cfg2 = load_or_default(tmp.path()).unwrap();
-    assert_eq!(cfg1.version, DEFAULT_VERSION);
-    assert_eq!(cfg2.version, DEFAULT_VERSION);
+    assert_eq!(cfg1.version(), SchemaVersion::CURRENT);
+    assert_eq!(cfg2.version(), SchemaVersion::CURRENT);
 }
 
 #[test]
@@ -2042,12 +2049,11 @@ fn rename_preserves_column_color() {
 // ───────── Config::plan_update_card_order ─────────
 
 fn card_order_base_config() -> Config {
-    Config {
-        version: 1,
-        columns: vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
-        card_order: CardOrder::new(),
-        done_column: Some("Done".into()),
-    }
+    Config::new(
+        vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
+        CardOrder::new(),
+        Some("Done".into()),
+    )
 }
 
 #[test]
@@ -2318,11 +2324,11 @@ fn normalize_card_order_parametrized() {
     ];
 
     for case in cases {
-        let config = Config {
-            card_order: card_order_of(case.card_order),
-            columns: case.columns,
-            ..Config::default()
-        };
+        let config = Config::new(
+            case.columns,
+            card_order_of(case.card_order),
+            Config::default().done_column,
+        );
         let (normalized, changed) = config.normalize_card_order();
         assert_eq!(
             normalized.card_order,
@@ -2373,11 +2379,11 @@ fn normalize_card_order_idempotent() {
     ];
 
     for case in cases {
-        let config = Config {
-            card_order: card_order_of(case.card_order),
-            columns: case.columns,
-            ..Config::default()
-        };
+        let config = Config::new(
+            case.columns,
+            card_order_of(case.card_order),
+            Config::default().done_column,
+        );
         let (first, _) = config.normalize_card_order();
         let (second, changed_again) = first.normalize_card_order();
         assert_eq!(
@@ -2436,11 +2442,11 @@ fn normalize_card_order_large_entry() {
         "同一列内重複は CardOrder の構築時に解消される"
     );
 
-    let config = Config {
+    let config = Config::new(
+        vec![col("Todo", 0)],
         card_order,
-        columns: vec![col("Todo", 0)],
-        ..Config::default()
-    };
+        Config::default().done_column,
+    );
     let (normalized, changed) = config.normalize_card_order();
     assert!(!changed, "列跨ぎ重複が無ければ normalize は何も変えない");
     assert_eq!(normalized.card_order.get("Todo").unwrap().len(), 100);
@@ -2450,12 +2456,11 @@ fn normalize_card_order_large_entry() {
 
 /// reconcile テストの基準 config（`Todo(0)` / `Doing(1)` / `Done(2)`、`doneColumn = "Done"`）。
 fn reconcile_base_config() -> Config {
-    Config {
-        version: DEFAULT_VERSION,
-        columns: vec![col("Todo", 0), col("Doing", 1), col("Done", 2)],
-        card_order: CardOrder::new(),
-        done_column: Some("Done".into()),
-    }
+    Config::new(
+        vec![col("Todo", 0), col("Doing", 1), col("Done", 2)],
+        CardOrder::new(),
+        Some("Done".into()),
+    )
 }
 
 /// `(path, status)` の組を `plan_reconcile_columns` の入力形へ詰める。
@@ -2597,9 +2602,8 @@ fn plan_reconcile_columns_adds_a_repeated_unknown_status_only_once() {
 
 #[test]
 fn plan_reconcile_columns_keeps_existing_columns_and_card_order_untouched() {
-    let config = Config {
-        version: DEFAULT_VERSION,
-        columns: vec![
+    let config = Config::new(
+        vec![
             Column {
                 name: "Todo".into(),
                 order: 0,
@@ -2608,9 +2612,9 @@ fn plan_reconcile_columns_keeps_existing_columns_and_card_order_untouched() {
             },
             col("Done", 1),
         ],
-        card_order: card_order_of(vec![("Todo", vec!["a.md"])]),
-        done_column: Some("Done".into()),
-    };
+        card_order_of(vec![("Todo", vec!["a.md"])]),
+        Some("Done".into()),
+    );
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("b.md", Some("Review"))]));
 
@@ -2650,12 +2654,7 @@ fn plan_reconcile_columns_freezes_the_resolved_done_column_when_unset() {
     ];
 
     for case in cases {
-        let config = Config {
-            version: DEFAULT_VERSION,
-            columns: case.columns,
-            card_order: CardOrder::new(),
-            done_column: None,
-        };
+        let config = Config::new(case.columns, CardOrder::new(), None);
         let before = config.resolved_done_column().cloned();
 
         let plan = config.plan_reconcile_columns(&status_inputs(vec![("z.md", Some("Review"))]));
@@ -2679,10 +2678,8 @@ fn plan_reconcile_columns_freezes_the_resolved_done_column_when_unset() {
 
 #[test]
 fn plan_reconcile_columns_leaves_done_column_none_on_noop() {
-    let config = Config {
-        done_column: None,
-        ..reconcile_base_config()
-    };
+    let base = reconcile_base_config();
+    let config = Config::new(base.columns, base.card_order, None);
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Todo"))]));
 
@@ -2692,10 +2689,8 @@ fn plan_reconcile_columns_leaves_done_column_none_on_noop() {
 
 #[test]
 fn plan_reconcile_columns_does_not_repair_a_done_column_outside_columns() {
-    let config = Config {
-        done_column: Some("Ghost".into()),
-        ..reconcile_base_config()
-    };
+    let base = reconcile_base_config();
+    let config = Config::new(base.columns, base.card_order, Some("Ghost".into()));
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
 
@@ -2704,12 +2699,11 @@ fn plan_reconcile_columns_does_not_repair_a_done_column_outside_columns() {
 
 #[test]
 fn plan_reconcile_columns_numbers_new_orders_from_the_existing_maximum() {
-    let config = Config {
-        version: DEFAULT_VERSION,
-        columns: vec![col("A", 0), col("B", 5), col("C", 9)],
-        card_order: CardOrder::new(),
-        done_column: Some("C".into()),
-    };
+    let config = Config::new(
+        vec![col("A", 0), col("B", 5), col("C", 9)],
+        CardOrder::new(),
+        Some("C".into()),
+    );
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![
         ("a.md", Some("Review")),
@@ -2725,12 +2719,11 @@ fn plan_reconcile_columns_numbers_new_orders_from_the_existing_maximum() {
 
 #[test]
 fn plan_reconcile_columns_saturates_the_order_without_panicking() {
-    let config = Config {
-        version: DEFAULT_VERSION,
-        columns: vec![col("A", 0), col("B", u32::MAX)],
-        card_order: CardOrder::new(),
-        done_column: Some("B".into()),
-    };
+    let config = Config::new(
+        vec![col("A", 0), col("B", u32::MAX)],
+        CardOrder::new(),
+        Some("B".into()),
+    );
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
 
@@ -2746,12 +2739,11 @@ fn plan_reconcile_columns_saturates_the_order_without_panicking() {
 
 #[test]
 fn plan_reconcile_columns_keeps_the_default_status_even_when_orders_saturate() {
-    let config = Config {
-        version: DEFAULT_VERSION,
-        columns: vec![col("A", u32::MAX), col("B", u32::MAX)],
-        card_order: CardOrder::new(),
-        done_column: Some("B".into()),
-    };
+    let config = Config::new(
+        vec![col("A", u32::MAX), col("B", u32::MAX)],
+        CardOrder::new(),
+        Some("B".into()),
+    );
     let before = crate::task::parse::default_status_for(&config);
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
@@ -2834,12 +2826,7 @@ fn plan_reconcile_columns_classifies_the_adopted_config_names() {
 
 #[test]
 fn plan_reconcile_columns_numbers_from_zero_for_an_empty_config() {
-    let config = Config {
-        version: DEFAULT_VERSION,
-        columns: Vec::new(),
-        card_order: CardOrder::new(),
-        done_column: None,
-    };
+    let config = Config::new(Vec::new(), CardOrder::new(), None);
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![
         ("a.md", Some("Review")),
@@ -2903,19 +2890,14 @@ fn plan_reconcile_columns_preserves_config_invariants_for_valid_inputs() {
         },
         Case {
             label: "doneColumn 未設定",
-            config: Config {
-                done_column: None,
-                ..reconcile_base_config()
+            config: {
+                let base = reconcile_base_config();
+                Config::new(base.columns, base.card_order, None)
             },
         },
         Case {
             label: "order 飛び番",
-            config: Config {
-                version: DEFAULT_VERSION,
-                columns: vec![col("A", 3), col("B", 7)],
-                card_order: CardOrder::new(),
-                done_column: None,
-            },
+            config: Config::new(vec![col("A", 3), col("B", 7)], CardOrder::new(), None),
         },
     ];
 

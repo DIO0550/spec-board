@@ -96,9 +96,8 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> Config {
     for (column, paths) in card_order {
         order.set_column(column, paths);
     }
-    Config {
-        version: 1,
-        columns: columns
+    Config::new(
+        columns
             .iter()
             .enumerate()
             .map(|(index, name)| Column {
@@ -108,9 +107,9 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> Config {
                 wip_limit: None,
             })
             .collect(),
-        card_order: order,
-        done_column: None,
-    }
+        order,
+        None,
+    )
 }
 
 /// command 層と同じ手順（board 順に整列してから `TaskIndex` を組み直す）で forest を作る。

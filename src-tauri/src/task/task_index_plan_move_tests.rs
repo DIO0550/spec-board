@@ -65,10 +65,8 @@ fn config_with_card_order(entries: &[(&str, &[&str])]) -> Config {
     for (column, paths) in entries {
         order.set_column(column, paths);
     }
-    Config {
-        card_order: order,
-        ..Config::default()
-    }
+    let default = Config::default();
+    Config::new(default.columns, order, default.done_column)
 }
 
 #[test]

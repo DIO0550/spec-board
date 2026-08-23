@@ -13,12 +13,7 @@ fn column(name: &str, order: u32) -> Column {
 }
 
 fn make_config(columns: Vec<Column>, done_column: Option<ColumnName>) -> Config {
-    Config {
-        version: 1,
-        columns,
-        card_order: CardOrder::new(),
-        done_column,
-    }
+    Config::new(columns, CardOrder::new(), done_column)
 }
 
 #[test]

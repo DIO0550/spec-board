@@ -8,7 +8,9 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::config::column_name::ColumnName;
-use crate::config::{CardOrder, Column, Config, FsConfigWriter, LabelRegistry, MilestoneRegistry};
+use crate::config::{
+    CardOrder, Column, Config, FsConfigWriter, LabelRegistry, MilestoneRegistry, SchemaVersion,
+};
 use crate::project::open::open_project_impl;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
@@ -30,12 +32,11 @@ fn col(name: &str, order: u32) -> Column {
 }
 
 fn config_with(columns: Vec<Column>, done: Option<&str>) -> Config {
-    Config {
-        version: 1,
+    Config::new(
         columns,
-        card_order: CardOrder::new(),
-        done_column: done.map(ColumnName::from_lenient),
-    }
+        CardOrder::new(),
+        done.map(ColumnName::from_lenient),
+    )
 }
 
 fn config_with_card_order(
@@ -43,12 +44,11 @@ fn config_with_card_order(
     done: Option<&str>,
     card_order: BTreeMap<String, Vec<String>>,
 ) -> Config {
-    Config {
-        version: 1,
+    Config::new(
         columns,
-        card_order: CardOrder::from_raw_map(card_order),
-        done_column: done.map(ColumnName::from_lenient),
-    }
+        CardOrder::from_raw_map(card_order),
+        done.map(ColumnName::from_lenient),
+    )
 }
 
 /// 指定カラムの並びを `&str` の Vec として取り出す。キーが無ければ空 Vec。
@@ -533,15 +533,14 @@ fn plan_done_column_none_args_with_existing_done_column_none_returns_none() {
 }
 
 #[test]
-fn plan_new_config_keeps_self_version() {
-    let mut config = config_with(vec![col("Todo", 0)], Some("Todo"));
-    config.version = 42;
+fn plan_new_config_keeps_current_schema_version() {
+    let config = config_with(vec![col("Todo", 0)], Some("Todo"));
     let args = UpdateColumnsArgs {
         columns: Some(vec![col("Todo", 0), col("Done", 1)]),
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert_eq!(plan.new_config.version, 42);
+    assert_eq!(plan.new_config.version(), SchemaVersion::CURRENT);
 }
 
 #[test]

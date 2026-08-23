@@ -1370,12 +1370,7 @@ fn payload_serialization_uses_camel_case() {
 
 #[test]
 fn build_payload_returns_empty_columns_for_config_with_no_columns() {
-    let cfg = Config {
-        version: 1,
-        columns: Vec::new(),
-        card_order: CardOrder::default(),
-        done_column: None,
-    };
+    let cfg = Config::new(Vec::new(), CardOrder::default(), None);
 
     let payload = super::build_payload_from_parts(Vec::new(), &cfg, zero_session());
 
@@ -1385,9 +1380,8 @@ fn build_payload_returns_empty_columns_for_config_with_no_columns() {
 
 #[test]
 fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
-    let cfg = Config {
-        version: 1,
-        columns: vec![
+    let cfg = Config::new(
+        vec![
             Column {
                 name: "Z".into(),
                 order: 2,
@@ -1407,9 +1401,9 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
                 wip_limit: None,
             },
         ],
-        card_order: CardOrder::default(),
-        done_column: None,
-    };
+        CardOrder::default(),
+        None,
+    );
     let task_b = Task {
         draft: false,
         id: "b.md".into(),
@@ -1954,20 +1948,19 @@ fn open_payload_projections_match_get_tasks_projections() {
 /// task projection は filePath key の内容だけを持ち、入力順に依存しない。
 #[test]
 fn task_projection_semantics_do_not_depend_on_input_order() {
-    let cfg = Config {
-        version: 1,
-        columns: vec![Column {
+    let cfg = Config::new(
+        vec![Column {
             name: "Todo".into(),
             order: 0,
             color: None,
             wip_limit: None,
         }],
-        card_order: CardOrder::from_raw_map(BTreeMap::from([(
+        CardOrder::from_raw_map(BTreeMap::from([(
             "Todo".to_string(),
             vec!["tasks/c.md".to_string()],
         )])),
-        done_column: None,
-    };
+        None,
+    );
     let parent = sample_task_with_parent("tasks/p.md", None);
     let child = sample_task_with_parent("tasks/c.md", Some("tasks/p.md"));
 
