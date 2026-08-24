@@ -523,6 +523,12 @@ wire / disk形状は従来どおりである。
 | `watcher-resync-required` | `{ reason: "rescan" }` | batch の `rescan` を受けて full rescan を完了した、キャッシュヒット再オープン後の背景再スキャンが差分を commit した、変更対象以外の task の派生値も変わった、未知 status のカラムを追加した、または変更対象を読めない・parse できない / load warning 対象で disk 全体からの再構築が必要になった。循環メンバーは raw `parent` を resident cache に保持するため、循環だけを理由に full rescan へ委ねない。**snapshot は同梱しない**（FE が `get_tasks` で取り直す） | true |
 | `watcher-diagnostic` | `{ code, message, paths }` | watcher backend の障害 / full rescan の失敗 | false |
 
+FEのpush受信境界はenvelope外枠とpayload判別子だけをruntime検証し、`task-created` /
+`task-updated`の`task`本体はpull型payloadと同様に素通しする。ただしFE entity identityの
+`task.id`と、reducerがtaskの追加・差し替え照合に使う`task.filePath`は文字列であることを
+parse時とaction変換時に検証し、欠損または非stringならenvelope / actionを`null`として
+dispatchしない。その他のtaskフィールドのruntime検証やwire形状は変更しない。
+
 受信側は `projectKey` / `generation` の不一致を破棄し、`eventSeq` の欠番を検知したら
 `get_tasks` で snapshot を取り直す。`cacheMutating: true` の event についてのみ
 `revision` の単調性を検査する（診断イベントは cache を変えないため revision が進まない）。
@@ -897,6 +903,7 @@ recommended / poll の両方を `WatcherError::Init` に保持するため、cal
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.16 | 2026-08-24 | Issue #619: watcher task payloadの外枠素通しを維持しつつ、entity identity `task.id` / reducer照合キー`task.filePath`のstring検証と不正eventのno-dispatch契約を明記 | - |
 | 1.15 | 2026-08-24 | Issue #610: WatcherHandleのconsuming stop、二重停止の型禁止、通常Dropと同じ同期停止順序、swap後のlock/lease外停止、runtime/wire互換を明記 | - |
 | 1.14 | 2026-08-24 | Issue #609: recoverableなscan warningのrelative PathBuf / std::io::ErrorKind内部契約、非UTF-8 pathのwire null化、io kind非公開と既存5-field warning互換を明記 | - |
 | 1.13 | 2026-08-24 | Issue #607: watcher両backendの起動失敗をtyped pairで保持し、通常error string互換を維持したまま`open_project`へ機械可読な起動診断を追加 | - |
