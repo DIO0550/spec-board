@@ -1426,9 +1426,9 @@ impl TaskIndex {
     ) -> Result<UpdateTaskOutcome, UpdateTaskError> {
         let mut document = TaskDocument::from_parsed(existing_parsed);
         let parent_changed = match &intent.parent {
-            None => false,
-            Some(s) if s.is_empty() => document.has_extra("parent") || existing.parent().is_some(),
-            Some(s) => {
+            Patch::Unchanged => false,
+            Patch::Clear => document.has_extra("parent") || existing.parent().is_some(),
+            Patch::Set(s) => {
                 // 正規化済み lookup key で比較する。raw string equality だと
                 // `./tasks/p.md` / `tasks\p.md` 等の表記揺れで同一 task を指していても
                 // changed と誤判定し、不要な strict validation と非正規形での書き戻しを招く。
@@ -1457,22 +1457,10 @@ impl TaskIndex {
                 .clone()
                 .map(Patch::Set)
                 .unwrap_or(Patch::Unchanged),
-            milestone: match intent.milestone.clone() {
-                None => Patch::Unchanged,
-                Some(value) if value.is_empty() => Patch::Clear,
-                Some(value) => Patch::Set(value),
-            },
-            parent: match intent.parent.clone() {
-                None => Patch::Unchanged,
-                Some(value) if value.is_empty() => Patch::Clear,
-                Some(value) => Patch::Set(value),
-            },
+            milestone: intent.milestone.clone(),
+            parent: intent.parent.clone(),
             links: Patch::Unchanged,
-            draft: match intent.draft {
-                None => Patch::Unchanged,
-                Some(true) => Patch::Set(true),
-                Some(false) => Patch::Clear,
-            },
+            draft: intent.draft.clone(),
             due: Patch::Unchanged,
             body: intent
                 .body
@@ -1484,10 +1472,10 @@ impl TaskIndex {
             .apply(patch)
             .map_err(|error| UpdateTaskError::DocumentRender(error.to_string()))?;
 
-        if let Some(parent_str) = intent.parent.as_deref().filter(|s| !s.is_empty()) {
+        if let Patch::Set(parent_str) = &intent.parent {
             if resolve_parent_for_new_task(parent_str, self.as_slice()).is_none() {
                 return Err(UpdateTaskError::ParentNotFound {
-                    path: parent_str.to_string(),
+                    path: parent_str.clone(),
                 });
             }
         }
@@ -1963,8 +1951,8 @@ pub struct CreateTaskIntent {
 
 /// `update_task` IPC 境界から domain に渡される更新意図。
 ///
-/// `Some` のフィールドだけが適用される。`parent: Some("")` は親解除。
-/// `priority` は `None` = 不変。
+/// `Some` のscalarフィールドだけが適用される。parent / milestone / draftは
+/// wire adapterで分類済みの3状態patchを受け取る。`priority` は `None` = 不変。
 #[derive(Debug, Clone)]
 pub struct UpdateTaskIntent {
     /// 対象タスクのプロジェクトルート相対パス（正規化済み）。
@@ -1972,15 +1960,14 @@ pub struct UpdateTaskIntent {
     pub title: Option<String>,
     pub status: Option<String>,
     pub priority: Option<Priority>,
-    /// マイルストーンの更新意図（既存 parent と同じ 3 値セマンティクス）:
-    /// `None` = 不変 / `Some("")` = クリア / `Some(name)` = 設定。
-    pub milestone: Option<String>,
+    /// マイルストーンの更新意図。
+    pub milestone: Patch<String>,
     pub labels: Option<Vec<String>>,
-    pub parent: Option<String>,
+    /// 親参照の更新意図。
+    pub parent: Patch<String>,
     pub body: Option<String>,
-    /// draft の更新意図（3 値）: `None` = 不変 / `Some(true)` = draft 化 /
-    /// `Some(false)` = 解除（frontmatter から draft キーを除去）。
-    pub draft: Option<bool>,
+    /// draft の更新意図。`Clear`はfrontmatterからdraftキーを除去する。
+    pub draft: Patch<bool>,
 }
 
 /// `TaskIndex::plan_update` の計算結果。effect 層が消費する。
@@ -2276,13 +2263,12 @@ fn build_patched_task(existing: &Task, intent: &UpdateTaskIntent) -> ParsedTask 
             .map(|s| Label::from_lenient(s.clone()))
             .collect();
     }
-    if let Some(parent) = &intent.parent {
-        let parent = if parent.is_empty() {
-            None
-        } else {
-            Some(TaskFilePath::from_lenient(parent.clone()))
-        };
-        task.parent = parent;
+    match &intent.parent {
+        Patch::Unchanged => {}
+        Patch::Set(parent) => {
+            task.parent = Some(TaskFilePath::from_lenient(parent.clone()));
+        }
+        Patch::Clear => task.parent = None,
     }
     if let Some(body) = &intent.body {
         task.body = format!("\n{body}");

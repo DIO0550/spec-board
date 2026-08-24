@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::task::document::Patch;
 use crate::task::frontmatter::Priority;
 use crate::task::input_task_path::InputTaskPath;
 use crate::task::task_index::UpdateTaskIntent;
@@ -45,12 +46,30 @@ impl UpdateTaskArgs {
             title: self.title,
             status: self.status,
             priority,
-            milestone: self.milestone,
+            milestone: string_patch(self.milestone),
             labels: self.labels,
-            parent: self.parent,
+            parent: string_patch(self.parent),
             body: self.body,
-            draft: self.draft,
+            draft: draft_patch(self.draft),
         })
+    }
+}
+
+/// wireのoptional stringをdomainの3状態patchへ分類する。
+fn string_patch(value: Option<String>) -> Patch<String> {
+    match value {
+        None => Patch::Unchanged,
+        Some(value) if value.is_empty() => Patch::Clear,
+        Some(value) => Patch::Set(value),
+    }
+}
+
+/// wireのoptional draft flagをdomainの3状態patchへ分類する。
+fn draft_patch(value: Option<bool>) -> Patch<bool> {
+    match value {
+        None => Patch::Unchanged,
+        Some(true) => Patch::Set(true),
+        Some(false) => Patch::Clear,
     }
 }
 

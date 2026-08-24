@@ -10,7 +10,7 @@ use tauri::State;
 use crate::project_session::conflict_recovery::ResyncSource;
 use crate::state::AppState;
 use crate::task::canonical_task_path::CanonicalTaskPath;
-use crate::task::document::TaskDocument;
+use crate::task::document::{Patch, TaskDocument};
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
@@ -48,10 +48,10 @@ pub(crate) fn update_task_impl(
             .cloned()
             .ok_or_else(|| UpdateTaskError::FileNotFound(abs.clone()))?;
 
-        if let Some(parent) = intent.parent.as_deref().filter(|parent| !parent.is_empty()) {
+        if let Patch::Set(parent) = &intent.parent {
             if index.resolve_parent_for_new_task(parent).is_none() {
                 return Err(UpdateTaskError::ParentNotFound {
-                    path: parent.to_string(),
+                    path: parent.clone(),
                 }
                 .into());
             }
