@@ -208,8 +208,8 @@ fn unique_spec_board_tmp_path(spec_board_dir: &Path, file_name: &str) -> PathBuf
 
 /// `config_io` モジュールのファイル I/O で発生し得るエラー。
 ///
-/// `path` には失敗時の対象パスのコピーを保持し、エラー文脈を残す
-/// （OS のエラーメッセージだけではどのパスで失敗したか不明になるため）。
+/// variantに応じて`name`または`path`に失敗時の入力・対象パスのコピーを保持し、
+/// エラー文脈を残す（OS のエラーメッセージだけでは対象が不明になるため）。
 /// 新たにtyped化した境界検証はsourceを持たず、実OS I/Oと既存のleaf非regular分類
 /// （`IsADirectory` / `InvalidInput`）だけをsource付きの[`ConfigIoError::Io`]とする。
 /// 既存の表示文言は操作に偏らない形のまま維持する。
@@ -230,7 +230,7 @@ pub enum ConfigIoError {
     )]
     SymlinkRejected { path: PathBuf },
 
-    /// 致命的 I/O エラー（ディレクトリ作成 / `is_dir` チェック / ファイル読み込みなど）。
+    /// 致命的 I/O エラー（metadata取得 / ディレクトリ作成 / ファイル読み込みなど）。
     /// `path` は失敗対象のパス（`.spec-board/` ディレクトリ自身 / `config.json` ファイル
     /// のいずれか）。詳細は `source` の `std::io::ErrorKind` を参照。
     #[error("config_io: I/O error at `{path}`: {source}", path = path.display())]
