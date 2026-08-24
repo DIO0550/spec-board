@@ -320,6 +320,23 @@ const removePath = <Path extends string>(
 };
 
 /**
+ * raw link参照からcanonical filePathと正規化同値な値を取り除く。
+ * @param paths frontmatter由来のraw link参照
+ * @param filePath 除去対象のcanonical filePath
+ * @returns 除去後のraw link参照
+ */
+const removeLinkReferences = (
+  paths: string[],
+  filePath: TaskFilePath,
+): string[] => {
+  if (!paths.some((path) => linkReferencesTaskPath(path, filePath))) {
+    return paths;
+  }
+
+  return paths.filter((path) => !linkReferencesTaskPath(path, filePath));
+};
+
+/**
  * link/reverseLink の両方から指定 path を取り除いた `TaskLinks` を返す。
  * @param taskLinks 元の link 状態
  * @param linkedFilePath 除去対象の path
@@ -329,7 +346,10 @@ const removeLinkedPath = (
   taskLinks: TaskLinks,
   linkedFilePath: TaskFilePath,
 ): TaskLinks => ({
-  linkedFilePaths: removePath(taskLinks.linkedFilePaths, linkedFilePath),
+  linkedFilePaths: removeLinkReferences(
+    taskLinks.linkedFilePaths,
+    linkedFilePath,
+  ),
   reverseLinkedFilePaths: removePath(
     taskLinks.reverseLinkedFilePaths,
     linkedFilePath,
