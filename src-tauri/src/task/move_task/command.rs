@@ -97,7 +97,7 @@ pub(crate) fn move_task_impl_with_config_io(
         // 重複であり、md の内容には依存しない（md を使う再検証は status のみ）。
         index.ensure_to_column_order_matches(config, &intent)?;
 
-        // revision/resource preflightはTaskIo readとcard-order metadata走査より先。
+        // revision/resource preflight は TaskIo read と card-order の存在判定より先。
         let resources = state.preflight_session_write(snapshot)?;
         let original_bytes = io
             .read(&abs)

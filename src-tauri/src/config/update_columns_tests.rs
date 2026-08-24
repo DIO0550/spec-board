@@ -1209,7 +1209,8 @@ use crate::config::ConfigWriter;
 use crate::task::io::{TaskIo, TaskIoError};
 
 /// 指定回数目の write_existing で `io::Error` を返す test-only `TaskIo`。
-/// それ以外の操作 (read / ensure_dir / write_new / remove) は `FsTaskIo` に委譲する。
+/// それ以外の操作 (read / try_exists / ensure_dir / write_new / remove) は
+/// `FsTaskIo` に委譲する。
 struct FailingTaskIo {
     inner: FsTaskIo,
     fail_write_indices: Mutex<HashSet<usize>>,
