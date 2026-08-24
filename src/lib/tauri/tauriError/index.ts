@@ -8,6 +8,8 @@ export type TauriErrorCode =
   | "PARSE_ERROR"
   | "HAS_CHILDREN"
   | "INVALID_FILE_NAME"
+  /** invoke前の公開引数検証に失敗した。 */
+  | "INVALID_ARGUMENT"
   /** 他の変更が先に入っていたため操作が拒否された。巻き戻して取り直す。 */
   | "CONFLICT"
   | "UNKNOWN";

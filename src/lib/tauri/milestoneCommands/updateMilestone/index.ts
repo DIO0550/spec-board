@@ -2,6 +2,7 @@ import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
 import type { Result } from "@/utils/result";
 import type { UpdateMilestoneArgs } from "../types";
+import { validateMilestoneOrder } from "../validateMilestoneOrder";
 
 /**
  * 既存マイルストーンの metadata を更新する（PUT セマンティクス・name は rename しない）。
@@ -11,5 +12,10 @@ import type { UpdateMilestoneArgs } from "../types";
  */
 export const updateMilestone = (
   args: UpdateMilestoneArgs,
-): Promise<Result<void, TauriError>> =>
-  invokeWrapped<void>("update_milestone", { args });
+): Promise<Result<void, TauriError>> => {
+  const validation = validateMilestoneOrder(args.order, "update_milestone");
+  if (!validation.ok) {
+    return Promise.resolve(validation);
+  }
+  return invokeWrapped<void>("update_milestone", { args });
+};

@@ -2,6 +2,7 @@ import { invokeWrapped } from "@/lib/tauri/invokeWrapped";
 import type { TauriError } from "@/lib/tauri/tauriError";
 import type { Result } from "@/utils/result";
 import type { CreateMilestoneArgs } from "../types";
+import { validateMilestoneOrder } from "../validateMilestoneOrder";
 
 /**
  * 新しいマイルストーンを milestones.yml に追記する。
@@ -11,5 +12,10 @@ import type { CreateMilestoneArgs } from "../types";
  */
 export const createMilestone = (
   args: CreateMilestoneArgs,
-): Promise<Result<void, TauriError>> =>
-  invokeWrapped<void>("create_milestone", { args });
+): Promise<Result<void, TauriError>> => {
+  const validation = validateMilestoneOrder(args.order, "create_milestone");
+  if (!validation.ok) {
+    return Promise.resolve(validation);
+  }
+  return invokeWrapped<void>("create_milestone", { args });
+};
