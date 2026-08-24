@@ -1,5 +1,5 @@
 {
-  "reportVersion": "6471149e9c068564223b576453f3368c40c8553b",
+  "reportVersion": "9c71b9f4f72563110a92ce1ae5e8763c49028f64",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -3900,12 +3900,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-commandpalette-components-commandpalette--empty",
@@ -6786,12 +6786,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
