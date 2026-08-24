@@ -1,7 +1,7 @@
 # spec-board - 設定仕様（バックエンド）
 
 > **機能**: [spec-board](./index.md)
-> **バージョン**: 1.1
+> **バージョン**: 1.14
 > **ステータス**: 下書き
 
 ## 概要
@@ -739,6 +739,19 @@ task md と `config.json` は別ファイルのため、両者をまたぐトラ
 
 ## エラーハンドリング
 
+### Config I/Oのtyped validation境界
+
+workspace内部API `spec_board_fs::config::config_io::ConfigIoError` は、I/Oを試みる前後に確定できる設定パスの不正を次のtyped variantへ分類する。
+
+| variant | 発生条件 | source |
+|:--------|:---------|:-------|
+| `InvalidFileName { name }` | `SpecBoardDir::file_path` / `read_file` / `write_file` に、`.spec-board/` 直下の単一通常コンポーネントではない名前を渡した | なし |
+| `NotADirectory { path }` | project rootまたは`.spec-board/`の`metadata`取得には成功したが、ensure/read境界でディレクトリではなかった | なし |
+| `SymlinkRejected { path }` | config系atomic writeまたは`move_task`のconfig write preflightで、`.spec-board/`または書き込み先leafが既存symlinkだった | なし |
+| `Io { path, source }` | metadata/read/write/rename等の実OS I/Oが失敗した、または読み取り対象leafがディレクトリ・特殊ファイルだった | OS由来の`std::io::Error`、または既存leaf分類の合成`IsADirectory` / `InvalidInput` |
+
+`NotADirectory`への分類は、ディレクトリを期待するproject root / `.spec-board/`に限定する。`config.json`、`labels.yml`等の読み取り対象leafがディレクトリまたは特殊ファイルだった場合は、従来どおり合成した`IsADirectory` / `InvalidInput` error kindをsourceに保持する`Io`とする。`template_io`で発生した実I/Oも`Io`のまま伝播する。新たな3つのvalidation variantだけがsourceを持たない。各variantの`Display`全文、上位の`LoadConfigError::Io`分類、Tauri wire、disk形式、fallback挙動は変更しない。
+
 ### open_project の config fallback と `loadWarnings`
 
 `.spec-board/config.json` が存在しない場合はタスクの `status` からカラムを生成して `config.json` に保存し、生成した Config で開く（生成規則は「既存タスクからのカラム自動生成」節を参照）。保存に成功した場合は warning を生成しない。保存に失敗した場合は `Config::default()` で開き、`loadWarnings` に下記の `configFallback` を 1 件追加する。既存 config の read / parse / validation / migration / backup に失敗した場合も `open_project` は `Config::default()` で継続し、同じ warning を 1 件追加する（この場合は生成・保存を行わず、既存ファイルを上書きしない）。
@@ -802,6 +815,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.14 | 2026-08-24 | Issue #608: config path validationのInvalidFileName / NotADirectory / SymlinkRejected分類（sourceなし）、実OS I/Oと既存leaf非regular分類をIo sourceとして保持する境界、既存Display / wire / disk / fallback互換を明記 | - |
 | 1.13 | 2026-08-24 | Issue #603: move_task の移動元・移動先cardOrder実在判定をtask I/O portへ統一し、NotFoundのみ除外・他I/O errorは保守的保持する契約を明記 | - |
 | 1.12 | 2026-08-23 | Issue #602: Task identity の canonical filePath 単一化と、cardOrder / projection の path 順・wire id/filePath・disk/error 互換を明記 | - |
 | 1.11 | 2026-08-23 | Issue #598: MilestoneState の予約語完全一致、空文字の未指定化、unknown raw保持、in-memory構築不変条件とroundtrip / wire / error互換契約を明記 | - |
