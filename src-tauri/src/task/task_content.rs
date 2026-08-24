@@ -6,6 +6,7 @@
 
 use std::fmt;
 
+use spec_board_fs::task::content_limits::{BINARY_PROBE_LEN, MAX_FILE_SIZE};
 use thiserror::Error;
 
 use crate::task::create::error::{ContentRejectReason, CreateTaskError};
@@ -24,27 +25,20 @@ pub enum TaskContentError {
 }
 
 impl TaskContent {
-    // この 2 つの上限は `spec_board_fs::task::file_scanner` の同名定数と同じ値で
-    // なければならない。scanner が「eligible」と判定して取り込んだ content は、
-    // ここで再構築・書き出しする際にも同じ閾値で拒否されないことが前提のため、
-    // 一方だけ変更すると scanner が通したファイルを VO 生成時に弾く（または逆）と
-    // いう不整合が生じる。値を変える場合は scanner 側の定数も必ず同時に更新すること。
-    const MAX_FILE_SIZE: usize = 1024 * 1024;
-    const BINARY_PROBE_LEN: usize = 8 * 1024;
-
     /// 1 MiB 超は `TooLarge`、先頭 8 KiB に NUL byte 含むなら `BinaryDetected`。
     pub fn try_new(content: String) -> Result<Self, TaskContentError> {
         let bytes = content.as_bytes();
-        if bytes.len() > Self::MAX_FILE_SIZE {
+        let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if size > MAX_FILE_SIZE {
             return Err(TaskContentError::TooLarge {
-                size: bytes.len() as u64,
-                limit: Self::MAX_FILE_SIZE as u64,
+                size,
+                limit: MAX_FILE_SIZE,
             });
         }
-        let probe_len = bytes.len().min(Self::BINARY_PROBE_LEN);
+        let probe_len = bytes.len().min(BINARY_PROBE_LEN);
         if bytes[..probe_len].contains(&0u8) {
             return Err(TaskContentError::BinaryDetected {
-                probe: Self::BINARY_PROBE_LEN,
+                probe: BINARY_PROBE_LEN,
             });
         }
         Ok(Self(content))
