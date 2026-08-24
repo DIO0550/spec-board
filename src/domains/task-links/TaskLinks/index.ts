@@ -310,7 +310,7 @@ const buildCreateLinkCandidates = (
  */
 const removePath = <Path extends string>(
   paths: Path[],
-  filePath: string,
+  filePath: Path,
 ): Path[] => {
   if (!paths.some((path) => path === filePath)) {
     return paths;
@@ -327,7 +327,7 @@ const removePath = <Path extends string>(
  */
 const removeLinkedPath = (
   taskLinks: TaskLinks,
-  linkedFilePath: string,
+  linkedFilePath: TaskFilePath,
 ): TaskLinks => ({
   linkedFilePaths: removePath(taskLinks.linkedFilePaths, linkedFilePath),
   reverseLinkedFilePaths: removePath(
@@ -353,7 +353,7 @@ const hasLinkChanges = (current: TaskLinks, next: TaskLinks): boolean =>
  * @param linkedFilePath 取り除く関連 task の filePath
  * @returns link 関係が変われば更新後 task、変わらなければ元 task
  */
-const removeLinkedTask = (task: Task, linkedFilePath: string): Task => {
+const removeLinkedTask = (task: Task, linkedFilePath: TaskFilePath): Task => {
   const taskLinks = removeLinkedPath(task.links, linkedFilePath);
 
   if (!hasLinkChanges(task.links, taskLinks)) {

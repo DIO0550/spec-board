@@ -1,6 +1,7 @@
 import { expectTypeOf, test } from "vitest";
 import type { TaskSelectProps } from "@/components/TaskSelect";
 import type { TaskFilePath, TaskId } from "@/domains/task-identity";
+import { TaskLinks } from "@/domains/task-links";
 import type { AddLinkParams } from "@/lib/tauri/linkCommands/types";
 import type {
   DeleteTaskParams,
@@ -94,4 +95,21 @@ test("TaskSelectの選択値はcanonical TaskFilePathだけを受け取る", () 
 
   expectTypeOf(canonicalValue).toEqualTypeOf<TaskFilePath>();
   expectTypeOf(rawValue).toEqualTypeOf<TaskFilePath | null>();
+});
+
+test("TaskLinksの削除境界はcanonical TaskFilePathだけを受け取る", () => {
+  const task = Task.fromPayload({
+    id: "task-id",
+    title: "Task",
+    status: "Todo",
+    labels: [],
+    links: ["tasks/deleted.md"],
+    children: [],
+    reverseLinks: ["tasks/deleted.md"],
+    body: "",
+    filePath: "tasks/task-id.md",
+  });
+  TaskLinks.removeLinkedTask(task, task.filePath);
+  // @ts-expect-error raw stringはcanonical reverse path削除境界へ直接渡せない。
+  TaskLinks.removeLinkedTask(task, "tasks/deleted.md");
 });
