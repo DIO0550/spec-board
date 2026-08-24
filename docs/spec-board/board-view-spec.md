@@ -1,7 +1,7 @@
 # spec-board - ボードビュー仕様（フロントエンド）
 
 > **機能**: [spec-board](./index.md)
-> **バージョン**: 1.10
+> **バージョン**: 1.11
 > **ステータス**: 下書き
 
 ## 概要
@@ -151,7 +151,10 @@ stateDiagram-v2
 
 ### サブバー（ビュー切替: ボード / 一覧 / ツリー / カレンダー / ロードマップ / GUIDE.md）
 
-メイン上部に WAI-ARIA Tabs のサブバーを置き、ビューアイコン付きのタブでボード領域の表示形態を切り替える。選択は `localStorage`（`spec-board:viewMode`）に永続化する。右側にはキーワード検索、フィルタ開閉、表示密度の操作群を置き、GUIDE.mdタブは設定画面のGUIDE表示へ遷移する。後述の横断フィルタは全ビュー共通で適用される。
+メイン上部に WAI-ARIA Tabs のサブバーを置き、ビューアイコン付きのタブでボード領域の表示形態を切り替える。永続化可能な表示形態は `board` / `list` / `tree` / `calendar` / `roadmap` の5種だけで、選択は `localStorage`（`spec-board:viewMode`）に保存する。保存値が未知・空・`guide`の場合は `board`へ正規化して復元する。右側にはキーワード検索、フィルタ開閉、表示密度の操作群を置く。後述の横断フィルタは全ビュー共通で適用される。
+
+- **GUIDE.md**: 表示形態ではなく設定画面のGUIDE表示へ遷移するactionである。選択時はcallbackだけを呼び、現在のviewと`spec-board:viewMode`を変更しない。
+- **タブID境界**: 共通`TabNav`は`tabs`をID unionの真実源とし、`activeTabId`と`onSelect`へ同じ型を貫通させる。BoardWorkspaceのruntime境界へ未知タブIDが混入した場合はfail-closedで何も行わず、view・storage・GUIDE actionを変更しない。
 
 - **ボード**: 既存のカンバン（カラム + DnD）。
 - **一覧**: status section ごとに、status / priority / title・ID / labels / due / 直下子進捗 / file を table row で表示する。status / priority / title / file の header は昇順・降順を切り替えられ、行クリックで詳細を開く。App の `columns` / `doneColumn` を使ってカラム順と完了表示を決め、空 section も「タスクなし」として残す。「+ 追加」は該当statusを初期値に作成画面へ遷移する。
@@ -348,6 +351,7 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.11 | 2026-08-24 | Issue #615: 永続化可能な5種のBoardViewMode、GUIDE action、未知storage/tab IDのfail-closed境界を明記 | - |
 | 1.10 | 2026-08-24 | Issue #614: SettingsTabIdの7種union、Milestone画面の4種subset、未知initial値のlabelsフォールバックと内部型契約を明記 | - |
 | 1.9 | 2026-08-24 | Issue #613: ProjectError.invalid-stateの必須reason、project switch専用factory、messageを表示専用とする判定契約を明記 | - |
 | 1.8 | 2026-08-12 | Global Search / Command Palette（⌘/Ctrl+K、title/id/path/labels検索、主要画面action、キーボード選択）を追加 | - |
