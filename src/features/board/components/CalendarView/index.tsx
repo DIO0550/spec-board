@@ -42,6 +42,8 @@ type CalendarRange = "month" | "week";
 type CalendarViewProps = {
   /** 表示するタスク一覧（絞り込み済み） */
   tasks: Task[];
+  /** 表示基準日。未指定時はクライアントのローカル日付。 */
+  today?: string;
   /** project設定順のstatus column。 */
   columns?: readonly Column[];
   /** project設定の完了status。 */
@@ -231,12 +233,12 @@ const taskFileName = (task: Task): string =>
  */
 export const CalendarView = ({
   tasks,
+  today = Due.todayLocal(),
   columns,
   doneColumn = "Done",
   onTaskClick,
   onAddTask,
 }: CalendarViewProps) => {
-  const today = Due.todayLocal();
   const [visibleMonth, setVisibleMonth] = useState<YearMonth>(() =>
     yearMonthOf(today),
   );

@@ -76,6 +76,33 @@ test("月表示は外月日を含む42セルと320pxサイドバーを描画す�
   ).toContain("w-80");
 });
 
+test("todayを指定するとsystem clockではなく指定日を表示基準にする", () => {
+  act(() => {
+    root?.render(
+      createElement(CalendarView, {
+        tasks: [
+          makeTask({
+            id: "story-today",
+            title: "固定日のタスク",
+            due: "2026-08-23",
+          }),
+        ],
+        today: "2026-08-23",
+      }),
+    );
+  });
+
+  expect(container?.textContent).toContain("2026年 8月");
+  expect(
+    container?.querySelector(
+      '[data-calendar-date="2026-08-23"][data-today="true"]',
+    ),
+  ).not.toBeNull();
+  const sidebar = container?.querySelector('[data-testid="calendar-sidebar"]');
+  expect(sidebar?.textContent).toContain("2026-08-23");
+  expect(sidebar?.textContent).toContain("固定日のタスク");
+});
+
 test("日付セルの追加ボタンはYYYY-MM-DD付きでコールバックを呼ぶ", () => {
   const onAddTask = vi.fn();
   act(() => {
