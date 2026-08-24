@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::core::{FsEvent, DEBOUNCE_DURATION};
-use super::file_change_batch::FileChangeBatch;
+use super::super::core::{FsEvent, DEBOUNCE_DURATION};
+use super::FileChangeBatch;
 
 /// ウィンドウ終了時点で path が取るべき最終状態。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,7 +158,12 @@ impl PendingChanges {
                 removed.push(path);
             }
         }
-        Some(FileChangeBatch::from_changes(removed, upserted))
+        Some(FileChangeBatch {
+            removed,
+            upserted,
+            rescan: false,
+            errors: Vec::new(),
+        })
     }
 }
 

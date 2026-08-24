@@ -25,8 +25,7 @@ use notify::{
 };
 use thiserror::Error;
 
-use super::file_change_batch::FileChangeBatch;
-use super::pending_changes::PendingChanges;
+use super::file_change_batch::{FileChangeBatch, PendingChanges};
 
 /// `PollWatcher` フォールバック時にファイルシステムを走査する間隔。
 ///

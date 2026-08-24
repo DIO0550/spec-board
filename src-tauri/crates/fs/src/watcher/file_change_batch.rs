@@ -1,13 +1,17 @@
 //! デバウンスウィンドウ 1 回分の畳み込み結果を表す値オブジェクト。
 
+#[cfg(any(test, feature = "test-utils"))]
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+#[cfg(any(test, feature = "test-utils"))]
+use std::path::Path;
+use std::path::PathBuf;
 
 use super::core::WatcherFailure;
 
 /// デバウンスウィンドウ 1 回分の畳み込み結果。
 ///
-/// crate 内部の `PendingChanges` と専用 constructor だけが組み立て、
+/// 通常変更は crate 内部の `PendingChanges::take` が組み立て、rescan / failure
+/// は専用 constructor が組み立てて、
 /// [`super::core::Watcher`] の receiver から上位層へ渡す。
 ///
 /// - `removed` / `upserted` はウィンドウ終了時点のファイルシステム状態を表す
@@ -49,26 +53,6 @@ pub struct FileChangeBatch {
 }
 
 impl FileChangeBatch {
-    /// 通常変更だけを伝える batch。
-    pub(super) fn from_changes(removed: Vec<PathBuf>, upserted: Vec<PathBuf>) -> Self {
-        assert!(
-            !removed.is_empty() || !upserted.is_empty(),
-            "changes mode must contain at least one path"
-        );
-        assert!(paths_are_unique(&removed), "removed paths must be unique");
-        assert!(paths_are_unique(&upserted), "upserted paths must be unique");
-        assert!(
-            paths_are_disjoint(&removed, &upserted),
-            "removed and upserted paths must be disjoint"
-        );
-        Self {
-            removed,
-            upserted,
-            rescan: false,
-            errors: Vec::new(),
-        }
-    }
-
     /// backend がイベント取りこぼしを報告したことだけを伝える batch。
     pub(super) fn rescan() -> Self {
         Self {
@@ -118,11 +102,13 @@ impl FileChangeBatch {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 fn paths_are_unique(paths: &[PathBuf]) -> bool {
     let mut seen = HashSet::<&Path>::with_capacity(paths.len());
     paths.iter().all(|path| seen.insert(path.as_path()))
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 fn paths_are_disjoint(removed: &[PathBuf], upserted: &[PathBuf]) -> bool {
     let removed_paths = removed
         .iter()
@@ -155,8 +141,23 @@ impl FileChangeBatchTestBuilder {
 
     /// 通常変更 batch mode。
     pub fn changes(removed: Vec<PathBuf>, upserted: Vec<PathBuf>) -> Self {
+        assert!(
+            !removed.is_empty() || !upserted.is_empty(),
+            "changes mode must contain at least one path"
+        );
+        assert!(paths_are_unique(&removed), "removed paths must be unique");
+        assert!(paths_are_unique(&upserted), "upserted paths must be unique");
+        assert!(
+            paths_are_disjoint(&removed, &upserted),
+            "removed and upserted paths must be disjoint"
+        );
         Self {
-            batch: FileChangeBatch::from_changes(removed, upserted),
+            batch: FileChangeBatch {
+                removed,
+                upserted,
+                rescan: false,
+                errors: Vec::new(),
+            },
         }
     }
 
@@ -179,6 +180,10 @@ impl FileChangeBatchTestBuilder {
         self.batch
     }
 }
+
+#[path = "pending_changes.rs"]
+mod pending_changes;
+pub(super) use pending_changes::PendingChanges;
 
 #[cfg(test)]
 #[path = "file_change_batch_tests.rs"]
