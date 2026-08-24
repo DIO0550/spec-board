@@ -11,7 +11,7 @@ export type MilestoneDefinition = {
   description?: string;
   /** 期日（ISO 8601 推奨・文字列のまま保持） */
   due?: string;
-  /** 表示順序（昇順・非負整数） */
+  /** 表示順序（昇順・0..=u32::MAX の整数） */
   order?: number;
   /** 開閉状態（open / closed 等。未知値も保持） */
   state?: MilestoneState;
@@ -21,6 +21,14 @@ export type MilestoneDefinition = {
 
 /** マイルストーンの表示・参照に使う共有ドメイン companion。 */
 export const Milestone = {
+  /**
+   * orderがRustのu32へlosslessに渡せる整数かを判定する。
+   * @param order 判定する表示順序
+   * @returns 0..=u32::MAXの整数ならtrue
+   */
+  isValidOrder: (order: number): boolean =>
+    Number.isInteger(order) && order >= 0 && order <= 4_294_967_295,
+
   /**
    * 任意の state 文字列を表示用の既知状態へ正規化する。
    * `closed` のみ closed とし、未知値 / undefined / その他は open 相当へフォールバックする。
