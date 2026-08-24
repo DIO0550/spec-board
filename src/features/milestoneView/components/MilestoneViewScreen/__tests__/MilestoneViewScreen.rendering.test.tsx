@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { MilestoneDefinition } from "@/domains/milestone";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { TaskProjectionMap } from "@/domains/task-projection";
+import type { SettingsTabId } from "@/features/settings";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { Task } from "@/types/task";
 import { MilestoneViewScreen } from "..";
@@ -143,6 +144,39 @@ test("初期状態はマイルストーン未選択で詳細プレースホル�
   expect(view.textContent).toContain(
     "マイルストーンを選択すると詳細を表示します",
   );
+});
+
+test("設定サブナビは4種subsetを維持し選択したcanonical IDをcallbackへ渡す", () => {
+  const selectedTabs: SettingsTabId[] = [];
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(MilestoneViewScreen, {
+        resource,
+        tasks,
+        doneColumn: "Done",
+        milestoneProjections,
+        taskProjections,
+        projectName: "spec-board",
+        onSettingsTab: (tabId) => selectedTabs.push(tabId),
+      }),
+    );
+  });
+
+  const tabs = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("[data-settings-tab]"),
+  );
+  expect(tabs.map((tab) => tab.dataset.settingsTab)).toEqual([
+    "labels",
+    "milestones",
+    "statuses",
+    "config",
+  ]);
+
+  act(() => tabs[0]?.click());
+  expect(selectedTabs).toEqual(["labels"]);
 });
 
 test("done column 未解決でも projection の done/total は表示し ratio だけ隠す", () => {

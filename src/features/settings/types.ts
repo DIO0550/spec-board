@@ -1,3 +1,13 @@
+/** 設定画面で扱う全タブの識別子。 */
+export type SettingsTabId =
+  | "labels"
+  | "milestones"
+  | "statuses"
+  | "archive"
+  | "trash"
+  | "config"
+  | "appearance";
+
 /**
  * 設定サブナビのタブ 1 件（表示用データのみ）。
  * 「どのコンポーネントを描画するか」は view 層（SettingsScreen）の責務なので
@@ -8,7 +18,7 @@ export type SettingsTab = {
    * タブ識別子（一意）。`settings-tab-${id}` / `settings-panel-${id}` の DOM id に
    * そのまま使うため、空白や記号を含まない ASCII slug（例 "labels" / "appearance"）に限定する。
    */
-  id: string;
+  id: SettingsTabId;
   /** タブに表示するラベル文言 */
   label: string;
   /** 任意の件数pill。 */

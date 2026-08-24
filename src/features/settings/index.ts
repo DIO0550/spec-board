@@ -14,3 +14,4 @@ export {
   type UseMilestoneMutationsResult,
   useMilestoneMutations,
 } from "./hooks/useMilestoneMutations";
+export type { SettingsTabId } from "./types";

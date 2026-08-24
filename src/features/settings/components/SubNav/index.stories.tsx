@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import type { SettingsTab } from "../../types";
 import { SubNav } from ".";
 
 const tabs = [
@@ -8,7 +9,7 @@ const tabs = [
   { id: "statuses", label: "ステータス", count: 5 },
   { id: "config", label: "設定ファイル" },
   { id: "appearance", label: "外観" },
-];
+] satisfies readonly SettingsTab[];
 const meta = {
   component: SubNav,
   args: { tabs, activeTabId: "labels", onSelect: fn(), onBack: fn() },
@@ -26,7 +27,7 @@ export const Default: Story = {};
 export const AllProps: Story = { args: { activeTabId: "config" } };
 export const EdgeCases: Story = {
   args: {
-    tabs: [{ id: "only", label: "非常に長い設定タブ名", count: 999 }],
-    activeTabId: "only",
+    tabs: [{ id: "labels", label: "非常に長い設定タブ名", count: 999 }],
+    activeTabId: "labels",
   },
 };

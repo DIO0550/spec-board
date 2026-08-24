@@ -1,7 +1,7 @@
 # spec-board - ボードビュー仕様（フロントエンド）
 
 > **機能**: [spec-board](./index.md)
-> **バージョン**: 1.9
+> **バージョン**: 1.10
 > **ステータス**: 下書き
 
 ## 概要
@@ -126,15 +126,15 @@ stateDiagram-v2
 ### 設定画面（サブナビ + タブ）
 
 設定画面はサブナビ（タブ）と、アクティブタブのパネルで構成する。
-- サブナビの設計上の表示項目は「ラベル / マイルストーン / ステータス / 設定ファイル」。各タブはアイコンと live 件数（設定ファイルは件数なし）を持ち、左端に「戻る」と `.spec-board / プロジェクト設定` を表示する。タスク数・ファイル数の compact 表示は置かない。
-- 「マイルストーン」を選択すると canonical な専用ビュー（`MilestoneViewScreen`）へ遷移し、同じ設定サブナビを維持する。ラベル / ステータス / 設定ファイルは設定パネル内で切り替える。
+- `SettingsScreen` が扱う全タブは表示順に「ラベル / マイルストーン / ステータス / アーカイブ / ゴミ箱 / 設定ファイル / 外観」の 7 種とする。各タブはアイコンを持ち、ラベル / マイルストーン / ステータスには live 件数を表示する。左端には「戻る」と `.spec-board / プロジェクト設定` を表示し、タスク数・ファイル数の compact 表示は置かない。
+- 「マイルストーン」を選択すると canonical な専用ビュー（`MilestoneViewScreen`）へ遷移する。専用ビューのサブナビは従来どおり「ラベル / マイルストーン / ステータス / 設定ファイル」の 4 種 subsetだけを表示し、アーカイブ / ゴミ箱 / 外観は追加しない。
 
 - **サブナビ**: タブが 1 枠でもタブ UI を表示する。WAI-ARIA Tabs のロール属性（`tablist` / `tab` / `tabpanel`、`aria-selected`、`aria-controls` / `aria-labelledby`）を付与する。タブ複数化時のキーボード操作（矢印 / Home / End・roving tabindex）は将来対応。
 - **ラベルタブ（CRUD）**: ラベルマスタの作成・編集・削除を行えるフル機能の管理タブ。各ラベルは色プレビューとともに一覧表示する（色解決規則は [label-registry-spec.md](./label-registry-spec.md) を参照）。取得失敗時はトーストを出さずタブ内のインライン文言で告知する。`labels.yml` 不在・0 件は「ラベルなし」相当の空表示とする（エラーではない）。validation 挙動の詳細は [config-spec.md](./config-spec.md) のラベル設定画面節を参照。
-- **外観設定**: テーマ（ライト / ダーク / システム）・表示密度（標準 / コンパクト）・アクセントカラー（5 色）の内部設定 API は保持する。設計chromeの設定サブナビでは外観タブを通常表示しないが、`SettingsScreen.initialTabId="appearance"` で直接到達した場合は選択中タブとして表示し、`aria-labelledby` の参照先を維持する。設定値は従来どおりクライアントローカル（`localStorage`）に永続化する。
+- **外観設定**: テーマ（ライト / ダーク / システム）・表示密度（標準 / コンパクト）・アクセントカラー（5 色）を設定する。`SettingsScreen.initialTabId="appearance"` で直接到達した場合も選択中タブと `aria-labelledby` の参照先を維持する。設定値は従来どおりクライアントローカル（`localStorage`）に永続化する。
 - **ステータスタブ**: App が読み込み済み project のカラム順・色・名称、task 使用数、完了カラムを渡す。空カラムの追加 / 削除、並び替え、rename、完了カラム変更を `update_columns` で保存する。タスクが 1 件以上残るカラムと最後の 1 カラムは削除不可。保存失敗時は dirty state を維持して再試行できる。「ボードで確認」は board、「設定ファイルを見る」は設定ファイルタブへ遷移する。
 - **設定ファイルタブ**: `config.json` / 自動生成 `GUIDE.md` を切り替える読み取り専用 viewer（行番号、copy / GUIDE 再生成 / 外部エディタ / folder 表示 action）を提供する。現段階の `SettingsScreen` 内部到達は canonical example の表示であり、実ファイル読込と各 OS / IPC action は `ConfigFileTab` callback の App 接続後に有効になる（未接続時は presentational no-op）。
-- **直接到達 API**: `SettingsScreen.initialTabId` で初期タブを指定できる。未知 ID は先頭のラベルタブへフォールバックする。`onBack` が指定された場合は設定 subbar の「戻る」から呼び出す。
+- **タブID型契約**: アプリ内部のタブ、選択state、callback、DOM ID生成は共通union `SettingsTabId`（上記7種）だけを受け渡す。`SettingsTab.selectActive` だけをruntime入力のlenient境界とし、未知の `initialTabId` はlazy state初期化時に先頭のラベルタブへ正規化する。正規化後のstate/callbackへ未知値を持ち込まない。`onBack` が指定された場合は設定 subbar の「戻る」から呼び出す。
 
 ## IDEシェル（サイドバー / ビュー切替 / 検索フィルタ / 外観）
 
@@ -348,6 +348,7 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.10 | 2026-08-24 | Issue #614: SettingsTabIdの7種union、Milestone画面の4種subset、未知initial値のlabelsフォールバックと内部型契約を明記 | - |
 | 1.9 | 2026-08-24 | Issue #613: ProjectError.invalid-stateの必須reason、project switch専用factory、messageを表示専用とする判定契約を明記 | - |
 | 1.8 | 2026-08-12 | Global Search / Command Palette（⌘/Ctrl+K、title/id/path/labels検索、主要画面action、キーボード選択）を追加 | - |
 | 1.7 | 2026-08-12 | HeaderBar の GUIDE.md、Calendar の日付指定タスク追加を optional callback 境界として追加（App 統合は呼び出し側の責務） | - |

@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { SettingsTab } from "@/features/settings/types";
+import type { SettingsTab, SettingsTabId } from "@/features/settings/types";
 import { SubNav, subNavPanelId, subNavTabId } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -97,6 +97,32 @@ test("外観タブにプラス記号ではなく太陽アイコンを描画す�
 
   expect(icon?.querySelector('circle[r="4"]')).not.toBeNull();
   expect(icon?.querySelector("path")?.getAttribute("d")).toContain("M12 2v2");
+});
+
+test.each([
+  "archive",
+  "trash",
+] satisfies SettingsTabId[])("%sタブは従来どおりプラスアイコンを描画する", (tabId) => {
+  const tab: SettingsTab = { id: tabId, label: tabId };
+  renderSubNav({ tabs: [tab], activeTabId: tabId });
+  const icon = container?.querySelector(`#${subNavTabId(tabId)} svg`);
+
+  expect(icon?.querySelector("path")?.getAttribute("d")).toBe("M12 8v8M8 12h8");
+});
+
+test("runtimeから未知タブIDが混入しても総称アイコンを描画しない", () => {
+  const unknownTab = {
+    id: "unknown",
+    label: "Unknown",
+  } as unknown as SettingsTab;
+  renderSubNav({
+    tabs: [unknownTab],
+    activeTabId: "unknown" as SettingsTabId,
+  });
+
+  expect(
+    container?.querySelector('[data-settings-tab="unknown"] svg'),
+  ).toBeNull();
 });
 
 test("件数pillのDOMテキストとアクセシブル名を空白で区切る", () => {

@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { SettingsTabId } from "@/features/settings";
 import { ThemeProvider } from "@/features/shell/hooks/useTheme";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
@@ -59,7 +60,7 @@ afterEach(() => {
 
 // milestoneMutations は App が hoist 保持する prop になったため、テストでも
 // フックを呼ぶ薄い Harness を挟んで本物のインスタンスを注入する。
-const Harness = ({ initialTabId }: { initialTabId?: string }) => {
+const Harness = ({ initialTabId }: { initialTabId?: SettingsTabId }) => {
   const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
   return createElement(
     ThemeProvider,
@@ -78,7 +79,7 @@ const Harness = ({ initialTabId }: { initialTabId?: string }) => {
 /**
  * SettingsScreen をマウントするヘルパー
  */
-const mountSettingsScreen = async (initialTabId?: string) => {
+const mountSettingsScreen = async (initialTabId?: SettingsTabId) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -104,6 +105,17 @@ test("initialTabId=appearanceでも選択中タブとtabpanelが相互参照さ�
   const panel = container?.querySelector('[role="tabpanel"]');
   expect(tab?.getAttribute("aria-selected")).toBe("true");
   expect(panel?.getAttribute("aria-labelledby")).toBe(tab?.getAttribute("id"));
+});
+
+test("runtimeから未知initialTabIdを受けてもlabelsへ正規化してARIA参照を揃える", async () => {
+  await mountSettingsScreen("unknown" as SettingsTabId);
+  const tab = container?.querySelector('[data-settings-tab="labels"]');
+  const panel = container?.querySelector('[role="tabpanel"]');
+
+  expect(tab?.getAttribute("aria-selected")).toBe("true");
+  expect(tab?.getAttribute("id")).toBe("settings-tab-labels");
+  expect(panel?.getAttribute("id")).toBe("settings-panel-labels");
+  expect(panel?.getAttribute("aria-labelledby")).toBe("settings-tab-labels");
 });
 
 test("アクティブ tab と tabpanel が aria 属性で相互参照される", async () => {
