@@ -317,5 +317,9 @@ test.each([
 ] as const)("linkRejectReasonToError は %s を invalidState + 文言へ変換する", (reason, message) => {
   const error = linkRejectReasonToError(reason);
 
-  expect(error).toEqual({ kind: "invalid-state", message });
+  expect(error).toEqual({
+    kind: "invalid-state",
+    reason: "operation-rejected",
+    message,
+  });
 });

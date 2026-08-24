@@ -6,10 +6,7 @@ import {
   type UseColumnReorderOptions,
   useColumnReorder,
 } from "@/features/board/hooks/useColumnReorder";
-import {
-  PROJECT_SWITCHED_MESSAGE,
-  ProjectError,
-} from "@/providers/ProjectProvider";
+import { ProjectError } from "@/providers/ProjectProvider";
 import { Result } from "@/utils/result";
 
 let root: ReturnType<typeof createRoot> | null = null;
@@ -78,9 +75,7 @@ test("reorderのproject switchは通知を抑止する", async () => {
       createElement(Probe, {
         reorderColumns: vi
           .fn()
-          .mockResolvedValue(
-            Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE)),
-          ),
+          .mockResolvedValue(Result.err(ProjectError.projectSwitched())),
         announce,
         onError,
         onResult: (value) => {

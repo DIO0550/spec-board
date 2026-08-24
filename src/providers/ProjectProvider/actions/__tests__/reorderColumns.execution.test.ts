@@ -215,7 +215,7 @@ test("invoke 失敗時 Result.err(ProjectError.tauri(...)) を返す", async () 
 test("project switch 以外の invalid-state (visibleData null 等) は rollback dispatch + onRollback を実行する", async () => {
   // snapshot 採取後 / queue 実行前に state が idle に巻き戻ったケースを再現する。
   // runUpdateColumnsInsideQueue が visibleData === null で invalid-state を返すが、
-  // 戻り message は PROJECT_SWITCHED_MESSAGE ではないので reducer は loaded のまま。
+  // 戻りreasonはoperation-rejectedなので reducer は loaded のまま。
   // この場合は楽観 dispatch を rollback すべき。
   const harness = setupLoaded(makeData());
   const data = (harness.state.current as { data: ProjectData }).data;
@@ -235,9 +235,9 @@ test("project switch 以外の invalid-state (visibleData null 等) は rollback
 
   expect(result).toMatchObject({
     ok: false,
-    error: { kind: "invalid-state" },
+    error: { kind: "invalid-state", reason: "not-loaded" },
   });
-  // PROJECT_SWITCHED_MESSAGE 以外の invalid-state なので rollback が走る
+  // project-switched以外のinvalid-stateなのでrollbackが走る。
   expect(onRollback).toHaveBeenCalledTimes(1);
   const replacedActions = harness.actions.filter(
     (a) => a.type === "columns-replaced",
@@ -273,7 +273,7 @@ test("project switch 中 (invalid-state) は rollback dispatch / onRollback を�
   expect(result.ok).toBe(false);
   expect(result).toMatchObject({
     ok: false,
-    error: { kind: "invalid-state" },
+    error: { kind: "invalid-state", reason: "project-switched" },
   });
   expect(onRollback).not.toHaveBeenCalled();
   const rollbackCols = harness.actions.filter(

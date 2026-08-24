@@ -373,6 +373,7 @@ test("listener登録失敗ではopenせず、次のopenで登録を再試行で�
   expect(onError).toHaveBeenCalledTimes(1);
   expect(onError).toHaveBeenCalledWith({
     kind: "invalid-state",
+    reason: "operation-rejected",
     message:
       "ファイル監視の準備に失敗しました。プロジェクトをもう一度開いてください",
   });
@@ -1210,6 +1211,41 @@ test("createTask invoke pending 中に reset → resolve 時に dispatch され�
   });
   expect(probe.latest.state.kind).toBe("idle");
   expect(result.ok).toBe(false);
+  expect(result).toMatchObject({
+    ok: false,
+    error: { kind: "invalid-state", reason: "project-switched" },
+  });
+});
+
+test("updateColumns invoke pending中のproject切替はcommitせずproject-switchedを返す", async () => {
+  const probe = renderHook();
+  await openLoaded(probe);
+  let resolveUpdate!: (result: ResultT<void, TauriError>) => void;
+  updateColumnsMock.mockReturnValueOnce(
+    new Promise<ResultT<void, TauriError>>((resolve) => {
+      resolveUpdate = resolve;
+    }),
+  );
+  let pending!: ReturnType<ProbeResult["updateColumns"]>;
+  act(() => {
+    pending = probe.latest.updateColumns({
+      columns: [{ name: "Next", order: 0 }],
+    });
+  });
+  act(() => {
+    probe.latest.reset();
+  });
+  let result!: Awaited<ReturnType<ProbeResult["updateColumns"]>>;
+  await act(async () => {
+    resolveUpdate(Result.ok(undefined));
+    result = await pending;
+  });
+
+  expect(probe.latest.state.kind).toBe("idle");
+  expect(result).toMatchObject({
+    ok: false,
+    error: { kind: "invalid-state", reason: "project-switched" },
+  });
 });
 
 test("openProject invoke pending 中に reset → resolve 時に loaded へ戻らない", async () => {
