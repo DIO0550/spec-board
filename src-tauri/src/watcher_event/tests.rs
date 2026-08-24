@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 use super::handler::{handle_batch, handle_change, run_event_loop, TaskFileChange};
 use super::watcher_test_support::{rename_batch, upsert_batch};
-use super::{AdapterContext, EmitFn};
+use super::{AdapterContext, EmitFn, EmittingWatcherHandle};
 use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, SessionIdentity};
@@ -20,8 +20,9 @@ use crate::state::active_project_resources::{
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
+use spec_board_fs::watcher::core::Watcher;
 use spec_board_fs::watcher::file_change_batch::{FileChangeBatch, FileChangeBatchTestBuilder};
-use spec_board_fs::watcher::handle::NoopWatcherHandle;
+use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
 
@@ -686,6 +687,69 @@ fn run_event_loop_processes_multiple_batches_then_exits_on_disconnect() {
 
     let entries = drain_log(&log);
     assert_eq!(2, entries.len());
+}
+
+fn assert_emitting_handle_waits_for_outer_worker(
+    stop_handle: impl FnOnce(EmittingWatcherHandle) + Send + 'static,
+) {
+    let dir = TempDir::new().expect("tempdir");
+    let (watcher, rx) = Watcher::start(dir.path()).expect("start watcher");
+    let (core_disconnected_tx, core_disconnected_rx) = std::sync::mpsc::channel();
+    let (release_worker_tx, release_worker_rx) = std::sync::mpsc::channel();
+    let (worker_exited_tx, worker_exited_rx) = std::sync::mpsc::channel();
+    let join = std::thread::spawn(move || {
+        while rx.recv().is_ok() {}
+        core_disconnected_tx
+            .send(())
+            .expect("signal core disconnect");
+        let release = release_worker_rx.recv_timeout(std::time::Duration::from_secs(5));
+        let _ = worker_exited_tx.send(release);
+    });
+    let handle = EmittingWatcherHandle {
+        watcher: Some(watcher),
+        join: Some(join),
+    };
+    let (stop_finished_tx, stop_finished_rx) = std::sync::mpsc::channel();
+    let stop_thread = std::thread::spawn(move || {
+        stop_handle(handle);
+        stop_finished_tx.send(()).expect("signal stop completion");
+    });
+
+    core_disconnected_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("core receiver should disconnect");
+    assert_eq!(
+        stop_finished_rx.recv_timeout(std::time::Duration::from_millis(100)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout),
+        "stopping the handle must wait until the outer worker exits"
+    );
+
+    release_worker_tx.send(()).expect("release outer worker");
+    let release_result = worker_exited_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("outer worker should exit");
+    assert_eq!(
+        release_result,
+        Ok(()),
+        "normal teardown should release the outer worker explicitly"
+    );
+    stop_finished_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("stop should finish after worker exit");
+    stop_thread.join().expect("stop thread should finish");
+}
+
+#[test]
+fn dropping_emitting_handle_waits_for_outer_worker_after_core_disconnect() {
+    assert_emitting_handle_waits_for_outer_worker(drop);
+}
+
+#[test]
+fn stopping_emitting_handle_through_trait_waits_for_outer_worker_after_core_disconnect() {
+    assert_emitting_handle_waits_for_outer_worker(|handle| {
+        let handle: Box<dyn WatcherHandle> = Box::new(handle);
+        handle.stop();
+    });
 }
 
 #[test]

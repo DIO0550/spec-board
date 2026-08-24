@@ -131,7 +131,7 @@ impl Drop for StagedProjectResources {
             activation.cancel();
         }
 
-        if let Some(mut watcher) = self.watcher.take() {
+        if let Some(watcher) = self.watcher.take() {
             let _ = catch_unwind(AssertUnwindSafe(|| watcher.stop()));
         }
     }
@@ -172,7 +172,7 @@ impl ActiveProjectResources {
         mut self,
         reporter: &dyn WatcherStopDiagnosticReporter,
     ) {
-        let Some(mut watcher) = self.watcher.take() else {
+        let Some(watcher) = self.watcher.take() else {
             return;
         };
         let stop_result = catch_unwind(AssertUnwindSafe(|| watcher.stop()));

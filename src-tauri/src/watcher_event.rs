@@ -18,12 +18,13 @@
 //!
 //! # スレッド寿命
 //!
-//! `EmittingWatcherHandle::stop()` は内部で
+//! `EmittingWatcherHandle` の停止は内部で
 //! 1. `Watcher` を `drop` して `notify` バックエンドの送信側を切断する
 //! 2. adapter スレッドを `join` する
 //!
-//! の 2 段で同期的に停止する。`stop()` は冪等で `AppState` の lock を
-//! 一切取得しない（displaced stop 中の deadlock を防ぐ）。
+//! の 2 段で同期的に停止する。明示的な`stop()`と通常の`Drop`は同じ停止経路を
+//! 通る。join対象のadapterは切断前のqueued batch処理で`AppState` lockやwriter
+//! leaseを取得し得るため、停止callerは必ずそれらを全て解放してから停止を始める。
 
 pub(crate) mod envelope;
 #[cfg(test)]
@@ -81,26 +82,34 @@ pub(crate) struct AdapterContext {
 /// 実 `WatcherHandle` 実装。Watcher Drop + adapter join を内包する。
 ///
 /// `watcher` が `Some` のうちは notify バックエンドの送信側が生きている。
-/// `stop()` で `watcher` を drop して送信側を切断したのち adapter スレッドを
-/// join することで、同期的に停止が完了する。
+/// 停止時に`watcher`をdropして送信側を切断したのちadapterスレッドをjoinし、
+/// 通常dropでも同期的な停止を保証する。
 pub(crate) struct EmittingWatcherHandle {
     watcher: Option<Watcher>,
     join: Option<JoinHandle<()>>,
 }
 
-impl WatcherHandle for EmittingWatcherHandle {
-    fn stop(&mut self) {
-        // (1) Watcher を drop → Receiver<FileChangeBatch> Disconnected
-        // (2) adapter スレッド join（recv() ループが Err で抜ける）
-        // 注: stop() は冪等。AppState lock を一切取らない（deadlock 回避）。
-        if let Some(w) = self.watcher.take() {
-            drop(w);
+impl EmittingWatcherHandle {
+    /// core watcherを先に停止し、その切断で終了するouter adapterをjoinする。
+    fn shutdown(&mut self) {
+        if let Some(watcher) = self.watcher.take() {
+            drop(watcher);
         }
         if let Some(handle) = self.join.take() {
-            // panic は握り潰す（mutex poison を起こさない）。adapter 本体は
-            // 既に catch_unwind で包んでいるので通常は panic で抜けない。
             let _ = handle.join();
         }
+    }
+}
+
+impl Drop for EmittingWatcherHandle {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+impl WatcherHandle for EmittingWatcherHandle {
+    fn stop(self: Box<Self>) {
+        drop(self);
     }
 }
 

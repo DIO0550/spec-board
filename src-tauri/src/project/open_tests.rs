@@ -94,7 +94,7 @@ struct TestPausedHandle {
 }
 
 impl WatcherHandle for TestPausedHandle {
-    fn stop(&mut self) {
+    fn stop(mut self: Box<Self>) {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
