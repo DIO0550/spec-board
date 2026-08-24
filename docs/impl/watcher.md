@@ -51,13 +51,18 @@
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum WatcherError {
-    #[error("failed to initialize file system watcher: {0}")]
-    Init(String),
+    #[error("failed to initialize file system watcher: recommended watcher failed: {recommended}; poll watcher failed: {poll}")]
+    Init {
+        recommended: WatcherFailure,
+        poll: WatcherFailure,
+    },
     // ...
 }
 ```
 
-`#[error("...")]` の文字列がそのまま `Display` の出力になる。`{0}` は variant の中身を埋め込む構文。
+`#[error("...")]` の文字列がそのまま `Display` の出力になる。`Init` はbackendごとの
+`WatcherFailure`を保持する一方、各failureの`Display`を`detail`そのものにすることで、
+外側の表示を従来の結合メッセージとbyte単位で一致させている。
 
 ### `tempfile = "3"` (dev-dependencies)
 
@@ -113,7 +118,7 @@ pub enum FsEvent {
     Removed(PathBuf),
     Renamed { from: PathBuf, to: PathBuf },
     Other(PathBuf),
-    Error(String),
+    Error(WatcherFailure),
     Rescan,
 }
 ```
@@ -144,7 +149,10 @@ Rust の enum は variant ごとに「中身の持ち方」を変えられる:
 ```rust
 #[derive(Debug, Error)]
 pub enum WatcherError {
-    Init(String),
+    Init {
+        recommended: WatcherFailure,
+        poll: WatcherFailure,
+    },
     PathNotFound(PathBuf),
     Io(#[from] std::io::Error),
 }
@@ -292,7 +300,7 @@ Linux で大量のファイルを監視すると、inotify の watch 上限 (`/p
 ### 失敗が 2 種類ある
 
 ```rust
-fn try_build_recommended(...) -> Result<Backend, String> {
+fn try_build_recommended(...) -> notify::Result<Backend> {
     let mut w = RecommendedWatcher::new(...)?;        // 失敗パターン 1: 初期化失敗
     w.watch(path, RecursiveMode::Recursive)?;         // 失敗パターン 2: 監視開始失敗
     Ok(Backend::Recommended(w))
@@ -311,8 +319,8 @@ pub(crate) fn build_backend_with<R, P>(
     try_poll: P,
 ) -> Result<Backend, WatcherError>
 where
-    R: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> Result<Backend, String>,
-    P: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> Result<Backend, String>,
+    R: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> notify::Result<Backend>,
+    P: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> notify::Result<Backend>,
 {
     let recommended_err = match try_recommended(tx.clone(), path) {
         Ok(backend) => return Ok(backend),
@@ -320,9 +328,10 @@ where
     };
     match try_poll(tx, path) {
         Ok(backend) => Ok(backend),
-        Err(poll_err) => Err(WatcherError::Init(combine_init_errors(
-            &recommended_err, &poll_err,
-        ))),
+        Err(poll_err) => Err(WatcherError::Init {
+            recommended: classify_notify_error(recommended_err),
+            poll: classify_notify_error(poll_err),
+        }),
     }
 }
 ```
@@ -331,10 +340,14 @@ where
 
 ```rust
 where
-    R: FnOnce(Sender<...>, &Path) -> Result<Backend, String>,
+    R: FnOnce(Sender<...>, &Path) -> notify::Result<Backend>,
 ```
 
-「R は『`Sender` と `&Path` を受け取って `Result<Backend, String>` を返す関数』ならなんでも良い」という制約。`Fn` / `FnMut` / `FnOnce` の 3 種類があるが、`FnOnce` は **1 回だけ呼べる**。今回は呼び出し回数が高々 1 回なので最弱の `FnOnce` で十分。
+「R は『`Sender` と`&Path`を受け取って`notify::Result<Backend>`を返す関数』なら
+なんでも良い」という制約。`Fn` / `FnMut` / `FnOnce` の 3 種類があるが、`FnOnce` は
+**1 回だけ呼べる**。今回は呼び出し回数が高々 1 回なので最弱の`FnOnce`で十分。
+生の`notify::Error`を保持するため、poll成功時は分類せず破棄でき、両失敗時だけ既存の
+classifierを適用できる。
 
 #### なぜ関数を引数として注入するのか
 
@@ -343,24 +356,19 @@ where
 ```rust
 let backend = build_backend_with(
     tx, &path,
-    |_t, _p| Err("new failed: inotify limit".into()),  // 偽の recommended
+    |_t, _p| Err(notify::Error::generic("new failed: inotify limit")),
     move |_t, _p| Ok(dummy),                            // 偽の poll
 ).expect("should fall back");
 ```
 
 これで「new が失敗 → poll に落ちる」というフォールバック契約を、OS の状態に依存せず決定論的に検証できる。本番の `build_backend` は `build_backend_with(tx, path, try_build_recommended, build_poll_backend)` という薄いラッパに過ぎない。
 
-#### `combine_init_errors` の独立
+#### typedな両backend診断
 
-両方のバックエンドが失敗したときのエラーメッセージ整形だけを純粋関数として切り出した:
-
-```rust
-pub(crate) fn combine_init_errors(recommended: &str, poll: &str) -> String {
-    format!("recommended watcher failed: {recommended}; poll watcher failed: {poll}")
-}
-```
-
-文字列フォーマットは純粋なので、`assert!(s.contains("recommended X"))` のような単体テストでフォーマットが崩れないことを保証できる。
+recommendedとpollが両方失敗した時点で、それぞれの`notify::Error`を既存の
+`classify_notify_error`へ渡す。結果の`WatcherFailure`は`kind` / `paths` / `detail`を
+保持し、起動診断と稼働中診断で同じ分類規則を共有する。先行文字列化は行わず、
+`WatcherError::Init`の`Display`だけを従来形式に保つ。
 
 ---
 
@@ -518,7 +526,10 @@ fn drain_until_disconnected(
 
 ### TDD 寄りの設計
 
-`build_backend_with` / `combine_init_errors` を `pub(crate)` で切り出して単体テスト可能にしているのは、**「OS 依存のないコア・ロジックは決定論的にテストする」** という方針。本番経路の `build_backend` は `build_backend_with(tx, path, real_recommended, real_poll)` の薄いラッパに過ぎない。
+`build_backend_with`を`pub(crate)`で切り出して単体テスト可能にしているのは、
+**「OS依存のないコア・ロジックは決定論的にテストする」**という方針。本番経路の
+`build_backend`は`build_backend_with(tx, path, real_recommended, real_poll)`という薄い
+ラッパに過ぎず、typed pairの分類・Display互換も注入した`notify::Error`で固定する。
 
 ### テストヘルパーの役割
 
@@ -691,9 +702,12 @@ Err(RecvTimeoutError::Disconnected) => {
 
 並び順を deadline 昇順 + path 昇順で固定するのは、テストの決定論性を確保するため。
 
-### 13.9 公開 API は完全互換
+### 13.9 runtime batch API は互換
 
-本デバウンス層は adapter スレッド内部の実装詳細であり、公開 API（`Watcher::start` / `FsEvent` / `WatcherError` / `Receiver<FsEvent>`）には変更が無い。本体クレート `spec-board` は `path = "crates/fs"` 経由で参照しているが、呼び出し側コードに変更を加える必要は無い。`Cargo.toml` への依存追加もない（標準ライブラリの `HashMap` / `Instant` / `RecvTimeoutError` のみで実装可能）。
+本デバウンス層は adapter スレッド内部の実装詳細であり、`Watcher::start`の成功時と
+`FileChangeBatch` / runtime diagnostic wireは変更しない。起動時だけ
+`WatcherError::Init`がbackend別のtyped failureを保持し、本体crateの`open_project`
+境界が`message`互換のstructured errorへ投影する。
 
 ---
 

@@ -53,6 +53,7 @@
 //! | `LabelsLoadFailed` (`category="parse"`) | `labels load failed (parse): ...` | `PARSE_ERROR` |
 //! | `MilestonesLoadFailed` (`category="io"`) | `milestones load failed (io): ...` | `IO_ERROR` |
 //! | `MilestonesLoadFailed` (`category="parse"`) | `milestones load failed (parse): ...` | `PARSE_ERROR` |
+//! | `WatcherInitFailed` | `ファイル監視の初期化に失敗しました: ...` | 内側message依存（`WatcherError::Init`だけ`watcherInit`診断objectを併送） |
 //! | `NotADirectory` | `ディレクトリではありません: ...` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //! | `StateLockPoisoned` | `内部状態のロックが破損しました` | `UNKNOWN`（FE 側 PATTERNS 未対応） |
 //!
@@ -114,7 +115,7 @@ use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksErro
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::config::config_io;
 use spec_board_fs::task::file_scanner::ScanError;
-use spec_board_fs::watcher::core::WatcherError;
+use spec_board_fs::watcher::core::{WatcherError, WatcherFailure, WatcherFailureKind};
 
 /// `open_project` コマンドのペイロード。
 ///
@@ -139,6 +140,62 @@ pub struct OpenProjectPayload {
     /// watcher event の検証基準。`tasks` と**同一トランザクション**で確定した
     /// 値であることが必須（そうでないと FE が復旧不能な split-brain に陥る）。
     pub session: WatcherSession,
+}
+
+/// watcher の backend 別起動診断を表す command error payload。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatcherInitDiagnostics {
+    recommended: WatcherInitFailure,
+    poll: WatcherInitFailure,
+}
+
+/// 起動に失敗した単一 watcher backend の診断 payload。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatcherInitFailure {
+    kind: &'static str,
+    paths: Vec<String>,
+    detail: String,
+}
+
+impl From<WatcherFailure> for WatcherInitFailure {
+    fn from(failure: WatcherFailure) -> Self {
+        Self {
+            kind: watcher_failure_kind_name(failure.kind),
+            paths: failure
+                .paths
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect(),
+            detail: failure.detail,
+        }
+    }
+}
+
+fn watcher_failure_kind_name(kind: WatcherFailureKind) -> &'static str {
+    match kind {
+        WatcherFailureKind::WatchPathUnavailable => "watchPathUnavailable",
+        WatcherFailureKind::ResourceExhausted => "resourceExhausted",
+        WatcherFailureKind::PermissionDenied => "permissionDenied",
+        WatcherFailureKind::Io => "io",
+        WatcherFailureKind::Unknown => "unknown",
+    }
+}
+
+/// `open_project` の Tauri error wire payload。
+///
+/// watcher の両 backend 初期化失敗だけ機械可読な診断 object を返し、それ以外は
+/// 従来どおり Display 文字列をそのまま JSON string として返す。
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum OpenProjectCommandError {
+    Legacy(String),
+    WatcherInit {
+        message: String,
+        #[serde(rename = "watcherInit")]
+        watcher_init: Box<WatcherInitDiagnostics>,
+    },
 }
 
 /// `open_project` コマンドのエラー。
@@ -199,16 +256,35 @@ pub enum OpenProjectError {
         category: &'static str,
         message: String,
     },
-    /// Watcher 初期化失敗（inotify 上限 / poll fallback 失敗 / path missing 等）。
+    /// Watcher 起動失敗（両backend初期化失敗 / path検証 / stage spawn I/O等）。
     ///
-    /// FE 側 `PATTERNS` には未対応のため `UNKNOWN` 分類になる。prepare / thread
-    /// stage は `swap_open` より前に完了するため、失敗時は resident domain/resources
-    /// を一切変更しない。
+    /// 両backend初期化失敗だけcommand境界で`watcherInit`診断objectへ投影し、
+    /// path検証やstage spawn I/Oなど他variantは従来のstring wireを維持する。
+    /// prepare / thread stage は`swap_open`より前に完了するため、失敗時はresident
+    /// domain/resourcesを一切変更しない。
     #[error("ファイル監視の初期化に失敗しました: {source}")]
     WatcherInitFailed {
         #[from]
         source: WatcherError,
     },
+}
+
+impl From<OpenProjectError> for OpenProjectCommandError {
+    fn from(error: OpenProjectError) -> Self {
+        let message = error.to_string();
+        match error {
+            OpenProjectError::WatcherInitFailed {
+                source: WatcherError::Init { recommended, poll },
+            } => Self::WatcherInit {
+                message,
+                watcher_init: Box::new(WatcherInitDiagnostics {
+                    recommended: recommended.into(),
+                    poll: poll.into(),
+                }),
+            },
+            _ => Self::Legacy(message),
+        }
+    }
 }
 
 impl From<AppStateError> for OpenProjectError {
@@ -229,22 +305,23 @@ fn map_open_swap_error(error: OpenSwapError) -> OpenProjectError {
     }
 }
 
-/// Tauri command 薄層。`open_project_impl` を直接呼び、エラーを文字列化して返す。
+/// Tauri command 薄層。`open_project_impl` を直接呼び、エラーを wire payloadへ変換する。
 ///
 /// `tauri::AppHandle` はこの薄層で構築する `TauriWatcherFactory` のフィールドに
 /// 閉じ込めて effect 層へは漏出させない。empty path 拒否は `OpenProjectIntent`
 /// 構築時 (`TryFrom<String>`) に集約済みのため、本層では `intent` 構築失敗時の
-/// `DirectoryNotFound { path: "" }` を文字列化してそのまま返す。
+/// `DirectoryNotFound { path: "" }` を従来どおり文字列化してそのまま返す。
 ///
-/// 戻り値の `Result<_, String>` の Err 文字列は `OpenProjectError` の Display 文字列であり、
-/// FE 側でパターンマッチして `TauriError` に変換される。
+/// [`WatcherError::Init`] だけは Display 互換の `message` に加えて backend 別の
+/// `watcherInit` 診断を返す。その他の Err は `OpenProjectError` の Display 文字列
+/// そのものを JSON string として返し、従来の FE 分類を維持する。
 #[tauri::command]
 pub fn open_project(
     app: tauri::AppHandle,
     state: State<'_, Arc<AppState>>,
     path: String,
-) -> Result<OpenProjectPayload, String> {
-    let intent = OpenProjectIntent::try_from(path).map_err(|e| e.to_string())?;
+) -> Result<OpenProjectPayload, OpenProjectCommandError> {
+    let intent = OpenProjectIntent::try_from(path).map_err(OpenProjectCommandError::from)?;
     let resync = TauriReactivationResyncScheduler::new(app.clone(), Arc::clone(state.inner()));
     let watcher = TauriWatcherFactory::new(app);
     let stop_reporter = LogWatcherStopDiagnosticReporter;
@@ -264,7 +341,7 @@ pub fn open_project(
         &stop_reporter,
         &resync,
     )
-    .map_err(|e| e.to_string())
+    .map_err(OpenProjectCommandError::from)
 }
 
 /// コールドオープンが disk 上のプロジェクト資産へ触れるための注入口。

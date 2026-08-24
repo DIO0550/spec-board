@@ -101,7 +101,12 @@ export { unarchiveTask } from "./taskCommands/unarchiveTask";
 export { updateTask } from "./taskCommands/updateTask";
 
 // tauriError
-export type { TauriErrorCode } from "./tauriError";
+export type {
+  TauriErrorCode,
+  WatcherInitDiagnostics,
+  WatcherInitFailure,
+  WatcherInitFailureKind,
+} from "./tauriError";
 export { TauriError } from "./tauriError";
 // toastSink
 export type { ToastSink } from "./toastSink";

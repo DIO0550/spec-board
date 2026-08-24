@@ -22,6 +22,74 @@ test("{ message } オブジェクトから message を読み取り cause にオ�
   expect(e.cause).toBe(raw);
 });
 
+test("watcher Init objectはbackend別diagnosticsを正規化しcauseにraw objectを保持する", () => {
+  const raw = {
+    message: "ファイル監視の初期化に失敗しました",
+    watcherInit: {
+      recommended: {
+        kind: "resourceExhausted",
+        paths: ["/watch/recommended"],
+        detail: "watch limit reached",
+      },
+      poll: {
+        kind: "permissionDenied",
+        paths: ["/watch/poll"],
+        detail: "permission denied",
+      },
+    },
+  };
+
+  const error = TauriError.from(raw, "open_project");
+
+  expect(error.watcherInit).toEqual(raw.watcherInit);
+  expect(error.code).toBe("UNKNOWN");
+  expect(error.message).toBe(raw.message);
+  expect(error.cause).toBe(raw);
+  expect(error.command).toBe("open_project");
+});
+
+test("未知のwatcher failure kindはunknownへ正規化する", () => {
+  const error = TauriError.from({
+    message: "watcher failed",
+    watcherInit: {
+      recommended: { kind: "futureKind", paths: [], detail: "future" },
+      poll: { kind: "io", paths: [], detail: "io" },
+    },
+  });
+
+  expect(error.watcherInit?.recommended.kind).toBe("unknown");
+  expect(error.watcherInit?.poll.kind).toBe("io");
+});
+
+test.for([
+  ["watcherInitなし", { message: "legacy watcher failure" }],
+  [
+    "backend欠落",
+    {
+      message: "malformed watcher failure",
+      watcherInit: {
+        recommended: { kind: "io", paths: [], detail: "io" },
+      },
+    },
+  ],
+  [
+    "paths不正",
+    {
+      message: "malformed watcher failure",
+      watcherInit: {
+        recommended: { kind: "io", paths: [42], detail: "io" },
+        poll: { kind: "unknown", paths: [], detail: "unknown" },
+      },
+    },
+  ],
+] as const)("%sなら従来message分類を維持しdiagnosticsを付けない", ([, raw]) => {
+  const error = TauriError.from(raw);
+
+  expect(error.message).toBe(raw.message);
+  expect(error.watcherInit).toBeUndefined();
+  expect(error.cause).toBe(raw);
+});
+
 test.for([
   ["null", null],
   ["数値", 42],
