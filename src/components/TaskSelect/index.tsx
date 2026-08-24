@@ -8,7 +8,9 @@ export type TaskSelectProps = {
   /** 候補から除外する filePath 集合（呼び出し側で重複・自身などを除外する用途） */
   readonly excludeFilePaths?: readonly TaskFilePath[];
   /** 現在選択中のタスクのファイルパス（未選択時は null） */
-  readonly value: string | null;
+  readonly value: TaskFilePath | null;
+  /** canonical taskへ解決できないraw参照を表示するadapter用fallback。 */
+  readonly unresolvedValueLabel?: string;
   /**
    * 選択変更時のコールバック
    * @param filePath - 選択されたタスクのファイルパス（解除時は null）
@@ -55,6 +57,7 @@ export const TaskSelect = ({
   tasks,
   excludeFilePaths = [],
   value,
+  unresolvedValueLabel,
   onChange,
   onClose,
   placeholder = "タスクを検索して選択",
@@ -154,11 +157,14 @@ export const TaskSelect = ({
     setQuery("");
   };
 
-  const selectedLabel = selected
-    ? selected.title || selected.filePath
-    : value !== null
-      ? value
-      : undefined;
+  let selectedLabel: string | undefined;
+  if (selected !== undefined) {
+    selectedLabel = selected.title || selected.filePath;
+  } else if (value !== null) {
+    selectedLabel = value;
+  } else {
+    selectedLabel = unresolvedValueLabel;
+  }
   const showSelectedLike = selectedLabel !== undefined;
   const showReadOnlyEmpty = !showSelectedLike && readOnly;
 

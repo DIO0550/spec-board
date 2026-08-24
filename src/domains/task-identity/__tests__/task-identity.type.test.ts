@@ -1,4 +1,5 @@
 import { expectTypeOf, test } from "vitest";
+import type { TaskSelectProps } from "@/components/TaskSelect";
 import type { TaskFilePath, TaskId } from "@/domains/task-identity";
 import type { AddLinkParams } from "@/lib/tauri/linkCommands/types";
 import type {
@@ -73,4 +74,24 @@ test("mutation DTOはTaskFilePathだけをcanonical pathとして受け取る", 
   expectTypeOf(invalidUpdate.filePath).toEqualTypeOf<TaskFilePath>();
   expectTypeOf(invalidDelete.filePath).toEqualTypeOf<TaskFilePath>();
   expectTypeOf(invalidLink.sourceFilePath).toEqualTypeOf<TaskFilePath>();
+});
+
+test("TaskSelectの選択値はcanonical TaskFilePathだけを受け取る", () => {
+  const task = Task.fromPayload({
+    id: "task-id",
+    title: "Task",
+    status: "Todo",
+    labels: [],
+    links: [],
+    children: [],
+    reverseLinks: [],
+    body: "",
+    filePath: "tasks/task-id.md",
+  });
+  const canonicalValue: TaskSelectProps["value"] = task.filePath;
+  // @ts-expect-error raw stringはTaskSelectのcanonical valueへ直接渡せない。
+  const rawValue: TaskSelectProps["value"] = "tasks/task-id.md";
+
+  expectTypeOf(canonicalValue).toEqualTypeOf<TaskFilePath>();
+  expectTypeOf(rawValue).toEqualTypeOf<TaskFilePath | null>();
 });
