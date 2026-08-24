@@ -31,7 +31,7 @@ test("invoke が 'remove_link' という command 名で呼ばれる", async () =
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await removeLink({
     sourceFilePath: taskFilePathFixture("tasks/a.md"),
-    targetFilePath: taskFilePathFixture("tasks/b.md"),
+    targetFilePath: ".\\tasks\\b.md",
   });
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("remove_link");
 });
@@ -40,12 +40,12 @@ test("引数 { sourceFilePath, targetFilePath } が args キー配下に camelCa
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   await removeLink({
     sourceFilePath: taskFilePathFixture("tasks/a.md"),
-    targetFilePath: taskFilePathFixture("tasks/b.md"),
+    targetFilePath: ".\\tasks\\b.md",
   });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("remove_link", {
     args: {
       sourceFilePath: taskFilePathFixture("tasks/a.md"),
-      targetFilePath: taskFilePathFixture("tasks/b.md"),
+      targetFilePath: ".\\tasks\\b.md",
     },
   });
 });
@@ -54,7 +54,7 @@ test("成功時は Result.ok(Task) を返す（更新後の source Task）", asy
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
   const res = await removeLink({
     sourceFilePath: taskFilePathFixture("tasks/a.md"),
-    targetFilePath: taskFilePathFixture("tasks/b.md"),
+    targetFilePath: ".\\tasks\\b.md",
   });
   expect(res).toEqual({ ok: true, value: taskFixture });
 });
