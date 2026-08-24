@@ -143,21 +143,22 @@ impl PendingChanges {
             deadline_a.cmp(&deadline_b).then_with(|| a.cmp(b))
         });
 
-        let mut batch = FileChangeBatch::default();
+        let mut removed = Vec::new();
+        let mut upserted = Vec::new();
         for path in paths {
             let entry = self.entries.remove(&path).expect("key was just collected");
-            let upserted = match entry.change {
+            let is_upserted = match entry.change {
                 PathChange::Upserted => true,
                 PathChange::Removed => false,
                 PathChange::Unresolved => exists(&path),
             };
-            if upserted {
-                batch.upserted.push(path);
+            if is_upserted {
+                upserted.push(path);
             } else {
-                batch.removed.push(path);
+                removed.push(path);
             }
         }
-        Some(batch)
+        Some(FileChangeBatch::from_changes(removed, upserted))
     }
 }
 

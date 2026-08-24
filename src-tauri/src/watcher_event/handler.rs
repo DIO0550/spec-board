@@ -79,16 +79,16 @@ pub(crate) fn handle_batch(batch: &FileChangeBatch, ctx: &AdapterContext) {
 /// 旧パスの削除を新パスの登録より先に反映させる必要があるからである。
 fn changes_in_order(batch: &FileChangeBatch) -> Vec<TaskFileChange> {
     let mut changes = Vec::new();
-    if batch.rescan {
+    if batch.is_rescan() {
         changes.push(TaskFileChange::Rescan);
     }
-    for failure in &batch.errors {
+    for failure in batch.errors() {
         changes.push(TaskFileChange::Failure(failure.clone()));
     }
-    for path in &batch.removed {
+    for path in batch.removed() {
         changes.push(TaskFileChange::Removed(path.clone()));
     }
-    for path in &batch.upserted {
+    for path in batch.upserted() {
         changes.push(TaskFileChange::Upserted(path.clone()));
     }
     changes
