@@ -23,6 +23,27 @@ test("成功時は Result.ok を返す", async () => {
   expect(res.ok).toBe(true);
 });
 
+test("orderの上限値はinvokeへ渡される", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  await updateMilestone({ name: "v0.3", order: 4_294_967_295 });
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("update_milestone", {
+    args: { name: "v0.3", order: 4_294_967_295 },
+  });
+});
+
+test("不正なorderはinvokeせずINVALID_ARGUMENTを返す", async () => {
+  const result = await updateMilestone({ name: "v0.3", order: -1 });
+  expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+  expect(result).toMatchObject({
+    ok: false,
+    error: {
+      code: "INVALID_ARGUMENT",
+      cause: -1,
+      command: "update_milestone",
+    },
+  });
+});
+
 test("invoke が reject すると Result.err(TauriError) を返す", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("fail"));
   const res = await updateMilestone({ name: "v0.3" });
