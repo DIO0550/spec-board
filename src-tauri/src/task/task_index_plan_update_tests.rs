@@ -11,7 +11,7 @@ use super::{
 use crate::task::create::error::ContentRejectReason;
 use crate::task::document::Patch;
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed, Priority};
-use crate::task::parse::TaskParseError;
+use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
 use crate::task::task_content::TaskContentError;
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::ParentValidationFailure;
@@ -341,7 +341,7 @@ fn plan_update_parent_added_writes_parent() {
 }
 
 #[test]
-fn plan_update_parent_cleared_with_empty_string_removes_parent() {
+fn plan_update_parent_clear_removes_parent() {
     let task = make_task("tasks/a.md", Some("tasks/p.md"));
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: tasks/p.md\n---\n");
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
@@ -726,11 +726,10 @@ fn plan_update_reparent_to_ancestor_is_allowed() {
     assert!(outcome.file_content.contains("parent: tasks/c.md"));
 }
 
-// 親解除 (`Some("")`) でも `parent_changed=true` のとき hierarchy 検証が全タスクを走り、
-// 独立循環が検出されることを Err 期待で観測する
-// （既存の親解除テストは循環なし cache で書き出しだけを確認する）。
+// `Patch::Clear` で effective parent を解除すると hierarchy 検証が全タスクを走り、
+// 独立循環が検出されることを Err 期待で観測する。
 #[test]
-fn plan_update_parent_removal_to_empty_string_triggers_hierarchy_validation() {
+fn plan_update_parent_clear_with_effective_parent_triggers_hierarchy_validation() {
     let tasks = resolve_tasks(vec![
         make_task("tasks/x.md", Some("tasks/y.md")),
         make_task("tasks/y.md", Some("tasks/x.md")),
@@ -751,6 +750,59 @@ fn plan_update_parent_removal_to_empty_string_triggers_hierarchy_validation() {
     let err = index
         .plan_update(project_root(), intent, &task, parsed)
         .expect_err("parent removal must trigger validation that surfaces existing cycle");
+    match err {
+        UpdateTaskError::ParentCycleOrTooDeep { reason, .. } => {
+            assert_eq!(ParentHierarchyErrorReason::Cycle, reason);
+        }
+        other => panic!("expected ParentCycleOrTooDeep(Cycle), got {other:?}"),
+    }
+}
+
+// 非文字列のraw parentはparse時に警告付きで無視され、effective parentはNoneになる。
+// それでもraw keyを`Patch::Clear`で除去するとhierarchy検証が走ることを固定する。
+#[test]
+fn plan_update_parent_clear_with_raw_invalid_parent_triggers_hierarchy_validation() {
+    let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nparent: 123\n---\n");
+    let candidate = task_from_parsed(
+        parsed.clone(),
+        &TaskParseContext {
+            file_path: PathBuf::from("tasks/a.md"),
+            default_status: "Todo".into(),
+        },
+    );
+    let tasks = ResolvedTaskSet::resolve_lenient(vec![
+        candidate,
+        ParsedTaskBuilder::new("tasks/x.md")
+            .parent(Some(TaskFilePath::from_lenient("tasks/y.md")))
+            .build(),
+        ParsedTaskBuilder::new("tasks/y.md")
+            .parent(Some(TaskFilePath::from_lenient("tasks/x.md")))
+            .build(),
+    ])
+    .expect("lenient fixture resolution preserves the independent cycle")
+    .into_tasks();
+    let task = tasks
+        .iter()
+        .find(|task| task.file_path.as_str() == "tasks/a.md")
+        .expect("target task")
+        .clone();
+    assert!(
+        task.parent().is_none(),
+        "invalid raw parent must be ignored"
+    );
+    assert!(task
+        .warnings()
+        .iter()
+        .any(|warning| warning.code == TaskWarningCode::InvalidParentIgnored));
+    let index = TaskIndex::new(tasks);
+    let intent = UpdateTaskIntent {
+        parent: Patch::Clear,
+        ..empty_intent("tasks/a.md")
+    };
+
+    let err = index
+        .plan_update(project_root(), intent, &task, parsed)
+        .expect_err("clearing a raw parent key must trigger hierarchy validation");
     match err {
         UpdateTaskError::ParentCycleOrTooDeep { reason, .. } => {
             assert_eq!(ParentHierarchyErrorReason::Cycle, reason);
