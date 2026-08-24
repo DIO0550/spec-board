@@ -4,8 +4,10 @@
 //! `move_task_impl` を呼び、disk（task md / config.json）と in-memory cache の
 //! 双方を検証する。
 
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -214,6 +216,59 @@ impl TaskIo for WriteCountingTaskIo {
 
     fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
         FsTaskIo.read(path)
+    }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        FsTaskIo.try_exists(path)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ExistenceAnswer {
+    Exists(bool),
+    Error(ErrorKind),
+}
+
+/// read/writeは本番Fsへ委譲し、存在判定だけをpath単位でscriptするadapter。
+struct ScriptedExistenceTaskIo {
+    answers: HashMap<PathBuf, ExistenceAnswer>,
+}
+
+impl ScriptedExistenceTaskIo {
+    fn new(answers: impl IntoIterator<Item = (PathBuf, ExistenceAnswer)>) -> Self {
+        Self {
+            answers: answers.into_iter().collect(),
+        }
+    }
+}
+
+impl TaskIo for ScriptedExistenceTaskIo {
+    fn ensure_dir(&self, dir: &Path) -> Result<(), TaskIoError> {
+        FsTaskIo.ensure_dir(dir)
+    }
+
+    fn write_new(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        FsTaskIo.write_new(path, bytes)
+    }
+
+    fn write_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), TaskIoError> {
+        FsTaskIo.write_existing(path, bytes)
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), TaskIoError> {
+        FsTaskIo.remove(path)
+    }
+
+    fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
+        FsTaskIo.read(path)
+    }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        match self.answers.get(path) {
+            Some(ExistenceAnswer::Exists(exists)) => Ok(*exists),
+            Some(ExistenceAnswer::Error(kind)) => Err(std::io::Error::from(*kind).into()),
+            None => FsTaskIo.try_exists(path),
+        }
     }
 }
 
@@ -489,6 +544,147 @@ fn destination_card_order_drops_paths_without_a_file_on_disk() {
 
     let on_disk = read_config_json(dir.path());
     assert_eq!(column_paths(&on_disk.card_order, "Done"), ["tasks/a.md"]);
+}
+
+#[test]
+fn destination_card_order_excludes_disk_file_when_task_io_reports_missing() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/x.md",
+        "---\ntitle: X\nstatus: Done\n---\n",
+    );
+    seed_default_config(dir.path());
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let io = ScriptedExistenceTaskIo::new([(
+        dir.path().join("tasks/x.md"),
+        ExistenceAnswer::Exists(false),
+    )]);
+
+    move_task_impl(
+        &state,
+        &io,
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/x.md", "tasks/a.md"],
+        ),
+    )
+    .expect("move should succeed");
+
+    assert_eq!(
+        column_paths(&read_config_json(dir.path()).card_order, "Done"),
+        ["tasks/a.md"]
+    );
+}
+
+#[test]
+fn destination_card_order_retains_missing_disk_path_when_task_io_reports_existing() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_default_config(dir.path());
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let io = ScriptedExistenceTaskIo::new([(
+        dir.path().join("tasks/ghost.md"),
+        ExistenceAnswer::Exists(true),
+    )]);
+
+    move_task_impl(
+        &state,
+        &io,
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/ghost.md", "tasks/a.md"],
+        ),
+    )
+    .expect("move should succeed");
+
+    assert_eq!(
+        column_paths(&read_config_json(dir.path()).card_order, "Done"),
+        ["tasks/ghost.md", "tasks/a.md"]
+    );
+}
+
+#[test]
+fn destination_card_order_conservatively_retains_path_on_permission_denied() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_default_config(dir.path());
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let io = ScriptedExistenceTaskIo::new([(
+        dir.path().join("tasks/blocked.md"),
+        ExistenceAnswer::Error(ErrorKind::PermissionDenied),
+    )]);
+
+    move_task_impl(
+        &state,
+        &io,
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/blocked.md", "tasks/a.md"],
+        ),
+    )
+    .expect("move should succeed");
+
+    assert_eq!(
+        column_paths(&read_config_json(dir.path()).card_order, "Done"),
+        ["tasks/blocked.md", "tasks/a.md"]
+    );
+}
+
+#[test]
+fn source_card_order_excludes_retained_task_when_task_io_reports_missing() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    seed_config_with_card_order(dir.path(), &[("Todo", &["tasks/b.md", "tasks/a.md"])]);
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+    let io = ScriptedExistenceTaskIo::new([(
+        dir.path().join("tasks/b.md"),
+        ExistenceAnswer::Exists(false),
+    )]);
+
+    move_task_impl(
+        &state,
+        &io,
+        make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
+    )
+    .expect("move should succeed");
+
+    assert!(column_paths(&read_config_json(dir.path()).card_order, "Todo").is_empty());
 }
 
 #[test]
@@ -783,6 +979,10 @@ fn disk_success_conflict_returns_typed_error_and_resyncs_same_session() {
 
         fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
             self.inner.read(path)
+        }
+
+        fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+            self.inner.try_exists(path)
         }
     }
 

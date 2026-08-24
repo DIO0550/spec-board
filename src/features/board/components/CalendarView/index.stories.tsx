@@ -5,11 +5,13 @@ import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { CalendarView } from ".";
 
+const STORY_TODAY = "2026-08-23";
+
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 
 const dateFromToday = (offset: number): string => {
-  const date = new Date();
-  date.setHours(12, 0, 0, 0);
+  const [year, month, day] = STORY_TODAY.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12);
   date.setDate(date.getDate() + offset);
   return [
     date.getFullYear(),
@@ -107,6 +109,7 @@ const meta: Meta<typeof CalendarView> = {
   component: CalendarView,
   args: {
     tasks: designTasks,
+    today: STORY_TODAY,
     columns: [
       { name: "Backlog", order: 0 },
       { name: "Todo", order: 1 },
@@ -120,6 +123,7 @@ const meta: Meta<typeof CalendarView> = {
   },
   argTypes: {
     tasks: { control: "object" },
+    today: { control: false },
     onTaskClick: { control: false },
     onAddTask: { control: false },
   },

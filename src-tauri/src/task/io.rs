@@ -62,6 +62,11 @@ pub trait TaskIo: Send + Sync {
 
     /// `path` の全バイトを読む。
     fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError>;
+
+    /// `path` がファイルまたはディレクトリとして存在するかを問い合わせる。
+    ///
+    /// `NotFound` は `Ok(false)`、その他の metadata 取得失敗は `Err` として返す。
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError>;
 }
 
 /// `std::io::Error` を `#[from]` で取り込むだけの薄い wrapper。
@@ -125,6 +130,14 @@ impl TaskIo for FsTaskIo {
 
     fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
         std::fs::read(path).map_err(TaskIoError::from)
+    }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        match std::fs::metadata(path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(TaskIoError::from(error)),
+        }
     }
 }
 
@@ -290,6 +303,11 @@ impl TaskIo for InMemoryTaskIo {
             .get(path)
             .cloned()
             .ok_or_else(|| TaskIoError::Io(io::Error::from(io::ErrorKind::NotFound)))
+    }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        let g = self.inner.lock().expect("InMemoryTaskIo lock");
+        Ok(g.files.contains_key(path) || g.dirs.contains(path))
     }
 }
 

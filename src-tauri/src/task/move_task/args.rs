@@ -32,7 +32,7 @@ impl MoveTaskArgs {
     ///
     /// `to_column_file_paths` も 1 件ずつ同じ VO を通す。ここを素通しすると `..` や
     /// 絶対パス（`Path::join` は絶対パスを渡されると project_root を捨てる）が
-    /// `std::fs::metadata` の実在判定に使われ、さらに `config.json` の cardOrder へ
+    /// task I/O port の実在判定に使われ、さらに `config.json` の cardOrder へ
     /// そのまま永続化されてしまう。1 件でも解決できなければ移動全体を reject する
     /// （並びの一部を黙って捨てると、カードが理由なく消えたように見えるため）。
     pub(crate) fn into_intent(

@@ -702,7 +702,7 @@ links:（任意）
 6. `toColumnFilePaths` に移動対象パスが含まれていない場合は末尾に追加する。FE の算出漏れや stale な並びをそのまま保存して、移動したタスクだけが移動先カラムの並びから抜け落ちることを防ぐ
 7. `toColumnFilePaths` 内の重複は初出のみを残して除去する（同じカードが並びに 2 回現れないようにする）
 8. `toColumnFilePaths` の各要素も `filePath` と同じ入力パス VO で正規化・検証する（空文字拒否 / 絶対パスの project_root 相対化 / `..` 拒否 / `.md` 拡張子必須）。1 件でも解決できない場合は移動全体を拒否する（エラー文字列: `ファイルパスが不正です: {path}`）。素通しすると `..` や絶対パスが実在判定に使われ、そのまま `cardOrder` へ永続化されてしまうため。並び順には正規化後の表記を保存する
-9. 上記で正規化した各パスを `project_root.join(path)` で解決して `std::fs::metadata` を呼び、`Err` が `ErrorKind::NotFound` の場合のみ除外する。`permission denied` 等の `NotFound` 以外の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。順序は入力を保持し、削除対象のみ抜く
+9. 上記で正規化した各パスを `project_root.join(path)` で解決し、task I/O port の存在判定を呼ぶ。ファイルまたはディレクトリが存在すれば保持し、`NotFound` に対応する `false` の場合のみ除外する。`permission denied` 等の I/O エラーはユーザーのカード並びを誤って消さないために保守的にパスを保持する。この port は移動元・移動先の両方に使い、順序は入力を保持して削除対象のみ抜く。wire / disk / error 文字列は変更しない
 10. 書き込みは tmp → rename ベース（Unix では `rename(2)` の atomic 置換、Windows では既存ファイル上書き時に backup 経由の 2 段 rename にフォールバック）で行い、`config.json` 自体が中途半端な内容になる部分書き込みを防止する
 11. `.spec-board/` ディレクトリは watcher の拡張子フィルタで除外されるため、`config.json` の書き込みによって FE への変更通知（emit）は走らない
 12. `config.json` への書き込みが成功した場合、`project_path` が処理開始時の snapshot と一致するときに限り AppState の `Config` を更新する。disk 失敗時は in-memory の `Config` を変更しない（次回呼び出しで再試行可能）
@@ -802,6 +802,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.13 | 2026-08-24 | Issue #603: move_task の移動元・移動先cardOrder実在判定をtask I/O portへ統一し、NotFoundのみ除外・他I/O errorは保守的保持する契約を明記 | - |
 | 1.12 | 2026-08-23 | Issue #602: Task identity の canonical filePath 単一化と、cardOrder / projection の path 順・wire id/filePath・disk/error 互換を明記 | - |
 | 1.11 | 2026-08-23 | Issue #598: MilestoneState の予約語完全一致、空文字の未指定化、unknown raw保持、in-memory構築不変条件とroundtrip / wire / error互換契約を明記 | - |
 | 1.10 | 2026-08-23 | Issue #597: SchemaVersion の CURRENT 限定、Config.version 非公開、raw load / migration 境界と wire / disk / error 互換契約を明記 | - |
