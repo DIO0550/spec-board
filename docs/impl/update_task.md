@@ -9,6 +9,25 @@
 aggregate（`task::task_index::TaskIndex::plan_update`）に閉じ込める。effect 層は
 `TaskIo` port 経由でのみファイルにアクセスし、`std::fs::*` の直接呼び出しは行わない。
 
+### wire sentinelをArgs adapterだけで分類する理由
+
+`UpdateTaskArgs`は既存wire互換のため、`parent` / `milestone`を`Option<String>`、
+`draft`を`Option<bool>`として受け取る。これらをそのままdomainへ渡すと、aggregateが
+空文字や`false`をclear sentinelとして再解釈する必要がある。そこで`into_intent`だけが
+次の分類を行い、`UpdateTaskIntent`以降は`Patch`として扱う。
+
+| wire入力 | parent / milestone | draft |
+|:---------|:-------------------|:------|
+| 未指定 / `null` | `Patch::Unchanged` | `Patch::Unchanged` |
+| exact `""` | `Patch::Clear` | - |
+| その他の文字列（空白のみを含む） | `Patch::Set(raw)` | - |
+| `true` | - | `Patch::Set(true)` |
+| `false` | - | `Patch::Clear` |
+
+commandのI/O前parent存在確認、`plan_update`の変更判定・strict検証、
+`TaskDocument`への適用はこの分類済みpatchだけを参照する。これによりwire/disk形状、
+既存エラー文字列、validationとI/Oの順序を変えずにsentinel解釈をadapterへ閉じ込める。
+
 ### なぜ Parsed を渡すのか
 
 `Task` 構造体は raw frontmatter を保持しない（typed フィールドの抽出と warning

@@ -359,7 +359,7 @@ parent: tasks/search-ui.md
 
 ### マージ規則
 
-- `Some` で渡されたフィールドだけが反映され、未指定フィールドは保持される
+- wireで指定されたフィールドだけが反映され、未指定フィールドは保持される
 - raw frontmatter の未知 key・`links`・YAML 値型・出現順は **そのまま保持** される
   （内部実装は `TaskDocument::parse` に読み込み、`TaskPatch` を適用して `TaskDocument::render` で書き戻す）
 - `parent: ""` で親解除（frontmatter から `parent` キーを除去）
@@ -370,6 +370,20 @@ parent: tasks/search-ui.md
 - **title 変更時もファイル名は不変**（rename はしない）
 - 空 title 指定は許可される。書き戻し後の Task 再 parse で `invalidTitleUsedFileName` warning が乗る
 - `children` は派生計算のため update_task では更新できない
+
+`UpdateTaskArgs`はwire形状を維持したadapterであり、domainへ渡す前にclear可能な3 fieldを
+`Patch`へ分類する。空文字判定はexactで、trimは行わない。
+
+| wire入力 | `parent` / `milestone` intent | `draft` intent |
+|:---------|:--------------------------------|:---------------|
+| 未指定 / `null` | `Patch::Unchanged` | `Patch::Unchanged` |
+| `""` | `Patch::Clear` | - |
+| 空白のみを含むその他の文字列 | `Patch::Set(raw)` | - |
+| `true` | - | `Patch::Set(true)` |
+| `false` | - | `Patch::Clear` |
+
+`UpdateTaskIntent`以降はwireの空文字・`false`を再解釈せず、この分類済みpatchを
+`TaskDocument`とparent検証へ渡す。wire / disk形状、エラー文字列、I/O順序は変わらない。
 
 ### ファイル位置
 
@@ -393,11 +407,11 @@ graph warning を全件再計算してから resident Task 集合を一括置換
 同じ disk 状態を再 open した状態と一致する。wire / disk 形状と既存エラー文字列は変更しない。
 
 create / update の strict parent 検証は I/O より前に従来どおり実行する。`parent` フィールドの
-「変化」は `intent.parent` の値に応じて以下のように判定する:
+「変化」は分類済みの `intent.parent` patchに応じて以下のように判定する:
 
-- `None`: parent は変更されない（`parent_changed=false`）。hierarchy 検証はスキップする（全タスク走査の O(N) コストを回避）。
-- `Some("")`: parent を解除する。既存 parent が存在する、または frontmatter から `parent` キーが除去された場合に `parent_changed=true` となり hierarchy 検証を実行する（親解除なので構造的に循環は発生しないが、不正データの早期検出のため検証は走る）。
-- `Some(path)`（非空）: 検証は以下の順序で実行する:
+- `Patch::Unchanged`: parent は変更されない（`parent_changed=false`）。hierarchy 検証はスキップする（全タスク走査の O(N) コストを回避）。
+- `Patch::Clear`: parent を解除する。既存 parent が存在する、または frontmatter にraw `parent` キーが存在する場合に `parent_changed=true` となり hierarchy 検証を実行する（親解除なので構造的に循環は発生しないが、不正データの早期検出のため検証は走る）。
+- `Patch::Set(path)`: 検証は以下の順序で実行する:
   1. **parent 存在チェック** — `parent_changed` の真偽に関わらず、最初に cache から該当 task を引き当てる。存在しなければ `parent not found: <path>` を返す。
   2. **正規化等価判定** — 正規化済みパス（`./tasks/p.md` / `tasks\p.md` などの表記揺れを吸収する lookup key）が既存 parent と等価なら `parent_changed=false` として hierarchy 検証はスキップする。
   3. **hierarchy 検証** — 正規化等価でない場合のみ`parent_changed=true`となり、対象をpatchした`Vec<ParsedTask>`を`ResolvedTaskSet::validate_strict`へ渡す。strict検証後のresident構築は全mutation共通のcanonical resolverを通る。
@@ -424,5 +438,6 @@ create / update の strict parent 検証は I/O より前に従来どおり実�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.3 | 2026-08-24 | Issue #605: update_task wireの3値互換を維持し、Args adapterでparent / milestone / draftを分類済みPatchへ変換する責務境界を明記 | - |
 | 1.2 | 2026-08-23 | Issue #602: resident Task の identity を canonical filePath の単一保存とし、wire id/filePath の同値・形状互換を明記 | - |
 | 1.1 | 2026-08-23 | Issue #601: parse-only candidate と resolved resident Task の型境界、raw/effective parent、warning 分離、全 mutation の canonical full resolver、path 昇順の派生値、出力専用 IPC projection と wire/disk/error 互換契約を明記 | - |
