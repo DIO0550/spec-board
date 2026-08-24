@@ -239,6 +239,33 @@ test("不明な reject は code === UNKNOWN になる", async () => {
   expect((res as { ok: false; error: TauriError }).error.code).toBe("UNKNOWN");
 });
 
+test("watcher Init rejectはbackend別diagnosticsを保ったTauriErrorになる", async () => {
+  const raw = {
+    message: "ファイル監視の初期化に失敗しました",
+    watcherInit: {
+      recommended: {
+        kind: "resourceExhausted",
+        paths: ["/watch/recommended"],
+        detail: "watch limit reached",
+      },
+      poll: {
+        kind: "permissionDenied",
+        paths: ["/watch/poll"],
+        detail: "permission denied",
+      },
+    },
+  };
+  vi.mocked(invoke).mockRejectedValue(raw);
+
+  const result = await openProject({ path: "/x" });
+
+  expect(result.ok).toBe(false);
+  const error = (result as { ok: false; error: TauriError }).error;
+  expect(error.watcherInit).toEqual(raw.watcherInit);
+  expect(error.cause).toBe(raw);
+  expect(error.command).toBe("open_project");
+});
+
 test.each([
   ["projectKey", "projectKey", "/home/user/specs"],
   ["generation", "generation", 3],
