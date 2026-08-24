@@ -137,6 +137,22 @@ test("Epic・child・進捗・期間を表示し展開を切り替えられる",
   ).not.toBeNull();
 });
 
+test("表記揺れraw parentのchildを重複Epicとして表示しない", () => {
+  const rawParentChild = makeTask({
+    id: "child-a",
+    title: "ログイン画面",
+    status: "Done",
+    filePath: "tasks/child-a.md",
+    parent: ".\\tasks\\epic.md",
+  });
+  renderRoadmap({ tasks: [epic, rawParentChild] });
+
+  const childBars = Array.from(
+    container?.querySelectorAll<HTMLElement>("[data-roadmap-bar]") ?? [],
+  ).filter((bar) => bar.textContent === "ログイン画面");
+  expect(childBars).toHaveLength(1);
+});
+
 test("週表示へ切り替えるとtimelineを縮小する", () => {
   renderRoadmap();
   const weekButton = Array.from(
