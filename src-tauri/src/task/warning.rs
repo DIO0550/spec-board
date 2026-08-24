@@ -24,6 +24,7 @@ pub enum TaskWarningCode {
 #[serde(rename_all = "camelCase")]
 pub struct TaskWarning {
     pub code: TaskWarningCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
     pub message: String,
 }

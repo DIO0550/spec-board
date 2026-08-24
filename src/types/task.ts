@@ -77,8 +77,14 @@ export type TaskPayload = {
   warnings: TaskWarning[];
 };
 
-type TaskPayloadInput = Omit<TaskPayload, "extras" | "warnings"> &
-  Partial<Pick<TaskPayload, "extras" | "warnings">>;
+type TaskWarningPayloadInput = Omit<TaskWarning, "field"> & {
+  field?: string | null;
+};
+
+type TaskPayloadInput = Omit<TaskPayload, "extras" | "warnings"> & {
+  extras?: TaskExtras;
+  warnings?: TaskWarningPayloadInput[];
+};
 
 /** タスク */
 export type Task = {
@@ -185,6 +191,21 @@ const deepEquals = (left: unknown, right: unknown): boolean => {
   return false;
 };
 
+/**
+ * IPC warningのlegacy nullをcanonicalなfieldキー省略へ正規化する。
+ * @param warning Tauri IPCから受け取ったwarning
+ * @returns frontend domainで保持するcanonical warning
+ */
+const taskWarningFromPayload = ({
+  field,
+  ...warning
+}: TaskWarningPayloadInput): TaskWarning => {
+  if (field === null || field === undefined) {
+    return warning;
+  }
+  return { ...warning, field };
+};
+
 export const Task = {
   /**
    * Tauri IPC の flat payload を frontend domain の Task に変換する。
@@ -204,7 +225,7 @@ export const Task = {
     body: payload.body,
     filePath: payload.filePath,
     extras: payload.extras ?? {},
-    warnings: payload.warnings ?? [],
+    warnings: payload.warnings?.map(taskWarningFromPayload) ?? [],
     links: {
       linkedFilePaths: payload.links,
       reverseLinkedFilePaths: payload.reverseLinks,
