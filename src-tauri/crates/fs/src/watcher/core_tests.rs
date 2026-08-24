@@ -698,7 +698,17 @@ fn stopping_watcher_through_trait_disconnects_before_returning() {
     drain_batches(&rx, Duration::from_millis(200));
 
     let handle: Box<dyn WatcherHandle> = Box::new(watcher);
-    handle.stop();
+    let (stop_finished_tx, stop_finished_rx) = std::sync::mpsc::channel();
+    let stop_thread = std::thread::spawn(move || {
+        handle.stop();
+        stop_finished_tx
+            .send(())
+            .expect("signal trait-object stop completion");
+    });
+    stop_finished_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("trait-object stop should complete within the teardown deadline");
+    stop_thread.join().expect("stop thread should finish");
 
     let marker = dir.path().join("marker-after-stop.md");
     std::fs::write(&marker, b"after-stop").unwrap();
