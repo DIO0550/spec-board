@@ -1,10 +1,11 @@
 use super::{TaskContent, TaskContentError};
 use crate::task::create::error::{ContentRejectReason, CreateTaskError};
 use crate::task::task_index::CreateTaskIntent;
+use spec_board_fs::task::content_limits::{BINARY_PROBE_LEN, MAX_FILE_SIZE};
 
 #[test]
 fn try_new_accepts_content_at_max_file_size_boundary() {
-    let max = 1024 * 1024;
+    let max = usize::try_from(MAX_FILE_SIZE).expect("limit fits usize on supported targets");
     let content = "a".repeat(max);
     let vo = TaskContent::try_new(content).expect("max boundary should succeed");
     assert_eq!(vo.as_bytes().len(), max);
@@ -12,7 +13,8 @@ fn try_new_accepts_content_at_max_file_size_boundary() {
 
 #[test]
 fn try_new_rejects_content_one_byte_over_max() {
-    let too_large = "a".repeat(1024 * 1024 + 1);
+    let max = usize::try_from(MAX_FILE_SIZE).expect("limit fits usize on supported targets");
+    let too_large = "a".repeat(max + 1);
     let err = TaskContent::try_new(too_large).expect_err("should fail");
     assert!(matches!(
         err,
@@ -24,10 +26,9 @@ fn try_new_rejects_content_one_byte_over_max() {
 }
 
 #[test]
-fn try_new_rejects_content_with_nul_byte_in_first_8kib() {
-    let mut content = String::from("hello");
+fn try_new_rejects_nul_byte_at_final_probe_position() {
+    let mut content = "a".repeat(BINARY_PROBE_LEN - 1);
     content.push('\u{0000}');
-    content.push_str("world");
     let err = TaskContent::try_new(content).expect_err("should fail");
     assert!(matches!(
         err,
@@ -36,11 +37,11 @@ fn try_new_rejects_content_with_nul_byte_in_first_8kib() {
 }
 
 #[test]
-fn try_new_accepts_nul_byte_beyond_first_8kib() {
-    let mut content = "a".repeat(8 * 1024);
+fn try_new_accepts_nul_byte_immediately_after_probe_range() {
+    let mut content = "a".repeat(BINARY_PROBE_LEN);
     content.push('\u{0000}');
     let vo = TaskContent::try_new(content).expect("nul beyond probe should succeed");
-    assert_eq!(vo.as_bytes().len(), 8 * 1024 + 1);
+    assert_eq!(vo.as_bytes().len(), BINARY_PROBE_LEN + 1);
 }
 
 #[test]
