@@ -131,11 +131,11 @@ test.each([
       message: "parent was ignored",
     },
   },
-])(
-  "fromPayload はwarningの$labelをcanonical domainへ正規化する",
-  ({ warning, expected }) => {
-    const task = Task.fromPayload({ ...basePayload, warnings: [warning] });
+])("fromPayload はwarningの$labelをcanonical domainへ正規化する", ({
+  warning,
+  expected,
+}) => {
+  const task = Task.fromPayload({ ...basePayload, warnings: [warning] });
 
-    expect(task.warnings).toEqual([expected]);
-  },
-);
+  expect(task.warnings).toEqual([expected]);
+});
