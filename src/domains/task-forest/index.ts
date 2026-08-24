@@ -27,6 +27,18 @@ export type TaskTreeNode = {
 /** root ノード列。board 表示順（循環救済ノードも board 順の自分の位置に入る）。 */
 export type TaskForest = readonly TaskTreeNode[];
 
+/** raw payloadを深さに依存せず組み替える途中ノード。 */
+type TaskTreeNodeBuilder = {
+  readonly filePath: TaskFilePath;
+  readonly children: TaskTreeNodeBuilder[];
+};
+
+/** 変換待ちのraw nodeと組み立て先を対応付ける。 */
+type PendingNodeConversion = {
+  readonly payload: TaskTreeNodePayloadInput;
+  readonly target: TaskTreeNodeBuilder;
+};
+
 /** tree 未取得時の空 forest（固定参照。useMemo の miss を防ぐ）。 */
 const EMPTY_FOREST: TaskForest = [];
 
@@ -150,17 +162,38 @@ export const TaskForest = {
    * IPC の raw payload を domain 表現へ写す。
    *
    * BEがcanonical化済みのpathを返すwire契約をadapter境界で`TaskFilePath`へbrand化する。
-   * brandはruntime表現を変えないため、再帰的な組み直しは行わずpayload参照を採用する。
-   * 再構築すると`get_tasks`のたびに全ノードを新規割り当てし、直後に`merge`が旧参照へ
-   * 戻すことになる。
-   *
-   * 素通しでも変換関数として残すのは、将来 BE の payload 形状が domain と乖離した
-   * ときの単一の変換点にするため（他 domain と codec の呼び出し形も揃う）。
+   * 10,000段のtreeでもcall stackを消費しないよう、明示stackで各nodeを組み替える。
    * @param payload - BE から受け取った taskTree
    * @returns domain 表現の forest
    */
-  fromPayload: (payload: TaskForestPayloadInput): TaskForest =>
-    payload as unknown as TaskForest,
+  fromPayload: (payload: TaskForestPayloadInput): TaskForest => {
+    const roots: TaskTreeNodeBuilder[] = payload.map((node) => ({
+      filePath: node.filePath as TaskFilePath,
+      children: [],
+    }));
+    const pending: PendingNodeConversion[] = payload.map((node, index) => ({
+      payload: node,
+      target: roots[index],
+    }));
+
+    while (pending.length > 0) {
+      const current = pending[pending.length - 1];
+      pending.pop();
+      for (const child of current.payload.children) {
+        const target: TaskTreeNodeBuilder = {
+          filePath: child.filePath as TaskFilePath,
+          children: [],
+        };
+        current.target.children.push(target);
+        pending.push({
+          payload: child,
+          target,
+        });
+      }
+    }
+
+    return roots;
+  },
 
   /**
    * 2 つの forest が構造・順序ともに同一かを判定する。
