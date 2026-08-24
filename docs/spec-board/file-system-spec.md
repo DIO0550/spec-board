@@ -120,11 +120,23 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 | 内部状態の lock 破損 | project domain / active resources / writer gate の Mutex が poison 状態 | `内部状態のロックが破損しました` |
 | スキャン致命エラー | root の metadata/read_dir、parent hierarchy の20段超過（`TooDeep`）など。循環は致命エラーにせず `parentCycle` warning として継続 | `io scan failed: {message}` |
 | config 読み込み失敗 | `config.json` が壊れている等 | `Config::default()` で継続し、`loadWarnings` に `configFallback` を含める |
-| ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}` |
+| ファイル監視の初期化失敗 | inotify 上限超過 / poll fallback 失敗 / path 消失等で `Watcher::start` が `Err` を返した場合 | `ファイル監視の初期化に失敗しました: {source}`（文字列は従来互換） |
 
 > 個別 md ファイルの fs::read 失敗、task_from_markdown のパース失敗、scanner の per-entry 失敗は recoverable な load warning として payload の loadWarnings に含め、該当ファイルを skip して残りのタスクで処理を継続する。root metadata/read_dir、hierarchy の `TooDeep`、labels/milestones、watcher/session 初期化、lock は fatal とし、コマンド全体を失敗させる。parent循環は `parentCycle` warning として継続する。
 >
-> ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側 `TauriError.PATTERNS` には watcher 初期化失敗の個別分類がないため `UNKNOWN` 分類になる。
+> ファイル監視の初期化、SessionId 枯渇、domain/resources lock のいずれの swap 前失敗でも resident `ProjectSession` と active resources は **一切変更されず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する。予約済み SessionId は再利用せず、次の成功 open との間に gap が生じ得る。FE 側の既存`TauriError.code`は引き続きmessage patternで分類する（内側detailによって分類は変わり得る）。recommended / poll の両backendが失敗した場合は、それとは独立して`TauriError.watcherInit`から機械可読な診断を参照できる。
+
+`open_project` の error wire は、通常エラーでは従来どおり JSON string である。`WatcherError::Init` の場合だけ次の untagged object を返す。`message` は従来の Display 文字列と byte 単位で同一で、`kind` は `watchPathUnavailable` / `resourceExhausted` / `permissionDenied` / `io` / `unknown`、`paths` は lossy UTF-8 の文字列配列、`detail` は backend の元メッセージである。未知の `kind` は FE で `unknown` へ正規化し、`watcherInit` の形が不正なら診断 metadata だけを破棄して従来の `message` fallbackを使う。
+
+```json
+{
+  "message": "ファイル監視の初期化に失敗しました: failed to initialize file system watcher: recommended watcher failed: ...; poll watcher failed: ...",
+  "watcherInit": {
+    "recommended": { "kind": "resourceExhausted", "paths": ["/project"], "detail": "..." },
+    "poll": { "kind": "permissionDenied", "paths": ["/project"], "detail": "..." }
+  }
+}
+```
 
 #### プロジェクトセッションキャッシュ（再オープンの即時応答）
 
@@ -636,7 +648,7 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 | ファイル読み込み失敗 | 個別 md の権限不足、ファイルロック中など | `loadWarnings` に `unreadableFile`/`taskReadFailed` を追加し、そのファイルだけ skip。残りのタスクで成功 | WARN |
 | フロントマターパース失敗 | YAML構文エラー、Task生成中の読み取り/解析失敗 | `loadWarnings` に `frontmatterParseFailed` を追加し、そのファイルだけ skip。残りのタスクで成功 | WARN |
 | ファイル書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに返却 | ERROR |
-| 監視の初期化失敗 | OS制限（inotify上限等） | `Watcher::start` 内部で recommended → poll の自動フォールバックを試み、両方失敗した場合のみ `open_project` から `ファイル監視の初期化に失敗しました: ...` を返す。AppState は **一切変更せず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する | ERROR |
+| 監視の初期化失敗 | OS制限（inotify上限等） | `Watcher::start` 内部で recommended → poll の自動フォールバックを試み、両方失敗した場合のみ `open_project` から従来互換の `message` と backend 別 `watcherInit` 診断を返す。AppState は **一切変更せず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する | ERROR |
 | 監視稼働中の backend 障害 | 監視対象の消失 / 資源枯渇 / 権限剥奪 / I/O エラー | batch の `errors`（`WatcherFailure`）を `watcher-diagnostic`（`cacheMutating: false`）として FE へ配信し、error トーストで可視化する。`tasks_cache` と `revision` は変更しない | WARN |
 | full rescan の失敗 | Rescan 受信後の再走査で root 不在 / 親チェーンの深さ超過 | `tasks_cache` を **一切変更せず**、`watcher-diagnostic`（`code: "rescanFailed"`）のみ発火する。FE に再取得させても BE の cache が古いままなので、「復旧できなかった」ことを伝える方が安全側 | WARN |
 | full rescan 中の並行 mutation / カラム更新 | 走査中に mutation command が commit して revision が進む、または `update_columns` が既定 status を変える | 置換直前の check-and-set が **revision と「走査に使った既定 status」の両方**の不一致を検出し、**最大 3 回**まで再走査する。上限超過時は cache を変更せず `rescanFailed` を通知する（最終試行を無条件採用すると、その走査中のカラム変更まで誤った内容で確定させてしまうため） | WARN |
@@ -753,7 +765,7 @@ impl FileChangeBatch {
     pub fn is_empty(&self) -> bool;
 }
 
-/// 監視稼働中に発生したランタイム障害。起動時エラー `WatcherError` とは役割が違う。
+/// watcher backendの起動時または監視稼働中に使う障害記述子。
 pub struct WatcherFailure {
     pub kind: WatcherFailureKind,
     pub paths: Vec<PathBuf>,
@@ -769,7 +781,10 @@ pub enum WatcherFailureKind {
 }
 
 pub enum WatcherError {
-    Init(String),
+    Init {
+        recommended: WatcherFailure,
+        poll: WatcherFailure,
+    },
     PathNotFound(PathBuf),
     Io(std::io::Error),
 }
@@ -803,16 +818,17 @@ pub enum WatcherError {
 | 任意 | `notify::Event::need_rescan() == true` | `FsEvent::Rescan`（キューオーバーフロー／コアレスでイベントが取りこぼされた可能性。`paths` の有無に関わらず先に判定し、caller に状態再構築を促す） |
 | `notify` バックエンドからの `Result::Err` | — | `FsEvent::Error(WatcherFailure)`（黙殺せず caller に通知）。`kind` は `notify::ErrorKind` から写像する: `PathNotFound` / `WatchNotFound` → `WatchPathUnavailable`、`MaxFilesWatch` → `ResourceExhausted`、`Io(_)` は内側の `std::io::ErrorKind` を見て `NotFound` → `WatchPathUnavailable` / `PermissionDenied` → `PermissionDenied` / `StorageFull`・`OutOfMemory` → `ResourceExhausted` / それ以外 → `Io`、`Generic` / `InvalidConfig` → `Unknown` |
 
-`WatcherFailure` は**稼働中**の障害、`WatcherError` は **`start` 時**の失敗を表す。両者を
-1 つの型にまとめると「監視が始まらなかった」と「監視が途中で壊れた」を呼び出し側が
-区別できず、後者を起動失敗として扱って project を閉じてしまう。
+`WatcherFailure` は起動・稼働で共有する単一 backend の障害記述子で、`WatcherError` は
+**`start` 時**の外側エラーを表す。稼働中は `WatcherFailure` を batch に載せ、起動時は
+recommended / poll の両方を `WatcherError::Init` に保持するため、callerは「開始不能」と
+「稼働中の障害」を区別しつつ、同じ分類・path・detailを利用できる。
 
 #### `WatcherError`（`start` 時のみ）
 
 | variant | 発生条件 |
 |:--------|:---------|
 | `PathNotFound(PathBuf)` | 単一の `std::fs::metadata(path)` 呼び出しで判定。`std::io::ErrorKind::NotFound`（パス不在）または `metadata.is_dir() == false`（ディレクトリでない）の場合に返す。`try_exists()` + `metadata()` の二段呼び出しは TOCTOU レースで `Io` に降格する恐れがあったため、単一呼び出しで両条件をマップする実装に統一している |
-| `Init(String)` | recommended と poll の両方が初期化または再帰 `watch()` に失敗。両者の原因メッセージを結合した文字列を保持する |
+| `Init { recommended, poll }` | recommended と poll の両方が初期化または再帰 `watch()` に失敗。各 `notify::Error` を両失敗が確定するまで保持し、既存classifierで `WatcherFailure` に変換する。Display は従来の結合文字列と byte 互換 |
 | `Io(std::io::Error)` | `metadata()` 取得時の I/O 失敗（`NotFound` 以外。例: 権限不足） |
 
 #### `spec-board-fs::watcher` のスコープ外
@@ -857,6 +873,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.13 | 2026-08-24 | Issue #607: watcher両backendの起動失敗をtyped pairで保持し、通常error string互換を維持したまま`open_project`へ機械可読な起動診断を追加 | - |
 | 1.12 | 2026-08-24 | Issue #606: task contentのsize / binary probe閾値をworkspace内部APIへ集約し、scannerとTaskContentが同じ定義を参照する契約を明記 | - |
 | 1.11 | 2026-08-24 | Issue #604: `FileChangeBatch` を opaque な不変条件付き batch とし、内部構築限定、immutable getter による consumer 契約、test-utils builder、wire/runtime 挙動不変を明記 | - |
 | 1.10 | 2026-08-23 | Issue #602: resident Task の canonical filePath identity、wire id/filePath 同値、path sort と wire/disk/error 互換を明記 | - |
