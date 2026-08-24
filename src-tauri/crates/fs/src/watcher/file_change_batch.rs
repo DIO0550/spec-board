@@ -51,10 +51,16 @@ pub struct FileChangeBatch {
 impl FileChangeBatch {
     /// 通常変更だけを伝える batch。
     pub(super) fn from_changes(removed: Vec<PathBuf>, upserted: Vec<PathBuf>) -> Self {
-        debug_assert!(!removed.is_empty() || !upserted.is_empty());
-        debug_assert!(paths_are_unique(&removed));
-        debug_assert!(paths_are_unique(&upserted));
-        debug_assert!(paths_are_disjoint(&removed, &upserted));
+        assert!(
+            !removed.is_empty() || !upserted.is_empty(),
+            "changes mode must contain at least one path"
+        );
+        assert!(paths_are_unique(&removed), "removed paths must be unique");
+        assert!(paths_are_unique(&upserted), "upserted paths must be unique");
+        assert!(
+            paths_are_disjoint(&removed, &upserted),
+            "removed and upserted paths must be disjoint"
+        );
         Self {
             removed,
             upserted,
@@ -149,16 +155,6 @@ impl FileChangeBatchTestBuilder {
 
     /// 通常変更 batch mode。
     pub fn changes(removed: Vec<PathBuf>, upserted: Vec<PathBuf>) -> Self {
-        assert!(
-            !removed.is_empty() || !upserted.is_empty(),
-            "changes mode must contain at least one path"
-        );
-        assert!(paths_are_unique(&removed), "removed paths must be unique");
-        assert!(paths_are_unique(&upserted), "upserted paths must be unique");
-        assert!(
-            paths_are_disjoint(&removed, &upserted),
-            "removed and upserted paths must be disjoint"
-        );
         Self {
             batch: FileChangeBatch::from_changes(removed, upserted),
         }
