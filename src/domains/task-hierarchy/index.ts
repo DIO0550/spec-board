@@ -70,7 +70,31 @@ const hasHierarchyChanges = (
   next.parentFilePath !== current.parentFilePath ||
   next.childFilePaths !== current.childFilePaths;
 
+/**
+ * resolved childrenから既存taskのcanonicalな子→親対応を構築する。
+ * 同じ子を複数親が宣言する不正payloadでは、board順で先に現れた親を採用する。
+ * @param tasks 対応を構築するtask一覧
+ * @returns child filePathからparent filePathを引くMap
+ */
+const parentByChildFilePath = (
+  tasks: readonly Task[],
+): ReadonlyMap<TaskFilePath, TaskFilePath> => {
+  const taskPaths = new Set(tasks.map((task) => task.filePath));
+  const parents = new Map<TaskFilePath, TaskFilePath>();
+  for (const task of tasks) {
+    for (const childFilePath of task.hierarchy.childFilePaths) {
+      if (!taskPaths.has(childFilePath) || parents.has(childFilePath)) {
+        continue;
+      }
+      parents.set(childFilePath, task.filePath);
+    }
+  }
+  return parents;
+};
+
 export const TaskHierarchy = {
+  parentByChildFilePath,
+
   /**
    * Task の親子階層から削除済み task への参照を取り除く。
    *
