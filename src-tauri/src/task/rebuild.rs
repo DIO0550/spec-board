@@ -83,7 +83,13 @@ pub fn rebuild_tasks_from_disk_with_report(
 }
 
 fn project_warning_from_scan(warning: ScanWarning) -> ProjectLoadWarning {
-    let code = match warning.code {
+    let ScanWarning {
+        code,
+        path,
+        io_kind: _,
+        message,
+    } = warning;
+    let code = match code {
         ScanWarningCode::EntryError => ProjectLoadWarningCode::ScanEntryError,
         ScanWarningCode::MetadataError => ProjectLoadWarningCode::MetadataError,
         ScanWarningCode::FileTooLarge => ProjectLoadWarningCode::FileTooLarge,
@@ -91,12 +97,8 @@ fn project_warning_from_scan(warning: ScanWarning) -> ProjectLoadWarning {
         ScanWarningCode::InvalidPath => ProjectLoadWarningCode::InvalidPath,
         ScanWarningCode::UnreadableFile => ProjectLoadWarningCode::UnreadableFile,
     };
-    ProjectLoadWarning::new(
-        code,
-        ProjectLoadWarningStage::Scan,
-        warning.path,
-        warning.message,
-    )
+    let path = path.and_then(|path| path.into_os_string().into_string().ok());
+    ProjectLoadWarning::new(code, ProjectLoadWarningStage::Scan, path, message)
 }
 
 /// 走査結果の md から Task と warning を集める。

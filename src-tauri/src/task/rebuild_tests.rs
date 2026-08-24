@@ -2,7 +2,7 @@ use super::*;
 
 use crate::project::load_warning::{ProjectLoadWarningCode, ProjectLoadWarningStage};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
@@ -31,6 +31,57 @@ fn sorted_paths(tasks: &[Task]) -> Vec<String> {
         .collect();
     paths.sort();
     paths
+}
+
+#[test]
+fn scan_warning_projection_keeps_legacy_wire_shape_and_hides_io_kind() {
+    let projected = project_warning_from_scan(ScanWarning {
+        code: ScanWarningCode::EntryError,
+        path: Some(PathBuf::from("tasks/locked")),
+        io_kind: Some(std::io::ErrorKind::PermissionDenied),
+        message: "permission denied".to_string(),
+    });
+
+    assert_eq!(
+        projected,
+        ProjectLoadWarning::new(
+            ProjectLoadWarningCode::ScanEntryError,
+            ProjectLoadWarningStage::Scan,
+            Some("tasks/locked".to_string()),
+            "permission denied",
+        )
+    );
+    assert_eq!(
+        serde_json::to_value(&projected).expect("warning should serialize"),
+        serde_json::json!({
+            "code": "scanEntryError",
+            "stage": "scan",
+            "path": "tasks/locked",
+            "message": "permission denied",
+            "recoverable": true,
+        })
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn scan_warning_projection_does_not_lossily_encode_non_utf8_paths() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let projected = project_warning_from_scan(ScanWarning {
+        code: ScanWarningCode::EntryError,
+        path: Some(PathBuf::from(OsString::from_vec(
+            b"tasks/invalid\xff.md".to_vec(),
+        ))),
+        io_kind: Some(std::io::ErrorKind::PermissionDenied),
+        message: "permission denied".to_string(),
+    });
+
+    assert_eq!(projected.path, None);
+    let json = serde_json::to_value(projected).expect("warning should serialize");
+    assert_eq!(json["path"], serde_json::Value::Null);
+    assert!(json.get("ioKind").is_none());
 }
 
 #[test]

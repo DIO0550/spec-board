@@ -471,7 +471,7 @@ wire / disk形状は従来どおりである。
 | BL-001a | 拡張子の大小文字非区別 | `.MD` / `.Md` / `.mD` などの大文字混じり拡張子 | `.md` と同等にスキャン対象とする |
 | BL-002 | 除外パターン | `node_modules`、`.git`、`.*`（ドットファイル/ディレクトリ） | スキャン対象から除外 |
 | BL-002a | ドット始まりのmdファイル | `.hidden.md` / `.DS_Store` などファイル名先頭がドット | `.md` 拡張子であっても除外 |
-| BL-002b | 非 UTF-8 のパス | ファイル名・パス component に非 UTF-8 バイト列を含む | 後続の Tauri / JSON 境界（UTF-8 文字列前提）と整合させるため保守的に除外 |
+| BL-002b | 非 UTF-8 のパス | ファイル名・パス component に非 UTF-8 バイト列を含む | `invalidPath` warning（wire `path: null`）として記録して保守的に除外し、ほかのファイルの走査を継続 |
 | BL-002c | 除外パターンの適用範囲 | 利用者が `~/.spec-board/` や `node_modules` という名前のディレクトリを root として渡した場合 | 除外パターンは **root 配下の子孫エントリにのみ適用** し、root 自身がドット始まりや `node_modules` 名でもスキャン自体は実行する |
 | BL-002d | 巨大ファイル | サイズが 1MB（1,048,576 byte）を超える `.md` ファイル | スキャン結果から除外（1MB ちょうどは含める） |
 | BL-002e | バイナリファイル | 先頭 8KB（8,192 byte）に NUL byte (`0x00`) を含む `.md` ファイル | スキャン結果から除外（プローブ範囲外の NUL byte は判定しない） |
@@ -673,6 +673,15 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 ```rust
 pub fn scan_md_files(root: &Path) -> Result<Vec<PathBuf>, ScanError>;
 
+pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError>;
+
+pub struct ScanWarning {
+    pub code: ScanWarningCode,
+    pub path: Option<PathBuf>,
+    pub io_kind: Option<std::io::ErrorKind>,
+    pub message: String,
+}
+
 pub enum ScanError {
     Io {
         path: std::path::PathBuf,
@@ -688,9 +697,13 @@ pub enum ScanError {
 | 戻り値 | `root` からの **相対 `PathBuf`** の `Vec`。順序は OS 依存のため呼び出し側でソートする |
 | 走査ライブラリ | `walkdir` crate（`follow_links(false)` 設定でシンボリックリンクは辿らない） |
 | 除外パターン | BL-002 / BL-002a / BL-002b / BL-002c / BL-002d / BL-002e の各ルールを内部で適用 |
-| 個別 I/O エラー | per-entry の `Err` は黙って skip し走査を継続（上記「エラーハンドリング」の挙動） |
+| 個別 I/O エラー | per-entry / metadata / file readの失敗は`ScanWarning`へ変換し、該当entryだけをskipして走査を継続する。warningは`open_project` / rescanの`loadWarnings`へ投影される |
 | 致命的エラー | `Err(ScanError::Io { path, source })` を返す。`path` には呼び出し時に渡された root が保持され、エラー文脈を残す |
 | `Display` 形式 | `failed to scan directory \`{path}\`: {source}`（root のパスを必ず含める） |
+
+`ScanWarning.path`は、entry pathがroot相対かつUTF-8表現可能な場合だけ`PathBuf`で保持する。相対化できない場合と非UTF-8 pathは`None`とする。`io_kind`は、`EntryError` / `MetadataError`では`walkdir` errorが内部に`std::io::Error`を持つ場合、`UnreadableFile`ではfile open/readが失敗した場合に、その`ErrorKind`を保持する。walkdirの非I/O loop error、および`FileTooLarge` / `BinaryFile` / `InvalidPath`では`None`である。root自身のmetadata/read_dir失敗はwarningへ落とさず、従来どおりfatalな`ScanError`とする。
+
+本体crateのrebuild境界は`PathBuf`をlossy変換せず、UTF-8へ変換できた場合だけ`ProjectLoadWarning.path`へ渡す。変換できなければwire `path`は`null`になる。`io_kind`はRust内部の診断・分類情報であり、Tauri/JSONへは公開しない。したがって`ProjectLoadWarning`の`code` / `stage` / `path` / `message` / `recoverable`の5フィールド、FE API、既存warning messageは不変である。
 
 `open_project` 等の Tauri command は本 API を呼び出し、`ScanError::Io` をフロントエンド表示用エラー（"ディレクトリが見つかりません" 等）に変換して返却する。
 
@@ -873,6 +886,7 @@ recommended / poll の両方を `WatcherError::Init` に保持するため、cal
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.14 | 2026-08-24 | Issue #609: recoverableなscan warningのrelative PathBuf / std::io::ErrorKind内部契約、非UTF-8 pathのwire null化、io kind非公開と既存5-field warning互換を明記 | - |
 | 1.13 | 2026-08-24 | Issue #607: watcher両backendの起動失敗をtyped pairで保持し、通常error string互換を維持したまま`open_project`へ機械可読な起動診断を追加 | - |
 | 1.12 | 2026-08-24 | Issue #606: task contentのsize / binary probe閾値をworkspace内部APIへ集約し、scannerとTaskContentが同じ定義を参照する契約を明記 | - |
 | 1.11 | 2026-08-24 | Issue #604: `FileChangeBatch` を opaque な不変条件付き batch とし、内部構築限定、immutable getter による consumer 契約、test-utils builder、wire/runtime 挙動不変を明記 | - |
