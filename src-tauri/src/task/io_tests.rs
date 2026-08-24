@@ -158,6 +158,35 @@ fn read_rejects_directory() {
 }
 
 #[test]
+fn try_exists_returns_true_for_existing_file() {
+    with_both(|io, base| {
+        let path = base.join("existing.md");
+        io.write_new(&path, b"task").expect("seed file");
+
+        assert!(io.try_exists(&path).expect("existence check succeeds"));
+    });
+}
+
+#[test]
+fn try_exists_returns_true_for_existing_directory() {
+    with_both(|io, base| {
+        let path = base.join("existing-dir");
+        io.ensure_dir(&path).expect("seed directory");
+
+        assert!(io.try_exists(&path).expect("existence check succeeds"));
+    });
+}
+
+#[test]
+fn try_exists_returns_false_for_missing_path() {
+    with_both(|io, base| {
+        let path = base.join("missing.md");
+
+        assert!(!io.try_exists(&path).expect("missing is not an error"));
+    });
+}
+
+#[test]
 fn ensure_dir_idempotent_for_existing_dir() {
     with_both(|io, base| {
         let dir = base.join("idempotent");
