@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+#[cfg(unix)]
 use spec_board_fs::config::config_io::ConfigIoError;
 use tempfile::TempDir;
 
