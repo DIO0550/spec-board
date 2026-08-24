@@ -156,7 +156,7 @@
       </div>
       <footer class="sidebar__footer">
         <p class="sidebar__brand">Storybook Visual Regression</p>
-        <p class="sidebar__version">Visual report UI v8 · 2038e6e</p>
+        <p class="sidebar__version">Visual report UI v8 · 42909c4</p>
       </footer>
     </aside>
     <main>
@@ -169,12 +169,12 @@
       <ul class="cards">
         <li class="card card--passed">
           <a class="card__open" href="./" data-open="components-commoncomponentsgallery--comfortable" aria-label="Open components-commoncomponentsgallery--comfortable">
-            <span class="card__thumb checker"><img loading="lazy" src="../actual/components-commoncomponentsgallery--comfortable.png" alt="components-commoncomponentsgallery--comfortable"></span>
+            <span class="card__thumb checker"><img loading="lazy" src="../diff/components-commoncomponentsgallery--comfortable.png" alt="components-commoncomponentsgallery--comfortable"></span>
             <span class="card__badge"><span class="ball ball--passed" aria-hidden="true"></span></span>
           </a>
           <div class="card__meta">
             <p class="card__name" title="components-commoncomponentsgallery--comfortable">components/CommonComponentsGallery / Comfortable</p>
-            <p class="card__sub">Identical</p>
+            <p class="card__sub">Within threshold</p>
           </div>
         </li>
       </ul>
@@ -196,7 +196,7 @@
       <button type="button" role="tab" data-view-mode="diff" aria-selected="false">Diff</button><button type="button" role="tab" data-view-mode="slide" aria-selected="false">Slide</button><button type="button" role="tab" data-view-mode="2up" aria-selected="false">2up</button><button type="button" role="tab" data-view-mode="blend" aria-selected="false">Blend</button><button type="button" role="tab" data-view-mode="toggle" aria-selected="false">Toggle</button>
     </nav>
   </div>
-  <script type="application/json" id="report-data">{"pathPrefix":"../","initialStory":"components-commoncomponentsgallery--comfortable","items":[{"story":"components-commoncomponentsgallery--comfortable","label":"components/CommonComponentsGallery / Comfortable","status":"passed","reason":"match","diffPixels":0,"diffRatio":0,"hasExpected":true,"hasActual":true,"hasDiff":false}]}</script>
+  <script type="application/json" id="report-data">{"pathPrefix":"../","initialStory":"components-commoncomponentsgallery--comfortable","items":[{"story":"components-commoncomponentsgallery--comfortable","label":"components/CommonComponentsGallery / Comfortable","status":"passed","reason":"within-threshold","diffPixels":1,"diffRatio":0,"hasExpected":true,"hasActual":true,"hasDiff":true}]}</script>
   <script>
     const data = JSON.parse(document.getElementById("report-data").textContent);
     const prefix = data.pathPrefix;

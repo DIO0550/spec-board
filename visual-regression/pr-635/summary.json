@@ -1,5 +1,5 @@
 {
-  "reportVersion": "2038e6e8aa83342fc858037d3b2cde787cb0a6dc",
+  "reportVersion": "42909c4005fc149d9d8bb73ebcc1cd7330d60696",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--compact",
