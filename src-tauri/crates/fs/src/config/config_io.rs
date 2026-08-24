@@ -105,8 +105,9 @@ impl SpecBoardDir {
     ///
     /// - 対象ファイルが存在しない場合のみ `Ok(None)` を返す（呼び出し側で Default 初期化に分岐）。
     /// - 中身が不正フォーマットでも本層では検査せず、生の文字列として返す（パースは本体クレート）。
-    /// - `project_root` / `.spec-board/` の不在・非ディレクトリ、壊れた symlink（dangling）は
-    ///   `Err(ConfigIoError::Io)` を返す（「ファイル不在」と「環境異常」を呼び出し側で区別可能にするため）。
+    /// - `project_root` / `.spec-board/` の非ディレクトリは
+    ///   `Err(ConfigIoError::NotADirectory)`、不在・アクセス失敗や壊れた symlink（dangling）は
+    ///   `Err(ConfigIoError::Io)` を返す（「ファイル不在」と「環境異常」を区別可能にするため）。
     ///
     /// # Errors
     ///
@@ -184,13 +185,9 @@ impl SpecBoardDir {
             (Some(Component::Normal(_)), None)
         );
         if !is_single_normal {
-            return Err(io_err(
-                Path::new(file_name),
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("invalid .spec-board file name: `{file_name}`"),
-                ),
-            ));
+            return Err(ConfigIoError::InvalidFileName {
+                name: file_name.to_string(),
+            });
         }
         Ok(())
     }
@@ -211,13 +208,29 @@ fn unique_spec_board_tmp_path(spec_board_dir: &Path, file_name: &str) -> PathBuf
 
 /// `config_io` モジュールのファイル I/O で発生し得るエラー。
 ///
-/// `path` には失敗時の対象パスのコピーを保持し、エラー文脈を残す
-/// （OS のエラーメッセージだけではどのパスで失敗したか不明になるため）。
-/// `.spec-board/` ディレクトリへのアクセス / 作成と `config.json` の読み込みの
-/// 両方で同じバリアントを使うため、メッセージは特定操作に偏らない汎用文言とする。
+/// variantに応じて`name`または`path`に失敗時の入力・対象パスのコピーを保持し、
+/// エラー文脈を残す（OS のエラーメッセージだけでは対象が不明になるため）。
+/// 新たにtyped化した境界検証はsourceを持たず、実OS I/Oと既存のleaf非regular分類
+/// （`IsADirectory` / `InvalidInput`）だけをsource付きの[`ConfigIoError::Io`]とする。
+/// 既存の表示文言は操作に偏らない形のまま維持する。
 #[derive(Debug, Error)]
 pub enum ConfigIoError {
-    /// 致命的 I/O エラー（ディレクトリ作成 / `is_dir` チェック / ファイル読み込みなど）。
+    /// `.spec-board/` 直下の単一ファイル名ではない入力。
+    #[error("config_io: I/O error at `{name}`: invalid .spec-board file name: `{name}`")]
+    InvalidFileName { name: String },
+
+    /// ディレクトリを要求する境界で、存在する非ディレクトリを検出した。
+    #[error("config_io: I/O error at `{path}`: not a directory", path = path.display())]
+    NotADirectory { path: PathBuf },
+
+    /// Project境界外への書き込みを防ぐため拒否した既存symlink。
+    #[error(
+        "config_io: I/O error at `{path}`: {path} is a symlink",
+        path = path.display()
+    )]
+    SymlinkRejected { path: PathBuf },
+
+    /// 致命的 I/O エラー（metadata取得 / ディレクトリ作成 / ファイル読み込みなど）。
     /// `path` は失敗対象のパス（`.spec-board/` ディレクトリ自身 / `config.json` ファイル
     /// のいずれか）。詳細は `source` の `std::io::ErrorKind` を参照。
     #[error("config_io: I/O error at `{path}`: {source}", path = path.display())]
@@ -239,6 +252,16 @@ fn io_err(path: &Path, source: std::io::Error) -> ConfigIoError {
     ConfigIoError::Io {
         path: path.to_path_buf(),
         source,
+    }
+}
+
+/// 存在する非ディレクトリをtyped errorへ分類する。
+///
+/// @param path ディレクトリであることを期待したpath。
+/// @returns sourceを持たずpathを保持する`ConfigIoError::NotADirectory`。
+fn not_a_directory(path: &Path) -> ConfigIoError {
+    ConfigIoError::NotADirectory {
+        path: path.to_path_buf(),
     }
 }
 
@@ -280,10 +303,7 @@ pub fn guide_markdown_path(project_root: &Path) -> PathBuf {
 pub fn ensure_spec_board_dir(project_root: &Path) -> Result<PathBuf, ConfigIoError> {
     let root_meta = std::fs::metadata(project_root).map_err(|e| io_err(project_root, e))?;
     if !root_meta.is_dir() {
-        return Err(io_err(
-            project_root,
-            std::io::Error::from(std::io::ErrorKind::NotADirectory),
-        ));
+        return Err(not_a_directory(project_root));
     }
 
     let spec_board_dir = project_root.join(SPEC_BOARD_DIR);
@@ -291,10 +311,7 @@ pub fn ensure_spec_board_dir(project_root: &Path) -> Result<PathBuf, ConfigIoErr
     match std::fs::metadata(&spec_board_dir) {
         Ok(meta) => {
             if !meta.is_dir() {
-                return Err(io_err(
-                    &spec_board_dir,
-                    std::io::Error::from(std::io::ErrorKind::NotADirectory),
-                ));
+                return Err(not_a_directory(&spec_board_dir));
             }
             Ok(spec_board_dir)
         }
@@ -322,9 +339,9 @@ pub fn ensure_spec_board_dir(project_root: &Path) -> Result<PathBuf, ConfigIoErr
 /// 実装は防御的に内部で `<project_root>/.spec-board/` の存在 + ディレクトリ性も
 /// 検査する：
 ///
-/// - `project_root` 不在 / `<project_root>/.spec-board/` 不在 / どちらかが
-///   ディレクトリでない場合は `Err(ConfigIoError::Io)` を返す（`Ok(None)` には
-///   しない。「設定ファイル不在」と「環境異常」を呼び出し側で区別可能にするため）
+/// - `project_root` 不在 / `<project_root>/.spec-board/` 不在は`Err(ConfigIoError::Io)`、
+///   どちらかがディレクトリでない場合は`Err(ConfigIoError::NotADirectory)`を返す
+///   （`Ok(None)`にはしない。「設定ファイル不在」と「環境異常」を区別可能にするため）
 /// - `Ok(None)` を返すのは「`.spec-board/` は存在 + `config.json` のみ不在」
 ///   の正常系のみ
 ///
@@ -383,13 +400,9 @@ pub fn write_config_json(project_root: &Path, content: &str) -> Result<PathBuf, 
 
 fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => Err(io_err(
-            path,
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("{} is a symlink", path.display()),
-            ),
-        )),
+        Ok(meta) if meta.file_type().is_symlink() => Err(ConfigIoError::SymlinkRejected {
+            path: path.to_path_buf(),
+        }),
         Ok(_) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(io_err(path, e)),
@@ -494,10 +507,7 @@ fn unique_sibling_path(base: &Path, suffix: &str) -> PathBuf {
 fn validate_dir(path: &Path) -> Result<(), ConfigIoError> {
     let meta = std::fs::metadata(path).map_err(|e| io_err(path, e))?;
     if !meta.is_dir() {
-        return Err(io_err(
-            path,
-            std::io::Error::from(std::io::ErrorKind::NotADirectory),
-        ));
+        return Err(not_a_directory(path));
     }
     Ok(())
 }

@@ -1,5 +1,39 @@
 use super::*;
+use std::error::Error as _;
 use tempfile::TempDir;
+
+/// `Io` variantが実OS errorまたは既存leaf分類のsourceを保持することを検査する。
+///
+/// @param error `Io` variantであることを期待する検査対象。
+/// @returns errorが保持するpathと`std::io::Error` source。
+fn expect_io(error: ConfigIoError) -> (PathBuf, std::io::Error) {
+    match error {
+        ConfigIoError::Io { path, source } => (path, source),
+        unexpected => panic!("expected ConfigIoError::Io, got {unexpected:?}"),
+    }
+}
+
+#[cfg(unix)]
+/// Symlink拒否がtyped variantでpathを保持し、OS sourceを偽装しないことを検査する。
+///
+/// @param error `SymlinkRejected` variantであることを期待する検査対象。
+/// @param expected_path variantと互換Displayに保持されるべきpath。
+/// @returns なし。期待と異なる場合はpanicする。
+fn assert_symlink_rejected(error: ConfigIoError, expected_path: &Path) {
+    assert!(
+        matches!(&error, ConfigIoError::SymlinkRejected { path } if path == expected_path),
+        "unexpected error: {error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "config_io: I/O error at `{}`: {} is a symlink",
+            expected_path.display(),
+            expected_path.display()
+        )
+    );
+    assert!(error.source().is_none());
+}
 
 // ───────── ensure_spec_board_dir ─────────
 
@@ -34,8 +68,39 @@ fn ensure_spec_board_dir_returns_err_when_path_is_file() {
     std::fs::write(&path, b"not a directory").unwrap();
 
     let err = ensure_spec_board_dir(tmp.path()).unwrap_err();
-    let ConfigIoError::Io { path: err_path, .. } = err;
-    assert_eq!(err_path, path);
+    assert!(
+        matches!(&err, ConfigIoError::NotADirectory { path: err_path } if err_path == &path),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "config_io: I/O error at `{}`: not a directory",
+            path.display()
+        )
+    );
+    assert!(err.source().is_none());
+}
+
+#[test]
+fn ensure_spec_board_dir_returns_not_a_directory_when_project_root_is_file() {
+    let tmp = TempDir::new().unwrap();
+    let project_root = tmp.path().join("project-file");
+    std::fs::write(&project_root, b"not a directory").unwrap();
+
+    let err = ensure_spec_board_dir(&project_root).unwrap_err();
+    assert!(
+        matches!(&err, ConfigIoError::NotADirectory { path } if path == &project_root),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "config_io: I/O error at `{}`: not a directory",
+            project_root.display()
+        )
+    );
+    assert!(err.source().is_none());
 }
 
 #[test]
@@ -44,7 +109,7 @@ fn ensure_spec_board_dir_returns_err_when_project_root_missing() {
     let missing = tmp.path().join("does-not-exist");
 
     let err = ensure_spec_board_dir(&missing).unwrap_err();
-    let ConfigIoError::Io { path, source } = err;
+    let (path, source) = expect_io(err);
     assert_eq!(path, missing);
     assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
 }
@@ -84,6 +149,9 @@ fn ensure_spec_board_dir_returns_err_when_project_root_unreadable() {
         }
         (false, Ok(unexpected)) => {
             panic!("PermissionDenied 期待だが Ok({unexpected:?})")
+        }
+        (false, Err(unexpected)) => {
+            panic!("PermissionDenied の Io error 期待だが {unexpected:?}")
         }
         (true, _) => {
             // uid 0 等で実際に書き込めてしまう環境では何もチェックしない
@@ -182,10 +250,7 @@ fn write_config_json_rejects_when_target_is_symlink() {
 
     let err = write_config_json(tmp.path(), "new").unwrap_err();
 
-    let ConfigIoError::Io { path, source } = err;
-    assert_eq!(path, config_path);
-    assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(source.to_string().contains("is a symlink"));
+    assert_symlink_rejected(err, &config_path);
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
 }
 
@@ -201,10 +266,7 @@ fn write_config_json_rejects_spec_board_dir_symlink_without_writing_target() {
 
     let err = write_config_json(tmp.path(), "new").unwrap_err();
 
-    let ConfigIoError::Io { path, source } = err;
-    assert_eq!(path, tmp.path().join(".spec-board"));
-    assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(source.to_string().contains("is a symlink"));
+    assert_symlink_rejected(err, &tmp.path().join(".spec-board"));
     assert!(!outside_config.exists());
 }
 
@@ -245,10 +307,7 @@ fn write_guide_markdown_rejects_spec_board_symlink_without_writing_target() {
 
     let err = write_guide_markdown(tmp.path(), "new").unwrap_err();
 
-    let ConfigIoError::Io { path, source } = err;
-    assert_eq!(path, tmp.path().join(".spec-board"));
-    assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(source.to_string().contains("is a symlink"));
+    assert_symlink_rejected(err, &tmp.path().join(".spec-board"));
     assert!(!outside_guide.exists());
 }
 
@@ -268,10 +327,7 @@ fn write_guide_markdown_rejects_guide_symlink_without_overwriting_target() {
 
     let err = write_guide_markdown(tmp.path(), "new").unwrap_err();
 
-    let ConfigIoError::Io { path, source } = err;
-    assert_eq!(path, guide_path);
-    assert_eq!(source.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(source.to_string().contains("is a symlink"));
+    assert_symlink_rejected(err, &guide_path);
     assert_eq!(std::fs::read_to_string(target).unwrap(), "keep");
 }
 
@@ -324,7 +380,7 @@ fn read_config_json_returns_err_when_project_root_missing() {
     let missing = tmp.path().join("does-not-exist");
 
     let err = read_config_json(&missing).unwrap_err();
-    let ConfigIoError::Io { path, .. } = err;
+    let (path, _) = expect_io(err);
     assert_eq!(path, missing);
 }
 
@@ -332,7 +388,7 @@ fn read_config_json_returns_err_when_project_root_missing() {
 fn read_config_json_returns_err_when_spec_board_dir_missing() {
     let tmp = TempDir::new().unwrap();
     let err = read_config_json(tmp.path()).unwrap_err();
-    let ConfigIoError::Io { path, source } = err;
+    let (path, source) = expect_io(err);
     assert_eq!(path, tmp.path().join(".spec-board"));
     assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
 }
@@ -344,8 +400,18 @@ fn read_config_json_returns_err_when_spec_board_dir_is_file() {
     std::fs::write(&path, b"not a directory").unwrap();
 
     let err = read_config_json(tmp.path()).unwrap_err();
-    let ConfigIoError::Io { path: err_path, .. } = err;
-    assert_eq!(err_path, path);
+    assert!(
+        matches!(&err, ConfigIoError::NotADirectory { path: err_path } if err_path == &path),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "config_io: I/O error at `{}`: not a directory",
+            path.display()
+        )
+    );
+    assert!(err.source().is_none());
 }
 
 #[test]
@@ -357,7 +423,7 @@ fn read_config_json_returns_err_when_config_is_directory() {
     std::fs::create_dir(&config_as_dir).unwrap();
 
     let err = read_config_json(tmp.path()).unwrap_err();
-    let ConfigIoError::Io { path, source } = err;
+    let (path, source) = expect_io(err);
     assert_eq!(path, config_as_dir);
     assert_eq!(source.kind(), std::io::ErrorKind::IsADirectory);
 }
@@ -375,7 +441,7 @@ fn read_config_json_returns_err_when_config_is_dangling_symlink() {
     symlink(tmp.path().join("does-not-exist.json"), &config_path).unwrap();
 
     let err = read_config_json(tmp.path()).unwrap_err();
-    let ConfigIoError::Io { path, source } = err;
+    let (path, source) = expect_io(err);
     assert_eq!(path, config_path);
     // dangling symlink を Ok(None) と誤認しないこと（NotFound は来るが Err として伝播）
     assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
@@ -411,6 +477,9 @@ fn read_config_json_returns_err_when_config_is_unreadable() {
         }
         (false, Ok(unexpected)) => {
             panic!("PermissionDenied 期待だが Ok({unexpected:?})")
+        }
+        (false, Err(unexpected)) => {
+            panic!("PermissionDenied の Io error 期待だが {unexpected:?}")
         }
         (true, _) => {
             // uid 0 環境では権限を無視できるためチェックしない
@@ -455,7 +524,28 @@ fn spec_board_dir_read_file_errs_when_spec_board_is_file() {
 
     let dir = SpecBoardDir::new(tmp.path());
     let err = dir.read_file(LABELS_FILE_NAME).unwrap_err();
-    let ConfigIoError::Io { .. } = err;
+    let path = tmp.path().join(".spec-board");
+    assert!(
+        matches!(&err, ConfigIoError::NotADirectory { path: err_path } if err_path == &path),
+        "unexpected error: {err:?}"
+    );
+    assert!(err.source().is_none());
+}
+
+#[test]
+fn spec_board_dir_read_file_returns_not_a_directory_when_project_root_is_file() {
+    let tmp = TempDir::new().unwrap();
+    let project_root = tmp.path().join("project-file");
+    std::fs::write(&project_root, b"not a directory").unwrap();
+
+    let err = SpecBoardDir::new(&project_root)
+        .read_file(LABELS_FILE_NAME)
+        .unwrap_err();
+    assert!(
+        matches!(&err, ConfigIoError::NotADirectory { path } if path == &project_root),
+        "unexpected error: {err:?}"
+    );
+    assert!(err.source().is_none());
 }
 
 #[test]
@@ -499,7 +589,7 @@ fn spec_board_dir_write_rejects_symlink_leaf() {
 
     let dir = SpecBoardDir::new(tmp.path());
     let err = dir.write_file(LABELS_FILE_NAME, "overwritten").unwrap_err();
-    let ConfigIoError::Io { .. } = err;
+    assert_symlink_rejected(err, &spec_board.join(LABELS_FILE_NAME));
     // symlink 先のファイルが上書きされていないこと
     assert_eq!(std::fs::read_to_string(&outside).unwrap(), "original");
 }
@@ -518,9 +608,26 @@ fn spec_board_dir_rejects_path_traversal_file_names() {
         "",
     ] {
         let read_err = dir.read_file(bad).unwrap_err();
-        let ConfigIoError::Io { .. } = read_err;
+        assert!(
+            matches!(&read_err, ConfigIoError::InvalidFileName { name } if name == bad),
+            "unexpected read error: {read_err:?}"
+        );
+        assert_eq!(
+            read_err.to_string(),
+            format!("config_io: I/O error at `{bad}`: invalid .spec-board file name: `{bad}`")
+        );
+        assert!(read_err.source().is_none());
+
         let write_err = dir.write_file(bad, "x").unwrap_err();
-        let ConfigIoError::Io { .. } = write_err;
+        assert!(
+            matches!(&write_err, ConfigIoError::InvalidFileName { name } if name == bad),
+            "unexpected write error: {write_err:?}"
+        );
+        assert_eq!(
+            write_err.to_string(),
+            format!("config_io: I/O error at `{bad}`: invalid .spec-board file name: `{bad}`")
+        );
+        assert!(write_err.source().is_none());
     }
 }
 
@@ -536,6 +643,14 @@ fn spec_board_dir_file_path_validates_and_rejects_traversal() {
     // 異常: 親ディレクトリ / セパレータ / 絶対パス / 空は拒否
     for bad in ["../outside.yml", "sub/dir.yml", "/abs.yml", ""] {
         let err = dir.file_path(bad).unwrap_err();
-        let ConfigIoError::Io { .. } = err;
+        assert!(
+            matches!(&err, ConfigIoError::InvalidFileName { name } if name == bad),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("config_io: I/O error at `{bad}`: invalid .spec-board file name: `{bad}`")
+        );
+        assert!(err.source().is_none());
     }
 }
