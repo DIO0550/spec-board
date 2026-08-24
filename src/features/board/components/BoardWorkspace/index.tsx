@@ -14,6 +14,7 @@ import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
 import {
   type BoardViewMode,
+  normalizeBoardViewMode,
   useBoardViewMode,
 } from "../../hooks/useBoardViewMode";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
@@ -31,6 +32,9 @@ type ViewIconKind =
   | "calendar"
   | "roadmap"
   | "guide";
+
+/** BoardWorkspaceのタブID。GUIDEは表示形態ではなく遷移action。 */
+type BoardWorkspaceTabId = BoardViewMode | "guide";
 
 /**
  * @param props - 表示するビューの種類
@@ -75,7 +79,7 @@ const ViewIcon = ({ kind }: { kind: ViewIconKind }) => (
 const buildViewTabs = (
   taskCount: number,
   includeGuide: boolean,
-): readonly TabItem[] => [
+): readonly TabItem<BoardWorkspaceTabId>[] => [
   {
     id: "board",
     label: "ボード",
@@ -92,7 +96,13 @@ const buildViewTabs = (
   { id: "calendar", label: "カレンダー", icon: <ViewIcon kind="calendar" /> },
   { id: "roadmap", label: "ロードマップ", icon: <ViewIcon kind="roadmap" /> },
   ...(includeGuide
-    ? [{ id: "guide", label: "GUIDE.md", icon: <ViewIcon kind="guide" /> }]
+    ? [
+        {
+          id: "guide" as const,
+          label: "GUIDE.md",
+          icon: <ViewIcon kind="guide" />,
+        },
+      ]
     : []),
 ];
 
@@ -311,7 +321,11 @@ export const BoardWorkspace = (props: BoardWorkspaceProps) => {
               onGuideClick?.();
               return;
             }
-            setViewMode(tabId as BoardViewMode);
+            const nextViewMode = normalizeBoardViewMode(tabId);
+            if (nextViewMode !== tabId) {
+              return;
+            }
+            setViewMode(nextViewMode);
           }}
           trailing={
             <div

@@ -1,8 +1,8 @@
 /** TabNav が扱うタブ 1 件。 */
 import type { ReactNode } from "react";
-export type TabItem = {
+export type TabItem<TId extends string = string> = {
   /** タブ識別子。 */
-  id: string;
+  id: TId;
   /** 表示ラベル。 */
   label: string;
   /** ラベル左側に表示する任意のアイコン。 */
@@ -29,11 +29,11 @@ export const tabNavTabId = (prefix: string, tabId: string): string =>
 export const tabNavPanelId = (prefix: string, tabId: string): string =>
   `${prefix}-panel-${tabId}`;
 
-type TabNavProps = {
+export type TabNavProps<TId extends string> = {
   /** タブ一覧。 */
-  tabs: readonly TabItem[];
+  tabs: readonly TabItem<TId>[];
   /** アクティブなタブID。 */
-  activeTabId: string;
+  activeTabId: NoInfer<TId>;
   /** DOM idの接頭辞。 */
   idPrefix: string;
   /** tablistの説明。 */
@@ -42,7 +42,7 @@ type TabNavProps = {
    * タブ選択ハンドラ。
    * @param tabId - 選択されたタブID
    */
-  onSelect: (tabId: string) => void;
+  onSelect: (tabId: TId) => void;
   /** subbar右側へ配置する検索・フィルタなどの操作群。 */
   trailing?: ReactNode;
 };
@@ -52,14 +52,14 @@ type TabNavProps = {
  * @param props - {@link TabNavProps}
  * @returns tablist要素
  */
-export const TabNav = ({
+export const TabNav = <TId extends string>({
   tabs,
   activeTabId,
   idPrefix,
   ariaLabel,
   onSelect,
   trailing,
-}: TabNavProps) => (
+}: TabNavProps<TId>) => (
   <div className="flex h-11 shrink-0 items-stretch gap-0.5 overflow-hidden border-b border-border bg-surface px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div
       role="tablist"
