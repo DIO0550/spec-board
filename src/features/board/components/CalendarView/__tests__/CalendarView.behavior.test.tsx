@@ -103,6 +103,27 @@ test("todayを指定するとsystem clockではなく指定日を表示基準に
   expect(sidebar?.textContent).toContain("固定日のタスク");
 });
 
+test.each([
+  "not-a-date",
+  "2026-02-29",
+  "2026-13-01",
+])("不正なtoday「%s」はsystem clockの日付へfallbackする", (today) => {
+  act(() => {
+    root?.render(createElement(CalendarView, { tasks: [], today }));
+  });
+
+  expect(container?.textContent).toContain("2026年 4月");
+  expect(
+    container?.querySelector(
+      '[data-calendar-date="2026-04-26"][data-today="true"]',
+    ),
+  ).not.toBeNull();
+  const sidebar = container?.querySelector('[data-testid="calendar-sidebar"]');
+  expect(sidebar?.textContent).toContain("2026-04-26");
+  expect(container?.textContent).not.toContain("NaN");
+  expect(container?.textContent).not.toContain(today);
+});
+
 test("日付セルの追加ボタンはYYYY-MM-DD付きでコールバックを呼ぶ", () => {
   const onAddTask = vi.fn();
   act(() => {
