@@ -1,6 +1,0 @@
-import{n as e}from"./chunk-BneVvdWh.js";import{t}from"./jsx-runtime-Bn1Ys6_W.js";var n,r,i,a,o=e((()=>{n=t(),r=`​`,i=e=>{if(e===null)return``;let t=e.id%2==0?``:r;return`${e.text}${t}`},a=({announcement:e})=>(0,n.jsx)(`div`,{role:`status`,"aria-live":`polite`,"aria-atomic":`true`,"data-testid":`live-region`,className:`sr-only absolute -m-px h-px w-px overflow-hidden border-0 p-0 [clip:rect(0,0,0,0)]`,children:i(e)});try{a.displayName=`LiveRegion`,a.__docgenInfo={description:`視覚非表示の aria-live="polite" 領域。
-
-status 変更などの非緊急アナウンスを SR に通知する目的で使用する。
-div 自体はマウント以後一度も unmount されず、textContent のみが更新される。
-同一文言の連続通知は {@link renderText} がゼロ幅スペースを付け替えることで
-SR に再読をトリガする。`,displayName:`LiveRegion`,filePath:`/home/runner/work/spec-board/spec-board/src/components/LiveRegion/index.tsx`,methods:[],props:{announcement:{defaultValue:null,declarations:[{fileName:`spec-board/src/components/LiveRegion/index.tsx`,name:`TypeLiteral`}],description:`null のとき何も読み上げない（初期状態）。`,name:`announcement`,required:!0,tags:{},type:{name:`LiveAnnouncement | null`}}},tags:{param:`props LiveRegion の props`,returns:`aria-live polite な div 要素`}}}catch{}}));export{o as n,a as t};
