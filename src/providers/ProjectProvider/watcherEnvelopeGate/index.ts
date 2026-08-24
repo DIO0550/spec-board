@@ -6,7 +6,7 @@ import {
   type WatcherProjectKey,
   WatcherSession,
 } from "@/domains/watcher-session";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFilePath, type TaskPayload } from "@/types/task";
 import type { ProjectAction } from "../reducer";
 
 /** BE と共有する watcher event 名。単一 effect でまとめて購読する。 */
@@ -624,14 +624,19 @@ export const WatcherGate = {
     switch (payload.kind) {
       case "task-created":
         return { type: "task-created", task: Task.fromPayload(payload.task) };
-      case "task-updated":
+      case "task-updated": {
+        const task = Task.fromPayload(payload.task);
         return {
           type: "task-updated",
-          originalFilePath: payload.task.filePath,
-          task: Task.fromPayload(payload.task),
+          originalFilePath: task.filePath,
+          task,
         };
+      }
       case "task-deleted":
-        return { type: "task-deleted", filePath: payload.filePath };
+        return {
+          type: "task-deleted",
+          filePath: payload.filePath as TaskFilePath,
+        };
       case "resync-required":
       case "diagnostic":
         return null;

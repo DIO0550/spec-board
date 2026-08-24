@@ -310,6 +310,7 @@ test("unknown warning code / stage と null path は mapper で安全な domain 
     columns: [],
     projections: {},
     milestoneProjections: {},
+    taskTree: [],
     loadWarnings: [
       {
         code: "futureWarningCode",

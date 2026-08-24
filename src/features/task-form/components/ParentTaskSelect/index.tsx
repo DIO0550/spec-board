@@ -1,5 +1,6 @@
 import { TaskSelect } from "@/components/TaskSelect";
-import type { Task } from "@/types/task";
+import { parentReferencesTaskPath } from "@/domains/task-path";
+import type { Task, TaskFilePath } from "@/types/task";
 
 type ParentTaskSelectProps = {
   /** 選択候補となるタスク一覧 */
@@ -10,7 +11,7 @@ type ParentTaskSelectProps = {
    * 選択変更時のコールバック
    * @param filePath - 選択されたタスクのファイルパス（解除時は undefined）
    */
-  onChange: (filePath: string | undefined) => void;
+  onChange: (filePath: TaskFilePath | undefined) => void;
   /** 無効化（送信中など） */
   disabled?: boolean;
   /**
@@ -26,7 +27,8 @@ type ParentTaskSelectProps = {
 /**
  * 既存タスクから親タスクを検索・選択するコンポーネント。
  * 共通 {@link TaskSelect} を `testIdPrefix="parent-task"` で wrap し、
- * value: string | undefined ↔ TaskSelect: string | null を変換する。
+ * raw parent文字列を解決済みTaskのcanonical filePathへ変換する。解決できないraw値は
+ * 表示用fallbackとして明示的に渡し、TaskSelectのcanonical value境界へ混入させない。
  *
  * @param props - {@link ParentTaskSelectProps}
  * @returns 親タスク選択 UI
@@ -38,10 +40,19 @@ export const ParentTaskSelect = ({
   disabled = false,
   readOnly = false,
 }: ParentTaskSelectProps) => {
+  const resolvedValue =
+    value === undefined
+      ? null
+      : (tasks.find((task) => parentReferencesTaskPath(value, task.filePath))
+          ?.filePath ?? null);
+  const unresolvedValueLabel =
+    value !== undefined && resolvedValue === null ? value : undefined;
+
   return (
     <TaskSelect
       tasks={tasks}
-      value={value ?? null}
+      value={resolvedValue}
+      unresolvedValueLabel={unresolvedValueLabel}
       onChange={(filePath) => onChange(filePath ?? undefined)}
       disabled={disabled}
       readOnly={readOnly}

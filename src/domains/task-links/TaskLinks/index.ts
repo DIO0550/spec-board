@@ -3,7 +3,7 @@ import {
   normalizeRefPathForLookup,
   normalizeTaskPathForLookup,
 } from "@/domains/task-path";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import type { LinkIntent } from "../LinkIntent";
 import {
   applyLinkOperationsToTask,
@@ -17,7 +17,7 @@ export type TaskLinks = {
   /** 関連タスクのファイルパスの配列 */
   linkedFilePaths: string[];
   /** 逆方向リンクのファイルパスの配列（links から逆引き） */
-  reverseLinkedFilePaths: string[];
+  reverseLinkedFilePaths: TaskFilePath[];
 };
 
 /** `planAddLink` の reject 理由 */
@@ -58,7 +58,7 @@ export type BuildAddLinkCandidatesArgs = {
   /** 親タスクの filePath（無ければ null） */
   readonly parentFilePath: string | null;
   /** 子タスクの filePath 配列 */
-  readonly childrenFilePaths: readonly string[];
+  readonly childrenFilePaths: readonly TaskFilePath[];
 };
 
 /**
@@ -308,12 +308,32 @@ const buildCreateLinkCandidates = (
  * @param filePath 除去対象の path
  * @returns 除去後の path 配列
  */
-const removePath = (paths: string[], filePath: string): string[] => {
-  if (!paths.includes(filePath)) {
+const removePath = <Path extends string>(
+  paths: Path[],
+  filePath: Path,
+): Path[] => {
+  if (!paths.some((path) => path === filePath)) {
     return paths;
   }
 
   return paths.filter((path) => path !== filePath);
+};
+
+/**
+ * raw link参照からcanonical filePathと正規化同値な値を取り除く。
+ * @param paths frontmatter由来のraw link参照
+ * @param filePath 除去対象のcanonical filePath
+ * @returns 除去後のraw link参照
+ */
+const removeLinkReferences = (
+  paths: string[],
+  filePath: TaskFilePath,
+): string[] => {
+  if (!paths.some((path) => linkReferencesTaskPath(path, filePath))) {
+    return paths;
+  }
+
+  return paths.filter((path) => !linkReferencesTaskPath(path, filePath));
 };
 
 /**
@@ -324,9 +344,12 @@ const removePath = (paths: string[], filePath: string): string[] => {
  */
 const removeLinkedPath = (
   taskLinks: TaskLinks,
-  linkedFilePath: string,
+  linkedFilePath: TaskFilePath,
 ): TaskLinks => ({
-  linkedFilePaths: removePath(taskLinks.linkedFilePaths, linkedFilePath),
+  linkedFilePaths: removeLinkReferences(
+    taskLinks.linkedFilePaths,
+    linkedFilePath,
+  ),
   reverseLinkedFilePaths: removePath(
     taskLinks.reverseLinkedFilePaths,
     linkedFilePath,
@@ -350,7 +373,7 @@ const hasLinkChanges = (current: TaskLinks, next: TaskLinks): boolean =>
  * @param linkedFilePath 取り除く関連 task の filePath
  * @returns link 関係が変われば更新後 task、変わらなければ元 task
  */
-const removeLinkedTask = (task: Task, linkedFilePath: string): Task => {
+const removeLinkedTask = (task: Task, linkedFilePath: TaskFilePath): Task => {
   const taskLinks = removeLinkedPath(task.links, linkedFilePath);
 
   if (!hasLinkChanges(task.links, taskLinks)) {

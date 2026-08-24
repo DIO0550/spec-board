@@ -1,6 +1,7 @@
 import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
 import { DRAG_MIME_TYPE } from "../../Board/mime";
@@ -30,7 +31,7 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/test.md",
+    filePath: taskFilePathFixture("tasks/test.md"),
     ...overrides,
   });
 
@@ -108,7 +109,10 @@ test("Provider の dndDisabled=true では draggable=false 属性になる", () 
 
 test("Provider の dndDisabled=true では dragstart しても startDrag / setData が呼ばれない", () => {
   const probe = render(
-    { task: makeTask({ filePath: "tasks/a.md" }), fromColumn: "Todo" },
+    {
+      task: makeTask({ filePath: taskFilePathFixture("tasks/a.md") }),
+      fromColumn: "Todo",
+    },
     { dndDisabled: true },
   );
   const card = queryCard();
@@ -116,13 +120,15 @@ test("Provider の dndDisabled=true では dragstart しても startDrag / setDa
   act(() => {
     card.dispatchEvent(event);
   });
-  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(false);
+  expect(probe.cardApi.isDragging(taskFilePathFixture("tasks/a.md"))).toBe(
+    false,
+  );
   expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe("");
 });
 
 test("dragstart で dataTransfer.setData(DRAG_MIME_TYPE, filePath) が呼ばれる", () => {
   render({
-    task: makeTask({ filePath: "tasks/a.md" }),
+    task: makeTask({ filePath: taskFilePathFixture("tasks/a.md") }),
     fromColumn: "Todo",
     onClick: vi.fn(),
   });
@@ -131,12 +137,14 @@ test("dragstart で dataTransfer.setData(DRAG_MIME_TYPE, filePath) が呼ばれ�
   act(() => {
     card.dispatchEvent(event);
   });
-  expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe("tasks/a.md");
+  expect(event.dataTransfer.getData(DRAG_MIME_TYPE)).toBe(
+    taskFilePathFixture("tasks/a.md"),
+  );
 });
 
 test("dragstart で Provider の isDragging(filePath) が true になる", () => {
   const probe = render({
-    task: makeTask({ filePath: "tasks/a.md" }),
+    task: makeTask({ filePath: taskFilePathFixture("tasks/a.md") }),
     fromColumn: "Todo",
     onClick: vi.fn(),
   });
@@ -144,12 +152,14 @@ test("dragstart で Provider の isDragging(filePath) が true になる", () =>
   act(() => {
     card.dispatchEvent(createDragEvent("dragstart"));
   });
-  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(true);
+  expect(probe.cardApi.isDragging(taskFilePathFixture("tasks/a.md"))).toBe(
+    true,
+  );
 });
 
 test("dragend で Provider の isDragging が false に戻る", () => {
   const probe = render({
-    task: makeTask({ filePath: "tasks/a.md" }),
+    task: makeTask({ filePath: taskFilePathFixture("tasks/a.md") }),
     fromColumn: "Todo",
     onClick: vi.fn(),
   });
@@ -160,11 +170,13 @@ test("dragend で Provider の isDragging が false に戻る", () => {
   act(() => {
     card.dispatchEvent(createDragEvent("dragend"));
   });
-  expect(probe.cardApi.isDragging("tasks/a.md")).toBe(false);
+  expect(probe.cardApi.isDragging(taskFilePathFixture("tasks/a.md"))).toBe(
+    false,
+  );
 });
 
 test("startDrag 後は data-dragging='true' + opacity-40 class が付く", () => {
-  const task = makeTask({ filePath: "tasks/a.md" });
+  const task = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const probe = render({ task, fromColumn: "Todo", onClick: vi.fn() });
   act(() => {
     probe.cardApi.startDrag(task.filePath, "Todo");

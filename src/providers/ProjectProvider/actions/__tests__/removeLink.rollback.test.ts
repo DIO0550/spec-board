@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { removeLink as removeLinkInvoke, TauriError } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
@@ -52,7 +53,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -131,90 +132,113 @@ beforeEach(() => {
 });
 
 test("失敗時は source forward / target reverse へ自分の path が復元される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
   removeLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-  ]);
   expect(
-    currentTask(harness, "tasks/b.md").links.reverseLinkedFilePaths,
-  ).toEqual(["tasks/a.md"]);
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/b.md")]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/b.md")).links
+      .reverseLinkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/a.md")]);
 });
 
 test("中間要素の remove 失敗では rollback が元位置へ復元する", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md", "tasks/c.md", "tasks/d.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/c.md"),
+      taskFilePathFixture("tasks/d.md"),
+    ],
   });
   const target = makeTask({
-    filePath: "tasks/c.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/c.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
   removeLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/c.md"),
   });
 
   // 中間要素 tasks/c.md が元位置（index 1）へ戻る
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-    "tasks/c.md",
-    "tasks/d.md",
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+    taskFilePathFixture("tasks/c.md"),
+    taskFilePathFixture("tasks/d.md"),
   ]);
 });
 
 test("先頭要素の remove 失敗では rollback が先頭位置へ復元する", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md", "tasks/c.md", "tasks/d.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/c.md"),
+      taskFilePathFixture("tasks/d.md"),
+    ],
   });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
   removeLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   // 先頭要素 tasks/b.md が元位置（index 0）へ戻る
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-    "tasks/c.md",
-    "tasks/d.md",
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+    taskFilePathFixture("tasks/c.md"),
+    taskFilePathFixture("tasks/d.md"),
   ]);
 });
 
 test("外部 remove で現在長が at 未満になっていたら末尾へ clamp して復元する", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md", "tasks/c.md", "tasks/d.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/c.md"),
+      taskFilePathFixture("tasks/d.md"),
+    ],
   });
   const harness = setupLoaded(makeData([source]));
 
   // 楽観除去後（[b, c]）にさらに外部で全要素を除去し、現在長 0 < at(2) の状態で失敗応答。
   removeLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: {
         ...current,
         links: { ...current.links, linkedFilePaths: [] },
@@ -224,110 +248,124 @@ test("外部 remove で現在長が at 未満になっていたら末尾へ clam
   });
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/d.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/d.md"),
   });
 
   // at: 2 だが現在長 0 のため clamp 挿入され、エラーにならない
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/d.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/d.md")]);
 });
 
 test("broken link の remove 失敗では forward raw が無条件に元位置へ復元される", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["./tasks/gone.md", "tasks/b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: ["./tasks/gone.md", taskFilePathFixture("tasks/b.md")],
   });
   const harness = setupLoaded(makeData([source]));
   removeLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     targetFilePath: "./tasks/gone.md",
   });
 
   // forward append は flag なし = value の task が不在でも復元される（disk との整合を優先）
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "./tasks/gone.md",
-    "tasks/b.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual(["./tasks/gone.md", taskFilePathFixture("tasks/b.md")]);
 });
 
 test("併存する正規化同値表記は両方除去され rollback で両方元位置へ復元される", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["./tasks/b.md", "tasks/x.md", "tasks\\b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: ["./tasks/b.md", taskFilePathFixture("tasks/x.md"), "tasks\\b.md"],
   });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
   removeLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     targetFilePath: "./tasks/b.md",
   });
 
   // 楽観段階で両表記が除去されている（1 dispatch 目）
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   expect(asTaskUpdated(sourceUpdates[0]).task.links.linkedFilePaths).toEqual([
-    "tasks/x.md",
+    taskFilePathFixture("tasks/x.md"),
   ]);
   // rollback（昇順 append）で両表記が各自の元位置へ戻る
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "./tasks/b.md",
-    "tasks/x.md",
-    "tasks\\b.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual(["./tasks/b.md", taskFilePathFixture("tasks/x.md"), "tasks\\b.md"]);
 });
 
 test("self-link 削除の失敗時は 1 dispatch で forward / reverse の両方が復元される", async () => {
   const selfTask = makeTask({
-    filePath: "tasks/a.md",
-    links: ["tasks/a.md"],
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/a.md")],
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([selfTask]));
   removeLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/a.md"),
   });
 
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   // 楽観 1 + rollback 1 の 2 件（rollback は両 field を 1 dispatch で復元）
   expect(sourceUpdates).toHaveLength(2);
   const rollback = asTaskUpdated(sourceUpdates[1]);
-  expect(rollback.task.links.linkedFilePaths).toEqual(["tasks/a.md"]);
-  expect(rollback.task.links.reverseLinkedFilePaths).toEqual(["tasks/a.md"]);
+  expect(rollback.task.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/a.md"),
+  ]);
+  expect(rollback.task.links.reverseLinkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/a.md"),
+  ]);
 });
 
 test("IPC 中の外部変更（別 path 追加）を保持したまま自分の path が復活する", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   removeLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: {
         ...current,
         links: {
           ...current.links,
-          linkedFilePaths: [...current.links.linkedFilePaths, "tasks/c.md"],
+          linkedFilePaths: [
+            ...current.links.linkedFilePaths,
+            taskFilePathFixture("tasks/c.md"),
+          ],
         },
       },
     });
@@ -335,35 +373,41 @@ test("IPC 中の外部変更（別 path 追加）を保持したまま自分の 
   });
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   // 外部追加 tasks/c.md を保持しつつ、自分の path が元位置（先頭）へ復活
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-    "tasks/c.md",
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+    taskFilePathFixture("tasks/c.md"),
   ]);
 });
 
 test("楽観除去した path が外部で復活済みなら rollback dispatch は skip される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
     reverseLinks: [],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   removeLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: {
         ...current,
         links: {
           ...current.links,
-          linkedFilePaths: ["tasks/b.md"],
+          linkedFilePaths: [taskFilePathFixture("tasks/b.md")],
         },
       },
     });
@@ -371,70 +415,89 @@ test("楽観除去した path が外部で復活済みなら rollback dispatch �
   });
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   // 楽観 + 外部復活の 2 件のみ（append は同一参照 → rollback dispatch なし）
   expect(sourceUpdates).toHaveLength(2);
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/b.md")]);
 });
 
 test("rollback 時に target が削除済みなら target は skip され source forward は復元される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   removeLinkMock.mockImplementation(async () => {
-    harness.deps.dispatch({ type: "task-deleted", filePath: "tasks/b.md" });
+    harness.deps.dispatch({
+      type: "task-deleted",
+      filePath: taskFilePathFixture("tasks/b.md"),
+    });
     return Result.err(ioError());
   });
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   // forward append は flag なしのため target 消失後も復元される（broken link として表示される）
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/b.md")]);
   // target への rollback dispatch は per-task skip（楽観 dispatch の 1 件のみ）
   const targetUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/b.md"),
   );
   expect(targetUpdates).toHaveLength(1);
 });
 
 test("remove 失敗 + source 外部削除では削除済み source への逆リンクを復活させない", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   removeLinkMock.mockImplementation(async () => {
-    harness.deps.dispatch({ type: "task-deleted", filePath: "tasks/a.md" });
+    harness.deps.dispatch({
+      type: "task-deleted",
+      filePath: taskFilePathFixture("tasks/a.md"),
+    });
     return Result.err(ioError());
   });
 
   await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   // 参照整合ガード（reverse append のみ requiresValueTask 付き）により
   // 削除済み source への逆リンク re-append は skip される
   expect(
-    currentTask(harness, "tasks/b.md").links.reverseLinkedFilePaths,
+    currentTask(harness, taskFilePathFixture("tasks/b.md")).links
+      .reverseLinkedFilePaths,
   ).toEqual([]);
 });

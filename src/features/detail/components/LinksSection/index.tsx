@@ -3,7 +3,7 @@ import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { TaskSelect } from "@/components/TaskSelect";
 import { TaskLinks } from "@/domains/task-links";
 import { linkReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import type { Result } from "@/utils/result";
 
 /** LinksSection Props */
@@ -15,7 +15,7 @@ export type LinksSectionProps = {
   /** 親タスクの filePath（無ければ null） */
   readonly parentFilePath: string | null;
   /** 子タスクの filePath 配列 */
-  readonly childrenFilePaths: readonly string[];
+  readonly childrenFilePaths: readonly TaskFilePath[];
   /**
    * リンク追加コールバック。source filePath / target filePath を受け取る。
    * @param sourceFilePath リンク元タスク filePath
@@ -23,8 +23,8 @@ export type LinksSectionProps = {
    * @returns invoke 結果
    */
   readonly onAddLink: (
-    sourceFilePath: string,
-    targetFilePath: string,
+    sourceFilePath: TaskFilePath,
+    targetFilePath: TaskFilePath,
   ) => Promise<Result<Task, unknown>>;
   /**
    * リンク削除コールバック。source filePath / target filePath を受け取る。
@@ -34,7 +34,7 @@ export type LinksSectionProps = {
    * @returns invoke 結果
    */
   readonly onRemoveLink: (
-    sourceFilePath: string,
+    sourceFilePath: TaskFilePath,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
   /**
@@ -42,7 +42,7 @@ export type LinksSectionProps = {
    * クリックされたリンク先タスクの filePath（= id）が渡される。
    * 未指定時は行 button を disabled にする。
    */
-  readonly onLinkClick?: (taskId: string) => void;
+  readonly onLinkClick?: (taskId: TaskId) => void;
   /**
    * forward link でリンク切れと判定された raw path 集合。
    * 該当行は WarningIcon + 「リンク切れ」テキスト + 取消線スタイル付き path 表示になる。
@@ -117,12 +117,15 @@ export const LinksSection = (props: LinksSectionProps) => {
   // linkedFilePaths は frontmatter 由来で `./tasks/b.md` / `tasks\\b.md` 等の表記揺れを
   // 保持する。`selectTaskOutcome` は `Task.id`（canonical）一致でのみ解決するため、
   // 行クリック時は allTasks から表記揺れを吸収して canonical id に解決してから渡す。
-  // 解決できない（壊れたリンク）場合は raw 値を渡し、上流 selectTaskOutcome の no-op に委ねる。
+  // 解決できない（壊れたリンク）場合は選択を通知しない。
   const handleLinkClick = (linkPath: string): void => {
     const resolved = props.allTasks.find((t) =>
       linkReferencesTaskPath(linkPath, t.filePath),
     );
-    props.onLinkClick?.(resolved?.id ?? linkPath);
+    if (resolved === undefined) {
+      return;
+    }
+    props.onLinkClick?.(resolved.id);
   };
 
   // TaskSelect.onChange は同期戻り値型のため、ここで async 関数を渡すと
@@ -130,7 +133,7 @@ export const LinksSection = (props: LinksSectionProps) => {
   // 同期関数として宣言し、runBusy の Promise は void + catch で明示的に握る。
   // （runBusy 側で try/finally による isBusy 復帰は済んでいるため、ここでの catch は
   // 防御的ガード。エラー通知は App.handleAddLink の toast/announce 経路で行う）
-  const handleSelect = (targetFilePath: string | null): void => {
+  const handleSelect = (targetFilePath: TaskFilePath | null): void => {
     if (targetFilePath === null) {
       return;
     }

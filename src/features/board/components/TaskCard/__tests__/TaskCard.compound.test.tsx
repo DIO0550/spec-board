@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskCard } from "..";
 import { wrapWithCardProvider } from "./_testHelpers";
@@ -38,11 +39,11 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
     title: "テスト",
     status: "Todo",
     labels: ["bug"],
-    links: ["tasks/a.md"],
+    links: [taskFilePathFixture("tasks/a.md")],
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/test.md",
+    filePath: taskFilePathFixture("tasks/test.md"),
     ...overrides,
   });
 
@@ -78,7 +79,7 @@ test("旧 API（Legacy）と新 API（Compound）が同じ data-testid と同じ
     id: "same-1",
     title: "同一",
     labels: ["bug", "urgent"],
-    links: ["tasks/a.md"],
+    links: [taskFilePathFixture("tasks/a.md")],
   });
   const onClick = vi.fn();
   act(() => {
@@ -138,18 +139,21 @@ test("フッターの サブIssue X/Y は projection 由来で doneColumn 指定
   // （isDoneColumn）としての doneColumn は BoardCardProvider 側でテストする。
   const parent = createTask({
     id: "parent",
-    filePath: "tasks/parent.md",
-    children: ["tasks/c1.md", "tasks/c2.md"],
+    filePath: taskFilePathFixture("tasks/parent.md"),
+    children: [
+      taskFilePathFixture("tasks/c1.md"),
+      taskFilePathFixture("tasks/c2.md"),
+    ],
   });
   const childDone = createTask({
     id: "c1",
     status: "Done",
-    filePath: "tasks/c1.md",
+    filePath: taskFilePathFixture("tasks/c1.md"),
   });
   const childTodo = createTask({
     id: "c2",
     status: "Todo",
-    filePath: "tasks/c2.md",
+    filePath: taskFilePathFixture("tasks/c2.md"),
   });
   act(() => {
     rootA?.render(
@@ -161,11 +165,14 @@ test("フッターの サブIssue X/Y は projection 由来で doneColumn 指定
           allTasks: [parent, childDone, childTodo],
           projections: new Map([
             [
-              "tasks/parent.md",
+              taskFilePathFixture("tasks/parent.md"),
               {
                 subIssueProgress: { done: 1, total: 2 },
                 isDone: false,
-                childFilePaths: ["tasks/c1.md", "tasks/c2.md"],
+                childFilePaths: [
+                  taskFilePathFixture("tasks/c1.md"),
+                  taskFilePathFixture("tasks/c2.md"),
+                ],
               },
             ],
           ]),

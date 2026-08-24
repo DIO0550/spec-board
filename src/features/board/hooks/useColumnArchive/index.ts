@@ -1,6 +1,7 @@
 import { useCallback } from "react";
+import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { ProjectTaskActionsContextValue } from "@/providers/ProjectProvider";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import type { UseToastsResult } from "@/types/toast";
 
 export type ColumnArchiveCallback = (columnName: string) => Promise<void>;
@@ -22,18 +23,18 @@ export type UseColumnArchiveOptions = {
  * @returns 子孫が先に来る順の新しい配列
  */
 const orderChildrenFirst = (tasks: readonly Task[]): Task[] => {
-  const byFilePath = new Map(tasks.map((task) => [task.filePath, task]));
+  const parentByChildFilePath = TaskHierarchy.parentByChildFilePath(tasks);
   const depthOf = (task: Task): number => {
     let depth = 0;
-    const visited = new Set<string>([task.filePath]);
-    let parentPath = task.hierarchy.parentFilePath;
-    while (parentPath !== undefined && byFilePath.has(parentPath)) {
+    const visited = new Set<TaskFilePath>([task.filePath]);
+    let parentPath = parentByChildFilePath.get(task.filePath);
+    while (parentPath !== undefined) {
       if (visited.has(parentPath)) {
         break;
       }
       visited.add(parentPath);
       depth += 1;
-      parentPath = byFilePath.get(parentPath)?.hierarchy.parentFilePath;
+      parentPath = parentByChildFilePath.get(parentPath);
     }
     return depth;
   };

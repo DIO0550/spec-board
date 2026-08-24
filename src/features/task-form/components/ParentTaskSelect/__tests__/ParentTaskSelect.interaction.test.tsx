@@ -153,6 +153,15 @@ test("選択済み状態ではタイトルと解除ボタンが表示される",
   ).toBeTruthy();
 });
 
+test("表記揺れを含むraw parentはcanonical taskへ解決してタイトルを表示する", () => {
+  render({ tasks: TASKS, value: ".\\tasks\\login.md", onChange: vi.fn() });
+
+  const selected = document.querySelector(
+    '[data-testid="parent-task-selected"]',
+  );
+  expect(selected?.textContent).toBe("ログイン修正");
+});
+
 test("解除ボタンで onChange が undefined で呼ばれる", () => {
   const onChange = vi.fn();
   render({ tasks: TASKS, value: "tasks/login.md", onChange });

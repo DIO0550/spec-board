@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { TaskForest } from "@/domains/task-forest";
 import { initialColumns, initialTasks } from "@/test-fixtures";
+import { Task } from "@/types/task";
 import { TreeView } from ".";
 
 const taskTree = TaskForest.fromPayload([
@@ -54,16 +55,20 @@ export const Done: Story = {
   },
 };
 
-const deepTasks = Array.from({ length: 6 }, (_unused, index) => ({
-  ...initialTasks[0],
-  id: `deep-${index}`,
-  title: `深い階層 ${index + 1}`,
-  filePath: `tasks/deep-${index}.md`,
-  hierarchy: {
-    parentFilePath: index === 0 ? undefined : `tasks/deep-${index - 1}.md`,
-    childFilePaths: index === 5 ? [] : [`tasks/deep-${index + 1}.md`],
-  },
-}));
+const deepTasks = Array.from({ length: 6 }, (_unused, index) =>
+  Task.fromPayload({
+    id: `deep-${index}`,
+    title: `深い階層 ${index + 1}`,
+    filePath: `tasks/deep-${index}.md`,
+    status: initialTasks[0].status,
+    labels: initialTasks[0].labels,
+    body: initialTasks[0].body,
+    parent: index === 0 ? undefined : `tasks/deep-${index - 1}.md`,
+    children: index === 5 ? [] : [`tasks/deep-${index + 1}.md`],
+    links: initialTasks[0].links.linkedFilePaths,
+    reverseLinks: initialTasks[0].links.reverseLinkedFilePaths,
+  }),
+);
 let deepTree = TaskForest.fromPayload([]);
 for (let index = deepTasks.length - 1; index >= 0; index -= 1) {
   deepTree = TaskForest.fromPayload([

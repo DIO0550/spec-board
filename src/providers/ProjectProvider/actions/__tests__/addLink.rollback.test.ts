@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { addLink as addLinkInvoke, TauriError } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
@@ -42,7 +43,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -106,18 +107,20 @@ beforeEach(() => {
 });
 
 test("失敗時は source の linkedFilePaths から自分の path のみ除去され snapshot 相当へ戻る", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   expect(sourceUpdates).toHaveLength(2);
   const rollback = asTaskUpdated(sourceUpdates[1]);
@@ -125,18 +128,20 @@ test("失敗時は source の linkedFilePaths から自分の path のみ除去�
 });
 
 test("失敗時は target の reverseLinkedFilePaths から自分の path のみ除去され snapshot 相当へ戻る", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(Result.err(ioError()));
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const targetUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/b.md"),
   );
   expect(targetUpdates).toHaveLength(2);
   const rollback = asTaskUpdated(targetUpdates[1]);
@@ -144,21 +149,24 @@ test("失敗時は target の reverseLinkedFilePaths から自分の path のみ
 });
 
 test("IPC 中の外部追加を保持したまま source から自分の path のみ除去する", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   // IPC 解決前に別経路で source に別 path を追加する（旧実装は rollback 全体を skip していた）。
   addLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: {
         ...current,
         links: {
           ...current.links,
-          linkedFilePaths: [...current.links.linkedFilePaths, "tasks/c.md"],
+          linkedFilePaths: [
+            ...current.links.linkedFilePaths,
+            taskFilePathFixture("tasks/c.md"),
+          ],
         },
       },
     });
@@ -166,29 +174,33 @@ test("IPC 中の外部追加を保持したまま source から自分の path �
   });
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   // 楽観 + 別経路 + rollback の 3 件（旧実装の skip から期待値変更）
   expect(sourceUpdates).toHaveLength(3);
   const rollback = asTaskUpdated(sourceUpdates[2]);
-  expect(rollback.task.links.linkedFilePaths).toEqual(["tasks/c.md"]);
+  expect(rollback.task.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("楽観 path が外部で既に消えていれば source rollback dispatch は skip される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   addLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: {
         ...current,
         links: { ...current.links, linkedFilePaths: [] },
@@ -198,12 +210,14 @@ test("楽観 path が外部で既に消えていれば source rollback dispatch 
   });
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   // 楽観 + 別経路の 2 件のみ（remove は同一参照 → dispatch skip）
   expect(sourceUpdates).toHaveLength(2);
@@ -212,56 +226,66 @@ test("楽観 path が外部で既に消えていれば source rollback dispatch 
 });
 
 test("rollback は links 以外の field に触れない（外部の title 更新を保持する）", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   addLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: { ...current, title: "外部更新" },
     });
     return Result.err(ioError());
   });
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
-  const rolledBack = currentTask(harness, "tasks/a.md");
+  const rolledBack = currentTask(harness, taskFilePathFixture("tasks/a.md"));
   expect(rolledBack.title).toBe("外部更新");
   expect(rolledBack.links.linkedFilePaths).toEqual([]);
 });
 
 test("add 失敗 + target 外部削除でも楽観 link が残らず削除済み target も復活しない", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   addLinkMock.mockImplementation(async () => {
-    harness.deps.dispatch({ type: "task-deleted", filePath: "tasks/b.md" });
+    harness.deps.dispatch({
+      type: "task-deleted",
+      filePath: taskFilePathFixture("tasks/b.md"),
+    });
     return Result.err(ioError());
   });
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   expect(result.ok).toBe(false);
   // task-deleted の reducer 掃除で source forward は既に除去済みのため
   // rollback の remove は同一参照 → dispatch skip（楽観 dispatch の 1 件のみ）
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   expect(sourceUpdates).toHaveLength(1);
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([]);
   // target は state 不在の per-task skip（楽観 dispatch の 1 件のみで復活しない）
   const targetUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/b.md"),
   );
   expect(targetUpdates).toHaveLength(1);
   const currentState = harness.state.current as Extract<
@@ -269,6 +293,8 @@ test("add 失敗 + target 外部削除でも楽観 link が残らず削除済み
     { kind: "loaded" }
   >;
   expect(
-    currentState.data.tasks.find((t) => t.filePath === "tasks/b.md"),
+    currentState.data.tasks.find(
+      (t) => t.filePath === taskFilePathFixture("tasks/b.md"),
+    ),
   ).toBeUndefined();
 });

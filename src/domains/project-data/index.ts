@@ -14,7 +14,7 @@ import {
 } from "@/domains/task-projection";
 import type { WatcherSession } from "@/domains/watcher-session";
 import type { Column } from "@/types/column";
-import { Task } from "@/types/task";
+import { Task, type TaskFilePath } from "@/types/task";
 
 export type ProjectData = {
   tasks: Task[];
@@ -80,7 +80,7 @@ const mergeProjections = (
   prev: TaskProjectionMap,
   next: TaskProjectionMap,
 ): TaskProjectionMap => {
-  const merged = new Map<string, TaskProjection>();
+  const merged = new Map<TaskFilePath, TaskProjection>();
   let unchanged = prev.size === next.size;
   for (const [filePath, projection] of next) {
     const previous = prev.get(filePath);
@@ -164,8 +164,8 @@ const mergeTasks = (prev: readonly Task[], next: readonly Task[]): Task[] => {
  * @returns 要素数と各要素がすべて一致すれば true
  */
 const sameFilePaths = (
-  left: readonly string[],
-  right: readonly string[],
+  left: readonly TaskFilePath[],
+  right: readonly TaskFilePath[],
 ): boolean =>
   left === right ||
   (left.length === right.length &&
@@ -244,7 +244,7 @@ const applyRenamesToTasks = (
 const syncParentChildren = (
   tasks: Task[],
   parentFilePath: string | undefined,
-  childFilePath: string,
+  childFilePath: TaskFilePath,
 ): Task[] => {
   if (parentFilePath === undefined) {
     return tasks;
@@ -281,7 +281,7 @@ const syncParentChildren = (
 const syncCreatedTaskReverseLinks = (
   tasks: Task[],
   linkedFilePaths: readonly string[],
-  createdFilePath: string,
+  createdFilePath: TaskFilePath,
 ): Task[] => {
   if (linkedFilePaths.length === 0) {
     return tasks;
@@ -340,7 +340,7 @@ const parentReferencesEquivalent = (
 const detachChildFromOldParent = (
   tasks: Task[],
   oldParentFilePath: string | undefined,
-  childFilePath: string,
+  childFilePath: TaskFilePath,
 ): Task[] => {
   if (oldParentFilePath === undefined) {
     return tasks;
@@ -372,7 +372,7 @@ const detachChildFromOldParent = (
  * @param filePath 削除済み task の filePath
  * @returns 参照を取り除いた task（変化がなければ元 task と同一参照）
  */
-const applyTaskDeletedToTask = (task: Task, filePath: string): Task =>
+const applyTaskDeletedToTask = (task: Task, filePath: TaskFilePath): Task =>
   TaskLinks.removeLinkedTask(
     TaskHierarchy.detachDeletedTask(task, filePath),
     filePath,
@@ -429,7 +429,7 @@ export const ProjectData = {
    */
   applyTaskUpdated: (
     data: ProjectData,
-    originalFilePath: string,
+    originalFilePath: TaskFilePath,
     task: Task,
   ): ProjectData => {
     const previous = data.tasks.find((t) => t.filePath === originalFilePath);
@@ -478,7 +478,10 @@ export const ProjectData = {
    * @param filePath 削除する task の filePath
    * @returns task 削除後の ProjectData
    */
-  applyTaskDeleted: (data: ProjectData, filePath: string): ProjectData => {
+  applyTaskDeleted: (
+    data: ProjectData,
+    filePath: TaskFilePath,
+  ): ProjectData => {
     const tasks = data.tasks
       .filter((task) => task.filePath !== filePath)
       .map((task) => applyTaskDeletedToTask(task, filePath));
@@ -654,7 +657,7 @@ export const ProjectData = {
   applyCardOrderUpdated: (
     data: ProjectData,
     columnName: string,
-    filePaths: readonly string[],
+    filePaths: readonly TaskFilePath[],
   ): ProjectData => {
     const inColumn = data.tasks.filter((t) => t.status === columnName);
     if (inColumn.length === 0) {

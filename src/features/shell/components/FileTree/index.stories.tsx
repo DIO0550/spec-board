@@ -1,6 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import { taskIdFixture } from "@/domains/__tests__/taskFixtures";
 import { Task } from "@/types/task";
 import { FileTree } from ".";
 
@@ -26,7 +27,11 @@ const tasks = [
 
 const meta: Meta<typeof FileTree> = {
   component: FileTree,
-  args: { tasks, selectedTaskId: "task-2", onSelectTask: fn() },
+  args: {
+    tasks,
+    selectedTaskId: taskIdFixture("task-2"),
+    onSelectTask: fn(),
+  },
   argTypes: {
     tasks: { control: "object" },
     selectedTaskId: { control: "text" },
@@ -55,7 +60,7 @@ export const EdgeCases: Story = {
         "very/deep/nested/directory/a-very-long-task-file-name.md",
       ),
     ],
-    selectedTaskId: "long-task",
+    selectedTaskId: taskIdFixture("long-task"),
   },
 };
 export const Empty: Story = { args: { tasks: [], selectedTaskId: undefined } };

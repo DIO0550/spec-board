@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import type { TaskTreeNode } from "@/domains/task-forest";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 
 const INDENT_PER_DEPTH = 16;
 const DETAILED_RENDER_DEPTH_LIMIT = 64;
@@ -13,22 +13,22 @@ type TreeNodeProgress = {
 type TreeNodeItemProps = {
   node: TaskTreeNode;
   depth: number;
-  tasksByFilePath: ReadonlyMap<string, Task>;
+  tasksByFilePath: ReadonlyMap<TaskFilePath, Task>;
   /**
    * ノードを選択したときのcallback。
    * @param taskId - 選択されたタスクの ID
    */
-  onSelect: (taskId: string) => void;
+  onSelect: (taskId: TaskId) => void;
   /** TreeView toolbarから制御する展開状態。省略時は従来どおりlocal state。 */
   expanded?: boolean;
   /** TreeViewが全ノードを一括制御するときの展開path集合。 */
-  expandedPaths?: ReadonlySet<string>;
+  expandedPaths?: ReadonlySet<TaskFilePath>;
   /** controlled時の展開切替通知。 */
-  onToggle?: (filePath: string) => void;
+  onToggle?: (filePath: TaskFilePath) => void;
   /** statusごとの表示色。 */
   accentByStatus?: ReadonlyMap<string, string>;
   /** filePathごとの子孫進捗。 */
-  progressByFilePath?: ReadonlyMap<string, TreeNodeProgress>;
+  progressByFilePath?: ReadonlyMap<TaskFilePath, TreeNodeProgress>;
   /** 完了status。 */
   doneColumn?: string;
 };
@@ -81,12 +81,12 @@ const CompactTreeBranch = ({
   doneColumn = "Done",
 }: TreeNodeItemProps) => {
   const [locallyCollapsedPaths, setLocallyCollapsedPaths] = useState<
-    ReadonlySet<string>
+    ReadonlySet<TaskFilePath>
   >(() => new Set());
   const rows = [];
   const pending: CompactTreeFrame[] = [{ node, depth, root: true }];
 
-  const handleToggle = (filePath: string): void => {
+  const handleToggle = (filePath: TaskFilePath): void => {
     if (onToggle !== undefined) {
       onToggle(filePath);
       return;

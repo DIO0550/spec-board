@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { addLink as addLinkInvoke, TauriError } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
@@ -41,7 +42,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -95,14 +96,14 @@ beforeEach(() => {
 });
 
 test("queue内preflightでversion不一致ならproject-switchedでIPCは呼ばれない", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   // queue 開始前 (capture 済み) → queue 内に入る前に version を進める
   const promise = addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
   invalidateProject(harness.version);
 
@@ -117,8 +118,8 @@ test("queue内preflightでversion不一致ならproject-switchedでIPCは呼ば�
 });
 
 test("rollback 前 version 不一致なら rollback dispatch も skip して invalid-state を返す", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   // IPC は失敗を返すが、その直前で version を進めて rollback ブロック前 guard を発火させる。
@@ -128,18 +129,22 @@ test("rollback 前 version 不一致なら rollback dispatch も skip して inv
   });
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
   expect(error.kind).toBe("invalid-state");
   // 楽観 dispatch (source/target 各 1) のみで、rollback dispatch は走らない
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   const targetUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/b.md"),
   );
   expect(sourceUpdates).toHaveLength(1);
   expect(targetUpdates).toHaveLength(1);
@@ -148,23 +153,23 @@ test("rollback 前 version 不一致なら rollback dispatch も skip して inv
 });
 
 test("IPC 直後 version 不一致なら commit dispatch されず invalid-state", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   addLinkMock.mockImplementation(async () => {
     invalidateProject(harness.version);
     return Result.ok(
       Task.fromPayload({
-        id: "tasks/a.md",
+        id: taskFilePathFixture("tasks/a.md"),
         title: "canonical",
         status: "Todo",
         labels: [],
-        links: ["tasks/b.md"],
+        links: [taskFilePathFixture("tasks/b.md")],
         children: [],
         reverseLinks: [],
         body: "",
-        filePath: "tasks/a.md",
+        filePath: taskFilePathFixture("tasks/a.md"),
         extras: {},
         warnings: [],
       }),
@@ -172,15 +177,17 @@ test("IPC 直後 version 不一致なら commit dispatch されず invalid-state
   });
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
   expect(error.kind).toBe("invalid-state");
   // canonical commit dispatch は実行されていない（楽観 dispatch までで止まる）
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   expect(sourceUpdates).toHaveLength(1);
 });

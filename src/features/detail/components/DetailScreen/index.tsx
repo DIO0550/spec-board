@@ -8,7 +8,7 @@ import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
 import { useParentTask } from "@/features/detail/hooks/useParentTask";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { DetailBody } from "../DetailBody";
 import { PropertiesSidebar } from "../PropertiesSidebar";
@@ -28,14 +28,14 @@ export type DetailScreenProps = {
    * @param id - 更新するタスクの ID
    * @param updates - 変更するフィールド
    */
-  onTaskUpdate: (id: string, updates: Partial<Omit<Task, "id">>) => void;
+  onTaskUpdate: (id: TaskId, updates: Partial<Omit<Task, "id">>) => void;
   /**
    * タスク削除を要求するcallback。
    * @param id - 削除するタスクの ID
    * @param orphanStrategy - 子タスクの扱い方
    */
   onDelete: (
-    id: string,
+    id: TaskId,
     orphanStrategy?: OrphanStrategy,
   ) => void | Promise<void>;
   /**
@@ -43,14 +43,14 @@ export type DetailScreenProps = {
    * @param task - アーカイブ対象タスク
    */
   onArchive?: (task: Task) => void | Promise<void>;
-  onAddSubIssue?: (parentFilePath: string) => void;
-  onSelectTask?: (taskId: string) => void;
+  onAddSubIssue?: (parentFilePath: TaskFilePath) => void;
+  onSelectTask?: (taskId: TaskId) => void;
   onAddLink?: (
-    sourceFilePath: string,
-    targetFilePath: string,
+    sourceFilePath: TaskFilePath,
+    targetFilePath: TaskFilePath,
   ) => Promise<Result<Task, unknown>>;
   onRemoveLink?: (
-    sourceFilePath: string,
+    sourceFilePath: TaskFilePath,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
 };

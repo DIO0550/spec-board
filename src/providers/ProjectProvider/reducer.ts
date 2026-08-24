@@ -9,7 +9,7 @@ import type { TaskForest } from "@/domains/task-forest";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import { ProjectState } from "./state/projectState";
 
 export type ProjectData = ProjectDataT;
@@ -19,8 +19,8 @@ export type ProjectAction =
   | { type: "open-succeed"; path: string; data: ProjectData }
   | { type: "open-fail"; path: string; error: TauriError }
   | { type: "task-created"; task: Task }
-  | { type: "task-updated"; originalFilePath: string; task: Task }
-  | { type: "task-deleted"; filePath: string }
+  | { type: "task-updated"; originalFilePath: TaskFilePath; task: Task }
+  | { type: "task-deleted"; filePath: TaskFilePath }
   // ProjectData 全体を snapshot で完全復元するための action。
   // 主に削除失敗時の rollback で使う (削除に伴い他 task の hierarchy / links /
   // reverseLinks も掃除されるため、task 単体差し替えでは戻しきれない)。
@@ -61,7 +61,11 @@ export type ProjectAction =
       loadWarnings: ProjectLoadWarning[];
     }
   | { type: "load-warnings-replaced"; loadWarnings: ProjectLoadWarning[] }
-  | { type: "card-order-updated"; columnName: string; filePaths: string[] }
+  | {
+      type: "card-order-updated";
+      columnName: string;
+      filePaths: TaskFilePath[];
+    }
   | { type: "reset" };
 
 export const initialState: ProjectState = ProjectState.initial;

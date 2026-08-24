@@ -5,7 +5,7 @@ import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow"
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import type { OrphanStrategy } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { BrokenParentRow } from "../BrokenParentRow";
 import { DetailFields } from "../DetailFields";
@@ -48,12 +48,12 @@ export type PropertiesSidebarProps = {
    * サブIssue 追加ハンドラ。
    * @param parentFilePath - 親タスクのファイルパス
    */
-  onAddSubIssue?: (parentFilePath: string) => void;
+  onAddSubIssue?: (parentFilePath: TaskFilePath) => void;
   /**
    * 別タスクへ表示対象を切り替えるハンドラ。
    * @param taskId - 切り替え先タスクの id
    */
-  onSelectTask?: (taskId: string) => void;
+  onSelectTask?: (taskId: TaskId) => void;
   /**
    * リンク追加ハンドラ。
    * @param sourceFilePath - リンク元 filePath
@@ -61,8 +61,8 @@ export type PropertiesSidebarProps = {
    * @returns invoke 結果
    */
   onAddLink?: (
-    sourceFilePath: string,
-    targetFilePath: string,
+    sourceFilePath: TaskFilePath,
+    targetFilePath: TaskFilePath,
   ) => Promise<Result<Task, unknown>>;
   /**
    * リンク削除ハンドラ。
@@ -71,7 +71,7 @@ export type PropertiesSidebarProps = {
    * @returns invoke 結果
    */
   onRemoveLink?: (
-    sourceFilePath: string,
+    sourceFilePath: TaskFilePath,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
 };

@@ -3,7 +3,7 @@ import { BrokenRefLabel } from "@/components/BrokenRefLabel";
 import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { normalizeRefPathForLookup } from "@/domains/task-path";
 import { type SubIssueCounts, TaskProjection } from "@/domains/task-projection";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 
 type SubIssueSectionProps = {
   /** 親タスク */
@@ -17,18 +17,18 @@ type SubIssueSectionProps = {
    * @param filePath - 判定対象 task の filePath
    * @returns 完了カラムに居れば true
    */
-  isDone: (filePath: string) => boolean;
+  isDone: (filePath: TaskFilePath) => boolean;
   /**
    * 「+ サブIssue 追加」ボタン押下時のコールバック。
    * 親タスクのファイルパスを引数に受け取り、タスク作成フォームを開く想定。
    * @param parentFilePath - 親タスクのファイルパス
    */
-  onAddSubIssue: (parentFilePath: string) => void;
+  onAddSubIssue: (parentFilePath: TaskFilePath) => void;
   /**
    * 子タスクをクリックした際のコールバック（任意）。
    * @param childId - 対象の子タスクID
    */
-  onChildClick?: (childId: string) => void;
+  onChildClick?: (childId: TaskId) => void;
   /**
    * `parentTask.hierarchy.childFilePaths` のうちリンク切れと判定された raw path 集合。
    * 該当 path の行は WarningIcon + 「リンク切れ」テキスト + 取消線スタイルで表示する。
@@ -59,7 +59,7 @@ type ChildRow =
  * @returns 描画順に並んだ {@link ChildRow}
  */
 export const buildChildRowList = (
-  childFilePaths: readonly string[],
+  childFilePaths: readonly TaskFilePath[],
   childTasks: readonly Task[],
   brokenChildPaths: ReadonlySet<string> | undefined,
 ): readonly ChildRow[] => {

@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { MilestoneDefinition } from "@/lib/tauri";
@@ -93,7 +94,11 @@ const milestoneProjections: MilestoneProjectionMap = new Map([
     {
       done: 1,
       total: 3,
-      taskFilePaths: ["tasks/a.md", "tasks/b.md", "tasks/c.md"],
+      taskFilePaths: [
+        taskFilePathFixture("tasks/a.md"),
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/c.md"),
+      ],
     },
   ],
   [
@@ -101,7 +106,10 @@ const milestoneProjections: MilestoneProjectionMap = new Map([
     {
       done: 0,
       total: 2,
-      taskFilePaths: ["tasks/special-a.md", "tasks/special-b.md"],
+      taskFilePaths: [
+        taskFilePathFixture("tasks/special-a.md"),
+        taskFilePathFixture("tasks/special-b.md"),
+      ],
     },
   ],
 ]);

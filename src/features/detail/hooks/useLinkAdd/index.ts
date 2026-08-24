@@ -5,11 +5,11 @@ import {
   type ProjectTaskActionsContextValue,
   projectErrorMessage,
 } from "@/providers/ProjectProvider";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 export type LinkAddCallback = (
-  sourceFilePath: string,
-  targetFilePath: string,
+  sourceFilePath: TaskFilePath,
+  targetFilePath: TaskFilePath,
 ) => ReturnType<ProjectTaskActionsContextValue["addLink"]>;
 
 export type UseLinkAddOptions = {

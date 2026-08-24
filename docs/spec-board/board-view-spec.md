@@ -1,7 +1,7 @@
 # spec-board - ボードビュー仕様（フロントエンド）
 
 > **機能**: [spec-board](./index.md)
-> **バージョン**: 1.11
+> **バージョン**: 1.12
 > **ステータス**: 下書き
 
 ## 概要
@@ -146,6 +146,7 @@ stateDiagram-v2
 - **プロジェクトスイッチャー**: 現在開いているプロジェクト名と「開く」ボタン、最近開いたプロジェクト一覧を表示する。一覧の項目をクリックするとディレクトリ選択ダイアログを経由せず、そのパスのプロジェクトを直接開く。
 - **最近開いたプロジェクト**: 読み込み成功時に `localStorage`（`spec-board:recentProjects`）へ記録する。先頭が最新で最大 8 件、同一パスは先頭へ繰り上げて重複させない。
 - **ファイルツリー**: 読み込み済みタスクの `filePath`（プロジェクト相対）からディレクトリ階層を構築して表示する（実ディレクトリ全体の走査ではなく、タスクファイル由来のツリー）。各階層はディレクトリを先に、ファイルを後に名前昇順で並べる。ファイル（タスク）クリックで対象タスクを選択する。サイドバーは画面区分（board / settings / detail / milestone）に依らず常時表示する。
+- **タスク識別子の型境界**: カード、一覧、ツリー、カレンダー、ロードマップ、マイルストーン、Explorerからの選択callbackと選択stateは`TaskId`を受け取る。`Task.filePath`、親候補のresolved値、projection/forestの索引、update/delete/move/archive/link等のcanonical mutation引数は`TaskFilePath`を受け取る。同じruntime文字列でも両brandは相互代入できず、wire JSONでは従来どおり文字列として送受信する。
 - **Explorer行の表示**: サイドバー幅は 248px、project group 見出しは 24px、ツリー行は 22px とする。各行は深さ 12px のインデント、開閉用のSVG chevron、ディレクトリのfolder icon、Markdownタスクのfile iconを持ち、タスクの状態が `In Progress` / `Done` の場合は右端に `●` / `✓` を表示する。選択中の行は accent の薄い背景で強調する。
 - **project groupの開閉**: project名を大文字で表示するgroup見出しをクリックすると、そのgroupだけを折りたためる。ワークスペース全体の折りたたみ（`spec-board:sidebarCollapsed`）とは独立した状態とする。
 
@@ -351,6 +352,7 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.12 | 2026-08-24 | Issue #616: TaskId選択callbackとTaskFilePath canonical mutationのfrontend型境界を明記 | - |
 | 1.11 | 2026-08-24 | Issue #615: 永続化可能な5種のBoardViewMode、GUIDE action、未知storage/tab IDのfail-closed境界を明記 | - |
 | 1.10 | 2026-08-24 | Issue #614: SettingsTabIdの7種union、Milestone画面の4種subset、未知initial値のlabelsフォールバックと内部型契約を明記 | - |
 | 1.9 | 2026-08-24 | Issue #613: ProjectError.invalid-stateの必須reason、project switch専用factory、messageを表示専用とする判定契約を明記 | - |

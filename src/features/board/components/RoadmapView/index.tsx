@@ -1,7 +1,8 @@
 import { type CSSProperties, useMemo, useState } from "react";
 import { ColumnColor } from "@/domains/column-color";
+import { TaskHierarchy } from "@/domains/task-hierarchy";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 type RoadmapZoom = "day" | "week";
 
@@ -20,7 +21,7 @@ export type RoadmapViewProps = {
   /** Epic 追加操作。 */
   onAddEpic?: () => void;
   /** タスク選択操作。 */
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
 };
 
 type DatedTask = {
@@ -98,19 +99,14 @@ const buildEpics = (
   fallback: Date,
   doneColumn: string,
 ): RoadmapEpic[] => {
-  const byPath = new Map(tasks.map((task) => [task.filePath, task]));
-  const roots = tasks.filter((task) => {
-    const parent = task.hierarchy.parentFilePath;
-    return parent === undefined || !byPath.has(parent);
-  });
+  const parentByChildFilePath = TaskHierarchy.parentByChildFilePath(tasks);
+  const roots = tasks.filter(
+    (task) => !parentByChildFilePath.has(task.filePath),
+  );
   return roots.map((task) => {
     const childPaths = new Set(task.hierarchy.childFilePaths);
     const children = tasks
-      .filter(
-        (candidate) =>
-          candidate.hierarchy.parentFilePath === task.filePath ||
-          childPaths.has(candidate.filePath),
-      )
+      .filter((candidate) => childPaths.has(candidate.filePath))
       .map((child) => resolveDates(child, fallback));
     const dated = resolveDates(task, fallback);
     const starts = [dated.start, ...children.map((child) => child.start)];
@@ -181,7 +177,7 @@ type TimelineBarProps = {
   item: DatedTask;
   rangeStart: Date;
   accent: string;
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
 };
 
 /**
@@ -285,7 +281,7 @@ export const RoadmapView = ({
     [tasks, fallback, doneColumn],
   );
   const [zoom, setZoom] = useState<RoadmapZoom>("day");
-  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<TaskId>>(
     () => new Set(defaultExpanded ? epics.map((epic) => epic.task.id) : []),
   );
 
@@ -322,7 +318,7 @@ export const RoadmapView = ({
     "--roadmap-row-height": "36px",
   } as CSSProperties;
 
-  const toggleEpic = (taskId: string) => {
+  const toggleEpic = (taskId: TaskId) => {
     setExpandedIds((current) => {
       const next = new Set(current);
       if (next.has(taskId)) {

@@ -1,19 +1,21 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 /** TaskSelect の Props */
 export type TaskSelectProps = {
   /** 選択候補となるタスク一覧 */
   readonly tasks: readonly Task[];
   /** 候補から除外する filePath 集合（呼び出し側で重複・自身などを除外する用途） */
-  readonly excludeFilePaths?: readonly string[];
+  readonly excludeFilePaths?: readonly TaskFilePath[];
   /** 現在選択中のタスクのファイルパス（未選択時は null） */
-  readonly value: string | null;
+  readonly value: TaskFilePath | null;
+  /** canonical taskへ解決できないraw参照を表示するadapter用fallback。 */
+  readonly unresolvedValueLabel?: string;
   /**
    * 選択変更時のコールバック
    * @param filePath - 選択されたタスクのファイルパス（解除時は null）
    */
-  readonly onChange: (filePath: string | null) => void;
+  readonly onChange: (filePath: TaskFilePath | null) => void;
   /** Escape / 外側クリックなど popover を閉じたい時の通知 */
   readonly onClose?: () => void;
   /** 検索入力の placeholder */
@@ -55,6 +57,7 @@ export const TaskSelect = ({
   tasks,
   excludeFilePaths = [],
   value,
+  unresolvedValueLabel,
   onChange,
   onClose,
   placeholder = "タスクを検索して選択",
@@ -154,11 +157,14 @@ export const TaskSelect = ({
     setQuery("");
   };
 
-  const selectedLabel = selected
-    ? selected.title || selected.filePath
-    : value !== null
-      ? value
-      : undefined;
+  let selectedLabel: string | undefined;
+  if (selected !== undefined) {
+    selectedLabel = selected.title || selected.filePath;
+  } else if (value !== null) {
+    selectedLabel = value;
+  } else {
+    selectedLabel = unresolvedValueLabel;
+  }
   const showSelectedLike = selectedLabel !== undefined;
   const showReadOnlyEmpty = !showSelectedLike && readOnly;
 

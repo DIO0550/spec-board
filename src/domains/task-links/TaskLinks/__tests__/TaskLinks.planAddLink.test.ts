@@ -1,10 +1,19 @@
 import { expect, test } from "vitest";
-import { makeTask } from "@/domains/__tests__/taskFixtures";
+import {
+  makeTask,
+  taskFilePathFixture,
+} from "@/domains/__tests__/taskFixtures";
 import { TaskLinks } from "@/domains/task-links";
 
 test("未リンクの 2 タスク間では apply と forward/reverse の 2 operations を返す", () => {
-  const source = makeTask({ id: "a", filePath: "tasks/a.md" });
-  const target = makeTask({ id: "b", filePath: "tasks/b.md" });
+  const source = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+  });
+  const target = makeTask({
+    id: "b",
+    filePath: taskFilePathFixture("tasks/b.md"),
+  });
 
   const plan = TaskLinks.planAddLink({
     sourceFilePath: source.filePath,
@@ -18,41 +27,44 @@ test("未リンクの 2 タスク間では apply と forward/reverse の 2 opera
     optimistic: [
       {
         op: "append",
-        filePath: "tasks/a.md",
+        filePath: taskFilePathFixture("tasks/a.md"),
         field: "linkedFilePaths",
-        value: "tasks/b.md",
+        value: taskFilePathFixture("tasks/b.md"),
       },
       {
         op: "append",
-        filePath: "tasks/b.md",
+        filePath: taskFilePathFixture("tasks/b.md"),
         field: "reverseLinkedFilePaths",
-        value: "tasks/a.md",
+        value: taskFilePathFixture("tasks/a.md"),
         requiresValueTask: true,
       },
     ],
     rollback: [
       {
         op: "remove",
-        filePath: "tasks/b.md",
+        filePath: taskFilePathFixture("tasks/b.md"),
         field: "reverseLinkedFilePaths",
-        value: "tasks/a.md",
+        value: taskFilePathFixture("tasks/a.md"),
       },
       {
         op: "remove",
-        filePath: "tasks/a.md",
+        filePath: taskFilePathFixture("tasks/a.md"),
         field: "linkedFilePaths",
-        value: "tasks/b.md",
+        value: taskFilePathFixture("tasks/b.md"),
       },
     ],
   });
 });
 
 test("target が既に reverse を持つ場合は forward の 1 operation のみを返す", () => {
-  const source = makeTask({ id: "a", filePath: "tasks/a.md" });
+  const source = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+  });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
 
   const plan = TaskLinks.planAddLink({
@@ -67,17 +79,17 @@ test("target が既に reverse を持つ場合は forward の 1 operation のみ
     optimistic: [
       {
         op: "append",
-        filePath: "tasks/a.md",
+        filePath: taskFilePathFixture("tasks/a.md"),
         field: "linkedFilePaths",
-        value: "tasks/b.md",
+        value: taskFilePathFixture("tasks/b.md"),
       },
     ],
     rollback: [
       {
         op: "remove",
-        filePath: "tasks/a.md",
+        filePath: taskFilePathFixture("tasks/a.md"),
         field: "linkedFilePaths",
-        value: "tasks/b.md",
+        value: taskFilePathFixture("tasks/b.md"),
       },
     ],
   });
@@ -86,13 +98,13 @@ test("target が既に reverse を持つ場合は forward の 1 operation のみ
 test("links / reverseLinks が空の task への初回 add は apply を返す", () => {
   const source = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     links: [],
     reverseLinks: [],
   });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
     links: [],
     reverseLinks: [],
   });
@@ -110,13 +122,13 @@ test("links / reverseLinks が空の task への初回 add は apply を返す",
 test("既リンク済みは noop を返し task は source の同一参照", () => {
   const source = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
   });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
 
   const plan = TaskLinks.planAddLink({
@@ -133,13 +145,13 @@ test("既リンク済みは noop を返し task は source の同一参照", () 
 test("既存 raw 表記 ./tasks/b.md への canonical tasks/b.md の add は noop（正規化同値判定）", () => {
   const source = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     links: ["./tasks/b.md"],
   });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
 
   const plan = TaskLinks.planAddLink({
@@ -155,13 +167,13 @@ test("既存 raw 表記 ./tasks/b.md への canonical tasks/b.md の add は noo
 test("既存の重複区切り表記 tasks//b.md への canonical add も noop（正規化同値判定）", () => {
   const source = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
-    links: ["tasks//b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks//b.md")],
   });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
 
   const plan = TaskLinks.planAddLink({
@@ -177,12 +189,12 @@ test("既存の重複区切り表記 tasks//b.md への canonical add も noop�
 test("既リンク済みで target reverse が欠落していても noop（ドリフト残置の仕様固定）", () => {
   const source = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
   });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
     reverseLinks: [],
   });
 
@@ -197,7 +209,10 @@ test("既リンク済みで target reverse が欠落していても noop（ド�
 });
 
 test("self-link は rejected（reason: self-link）を返す", () => {
-  const source = makeTask({ id: "a", filePath: "tasks/a.md" });
+  const source = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+  });
 
   const plan = TaskLinks.planAddLink({
     sourceFilePath: source.filePath,
@@ -210,10 +225,13 @@ test("self-link は rejected（reason: self-link）を返す", () => {
 });
 
 test("source 不在は rejected（reason: source-not-found）を返す", () => {
-  const target = makeTask({ id: "b", filePath: "tasks/b.md" });
+  const target = makeTask({
+    id: "b",
+    filePath: taskFilePathFixture("tasks/b.md"),
+  });
 
   const plan = TaskLinks.planAddLink({
-    sourceFilePath: "tasks/a.md",
+    sourceFilePath: taskFilePathFixture("tasks/a.md"),
     targetFilePath: target.filePath,
     source: undefined,
     target,
@@ -223,11 +241,14 @@ test("source 不在は rejected（reason: source-not-found）を返す", () => {
 });
 
 test("target 不在は rejected（reason: target-not-found）を返す", () => {
-  const source = makeTask({ id: "a", filePath: "tasks/a.md" });
+  const source = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+  });
 
   const plan = TaskLinks.planAddLink({
     sourceFilePath: source.filePath,
-    targetFilePath: "tasks/missing.md",
+    targetFilePath: taskFilePathFixture("tasks/missing.md"),
     source,
     target: undefined,
   });
@@ -237,8 +258,8 @@ test("target 不在は rejected（reason: target-not-found）を返す", () => {
 
 test("source 不在かつ self-link 指定では source-not-found が優先される", () => {
   const plan = TaskLinks.planAddLink({
-    sourceFilePath: "tasks/a.md",
-    targetFilePath: "tasks/a.md",
+    sourceFilePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/a.md"),
     source: undefined,
     target: undefined,
   });
@@ -249,13 +270,13 @@ test("source 不在かつ self-link 指定では source-not-found が優先さ�
 test("plan 呼出は入力 Task の links 配列を破壊しない", () => {
   const source = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
-    links: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/c.md")],
   });
   const target = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/d.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/d.md")],
   });
 
   TaskLinks.planAddLink({
@@ -265,8 +286,12 @@ test("plan 呼出は入力 Task の links 配列を破壊しない", () => {
     target,
   });
 
-  expect(source.links.linkedFilePaths).toEqual(["tasks/c.md"]);
+  expect(source.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
   expect(source.links.reverseLinkedFilePaths).toEqual([]);
   expect(target.links.linkedFilePaths).toEqual([]);
-  expect(target.links.reverseLinkedFilePaths).toEqual(["tasks/d.md"]);
+  expect(target.links.reverseLinkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/d.md"),
+  ]);
 });

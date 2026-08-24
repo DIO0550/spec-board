@@ -15,12 +15,12 @@ import {
   type TaskProjectionMap,
 } from "@/domains/task-projection";
 import type { MilestoneDefinition } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import type { MilestonesByName } from "../TaskCard";
 
 /** drop 確定時に呼ばれる引数（Card 用）。 */
 export type TaskDrop = {
-  readonly taskFilePath: string;
+  readonly taskFilePath: TaskFilePath;
   readonly fromColumn: string;
   readonly toColumn: string;
   readonly toIndex: number;
@@ -71,7 +71,7 @@ export type BoardCardApi = {
    * @param filePath 判定対象 task の filePath
    * @returns ドラッグ中なら true
    */
-  isDragging: (filePath: string) => boolean;
+  isDragging: (filePath: TaskFilePath) => boolean;
   /** hover ターゲット（column / index） */
   hoverTarget: {
     readonly column: string | null;
@@ -82,7 +82,7 @@ export type BoardCardApi = {
    * drop 確定時に Column が「ドラッグ開始時の fromColumn」を復元するために参照する。
    */
   dragSource: {
-    readonly filePath: string;
+    readonly filePath: TaskFilePath;
     readonly fromColumn: string;
   } | null;
   /** DnD 無効フラグ */
@@ -93,7 +93,7 @@ export type BoardCardApi = {
    * @param filePath ドラッグ対象 task の filePath
    * @param fromColumn 元カラム名
    */
-  startDrag: (filePath: string, fromColumn: string) => void;
+  startDrag: (filePath: TaskFilePath, fromColumn: string) => void;
   /**
    * hover ターゲットを更新する（drag leave 時は null, null）。
    * @param column hover 中のカラム名（外れたら null）
@@ -114,7 +114,7 @@ export type BoardCardApi = {
    * @param filePath 引き当てたい task の filePath
    * @returns 該当 task、なければ undefined
    */
-  byPath: (filePath: string) => Task | undefined;
+  byPath: (filePath: TaskFilePath) => Task | undefined;
   /**
    * name からマイルストーン定義を引き当てる。
    * @param name マイルストーン名
@@ -134,13 +134,13 @@ export type BoardCardApi = {
    * 子の useMemo が miss しないようにする。
    * @param filePath 起点 task の filePath
    */
-  descendantCount: (filePath: string) => SubIssueCounts;
+  descendantCount: (filePath: TaskFilePath) => SubIssueCounts;
   /**
    * task 自身が完了カラムに居るか（BE projection 由来）。
    * カラム名判定の `isDoneColumn` とは別物。
    * @param filePath 判定対象 task の filePath
    */
-  isDone: (filePath: string) => boolean;
+  isDone: (filePath: TaskFilePath) => boolean;
 
   /**
    * 指定カラムに属する表示用タスクを返す（tasks ベースの status 別 grouping）。
@@ -164,7 +164,7 @@ export type BoardCardApi = {
 
 /** Provider 内部の DnD ローカル状態。 */
 type CardDragState = {
-  readonly draggingTaskFilePath: string;
+  readonly draggingTaskFilePath: TaskFilePath;
   readonly draggingFromColumn: string;
   readonly hoverColumn: string | null;
   readonly hoverIndex: number | null;
@@ -174,7 +174,7 @@ type CardDragState = {
 type CardDragAction =
   | {
       readonly type: "start";
-      readonly taskFilePath: string;
+      readonly taskFilePath: TaskFilePath;
       readonly fromColumn: string;
     }
   | {
@@ -298,14 +298,17 @@ export const BoardCardProvider = ({
   );
 
   const isDragging = useCallback(
-    (filePath: string): boolean =>
+    (filePath: TaskFilePath): boolean =>
       dragState !== null && dragState.draggingTaskFilePath === filePath,
     [dragState],
   );
 
-  const startDrag = useCallback((filePath: string, fromColumn: string) => {
-    dispatch({ type: "start", taskFilePath: filePath, fromColumn });
-  }, []);
+  const startDrag = useCallback(
+    (filePath: TaskFilePath, fromColumn: string) => {
+      dispatch({ type: "start", taskFilePath: filePath, fromColumn });
+    },
+    [],
+  );
 
   const hover = useCallback((column: string | null, index: number | null) => {
     dispatch({ type: "hover", column, index });
@@ -329,7 +332,7 @@ export const BoardCardProvider = ({
   );
 
   const byPath = useCallback(
-    (filePath: string): Task | undefined => byPathMap.get(filePath),
+    (filePath: TaskFilePath): Task | undefined => byPathMap.get(filePath),
     [byPathMap],
   );
 
@@ -347,13 +350,13 @@ export const BoardCardProvider = ({
   // 集計は BE (TaskIndex::project_all) が済ませている。ここは lookup のみで、
   // allTasks の変更ごとに全 task を DFS する O(N x M) を持たない。
   const descendantCount = useCallback(
-    (filePath: string): SubIssueCounts =>
+    (filePath: TaskFilePath): SubIssueCounts =>
       TaskProjection.findByFilePath(projections, filePath).subIssueProgress,
     [projections],
   );
 
   const isDone = useCallback(
-    (filePath: string): boolean =>
+    (filePath: TaskFilePath): boolean =>
       TaskProjection.findByFilePath(projections, filePath).isDone,
     [projections],
   );

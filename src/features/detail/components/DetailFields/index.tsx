@@ -7,7 +7,7 @@ import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks"
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { Result as ResultDomain } from "@/utils/result";
 import { LinksSection } from "../LinksSection";
@@ -146,12 +146,12 @@ export type DetailFieldsSubIssueProps = {
    * サブIssue 追加ハンドラ。
    * @param parentFilePath - 親タスクのファイルパス
    */
-  onAddSubIssue: (parentFilePath: string) => void;
+  onAddSubIssue: (parentFilePath: TaskFilePath) => void;
   /**
    * 子タスククリック時のハンドラ。
    * @param taskId - クリックされた子タスクの id
    */
-  onChildClick?: (taskId: string) => void;
+  onChildClick?: (taskId: TaskId) => void;
 };
 
 /**
@@ -216,7 +216,7 @@ export type DetailFieldsLinksProps = {
   /** 親タスクの filePath（無ければ null） */
   parentFilePath: string | null;
   /** 子タスクの filePath 一覧 */
-  childrenFilePaths: string[];
+  childrenFilePaths: TaskFilePath[];
   /** リンク切れと判定された links の path 集合 */
   brokenLinkPaths: ReadonlySet<string>;
   /** リンク切れと判定された reverseLinks の path 集合 */
@@ -228,8 +228,8 @@ export type DetailFieldsLinksProps = {
    * @returns invoke 結果
    */
   onAddLink: (
-    sourceFilePath: string,
-    targetFilePath: string,
+    sourceFilePath: TaskFilePath,
+    targetFilePath: TaskFilePath,
   ) => Promise<Result<Task, unknown>>;
   /**
    * リンク削除ハンドラ。
@@ -238,14 +238,14 @@ export type DetailFieldsLinksProps = {
    * @returns invoke 結果
    */
   onRemoveLink?: (
-    sourceFilePath: string,
+    sourceFilePath: TaskFilePath,
     targetFilePath: string,
   ) => Promise<Result<Task, unknown>>;
   /**
    * リンククリック時のハンドラ。
    * @param taskId - クリックされたタスクの id
    */
-  onLinkClick?: (taskId: string) => void;
+  onLinkClick?: (taskId: TaskId) => void;
 };
 
 /**

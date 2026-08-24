@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   TaskProjection,
   type TaskProjectionPayloadInput,
@@ -9,14 +10,14 @@ const payloadOf = (
 ): TaskProjectionPayloadInput => ({
   subIssueProgress: { done: 1, total: 2 },
   isDone: false,
-  childFilePaths: ["tasks/b.md"],
+  childFilePaths: [taskFilePathFixture("tasks/b.md")],
   ...overrides,
 });
 
 test("fromPayload は filePath をキーにした Map を返す", () => {
   const map = TaskProjection.fromPayload({ "tasks/a.md": payloadOf() });
 
-  expect(map.get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(map.get(taskFilePathFixture("tasks/a.md"))?.subIssueProgress).toEqual({
     done: 1,
     total: 2,
   });
@@ -29,7 +30,7 @@ test("fromPayload は __proto__ キーでもプロトタイプ汚染を起こさ
     ) as Record<string, TaskProjectionPayloadInput>,
   );
 
-  expect(map.get("__proto__")?.isDone).toBe(true);
+  expect(map.get(taskFilePathFixture("__proto__"))?.isDone).toBe(true);
   expect(({} as { isDone?: boolean }).isDone).toBeUndefined();
 });
 
@@ -41,23 +42,30 @@ test("findByFilePath は登録済み filePath の projection を返す", () => {
   const map = TaskProjection.fromPayload({ "tasks/a.md": payloadOf() });
 
   expect(
-    TaskProjection.findByFilePath(map, "tasks/a.md").childFilePaths,
-  ).toEqual(["tasks/b.md"]);
+    TaskProjection.findByFilePath(map, taskFilePathFixture("tasks/a.md"))
+      .childFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/b.md")]);
 });
 
 test("findByFilePath は同一 filePath に対して同一参照を返す", () => {
   const map = TaskProjection.fromPayload({ "tasks/a.md": payloadOf() });
 
-  expect(TaskProjection.findByFilePath(map, "tasks/a.md")).toBe(
-    TaskProjection.findByFilePath(map, "tasks/a.md"),
-  );
+  expect(
+    TaskProjection.findByFilePath(map, taskFilePathFixture("tasks/a.md")),
+  ).toBe(TaskProjection.findByFilePath(map, taskFilePathFixture("tasks/a.md")));
 });
 
 test("findByFilePath は未登録 path に対して常に同一の empty 参照を返す", () => {
   const map = TaskProjection.fromPayload({});
 
-  const first = TaskProjection.findByFilePath(map, "tasks/missing.md");
-  const second = TaskProjection.findByFilePath(map, "tasks/other.md");
+  const first = TaskProjection.findByFilePath(
+    map,
+    taskFilePathFixture("tasks/missing.md"),
+  );
+  const second = TaskProjection.findByFilePath(
+    map,
+    taskFilePathFixture("tasks/other.md"),
+  );
 
   expect(first).toBe(second);
   expect(first).toBe(TaskProjection.empty);
@@ -66,14 +74,18 @@ test("findByFilePath は未登録 path に対して常に同一の empty 参照�
 test("findByFilePath は raw filePath をそのまま引き当て、表記揺れを正規化しない", () => {
   const map = TaskProjection.fromPayload({ "tasks/a.md": payloadOf() });
 
-  expect(TaskProjection.findByFilePath(map, "./tasks/a.md")).toBe(
-    TaskProjection.empty,
-  );
+  expect(
+    TaskProjection.findByFilePath(map, taskFilePathFixture("./tasks/a.md")),
+  ).toBe(TaskProjection.empty);
 });
 
 test("equals は done/total/isDone/childFilePaths すべて一致で true を返す", () => {
-  const left = TaskProjection.fromPayload({ "a.md": payloadOf() }).get("a.md");
-  const right = TaskProjection.fromPayload({ "a.md": payloadOf() }).get("a.md");
+  const left = TaskProjection.fromPayload({ "a.md": payloadOf() }).get(
+    taskFilePathFixture("a.md"),
+  );
+  const right = TaskProjection.fromPayload({ "a.md": payloadOf() }).get(
+    taskFilePathFixture("a.md"),
+  );
 
   expect(TaskProjection.equals(left, right)).toBe(true);
 });
@@ -82,16 +94,29 @@ test.each([
   ["done", { subIssueProgress: { done: 2, total: 2 } }],
   ["total", { subIssueProgress: { done: 1, total: 3 } }],
   ["isDone", { isDone: true }],
-  ["childFilePaths の要素", { childFilePaths: ["tasks/c.md"] }],
-  ["childFilePaths の件数", { childFilePaths: ["tasks/b.md", "tasks/c.md"] }],
+  [
+    "childFilePaths の要素",
+    { childFilePaths: [taskFilePathFixture("tasks/c.md")] },
+  ],
+  [
+    "childFilePaths の件数",
+    {
+      childFilePaths: [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/c.md"),
+      ],
+    },
+  ],
 ] satisfies readonly [
   string,
   Partial<TaskProjectionPayloadInput>,
 ][])("equals は %s が異なれば false を返す", (_label, overrides) => {
-  const left = TaskProjection.fromPayload({ "a.md": payloadOf() }).get("a.md");
+  const left = TaskProjection.fromPayload({ "a.md": payloadOf() }).get(
+    taskFilePathFixture("a.md"),
+  );
   const right = TaskProjection.fromPayload({
     "a.md": payloadOf(overrides),
-  }).get("a.md");
+  }).get(taskFilePathFixture("a.md"));
 
   expect(TaskProjection.equals(left, right)).toBe(false);
 });

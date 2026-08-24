@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { taskIdFixture } from "@/domains/__tests__/taskFixtures";
 import { buildProjectionsFixture, initialTasks } from "@/test-fixtures";
 import { BoardCardProvider } from "../../BoardCardProvider";
 import { TaskCardRoot } from "../TaskCardRoot";
@@ -29,7 +30,7 @@ export const AllProps: Story = {
   decorators: [
     withTask({
       ...baseTask,
-      id: "tasks/very-long-feature-name.md",
+      id: taskIdFixture("tasks/very-long-feature-name.md"),
       links: { ...baseTask.links, linkedFilePaths: ["one.md", "two.md"] },
     }),
   ],
@@ -38,7 +39,7 @@ export const EdgeCases: Story = {
   decorators: [
     withTask({
       ...baseTask,
-      id: "task",
+      id: taskIdFixture("task"),
       links: { linkedFilePaths: [], reverseLinkedFilePaths: [] },
       hierarchy: { parentFilePath: undefined, childFilePaths: [] },
     }),

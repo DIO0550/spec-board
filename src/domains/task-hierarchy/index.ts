@@ -1,12 +1,12 @@
 import { parentReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 /** Task の親子階層情報 */
 export type TaskHierarchy = {
   /** 親タスクのファイルパス（親がない場合は未設定） */
   parentFilePath?: string;
   /** 子タスクのファイルパスの配列（parent から逆引き） */
-  childFilePaths: string[];
+  childFilePaths: TaskFilePath[];
 };
 
 /**
@@ -15,7 +15,10 @@ export type TaskHierarchy = {
  * @param filePath 除去対象の path
  * @returns 除去後の配列
  */
-const removeChild = (children: string[], filePath: string): string[] => {
+const removeChild = (
+  children: TaskFilePath[],
+  filePath: TaskFilePath,
+): TaskFilePath[] => {
   if (!children.includes(filePath)) {
     return children;
   }
@@ -48,7 +51,7 @@ const detachParent = (
  */
 const detachDeletedPath = (
   hierarchy: TaskHierarchy,
-  deletedFilePath: string,
+  deletedFilePath: TaskFilePath,
 ): TaskHierarchy => ({
   parentFilePath: detachParent(hierarchy.parentFilePath, deletedFilePath),
   childFilePaths: removeChild(hierarchy.childFilePaths, deletedFilePath),
@@ -67,7 +70,31 @@ const hasHierarchyChanges = (
   next.parentFilePath !== current.parentFilePath ||
   next.childFilePaths !== current.childFilePaths;
 
+/**
+ * resolved childrenから既存taskのcanonicalな子→親対応を構築する。
+ * 同じ子を複数親が宣言する不正payloadでは、board順で先に現れた親を採用する。
+ * @param tasks 対応を構築するtask一覧
+ * @returns child filePathからparent filePathを引くMap
+ */
+const parentByChildFilePath = (
+  tasks: readonly Task[],
+): ReadonlyMap<TaskFilePath, TaskFilePath> => {
+  const taskPaths = new Set(tasks.map((task) => task.filePath));
+  const parents = new Map<TaskFilePath, TaskFilePath>();
+  for (const task of tasks) {
+    for (const childFilePath of task.hierarchy.childFilePaths) {
+      if (!taskPaths.has(childFilePath) || parents.has(childFilePath)) {
+        continue;
+      }
+      parents.set(childFilePath, task.filePath);
+    }
+  }
+  return parents;
+};
+
 export const TaskHierarchy = {
+  parentByChildFilePath,
+
   /**
    * Task の親子階層から削除済み task への参照を取り除く。
    *
@@ -75,7 +102,7 @@ export const TaskHierarchy = {
    * @param deletedFilePath 削除済み task の filePath
    * @returns 階層関係が変われば更新後 task、変わらなければ元 task
    */
-  detachDeletedTask: (task: Task, deletedFilePath: string): Task => {
+  detachDeletedTask: (task: Task, deletedFilePath: TaskFilePath): Task => {
     const hierarchy = detachDeletedPath(task.hierarchy, deletedFilePath);
 
     if (!hasHierarchyChanges(task.hierarchy, hierarchy)) {

@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
+import {
+  makeTask,
+  taskFilePathFixture,
+} from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { TauriError } from "@/lib/tauri";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
 import {
   initialState,
   type ProjectAction,
@@ -11,41 +14,18 @@ import {
 } from "../reducer";
 import type { ProjectState } from "../state/projectState";
 
-type TaskFixtureOverrides = Partial<Omit<Task, "links" | "hierarchy">> &
-  Pick<Task, "id"> & {
-    parent?: string;
-    links?: string[];
-    children?: string[];
-    reverseLinks?: string[];
-  };
-
-const makeTask = (overrides: TaskFixtureOverrides): Task => ({
-  id: overrides.id,
-  title: overrides.title ?? "t",
-  status: overrides.status ?? "Todo",
-  labels: overrides.labels ?? [],
-  body: overrides.body ?? "",
-  filePath: overrides.filePath ?? `tasks/${overrides.id}.md`,
-  priority: overrides.priority,
-  draft: overrides.draft ?? false,
-  extras: overrides.extras ?? {},
-  warnings: overrides.warnings ?? [],
-  links: {
-    linkedFilePaths: overrides.links ?? [],
-    reverseLinkedFilePaths: overrides.reverseLinks ?? [],
-  },
-  hierarchy: {
-    parentFilePath: overrides.parent,
-    childFilePaths: overrides.children ?? [],
-  },
-});
-
 const cols = (...names: string[]): Column[] =>
   names.map((name, order) => ({ name, order }));
 
 const dataA: ProjectData = {
   watcherSession: WATCHER_SESSION_FIXTURE,
-  tasks: [makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" })],
+  tasks: [
+    makeTask({
+      id: "a",
+      filePath: taskFilePathFixture("tasks/a.md"),
+      status: "Todo",
+    }),
+  ],
   columns: cols("Todo", "Done"),
   projections: new Map(),
   milestoneProjections: new Map(),
@@ -56,7 +36,13 @@ const dataA: ProjectData = {
 
 const dataB: ProjectData = {
   watcherSession: WATCHER_SESSION_FIXTURE,
-  tasks: [makeTask({ id: "b", filePath: "tasks/b.md", status: "Done" })],
+  tasks: [
+    makeTask({
+      id: "b",
+      filePath: taskFilePathFixture("tasks/b.md"),
+      status: "Done",
+    }),
+  ],
   columns: cols("Todo", "Done"),
   projections: new Map(),
   milestoneProjections: new Map(),
@@ -106,18 +92,25 @@ test("open-succeed → loaded", () => {
 test("open-succeed は task と milestone の projection map を同時に設定する", () => {
   const projections = new Map([
     [
-      "tasks/a.md",
+      taskFilePathFixture("tasks/a.md"),
       {
         subIssueProgress: { done: 1, total: 2 },
         isDone: false,
-        childFilePaths: ["tasks/child.md"],
+        childFilePaths: [taskFilePathFixture("tasks/child.md")],
       },
     ],
   ]);
   const milestoneProjections = new Map([
     [
       "v1",
-      { done: 1, total: 2, taskFilePaths: ["tasks/a.md", "tasks/child.md"] },
+      {
+        done: 1,
+        total: 2,
+        taskFilePaths: [
+          taskFilePathFixture("tasks/a.md"),
+          taskFilePathFixture("tasks/child.md"),
+        ],
+      },
     ],
   ]);
   const data = { ...dataA, projections, milestoneProjections };
@@ -164,7 +157,10 @@ test("open-fail (loaded 起点の loading) → 直前の loaded に復元", () =
 });
 
 test("task-created → state.data.tasks 末尾に追加", () => {
-  const created = makeTask({ id: "new", filePath: "tasks/new.md" });
+  const created = makeTask({
+    id: "new",
+    filePath: taskFilePathFixture("tasks/new.md"),
+  });
   const next = reducer(loadedAState, { type: "task-created", task: created });
   expect(next.kind).toBe("loaded");
   expect((next as { data: ProjectData }).data.tasks).toEqual([
@@ -176,7 +172,7 @@ test("task-created → state.data.tasks 末尾に追加", () => {
 test("task-created (parent あり) → 親タスクの children に新規 filePath を冪等に追加", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     status: "Todo",
     children: [],
   });
@@ -196,21 +192,25 @@ test("task-created (parent あり) → 親タスクの children に新規 filePa
   };
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
     status: "Todo",
-    parent: "tasks/p.md",
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const next = reducer(loadedWithParent, { type: "task-created", task: child });
   const tasks = (next as { data: ProjectData }).data.tasks;
   expect(tasks).toHaveLength(2);
-  const parentAfter = tasks.find((t) => t.filePath === "tasks/p.md");
-  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  const parentAfter = tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
+  );
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("task-created (parent 表記ゆれあり) → 親タスクの children に新規 filePath を追加", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     children: [],
   });
   const loadedWithParent: ProjectState = {
@@ -229,22 +229,24 @@ test("task-created (parent 表記ゆれあり) → 親タスクの children に�
   };
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
     parent: ".\\tasks\\p.md",
   });
   const next = reducer(loadedWithParent, { type: "task-created", task: child });
   const parentAfter = (next as { data: ProjectData }).data.tasks.find(
-    (t) => t.filePath === "tasks/p.md",
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
   );
 
-  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("task-created (parent あり) で親が既に children を持っていれば二重追加しない (冪等)", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const loadedWithParent: ProjectState = {
     kind: "loaded",
@@ -262,26 +264,28 @@ test("task-created (parent あり) で親が既に children を持っていれ�
   };
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const next = reducer(loadedWithParent, { type: "task-created", task: child });
   const parentAfter = (next as { data: ProjectData }).data.tasks.find(
-    (t) => t.filePath === "tasks/p.md",
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
   );
-  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("task-updated → originalFilePath 一致で差し替え", () => {
   const updated = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     title: "renamed",
     status: "Done",
   });
   const next = reducer(loadedAState, {
     type: "task-updated",
-    originalFilePath: "tasks/a.md",
+    originalFilePath: taskFilePathFixture("tasks/a.md"),
     task: updated,
   });
   expect(next.kind).toBe("loaded");
@@ -294,35 +298,38 @@ test("task-updated → originalFilePath 一致で差し替え", () => {
 test("task-updated → BE が filePath を変更しても originalFilePath で既存エントリを正しく差し替える", () => {
   const renamed = makeTask({
     id: "a",
-    filePath: "tasks/a-renamed.md", // BE がタイトル由来で filePath を再生成したケース
+    filePath: taskFilePathFixture("tasks/a-renamed.md"), // BE がタイトル由来で filePath を再生成したケース
     title: "renamed",
   });
   const next = reducer(loadedAState, {
     type: "task-updated",
-    originalFilePath: "tasks/a.md",
+    originalFilePath: taskFilePathFixture("tasks/a.md"),
     task: renamed,
   });
   expect(next.kind).toBe("loaded");
   const tasks = (next as { data: ProjectData }).data.tasks;
   expect(tasks).toHaveLength(1);
-  expect(tasks[0].filePath).toBe("tasks/a-renamed.md");
+  expect(tasks[0].filePath).toBe(taskFilePathFixture("tasks/a-renamed.md"));
   expect(tasks[0].title).toBe("renamed");
 });
 
 test("task-deleted → 削除 filePath を他 task の links / reverseLinks からも除去", () => {
   const a = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md", "tasks/c.md"],
-    reverseLinks: ["tasks/b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/c.md"),
+    ],
+    reverseLinks: [taskFilePathFixture("tasks/b.md")],
   });
   const b = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
-    links: ["tasks/a.md"],
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    links: [taskFilePathFixture("tasks/a.md")],
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
-  const c = makeTask({ id: "c", filePath: "tasks/c.md" });
+  const c = makeTask({ id: "c", filePath: taskFilePathFixture("tasks/c.md") });
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/x",
@@ -340,18 +347,22 @@ test("task-deleted → 削除 filePath を他 task の links / reverseLinks か�
   // b を削除すると、a の links と reverseLinks から tasks/b.md が消える
   const next = reducer(loaded, {
     type: "task-deleted",
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
   });
   const tasks = (next as { data: ProjectData }).data.tasks;
-  const aAfter = tasks.find((t) => t.filePath === "tasks/a.md");
-  expect(aAfter?.links.linkedFilePaths).toEqual(["tasks/c.md"]);
+  const aAfter = tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/a.md"),
+  );
+  expect(aAfter?.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
   expect(aAfter?.links.reverseLinkedFilePaths).toEqual([]);
 });
 
 test("task-deleted → filePath 一致で除去", () => {
   const next = reducer(loadedAState, {
     type: "task-deleted",
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
   });
   expect(next.kind).toBe("loaded");
   expect((next as { data: ProjectData }).data.tasks).toEqual([]);
@@ -360,18 +371,18 @@ test("task-deleted → filePath 一致で除去", () => {
 test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定にし、他 task の children からも除去", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const otherWithLink = makeTask({
     id: "o",
-    filePath: "tasks/o.md",
-    children: ["tasks/c.md"], // 別経路で c を子に持つ task もクリア対象
+    filePath: taskFilePathFixture("tasks/o.md"),
+    children: [taskFilePathFixture("tasks/c.md")], // 別経路で c を子に持つ task もクリア対象
   });
   const loaded: ProjectState = {
     kind: "loaded",
@@ -390,35 +401,40 @@ test("task-deleted → orphanStrategy=clear 整合: 子の parent を未設定�
   // 親 (p) を削除した場合、子 (c) の parent と other (o) の children をクリア
   const next = reducer(loaded, {
     type: "task-deleted",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
   });
   const tasks = (next as { data: ProjectData }).data.tasks;
-  expect(tasks.find((t) => t.filePath === "tasks/p.md")).toBeUndefined();
   expect(
-    tasks.find((t) => t.filePath === "tasks/c.md")?.hierarchy.parentFilePath,
+    tasks.find((t) => t.filePath === taskFilePathFixture("tasks/p.md")),
+  ).toBeUndefined();
+  expect(
+    tasks.find((t) => t.filePath === taskFilePathFixture("tasks/c.md"))
+      ?.hierarchy.parentFilePath,
   ).toBeUndefined();
   // c を子として削除した場合の other.children クリア検証
   const next2 = reducer(loaded, {
     type: "task-deleted",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
   });
   const tasks2 = (next2 as { data: ProjectData }).data.tasks;
   expect(
-    tasks2.find((t) => t.filePath === "tasks/p.md")?.hierarchy.childFilePaths,
+    tasks2.find((t) => t.filePath === taskFilePathFixture("tasks/p.md"))
+      ?.hierarchy.childFilePaths,
   ).toEqual([]);
   expect(
-    tasks2.find((t) => t.filePath === "tasks/o.md")?.hierarchy.childFilePaths,
+    tasks2.find((t) => t.filePath === taskFilePathFixture("tasks/o.md"))
+      ?.hierarchy.childFilePaths,
   ).toEqual([]);
 });
 
 test("task-deleted → parent 表記ゆれがある子の parent も未設定にする", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
     parent: "./tasks/p.md",
   });
   const loaded: ProjectState = {
@@ -438,12 +454,13 @@ test("task-deleted → parent 表記ゆれがある子の parent も未設定に
 
   const next = reducer(loaded, {
     type: "task-deleted",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
   });
   const tasks = (next as { data: ProjectData }).data.tasks;
 
   expect(
-    tasks.find((t) => t.filePath === "tasks/c.md")?.hierarchy.parentFilePath,
+    tasks.find((t) => t.filePath === taskFilePathFixture("tasks/c.md"))
+      ?.hierarchy.parentFilePath,
   ).toBeUndefined();
 });
 
@@ -554,18 +571,21 @@ test.for<[string, ProjectAction]>([
     "task-created (idle)",
     {
       type: "task-created",
-      task: makeTask({ id: "x", filePath: "tasks/x.md" }),
+      task: makeTask({ id: "x", filePath: taskFilePathFixture("tasks/x.md") }),
     },
   ],
   [
     "task-updated (idle)",
     {
       type: "task-updated",
-      originalFilePath: "tasks/x.md",
-      task: makeTask({ id: "x", filePath: "tasks/x.md" }),
+      originalFilePath: taskFilePathFixture("tasks/x.md"),
+      task: makeTask({ id: "x", filePath: taskFilePathFixture("tasks/x.md") }),
     },
   ],
-  ["task-deleted (idle)", { type: "task-deleted", filePath: "tasks/x.md" }],
+  [
+    "task-deleted (idle)",
+    { type: "task-deleted", filePath: taskFilePathFixture("tasks/x.md") },
+  ],
   ["columns-replaced (idle)", { type: "columns-replaced", columns: cols("X") }],
 ])("loaded 以外で %s は state 不変", ([, action]) => {
   const idle: ProjectState = { kind: "idle" };
@@ -597,9 +617,21 @@ test("dataB を別途 loaded に持つ場合も open-fail 復元先が正しい"
 });
 
 test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ", () => {
-  const todoA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
-  const todoB = makeTask({ id: "b", filePath: "tasks/b.md", status: "Todo" });
-  const doneX = makeTask({ id: "x", filePath: "tasks/x.md", status: "Done" });
+  const todoA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
+  const todoB = makeTask({
+    id: "b",
+    filePath: taskFilePathFixture("tasks/b.md"),
+    status: "Todo",
+  });
+  const doneX = makeTask({
+    id: "x",
+    filePath: taskFilePathFixture("tasks/x.md"),
+    status: "Done",
+  });
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/p",
@@ -617,20 +649,35 @@ test("card-order-updated → 対象カラムの tasks が filePaths 順に並ぶ
   const next = reducer(loaded, {
     type: "card-order-updated",
     columnName: "Todo",
-    filePaths: ["tasks/b.md", "tasks/a.md"],
+    filePaths: [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ],
   });
   const data = (next as { data: ProjectData }).data;
   expect(data.tasks.map((t) => t.filePath)).toEqual([
-    "tasks/b.md",
-    "tasks/x.md",
-    "tasks/a.md",
+    taskFilePathFixture("tasks/b.md"),
+    taskFilePathFixture("tasks/x.md"),
+    taskFilePathFixture("tasks/a.md"),
   ]);
 });
 
 test("card-order-updated → 他カラムの tasks 順序は不変", () => {
-  const todoA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
-  const doneX = makeTask({ id: "x", filePath: "tasks/x.md", status: "Done" });
-  const doneY = makeTask({ id: "y", filePath: "tasks/y.md", status: "Done" });
+  const todoA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
+  const doneX = makeTask({
+    id: "x",
+    filePath: taskFilePathFixture("tasks/x.md"),
+    status: "Done",
+  });
+  const doneY = makeTask({
+    id: "y",
+    filePath: taskFilePathFixture("tasks/y.md"),
+    status: "Done",
+  });
   const loaded: ProjectState = {
     kind: "loaded",
     path: "/p",
@@ -648,13 +695,13 @@ test("card-order-updated → 他カラムの tasks 順序は不変", () => {
   const next = reducer(loaded, {
     type: "card-order-updated",
     columnName: "Todo",
-    filePaths: ["tasks/a.md"],
+    filePaths: [taskFilePathFixture("tasks/a.md")],
   });
   const data = (next as { data: ProjectData }).data;
   expect(data.tasks.map((t) => t.filePath)).toEqual([
-    "tasks/a.md",
-    "tasks/x.md",
-    "tasks/y.md",
+    taskFilePathFixture("tasks/a.md"),
+    taskFilePathFixture("tasks/x.md"),
+    taskFilePathFixture("tasks/y.md"),
   ]);
 });
 
@@ -663,7 +710,7 @@ test("card-order-updated → idle state では no-op", () => {
   const next = reducer(idle, {
     type: "card-order-updated",
     columnName: "Todo",
-    filePaths: ["tasks/a.md"],
+    filePaths: [taskFilePathFixture("tasks/a.md")],
   });
   expect(next).toBe(idle);
 });
@@ -673,16 +720,19 @@ test("card-order-updated → idle state では no-op", () => {
 test("projections-refreshed は task と milestone の projection map を同時に更新する", () => {
   const projections = new Map([
     [
-      "tasks/a.md",
+      taskFilePathFixture("tasks/a.md"),
       {
         subIssueProgress: { done: 0, total: 1 },
         isDone: false,
-        childFilePaths: ["tasks/child.md"],
+        childFilePaths: [taskFilePathFixture("tasks/child.md")],
       },
     ],
   ]);
   const milestoneProjections = new Map([
-    ["release", { done: 0, total: 1, taskFilePaths: ["tasks/a.md"] }],
+    [
+      "release",
+      { done: 0, total: 1, taskFilePaths: [taskFilePathFixture("tasks/a.md")] },
+    ],
   ]);
 
   const next = reducer(loadedAState, {
@@ -724,7 +774,7 @@ test("非 loaded state への projections-refreshed は両 map を変更しな�
 test("tasks-resynced は tasks と両 projection map を更新し columns は変えない", () => {
   const projections = new Map([
     [
-      "tasks/z.md",
+      taskFilePathFixture("tasks/z.md"),
       {
         subIssueProgress: { done: 0, total: 0 },
         isDone: true,
@@ -733,11 +783,20 @@ test("tasks-resynced は tasks と両 projection map を更新し columns は変
     ],
   ]);
   const milestoneProjections = new Map([
-    ["v2", { done: 1, total: 1, taskFilePaths: ["tasks/z.md"] }],
+    [
+      "v2",
+      { done: 1, total: 1, taskFilePaths: [taskFilePathFixture("tasks/z.md")] },
+    ],
   ]);
   const next = reducer(loadedAState, {
     type: "tasks-resynced",
-    tasks: [makeTask({ id: "z", filePath: "tasks/z.md", status: "Done" })],
+    tasks: [
+      makeTask({
+        id: "z",
+        filePath: taskFilePathFixture("tasks/z.md"),
+        status: "Done",
+      }),
+    ],
     projections,
     milestoneProjections,
     taskTree: [],

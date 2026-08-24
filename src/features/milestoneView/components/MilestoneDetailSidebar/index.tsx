@@ -14,7 +14,7 @@ import {
   type MilestoneDisplayStatus,
   resolveCountdown,
 } from "@/features/milestoneView/lib/milestoneStatus";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 type MilestoneDetailSidebarProps = {
   def: MilestoneDefinition | undefined;
@@ -24,7 +24,7 @@ type MilestoneDetailSidebarProps = {
   tasks: readonly Task[];
   taskProjections: TaskProjectionMap;
   /** 所属タスク選択時のコールバック。 */
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
   now?: Date;
 };
 

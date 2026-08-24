@@ -71,11 +71,18 @@ test("対象カラムのタスクを子から順にアーカイブする", async
     return Result.ok(undefined);
   });
   const tasks = [
-    makeTask({ filePath: "tasks/parent.md" }),
-    makeTask({ filePath: "tasks/child.md", parent: "tasks/parent.md" }),
+    makeTask({
+      filePath: "tasks/parent.md",
+      children: ["tasks/child.md"],
+    }),
+    makeTask({
+      filePath: "tasks/child.md",
+      parent: ".\\tasks\\parent.md",
+      children: ["tasks/grandchild.md"],
+    }),
     makeTask({
       filePath: "tasks/grandchild.md",
-      parent: "tasks/child.md",
+      parent: "./tasks/child.md",
     }),
   ];
   const probe = mountHook({

@@ -1,6 +1,7 @@
 import { act, type ReactNode, StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { TaskProjection } from "@/domains/task-projection";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
@@ -41,7 +42,7 @@ const makeTask = (patch: Partial<TaskPayload>): Task =>
     status: patch.status ?? "Todo",
     labels: patch.labels ?? [],
     body: patch.body ?? "",
-    filePath: patch.filePath ?? "tasks/x.md",
+    filePath: patch.filePath ?? taskFilePathFixture("tasks/x.md"),
     links: patch.links ?? [],
     reverseLinks: patch.reverseLinks ?? [],
     children: patch.children ?? [],
@@ -98,10 +99,12 @@ const mountProbe = (
 };
 
 test("byPath は allTasks から該当 task を返し、不在時は undefined を返す", () => {
-  const a = makeTask({ id: "a", filePath: "tasks/a.md" });
+  const a = makeTask({ id: "a", filePath: taskFilePathFixture("tasks/a.md") });
   const probe = mountProbe({ allTasks: [a] });
-  expect(probe.latest.byPath("tasks/a.md")?.id).toBe("a");
-  expect(probe.latest.byPath("tasks/missing.md")).toBeUndefined();
+  expect(probe.latest.byPath(taskFilePathFixture("tasks/a.md"))?.id).toBe("a");
+  expect(
+    probe.latest.byPath(taskFilePathFixture("tasks/missing.md")),
+  ).toBeUndefined();
 });
 
 test("milestoneByName は Map.get と同じ挙動で undefined/該当を返す", () => {
@@ -141,10 +144,16 @@ test("isDoneColumn は effective doneColumn と一致するかで判定する", 
 });
 
 test("descendantCount は子なしのとき固定参照 (total: 0, done: 0) を返す", () => {
-  const a = makeTask({ id: "a", filePath: "tasks/a.md", children: [] });
+  const a = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    children: [],
+  });
   const probe = mountProbe({ allTasks: [a] });
-  const first = probe.latest.descendantCount("tasks/a.md");
-  const second = probe.latest.descendantCount("tasks/a.md");
+  const first = probe.latest.descendantCount(taskFilePathFixture("tasks/a.md"));
+  const second = probe.latest.descendantCount(
+    taskFilePathFixture("tasks/a.md"),
+  );
   expect(first).toEqual({ total: 0, done: 0 });
   expect(first).toBe(second);
 });
@@ -152,36 +161,44 @@ test("descendantCount は子なしのとき固定参照 (total: 0, done: 0) を�
 test("descendantCount は子あり一部 done のとき total と done を返す", () => {
   const child1 = makeTask({
     id: "c1",
-    filePath: "tasks/c1.md",
+    filePath: taskFilePathFixture("tasks/c1.md"),
     status: "Done",
-    parent: "tasks/p.md",
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const child2 = makeTask({
     id: "c2",
-    filePath: "tasks/c2.md",
+    filePath: taskFilePathFixture("tasks/c2.md"),
     status: "Todo",
-    parent: "tasks/p.md",
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c1.md", "tasks/c2.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [
+      taskFilePathFixture("tasks/c1.md"),
+      taskFilePathFixture("tasks/c2.md"),
+    ],
   });
   const probe = mountProbe({
     allTasks: [parent, child1, child2],
     doneColumn: "Done",
     projections: new Map([
       [
-        "tasks/p.md",
+        taskFilePathFixture("tasks/p.md"),
         {
           subIssueProgress: { done: 1, total: 2 },
           isDone: false,
-          childFilePaths: ["tasks/c1.md", "tasks/c2.md"],
+          childFilePaths: [
+            taskFilePathFixture("tasks/c1.md"),
+            taskFilePathFixture("tasks/c2.md"),
+          ],
         },
       ],
     ]),
   });
-  expect(probe.latest.descendantCount("tasks/p.md")).toEqual({
+  expect(
+    probe.latest.descendantCount(taskFilePathFixture("tasks/p.md")),
+  ).toEqual({
     total: 2,
     done: 1,
   });
@@ -190,8 +207,12 @@ test("descendantCount は子あり一部 done のとき total と done を返す
 test("descendantCount は projection 未登録の filePath で 0/0 の固定参照を返す", () => {
   const probe = mountProbe({ allTasks: [] });
 
-  const first = probe.latest.descendantCount("tasks/missing.md");
-  const second = probe.latest.descendantCount("tasks/other.md");
+  const first = probe.latest.descendantCount(
+    taskFilePathFixture("tasks/missing.md"),
+  );
+  const second = probe.latest.descendantCount(
+    taskFilePathFixture("tasks/other.md"),
+  );
 
   expect(first).toEqual({ done: 0, total: 0 });
   expect(first).toBe(second);
@@ -201,7 +222,7 @@ test("isDone は projection の値を返す", () => {
   const probe = mountProbe({
     projections: new Map([
       [
-        "tasks/a.md",
+        taskFilePathFixture("tasks/a.md"),
         {
           subIssueProgress: { done: 0, total: 0 },
           isDone: true,
@@ -211,15 +232,21 @@ test("isDone は projection の値を返す", () => {
     ]),
   });
 
-  expect(probe.latest.isDone("tasks/a.md")).toBe(true);
-  expect(probe.latest.isDone("tasks/unknown.md")).toBe(false);
+  expect(probe.latest.isDone(taskFilePathFixture("tasks/a.md"))).toBe(true);
+  expect(probe.latest.isDone(taskFilePathFixture("tasks/unknown.md"))).toBe(
+    false,
+  );
 });
 
 test("tasksInColumn は該当 column のタスクを status 別に返す", () => {
-  const a = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const a = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const b = makeTask({
     id: "b",
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
     status: "In Progress",
   });
   const probe = mountProbe({ tasks: [a, b] });
@@ -237,9 +264,9 @@ test("tasksInColumn は存在しない column 名で空配列固定参照を返�
 
 test("totalCountInColumn はフィルタ非適用の allTasks から status 一致件数を返す", () => {
   const all = [
-    makeTask({ filePath: "tasks/a.md", status: "Todo" }),
-    makeTask({ filePath: "tasks/b.md", status: "Todo" }),
-    makeTask({ filePath: "tasks/c.md", status: "Done" }),
+    makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" }),
+    makeTask({ filePath: taskFilePathFixture("tasks/b.md"), status: "Todo" }),
+    makeTask({ filePath: taskFilePathFixture("tasks/c.md"), status: "Done" }),
   ];
   // tasks（フィルタ後）を 1 件に絞っても、総件数は allTasks 基準で変わらない。
   const probe = mountProbe({ tasks: [all[0] as Task], allTasks: all });
@@ -250,7 +277,9 @@ test("totalCountInColumn はフィルタ非適用の allTasks から status 一�
 test("totalCountInColumn は該当タスクのないカラムで 0 を返す", () => {
   const probe = mountProbe({
     tasks: [],
-    allTasks: [makeTask({ filePath: "tasks/a.md", status: "Todo" })],
+    allTasks: [
+      makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" }),
+    ],
   });
   expect(probe.latest.totalCountInColumn("Empty")).toBe(0);
 });

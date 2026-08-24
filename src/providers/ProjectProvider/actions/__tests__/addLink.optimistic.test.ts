@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { addLink as addLinkInvoke, TauriError } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
@@ -53,7 +54,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -110,7 +111,7 @@ const okTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     extras: {},
     warnings: [],
     ...overrides,
@@ -121,83 +122,97 @@ beforeEach(() => {
 });
 
 test("source 楽観 dispatch で linkedFilePaths が即時拡張される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", title: "A" });
-  const target = makeTask({ filePath: "tasks/b.md", title: "B" });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    title: "A",
+  });
+  const target = makeTask({
+    filePath: taskFilePathFixture("tasks/b.md"),
+    title: "B",
+  });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
     Result.ok(
       okTask({
-        id: "tasks/a.md",
-        filePath: "tasks/a.md",
-        links: ["tasks/b.md"],
+        id: taskFilePathFixture("tasks/a.md"),
+        filePath: taskFilePathFixture("tasks/a.md"),
+        links: [taskFilePathFixture("tasks/b.md")],
       }),
     ),
   );
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const firstSourceUpdate = asTaskUpdated(
     harness.actions.find(
-      (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+      (a) =>
+        a.type === "task-updated" &&
+        a.originalFilePath === taskFilePathFixture("tasks/a.md"),
     ),
   );
-  expect(firstSourceUpdate.task.links.linkedFilePaths).toEqual(["tasks/b.md"]);
+  expect(firstSourceUpdate.task.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+  ]);
 });
 
 test("target 楽観 dispatch で reverseLinkedFilePaths が即時拡張される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
     Result.ok(
       okTask({
-        id: "tasks/a.md",
-        filePath: "tasks/a.md",
-        links: ["tasks/b.md"],
+        id: taskFilePathFixture("tasks/a.md"),
+        filePath: taskFilePathFixture("tasks/a.md"),
+        links: [taskFilePathFixture("tasks/b.md")],
       }),
     ),
   );
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const targetUpdate = asTaskUpdated(
     harness.actions.find(
-      (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+      (a) =>
+        a.type === "task-updated" &&
+        a.originalFilePath === taskFilePathFixture("tasks/b.md"),
     ),
   );
   expect(targetUpdate.task.links.reverseLinkedFilePaths).toEqual([
-    "tasks/a.md",
+    taskFilePathFixture("tasks/a.md"),
   ]);
 });
 
 test("IPC 成功で source が canonical Task で再 dispatch される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
     Result.ok(
       okTask({
-        id: "tasks/a.md",
-        filePath: "tasks/a.md",
+        id: taskFilePathFixture("tasks/a.md"),
+        filePath: taskFilePathFixture("tasks/a.md"),
         title: "canonical",
-        links: ["tasks/b.md"],
+        links: [taskFilePathFixture("tasks/b.md")],
       }),
     ),
   );
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const sourceUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/a.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/a.md"),
   );
   expect(sourceUpdates).toHaveLength(2);
   const commit = asTaskUpdated(sourceUpdates[1]);
@@ -205,37 +220,39 @@ test("IPC 成功で source が canonical Task で再 dispatch される", async 
 });
 
 test("IPC 成功で target は再 dispatch されない（楽観値据え置き）", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
     Result.ok(
       okTask({
-        id: "tasks/a.md",
-        filePath: "tasks/a.md",
-        links: ["tasks/b.md"],
+        id: taskFilePathFixture("tasks/a.md"),
+        filePath: taskFilePathFixture("tasks/a.md"),
+        links: [taskFilePathFixture("tasks/b.md")],
       }),
     ),
   );
 
   await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const targetUpdates = harness.actions.filter(
-    (a) => a.type === "task-updated" && a.originalFilePath === "tasks/b.md",
+    (a) =>
+      a.type === "task-updated" &&
+      a.originalFilePath === taskFilePathFixture("tasks/b.md"),
   );
   expect(targetUpdates).toHaveLength(1);
 });
 
 test("target 不在は IPC を呼ばず invalid-state で失敗し dispatch もされない", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const harness = setupLoaded(makeData([source]));
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/missing.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/missing.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
@@ -245,12 +262,12 @@ test("target 不在は IPC を呼ばず invalid-state で失敗し dispatch も�
 });
 
 test("self-link は IPC を呼ばず invalid-state で失敗し dispatch もされない", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const harness = setupLoaded(makeData([source]));
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/a.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
@@ -261,40 +278,42 @@ test("self-link は IPC を呼ばず invalid-state で失敗し dispatch もさ�
 
 test("既にリンク済みなら IPC を呼ばず現行 source で成功する", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
   });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const value = expectOk<Task, ProjectError>(result);
-  expect(value.links.linkedFilePaths).toEqual(["tasks/b.md"]);
+  expect(value.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+  ]);
   expect(addLinkMock).not.toHaveBeenCalled();
   expect(harness.actions).toHaveLength(0);
 });
 
 test("既存 raw 表記 ./tasks/b.md への canonical add も noop として成功する", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     links: ["./tasks/b.md"],
   });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   expectOk<Task, ProjectError>(result);
@@ -304,18 +323,18 @@ test("既存 raw 表記 ./tasks/b.md への canonical add も noop として成�
 
 test("既リンク済みで target reverse が欠落していても noop で成功する（ドリフト残置）", async () => {
   const source = makeTask({
-    filePath: "tasks/a.md",
-    links: ["tasks/b.md"],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
   });
   const target = makeTask({
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
     reverseLinks: [],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   expectOk<Task, ProjectError>(result);
@@ -327,8 +346,8 @@ test("source 不在で invalid-state エラーが返り IPC は呼ばれない",
   const harness = setupLoaded(makeData([]));
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/missing.md",
-    targetFilePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/missing.md"),
+    targetFilePath: taskFilePathFixture("tasks/x.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
@@ -337,41 +356,43 @@ test("source 不在で invalid-state エラーが返り IPC は呼ばれない",
 });
 
 test("IPC 成功時の Result.ok には canonical source Task が含まれる", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
     Result.ok(
       okTask({
-        id: "tasks/a.md",
-        filePath: "tasks/a.md",
+        id: taskFilePathFixture("tasks/a.md"),
+        filePath: taskFilePathFixture("tasks/a.md"),
         title: "canonical",
-        links: ["tasks/b.md"],
+        links: [taskFilePathFixture("tasks/b.md")],
       }),
     ),
   );
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const value = expectOk<Task, ProjectError>(result);
   expect(value.title).toBe("canonical");
-  expect(value.links.linkedFilePaths).toEqual(["tasks/b.md"]);
+  expect(value.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+  ]);
 });
 
 test("IPC 失敗時の Result.err は ProjectError.tauri を運ぶ", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
     Result.err(TauriError.from(new Error("書き込みに失敗"))),
   );
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
@@ -395,8 +416,8 @@ test("idle state では preflight invalid-state で IPC を呼ばない", async 
   };
 
   const result = await addLinkAction(deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);

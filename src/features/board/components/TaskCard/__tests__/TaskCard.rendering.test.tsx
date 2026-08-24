@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskCard } from "..";
 import { type CardWrapperArgs, wrapWithCardProvider } from "./_testHelpers";
@@ -27,7 +28,7 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/test.md",
+    filePath: taskFilePathFixture("tasks/test.md"),
     ...overrides,
   });
 }
@@ -85,11 +86,16 @@ test("onClick未指定の場合、divで描画されボタンにならない", a
 
 test("titleが未設定の場合、filePathが表示される", async () => {
   render({
-    task: createTask({ title: "", filePath: "tasks/my-task.md" }),
+    task: createTask({
+      title: "",
+      filePath: taskFilePathFixture("tasks/my-task.md"),
+    }),
     onClick: vi.fn(),
   });
   await vi.waitFor(() => {
-    expect(container?.textContent).toContain("tasks/my-task.md");
+    expect(container?.textContent).toContain(
+      taskFilePathFixture("tasks/my-task.md"),
+    );
   });
 });
 
@@ -152,23 +158,41 @@ test("BoardCardProvider.descendantCount 経由で全子孫ベースの進捗サ�
   const c1 = createTask({
     id: "c1",
     status: "Todo",
-    filePath: "tasks/c1.md",
-    children: ["tasks/g1.md", "tasks/g2.md"],
+    filePath: taskFilePathFixture("tasks/c1.md"),
+    children: [
+      taskFilePathFixture("tasks/g1.md"),
+      taskFilePathFixture("tasks/g2.md"),
+    ],
   });
   const c2 = createTask({
     id: "c2",
     status: "Done",
-    filePath: "tasks/c2.md",
-    children: ["tasks/g3.md"],
+    filePath: taskFilePathFixture("tasks/c2.md"),
+    children: [taskFilePathFixture("tasks/g3.md")],
   });
-  const g1 = createTask({ id: "g1", status: "Done", filePath: "tasks/g1.md" });
-  const g2 = createTask({ id: "g2", status: "Done", filePath: "tasks/g2.md" });
-  const g3 = createTask({ id: "g3", status: "Todo", filePath: "tasks/g3.md" });
+  const g1 = createTask({
+    id: "g1",
+    status: "Done",
+    filePath: taskFilePathFixture("tasks/g1.md"),
+  });
+  const g2 = createTask({
+    id: "g2",
+    status: "Done",
+    filePath: taskFilePathFixture("tasks/g2.md"),
+  });
+  const g3 = createTask({
+    id: "g3",
+    status: "Todo",
+    filePath: taskFilePathFixture("tasks/g3.md"),
+  });
   const parent = createTask({
     id: "parent",
     title: "親",
-    filePath: "tasks/parent.md",
-    children: ["tasks/c1.md", "tasks/c2.md"],
+    filePath: taskFilePathFixture("tasks/parent.md"),
+    children: [
+      taskFilePathFixture("tasks/c1.md"),
+      taskFilePathFixture("tasks/c2.md"),
+    ],
   });
   render(
     { task: parent, onClick: vi.fn() },
@@ -178,11 +202,14 @@ test("BoardCardProvider.descendantCount 経由で全子孫ベースの進捗サ�
       // 集計は BE (TaskIndex::project_all) 由来。直下子 2 + 孫 3 のうち done 3。
       projections: new Map([
         [
-          "tasks/parent.md",
+          taskFilePathFixture("tasks/parent.md"),
           {
             subIssueProgress: { done: 3, total: 5 },
             isDone: false,
-            childFilePaths: ["tasks/c1.md", "tasks/c2.md"],
+            childFilePaths: [
+              taskFilePathFixture("tasks/c1.md"),
+              taskFilePathFixture("tasks/c2.md"),
+            ],
           },
         ],
       ]),
@@ -210,7 +237,12 @@ test("フッターにタスク ID が常時表示される（links 0 / 子孫 0�
 
 test("links が 2 件の場合、フッターにリンク件数が表示される", async () => {
   render({
-    task: createTask({ links: ["tasks/a.md", "tasks/b.md"] }),
+    task: createTask({
+      links: [
+        taskFilePathFixture("tasks/a.md"),
+        taskFilePathFixture("tasks/b.md"),
+      ],
+    }),
     onClick: vi.fn(),
   });
   await vi.waitFor(() => {
@@ -236,14 +268,18 @@ test("子孫が存在する場合、フッターにサブIssue X/Y が表示さ�
   const c1 = createTask({
     id: "c1",
     status: "Done",
-    filePath: "tasks/c1.md",
-    children: ["tasks/c2.md"],
+    filePath: taskFilePathFixture("tasks/c1.md"),
+    children: [taskFilePathFixture("tasks/c2.md")],
   });
-  const c2 = createTask({ id: "c2", status: "Todo", filePath: "tasks/c2.md" });
+  const c2 = createTask({
+    id: "c2",
+    status: "Todo",
+    filePath: taskFilePathFixture("tasks/c2.md"),
+  });
   const parent = createTask({
     id: "parent",
-    filePath: "tasks/parent.md",
-    children: ["tasks/c1.md"],
+    filePath: taskFilePathFixture("tasks/parent.md"),
+    children: [taskFilePathFixture("tasks/c1.md")],
   });
   render(
     { task: parent, onClick: vi.fn() },
@@ -252,11 +288,11 @@ test("子孫が存在する場合、フッターにサブIssue X/Y が表示さ�
       doneColumn: "Done",
       projections: new Map([
         [
-          "tasks/parent.md",
+          taskFilePathFixture("tasks/parent.md"),
           {
             subIssueProgress: { done: 1, total: 2 },
             isDone: false,
-            childFilePaths: ["tasks/c1.md"],
+            childFilePaths: [taskFilePathFixture("tasks/c1.md")],
           },
         ],
       ]),

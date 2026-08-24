@@ -93,6 +93,7 @@ const openProjectRawPayload = {
   columns: ["Todo", "Doing", "Done"],
   projections: {},
   milestoneProjections: {},
+  taskTree: [],
   loadWarnings: [],
   session: {
     projectKey: "/test/project",
@@ -108,6 +109,7 @@ const twoTaskRawPayload = {
   columns: ["Todo", "Doing", "Done"],
   projections: {},
   milestoneProjections: {},
+  taskTree: [],
   loadWarnings: [],
   session: {
     projectKey: "/test/project",
@@ -294,6 +296,7 @@ const makeInvoke =
           tasks: [],
           projections: {},
           milestoneProjections: {},
+          taskTree: [],
           loadWarnings: [],
           session: {
             projectKey: "/test/project",

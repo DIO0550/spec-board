@@ -1,6 +1,6 @@
 import { LinkIntent, TaskLinks } from "@/domains/task-links";
 import { addLink as addLinkInvoke } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { ProjectError } from "../errors";
@@ -21,9 +21,9 @@ import {
  */
 export type AddLinkActionParams = {
   /** リンク元タスクの filePath（IPC 側では `sourceFilePath` に対応） */
-  readonly filePath: string;
+  readonly filePath: TaskFilePath;
   /** リンク先タスクの filePath（`buildAddLinkCandidates` 由来の canonical 値） */
-  readonly targetFilePath: string;
+  readonly targetFilePath: TaskFilePath;
 };
 
 /**
@@ -63,7 +63,7 @@ export const addLinkAction = (
      * @param filePath 引き当てる filePath
      * @returns 該当 Task（不在なら undefined）
      */
-    const findTaskInCurrentState = (filePath: string): Task | undefined =>
+    const findTaskInCurrentState = (filePath: TaskFilePath): Task | undefined =>
       findLinkTask(deps.getState(), filePath);
 
     const plan = TaskLinks.planAddLink(

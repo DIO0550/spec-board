@@ -1,6 +1,6 @@
 import { LinkIntent, TaskLinks } from "@/domains/task-links";
 import { removeLink as removeLinkInvoke } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { ProjectError } from "../errors";
@@ -19,7 +19,7 @@ import {
  */
 export type RemoveLinkActionParams = {
   /** リンク元タスクの filePath（IPC 側では `sourceFilePath` に対応） */
-  readonly filePath: string;
+  readonly filePath: TaskFilePath;
   /** 削除するリンクの raw 値（`linkedFilePaths` の要素。`./tasks/b.md` 等の表記揺れ可） */
   readonly targetFilePath: string;
 };
@@ -67,7 +67,7 @@ export const removeLinkAction = (
      * @param filePath 引き当てる filePath
      * @returns 該当 Task（不在なら undefined）
      */
-    const findTaskInCurrentState = (filePath: string): Task | undefined =>
+    const findTaskInCurrentState = (filePath: TaskFilePath): Task | undefined =>
       findLinkTask(deps.getState(), filePath);
     /**
      * 現在 state から raw 参照（表記揺れ込み）で Task を引き当てる lookup。

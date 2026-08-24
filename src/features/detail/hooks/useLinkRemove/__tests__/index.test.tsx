@@ -1,6 +1,7 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   type LinkRemoveCallback,
   type UseLinkRemoveOptions,
@@ -139,9 +140,12 @@ test("link removeのproject switchは通知を抑止する", async () => {
       }),
     ),
   );
-  expect(await (latest as unknown as LinkRemoveCallback)("a.md", "b.md")).toBe(
-    result,
-  );
+  expect(
+    await (latest as unknown as LinkRemoveCallback)(
+      taskFilePathFixture("a.md"),
+      "b.md",
+    ),
+  ).toBe(result);
   expect(onError).not.toHaveBeenCalled();
   expect(announce).not.toHaveBeenCalled();
 });

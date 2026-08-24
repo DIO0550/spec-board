@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { Task, type TaskPayload } from "@/types/task";
 import { buildChildRowList, SubIssueSection } from "..";
 
@@ -153,7 +154,11 @@ test("broken 行に WarningIcon と取消線 path が描画される", () => {
 test("buildChildRowList: 解決済タスクは resolved、broken set 一致は broken、それ以外はスキップ", () => {
   const c1 = makeTask({ id: "c1", filePath: "tasks/c1.md" });
   const rows = buildChildRowList(
-    ["tasks/c1.md", "tasks/dead.md", "tasks/unknown.md"],
+    [
+      c1.filePath,
+      taskFilePathFixture("tasks/dead.md"),
+      taskFilePathFixture("tasks/unknown.md"),
+    ],
     [c1],
     new Set(["tasks/dead.md"]),
   );

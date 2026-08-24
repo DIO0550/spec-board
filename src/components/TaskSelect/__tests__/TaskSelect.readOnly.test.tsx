@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskSelect } from "..";
 
@@ -59,7 +60,7 @@ test("readOnly && value あり → selected 表示で clear ボタンは描画�
   const task = makeTask({ id: "t-1", title: "親", filePath: "tasks/a.md" });
   render({
     tasks: [task],
-    value: "tasks/a.md",
+    value: taskFilePathFixture("tasks/a.md"),
     onChange: vi.fn(),
     readOnly: true,
   });
@@ -96,7 +97,7 @@ test("disabled で input と候補 option が disabled になる", () => {
 test("value が tasks 不在でも filePath fallback で selected 表示される", () => {
   render({
     tasks: [],
-    value: "tasks/missing.md",
+    value: taskFilePathFixture("tasks/missing.md"),
     onChange: vi.fn(),
   });
 
@@ -111,7 +112,7 @@ test("clear ボタンで onChange(null) が呼ばれる", () => {
   const task = makeTask({ id: "t-1", title: "親", filePath: "tasks/a.md" });
   render({
     tasks: [task],
-    value: "tasks/a.md",
+    value: taskFilePathFixture("tasks/a.md"),
     onChange,
   });
 

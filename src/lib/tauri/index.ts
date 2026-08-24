@@ -45,7 +45,11 @@ export { updateLabel } from "./labelCommands/updateLabel";
 // linkCommands
 export { addLink } from "./linkCommands/addLink";
 export { removeLink } from "./linkCommands/removeLink";
-export type { LinkParams } from "./linkCommands/types";
+export type {
+  AddLinkParams,
+  LinkParams,
+  RemoveLinkParams,
+} from "./linkCommands/types";
 // milestoneCommands
 export { createMilestone } from "./milestoneCommands/createMilestone";
 export { deleteMilestone } from "./milestoneCommands/deleteMilestone";

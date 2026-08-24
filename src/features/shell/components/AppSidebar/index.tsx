@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { RecentProject } from "@/providers/RecentProjectsProvider";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import { useSidebar } from "../../hooks/useSidebar";
 import { FileTree } from "../FileTree";
 import { ProjectSwitcher } from "../ProjectSwitcher";
@@ -15,7 +15,7 @@ type AppSidebarProps = {
   /** ファイルツリーに表示するタスク一覧。 */
   tasks: Task[];
   /** 選択中タスク ID。 */
-  selectedTaskId?: string | null;
+  selectedTaskId?: TaskId | null;
   /** 外部管理時の折りたたみ状態。 */
   collapsed?: boolean;
   /** 外部管理時の開閉ハンドラ。 */
@@ -31,7 +31,7 @@ type AppSidebarProps = {
    * ファイル選択ハンドラ。
    * @param taskId - 選択されたタスク ID
    */
-  onSelectTask: (taskId: string) => void;
+  onSelectTask: (taskId: TaskId) => void;
 };
 
 /** @returns ワークスペース見出しのアイコン */

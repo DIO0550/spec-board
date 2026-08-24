@@ -1,6 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import { taskIdFixture } from "@/domains/__tests__/taskFixtures";
 import { Task } from "@/types/task";
 import { AppSidebar } from ".";
 
@@ -34,7 +35,7 @@ const meta: Meta<typeof AppSidebar> = {
       { path: "/workspace/design-system", name: "design-system" },
     ],
     tasks,
-    selectedTaskId: "task-2",
+    selectedTaskId: taskIdFixture("task-2"),
     onOpenProject: fn(),
     onOpenProjectPath: fn(),
     onSelectTask: fn(),
@@ -81,7 +82,7 @@ export const EdgeCases: Story = {
         "very/deep/nested/directory/a-very-long-task-file-name.md",
       ),
     ],
-    selectedTaskId: "long-task",
+    selectedTaskId: taskIdFixture("long-task"),
   },
 };
 export const Empty: Story = {

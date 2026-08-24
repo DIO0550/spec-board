@@ -1,6 +1,7 @@
 import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { TaskProjection } from "@/domains/task-projection";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
@@ -39,7 +40,7 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -136,7 +137,7 @@ test("独自 MIME を持つ dragover で preventDefault される", () => {
   });
   const section = querySection();
   const event = createDragEvent("dragover");
-  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  event.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   act(() => {
     section.dispatchEvent(event);
   });
@@ -161,11 +162,11 @@ test("dragover で hover ターゲット (name, index) が Provider に通知さ
     column: { name: "Todo", onAddTask: vi.fn() },
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/a.md", "Done");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Done");
   });
   const section = querySection();
   const event = createDragEvent("dragover", { clientY: 0 });
-  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  event.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   act(() => {
     section.dispatchEvent(event);
   });
@@ -179,7 +180,7 @@ test("currentTarget 外への dragleave で hover ターゲットが (null, null
     column: { name: "Todo", onAddTask: vi.fn() },
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/a.md", "Done");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Done");
     probe.cardApi.hover("Todo", 0);
   });
   const section = querySection();
@@ -192,24 +193,28 @@ test("currentTarget 外への dragleave で hover ターゲットが (null, null
 
 test("drop で onTaskDrop が期待引数で呼ばれる", async () => {
   const onTaskDrop = vi.fn();
-  const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const probe = renderWithProviders({
     column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/a.md", "Todo");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Todo");
   });
   const section = querySection();
   const event = createDragEvent("drop");
-  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  event.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   act(() => {
     section.dispatchEvent(event);
   });
   await vi.waitFor(() => {
     expect(onTaskDrop).toHaveBeenCalledWith({
-      taskFilePath: "tasks/a.md",
+      taskFilePath: taskFilePathFixture("tasks/a.md"),
       fromColumn: "Todo",
       toColumn: "Done",
       toIndex: 0,
@@ -219,14 +224,18 @@ test("drop で onTaskDrop が期待引数で呼ばれる", async () => {
 
 test("dataTransfer 空の drop（外部 D&D）では onTaskDrop が呼ばれない", () => {
   const onTaskDrop = vi.fn();
-  const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const probe = renderWithProviders({
     column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/a.md", "Todo");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Todo");
   });
   const section = querySection();
   const event = createDragEvent("drop");
@@ -238,18 +247,25 @@ test("dataTransfer 空の drop（外部 D&D）では onTaskDrop が呼ばれな�
 
 test("dataTransfer の filePath が dragState と不一致なら onTaskDrop が呼ばれない", () => {
   const onTaskDrop = vi.fn();
-  const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const probe = renderWithProviders({
     column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/a.md", "Todo");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Todo");
   });
   const section = querySection();
   const event = createDragEvent("drop");
-  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/wrong.md");
+  event.dataTransfer.setData(
+    DRAG_MIME_TYPE,
+    taskFilePathFixture("tasks/wrong.md"),
+  );
   act(() => {
     section.dispatchEvent(event);
   });
@@ -258,24 +274,28 @@ test("dataTransfer の filePath が dragState と不一致なら onTaskDrop が�
 
 test("空カラムでの drop は toIndex=0 で呼ばれる", async () => {
   const onTaskDrop = vi.fn();
-  const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const probe = renderWithProviders({
     column: { name: "Done", onAddTask: vi.fn() },
     allTasks: [taskA],
     onTaskDrop,
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/a.md", "Todo");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Todo");
   });
   const section = querySection();
   const event = createDragEvent("drop");
-  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  event.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   act(() => {
     section.dispatchEvent(event);
   });
   await vi.waitFor(() => {
     expect(onTaskDrop).toHaveBeenCalledWith({
-      taskFilePath: "tasks/a.md",
+      taskFilePath: taskFilePathFixture("tasks/a.md"),
       fromColumn: "Todo",
       toColumn: "Done",
       toIndex: 0,
@@ -285,11 +305,27 @@ test("空カラムでの drop は toIndex=0 で呼ばれる", async () => {
 
 test("非空カラムでの drop は drop event の clientY から toIndex を同期計算する", async () => {
   const tasks = [
-    makeTask({ id: "1", filePath: "tasks/1.md", status: "Done" }),
-    makeTask({ id: "2", filePath: "tasks/2.md", status: "Done" }),
-    makeTask({ id: "3", filePath: "tasks/3.md", status: "Done" }),
+    makeTask({
+      id: "1",
+      filePath: taskFilePathFixture("tasks/1.md"),
+      status: "Done",
+    }),
+    makeTask({
+      id: "2",
+      filePath: taskFilePathFixture("tasks/2.md"),
+      status: "Done",
+    }),
+    makeTask({
+      id: "3",
+      filePath: taskFilePathFixture("tasks/3.md"),
+      status: "Done",
+    }),
   ];
-  const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const onTaskDrop = vi.fn();
   const probe = renderWithProviders({
     column: { name: "Done", onAddTask: vi.fn() },
@@ -299,7 +335,7 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
   });
   act(() => {
     // hoverIndex を故意に 0 に設定（drop 側で再計算されることを確認）
-    probe.cardApi.startDrag("tasks/a.md", "Todo");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/a.md"), "Todo");
     probe.cardApi.hover("Done", 0);
   });
   const liElements =
@@ -326,13 +362,13 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
   });
   const section = querySection();
   const event = createDragEvent("drop", { clientY: 70 });
-  event.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  event.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   act(() => {
     section.dispatchEvent(event);
   });
   await vi.waitFor(() => {
     expect(onTaskDrop).toHaveBeenCalledWith({
-      taskFilePath: "tasks/a.md",
+      taskFilePath: taskFilePathFixture("tasks/a.md"),
       fromColumn: "Todo",
       toColumn: "Done",
       toIndex: 2,
@@ -341,13 +377,15 @@ test("非空カラムでの drop は drop event の clientY から toIndex を�
 });
 
 test("hoverTarget.column === name の時のみ drop-placeholder が出る", () => {
-  const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
+  const tasks = [
+    makeTask({ id: "1", filePath: taskFilePathFixture("tasks/1.md") }),
+  ];
   const probe = renderWithProviders({
     column: { name: "Todo", onAddTask: vi.fn() },
     tasks,
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/x.md", "Todo");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/x.md"), "Todo");
     probe.cardApi.hover("Todo", 0);
   });
   expect(
@@ -356,13 +394,15 @@ test("hoverTarget.column === name の時のみ drop-placeholder が出る", () =
 });
 
 test("hoverTarget.column が他カラムの時は placeholder が出ない", () => {
-  const tasks = [makeTask({ id: "1", filePath: "tasks/1.md" })];
+  const tasks = [
+    makeTask({ id: "1", filePath: taskFilePathFixture("tasks/1.md") }),
+  ];
   const probe = renderWithProviders({
     column: { name: "Todo", onAddTask: vi.fn() },
     tasks,
   });
   act(() => {
-    probe.cardApi.startDrag("tasks/x.md", "Done");
+    probe.cardApi.startDrag(taskFilePathFixture("tasks/x.md"), "Done");
     probe.cardApi.hover("Done", 0);
   });
   expect(

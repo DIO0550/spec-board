@@ -5,7 +5,7 @@ import type {
 } from "@/domains/task-links";
 import { TaskLinks } from "@/domains/task-links";
 import { linkReferencesTaskPath } from "@/domains/task-path";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import { ProjectError } from "../errors";
 import { ProjectState } from "../state/projectState";
 import type { TaskActionDeps } from "./deps";
@@ -19,7 +19,7 @@ import type { TaskActionDeps } from "./deps";
  */
 export const findLinkTask = (
   state: ProjectState,
-  filePath: string,
+  filePath: TaskFilePath,
 ): Task | undefined =>
   ProjectState.visibleData(state)?.tasks.find(
     (task) => task.filePath === filePath,

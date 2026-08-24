@@ -1,7 +1,10 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
-import { makeTask } from "@/domains/__tests__/taskFixtures";
+import {
+  makeTask,
+  taskFilePathFixture,
+} from "@/domains/__tests__/taskFixtures";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -24,12 +27,12 @@ afterEach(() => {
   container = null;
 });
 
-const fp = (id: string) => `tasks/${id}.md`;
+const fp = (id: string) => taskFilePathFixture(`tasks/${id}.md`);
 
 const projection = (
   done: number,
   total: number,
-  childFilePaths: readonly string[] = [],
+  childFilePaths: readonly ReturnType<typeof taskFilePathFixture>[] = [],
   isDone = false,
 ): TaskProjection => ({
   subIssueProgress: { done, total },

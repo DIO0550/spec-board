@@ -1,6 +1,10 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import {
+  taskFilePathFixture,
+  taskIdFixture,
+} from "@/domains/__tests__/taskFixtures";
 import type { TaskUpdateHandler } from "@/features/detail/hooks/useDetailFieldHandlers";
 import {
   type UseTaskUpdateOptions,
@@ -19,7 +23,7 @@ const task = Task.fromPayload({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/task-1.md",
+  filePath: taskFilePathFixture("tasks/task-1.md"),
 });
 
 let container: HTMLDivElement | null = null;
@@ -68,7 +72,12 @@ test("更新成功時はfilePathを後置した引数でactionを呼び成功toa
   const onError = vi.fn();
   const get = renderHook({ tasks: [task], updateTask, showToast, onError });
 
-  await act(async () => get()(task.id, { title: "更新後", filePath: "不正" }));
+  await act(async () =>
+    get()(task.id, {
+      title: "更新後",
+      filePath: taskFilePathFixture("不正"),
+    }),
+  );
 
   expect(updateTask).toHaveBeenCalledWith({
     title: "更新後",
@@ -87,7 +96,7 @@ test("対象taskが存在しない場合はactionを呼ばない", async () => {
     onError: vi.fn(),
   });
 
-  await act(async () => get()("missing", { title: "更新" }));
+  await act(async () => get()(taskIdFixture("missing"), { title: "更新" }));
 
   expect(updateTask).not.toHaveBeenCalled();
 });

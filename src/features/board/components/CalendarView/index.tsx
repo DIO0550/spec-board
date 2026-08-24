@@ -2,7 +2,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { ColumnColor } from "@/domains/column-color";
 import { Due } from "@/domains/due";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import {
   addMonth,
   bucketTasksByDue,
@@ -52,7 +52,7 @@ type CalendarViewProps = {
    * 日付セル内のタスククリック時のコールバック。
    * @param taskId - クリックされたタスクの ID
    */
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
   /** 指定日を初期値にタスク作成を開くコールバック。 */
   onAddTask?: (date: string) => void;
 };

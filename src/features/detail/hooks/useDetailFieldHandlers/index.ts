@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { Priority } from "@/domains/priority";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 /**
  * タスク更新コールバックの型。id と更新フィールドを受け取る。
@@ -8,7 +8,7 @@ import type { Task } from "@/types/task";
  * @param updates - 更新するフィールド
  */
 export type TaskUpdateHandler = (
-  id: string,
+  id: TaskId,
   updates: Partial<Omit<Task, "id">>,
 ) => void;
 

@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   MilestoneProjection,
   type MilestoneProjectionMap,
@@ -36,13 +37,15 @@ const columns: Column[] = [
 const projectionOf = (done: number, total: number): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone: false,
-  childFilePaths: ["tasks/c.md"],
+  childFilePaths: [taskFilePathFixture("tasks/c.md")],
 });
 
 const milestoneProjectionOf = (
   done: number,
   total: number,
-  taskFilePaths: readonly string[] = ["tasks/a.md"],
+  taskFilePaths: readonly ReturnType<typeof taskFilePathFixture>[] = [
+    taskFilePathFixture("tasks/a.md"),
+  ],
 ) => ({ done, total, taskFilePaths });
 
 const dataWith = (
@@ -51,7 +54,7 @@ const dataWith = (
   taskTree: TaskForest = TaskForest.empty,
 ): ProjectDataT => ({
   watcherSession: WATCHER_SESSION_FIXTURE,
-  tasks: [makeTask("tasks/a.md")],
+  tasks: [makeTask(taskFilePathFixture("tasks/a.md"))],
   columns,
   doneColumn: "Done",
   projections,
@@ -72,25 +75,31 @@ const replaceTaskProjections = (
   });
 
 test("replaceProjections は projections だけを差し替える", () => {
-  const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
+  const data = dataWith(
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
+  );
 
   const next = replaceTaskProjections(
     data,
-    new Map([["tasks/a.md", projectionOf(1, 2)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(1, 2)]]),
   );
 
-  expect(next.projections.get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    next.projections.get(taskFilePathFixture("tasks/a.md"))?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 2,
   });
 });
 
 test("replaceProjections は tasks / columns / doneColumn / openRequestId を変えない", () => {
-  const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
+  const data = dataWith(
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
+  );
 
   const next = replaceTaskProjections(
     data,
-    new Map([["tasks/a.md", projectionOf(1, 2)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(1, 2)]]),
   );
 
   expect(next.tasks).toBe(data.tasks);
@@ -100,7 +109,9 @@ test("replaceProjections は tasks / columns / doneColumn / openRequestId を変
 });
 
 test("replaceProjections は空 Map への差し替えができる", () => {
-  const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
+  const data = dataWith(
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
+  );
 
   const next = replaceTaskProjections(data, new Map());
 
@@ -111,52 +122,63 @@ test("値が等価なエントリは旧オブジェクトの参照を引き継�
   const kept = projectionOf(0, 2);
   const data = dataWith(
     new Map([
-      ["tasks/a.md", kept],
-      ["tasks/b.md", projectionOf(0, 1)],
+      [taskFilePathFixture("tasks/a.md"), kept],
+      [taskFilePathFixture("tasks/b.md"), projectionOf(0, 1)],
     ]),
   );
 
   const next = replaceTaskProjections(
     data,
     new Map([
-      ["tasks/a.md", projectionOf(0, 2)],
-      ["tasks/b.md", projectionOf(1, 1)],
+      [taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)],
+      [taskFilePathFixture("tasks/b.md"), projectionOf(1, 1)],
     ]),
   );
 
-  expect(next.projections.get("tasks/a.md")).toBe(kept);
+  expect(next.projections.get(taskFilePathFixture("tasks/a.md"))).toBe(kept);
 });
 
 test("値が変わったエントリは新しいオブジェクトになる", () => {
   const changed = projectionOf(0, 1);
-  const data = dataWith(new Map([["tasks/b.md", changed]]));
+  const data = dataWith(
+    new Map([[taskFilePathFixture("tasks/b.md"), changed]]),
+  );
 
   const next = replaceTaskProjections(
     data,
-    new Map([["tasks/b.md", projectionOf(1, 1)]]),
+    new Map([[taskFilePathFixture("tasks/b.md"), projectionOf(1, 1)]]),
   );
 
-  expect(next.projections.get("tasks/b.md")).not.toBe(changed);
-  expect(next.projections.get("tasks/b.md")?.subIssueProgress.done).toBe(1);
+  expect(next.projections.get(taskFilePathFixture("tasks/b.md"))).not.toBe(
+    changed,
+  );
+  expect(
+    next.projections.get(taskFilePathFixture("tasks/b.md"))?.subIssueProgress
+      .done,
+  ).toBe(1);
 });
 
 test("全エントリが等価なら Map インスタンスごと据え置く", () => {
-  const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
+  const data = dataWith(
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
+  );
 
   const next = replaceTaskProjections(
     data,
-    new Map([["tasks/a.md", projectionOf(0, 2)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
   );
 
   expect(next.projections).toBe(data.projections);
 });
 
 test("全エントリが等価なら ProjectData オブジェクトごと据え置く", () => {
-  const data = dataWith(new Map([["tasks/a.md", projectionOf(0, 2)]]));
+  const data = dataWith(
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
+  );
 
   const next = replaceTaskProjections(
     data,
-    new Map([["tasks/a.md", projectionOf(0, 2)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
   );
 
   expect(next).toBe(data);
@@ -166,36 +188,36 @@ test("1 エントリだけ変われば Map も ProjectData も新インスタン
   const kept = projectionOf(0, 2);
   const data = dataWith(
     new Map([
-      ["tasks/a.md", kept],
-      ["tasks/b.md", projectionOf(0, 1)],
+      [taskFilePathFixture("tasks/a.md"), kept],
+      [taskFilePathFixture("tasks/b.md"), projectionOf(0, 1)],
     ]),
   );
 
   const next = replaceTaskProjections(
     data,
     new Map([
-      ["tasks/a.md", projectionOf(0, 2)],
-      ["tasks/b.md", projectionOf(1, 1)],
+      [taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)],
+      [taskFilePathFixture("tasks/b.md"), projectionOf(1, 1)],
     ]),
   );
 
   expect(next).not.toBe(data);
   expect(next.projections).not.toBe(data.projections);
-  expect(next.projections.get("tasks/a.md")).toBe(kept);
+  expect(next.projections.get(taskFilePathFixture("tasks/a.md"))).toBe(kept);
 });
 
 test("エントリ数が減れば残存エントリが等価でも Map 参照が変わる", () => {
   const kept = projectionOf(0, 2);
   const data = dataWith(
     new Map([
-      ["tasks/a.md", kept],
-      ["tasks/b.md", projectionOf(0, 1)],
+      [taskFilePathFixture("tasks/a.md"), kept],
+      [taskFilePathFixture("tasks/b.md"), projectionOf(0, 1)],
     ]),
   );
 
   const next = replaceTaskProjections(
     data,
-    new Map([["tasks/a.md", projectionOf(0, 2)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 2)]]),
   );
 
   expect(next.projections).not.toBe(data.projections);
@@ -205,36 +227,46 @@ test("エントリ数が減れば残存エントリが等価でも Map 参照が
 test("未登録 filePath の projection は findByFilePath が empty を返す", () => {
   const data = dataWith(TaskProjection.emptyMap);
 
-  expect(TaskProjection.findByFilePath(data.projections, "tasks/a.md")).toBe(
-    TaskProjection.empty,
-  );
+  expect(
+    TaskProjection.findByFilePath(
+      data.projections,
+      taskFilePathFixture("tasks/a.md"),
+    ),
+  ).toBe(TaskProjection.empty);
 });
 
 test("replaceProjections は task と milestone の両 Map を1回で更新する", () => {
   const data = dataWith(
-    new Map([["tasks/a.md", projectionOf(0, 1)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 1)]]),
     new Map([["v1", milestoneProjectionOf(0, 1)]]),
   );
 
   const next = ProjectData.replaceProjections(data, {
-    projections: new Map([["tasks/a.md", projectionOf(1, 1)]]),
+    projections: new Map([
+      [taskFilePathFixture("tasks/a.md"), projectionOf(1, 1)],
+    ]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(1, 1)]]),
     taskTree: [],
   });
 
-  expect(next.projections.get("tasks/a.md")?.subIssueProgress.done).toBe(1);
+  expect(
+    next.projections.get(taskFilePathFixture("tasks/a.md"))?.subIssueProgress
+      .done,
+  ).toBe(1);
   expect(next.milestoneProjections.get("v1")?.done).toBe(1);
 });
 
 test("task projection だけ変わると milestone Map の参照を保つ", () => {
   const milestoneProjections = new Map([["v1", milestoneProjectionOf(0, 1)]]);
   const data = dataWith(
-    new Map([["tasks/a.md", projectionOf(0, 1)]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), projectionOf(0, 1)]]),
     milestoneProjections,
   );
 
   const next = ProjectData.replaceProjections(data, {
-    projections: new Map([["tasks/a.md", projectionOf(1, 1)]]),
+    projections: new Map([
+      [taskFilePathFixture("tasks/a.md"), projectionOf(1, 1)],
+    ]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(0, 1)]]),
     taskTree: [],
   });
@@ -244,14 +276,18 @@ test("task projection だけ変わると milestone Map の参照を保つ", () =
 });
 
 test("milestone projection だけ変わると task Map の参照を保つ", () => {
-  const projections = new Map([["tasks/a.md", projectionOf(0, 1)]]);
+  const projections = new Map([
+    [taskFilePathFixture("tasks/a.md"), projectionOf(0, 1)],
+  ]);
   const data = dataWith(
     projections,
     new Map([["v1", milestoneProjectionOf(0, 1)]]),
   );
 
   const next = ProjectData.replaceProjections(data, {
-    projections: new Map([["tasks/a.md", projectionOf(0, 1)]]),
+    projections: new Map([
+      [taskFilePathFixture("tasks/a.md"), projectionOf(0, 1)],
+    ]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(1, 1)]]),
     taskTree: [],
   });
@@ -261,13 +297,22 @@ test("milestone projection だけ変わると task Map の参照を保つ", () =
 });
 
 test("milestone task path の順序が変わると新しい entry と Map を採用する", () => {
-  const previous = milestoneProjectionOf(0, 2, ["tasks/a.md", "tasks/b.md"]);
+  const previous = milestoneProjectionOf(0, 2, [
+    taskFilePathFixture("tasks/a.md"),
+    taskFilePathFixture("tasks/b.md"),
+  ]);
   const data = dataWith(new Map(), new Map([["v1", previous]]));
 
   const next = ProjectData.replaceProjections(data, {
     projections: new Map(),
     milestoneProjections: new Map([
-      ["v1", milestoneProjectionOf(0, 2, ["tasks/b.md", "tasks/a.md"])],
+      [
+        "v1",
+        milestoneProjectionOf(0, 2, [
+          taskFilePathFixture("tasks/b.md"),
+          taskFilePathFixture("tasks/a.md"),
+        ]),
+      ],
     ]),
     taskTree: [],
   });
@@ -280,18 +325,22 @@ test("両 Map が完全等価なら entry・Map・ProjectData の全参照を保
   const taskProjection = projectionOf(0, 1);
   const milestoneProjection = milestoneProjectionOf(0, 1);
   const data = dataWith(
-    new Map([["tasks/a.md", taskProjection]]),
+    new Map([[taskFilePathFixture("tasks/a.md"), taskProjection]]),
     new Map([["v1", milestoneProjection]]),
   );
 
   const next = ProjectData.replaceProjections(data, {
-    projections: new Map([["tasks/a.md", projectionOf(0, 1)]]),
+    projections: new Map([
+      [taskFilePathFixture("tasks/a.md"), projectionOf(0, 1)],
+    ]),
     milestoneProjections: new Map([["v1", milestoneProjectionOf(0, 1)]]),
     taskTree: [],
   });
 
   expect(next).toBe(data);
-  expect(next.projections.get("tasks/a.md")).toBe(taskProjection);
+  expect(next.projections.get(taskFilePathFixture("tasks/a.md"))).toBe(
+    taskProjection,
+  );
   expect(next.milestoneProjections.get("v1")).toBe(milestoneProjection);
 });
 
@@ -322,13 +371,13 @@ test("projections も tree も等価なら ProjectData 参照を据え置く", (
   const data = dataWith(
     new Map(),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
 
   const next = ProjectData.replaceProjections(data, {
     projections: new Map(),
     milestoneProjections: new Map(),
-    taskTree: treeOf("tasks/a.md"),
+    taskTree: treeOf(taskFilePathFixture("tasks/a.md")),
   });
 
   expect(next).toBe(data);
@@ -339,12 +388,12 @@ test("tree だけ変わった場合も新しい ProjectData に反映される",
   const data = dataWith(
     new Map(),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
   const taskTree = TaskForest.fromPayload([
     {
-      filePath: "tasks/a.md",
-      children: [{ filePath: "tasks/b.md", children: [] }],
+      filePath: taskFilePathFixture("tasks/a.md"),
+      children: [{ filePath: taskFilePathFixture("tasks/b.md"), children: [] }],
     },
   ]);
 
@@ -362,10 +411,13 @@ test("optimistic な task 追加では taskTree が据え置かれる", () => {
   const data = dataWith(
     new Map(),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
 
-  const next = ProjectData.applyTaskCreated(data, makeTask("tasks/new.md"));
+  const next = ProjectData.applyTaskCreated(
+    data,
+    makeTask(taskFilePathFixture("tasks/new.md")),
+  );
 
   expect(next.taskTree).toBe(data.taskTree);
   expect(next.tasks).toHaveLength(2);
@@ -375,10 +427,13 @@ test("optimistic な task 削除でも taskTree が据え置かれる", () => {
   const data = dataWith(
     new Map(),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
 
-  const next = ProjectData.applyTaskDeleted(data, "tasks/a.md");
+  const next = ProjectData.applyTaskDeleted(
+    data,
+    taskFilePathFixture("tasks/a.md"),
+  );
 
   expect(next.taskTree).toBe(data.taskTree);
   expect(next.tasks).toHaveLength(0);
@@ -388,11 +443,11 @@ test("optimistic な親付け替えでは次の get_tasks まで旧階層のま�
   const data = dataWith(
     new Map(),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
   const reparented = Task.fromPayload({
-    id: "tasks/a.md",
-    filePath: "tasks/a.md",
+    id: taskFilePathFixture("tasks/a.md"),
+    filePath: taskFilePathFixture("tasks/a.md"),
     title: "T",
     status: "Todo",
     labels: [],
@@ -402,10 +457,14 @@ test("optimistic な親付け替えでは次の get_tasks まで旧階層のま�
     body: "",
     extras: {},
     warnings: [],
-    parent: "tasks/parent.md",
+    parent: taskFilePathFixture("tasks/parent.md"),
   });
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/a.md", reparented);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/a.md"),
+    reparented,
+  );
 
   expect(next.taskTree).toBe(data.taskTree);
 });

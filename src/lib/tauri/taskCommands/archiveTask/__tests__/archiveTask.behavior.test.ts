@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { archiveTask } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 
@@ -11,21 +12,25 @@ beforeEach(() => {
 
 test("invoke が 'archive_task' command に args キーで params を渡す", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  await archiveTask({ filePath: "tasks/x.md" });
+  await archiveTask({ filePath: taskFilePathFixture("tasks/x.md") });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("archive_task", {
-    args: { filePath: "tasks/x.md" },
+    args: { filePath: taskFilePathFixture("tasks/x.md") },
   });
 });
 
 test("成功時は Result.ok(undefined) を返す", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  const result = await archiveTask({ filePath: "tasks/x.md" });
+  const result = await archiveTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+  });
   expect(result).toEqual({ ok: true, value: undefined });
 });
 
 test("invoke が reject すると throw せず Result.err(TauriError) を返す", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("fail"));
-  const result = await archiveTask({ filePath: "tasks/x.md" });
+  const result = await archiveTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+  });
   expect(result.ok).toBe(false);
   expect((result as { ok: false; error: unknown }).error).toBeInstanceOf(
     TauriError,

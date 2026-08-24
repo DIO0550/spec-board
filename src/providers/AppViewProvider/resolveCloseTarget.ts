@@ -1,3 +1,4 @@
+import type { TaskId } from "@/types/task";
 import type { AppView } from "./index";
 
 /** create 画面を閉じたときの戻り先。 */
@@ -5,7 +6,7 @@ export type CloseTarget = {
   /** 遷移先の view */
   view: AppView;
   /** 復元する選択タスク（detail 復帰時のみ非 null） */
-  selectedTaskId: string | null;
+  selectedTaskId: TaskId | null;
 };
 
 /**
@@ -18,7 +19,7 @@ export type CloseTarget = {
  */
 export const resolveCloseTarget = (
   returnView: AppView,
-  returnTaskId: string | null,
+  returnTaskId: TaskId | null,
 ): CloseTarget => {
   if (returnView === "detail" && returnTaskId !== null) {
     return { view: "detail", selectedTaskId: returnTaskId };

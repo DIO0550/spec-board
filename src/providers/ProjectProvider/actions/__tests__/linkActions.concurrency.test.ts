@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   addLink as addLinkInvoke,
@@ -71,7 +72,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -150,8 +151,8 @@ beforeEach(() => {
 });
 
 test("同一 pair への add と remove を await せず連続発行しても最終 state が remove 後の整合状態になる", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   // 先行 add の IPC を deferred にし、解決するまで後続 remove が開始されないことで
   // queue の直列化そのものを証明する（即時解決だと queue なしでも期待値を満たし得る）。
@@ -163,16 +164,18 @@ test("同一 pair への add と remove を await せず連続発行しても最
       }),
   );
   removeLinkMock.mockResolvedValue(
-    Result.ok(makeTask({ filePath: "tasks/a.md", links: [] })),
+    Result.ok(
+      makeTask({ filePath: taskFilePathFixture("tasks/a.md"), links: [] }),
+    ),
   );
 
   const first = addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
   const second = removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   // 先行 add が IPC 待ちの間、後続 remove の invoke は開始されない（queue 直列化）
@@ -182,7 +185,12 @@ test("同一 pair への add と remove を await せず連続発行しても最
   expect(removeLinkMock).not.toHaveBeenCalled();
 
   resolveAdd?.(
-    Result.ok(makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] })),
+    Result.ok(
+      makeTask({
+        filePath: taskFilePathFixture("tasks/a.md"),
+        links: [taskFilePathFixture("tasks/b.md")],
+      }),
+    ),
   );
   const [addResult, removeResult] = await Promise.all([first, second]);
 
@@ -191,55 +199,65 @@ test("同一 pair への add と remove を await せず連続発行しても最
   // queue 直列化により remove の plan は add 確定後の state から計算される
   expect(addLinkMock).toHaveBeenCalledTimes(1);
   expect(removeLinkMock).toHaveBeenCalledTimes(1);
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([]);
   expect(
-    currentTask(harness, "tasks/b.md").links.reverseLinkedFilePaths,
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/b.md")).links
+      .reverseLinkedFilePaths,
   ).toEqual([]);
 });
 
 test("同一 pair への add 2 連発の 2 回目は noop になり IPC は 1 回のみ", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   addLinkMock.mockResolvedValue(
-    Result.ok(makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] })),
+    Result.ok(
+      makeTask({
+        filePath: taskFilePathFixture("tasks/a.md"),
+        links: [taskFilePathFixture("tasks/b.md")],
+      }),
+    ),
   );
 
   const first = addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
   const second = addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
   const [firstResult, secondResult] = await Promise.all([first, second]);
 
   expectOk<Task, ProjectError>(firstResult);
   expectOk<Task, ProjectError>(secondResult);
   expect(addLinkMock).toHaveBeenCalledTimes(1);
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/b.md")]);
 });
 
 test("stale 失敗応答: IPC 中の watcher 相当の外部追加を rollback が保持する", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
 
   addLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: {
         ...current,
         links: {
           ...current.links,
           linkedFilePaths: [
             ...current.links.linkedFilePaths,
-            "tasks/watcher.md",
+            taskFilePathFixture("tasks/watcher.md"),
           ],
         },
       },
@@ -248,43 +266,49 @@ test("stale 失敗応答: IPC 中の watcher 相当の外部追加を rollback �
   });
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   expectErr<Task, ProjectError>(result);
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/watcher.md",
-  ]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/watcher.md")]);
 });
 
 test("stale 失敗応答: IPC 中の links 以外の外部 field 更新が rollback 後も残る", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
 
   removeLinkMock.mockImplementation(async () => {
-    const current = currentTask(harness, "tasks/a.md");
+    const current = currentTask(harness, taskFilePathFixture("tasks/a.md"));
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: { ...current, title: "外部更新済み" },
     });
     return Result.err(TauriError.from(new Error("io 失敗")));
   });
 
   const result = await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   expectErr<Task, ProjectError>(result);
-  const rolledBack = currentTask(harness, "tasks/a.md");
+  const rolledBack = currentTask(harness, taskFilePathFixture("tasks/a.md"));
   expect(rolledBack.title).toBe("外部更新済み");
-  expect(rolledBack.links.linkedFilePaths).toEqual(["tasks/b.md"]);
+  expect(rolledBack.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/b.md"),
+  ]);
 });
 
 /**
@@ -295,20 +319,20 @@ test("stale 失敗応答: IPC 中の links 以外の外部 field 更新が rollb
  */
 const makeNewProjectSentinels = (): { source: Task; target: Task } => ({
   source: makeTask({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     title: "新プロジェクトA",
-    links: ["tasks/keep.md"],
+    links: [taskFilePathFixture("tasks/keep.md")],
   }),
   target: makeTask({
-    filePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/b.md"),
     title: "新プロジェクトB",
-    reverseLinks: ["tasks/keep.md"],
+    reverseLinks: [taskFilePathFixture("tasks/keep.md")],
   }),
 });
 
 test("stale 応答前の project 切替では新 project state を一切変更しない（add）", async () => {
-  const source = makeTask({ filePath: "tasks/a.md" });
-  const target = makeTask({ filePath: "tasks/b.md" });
+  const source = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const target = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const harness = setupLoaded(makeData([source, target]));
   const sentinels = makeNewProjectSentinels();
   let actionsAtSwitch = 0;
@@ -326,8 +350,8 @@ test("stale 応答前の project 切替では新 project state を一切変更�
   });
 
   const result = await addLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
@@ -339,18 +363,25 @@ test("stale 応答前の project 切替では新 project state を一切変更�
   // 切替後に confirm / rollback の dispatch が積まれていない
   expect(harness.actions).toHaveLength(actionsAtSwitch);
   // 同一 filePath の sentinel が rollback（remove）で汚染されていない
-  const newSource = currentTask(harness, "tasks/a.md");
+  const newSource = currentTask(harness, taskFilePathFixture("tasks/a.md"));
   expect(newSource.title).toBe("新プロジェクトA");
-  expect(newSource.links.linkedFilePaths).toEqual(["tasks/keep.md"]);
-  const newTarget = currentTask(harness, "tasks/b.md");
-  expect(newTarget.links.reverseLinkedFilePaths).toEqual(["tasks/keep.md"]);
+  expect(newSource.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/keep.md"),
+  ]);
+  const newTarget = currentTask(harness, taskFilePathFixture("tasks/b.md"));
+  expect(newTarget.links.reverseLinkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/keep.md"),
+  ]);
 });
 
 test("stale 応答前の project 切替では新 project state を一切変更しない（remove）", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
   const sentinels = makeNewProjectSentinels();
@@ -368,8 +399,8 @@ test("stale 応答前の project 切替では新 project state を一切変更�
   });
 
   const result = await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   const error = expectErr<Task, ProjectError>(result);
@@ -380,18 +411,25 @@ test("stale 応答前の project 切替では新 project state を一切変更�
   });
   expect(harness.actions).toHaveLength(actionsAtSwitch);
   // 同一 filePath の sentinel が rollback（re-append）で汚染されていない
-  const newSource = currentTask(harness, "tasks/a.md");
+  const newSource = currentTask(harness, taskFilePathFixture("tasks/a.md"));
   expect(newSource.title).toBe("新プロジェクトA");
-  expect(newSource.links.linkedFilePaths).toEqual(["tasks/keep.md"]);
-  const newTarget = currentTask(harness, "tasks/b.md");
-  expect(newTarget.links.reverseLinkedFilePaths).toEqual(["tasks/keep.md"]);
+  expect(newSource.links.linkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/keep.md"),
+  ]);
+  const newTarget = currentTask(harness, taskFilePathFixture("tasks/b.md"));
+  expect(newTarget.links.reverseLinkedFilePaths).toEqual([
+    taskFilePathFixture("tasks/keep.md"),
+  ]);
 });
 
 test("post-write failure 相当の Err でも inverse rollback が適用される", async () => {
-  const source = makeTask({ filePath: "tasks/a.md", links: ["tasks/b.md"] });
+  const source = makeTask({
+    filePath: taskFilePathFixture("tasks/a.md"),
+    links: [taskFilePathFixture("tasks/b.md")],
+  });
   const target = makeTask({
-    filePath: "tasks/b.md",
-    reverseLinks: ["tasks/a.md"],
+    filePath: taskFilePathFixture("tasks/b.md"),
+    reverseLinks: [taskFilePathFixture("tasks/a.md")],
   });
   const harness = setupLoaded(makeData([source, target]));
   // FE は文字列エラー契約のため pre/post-write を判別できず、すべての Err に rollback を適用する
@@ -400,16 +438,18 @@ test("post-write failure 相当の Err でも inverse rollback が適用され�
   );
 
   const result = await removeLinkAction(harness.deps, {
-    filePath: "tasks/a.md",
-    targetFilePath: "tasks/b.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    targetFilePath: taskFilePathFixture("tasks/b.md"),
   });
 
   expectErr<Task, ProjectError>(result);
   // disk では削除済みでも FE cache には復元される（canonical 再収束までの一時乖離が既知の限界）
-  expect(currentTask(harness, "tasks/a.md").links.linkedFilePaths).toEqual([
-    "tasks/b.md",
-  ]);
   expect(
-    currentTask(harness, "tasks/b.md").links.reverseLinkedFilePaths,
-  ).toEqual(["tasks/a.md"]);
+    currentTask(harness, taskFilePathFixture("tasks/a.md")).links
+      .linkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/b.md")]);
+  expect(
+    currentTask(harness, taskFilePathFixture("tasks/b.md")).links
+      .reverseLinkedFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/a.md")]);
 });

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { deleteTask } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 
@@ -11,13 +12,13 @@ beforeEach(() => {
 
 test("invoke が 'delete_task' という command 名で呼ばれる", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  await deleteTask({ filePath: "tasks/x.md" });
+  await deleteTask({ filePath: taskFilePathFixture("tasks/x.md") });
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("delete_task");
 });
 
 test("filePath のみ渡した場合、invoke 引数に orphanStrategy キーが含まれない", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  await deleteTask({ filePath: "tasks/x.md" });
+  await deleteTask({ filePath: taskFilePathFixture("tasks/x.md") });
   const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
     args: Record<string, unknown>;
   };
@@ -26,15 +27,24 @@ test("filePath のみ渡した場合、invoke 引数に orphanStrategy キーが
 
 test("orphanStrategy='abort' は camelCase キーで渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  await deleteTask({ filePath: "tasks/x.md", orphanStrategy: "abort" });
+  await deleteTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+    orphanStrategy: "abort",
+  });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("delete_task", {
-    args: { filePath: "tasks/x.md", orphanStrategy: "abort" },
+    args: {
+      filePath: taskFilePathFixture("tasks/x.md"),
+      orphanStrategy: "abort",
+    },
   });
 });
 
 test("orphanStrategy: undefined の明示指定は undefined のまま渡る（ラッパで削らない）", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  await deleteTask({ filePath: "tasks/x.md", orphanStrategy: undefined });
+  await deleteTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+    orphanStrategy: undefined,
+  });
   const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
     args: Record<string, unknown>;
   };
@@ -44,13 +54,13 @@ test("orphanStrategy: undefined の明示指定は undefined のまま渡る（�
 
 test("成功時は Result.ok(undefined) を返す", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
-  const res = await deleteTask({ filePath: "tasks/x.md" });
+  const res = await deleteTask({ filePath: taskFilePathFixture("tasks/x.md") });
   expect(res).toEqual({ ok: true, value: undefined });
 });
 
 test("invoke が reject すると throw せず Result.err(TauriError) を返す", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("fail"));
-  const res = await deleteTask({ filePath: "tasks/x.md" });
+  const res = await deleteTask({ filePath: taskFilePathFixture("tasks/x.md") });
   expect(res.ok).toBe(false);
   expect((res as { ok: false; error: unknown }).error).toBeInstanceOf(
     TauriError,

@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   MilestoneProjection,
   type MilestoneProjectionMap,
@@ -14,7 +15,7 @@ import { WatcherSession } from "@/domains/watcher-session";
 import { Task, type TaskPayload } from "@/types/task";
 
 const payload = (overrides: Partial<TaskPayload> = {}): TaskPayload => ({
-  id: "tasks/a.md",
+  id: taskFilePathFixture("tasks/a.md"),
   title: "A",
   status: "Todo",
   labels: [],
@@ -22,7 +23,7 @@ const payload = (overrides: Partial<TaskPayload> = {}): TaskPayload => ({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/a.md",
+  filePath: taskFilePathFixture("tasks/a.md"),
   extras: {},
   warnings: [],
   ...overrides,
@@ -40,7 +41,9 @@ const projectionOf = (filePath: string, done: boolean): TaskProjectionMap =>
 const milestoneProjectionOf = (
   done: number,
   total: number,
-  taskFilePaths: readonly string[] = ["tasks/a.md"],
+  taskFilePaths: readonly ReturnType<typeof taskFilePathFixture>[] = [
+    taskFilePathFixture("tasks/a.md"),
+  ],
 ): MilestoneProjectionMap => new Map([["v1", { done, total, taskFilePaths }]]);
 
 const session = WatcherSession.fromPayload({
@@ -80,12 +83,12 @@ const resyncTaskSnapshot = (
 test("内容が変わった task が反映され、他フィールドは据え置かれる", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
   );
 
   const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload({ title: "A2" }))],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
   });
 
   expect(next.tasks[0].title).toBe("A2");
@@ -98,12 +101,12 @@ test("内容が変わった task が反映され、他フィールドは据え�
 test("内容が同一なら ProjectData の参照がそのまま保たれる", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
   );
 
   const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload())],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
   });
 
   expect(next).toBe(data);
@@ -111,20 +114,47 @@ test("内容が同一なら ProjectData の参照がそのまま保たれる", (
 
 test("3 件中 1 件だけ変わったとき、変わっていない 2 件は旧参照のまま", () => {
   const kept = [
-    Task.fromPayload(payload({ filePath: "tasks/a.md", id: "tasks/a.md" })),
-    Task.fromPayload(payload({ filePath: "tasks/b.md", id: "tasks/b.md" })),
+    Task.fromPayload(
+      payload({
+        filePath: taskFilePathFixture("tasks/a.md"),
+        id: taskFilePathFixture("tasks/a.md"),
+      }),
+    ),
+    Task.fromPayload(
+      payload({
+        filePath: taskFilePathFixture("tasks/b.md"),
+        id: taskFilePathFixture("tasks/b.md"),
+      }),
+    ),
   ];
   const changed = Task.fromPayload(
-    payload({ filePath: "tasks/c.md", id: "tasks/c.md" }),
+    payload({
+      filePath: taskFilePathFixture("tasks/c.md"),
+      id: taskFilePathFixture("tasks/c.md"),
+    }),
   );
   const data = baseData([...kept, changed], new Map());
 
   const next = resyncTaskSnapshot(data, {
     tasks: [
-      Task.fromPayload(payload({ filePath: "tasks/a.md", id: "tasks/a.md" })),
-      Task.fromPayload(payload({ filePath: "tasks/b.md", id: "tasks/b.md" })),
       Task.fromPayload(
-        payload({ filePath: "tasks/c.md", id: "tasks/c.md", title: "C2" }),
+        payload({
+          filePath: taskFilePathFixture("tasks/a.md"),
+          id: taskFilePathFixture("tasks/a.md"),
+        }),
+      ),
+      Task.fromPayload(
+        payload({
+          filePath: taskFilePathFixture("tasks/b.md"),
+          id: taskFilePathFixture("tasks/b.md"),
+        }),
+      ),
+      Task.fromPayload(
+        payload({
+          filePath: taskFilePathFixture("tasks/c.md"),
+          id: taskFilePathFixture("tasks/c.md"),
+          title: "C2",
+        }),
       ),
     ],
     projections: new Map(),
@@ -136,12 +166,12 @@ test("3 件中 1 件だけ変わったとき、変わっていない 2 件は旧
 });
 
 test("tasks だけ変わったときも projections の参照は保たれる", () => {
-  const projections = projectionOf("tasks/a.md", false);
+  const projections = projectionOf(taskFilePathFixture("tasks/a.md"), false);
   const data = baseData([Task.fromPayload(payload())], projections);
 
   const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload({ title: "A2" }))],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
   });
 
   expect(next.projections).toBe(projections);
@@ -150,11 +180,14 @@ test("tasks だけ変わったときも projections の参照は保たれる", (
 
 test("projections だけ変わったときも tasks の参照は保たれる", () => {
   const tasks = [Task.fromPayload(payload())];
-  const data = baseData(tasks, projectionOf("tasks/a.md", false));
+  const data = baseData(
+    tasks,
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
+  );
 
   const next = resyncTaskSnapshot(data, {
     tasks: [Task.fromPayload(payload())],
-    projections: projectionOf("tasks/a.md", true),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), true),
   });
 
   expect(next.tasks).toBe(tasks);
@@ -164,7 +197,7 @@ test("projections だけ変わったときも tasks の参照は保たれる", (
 test("空 snapshot は tasks を空配列にする", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
   );
 
   const next = resyncTaskSnapshot(data, {
@@ -181,7 +214,12 @@ test("件数が増えた snapshot を取りこぼさない", () => {
   const next = resyncTaskSnapshot(data, {
     tasks: [
       Task.fromPayload(payload()),
-      Task.fromPayload(payload({ filePath: "tasks/b.md", id: "tasks/b.md" })),
+      Task.fromPayload(
+        payload({
+          filePath: taskFilePathFixture("tasks/b.md"),
+          id: taskFilePathFixture("tasks/b.md"),
+        }),
+      ),
     ],
     projections: new Map(),
   });
@@ -204,30 +242,32 @@ test("楽観 dispatch した Task と等価な snapshot ではその Task の参
 test("resyncTasks は tasks と両 projection を同じ snapshot から更新する", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
     milestoneProjectionOf(0, 1),
   );
 
   const next = ProjectData.resyncTasks(data, {
     tasks: [Task.fromPayload(payload({ title: "A2" }))],
-    projections: projectionOf("tasks/a.md", true),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), true),
     milestoneProjections: milestoneProjectionOf(1, 1),
     taskTree: [],
   });
 
   expect(next.tasks[0].title).toBe("A2");
-  expect(next.projections.get("tasks/a.md")?.isDone).toBe(true);
+  expect(next.projections.get(taskFilePathFixture("tasks/a.md"))?.isDone).toBe(
+    true,
+  );
   expect(next.milestoneProjections.get("v1")?.done).toBe(1);
 });
 
 test("milestone projection だけ変わると tasks と task Map の参照を保つ", () => {
   const tasks = [Task.fromPayload(payload())];
-  const projections = projectionOf("tasks/a.md", false);
+  const projections = projectionOf(taskFilePathFixture("tasks/a.md"), false);
   const data = baseData(tasks, projections, milestoneProjectionOf(0, 1));
 
   const next = ProjectData.resyncTasks(data, {
     tasks: [Task.fromPayload(payload())],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
     milestoneProjections: milestoneProjectionOf(1, 1),
     taskTree: [],
   });
@@ -241,20 +281,23 @@ test("tasks と両 Map が等価なら resyncTasks は ProjectData 参照を保�
   const milestoneEntry = {
     done: 0,
     total: 2,
-    taskFilePaths: ["tasks/a.md", "tasks/b.md"],
+    taskFilePaths: [
+      taskFilePathFixture("tasks/a.md"),
+      taskFilePathFixture("tasks/b.md"),
+    ],
   };
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
     new Map([["v1", milestoneEntry]]),
   );
 
   const next = ProjectData.resyncTasks(data, {
     tasks: [Task.fromPayload(payload())],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
     milestoneProjections: milestoneProjectionOf(0, 2, [
-      "tasks/a.md",
-      "tasks/b.md",
+      taskFilePathFixture("tasks/a.md"),
+      taskFilePathFixture("tasks/b.md"),
     ]),
     taskTree: [],
   });
@@ -266,7 +309,7 @@ test("tasks と両 Map が等価なら resyncTasks は ProjectData 参照を保�
 const loadWarning = (message: string): ProjectLoadWarning => ({
   code: "unreadableFile",
   stage: "read",
-  path: "tasks/broken.md",
+  path: taskFilePathFixture("tasks/broken.md"),
   message,
   recoverable: true,
 });
@@ -324,16 +367,16 @@ const treeOf = (...filePaths: string[]): TaskForest =>
 test("tasks / projections / tree すべて等価な resync では data 参照が変わらない", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
 
   const next = ProjectData.resyncTasks(data, {
     tasks: [Task.fromPayload(payload())],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
     milestoneProjections: MilestoneProjection.emptyMap,
-    taskTree: treeOf("tasks/a.md"),
+    taskTree: treeOf(taskFilePathFixture("tasks/a.md")),
   });
 
   expect(next).toBe(data);
@@ -342,23 +385,25 @@ test("tasks / projections / tree すべて等価な resync では data 参照が
 test("tasks と taskTree が同じ snapshot として同時に更新される", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
   const taskTree = TaskForest.fromPayload([
     {
-      filePath: "tasks/a.md",
-      children: [{ filePath: "tasks/b.md", children: [] }],
+      filePath: taskFilePathFixture("tasks/a.md"),
+      children: [{ filePath: taskFilePathFixture("tasks/b.md"), children: [] }],
     },
   ]);
 
   const next = ProjectData.resyncTasks(data, {
     tasks: [
       Task.fromPayload(payload()),
-      Task.fromPayload(payload({ id: "b", filePath: "tasks/b.md" })),
+      Task.fromPayload(
+        payload({ id: "b", filePath: taskFilePathFixture("tasks/b.md") }),
+      ),
     ],
-    projections: projectionOf("tasks/a.md", false),
+    projections: projectionOf(taskFilePathFixture("tasks/a.md"), false),
     milestoneProjections: MilestoneProjection.emptyMap,
     taskTree,
   });
@@ -370,14 +415,17 @@ test("tasks と taskTree が同じ snapshot として同時に更新される", 
 test("tree だけ変化した resync でも新しい構造が反映される", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md", "tasks/b.md"),
+    treeOf(
+      taskFilePathFixture("tasks/a.md"),
+      taskFilePathFixture("tasks/b.md"),
+    ),
   );
   const taskTree = TaskForest.fromPayload([
     {
-      filePath: "tasks/a.md",
-      children: [{ filePath: "tasks/b.md", children: [] }],
+      filePath: taskFilePathFixture("tasks/a.md"),
+      children: [{ filePath: taskFilePathFixture("tasks/b.md"), children: [] }],
     },
   ]);
 
@@ -395,9 +443,9 @@ test("tree だけ変化した resync でも新しい構造が反映される", (
 test("全タスク削除後の rescan では taskTree が空になる", () => {
   const data = baseData(
     [Task.fromPayload(payload())],
-    projectionOf("tasks/a.md", false),
+    projectionOf(taskFilePathFixture("tasks/a.md"), false),
     MilestoneProjection.emptyMap,
-    treeOf("tasks/a.md"),
+    treeOf(taskFilePathFixture("tasks/a.md")),
   );
 
   const next = ProjectData.resyncTasks(data, {

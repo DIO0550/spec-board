@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { DueBadge } from "@/components/DueBadge";
 import { ColumnColor } from "@/domains/column-color";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 
 type SortKey = "status" | "priority" | "title" | "file";
 type SortDirection = "ascending" | "descending";
@@ -16,13 +16,13 @@ type ListViewProps = {
   /** 完了として取り消し線を付ける status。 */
   doneColumn?: string;
   /** 選択中の task ID（active row 表示用）。 */
-  selectedTaskId?: string | null;
+  selectedTaskId?: TaskId | null;
   /** 絞り込み中か。0件時に空ボードとno-resultsを区別する。 */
   filterActive?: boolean;
   /** status group の追加ボタン。 */
   onAddTask?: (status: string) => void;
   /** 行クリック時のコールバック。 */
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
 };
 
 const TABLE_GRID =
@@ -72,7 +72,7 @@ const compareTasks = (left: Task, right: Task, key: SortKey): number => {
  */
 const progressOf = (
   task: Task,
-  tasksByFilePath: ReadonlyMap<string, Task>,
+  tasksByFilePath: ReadonlyMap<TaskFilePath, Task>,
   doneColumn: string,
 ): { done: number; total: number } => {
   const children = task.hierarchy.childFilePaths
