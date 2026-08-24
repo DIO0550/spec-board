@@ -2,7 +2,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { SettingsTabId } from "@/features/settings";
-import { ThemeProvider } from "@/features/shell/hooks/useTheme";
+import { ThemeProvider } from "@/features/shell";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import { getLabels } from "@/lib/tauri";
