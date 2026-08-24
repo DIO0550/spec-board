@@ -80,3 +80,62 @@ test("fromPayload は due 未設定を undefined にする", () => {
   const task = Task.fromPayload(basePayload);
   expect(task.due).toBeUndefined();
 });
+
+test.each([
+  {
+    label: "field省略",
+    warning: {
+      code: "nonStringExtraKeyIgnored" as const,
+      message: "non-string extra key was ignored",
+    },
+    expected: {
+      code: "nonStringExtraKeyIgnored",
+      message: "non-string extra key was ignored",
+    },
+  },
+  {
+    label: "legacy null",
+    warning: {
+      code: "nonStringExtraKeyIgnored" as const,
+      field: null,
+      message: "non-string extra key was ignored",
+    },
+    expected: {
+      code: "nonStringExtraKeyIgnored",
+      message: "non-string extra key was ignored",
+    },
+  },
+  {
+    label: "field文字列",
+    warning: {
+      code: "parentNotFound" as const,
+      field: "parent",
+      message: "parent task was not found",
+    },
+    expected: {
+      code: "parentNotFound",
+      field: "parent",
+      message: "parent task was not found",
+    },
+  },
+  {
+    label: "field空文字",
+    warning: {
+      code: "invalidParentIgnored" as const,
+      field: "",
+      message: "parent was ignored",
+    },
+    expected: {
+      code: "invalidParentIgnored",
+      field: "",
+      message: "parent was ignored",
+    },
+  },
+])("fromPayload はwarningの$labelをcanonical domainへ正規化する", ({
+  warning,
+  expected,
+}) => {
+  const task = Task.fromPayload({ ...basePayload, warnings: [warning] });
+
+  expect(task.warnings).toEqual([expected]);
+});
