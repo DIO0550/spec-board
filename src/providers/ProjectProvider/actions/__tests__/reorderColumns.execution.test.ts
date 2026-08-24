@@ -215,7 +215,7 @@ test("invoke 失敗時 Result.err(ProjectError.tauri(...)) を返す", async () 
 test("project switch 以外の invalid-state (visibleData null 等) は rollback dispatch + onRollback を実行する", async () => {
   // snapshot 採取後 / queue 実行前に state が idle に巻き戻ったケースを再現する。
   // runUpdateColumnsInsideQueue が visibleData === null で invalid-state を返すが、
-  // 戻りreasonはoperation-rejectedなので reducer は loaded のまま。
+  // 戻りreasonはnot-loadedなので reducer は loaded のまま。
   // この場合は楽観 dispatch を rollback すべき。
   const harness = setupLoaded(makeData());
   const data = (harness.state.current as { data: ProjectData }).data;

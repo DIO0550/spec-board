@@ -214,7 +214,7 @@ const safeCallback = (
  * 前提（caller 責務）:
  *   - 呼び出し側が `snapshot.isNoop === false` を保証してから呼ぶこと。
  *     no-op の早期 return は `reorderColumnsAction` の preflight 側で扱う。
- *   - `runUpdateColumnsInsideQueue` が `invalid-state` を返した場合は、
+ *   - `runUpdateColumnsInsideQueue` が `reason=project-switched` を返した場合だけ、
  *     reducer が既に新 project の state に切り替わっている前提で rollback
  *     dispatch / callback を行わずそのまま err を返す。
  */

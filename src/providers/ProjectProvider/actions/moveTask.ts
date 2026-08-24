@@ -336,9 +336,7 @@ const revalidateInsideQueue = (
   }
   const data = ProjectState.visibleData(deps.getState());
   if (data === null) {
-    return Result.err(
-      ProjectError.invalidState("プロジェクトが開かれていません"),
-    );
+    return Result.err(ProjectError.invalidState());
   }
   const target = data.tasks.find((t) => t.filePath === params.taskFilePath);
   if (!target) {
