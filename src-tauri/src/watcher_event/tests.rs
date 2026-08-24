@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 use super::handler::{handle_batch, handle_change, run_event_loop, TaskFileChange};
 use super::watcher_test_support::{rename_batch, upsert_batch};
-use super::{AdapterContext, EmitFn};
+use super::{AdapterContext, EmitFn, EmittingWatcherHandle};
 use crate::config::{ConfigWriter, FsConfigWriter};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{PreparedProjectSession, SessionIdentity};
@@ -20,6 +20,7 @@ use crate::state::active_project_resources::{
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
+use spec_board_fs::watcher::core::Watcher;
 use spec_board_fs::watcher::file_change_batch::{FileChangeBatch, FileChangeBatchTestBuilder};
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
@@ -686,6 +687,50 @@ fn run_event_loop_processes_multiple_batches_then_exits_on_disconnect() {
 
     let entries = drain_log(&log);
     assert_eq!(2, entries.len());
+}
+
+#[test]
+fn dropping_emitting_handle_waits_for_outer_worker_after_core_disconnect() {
+    let dir = TempDir::new().expect("tempdir");
+    let (watcher, rx) = Watcher::start(dir.path()).expect("start watcher");
+    let (core_disconnected_tx, core_disconnected_rx) = std::sync::mpsc::channel();
+    let (release_worker_tx, release_worker_rx) = std::sync::mpsc::channel();
+    let (worker_exited_tx, worker_exited_rx) = std::sync::mpsc::channel();
+    let join = std::thread::spawn(move || {
+        while rx.recv().is_ok() {}
+        core_disconnected_tx
+            .send(())
+            .expect("signal core disconnect");
+        release_worker_rx.recv().expect("release outer worker");
+        worker_exited_tx.send(()).expect("signal worker exit");
+    });
+    let handle = EmittingWatcherHandle {
+        watcher: Some(watcher),
+        join: Some(join),
+    };
+    let (drop_finished_tx, drop_finished_rx) = std::sync::mpsc::channel();
+    let drop_thread = std::thread::spawn(move || {
+        drop(handle);
+        drop_finished_tx.send(()).expect("signal drop completion");
+    });
+
+    core_disconnected_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("core receiver should disconnect");
+    assert_eq!(
+        drop_finished_rx.recv_timeout(std::time::Duration::from_millis(100)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout),
+        "normal drop must wait until the outer worker exits"
+    );
+
+    release_worker_tx.send(()).expect("release outer worker");
+    worker_exited_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("outer worker should exit");
+    drop_finished_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("drop should finish after worker exit");
+    drop_thread.join().expect("drop thread should finish");
 }
 
 #[test]

@@ -7,7 +7,7 @@ struct FakeHandle {
 }
 
 impl WatcherHandle for FakeHandle {
-    fn stop(&mut self) {
+    fn stop(self: Box<Self>) {
         self.stop_calls.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -15,14 +15,13 @@ impl WatcherHandle for FakeHandle {
 #[test]
 fn trait_object_dispatches_stop_to_concrete_impl() {
     let counter = Arc::new(AtomicUsize::new(0));
-    let mut handle: Box<dyn WatcherHandle> = Box::new(FakeHandle {
+    let handle: Box<dyn WatcherHandle> = Box::new(FakeHandle {
         stop_calls: Arc::clone(&counter),
     });
 
-    (*handle).stop();
-    (*handle).stop();
+    handle.stop();
 
-    assert_eq!(2, counter.load(Ordering::SeqCst));
+    assert_eq!(1, counter.load(Ordering::SeqCst));
 }
 
 #[test]
@@ -33,24 +32,7 @@ fn watcher_handle_box_is_send() {
 
 #[test]
 fn noop_watcher_handle_stop_does_not_panic() {
-    let mut handle = NoopWatcherHandle::new();
+    let handle: Box<dyn WatcherHandle> = Box::new(NoopWatcherHandle::new());
 
     handle.stop();
-}
-
-#[test]
-fn noop_watcher_handle_stop_is_idempotent() {
-    let mut handle = NoopWatcherHandle::new();
-
-    handle.stop();
-    handle.stop();
-    handle.stop();
-}
-
-#[test]
-fn noop_watcher_handle_works_through_trait_object() {
-    let mut handle: Box<dyn WatcherHandle + Send + 'static> = Box::new(NoopWatcherHandle::new());
-
-    (*handle).stop();
-    (*handle).stop();
 }

@@ -27,6 +27,7 @@ use notify::{
 use thiserror::Error;
 
 use super::file_change_batch::{FileChangeBatch, PendingChanges};
+use super::handle::WatcherHandle;
 
 /// `PollWatcher` フォールバック時にファイルシステムを走査する間隔。
 ///
@@ -263,6 +264,12 @@ impl Drop for Watcher {
         if let Some(handle) = self.adapter_handle.take() {
             let _ = handle.join();
         }
+    }
+}
+
+impl WatcherHandle for Watcher {
+    fn stop(self: Box<Self>) {
+        drop(self);
     }
 }
 

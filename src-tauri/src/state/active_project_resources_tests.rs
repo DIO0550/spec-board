@@ -60,7 +60,7 @@ struct JoiningHandle {
 }
 
 impl WatcherHandle for JoiningHandle {
-    fn stop(&mut self) {
+    fn stop(mut self: Box<Self>) {
         let state = self.activation_state.load(Ordering::Acquire);
         self.cancelled_before_stop.store(
             state == WatcherActivationState::Cancelled as u8,
@@ -77,7 +77,7 @@ struct CountingHandle {
 }
 
 impl WatcherHandle for CountingHandle {
-    fn stop(&mut self) {
+    fn stop(self: Box<Self>) {
         self.stop_count.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -87,7 +87,7 @@ struct PanickingHandle {
 }
 
 impl WatcherHandle for PanickingHandle {
-    fn stop(&mut self) {
+    fn stop(self: Box<Self>) {
         self.stop_count.fetch_add(1, Ordering::SeqCst);
         panic!("watcher stop failed");
     }

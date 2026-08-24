@@ -1,5 +1,6 @@
 use super::*;
 use crate::watcher::file_change_batch::FileChangeBatchTestBuilder;
+use crate::watcher::handle::WatcherHandle;
 use notify::event::{
     AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
 };
@@ -683,6 +684,31 @@ fn dropping_watcher_blocks_new_events() {
     assert!(
         !any_marker,
         "no batch referencing {marker_name} should appear after Drop; got {queued:?}"
+    );
+}
+
+#[test]
+fn stopping_watcher_through_trait_disconnects_before_returning() {
+    let dir = TempDir::new().unwrap();
+    let (watcher, rx) = Watcher::start(dir.path()).expect("start should succeed");
+
+    let warmup = dir.path().join("warmup.md");
+    std::fs::write(&warmup, b"warm").unwrap();
+    wait_for_batch_at(&rx, &warmup, Duration::from_secs(5)).expect("watcher should be active");
+    drain_batches(&rx, Duration::from_millis(200));
+
+    let handle: Box<dyn WatcherHandle> = Box::new(watcher);
+    handle.stop();
+
+    let marker = dir.path().join("marker-after-stop.md");
+    std::fs::write(&marker, b"after-stop").unwrap();
+    let queued = drain_until_disconnected(&rx, Duration::from_millis(300), Duration::from_secs(10));
+
+    assert!(
+        queued
+            .iter()
+            .all(|batch| !batch_paths(batch).contains(&marker)),
+        "events created after stop returns must not arrive: {queued:?}"
     );
 }
 
