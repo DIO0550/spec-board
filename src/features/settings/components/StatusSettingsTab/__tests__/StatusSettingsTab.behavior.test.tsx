@@ -75,6 +75,17 @@ test("保存失敗時は変更をdirtyのまま保持して再試行できる", 
   expect(buttonByLabel("変更を保存")?.disabled).toBe(false);
 });
 
+test("controlled idleでは内部保存失敗をerror表示へ漏らさない", async () => {
+  const onSave = vi.fn(async () => false);
+  renderTab({ saveState: "idle", onSave });
+  act(() => buttonByLabel("Todo を上へ")?.click());
+
+  await act(async () => buttonByLabel("変更を保存")?.click());
+
+  expect(container?.querySelector('[role="alert"]')).toBeNull();
+  expect(buttonByLabel("変更を保存")?.disabled).toBe(false);
+});
+
 test("保存成功後の連続renameは直前の保存名をsourceNameにする", async () => {
   type SaveValue = Parameters<
     NonNullable<Parameters<typeof StatusSettingsTab>[0]["onSave"]>

@@ -1,7 +1,7 @@
 # spec-board - 設定仕様（バックエンド）
 
 > **機能**: [spec-board](./index.md)
-> **バージョン**: 1.15
+> **バージョン**: 1.16
 > **ステータス**: 下書き
 
 ## 概要
@@ -261,7 +261,7 @@ type GetLabelsPayload = {
 
 設定画面には `StatusSettingsTab` と `ConfigFileTab` の内部到達経路を持つ。
 
-- `StatusSettingsTab` は App が渡す実project columnとtask使用数を初期値に、カラム順序、名称、完了カラム、空カラムの追加 / 削除を編集する。App adapter は `{ columns, doneColumn }` を `update_columns` command（rename時は `renames` を含む）へ変換する。成功時のみdirtyを解除し、失敗時は変更を保持して再試行可能にする。
+- `StatusSettingsTab` は App が渡す実project columnとtask使用数を初期値に、カラム順序、名称、完了カラム、空カラムの追加 / 削除を編集する。App adapter は `{ columns, doneColumn }` を `update_columns` command（rename時は `renames` を含む）へ変換する。成功時のみdirtyを解除し、失敗時は変更を保持して再試行可能にする。`saveState` を省略した場合は保存結果の表示状態をタブ内部で管理し、指定した場合は `idle` を含む全状態を外部管理する。この2モードはPropsの判別unionで択一とし、controlled `idle` に内部の失敗状態を漏らさない。
 - `ConfigFileTab` は `config.json` / `GUIDE.md` の読み取り専用表示と copy / regenerate / external editor / reveal folder の callback 境界を持つ。現段階の `SettingsScreen` は canonical example を表示し、実ディスク読込や OS / IPC action を行わない。`GUIDE.md` の正式な生成・更新条件は本仕様「AIエージェント向けガイド（GUIDE.md）」節を引き続き source of truth とする。
 - したがって、これら 2 タブの表示が存在すること自体は `config.json` / `GUIDE.md` の永続化契約を変更しない。接続前の UI 操作を成功した書込みとして扱ってはならない。
 
@@ -821,6 +821,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.16 | 2026-08-24 | Issue #618: StatusSettingsTabの保存表示状態をcontrolled / uncontrolledの判別unionへ分離し、controlled idleへ内部失敗を漏らさない契約を明記 | - |
 | 1.15 | 2026-08-24 | Issue #612: milestone orderのu32境界predicate、CRUD invoke前strict reject、YAML loadのlenient fallbackとの責務差、wire互換を明記 | - |
 | 1.14 | 2026-08-24 | Issue #608: config path validationのInvalidFileName / NotADirectory / SymlinkRejected分類（sourceなし）、実OS I/Oと既存leaf非regular分類をIo sourceとして保持する境界、既存Display / wire / disk / fallback互換を明記 | - |
 | 1.13 | 2026-08-24 | Issue #603: move_task の移動元・移動先cardOrder実在判定をtask I/O portへ統一し、NotFoundのみ除外・他I/O errorは保守的保持する契約を明記 | - |

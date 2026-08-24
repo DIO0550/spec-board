@@ -44,10 +44,11 @@ const normalizeColumnWipLimit = (column: StatusColumn): StatusColumn => {
   return rest;
 };
 
-type StatusSettingsTabProps = {
+type StatusSaveState = "idle" | "saving" | "saved" | "error";
+
+type StatusSettingsTabCommonProps = {
   initialColumns?: readonly StatusColumn[];
   initialDoneColumn?: string;
-  saveState?: "idle" | "saving" | "saved" | "error";
   onSave?: (
     value: StatusSettingsValue,
     // biome-ignore lint/suspicious/noConfusingVoidType: synchronous callbacks may intentionally return void.
@@ -56,16 +57,25 @@ type StatusSettingsTabProps = {
   onOpenConfig?: () => void;
 };
 
+export type StatusSettingsTabProps = StatusSettingsTabCommonProps &
+  (
+    | { saveState?: never }
+    | {
+        saveState: StatusSaveState;
+      }
+  );
+
 /**
  * ボードのステータス/カラム定義を編集する設定タブ。
- * 永続化はonSaveへ委譲し、未接続時も編集状態を視覚確認できる。
+ * 永続化はonSaveへ委譲する。saveStateを渡した場合は表示状態を完全に外部管理し、
+ * 省略した場合だけ内部の保存結果を表示する。
  * @param props - 初期値・保存状態・外部action callbacks
  * @returns ステータス設定画面
  */
 export const StatusSettingsTab = ({
   initialColumns = DEFAULT_COLUMNS,
   initialDoneColumn = "Done",
-  saveState = "idle",
+  saveState,
   onSave,
   onOpenBoard,
   onOpenConfig,
@@ -75,14 +85,25 @@ export const StatusSettingsTab = ({
   const [doneColumn, setDoneColumn] = useState(initialDoneColumn);
   const [newName, setNewName] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [internalSaveState, setInternalSaveState] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
-  const currentSaveState = saveState === "idle" ? internalSaveState : saveState;
+  const [internalSaveState, setInternalSaveState] =
+    useState<StatusSaveState>("idle");
+  const isSaveStateControlled = saveState !== undefined;
+  const currentSaveState = saveState ?? internalSaveState;
   const taskCount = useMemo(
     () => columns.reduce((sum, column) => sum + column.taskCount, 0),
     [columns],
   );
+
+  /**
+   * uncontrolled時だけ内部の保存表示状態を更新する。
+   * @param next - 次の保存表示状態
+   */
+  const updateInternalSaveState = (next: StatusSaveState): void => {
+    if (isSaveStateControlled) {
+      return;
+    }
+    setInternalSaveState(next);
+  };
 
   /** @param next - 次のカラム配列 */
   const updateColumns = (next: readonly StatusColumn[]): void => {
@@ -131,23 +152,23 @@ export const StatusSettingsTab = ({
     if (onSave === undefined) {
       return;
     }
-    setInternalSaveState("saving");
+    updateInternalSaveState("saving");
     try {
       const result = await onSave({
         columns: columns.map(normalizeColumnWipLimit),
         doneColumn,
       });
       if (result === false) {
-        setInternalSaveState("error");
+        updateInternalSaveState("error");
         return;
       }
       setColumns((current) =>
         current.map((column) => ({ ...column, sourceName: column.name })),
       );
       setDirty(false);
-      setInternalSaveState("saved");
+      updateInternalSaveState("saved");
     } catch {
-      setInternalSaveState("error");
+      updateInternalSaveState("error");
     }
   };
 
