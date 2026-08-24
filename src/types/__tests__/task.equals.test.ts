@@ -61,6 +61,30 @@ test("warnings だけ変わった場合も等価でなくなる", () => {
   ).toBe(false);
 });
 
+test("warning field省略とlegacy nullは正規化後に等価と判定される", () => {
+  const canonical = Task.fromPayload({
+    ...fullPayload,
+    warnings: [
+      {
+        code: "nonStringExtraKeyIgnored",
+        message: "non-string extra key was ignored",
+      },
+    ],
+  });
+  const legacy = Task.fromPayload({
+    ...fullPayload,
+    warnings: [
+      {
+        code: "nonStringExtraKeyIgnored",
+        field: null,
+        message: "non-string extra key was ignored",
+      },
+    ],
+  });
+
+  expect(Task.equals(canonical, legacy)).toBe(true);
+});
+
 test("optional をすべて埋めた Task のキー集合と比較対象キーが一致する", () => {
   const keys = Object.keys(build()).sort();
 

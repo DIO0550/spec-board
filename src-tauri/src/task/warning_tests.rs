@@ -62,6 +62,68 @@ fn parent_cycle_warning_serializes_with_camel_case_field_names() {
 }
 
 #[test]
+fn warning_without_field_omits_the_field_key() {
+    let warning = TaskWarning {
+        code: TaskWarningCode::NonStringExtraKeyIgnored,
+        field: None,
+        message: "non-string extra key was ignored".to_string(),
+    };
+
+    let serialized = serde_json::to_value(&warning).expect("serialize warning");
+
+    assert_eq!(
+        serialized,
+        serde_json::json!({
+            "code": "nonStringExtraKeyIgnored",
+            "message": "non-string extra key was ignored"
+        })
+    );
+}
+
+#[test]
+fn warning_with_field_keeps_the_field_key() {
+    let warning = TaskWarning {
+        code: TaskWarningCode::ParentNotFound,
+        field: Some("parent".to_string()),
+        message: "parent task was not found".to_string(),
+    };
+
+    let serialized = serde_json::to_value(&warning).expect("serialize warning");
+
+    assert_eq!(
+        serialized,
+        serde_json::json!({
+            "code": "parentNotFound",
+            "field": "parent",
+            "message": "parent task was not found"
+        })
+    );
+}
+
+#[test]
+fn warning_deserializes_missing_field_as_none() {
+    let warning: TaskWarning = serde_json::from_value(serde_json::json!({
+        "code": "nonStringExtraKeyIgnored",
+        "message": "non-string extra key was ignored"
+    }))
+    .expect("deserialize warning without field");
+
+    assert_eq!(warning.field, None);
+}
+
+#[test]
+fn warning_deserializes_null_field_as_none() {
+    let warning: TaskWarning = serde_json::from_value(serde_json::json!({
+        "code": "nonStringExtraKeyIgnored",
+        "field": null,
+        "message": "non-string extra key was ignored"
+    }))
+    .expect("deserialize legacy warning with null field");
+
+    assert_eq!(warning.field, None);
+}
+
+#[test]
 fn invalid_due_code_serializes_to_camel_case_string() {
     let serialized = serde_json::to_string(&TaskWarningCode::InvalidDue).expect("serialize code");
     assert_eq!(serialized, "\"invalidDue\"");
