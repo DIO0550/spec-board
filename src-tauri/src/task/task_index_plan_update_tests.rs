@@ -9,6 +9,7 @@ use super::{
     UpdateTaskIntent,
 };
 use crate::task::create::error::ContentRejectReason;
+use crate::task::document::Patch;
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed, Priority};
 use crate::task::parse::TaskParseError;
 use crate::task::task_content::TaskContentError;
@@ -36,14 +37,14 @@ fn parsed_from_md(md: &str) -> Parsed {
 
 fn empty_intent(rel: &str) -> UpdateTaskIntent {
     UpdateTaskIntent {
-        draft: None,
+        draft: Patch::Unchanged,
         file_path: PathBuf::from(rel),
         title: None,
         status: None,
         priority: None,
-        milestone: None,
+        milestone: Patch::Unchanged,
         labels: None,
-        parent: None,
+        parent: Patch::Unchanged,
         body: None,
     }
 }
@@ -286,7 +287,7 @@ fn plan_update_with_no_parent_change_succeeds() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/p.md".to_string());
+    intent.parent = Patch::Set("tasks/p.md".to_string());
 
     index
         .plan_update(project_root(), intent, &task, parsed)
@@ -302,7 +303,7 @@ fn plan_update_same_parent_with_dot_prefix_is_not_treated_as_change() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("./tasks/p.md".to_string());
+    intent.parent = Patch::Set("./tasks/p.md".to_string());
 
     index
         .plan_update(project_root(), intent, &task, parsed)
@@ -316,7 +317,7 @@ fn plan_update_same_parent_with_backslash_separator_is_not_treated_as_change() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks\\p.md".to_string());
+    intent.parent = Patch::Set("tasks\\p.md".to_string());
 
     index
         .plan_update(project_root(), intent, &task, parsed)
@@ -330,7 +331,7 @@ fn plan_update_parent_added_writes_parent() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/p.md".to_string());
+    intent.parent = Patch::Set("tasks/p.md".to_string());
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -346,7 +347,7 @@ fn plan_update_parent_cleared_with_empty_string_removes_parent() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some(String::new());
+    intent.parent = Patch::Clear;
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -362,7 +363,7 @@ fn plan_update_returns_parent_not_found_for_missing_parent() {
     let index = TaskIndex::new(vec![task.clone()]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/missing.md".to_string());
+    intent.parent = Patch::Set("tasks/missing.md".to_string());
 
     let err = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -383,7 +384,7 @@ fn plan_update_resolves_parent_with_dot_prefix_via_normalization() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("./tasks/p.md".to_string());
+    intent.parent = Patch::Set("./tasks/p.md".to_string());
 
     index
         .plan_update(project_root(), intent, &task, parsed)
@@ -397,7 +398,7 @@ fn plan_update_resolves_parent_with_backslash_separator_via_normalization() {
     let index = TaskIndex::new(vec![task.clone(), make_task("tasks/p.md", None)]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks\\p.md".to_string());
+    intent.parent = Patch::Set("tasks\\p.md".to_string());
 
     index
         .plan_update(project_root(), intent, &task, parsed)
@@ -411,7 +412,7 @@ fn plan_update_self_reference_returns_parent_cycle() {
     let index = TaskIndex::new(vec![task.clone()]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/a.md".to_string());
+    intent.parent = Patch::Set("tasks/a.md".to_string());
 
     let err = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -432,7 +433,7 @@ fn plan_update_descendant_parent_returns_parent_cycle() {
     let index = TaskIndex::new(vec![task_a.clone(), task_b]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/b.md".to_string());
+    intent.parent = Patch::Set("tasks/b.md".to_string());
 
     let err = index
         .plan_update(project_root(), intent, &task_a, parsed)
@@ -459,7 +460,7 @@ fn plan_update_chain_too_deep_returns_parent_too_deep() {
     let index = TaskIndex::new(tasks);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/B0.md".to_string());
+    intent.parent = Patch::Set("tasks/B0.md".to_string());
 
     let err = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -617,7 +618,7 @@ fn plan_update_returns_root_relative_file_path_in_updated_task() {
     assert_eq!(outcome.updated_task.file_path, "tasks/a.md");
 }
 
-// `intent.parent = None` のとき、cache 側に独立循環があっても
+// `intent.parent = Patch::Unchanged` のとき、cache 側に独立循環があっても
 // strict hierarchy 検証はスキップされること。
 // fixture のcycleはproduction同様にresolverへ通し、raw parentを保持したresolved
 // Task集合からquery用TaskIndexを組み立てる。
@@ -664,7 +665,7 @@ fn plan_update_normalized_equal_parent_skips_hierarchy_validation() {
     let index = TaskIndex::new(tasks);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("./tasks/p.md".to_string());
+    intent.parent = Patch::Set("./tasks/p.md".to_string());
 
     index
         .plan_update(project_root(), intent, &task, parsed)
@@ -691,7 +692,7 @@ fn plan_update_sibling_parent_change_is_allowed() {
     let index = TaskIndex::new(tasks);
 
     let mut intent = empty_intent("tasks/x.md");
-    intent.parent = Some("tasks/c.md".to_string());
+    intent.parent = Patch::Set("tasks/c.md".to_string());
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -717,7 +718,7 @@ fn plan_update_reparent_to_ancestor_is_allowed() {
     let index = TaskIndex::new(tasks);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/c.md".to_string());
+    intent.parent = Patch::Set("tasks/c.md".to_string());
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -745,7 +746,7 @@ fn plan_update_parent_removal_to_empty_string_triggers_hierarchy_validation() {
     let index = TaskIndex::new(tasks);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some(String::new());
+    intent.parent = Patch::Clear;
 
     let err = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -777,7 +778,7 @@ fn plan_update_detects_independent_cycle_in_cache_when_parent_changes() {
     let index = TaskIndex::new(tasks);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/b.md".to_string());
+    intent.parent = Patch::Set("tasks/b.md".to_string());
 
     let err = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -803,7 +804,7 @@ fn plan_update_three_node_descendant_cycle_returns_parent_cycle() {
     let index = TaskIndex::new(vec![task_a.clone(), task_b, task_c]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.parent = Some("tasks/c.md".to_string());
+    intent.parent = Patch::Set("tasks/c.md".to_string());
 
     let err = index
         .plan_update(project_root(), intent, &task_a, parsed)
@@ -819,12 +820,12 @@ fn plan_update_three_node_descendant_cycle_returns_parent_cycle() {
 // ───────── milestone（3 値セマンティクス） ─────────
 
 #[test]
-fn plan_update_milestone_none_keeps_existing() {
+fn plan_update_milestone_unchanged_keeps_existing() {
     let task = make_task("tasks/a.md", None);
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nmilestone: v0.3\n---\n");
     let index = TaskIndex::new(vec![task.clone()]);
 
-    // intent.milestone = None → 不変。
+    // intent.milestone = Unchanged → 不変。
     let outcome = index
         .plan_update(project_root(), empty_intent("tasks/a.md"), &task, parsed)
         .expect("ok");
@@ -834,13 +835,13 @@ fn plan_update_milestone_none_keeps_existing() {
 }
 
 #[test]
-fn plan_update_milestone_empty_clears() {
+fn plan_update_milestone_clear_removes_value() {
     let task = make_task("tasks/a.md", None);
     let parsed = parsed_from_md("---\ntitle: A\nstatus: Todo\nmilestone: v0.3\n---\n");
     let index = TaskIndex::new(vec![task.clone()]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.milestone = Some(String::new()); // クリア
+    intent.milestone = Patch::Clear;
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -857,7 +858,7 @@ fn plan_update_milestone_set_replaces_value() {
     let index = TaskIndex::new(vec![task.clone()]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.milestone = Some("v0.4".to_string());
+    intent.milestone = Patch::Set("v0.4".to_string());
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -877,7 +878,7 @@ fn plan_update_milestone_set_preserves_unknown_extras() {
     let index = TaskIndex::new(vec![task.clone()]);
 
     let mut intent = empty_intent("tasks/a.md");
-    intent.milestone = Some("v0.4".to_string());
+    intent.milestone = Patch::Set("v0.4".to_string());
 
     let outcome = index
         .plan_update(project_root(), intent, &task, parsed)
@@ -888,12 +889,12 @@ fn plan_update_milestone_set_preserves_unknown_extras() {
 }
 
 #[test]
-fn plan_update_sets_draft_when_some_true() {
+fn plan_update_sets_draft_when_patch_sets_true() {
     let task = make_task("tasks/a.md", None);
     let index = TaskIndex::new(vec![task.clone()]);
     let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\n---\nbody\n");
     let intent = UpdateTaskIntent {
-        draft: Some(true),
+        draft: Patch::Set(true),
         ..empty_intent("tasks/a.md")
     };
 
@@ -906,12 +907,12 @@ fn plan_update_sets_draft_when_some_true() {
 }
 
 #[test]
-fn plan_update_clears_draft_when_some_false() {
+fn plan_update_clears_draft_when_patch_clears() {
     let task = make_task("tasks/a.md", None);
     let index = TaskIndex::new(vec![task.clone()]);
     let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\ndraft: true\n---\nbody\n");
     let intent = UpdateTaskIntent {
-        draft: Some(false),
+        draft: Patch::Clear,
         ..empty_intent("tasks/a.md")
     };
 
@@ -924,7 +925,7 @@ fn plan_update_clears_draft_when_some_false() {
 }
 
 #[test]
-fn plan_update_keeps_draft_when_none() {
+fn plan_update_keeps_draft_when_patch_is_unchanged() {
     let task = make_task("tasks/a.md", None);
     let index = TaskIndex::new(vec![task.clone()]);
     let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\ndraft: true\n---\nbody\n");
@@ -944,7 +945,7 @@ fn plan_update_clearing_draft_on_non_draft_is_idempotent() {
     let index = TaskIndex::new(vec![task.clone()]);
     let parsed = parsed_from_md("---\ntitle: T\nstatus: Todo\n---\nbody\n");
     let intent = UpdateTaskIntent {
-        draft: Some(false),
+        draft: Patch::Clear,
         ..empty_intent("tasks/a.md")
     };
 

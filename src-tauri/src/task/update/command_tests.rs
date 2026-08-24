@@ -371,7 +371,8 @@ fn update_parent_not_found_leaves_state_untouched() {
     let mut args = args_for("tasks/a.md");
     args.parent = Some("tasks/missing.md".into());
 
-    let err = update_task_impl(&state, &FsTaskIo, args).expect_err("fail");
+    let io = CountingTaskIo::default();
+    let err = update_task_impl(&state, &io, args).expect_err("fail");
     match err {
         UpdateTaskCommandError::Validation(UpdateTaskError::ParentNotFound { path }) => {
             assert_eq!("tasks/missing.md", path);
@@ -381,6 +382,7 @@ fn update_parent_not_found_leaves_state_untouched() {
 
     let after = fs::read_to_string(dir.path().join("tasks/a.md")).unwrap();
     assert_eq!(original, after);
+    assert_eq!(0, io.calls(), "parent preflight must run before task I/O");
     assert_eq!(0, session_write_ignore_len(&state));
 }
 

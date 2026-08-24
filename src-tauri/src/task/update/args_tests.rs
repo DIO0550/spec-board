@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::UpdateTaskArgs;
+use crate::task::document::Patch;
 use crate::task::update::error::UpdateTaskError;
 
 fn raw_args(file_path: &str) -> UpdateTaskArgs {
@@ -147,12 +148,58 @@ fn invalid_priority_string_becomes_none() {
 }
 
 #[test]
-fn draft_three_state_maps_to_intent() {
+fn parent_and_milestone_wire_values_map_to_canonical_patches() {
     let root = Path::new("/project");
     let cases = [
-        (Some(true), Some(true)),
-        (Some(false), Some(false)),
-        (None, None),
+        (None, Patch::Unchanged),
+        (Some(String::new()), Patch::Clear),
+        (Some("   ".to_string()), Patch::Set("   ".to_string())),
+        (
+            Some("tasks/parent.md".to_string()),
+            Patch::Set("tasks/parent.md".to_string()),
+        ),
+    ];
+
+    for (input, expected) in cases {
+        let mut parent_args = raw_args("tasks/foo.md");
+        parent_args.parent = input.clone();
+        let parent_intent = parent_args.into_intent(root).expect("parent maps");
+        assert_eq!(parent_intent.parent, expected, "parent input={input:?}");
+
+        let mut milestone_args = raw_args("tasks/foo.md");
+        milestone_args.milestone = input.clone();
+        let milestone_intent = milestone_args.into_intent(root).expect("milestone maps");
+        assert_eq!(
+            milestone_intent.milestone, expected,
+            "milestone input={input:?}"
+        );
+    }
+}
+
+#[test]
+fn missing_and_null_wire_values_both_map_to_unchanged_patches() {
+    let root = Path::new("/project");
+    let cases = [
+        r#"{"filePath":"tasks/foo.md"}"#,
+        r#"{"filePath":"tasks/foo.md","parent":null,"milestone":null,"draft":null}"#,
+    ];
+
+    for input in cases {
+        let args: UpdateTaskArgs = serde_json::from_str(input).expect("wire args deserialize");
+        let intent = args.into_intent(root).expect("wire args map");
+        assert_eq!(intent.parent, Patch::Unchanged, "input={input}");
+        assert_eq!(intent.milestone, Patch::Unchanged, "input={input}");
+        assert_eq!(intent.draft, Patch::Unchanged, "input={input}");
+    }
+}
+
+#[test]
+fn draft_wire_values_map_to_canonical_patches() {
+    let root = Path::new("/project");
+    let cases = [
+        (Some(true), Patch::Set(true)),
+        (Some(false), Patch::Clear),
+        (None, Patch::Unchanged),
     ];
     for (input, expected) in cases {
         let mut args = raw_args("tasks/foo.md");
