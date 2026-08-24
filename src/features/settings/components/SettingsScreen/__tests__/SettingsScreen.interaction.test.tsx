@@ -107,6 +107,17 @@ test("initialTabId=appearanceでも選択中タブとtabpanelが相互参照さ�
   expect(panel?.getAttribute("aria-labelledby")).toBe(tab?.getAttribute("id"));
 });
 
+test("runtimeから未知initialTabIdを受けてもlabelsへ正規化してARIA参照を揃える", async () => {
+  await mountSettingsScreen("unknown" as SettingsTabId);
+  const tab = container?.querySelector('[data-settings-tab="labels"]');
+  const panel = container?.querySelector('[role="tabpanel"]');
+
+  expect(tab?.getAttribute("aria-selected")).toBe("true");
+  expect(tab?.getAttribute("id")).toBe("settings-tab-labels");
+  expect(panel?.getAttribute("id")).toBe("settings-panel-labels");
+  expect(panel?.getAttribute("aria-labelledby")).toBe("settings-tab-labels");
+});
+
 test("アクティブ tab と tabpanel が aria 属性で相互参照される", async () => {
   await mountSettingsScreen();
   const tab = container?.querySelector('[role="tab"]');
