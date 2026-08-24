@@ -702,8 +702,8 @@ fn assert_emitting_handle_waits_for_outer_worker(
         core_disconnected_tx
             .send(())
             .expect("signal core disconnect");
-        release_worker_rx.recv().expect("release outer worker");
-        worker_exited_tx.send(()).expect("signal worker exit");
+        let release = release_worker_rx.recv_timeout(std::time::Duration::from_secs(5));
+        let _ = worker_exited_tx.send(release);
     });
     let handle = EmittingWatcherHandle {
         watcher: Some(watcher),
@@ -725,9 +725,14 @@ fn assert_emitting_handle_waits_for_outer_worker(
     );
 
     release_worker_tx.send(()).expect("release outer worker");
-    worker_exited_rx
+    let release_result = worker_exited_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("outer worker should exit");
+    assert_eq!(
+        release_result,
+        Ok(()),
+        "normal teardown should release the outer worker explicitly"
+    );
     stop_finished_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("stop should finish after worker exit");
