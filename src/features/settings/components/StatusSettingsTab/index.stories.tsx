@@ -1,6 +1,6 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { Meta, StoryContext, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
-import { StatusSettingsTab } from ".";
+import { StatusSettingsTab, type StatusSettingsTabProps } from ".";
 
 const meta = {
   component: StatusSettingsTab,
@@ -13,9 +13,9 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof StatusSettingsTab>;
+} satisfies Meta<StatusSettingsTabProps>;
 export default meta;
-type Story = StoryObj<typeof meta>;
+type Story = StoryObj<StatusSettingsTabProps>;
 export const Default: Story = {};
 export const AllProps: Story = { args: { saveState: "saved" } };
 export const EdgeCases: Story = {
@@ -39,7 +39,7 @@ export const Dirty: Story = {
    * 新しいカラム名を入力し、未保存の変更がある状態を再現する。
    * @param context - story の描画コンテキスト
    */
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement }: StoryContext<StatusSettingsTabProps>) => {
     await userEvent.type(
       within(canvasElement).getByRole("textbox", { name: "新しいカラム名" }),
       "Blocked",
