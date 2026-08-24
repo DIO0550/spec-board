@@ -1,6 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { Task, type TaskPayload } from "@/types/task";
 import { TaskSelect } from ".";
 
@@ -14,14 +15,26 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
 const TASKS: Task[] = [
-  makeTask({ id: "t-1", title: "ログイン修正", filePath: "tasks/login.md" }),
-  makeTask({ id: "t-2", title: "検索機能追加", filePath: "tasks/search.md" }),
-  makeTask({ id: "t-3", title: "通知バッジ", filePath: "tasks/badge.md" }),
+  makeTask({
+    id: "t-1",
+    title: "ログイン修正",
+    filePath: taskFilePathFixture("tasks/login.md"),
+  }),
+  makeTask({
+    id: "t-2",
+    title: "検索機能追加",
+    filePath: taskFilePathFixture("tasks/search.md"),
+  }),
+  makeTask({
+    id: "t-3",
+    title: "通知バッジ",
+    filePath: taskFilePathFixture("tasks/badge.md"),
+  }),
 ];
 
 const meta: Meta<typeof TaskSelect> = {
@@ -43,13 +56,13 @@ export const Default: Story = {};
 
 export const WithExclusions: Story = {
   args: {
-    excludeFilePaths: ["tasks/login.md"],
+    excludeFilePaths: [taskFilePathFixture("tasks/login.md")],
   },
 };
 
 export const WithSelected: Story = {
   args: {
-    value: "tasks/login.md",
+    value: taskFilePathFixture("tasks/login.md"),
   },
 };
 
@@ -68,7 +81,7 @@ export const Disabled: Story = {
 export const ReadOnly: Story = {
   args: {
     readOnly: true,
-    value: "tasks/login.md",
+    value: taskFilePathFixture("tasks/login.md"),
   },
 };
 

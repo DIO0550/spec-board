@@ -48,6 +48,7 @@ const noopOnRemoveLink = vi.fn(async () =>
 );
 
 test("forward 行 button クリックで onLinkClick(filePath) が呼ばれる", async () => {
+  const target = makeTask({ id: "task-a", filePath: "tasks/a.md" });
   const self = makeTask({
     filePath: "tasks/self.md",
     links: ["tasks/a.md"],
@@ -55,7 +56,7 @@ test("forward 行 button クリックで onLinkClick(filePath) が呼ばれる",
   const onLinkClick = vi.fn();
   render({
     task: self,
-    allTasks: [self],
+    allTasks: [self, target],
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
@@ -72,10 +73,11 @@ test("forward 行 button クリックで onLinkClick(filePath) が呼ばれる",
     btn.click();
   });
   expect(onLinkClick).toHaveBeenCalledTimes(1);
-  expect(onLinkClick).toHaveBeenCalledWith("tasks/a.md");
+  expect(onLinkClick).toHaveBeenCalledWith(target.id);
 });
 
 test("reverse 行 button クリックで onLinkClick(filePath) が呼ばれる", async () => {
+  const target = makeTask({ id: "task-r", filePath: "tasks/r.md" });
   const self = makeTask({
     filePath: "tasks/self.md",
     reverseLinks: ["tasks/r.md"],
@@ -83,7 +85,7 @@ test("reverse 行 button クリックで onLinkClick(filePath) が呼ばれる",
   const onLinkClick = vi.fn();
   render({
     task: self,
-    allTasks: [self],
+    allTasks: [self, target],
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
@@ -100,10 +102,12 @@ test("reverse 行 button クリックで onLinkClick(filePath) が呼ばれる",
     btn.click();
   });
   expect(onLinkClick).toHaveBeenCalledTimes(1);
-  expect(onLinkClick).toHaveBeenCalledWith("tasks/r.md");
+  expect(onLinkClick).toHaveBeenCalledWith(target.id);
 });
 
 test("複数 forward links がある場合、それぞれの navigate button が独立に動作する", async () => {
+  const targetA = makeTask({ id: "task-a", filePath: "tasks/a.md" });
+  const targetB = makeTask({ id: "task-b", filePath: "tasks/b.md" });
   const self = makeTask({
     filePath: "tasks/self.md",
     links: ["tasks/a.md", "tasks/b.md"],
@@ -111,7 +115,7 @@ test("複数 forward links がある場合、それぞれの navigate button が
   const onLinkClick = vi.fn();
   render({
     task: self,
-    allTasks: [self],
+    allTasks: [self, targetA, targetB],
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
@@ -131,8 +135,8 @@ test("複数 forward links がある場合、それぞれの navigate button が
   await act(async () => {
     btnB.click();
   });
-  expect(onLinkClick).toHaveBeenNthCalledWith(1, "tasks/a.md");
-  expect(onLinkClick).toHaveBeenNthCalledWith(2, "tasks/b.md");
+  expect(onLinkClick).toHaveBeenNthCalledWith(1, targetA.id);
+  expect(onLinkClick).toHaveBeenNthCalledWith(2, targetB.id);
 });
 
 test("forward 行は navigate button と × button の 2 つを持ち、reverse 行は navigate button のみ", () => {
@@ -199,6 +203,7 @@ test("linked <ul> が reverse <ul> より DOM 上で先に出現する", () => {
 });
 
 test("同一 ID が linked と reverse 両方にある場合、両方の行が表示され両方クリック可能", async () => {
+  const target = makeTask({ id: "task-dup", filePath: "tasks/dup.md" });
   const self = makeTask({
     filePath: "tasks/self.md",
     links: ["tasks/dup.md"],
@@ -207,7 +212,7 @@ test("同一 ID が linked と reverse 両方にある場合、両方の行が�
   const onLinkClick = vi.fn();
   render({
     task: self,
-    allTasks: [self],
+    allTasks: [self, target],
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
@@ -231,8 +236,8 @@ test("同一 ID が linked と reverse 両方にある場合、両方の行が�
     reverseBtn.click();
   });
   expect(onLinkClick).toHaveBeenCalledTimes(2);
-  expect(onLinkClick).toHaveBeenNthCalledWith(1, "tasks/dup.md");
-  expect(onLinkClick).toHaveBeenNthCalledWith(2, "tasks/dup.md");
+  expect(onLinkClick).toHaveBeenNthCalledWith(1, target.id);
+  expect(onLinkClick).toHaveBeenNthCalledWith(2, target.id);
 });
 
 test("onLinkClick 未指定時、navigate button は disabled になり click しても呼ばれない", async () => {
@@ -273,6 +278,7 @@ test("forward 行の link path に表記揺れ（./prefix）があっても cano
   // selectTaskOutcome が null を返して no-op になる。LinksSection 側で allTasks から
   // 表記揺れを吸収し canonical id を渡すことで正しく遷移できる。
   const target = makeTask({
+    id: "target-id",
     filePath: "tasks/target.md",
     title: "Target",
   });
@@ -300,10 +306,10 @@ test("forward 行の link path に表記揺れ（./prefix）があっても cano
     btn.click();
   });
   expect(onLinkClick).toHaveBeenCalledTimes(1);
-  expect(onLinkClick).toHaveBeenCalledWith("tasks/target.md");
+  expect(onLinkClick).toHaveBeenCalledWith(target.id);
 });
 
-test("壊れたリンク（target が allTasks に居ない）クリックでは raw 値を渡し上流に no-op を委ねる", async () => {
+test("壊れたリンク（target が allTasks に居ない）クリックは選択callbackを呼ばない", async () => {
   const self = makeTask({
     filePath: "tasks/self.md",
     links: ["tasks/missing.md"],
@@ -325,8 +331,7 @@ test("壊れたリンク（target が allTasks に居ない）クリックでは
   await act(async () => {
     btn.click();
   });
-  expect(onLinkClick).toHaveBeenCalledTimes(1);
-  expect(onLinkClick).toHaveBeenCalledWith("tasks/missing.md");
+  expect(onLinkClick).not.toHaveBeenCalled();
 });
 
 test("forward × クリック直後の busy 状態でも navigate button は disabled にならず click 可能", async () => {
@@ -342,10 +347,11 @@ test("forward × クリック直後の busy 状態でも navigate button は dis
     links: ["tasks/a.md"],
     reverseLinks: ["tasks/r.md"],
   });
+  const target = makeTask({ id: "task-a", filePath: "tasks/a.md" });
   const onLinkClick = vi.fn();
   render({
     task: self,
-    allTasks: [self],
+    allTasks: [self, target],
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
@@ -374,7 +380,7 @@ test("forward × クリック直後の busy 状態でも navigate button は dis
   await act(async () => {
     navBtn.click();
   });
-  expect(onLinkClick).toHaveBeenCalledWith("tasks/a.md");
+  expect(onLinkClick).toHaveBeenCalledWith(target.id);
 
   // 後片付け
   await act(async () => {

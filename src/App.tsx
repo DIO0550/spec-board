@@ -77,7 +77,7 @@ import {
   useTaskCreate,
 } from "./features/task-form";
 import type { Column } from "./types/column";
-import type { Task } from "./types/task";
+import type { Task, TaskFilePath, TaskId } from "./types/task";
 
 /** State の表示用 ProjectData を返すための内部型。 */
 type DisplayableData = {
@@ -104,7 +104,7 @@ type CreateModalState =
   | {
       readonly kind: "subIssue";
       readonly status: string;
-      readonly parentPath: string;
+      readonly parentPath: TaskFilePath;
     }
   | null;
 
@@ -191,7 +191,7 @@ const doneColumnOf = (state: ProjectState): string | undefined =>
  * @returns 選択中タスク、または解決不能 / 未選択なら null
  */
 const resolveSelectedTask = (
-  selectedTaskId: string | null,
+  selectedTaskId: TaskId | null,
   tasks: Task[],
   pendingDeleteTask: Task | null,
 ): Task | null => {
@@ -252,7 +252,7 @@ const AppShell = () => {
     [showToast],
   );
 
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   // 削除楽観 dispatch 中に tasks から消えた target を一時保持する snapshot。
   // 存在する間は selectedTask 計算の fallback として参照され、DetailScreen が
@@ -266,7 +266,7 @@ const AppShell = () => {
   // create（全画面作成画面）を閉じたときの戻り先。create 起動時に直前の view と
   // 選択タスクを退避し、キャンセル/成功後に元の画面（board / 元の detail）へ戻す。
   const [returnView, setReturnView] = useState<AppView>("board");
-  const [returnTaskId, setReturnTaskId] = useState<string | null>(null);
+  const [returnTaskId, setReturnTaskId] = useState<TaskId | null>(null);
   const [announcement, setAnnouncement] = useState<LiveAnnouncement | null>(
     null,
   );
@@ -542,7 +542,7 @@ const AppShell = () => {
   // カードクリックは選択 + detail（全画面2ペイン）への即遷移を併発する。
   // board 上にスライドパネルを重ねる挙動は廃止し、詳細は detail 区分へ一本化する。
   const handleTaskClick = useCallback(
-    (taskId: string) => {
+    (taskId: TaskId) => {
       setSelectedTaskId(taskId);
       navigate("detail");
     },
@@ -552,7 +552,7 @@ const AppShell = () => {
   // サイドバーは全画面区分で常時表示される。詳細は detail 区分へ一本化したため、
   // どの区分から選んでも選択 + navigate("detail") で全画面詳細(DetailScreen)を開く。
   const handleSidebarSelectTask = useCallback(
-    (taskId: string) => {
+    (taskId: TaskId) => {
       setSelectedTaskId(taskId);
       navigate("detail");
     },
@@ -560,7 +560,7 @@ const AppShell = () => {
   );
 
   const handleSelectTask = useCallback(
-    (taskId: string) => {
+    (taskId: TaskId) => {
       const outcome = selectTaskOutcome(tasks, taskId);
       if (outcome === null) {
         return;
@@ -683,7 +683,7 @@ const AppShell = () => {
   }, [defaultCreateStatus, handleAddTask, showToast]);
 
   const handleAddSubIssue = useCallback(
-    (parentFilePath: string) => {
+    (parentFilePath: TaskFilePath) => {
       // 利用可能なステータスがなければ toast して中断（create へ遷移しない）。
       // これを消すと createModal=null のまま navigate("create") され、
       // create ビューだが TaskCreateScreen も board も描画されず空画面になる。

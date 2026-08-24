@@ -12,7 +12,7 @@ import {
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import { useBoardCard } from "@/features/board/components/BoardCardProvider";
 import { useStableTaskList } from "@/features/board/hooks/useStableTaskList";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import type { SubIssueRow } from "../../SubIssueProgress";
 import { TaskCardContext, type TaskCardContextValue } from "../TaskCardContext";
 
@@ -35,7 +35,7 @@ export type TaskCardRootProps = {
    * カードクリック時のコールバック
    * @param taskId クリックされたタスクの id
    */
-  onClick?: (taskId: string) => void;
+  onClick?: (taskId: TaskId) => void;
   /**
    * 直下子タスクの配列（<details> 内の一覧表示用）。Provider 経由で descendantCount は
    * 取得するため再帰展開は不要だが、サブ部品が直下子のみを参照するケースで必要なら渡す。

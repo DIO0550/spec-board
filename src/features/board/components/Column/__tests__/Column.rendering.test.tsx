@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -37,7 +38,7 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/test.md",
+    filePath: taskFilePathFixture("tasks/test.md"),
     ...overrides,
   });
 }
@@ -138,27 +139,30 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
     id: "g1",
     title: "孫1",
     status: "Done",
-    filePath: "tasks/g1.md",
+    filePath: taskFilePathFixture("tasks/g1.md"),
   });
   const grand2 = createTask({
     id: "g2",
     title: "孫2",
     status: "Todo",
-    filePath: "tasks/g2.md",
+    filePath: taskFilePathFixture("tasks/g2.md"),
   });
   const child = createTask({
     id: "c1",
     title: "子1",
     status: "Todo",
-    filePath: "tasks/c1.md",
-    children: ["tasks/g1.md", "tasks/g2.md"],
+    filePath: taskFilePathFixture("tasks/c1.md"),
+    children: [
+      taskFilePathFixture("tasks/g1.md"),
+      taskFilePathFixture("tasks/g2.md"),
+    ],
   });
   const rootTask = createTask({
     id: "root",
     title: "親",
     status: "Todo",
-    filePath: "tasks/root.md",
-    children: ["tasks/c1.md"],
+    filePath: taskFilePathFixture("tasks/root.md"),
+    children: [taskFilePathFixture("tasks/c1.md")],
   });
   const allTasks = [rootTask, child, grand1, grand2];
 
@@ -170,11 +174,11 @@ test("3 階層 fixture（root + 子 1 + 孫 2 のうち done 1）で TaskCard �
     // 集計は BE 由来。子 1 + 孫 2 のうち done 1。
     projections: new Map([
       [
-        "tasks/root.md",
+        taskFilePathFixture("tasks/root.md"),
         {
           subIssueProgress: { done: 1, total: 3 },
           isDone: false,
-          childFilePaths: ["tasks/c1.md"],
+          childFilePaths: [taskFilePathFixture("tasks/c1.md")],
         },
       ],
     ]),

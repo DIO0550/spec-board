@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { initialTasks } from "@/test-fixtures";
 import { TreeNodeItem } from ".";
 
@@ -30,7 +31,7 @@ export const Default: Story = {};
 export const AllProps: Story = { args: { depth: 2 } };
 export const EdgeCases: Story = {
   args: {
-    node: { filePath: "missing.md", children: [] },
+    node: { filePath: taskFilePathFixture("missing.md"), children: [] },
     tasksByFilePath: new Map(),
   },
 };

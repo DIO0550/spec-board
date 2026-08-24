@@ -1,6 +1,7 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   type LinkAddCallback,
   type UseLinkAddOptions,
@@ -126,6 +127,6 @@ test("link addはtitle不明時にfilePathを使う", async () => {
     announce,
     onError: vi.fn(),
   });
-  await callback("a.md", "b.md");
+  await callback(taskFilePathFixture("a.md"), taskFilePathFixture("b.md"));
   expect(announce).toHaveBeenCalledWith("「a.md」に「b.md」をリンクしました");
 });

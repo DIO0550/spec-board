@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 /**
  * `planAddLink` / `planRemoveLink` 共通の入力。lookup は action 側の責務。
@@ -10,7 +10,7 @@ import type { Task } from "@/types/task";
  */
 export type LinkIntent = {
   /** リンク元タスクの filePath */
-  readonly sourceFilePath: string;
+  readonly sourceFilePath: TaskFilePath;
   /** リンク先の filePath（add は canonical / remove は raw 値） */
   readonly targetFilePath: string;
   /** state から引き当てた source Task（不在なら undefined） */
@@ -20,14 +20,17 @@ export type LinkIntent = {
 };
 
 /** filePath / 参照から Task を引き当てる lookup（state への依存は呼出側が閉じる）。 */
-export type LinkTaskLookup = (filePath: string) => Task | undefined;
+export type LinkTaskLookup = (filePath: TaskFilePath) => Task | undefined;
+
+/** raw frontmatter参照からTaskを解決するlookup。 */
+type LinkReferenceLookup = (reference: string) => Task | undefined;
 
 /** `LinkIntent.forAdd` の引数。 */
 export type AddLinkIntentArgs = {
   /** リンク元タスクの filePath */
-  readonly sourceFilePath: string;
+  readonly sourceFilePath: TaskFilePath;
   /** リンク先タスクの canonical filePath（`buildAddLinkCandidates` 由来） */
-  readonly targetFilePath: string;
+  readonly targetFilePath: TaskFilePath;
   /** canonical 完全一致 lookup */
   readonly findTask: LinkTaskLookup;
 };
@@ -35,13 +38,13 @@ export type AddLinkIntentArgs = {
 /** `LinkIntent.forRemove` の引数。 */
 export type RemoveLinkIntentArgs = {
   /** リンク元タスクの filePath */
-  readonly sourceFilePath: string;
+  readonly sourceFilePath: TaskFilePath;
   /** 削除するリンクの raw 値（`linkedFilePaths` の要素。表記揺れ可） */
   readonly targetFilePath: string;
   /** canonical 完全一致 lookup（source の引き当て用） */
   readonly findTask: LinkTaskLookup;
   /** raw 参照の解決 lookup（target の引き当て用。解決不能なら undefined を返す） */
-  readonly findTaskByReference: LinkTaskLookup;
+  readonly findTaskByReference: LinkReferenceLookup;
 };
 
 /**

@@ -9,7 +9,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { hasAnyBrokenLink } from "@/domains/broken-link";
 import { hasParseError } from "@/domains/parse-error";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../Board/mime";
 import { useBoardCard } from "../BoardCardProvider";
 import { useBoardColumn } from "../BoardColumnProvider";
@@ -55,7 +55,7 @@ type ColumnProps = {
    * タスクカードクリック時のコールバック
    * @param taskId - クリックされたタスクのID
    */
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
   /**
    * カラム名リネーム確定時のコールバック。
    * 未指定の場合はヘッダー名編集 UI を無効化する。
@@ -211,16 +211,17 @@ export const Column = ({
     if (!isTaskMime) {
       return;
     }
-    const taskFilePath = e.dataTransfer.getData(DRAG_MIME_TYPE);
-    if (!taskFilePath || !card.isDragging(taskFilePath)) {
-      return;
-    }
+    const rawTaskFilePath = e.dataTransfer.getData(DRAG_MIME_TYPE);
     // card.isDragging が true なら Provider state は dragging なので dragSource は
     // 必ず存在する。万一 null だった場合は state を不正に進められないため安全に
     // 早期 return する（`?? name` で fromColumn === toColumn の誤った dispatch に
     // しないため）。
     const dragSource = card.dragSource;
-    if (dragSource === null) {
+    if (
+      dragSource === null ||
+      rawTaskFilePath !== dragSource.filePath ||
+      !card.isDragging(dragSource.filePath)
+    ) {
       return;
     }
     e.preventDefault();
@@ -238,7 +239,7 @@ export const Column = ({
     });
     const toIndex = computeHoverIndex(rects, e.clientY);
     void card.dropTask({
-      taskFilePath,
+      taskFilePath: dragSource.filePath,
       // ドラッグ開始時点の fromColumn を Provider state から復元する。
       // task.status 経由だと drag 中の楽観更新等で stale になり、moveTask の
       // preflight が「fromColumn !== task.status」を異常検知する経路を破る可能性がある。

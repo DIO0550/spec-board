@@ -8,7 +8,7 @@ import {
   type UpdateTaskParams,
   updateTask as updateTaskInvoke,
 } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { ProjectError } from "../errors";
@@ -171,7 +171,7 @@ const buildOptimisticTask = (
 /** filePath で現在の Task を visibleData から引き当てる。 */
 const findCurrentTask = (
   state: ProjectState,
-  filePath: string,
+  filePath: TaskFilePath,
 ): Task | undefined =>
   ProjectState.visibleData(state)?.tasks.find(
     (task) => task.filePath === filePath,

@@ -109,6 +109,7 @@ test("reverse 行には × 削除ボタンが存在しない（reverseLinks は�
 });
 
 test("forward 行は navigate button と × button が独立してクリック可能", async () => {
+  const target = makeTask({ id: "task-a", filePath: "tasks/a.md" });
   const self = makeTask({
     filePath: "tasks/self.md",
     links: ["tasks/a.md"],
@@ -117,7 +118,7 @@ test("forward 行は navigate button と × button が独立してクリック�
   const onLinkClick = vi.fn();
   render({
     task: self,
-    allTasks: [self],
+    allTasks: [self, target],
     parentFilePath: null,
     childrenFilePaths: [],
     onAddLink: noopOnAddLink,
@@ -138,7 +139,7 @@ test("forward 行は navigate button と × button が独立してクリック�
     navBtn.click();
   });
   expect(onLinkClick).toHaveBeenCalledTimes(1);
-  expect(onLinkClick).toHaveBeenCalledWith("tasks/a.md");
+  expect(onLinkClick).toHaveBeenCalledWith(target.id);
   expect(onRemoveLink).not.toHaveBeenCalled();
 
   await act(async () => {

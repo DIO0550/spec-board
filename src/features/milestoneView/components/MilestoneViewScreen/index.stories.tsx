@@ -1,6 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import type { MilestoneDefinition } from "@/domains/milestone";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { TaskProjectionMap } from "@/domains/task-projection";
@@ -113,14 +114,62 @@ const SAMPLE_MILESTONE_PROJECTIONS: MilestoneProjectionMap = new Map([
     {
       done: 2,
       total: 4,
-      taskFilePaths: ["v15-1.md", "v15-2.md", "v15-3.md", "v15-4.md"],
+      taskFilePaths: [
+        taskFilePathFixture("v15-1.md"),
+        taskFilePathFixture("v15-2.md"),
+        taskFilePathFixture("v15-3.md"),
+        taskFilePathFixture("v15-4.md"),
+      ],
     },
   ],
-  ["v1.6", { done: 0, total: 2, taskFilePaths: ["v16-1.md", "v16-2.md"] }],
-  ["v1.7", { done: 0, total: 2, taskFilePaths: ["v17-1.md", "v17-2.md"] }],
-  ["sprint-24", { done: 1, total: 2, taskFilePaths: ["s24-1.md", "s24-2.md"] }],
-  ["v1.4", { done: 2, total: 2, taskFilePaths: ["v14-1.md", "v14-2.md"] }],
-  ["ops-2026q3", { done: 0, total: 1, taskFilePaths: ["ops-1.md"] }],
+  [
+    "v1.6",
+    {
+      done: 0,
+      total: 2,
+      taskFilePaths: [
+        taskFilePathFixture("v16-1.md"),
+        taskFilePathFixture("v16-2.md"),
+      ],
+    },
+  ],
+  [
+    "v1.7",
+    {
+      done: 0,
+      total: 2,
+      taskFilePaths: [
+        taskFilePathFixture("v17-1.md"),
+        taskFilePathFixture("v17-2.md"),
+      ],
+    },
+  ],
+  [
+    "sprint-24",
+    {
+      done: 1,
+      total: 2,
+      taskFilePaths: [
+        taskFilePathFixture("s24-1.md"),
+        taskFilePathFixture("s24-2.md"),
+      ],
+    },
+  ],
+  [
+    "v1.4",
+    {
+      done: 2,
+      total: 2,
+      taskFilePaths: [
+        taskFilePathFixture("v14-1.md"),
+        taskFilePathFixture("v14-2.md"),
+      ],
+    },
+  ],
+  [
+    "ops-2026q3",
+    { done: 0, total: 1, taskFilePaths: [taskFilePathFixture("ops-1.md")] },
+  ],
 ]);
 
 const doneTaskProjection = {
@@ -130,11 +179,11 @@ const doneTaskProjection = {
 } as const;
 
 const SAMPLE_TASK_PROJECTIONS: TaskProjectionMap = new Map([
-  ["v15-2.md", doneTaskProjection],
-  ["v15-4.md", doneTaskProjection],
-  ["s24-1.md", doneTaskProjection],
-  ["v14-1.md", doneTaskProjection],
-  ["v14-2.md", doneTaskProjection],
+  [taskFilePathFixture("v15-2.md"), doneTaskProjection],
+  [taskFilePathFixture("v15-4.md"), doneTaskProjection],
+  [taskFilePathFixture("s24-1.md"), doneTaskProjection],
+  [taskFilePathFixture("v14-1.md"), doneTaskProjection],
+  [taskFilePathFixture("v14-2.md"), doneTaskProjection],
 ]);
 
 /** Storybook では reload を呼ばないので no-op で埋める。 */
@@ -244,13 +293,23 @@ export const EdgeCases: Story = {
     resource: EDGE_RESOURCE,
     tasks: EDGE_TASKS,
     milestoneProjections: new Map([
-      ["__proto__", { done: 0, total: 1, taskFilePaths: ["special.md"] }],
+      [
+        "__proto__",
+        {
+          done: 0,
+          total: 1,
+          taskFilePaths: [taskFilePathFixture("special.md")],
+        },
+      ],
       [
         "unknown-from-task",
         {
           done: 1,
           total: 2,
-          taskFilePaths: ["unknown-a.md", "unknown-b.md"],
+          taskFilePaths: [
+            taskFilePathFixture("unknown-a.md"),
+            taskFilePathFixture("unknown-b.md"),
+          ],
         },
       ],
     ]),

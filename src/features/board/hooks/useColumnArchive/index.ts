@@ -22,7 +22,9 @@ export type UseColumnArchiveOptions = {
  * @returns 子孫が先に来る順の新しい配列
  */
 const orderChildrenFirst = (tasks: readonly Task[]): Task[] => {
-  const byFilePath = new Map(tasks.map((task) => [task.filePath, task]));
+  const byFilePath: ReadonlyMap<string, Task> = new Map(
+    tasks.map((task) => [task.filePath, task]),
+  );
   const depthOf = (task: Task): number => {
     let depth = 0;
     const visited = new Set<string>([task.filePath]);

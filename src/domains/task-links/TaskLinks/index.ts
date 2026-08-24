@@ -3,7 +3,7 @@ import {
   normalizeRefPathForLookup,
   normalizeTaskPathForLookup,
 } from "@/domains/task-path";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import type { LinkIntent } from "../LinkIntent";
 import {
   applyLinkOperationsToTask,
@@ -17,7 +17,7 @@ export type TaskLinks = {
   /** 関連タスクのファイルパスの配列 */
   linkedFilePaths: string[];
   /** 逆方向リンクのファイルパスの配列（links から逆引き） */
-  reverseLinkedFilePaths: string[];
+  reverseLinkedFilePaths: TaskFilePath[];
 };
 
 /** `planAddLink` の reject 理由 */
@@ -58,7 +58,7 @@ export type BuildAddLinkCandidatesArgs = {
   /** 親タスクの filePath（無ければ null） */
   readonly parentFilePath: string | null;
   /** 子タスクの filePath 配列 */
-  readonly childrenFilePaths: readonly string[];
+  readonly childrenFilePaths: readonly TaskFilePath[];
 };
 
 /**
@@ -308,8 +308,11 @@ const buildCreateLinkCandidates = (
  * @param filePath 除去対象の path
  * @returns 除去後の path 配列
  */
-const removePath = (paths: string[], filePath: string): string[] => {
-  if (!paths.includes(filePath)) {
+const removePath = <Path extends string>(
+  paths: Path[],
+  filePath: string,
+): Path[] => {
+  if (!paths.some((path) => path === filePath)) {
     return paths;
   }
 

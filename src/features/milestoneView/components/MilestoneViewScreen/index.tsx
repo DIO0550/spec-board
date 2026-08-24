@@ -25,7 +25,7 @@ import { resolveDisplayStatus } from "@/features/milestoneView/lib/milestoneStat
 import { type SettingsTabId, SubNav } from "@/features/settings";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 /** @param value - CSV cell value @returns RFC 4180 escaped cell */
 const escapeCsvCell = (value: unknown): string => {
@@ -89,7 +89,7 @@ type MilestoneViewScreenProps = {
   /** create が pending 中かどうか（送信ボタン disabled に使う） */
   isCreating?: boolean;
   /** 所属タスク選択時のコールバック。 */
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
   /** visual regression用の基準時刻。通常は未指定。 */
   now?: Date;
   /** デザインシェルに表示するプロジェクト名。未指定なら埋め込み表示。 */

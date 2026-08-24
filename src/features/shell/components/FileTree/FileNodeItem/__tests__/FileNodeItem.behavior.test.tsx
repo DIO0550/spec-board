@@ -1,8 +1,12 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import {
+  taskFilePathFixture,
+  taskIdFixture,
+} from "@/domains/__tests__/taskFixtures";
 import type { FileTreeNode } from "@/features/shell/lib/buildFileTree";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskId, type TaskPayload } from "@/types/task";
 import { FileNodeItem } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -33,7 +37,7 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/test.md",
+    filePath: taskFilePathFixture("tasks/test.md"),
     ...overrides,
   });
 
@@ -70,9 +74,10 @@ const fileButton = (): HTMLButtonElement | null =>
   container?.querySelector("button:not([aria-expanded])") ?? null;
 
 test("file ノードのボタン click で onSelect が task.id 引数で発火する", () => {
-  const onSelect = vi.fn();
+  const onSelect = vi.fn<(taskId: TaskId) => void>();
+  const task = createTask({ id: "task-9" });
   render({
-    node: fileNode(createTask({ id: "task-9" }), "task.md"),
+    node: fileNode(task, "task.md"),
     depth: 0,
     onSelect,
   });
@@ -80,14 +85,14 @@ test("file ノードのボタン click で onSelect が task.id 引数で発火�
   click(fileButton());
 
   expect(onSelect).toHaveBeenCalledTimes(1);
-  expect(onSelect).toHaveBeenCalledWith("task-9");
+  expect(onSelect).toHaveBeenCalledWith(task.id);
 });
 
 test("selectedTaskId 一致で選択クラス（bg-accent-soft）が付与される", () => {
   render({
     node: fileNode(createTask({ id: "sel" }), "task.md"),
     depth: 0,
-    selectedTaskId: "sel",
+    selectedTaskId: taskIdFixture("sel"),
     onSelect: vi.fn(),
   });
 
@@ -95,8 +100,8 @@ test("selectedTaskId 一致で選択クラス（bg-accent-soft）が付与され
 });
 
 test.each([
-  { label: "別 id", selectedTaskId: "other" as string | null },
-  { label: "null", selectedTaskId: null as string | null },
+  { label: "別 id", selectedTaskId: taskIdFixture("other") },
+  { label: "null", selectedTaskId: null },
 ])("selectedTaskId が $label のとき非選択クラス（hover:bg-surface-muted）になる", ({
   selectedTaskId,
 }) => {
@@ -129,7 +134,7 @@ test("dir 配下のネスト file にも selectedTaskId が再帰伝播しハイ
   render({
     node: dirNode("dir", "dir", [childFile]),
     depth: 0,
-    selectedTaskId: "child",
+    selectedTaskId: taskIdFixture("child"),
     onSelect: vi.fn(),
   });
 

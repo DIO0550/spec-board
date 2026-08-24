@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { type GetTasksPayload, getTasks } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
@@ -16,7 +17,7 @@ const taskPayloadFixture: TaskPayload = {
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/x.md",
+  filePath: taskFilePathFixture("tasks/x.md"),
   extras: {},
   warnings: [],
 };
@@ -60,14 +61,14 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
       "tasks/x.md": {
         subIssueProgress: { done: 1, total: 2 },
         isDone: false,
-        childFilePaths: ["tasks/y.md"],
+        childFilePaths: [taskFilePathFixture("tasks/y.md")],
       },
     },
     milestoneProjections: {
       v1: {
         done: 1,
         total: 1,
-        taskFilePaths: ["tasks/x.md"],
+        taskFilePaths: [taskFilePathFixture("tasks/x.md")],
       },
     },
     taskTree: [],
@@ -85,14 +86,16 @@ test("成功時は tasks と projections を持つ payload を返す", async () 
   expect(res.ok).toBe(true);
   const { value } = res as { ok: true; value: GetTasksPayload };
   expect(value.tasks).toEqual([taskFixture]);
-  expect(value.projections.get("tasks/x.md")?.subIssueProgress).toEqual({
+  expect(
+    value.projections.get(taskFilePathFixture("tasks/x.md"))?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 2,
   });
   expect(value.milestoneProjections.get("v1")).toEqual({
     done: 1,
     total: 1,
-    taskFilePaths: ["tasks/x.md"],
+    taskFilePaths: [taskFilePathFixture("tasks/x.md")],
   });
 });
 
@@ -180,8 +183,8 @@ test("milestoneProjections は特殊名と task path 順序を保つ Map に変�
   const { value } = result as { ok: true; value: GetTasksPayload };
   expect(value.milestoneProjections).toBeInstanceOf(Map);
   expect(value.milestoneProjections.get("__proto__")?.taskFilePaths).toEqual([
-    "tasks/b.md",
-    "tasks/a.md",
+    taskFilePathFixture("tasks/b.md"),
+    taskFilePathFixture("tasks/a.md"),
   ]);
   expect(value.milestoneProjections.has("constructor")).toBe(true);
   expect(value.milestoneProjections.has("toString")).toBe(true);
@@ -269,8 +272,10 @@ test("taskTree がネスト構造を保ったまま domain 型へ変換される
     ...emptyRawPayload,
     taskTree: [
       {
-        filePath: "tasks/p.md",
-        children: [{ filePath: "tasks/c.md", children: [] }],
+        filePath: taskFilePathFixture("tasks/p.md"),
+        children: [
+          { filePath: taskFilePathFixture("tasks/c.md"), children: [] },
+        ],
       },
     ],
   });
@@ -279,8 +284,8 @@ test("taskTree がネスト構造を保ったまま domain 型へ変換される
 
   expect(Result.isOk(result) && result.value.taskTree).toEqual([
     {
-      filePath: "tasks/p.md",
-      children: [{ filePath: "tasks/c.md", children: [] }],
+      filePath: taskFilePathFixture("tasks/p.md"),
+      children: [{ filePath: taskFilePathFixture("tasks/c.md"), children: [] }],
     },
   ]);
 });

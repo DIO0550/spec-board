@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import type { FileTreeNode } from "@/features/shell/lib/buildFileTree";
+import type { TaskId } from "@/types/task";
 
 /**
  * 1 段あたりのインデント幅（px）。
@@ -14,12 +15,12 @@ type FileNodeItemProps = {
   /** ルートからの深さ */
   depth: number;
   /** 現在選択中のタスク ID（ハイライト用） */
-  selectedTaskId?: string | null;
+  selectedTaskId?: TaskId | null;
   /**
    * ファイル（タスク）選択ハンドラ（安定参照で渡す）。
    * @param taskId - 選択されたタスクの ID
    */
-  onSelect: (taskId: string) => void;
+  onSelect: (taskId: TaskId) => void;
 };
 
 type FileIconKind = "markdown" | "json" | "config";

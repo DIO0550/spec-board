@@ -1,5 +1,5 @@
 import { TaskSelect } from "@/components/TaskSelect";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 type ParentTaskSelectProps = {
   /** 選択候補となるタスク一覧 */
@@ -10,7 +10,7 @@ type ParentTaskSelectProps = {
    * 選択変更時のコールバック
    * @param filePath - 選択されたタスクのファイルパス（解除時は undefined）
    */
-  onChange: (filePath: string | undefined) => void;
+  onChange: (filePath: TaskFilePath | undefined) => void;
   /** 無効化（送信中など） */
   disabled?: boolean;
   /**

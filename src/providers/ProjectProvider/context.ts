@@ -7,7 +7,7 @@ import type {
   DeleteTaskParams,
   UpdateTaskParams,
 } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import type { Result as ResultT } from "@/utils/result";
 import type {
   ColumnsCommand,
@@ -94,8 +94,8 @@ export type ProjectTaskActionsContextValue = {
    * @returns 更新後の source Task または ProjectError
    */
   addLink: (params: {
-    filePath: string;
-    targetFilePath: string;
+    filePath: TaskFilePath;
+    targetFilePath: TaskFilePath;
   }) => Promise<ResultT<Task, ProjectError>>;
   /**
    * source タスクから target タスクへの link を削除する。
@@ -103,7 +103,7 @@ export type ProjectTaskActionsContextValue = {
    * @returns 更新後の source Task または ProjectError
    */
   removeLink: (params: {
-    filePath: string;
+    filePath: TaskFilePath;
     targetFilePath: string;
   }) => Promise<ResultT<Task, ProjectError>>;
 };

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { updateTask } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
@@ -15,7 +16,7 @@ const taskPayloadFixture: TaskPayload = {
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/x.md",
+  filePath: taskFilePathFixture("tasks/x.md"),
   extras: {},
   warnings: [],
 };
@@ -28,16 +29,19 @@ beforeEach(() => {
 
 test("invoke が 'update_task' という command 名で呼ばれる", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
-  await updateTask({ filePath: "tasks/x.md" });
+  await updateTask({ filePath: taskFilePathFixture("tasks/x.md") });
   expect(vi.mocked(invoke).mock.calls[0]?.[0]).toBe("update_task");
 });
 
 test("filePath を含む引数が args キー配下に camelCase のまま渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
-  await updateTask({ filePath: "tasks/x.md", title: "new" });
+  await updateTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+    title: "new",
+  });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("update_task", {
     args: {
-      filePath: "tasks/x.md",
+      filePath: taskFilePathFixture("tasks/x.md"),
       title: "new",
     },
   });
@@ -45,7 +49,7 @@ test("filePath を含む引数が args キー配下に camelCase のまま渡る
 
 test("optional 未指定（キー省略）の場合、そのキーは invoke 引数に含まれない", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
-  await updateTask({ filePath: "tasks/x.md" });
+  await updateTask({ filePath: taskFilePathFixture("tasks/x.md") });
   const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
     args: Record<string, unknown>;
   };
@@ -54,7 +58,10 @@ test("optional 未指定（キー省略）の場合、そのキーは invoke 引
 
 test("optional に undefined を明示指定した場合 undefined のまま渡る（ラッパで削らない）", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
-  await updateTask({ filePath: "tasks/x.md", title: undefined });
+  await updateTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+    title: undefined,
+  });
   const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
     args: Record<string, unknown>;
   };
@@ -64,7 +71,7 @@ test("optional に undefined を明示指定した場合 undefined のまま渡�
 
 test("parent: '' （親解除）はそのまま空文字で渡る", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
-  await updateTask({ filePath: "tasks/x.md", parent: "" });
+  await updateTask({ filePath: taskFilePathFixture("tasks/x.md"), parent: "" });
   const payload = vi.mocked(invoke).mock.calls[0]?.[1] as {
     args: Record<string, unknown>;
   };
@@ -73,13 +80,16 @@ test("parent: '' （親解除）はそのまま空文字で渡る", async () => 
 
 test("成功時は Result.ok(Task) を返す", async () => {
   vi.mocked(invoke).mockResolvedValue(taskPayloadFixture);
-  const res = await updateTask({ filePath: "tasks/x.md", title: "new" });
+  const res = await updateTask({
+    filePath: taskFilePathFixture("tasks/x.md"),
+    title: "new",
+  });
   expect(res).toEqual({ ok: true, value: taskFixture });
 });
 
 test("invoke が reject すると throw せず Result.err(TauriError) を返す", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("fail"));
-  const res = await updateTask({ filePath: "tasks/x.md" });
+  const res = await updateTask({ filePath: taskFilePathFixture("tasks/x.md") });
   expect(res.ok).toBe(false);
   expect((res as { ok: false; error: unknown }).error).toBeInstanceOf(
     TauriError,

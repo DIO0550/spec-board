@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import type { TaskTreeNode } from "@/domains/task-forest";
 import { Task, type TaskPayload } from "@/types/task";
 import { TreeNodeItem } from "..";
@@ -33,18 +34,20 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/test.md",
+    filePath: taskFilePathFixture("tasks/test.md"),
     // due は未設定（DueBadge の today 依存を回避）
     ...overrides,
   });
 
 const node = (
-  filePath: string,
+  filePath: ReturnType<typeof taskFilePathFixture>,
   children: TaskTreeNode[] = [],
 ): TaskTreeNode => ({ filePath, children });
 
 /** ノードが参照する Task を lookup Map に詰める。 */
-const lookup = (...tasks: Task[]): ReadonlyMap<string, Task> =>
+const lookup = (
+  ...tasks: Task[]
+): ReadonlyMap<ReturnType<typeof taskFilePathFixture>, Task> =>
   new Map(tasks.map((task) => [task.filePath, task]));
 
 const render = (props: Parameters<typeof TreeNodeItem>[0]) => {
@@ -101,7 +104,7 @@ test("子ありノードではトグルボタンが展開状態で描画され�
   const child = createTask({
     id: "child-1",
     title: "子",
-    filePath: "tasks/child.md",
+    filePath: taskFilePathFixture("tasks/child.md"),
   });
   render({
     node: node(parent.filePath, [node(child.filePath)]),
@@ -123,7 +126,7 @@ test("トグル click で折りたたみ・再 click で復帰する", () => {
   const child = createTask({
     id: "child-1",
     title: "子タスク",
-    filePath: "tasks/child.md",
+    filePath: taskFilePathFixture("tasks/child.md"),
   });
   render({
     node: node(parent.filePath, [node(child.filePath)]),
@@ -171,7 +174,7 @@ test("子には depth + 1 が渡り 1 段深いインデントで描画される
   const child = createTask({
     id: "child-1",
     title: "子",
-    filePath: "tasks/child.md",
+    filePath: taskFilePathFixture("tasks/child.md"),
   });
   render({
     node: node(parent.filePath, [node(child.filePath)]),
@@ -187,7 +190,7 @@ test("子には depth + 1 が渡り 1 段深いインデントで描画される
 
 test("lookup が外れたノードは行を描画しない", () => {
   render({
-    node: node("tasks/missing.md"),
+    node: node(taskFilePathFixture("tasks/missing.md")),
     depth: 0,
     tasksByFilePath: lookup(),
     onSelect: vi.fn(),
@@ -214,22 +217,22 @@ test("あるノードのトグルは兄弟ノードの折りたたみ state に�
   const childA = createTask({
     id: "child-a",
     title: "子A",
-    filePath: "tasks/child-a.md",
+    filePath: taskFilePathFixture("tasks/child-a.md"),
   });
   const childB = createTask({
     id: "child-b",
     title: "子B",
-    filePath: "tasks/child-b.md",
+    filePath: taskFilePathFixture("tasks/child-b.md"),
   });
   const grandchildA = createTask({
     id: "gc-a",
     title: "孫A",
-    filePath: "tasks/gc-a.md",
+    filePath: taskFilePathFixture("tasks/gc-a.md"),
   });
   const grandchildB = createTask({
     id: "gc-b",
     title: "孫B",
-    filePath: "tasks/gc-b.md",
+    filePath: taskFilePathFixture("tasks/gc-b.md"),
   });
   render({
     node: node(parent.filePath, [

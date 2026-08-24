@@ -1,5 +1,8 @@
 import { expect, test } from "vitest";
-import { makeTask } from "@/domains/__tests__/taskFixtures";
+import {
+  makeTask,
+  taskFilePathFixture,
+} from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import type { Column } from "@/types/column";
 import { ProjectData, type ProjectData as ProjectDataT } from "..";
@@ -10,12 +13,12 @@ const columns = (...names: string[]): Column[] =>
 test("applyTaskCreated は task を追加し parent task の children を同期する", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     children: [],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
     parent: ".\\tasks\\p.md",
   });
   const data: ProjectDataT = {
@@ -33,21 +36,22 @@ test("applyTaskCreated は task を追加し parent task の children を同期�
 
   expect(next.tasks).toHaveLength(2);
   expect(
-    next.tasks.find((task) => task.filePath === "tasks/p.md")?.hierarchy
-      .childFilePaths,
-  ).toEqual(["tasks/c.md"]);
+    next.tasks.find(
+      (task) => task.filePath === taskFilePathFixture("tasks/p.md"),
+    )?.hierarchy.childFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/c.md")]);
 });
 
 test("applyTaskCreated は parent children を二重追加しない", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -63,16 +67,20 @@ test("applyTaskCreated は parent children を二重追加しない", () => {
   const next = ProjectData.applyTaskCreated(data, child);
 
   expect(
-    next.tasks.find((task) => task.filePath === "tasks/p.md")?.hierarchy
-      .childFilePaths,
-  ).toEqual(["tasks/c.md"]);
+    next.tasks.find(
+      (task) => task.filePath === taskFilePathFixture("tasks/p.md"),
+    )?.hierarchy.childFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/c.md")]);
 });
 
 test("applyTaskUpdated は originalFilePath に一致する task を差し替える", () => {
-  const current = makeTask({ id: "a", filePath: "tasks/a.md" });
+  const current = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+  });
   const updated = makeTask({
     id: "a",
-    filePath: "tasks/a-renamed.md",
+    filePath: taskFilePathFixture("tasks/a-renamed.md"),
     title: "renamed",
   });
   const data: ProjectDataT = {
@@ -86,7 +94,11 @@ test("applyTaskUpdated は originalFilePath に一致する task を差し替え
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/a.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/a.md"),
+    updated,
+  );
 
   expect(next.tasks).toEqual([updated]);
 });
@@ -94,23 +106,23 @@ test("applyTaskUpdated は originalFilePath に一致する task を差し替え
 test("applyTaskUpdated は parent が変わったとき旧親 children から該当 path を除去する", () => {
   const oldParent = makeTask({
     id: "old",
-    filePath: "tasks/old.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/old.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const newParent = makeTask({
     id: "new",
-    filePath: "tasks/new.md",
+    filePath: taskFilePathFixture("tasks/new.md"),
     children: [],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/old.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/old.md"),
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/new.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/new.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -123,32 +135,38 @@ test("applyTaskUpdated は parent が変わったとき旧親 children から該
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const oldAfter = next.tasks.find((t) => t.filePath === "tasks/old.md");
+  const oldAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/old.md"),
+  );
   expect(oldAfter?.hierarchy.childFilePaths).toEqual([]);
 });
 
 test("applyTaskUpdated は parent が変わったとき新親 children に該当 path を追加する", () => {
   const oldParent = makeTask({
     id: "old",
-    filePath: "tasks/old.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/old.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const newParent = makeTask({
     id: "new",
-    filePath: "tasks/new.md",
+    filePath: taskFilePathFixture("tasks/new.md"),
     children: [],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/old.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/old.md"),
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/new.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/new.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -161,26 +179,34 @@ test("applyTaskUpdated は parent が変わったとき新親 children に該当
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const newAfter = next.tasks.find((t) => t.filePath === "tasks/new.md");
-  expect(newAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  const newAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/new.md"),
+  );
+  expect(newAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("applyTaskUpdated は parent が新規付与されたとき新親 children を更新する", () => {
   const newParent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     children: [],
   });
   const orphan = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -193,26 +219,34 @@ test("applyTaskUpdated は parent が新規付与されたとき新親 children 
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const parentAfter = next.tasks.find((t) => t.filePath === "tasks/p.md");
-  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  const parentAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
+  );
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("applyTaskUpdated は parent が解除されたとき旧親 children からのみ除去する", () => {
   const oldParent = makeTask({
     id: "old",
-    filePath: "tasks/old.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/old.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/old.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/old.md"),
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -225,9 +259,15 @@ test("applyTaskUpdated は parent が解除されたとき旧親 children から
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const oldAfter = next.tasks.find((t) => t.filePath === "tasks/old.md");
+  const oldAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/old.md"),
+  );
   expect(oldAfter?.hierarchy.childFilePaths).toEqual([]);
 });
 
@@ -237,13 +277,13 @@ test("applyTaskUpdated は originalFilePath が存在しないとき parent-sync
   // 書き換えてはならない（dangling な child 参照を残さない）。
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     children: [],
   });
   const orphanUpdate = makeTask({
     id: "deleted",
-    filePath: "tasks/deleted.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/deleted.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -258,12 +298,14 @@ test("applyTaskUpdated は originalFilePath が存在しないとき parent-sync
 
   const next = ProjectData.applyTaskUpdated(
     data,
-    "tasks/deleted.md",
+    taskFilePathFixture("tasks/deleted.md"),
     orphanUpdate,
   );
 
   expect(next.tasks).toHaveLength(1);
-  const parentAfter = next.tasks.find((t) => t.filePath === "tasks/p.md");
+  const parentAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
+  );
   expect(parentAfter?.hierarchy.childFilePaths).toEqual([]);
   // 元 task 参照を保つ（無関係な書き換えを発生させない）
   expect(parentAfter).toBe(parent);
@@ -274,23 +316,23 @@ test("applyTaskUpdated は rename + reparent で旧親から originalFilePath �
   // が登録されているので、新パスで detach すると除去できずゴーストが残る。
   const oldParent = makeTask({
     id: "old",
-    filePath: "tasks/old.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/old.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const newParent = makeTask({
     id: "new",
-    filePath: "tasks/new.md",
+    filePath: taskFilePathFixture("tasks/new.md"),
     children: [],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/old.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/old.md"),
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c-renamed.md",
-    parent: "tasks/new.md",
+    filePath: taskFilePathFixture("tasks/c-renamed.md"),
+    parent: taskFilePathFixture("tasks/new.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -303,12 +345,22 @@ test("applyTaskUpdated は rename + reparent で旧親から originalFilePath �
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const oldAfter = next.tasks.find((t) => t.filePath === "tasks/old.md");
-  const newAfter = next.tasks.find((t) => t.filePath === "tasks/new.md");
+  const oldAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/old.md"),
+  );
+  const newAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/new.md"),
+  );
   expect(oldAfter?.hierarchy.childFilePaths).toEqual([]);
-  expect(newAfter?.hierarchy.childFilePaths).toEqual(["tasks/c-renamed.md"]);
+  expect(newAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c-renamed.md"),
+  ]);
 });
 
 test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の childFilePaths を新パスへ更新する", () => {
@@ -317,18 +369,18 @@ test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の
   // 旧親 children を新パスに置き換える。
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c-renamed.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c-renamed.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -341,28 +393,36 @@ test("applyTaskUpdated は rename のみ（parent 不変）の場合も旧親の
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const parentAfter = next.tasks.find((t) => t.filePath === "tasks/p.md");
-  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c-renamed.md"]);
+  const parentAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
+  );
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c-renamed.md"),
+  ]);
 });
 
 test("applyTaskUpdated は parent 変更がなければ他 task 参照を維持する", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
     title: "old",
   });
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
     title: "new",
   });
   const data: ProjectDataT = {
@@ -376,25 +436,33 @@ test("applyTaskUpdated は parent 変更がなければ他 task 参照を維持�
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
-  const parentAfter = next.tasks.find((t) => t.filePath === "tasks/p.md");
+  const parentAfter = next.tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/p.md"),
+  );
   expect(parentAfter).toBe(parent);
-  expect(parentAfter?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  expect(parentAfter?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("applyTaskDeleted は task を削除し hierarchy と links から参照を掃除する", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
-    links: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
+    links: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p.md",
-    reverseLinks: ["tasks/p.md"],
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p.md"),
+    reverseLinks: [taskFilePathFixture("tasks/p.md")],
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -407,10 +475,13 @@ test("applyTaskDeleted は task を削除し hierarchy と links から参照を
     loadWarnings: [],
   };
 
-  const next = ProjectData.applyTaskDeleted(data, "tasks/c.md");
+  const next = ProjectData.applyTaskDeleted(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+  );
 
   expect(next.tasks).toHaveLength(1);
-  expect(next.tasks[0].filePath).toBe("tasks/p.md");
+  expect(next.tasks[0].filePath).toBe(taskFilePathFixture("tasks/p.md"));
   expect(next.tasks[0].hierarchy.childFilePaths).toEqual([]);
   expect(next.tasks[0].links.linkedFilePaths).toEqual([]);
 });
@@ -418,7 +489,7 @@ test("applyTaskDeleted は task を削除し hierarchy と links から参照を
 test("replaceColumns は status と doneColumn を rename に追従させる", () => {
   const task = makeTask({
     id: "a",
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Done",
   });
   const data: ProjectDataT = {
@@ -468,8 +539,8 @@ test("replaceColumns は指定された doneColumn を rename 追従より優先
 test("applyTaskUpdated は children 空の payload でも既存の childFilePaths を保つ", () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
@@ -484,30 +555,42 @@ test("applyTaskUpdated は children 空の payload でも既存の childFilePath
   // watcher の task-updated / 非 parent の update_task はどちらも children: [] を返す。
   const updated = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     title: "renamed",
     children: [],
   });
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/p.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/p.md"),
+    updated,
+  );
 
-  const target = next.tasks.find((task) => task.filePath === "tasks/p.md");
-  expect(target?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  const target = next.tasks.find(
+    (task) => task.filePath === taskFilePathFixture("tasks/p.md"),
+  );
+  expect(target?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
   expect(target?.title).toBe("renamed");
 });
 
 test("applyTaskUpdated は payload の parentFilePath を採用する", () => {
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p1.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p1.md"),
   });
   const p1 = makeTask({
     id: "p1",
-    filePath: "tasks/p1.md",
-    children: ["tasks/c.md"],
+    filePath: taskFilePathFixture("tasks/p1.md"),
+    children: [taskFilePathFixture("tasks/c.md")],
   });
-  const p2 = makeTask({ id: "p2", filePath: "tasks/p2.md", children: [] });
+  const p2 = makeTask({
+    id: "p2",
+    filePath: taskFilePathFixture("tasks/p2.md"),
+    children: [],
+  });
   const data: ProjectDataT = {
     watcherSession: WATCHER_SESSION_FIXTURE,
     tasks: [child, p1, p2],
@@ -520,22 +603,29 @@ test("applyTaskUpdated は payload の parentFilePath を採用する", () => {
   };
   const updated = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
-    parent: "tasks/p2.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
+    parent: taskFilePathFixture("tasks/p2.md"),
   });
 
-  const next = ProjectData.applyTaskUpdated(data, "tasks/c.md", updated);
+  const next = ProjectData.applyTaskUpdated(
+    data,
+    taskFilePathFixture("tasks/c.md"),
+    updated,
+  );
 
   expect(
-    next.tasks.find((task) => task.filePath === "tasks/c.md")?.hierarchy
-      .parentFilePath,
-  ).toBe("tasks/p2.md");
+    next.tasks.find(
+      (task) => task.filePath === taskFilePathFixture("tasks/c.md"),
+    )?.hierarchy.parentFilePath,
+  ).toBe(taskFilePathFixture("tasks/p2.md"));
   expect(
-    next.tasks.find((task) => task.filePath === "tasks/p1.md")?.hierarchy
-      .childFilePaths,
+    next.tasks.find(
+      (task) => task.filePath === taskFilePathFixture("tasks/p1.md"),
+    )?.hierarchy.childFilePaths,
   ).toEqual([]);
   expect(
-    next.tasks.find((task) => task.filePath === "tasks/p2.md")?.hierarchy
-      .childFilePaths,
-  ).toEqual(["tasks/c.md"]);
+    next.tasks.find(
+      (task) => task.filePath === taskFilePathFixture("tasks/p2.md"),
+    )?.hierarchy.childFilePaths,
+  ).toEqual([taskFilePathFixture("tasks/c.md")]);
 });

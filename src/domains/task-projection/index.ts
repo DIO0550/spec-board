@@ -1,3 +1,5 @@
+import type { TaskFilePath } from "@/domains/task-identity";
+
 /**
  * `TaskProjection.fromPayload` が受け取る 1 件分の raw 入力。
  *
@@ -30,13 +32,14 @@ export type TaskProjection = {
   /** このタスク自身が完了カラムに居るか */
   readonly isDone: boolean;
   /** 直接の子のうち実在する task の filePath（`filePath` 昇順） */
-  readonly childFilePaths: readonly string[];
+  readonly childFilePaths: readonly TaskFilePath[];
 };
 
 /**
  * filePath -> projection。IPC の raw object から `Map` へ写して保持する。
  *
- * キーは BE が返した **raw な `filePath`**。`@/domains/broken-link` の
+ * キーはBEが返したcanonical `filePath`をadapter境界でbrand化した値。
+ * `@/domains/broken-link` の
  * `buildTasksByNormalizedPath` は `normalizeTaskPathForLookup` 済みの正規化 path を
  * キーにするため、同じ filePath キー Map でも基準が異なる。取り違えると無言で
  * lookup が外れるので、引き当ては `findByFilePath` を使う。
@@ -45,7 +48,7 @@ export type TaskProjection = {
  * （`labelCommands/types.ts` の `usageCounts: Record<string, number>`）と
  * `label-registry` のプロトタイプ汚染配慮の折衷。
  */
-export type TaskProjectionMap = ReadonlyMap<string, TaskProjection>;
+export type TaskProjectionMap = ReadonlyMap<TaskFilePath, TaskProjection>;
 
 /**
  * projection 未登録 filePath 用の固定参照。
@@ -74,38 +77,42 @@ export const TaskProjection = {
    * IPC の raw payload（filePath をキーにしたオブジェクト）を Map へ変換する。
    *
    * `filePath` はユーザー由来の任意文字列のため、プロトタイプ汚染を避けて Map で保持する。
-   * BE の payload 契約を信頼して素通しし、欠損フィールドへの防御は入れない
+   * BEのcanonical path契約を信頼してbrand化し、欠損フィールドへの防御は入れない
    * （fixture 漏れを隠さないため）。
    * @param payload - BE から受け取った projections オブジェクト
-   * @returns raw filePath -> projection の Map
+   * @returns canonical TaskFilePath -> projection の Map
    */
   fromPayload: (payload: TaskProjectionsPayloadInput): TaskProjectionMap => {
-    const map = new Map<string, TaskProjection>();
+    const map = new Map<TaskFilePath, TaskProjection>();
     for (const [filePath, projection] of Object.entries(payload)) {
-      map.set(filePath, {
+      map.set(filePath as TaskFilePath, {
         subIssueProgress: {
           done: projection.subIssueProgress.done,
           total: projection.subIssueProgress.total,
         },
         isDone: projection.isDone,
-        childFilePaths: projection.childFilePaths,
+        childFilePaths: projection.childFilePaths.map(
+          (childFilePath) => childFilePath as TaskFilePath,
+        ),
       });
     }
     return map;
   },
 
   /**
-   * raw filePath に対応する projection を引く。未登録なら固定参照 {@link TaskProjection.empty}
+   * canonical filePath に対応する projection を引く。未登録なら固定参照 {@link TaskProjection.empty}
    * を返し、同一 filePath に対して常に同一参照になることを保証する。
    *
    * 正規化 path をキーにする `@/domains/broken-link` の lookup と取り違えないよう、
    * キーの基準を名前に含める。
    * @param map - projection map
-   * @param filePath - 引き当てる raw filePath（正規化しない）
+   * @param filePath - 引き当てるcanonical filePath
    * @returns 該当 projection、なければ `TaskProjection.empty`
    */
-  findByFilePath: (map: TaskProjectionMap, filePath: string): TaskProjection =>
-    map.get(filePath) ?? EMPTY_PROJECTION,
+  findByFilePath: (
+    map: TaskProjectionMap,
+    filePath: TaskFilePath,
+  ): TaskProjection => map.get(filePath) ?? EMPTY_PROJECTION,
 
   /**
    * 2 つの projection が同じ内容かを判定する。

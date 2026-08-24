@@ -1,6 +1,10 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
+import {
+  taskFilePathFixture,
+  taskIdFixture,
+} from "@/domains/__tests__/taskFixtures";
 import type { FileTreeNode } from "@/features/shell/lib/buildFileTree";
 import { Task } from "@/types/task";
 import { FileNodeItem } from ".";
@@ -18,7 +22,11 @@ const makeTask = (id: string, title: string, filePath: string) =>
     filePath,
   });
 
-const task = makeTask("task-1", "ログイン画面を改善", "tasks/login.md");
+const task = makeTask(
+  "task-1",
+  "ログイン画面を改善",
+  taskFilePathFixture("tasks/login.md"),
+);
 const fileNode: FileTreeNode = { kind: "file", name: "login.md", task };
 const directoryNode: FileTreeNode = {
   kind: "dir",
@@ -62,7 +70,11 @@ type Story = StoryObj<typeof FileNodeItem>;
 
 export const Default: Story = {};
 export const AllProps: Story = {
-  args: { node: directoryNode, depth: 1, selectedTaskId: "task-1" },
+  args: {
+    node: directoryNode,
+    depth: 1,
+    selectedTaskId: taskIdFixture("task-1"),
+  },
 };
 export const EdgeCases: Story = {
   args: {
@@ -76,6 +88,6 @@ export const EdgeCases: Story = {
       ),
     },
     depth: 6,
-    selectedTaskId: "long",
+    selectedTaskId: taskIdFixture("long"),
   },
 };

@@ -2,12 +2,16 @@ import { listen as listenInvoke } from "@tauri-apps/api/event";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import type {
   MilestoneProjection,
   MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
 import { TaskForest } from "@/domains/task-forest";
-import type { TaskProjection } from "@/domains/task-projection";
+import type {
+  TaskProjection,
+  TaskProjectionMap,
+} from "@/domains/task-projection";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   getColumns as getColumnsInvoke,
@@ -70,7 +74,7 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
 const taskA: Task = Task.fromPayload({
-  id: "tasks/a.md",
+  id: taskFilePathFixture("tasks/a.md"),
   title: "A",
   status: "Todo",
   labels: [],
@@ -78,13 +82,13 @@ const taskA: Task = Task.fromPayload({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/a.md",
+  filePath: taskFilePathFixture("tasks/a.md"),
 });
 
 const initialMilestoneProjection: MilestoneProjection = {
   done: 0,
   total: 1,
-  taskFilePaths: ["tasks/a.md"],
+  taskFilePaths: [taskFilePathFixture("tasks/a.md")],
 };
 
 const openPayload: OpenProjectPayload = {
@@ -92,11 +96,11 @@ const openPayload: OpenProjectPayload = {
   columns: ["Todo", "Done"],
   projections: new Map([
     [
-      "tasks/a.md",
+      taskFilePathFixture("tasks/a.md"),
       {
         subIssueProgress: { done: 0, total: 1 },
         isDone: false,
-        childFilePaths: ["tasks/b.md"],
+        childFilePaths: [taskFilePathFixture("tasks/b.md")],
       },
     ],
   ]),
@@ -123,19 +127,19 @@ const makeTaskPayload = (filePath: string, title: string): TaskPayload => ({
 const projection = (done: number, total: number): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone: false,
-  childFilePaths: ["tasks/b.md"],
+  childFilePaths: [taskFilePathFixture("tasks/b.md")],
 });
 
 const milestoneProjection = (
   done: number,
   total: number,
-  taskFilePaths: readonly string[],
+  taskFilePaths: readonly ReturnType<typeof taskFilePathFixture>[],
 ): MilestoneProjection => ({ done, total, taskFilePaths });
 
 const milestoneMap = (
   done: number,
   total: number,
-  taskFilePaths: readonly string[],
+  taskFilePaths: readonly ReturnType<typeof taskFilePathFixture>[],
 ): MilestoneProjectionMap =>
   new Map([["M1", milestoneProjection(done, total, taskFilePaths)]]);
 
@@ -146,7 +150,7 @@ const OPEN_COLUMNS = [
 ];
 
 const getTasksOk = (
-  projections: ReadonlyMap<string, TaskProjection>,
+  projections: TaskProjectionMap,
   milestoneProjections: MilestoneProjectionMap,
   taskTree: TaskForest = TaskForest.empty,
 ) =>
@@ -264,7 +268,10 @@ test("open 直後は get_tasks を呼ばず payload の両 projection を維持�
   await flush();
 
   expect(getTasksCalls()).toBe(0);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 0,
     total: 1,
   });
@@ -277,23 +284,34 @@ test("task-updated で tasks 参照が変われば両 projection を再同期す
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(1, 2)]]),
-      milestoneMap(1, 2, ["tasks/b.md", "tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 2)]]),
+      milestoneMap(1, 2, [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
   expect(getTasksCalls()).toBe(1);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 2,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(1, 2, ["tasks/b.md", "tasks/a.md"]),
+    milestoneProjection(1, 2, [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ]),
   );
 });
 
@@ -301,35 +319,48 @@ test("task-created / task-deleted でも両 projection を再同期する", asyn
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValueOnce(
     getTasksOk(
-      new Map([["tasks/a.md", projection(0, 2)]]),
-      milestoneMap(0, 2, ["tasks/a.md", "tasks/b.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(0, 2)]]),
+      milestoneMap(0, 2, [
+        taskFilePathFixture("tasks/a.md"),
+        taskFilePathFixture("tasks/b.md"),
+      ]),
     ),
   );
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(0, 1)]]),
-      milestoneMap(0, 1, ["tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(0, 1)]]),
+      milestoneMap(0, 1, [taskFilePathFixture("tasks/a.md")]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-created", { task: makeTaskPayload("tasks/b.md", "B") });
+  fire(handlers, "task-created", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/b.md"), "B"),
+  });
   await flush();
   const milestoneAfterCreate = currentMilestoneProjections().get("M1");
-  fire(handlers, "task-deleted", { filePath: "tasks/b.md" });
+  fire(handlers, "task-deleted", {
+    filePath: taskFilePathFixture("tasks/b.md"),
+  });
   await flush();
 
   expect(getTasksCalls()).toBe(2);
   expect(milestoneAfterCreate).toEqual(
-    milestoneProjection(0, 2, ["tasks/a.md", "tasks/b.md"]),
+    milestoneProjection(0, 2, [
+      taskFilePathFixture("tasks/a.md"),
+      taskFilePathFixture("tasks/b.md"),
+    ]),
   );
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 0,
     total: 1,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(0, 1, ["tasks/a.md"]),
+    milestoneProjection(0, 1, [taskFilePathFixture("tasks/a.md")]),
   );
 });
 
@@ -337,22 +368,35 @@ test("応答の両 projections は path 順と done を保って state に同時
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(1, 3)]]),
-      milestoneMap(2, 3, ["tasks/c.md", "tasks/a.md", "tasks/b.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 3)]]),
+      milestoneMap(2, 3, [
+        taskFilePathFixture("tasks/c.md"),
+        taskFilePathFixture("tasks/a.md"),
+        taskFilePathFixture("tasks/b.md"),
+      ]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 3,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(2, 3, ["tasks/c.md", "tasks/a.md", "tasks/b.md"]),
+    milestoneProjection(2, 3, [
+      taskFilePathFixture("tasks/c.md"),
+      taskFilePathFixture("tasks/a.md"),
+      taskFilePathFixture("tasks/b.md"),
+    ]),
   );
 });
 
@@ -360,7 +404,11 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValue(
     Result.ok({
-      tasks: [Task.fromPayload(makeTaskPayload("tasks/zzz.md", "Z"))],
+      tasks: [
+        Task.fromPayload(
+          makeTaskPayload(taskFilePathFixture("tasks/zzz.md"), "Z"),
+        ),
+      ],
       columns: OPEN_COLUMNS,
       doneColumn: "Done",
       projections: new Map(),
@@ -373,20 +421,24 @@ test("応答の tasks は state に反映されない（tasks の真実源は差
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
   const state = latest?.state;
   const filePaths =
     state?.kind === "loaded" ? state.data.tasks.map((t) => t.filePath) : [];
-  expect(filePaths).toEqual(["tasks/a.md"]);
+  expect(filePaths).toEqual([taskFilePathFixture("tasks/a.md")]);
 });
 
 test("同じ tasks / columns / doneColumn では再取得しない", async () => {
   const handlers = installCaptureListen();
   await mountLoaded();
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
   await flush();
@@ -400,10 +452,15 @@ test("get_tasks IPC 失敗時は両 projections を据え置く", async () => {
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 0,
     total: 1,
   });
@@ -419,25 +476,38 @@ test("get_tasks 失敗後も次の tasks 変化で再試行される", async () 
   );
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(2, 2)]]),
-      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(2, 2)]]),
+      milestoneMap(2, 2, [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A3") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A3"),
+  });
   await flush();
 
   expect(getTasksCalls()).toBe(2);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 2,
     total: 2,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    milestoneProjection(2, 2, [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ]),
   );
 });
 
@@ -450,24 +520,33 @@ test("in-flight 中の連続更新は畳み込まれ invoke が 2 本に収ま�
   getTasksMock.mockImplementationOnce(async () => {
     await firstGate;
     return getTasksOk(
-      new Map([["tasks/a.md", projection(1, 1)]]),
-      milestoneMap(1, 1, ["tasks/stale.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 1)]]),
+      milestoneMap(1, 1, [taskFilePathFixture("tasks/stale.md")]),
     );
   });
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(2, 2)]]),
-      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(2, 2)]]),
+      milestoneMap(2, 2, [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A3") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A3"),
+  });
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A4") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A4"),
+  });
   await flush();
   await act(async () => {
     releaseFirst();
@@ -476,12 +555,18 @@ test("in-flight 中の連続更新は畳み込まれ invoke が 2 本に収ま�
   await flush();
 
   expect(getTasksCalls()).toBe(2);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 2,
     total: 2,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    milestoneProjection(2, 2, [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ]),
   );
 });
 
@@ -494,22 +579,29 @@ test("in-flight 中に基準が変わると先頭応答は採用されずトレ�
   getTasksMock.mockImplementationOnce(async () => {
     await firstGate;
     return getTasksOk(
-      new Map([["tasks/a.md", projection(1, 1)]]),
-      milestoneMap(1, 1, ["tasks/stale.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 1)]]),
+      milestoneMap(1, 1, [taskFilePathFixture("tasks/stale.md")]),
     );
   });
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(2, 2)]]),
-      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(2, 2)]]),
+      milestoneMap(2, 2, [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A3") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A3"),
+  });
   await flush();
   await act(async () => {
     releaseFirst();
@@ -517,12 +609,18 @@ test("in-flight 中に基準が変わると先頭応答は採用されずトレ�
   });
   await flush();
 
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 2,
     total: 2,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    milestoneProjection(2, 2, [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ]),
   );
 });
 
@@ -535,20 +633,25 @@ test("同一 path の open 失敗で復元した後は古い応答を捨て両 p
   getTasksMock.mockImplementationOnce(async () => {
     await staleGate;
     return getTasksOk(
-      new Map([["tasks/a.md", projection(1, 1)]]),
-      milestoneMap(1, 1, ["tasks/stale.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 1)]]),
+      milestoneMap(1, 1, [taskFilePathFixture("tasks/stale.md")]),
     );
   });
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(2, 2)]]),
-      milestoneMap(2, 2, ["tasks/b.md", "tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(2, 2)]]),
+      milestoneMap(2, 2, [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ]),
     ),
   );
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
   openProjectMock.mockResolvedValueOnce(
     Result.err(new TauriError("UNKNOWN", "reopen failed")),
@@ -569,12 +672,18 @@ test("同一 path の open 失敗で復元した後は古い応答を捨て両 p
   await flush();
 
   expect(getTasksCalls()).toBe(2);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 2,
     total: 2,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(2, 2, ["tasks/b.md", "tasks/a.md"]),
+    milestoneProjection(2, 2, [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ]),
   );
 });
 
@@ -587,23 +696,31 @@ test("project switch 後に旧 project の応答が着地しても両 projection
   getTasksMock.mockImplementationOnce(async () => {
     await oldGate;
     return getTasksOk(
-      new Map([["tasks/a.md", projection(1, 1)]]),
-      milestoneMap(1, 1, ["tasks/old.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 1)]]),
+      milestoneMap(1, 1, [taskFilePathFixture("tasks/old.md")]),
     );
   });
   await mountLoaded();
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
-  const qProjections = new Map([["tasks/q.md", projection(3, 3)]]);
+  const qProjections = new Map([
+    [taskFilePathFixture("tasks/q.md"), projection(3, 3)],
+  ]);
   const qMilestoneProjections = new Map([
-    ["Q", milestoneProjection(3, 3, ["tasks/q.md"])],
+    ["Q", milestoneProjection(3, 3, [taskFilePathFixture("tasks/q.md")])],
   ]);
   openProjectMock.mockResolvedValueOnce(
     Result.ok({
       ...openPayload,
-      tasks: [Task.fromPayload(makeTaskPayload("tasks/q.md", "Q"))],
+      tasks: [
+        Task.fromPayload(
+          makeTaskPayload(taskFilePathFixture("tasks/q.md"), "Q"),
+        ),
+      ],
       projections: qProjections,
       milestoneProjections: qMilestoneProjections,
       taskTree: [],
@@ -658,8 +775,11 @@ test("カラム並び替えは mutation queue 完了後に両 projection を再�
   });
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(1, 2)]]),
-      milestoneMap(1, 2, ["tasks/b.md", "tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 2)]]),
+      milestoneMap(1, 2, [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ]),
     ),
   );
   await mountLoaded();
@@ -690,12 +810,18 @@ test("カラム並び替えは mutation queue 完了後に両 projection を再�
   expect(tasksAfter).toBe(tasksBefore);
   expect(doneAfter).toBe(doneBefore);
   expect(getTasksCalls()).toBe(1);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 2,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(1, 2, ["tasks/b.md", "tasks/a.md"]),
+    milestoneProjection(1, 2, [
+      taskFilePathFixture("tasks/b.md"),
+      taskFilePathFixture("tasks/a.md"),
+    ]),
   );
 });
 
@@ -703,8 +829,8 @@ test("doneColumn 変更は tasks 参照が同じでも両 projection を再同�
   installCaptureListen();
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(1, 1)]]),
-      milestoneMap(1, 1, ["tasks/a.md"]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 1)]]),
+      milestoneMap(1, 1, [taskFilePathFixture("tasks/a.md")]),
     ),
   );
   await mountLoaded();
@@ -730,12 +856,15 @@ test("doneColumn 変更は tasks 参照が同じでも両 projection を再同�
   expect(tasksAfter).toBe(tasksBefore);
   expect(doneAfter).toBe("Todo");
   expect(getTasksCalls()).toBe(1);
-  expect(currentProjections().get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    currentProjections().get(taskFilePathFixture("tasks/a.md"))
+      ?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 1,
   });
   expect(currentMilestoneProjections().get("M1")).toEqual(
-    milestoneProjection(1, 1, ["tasks/a.md"]),
+    milestoneProjection(1, 1, [taskFilePathFixture("tasks/a.md")]),
   );
 });
 
@@ -753,8 +882,8 @@ const currentData = () => {
 
 const nestedTree: TaskForest = TaskForest.fromPayload([
   {
-    filePath: "tasks/a.md",
-    children: [{ filePath: "tasks/b.md", children: [] }],
+    filePath: taskFilePathFixture("tasks/a.md"),
+    children: [{ filePath: taskFilePathFixture("tasks/b.md"), children: [] }],
   },
 ]);
 
@@ -764,7 +893,9 @@ test("projections-refreshed で taskTree が新しい内容へ更新される", 
   await mountLoaded();
   await flush();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
   expect(currentTaskTree()).toEqual(nestedTree);
@@ -774,7 +905,7 @@ test("projections と taskTree は同じ dispatch で入る", async () => {
   const handlers = installCaptureListen();
   getTasksMock.mockResolvedValue(
     getTasksOk(
-      new Map([["tasks/a.md", projection(1, 2)]]),
+      new Map([[taskFilePathFixture("tasks/a.md"), projection(1, 2)]]),
       new Map(),
       nestedTree,
     ),
@@ -783,13 +914,17 @@ test("projections と taskTree は同じ dispatch で入る", async () => {
   await flush();
   const before = currentData();
 
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
   const after = currentData();
   // 中間で「projections だけ新・tree だけ旧」の data は観測されない。
   expect(after).not.toBe(before);
-  expect(after?.projections.get("tasks/a.md")?.subIssueProgress).toEqual({
+  expect(
+    after?.projections.get(taskFilePathFixture("tasks/a.md"))?.subIssueProgress,
+  ).toEqual({
     done: 1,
     total: 2,
   });
@@ -802,11 +937,11 @@ test("内容不変の同期では data 参照が据え置かれる", async () =>
     getTasksOk(
       new Map([
         [
-          "tasks/a.md",
+          taskFilePathFixture("tasks/a.md"),
           {
             subIssueProgress: { done: 0, total: 1 },
             isDone: false,
-            childFilePaths: ["tasks/b.md"],
+            childFilePaths: [taskFilePathFixture("tasks/b.md")],
           },
         ],
       ]),
@@ -820,7 +955,9 @@ test("内容不変の同期では data 参照が据え置かれる", async () =>
   // task-updated 自体は tasks を進めるので data 参照が変わる。ここで見たいのは
   // 「その後に届く projections-refreshed が内容不変なら data を作り直さない」こと
   // なので、event 適用直後・get_tasks 応答適用前の data を基準にする。
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A"),
+  });
   const beforeSync = currentData();
   await flush();
 
@@ -834,13 +971,17 @@ test("get_tasks が失敗しても直前の taskTree を捨てない", async () 
   );
   await mountLoaded();
   await flush();
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A2") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A2"),
+  });
   await flush();
 
   getTasksMock.mockResolvedValueOnce(
     Result.err(new TauriError("UNKNOWN", "失敗")),
   );
-  fire(handlers, "task-updated", { task: makeTaskPayload("tasks/a.md", "A3") });
+  fire(handlers, "task-updated", {
+    task: makeTaskPayload(taskFilePathFixture("tasks/a.md"), "A3"),
+  });
   await flush();
 
   expect(currentTaskTree()).toEqual(nestedTree);

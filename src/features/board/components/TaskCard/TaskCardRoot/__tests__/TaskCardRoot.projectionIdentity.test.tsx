@@ -1,6 +1,7 @@
 import { act, type ReactNode, useContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import {
   ProjectData as ProjectDataDomain,
   type ProjectData as ProjectDataT,
@@ -45,14 +46,14 @@ const createTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/t.md",
+    filePath: taskFilePathFixture("tasks/t.md"),
     ...overrides,
   });
 
 const projection = (
   done: number,
   total: number,
-  childFilePaths: readonly string[] = [],
+  childFilePaths: readonly ReturnType<typeof taskFilePathFixture>[] = [],
 ): TaskProjection => ({
   subIssueProgress: { done, total },
   isDone: false,
@@ -62,16 +63,20 @@ const projection = (
 const parent = createTask({
   id: "p",
   title: "親",
-  filePath: "tasks/p.md",
-  children: ["tasks/c.md"],
+  filePath: taskFilePathFixture("tasks/p.md"),
+  children: [taskFilePathFixture("tasks/c.md")],
 });
 const child = createTask({
   id: "c",
   title: "子",
-  filePath: "tasks/c.md",
-  parent: "tasks/p.md",
+  filePath: taskFilePathFixture("tasks/c.md"),
+  parent: taskFilePathFixture("tasks/p.md"),
 });
-const other = createTask({ id: "o", title: "他", filePath: "tasks/o.md" });
+const other = createTask({
+  id: "o",
+  title: "他",
+  filePath: taskFilePathFixture("tasks/o.md"),
+});
 const allTasks = [parent, child, other];
 
 /** TaskCard.Root 配下で context 値を観測するテスト専用コンポーネント。 */
@@ -121,12 +126,17 @@ const renderWithProjections = (
 };
 
 const withParent = (done: number, total: number): TaskProjectionMap =>
-  new Map([["tasks/p.md", projection(done, total, ["tasks/c.md"])]]);
+  new Map([
+    [
+      taskFilePathFixture("tasks/p.md"),
+      projection(done, total, [taskFilePathFixture("tasks/c.md")]),
+    ],
+  ]);
 
 test("無関係カードの projection だけが変わっても対象カードの Context Value は同一参照", () => {
   const first = withParent(0, 1);
   const second = new Map(first);
-  second.set("tasks/o.md", projection(1, 1));
+  second.set(taskFilePathFixture("tasks/o.md"), projection(1, 1));
 
   const values = renderWithProjections([first, second]);
 
@@ -176,13 +186,19 @@ test("自カードの projection が変われば Context Value が更新され�
 
 test("子行の完了状態が変われば childRows が更新される", () => {
   const before = new Map([
-    ["tasks/p.md", projection(0, 1, ["tasks/c.md"])],
-    ["tasks/c.md", projection(0, 0)],
+    [
+      taskFilePathFixture("tasks/p.md"),
+      projection(0, 1, [taskFilePathFixture("tasks/c.md")]),
+    ],
+    [taskFilePathFixture("tasks/c.md"), projection(0, 0)],
   ]);
   const after = new Map([
-    ["tasks/p.md", projection(0, 1, ["tasks/c.md"])],
     [
-      "tasks/c.md",
+      taskFilePathFixture("tasks/p.md"),
+      projection(0, 1, [taskFilePathFixture("tasks/c.md")]),
+    ],
+    [
+      taskFilePathFixture("tasks/c.md"),
       {
         subIssueProgress: { done: 0, total: 0 },
         isDone: true,

@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 /**
  * `handleSelectTask` の本体ロジック。
@@ -16,8 +16,8 @@ import type { Task } from "@/types/task";
  */
 export const selectTaskOutcome = (
   tasks: readonly Task[],
-  taskId: string,
-): { selectedTaskId: string; announceText: string } | null => {
+  taskId: TaskId,
+): { selectedTaskId: TaskId; announceText: string } | null => {
   const target = tasks.find((t) => t.id === taskId);
   if (target === undefined) {
     return null;

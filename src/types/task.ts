@@ -1,6 +1,9 @@
 import type { Priority } from "@/domains/priority";
 import type { TaskHierarchy } from "@/domains/task-hierarchy";
+import type { TaskFilePath, TaskId } from "@/domains/task-identity";
 import type { TaskLinks } from "@/domains/task-links";
+
+export type { TaskFilePath, TaskId } from "@/domains/task-identity";
 
 /** JSON 互換値。 */
 export type TaskExtraValue =
@@ -89,7 +92,7 @@ type TaskPayloadInput = Omit<TaskPayload, "extras" | "warnings"> & {
 /** タスク */
 export type Task = {
   /** 一意な識別子 */
-  id: string;
+  id: TaskId;
   /** タスクタイトル */
   title: string;
   /** ステータス（カラム名に対応） */
@@ -110,7 +113,7 @@ export type Task = {
   /** Markdown 本文 */
   body: string;
   /** タスクファイルのパス */
-  filePath: string;
+  filePath: TaskFilePath;
   /** 定義外 frontmatter の JSON 互換値 */
   extras: TaskExtras;
   /** Task 生成を継続できる非致命 warning 一覧 */
@@ -214,7 +217,7 @@ export const Task = {
    * @returns frontend domain の task
    */
   fromPayload: (payload: TaskPayloadInput): Task => ({
-    id: payload.id,
+    id: payload.id as TaskId,
     title: payload.title,
     status: payload.status,
     priority: payload.priority,
@@ -223,16 +226,20 @@ export const Task = {
     draft: payload.draft ?? false,
     labels: payload.labels,
     body: payload.body,
-    filePath: payload.filePath,
+    filePath: payload.filePath as TaskFilePath,
     extras: payload.extras ?? {},
     warnings: payload.warnings?.map(taskWarningFromPayload) ?? [],
     links: {
       linkedFilePaths: payload.links,
-      reverseLinkedFilePaths: payload.reverseLinks,
+      reverseLinkedFilePaths: payload.reverseLinks.map(
+        (filePath) => filePath as TaskFilePath,
+      ),
     },
     hierarchy: {
       parentFilePath: payload.parent,
-      childFilePaths: payload.children,
+      childFilePaths: payload.children.map(
+        (filePath) => filePath as TaskFilePath,
+      ),
     },
   }),
 

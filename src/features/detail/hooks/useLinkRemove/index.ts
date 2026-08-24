@@ -5,10 +5,10 @@ import {
   type ProjectTaskActionsContextValue,
   projectErrorMessage,
 } from "@/providers/ProjectProvider";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 export type LinkRemoveCallback = (
-  sourceFilePath: string,
+  sourceFilePath: TaskFilePath,
   targetFilePath: string,
 ) => ReturnType<ProjectTaskActionsContextValue["removeLink"]>;
 

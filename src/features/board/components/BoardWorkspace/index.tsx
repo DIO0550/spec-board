@@ -11,7 +11,7 @@ import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
 import { useSavedFilters } from "@/features/board/hooks/useSavedFilters";
 import type { MilestoneDefinition } from "@/lib/tauri";
 import type { Column as ColumnType } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import {
   type BoardViewMode,
   normalizeBoardViewMode,
@@ -145,7 +145,7 @@ export type BoardWorkspaceProps = {
    * タスククリック時のコールバック。
    * @param taskId - クリックされたタスクの ID
    */
-  onTaskClick: (taskId: string) => void;
+  onTaskClick: (taskId: TaskId) => void;
   /**
    * 新規カラム追加時のコールバック。
    * @param columnName - 追加するカラム名

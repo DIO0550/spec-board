@@ -1,6 +1,7 @@
 import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { TaskProjection } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
@@ -36,7 +37,7 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -124,8 +125,16 @@ test("dndDisabled 省略時は Card / Column 両方とも false がデフォル�
 });
 
 test("allTasks が Column 側の taskCountInColumn 集計に到達する", () => {
-  const todoA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
-  const todoB = makeTask({ id: "b", filePath: "tasks/b.md", status: "Todo" });
+  const todoA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
+  const todoB = makeTask({
+    id: "b",
+    filePath: taskFilePathFixture("tasks/b.md"),
+    status: "Todo",
+  });
   const probe = mountProbe({
     columns: [{ name: "Todo", order: 0 }],
     tasks: [],
@@ -135,11 +144,19 @@ test("allTasks が Column 側の taskCountInColumn 集計に到達する", () =>
 });
 
 test("allTasks が Card 側の byPath lookup に到達する（両 Provider に同値で配線される）", () => {
-  const taskA = makeTask({ id: "a", filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({
+    id: "a",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    status: "Todo",
+  });
   const probe = mountProbe({
     tasks: [],
     allTasks: [taskA],
   });
-  expect(probe.card.byPath("tasks/a.md")?.filePath).toBe("tasks/a.md");
-  expect(probe.card.byPath("tasks/missing.md")).toBeUndefined();
+  expect(probe.card.byPath(taskFilePathFixture("tasks/a.md"))?.filePath).toBe(
+    taskFilePathFixture("tasks/a.md"),
+  );
+  expect(
+    probe.card.byPath(taskFilePathFixture("tasks/missing.md")),
+  ).toBeUndefined();
 });

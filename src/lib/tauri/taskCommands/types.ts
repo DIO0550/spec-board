@@ -18,7 +18,7 @@ import type {
   WatcherSessionPayloadInput,
 } from "@/domains/watcher-session";
 import type { Column } from "@/types/column";
-import type { Task, TaskPayload } from "@/types/task";
+import type { Task, TaskFilePath, TaskPayload } from "@/types/task";
 
 /**
  * 1 タスク分の projection の raw payload。
@@ -161,7 +161,7 @@ export type CreateTaskParams = {
 /** update_task 引数（filePath 必須、それ以外は任意の部分更新）。 */
 export type UpdateTaskParams = {
   /** 更新対象タスクのファイルパス */
-  filePath: string;
+  filePath: TaskFilePath;
   /** タスクタイトル（任意） */
   title?: string;
   /** ステータス（任意） */
@@ -183,15 +183,15 @@ export type UpdateTaskParams = {
 /** move_task 引数（カラム間移動と同一カラム並び替えの両方で使う）。 */
 export type MoveTaskParams = {
   /** 移動対象タスクのファイルパス */
-  readonly filePath: string;
+  readonly filePath: TaskFilePath;
   /** 移動元カラム名（BE 側で現在の status と一致するか検証される） */
   readonly fromColumn: string;
   /** 移動先カラム名（同一カラム並び替えでは fromColumn と同値） */
   readonly toColumn: string;
   /** 移動先カラムの新しい並び順（タスクファイルパスの配列。先頭が最上位） */
-  readonly toColumnFilePaths: readonly string[];
+  readonly toColumnFilePaths: readonly TaskFilePath[];
   /** 移動先カラムが移動前にこうであったはず、という並び。BE が現実と照合する。 */
-  readonly expectedToColumnOrder: readonly string[];
+  readonly expectedToColumnOrder: readonly TaskFilePath[];
 };
 
 /** preview_task_markdown 引数。Task entity や fileName を含めない明示的な draft DTO。 */
@@ -226,7 +226,7 @@ export type PreviewTaskFilenamePayload =
 /** archive_task 引数。 */
 export type ArchiveTaskParams = {
   /** アーカイブ対象タスクのファイルパス */
-  filePath: string;
+  filePath: TaskFilePath;
 };
 
 /** unarchive_task 引数。 */
@@ -329,7 +329,7 @@ export type OrphanStrategy = "clear" | "abort";
 /** delete_task 引数。 */
 export type DeleteTaskParams = {
   /** 削除対象タスクのファイルパス */
-  filePath: string;
+  filePath: TaskFilePath;
   /** 子タスクへの方針（任意） */
   orphanStrategy?: OrphanStrategy;
 };

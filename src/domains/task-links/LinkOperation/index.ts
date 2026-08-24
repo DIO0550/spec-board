@@ -1,27 +1,38 @@
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import type { TaskLinks } from "../TaskLinks";
 
 /**
  * link 変更 1 件の操作。
  *
- * `at` / `requiresValueTask` は **append のみ有効** な field。生成者は
- * `planAddLink` / `planRemoveLink` に閉じているため、union による構造的制約より
- * 単純さを優先した単一オブジェクト型とし、apply 実装は remove では両 field を無視する。
+ * 適用先taskはcanonical `TaskFilePath`で識別する。forward linkの値はraw表記を
+ * 保持する`string`、reverse linkの値はresolver由来のcanonical pathとして区別する。
  */
-export type LinkOperation = {
+type LinkOperationBase = {
   /** 操作種別 */
   readonly op: "append" | "remove";
   /** 適用先 task の filePath */
-  readonly filePath: string;
-  /** 適用先 field */
-  readonly field: "linkedFilePaths" | "reverseLinkedFilePaths";
-  /** append / remove する path 値 */
-  readonly value: string;
+  readonly filePath: TaskFilePath;
   /** append のみ有効: 挿入位置（省略時は末尾。適用時に min(at, 現在長) へ clamp） */
   readonly at?: number;
   /** append のみ有効: reverse append の参照整合ガード（value の task が適用時点で不在なら skip） */
   readonly requiresValueTask?: true;
 };
+
+export type LinkOperation = LinkOperationBase &
+  (
+    | {
+        /** raw forward linkを変更する。 */
+        readonly field: "linkedFilePaths";
+        /** append / removeするraw path表記。 */
+        readonly value: string;
+      }
+    | {
+        /** canonical reverse linkを変更する。 */
+        readonly field: "reverseLinkedFilePaths";
+        /** append / removeするcanonical path。 */
+        readonly value: TaskFilePath;
+      }
+  );
 
 /** invert 時に元位置 `at` を引くための snapshot（plan 入力の source / target）。 */
 export type LinkPlanSnapshot = {
@@ -41,32 +52,54 @@ export type LinkPlanSnapshot = {
  * @param operation 適用する operation
  * @returns 適用後の links（変化なしなら元の参照）
  */
+const applyPathOperation = <Path extends string>(
+  current: Path[],
+  operation: LinkOperation,
+  value: Path,
+): Path[] => {
+  if (operation.op === "append") {
+    if (current.includes(value)) {
+      return current;
+    }
+    const insertAt = Math.min(operation.at ?? current.length, current.length);
+    return [...current.slice(0, insertAt), value, ...current.slice(insertAt)];
+  }
+
+  if (!current.includes(value)) {
+    return current;
+  }
+  return current.filter((path) => path !== value);
+};
+
+/**
+ * operation 1 件を links に適用する。変化がなければ同一参照を返す。
+ * @param links 元の links
+ * @param operation 適用する operation
+ * @returns 適用後の links
+ */
 const applyLinkOperation = (
   links: TaskLinks,
   operation: LinkOperation,
 ): TaskLinks => {
-  const current = links[operation.field];
-
-  if (operation.op === "append") {
-    if (current.includes(operation.value)) {
-      return links;
-    }
-    const insertAt = Math.min(operation.at ?? current.length, current.length);
-    const appended = [
-      ...current.slice(0, insertAt),
+  if (operation.field === "linkedFilePaths") {
+    const linkedFilePaths = applyPathOperation(
+      links.linkedFilePaths,
+      operation,
       operation.value,
-      ...current.slice(insertAt),
-    ];
-    return { ...links, [operation.field]: appended };
+    );
+    return linkedFilePaths === links.linkedFilePaths
+      ? links
+      : { ...links, linkedFilePaths };
   }
 
-  if (!current.includes(operation.value)) {
-    return links;
-  }
-  return {
-    ...links,
-    [operation.field]: current.filter((path) => path !== operation.value),
-  };
+  const reverseLinkedFilePaths = applyPathOperation(
+    links.reverseLinkedFilePaths,
+    operation,
+    operation.value,
+  );
+  return reverseLinkedFilePaths === links.reverseLinkedFilePaths
+    ? links
+    : { ...links, reverseLinkedFilePaths };
 };
 
 /**
@@ -99,9 +132,9 @@ export const applyLinkOperationsToTask = (
  */
 export const linkOperationTargetFilePaths = (
   operations: readonly LinkOperation[],
-): readonly string[] => {
-  const seen = new Set<string>();
-  const filePaths: string[] = [];
+): readonly TaskFilePath[] => {
+  const seen = new Set<TaskFilePath>();
+  const filePaths: TaskFilePath[] = [];
   for (const operation of operations) {
     if (seen.has(operation.filePath)) {
       continue;
@@ -190,7 +223,7 @@ export const invertLinkOperations = (
   snapshot: LinkPlanSnapshot,
 ): readonly LinkOperation[] => {
   // filePath → field → 「除去される value の集合」（実効 index の計算用）
-  const removedValuesByFilePath = new Map<string, PerFieldSets>();
+  const removedValuesByFilePath = new Map<TaskFilePath, PerFieldSets>();
   for (const operation of operations) {
     if (operation.op !== "remove") {
       continue;
@@ -203,7 +236,7 @@ export const invertLinkOperations = (
   }
 
   // filePath → field → 「value → 実効復元 index」（field 配列 1 パスの前計算を lazy に共有）
-  const restoreIndexByFilePath = new Map<string, PerFieldRestoreIndex>();
+  const restoreIndexByFilePath = new Map<TaskFilePath, PerFieldRestoreIndex>();
   /**
    * remove operation の inverse append が使う実効復元 index を返す。
    * filePath / field 単位で `buildRestoreIndexMap` の結果をキャッシュし、
@@ -235,6 +268,14 @@ export const invertLinkOperations = (
 
   return [...operations].reverse().map((operation) => {
     if (operation.op === "append") {
+      if (operation.field === "reverseLinkedFilePaths") {
+        return {
+          op: "remove" as const,
+          filePath: operation.filePath,
+          field: operation.field,
+          value: operation.value,
+        };
+      }
       return {
         op: "remove" as const,
         filePath: operation.filePath,

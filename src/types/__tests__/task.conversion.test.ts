@@ -1,4 +1,5 @@
-import { expect, test } from "vitest";
+import { expect, expectTypeOf, test } from "vitest";
+import type { TaskFilePath, TaskId } from "@/domains/task-identity";
 import { Task, type TaskPayload } from "../task";
 
 test("fromPayload は flat payload の関連情報を nested domain property に変換する", () => {
@@ -67,6 +68,19 @@ const basePayload: TaskPayload = {
   extras: {},
   warnings: [],
 };
+
+test("fromPayloadは異なるraw idとfilePathを個別のbrandへ変換する", () => {
+  const task = Task.fromPayload({
+    ...basePayload,
+    id: "wire-task-id",
+    filePath: "tasks/canonical-path.md",
+  });
+
+  expect(task.id).toBe("wire-task-id");
+  expect(task.filePath).toBe("tasks/canonical-path.md");
+  expectTypeOf(task.id).toEqualTypeOf<TaskId>();
+  expectTypeOf(task.filePath).toEqualTypeOf<TaskFilePath>();
+});
 
 test.each([
   { due: "2026-06-30", label: "妥当な日付" },

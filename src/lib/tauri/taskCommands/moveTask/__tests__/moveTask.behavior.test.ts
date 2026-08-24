@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { moveTask } from "@/lib/tauri";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Task, type TaskPayload } from "@/types/task";
@@ -11,11 +12,11 @@ const taskPayloadFixture: TaskPayload = {
   title: "T",
   status: "Done",
   labels: [],
-  links: ["tasks/y.md"],
+  links: [taskFilePathFixture("tasks/y.md")],
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/x.md",
+  filePath: taskFilePathFixture("tasks/x.md"),
   extras: {},
   warnings: [],
 };
@@ -23,10 +24,10 @@ const taskPayloadFixture: TaskPayload = {
 const taskFixture = Task.fromPayload(taskPayloadFixture);
 
 const params = {
-  filePath: "tasks/x.md",
+  filePath: taskFilePathFixture("tasks/x.md"),
   fromColumn: "Todo",
   toColumn: "Done",
-  toColumnFilePaths: ["tasks/x.md"],
+  toColumnFilePaths: [taskFilePathFixture("tasks/x.md")],
   expectedToColumnOrder: [],
 };
 
@@ -45,10 +46,10 @@ test("引数が args キー配下に camelCase のまま渡る", async () => {
   await moveTask(params);
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("move_task", {
     args: {
-      filePath: "tasks/x.md",
+      filePath: taskFilePathFixture("tasks/x.md"),
       fromColumn: "Todo",
       toColumn: "Done",
-      toColumnFilePaths: ["tasks/x.md"],
+      toColumnFilePaths: [taskFilePathFixture("tasks/x.md")],
       expectedToColumnOrder: [],
     },
   });
@@ -59,16 +60,28 @@ test("同一カラム並び替え（fromColumn === toColumn）も同じ command 
   await moveTask({
     ...params,
     toColumn: "Todo",
-    toColumnFilePaths: ["tasks/y.md", "tasks/x.md"],
-    expectedToColumnOrder: ["tasks/x.md", "tasks/y.md"],
+    toColumnFilePaths: [
+      taskFilePathFixture("tasks/y.md"),
+      taskFilePathFixture("tasks/x.md"),
+    ],
+    expectedToColumnOrder: [
+      taskFilePathFixture("tasks/x.md"),
+      taskFilePathFixture("tasks/y.md"),
+    ],
   });
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("move_task", {
     args: {
-      filePath: "tasks/x.md",
+      filePath: taskFilePathFixture("tasks/x.md"),
       fromColumn: "Todo",
       toColumn: "Todo",
-      toColumnFilePaths: ["tasks/y.md", "tasks/x.md"],
-      expectedToColumnOrder: ["tasks/x.md", "tasks/y.md"],
+      toColumnFilePaths: [
+        taskFilePathFixture("tasks/y.md"),
+        taskFilePathFixture("tasks/x.md"),
+      ],
+      expectedToColumnOrder: [
+        taskFilePathFixture("tasks/x.md"),
+        taskFilePathFixture("tasks/y.md"),
+      ],
     },
   });
 });

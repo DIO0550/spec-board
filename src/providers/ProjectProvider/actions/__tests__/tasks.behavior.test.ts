@@ -1,3 +1,4 @@
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { beforeEach, expect, test, vi } from "vitest";
 import { TauriError, updateTask as updateTaskInvoke } from "@/lib/tauri";
@@ -39,7 +40,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -122,19 +123,19 @@ beforeEach(() => {
 // === 正常系: 楽観 dispatch ===
 
 test("status 変更で楽観 dispatch が IPC await 前に発火する", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
   const harness = setupLoaded(makeData([taskA]));
 
   let optimisticSeen: Task | null = null;
   updateTaskMock.mockImplementation(async () => {
     const data = (harness.state.current as { data: ProjectData }).data;
     optimisticSeen =
-      data.tasks.find((t) => t.filePath === "tasks/a.md") ?? null;
+      data.tasks.find((t) => t.filePath === taskFilePathFixture("tasks/a.md")) ?? null;
     return Result.ok({ ...taskA, status: "Doing" });
   });
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -143,9 +144,9 @@ test("status 変更で楽観 dispatch が IPC await 前に発火する", async (
 });
 
 test("成功時、楽観 dispatch + 確定 dispatch の 2 回 dispatch される", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
   const confirmed = makeTask({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
     title: "from-be",
   });
@@ -153,7 +154,7 @@ test("成功時、楽観 dispatch + 確定 dispatch の 2 回 dispatch される
   updateTaskMock.mockResolvedValue(Result.ok(confirmed));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -170,14 +171,14 @@ test("成功時、楽観 dispatch + 確定 dispatch の 2 回 dispatch される
 // === 正常系: priority バリエーション ===
 
 test("priority undefined → value への変更が楽観反映される", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(
     Result.ok({ ...taskA, priority: "High" as const }),
   );
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     priority: "High",
   });
 
@@ -186,13 +187,13 @@ test("priority undefined → value への変更が楽観反映される", async 
 });
 
 test("priority: undefined を明示的に渡しても楽観 dispatch から除外される", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", priority: "High" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), priority: "High" });
   const harness = setupLoaded(makeData([taskA]));
   // BE は priority クリアをサポートしないため High のまま返ってくる想定
   updateTaskMock.mockResolvedValue(Result.ok(taskA));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     priority: undefined,
     status: "Doing",
   });
@@ -204,12 +205,12 @@ test("priority: undefined を明示的に渡しても楽観 dispatch から除�
 });
 
 test("priority 以外のフィールドも undefined 明示は楽観対象から除外される (status / title / labels / body)", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo", title: "orig" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo", title: "orig" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(Result.ok(taskA));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: undefined,
     title: undefined,
     labels: undefined,
@@ -225,12 +226,12 @@ test("priority 以外のフィールドも undefined 明示は楽観対象から
 // === 正常系: 共有経路（title / labels） ===
 
 test("title 変更も同じ楽観経路で動く", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", title: "old" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), title: "old" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(Result.ok({ ...taskA, title: "new" }));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     title: "new",
   });
 
@@ -240,14 +241,14 @@ test("title 変更も同じ楽観経路で動く", async () => {
 });
 
 test("labels 変更も楽観反映される", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", labels: ["a"] });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), labels: ["a"] });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(
     Result.ok({ ...taskA, labels: ["a", "b"] }),
   );
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     labels: ["a", "b"],
   });
 
@@ -258,10 +259,10 @@ test("labels 変更も楽観反映される", async () => {
 // === 境界値 ===
 
 test("currentTask が見つからない場合 invalid-state Err、dispatch なし", async () => {
-  const harness = setupLoaded(makeData([makeTask({ filePath: "tasks/a.md" })]));
+  const harness = setupLoaded(makeData([makeTask({ filePath: taskFilePathFixture("tasks/a.md") })]));
 
   const result = await updateTaskAction(harness.deps, {
-    filePath: "tasks/missing.md",
+    filePath: taskFilePathFixture("tasks/missing.md"),
     status: "Doing",
   });
 
@@ -277,7 +278,7 @@ test("canAcceptDataCommand=false (idle) で invalid-state Err、dispatch なし"
   const harness = setupIdle();
 
   const result = await updateTaskAction(harness.deps, {
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     status: "Doing",
   });
 
@@ -290,11 +291,11 @@ test("canAcceptDataCommand=false (idle) で invalid-state Err、dispatch なし"
 });
 
 test("params が filePath のみ（楽観対象キーなし）→ 楽観 dispatch skip、IPC 成功時に確定 dispatch のみ", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(Result.ok(taskA));
 
-  await updateTaskAction(harness.deps, { filePath: "tasks/a.md" });
+  await updateTaskAction(harness.deps, { filePath: taskFilePathFixture("tasks/a.md") });
 
   const taskUpdates = harness.actions.filter((a) => a.type === "task-updated");
   expect(taskUpdates).toHaveLength(1);
@@ -302,13 +303,13 @@ test("params が filePath のみ（楽観対象キーなし）→ 楽観 dispatc
 });
 
 test("params が { filePath, parent } のみ → 楽観 dispatch skip、確定 dispatch のみ", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(Result.ok(taskA));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
-    parent: "tasks/parent.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
+    parent: taskFilePathFixture("tasks/parent.md"),
   });
 
   const taskUpdates = harness.actions.filter((a) => a.type === "task-updated");
@@ -317,34 +318,34 @@ test("params が { filePath, parent } のみ → 楽観 dispatch skip、確定 d
 });
 
 test("params.parent と status を同時に渡しても、楽観 task の hierarchy.parentFilePath は元のまま（parent は楽観対象外）", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", parent: "tasks/old.md" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), parent: taskFilePathFixture("tasks/old.md") });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(Result.ok(taskA));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
-    parent: "tasks/new.md",
+    parent: taskFilePathFixture("tasks/new.md"),
   });
 
   const taskUpdates = harness.actions.filter((a) => a.type === "task-updated");
   expect((taskUpdates[0] as { task: Task }).task.status).toBe("Doing");
   expect(
     (taskUpdates[0] as { task: Task }).task.hierarchy.parentFilePath,
-  ).toBe("tasks/old.md");
+  ).toBe(taskFilePathFixture("tasks/old.md"));
 });
 
 // === 異常系: rollback ===
 
 test("IPC 失敗時、楽観 → rollback の 2 段 dispatch、更新キーが snapshot 値に戻る", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(
     Result.err(new TauriError("IO_ERROR", "io")),
   );
 
   const result = await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -359,13 +360,13 @@ test("IPC 失敗時、楽観 → rollback の 2 段 dispatch、更新キーが s
 });
 
 test("IPC 失敗時 rollback で ProjectError.tauri を返す", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
   const harness = setupLoaded(makeData([taskA]));
   const err = new TauriError("IO_ERROR", "io");
   updateTaskMock.mockResolvedValue(Result.err(err));
 
   const result = await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -381,20 +382,20 @@ test("IPC 失敗時 rollback で ProjectError.tauri を返す", async () => {
 // === エッジ: concurrent 保護 (キー単位) ===
 
 test("rollback 時、外部 listener が同じキー (status) を別値に上書き済みなら rollback を skip し外部値を保護", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockImplementation(async () => {
     // IPC 中に外部 listener が status を Done に上書きしたシナリオ
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: { ...taskA, status: "Done" },
     });
     return Result.err(new TauriError("IO_ERROR", "io"));
   });
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -409,7 +410,7 @@ test("rollback 時、外部 listener が同じキー (status) を別値に上書
 
 test("rollback 時、外部 listener が別キー (title) だけ更新済みなら、更新キー (status) は snapshot に戻し外部キーは保護", async () => {
   const taskA = makeTask({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Todo",
     title: "orig-title",
   });
@@ -417,14 +418,14 @@ test("rollback 時、外部 listener が別キー (title) だけ更新済みな�
   updateTaskMock.mockImplementation(async () => {
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: { ...taskA, status: "Doing", title: "external-title" },
     });
     return Result.err(new TauriError("IO_ERROR", "io"));
   });
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -436,19 +437,19 @@ test("rollback 時、外部 listener が別キー (title) だけ更新済みな�
 });
 
 test("rollback 時、labels 配列が外部更新で変わっていれば labels は skip", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", labels: ["a"] });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), labels: ["a"] });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockImplementation(async () => {
     harness.deps.dispatch({
       type: "task-updated",
-      originalFilePath: "tasks/a.md",
+      originalFilePath: taskFilePathFixture("tasks/a.md"),
       task: { ...taskA, labels: ["external"] },
     });
     return Result.err(new TauriError("IO_ERROR", "io"));
   });
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     labels: ["a", "b"],
   });
 
@@ -461,7 +462,7 @@ test("rollback 時、labels 配列が外部更新で変わっていれば labels
 // === エッジ: projectVersion 切替 ===
 
 test("IPC await 中に projectVersion 切替 → rollback skip + invalid-state Err", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockImplementation(async () => {
     invalidateProject(harness.deps.projectVersion);
@@ -469,7 +470,7 @@ test("IPC await 中に projectVersion 切替 → rollback skip + invalid-state E
   });
 
   const result = await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
 
@@ -485,19 +486,19 @@ test("IPC await 中に projectVersion 切替 → rollback skip + invalid-state E
 // === エッジ: idempotency (二重 dispatch) ===
 
 test("BE 確定 dispatch + 外部 listener 由来の dispatch が二重に流れても最終 state は idempotent", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
-  const confirmed = makeTask({ filePath: "tasks/a.md", status: "Doing" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
+  const confirmed = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Doing" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockResolvedValue(Result.ok(confirmed));
 
   await updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
   // 外部 listener 由来の同等 dispatch
   harness.deps.dispatch({
     type: "task-updated",
-    originalFilePath: "tasks/a.md",
+    originalFilePath: taskFilePathFixture("tasks/a.md"),
     task: confirmed,
   });
 
@@ -509,18 +510,18 @@ test("BE 確定 dispatch + 外部 listener 由来の dispatch が二重に流れ
 // === エッジ: 連続変更 ===
 
 test("ToDo → Doing → Done の連続 invoke が queue で順次処理される", async () => {
-  const taskA = makeTask({ filePath: "tasks/a.md", status: "Todo" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md"), status: "Todo" });
   const harness = setupLoaded(makeData([taskA]));
   updateTaskMock.mockImplementation(async (params) =>
     Result.ok({ ...taskA, status: params.status ?? taskA.status }),
   );
 
   const first = updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Doing",
   });
   const second = updateTaskAction(harness.deps, {
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     status: "Done",
   });
   await Promise.all([first, second]);

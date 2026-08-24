@@ -13,6 +13,7 @@ import {
   test,
   vi,
 } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import {
   type CreateTaskParams,
@@ -272,7 +273,7 @@ const taskA: Task = Task.fromPayload({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/a.md",
+  filePath: taskFilePathFixture("tasks/a.md"),
 });
 
 const taskB: Task = Task.fromPayload({
@@ -284,7 +285,7 @@ const taskB: Task = Task.fromPayload({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/b.md",
+  filePath: taskFilePathFixture("tasks/b.md"),
 });
 
 const payload: OpenProjectPayload = {
@@ -294,7 +295,10 @@ const payload: OpenProjectPayload = {
   columns: ["Todo", "Done"],
   projections: new Map(),
   milestoneProjections: new Map([
-    ["release-1", { done: 0, total: 1, taskFilePaths: ["tasks/a.md"] }],
+    [
+      "release-1",
+      { done: 0, total: 1, taskFilePaths: [taskFilePathFixture("tasks/a.md")] },
+    ],
   ]),
   taskTree: [],
 };
@@ -852,7 +856,7 @@ test("updateTask (loaded) 成功 → Result.ok(task) + 該当差し替え", asyn
   let result!: Awaited<ReturnType<ProbeResult["updateTask"]>>;
   await act(async () => {
     result = await probe.latest.updateTask({
-      filePath: "tasks/a.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
       title: "renamed",
     } satisfies UpdateTaskParams);
   });
@@ -870,7 +874,7 @@ test("updateTask (loaded) 失敗 → Result.err、楽観 → rollback で state 
   let result!: Awaited<ReturnType<ProbeResult["updateTask"]>>;
   await act(async () => {
     result = await probe.latest.updateTask({
-      filePath: "tasks/a.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
       status: "Doing",
     });
   });
@@ -887,7 +891,10 @@ test("updateTask 楽観対象キーなし ({ filePath, parent } のみ) → 楽�
   // BE が parent 付与済み task を返す想定
   const updated: Task = {
     ...taskA,
-    hierarchy: { ...taskA.hierarchy, parentFilePath: "tasks/parent.md" },
+    hierarchy: {
+      ...taskA.hierarchy,
+      parentFilePath: taskFilePathFixture("tasks/parent.md"),
+    },
   };
   let stateDuringIpc: Task | null = null;
   updateTaskMock.mockImplementationOnce(async () => {
@@ -900,8 +907,8 @@ test("updateTask 楽観対象キーなし ({ filePath, parent } のみ) → 楽�
   let result!: Awaited<ReturnType<ProbeResult["updateTask"]>>;
   await act(async () => {
     result = await probe.latest.updateTask({
-      filePath: "tasks/a.md",
-      parent: "tasks/parent.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
+      parent: taskFilePathFixture("tasks/parent.md"),
     });
   });
   expect(result).toEqual({ ok: true, value: updated });
@@ -913,14 +920,16 @@ test("updateTask 楽観対象キーなし ({ filePath, parent } のみ) → 楽�
   expect(
     (probe.latest.state as { data: { tasks: Task[] } }).data.tasks[0].hierarchy
       .parentFilePath,
-  ).toBe("tasks/parent.md");
+  ).toBe(taskFilePathFixture("tasks/parent.md"));
 });
 
 test("updateTask (idle) → invalid-state を即返す、invoke 未呼び出し", async () => {
   const probe = renderHook();
   let result!: Awaited<ReturnType<ProbeResult["updateTask"]>>;
   await act(async () => {
-    result = await probe.latest.updateTask({ filePath: "tasks/x.md" });
+    result = await probe.latest.updateTask({
+      filePath: taskFilePathFixture("tasks/x.md"),
+    });
   });
   expect((result as { error: { kind: string } }).error.kind).toBe(
     "invalid-state",
@@ -937,7 +946,7 @@ test("deleteTask (loaded) 成功 → Result.ok + 除去", async () => {
   let result!: Awaited<ReturnType<ProbeResult["deleteTask"]>>;
   await act(async () => {
     result = await probe.latest.deleteTask({
-      filePath: "tasks/a.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
     } satisfies DeleteTaskParams);
   });
   expect(result).toEqual({ ok: true, value: undefined });
@@ -959,7 +968,9 @@ test("deleteTask (loaded) pending 中は tasks 空 → 失敗 resolve で snapsh
 
   let resultPromise!: Promise<Awaited<ReturnType<ProbeResult["deleteTask"]>>>;
   act(() => {
-    resultPromise = probe.latest.deleteTask({ filePath: "tasks/a.md" });
+    resultPromise = probe.latest.deleteTask({
+      filePath: taskFilePathFixture("tasks/a.md"),
+    });
   });
   // queue の microtask を進めて楽観 dispatch を反映させる
   await act(async () => {
@@ -994,12 +1005,12 @@ test("deleteTask orphanStrategy: 'clear' を invoke にそのまま forwarding",
   deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
   await act(async () => {
     await probe.latest.deleteTask({
-      filePath: "tasks/a.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
       orphanStrategy: "clear",
     } satisfies DeleteTaskParams);
   });
   expect(deleteTaskMock).toHaveBeenCalledWith({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     orphanStrategy: "clear",
   });
 });
@@ -1010,12 +1021,12 @@ test("deleteTask orphanStrategy: 'abort' を invoke にそのまま forwarding",
   deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
   await act(async () => {
     await probe.latest.deleteTask({
-      filePath: "tasks/a.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
       orphanStrategy: "abort",
     } satisfies DeleteTaskParams);
   });
   expect(deleteTaskMock).toHaveBeenCalledWith({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
     orphanStrategy: "abort",
   });
 });
@@ -1026,11 +1037,11 @@ test("deleteTask orphanStrategy 未指定なら invoke にも未指定で forwar
   deleteTaskMock.mockResolvedValueOnce(Result.ok(undefined));
   await act(async () => {
     await probe.latest.deleteTask({
-      filePath: "tasks/a.md",
+      filePath: taskFilePathFixture("tasks/a.md"),
     } satisfies DeleteTaskParams);
   });
   expect(deleteTaskMock).toHaveBeenCalledWith({
-    filePath: "tasks/a.md",
+    filePath: taskFilePathFixture("tasks/a.md"),
   });
 });
 
@@ -1038,7 +1049,9 @@ test("deleteTask (idle) → invalid-state を即返す、invoke 未呼び出し"
   const probe = renderHook();
   let result!: Awaited<ReturnType<ProbeResult["deleteTask"]>>;
   await act(async () => {
-    result = await probe.latest.deleteTask({ filePath: "tasks/x.md" });
+    result = await probe.latest.deleteTask({
+      filePath: taskFilePathFixture("tasks/x.md"),
+    });
   });
   expect((result as { error: { kind: string } }).error.kind).toBe(
     "invalid-state",
@@ -1515,7 +1528,7 @@ test("task-created callback を invoke すると state.data.tasks に追加さ�
           children: [],
           reverseLinks: [],
           body: "",
-          filePath: "tasks/b.md",
+          filePath: taskFilePathFixture("tasks/b.md"),
           extras: {},
           warnings: [],
         },
@@ -1523,7 +1536,10 @@ test("task-created callback を invoke すると state.data.tasks に追加さ�
     });
   });
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
-  expect(tasks.map((t) => t.filePath)).toEqual(["tasks/a.md", "tasks/b.md"]);
+  expect(tasks.map((t) => t.filePath)).toEqual([
+    taskFilePathFixture("tasks/a.md"),
+    taskFilePathFixture("tasks/b.md"),
+  ]);
 });
 
 test("parent あり task-created で親の hierarchy.childFilePaths に追加される", async () => {
@@ -1538,12 +1554,12 @@ test("parent あり task-created で親の hierarchy.childFilePaths に追加さ
           title: "C",
           status: "Todo",
           labels: [],
-          parent: "tasks/a.md",
+          parent: taskFilePathFixture("tasks/a.md"),
           links: [],
           children: [],
           reverseLinks: [],
           body: "",
-          filePath: "tasks/c.md",
+          filePath: taskFilePathFixture("tasks/c.md"),
           extras: {},
           warnings: [],
         },
@@ -1551,8 +1567,12 @@ test("parent あり task-created で親の hierarchy.childFilePaths に追加さ
     });
   });
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
-  const parent = tasks.find((t) => t.filePath === "tasks/a.md");
-  expect(parent?.hierarchy.childFilePaths).toEqual(["tasks/c.md"]);
+  const parent = tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/a.md"),
+  );
+  expect(parent?.hierarchy.childFilePaths).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
 });
 
 test("unmount で task-created の unlisten が呼ばれる", async () => {
@@ -1689,7 +1709,7 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
           children: [],
           reverseLinks: [],
           body: "",
-          filePath: "tasks/z.md",
+          filePath: taskFilePathFixture("tasks/z.md"),
           extras: {},
           warnings: [],
         },
@@ -1704,7 +1724,7 @@ test("open-start 直後の race: loading 中に旧 callback が発火しても p
   };
   expect(
     loadingState.previousLoaded?.data.tasks.map((t) => t.filePath),
-  ).toEqual(["tasks/a.md"]);
+  ).toEqual([taskFilePathFixture("tasks/a.md")]);
 
   // teardown: invoke を成功させる
   await act(async () => {
@@ -1765,7 +1785,7 @@ const taskAUpdatedPayload: TaskPayload = {
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/a.md",
+  filePath: taskFilePathFixture("tasks/a.md"),
   extras: {},
   warnings: [],
 };
@@ -1786,7 +1806,9 @@ test("task-updated callback で一致 filePath の task が差し替わる", asy
     handlers[0]({ payload: { task: taskAUpdatedPayload } });
   });
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
-  const updated = tasks.find((t) => t.filePath === "tasks/a.md");
+  const updated = tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/a.md"),
+  );
   expect(updated?.title).toBe("A2");
   expect(tasks).toHaveLength(1);
 });
@@ -1799,7 +1821,10 @@ test("filePath 不一致の task-updated は内容上 state を変化させな�
   act(() => {
     handlers[0]({
       payload: {
-        task: { ...taskAUpdatedPayload, filePath: "tasks/missing.md" },
+        task: {
+          ...taskAUpdatedPayload,
+          filePath: taskFilePathFixture("tasks/missing.md"),
+        },
       },
     });
   });
@@ -2032,7 +2057,7 @@ test("task-deleted callback で一致 filePath の task が state.data.tasks か
   const probe = renderHook();
   await openLoaded(probe);
   act(() => {
-    handlers[0]({ payload: { filePath: "tasks/a.md" } });
+    handlers[0]({ payload: { filePath: taskFilePathFixture("tasks/a.md") } });
   });
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
   expect(tasks).toHaveLength(0);
@@ -2044,7 +2069,9 @@ test("filePath 不一致の task-deleted は内容上 state を変化させな�
   await openLoaded(probe);
   const before = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
   act(() => {
-    handlers[0]({ payload: { filePath: "tasks/missing.md" } });
+    handlers[0]({
+      payload: { filePath: taskFilePathFixture("tasks/missing.md") },
+    });
   });
   const after = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
   expect(after).toEqual(before);
@@ -2130,7 +2157,7 @@ test("open-start 直後の race: loading 中に旧 task-deleted callback が発�
   expect(probe.latest.state.kind).toBe("loading");
 
   act(() => {
-    oldHandler({ payload: { filePath: "tasks/a.md" } });
+    oldHandler({ payload: { filePath: taskFilePathFixture("tasks/a.md") } });
   });
 
   const loadingState = probe.latest.state as {
@@ -2139,7 +2166,7 @@ test("open-start 直後の race: loading 中に旧 task-deleted callback が発�
   };
   expect(
     loadingState.previousLoaded?.data.tasks.map((t) => t.filePath),
-  ).toEqual(["tasks/a.md"]);
+  ).toEqual([taskFilePathFixture("tasks/a.md")]);
 
   await act(async () => {
     resolveInvoke(
@@ -2221,12 +2248,12 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
     title: "C",
     status: "Todo",
     labels: [],
-    parent: "tasks/a.md",
+    parent: taskFilePathFixture("tasks/a.md"),
     links: [],
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
     extras: {},
     warnings: [],
   };
@@ -2254,11 +2281,15 @@ test("parent あり task の filePath 削除で子の parent も未設定にな�
   });
 
   act(() => {
-    handlers[0]({ payload: { filePath: "tasks/a.md" } });
+    handlers[0]({ payload: { filePath: taskFilePathFixture("tasks/a.md") } });
   });
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
-  expect(tasks.map((t) => t.filePath)).toEqual(["tasks/c.md"]);
-  const child = tasks.find((t) => t.filePath === "tasks/c.md");
+  expect(tasks.map((t) => t.filePath)).toEqual([
+    taskFilePathFixture("tasks/c.md"),
+  ]);
+  const child = tasks.find(
+    (t) => t.filePath === taskFilePathFixture("tasks/c.md"),
+  );
   expect(child?.hierarchy.parentFilePath).toBeUndefined();
 });
 
@@ -2280,7 +2311,7 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/a-renamed.md",
+    filePath: taskFilePathFixture("tasks/a-renamed.md"),
     extras: {},
     warnings: [],
   };
@@ -2289,7 +2320,7 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
     const deleteHandler = handlersByEvent["task-deleted"][0] as (event: {
       payload: { filePath: string };
     }) => void;
-    deleteHandler({ payload: { filePath: "tasks/a.md" } });
+    deleteHandler({ payload: { filePath: taskFilePathFixture("tasks/a.md") } });
   });
   act(() => {
     const createHandler = handlersByEvent["task-created"][0] as (event: {
@@ -2299,7 +2330,9 @@ test("rename シーケンス: task-deleted handler → task-created handler 連�
   });
 
   const tasks = (probe.latest.state as { data: { tasks: Task[] } }).data.tasks;
-  expect(tasks.map((t) => t.filePath)).toEqual(["tasks/a-renamed.md"]);
+  expect(tasks.map((t) => t.filePath)).toEqual([
+    taskFilePathFixture("tasks/a-renamed.md"),
+  ]);
 });
 
 // === reorderColumns ===

@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { LinksSection } from "..";
@@ -27,7 +28,7 @@ const makeTask = (overrides: Partial<TaskPayload>): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -59,12 +60,15 @@ const renderWrapped = (
 };
 
 const noopOnRemoveLink = vi.fn(async () =>
-  Result.ok(makeTask({ filePath: "tasks/x.md" })),
+  Result.ok(makeTask({ filePath: taskFilePathFixture("tasks/x.md") })),
 );
 
 test("+ ボタン押下で TaskSelect popover が表示される", () => {
-  const self = makeTask({ filePath: "tasks/self.md" });
-  const candidate = makeTask({ filePath: "tasks/c1.md", title: "C1" });
+  const self = makeTask({ filePath: taskFilePathFixture("tasks/self.md") });
+  const candidate = makeTask({
+    filePath: taskFilePathFixture("tasks/c1.md"),
+    title: "C1",
+  });
   const onAddLink = vi.fn(async () => Result.ok(self));
   render({
     task: self,
@@ -89,20 +93,31 @@ test("+ ボタン押下で TaskSelect popover が表示される", () => {
 
 test("popover の候補に self / linked / reverseLinked / parent / children は含まれない", () => {
   const self = makeTask({
-    filePath: "tasks/self.md",
-    links: ["tasks/linked.md"],
-    reverseLinks: ["tasks/reverse.md"],
+    filePath: taskFilePathFixture("tasks/self.md"),
+    links: [taskFilePathFixture("tasks/linked.md")],
+    reverseLinks: [taskFilePathFixture("tasks/reverse.md")],
   });
-  const linked = makeTask({ filePath: "tasks/linked.md" });
-  const reverse = makeTask({ filePath: "tasks/reverse.md" });
-  const parent = makeTask({ filePath: "tasks/parent.md", title: "Parent" });
-  const child = makeTask({ filePath: "tasks/child.md", title: "Child" });
-  const other = makeTask({ filePath: "tasks/other.md", title: "Other" });
+  const linked = makeTask({ filePath: taskFilePathFixture("tasks/linked.md") });
+  const reverse = makeTask({
+    filePath: taskFilePathFixture("tasks/reverse.md"),
+  });
+  const parent = makeTask({
+    filePath: taskFilePathFixture("tasks/parent.md"),
+    title: "Parent",
+  });
+  const child = makeTask({
+    filePath: taskFilePathFixture("tasks/child.md"),
+    title: "Child",
+  });
+  const other = makeTask({
+    filePath: taskFilePathFixture("tasks/other.md"),
+    title: "Other",
+  });
   render({
     task: self,
     allTasks: [self, linked, reverse, parent, child, other],
-    parentFilePath: "tasks/parent.md",
-    childrenFilePaths: ["tasks/child.md"],
+    parentFilePath: taskFilePathFixture("tasks/parent.md"),
+    childrenFilePaths: [taskFilePathFixture("tasks/child.md")],
     onAddLink: vi.fn(async () => Result.ok(self)),
     onRemoveLink: noopOnRemoveLink,
   });
@@ -127,8 +142,11 @@ test("popover の候補に self / linked / reverseLinked / parent / children は
 });
 
 test("候補選択で onAddLink が source/target で呼ばれ popover が閉じる", async () => {
-  const self = makeTask({ filePath: "tasks/self.md" });
-  const candidate = makeTask({ filePath: "tasks/c.md", title: "C" });
+  const self = makeTask({ filePath: taskFilePathFixture("tasks/self.md") });
+  const candidate = makeTask({
+    filePath: taskFilePathFixture("tasks/c.md"),
+    title: "C",
+  });
   const onAddLink = vi.fn(async () => Result.ok(self));
   render({
     task: self,
@@ -156,15 +174,18 @@ test("候補選択で onAddLink が source/target で呼ばれ popover が閉じ
     );
   });
 
-  expect(onAddLink).toHaveBeenCalledWith("tasks/self.md", "tasks/c.md");
+  expect(onAddLink).toHaveBeenCalledWith(
+    taskFilePathFixture("tasks/self.md"),
+    taskFilePathFixture("tasks/c.md"),
+  );
   expect(
     document.querySelector('[data-testid="links-section-select"]'),
   ).toBeNull();
 });
 
 test("task 切替（key 変化）で popover が閉じる（リマウント挙動）", () => {
-  const taskA = makeTask({ filePath: "tasks/a.md" });
-  const taskB = makeTask({ filePath: "tasks/b.md" });
+  const taskA = makeTask({ filePath: taskFilePathFixture("tasks/a.md") });
+  const taskB = makeTask({ filePath: taskFilePathFixture("tasks/b.md") });
   const props = {
     task: taskA,
     allTasks: [taskA, taskB],

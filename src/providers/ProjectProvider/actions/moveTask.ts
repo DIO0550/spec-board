@@ -1,5 +1,5 @@
 import { moveTask, type TauriError } from "@/lib/tauri";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { ProjectError } from "../errors";
@@ -10,7 +10,7 @@ import type { TaskActionDeps } from "./deps";
 
 /** moveTask が受け取るパラメータ。 */
 export type MoveTaskParams = {
-  readonly taskFilePath: string;
+  readonly taskFilePath: TaskFilePath;
   readonly fromColumn: string;
   readonly toColumn: string;
   readonly toIndex: number;
@@ -29,7 +29,7 @@ export type MoveTaskCallbacks = {
    * status 乖離 / toColumn 不存在 / 開始前 version 切替）でも呼ばれない。
    */
   readonly onOptimisticApplied?: (params: {
-    taskFilePath: string;
+    taskFilePath: TaskFilePath;
     fromColumn: string;
     toColumn: string;
   }) => void;
@@ -39,7 +39,7 @@ export type MoveTaskCallbacks = {
    * invalid-state では呼ばれない。
    */
   readonly onRollback?: (params: {
-    taskFilePath: string;
+    taskFilePath: TaskFilePath;
     fromColumn: string;
     toColumn: string;
   }) => void;
@@ -65,8 +65,8 @@ const ensureLoaded = (
  */
 export type MoveSnapshot = {
   readonly originalTask: Task;
-  readonly fromColumnOrderBefore: readonly string[];
-  readonly toColumnOrderBefore: readonly string[];
+  readonly fromColumnOrderBefore: readonly TaskFilePath[];
+  readonly toColumnOrderBefore: readonly TaskFilePath[];
 };
 
 /**
@@ -79,7 +79,7 @@ export type MoveSnapshot = {
 const filePathsInColumn = (
   data: ProjectData,
   columnName: string,
-): readonly string[] =>
+): readonly TaskFilePath[] =>
   data.tasks.filter((t) => t.status === columnName).map((t) => t.filePath);
 
 export const MoveSnapshot = {
@@ -122,7 +122,7 @@ export const MoveSnapshot = {
    */
   isSameOrder: (
     snapshot: MoveSnapshot,
-    filePaths: readonly string[],
+    filePaths: readonly TaskFilePath[],
   ): boolean =>
     filePaths.length === snapshot.toColumnOrderBefore.length &&
     filePaths.every((p, i) => p === snapshot.toColumnOrderBefore[i]),
@@ -139,7 +139,7 @@ export const MoveSnapshot = {
   optimisticCrossDispatches: (
     params: MoveTaskParams,
     optimisticTask: Task,
-    optimisticToOrder: readonly string[],
+    optimisticToOrder: readonly TaskFilePath[],
   ): readonly ProjectAction[] => [
     {
       type: "task-updated",

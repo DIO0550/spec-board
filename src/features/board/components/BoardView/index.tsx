@@ -5,7 +5,7 @@ import type { ColumnReorderHandler } from "@/features/board/components/BoardColu
 import { BoardProviders } from "@/features/board/components/BoardProviders";
 import type { MilestonesByName } from "@/features/board/components/TaskCard";
 import type { Column as ColumnType } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 /** BoardView の Props。board 描画に必要な最小集合を明示的に受ける。 */
 type BoardViewProps = {
@@ -38,7 +38,7 @@ type BoardViewProps = {
    * タスククリック時のコールバック。
    * @param taskId - クリックされたタスクの ID
    */
-  onTaskClick: (taskId: string) => void;
+  onTaskClick: (taskId: TaskId) => void;
   /**
    * 新規カラム追加コールバック（undefined のとき AddColumn を出さない）。
    * @param columnName - 追加するカラム名

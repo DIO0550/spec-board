@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import {
   createTaskSearchIndex,
   searchTaskIndex,
@@ -38,7 +38,7 @@ export type CommandPaletteProps = {
    * 検索結果のタスクを選んだときのcallback。
    * @param taskId - 選択されたタスクの ID
    */
-  onTaskSelect: (taskId: string) => void;
+  onTaskSelect: (taskId: TaskId) => void;
   /** タスク作成コマンドを選んだときのcallback。 */
   onNewTask: () => void;
   /** 設定コマンドを選んだときのcallback。 */

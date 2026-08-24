@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 import { buildFileTree } from "../../lib/buildFileTree";
 import { FileNodeItem } from "./FileNodeItem";
 
@@ -8,12 +8,12 @@ type FileTreeProps = {
   /** ツリー化するタスク一覧 */
   tasks: Task[];
   /** 現在選択中のタスク ID（ハイライト用） */
-  selectedTaskId?: string | null;
+  selectedTaskId?: TaskId | null;
   /**
    * ファイル（タスク）選択時のコールバック。
    * @param taskId - 選択されたタスクの ID
    */
-  onSelectTask: (taskId: string) => void;
+  onSelectTask: (taskId: TaskId) => void;
 };
 
 /**
@@ -29,7 +29,7 @@ export const FileTree = ({
 }: FileTreeProps) => {
   const roots = useMemo(() => buildFileTree(tasks), [tasks]);
   const handleSelect = useCallback(
-    (taskId: string) => onSelectTask(taskId),
+    (taskId: TaskId) => onSelectTask(taskId),
     [onSelectTask],
   );
 

@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import type { MilestoneDefinition } from "@/domains/milestone";
 import type { MilestoneProjectionMap } from "@/domains/milestone-projection";
 import type { TaskProjectionMap } from "@/domains/task-projection";
@@ -55,23 +56,37 @@ const milestoneProjections: MilestoneProjectionMap = new Map([
     {
       done: 1,
       total: 3,
-      taskFilePaths: ["tasks/b.md", "tasks/missing.md", "tasks/a.md"],
+      taskFilePaths: [
+        taskFilePathFixture("tasks/b.md"),
+        taskFilePathFixture("tasks/missing.md"),
+        taskFilePathFixture("tasks/a.md"),
+      ],
     },
   ],
-  ["__proto__", { done: 1, total: 1, taskFilePaths: ["tasks/special.md"] }],
+  [
+    "__proto__",
+    {
+      done: 1,
+      total: 1,
+      taskFilePaths: [taskFilePathFixture("tasks/special.md")],
+    },
+  ],
   [
     "ghost",
     {
       done: 0,
       total: 2,
-      taskFilePaths: ["tasks/ghost.md", "tasks/ghost-missing.md"],
+      taskFilePaths: [
+        taskFilePathFixture("tasks/ghost.md"),
+        taskFilePathFixture("tasks/ghost-missing.md"),
+      ],
     },
   ],
 ]);
 
 const taskProjections: TaskProjectionMap = new Map([
   [
-    "tasks/a.md",
+    taskFilePathFixture("tasks/a.md"),
     {
       subIssueProgress: { done: 0, total: 0 },
       isDone: false,
@@ -79,7 +94,7 @@ const taskProjections: TaskProjectionMap = new Map([
     },
   ],
   [
-    "tasks/b.md",
+    taskFilePathFixture("tasks/b.md"),
     {
       subIssueProgress: { done: 0, total: 0 },
       isDone: true,

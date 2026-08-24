@@ -7,7 +7,7 @@ import type {
   TaskProjectionMap,
 } from "@/domains/task-projection";
 import type { Column } from "@/types/column";
-import { Task, type TaskPayload } from "@/types/task";
+import { Task, type TaskFilePath, type TaskPayload } from "@/types/task";
 
 /** Storybook 用の固定カラム配列。 */
 export const initialColumns: Column[] = [
@@ -111,7 +111,7 @@ export const buildProjectionsFixture = (
   tasks: readonly Task[],
   doneColumn: string,
 ): TaskProjectionMap => {
-  const childrenOf = new Map<string, string[]>();
+  const childrenOf = new Map<TaskFilePath, TaskFilePath[]>();
   for (const task of tasks) {
     const parent = task.hierarchy.parentFilePath;
     if (parent === undefined || parent === task.filePath) {
@@ -135,9 +135,9 @@ export const buildProjectionsFixture = (
   }
 
   const statusOf = new Map(tasks.map((task) => [task.filePath, task.status]));
-  const map = new Map<string, TaskProjection>();
+  const map = new Map<TaskFilePath, TaskProjection>();
   for (const task of tasks) {
-    const visited = new Set<string>([task.filePath]);
+    const visited = new Set<TaskFilePath>([task.filePath]);
     const stack = [...(childrenOf.get(task.filePath) ?? [])];
     let done = 0;
     let total = 0;

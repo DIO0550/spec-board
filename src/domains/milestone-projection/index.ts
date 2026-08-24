@@ -1,3 +1,5 @@
+import type { TaskFilePath } from "@/domains/task-identity";
+
 /** BE wire payload 1 milestone 分の入力型。 */
 export type MilestoneProjectionPayloadInput = Readonly<{
   done: number;
@@ -14,7 +16,7 @@ export type MilestoneProjectionsPayloadInput = Readonly<
 export type MilestoneProjection = Readonly<{
   done: number;
   total: number;
-  taskFilePaths: readonly string[];
+  taskFilePaths: readonly TaskFilePath[];
 }>;
 
 /** raw milestone 名から projection を引く安全な domain Map。 */
@@ -23,7 +25,7 @@ export type MilestoneProjectionMap = ReadonlyMap<string, MilestoneProjection>;
 const EMPTY: MilestoneProjection = Object.freeze({
   done: 0,
   total: 0,
-  taskFilePaths: Object.freeze([]) as readonly string[],
+  taskFilePaths: Object.freeze([]) as readonly TaskFilePath[],
 });
 
 const EMPTY_MAP: MilestoneProjectionMap = new Map();
@@ -46,7 +48,9 @@ export const MilestoneProjection = {
         {
           done: value.done,
           total: value.total,
-          taskFilePaths: [...value.taskFilePaths],
+          taskFilePaths: value.taskFilePaths.map(
+            (filePath) => filePath as TaskFilePath,
+          ),
         },
       ]),
     ),

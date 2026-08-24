@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { TaskForest } from "@/domains/task-forest";
 import { TaskProjection } from "@/domains/task-projection";
 import type { BoardWorkspaceProps } from "@/features/board/components/BoardWorkspace";
@@ -45,7 +46,7 @@ const makeTask = (overrides: Partial<TaskPayload> = {}): Task =>
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/x.md",
+    filePath: taskFilePathFixture("tasks/x.md"),
     ...overrides,
   });
 
@@ -126,7 +127,13 @@ test.each(
 }) => {
   renderActiveBoardView({
     viewMode,
-    filtered: [makeTask({ id: "a", filePath: "tasks/a.md", title: "タスクA" })],
+    filtered: [
+      makeTask({
+        id: "a",
+        filePath: taskFilePathFixture("tasks/a.md"),
+        title: "タスクA",
+      }),
+    ],
     workspace: makeWorkspace(),
   });
   await vi.waitFor(() => {
@@ -139,8 +146,16 @@ test("非 board ビューへ filtered が委譲され件数分描画される", 
   renderActiveBoardView({
     viewMode: "list",
     filtered: [
-      makeTask({ id: "a", filePath: "tasks/a.md", title: "A" }),
-      makeTask({ id: "b", filePath: "tasks/b.md", title: "B" }),
+      makeTask({
+        id: "a",
+        filePath: taskFilePathFixture("tasks/a.md"),
+        title: "A",
+      }),
+      makeTask({
+        id: "b",
+        filePath: taskFilePathFixture("tasks/b.md"),
+        title: "B",
+      }),
     ],
     workspace: makeWorkspace(),
   });
@@ -200,7 +215,13 @@ test.each(
   const onTaskClick = vi.fn();
   renderActiveBoardView({
     viewMode,
-    filtered: [makeTask({ id: "a", filePath: "tasks/a.md", title: "タスクA" })],
+    filtered: [
+      makeTask({
+        id: "a",
+        filePath: taskFilePathFixture("tasks/a.md"),
+        title: "タスクA",
+      }),
+    ],
     workspace: makeWorkspace({ onTaskClick }),
   });
   await vi.waitFor(() => {
@@ -217,17 +238,17 @@ test.each(
 test("board で allTasks(絞り込み前) と filtered(絞り込み後) が別々に BoardView へ委譲される", async () => {
   const parent = makeTask({
     id: "p",
-    filePath: "tasks/p.md",
+    filePath: taskFilePathFixture("tasks/p.md"),
     title: "親",
     status: "Todo",
-    children: ["tasks/c.md"],
+    children: [taskFilePathFixture("tasks/c.md")],
   });
   const child = makeTask({
     id: "c",
-    filePath: "tasks/c.md",
+    filePath: taskFilePathFixture("tasks/c.md"),
     title: "子",
     status: "Done",
-    parent: "tasks/p.md",
+    parent: taskFilePathFixture("tasks/p.md"),
   });
   renderActiveBoardView({
     viewMode: "board",
@@ -239,11 +260,11 @@ test("board で allTasks(絞り込み前) と filtered(絞り込み後) が別�
       // 集計は BE 由来。子 1 件のうち done 1。
       projections: new Map([
         [
-          "tasks/p.md",
+          taskFilePathFixture("tasks/p.md"),
           {
             subIssueProgress: { done: 1, total: 1 },
             isDone: false,
-            childFilePaths: ["tasks/c.md"],
+            childFilePaths: [taskFilePathFixture("tasks/c.md")],
           },
         ],
       ]),

@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 /**
  * 移動先カラムの新しい filePaths を生成する純粋関数。
@@ -23,11 +23,11 @@ import type { Task } from "@/types/task";
  */
 export const buildMovedFilePaths = (
   tasks: readonly Task[],
-  taskFilePath: string,
+  taskFilePath: TaskFilePath,
   fromColumn: string,
   toColumn: string,
   toIndex: number,
-): string[] => {
+): TaskFilePath[] => {
   const filePathsInColumn = tasks
     .filter((t) => t.status === toColumn)
     .map((t) => t.filePath);

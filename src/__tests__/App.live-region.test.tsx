@@ -11,6 +11,7 @@ import {
   vi,
 } from "vitest";
 import { App } from "@/App";
+import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
 import { WATCHER_SESSION_FIXTURE } from "@/domains/watcher-session/__tests__/fixture";
 import { DRAG_MIME_TYPE } from "@/features/board/components/Board/mime";
 import {
@@ -116,7 +117,7 @@ const taskA: Task = Task.fromPayload({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/a.md",
+  filePath: taskFilePathFixture("tasks/a.md"),
 });
 
 const taskB: Task = Task.fromPayload({
@@ -128,7 +129,7 @@ const taskB: Task = Task.fromPayload({
   children: [],
   reverseLinks: [],
   body: "",
-  filePath: "tasks/b.md",
+  filePath: taskFilePathFixture("tasks/b.md"),
 });
 
 const payload: OpenProjectPayload = {
@@ -192,7 +193,7 @@ const dropFirstCardToDone = async (): Promise<void> => {
     card?.dispatchEvent(createDragEvent("dragstart"));
   });
   const drop = createDragEvent("drop");
-  drop.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  drop.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   await act(async () => {
     doneSection?.dispatchEvent(drop);
   });
@@ -218,7 +219,7 @@ const dropFirstCardWithinTodo = async (): Promise<void> => {
     card?.dispatchEvent(createDragEvent("dragstart"));
   });
   const drop = createDragEvent("drop");
-  drop.dataTransfer.setData(DRAG_MIME_TYPE, "tasks/a.md");
+  drop.dataTransfer.setData(DRAG_MIME_TYPE, taskFilePathFixture("tasks/a.md"));
   await act(async () => {
     todoSection?.dispatchEvent(drop);
   });
@@ -404,10 +405,10 @@ const openParentChildProject = async (): Promise<void> => {
     status: "Todo",
     labels: [],
     links: [],
-    children: ["tasks/c1.md"],
+    children: [taskFilePathFixture("tasks/c1.md")],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/p1.md",
+    filePath: taskFilePathFixture("tasks/p1.md"),
   });
   const childTask: Task = Task.fromPayload({
     id: "c1",
@@ -418,8 +419,8 @@ const openParentChildProject = async (): Promise<void> => {
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/c1.md",
-    parent: "tasks/p1.md",
+    filePath: taskFilePathFixture("tasks/c1.md"),
+    parent: taskFilePathFixture("tasks/p1.md"),
   });
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pc"));
   openProjectMock.mockResolvedValueOnce(
@@ -431,11 +432,11 @@ const openParentChildProject = async (): Promise<void> => {
       // 直下子の解決は BE projection の childFilePaths 経由になった。
       projections: new Map([
         [
-          "tasks/p1.md",
+          taskFilePathFixture("tasks/p1.md"),
           {
             subIssueProgress: { done: 0, total: 1 },
             isDone: false,
-            childFilePaths: ["tasks/c1.md"],
+            childFilePaths: [taskFilePathFixture("tasks/c1.md")],
           },
         ],
       ]),
@@ -539,30 +540,33 @@ const openLinkedTasksProject = async (options?: {
   withSelfLink?: boolean;
 }): Promise<void> => {
   const linkedA: Task = Task.fromPayload({
-    id: "tasks/la.md",
+    id: taskFilePathFixture("tasks/la.md"),
     title: "A",
     status: "Todo",
     labels: [],
     links: options?.withSelfLink
-      ? ["tasks/lb.md", "tasks/la.md"]
+      ? [taskFilePathFixture("tasks/lb.md"), taskFilePathFixture("tasks/la.md")]
       : options?.withBrokenLink
-        ? ["tasks/lb.md", "tasks/missing.md"]
-        : ["tasks/lb.md"],
+        ? [
+            taskFilePathFixture("tasks/lb.md"),
+            taskFilePathFixture("tasks/missing.md"),
+          ]
+        : [taskFilePathFixture("tasks/lb.md")],
     children: [],
     reverseLinks: [],
     body: "",
-    filePath: "tasks/la.md",
+    filePath: taskFilePathFixture("tasks/la.md"),
   });
   const linkedB: Task = Task.fromPayload({
-    id: "tasks/lb.md",
+    id: taskFilePathFixture("tasks/lb.md"),
     title: "B",
     status: "Todo",
     labels: [],
     links: [],
     children: [],
-    reverseLinks: ["tasks/la.md"],
+    reverseLinks: [taskFilePathFixture("tasks/la.md")],
     body: "",
-    filePath: "tasks/lb.md",
+    filePath: taskFilePathFixture("tasks/lb.md"),
   });
   openDirectoryDialogMock.mockResolvedValueOnce(Result.ok("/pl"));
   openProjectMock.mockResolvedValueOnce(
@@ -635,7 +639,7 @@ test("DetailScreen の links 行クリックで LiveRegion に「{title}を表�
   await clickTaskCardByTitle("A");
   expect(detailTitleValue()).toBe("A");
 
-  await clickLinkedNavigate("tasks/lb.md");
+  await clickLinkedNavigate(taskFilePathFixture("tasks/lb.md"));
 
   expect(liveRegionText()).toBe("「B」を表示中");
   expect(detailTitleValue()).toBe("B");
@@ -647,7 +651,7 @@ test("DetailScreen の reverseLinks 行クリックでも in-place 切替され�
   await clickTaskCardByTitle("B");
   expect(detailTitleValue()).toBe("B");
 
-  await clickReverseNavigate("tasks/la.md");
+  await clickReverseNavigate(taskFilePathFixture("tasks/la.md"));
 
   expect(liveRegionText()).toBe("「A」を表示中");
   expect(detailTitleValue()).toBe("A");
@@ -676,7 +680,7 @@ test("自タスクを指す links 行クリックでは selectedTaskId 不変、
   await clickTaskCardByTitle("A");
   expect(detailTitleValue()).toBe("A");
 
-  await clickLinkedNavigate("tasks/la.md");
+  await clickLinkedNavigate(taskFilePathFixture("tasks/la.md"));
 
   expect(detailTitleValue()).toBe("A");
   expect(liveRegionText()).toContain("「A」を表示中");

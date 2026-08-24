@@ -4,12 +4,12 @@ import {
   TaskProjection,
   type TaskProjectionMap,
 } from "@/domains/task-projection";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath } from "@/types/task";
 
 /** useChildTasks の引数 */
 export type UseChildTasksArgs = {
   /** 親タスクのファイルパス */
-  parentFilePath: string;
+  parentFilePath: TaskFilePath;
   /** 全タスク一覧（未指定なら空配列扱い）。projection の filePath から実体を引くのに使う */
   allTasks?: readonly Task[];
   /**
@@ -35,7 +35,7 @@ export type UseChildTasksResult = {
    * @param filePath - 判定対象 task の filePath
    * @returns 完了カラムに居れば true
    */
-  isDone: (filePath: string) => boolean;
+  isDone: (filePath: TaskFilePath) => boolean;
 };
 
 const EMPTY_TASKS: readonly Task[] = [];
@@ -80,7 +80,7 @@ export const useChildTasks = (args: UseChildTasksArgs): UseChildTasksResult => {
   );
 
   const isDone = useCallback(
-    (filePath: string): boolean =>
+    (filePath: TaskFilePath): boolean =>
       TaskProjection.findByFilePath(projections, filePath).isDone,
     [projections],
   );

@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { taskIdFixture } from "@/domains/__tests__/taskFixtures";
 import { resolveCloseTarget } from "../resolveCloseTarget";
 
 test("board 起点は board へ戻り selectedTaskId は null", () => {
@@ -9,9 +10,9 @@ test("board 起点は board へ戻り selectedTaskId は null", () => {
 });
 
 test("detail 起点 + taskId ありは detail へ復帰し selectedTaskId を復元する", () => {
-  expect(resolveCloseTarget("detail", "tasks/t1.md")).toEqual({
+  expect(resolveCloseTarget("detail", taskIdFixture("tasks/t1.md"))).toEqual({
     view: "detail",
-    selectedTaskId: "tasks/t1.md",
+    selectedTaskId: taskIdFixture("tasks/t1.md"),
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Task } from "@/types/task";
+import type { Task, TaskId } from "@/types/task";
 
 /** ParentLink の Props */
 export type ParentLinkProps = {
@@ -8,7 +8,7 @@ export type ParentLinkProps = {
    * 親タスク選択時のコールバック。
    * @param taskId - 遷移先となる親タスクの id
    */
-  onSelect: (taskId: string) => void;
+  onSelect: (taskId: TaskId) => void;
 };
 
 /**

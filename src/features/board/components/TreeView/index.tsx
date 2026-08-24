@@ -2,13 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { ColumnColor } from "@/domains/column-color";
 import { TaskForest, type TaskTreeNode } from "@/domains/task-forest";
 import type { Column } from "@/types/column";
-import type { Task } from "@/types/task";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import { TreeNodeItem } from "./TreeNodeItem";
 
 type TreeViewProps = {
   tasks: Task[];
   taskTree: TaskForest;
-  onTaskClick?: (taskId: string) => void;
+  onTaskClick?: (taskId: TaskId) => void;
   /** status sectionの順序・色。 */
   columns?: readonly Column[];
   /** toolbarに表示するproject名。 */
@@ -27,8 +27,8 @@ type Progress = { readonly done: number; readonly total: number };
  * @param roots - 走査するツリーの根
  * @returns 子を持つノードの filePath 集合
  */
-const collectExpandablePaths = (roots: TaskForest): Set<string> => {
-  const result = new Set<string>();
+const collectExpandablePaths = (roots: TaskForest): Set<TaskFilePath> => {
+  const result = new Set<TaskFilePath>();
   const stack = [...roots];
   while (stack.length > 0) {
     const current = stack.pop();
@@ -51,10 +51,10 @@ const collectExpandablePaths = (roots: TaskForest): Set<string> => {
  */
 const buildProgress = (
   roots: TaskForest,
-  tasksByFilePath: ReadonlyMap<string, Task>,
+  tasksByFilePath: ReadonlyMap<TaskFilePath, Task>,
   doneColumn: string,
-): ReadonlyMap<string, Progress> => {
-  const result = new Map<string, Progress>();
+): ReadonlyMap<TaskFilePath, Progress> => {
+  const result = new Map<TaskFilePath, Progress>();
   const pending: Array<{
     readonly node: TaskTreeNode;
     readonly visited: boolean;
@@ -111,7 +111,7 @@ export const TreeView = ({
     [tasks],
   );
   const expandablePaths = useMemo(() => collectExpandablePaths(roots), [roots]);
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() =>
+  const [expandedPaths, setExpandedPaths] = useState<Set<TaskFilePath>>(() =>
     defaultExpanded ? new Set(expandablePaths) : new Set(),
   );
   const progressByFilePath = useMemo(
@@ -143,10 +143,10 @@ export const TreeView = ({
   );
 
   const handleSelect = useCallback(
-    (taskId: string) => onTaskClick?.(taskId),
+    (taskId: TaskId) => onTaskClick?.(taskId),
     [onTaskClick],
   );
-  const handleToggle = useCallback((filePath: string) => {
+  const handleToggle = useCallback((filePath: TaskFilePath) => {
     setExpandedPaths((current) => {
       const next = new Set(current);
       if (next.has(filePath)) {

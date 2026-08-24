@@ -1,3 +1,5 @@
+import type { TaskFilePath } from "@/domains/task-identity";
+
 /**
  * `TaskForest.fromPayload` が受け取る 1 ノード分の raw 入力。
  * IPC 層の型を import せず domain 側に構造型を置き、依存を IPC → domain の
@@ -16,8 +18,8 @@ export type TaskForestPayloadInput = readonly TaskTreeNodePayloadInput[];
  * `depth` は持たない（ネスト構造から自明。描画側が親から depth + 1 を渡す）。
  */
 export type TaskTreeNode = {
-  /** BE が解決した raw な filePath（`Task.filePath` と同じ基準。正規化しない） */
-  readonly filePath: string;
+  /** BE が解決したcanonical filePath（`Task.filePath` と同じ基準） */
+  readonly filePath: TaskFilePath;
   /** 直接の子（board 表示順） */
   readonly children: readonly TaskTreeNode[];
 };
@@ -80,7 +82,7 @@ const forestEquals = (left: TaskForest, right: TaskForest): boolean => {
 
 /** `prune` の組み立て途中ノード。children を後から差し替えるため可変で持つ。 */
 type PrunedNode = {
-  readonly filePath: string;
+  readonly filePath: TaskFilePath;
   children: PrunedNode[];
 };
 
@@ -95,9 +97,11 @@ type PrunedNode = {
  * @param forest - BE 由来の正準ツリー
  * @returns 子 filePath -> 親 filePath の Map
  */
-const buildParentByFilePath = (forest: TaskForest): Map<string, string> => {
-  const parentByFilePath = new Map<string, string>();
-  const visited = new Set<string>();
+const buildParentByFilePath = (
+  forest: TaskForest,
+): Map<TaskFilePath, TaskFilePath> => {
+  const parentByFilePath = new Map<TaskFilePath, TaskFilePath>();
+  const visited = new Set<TaskFilePath>();
   const stack: TaskTreeNode[] = [...forest].reverse();
   while (stack.length > 0) {
     const current = stack[stack.length - 1];
@@ -122,7 +126,10 @@ const buildParentByFilePath = (forest: TaskForest): Map<string, string> => {
  * @param start - 走査の起点ノード
  * @param reachable - 到達済み filePath の集合（この関数が書き加える）
  */
-const markReachable = (start: PrunedNode, reachable: Set<string>): void => {
+const markReachable = (
+  start: PrunedNode,
+  reachable: Set<TaskFilePath>,
+): void => {
   const stack: PrunedNode[] = [start];
   while (stack.length > 0) {
     const current = stack[stack.length - 1];
@@ -142,18 +149,18 @@ export const TaskForest = {
   /**
    * IPC の raw payload を domain 表現へ写す。
    *
-   * `TaskTreeNodePayloadInput` と `TaskTreeNode` は構造的に同一なので、再帰的な
-   * 組み直しは行わず payload の参照をそのまま採用する（`TaskProjection.fromPayload`
-   * が `childFilePaths` を素通ししているのと同じ先例）。再構築すると `get_tasks` の
-   * たびに全ノードを新規割り当てし、直後に `merge` が旧参照へ戻すことになる。
-   * 代入可能性は構造的部分型で保証されるため型アサーション（`as`）は使わない。
+   * BEがcanonical化済みのpathを返すwire契約をadapter境界で`TaskFilePath`へbrand化する。
+   * brandはruntime表現を変えないため、再帰的な組み直しは行わずpayload参照を採用する。
+   * 再構築すると`get_tasks`のたびに全ノードを新規割り当てし、直後に`merge`が旧参照へ
+   * 戻すことになる。
    *
    * 素通しでも変換関数として残すのは、将来 BE の payload 形状が domain と乖離した
    * ときの単一の変換点にするため（他 domain と codec の呼び出し形も揃う）。
    * @param payload - BE から受け取った taskTree
    * @returns domain 表現の forest
    */
-  fromPayload: (payload: TaskForestPayloadInput): TaskForest => payload,
+  fromPayload: (payload: TaskForestPayloadInput): TaskForest =>
+    payload as unknown as TaskForest,
 
   /**
    * 2 つの forest が構造・順序ともに同一かを判定する。
@@ -215,13 +222,13 @@ export const TaskForest = {
    */
   prune: (
     forest: TaskForest,
-    visibleFilePaths: readonly string[],
+    visibleFilePaths: readonly TaskFilePath[],
   ): TaskForest => {
     const parentByFilePath = buildParentByFilePath(forest);
 
     // Map の反復順 = 挿入順 = board 順。以降のフェーズはこの順で走査するので、
     // 別に順序配列を持たなくても root 列・children 列が board 順に揃う。
-    const nodeByFilePath = new Map<string, PrunedNode>();
+    const nodeByFilePath = new Map<TaskFilePath, PrunedNode>();
     for (const filePath of visibleFilePaths) {
       if (nodeByFilePath.has(filePath)) {
         continue;
@@ -234,7 +241,7 @@ export const TaskForest = {
      * @param filePath - 親を引きたいノードの filePath
      * @returns 可視な親ノード。tree に親が無い / 親が不可視なら `undefined`
      */
-    const parentNodeOf = (filePath: string): PrunedNode | undefined => {
+    const parentNodeOf = (filePath: TaskFilePath): PrunedNode | undefined => {
       const parentFilePath = parentByFilePath.get(filePath);
       if (parentFilePath === undefined) {
         return undefined;
@@ -255,7 +262,7 @@ export const TaskForest = {
     // 壊れた payload（親が相互参照）では、どの root からも辿れないノードが残る。
     // 親の children から外してから root へ足すことで、出力が必ず有限の森になる。
     // 外さずに root へ足すだけだと相互参照が残り、描画側が無限に再帰する。
-    const reachable = new Set<string>();
+    const reachable = new Set<TaskFilePath>();
     for (const root of roots) {
       markReachable(root, reachable);
     }
