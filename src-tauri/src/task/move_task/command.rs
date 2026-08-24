@@ -330,12 +330,8 @@ fn write_config_content(
 /// pathがexisting symlinkならconfig writeを拒否する。
 fn reject_existing_symlink(path: &Path) -> Result<(), ConfigIoError> {
     match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(ConfigIoError::Io {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(ConfigIoError::SymlinkRejected {
             path: path.to_path_buf(),
-            source: std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("{} is a symlink", path.display()),
-            ),
         }),
         Ok(_) => Ok(()),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
