@@ -207,6 +207,8 @@ flowchart TD
 - canonical resolver は全 task を `filePath` 昇順に正規化してから、parent 検証、`children`、`reverseLinks`、graph warning を全件再計算する。したがって `children` / `reverseLinks` の配列順も参照元 task の `filePath` 昇順で安定する
 - parser が生成した warning と graph resolver が生成した `parentNotFound` / `parentCycle` warning は内部で分離して保持し、IPC では parser warning → graph warning の順に連結する
 - Rust / Tauri IPC の task payload は出力専用の projection であり、`parent` / `children` / `links` / `reverseLinks` を top-level に持つ従来どおりの flat camelCase JSON とする。キー順、`Option` の省略、`draft: false` の省略を含む wire 形状は変更しない
+- `TaskWarning.field` の canonical wire は値がある場合だけ文字列キーを出力し、未指定時はキー自体を省略する。canonical payload は `field: null` を出力しない
+- frontend の IPC 入力adapterは旧backendが出力した `field: null` も互換入力として受理し、field省略とともにdomain `TaskWarning`のキーなしへ正規化する。文字列は空文字を含めて保持し、frontend domain / canonical `TaskPayload`へ`null`を持ち込まない
 - フロントエンド domain の `Task` は IPC payload を `TaskPayload` として受け取った後、`hierarchy.parentFilePath` / `hierarchy.childFilePaths` と `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に変換して保持する
 - `title` が未定義の場合はファイル名（拡張子除去、ハイフンをスペースに変換）を fallback とし、`missingTitleUsedFileName` warning を付与する
 - `title` が空文字または文字列以外の場合はファイル名 fallback とし、`invalidTitleUsedFileName` warning を付与する
@@ -438,6 +440,7 @@ create / update の strict parent 検証は I/O より前に従来どおり実�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.4 | 2026-08-24 | Issue #611: TaskWarning.field未指定のcanonical wireをキー省略へ統一し、legacy nullをfrontend入力adapterでdomainキーなしへ正規化する互換契約を明記 | - |
 | 1.3 | 2026-08-24 | Issue #605: update_task wireの3値互換を維持し、Args adapterでparent / milestone / draftを分類済みPatchへ変換する責務境界を明記 | - |
 | 1.2 | 2026-08-23 | Issue #602: resident Task の identity を canonical filePath の単一保存とし、wire id/filePath の同値・形状互換を明記 | - |
 | 1.1 | 2026-08-23 | Issue #601: parse-only candidate と resolved resident Task の型境界、raw/effective parent、warning 分離、全 mutation の canonical full resolver、path 昇順の派生値、出力専用 IPC projection と wire/disk/error 互換契約を明記 | - |
