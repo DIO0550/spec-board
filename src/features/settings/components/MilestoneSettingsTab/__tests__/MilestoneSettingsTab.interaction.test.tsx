@@ -247,6 +247,8 @@ test.each([
   ["", undefined],
   ["3", 3],
   ["0", 0],
+  ["4294967295", 4_294_967_295],
+  ["4294967296", undefined],
 ])("新規作成で order=%j は %j に正規化される（部分パースを受理しない）", async (input, expected) => {
   createMock.mockReset();
   createMock.mockResolvedValue(Result.ok(undefined));
