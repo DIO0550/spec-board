@@ -1,4 +1,5 @@
 import { TaskSelect } from "@/components/TaskSelect";
+import { parentReferencesTaskPath } from "@/domains/task-path";
 import type { Task, TaskFilePath } from "@/types/task";
 
 type ParentTaskSelectProps = {
@@ -42,7 +43,8 @@ export const ParentTaskSelect = ({
   const resolvedValue =
     value === undefined
       ? null
-      : (tasks.find((task) => task.filePath === value)?.filePath ?? null);
+      : (tasks.find((task) => parentReferencesTaskPath(value, task.filePath))
+          ?.filePath ?? null);
   const unresolvedValueLabel =
     value !== undefined && resolvedValue === null ? value : undefined;
 
