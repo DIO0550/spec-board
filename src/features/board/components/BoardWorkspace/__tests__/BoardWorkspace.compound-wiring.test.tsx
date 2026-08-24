@@ -53,6 +53,8 @@ type RenderOptions = {
   onAddTask?: (columnName: string) => void;
   /** 新規カラム追加コールバック（省略時は AddColumnButton 非表示） */
   onAddColumn?: (columnName: string) => void;
+  /** GUIDE.mdタブ選択コールバック（省略時はタブ非表示） */
+  onGuideClick?: () => void;
 };
 
 const renderWorkspace = (options: RenderOptions) => {
@@ -69,6 +71,7 @@ const renderWorkspace = (options: RenderOptions) => {
         onAddTask={options.onAddTask ?? (() => {})}
         onTaskClick={() => {}}
         onAddColumn={options.onAddColumn}
+        onGuideClick={options.onGuideClick}
       />,
     );
   });
@@ -198,6 +201,33 @@ test("5番目のロードマップタブからEpicロードマップへ到達で
     expect(container?.querySelector("[data-roadmap]")).not.toBeNull();
   });
   expect(localStorage.getItem("spec-board:viewMode")).toBe("roadmap");
+});
+
+test("GUIDE.mdタブはcallbackだけを呼びviewとstorageを変更しない", async () => {
+  localStorage.setItem("spec-board:viewMode", "roadmap");
+  const onGuideClick = vi.fn();
+  renderWorkspace({
+    columns: [{ name: "Todo", order: 0 }],
+    onGuideClick,
+  });
+  const guideTab = container?.querySelector<HTMLButtonElement>(
+    "[role='tab'][aria-controls='board-view-panel-guide']",
+  );
+
+  act(() => guideTab?.click());
+
+  expect(onGuideClick).toHaveBeenCalledOnce();
+  expect(
+    container?.querySelector("[data-board-view='roadmap']"),
+  ).not.toBeNull();
+  expect(localStorage.getItem("spec-board:viewMode")).toBe("roadmap");
+});
+
+test("localStorageの未知view modeはboardへ正規化する", () => {
+  localStorage.setItem("spec-board:viewMode", "unknown");
+  renderWorkspace({ columns: [{ name: "Todo", order: 0 }] });
+
+  expect(container?.querySelector("[data-board-view='board']")).not.toBeNull();
 });
 
 test("参照デザインのsubbarに検索と折りたたみ式フィルタ導線を表示する", async () => {
