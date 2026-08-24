@@ -743,6 +743,8 @@ fn debounce_duration_constant_is_100ms() {
 // ちは残る。CI のスレッドスケジューリング遅延を吸収するため、各
 // `recv_timeout` には寛大なタイムアウト（数百 ms 〜数秒）を設け、
 // 絶対時間ではなくイベント順序で仕様を検証している。
+// 複数 path の同一 batch 集約と deadline 順（同点は path 順）は、
+// 固定 `Instant` を使う `pending_changes_tests` で決定的に検証する。
 // ─────────────────────────────────────────────────────────────────
 
 fn modify_event(path: &Path) -> NotifyEvent {
@@ -821,39 +823,6 @@ fn spawn_adapter_slides_deadline_when_same_path_arrives_within_window() {
             Err(RecvTimeoutError::Timeout)
         ),
         "sliding 集約により 2 回投入でも発火は 1 batch のみであるべき"
-    );
-
-    drop(notify_tx);
-    let _ = handle.join();
-}
-
-#[test]
-fn spawn_adapter_collapses_changes_to_different_paths_into_one_batch() {
-    let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
-    let (fs_rx, handle) = spawn_adapter(notify_rx);
-    let first = PathBuf::from("/tmp/test_multi_z");
-    let second = PathBuf::from("/tmp/test_multi_a");
-
-    // 2 件を間を空けずに投入して同一ウィンドウへ入れる。順序は path
-    // 昇順ではなく deadline 昇順（= 到着順）になることを固定する。
-    notify_tx.send(Ok(modify_event(&first))).unwrap();
-    notify_tx.send(Ok(modify_event(&second))).unwrap();
-
-    let batch = fs_rx
-        .recv_timeout(Duration::from_secs(2))
-        .expect("debounce 満了後に 1 batch 届くべき");
-    assert_eq!(
-        vec![first, second],
-        batch.upserted(),
-        "別 path の変更は 1 batch にまとまり、deadline 昇順で並ぶべき"
-    );
-
-    assert!(
-        matches!(
-            fs_rx.recv_timeout(Duration::from_millis(300)),
-            Err(RecvTimeoutError::Timeout)
-        ),
-        "同一ウィンドウ内の変更は 1 batch に収まるべき"
     );
 
     drop(notify_tx);
