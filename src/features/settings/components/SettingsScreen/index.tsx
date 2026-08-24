@@ -6,7 +6,11 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 import type { UseConfigFilesResult } from "../../hooks/useConfigFiles";
 import type { UseMilestoneMutationsResult } from "../../hooks/useMilestoneMutations";
-import { type NonEmptySettingsTabs, SettingsTab } from "../../types";
+import {
+  type NonEmptySettingsTabs,
+  SettingsTab,
+  type SettingsTabId,
+} from "../../types";
 import { AppearanceSettingsTab } from "../AppearanceSettingsTab";
 import { ArchiveSettingsTab } from "../ArchiveSettingsTab";
 import { ConfigFileTab } from "../ConfigFileTab";
@@ -33,7 +37,7 @@ const SETTINGS_TABS: NonEmptySettingsTabs = [
 
 type ActivePanelProps = {
   /** アクティブタブの識別子 */
-  tabId: string;
+  tabId: SettingsTabId;
   /** ラベルリソース（labels タブへ配る） */
   labels: LabelsResource;
   /** マイルストーンリソース（milestones タブへ配る） */
@@ -62,9 +66,9 @@ type ActivePanelProps = {
 /**
  * アクティブタブ ID に対応するパネルを描画するコンポーネント。
  * id → コンポーネントの対応付けは view 層の責務として本コンポーネント（switch）に
- * 閉じ込め、タブのデータ型（SettingsTab）には持たせない。未知 id は描画しない。
+ * 閉じ込め、タブのデータ型（SettingsTab）には持たせない。
  * @param props - tabId とリソースを含む props
- * @returns 対応するパネル要素、未知 id なら null
+ * @returns 対応するパネル要素
  */
 const ActivePanel = ({
   tabId,
@@ -137,7 +141,7 @@ const ActivePanel = ({
         />
       );
     default:
-      return null;
+      return tabId satisfies never;
   }
 };
 
@@ -167,11 +171,11 @@ type SettingsScreenProps = {
    */
   onLabelUsageClick: (labelName: string) => void;
   /** 初期表示タブ。Story/外部ルーティングから直接到達するために使う。 */
-  initialTabId?: string;
+  initialTabId?: SettingsTabId;
   /** 戻るaction。App未接続時はno-op。 */
   onBack?: () => void;
   /** マイルストーン選択時に専用ビューへ遷移するコールバック。 */
-  onSettingsTab?: (tabId: string) => void;
+  onSettingsTab?: (tabId: SettingsTabId) => void;
   projectName?: string;
   projectPath?: string;
   tasks?: readonly Task[];
@@ -211,7 +215,9 @@ export const SettingsScreen = ({
   configFiles: configFilesProp,
   onSettingsTab,
 }: SettingsScreenProps) => {
-  const [activeTabId, setActiveTabId] = useState<string>(initialTabId);
+  const [activeTabId, setActiveTabId] = useState<SettingsTabId>(
+    () => SettingsTab.selectActive(SETTINGS_TABS, initialTabId).id,
+  );
   const tabs = useMemo<NonEmptySettingsTabs>(
     () => [
       { ...SETTINGS_TABS[0], count: labels.labels.length },

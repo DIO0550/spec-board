@@ -1,7 +1,7 @@
-import type { SettingsTab } from "../../types";
+import type { SettingsTab, SettingsTabId } from "../../types";
 
 type SubNavIconProps = {
-  tabId: string;
+  tabId: SettingsTabId;
 };
 
 /**
@@ -62,13 +62,14 @@ const SubNavIcon = ({ tabId }: SubNavIconProps) => {
  * @param tabId - タブ ID
  * @returns tab 要素の DOM id
  */
-export const subNavTabId = (tabId: string) => `settings-tab-${tabId}`;
+export const subNavTabId = (tabId: SettingsTabId) => `settings-tab-${tabId}`;
 /**
  * tabpanel の DOM id を組み立てる（SettingsScreen 側と共有する規約）
  * @param tabId - タブ ID
  * @returns tabpanel 要素の DOM id
  */
-export const subNavPanelId = (tabId: string) => `settings-panel-${tabId}`;
+export const subNavPanelId = (tabId: SettingsTabId) =>
+  `settings-panel-${tabId}`;
 
 /** SubNav の Props */
 type SubNavProps = {
@@ -79,12 +80,12 @@ type SubNavProps = {
    */
   tabs: readonly SettingsTab[];
   /** 現在アクティブなタブ ID */
-  activeTabId: string;
+  activeTabId: SettingsTabId;
   /**
    * タブ選択ハンドラ
    * @param tabId - 選択されたタブ ID
    */
-  onSelect: (tabId: string) => void;
+  onSelect: (tabId: SettingsTabId) => void;
   /** 設定画面から戻るaction。 */
   onBack?: () => void;
   /** 現在のproject context。 */

@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { SettingsTabId } from "@/features/settings";
 import { ThemeProvider } from "@/features/shell/hooks/useTheme";
 import type { LabelsResource } from "@/hooks/useLabels";
 import type { MilestonesResource } from "@/hooks/useMilestones";
@@ -59,7 +60,7 @@ afterEach(() => {
 
 // milestoneMutations は App が hoist 保持する prop になったため、テストでも
 // フックを呼ぶ薄い Harness を挟んで本物のインスタンスを注入する。
-const Harness = ({ initialTabId }: { initialTabId?: string }) => {
+const Harness = ({ initialTabId }: { initialTabId?: SettingsTabId }) => {
   const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
   return createElement(
     ThemeProvider,
@@ -78,7 +79,7 @@ const Harness = ({ initialTabId }: { initialTabId?: string }) => {
 /**
  * SettingsScreen をマウントするヘルパー
  */
-const mountSettingsScreen = async (initialTabId?: string) => {
+const mountSettingsScreen = async (initialTabId?: SettingsTabId) => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);

@@ -4,17 +4,17 @@ import {
   SettingsTab,
 } from "@/features/settings/types";
 
-const tabA: SettingsTab = { id: "a", label: "A" };
-const tabB: SettingsTab = { id: "b", label: "B" };
+const tabA: SettingsTab = { id: "labels", label: "ラベル" };
+const tabB: SettingsTab = { id: "appearance", label: "外観" };
 
 test("selectActive: 一致する ID のタブを返す", () => {
   const tabs: NonEmptySettingsTabs = [tabA, tabB];
-  expect(SettingsTab.selectActive(tabs, "b")).toBe(tabB);
+  expect(SettingsTab.selectActive(tabs, "appearance")).toBe(tabB);
 });
 
 test("selectActive: 先頭タブの ID を渡すと先頭タブを返す", () => {
   const tabs: NonEmptySettingsTabs = [tabA, tabB];
-  expect(SettingsTab.selectActive(tabs, "a")).toBe(tabA);
+  expect(SettingsTab.selectActive(tabs, "labels")).toBe(tabA);
 });
 
 test("selectActive: 未知 ID は先頭タブにフォールバックする", () => {

@@ -22,7 +22,7 @@ import {
   sortMilestones,
 } from "@/features/milestoneView/lib/listOps";
 import { resolveDisplayStatus } from "@/features/milestoneView/lib/milestoneStatus";
-import { SubNav } from "@/features/settings";
+import { type SettingsTabId, SubNav } from "@/features/settings";
 import type { MilestonesResource } from "@/hooks/useMilestones";
 import type { CreateMilestoneArgs } from "@/lib/tauri";
 import type { Task } from "@/types/task";
@@ -101,7 +101,7 @@ type MilestoneViewScreenProps = {
   /** 設定サブナビの戻る操作。 */
   onBack?: () => void;
   /** 設定サブナビから他の設定タブへ移動する操作。 */
-  onSettingsTab?: (tabId: string) => void;
+  onSettingsTab?: (tabId: SettingsTabId) => void;
 };
 
 /**

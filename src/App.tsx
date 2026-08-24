@@ -60,6 +60,7 @@ import {
 import { MilestoneViewScreen } from "./features/milestoneView";
 import {
   SettingsScreen,
+  type SettingsTabId,
   type StatusSettingsValue,
   useConfigFiles,
   useMilestoneMutations,
@@ -433,7 +434,7 @@ const AppShell = () => {
     null,
   );
   const [settingsEntry, setSettingsEntry] = useState<{
-    readonly tabId: string;
+    readonly tabId: SettingsTabId;
     readonly configFile?: "config" | "guide";
   }>({ tabId: "labels" });
   const handleLabelUsageClick = useCallback(
@@ -603,7 +604,7 @@ const AppShell = () => {
 
   /** 設定サブナビから対象画面へ遷移する。 */
   const handleSettingsTab = useCallback(
-    (tabId: string) => {
+    (tabId: SettingsTabId) => {
       if (tabId === "milestones") {
         navigate("milestone");
         return;
