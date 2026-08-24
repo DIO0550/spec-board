@@ -22,7 +22,7 @@ use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
 use spec_board_fs::watcher::core::Watcher;
 use spec_board_fs::watcher::file_change_batch::{FileChangeBatch, FileChangeBatchTestBuilder};
-use spec_board_fs::watcher::handle::NoopWatcherHandle;
+use spec_board_fs::watcher::handle::{NoopWatcherHandle, WatcherHandle};
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
 
@@ -689,8 +689,9 @@ fn run_event_loop_processes_multiple_batches_then_exits_on_disconnect() {
     assert_eq!(2, entries.len());
 }
 
-#[test]
-fn dropping_emitting_handle_waits_for_outer_worker_after_core_disconnect() {
+fn assert_emitting_handle_waits_for_outer_worker(
+    stop_handle: impl FnOnce(EmittingWatcherHandle) + Send + 'static,
+) {
     let dir = TempDir::new().expect("tempdir");
     let (watcher, rx) = Watcher::start(dir.path()).expect("start watcher");
     let (core_disconnected_tx, core_disconnected_rx) = std::sync::mpsc::channel();
@@ -708,29 +709,42 @@ fn dropping_emitting_handle_waits_for_outer_worker_after_core_disconnect() {
         watcher: Some(watcher),
         join: Some(join),
     };
-    let (drop_finished_tx, drop_finished_rx) = std::sync::mpsc::channel();
-    let drop_thread = std::thread::spawn(move || {
-        drop(handle);
-        drop_finished_tx.send(()).expect("signal drop completion");
+    let (stop_finished_tx, stop_finished_rx) = std::sync::mpsc::channel();
+    let stop_thread = std::thread::spawn(move || {
+        stop_handle(handle);
+        stop_finished_tx.send(()).expect("signal stop completion");
     });
 
     core_disconnected_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("core receiver should disconnect");
     assert_eq!(
-        drop_finished_rx.recv_timeout(std::time::Duration::from_millis(100)),
+        stop_finished_rx.recv_timeout(std::time::Duration::from_millis(100)),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout),
-        "normal drop must wait until the outer worker exits"
+        "stopping the handle must wait until the outer worker exits"
     );
 
     release_worker_tx.send(()).expect("release outer worker");
     worker_exited_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("outer worker should exit");
-    drop_finished_rx
+    stop_finished_rx
         .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("drop should finish after worker exit");
-    drop_thread.join().expect("drop thread should finish");
+        .expect("stop should finish after worker exit");
+    stop_thread.join().expect("stop thread should finish");
+}
+
+#[test]
+fn dropping_emitting_handle_waits_for_outer_worker_after_core_disconnect() {
+    assert_emitting_handle_waits_for_outer_worker(drop);
+}
+
+#[test]
+fn stopping_emitting_handle_through_trait_waits_for_outer_worker_after_core_disconnect() {
+    assert_emitting_handle_waits_for_outer_worker(|handle| {
+        let handle: Box<dyn WatcherHandle> = Box::new(handle);
+        handle.stop();
+    });
 }
 
 #[test]
