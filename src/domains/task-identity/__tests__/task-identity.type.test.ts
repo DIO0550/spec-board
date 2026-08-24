@@ -1,3 +1,4 @@
+import { expectTypeOf, test } from "vitest";
 import type { TaskFilePath, TaskId } from "@/domains/task-identity";
 import type { AddLinkParams } from "@/lib/tauri/linkCommands/types";
 import type {
@@ -6,7 +7,6 @@ import type {
   UpdateTaskParams,
 } from "@/lib/tauri/taskCommands/types";
 import { Task } from "@/types/task";
-import { expectTypeOf, test } from "vitest";
 
 test("TaskIdとTaskFilePathは相互代入できずstringへだけ拡張できる", () => {
   const taskId = "task-id" as TaskId;
@@ -68,9 +68,7 @@ test("mutation DTOはTaskFilePathだけをcanonical pathとして受け取る", 
 
   expectTypeOf(update.filePath).toEqualTypeOf<TaskFilePath>();
   expectTypeOf(remove.filePath).toEqualTypeOf<TaskFilePath>();
-  expectTypeOf(move.toColumnFilePaths).toEqualTypeOf<
-    readonly TaskFilePath[]
-  >();
+  expectTypeOf(move.toColumnFilePaths).toEqualTypeOf<readonly TaskFilePath[]>();
   expectTypeOf(addLink.targetFilePath).toEqualTypeOf<TaskFilePath>();
   expectTypeOf(invalidUpdate.filePath).toEqualTypeOf<TaskFilePath>();
   expectTypeOf(invalidDelete.filePath).toEqualTypeOf<TaskFilePath>();
