@@ -471,7 +471,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 | モジュール配置 | サブクレート `spec-board-fs`（`src-tauri/crates/fs/`）配下に置く（重い外部 crate を集約する規約。CLAUDE.md「Rust バックエンド構成ルール」参照）。公開 API には `notify::*` の型を漏らさず、`std` の型と独自エラー型のみで構成する |
 | 監視対象 | プロジェクトディレクトリ以下の `.md` ファイル |
 | 稼働数 | 常にフォアグラウンドのプロジェクト 1 つ分のみ。プロジェクト切替のたびに旧 watcher を stop / join し、OS ハンドルとスレッドを解放する。キャッシュから再活性化した場合も watcher と `WriteIgnoreRegistry` は新規作成する（write-ignore は session-scoped の意味を保つため空で始まる） |
-| 監視イベント | 変更は `FileChangeBatch { removed, upserted, rescan, errors }` に畳み込まれて本体クレートへ渡る。`upserted` は読み直したうえで、`removed` は cache 登録済みパスのみを対象に、**変更を反映した全 task の派生値（`children` / `reverseLinks` / parent 関連 warning）を再構築して `tasks_cache` を全置換**する（`WriteIgnoreRegistry` に登録された自前書き込み / delete はスキップ）。emit は変更対象だけが変わった場合のみ `task-created` / `task-updated` / `task-deleted` を 1 通、**変更対象以外の task の派生値も変わった場合は `watcher-resync-required` を 1 通**出す。`rescan` は full rescan を行って `tasks_cache` を全置換し、`errors` は structured diagnostics として FE へ通知する |
+| 監視イベント | 変更は opaque な `FileChangeBatch` に畳み込まれて本体クレートへ渡る。consumer は `removed()` / `upserted()` / `is_rescan()` / `errors()` で内容を読み取る。`upserted` は読み直したうえで、`removed` は cache 登録済みパスのみを対象に、**変更を反映した全 task の派生値（`children` / `reverseLinks` / parent 関連 warning）を再構築して `tasks_cache` を全置換**する（`WriteIgnoreRegistry` に登録された自前書き込み / delete はスキップ）。emit は変更対象だけが変わった場合のみ `task-created` / `task-updated` / `task-deleted` を 1 通、**変更対象以外の task の派生値も変わった場合は `watcher-resync-required` を 1 通**出す。`is_rescan()` が true の batch は full rescan を行って `tasks_cache` を全置換し、`errors()` は structured diagnostics として FE へ通知する |
 | デバウンス | 後述の「デバウンス（変更バッチへの畳み込み）」セクション参照 |
 | 自己書き込み抑制 | 後述の「自己書き込み抑制」セクション参照 |
 | フロントエンドへの通知 | Tauri のイベントシステム（`emit`）を使用 |
@@ -590,12 +590,12 @@ event や同一 revision の 2 payload には統合しない。
 | Rename の扱い | `Renamed { from, to }` は `from` → removal と `to` → upsert の **2 エントリを独立に登録**する。後続の `Modified(to)` は `to` のエントリだけを更新するため、`from` の削除は失われない |
 | 判定不能イベントの解決 | 端点が 1 つしかない rename 通知（backend が rename の from / to を別イベントで通知する場合）は、flush 時に実在を確認し、存在すれば upsert、存在しなければ removal として確定する |
 | batch の不変条件 | 同一 path が `removed` と `upserted` の両方に現れない。各配列内でも path は重複しない。順序は deadline 昇順（同点は path 昇順）で決定的（`HashMap` の反復順に依存しない） |
-| 適用順序 | 受信側は 1 batch を `rescan` → `errors` → `removed` → `upserted` の順に処理する。`removed` を先に処理するのは、分解された rename の旧パス削除を新パス登録より先に反映させるため。1 件の処理に失敗しても残りの変更は処理する |
+| 適用順序 | 受信側は 1 batch を `is_rescan()` → `errors()` → `removed()` → `upserted()` の順に処理する。`removed()` を先に処理するのは、分解された rename の旧パス削除を新パス登録より先に反映させるため。1 件の処理に失敗しても残りの変更は処理する |
 | バイパス対象 | backend の rescan 通知と稼働中障害は畳み込まず、`rescan` / `errors` のみを立てた専用 batch として即時送出する。状態乖離や障害検出を遅延させないため、保留を **追い越して** 先に通知される（このとき保留は flush されず残る） |
 | 順序保証 | バイパス batch は保留を flush せずに追い越すため、受信側は rescan の後に古い変更 batch が遅延到着する可能性を許容する前提で実装すること。**上位層はこれを envelope の `revision` / `eventSeq` で吸収する**: 追い越した古い cache 変更は `revision` が snapshot 以下になるので破棄され、`eventSeq` の欠番は取りこぼしとして自動再取得を起こす。再取得の応答が届くまでに来た cache 変更は受信側 gate が buffer し、baseline 取り直し後に順に畳み込んで適用する |
 | Drop 時の保留 | `Watcher` の Drop で上流が解放された際、残っている保留は破棄せず **1 つの batch** にまとめ、deadline 昇順（同点は path 昇順）で flush されてから adapter スレッドが終了する |
 | 空 batch | 伝えるべき変更が 1 件も無い batch は送出しない |
-| 公開 API | `Watcher::start` は `Receiver<FileChangeBatch>` を返す。`notify::Event` の翻訳結果である `FsEvent` は `watcher` モジュール内部の中間表現で、公開 API には出さない |
+| 公開 API | `Watcher::start` は `Receiver<FileChangeBatch>` を返す。batch の field は非公開で、外部 consumer は immutable getter のみを使用する。batch の構築は watcher 内部に限定し、`Default` や外部 struct literal による不変条件の迂回を許さない。`notify::Event` の翻訳結果である `FsEvent` は `watcher` モジュール内部の中間表現で、公開 API には出さない |
 
 ### 自己書き込み抑制
 
@@ -731,13 +731,14 @@ impl Watcher {
 /// `rescan` / `errors` は保留を追い越して送られる専用 batch でのみ立ち、
 /// そのとき `removed` / `upserted` は空である。
 pub struct FileChangeBatch {
-    pub removed: Vec<PathBuf>,
-    pub upserted: Vec<PathBuf>,
-    pub rescan: bool,
-    pub errors: Vec<WatcherFailure>,
+    /* private fields */
 }
 
 impl FileChangeBatch {
+    pub fn removed(&self) -> &[PathBuf];
+    pub fn upserted(&self) -> &[PathBuf];
+    pub fn is_rescan(&self) -> bool;
+    pub fn errors(&self) -> &[WatcherFailure];
     pub fn is_empty(&self) -> bool;
 }
 
@@ -762,6 +763,8 @@ pub enum WatcherError {
     Io(std::io::Error),
 }
 ```
+
+`FileChangeBatch` は watcher 内部だけが `changes` / `rescan` / `failure` の相互排他的な mode として構築する。外部 consumer は getter で観測するだけであり、field の組み合わせを直接作れない。テストでは `test-utils` feature が公開する `FileChangeBatchTestBuilder` の mode constructor を使い、production と同じ不変条件を満たす fixture を作る。
 
 | 項目 | 仕様 |
 |:-----|:-----|
@@ -843,6 +846,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.11 | 2026-08-24 | Issue #604: `FileChangeBatch` を opaque な不変条件付き batch とし、内部構築限定、immutable getter による consumer 契約、test-utils builder、wire/runtime 挙動不変を明記 | - |
 | 1.10 | 2026-08-23 | Issue #602: resident Task の canonical filePath identity、wire id/filePath 同値、path sort と wire/disk/error 互換を明記 | - |
 | 1.9 | 2026-08-23 | Issue #601: open / mutation / watcher / rescan / conflict recovery を canonical full resolver に統一し、resolved Task 集合だけを resident state に格納する型境界、raw/effective parent、path 昇順の派生値、wire/disk/error 互換を明記 | - |
 | 1.8 | 2026-08-23 | Issue #594: raw resident Mutex を private lock owner へ封じ、domain → resources の段階 guard、background/resources の値 API、closure-scoped writer lease と同一 thread 再入の fail-fast typed error を仕様化 | - |

@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::core::{FsEvent, DEBOUNCE_DURATION};
-use super::file_change_batch::FileChangeBatch;
+use super::super::core::{FsEvent, DEBOUNCE_DURATION};
+use super::FileChangeBatch;
 
 /// ウィンドウ終了時点で path が取るべき最終状態。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,21 +143,27 @@ impl PendingChanges {
             deadline_a.cmp(&deadline_b).then_with(|| a.cmp(b))
         });
 
-        let mut batch = FileChangeBatch::default();
+        let mut removed = Vec::new();
+        let mut upserted = Vec::new();
         for path in paths {
             let entry = self.entries.remove(&path).expect("key was just collected");
-            let upserted = match entry.change {
+            let is_upserted = match entry.change {
                 PathChange::Upserted => true,
                 PathChange::Removed => false,
                 PathChange::Unresolved => exists(&path),
             };
-            if upserted {
-                batch.upserted.push(path);
+            if is_upserted {
+                upserted.push(path);
             } else {
-                batch.removed.push(path);
+                removed.push(path);
             }
         }
-        Some(batch)
+        Some(FileChangeBatch {
+            removed,
+            upserted,
+            rescan: false,
+            errors: Vec::new(),
+        })
     }
 }
 

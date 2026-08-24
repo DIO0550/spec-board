@@ -20,7 +20,7 @@ use crate::state::active_project_resources::{
 };
 use crate::state::{AppState, BoxedWatcherHandle, SessionResourceAccess};
 use crate::task::io::{FsTaskIo, TaskIo};
-use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
+use spec_board_fs::watcher::file_change_batch::{FileChangeBatch, FileChangeBatchTestBuilder};
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
@@ -623,7 +623,7 @@ fn empty_batch_emits_nothing() {
     write_md(dir.path(), "tasks/a.md", &task_md("A"));
     let (ctx, log) = build_ctx(dir.path().to_path_buf(), Arc::clone(&state));
 
-    handle_batch(&FileChangeBatch::default(), &ctx);
+    handle_batch(&FileChangeBatchTestBuilder::empty().build(), &ctx);
 
     assert!(drain_log(&log).is_empty());
     assert!(snapshot_paths(&state).is_empty());

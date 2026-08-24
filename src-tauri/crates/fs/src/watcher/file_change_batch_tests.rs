@@ -10,79 +10,80 @@ fn sample_failure() -> WatcherFailure {
 }
 
 #[test]
-fn rescan_sets_only_the_rescan_flag() {
-    let batch = FileChangeBatch::rescan();
+fn builder_empty_builds_the_only_empty_mode() {
+    let batch = FileChangeBatchTestBuilder::empty().build();
 
-    assert!(batch.rescan, "rescan() は rescan フラグを立てるべき");
-    assert!(
-        batch.removed.is_empty(),
-        "rescan batch に removed は載らない"
-    );
-    assert!(
-        batch.upserted.is_empty(),
-        "rescan batch に upserted は載らない"
-    );
-    assert!(batch.errors.is_empty(), "rescan batch に errors は載らない");
+    assert!(batch.is_empty());
+    assert!(batch.removed().is_empty());
+    assert!(batch.upserted().is_empty());
+    assert!(!batch.is_rescan());
+    assert!(batch.errors().is_empty());
 }
 
 #[test]
-fn from_failure_carries_only_the_reported_failure() {
+fn builder_changes_preserves_disjoint_paths() {
+    let removed = vec![PathBuf::from("old-a.md"), PathBuf::from("old-b.md")];
+    let upserted = vec![PathBuf::from("new-a.md"), PathBuf::from("new-b.md")];
+
+    let batch = FileChangeBatchTestBuilder::changes(removed.clone(), upserted.clone()).build();
+
+    assert_eq!(removed, batch.removed());
+    assert_eq!(upserted, batch.upserted());
+    assert!(!batch.is_rescan());
+    assert!(batch.errors().is_empty());
+    assert!(!batch.is_empty());
+}
+
+#[test]
+fn builder_rescan_builds_only_the_rescan_mode() {
+    let batch = FileChangeBatchTestBuilder::rescan().build();
+
+    assert!(batch.is_rescan());
+    assert!(batch.removed().is_empty());
+    assert!(batch.upserted().is_empty());
+    assert!(batch.errors().is_empty());
+    assert!(!batch.is_empty());
+}
+
+#[test]
+fn builder_failure_builds_only_the_failure_mode() {
     let failure = sample_failure();
 
-    let batch = FileChangeBatch::from_failure(failure.clone());
+    let batch = FileChangeBatchTestBuilder::failure(failure.clone()).build();
 
-    assert_eq!(vec![failure], batch.errors);
-    assert!(!batch.rescan, "障害通知は rescan を立てない");
-    assert!(batch.removed.is_empty(), "障害 batch に removed は載らない");
-    assert!(
-        batch.upserted.is_empty(),
-        "障害 batch に upserted は載らない"
-    );
+    assert_eq!([failure], batch.errors());
+    assert!(!batch.is_rescan());
+    assert!(batch.removed().is_empty());
+    assert!(batch.upserted().is_empty());
+    assert!(!batch.is_empty());
 }
 
 #[test]
-fn is_empty_table() {
-    struct Case {
-        name: &'static str,
-        batch: FileChangeBatch,
-        expected: bool,
-    }
+#[should_panic(expected = "changes mode must contain at least one path")]
+fn builder_changes_rejects_empty_path_lists() {
+    let _ = FileChangeBatchTestBuilder::changes(Vec::new(), Vec::new());
+}
 
-    let cases = vec![
-        Case {
-            name: "default は空",
-            batch: FileChangeBatch::default(),
-            expected: true,
-        },
-        Case {
-            name: "removed が 1 件なら空でない",
-            batch: FileChangeBatch {
-                removed: vec![PathBuf::from("/tmp/a.md")],
-                ..FileChangeBatch::default()
-            },
-            expected: false,
-        },
-        Case {
-            name: "upserted が 1 件なら空でない",
-            batch: FileChangeBatch {
-                upserted: vec![PathBuf::from("/tmp/a.md")],
-                ..FileChangeBatch::default()
-            },
-            expected: false,
-        },
-        Case {
-            name: "rescan が立っていれば空でない",
-            batch: FileChangeBatch::rescan(),
-            expected: false,
-        },
-        Case {
-            name: "errors が 1 件なら空でない",
-            batch: FileChangeBatch::from_failure(sample_failure()),
-            expected: false,
-        },
-    ];
+#[test]
+#[should_panic(expected = "removed paths must be unique")]
+fn builder_changes_rejects_duplicate_removed_paths() {
+    let duplicate = PathBuf::from("same.md");
 
-    for c in cases {
-        assert_eq!(c.expected, c.batch.is_empty(), "case `{}` failed", c.name);
-    }
+    let _ = FileChangeBatchTestBuilder::changes(vec![duplicate.clone(), duplicate], Vec::new());
+}
+
+#[test]
+#[should_panic(expected = "upserted paths must be unique")]
+fn builder_changes_rejects_duplicate_upserted_paths() {
+    let duplicate = PathBuf::from("same.md");
+
+    let _ = FileChangeBatchTestBuilder::changes(Vec::new(), vec![duplicate.clone(), duplicate]);
+}
+
+#[test]
+#[should_panic(expected = "removed and upserted paths must be disjoint")]
+fn builder_changes_rejects_a_path_in_both_lists() {
+    let shared = PathBuf::from("same.md");
+
+    let _ = FileChangeBatchTestBuilder::changes(vec![shared.clone()], vec![shared]);
 }

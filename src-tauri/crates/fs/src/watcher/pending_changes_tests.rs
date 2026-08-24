@@ -25,8 +25,8 @@ fn ms(millis: u64) -> Duration {
 
 /// `removed` と `upserted` に同じ path が現れず、各配列内でも重複しないこと。
 fn assert_paths_are_disjoint_and_unique(batch: &FileChangeBatch, case: &str) {
-    for (label, list) in [("removed", &batch.removed), ("upserted", &batch.upserted)] {
-        let mut sorted = list.clone();
+    for (label, list) in [("removed", batch.removed()), ("upserted", batch.upserted())] {
+        let mut sorted = list.to_vec();
         sorted.sort();
         let before = sorted.len();
         sorted.dedup();
@@ -36,9 +36,9 @@ fn assert_paths_are_disjoint_and_unique(batch: &FileChangeBatch, case: &str) {
             "case `{case}`: {label} に重複した path がある: {list:?}"
         );
     }
-    for path in &batch.removed {
+    for path in batch.removed() {
         assert!(
-            !batch.upserted.contains(path),
+            !batch.upserted().contains(path),
             "case `{case}`: {} が removed と upserted の両方に現れた",
             path.display()
         );
@@ -55,10 +55,10 @@ fn modified_becomes_a_single_upsert() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, always_exists)
         .expect("deadline 到来後は batch が返るべき");
 
-    assert_eq!(paths(&["a.md"]), batch.upserted);
-    assert!(batch.removed.is_empty());
-    assert!(!batch.rescan);
-    assert!(batch.errors.is_empty());
+    assert_eq!(paths(&["a.md"]), batch.upserted());
+    assert!(batch.removed().is_empty());
+    assert!(!batch.is_rescan());
+    assert!(batch.errors().is_empty());
 }
 
 #[test]
@@ -71,8 +71,8 @@ fn created_becomes_an_upsert() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, always_exists)
         .expect("deadline 到来後は batch が返るべき");
 
-    assert_eq!(paths(&["a.md"]), batch.upserted);
-    assert!(batch.removed.is_empty());
+    assert_eq!(paths(&["a.md"]), batch.upserted());
+    assert!(batch.removed().is_empty());
 }
 
 #[test]
@@ -85,8 +85,8 @@ fn removed_becomes_a_removal() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, never_exists)
         .expect("deadline 到来後は batch が返るべき");
 
-    assert_eq!(paths(&["a.md"]), batch.removed);
-    assert!(batch.upserted.is_empty());
+    assert_eq!(paths(&["a.md"]), batch.removed());
+    assert!(batch.upserted().is_empty());
 }
 
 #[test]
@@ -105,8 +105,8 @@ fn renamed_registers_from_and_to_as_independent_entries() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, always_exists)
         .expect("deadline 到来後は batch が返るべき");
 
-    assert_eq!(paths(&["old.md"]), batch.removed);
-    assert_eq!(paths(&["new.md"]), batch.upserted);
+    assert_eq!(paths(&["old.md"]), batch.removed());
+    assert_eq!(paths(&["new.md"]), batch.upserted());
 }
 
 #[test]
@@ -128,10 +128,10 @@ fn rename_followed_by_modify_keeps_the_removal_of_the_old_path() {
 
     assert_eq!(
         paths(&["old.md"]),
-        batch.removed,
+        batch.removed(),
         "後続の Modified(new) で from の削除が失われてはならない"
     );
-    assert_eq!(paths(&["new.md"]), batch.upserted);
+    assert_eq!(paths(&["new.md"]), batch.upserted());
     assert_paths_are_disjoint_and_unique(&batch, "rename → modify");
 }
 
@@ -221,13 +221,13 @@ fn reduction_table() {
 
         assert_eq!(
             paths(&c.expected_removed),
-            batch.removed,
+            batch.removed(),
             "case `{}` failed (removed)",
             c.name
         );
         assert_eq!(
             paths(&c.expected_upserted),
-            batch.upserted,
+            batch.upserted(),
             "case `{}` failed (upserted)",
             c.name
         );
@@ -245,7 +245,7 @@ fn drain_due_includes_an_entry_whose_deadline_equals_now() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, always_exists)
         .expect("deadline == now は取り出し対象");
 
-    assert_eq!(paths(&["a.md"]), batch.upserted);
+    assert_eq!(paths(&["a.md"]), batch.upserted());
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn drain_due_keeps_entries_whose_deadline_has_not_arrived() {
     let batch = pending
         .drain_due_with(t0 + DEBOUNCE_DURATION, always_exists)
         .expect("未到来のエントリは保留に残り、deadline 到来後に取り出せるべき");
-    assert_eq!(paths(&["a.md"]), batch.upserted);
+    assert_eq!(paths(&["a.md"]), batch.upserted());
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn recording_the_same_path_again_slides_the_deadline() {
     let batch = pending
         .drain_due_with(t0 + ms(50) + DEBOUNCE_DURATION, always_exists)
         .expect("延長後の deadline では取り出せるべき");
-    assert_eq!(paths(&["a.md"]), batch.upserted);
+    assert_eq!(paths(&["a.md"]), batch.upserted());
 }
 
 #[test]
@@ -317,7 +317,7 @@ fn drain_order_is_deadline_then_path_ascending() {
 
     assert_eq!(
         paths(&["z.md", "a.md", "b.md"]),
-        batch.upserted,
+        batch.upserted(),
         "deadline 昇順、同点は path 昇順で並ぶべき"
     );
 }
@@ -332,8 +332,8 @@ fn other_resolves_to_upserted_when_the_path_exists() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, |path| path == Path::new("a.md"))
         .expect("deadline 到来後は batch が返るべき");
 
-    assert_eq!(paths(&["a.md"]), batch.upserted);
-    assert!(batch.removed.is_empty());
+    assert_eq!(paths(&["a.md"]), batch.upserted());
+    assert!(batch.removed().is_empty());
 }
 
 #[test]
@@ -346,8 +346,8 @@ fn other_resolves_to_removed_when_the_path_is_gone() {
         .drain_due_with(t0 + DEBOUNCE_DURATION, never_exists)
         .expect("deadline 到来後は batch が返るべき");
 
-    assert_eq!(paths(&["a.md"]), batch.removed);
-    assert!(batch.upserted.is_empty());
+    assert_eq!(paths(&["a.md"]), batch.removed());
+    assert!(batch.upserted().is_empty());
 }
 
 #[test]
@@ -362,8 +362,8 @@ fn drain_all_takes_every_entry_regardless_of_deadline() {
         .drain_all_with(never_exists)
         .expect("deadline 未到来でも全件取り出すべき");
 
-    assert_eq!(paths(&["a.md"]), batch.upserted);
-    assert_eq!(paths(&["b.md"]), batch.removed);
+    assert_eq!(paths(&["a.md"]), batch.upserted());
+    assert_eq!(paths(&["b.md"]), batch.removed());
     assert!(
         pending.drain_all_with(never_exists).is_none(),
         "取り出した後の保留は空になるべき"
