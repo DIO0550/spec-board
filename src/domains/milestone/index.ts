@@ -19,15 +19,20 @@ export type MilestoneDefinition = {
   updated?: string;
 };
 
+const MAX_ORDER = 4_294_967_295;
+
 /** マイルストーンの表示・参照に使う共有ドメイン companion。 */
 export const Milestone = {
+  /** Rustのu32へlosslessに渡せるorderの最大値。 */
+  MAX_ORDER,
+
   /**
    * orderがRustのu32へlosslessに渡せる整数かを判定する。
    * @param order 判定する表示順序
    * @returns 0..=u32::MAXの整数ならtrue
    */
   isValidOrder: (order: number): boolean =>
-    Number.isInteger(order) && order >= 0 && order <= 4_294_967_295,
+    Number.isInteger(order) && order >= 0 && order <= MAX_ORDER,
 
   /**
    * 任意の state 文字列を表示用の既知状態へ正規化する。

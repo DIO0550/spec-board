@@ -4,8 +4,7 @@ import { notifyMutationFailure } from "@/lib/tauri/notifyMutationFailure";
 import { TauriError } from "@/lib/tauri/tauriError";
 import { Result, type Result as ResultT } from "@/utils/result";
 
-const INVALID_ORDER_MESSAGE =
-  "order は0以上4294967295以下の整数で指定してください";
+const INVALID_ORDER_MESSAGE = `order は0以上${Milestone.MAX_ORDER}以下の整数で指定してください`;
 
 type MilestoneMutationCommand = Extract<
   MutationCommand,
