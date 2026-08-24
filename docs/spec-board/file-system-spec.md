@@ -442,6 +442,17 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 
 ### mdファイルのスキャン
 
+サイズ・バイナリ判定の閾値はworkspace内部API
+`spec_board_fs::task::content_limits`の次の定数を唯一の定義とする。
+
+| 定数 | 型 | 値 | 利用箇所 |
+|:-----|:---|---:|:---------|
+| `MAX_FILE_SIZE` | `u64` | `1,048,576` | `file_scanner`のmetadata判定と、本体crateの`TaskContent` constructor |
+| `BINARY_PROBE_LEN` | `usize` | `8,192` | `file_scanner`の先頭byte probeと、本体crateの`TaskContent` constructor |
+
+両consumerはこの共有定義を直接参照する。公開runtime挙動、warning・error文字列、
+wire / disk形状は従来どおりである。
+
 | ID | ルール | 条件 | 振る舞い |
 |:---|:-------|:-----|:---------|
 | BL-001 | スキャン対象 | プロジェクトディレクトリ直下および再帰的なサブディレクトリ | `.md` 拡張子のファイルのみをタスクとして認識 |
@@ -846,6 +857,7 @@ pub enum WatcherError {
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.12 | 2026-08-24 | Issue #606: task contentのsize / binary probe閾値をworkspace内部APIへ集約し、scannerとTaskContentが同じ定義を参照する契約を明記 | - |
 | 1.11 | 2026-08-24 | Issue #604: `FileChangeBatch` を opaque な不変条件付き batch とし、内部構築限定、immutable getter による consumer 契約、test-utils builder、wire/runtime 挙動不変を明記 | - |
 | 1.10 | 2026-08-23 | Issue #602: resident Task の canonical filePath identity、wire id/filePath 同値、path sort と wire/disk/error 互換を明記 | - |
 | 1.9 | 2026-08-23 | Issue #601: open / mutation / watcher / rescan / conflict recovery を canonical full resolver に統一し、resolved Task 集合だけを resident state に格納する型境界、raw/effective parent、path 昇順の派生値、wire/disk/error 互換を明記 | - |

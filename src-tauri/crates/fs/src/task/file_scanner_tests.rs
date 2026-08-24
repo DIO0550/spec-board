@@ -301,7 +301,8 @@ fn scan_md_files_includes_small_text_md_file() {
 fn scan_md_files_includes_file_at_exactly_max_size() {
     let dir = TempDir::new().unwrap();
     // ちょうど 1,048,576 byte（NUL byte なし）。サイズ境界 + バイナリ判定通過の両方を検証。
-    make_file_with_bytes(dir.path(), "max.md", &b"a".repeat(1024 * 1024));
+    let max = usize::try_from(MAX_FILE_SIZE).expect("limit fits usize on supported targets");
+    make_file_with_bytes(dir.path(), "max.md", &b"a".repeat(max));
 
     let result = scan_md_files(dir.path()).unwrap();
     assert_eq!(collect_sorted_relative(&result), vec!["max.md"]);
@@ -311,7 +312,7 @@ fn scan_md_files_includes_file_at_exactly_max_size() {
 fn scan_md_files_excludes_file_over_max_size() {
     let dir = TempDir::new().unwrap();
     // 1,048,577 byte (1MB + 1 byte)。sparse file で OK（サイズチェックで先に弾かれる）。
-    make_file_with_size(dir.path(), "over.md", 1024 * 1024 + 1);
+    make_file_with_size(dir.path(), "over.md", MAX_FILE_SIZE + 1);
 
     let result = scan_md_files(dir.path()).unwrap();
     assert!(
@@ -359,7 +360,7 @@ fn scan_md_files_excludes_binary_with_nul_in_probe_range() {
 fn scan_md_files_excludes_binary_with_nul_at_probe_boundary() {
     let dir = TempDir::new().unwrap();
     // 先頭 8,191 byte 'a' + 8,192 byte 目に NUL → プローブ範囲の最終バイト。
-    let mut bytes = vec![b'a'; 8 * 1024 - 1];
+    let mut bytes = vec![b'a'; BINARY_PROBE_LEN - 1];
     bytes.push(0);
     make_file_with_bytes(dir.path(), "boundary.md", &bytes);
 
@@ -374,7 +375,7 @@ fn scan_md_files_excludes_binary_with_nul_at_probe_boundary() {
 fn scan_md_files_includes_file_with_nul_after_probe_range() {
     let dir = TempDir::new().unwrap();
     // 先頭 8,192 byte 'a' + 8,193 byte 目以降にのみ NUL → プローブ範囲外。仕様として含める。
-    let mut bytes = vec![b'a'; 8 * 1024];
+    let mut bytes = vec![b'a'; BINARY_PROBE_LEN];
     bytes.push(0);
     bytes.extend_from_slice(b"trailing\x00bytes");
     make_file_with_bytes(dir.path(), "tail-nul.md", &bytes);
@@ -447,7 +448,7 @@ fn scan_md_files_with_warnings_reports_rejected_entries() {
     let dir = TempDir::new().unwrap();
     make_file_with_bytes(dir.path(), "ok.md", b"ok");
     make_file_with_bytes(dir.path(), "binary.md", b"hello\x00world");
-    make_file_with_size(dir.path(), "too-large.md", 1024 * 1024 + 1);
+    make_file_with_size(dir.path(), "too-large.md", MAX_FILE_SIZE + 1);
 
     let outcome = scan_md_files_with_warnings(dir.path()).unwrap();
 
