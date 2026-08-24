@@ -1,6 +1,7 @@
 # spec-board - ボードビュー仕様（フロントエンド）
 
 > **機能**: [spec-board](./index.md)
+> **バージョン**: 1.9
 > **ステータス**: 下書き
 
 ## 概要
@@ -225,6 +226,14 @@ stateDiagram-v2
 - **共通トースト対象（allowlist）**: `create_task` / `update_task` / `delete_task` / `move_task` / `add_link` / `remove_link` / `update_columns` の失敗。`invokeWrapped` が「&lt;操作&gt;に失敗しました: &lt;詳細&gt;」を 1 件発火する。操作ラベルはコマンド単位で決まる（例: `update_columns` 由来はカラムの追加 / 改名 / 削除 / 並び替えのいずれでも「カラムの更新に失敗しました」に統一される）。`HAS_CHILDREN` 詳細は「子タスクが存在するため削除できません」に翻訳する。
 - **操作フックへのエラー通知注入**: App は `onMutationError` を各操作単位フックへ注入する。callback は失敗が allowlist 由来（= `invokeWrapped` が通知済み）のときだけ上位の失敗トーストを抑止し、判定は起点コマンド名を保持する `TauriError.command` に基づく。操作固有の成功通知・rollback・retry 用の rejection は `useTaskDelete` や `useColumnRename` など各操作フックが担当する。
 - **サイレント化させないもの（注入callbackが通知）**: allowlist 外の tauri 失敗（`open_project` / `update_columns` 前段の `get_columns` refresh 失敗）と非 tauri 失敗（`invalid-state` / カラム domain validation）。
+
+### `ProjectError.invalid-state`のreason契約
+
+FE内部の`ProjectError`は、`invalid-state`に表示用`message`と必須の機械可読`reason`を持つ。`reason`は`not-loaded` / `operation-rejected` / `project-switched`のいずれかとする。未open状態は`not-loaded`、操作固有の拒否は`operation-rejected`、active projectの世代切替は`project-switched`へ分類する。
+
+project切替の生成には専用の`ProjectError.projectSwitched()`を使い、判定は`isProjectSwitchedError`が`reason === "project-switched"`だけを参照する。`message`はtoast・画面表示専用であり、rollback / commit / callbackを実行するかどうかの処理分岐には使わない。これにより表示文言が同じoperation rejectionをproject切替と誤認せず、表示文言を変更しても世代guardの挙動を維持する。
+
+既定の表示文言は従来どおり、未open時が「プロジェクトが開かれていません」、project切替時が「プロジェクトが切り替わりました」とする。このreasonはFE内部状態の契約であり、Tauri IPC payload、Rust error wire、既存toast文言は変更しない。
 - **成功トースト・LiveRegion アナウンス**は本一元化の影響を受けず従来どおり表示する。
 
 watcher listener の一部だけで open を続行する degraded mode は禁止する。registration readiness が成立しない限り loading へ遷移せず、`open_project` も呼ばない。
@@ -339,6 +348,7 @@ DetailScreen の「削除」ボタン押下で確認ダイアログを表示す�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.9 | 2026-08-24 | Issue #613: ProjectError.invalid-stateの必須reason、project switch専用factory、messageを表示専用とする判定契約を明記 | - |
 | 1.8 | 2026-08-12 | Global Search / Command Palette（⌘/Ctrl+K、title/id/path/labels検索、主要画面action、キーボード選択）を追加 | - |
 | 1.7 | 2026-08-12 | HeaderBar の GUIDE.md、Calendar の日付指定タスク追加を optional callback 境界として追加（App 統合は呼び出し側の責務） | - |
 | 1.6 | 2026-08-11 | Epic Roadmap view mode、List / Tree / Calendar の実装済み操作、Settings Status / Config 内部タブと presentational integration boundary、共通 HeaderBar 契約を追記 | - |
