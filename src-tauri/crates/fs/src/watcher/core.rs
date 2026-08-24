@@ -13,6 +13,7 @@
 //! 変更はイベント化されないが、Drop 前にアダプタが enqueue 済みの batch
 //! は `Disconnected` が観測されるまで receiver から取り出せる。
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
@@ -78,11 +79,7 @@ pub(crate) enum FsEvent {
     Rescan,
 }
 
-/// 監視稼働中に発生した watcher バックエンドのランタイム障害。
-///
-/// 起動時の失敗を表す [`WatcherError`] とは役割が異なる。あちらは
-/// `Watcher::start` の戻り値で、監視がそもそも始まらなかったことを意味する。
-/// 本型はイベントストリーム上を流れ、既に稼働している監視が壊れたことを表す。
+/// watcher バックエンドの起動時または稼働中の障害記述子。
 ///
 /// 上位層が障害種別で分岐できるよう、文字列ではなく機械可読な `kind` を持つ。
 /// 上位で文字列パースを強いる設計は、backend のメッセージ変更で静かに壊れる。
@@ -94,6 +91,12 @@ pub struct WatcherFailure {
     pub paths: Vec<PathBuf>,
     /// 人間向けの詳細。backend のメッセージをそのまま載せる。
     pub detail: String,
+}
+
+impl fmt::Display for WatcherFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.detail)
+    }
 }
 
 /// [`WatcherFailure`] の種別。
@@ -118,12 +121,30 @@ pub enum WatcherFailureKind {
 /// 呼び出し側が区別できず、後者を起動失敗として扱って project を閉じてしまう。
 #[derive(Debug, Error)]
 pub enum WatcherError {
-    #[error("failed to initialize file system watcher: {0}")]
-    Init(String),
+    #[error(
+        "failed to initialize file system watcher: recommended watcher failed: {recommended}; poll watcher failed: {poll}"
+    )]
+    Init {
+        recommended: WatcherFailure,
+        poll: WatcherFailure,
+    },
     #[error("watch path does not exist or is not a directory: `{}`", .0.display())]
     PathNotFound(PathBuf),
     #[error("io error while preparing watcher: {0}")]
     Io(#[from] std::io::Error),
+}
+
+/// 強制 poll 起動テスト専用のエラー。
+///
+/// production の [`WatcherError::Init`] は recommended と poll の両方が
+/// 失敗した場合だけ生成するため、poll 単独起動の失敗を別型で表す。
+#[cfg(test)]
+#[derive(Debug, Error)]
+pub(crate) enum PollStartError {
+    #[error(transparent)]
+    Validation(WatcherError),
+    #[error("poll backend failed: {0}")]
+    Init(WatcherFailure),
 }
 
 /// 背後の `notify` ウォッチャを保持し、[`Watcher`] が生きている間 OS レベ
@@ -199,21 +220,22 @@ impl Watcher {
     ///
     /// # Errors
     ///
-    /// - [`WatcherError::PathNotFound`]: `path` が存在しない、または
+    /// - [`PollStartError::Validation`]: `path` が存在しない、または
     ///   ディレクトリでない場合
-    /// - [`WatcherError::Io`]: metadata 取得時の I/O 失敗
-    /// - [`WatcherError::Init`]: poll バックエンドの初期化または再帰監視
+    /// - [`PollStartError::Validation`]: metadata 取得時の I/O 失敗
+    /// - [`PollStartError::Init`]: poll バックエンドの初期化または再帰監視
     ///   開始に失敗した場合
     #[cfg(test)]
     pub(crate) fn start_with_poll(
         path: impl AsRef<Path>,
-    ) -> Result<(Self, Receiver<FileChangeBatch>), WatcherError> {
+    ) -> Result<(Self, Receiver<FileChangeBatch>), PollStartError> {
         let path = path.as_ref();
-        validate_path(path)?;
+        validate_path(path).map_err(PollStartError::Validation)?;
 
         let (notify_tx, notify_rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
         let backend = build_poll_backend(notify_tx, path)
-            .map_err(|e| WatcherError::Init(format!("poll backend failed: {e}")))?;
+            .map_err(classify_notify_error)
+            .map_err(PollStartError::Init)?;
         let (fs_rx, handle) = spawn_adapter(notify_rx);
 
         Ok((
@@ -283,8 +305,8 @@ pub(crate) fn build_backend_with<R, P>(
     try_poll: P,
 ) -> Result<Backend, WatcherError>
 where
-    R: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> Result<Backend, String>,
-    P: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> Result<Backend, String>,
+    R: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> notify::Result<Backend>,
+    P: FnOnce(Sender<notify::Result<NotifyEvent>>, &Path) -> notify::Result<Backend>,
 {
     let recommended_err = match try_recommended(tx.clone(), path) {
         Ok(backend) => return Ok(backend),
@@ -292,39 +314,29 @@ where
     };
     match try_poll(tx, path) {
         Ok(backend) => Ok(backend),
-        Err(poll_err) => Err(WatcherError::Init(combine_init_errors(
-            &recommended_err,
-            &poll_err,
-        ))),
+        Err(poll_err) => Err(WatcherError::Init {
+            recommended: classify_notify_error(recommended_err),
+            poll: classify_notify_error(poll_err),
+        }),
     }
-}
-
-/// recommended と poll の両バックエンド初期化が失敗した場合に返す結合
-/// エラーメッセージを組み立てる純粋関数。フォーマットを単体テストで固定
-/// できるよう（OS 依存無し）に分離してある。
-pub(crate) fn combine_init_errors(recommended: &str, poll: &str) -> String {
-    format!("recommended watcher failed: {recommended}; poll watcher failed: {poll}")
 }
 
 fn try_build_recommended(
     tx: Sender<notify::Result<NotifyEvent>>,
     path: &Path,
-) -> Result<Backend, String> {
-    let mut w =
-        RecommendedWatcher::new(forward_handler(tx), notify_config()).map_err(|e| e.to_string())?;
-    w.watch(path, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+) -> notify::Result<Backend> {
+    let mut w = RecommendedWatcher::new(forward_handler(tx), notify_config())?;
+    w.watch(path, RecursiveMode::Recursive)?;
     Ok(Backend::Recommended(w))
 }
 
 fn build_poll_backend(
     tx: Sender<notify::Result<NotifyEvent>>,
     path: &Path,
-) -> Result<Backend, String> {
+) -> notify::Result<Backend> {
     let config = notify_config().with_poll_interval(POLL_INTERVAL);
-    let mut w = PollWatcher::new(forward_handler(tx), config).map_err(|e| e.to_string())?;
-    w.watch(path, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    let mut w = PollWatcher::new(forward_handler(tx), config)?;
+    w.watch(path, RecursiveMode::Recursive)?;
     Ok(Backend::Poll(w))
 }
 
@@ -447,8 +459,8 @@ fn spawn_adapter(
 
 /// `notify::Error` を自前の [`WatcherFailure`] へ写像する。
 ///
-/// 本関数だけが `notify::Error` に触れ、戻り値には一切漏らさない
-/// （spec-board-fs は pub API に外部 crate の型を出さない）。
+/// backend内部で保持した`notify::Error`は本関数で公開独自型へ変換し、
+/// spec-board-fsのpublic APIには外部crateの型を一切漏らさない。
 ///
 /// inotify 上限は backend によって `MaxFilesWatch` にも
 /// `Io(StorageFull)`（ENOSPC）にもなるため、両方を資源枯渇として扱う。

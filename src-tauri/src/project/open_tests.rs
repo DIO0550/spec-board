@@ -1,6 +1,6 @@
 use super::{
-    open_project_impl, open_project_impl_with_reporter, OpenProjectError, OpenProjectPayload,
-    ProjectDataPorts,
+    open_project_impl, open_project_impl_with_reporter, OpenProjectCommandError, OpenProjectError,
+    OpenProjectPayload, ProjectDataPorts,
 };
 
 use crate::config::{CardOrder, Column, Config, ConfigWriter, FsConfigWriter};
@@ -25,7 +25,7 @@ use crate::task::projection::{
     MilestoneProjectionMap, TaskForest, TaskProjectionMap, TaskTreeNode,
 };
 use crate::task::task_index::Task;
-use spec_board_fs::watcher::core::WatcherError;
+use spec_board_fs::watcher::core::{WatcherError, WatcherFailure, WatcherFailureKind};
 use spec_board_fs::watcher::handle::WatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::collections::BTreeMap;
@@ -50,6 +50,21 @@ fn zero_session() -> WatcherSession {
 
 fn tempdir() -> TempDir {
     tempfile::tempdir().expect("create temp dir")
+}
+
+fn synthetic_watcher_init_error(recommended_detail: &str, poll_detail: &str) -> WatcherError {
+    WatcherError::Init {
+        recommended: WatcherFailure {
+            kind: WatcherFailureKind::ResourceExhausted,
+            paths: vec!["/watch/recommended".into()],
+            detail: recommended_detail.to_owned(),
+        },
+        poll: WatcherFailure {
+            kind: WatcherFailureKind::PermissionDenied,
+            paths: vec!["/watch/poll".into()],
+            detail: poll_detail.to_owned(),
+        },
+    }
 }
 
 /// 4 段階手順を保ったまま、`AppHandle` / `Watcher::start` を使わずに
@@ -137,7 +152,10 @@ impl WatcherFactory for FailingPrepareFactory {
 
     fn prepare(&self, _root: &Path) -> Result<(), OpenProjectError> {
         Err(OpenProjectError::WatcherInitFailed {
-            source: WatcherError::Init(self.init_message.clone()),
+            source: synthetic_watcher_init_error(
+                &self.init_message,
+                "synthetic poll initialization failure",
+            ),
         })
     }
 
@@ -275,7 +293,10 @@ impl WatcherFactory for FailingStageFactory {
         _identity: SessionIdentity,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         Err(OpenProjectError::WatcherInitFailed {
-            source: WatcherError::Init("synthetic stage failure".to_owned()),
+            source: synthetic_watcher_init_error(
+                "synthetic stage failure",
+                "synthetic poll stage failure",
+            ),
         })
     }
 }
@@ -1292,6 +1313,60 @@ fn watcher_init_failure_does_not_invoke_active_watcher_stop() {
     assert_eq!(
         identity_before,
         state.active_session_identity().expect("identity preserved")
+    );
+}
+
+#[test]
+fn watcher_init_command_error_serializes_typed_backend_diagnostics() {
+    let error = OpenProjectError::WatcherInitFailed {
+        source: synthetic_watcher_init_error(
+            "recommended watch limit reached",
+            "poll permission denied",
+        ),
+    };
+    let command_error = OpenProjectCommandError::from(error);
+
+    assert_eq!(
+        serde_json::json!({
+            "message": "ファイル監視の初期化に失敗しました: failed to initialize file system watcher: recommended watcher failed: recommended watch limit reached; poll watcher failed: poll permission denied",
+            "watcherInit": {
+                "recommended": {
+                    "kind": "resourceExhausted",
+                    "paths": ["/watch/recommended"],
+                    "detail": "recommended watch limit reached"
+                },
+                "poll": {
+                    "kind": "permissionDenied",
+                    "paths": ["/watch/poll"],
+                    "detail": "poll permission denied"
+                }
+            }
+        }),
+        serde_json::to_value(command_error).expect("command error should serialize")
+    );
+}
+
+#[test]
+fn ordinary_open_command_error_serializes_as_the_exact_legacy_string() {
+    let command_error = OpenProjectCommandError::from(OpenProjectError::DirectoryNotFound {
+        path: "/missing/project".to_owned(),
+    });
+
+    assert_eq!(
+        r#""ディレクトリが見つかりません: /missing/project""#,
+        serde_json::to_string(&command_error).expect("command error should serialize")
+    );
+}
+
+#[test]
+fn watcher_stage_io_command_error_serializes_as_the_exact_legacy_string() {
+    let command_error = OpenProjectCommandError::from(OpenProjectError::WatcherInitFailed {
+        source: WatcherError::Io(std::io::Error::other("synthetic stage spawn failure")),
+    });
+
+    assert_eq!(
+        r#""ファイル監視の初期化に失敗しました: io error while preparing watcher: synthetic stage spawn failure""#,
+        serde_json::to_string(&command_error).expect("command error should serialize")
     );
 }
 

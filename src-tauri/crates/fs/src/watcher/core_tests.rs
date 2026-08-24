@@ -308,7 +308,7 @@ fn build_backend_with_returns_recommended_when_ok() {
         },
         move |_t, _p| {
             p_flag.store(true, Ordering::SeqCst);
-            Err("poll should not be called".into())
+            Err(notify::Error::generic("poll should not be called"))
         },
     )
     .expect("should return recommended backend when its constructor succeeds");
@@ -336,7 +336,7 @@ fn build_backend_with_falls_back_when_recommended_new_fails() {
         &path,
         move |_t, _p| {
             r_flag.store(true, Ordering::SeqCst);
-            Err("new failed: inotify limit".into())
+            Err(notify::Error::generic("new failed: inotify limit"))
         },
         move |_t, _p| {
             p_flag.store(true, Ordering::SeqCst);
@@ -372,7 +372,7 @@ fn build_backend_with_falls_back_when_recommended_watch_fails() {
         &path,
         move |_t, _p| {
             r_flag.store(true, Ordering::SeqCst);
-            Err("watch failed: too many watches".into())
+            Err(notify::Error::generic("watch failed: too many watches"))
         },
         move |_t, _p| {
             p_flag.store(true, Ordering::SeqCst);
@@ -398,30 +398,40 @@ fn build_backend_with_falls_back_when_recommended_watch_fails() {
 fn build_backend_with_returns_init_when_both_fail() {
     let (tx, _rx) = mpsc::channel::<notify::Result<NotifyEvent>>();
     let path = PathBuf::from("/tmp");
+    let recommended_path = PathBuf::from("/watch/recommended");
+    let poll_path = PathBuf::from("/watch/poll");
+    let recommended_error =
+        notify::Error::new(notify::ErrorKind::MaxFilesWatch).add_path(recommended_path.clone());
+    let recommended_detail = recommended_error.to_string();
+    let poll_error = notify::Error::io(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        .add_path(poll_path.clone());
+    let poll_detail = poll_error.to_string();
     let result = build_backend_with(
         tx,
         &path,
-        |_t, _p| Err("new failed: A".into()),
-        |_t, _p| Err("io error: B".into()),
+        |_t, _p| Err(recommended_error),
+        |_t, _p| Err(poll_error),
     );
-    match result {
-        Ok(_) => panic!("expected error when both backends fail"),
-        Err(WatcherError::Init(msg)) => {
-            assert!(
-                msg.contains("new failed: A"),
-                "missing recommended ctx: {msg}"
-            );
-            assert!(msg.contains("io error: B"), "missing poll ctx: {msg}");
-        }
-        Err(other) => panic!("expected Init, got {other:?}"),
-    }
-}
-
-#[test]
-fn combine_init_errors_includes_both_contexts() {
-    let s = combine_init_errors("recommended X", "poll Y");
-    assert!(s.contains("recommended X"));
-    assert!(s.contains("poll Y"));
+    let error = match result {
+        Ok(_) => panic!("both backend failures must return typed diagnostics"),
+        Err(error) => error,
+    };
+    let expected_display = format!(
+        "failed to initialize file system watcher: recommended watcher failed: \
+         {recommended_detail}; poll watcher failed: {poll_detail}"
+    );
+    assert_eq!(expected_display, error.to_string());
+    let WatcherError::Init { recommended, poll } = error else {
+        panic!("expected Init, got {error:?}");
+    };
+    assert_eq!(WatcherFailureKind::ResourceExhausted, recommended.kind);
+    assert_eq!(vec![recommended_path], recommended.paths);
+    assert_eq!(recommended_detail, recommended.detail);
+    assert_eq!(recommended.detail, recommended.to_string());
+    assert_eq!(WatcherFailureKind::PermissionDenied, poll.kind);
+    assert_eq!(vec![poll_path], poll.paths);
+    assert_eq!(poll_detail, poll.detail);
+    assert_eq!(poll.detail, poll.to_string());
 }
 
 // ─────────────────────────────────────────────────────────────────
