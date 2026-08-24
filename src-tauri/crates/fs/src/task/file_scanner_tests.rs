@@ -453,13 +453,21 @@ fn scan_md_files_with_warnings_reports_rejected_entries() {
     let outcome = scan_md_files_with_warnings(dir.path()).unwrap();
 
     assert_eq!(collect_sorted_relative(&outcome.items), vec!["ok.md"]);
-    assert!(outcome.warnings.iter().any(|warning| {
-        warning.code == ScanWarningCode::BinaryFile && warning.path.as_deref() == Some("binary.md")
-    }));
-    assert!(outcome.warnings.iter().any(|warning| {
-        warning.code == ScanWarningCode::FileTooLarge
-            && warning.path.as_deref() == Some("too-large.md")
-    }));
+    let binary = outcome
+        .warnings
+        .iter()
+        .find(|warning| warning.code == ScanWarningCode::BinaryFile)
+        .expect("binary warning");
+    assert_eq!(binary.path.as_deref(), Some(Path::new("binary.md")));
+    assert_eq!(binary.io_kind, None);
+
+    let too_large = outcome
+        .warnings
+        .iter()
+        .find(|warning| warning.code == ScanWarningCode::FileTooLarge)
+        .expect("file-too-large warning");
+    assert_eq!(too_large.path.as_deref(), Some(Path::new("too-large.md")));
+    assert_eq!(too_large.io_kind, None);
 }
 
 #[cfg(unix)]
@@ -475,10 +483,11 @@ fn scan_md_files_with_warnings_reports_invalid_utf8_paths() {
     let outcome = scan_md_files_with_warnings(dir.path()).unwrap();
 
     assert!(outcome.items.is_empty());
-    assert!(outcome
-        .warnings
-        .iter()
-        .any(|warning| { warning.code == ScanWarningCode::InvalidPath && warning.path.is_none() }));
+    assert!(outcome.warnings.iter().any(|warning| {
+        warning.code == ScanWarningCode::InvalidPath
+            && warning.path.is_none()
+            && warning.io_kind.is_none()
+    }));
 }
 
 #[cfg(unix)]
@@ -504,10 +513,45 @@ fn scan_md_files_with_warnings_reports_unreadable_files_when_os_denies_read() {
     if actually_unreadable {
         assert!(outcome.warnings.iter().any(|warning| {
             warning.code == ScanWarningCode::UnreadableFile
-                && warning.path.as_deref() == Some("locked.md")
+                && warning.path.as_deref() == Some(Path::new("locked.md"))
+                && warning.io_kind == Some(std::io::ErrorKind::PermissionDenied)
         }));
     } else {
         assert_eq!(collect_sorted_relative(&outcome.items), vec!["locked.md"]);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn scan_md_files_with_warnings_reports_unreadable_child_directory_and_continues() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    make_file_with_bytes(dir.path(), "readable.md", b"readable");
+    make_file_with_bytes(dir.path(), "locked/child.md", b"secret");
+    let locked = dir.path().join("locked");
+    let original = std::fs::metadata(&locked).unwrap().permissions();
+    let mut denied = original.clone();
+    denied.set_mode(0o000);
+    std::fs::set_permissions(&locked, denied).unwrap();
+    let actually_unreadable = std::fs::read_dir(&locked).is_err();
+
+    let outcome = scan_md_files_with_warnings(dir.path());
+
+    std::fs::set_permissions(&locked, original).unwrap();
+    let outcome = outcome.expect("child entry failure should remain recoverable");
+    if actually_unreadable {
+        assert_eq!(collect_sorted_relative(&outcome.items), vec!["readable.md"]);
+        assert!(outcome.warnings.iter().any(|warning| {
+            warning.code == ScanWarningCode::EntryError
+                && warning.path.as_deref() == Some(Path::new("locked"))
+                && warning.io_kind == Some(std::io::ErrorKind::PermissionDenied)
+        }));
+    } else {
+        assert_eq!(
+            collect_sorted_relative(&outcome.items),
+            vec!["locked/child.md", "readable.md"]
+        );
     }
 }
 
