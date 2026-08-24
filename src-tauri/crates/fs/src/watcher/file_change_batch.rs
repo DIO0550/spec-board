@@ -49,7 +49,7 @@ pub struct FileChangeBatch {
 
 impl FileChangeBatch {
     /// 通常変更だけを伝える batch。
-    pub(crate) fn from_changes(removed: Vec<PathBuf>, upserted: Vec<PathBuf>) -> Self {
+    pub(super) fn from_changes(removed: Vec<PathBuf>, upserted: Vec<PathBuf>) -> Self {
         debug_assert!(!removed.is_empty() || !upserted.is_empty());
         debug_assert!(paths_are_unique(&removed));
         debug_assert!(paths_are_unique(&upserted));
@@ -63,7 +63,7 @@ impl FileChangeBatch {
     }
 
     /// backend がイベント取りこぼしを報告したことだけを伝える batch。
-    pub(crate) fn rescan() -> Self {
+    pub(super) fn rescan() -> Self {
         Self {
             removed: Vec::new(),
             upserted: Vec::new(),
@@ -73,7 +73,7 @@ impl FileChangeBatch {
     }
 
     /// 稼働中のランタイム障害 1 件だけを伝える batch。
-    pub(crate) fn from_failure(failure: WatcherFailure) -> Self {
+    pub(super) fn from_failure(failure: WatcherFailure) -> Self {
         Self {
             removed: Vec::new(),
             upserted: Vec::new(),
