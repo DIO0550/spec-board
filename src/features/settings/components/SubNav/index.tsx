@@ -4,6 +4,21 @@ type SubNavIconProps = {
   tabId: SettingsTabId;
 };
 
+/** @returns archive / trashタブで共有する従来のプラスアイコン */
+const SubNavPlusIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 8v8M8 12h8" />
+  </svg>
+);
+
+/**
+ * 型上到達不能なタブIDをruntimeでは描画しない。
+ * @param _tabId - exhaustive check対象
+ * @returns null
+ */
+const unreachableSubNavIcon = (_tabId: never): null => null;
+
 /**
  * @param props - 表示対象のタブ ID
  * @returns 設定タブに対応するアイコン
@@ -49,12 +64,13 @@ const SubNavIcon = ({ tabId }: SubNavIconProps) => {
       </svg>
     );
   }
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-3.5">
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 8v8M8 12h8" />
-    </svg>
-  );
+  if (tabId === "archive") {
+    return <SubNavPlusIcon />;
+  }
+  if (tabId === "trash") {
+    return <SubNavPlusIcon />;
+  }
+  return unreachableSubNavIcon(tabId);
 };
 
 /**
