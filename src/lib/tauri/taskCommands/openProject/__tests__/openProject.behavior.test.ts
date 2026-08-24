@@ -262,6 +262,7 @@ test("watcher Init rejectはbackend別diagnosticsを保ったTauriErrorになる
   expect(result.ok).toBe(false);
   const error = (result as { ok: false; error: TauriError }).error;
   expect(error.watcherInit).toEqual(raw.watcherInit);
+  expect(error.code).toBe("UNKNOWN");
   expect(error.cause).toBe(raw);
   expect(error.command).toBe("open_project");
 });

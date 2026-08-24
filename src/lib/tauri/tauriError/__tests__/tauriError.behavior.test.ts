@@ -42,6 +42,7 @@ test("watcher Init objectはbackend別diagnosticsを正規化しcauseにraw obje
   const error = TauriError.from(raw, "open_project");
 
   expect(error.watcherInit).toEqual(raw.watcherInit);
+  expect(error.code).toBe("UNKNOWN");
   expect(error.message).toBe(raw.message);
   expect(error.cause).toBe(raw);
   expect(error.command).toBe("open_project");

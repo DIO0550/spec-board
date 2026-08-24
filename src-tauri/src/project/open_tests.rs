@@ -293,10 +293,7 @@ impl WatcherFactory for FailingStageFactory {
         _identity: SessionIdentity,
     ) -> Result<StagedProjectResources, OpenProjectError> {
         Err(OpenProjectError::WatcherInitFailed {
-            source: synthetic_watcher_init_error(
-                "synthetic stage failure",
-                "synthetic poll stage failure",
-            ),
+            source: WatcherError::Io(std::io::Error::other("synthetic stage failure")),
         })
     }
 }
