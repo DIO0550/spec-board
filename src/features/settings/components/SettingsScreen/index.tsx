@@ -64,6 +64,13 @@ type ActivePanelProps = {
 };
 
 /**
+ * 型上到達不能なタブIDをruntimeでは描画しない。
+ * @param _tabId - exhaustive check対象
+ * @returns null
+ */
+const unreachableActivePanel = (_tabId: never): null => null;
+
+/**
  * アクティブタブ ID に対応するパネルを描画するコンポーネント。
  * id → コンポーネントの対応付けは view 層の責務として本コンポーネント（switch）に
  * 閉じ込め、タブのデータ型（SettingsTab）には持たせない。
@@ -141,7 +148,7 @@ const ActivePanel = ({
         />
       );
     default:
-      return tabId satisfies never;
+      return unreachableActivePanel(tabId);
   }
 };
 
