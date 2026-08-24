@@ -87,7 +87,7 @@ test("未知の event 名は null になる", () => {
   ).toBeNull();
 });
 
-test("payload.task の一部フィールドが欠けていても素通しする", () => {
+test("payload.task の id/filePath 以外のフィールドが欠けていても素通しする", () => {
   const envelope = parseWatcherEnvelope("task-created", {
     ...outer,
     payload: { task: { id: "tasks/a.md", filePath: "tasks/a.md" } },
