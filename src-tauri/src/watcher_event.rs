@@ -23,7 +23,8 @@
 //! 2. adapter スレッドを `join` する
 //!
 //! の 2 段で同期的に停止する。明示的な`stop()`と通常の`Drop`は同じ停止経路を
-//! 通り、`AppState`のlockを一切取得しない（displaced stop中のdeadlockを防ぐ）。
+//! 通る。join対象のadapterは切断前のqueued batch処理で`AppState` lockやwriter
+//! leaseを取得し得るため、停止callerは必ずそれらを全て解放してから停止を始める。
 
 pub(crate) mod envelope;
 #[cfg(test)]

@@ -722,30 +722,35 @@ Err(RecvTimeoutError::Disconnected) => {
 
 | ファイル | 役割 |
 |:--------|:----|
-| `src/watcher_event/mod.rs` | `prepare_watcher` / `spawn_adapter` / `EmittingWatcherHandle` |
-| `src/watcher_event/handler.rs` | `handle_event`（純粋関数）と `run_event_loop`（adapter 本体） |
-| `src/watcher_event/tests.rs` | `handle_event` への単体テスト + smoke テスト |
+| `src/watcher_event.rs` | `prepare_watcher` / `stage_adapter` / `EmittingWatcherHandle` |
+| `src/watcher_event/handler.rs` | `handle_batch` / `handle_change` と `run_event_loop`（adapter 本体） |
+| `src/watcher_event/tests.rs` | batch適用とadapter停止順序の回帰テスト |
 
-### 14.2 起動の 4 段階
+### 14.2 paused stageとsession swap
 
-`open_project_impl` では以下の 4 段階で watcher を起動する。step 1 が失敗した
-ときは `AppState` を一切変更せずに `OpenProjectError::WatcherInitFailed` を返す
-契約（旧プロジェクトを表示したまま動作を継続できる）。
+`open_project_impl`ではtarget exact-rootのwriter lease内で、以下の順にwatcherを
+準備してsession/resourcesを入れ替える。swap前の失敗はresident domain/resourcesを
+変更せず（session ID予約counterは進み得る）、stage済みresourceのDropはactivationを
+cancelしてからwatcherを停止する。
 
-1. **prepare**: `prepare_watcher(root)` で `Watcher::start` を呼び `(Watcher, Receiver<FsEvent>)` を確保する。**失敗時はこの段階で復帰**し、AppState のどのフィールドも書き換わらない
-2. **stop_old**: `state.take_watcher_handle()` で旧 handle を取り出し `stop()` する。lock 解放後に `stop()` を呼ぶため、panic しても `watcher_handle` mutex は poison しない
-3. **commit**: project_path / config / tasks_cache / write_ignore.clear を順に書き込む
-4. **spawn**: `spawn_adapter(...)` で adapter スレッドを起動し、`EmittingWatcherHandle` を `install_watcher_handle` で AppState に格納する
+1. **prepare**: `WatcherFactory::prepare(root)`でbackend/channelを確保する
+2. **stage_paused**: activation latchが`Pending`のouter adapterとsession専用resourceをresident state外で完全構築する
+3. **swap / activate**: `AppState::swap_open`の単一critical sectionでdomain/resourcesを置換し、新workerを`Active`にする
+4. **displaced stop**: swap closureを抜けてwriter leaseと全state lockを解放した後、押し出された所有`Box<dyn WatcherHandle>`をconsuming `stop()`へ渡す。第三者実装のpanicは`catch_unwind`でdiagnosticへ変換し、新sessionをrollbackしない
 
-### 14.3 `EmittingWatcherHandle::stop()` の同期停止
+### 14.3 consuming stopと通常Dropの同期停止
 
-`stop()` は (a) `Watcher` を drop して notify バックエンドの送信側を切断 → (b)
-adapter スレッドを `JoinHandle::join()` する 2 段で同期停止する。Rust の
+`WatcherHandle::stop(self: Box<Self>)`はhandleを消費するため、同じhandleへの二重の
+明示停止を型で禁止する。`EmittingWatcherHandle`はprivate `shutdown(&mut self)`へ停止を
+集約し、(a) core `Watcher`をdropしてnotifyバックエンドの送信側を切断 → (b)
+outer adapterスレッドを`JoinHandle::join()`する2段で同期停止する。Rustの
 `Receiver::recv()` は対応するすべての `Sender` が drop されると `Err(RecvError)`
 を返すため、Watcher を先に drop すれば adapter ループが自動的に抜ける。
 
-`stop()` は冪等で、AppState の lock を一切取らない（取ると `watcher_handle` 保持
-中の deadlock になり得る）。
+明示`stop()`は`drop(self)`へ委譲し、通常のDropも同じ`shutdown`を通る。各resourceは
+`Option::take`で1回だけteardownし、順序を逆転させない。join対象のouter workerは
+disconnect前のqueued batch処理でAppState lockやwriter leaseを取得し得るため、停止
+callerは必ず全lock/leaseを解放してから`stop()`またはDropを開始する。
 
 ### 14.4 `handle_event` 純粋関数
 

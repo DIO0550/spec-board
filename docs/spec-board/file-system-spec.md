@@ -814,6 +814,17 @@ pub enum WatcherError {
 | 停止 | 戻り値の `Watcher` を drop すると **同期的** に監視停止する。内部 backend → adapter thread の順で解放され、`Drop` 完了後に発生したファイル変更は `Receiver` に届かない（Drop 前の保留は 1 batch にまとめて flush され、`Disconnected` を観測するまで `recv` 可能） |
 | 公開境界 | `notify::*` の型は公開シグネチャに一切露出させない（`std` の型と `FileChangeBatch` / `WatcherFailure` / `WatcherError` のみ） |
 
+`Watcher`はobject-safeな`WatcherHandle`も実装し、明示停止APIは`fn stop(self: Box<Self>)`で
+handleを消費する。同じhandleの二重停止はmove errorとしてcompile時に拒否される。
+`WatcherHandle`実装の明示stopは`drop(self)`へ委譲し、通常Dropと同じbackend解放→inner adapter join→
+pending flush / disconnectの同期経路を通る。本体crateの`EmittingWatcherHandle`もcore
+`Watcher`を先にdropしてからouter adapterをjoinし、通常Dropと明示stopを同じ順序にする。
+
+project切替時は、session/resourcesのswapと新watcher activationを完了した後、writer leaseと
+全state lockを解放してから押し出された所有handleをconsuming stopする。第三者handleのpanicは
+lock外の`catch_unwind`でdiagnosticへ変換する。watcher event、debounce、IPC wire、runtime
+diagnosticの形状と順序はこの停止契約変更では変わらない。
+
 #### `notify::Event` → 内部表現 `FsEvent` の変換テーブル
 
 `FsEvent` は `watcher` モジュール内部の中間表現で、公開 API には出ない。
@@ -886,6 +897,7 @@ recommended / poll の両方を `WatcherError::Init` に保持するため、cal
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.15 | 2026-08-24 | Issue #610: WatcherHandleのconsuming stop、二重停止の型禁止、通常Dropと同じ同期停止順序、swap後のlock/lease外停止、runtime/wire互換を明記 | - |
 | 1.14 | 2026-08-24 | Issue #609: recoverableなscan warningのrelative PathBuf / std::io::ErrorKind内部契約、非UTF-8 pathのwire null化、io kind非公開と既存5-field warning互換を明記 | - |
 | 1.13 | 2026-08-24 | Issue #607: watcher両backendの起動失敗をtyped pairで保持し、通常error string互換を維持したまま`open_project`へ機械可読な起動診断を追加 | - |
 | 1.12 | 2026-08-24 | Issue #606: task contentのsize / binary probe閾値をworkspace内部APIへ集約し、scannerとTaskContentが同じ定義を参照する契約を明記 | - |
