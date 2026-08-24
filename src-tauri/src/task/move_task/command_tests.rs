@@ -215,6 +215,10 @@ impl TaskIo for WriteCountingTaskIo {
     fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
         FsTaskIo.read(path)
     }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        FsTaskIo.try_exists(path)
+    }
 }
 
 #[test]
@@ -783,6 +787,10 @@ fn disk_success_conflict_returns_typed_error_and_resyncs_same_session() {
 
         fn read(&self, path: &Path) -> Result<Vec<u8>, TaskIoError> {
             self.inner.read(path)
+        }
+
+        fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+            self.inner.try_exists(path)
         }
     }
 

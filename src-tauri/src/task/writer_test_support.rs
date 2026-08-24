@@ -69,4 +69,8 @@ impl TaskIo for CountingTaskIo {
     fn read(&self, _path: &Path) -> Result<Vec<u8>, TaskIoError> {
         Err(self.reject_call())
     }
+
+    fn try_exists(&self, _path: &Path) -> Result<bool, TaskIoError> {
+        Err(self.reject_call())
+    }
 }

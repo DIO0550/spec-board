@@ -413,6 +413,10 @@ impl TaskIo for RevisionBumpingIo {
         }
         self.inner.read(path)
     }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, crate::task::io::TaskIoError> {
+        self.inner.try_exists(path)
+    }
 }
 
 fn ctx_with_io(
@@ -958,6 +962,10 @@ impl TaskIo for ConfigSwappingIo {
         }
         self.inner.read(path)
     }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, crate::task::io::TaskIoError> {
+        self.inner.try_exists(path)
+    }
 }
 
 // ───────── 未知 status のカラム追加（reconcile） ─────────
@@ -1065,6 +1073,10 @@ impl TaskIo for CommitInjectingTaskIo {
     fn read(&self, path: &Path) -> Result<Vec<u8>, crate::task::io::TaskIoError> {
         self.inject();
         FsTaskIo.read(path)
+    }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, crate::task::io::TaskIoError> {
+        FsTaskIo.try_exists(path)
     }
 }
 
@@ -1900,6 +1912,10 @@ impl TaskIo for FailingReadIo {
             return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into());
         }
         FsTaskIo.read(path)
+    }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, crate::task::io::TaskIoError> {
+        FsTaskIo.try_exists(path)
     }
 }
 

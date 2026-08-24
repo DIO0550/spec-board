@@ -1273,6 +1273,10 @@ impl TaskIo for FailingTaskIo {
         }
         self.inner.read(path)
     }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        self.inner.try_exists(path)
+    }
 }
 
 /// `write_atomic` を必ず失敗させる test-only `ConfigWriter`。

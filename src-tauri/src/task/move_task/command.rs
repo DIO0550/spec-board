@@ -180,6 +180,7 @@ fn commit_same_column_move(args: SameColumnMove<'_>) -> Result<Task, MoveTaskCom
     } = args;
     let next_config = plan_destination_card_order(
         config,
+        io,
         target_root.as_path(),
         intent,
         existing_task.file_path().as_str(),
@@ -243,9 +244,14 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
     } = args;
     let moved_file_path = updated_task.file_path.as_str();
     let next_config =
-        plan_source_card_order(config, target_root.as_path(), intent, moved_file_path)?;
-    let next_config =
-        plan_destination_card_order(&next_config, target_root.as_path(), intent, moved_file_path)?;
+        plan_source_card_order(config, io, target_root.as_path(), intent, moved_file_path)?;
+    let next_config = plan_destination_card_order(
+        &next_config,
+        io,
+        target_root.as_path(),
+        intent,
+        moved_file_path,
+    )?;
     let config_content = serde_json::to_string_pretty(&next_config)?;
 
     let moved_key = CanonicalTaskPath::from_path(&intent.file_path);
@@ -356,6 +362,7 @@ fn ensure_column_exists(config: &Config, column_name: &str) -> Result<(), MoveTa
 /// 並びをそのまま保存すると、移動したタスクだけが移動先カラムの並びから抜け落ちる。
 fn plan_destination_card_order(
     config: &Config,
+    io: &dyn TaskIo,
     project_root: &Path,
     intent: &MoveTaskIntent,
     moved_file_path: &str,
@@ -376,7 +383,7 @@ fn plan_destination_card_order(
             file_paths.push(moved.into_string());
         }
     }
-    let existing_paths = collect_existing_paths(project_root, &file_paths);
+    let existing_paths = collect_existing_paths(io, project_root, &file_paths);
     config
         .plan_update_card_order(intent.to_column.clone(), file_paths, &existing_paths)
         .map_err(MoveTaskCommandError::from)
@@ -389,6 +396,7 @@ fn plan_destination_card_order(
 /// config.json が無意味に肥大化するため。
 fn plan_source_card_order(
     config: &Config,
+    io: &dyn TaskIo,
     project_root: &Path,
     intent: &MoveTaskIntent,
     moved_file_path: &str,
@@ -408,7 +416,7 @@ fn plan_source_card_order(
         .filter(|p| *p != &moved)
         .map(|p| p.as_str().to_string())
         .collect();
-    let existing_paths = collect_existing_paths(project_root, &retained);
+    let existing_paths = collect_existing_paths(io, project_root, &retained);
     config
         .plan_update_card_order(intent.from_column.clone(), retained, &existing_paths)
         .map_err(MoveTaskCommandError::from)
@@ -416,16 +424,17 @@ fn plan_source_card_order(
 
 /// `file_paths` のうち `project_root` 配下で「保持すべき」パスの集合を返す。
 ///
-/// 各パスを `project_root.join(rel)` で解決し `std::fs::metadata` で判定する。
-/// `Err(NotFound)` のみ除外対象（集合に入れない）とし、`permission denied` など
-/// 他の I/O エラーは、ユーザーのカード並びを誤って失わないために保守的に集合へ含める。
-fn collect_existing_paths(project_root: &Path, file_paths: &[String]) -> HashSet<String> {
+/// 各パスを `project_root.join(rel)` で解決し [`TaskIo::try_exists`] で判定する。
+/// `Ok(false)` のみ除外対象（集合に入れない）とし、`permission denied` などの
+/// I/O エラーは、ユーザーのカード並びを誤って失わないために保守的に集合へ含める。
+fn collect_existing_paths(
+    io: &dyn TaskIo,
+    project_root: &Path,
+    file_paths: &[String],
+) -> HashSet<String> {
     file_paths
         .iter()
-        .filter(|rel| match std::fs::metadata(project_root.join(rel)) {
-            Ok(_) => true,
-            Err(e) => e.kind() != ErrorKind::NotFound,
-        })
+        .filter(|rel| io.try_exists(&project_root.join(rel)).unwrap_or(true))
         .cloned()
         .collect()
 }

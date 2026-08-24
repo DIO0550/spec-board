@@ -200,6 +200,10 @@ impl TaskIo for CommitInjectingTaskIo {
         self.inject_commit();
         FsTaskIo.read(path)
     }
+
+    fn try_exists(&self, path: &Path) -> Result<bool, TaskIoError> {
+        FsTaskIo.try_exists(path)
+    }
 }
 
 #[test]
