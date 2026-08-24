@@ -63,6 +63,38 @@ const asString = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 
 /**
+ * reducerのtask照合に使えるfilePathを取り出す。
+ * @param value 判定対象
+ * @returns 文字列ならTaskFilePath、そうでなければundefined
+ */
+const asTaskFilePath = (value: unknown): TaskFilePath | undefined => {
+  const filePath = asString(value);
+  return filePath === undefined ? undefined : (filePath as TaskFilePath);
+};
+
+type WatcherTaskIdentity = {
+  readonly id: string;
+  readonly filePath: TaskFilePath;
+};
+
+/**
+ * FE entity identityとreducer照合キーをtask payloadから取り出す。
+ * @param task 未検証のtask identity fields
+ * @returns id/filePathが文字列ならidentity、そうでなければnull
+ */
+const parseWatcherTaskIdentity = (task: {
+  readonly id?: unknown;
+  readonly filePath?: unknown;
+}): WatcherTaskIdentity | null => {
+  const id = asString(task.id);
+  const filePath = asTaskFilePath(task.filePath);
+  if (id === undefined || filePath === undefined) {
+    return null;
+  }
+  return { id, filePath };
+};
+
+/**
  * 有限数フィールドを取り出す。NaN / Infinity は順序判定に使えないため弾く。
  * @param value 判定対象
  * @returns 有限数ならその値、そうでなければ undefined
@@ -74,7 +106,7 @@ const asNumber = (value: unknown): number | undefined =>
  * upsert 系 payload をパースする。
  * @param kind 判別子（created / updated）
  * @param raw 未検証の payload
- * @returns 判別子付き payload。task が無ければ null
+ * @returns 判別子付き payload。taskまたはidentity fieldsが無ければnull
  */
 const parseTaskPayload = (
   kind: "task-created" | "task-updated",
@@ -82,6 +114,9 @@ const parseTaskPayload = (
 ): WatcherPayload | null => {
   // task 本体は検証せずそのまま渡す。理由は parseWatcherEnvelope の doc を参照。
   if (!isRecord(raw.task)) {
+    return null;
+  }
+  if (parseWatcherTaskIdentity(raw.task) === null) {
     return null;
   }
   return { kind, task: raw.task as TaskPayload };
@@ -156,7 +191,9 @@ const PAYLOAD_PARSERS: Record<
  * listen が型を保証しないため最小限の検証を入れるが、検証するのは envelope の
  * 外枠（identity / 順序フィールド / payload の判別子）だけにする。
  * `payload.task` の中身まで検証すると上記方針と矛盾し、contract fixture の漏れを
- * runtime のフォールバックで隠してしまう。
+ * runtime のフォールバックで隠してしまう。ただしFE entity identityの`task.id`と
+ * reducer照合キーの`task.filePath`だけは文字列であることを検証し、不正なactionを
+ * dispatchしない。
  *
  * @param eventName 受信した Tauri event 名
  * @param raw listen が渡した未検証の payload
@@ -622,13 +659,21 @@ export const WatcherGate = {
   toAction: (received: WatcherEnvelope): ProjectAction | null => {
     const { payload } = received;
     switch (payload.kind) {
-      case "task-created":
+      case "task-created": {
+        if (parseWatcherTaskIdentity(payload.task) === null) {
+          return null;
+        }
         return { type: "task-created", task: Task.fromPayload(payload.task) };
+      }
       case "task-updated": {
+        const identity = parseWatcherTaskIdentity(payload.task);
+        if (identity === null) {
+          return null;
+        }
         const task = Task.fromPayload(payload.task);
         return {
           type: "task-updated",
-          originalFilePath: task.filePath,
+          originalFilePath: identity.filePath,
           task,
         };
       }
