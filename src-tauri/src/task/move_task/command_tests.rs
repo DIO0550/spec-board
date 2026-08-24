@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use spec_board_fs::config::config_io::ConfigIoError;
 use tempfile::TempDir;
 
 use super::{move_task_impl, move_task_impl_with_config_io};
@@ -1402,7 +1403,11 @@ fn config_write_failure_restores_the_original_task_md() {
     .expect_err("config write should fail");
 
     assert!(
-        matches!(err, MoveTaskCommandError::ConfigIo(_)),
+        matches!(
+            &err,
+            MoveTaskCommandError::ConfigIo(ConfigIoError::SymlinkRejected { path })
+                if path == &config_path
+        ),
         "unexpected error: {err:?}"
     );
     assert_eq!(
@@ -1424,6 +1429,7 @@ fn config_write_failure_unregisters_the_self_write_marker() {
         "tasks/a.md",
         "---\ntitle: A\nstatus: Todo\n---\n",
     );
+    seed_default_config(dir.path());
     let state = Arc::new(AppState::new());
     open_with_noop(&state, dir.path());
 
@@ -1434,12 +1440,21 @@ fn config_write_failure_unregisters_the_self_write_marker() {
     let _ = fs::remove_file(&config_path);
     symlink(&target, &config_path).expect("symlink config.json");
 
-    move_task_impl(
+    let err = move_task_impl(
         &state,
         &FsTaskIo,
         make_args(&state, "tasks/a.md", "Todo", "Done", &["tasks/a.md"]),
     )
     .expect_err("config write should fail");
+
+    assert!(
+        matches!(
+            &err,
+            MoveTaskCommandError::ConfigIo(ConfigIoError::SymlinkRejected { path })
+                if path == &config_path
+        ),
+        "unexpected error: {err:?}"
+    );
 
     assert_eq!(0, session_write_ignore_len(&state));
 }
