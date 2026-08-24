@@ -13,7 +13,6 @@ import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
 import { ProjectError } from "../errors";
 import { ProjectState } from "../state/projectState";
-import { PROJECT_SWITCHED_MESSAGE } from "../constants";
 import type { TaskActionDeps } from "./deps";
 
 /**
@@ -53,7 +52,7 @@ export const createTaskAction = (
       !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
 
     const result = await createTaskInvoke(params);
@@ -61,7 +60,7 @@ export const createTaskAction = (
       return Result.err(ProjectError.tauri(result.error));
     }
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
     deps.dispatch({ type: "task-created", task: result.value });
     return Result.ok(result.value);
@@ -279,9 +278,7 @@ export const updateTaskAction = (
       !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(
-        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
-      );
+      return Result.err(ProjectError.projectSwitched());
     }
 
     const snapshot = findCurrentTask(deps.getState(), params.filePath);
@@ -308,9 +305,7 @@ export const updateTaskAction = (
     const result = await updateTaskInvoke(params);
 
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(
-        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
-      );
+      return Result.err(ProjectError.projectSwitched());
     }
 
     if (!result.ok) {
@@ -369,7 +364,7 @@ export const archiveTaskAction = (
       !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
 
     // rollback 用 snapshot（削除と同じ理由で ProjectData 単位で採取する）。
@@ -385,7 +380,7 @@ export const archiveTaskAction = (
     const result = await archiveTaskInvoke(params);
 
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
 
     if (!result.ok) {
@@ -427,9 +422,7 @@ export const deleteTaskAction = (
       !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(
-        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
-      );
+      return Result.err(ProjectError.projectSwitched());
     }
 
     // ProjectData 全体を snapshot として採取する。
@@ -450,9 +443,7 @@ export const deleteTaskAction = (
     if (!isProjectCurrent(deps.projectVersion, version)) {
       // project が切り替わった場合は rollback dispatch も skip する。
       // 通知抑止と rollback skip を分離せず、両方とも skip する方針。
-      return Result.err(
-        ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
-      );
+      return Result.err(ProjectError.projectSwitched());
     }
 
     if (!result.ok) {

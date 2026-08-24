@@ -76,6 +76,7 @@ export {
   useProjectState,
   useProjectTaskActions,
 } from "./context";
+export type { ProjectInvalidStateReason } from "./errors";
 export { isProjectSwitchedError, ProjectError } from "./errors";
 export { wasNotifiedByInvokeWrapped } from "./notifiedByInvokeWrapped";
 export { projectErrorMessage } from "./projectErrorMessage";

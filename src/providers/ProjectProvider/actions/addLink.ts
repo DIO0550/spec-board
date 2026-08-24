@@ -3,7 +3,6 @@ import { addLink as addLinkInvoke } from "@/lib/tauri";
 import type { Task } from "@/types/task";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
-import { PROJECT_SWITCHED_MESSAGE } from "../constants";
 import { ProjectError } from "../errors";
 import { ProjectState } from "../state/projectState";
 import type { TaskActionDeps } from "./deps";
@@ -56,7 +55,7 @@ export const addLinkAction = (
       !ProjectState.canAcceptDataCommand(deps.getState()) ||
       !isProjectCurrent(deps.projectVersion, version)
     ) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
 
     /**
@@ -89,7 +88,7 @@ export const addLinkAction = (
     });
 
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
 
     if (!result.ok) {
@@ -98,7 +97,7 @@ export const addLinkAction = (
       // 満たすため明示的に再 check する。version が進んでいたら他 project の
       // reducer を汚さないよう rollback dispatch ごと skip して invalid-state を返す。
       if (!isProjectCurrent(deps.projectVersion, version)) {
-        return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+        return Result.err(ProjectError.projectSwitched());
       }
       dispatchLinkOperations(deps, plan.rollback);
       return Result.err(ProjectError.tauri(result.error));

@@ -145,7 +145,7 @@ test("通常の削除失敗時はsnapshotを解放し、通知して再throwす�
 });
 
 test("project切替による失敗は表示通知を抑止して再throwする", async () => {
-  const error = ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE);
+  const error = ProjectError.projectSwitched();
   const onError = vi.fn();
   const announce = vi.fn();
   const get = renderHook(

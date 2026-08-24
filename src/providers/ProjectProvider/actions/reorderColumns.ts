@@ -2,8 +2,7 @@ import type { ProjectData } from "@/domains/project-data";
 import type { Column } from "@/types/column";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
-import { PROJECT_SWITCHED_MESSAGE } from "../constants";
-import { ProjectError } from "../errors";
+import { isProjectSwitchedError, ProjectError } from "../errors";
 import type { ProjectAction } from "../reducer";
 import { ProjectState } from "../state/projectState";
 import type { ColumnsCommandBuilder } from "./columnsCommand";
@@ -215,7 +214,7 @@ const safeCallback = (
  * 前提（caller 責務）:
  *   - 呼び出し側が `snapshot.isNoop === false` を保証してから呼ぶこと。
  *     no-op の早期 return は `reorderColumnsAction` の preflight 側で扱う。
- *   - `runUpdateColumnsInsideQueue` が `invalid-state` を返した場合は、
+ *   - `runUpdateColumnsInsideQueue` が `reason=project-switched` を返した場合だけ、
  *     reducer が既に新 project の state に切り替わっている前提で rollback
  *     dispatch / callback を行わずそのまま err を返す。
  */
@@ -252,10 +251,7 @@ export const ReorderExecution = {
     // invalid-state でも project switch（reducer が新 project に切替済み）以外は
     // rollback すべき。doneColumn validation 失敗や visibleData == null のケースでは
     // reducer は loaded のままなので楽観 dispatch を before 列に戻す必要がある。
-    const isStaleProject =
-      result.error.kind === "invalid-state" &&
-      result.error.message === PROJECT_SWITCHED_MESSAGE;
-    if (isStaleProject) {
+    if (isProjectSwitchedError(result.error)) {
       return Result.err(result.error);
     }
     deps.dispatch(ReorderSnapshot.rollbackDispatch(snapshot));
@@ -284,7 +280,7 @@ export const reorderColumnsAction = (
   const version = deps.projectVersion.current;
   return enqueueProjectCommand(deps.projectCommandQueue, async () => {
     if (!isProjectCurrent(deps.projectVersion, version)) {
-      return Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+      return Result.err(ProjectError.projectSwitched());
     }
     const data = ProjectState.visibleData(deps.getState());
     if (data === null) {

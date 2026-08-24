@@ -23,6 +23,7 @@ test("kind=tauri / NOT_FOUND は TauriError.message をそのまま返す", () =
 test("kind=invalid-state は message をそのまま返す", () => {
   const message = projectErrorMessage({
     kind: "invalid-state",
+    reason: "not-loaded",
     message: "プロジェクトが開かれていません",
   });
   expect(message).toBe("プロジェクトが開かれていません");

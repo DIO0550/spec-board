@@ -94,7 +94,7 @@ beforeEach(() => {
   addLinkMock.mockReset();
 });
 
-test("queue 内 preflight で version 不一致なら invalid-state (PROJECT_SWITCHED_MESSAGE) で IPC は呼ばれない", async () => {
+test("queue内preflightでversion不一致ならproject-switchedでIPCは呼ばれない", async () => {
   const source = makeTask({ filePath: "tasks/a.md" });
   const target = makeTask({ filePath: "tasks/b.md" });
   const harness = setupLoaded(makeData([source, target]));
@@ -108,10 +108,11 @@ test("queue 内 preflight で version 不一致なら invalid-state (PROJECT_SWI
 
   const result = await promise;
   const error = expectErr<Task, ProjectError>(result);
-  expect(error.kind).toBe("invalid-state");
-  expect((error as { kind: "invalid-state"; message: string }).message).toBe(
-    PROJECT_SWITCHED_MESSAGE,
-  );
+  expect(error).toMatchObject({
+    kind: "invalid-state",
+    reason: "project-switched",
+    message: PROJECT_SWITCHED_MESSAGE,
+  });
   expect(addLinkMock).not.toHaveBeenCalled();
 });
 

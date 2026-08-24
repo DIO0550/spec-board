@@ -331,10 +331,11 @@ test("stale 応答前の project 切替では新 project state を一切変更�
   });
 
   const error = expectErr<Task, ProjectError>(result);
-  expect(error.kind).toBe("invalid-state");
-  expect((error as { kind: "invalid-state"; message: string }).message).toBe(
-    PROJECT_SWITCHED_MESSAGE,
-  );
+  expect(error).toMatchObject({
+    kind: "invalid-state",
+    reason: "project-switched",
+    message: PROJECT_SWITCHED_MESSAGE,
+  });
   // 切替後に confirm / rollback の dispatch が積まれていない
   expect(harness.actions).toHaveLength(actionsAtSwitch);
   // 同一 filePath の sentinel が rollback（remove）で汚染されていない
@@ -372,9 +373,11 @@ test("stale 応答前の project 切替では新 project state を一切変更�
   });
 
   const error = expectErr<Task, ProjectError>(result);
-  expect((error as { kind: "invalid-state"; message: string }).message).toBe(
-    PROJECT_SWITCHED_MESSAGE,
-  );
+  expect(error).toMatchObject({
+    kind: "invalid-state",
+    reason: "project-switched",
+    message: PROJECT_SWITCHED_MESSAGE,
+  });
   expect(harness.actions).toHaveLength(actionsAtSwitch);
   // 同一 filePath の sentinel が rollback（re-append）で汚染されていない
   const newSource = currentTask(harness, "tasks/a.md");

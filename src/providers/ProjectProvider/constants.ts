@@ -2,10 +2,8 @@ import type { Column } from "@/types/column";
 import type { Task } from "@/types/task";
 
 /**
- * project switch を示す invalid-state エラーの message 文字列。
- * reorder などの後段 effect は、楽観 dispatch を rollback すべきかどうかを
- * この message と照合して判定する（switch 時は reducer が新 project に
- * 切替済みのため rollback してはならない）。
+ * project switchをユーザーへ表示するmessage文字列。
+ * 処理分岐にはmessageではなくProjectErrorのreasonを使う。
  */
 export const PROJECT_SWITCHED_MESSAGE = "プロジェクトが切り替わりました";
 

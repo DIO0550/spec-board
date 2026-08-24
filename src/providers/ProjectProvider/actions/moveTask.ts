@@ -272,7 +272,7 @@ const versionGuard = (
 ): ResultT<void, ProjectError> | null =>
   isProjectCurrent(deps.projectVersion, version)
     ? null
-    : Result.err(ProjectError.invalidState("プロジェクトが切り替わりました"));
+    : Result.err(ProjectError.projectSwitched());
 
 /** 単一引数を受け取り副作用のみ起こす callback の型エイリアス。 */
 type SafeCallbackFn<T> = (arg: T) => void;
@@ -332,15 +332,11 @@ const revalidateInsideQueue = (
     !ProjectState.canAcceptDataCommand(deps.getState()) ||
     !isProjectCurrent(deps.projectVersion, version)
   ) {
-    return Result.err(
-      ProjectError.invalidState("プロジェクトが切り替わりました"),
-    );
+    return Result.err(ProjectError.projectSwitched());
   }
   const data = ProjectState.visibleData(deps.getState());
   if (data === null) {
-    return Result.err(
-      ProjectError.invalidState("プロジェクトが開かれていません"),
-    );
+    return Result.err(ProjectError.invalidState());
   }
   const target = data.tasks.find((t) => t.filePath === params.taskFilePath);
   if (!target) {

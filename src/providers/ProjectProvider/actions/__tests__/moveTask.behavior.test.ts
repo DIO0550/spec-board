@@ -851,7 +851,10 @@ test("session が loaded でない時 invalidState で抜ける", async () => {
   );
 
   expect(result.ok).toBe(false);
-  expect((result as { error: ProjectError }).error.kind).toBe("invalid-state");
+  expect((result as { error: ProjectError }).error).toMatchObject({
+    kind: "invalid-state",
+    reason: "not-loaded",
+  });
   expect(moveTaskMock).not.toHaveBeenCalled();
 });
 
@@ -880,7 +883,10 @@ test("IPC 中に projectVersion が変わると invalidState で抜け、確定�
   );
 
   expect(result.ok).toBe(false);
-  expect((result as { error: ProjectError }).error.kind).toBe("invalid-state");
+  expect((result as { error: ProjectError }).error).toMatchObject({
+    kind: "invalid-state",
+    reason: "project-switched",
+  });
   expect(rollback).not.toHaveBeenCalled();
   expect(harness.actions.map((a) => a.type)).toEqual([
     "task-updated",

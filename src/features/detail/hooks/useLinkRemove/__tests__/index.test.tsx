@@ -6,10 +6,7 @@ import {
   type UseLinkRemoveOptions,
   useLinkRemove,
 } from "@/features/detail/hooks/useLinkRemove";
-import {
-  PROJECT_SWITCHED_MESSAGE,
-  ProjectError,
-} from "@/providers/ProjectProvider";
+import { ProjectError } from "@/providers/ProjectProvider";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
 
@@ -123,9 +120,7 @@ test("link remove失敗はonErrorとrollbackを通知する", async () => {
 });
 
 test("link removeのproject switchは通知を抑止する", async () => {
-  const result = Result.err(
-    ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE),
-  );
+  const result = Result.err(ProjectError.projectSwitched());
   const onError = vi.fn();
   const announce = vi.fn();
   let latest: LinkRemoveCallback | null = null;

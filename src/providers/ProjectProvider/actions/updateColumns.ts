@@ -9,7 +9,6 @@ import {
 } from "@/lib/tauri";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { enqueueProjectCommand, isProjectCurrent } from "../concurrency";
-import { PROJECT_SWITCHED_MESSAGE } from "../constants";
 import { ProjectError } from "../errors";
 import { ProjectState } from "../state/projectState";
 import { ColumnsCommand, type ColumnsCommandBuilder } from "./columnsCommand";
@@ -21,7 +20,7 @@ import type { TaskActionDeps } from "./deps";
  * @returns applied=false ではなく stale command を表す invalid-state
  */
 const switchedProject = (): ResultT<{ applied: boolean }, ProjectError> =>
-  Result.err(ProjectError.invalidState(PROJECT_SWITCHED_MESSAGE));
+  Result.err(ProjectError.projectSwitched());
 
 /**
  * ProjectColumns の domain validation error を useProject の error 型に変換する。

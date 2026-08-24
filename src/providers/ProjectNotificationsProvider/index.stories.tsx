@@ -103,6 +103,7 @@ const NotificationConsumer = ({ emit }: NotificationConsumerProps) => {
               type: "open-error",
               error: {
                 kind: "invalid-state",
+                reason: "operation-rejected",
                 message: "プロジェクトを開けませんでした",
               },
             })
