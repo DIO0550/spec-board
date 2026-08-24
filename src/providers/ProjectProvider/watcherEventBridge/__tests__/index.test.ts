@@ -100,7 +100,9 @@ const queueEvents = async (
 
   Array.from({ length: count }).forEach(() => {
     handlers["task-created"]?.(
-      watcherEnvelope({ task: { filePath: "tasks/queued.md" } }),
+      watcherEnvelope({
+        task: { id: "tasks/queued.md", filePath: "tasks/queued.md" },
+      }),
     );
   });
   bridge.commitOpen(1, WATCHER_SESSION_FIXTURE, vi.fn());

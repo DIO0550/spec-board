@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import type { TaskPayload } from "@/types/task";
 import { WatcherGate } from "../index";
 import {
   diagnosticEnvelope,
@@ -40,6 +41,26 @@ test("task-deleted は task-deleted action になる", () => {
   );
 
   expect(action).toEqual({ type: "task-deleted", filePath: "tasks/c.md" });
+});
+
+test.each([
+  ["task-created", "id", undefined],
+  ["task-created", "id", 42],
+  ["task-created", "filePath", undefined],
+  ["task-created", "filePath", 42],
+  ["task-updated", "id", undefined],
+  ["task-updated", "id", 42],
+  ["task-updated", "filePath", undefined],
+  ["task-updated", "filePath", 42],
+] as const)("%s の task.%s が %s なら actionへ変換しない", (kind, field, value) => {
+  const malformedTask = {
+    ...taskPayload("tasks/a.md"),
+    [field]: value,
+  } as unknown as TaskPayload;
+
+  expect(
+    WatcherGate.toAction(envelope({ payload: { kind, task: malformedTask } })),
+  ).toBeNull();
 });
 
 test.each([

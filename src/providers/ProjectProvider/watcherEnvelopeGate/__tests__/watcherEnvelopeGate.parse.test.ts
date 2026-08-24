@@ -87,13 +87,31 @@ test("未知の event 名は null になる", () => {
   ).toBeNull();
 });
 
-test("payload.task の一部フィールドが欠けていても素通しする", () => {
+test("payload.task の id/filePath 以外のフィールドが欠けていても素通しする", () => {
   const envelope = parseWatcherEnvelope("task-created", {
     ...outer,
-    payload: { task: { filePath: "tasks/a.md" } },
+    payload: { task: { id: "tasks/a.md", filePath: "tasks/a.md" } },
   });
 
   expect(envelope?.payload.kind).toBe("task-created");
+});
+
+test.each([
+  ["task-created", "id", "欠損", { ...taskPayload, id: undefined }],
+  ["task-created", "id", "非string", { ...taskPayload, id: 42 }],
+  ["task-created", "filePath", "欠損", { ...taskPayload, filePath: undefined }],
+  ["task-created", "filePath", "非string", { ...taskPayload, filePath: 42 }],
+  ["task-updated", "id", "欠損", { ...taskPayload, id: undefined }],
+  ["task-updated", "id", "非string", { ...taskPayload, id: 42 }],
+  ["task-updated", "filePath", "欠損", { ...taskPayload, filePath: undefined }],
+  ["task-updated", "filePath", "非string", { ...taskPayload, filePath: 42 }],
+])("%s の task.%s が%sなら null になる", (eventName, _field, _case, task) => {
+  expect(
+    parseWatcherEnvelope(eventName, {
+      ...outer,
+      payload: { task },
+    }),
+  ).toBeNull();
 });
 
 test.each([
