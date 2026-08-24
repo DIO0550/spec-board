@@ -2,15 +2,11 @@
 
 use std::path::PathBuf;
 
-use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
+use spec_board_fs::watcher::file_change_batch::{FileChangeBatch, FileChangeBatchTestBuilder};
 
 /// fs 層が rename を分解した形の batch（from を removed、to を upserted）。
 pub(crate) fn rename_batch(from: PathBuf, to: PathBuf) -> FileChangeBatch {
-    FileChangeBatch {
-        removed: vec![from],
-        upserted: vec![to],
-        ..FileChangeBatch::default()
-    }
+    FileChangeBatchTestBuilder::changes(vec![from], vec![to]).build()
 }
 
 /// 1 path の upsert だけを持つ batch。
@@ -20,16 +16,10 @@ pub(crate) fn upsert_batch(path: PathBuf) -> FileChangeBatch {
 
 /// 複数 path の upsert を持つ batch。
 pub(crate) fn upserts_batch(paths: Vec<PathBuf>) -> FileChangeBatch {
-    FileChangeBatch {
-        upserted: paths,
-        ..FileChangeBatch::default()
-    }
+    FileChangeBatchTestBuilder::changes(Vec::new(), paths).build()
 }
 
 /// 1 path の削除だけを持つ batch。
 pub(crate) fn removed_batch(path: PathBuf) -> FileChangeBatch {
-    FileChangeBatch {
-        removed: vec![path],
-        ..FileChangeBatch::default()
-    }
+    FileChangeBatchTestBuilder::changes(vec![path], Vec::new()).build()
 }

@@ -24,7 +24,7 @@ use crate::task::io::{FsTaskIo, TaskIo};
 use crate::watcher_event::watcher_test_support::{rename_batch, upserts_batch};
 use crate::watcher_event::{AdapterContext, EmitFn};
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
-use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
+use spec_board_fs::watcher::file_change_batch::FileChangeBatchTestBuilder;
 use spec_board_fs::watcher::handle::NoopWatcherHandle;
 use spec_board_fs::watcher::write_ignore::WriteIgnoreRegistry;
 use std::thread;
@@ -1860,22 +1860,36 @@ fn a_retrying_rescan_keeps_a_column_another_writer_added_between_attempts() {
 // ───────── batch 展開（changes_in_order / handle_batch） ─────────
 
 #[test]
-fn changes_in_order_puts_rescan_and_failures_before_removed_and_upserted() {
-    let reported = failure(WatcherFailureKind::Io, "read error", Vec::new());
-    let batch = FileChangeBatch {
-        removed: vec![PathBuf::from("/tmp/x.md")],
-        upserted: vec![PathBuf::from("/tmp/y.md")],
-        rescan: true,
-        errors: vec![reported.clone()],
-    };
+fn changes_in_order_puts_removed_before_upserted() {
+    let batch = FileChangeBatchTestBuilder::changes(
+        vec![PathBuf::from("/tmp/x.md")],
+        vec![PathBuf::from("/tmp/y.md")],
+    )
+    .build();
 
     assert_eq!(
         vec![
-            TaskFileChange::Rescan,
-            TaskFileChange::Failure(reported),
             TaskFileChange::Removed(PathBuf::from("/tmp/x.md")),
             TaskFileChange::Upserted(PathBuf::from("/tmp/y.md")),
         ],
+        changes_in_order(&batch)
+    );
+}
+
+#[test]
+fn changes_in_order_projects_the_rescan_mode() {
+    let batch = FileChangeBatchTestBuilder::rescan().build();
+
+    assert_eq!(vec![TaskFileChange::Rescan], changes_in_order(&batch));
+}
+
+#[test]
+fn changes_in_order_projects_the_failure_mode() {
+    let reported = failure(WatcherFailureKind::Io, "read error", Vec::new());
+    let batch = FileChangeBatchTestBuilder::failure(reported.clone()).build();
+
+    assert_eq!(
+        vec![TaskFileChange::Failure(reported)],
         changes_in_order(&batch)
     );
 }
@@ -1950,7 +1964,7 @@ fn an_empty_batch_consumes_no_event_seq() {
         .expect("session is open")
         .version();
 
-    handle_batch(&FileChangeBatch::default(), &ctx);
+    handle_batch(&FileChangeBatchTestBuilder::empty().build(), &ctx);
 
     assert!(drain(&log).is_empty(), "空 batch は何も emit しない");
     assert_eq!(

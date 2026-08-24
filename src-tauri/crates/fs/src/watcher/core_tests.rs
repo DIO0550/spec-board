@@ -1,4 +1,5 @@
 use super::*;
+use crate::watcher::file_change_batch::FileChangeBatchTestBuilder;
 use notify::event::{
     AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
 };
@@ -107,9 +108,9 @@ fn drain_until_disconnected(
 /// batch が言及する全 path（removed + upserted）。
 fn batch_paths(batch: &FileChangeBatch) -> Vec<PathBuf> {
     batch
-        .removed
+        .removed()
         .iter()
-        .chain(batch.upserted.iter())
+        .chain(batch.upserted().iter())
         .cloned()
         .collect()
 }
@@ -118,7 +119,7 @@ fn batch_paths(batch: &FileChangeBatch) -> Vec<PathBuf> {
 fn upsert_count(batches: &[FileChangeBatch], target: &Path) -> usize {
     batches
         .iter()
-        .flat_map(|batch| batch.upserted.iter())
+        .flat_map(|batch| batch.upserted().iter())
         .filter(|path| path.as_path() == target)
         .count()
 }
@@ -127,7 +128,7 @@ fn upsert_count(batches: &[FileChangeBatch], target: &Path) -> usize {
 fn removed_count(batches: &[FileChangeBatch], target: &Path) -> usize {
     batches
         .iter()
-        .flat_map(|batch| batch.removed.iter())
+        .flat_map(|batch| batch.removed().iter())
         .filter(|path| path.as_path() == target)
         .count()
 }
@@ -438,8 +439,8 @@ fn spawn_adapter_translates_runtime_error_into_a_failure_batch() {
     let batch = fs_rx
         .recv_timeout(Duration::from_secs(2))
         .expect("should receive a failure batch");
-    let [failure] = batch.errors.as_slice() else {
-        panic!("expected exactly one failure, got {:?}", batch.errors);
+    let [failure] = batch.errors() else {
+        panic!("expected exactly one failure, got {:?}", batch.errors());
     };
     assert!(
         failure.detail.contains("backend exploded"),
@@ -447,7 +448,7 @@ fn spawn_adapter_translates_runtime_error_into_a_failure_batch() {
         failure.detail
     );
     assert_eq!(WatcherFailureKind::Unknown, failure.kind);
-    assert!(!batch.rescan, "障害 batch は rescan を立てない");
+    assert!(!batch.is_rescan(), "障害 batch は rescan を立てない");
     assert!(
         batch_paths(&batch).is_empty(),
         "障害 batch に path は載らない"
@@ -582,7 +583,7 @@ fn watcher_start_observes_top_level_file_creation() {
     let batch = wait_for_batch_at(&rx, &target, Duration::from_secs(5))
         .expect("should observe a batch for the new file");
     assert!(
-        batch.upserted.contains(&target),
+        batch.upserted().contains(&target),
         "新規ファイルは upserted に載るべき: {batch:?}"
     );
 
@@ -607,7 +608,7 @@ fn watcher_start_observes_nested_file_creation() {
     let batch = wait_for_batch_at(&rx, &target, Duration::from_secs(5))
         .expect("should observe a batch for nested file");
     assert!(
-        batch.upserted.contains(&target),
+        batch.upserted().contains(&target),
         "ネストしたファイルも upserted に載るべき: {batch:?}"
     );
 
@@ -630,7 +631,7 @@ fn watcher_start_with_poll_observes_file_creation() {
     let batch = wait_for_batch_at(&rx, &target, Duration::from_secs(8))
         .expect("poll backend should eventually observe the file");
     assert!(
-        batch.upserted.contains(&target),
+        batch.upserted().contains(&target),
         "poll backend でも upserted に載るべき: {batch:?}"
     );
 
@@ -774,8 +775,8 @@ fn spawn_adapter_emits_a_single_batch_after_the_debounce_window() {
     let batch = fs_rx
         .recv_timeout(Duration::from_secs(2))
         .expect("debounce 満了後に batch が届くべき");
-    assert_eq!(vec![path], batch.upserted);
-    assert!(batch.removed.is_empty());
+    assert_eq!(vec![path], batch.upserted());
+    assert!(batch.removed().is_empty());
 
     assert!(
         matches!(
@@ -810,7 +811,7 @@ fn spawn_adapter_slides_deadline_when_same_path_arrives_within_window() {
         .expect("debounce 満了後に 1 batch 届くべき");
     assert_eq!(
         vec![path],
-        batch.upserted,
+        batch.upserted(),
         "同一 path は 1 エントリに畳まれるべき"
     );
 
@@ -843,7 +844,7 @@ fn spawn_adapter_collapses_changes_to_different_paths_into_one_batch() {
         .expect("debounce 満了後に 1 batch 届くべき");
     assert_eq!(
         vec![first, second],
-        batch.upserted,
+        batch.upserted(),
         "別 path の変更は 1 batch にまとまり、deadline 昇順で並ぶべき"
     );
 
@@ -879,7 +880,7 @@ fn spawn_adapter_flushes_remaining_pending_as_one_batch_on_notify_tx_drop() {
         .expect("Drop 時に保留が flush されるべき");
     assert_eq!(
         vec![first, second],
-        batch.upserted,
+        batch.upserted(),
         "残保留は 1 batch にまとまり、deadline 昇順で並ぶべき"
     );
 
@@ -918,11 +919,11 @@ fn spawn_adapter_forwards_rescan_immediately_bypassing_pending_changes() {
         .expect("保留は Rescan の後に発火すべき（破棄されない）");
 
     assert_eq!(
-        FileChangeBatch::rescan(),
+        FileChangeBatchTestBuilder::rescan().build(),
         first,
         "rescan 専用 batch が先に届くべき"
     );
-    assert_eq!(vec![path], second.upserted);
+    assert_eq!(vec![path], second.upserted());
 
     drop(notify_tx);
     let _ = handle.join();
@@ -947,12 +948,12 @@ fn spawn_adapter_forwards_backend_failure_immediately_bypassing_pending_changes(
         .recv_timeout(Duration::from_secs(2))
         .expect("保留は Error の後に発火すべき（破棄されない）");
 
-    assert_eq!(1, first.errors.len(), "障害 batch は errors だけを持つ");
+    assert_eq!(1, first.errors().len(), "障害 batch は errors だけを持つ");
     assert!(
         batch_paths(&first).is_empty(),
         "障害 batch に path は載らない: {first:?}"
     );
-    assert_eq!(vec![path], second.upserted);
+    assert_eq!(vec![path], second.upserted());
 
     drop(notify_tx);
     let _ = handle.join();
@@ -990,11 +991,11 @@ fn spawn_adapter_keeps_the_renamed_from_path_when_modify_follows_for_the_to_path
     );
     let removed_at = batches
         .iter()
-        .position(|batch| batch.removed.contains(&from))
+        .position(|batch| batch.removed().contains(&from))
         .expect("rename 元の削除を含む batch があるべき");
     let upserted_at = batches
         .iter()
-        .position(|batch| batch.upserted.contains(&to))
+        .position(|batch| batch.upserted().contains(&to))
         .expect("rename 先の upsert を含む batch があるべき");
     assert!(
         removed_at <= upserted_at,
@@ -1252,7 +1253,7 @@ fn watcher_with_poll_debounces_consecutive_writes() {
     );
     assert_eq!(
         vec![target],
-        batches[0].upserted,
+        batches[0].upserted(),
         "poll backend でも upserted に 1 回だけ載るべき"
     );
 
