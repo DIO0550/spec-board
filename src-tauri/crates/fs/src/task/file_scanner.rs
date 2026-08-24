@@ -65,9 +65,8 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
             Err(error) => {
                 warnings.push(ScanWarning {
                     code: ScanWarningCode::EntryError,
-                    path: error
-                        .path()
-                        .and_then(|path| relative_path_string(path, root)),
+                    path: error.path().and_then(|path| relative_path(path, root)),
+                    io_kind: error.io_error().map(std::io::Error::kind),
                     message: error.to_string(),
                 });
                 continue;
@@ -81,6 +80,7 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
             warnings.push(ScanWarning {
                 code: ScanWarningCode::InvalidPath,
                 path: None,
+                io_kind: None,
                 message: format!(
                     "path cannot be represented as UTF-8: {}",
                     entry.path().to_string_lossy()
@@ -95,6 +95,7 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
                 warnings.push(ScanWarning {
                     code: ScanWarningCode::InvalidPath,
                     path: None,
+                    io_kind: None,
                     message: format!(
                         "path is outside the scan root or cannot be represented as UTF-8: {}",
                         entry.path().to_string_lossy()
@@ -103,13 +104,13 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
                 continue;
             }
         };
-        let relative = relative_path.to_string_lossy().into_owned();
         let metadata = match entry.metadata() {
             Ok(metadata) => metadata,
             Err(error) => {
                 warnings.push(ScanWarning {
                     code: ScanWarningCode::MetadataError,
-                    path: Some(relative),
+                    path: Some(relative_path),
+                    io_kind: error.io_error().map(std::io::Error::kind),
                     message: error.to_string(),
                 });
                 continue;
@@ -118,7 +119,8 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
         if metadata.len() > MAX_FILE_SIZE {
             warnings.push(ScanWarning {
                 code: ScanWarningCode::FileTooLarge,
-                path: Some(relative),
+                path: Some(relative_path),
+                io_kind: None,
                 message: format!("file is larger than the {} byte limit", MAX_FILE_SIZE),
             });
             continue;
@@ -127,7 +129,8 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
             Ok(true) => items.push(relative_path),
             Ok(false) => warnings.push(ScanWarning {
                 code: ScanWarningCode::BinaryFile,
-                path: Some(relative),
+                path: Some(relative_path),
+                io_kind: None,
                 message: format!(
                     "file contains a NUL byte in the first {} bytes",
                     BINARY_PROBE_LEN
@@ -135,7 +138,8 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
             }),
             Err(error) => warnings.push(ScanWarning {
                 code: ScanWarningCode::UnreadableFile,
-                path: Some(relative),
+                path: Some(relative_path),
+                io_kind: Some(error.kind()),
                 message: error.to_string(),
             }),
         }
@@ -156,10 +160,18 @@ pub enum ScanWarningCode {
 }
 
 /// scanner が返す per-entry warning。
+///
+/// `path` は UTF-8 で表現できる場合だけ保持する scan root 相対パスで、`io_kind` は
+/// underlying failure が I/O error を持つ場合だけ設定される。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScanWarning {
+    /// warning の分類。
     pub code: ScanWarningCode,
-    pub path: Option<String>,
+    /// UTF-8 で表現できる scan root 相対パス。
+    pub path: Option<PathBuf>,
+    /// underlying I/O error の [`std::io::ErrorKind`]。
+    pub io_kind: Option<std::io::ErrorKind>,
+    /// 従来互換の診断文言。
     pub message: String,
 }
 
@@ -182,10 +194,6 @@ fn relative_path(path: &Path, root: &Path) -> Option<PathBuf> {
     let rel = path.strip_prefix(root).ok()?;
     rel.to_str()?;
     Some(rel.to_path_buf())
-}
-
-fn relative_path_string(path: &Path, root: &Path) -> Option<String> {
-    relative_path(path, root).and_then(|relative| relative.to_str().map(ToOwned::to_owned))
 }
 
 /// 先頭 [`BINARY_PROBE_LEN`] byte をプローブし、NUL byte を含まなければテキストと判定する。
