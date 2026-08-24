@@ -206,7 +206,7 @@ flowchart TD
 - Markdown/YAML の読み込み直後は parse-only candidate とし、resident session/cache には canonical resolver を通過した Task 集合だけを格納する。parse-only candidate と resident Task は IPC serialize / deserialize の対象にしない
 - canonical resolver は全 task を `filePath` 昇順に正規化してから、parent 検証、`children`、`reverseLinks`、graph warning を全件再計算する。したがって `children` / `reverseLinks` の配列順も参照元 task の `filePath` 昇順で安定する
 - parser が生成した warning と graph resolver が生成した `parentNotFound` / `parentCycle` warning は内部で分離して保持し、IPC では parser warning → graph warning の順に連結する
-- Rust / Tauri IPC の task payload は出力専用の projection であり、`parent` / `children` / `links` / `reverseLinks` を top-level に持つ従来どおりの flat camelCase JSON とする。キー順、`Option` の省略、`draft: false` の省略を含む wire 形状は変更しない
+- Rust / Tauri IPC の task payload は出力専用の projection であり、`parent` / `children` / `links` / `reverseLinks` を top-level に持つ従来どおりの flat camelCase JSON とする。今回 canonical 化する `TaskWarning.field` を除き、既存キー順、他の `Option` の省略、`draft: false` の省略を含む wire 形状は変更しない
 - `TaskWarning.field` の canonical wire は値がある場合だけ文字列キーを出力し、未指定時はキー自体を省略する。canonical payload は `field: null` を出力しない
 - frontend の IPC 入力adapterは旧backendが出力した `field: null` も互換入力として受理し、field省略とともにdomain `TaskWarning`のキーなしへ正規化する。文字列は空文字を含めて保持し、frontend domain / canonical `TaskPayload`へ`null`を持ち込まない
 - フロントエンド domain の `Task` は IPC payload を `TaskPayload` として受け取った後、`hierarchy.parentFilePath` / `hierarchy.childFilePaths` と `links.linkedFilePaths` / `links.reverseLinkedFilePaths` に変換して保持する
