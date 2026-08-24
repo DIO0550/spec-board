@@ -60,30 +60,30 @@ fn builder_failure_builds_only_the_failure_mode() {
 
 #[test]
 #[should_panic(expected = "changes mode must contain at least one path")]
-fn from_changes_rejects_empty_path_lists() {
-    let _ = FileChangeBatch::from_changes(Vec::new(), Vec::new());
+fn builder_changes_rejects_empty_path_lists() {
+    let _ = FileChangeBatchTestBuilder::changes(Vec::new(), Vec::new());
 }
 
 #[test]
 #[should_panic(expected = "removed paths must be unique")]
-fn from_changes_rejects_duplicate_removed_paths() {
+fn builder_changes_rejects_duplicate_removed_paths() {
     let duplicate = PathBuf::from("same.md");
 
-    let _ = FileChangeBatch::from_changes(vec![duplicate.clone(), duplicate], Vec::new());
+    let _ = FileChangeBatchTestBuilder::changes(vec![duplicate.clone(), duplicate], Vec::new());
 }
 
 #[test]
 #[should_panic(expected = "upserted paths must be unique")]
-fn from_changes_rejects_duplicate_upserted_paths() {
+fn builder_changes_rejects_duplicate_upserted_paths() {
     let duplicate = PathBuf::from("same.md");
 
-    let _ = FileChangeBatch::from_changes(Vec::new(), vec![duplicate.clone(), duplicate]);
+    let _ = FileChangeBatchTestBuilder::changes(Vec::new(), vec![duplicate.clone(), duplicate]);
 }
 
 #[test]
 #[should_panic(expected = "removed and upserted paths must be disjoint")]
-fn from_changes_rejects_a_path_in_both_lists() {
+fn builder_changes_rejects_a_path_in_both_lists() {
     let shared = PathBuf::from("same.md");
 
-    let _ = FileChangeBatch::from_changes(vec![shared.clone()], vec![shared]);
+    let _ = FileChangeBatchTestBuilder::changes(vec![shared.clone()], vec![shared]);
 }
