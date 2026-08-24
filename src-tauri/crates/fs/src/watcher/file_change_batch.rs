@@ -1,6 +1,7 @@
 //! デバウンスウィンドウ 1 回分の畳み込み結果を表す値オブジェクト。
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use super::core::WatcherFailure;
 
@@ -112,14 +113,18 @@ impl FileChangeBatch {
 }
 
 fn paths_are_unique(paths: &[PathBuf]) -> bool {
-    paths
-        .iter()
-        .enumerate()
-        .all(|(index, path)| !paths[index + 1..].contains(path))
+    let mut seen = HashSet::<&Path>::with_capacity(paths.len());
+    paths.iter().all(|path| seen.insert(path.as_path()))
 }
 
 fn paths_are_disjoint(removed: &[PathBuf], upserted: &[PathBuf]) -> bool {
-    removed.iter().all(|path| !upserted.contains(path))
+    let removed_paths = removed
+        .iter()
+        .map(PathBuf::as_path)
+        .collect::<HashSet<&Path>>();
+    upserted
+        .iter()
+        .all(|path| !removed_paths.contains(path.as_path()))
 }
 
 /// テストで相互排他的な batch mode を選ぶための builder。
