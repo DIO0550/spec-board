@@ -183,7 +183,8 @@ Aggregate 境界の引き方の指針:
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │           サブクレート: spec-board-fs (src-tauri/crates/fs/)                  │
-│  task::kebab_case / task::unique_filename / task::file_scanner               │
+│  task::content_limits / task::kebab_case / task::unique_filename             │
+│  task::file_scanner                                                          │
 │  watcher::core / watcher::handle / watcher::write_ignore                     │
 │  config::config_io                                                           │
 │                                                                              │
@@ -289,8 +290,8 @@ project_path → config → tasks_cache → watcher_handle → write_ignore
 ## 7. sub-crate との境界
 
 `spec-board-fs` (`src-tauri/crates/fs/`) は重い外部 crate（`walkdir` /
-`notify` / `tempfile` 等）を集約するためのサブクレート。本リファクタでは
-**sub-crate の API は一切変更しない**:
+`notify` / `tempfile` 等）を集約するためのサブクレート。関数APIは引き続き
+`std`の型だけを境界に出す:
 
 - 引数: `&Path` / `&str`
 - 戻り値: `PathBuf` / `String` / `Vec<PathBuf>` / `Vec<String>`
@@ -298,6 +299,13 @@ project_path → config → tasks_cache → watcher_handle → write_ignore
 VO は本体側に置き、`vo.as_str()` / `vo.as_path()` で sub-crate に渡す。
 sub-crate からの戻り値（`PathBuf`）を本体側で
 `TaskFilePath::from_relative_path(&path)?` で詰め直す。
+
+scanner eligibilityの数値契約だけは
+`spec_board_fs::task::content_limits::{MAX_FILE_SIZE, BINARY_PROBE_LEN}`を
+workspace内部の共有定義として公開する。本体crateの`TaskContent` constructorと
+sub-crateの`file_scanner`が同じ定数を直接importすることで、手動同期コメントや
+重複定義なしに「scannerが受理したcontentをdomain側だけが拒否する」ずれを防ぐ。
+定数の型はそれぞれ`u64` / `usize`で、I/O metadataのsize型とslice長の型に合わせる。
 
 これにより、サブクレート差し替えの影響範囲を狭く保ったまま、本体クレート
 側で型による安全性を享受できる。
@@ -353,7 +361,7 @@ src-tauri/src/
     ├── path_lookup.rs           normalize_*_for_lookup / task_*_index helper
     ├── children.rs              build_children (task_index の検証を委譲呼び出し)
     ├── reverse_links.rs         build_reverse_links + 関連 helper
-    ├── task_content.rs          TaskContent VO (scanner eligible を constructor で強制)
+    ├── task_content.rs          TaskContent VO (sub-crate共有閾値をconstructorで強制)
     ├── task_file_name.rs        TaskFileName VO（変更なし）
     ├── task_file_path.rs        TaskFilePath VO（変更なし）
     ├── task_title.rs            TaskTitle VO（変更なし）
