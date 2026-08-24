@@ -12,7 +12,13 @@ spec-board で管理するタスクのmdファイルフォーマットを定義�
 バックエンドの resident `Task` は、scanner が正規化した project root 相対の
 `filePath` を唯一の identity として保持する。IPC payload は後方互換のため `id` と
 `filePath` の両フィールドを従来の順序・型で返すが、両方とも常に同じ canonical path
-である。フロントエンドの `Task.id` と既存 wire / disk / error 形状は変更しない。
+である。wire上の`TaskPayload.id` / `TaskPayload.filePath`は従来どおりJSON文字列とし、
+フロントエンドの`Task.fromPayload`境界でそれぞれ`TaskId` / `TaskFilePath`へ個別に
+変換する。両brandはruntimeでは同じ文字列でも相互代入できず、選択state/callbackは
+`TaskId`、canonical pathのprojection・forest・mutation引数は`TaskFilePath`を使う。
+
+frontmatter由来のraw `parent` / forward `links`は、表記揺れやリンク切れを保持するため
+通常の`string`のままとする。既存wire fieldの名前・順序・値、disk/error形状は変更しない。
 
 ## ファイルフォーマット
 
@@ -440,6 +446,7 @@ create / update の strict parent 検証は I/O より前に従来どおり実�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.5 | 2026-08-24 | Issue #616: wire文字列をTaskId/TaskFilePathへ個別変換し、選択ID・canonical path・raw参照のfrontend型境界を明記 | - |
 | 1.4 | 2026-08-24 | Issue #611: TaskWarning.field未指定のcanonical wireをキー省略へ統一し、legacy nullをfrontend入力adapterでdomainキーなしへ正規化する互換契約を明記 | - |
 | 1.3 | 2026-08-24 | Issue #605: update_task wireの3値互換を維持し、Args adapterでparent / milestone / draftを分類済みPatchへ変換する責務境界を明記 | - |
 | 1.2 | 2026-08-23 | Issue #602: resident Task の identity を canonical filePath の単一保存とし、wire id/filePath の同値・形状互換を明記 | - |
