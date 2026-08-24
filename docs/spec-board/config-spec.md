@@ -1,7 +1,7 @@
 # spec-board - 設定仕様（バックエンド）
 
 > **機能**: [spec-board](./index.md)
-> **バージョン**: 1.14
+> **バージョン**: 1.15
 > **ステータス**: 下書き
 
 ## 概要
@@ -291,7 +291,7 @@ milestones:
 | milestones[].title | `string` | いいえ | なし | 人間可読な表示名（例: `v0.3 リリース`）。未指定時は表示層が `name` をフォールバック表示する |
 | milestones[].description | `string` | いいえ | なし | マイルストーンの説明文 |
 | milestones[].due | `string` | いいえ | なし | 期日（リリース予定日 / 締切）。ISO 8601 を推奨するが形式は検証せず文字列のまま保持する。並び替え・進捗表示に利用 |
-| milestones[].order | `number` | いいえ | なし | 表示順序（昇順）。**有限の非負整数のみ有効**。小数 / 負数 / `null` / 型不一致は未指定（並び順なし）に倒す。並び規則: 有効な `order` を持つ要素を `order` 昇順で先に並べ、同一 `order` は定義順を保持する。`order` 未指定の要素は有効 `order` 付き要素の後ろに定義順で並べる |
+| milestones[].order | `number` | いいえ | なし | 表示順序（昇順）。**0..=4294967295（u32）の整数のみ有効**。小数 / 負数 / u32 上限超過 / `null` / 型不一致は未指定（並び順なし）に倒す。並び規則: 有効な `order` を持つ要素を `order` 昇順で先に並べ、同一 `order` は定義順を保持する。`order` 未指定の要素は有効 `order` 付き要素の後ろに定義順で並べる |
 | milestones[].state | `string` | いいえ | `open`（表示層フォールバック） | マイルストーンの開閉状態。`open` / `closed` 等。**task frontmatter の `status` とは別概念**。未知値は表示層が `open` 相当にフォールバックする |
 | milestones[].updated | `string` | いいえ | なし | 最終更新日時。ISO 8601 を推奨するが形式は検証せず文字列のまま保持する |
 
@@ -336,13 +336,19 @@ type MilestoneProjectionsDto = {
 
 lenient には **2 つの軸**がある（labels.yml が「lenient なのは color のみ」と単軸で語るのに対し、milestones は型と値で層が分かれる点に注意）。
 
-- **型レベルの lenient（`order` のみ）**: `order` が型不一致（文字列など）・小数・負数・`null` の場合はエラーにせず未指定（並び順なし）に倒す。有効値は有限の非負整数のみ。文字列フィールドはこの型 lenient の対象外で文字列型を strict に検証する。
+- **型レベルの lenient（`order` のみ）**: 永続化済みYAMLの`order`が型不一致（文字列など）・小数・負数・u32上限超過・`null`の場合はエラーにせず未指定（並び順なし）に倒す。有効値は0..=4294967295の整数のみ。文字列フィールドはこの型 lenient の対象外で文字列型を strict に検証する。
 - **値レベルの lenient（`state`）**: `state` は文字列型としては strict に検証する。予約語は完全一致する小文字の `open` / `closed` だけであり、空文字 `""` は未指定として扱う。それ以外の未知値は、空白のみ・前後空白付き・case 違いを含めて正規化せず raw 文字列のまま保持する。表示層は未知値を既定（`open` 相当）へフォールバックする。文字列以外の型（数値 / bool / mapping 等）が来た場合は load エラー。
 - **in-memory invariant**: Rust ドメインでは未知値をprivateな rawを持つ `OtherState` として保持し、rawからの分類は `MilestoneState::from_lenient` だけが行う。YAML deserializeとcreate / update adapterもこの入口を直接利用するため、空文字や予約語を `Other` として構築できない。
 - **roundtrip / 互換**: 未知の `state` は保存後の再読み込みでも同じraw値と分類を保つ。`state` のwire / disk表現は従来どおり文字列であり、既存のYAML型不一致を含むエラー分類・表示文字列も変更しない。
 - `due` / `updated` は形式（ISO 8601 等）を検証せず文字列のまま保持する（型は strict に文字列を要求）。
 - 任意文字列フィールド（`title` / `description`）の空文字 `""` は未指定として `None` に正規化する（trim はしない。labels.yml の `group` 空文字正規化に倣う。`name` の空文字のみ拒否対象）。
 - frontmatter `milestone` 値がマスタ未定義の場合は警告を出さず素通しする（暗黙許容・非破壊。「name 一意性の検証」節と区別）。
+
+### milestone CRUDの`order`検証
+
+公開DTOの`MilestoneDefinition` / `CreateMilestoneArgs` / `UpdateMilestoneArgs`は、既存clientとの互換のため`order?: number`を維持する。FEの`create_milestone` / `update_milestone` wrapperはinvoke前に`order`を検証し、未指定または0..=4294967295の整数だけを受理する。上限超過・負数・小数・`NaN`・正負の`Infinity`は`INVALID_ARGUMENT`として返し、Tauri commandを呼ばない。失敗は既存mutation失敗通知と同じ経路で1回通知する。
+
+このCRUD境界のstrict rejectは、既存YAMLを開く際のlenient fallbackとは意図的に異なる。disk loadは不正な`order`だけを未指定へ倒してプロジェクトを継続する一方、新規作成・更新では新たな不正値を永続化しない。公開DTOのキー、`number`型、正常系wire payload、およびRust production commandは変更しない。Settingsの文字列入力も同じ範囲判定を共有し、不正入力は従来どおり未指定へ正規化する。
 
 ### name 一意性の検証
 
@@ -815,6 +821,7 @@ FE は `loadWarnings` の件数を warning toast と loaded board の展開パ�
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.15 | 2026-08-24 | Issue #612: milestone orderのu32境界predicate、CRUD invoke前strict reject、YAML loadのlenient fallbackとの責務差、wire互換を明記 | - |
 | 1.14 | 2026-08-24 | Issue #608: config path validationのInvalidFileName / NotADirectory / SymlinkRejected分類（sourceなし）、実OS I/Oと既存leaf非regular分類をIo sourceとして保持する境界、既存Display / wire / disk / fallback互換を明記 | - |
 | 1.13 | 2026-08-24 | Issue #603: move_task の移動元・移動先cardOrder実在判定をtask I/O portへ統一し、NotFoundのみ除外・他I/O errorは保守的保持する契約を明記 | - |
 | 1.12 | 2026-08-23 | Issue #602: Task identity の canonical filePath 単一化と、cardOrder / projection の path 順・wire id/filePath・disk/error 互換を明記 | - |

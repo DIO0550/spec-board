@@ -10,6 +10,19 @@ test.each([
   expect(Milestone.parseState(raw)).toBe(expected);
 });
 
+test.each([
+  [0, true],
+  [4_294_967_295, true],
+  [4_294_967_296, false],
+  [-1, false],
+  [1.5, false],
+  [Number.NaN, false],
+  [Number.POSITIVE_INFINITY, false],
+  [Number.NEGATIVE_INFINITY, false],
+])("isValidOrder(%s) は %s を返す", (order, expected) => {
+  expect(Milestone.isValidOrder(order)).toBe(expected);
+});
+
 test("badgeLabel は title があれば title を優先する", () => {
   const def: MilestoneDefinition = { name: "v0.3", title: "v0.3 リリース" };
   expect(Milestone.badgeLabel("v0.3", def)).toBe("v0.3 リリース");

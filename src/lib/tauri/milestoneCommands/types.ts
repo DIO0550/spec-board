@@ -14,7 +14,10 @@ export type GetMilestonesPayload = {
   usageCounts: Record<string, number>;
 };
 
-/** create_milestone 引数。 */
+/**
+ * create_milestone 引数。公開wire形状は従来どおり`order?: number`であり、
+ * invoke wrapperが0..=u32::MAXの整数だけを送信する。
+ */
 export type CreateMilestoneArgs = {
   /** マイルストーン識別子（必須） */
   name: string;
@@ -24,13 +27,16 @@ export type CreateMilestoneArgs = {
   description?: string;
   /** 期日（任意） */
   due?: string;
-  /** 表示順序（任意） */
+  /** 表示順序（任意）。指定時は0..=4294967295の整数 */
   order?: number;
   /** 開閉状態（任意） */
   state?: MilestoneState;
 };
 
-/** update_milestone 引数。PUT セマンティクス（全フィールドを送る・未指定はクリア）。 */
+/**
+ * update_milestone 引数。PUT セマンティクス（全フィールドを送る・未指定はクリア）。
+ * orderのwire型とinvoke前検証は{@link CreateMilestoneArgs}と共通。
+ */
 export type UpdateMilestoneArgs = CreateMilestoneArgs;
 
 /** delete_milestone 戻り値ペイロード。削除前の使用タスク件数を返す。 */

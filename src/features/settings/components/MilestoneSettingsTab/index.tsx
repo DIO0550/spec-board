@@ -29,23 +29,24 @@ const EMPTY_FORM: FormValues = {
 const NON_NEGATIVE_INTEGER = /^\d+$/;
 
 /**
- * order 入力を非負整数 or undefined に正規化する。
+ * order 入力をu32範囲の整数 or undefined に正規化する。
  * `Number.parseInt` は "1.5" / "2abc" を 1 / 2 と部分パースしてしまうため、
  * 文字列全体が整数のときだけ採用し、それ以外（小数・余剰文字・空）は undefined に倒す。
  * @param raw - order の生入力
- * @returns 非負整数、または未割当を表す undefined
+ * @returns u32範囲の整数、または未割当を表す undefined
  */
 const toOrder = (raw: string): number | undefined => {
   const trimmed = raw.trim();
   if (!NON_NEGATIVE_INTEGER.test(trimmed)) {
     return undefined;
   }
-  return Number.parseInt(trimmed, 10);
+  const order = Number.parseInt(trimmed, 10);
+  return Milestone.isValidOrder(order) ? order : undefined;
 };
 
 /**
  * フォーム入力値を CreateMilestoneArgs に正規化する。
- * 空文字フィールドは undefined（未割当）に倒す。order は文字列全体が非負整数のときのみ採用。
+ * 空文字フィールドは undefined（未割当）に倒す。order は文字列全体がu32範囲の整数のときのみ採用。
  * @param values - フォーム入力値
  * @returns 送信用 args
  */

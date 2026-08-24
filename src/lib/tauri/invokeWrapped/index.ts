@@ -1,9 +1,6 @@
 import { type InvokeArgs, invoke } from "@tauri-apps/api/core";
-import {
-  buildMutationFailureMessage,
-  isMutationCommand,
-} from "@/lib/tauri/mutationFailureMessage";
-import { getToastSink } from "@/lib/tauri/toastSink";
+import { isMutationCommand } from "@/lib/tauri/mutationFailureMessage";
+import { notifyMutationFailure } from "@/lib/tauri/notifyMutationFailure";
 import { Result, type Result as ResultT } from "@/utils/result";
 import { TauriError } from "../tauriError";
 
@@ -33,11 +30,7 @@ export const invokeWrapped = async <T>(
     const error = TauriError.from(e, cmd);
     // 書き込み系コマンドの失敗だけを共通トースト化する。
     if (isMutationCommand(cmd)) {
-      const sink = getToastSink();
-      // 未登録時は no-op（従来挙動を維持＝安全側のデフォルト）。
-      if (sink !== null) {
-        sink(buildMutationFailureMessage(cmd, error), "error");
-      }
+      notifyMutationFailure(cmd, error);
     }
     return Result.err(error);
   }
