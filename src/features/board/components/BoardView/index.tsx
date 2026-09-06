@@ -1,3 +1,4 @@
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { Board } from "@/features/board/components/Board";
 import type { TaskDropHandler } from "@/features/board/components/BoardCardProvider";
@@ -17,8 +18,8 @@ type BoardViewProps = {
   allTasks: Task[];
   /** 絞り込みが有効か。true のとき DnD を無効化する（dndDisabled へ伝播） */
   filterActive: boolean;
-  /** 正規化済み Task.filePath → Task の lookup Map */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** 正規化済み Task.filePath → Task の lookup */
+  tasksByNormalizedPath?: TaskPathLookup;
   /** name → マイルストーン定義の Map（カードバッジ用） */
   milestonesByName?: MilestonesByName;
   /** 完了カラム名 */

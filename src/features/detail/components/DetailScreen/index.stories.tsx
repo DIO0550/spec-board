@@ -1,7 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
-import { buildTasksByNormalizedPath } from "@/domains/broken-link";
+import { TaskPathLookup } from "@/domains/task-path-lookup";
 import { buildProjectionsFixture } from "@/test-fixtures";
 import { Result } from "@/utils/result";
 import {
@@ -22,7 +22,7 @@ const meta: Meta<typeof DetailScreen> = {
     columns: detailColumns,
     allTasks,
     projections: buildProjectionsFixture(allTasks, "Done"),
-    tasksByNormalizedPath: buildTasksByNormalizedPath(allTasks),
+    tasksByNormalizedPath: TaskPathLookup.fromTasks(allTasks),
     onBack: fn(),
     onTaskUpdate: fn(),
     onDelete: fn(),

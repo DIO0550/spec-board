@@ -6,6 +6,7 @@ import {
   tabNavTabId,
 } from "@/components/TabNav";
 import type { TaskForest } from "@/domains/task-forest";
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { ActiveBoardView } from "@/features/board/components/ActiveBoardView";
 import { useSavedFilters } from "@/features/board/hooks/useSavedFilters";
@@ -119,8 +120,8 @@ export type BoardWorkspaceProps = {
   columns: ColumnType[];
   /** 全タスク（絞り込み前） */
   tasks: Task[];
-  /** 正規化済み Task.filePath → Task の lookup Map（broken link 判定用） */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** 正規化済み Task.filePath → Task の lookup（broken link 判定用） */
+  tasksByNormalizedPath?: TaskPathLookup;
   /** 完了カラム名 */
   doneColumn?: string;
   /** filePath -> projection（BE 集計）。BoardView へそのまま渡す。 */

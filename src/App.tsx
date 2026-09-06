@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LiveAnnouncement, LiveRegion } from "@/components/LiveRegion";
 import { ProjectLoadWarnings } from "@/components/ProjectLoadWarnings";
-import { buildTasksByNormalizedPath } from "@/domains/broken-link";
 import { LabelRegistry } from "@/domains/label-registry";
 import {
   MilestoneProjection,
   type MilestoneProjectionMap,
 } from "@/domains/milestone-projection";
 import { TaskForest } from "@/domains/task-forest";
+import { TaskPathLookup } from "@/domains/task-path-lookup";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -318,7 +318,7 @@ const AppShell = () => {
   const taskTree = taskTreeOf(state);
   const milestoneProjections = milestoneProjectionsOf(state);
   const tasksByNormalizedPath = useMemo(
-    () => buildTasksByNormalizedPath(tasks),
+    () => TaskPathLookup.fromTasks(tasks),
     [tasks],
   );
 
