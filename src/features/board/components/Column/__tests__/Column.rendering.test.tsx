@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import {
   TaskProjection,
   type TaskProjectionMap,
@@ -53,7 +54,7 @@ type RenderOptions = {
   /** Provider に渡す doneColumn */
   doneColumn?: string;
   /** Provider に渡す tasksByNormalizedPath */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  tasksByNormalizedPath?: TaskPathLookup;
   /** Provider に渡す projection map（BE 集計。未指定なら空 Map） */
   projections?: TaskProjectionMap;
 };

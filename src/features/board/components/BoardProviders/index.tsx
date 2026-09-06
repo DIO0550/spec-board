@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import type { Column as ColumnType } from "@/types/column";
 import type { Task } from "@/types/task";
@@ -22,8 +23,8 @@ type BoardProvidersProps = {
   tasks: readonly Task[];
   /** 階層カウント等の解決に使う全タスク集合。共通項として両 Provider に同値で渡される */
   allTasks: readonly Task[];
-  /** 正規化済み Task.filePath → Task の lookup Map */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  /** 正規化済み Task.filePath → Task の lookup */
+  tasksByNormalizedPath?: TaskPathLookup;
   /** 完了カラム名 */
   doneColumn?: string;
   /** filePath -> projection（BE 集計）。BoardCardProvider へそのまま渡す。 */

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getBrokenLinks } from "@/domains/broken-link";
+import { BrokenLinkSet } from "@/domains/broken-link";
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
 import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
@@ -19,7 +20,7 @@ export type DetailScreenProps = {
   columns: Column[];
   allTasks?: Task[];
   projections: TaskProjectionMap;
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  tasksByNormalizedPath?: TaskPathLookup;
   /** 一覧へ戻るcallback。 */
   onBack: () => void;
   isUpperModalOpen?: boolean;
@@ -87,7 +88,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
   const { parentTask } = useParentTask({ task, allTasks });
   const fieldHandlers = useDetailFieldHandlers(task, onTaskUpdate);
   const brokenLinks = useMemo(
-    () => getBrokenLinks(task, tasksByNormalizedPath),
+    () => BrokenLinkSet.from(task, tasksByNormalizedPath),
     [task, tasksByNormalizedPath],
   );
 

@@ -2,6 +2,7 @@ import { act, type ReactNode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { taskFilePathFixture } from "@/domains/__tests__/taskFixtures";
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import { TaskProjection } from "@/domains/task-projection";
 import { createDragEvent } from "@/test-fixtures/createDragEvent";
 import { Task, type TaskPayload } from "@/types/task";
@@ -52,7 +53,7 @@ type RenderOptions = {
   /** BoardCardProvider に渡す全 tasks（未指定なら tasks を使う） */
   allTasks?: readonly Task[];
   /** BoardCardProvider に渡す tasksByNormalizedPath */
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  tasksByNormalizedPath?: TaskPathLookup;
   /** BoardCardProvider に渡す doneColumn */
   doneColumn?: string;
   /** BoardCardProvider に渡す onTaskDrop */

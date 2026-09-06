@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import { TaskProjection } from "@/domains/task-projection";
 import { Task, type TaskPayload, type TaskWarning } from "@/types/task";
 import { BoardCardProvider } from "../../BoardCardProvider";
@@ -53,7 +54,7 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 type RenderOptions = {
   column: Omit<Parameters<typeof Column>[0], "order"> & { order?: number };
   tasks?: readonly Task[];
-  tasksByNormalizedPath?: ReadonlyMap<string, Task>;
+  tasksByNormalizedPath?: TaskPathLookup;
 };
 
 /**

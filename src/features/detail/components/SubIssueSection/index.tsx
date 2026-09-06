@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { BrokenRefLabel } from "@/components/BrokenRefLabel";
-import { buildTasksByNormalizedPath } from "@/domains/broken-link";
-import { normalizeRefPathForLookup } from "@/domains/task-path";
+import { TaskPathLookup } from "@/domains/task-path-lookup";
 import { type SubIssueCounts, TaskProjection } from "@/domains/task-projection";
 import type { Task, TaskFilePath, TaskId } from "@/types/task";
 
@@ -49,7 +48,7 @@ type ChildRow =
 
 /**
  * `childFilePaths` の順序を保ちながら、各 path を `childTasks` から解決するか broken 行として残すかを決める。
- * - `normalizeRefPathForLookup` で正規化したキーが `childTasks` の `normalizeTaskPathForLookup(filePath)` と一致すれば resolved
+ * - `TaskPathLookup.findByRef` が Task を返せば resolved
  *   （空文字 / 絶対 path / Windows drive prefix は正規化が undefined を返すため、resolved にならず broken 扱いに回る）
  * - resolved にできなかった path が `brokenChildPaths` に含まれていれば broken
  * - どちらにも当たらない path はスキップ（過剰描画を防ぐ）
@@ -63,17 +62,15 @@ export const buildChildRowList = (
   childTasks: readonly Task[],
   brokenChildPaths: ReadonlySet<string> | undefined,
 ): readonly ChildRow[] => {
-  // 子タスクを正規化済み filePath で 1 度だけ Map 化し、各 rawPath は 1 回の
+  // 子タスクを正規化済み filePath で 1 度だけ lookup 化し、各 rawPath は 1 回の
   // 正規化 + Map 参照で解決する。childFilePaths × childTasks の二重ループを避けて
-  // O(childFilePaths + childTasks) に抑える。broken-link ドメインと同じ key 規約。
-  const childByNormalizedPath = buildTasksByNormalizedPath(childTasks);
+  // O(childFilePaths + childTasks) に抑える。
+  const childLookup = TaskPathLookup.fromTasks(childTasks);
 
   const rows: ChildRow[] = [];
   let brokenIndex = 0;
   for (const rawPath of childFilePaths) {
-    const refKey = normalizeRefPathForLookup(rawPath);
-    const resolved =
-      refKey === undefined ? undefined : childByNormalizedPath.get(refKey);
+    const resolved = TaskPathLookup.findByRef(childLookup, rawPath);
     if (resolved !== undefined) {
       rows.push({ kind: "resolved", task: resolved });
       continue;

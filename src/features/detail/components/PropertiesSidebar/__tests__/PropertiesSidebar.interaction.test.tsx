@@ -1,18 +1,13 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { BrokenLinkSet } from "@/domains/broken-link";
+import { BrokenLinkSet } from "@/domains/broken-link";
 import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
 import { Task, type TaskPayload } from "@/types/task";
 import { PropertiesSidebar } from "..";
 
 /** リンク切れなしの BrokenLinkSet */
-const noBrokenLinks: BrokenLinkSet = {
-  parent: false,
-  links: new Set<string>(),
-  children: new Set<string>(),
-  reverseLinks: new Set<string>(),
-};
+const noBrokenLinks = BrokenLinkSet.empty;
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

@@ -1,10 +1,8 @@
 import { type ReactNode, useEffect, useRef } from "react";
-import {
-  buildTasksByNormalizedPath,
-  countTasksWithBrokenLink,
-} from "@/domains/broken-link";
+import { BrokenLinkSet } from "@/domains/broken-link";
 import { countTasksWithParseError } from "@/domains/parse-error";
 import { ProjectLoadWarning } from "@/domains/project-load-warning";
+import { TaskPathLookup } from "@/domains/task-path-lookup";
 import {
   type ProjectEvent,
   projectErrorMessage,
@@ -64,9 +62,9 @@ export const ProjectNotificationsProvider = ({
       if (event.type === "loaded") {
         addRecentProject(event.path);
         // リンク切れ / パースエラーは判定ドメイン・文言が別なので個別に集計して通知する。
-        const brokenLinkCount = countTasksWithBrokenLink(
+        const brokenLinkCount = BrokenLinkSet.countTasks(
           event.data.tasks,
-          buildTasksByNormalizedPath(event.data.tasks),
+          TaskPathLookup.fromTasks(event.data.tasks),
         );
         if (brokenLinkCount >= 1) {
           showToast(`リンク切れが ${brokenLinkCount} 件あります`, "warning");

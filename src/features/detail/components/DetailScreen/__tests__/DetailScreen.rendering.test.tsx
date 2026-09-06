@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { buildTasksByNormalizedPath } from "@/domains/broken-link";
+import { TaskPathLookup } from "@/domains/task-path-lookup";
 import { TaskProjection } from "@/domains/task-projection";
 import { Task, type TaskPayload, type TaskWarning } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -184,7 +184,7 @@ test("parent broken + 解決不可: BrokenParentRow が描画される", () => {
     buildProps({
       task,
       allTasks: [task],
-      tasksByNormalizedPath: buildTasksByNormalizedPath([task]),
+      tasksByNormalizedPath: TaskPathLookup.fromTasks([task]),
     }),
   );
   const row = document.querySelector('[data-testid="broken-parent-row"]');
@@ -202,7 +202,7 @@ test("links の broken 要素に WarningIcon が出る", () => {
       task,
       allTasks: [task],
       onAddLink: vi.fn(async () => Result.ok(task)),
-      tasksByNormalizedPath: buildTasksByNormalizedPath([task]),
+      tasksByNormalizedPath: TaskPathLookup.fromTasks([task]),
     }),
   );
   const row = document.querySelector('[data-testid="links-section-linked-0"]');

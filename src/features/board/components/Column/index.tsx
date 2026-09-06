@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { hasAnyBrokenLink } from "@/domains/broken-link";
+import { BrokenLinkSet } from "@/domains/broken-link";
 import { hasParseError } from "@/domains/parse-error";
 import type { Task, TaskId } from "@/types/task";
 import { COLUMN_DRAG_MIME_TYPE, DRAG_MIME_TYPE } from "../Board/mime";
@@ -394,7 +394,7 @@ export const Column = ({
                   task={task}
                   childTasks={childTasks}
                   fromColumn={name}
-                  hasBrokenLink={hasAnyBrokenLink(
+                  hasBrokenLink={BrokenLinkSet.hasAny(
                     task,
                     card.tasksByNormalizedPath,
                   )}
