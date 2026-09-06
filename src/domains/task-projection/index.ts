@@ -39,8 +39,8 @@ export type TaskProjection = {
  * filePath -> projection。IPC の raw object から `Map` へ写して保持する。
  *
  * キーはBEが返したcanonical `filePath`をadapter境界でbrand化した値。
- * `@/domains/broken-link` の
- * `buildTasksByNormalizedPath` は `normalizeTaskPathForLookup` 済みの正規化 path を
+ * `@/domains/task-path-lookup` の `TaskPathLookup` は
+ * `normalizeTaskPathForLookup` 済みの正規化 path を
  * キーにするため、同じ filePath キー Map でも基準が異なる。取り違えると無言で
  * lookup が外れるので、引き当ては `findByFilePath` を使う。
  *
@@ -55,7 +55,7 @@ export type TaskProjectionMap = ReadonlyMap<TaskFilePath, TaskProjection>;
  *
  * 未登録のたびに新しいオブジェクトを返すと、参照を依存に取る `useMemo` が毎回 miss
  * するため固定参照を共有する（実体は freeze されていないが、呼出元は読み取りのみで
- * 使う前提。`EMPTY_BROKEN_LINK_SET` と同じ扱い）。
+ * 使う前提。`BrokenLinkSet.empty` と同じ扱い。あちらは外側のみ freeze 済み）。
  */
 const EMPTY_PROJECTION: TaskProjection = {
   subIssueProgress: { done: 0, total: 0 },
@@ -103,8 +103,8 @@ export const TaskProjection = {
    * canonical filePath に対応する projection を引く。未登録なら固定参照 {@link TaskProjection.empty}
    * を返し、同一 filePath に対して常に同一参照になることを保証する。
    *
-   * 正規化 path をキーにする `@/domains/broken-link` の lookup と取り違えないよう、
-   * キーの基準を名前に含める。
+   * 正規化 path をキーにする `@/domains/task-path-lookup` の `TaskPathLookup` と
+   * 取り違えないよう、キーの基準を名前に含める。
    * @param map - projection map
    * @param filePath - 引き当てるcanonical filePath
    * @returns 該当 projection、なければ `TaskProjection.empty`
