@@ -233,7 +233,16 @@ export const TaskSelect = ({
               setQuery(e.target.value);
               setIsOpen(true);
             }}
-            onFocus={() => setIsOpen(true)}
+            onFocus={() => {
+              // blur で仕込んだ「100ms 後に閉じる」タイマーが保留中なら取り消す。
+              // 取り消さないと、再 focus してフォーカスがあるのにタイマーが発火して
+              // isOpen が false に落ち、Escape リスナまで外れて Escape が親画面へ抜ける。
+              if (blurTimeoutRef.current !== null) {
+                window.clearTimeout(blurTimeoutRef.current);
+                blurTimeoutRef.current = null;
+              }
+              setIsOpen(true);
+            }}
             onBlur={() => {
               // 候補ボタンの mousedown→click は input の blur より後に処理されるため、
               // blur 即時に popover を閉じると候補クリックが選択前に消えてしまう。
