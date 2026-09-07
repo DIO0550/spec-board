@@ -102,6 +102,13 @@ export const TaskSelect = ({
     if (onClose === undefined) {
       return;
     }
+    // 候補 popover が閉じている間はリスナ自体を登録しない。
+    // このリスナは capture + stopPropagation で親より先に Escape を奪うため、
+    // 「登録したうえで isOpen を見て何もしない」では不十分（親の Escape ハンドラを
+    // 塞ぐ位置を占めたままになる）。usePopoverDismiss と同じ不変条件に揃える。
+    if (!isOpen) {
+      return;
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -115,7 +122,7 @@ export const TaskSelect = ({
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [onClose]);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (onClose === undefined) {
