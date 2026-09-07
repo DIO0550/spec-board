@@ -1,6 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Task, TaskFilePath } from "@/types/task";
 
+/**
+ * excludeFilePaths 省略時に使う固定参照の空配列。
+ * デフォルト式に `[]` を直接書くと呼び出し（＝レンダー）ごとに新しい参照になり、
+ * candidates の useMemo が依存配列の比較で必ず miss して全 tasks の filter と
+ * Set 構築を毎レンダー再実行してしまうため、module スコープの固定参照を使う。
+ */
+const EMPTY_EXCLUDES: readonly TaskFilePath[] = [];
+
 /** TaskSelect の Props */
 export type TaskSelectProps = {
   /** 選択候補となるタスク一覧 */
@@ -55,7 +63,7 @@ export type TaskSelectProps = {
  */
 export const TaskSelect = ({
   tasks,
-  excludeFilePaths = [],
+  excludeFilePaths = EMPTY_EXCLUDES,
   value,
   unresolvedValueLabel,
   onChange,
