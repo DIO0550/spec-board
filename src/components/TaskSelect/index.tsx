@@ -1,6 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Task, TaskFilePath } from "@/types/task";
 
+/**
+ * excludeFilePaths 省略時に使う固定参照の空配列。
+ * デフォルト式に `[]` を直接書くと呼び出し（＝レンダー）ごとに新しい参照になり、
+ * candidates の useMemo が依存配列の比較で必ず miss して全 tasks の filter と
+ * Set 構築を毎レンダー再実行してしまうため、module スコープの固定参照を使う。
+ */
+const EMPTY_EXCLUDES: readonly TaskFilePath[] = [];
+
 /** TaskSelect の Props */
 export type TaskSelectProps = {
   /** 選択候補となるタスク一覧 */
@@ -55,7 +63,7 @@ export type TaskSelectProps = {
  */
 export const TaskSelect = ({
   tasks,
-  excludeFilePaths = [],
+  excludeFilePaths = EMPTY_EXCLUDES,
   value,
   unresolvedValueLabel,
   onChange,
@@ -94,6 +102,13 @@ export const TaskSelect = ({
     if (onClose === undefined) {
       return;
     }
+    // 候補 popover が閉じている間はリスナ自体を登録しない。
+    // このリスナは capture + stopPropagation で親より先に Escape を奪うため、
+    // 「登録したうえで isOpen を見て何もしない」では不十分（親の Escape ハンドラを
+    // 塞ぐ位置を占めたままになる）。usePopoverDismiss と同じ不変条件に揃える。
+    if (!isOpen) {
+      return;
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -107,7 +122,7 @@ export const TaskSelect = ({
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [onClose]);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (onClose === undefined) {
@@ -218,7 +233,16 @@ export const TaskSelect = ({
               setQuery(e.target.value);
               setIsOpen(true);
             }}
-            onFocus={() => setIsOpen(true)}
+            onFocus={() => {
+              // blur で仕込んだ「100ms 後に閉じる」タイマーが保留中なら取り消す。
+              // 取り消さないと、再 focus してフォーカスがあるのにタイマーが発火して
+              // isOpen が false に落ち、Escape リスナまで外れて Escape が親画面へ抜ける。
+              if (blurTimeoutRef.current !== null) {
+                window.clearTimeout(blurTimeoutRef.current);
+                blurTimeoutRef.current = null;
+              }
+              setIsOpen(true);
+            }}
             onBlur={() => {
               // 候補ボタンの mousedown→click は input の blur より後に処理されるため、
               // blur 即時に popover を閉じると候補クリックが選択前に消えてしまう。

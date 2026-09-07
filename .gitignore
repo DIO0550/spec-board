@@ -192,6 +192,10 @@ tasks*
 # 同じ理由で BE の `tasks_revision` VO（`tasks*` に前方一致）も除外解除する。
 !src-tauri/src/state/tasks_revision.rs
 !src-tauri/src/state/tasks_revision_tests.rs
+# 同じ理由で `TaskSelect` コンポーネント（TaskS... が誤マッチ）も除外解除する。
+# 既存ファイルは追跡済みのため影響が出ていなかったが、新規ファイルが無視される。
+!src/components/TaskSelect/
+!src/components/TaskSelect/**
 .specs
 plugin-workspace/
 *.local.*
