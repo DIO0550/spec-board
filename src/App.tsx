@@ -411,7 +411,9 @@ const AppShell = () => {
   // を画面間で共有することで、片方の mutation 実行中に画面遷移して別画面から送信しても
   // 同じガードで短絡され、並行書き込みが直列化される。
   const milestoneMutations = useMilestoneMutations(milestonesResource.reload);
-  // ラベルリソース（settings 向けの唯一の取得点）。TaskForm は別途 useLabelList を使う。
+  // ラベルリソース（アプリ全体で唯一の取得点）。settings / 作成フォーム / 詳細フォームの
+  // 候補はすべてここから配る。projectKey に loadedPath を渡しているため、プロジェクト
+  // 切替時の再取得と未オープン時の idle（空一覧）が全配布先に一括で効く。
   const labelsResource = useLabels(loadedPath ?? undefined);
   const configFiles = useConfigFiles(loadedPath ?? undefined);
   // settings の使用数は milestone と対称に live な tasks から算出した値で上書きする。
@@ -789,6 +791,7 @@ const AppShell = () => {
           columns={columns}
           projectPath={loadedPath ?? undefined}
           projectName={projectName}
+          labelSuggestions={labelsResource.labels}
           watchedFileCount={tasks.length}
           initialStatus={createModal.status}
           initialDue={
@@ -882,6 +885,7 @@ const AppShell = () => {
                   task={selectedTask}
                   columns={columns}
                   allTasks={tasks}
+                  labelSuggestions={labelsResource.labels}
                   tasksByNormalizedPath={tasksByNormalizedPath}
                   projections={projections}
                   // 作成は全画面 create ビューへ分離され detail と共存しないため、
