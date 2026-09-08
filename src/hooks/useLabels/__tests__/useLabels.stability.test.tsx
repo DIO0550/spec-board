@@ -27,9 +27,12 @@ const getLabelsMock = vi.mocked(getLabels);
 const reactActEnvironmentGlobal = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
 };
+let hadIsReactActEnvironment = false;
 let previousIsReactActEnvironment: boolean | undefined;
 
 beforeAll(() => {
+  hadIsReactActEnvironment =
+    "IS_REACT_ACT_ENVIRONMENT" in reactActEnvironmentGlobal;
   previousIsReactActEnvironment =
     reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT;
   reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +41,14 @@ beforeAll(() => {
 afterAll(() => {
   reactActEnvironmentGlobal.IS_REACT_ACT_ENVIRONMENT =
     previousIsReactActEnvironment;
+  // 元々キーが無かった場合は値を戻すだけでは `in` 判定が変わったままになるため、
+  // キー自体を削除して他テストへの汚染を防ぐ。
+  const keysToDelete = hadIsReactActEnvironment
+    ? []
+    : (["IS_REACT_ACT_ENVIRONMENT"] as const);
+  for (const key of keysToDelete) {
+    Reflect.deleteProperty(reactActEnvironmentGlobal, key);
+  }
 });
 
 let container: HTMLDivElement | null = null;
