@@ -1,11 +1,11 @@
 {
-  "reportVersion": "982662982be8e1315e89800f17f4baa911100241",
+  "reportVersion": "ba1130edad2c8bd003a824ac897d74724f99bc34",
   "maxDiffRatio": 0.002,
-  "changed": 1,
+  "changed": 0,
   "new": 0,
   "deleted": 0,
-  "passed": 631,
-  "failed": 1,
+  "passed": 632,
+  "failed": 0,
   "results": [
     {
       "story": "app--all-props",
@@ -26,12 +26,12 @@
       "title": "App",
       "name": "Command Palette Keyboard",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "app--default",
@@ -273,12 +273,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "All Props",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--comfortable",
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -325,12 +325,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--edge-cases",
@@ -338,12 +338,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--focus",
@@ -3900,12 +3900,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--empty",
@@ -6785,13 +6785,13 @@
       "id": "features-task-form-components-taskcreatescreen--labels-popover-open",
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
-      "status": "changed",
-      "reason": "pixel-diff",
-      "diffPixels": 7774,
-      "diffRatio": 0.0084,
+      "status": "passed",
+      "reason": "match",
+      "diffPixels": 0,
+      "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
