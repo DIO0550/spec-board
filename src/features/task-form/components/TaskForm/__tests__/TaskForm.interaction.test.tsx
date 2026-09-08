@@ -1,7 +1,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { getLabels, previewTaskFilename, TauriError } from "@/lib/tauri";
+import { LabelDefinition } from "@/domains/label-definition";
+import { getLabels, previewTaskFilename } from "@/lib/tauri";
 import type { Column } from "@/types/column";
 import { Task } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -588,21 +589,16 @@ test("isSubmitting=true で下書きチェックボックスも無効化され�
   expect(checkbox.disabled).toBe(true);
 });
 
-test("getLabels の候補が popover の option へ配線される（結合）", async () => {
-  getLabelsMock.mockResolvedValue(
-    Result.ok({
-      labels: [{ name: "bug" }, { name: "feature" }],
-      usageCounts: {},
-    }),
-  );
+test("labelSuggestions が popover の option へ配線される（結合）", () => {
   render({
     columns: COLUMNS,
     initialStatus: "Todo",
+    labelSuggestions: LabelDefinition.listFromWire([
+      { name: "bug" },
+      { name: "feature" },
+    ]),
     onSubmit: vi.fn(),
     onCancel: vi.fn(),
-  });
-  await act(async () => {
-    await Promise.resolve();
   });
   openLabels();
   const options = Array.from(
@@ -613,22 +609,33 @@ test("getLabels の候補が popover の option へ配線される（結合）",
   expect(options.map((o) => o.textContent)).toEqual(["bug", "feature"]);
 });
 
-test("getLabels が失敗しても popover は開き、新規作成のみ可能になる（結合）", async () => {
-  getLabelsMock.mockResolvedValue(Result.err(TauriError.from("読み込み失敗")));
+test("labelSuggestions 未指定でも popover は開き option は 0 件になる（結合）", () => {
   render({
     columns: COLUMNS,
     initialStatus: "Todo",
     onSubmit: vi.fn(),
     onCancel: vi.fn(),
   });
-  await act(async () => {
-    await Promise.resolve();
-  });
   openLabels();
-  // 候補（既存ラベル option）は無いが popover 自体は開き、検索 + 新規作成は使える。
   expect(
     document.querySelector('[data-testid="task-form-labels-popover"]'),
   ).toBeTruthy();
+  expect(
+    document.querySelector('[data-testid^="task-form-labels-option-"]'),
+  ).toBeNull();
+});
+
+test("labelSuggestions が空でも popover は開き、新規作成のみ可能になる（結合）", () => {
+  // 取得失敗は App 側の useLabels が labels: [] に潰すため、この層では空配列と等価。
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    labelSuggestions: [],
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+  });
+  openLabels();
+  // 候補（既存ラベル option）は無いが popover 自体は開き、検索 + 新規作成は使える。
   expect(
     document.querySelector('[data-testid^="task-form-labels-option-"]'),
   ).toBeNull();
@@ -638,10 +645,7 @@ test("getLabels が失敗しても popover は開き、新規作成のみ可能�
   ).toBeTruthy();
 });
 
-test("popover の option クリックでラベルが選択され trigger に表示される（結合）", async () => {
-  getLabelsMock.mockResolvedValue(
-    Result.ok({ labels: [{ name: "bug" }], usageCounts: {} }),
-  );
+test("TaskForm はラベル候補を自前で取得しない（getLabels を呼ばない）", async () => {
   render({
     columns: COLUMNS,
     initialStatus: "Todo",
@@ -650,6 +654,17 @@ test("popover の option クリックでラベルが選択され trigger に表�
   });
   await act(async () => {
     await Promise.resolve();
+  });
+  expect(getLabelsMock).not.toHaveBeenCalled();
+});
+
+test("popover の option クリックでラベルが選択され trigger に表示される（結合）", () => {
+  render({
+    columns: COLUMNS,
+    initialStatus: "Todo",
+    labelSuggestions: LabelDefinition.listFromWire([{ name: "bug" }]),
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
   });
   openLabels();
   const option = document.querySelector(

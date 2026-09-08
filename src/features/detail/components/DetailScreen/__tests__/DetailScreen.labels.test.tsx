@@ -1,18 +1,17 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
+import { LabelDefinition } from "@/domains/label-definition";
 import { TaskProjection } from "@/domains/task-projection";
-import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
-import { Result } from "@/utils/result";
 import { DetailScreen } from "..";
 
-vi.mock("@/lib/tauri", async () => {
-  const actual =
-    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
-  return { ...actual, getLabels: vi.fn() };
-});
-const getLabelsMock = vi.mocked(getLabels);
+/** ラベル候補は App の唯一の取得点（useLabels）由来のため、テストでは prop で供給する。 */
+const LABEL_SUGGESTIONS = LabelDefinition.listFromWire([
+  { name: "existing" },
+  { name: "bug" },
+  { name: "frontend" },
+]);
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -26,15 +25,6 @@ const testColumns = [
   { name: "In Progress", order: 1 },
   { name: "Done", order: 2 },
 ];
-
-beforeEach(() => {
-  getLabelsMock.mockResolvedValue(
-    Result.ok({
-      labels: [{ name: "existing" }, { name: "bug" }, { name: "frontend" }],
-      usageCounts: {},
-    }),
-  );
-});
 
 afterEach(() => {
   act(() => {
@@ -75,6 +65,7 @@ const buildProps = (
   task: overrides.task ?? createTask(),
   columns: testColumns,
   projections: TaskProjection.emptyMap,
+  labelSuggestions: LABEL_SUGGESTIONS,
   onBack: vi.fn(),
   onTaskUpdate: vi.fn(),
   onDelete: vi.fn(),
@@ -91,13 +82,6 @@ const render = (props: Parameters<typeof DetailScreen>[0]) => {
   root = createRoot(container);
   act(() => {
     root?.render(createElement(DetailScreen, props));
-  });
-};
-
-/** getLabels（useLabelList）の非同期解決をフラッシュする。 */
-const flush = async () => {
-  await act(async () => {
-    await Promise.resolve();
   });
 };
 
@@ -128,7 +112,7 @@ const typeLabelSearch = (value: string): void => {
   });
 };
 
-test("popover から新規作成で onTaskUpdate({ labels: [..., new] }) が呼ばれる", async () => {
+test("popover から新規作成で onTaskUpdate({ labels: [..., new] }) が呼ばれる", () => {
   const onTaskUpdate = vi.fn();
   render(
     buildProps({
@@ -136,7 +120,6 @@ test("popover から新規作成で onTaskUpdate({ labels: [..., new] }) が呼�
       onTaskUpdate,
     }),
   );
-  await flush();
   openLabels();
   typeLabelSearch("new-label");
   act(() => {
@@ -151,7 +134,7 @@ test("popover から新規作成で onTaskUpdate({ labels: [..., new] }) が呼�
   });
 });
 
-test("選択済み候補のトグル解除で onTaskUpdate({ labels: [除外結果] }) が呼ばれる", async () => {
+test("選択済み候補のトグル解除で onTaskUpdate({ labels: [除外結果] }) が呼ばれる", () => {
   const onTaskUpdate = vi.fn();
   render(
     buildProps({
@@ -159,7 +142,6 @@ test("選択済み候補のトグル解除で onTaskUpdate({ labels: [除外結�
       onTaskUpdate,
     }),
   );
-  await flush();
   openLabels();
   act(() => {
     (
@@ -171,7 +153,7 @@ test("選択済み候補のトグル解除で onTaskUpdate({ labels: [除外結�
   expect(onTaskUpdate).toHaveBeenCalledWith("t1", { labels: ["frontend"] });
 });
 
-test("既存ラベルと同じ文字列は作成候補を出さない（重複作成不可）", async () => {
+test("既存ラベルと同じ文字列は作成候補を出さない（重複作成不可）", () => {
   const onTaskUpdate = vi.fn();
   render(
     buildProps({
@@ -179,10 +161,34 @@ test("既存ラベルと同じ文字列は作成候補を出さない（重複�
       onTaskUpdate,
     }),
   );
-  await flush();
   openLabels();
   typeLabelSearch("existing");
   expect(
     document.querySelector('[data-testid="detail-labels-create"]'),
   ).toBeNull();
+});
+
+test("labelSuggestions が空配列でも新規ラベルを作成できる", () => {
+  // 取得失敗・未オープンを App の useLabels が labels: [] に潰した状態が詳細側へ届くケース。
+  const onTaskUpdate = vi.fn();
+  render(
+    buildProps({
+      task: createTask({ id: "t1", labels: [] }),
+      labelSuggestions: [],
+      onTaskUpdate,
+    }),
+  );
+  openLabels();
+  expect(
+    document.querySelector('[data-testid^="detail-labels-option-"]'),
+  ).toBeNull();
+  typeLabelSearch("new-label");
+  act(() => {
+    (
+      document.querySelector(
+        '[data-testid="detail-labels-create"]',
+      ) as HTMLElement
+    ).click();
+  });
+  expect(onTaskUpdate).toHaveBeenCalledWith("t1", { labels: ["new-label"] });
 });
