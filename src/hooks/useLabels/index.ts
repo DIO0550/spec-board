@@ -9,8 +9,9 @@ import { getLabels } from "@/lib/tauri";
 export type LabelsStatus = "idle" | "loading" | "loaded" | "error";
 
 /**
- * 複数 feature（settings / 将来統合先）で共有するラベル定義リソース。
- * settings 向けの取得点として使う。TaskForm は別途 `useLabelList` を使用する。
+ * アプリ全体で共有するラベル定義リソース。
+ * App がこのフックを 1 回だけ呼び、settings / 作成フォーム / 詳細フォームへ
+ * 候補を配る（ラベルマスタの唯一の取得点）。
  */
 export type LabelsResource = {
   /** ラベル定義の配列（定義順）。idle / loading 中は空配列 */

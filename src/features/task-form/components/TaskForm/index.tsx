@@ -4,6 +4,7 @@ import { Button } from "@/components/Button";
 import { LabelsField as LabelsFieldView } from "@/components/fields/LabelsField";
 import { PriorityField } from "@/components/fields/PriorityField";
 import { StatusField } from "@/components/fields/StatusField";
+import type { LabelDefinition } from "@/domains/label-definition";
 import { Priority } from "@/domains/priority";
 import { TaskLinks } from "@/domains/task-links";
 import { useLabelsInput } from "@/features/task-form/hooks/useLabelsInput";
@@ -14,7 +15,6 @@ import { FileNameField } from "@/features/task-form/lib/fields/fileName";
 import { LabelsField } from "@/features/task-form/lib/fields/labels";
 import { isFormDirty } from "@/features/task-form/lib/isFormDirty";
 import type { TaskFormValues } from "@/features/task-form/types";
-import { useLabelList } from "@/hooks/useLabelList";
 import type {
   PreviewTaskFilenamePayload,
   PreviewTaskMarkdownParams,
@@ -63,6 +63,13 @@ type TaskFormProps = {
   parentReadOnly?: boolean;
   /** links ピッカー候補・選択済み chip の逆引きに使う既存タスク一覧 */
   existingTasks?: readonly Task[];
+  /**
+   * ラベルマスタ由来のサジェスト候補（name + 色）。
+   * App の唯一の取得点（useLabels）から配られる。未指定 / 空配列のときは
+   * 候補なしで popover 内の新規作成のみ可能。取得中・取得失敗も呼び出し元で
+   * 空配列に潰されるため、この層に取得状態の分岐は存在しない。
+   */
+  labelSuggestions?: LabelDefinition[];
   /** 送信中かどうか（true の間は送信ボタンと入力欄が無効化される） */
   isSubmitting?: boolean;
   /** 送信ボタンのラベル（デフォルト: "作成"） */
@@ -128,6 +135,7 @@ export const TaskForm = ({
   initialParent,
   parentReadOnly,
   existingTasks,
+  labelSuggestions = [],
   isSubmitting = false,
   submitLabel = "作成",
   cancelLabel = "キャンセル",
@@ -140,13 +148,6 @@ export const TaskForm = ({
   renderActionsInline = true,
 }: TaskFormProps) => {
   const labels = useLabelsInput(initialLabels);
-  // ラベルマスタ由来のサジェスト候補（name + 色）。loading / error 時は候補なし
-  //（その場合は popover 内での新規作成のみ可能）。
-  const labelList = useLabelList();
-  const labelDefinitions = useMemo(
-    () => (labelList.kind === "loaded" ? labelList.labels : []),
-    [labelList],
-  );
   // links state は parent 非依存。先に呼ぶことで循環依存を避ける。
   const links = useLinksInput(initialLinks);
   const fields = useTaskFormFields({
@@ -297,7 +298,7 @@ export const TaskForm = ({
       <LabelsFieldView
         label="ラベル"
         value={labels.state.labels}
-        suggestions={labelDefinitions}
+        suggestions={labelSuggestions}
         onChange={(next) => labels.dispatch({ type: "set", labels: next })}
         disabled={isSubmitting}
         data-testid="task-form-labels"

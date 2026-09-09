@@ -166,7 +166,7 @@ const openSuccessfully = async (seedTask: Task): Promise<void> => {
   });
 };
 
-/** TaskCard を click して DetailScreen を開き、ラベル候補取得（useLabelList）をフラッシュする。 */
+/** TaskCard を click して DetailScreen を開き、App のラベル候補取得（useLabels）をフラッシュする。 */
 const openDetailScreen = async (): Promise<void> => {
   const card = container?.querySelector<HTMLElement>(
     "[data-testid='task-card']",

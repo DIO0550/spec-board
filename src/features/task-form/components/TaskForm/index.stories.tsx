@@ -1,6 +1,7 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
+import { LabelDefinition } from "@/domains/label-definition";
 import { initialColumns, initialTasks } from "@/test-fixtures";
 import { TaskForm } from ".";
 
@@ -9,6 +10,11 @@ const meta: Meta<typeof TaskForm> = {
   args: {
     columns: initialColumns,
     initialStatus: "Todo",
+    labelSuggestions: LabelDefinition.listFromWire([
+      { name: "bug", color: "red" },
+      { name: "feature", color: "blue" },
+      { name: "docs" },
+    ]),
     onSubmit: fn(),
     onCancel: fn(),
   },

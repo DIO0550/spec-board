@@ -1,10 +1,10 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { LabelDefinition } from "@/domains/label-definition";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
-import { Result } from "@/utils/result";
 import { DetailFields } from "..";
 
 vi.mock("@/lib/tauri", async () => {
@@ -28,10 +28,14 @@ const testColumns = [
 ];
 
 beforeEach(() => {
-  getLabelsMock.mockResolvedValue(
-    Result.ok({ labels: [{ name: "bug" }, { name: "feat" }], usageCounts: {} }),
-  );
+  getLabelsMock.mockReset();
 });
+
+/** ラベル候補は App の唯一の取得点（useLabels）由来のため、テストでは prop で供給する。 */
+const LABEL_SUGGESTIONS = LabelDefinition.listFromWire([
+  { name: "bug" },
+  { name: "feat" },
+]);
 
 afterEach(() => {
   act(() => {
@@ -90,13 +94,6 @@ function render(node: ReactNode) {
   });
 }
 
-/** getLabels（useLabelList）の非同期解決をフラッシュする。 */
-const flush = async () => {
-  await act(async () => {
-    await Promise.resolve();
-  });
-};
-
 /**
  * data-testid の要素をクリックする。
  * @param testId - 対象 testid
@@ -129,38 +126,71 @@ test("StatusPriority の変更で onStatusChange / onPriorityChange が呼ばれ
   expect(onPriorityChange).toHaveBeenCalledWith("High");
 });
 
-test("Labels の候補トグルで onLabelsChange が呼ばれる", async () => {
+test("Labels の候補トグルで onLabelsChange が呼ばれる", () => {
   const onLabelsChange = vi.fn();
   render(
     <DetailFields
       task={createTask({ labels: [] })}
       columns={testColumns}
       handlers={createHandlers({ onLabelsChange })}
+      labelSuggestions={LABEL_SUGGESTIONS}
     >
       <DetailFields.Labels />
     </DetailFields>,
   );
-  await flush();
   clickTestId("detail-labels");
   clickTestId("detail-labels-option-bug");
   expect(onLabelsChange).toHaveBeenCalledWith(["bug"]);
 });
 
-test("Labels の選択済みトグル解除で onLabelsChange が除外後配列で呼ばれる", async () => {
+test("Labels の選択済みトグル解除で onLabelsChange が除外後配列で呼ばれる", () => {
   const onLabelsChange = vi.fn();
   render(
     <DetailFields
       task={createTask({ labels: ["bug"] })}
       columns={testColumns}
       handlers={createHandlers({ onLabelsChange })}
+      labelSuggestions={LABEL_SUGGESTIONS}
     >
       <DetailFields.Labels />
     </DetailFields>,
   );
-  await flush();
   clickTestId("detail-labels");
   clickTestId("detail-labels-option-bug");
   expect(onLabelsChange).toHaveBeenCalledWith([]);
+});
+
+test("labelSuggestions 未指定でもラベル欄が描画され候補は 0 件になる", () => {
+  render(
+    <DetailFields
+      task={createTask({ labels: [] })}
+      columns={testColumns}
+      handlers={createHandlers()}
+    >
+      <DetailFields.Labels />
+    </DetailFields>,
+  );
+  clickTestId("detail-labels");
+  expect(
+    document.querySelector('[data-testid^="detail-labels-option-"]'),
+  ).toBeNull();
+});
+
+test("DetailFields はラベル候補を自前で取得しない（getLabels を呼ばない）", async () => {
+  render(
+    <DetailFields
+      task={createTask({ labels: [] })}
+      columns={testColumns}
+      handlers={createHandlers()}
+      labelSuggestions={LABEL_SUGGESTIONS}
+    >
+      <DetailFields.Labels />
+    </DetailFields>,
+  );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(getLabelsMock).not.toHaveBeenCalled();
 });
 
 test("Root の外で部品を使うと例外を投げる（誤用検知）", () => {

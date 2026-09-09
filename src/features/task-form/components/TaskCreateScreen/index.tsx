@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import type { LabelDefinition } from "@/domains/label-definition";
 import { PreviewPane } from "@/features/task-form/components/PreviewPane";
 import { TaskForm } from "@/features/task-form/components/TaskForm";
 import { usePreviewTaskMarkdown } from "@/features/task-form/hooks/usePreviewTaskMarkdown";
@@ -71,6 +72,11 @@ export type TaskCreateScreenProps = {
   existingTasks: readonly Task[];
   /** プロジェクト絶対パス（保存先フルパスプレビュー用。未指定なら相対パス表示） */
   projectPath?: string;
+  /**
+   * ラベル入力のサジェスト候補（App の唯一の取得点 useLabels 由来）。
+   * 未指定は候補なし（新規作成のみ可能）を意味する。
+   */
+  labelSuggestions?: LabelDefinition[];
   /** プロジェクト名（topbar の crumbs 表示用）。 */
   projectName?: string;
   /** 同期バッジに出す監視ファイル数（読み込み済みタスク総数を流用）。 */
@@ -411,6 +417,7 @@ export const TaskCreateScreen = (props: TaskCreateScreenProps) => {
                 parentCandidates={props.parentCandidates}
                 parentReadOnly={props.parentReadOnly}
                 existingTasks={props.existingTasks}
+                labelSuggestions={props.labelSuggestions}
                 isSubmitting={isSubmitting}
                 onSubmit={handleSubmit}
                 onValuesChange={setPreviewValues}

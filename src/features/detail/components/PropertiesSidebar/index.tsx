@@ -1,5 +1,6 @@
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { BrokenLinkSet } from "@/domains/broken-link";
+import type { LabelDefinition } from "@/domains/label-definition";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
@@ -27,6 +28,8 @@ export type PropertiesSidebarProps = {
   brokenLinks: BrokenLinkSet;
   /** ステータス/優先度/ラベルの編集ハンドラ */
   handlers: DetailFieldHandlers;
+  /** ラベル入力のサジェスト候補（DetailFields の横断 context へ流す） */
+  labelSuggestions?: LabelDefinition[];
   /**
    * 削除フロー（DetailScreen が所有する useDeleteFlow の戻り値）。
    * 削除ボタン押下 / ConfirmDialog の開閉・確定・キャンセルに利用する。
@@ -94,6 +97,7 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
     parentTask,
     brokenLinks,
     handlers,
+    labelSuggestions,
     deleteFlow,
     onArchive,
     orphanStrategy,
@@ -155,7 +159,12 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
         task.hierarchy.parentFilePath !== undefined && (
           <BrokenParentRow parentFilePath={task.hierarchy.parentFilePath} />
         )}
-      <DetailFields task={task} columns={columns} handlers={handlers}>
+      <DetailFields
+        task={task}
+        columns={columns}
+        handlers={handlers}
+        labelSuggestions={labelSuggestions}
+      >
         <DetailFields.StatusPriority />
         <DetailFields.Labels />
         <DetailFields.Draft />

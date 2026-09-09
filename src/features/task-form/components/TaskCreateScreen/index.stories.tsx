@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { type ReactNode, useEffect, useState } from "react";
 import { expect, fireEvent, fn, userEvent, within } from "storybook/test";
+import { LabelDefinition } from "@/domains/label-definition";
 import { ThemeProvider } from "@/features/shell";
 import type { CreateTaskSubmitOutcome } from "@/features/task-form/hooks/useTaskCreate";
 import { ProjectError } from "@/providers/ProjectProvider";
@@ -73,6 +74,19 @@ const TauriPreviewMockBoundary = ({
   return children;
 };
 
+/**
+ * Storybook には Tauri backend が無くラベルマスタを取得できないため、
+ * App が useLabels から配るのと同じ形のサンプル候補を args で与える。
+ */
+const SAMPLE_LABEL_SUGGESTIONS = [
+  LabelDefinition.fromWire({ name: "bug", color: "#e11d48" }),
+  LabelDefinition.fromWire({ name: "feature", color: "#16a34a" }),
+  LabelDefinition.fromWire({ name: "enhancement", color: "#2563eb" }),
+  LabelDefinition.fromWire({ name: "documentation", color: "#d97706" }),
+  LabelDefinition.fromWire({ name: "good first issue", color: "#7c3aed" }),
+  LabelDefinition.fromWire({ name: "help wanted", color: "#0891b2" }),
+];
+
 const meta: Meta<typeof TaskCreateScreen> = {
   component: TaskCreateScreen,
   // 全画面 chrome を持つため fullscreen レイアウトで表示する。
@@ -97,6 +111,7 @@ const meta: Meta<typeof TaskCreateScreen> = {
     existingTasks: initialTasks,
     projectName: "payments-service",
     projectPath: "~/work/payments-service",
+    labelSuggestions: SAMPLE_LABEL_SUGGESTIONS,
     watchedFileCount: 127,
     onSubmit: fn(async () => Result.ok(STUB_PARENT_OUTCOME)),
     onClose: fn(),

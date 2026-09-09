@@ -1,23 +1,11 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
-import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
 import { DetailFields } from "..";
-
-vi.mock("@/lib/tauri", async () => {
-  const actual =
-    await vi.importActual<typeof import("@/lib/tauri")>("@/lib/tauri");
-  return { ...actual, getLabels: vi.fn() };
-});
-const getLabelsMock = vi.mocked(getLabels);
-
-beforeEach(() => {
-  getLabelsMock.mockResolvedValue(Result.ok({ labels: [], usageCounts: {} }));
-});
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;

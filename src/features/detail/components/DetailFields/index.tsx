@@ -3,9 +3,9 @@ import { DueBadge } from "@/components/DueBadge";
 import { LabelsField } from "@/components/fields/LabelsField";
 import { PriorityField } from "@/components/fields/PriorityField";
 import { StatusField } from "@/components/fields/StatusField";
+import type { LabelDefinition } from "@/domains/label-definition";
 import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
 import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
-import { useLabelList } from "@/hooks/useLabelList";
 import type { Column } from "@/types/column";
 import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import type { Result } from "@/utils/result";
@@ -35,6 +35,11 @@ type DetailFieldsContextValue = {
   columns: Column[];
   /** ステータス/優先度/ラベルの編集ハンドラ */
   handlers: DetailFieldHandlers;
+  /**
+   * ラベル入力のサジェスト候補。App の唯一の取得点（useLabels）から
+   * PropertiesSidebar 経由で配られる。空配列は候補なし（新規作成のみ可能）。
+   */
+  labelSuggestions: LabelDefinition[];
 };
 
 const DetailFieldsContext = createContext<DetailFieldsContextValue | null>(
@@ -65,6 +70,8 @@ export type DetailFieldsProps = {
   columns: Column[];
   /** ステータス/優先度/ラベルの編集ハンドラ */
   handlers: DetailFieldHandlers;
+  /** ラベル入力のサジェスト候補。未指定は候補なし */
+  labelSuggestions?: LabelDefinition[];
   /** 並べるフィールドのサブ部品（DetailFields.StatusPriority 等） */
   children: ReactNode;
 };
@@ -82,10 +89,16 @@ const DetailFieldsRoot = ({
   task,
   columns,
   handlers,
+  labelSuggestions = [],
   children,
 }: DetailFieldsProps) => {
+  // context value は毎レンダー新規オブジェクトになるが、DetailFields のサブ部品は
+  // いずれも memo 化されておらず親の再レンダーで必ず再実行されるため、
+  // ここでの useMemo は再レンダー回数を減らさない（既存実装の方針を踏襲する）。
   return (
-    <DetailFieldsContext.Provider value={{ task, columns, handlers }}>
+    <DetailFieldsContext.Provider
+      value={{ task, columns, handlers, labelSuggestions }}
+    >
       {children}
     </DetailFieldsContext.Provider>
   );
@@ -114,21 +127,19 @@ const DetailFieldsStatusPriority = () => {
 };
 
 /**
- * ラベルフィールド。横断 context から task / handlers を読む。
- * 編集側にも候補取得（{@link useLabelList}）を配線し、作成側と同等の検索・既存選択を可能にする。
- * loading / error 時は候補空でフォールバックし、新規作成のみ可能とする。
+ * ラベルフィールド。横断 context から task / handlers / labelSuggestions を読む。
+ * 候補は App の唯一の取得点（useLabels）由来で、このフィールド自体は取得を行わない。
+ * 候補が空配列のときは popover 内での新規作成のみ可能となる。
  * @returns ラベル選択フィールド
  */
 const DetailFieldsLabels = () => {
-  const { task, handlers } = useDetailFieldsContext();
-  const labelList = useLabelList();
-  const suggestions = labelList.kind === "loaded" ? labelList.labels : [];
+  const { task, handlers, labelSuggestions } = useDetailFieldsContext();
   return (
     <div className="border-b border-border px-[18px] py-4">
       <LabelsField
         label="ラベル"
         value={task.labels}
-        suggestions={suggestions}
+        suggestions={labelSuggestions}
         onChange={handlers.onLabelsChange}
         data-testid="detail-labels"
       />

@@ -1,5 +1,6 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { LabelDefinition } from "@/domains/label-definition";
 import {
   detailChildInfo,
   detailColumns,
@@ -17,6 +18,11 @@ const meta: Meta<typeof DetailFields> = {
     task: detailTask,
     columns: detailColumns,
     handlers: detailHandlers,
+    labelSuggestions: LabelDefinition.listFromWire([
+      { name: "bug", color: "red" },
+      { name: "feature", color: "blue" },
+      { name: "docs" },
+    ]),
     children: null,
   },
 };

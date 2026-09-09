@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrokenLinkSet } from "@/domains/broken-link";
+import type { LabelDefinition } from "@/domains/label-definition";
 import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
@@ -21,6 +22,11 @@ export type DetailScreenProps = {
   allTasks?: Task[];
   projections: TaskProjectionMap;
   tasksByNormalizedPath?: TaskPathLookup;
+  /**
+   * ラベル入力のサジェスト候補（App の唯一の取得点 useLabels 由来）。
+   * 未指定は候補なし（新規作成のみ可能）。
+   */
+  labelSuggestions?: LabelDefinition[];
   /** 一覧へ戻るcallback。 */
   onBack: () => void;
   isUpperModalOpen?: boolean;
@@ -69,6 +75,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
     allTasks,
     projections,
     tasksByNormalizedPath,
+    labelSuggestions,
     onBack,
     onTaskUpdate,
     onDelete,
@@ -216,6 +223,7 @@ export const DetailScreen = (props: DetailScreenProps) => {
             parentTask={parentTask}
             brokenLinks={brokenLinks}
             handlers={fieldHandlers}
+            labelSuggestions={labelSuggestions}
             onAddSubIssue={onAddSubIssue}
             onSelectTask={onSelectTask}
             onAddLink={onAddLink}
