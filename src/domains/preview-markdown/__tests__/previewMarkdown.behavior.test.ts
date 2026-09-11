@@ -41,7 +41,7 @@ test.each([
     markdown: "---\ntitle: A\n----\n---x\n---\n本文",
     frontmatter: "---\ntitle: A\n----\n---x\n---",
   },
-])("frontmatter 値が $label 場合は後続の閉じフェンスで分割する", ({
+])("frontmatter 値が $label の場合は後続の閉じフェンスで分割する", ({
   markdown,
   frontmatter,
 }) => {
