@@ -1,5 +1,5 @@
 {
-  "reportVersion": "2c24a66f9e981e267f9f1e6d595d2d158c5877f7",
+  "reportVersion": "6a3d3dd3915aefe13420b7965a69e9cab9376ada",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -273,12 +273,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--comfortable",
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -299,12 +299,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Compact",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 2,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--dark",
@@ -325,12 +325,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--edge-cases",
@@ -338,12 +338,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--focus",
@@ -351,12 +351,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Focus",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-confirmdialog--all-props",
@@ -3900,12 +3900,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--empty",
@@ -3913,12 +3913,12 @@
       "title": "features/commandPalette/components/CommandPalette",
       "name": "Empty",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 10,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "features-commandpalette-components-commandpalette--keyboard",
@@ -6786,12 +6786,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
