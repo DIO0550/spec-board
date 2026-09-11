@@ -54,6 +54,8 @@ const createHandlers = (): DetailFieldHandlers => ({
   onPriorityChange: vi.fn(),
   onLabelsChange: vi.fn(),
   onChangeDraft: vi.fn(),
+  onTitleChange: vi.fn(),
+  onBodyChange: vi.fn(),
 });
 
 /** 空の子タスク解決結果 */

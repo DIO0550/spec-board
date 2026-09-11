@@ -60,6 +60,8 @@ export const detailHandlers: DetailFieldHandlers = {
   onPriorityChange: fn(),
   onLabelsChange: fn(),
   onChangeDraft: fn(),
+  onTitleChange: fn(),
+  onBodyChange: fn(),
 };
 
 export const detailChildInfo: UseChildTasksResult = {

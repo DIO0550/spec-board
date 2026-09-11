@@ -89,6 +89,8 @@ function buildProps(
       onPriorityChange: vi.fn(),
       onLabelsChange: vi.fn(),
       onChangeDraft: vi.fn(),
+      onTitleChange: vi.fn(),
+      onBodyChange: vi.fn(),
     },
     deleteFlow: buildDeleteFlow(),
     orphanStrategy: "clear",
