@@ -1,112 +1,32 @@
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import type { BrokenLinkSet } from "@/domains/broken-link";
-import type { LabelDefinition } from "@/domains/label-definition";
-import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
-import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
-import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
-import type { OrphanStrategy } from "@/lib/tauri";
-import type { Column } from "@/types/column";
-import type { Task, TaskFilePath, TaskId } from "@/types/task";
-import type { Result } from "@/utils/result";
 import { BrokenParentRow } from "../BrokenParentRow";
+import { useDeleteFlowContext } from "../DeleteFlowProvider";
 import { DetailFields } from "../DetailFields";
+import { useDetail } from "../DetailProvider";
 import { ParentLink } from "../ParentLink";
 
-/** プロパティペイン（DetailFields + 削除）の Props */
+/** プロパティペインの Props */
 export type PropertiesSidebarProps = {
-  /** 表示するタスク */
-  task: Task;
-  /** 選択肢となるカラム一覧 */
-  columns: Column[];
-  /** 全タスク一覧。SubIssue / Links セクションの解決に利用する */
-  allTasks?: Task[];
-  /** 子タスク解決結果（useChildTasks の戻り値） */
-  childInfo: UseChildTasksResult;
-  /** 親タスク（無ければ null） */
-  parentTask: Task | null;
-  /** リンク切れ判定結果 */
-  brokenLinks: BrokenLinkSet;
-  /** ステータス/優先度/ラベルの編集ハンドラ */
-  handlers: DetailFieldHandlers;
-  /** ラベル入力のサジェスト候補（DetailFields の横断 context へ流す） */
-  labelSuggestions?: LabelDefinition[];
-  /**
-   * 削除フロー（DetailScreen が所有する useDeleteFlow の戻り値）。
-   * 削除ボタン押下 / ConfirmDialog の開閉・確定・キャンセルに利用する。
-   */
-  deleteFlow: UseDeleteFlowResult;
   /**
    * アーカイブボタン押下時のコールバック。未指定ならボタンを表示しない。
    * アーカイブは復元可能な操作のため、削除と違い確認ダイアログは挟まない。
    */
   onArchive?: () => void;
-  /** 子タスクがある場合の削除方針（clear / abort）。子なし時は無視される */
-  orphanStrategy: OrphanStrategy;
-  /**
-   * 削除方針の変更ハンドラ。
-   * @param strategy - 選択された削除方針
-   */
-  onOrphanStrategyChange: (strategy: OrphanStrategy) => void;
-  /**
-   * サブIssue 追加ハンドラ。
-   * @param parentFilePath - 親タスクのファイルパス
-   */
-  onAddSubIssue?: (parentFilePath: TaskFilePath) => void;
-  /**
-   * 別タスクへ表示対象を切り替えるハンドラ。
-   * @param taskId - 切り替え先タスクの id
-   */
-  onSelectTask?: (taskId: TaskId) => void;
-  /**
-   * リンク追加ハンドラ。
-   * @param sourceFilePath - リンク元 filePath
-   * @param targetFilePath - リンク先 filePath
-   * @returns invoke 結果
-   */
-  onAddLink?: (
-    sourceFilePath: TaskFilePath,
-    targetFilePath: TaskFilePath,
-  ) => Promise<Result<Task, unknown>>;
-  /**
-   * リンク削除ハンドラ。
-   * @param sourceFilePath - リンク元 filePath
-   * @param targetFilePath - リンク先 filePath
-   * @returns invoke 結果
-   */
-  onRemoveLink?: (
-    sourceFilePath: TaskFilePath,
-    targetFilePath: string,
-  ) => Promise<Result<Task, unknown>>;
 };
 
 /**
  * 詳細のプロパティペイン。DetailScreen の右サイドバー専用。
  * 最上部に ParentLink / BrokenParentRow（Parent はサイドバー集約）、続いて
- * DetailFields（Compound: Status/Priority・Labels・SubIssue・Links）、最下部に削除ボタンを置く。
- * 削除フロー（useDeleteFlow + orphanStrategy）の所有権は DetailScreen にあり、本コンポーネントは
- * props で受け取った state を描画するだけの presentational コンポーネントとして振る舞う。
+ * DetailFields（Compound: Status/Priority・Labels・Draft・SubIssue・Links）、最下部に削除ボタンを置く。
+ * 表示対象・親子・リンク切れは {@link useDetail}、削除フローは {@link useDeleteFlowContext} から読む。
+ * 削除フロー（state machine + orphanStrategy）の所有権は DeleteFlowProvider にあり、
+ * 本コンポーネントは context の値を描画し操作を context に返すだけ。
  * @param props - {@link PropertiesSidebarProps}
  * @returns プロパティペイン要素
  */
-export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
-  const {
-    task,
-    columns,
-    allTasks,
-    childInfo,
-    parentTask,
-    brokenLinks,
-    handlers,
-    labelSuggestions,
-    deleteFlow,
-    onArchive,
-    orphanStrategy,
-    onOrphanStrategyChange,
-    onAddSubIssue,
-    onSelectTask,
-    onAddLink,
-    onRemoveLink,
-  } = props;
+export const PropertiesSidebar = ({ onArchive }: PropertiesSidebarProps) => {
+  const { task, parentTask, brokenLinks, onSelectTask } = useDetail();
+  const deleteFlow = useDeleteFlowContext();
 
   const hasChildren = task.hierarchy.childFilePaths.length > 0;
   const rawAssignees = task.extras.assignees;
@@ -159,35 +79,12 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
         task.hierarchy.parentFilePath !== undefined && (
           <BrokenParentRow parentFilePath={task.hierarchy.parentFilePath} />
         )}
-      <DetailFields
-        task={task}
-        columns={columns}
-        handlers={handlers}
-        labelSuggestions={labelSuggestions}
-      >
+      <DetailFields>
         <DetailFields.StatusPriority />
         <DetailFields.Labels />
         <DetailFields.Draft />
-        {onAddSubIssue && allTasks !== undefined && (
-          <DetailFields.SubIssue
-            childInfo={childInfo}
-            brokenChildPaths={brokenLinks.children}
-            onAddSubIssue={onAddSubIssue}
-            onChildClick={onSelectTask}
-          />
-        )}
-        {onAddLink !== undefined && allTasks !== undefined && (
-          <DetailFields.Links
-            allTasks={allTasks}
-            parentFilePath={parentTask?.filePath ?? null}
-            childrenFilePaths={childInfo.childTasks.map((t) => t.filePath)}
-            onAddLink={onAddLink}
-            onRemoveLink={onRemoveLink}
-            onLinkClick={onSelectTask}
-            brokenLinkPaths={brokenLinks.links}
-            brokenReverseLinkPaths={brokenLinks.reverseLinks}
-          />
-        )}
+        <DetailFields.SubIssue />
+        <DetailFields.Links />
       </DetailFields>
       <section className="border-b border-border px-[18px] py-4">
         <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
@@ -246,8 +143,8 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
                   type="radio"
                   name="orphan-strategy"
                   value="clear"
-                  checked={orphanStrategy === "clear"}
-                  onChange={() => onOrphanStrategyChange("clear")}
+                  checked={deleteFlow.orphanStrategy === "clear"}
+                  onChange={() => deleteFlow.setOrphanStrategy("clear")}
                   data-testid="delete-orphan-strategy-clear"
                 />
                 子タスクの親リンクを解除して削除（clear）
@@ -257,8 +154,8 @@ export const PropertiesSidebar = (props: PropertiesSidebarProps) => {
                   type="radio"
                   name="orphan-strategy"
                   value="abort"
-                  checked={orphanStrategy === "abort"}
-                  onChange={() => onOrphanStrategyChange("abort")}
+                  checked={deleteFlow.orphanStrategy === "abort"}
+                  onChange={() => deleteFlow.setOrphanStrategy("abort")}
                   data-testid="delete-orphan-strategy-abort"
                 />
                 削除を中止（abort）
