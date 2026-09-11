@@ -1,31 +1,11 @@
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { BrokenLinkSet } from "@/domains/broken-link";
-import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
+import { TaskPathLookup } from "@/domains/task-path-lookup";
 import { Task, type TaskPayload } from "@/types/task";
+import { createDeleteFlowWrapper } from "../../DeleteFlowProvider/wrapper";
+import { createDetailWrapper } from "../../DetailProvider/wrapper";
 import { PropertiesSidebar } from "..";
-
-/** リンク切れなしの BrokenLinkSet */
-const noBrokenLinks = BrokenLinkSet.empty;
-
-/**
- * 削除フロー（DetailScreen が所有する state）のスタブを生成する。
- * @param overrides - 上書きするフィールド
- * @returns UseDeleteFlowResult スタブ
- */
-function buildDeleteFlow(
-  overrides: Partial<UseDeleteFlowResult> = {},
-): UseDeleteFlowResult {
-  return {
-    isOpen: false,
-    isBusy: false,
-    requestDelete: vi.fn(),
-    cancelDelete: vi.fn(),
-    confirmDelete: vi.fn(),
-    ...overrides,
-  };
-}
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -65,101 +45,87 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
-/**
- * PropertiesSidebar の必須 props にデフォルトを与えるヘルパー。
- * @param overrides - 上書きする props
- * @returns PropertiesSidebar の props
- */
-function buildProps(
-  overrides: Partial<Parameters<typeof PropertiesSidebar>[0]> = {},
-): Parameters<typeof PropertiesSidebar>[0] {
-  const task = overrides.task ?? createTask();
-  return {
-    task,
-    columns: testColumns,
-    childInfo: {
-      childTasks: [],
-      subIssueCounts: { done: 0, total: 0 },
-      isDone: () => false,
-    },
-    parentTask: null,
-    brokenLinks: noBrokenLinks,
-    handlers: {
-      onStatusChange: vi.fn(),
-      onPriorityChange: vi.fn(),
-      onLabelsChange: vi.fn(),
-      onChangeDraft: vi.fn(),
-      onTitleChange: vi.fn(),
-      onBodyChange: vi.fn(),
-    },
-    deleteFlow: buildDeleteFlow(),
-    orphanStrategy: "clear",
-    onOrphanStrategyChange: vi.fn(),
-    ...overrides,
-  };
-}
+/** render に渡す引数（両 Provider の上書きと PropertiesSidebar の props） */
+type RenderArgs = {
+  detail?: Parameters<typeof createDetailWrapper>[0];
+  deleteFlow?: Parameters<typeof createDeleteFlowWrapper>[0];
+  onArchive?: () => void;
+};
 
 /**
- * PropertiesSidebar をレンダリングするヘルパー
- * @param props - PropertiesSidebar に渡す props
+ * 両 Provider 配下に PropertiesSidebar を mount する。task は両 Provider に同じものを渡す。
+ * @param args - detail / deleteFlow の wrapper 引数と onArchive
  */
-function render(props: Parameters<typeof PropertiesSidebar>[0]) {
+function render(args: RenderArgs = {}) {
+  const task = args.detail?.task ?? createTask();
+  const Detail = createDetailWrapper({
+    task,
+    columns: testColumns,
+    ...args.detail,
+  });
+  const DeleteFlow = createDeleteFlowWrapper({ task, ...args.deleteFlow });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(PropertiesSidebar, props));
+    root?.render(
+      <Detail>
+        <DeleteFlow>
+          <PropertiesSidebar onArchive={args.onArchive} />
+        </DeleteFlow>
+      </Detail>,
+    );
   });
 }
 
 test("DetailFields（Status 等）が描画される", () => {
-  render(buildProps());
+  render();
   expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
 });
 
-test("parentTask あり + onSelectTask で ParentLink が描画される（サイドバー集約）", () => {
+test("allTasks に親がいる + onSelectTask で ParentLink が描画される（サイドバー集約）", () => {
   const parent = createTask({ id: "p", title: "親", filePath: "tasks/p.md" });
   const child = createTask({
     id: "c",
     filePath: "tasks/c.md",
     parent: "tasks/p.md",
   });
-  render(
-    buildProps({ task: child, parentTask: parent, onSelectTask: vi.fn() }),
-  );
+  render({
+    detail: { task: child, allTasks: [parent, child], onSelectTask: vi.fn() },
+  });
   expect(
     document.querySelector('[data-testid="detail-parent-link"]'),
   ).toBeTruthy();
 });
 
-test("parentTask 無し + brokenLinks.parent で BrokenParentRow が描画される", () => {
+test("lookup に親が無い（broken parent）なら BrokenParentRow が描画される", () => {
   const child = createTask({
     id: "c",
     filePath: "tasks/c.md",
     parent: "tasks/missing.md",
   });
-  render(
-    buildProps({
+  render({
+    detail: {
       task: child,
-      parentTask: null,
-      brokenLinks: { ...noBrokenLinks, parent: true },
+      allTasks: [child],
+      tasksByNormalizedPath: TaskPathLookup.fromTasks([child]),
       onSelectTask: vi.fn(),
-    }),
-  );
+    },
+  });
   expect(
     document.querySelector('[data-testid="broken-parent-row"]'),
   ).toBeTruthy();
 });
 
 test("削除ボタンが描画される", () => {
-  render(buildProps());
+  render();
   expect(
     document.querySelector('[data-testid="detail-delete-button"]'),
   ).toBeTruthy();
 });
 
 test("削除ボタンに focus-visible リング（red）クラスを含む（DetailScreen とトーン統一）", () => {
-  render(buildProps());
+  render();
   const cls = (
     document.querySelector(
       '[data-testid="detail-delete-button"]',

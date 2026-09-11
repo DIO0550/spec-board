@@ -1,10 +1,9 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
-import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
+import { createDetailWrapper } from "../../DetailProvider/wrapper";
 import { DetailFields } from "..";
 
 let container: HTMLDivElement | null = null;
@@ -46,26 +45,6 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 }
 
 /**
- * テスト用の編集ハンドラ群を生成する。
- * @returns DetailFieldHandlers
- */
-const createHandlers = (): DetailFieldHandlers => ({
-  onStatusChange: vi.fn(),
-  onPriorityChange: vi.fn(),
-  onLabelsChange: vi.fn(),
-  onChangeDraft: vi.fn(),
-  onTitleChange: vi.fn(),
-  onBodyChange: vi.fn(),
-});
-
-/** 空の子タスク解決結果 */
-const emptyChildInfo: UseChildTasksResult = {
-  childTasks: [],
-  subIssueCounts: { done: 0, total: 0 },
-  isDone: () => false,
-};
-
-/**
  * 任意の React 要素をレンダリングするヘルパー
  * @param node - レンダリング対象
  */
@@ -79,42 +58,50 @@ function render(node: ReactNode) {
 }
 
 test("StatusPriority で Status/Priority が描画される", () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask(),
+    columns: testColumns,
+  });
   render(
-    <DetailFields
-      task={createTask()}
-      columns={testColumns}
-      handlers={createHandlers()}
-    >
-      <DetailFields.StatusPriority />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.StatusPriority />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
   expect(document.querySelector('[data-testid="priority-field"]')).toBeTruthy();
 });
 
 test("Labels で ラベル選択フィールドが描画される", () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask(),
+    columns: testColumns,
+  });
   render(
-    <DetailFields
-      task={createTask()}
-      columns={testColumns}
-      handlers={createHandlers()}
-    >
-      <DetailFields.Labels />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Labels />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(document.querySelector('[data-testid="detail-labels"]')).toBeTruthy();
 });
 
 test("SubIssue で SubIssueSection が描画される", () => {
   const task = createTask({ filePath: "tasks/parent.md" });
+  const Wrapper = createDetailWrapper({
+    task,
+    columns: testColumns,
+    allTasks: [task],
+    onAddSubIssue: vi.fn(),
+  });
   render(
-    <DetailFields task={task} columns={testColumns} handlers={createHandlers()}>
-      <DetailFields.SubIssue
-        childInfo={emptyChildInfo}
-        brokenChildPaths={new Set()}
-        onAddSubIssue={vi.fn()}
-      />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.SubIssue />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(
     document.querySelector('[data-testid="sub-issue-section"]'),
@@ -123,35 +110,74 @@ test("SubIssue で SubIssueSection が描画される", () => {
 
 test("Links で LinksSection が描画される", () => {
   const task = createTask();
+  const Wrapper = createDetailWrapper({
+    task,
+    columns: testColumns,
+    allTasks: [task],
+    onAddLink: vi.fn(async () => Result.ok(task)),
+  });
   render(
-    <DetailFields task={task} columns={testColumns} handlers={createHandlers()}>
-      <DetailFields.Links
-        allTasks={[task]}
-        parentFilePath={null}
-        childrenFilePaths={[]}
-        onAddLink={vi.fn(async () => Result.ok(task))}
-        brokenLinkPaths={new Set()}
-        brokenReverseLinkPaths={new Set()}
-      />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Links />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(document.querySelector('[data-testid="links-section"]')).toBeTruthy();
 });
 
 test("呼び出し側が並べた部品のみが描画される（Links を並べなければ非描画）", () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask(),
+    columns: testColumns,
+  });
   render(
-    <DetailFields
-      task={createTask()}
-      columns={testColumns}
-      handlers={createHandlers()}
-    >
-      <DetailFields.StatusPriority />
-      <DetailFields.Labels />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.StatusPriority />
+        <DetailFields.Labels />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(document.querySelector('[data-testid="status-field"]')).toBeTruthy();
   expect(document.querySelector('[data-testid="links-section"]')).toBeNull();
   expect(
     document.querySelector('[data-testid="sub-issue-section"]'),
   ).toBeNull();
+});
+
+test("onAddSubIssue 未指定なら SubIssue を並べても描画しない", () => {
+  const task = createTask();
+  const Wrapper = createDetailWrapper({
+    task,
+    columns: testColumns,
+    allTasks: [task],
+  });
+  render(
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.SubIssue />
+      </DetailFields>
+    </Wrapper>,
+  );
+  expect(
+    document.querySelector('[data-testid="sub-issue-section"]'),
+  ).toBeNull();
+});
+
+test("onAddLink 未指定なら Links を並べても描画しない", () => {
+  const task = createTask();
+  const Wrapper = createDetailWrapper({
+    task,
+    columns: testColumns,
+    allTasks: [task],
+  });
+  render(
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Links />
+      </DetailFields>
+    </Wrapper>,
+  );
+  expect(document.querySelector('[data-testid="links-section"]')).toBeNull();
 });
