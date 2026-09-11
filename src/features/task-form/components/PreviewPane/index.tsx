@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { MarkdownContent } from "@/components/MarkdownContent";
+import { PreviewMarkdown } from "@/domains/preview-markdown";
 import type { PreviewMarkdownState } from "@/features/task-form/hooks/usePreviewTaskMarkdown";
-import { splitPreviewMarkdown } from "./splitPreviewMarkdown";
 
 export type PreviewPaneProps = {
   /** BE の shared document codec が生成した preview 状態。 */
@@ -78,16 +78,18 @@ export const PreviewPane = (props: PreviewPaneProps) => {
   const markdown = props.state.kind === "ready" ? props.state.markdown : "";
   const split = useMemo(
     () =>
-      props.state.kind === "ready" ? splitPreviewMarkdown(markdown) : null,
+      props.state.kind === "ready"
+        ? PreviewMarkdown.split(markdown)
+        : undefined,
     [markdown, props.state.kind],
   );
   const byteLength = useMemo(() => {
-    if (props.state.kind !== "ready" || split === null) {
+    if (props.state.kind !== "ready" || split === undefined) {
       return 0;
     }
     return new TextEncoder().encode(markdown).length;
   }, [markdown, props.state.kind, split]);
-  const hasError = props.state.kind === "error" || split === null;
+  const hasError = props.state.kind === "error" || split === undefined;
   const errorMessage =
     props.state.kind === "error"
       ? props.state.error.message
