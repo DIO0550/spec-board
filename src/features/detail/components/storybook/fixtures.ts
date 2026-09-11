@@ -1,8 +1,4 @@
-import { fn } from "storybook/test";
-import type { BrokenLinkSet } from "@/domains/broken-link";
-import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
-import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
-import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { buildProjectionsFixture } from "@/test-fixtures";
 import type { Column } from "@/types/column";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
@@ -49,45 +45,19 @@ export const childTask = makeDetailTask({
   children: [],
 });
 
+/** stories の allTasks 既定値（親 / 表示対象 / 子） */
+export const detailAllTasks: Task[] = [parentTask, detailTask, childTask];
+/** detailAllTasks から BE 相当で集計した projection（Done を完了カラムとする） */
+export const detailProjections = buildProjectionsFixture(
+  detailAllTasks,
+  "Done",
+);
+
 export const detailColumns: Column[] = [
   { name: "Todo", order: 0 },
   { name: "In Progress", order: 1, color: "#d97706" },
   { name: "Done", order: 2, color: "#16a34a" },
 ];
-
-export const detailHandlers: DetailFieldHandlers = {
-  onStatusChange: fn(),
-  onPriorityChange: fn(),
-  onLabelsChange: fn(),
-  onChangeDraft: fn(),
-  onTitleChange: fn(),
-  onBodyChange: fn(),
-};
-
-export const detailChildInfo: UseChildTasksResult = {
-  childTasks: [childTask],
-  subIssueCounts: { done: 1, total: 2 },
-  /**
-   * 子タスクが完了しているかを返す。
-   * @param filePath - 判定する子タスクの filePath
-   */
-  isDone: (filePath) => filePath === childTask.filePath,
-};
-
-export const noBrokenLinks: BrokenLinkSet = {
-  parent: false,
-  links: new Set<string>(),
-  children: new Set<string>(),
-  reverseLinks: new Set<string>(),
-};
-
-export const idleDeleteFlow: UseDeleteFlowResult = {
-  isOpen: false,
-  isBusy: false,
-  requestDelete: fn(),
-  cancelDelete: fn(),
-  confirmDelete: fn(),
-};
 
 /** @returns 常に成功する link 追加のダミー実装 */
 export const noopAddLink = async () => Result.ok(detailTask);
