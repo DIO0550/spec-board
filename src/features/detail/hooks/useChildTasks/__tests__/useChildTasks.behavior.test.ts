@@ -220,3 +220,20 @@ test("同じ入力で再レンダーしても戻り値の参照が変わらな�
   expect(probe.latest.subIssueCounts).toBe(before.subIssueCounts);
   expect(probe.latest.isDone).toBe(before.isDone);
 });
+
+test("同一引数で再レンダーしても戻り値オブジェクト自体の参照が同一", () => {
+  const rootTask = makeTask({ id: "root" });
+  const allTasks = [rootTask];
+  const args = {
+    parentFilePath: fp("root"),
+    allTasks,
+    projections: TaskProjection.emptyMap,
+  };
+
+  const probe = renderHook(args);
+  const first = probe.latest;
+
+  probe.rerender(args);
+
+  expect(probe.latest).toBe(first);
+});
