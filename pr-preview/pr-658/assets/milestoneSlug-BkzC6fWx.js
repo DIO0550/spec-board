@@ -1,0 +1,1 @@
+import{n as e}from"./chunk-BneVvdWh.js";var t,n=e((()=>{t=e=>e.trim().toLowerCase().replace(/[^a-z0-9]+/g,`-`).replace(/^-+/,``).replace(/-+$/,``)||`version-tag`}));export{t as n,n as t};

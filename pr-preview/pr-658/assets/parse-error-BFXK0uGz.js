@@ -1,0 +1,1 @@
+import{n as e}from"./chunk-BneVvdWh.js";var t,n,r,i=e((()=>{t=new Set([`invalidTitleUsedFileName`,`invalidStatusUsedDefault`,`invalidParentIgnored`,`nonStringExtraKeyIgnored`,`extraValueNotJsonCompatible`]),n=e=>e.warnings.some(e=>t.has(e.code)),r=e=>e.filter(n).length}));export{n,i as r,r as t};
