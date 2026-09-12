@@ -7,6 +7,9 @@ import { DetailProvider, type DetailProviderProps } from "./index";
 /** wrapper に渡せる Partial の props（children は内部で当てる） */
 type DetailWrapperArgs = Partial<Omit<DetailProviderProps, "children">>;
 
+/** 既定の onTaskUpdate（何もしない）。 */
+const noopTaskUpdate = () => {};
+
 /**
  * Wrapper のデフォルト。`allTasks` / `onAddSubIssue` / `onAddLink` は意図的に含めない
  * （未指定だと SubIssue / Links セクションが描画されない、という本番と同じ条件で mount する）。
@@ -15,7 +18,7 @@ const DEFAULTS: Omit<DetailProviderProps, "children"> = {
   task: makeTask({ id: "task-1", filePath: "tasks/test.md" }),
   columns: initialColumns,
   projections: TaskProjection.emptyMap,
-  onTaskUpdate: () => {},
+  onTaskUpdate: noopTaskUpdate,
 };
 
 /**

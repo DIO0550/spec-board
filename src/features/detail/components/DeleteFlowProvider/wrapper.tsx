@@ -5,10 +5,13 @@ import { DeleteFlowProvider, type DeleteFlowProviderProps } from "./index";
 /** wrapper に渡せる Partial の props（children は内部で当てる） */
 type DeleteFlowWrapperArgs = Partial<Omit<DeleteFlowProviderProps, "children">>;
 
+/** 既定の onDelete（何もしない）。 */
+const noopDelete = () => {};
+
 /** Wrapper のデフォルト（既定 task は子なし。`makeTask` は既存の共有 fixture） */
 const DEFAULTS: Omit<DeleteFlowProviderProps, "children"> = {
   task: makeTask({ id: "task-1", filePath: "tasks/test.md" }),
-  onDelete: () => {},
+  onDelete: noopDelete,
 };
 
 /**

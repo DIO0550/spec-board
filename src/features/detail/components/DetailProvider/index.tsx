@@ -94,9 +94,15 @@ export type DetailApi = {
   handlers: DetailFieldHandlers;
   /** ラベル入力のサジェスト候補（未指定時は固定参照の空配列） */
   labelSuggestions: LabelDefinition[];
-  /** サブIssue 追加ハンドラ（未指定のまま配る） */
+  /**
+   * サブIssue 追加ハンドラ（未指定のまま配る）
+   * @param parentFilePath - 親タスクの filePath
+   */
   onAddSubIssue: ((parentFilePath: TaskFilePath) => void) | undefined;
-  /** 別タスクへ表示対象を切り替えるハンドラ（未指定のまま配る） */
+  /**
+   * 別タスクへ表示対象を切り替えるハンドラ（未指定のまま配る）
+   * @param taskId - 切り替え先タスクの ID
+   */
   onSelectTask: ((taskId: TaskId) => void) | undefined;
   /** リンク追加ハンドラ（未指定のまま配る） */
   onAddLink: AddLinkHandler | undefined;
