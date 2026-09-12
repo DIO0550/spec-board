@@ -1,0 +1,1 @@
+import{n as e}from"./chunk-BneVvdWh.js";var t,n=e((()=>{t={ok:e=>({ok:!0,value:e}),err:e=>({ok:!1,error:e}),isOk:e=>e.ok,isErr:e=>!e.ok,map:(e,t)=>e.ok?{ok:!0,value:t(e.value)}:e,mapErr:(e,t)=>e.ok?e:{ok:!1,error:t(e.error)},unwrapOr:(e,t)=>e.ok?e.value:t,match:(e,t)=>e.ok?t.ok(e.value):t.err(e.error)}}));export{n,t};
