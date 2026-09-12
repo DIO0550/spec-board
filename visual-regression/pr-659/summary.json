@@ -1,5 +1,5 @@
 {
-  "reportVersion": "3d04d0ab2f099e42ee542bf05f4a6931ac2e0bbe",
+  "reportVersion": "12ba35666f19f7f63b09c75af72d22cf0e788f68",
   "maxDiffRatio": 0.002,
   "changed": 4,
   "new": 0,
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -299,12 +299,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Compact",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--dark",
@@ -325,12 +325,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Default",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--edge-cases",
@@ -338,12 +338,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-commoncomponentsgallery--focus",
@@ -351,12 +351,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Focus",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 1,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "components-confirmdialog--all-props",
