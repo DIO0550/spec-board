@@ -140,7 +140,7 @@ fn write_task_md_with_status(root: &Path, rel: &str, title: &str, status: &str) 
 
 fn column_names_of(config: &Config) -> Vec<&str> {
     config
-        .columns
+        .columns()
         .iter()
         .map(|column| column.name.as_str())
         .collect()
@@ -306,8 +306,8 @@ fn changed_config_json_is_picked_up() {
         .expect("session stays open")
         .config()
         .clone();
-    assert_eq!(1, config.columns.len());
-    assert_eq!("Backlog", config.columns[0].name.as_str());
+    assert_eq!(1, config.columns().len());
+    assert_eq!("Backlog", config.columns()[0].name.as_str());
 }
 
 #[test]

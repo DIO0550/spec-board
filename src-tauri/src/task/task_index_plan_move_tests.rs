@@ -48,7 +48,7 @@ fn config_with_card_order(entries: &[(&str, &[&str])]) -> Config {
         order.set_column(column, paths);
     }
     let default = Config::default();
-    Config::new(default.columns, order, default.done_column)
+    Config::try_new(default.columns().to_vec(), order, default.done_column).expect("valid config")
 }
 
 #[test]

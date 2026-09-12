@@ -2,7 +2,7 @@
 //!
 //! [`Config`] / [`Column`] / [`ColumnColor`] と、GUIDE.md 本文生成、
 //! `update_columns` 純粋計算（[`Config::plan_update_columns`]）、
-//! status 列からの config 組み立て（[`build_config_from_statuses`]）、
+//! status 列からの config 組み立て（[`Config::from_statuses`]）、
 //! カラム名重複検証（[`validate_unique_column_names`]）を提供する。
 //!
 //! `cardOrder` そのものの型と不変条件は [`crate::config::card_order::CardOrder`] が持ち、
@@ -31,6 +31,15 @@ use spec_board_fs::config::config_io::write_guide_markdown;
 
 /// プロジェクト設定全体。
 ///
+/// 型が保証する不変条件は次の 2 つで、[`Config::try_new`] だけが構築境界になる:
+///
+/// 1. `columns` は 1 件以上
+/// 2. `columns[].name` は完全一致（case-sensitive・未正規化）で一意
+///
+/// `columns` は private で、読み取りは [`Config::columns`] を使う。`doneColumn` が
+/// `columns` に含まれるかは不変条件に**含めない**（`config-spec.md` の「load 時に
+/// 拒否しない」規則）。
+///
 /// `version` / `columns` / `card_order` は仕様上「必須: はい」のため、
 /// JSON 側で欠落していると `serde_json::from_str` はエラーを返す
 /// （部分的な手書き / 切り詰められた config を黙ってデフォルト値で受理し、
@@ -48,19 +57,68 @@ use spec_board_fs::config::config_io::write_guide_markdown;
 /// let config = Config::default();
 /// let _ = config.version;
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// `columns` への代入も同様に拒否される（不変条件を構築後に破れない）。
+///
+/// ```compile_fail,E0616
+/// use spec_board_lib::config::Config;
+///
+/// let mut config = Config::default();
+/// config.columns = Vec::new();
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     /// 設定ファイルのスキーマバージョン。
     version: SchemaVersion,
-    /// カラム定義の配列。順序は `Column::order` 昇順で表示する想定（ソートは呼び出し側）。
-    pub columns: Vec<Column>,
+    /// 検証済みカラム定義。順序は `Column::order` 昇順で表示する想定（ソートは呼び出し側）。
+    columns: Vec<Column>,
     /// カラム名 → そのカラム内のタスクファイルパス配列。空 `{}` を許容。
     pub card_order: CardOrder,
     /// 「完了」として扱うカラム名。仕様上「必須: いいえ」のため省略可。
     /// 未設定時は `columns` の最後のカラムを呼び出し層で採用する。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done_column: Option<ColumnName>,
+}
+
+/// `config.json` を検証前に受ける生の形。フィールドと serde 属性は [`Config`] と
+/// 同一で、[`Config::try_from`] で不変条件を検査してから `Config` になる。
+///
+/// `load.rs` が `LoadConfigError` の variant を保ったまま検証エラーを詰め替えられる
+/// よう `pub(crate)` にしてある（`Config` の `Deserialize` に包むと
+/// `serde::de::Error::custom` で variant が潰れる）。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RawConfig {
+    /// `SchemaVersion` の `Deserialize` が現行値以外を拒否するため、
+    /// `Config::try_new` が設定する `CURRENT` と常に一致する（値は読み捨てる）。
+    #[expect(
+        dead_code,
+        reason = "version は SchemaVersion の Deserialize が検証済みで、Config 側は CURRENT を固定で持つ"
+    )]
+    version: SchemaVersion,
+    columns: Vec<Column>,
+    card_order: CardOrder,
+    #[serde(default)]
+    done_column: Option<ColumnName>,
+}
+
+impl TryFrom<RawConfig> for Config {
+    type Error = ConfigInvariantError;
+
+    fn try_from(raw: RawConfig) -> Result<Self, Self::Error> {
+        Self::try_new(raw.columns, raw.card_order, raw.done_column)
+    }
+}
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawConfig::deserialize(deserializer)?;
+        Self::try_from(raw).map_err(serde::de::Error::custom)
+    }
 }
 
 /// `#rrggbb` 形式のカラムアクセント色 VO。constructor で形式を強制し、
@@ -189,23 +247,59 @@ impl Default for Config {
         let done_column = DEFAULT_COLUMN_NAMES
             .last()
             .map(|s| ColumnName::classify_after_validation(*s));
-        Self::new(columns, CardOrder::new(), done_column)
+        Self::try_new(columns, CardOrder::new(), done_column)
+            .expect("DEFAULT_COLUMN_NAMES は 3 件の相異なる名前なので不変条件を満たす")
     }
 }
 
+/// [`Config::try_new`] の不変条件違反。
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ConfigInvariantError {
+    /// `columns` が空。
+    #[error("config must contain at least one column, but `columns` is empty")]
+    EmptyColumns,
+    /// 同名カラムが複数ある。`name` は最初に検出した重複名（未正規化）。
+    #[error("duplicate column name: `{name}`")]
+    DuplicateColumnName { name: String },
+}
+
 impl Config {
-    /// 現行スキーマバージョンの設定を構築する。
-    pub fn new(
+    /// 不変条件を検証して現行スキーマバージョンの設定を構築する（唯一の構築境界）。
+    ///
+    /// # Errors
+    ///
+    /// - [`ConfigInvariantError::EmptyColumns`] — `columns` が空
+    /// - [`ConfigInvariantError::DuplicateColumnName`] — 同名カラムが複数ある
+    pub fn try_new(
         columns: Vec<Column>,
         card_order: CardOrder,
         done_column: Option<ColumnName>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ConfigInvariantError> {
+        Self::validate_columns(&columns)?;
+        Ok(Self {
             version: SchemaVersion::CURRENT,
             columns,
             card_order,
             done_column,
+        })
+    }
+
+    /// `columns` 単体で不変条件を検査する。
+    ///
+    /// `try_new` の本体であり、[`Config::plan_update_columns`] が最終構築より前に
+    /// 同じ規則で候補 columns を弾く（検証順序 renames → columns → doneColumn を
+    /// 保つ）ためにも使う。重複判定は [`validate_unique_column_names`] を流用する。
+    pub(crate) fn validate_columns(columns: &[Column]) -> Result<(), ConfigInvariantError> {
+        if columns.is_empty() {
+            return Err(ConfigInvariantError::EmptyColumns);
         }
+        validate_unique_column_names(columns)
+            .map_err(|name| ConfigInvariantError::DuplicateColumnName { name })
+    }
+
+    /// 検証済みカラム定義を JSON 配列順のまま返す（表示順は [`Self::columns_in_display_order`]）。
+    pub fn columns(&self) -> &[Column] {
+        &self.columns
     }
 
     /// 正規化済み設定が保持する現行スキーマバージョンを返す。
@@ -324,12 +418,10 @@ impl Config {
             None => apply_renames_to_columns(&self.columns, &rename_map),
         };
 
-        if candidate_columns.is_empty() {
-            return Err(UpdateColumnsError::EmptyColumns);
-        }
-
-        validate_unique_column_names(&candidate_columns)
-            .map_err(|name| UpdateColumnsError::DuplicateColumnName { name })?;
+        // 早期検証: `From<ConfigInvariantError>` で EmptyColumns / DuplicateColumnName に
+        // 1:1 対応する。renames → columns → doneColumn の検証順序を保つため、
+        // 最終構築（`try_new`）より前に置く。
+        Self::validate_columns(&candidate_columns)?;
 
         if args.columns.is_some() && !rename_map.is_empty() {
             for to in rename_map.values() {
@@ -397,7 +489,9 @@ impl Config {
         }
 
         Ok(UpdateColumnsPlan {
-            new_config: Config::new(candidate_columns, new_card_order, new_done)
+            // 最終構築も try_new を通す（valid → valid の遷移）。早期検証済みなので Err には
+            // ならないが、unchecked 経路を持たないため `?` で型を合わせる。
+            new_config: Config::try_new(candidate_columns, new_card_order, new_done)?
                 .classify_column_names_after_validation(),
             rename_targets,
             is_noop: false,
@@ -514,13 +608,13 @@ impl Config {
     /// [`Self::plan_update_columns`] と同じく `&self` を借用して新しい `Config` を
     /// 返し、disk も state も触らない。
     ///
-    /// [`build_config_from_statuses`]（config 不在時の生成）と統合していないのは
+    /// [`Config::from_statuses`]（config 不在時の生成）と統合していないのは
     /// `doneColumn` の規則が異なるため。生成側は末尾 status を `doneColumn` に
     /// 採用するが、reconcile は既存の `doneColumn` を動かさない。走査順と初出順の
     /// 規則だけは [`distinct_statuses_in_path_order`] で共有する。
     ///
     /// # 入力規約
-    /// [`build_config_from_statuses`] と同一。`status` は trim も大文字小文字統一も
+    /// [`Config::from_statuses`] と同一。`status` は trim も大文字小文字統一も
     /// せずそのままカラム名になる。`None`（status 未記載）は追加候補にしない。
     /// 未記載タスクの status はパース時に既定 status（`order` 最小の既存カラム）へ
     /// 解決済みで、新しいカラムを生む余地がないため。
@@ -594,17 +688,100 @@ impl Config {
         }
 
         ReconcileColumnsPlan {
-            new_config: Config::new(
+            new_config: Config::try_new(
                 columns,
                 // 新カラムは cardOrder にエントリを持たない。CardOrder は全カラム分の
                 // キーを要求しないため、これで不変条件は保たれる。
                 self.card_order.clone(),
                 frozen_done_column,
             )
+            .expect("self は valid で、追加する名前は has_column で既存名を除外済みのため一意")
             .classify_column_names_after_validation(),
             added_columns,
             is_noop: false,
         }
+    }
+}
+
+impl From<ConfigInvariantError> for UpdateColumnsError {
+    fn from(error: ConfigInvariantError) -> Self {
+        match error {
+            ConfigInvariantError::EmptyColumns => UpdateColumnsError::EmptyColumns,
+            ConfigInvariantError::DuplicateColumnName { name } => {
+                UpdateColumnsError::DuplicateColumnName { name }
+            }
+        }
+    }
+}
+
+impl Config {
+    /// 既存タスクの `(path, status)` 列から [`Config`] を組み立てる純粋関数
+    /// （旧 `build_config_from_statuses`）。
+    ///
+    /// プロジェクトを開いたとき `.spec-board/config.json` が存在せず、md タスクが
+    /// 既に存在するケースで「status 出現順にカラムを生成して保存する」フローの
+    /// 中核ロジック（保存・走査・パースは別レイヤの責務）。
+    ///
+    /// # 入力規約
+    /// - `inputs`: `(file_path, status)` のスライス。型は `&[(PathBuf, Option<String>)]` の
+    ///   まま（VO 化は #457 の所掌）。
+    ///   - `file_path`: 関数内で path 昇順に defensive sort される（OS 依存順の流入防止）。
+    ///     ソートは [`PathBuf`] の `Ord` 実装（OS の `OsStr` 表現順序）に従い、
+    ///     project-root からの相対パスでの比較が前提。
+    ///   - `status`:
+    ///     - `Some(s)`: `s` をそのままカラム名候補に採用する。空文字 / 空白のみ /
+    ///       前後空白を含む値も**そのまま採用**し、`trim` / 大文字小文字統一などの
+    ///       正規化は呼び出し層の責務。
+    ///     - `None`: 先頭デフォルトカラム名（[`DEFAULT_COLUMN_NAMES`] の先頭要素 = `"Todo"`）に
+    ///       フォールバックする。
+    ///
+    /// # 戻り値
+    /// - 入力が空のときは [`Config::default`]（既定 3 カラム）。「カラムのないボードは
+    ///   開けない」ため空 `columns` の `Config` は作らず、既定カラムへ明示的に収束させる
+    /// - それ以外:
+    ///   - `version` = 1
+    ///   - `columns`: status を first-occurrence wins で uniq し、`order = 0..N` を採番した
+    ///     [`Column`] 列
+    ///   - `card_order`: 空 `{}`（"未記載タスクはカラム末尾扱い" 規則に依拠した安全側のデフォルト）
+    ///   - `done_column`: `columns` の末尾カラム名（[`Column::name`] のクローン）
+    ///
+    /// # 決定論性
+    /// 呼び出し側のソート漏れがあっても OS 依存の走査順は流入しない
+    /// （内部で defensive sort するため）。
+    ///
+    /// # 例
+    /// ```ignore
+    /// use std::path::PathBuf;
+    ///
+    /// let inputs = vec![
+    ///     (PathBuf::from("a.md"), Some("Todo".to_string())),
+    ///     (PathBuf::from("b.md"), Some("Doing".to_string())),
+    ///     (PathBuf::from("c.md"), Some("Todo".to_string())),
+    /// ];
+    /// let cfg = Config::from_statuses(&inputs);
+    /// assert_eq!(cfg.columns().len(), 2);
+    /// ```
+    pub fn from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Config {
+        if inputs.is_empty() {
+            return Config::default();
+        }
+
+        let names = distinct_statuses_in_path_order(inputs, Some(DEFAULT_COLUMN_NAMES[0]));
+
+        let columns: Vec<Column> = names
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| Column {
+                name: ColumnName::classify_after_validation(name),
+                order: i as u32,
+                color: None,
+                wip_limit: None,
+            })
+            .collect();
+        let done_column = columns.last().map(|c| c.name.clone());
+
+        Config::try_new(columns, CardOrder::new(), done_column)
+            .expect("inputs が非空なら名前は 1 件以上あり、distinct_statuses_in_path_order で一意")
     }
 }
 
@@ -624,7 +801,7 @@ pub struct ReconcileColumnsPlan {
 
 /// `(path, status)` 列から、採用すべき status 名を **path 昇順での初出順**で取り出す。
 ///
-/// [`build_config_from_statuses`]（config 不在時の生成）と
+/// [`Config::from_statuses`]（config 不在時の生成）と
 /// [`Config::plan_reconcile_columns`]（既存 config への追加）が共有する走査規則。
 /// doc だけで契約を揃えても、`PathBuf::Ord` に依る走査順が 2 か所へ写経されれば
 /// 片方だけ変わるため、実体を共有する。
@@ -866,70 +1043,6 @@ links:（任意）\n\
     markdown
 }
 
-/// 既存タスクの `(path, status)` 列から [`Config`] を組み立てる純粋関数。
-///
-/// プロジェクトを開いたとき `.spec-board/config.json` が存在せず、md タスクが
-/// 既に存在するケースで「status 出現順にカラムを生成して保存する」フローの
-/// 中核ロジック（保存・走査・パースは別レイヤの責務）。
-///
-/// # 入力規約
-/// - `inputs`: `(file_path, status)` のスライス。
-///   - `file_path`: 関数内で path 昇順に defensive sort される（OS 依存順の流入防止）。
-///     ソートは [`PathBuf`] の `Ord` 実装（OS の `OsStr` 表現順序）に従い、
-///     project-root からの相対パスでの比較が前提。
-///   - `status`:
-///     - `Some(s)`: `s` をそのままカラム名候補に採用する。空文字 / 空白のみ /
-///       前後空白を含む値も**そのまま採用**し、`trim` / 大文字小文字統一などの
-///       正規化は呼び出し層の責務。
-///     - `None`: 先頭デフォルトカラム名（[`DEFAULT_COLUMN_NAMES`] の先頭要素 = `"Todo"`）に
-///       フォールバックする。
-///
-/// # 戻り値
-/// - `version` = 1
-/// - `columns`: status を first-occurrence wins で uniq し、`order = 0..N` を採番した
-///   [`Column`] 列。入力が空のときは `vec![]`。
-/// - `card_order`: 空 `{}`（"未記載タスクはカラム末尾扱い" 規則に依拠した安全側のデフォルト）。
-/// - `done_column`: `columns` の末尾カラム名（[`Column::name`] のクローン）。
-///   `columns` が空なら `None`。
-///
-/// # 決定論性
-/// 呼び出し側のソート漏れがあっても OS 依存の走査順は流入しない
-/// （内部で defensive sort するため）。
-///
-/// # 例
-/// ```ignore
-/// use std::path::PathBuf;
-///
-/// let inputs = vec![
-///     (PathBuf::from("a.md"), Some("Todo".to_string())),
-///     (PathBuf::from("b.md"), Some("Doing".to_string())),
-///     (PathBuf::from("c.md"), Some("Todo".to_string())),
-/// ];
-/// let cfg = build_config_from_statuses(&inputs);
-/// assert_eq!(cfg.columns.len(), 2);
-/// ```
-pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Config {
-    if inputs.is_empty() {
-        return Config::new(Vec::new(), CardOrder::new(), None);
-    }
-
-    let names = distinct_statuses_in_path_order(inputs, Some(DEFAULT_COLUMN_NAMES[0]));
-
-    let columns: Vec<Column> = names
-        .into_iter()
-        .enumerate()
-        .map(|(i, name)| Column {
-            name: ColumnName::classify_after_validation(name),
-            order: i as u32,
-            color: None,
-            wip_limit: None,
-        })
-        .collect();
-    let done_column = columns.last().map(|c| c.name.clone());
-
-    Config::new(columns, CardOrder::new(), done_column)
-}
-
 /// `Config::columns` のカラム名重複を検証する純粋関数。
 ///
 /// 完全一致比較。最初に見つけた重複名を `Err(name)` で返す。大文字小文字違い
@@ -937,7 +1050,7 @@ pub fn build_config_from_statuses(inputs: &[(PathBuf, Option<String>)]) -> Confi
 ///
 /// 入力値はそのまま完全一致比較する（未正規化のまま）。空文字 `""` / 空白のみ
 /// `" "` / 前後空白付き `"  Todo  "` は値そのものを比較対象とし、本関数では
-/// 空文字や空白を別エラーとして拒否しない（[`build_config_from_statuses`] が
+/// 空文字や空白を別エラーとして拒否しない（[`Config::from_statuses`] が
 /// status 入力を未正規化のまま受ける規約と一貫させる）。
 ///
 /// # Errors
