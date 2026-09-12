@@ -1,7 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { createDetailWrapper } from "@/features/detail/providers/DetailProvider/wrapper";
 import { Task, type TaskPayload } from "@/types/task";
 import { DetailFields } from "..";
 
@@ -43,17 +43,6 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 }
 
 /**
- * テスト用の編集ハンドラ群を生成する。
- * @returns DetailFieldHandlers
- */
-const createHandlers = (): DetailFieldHandlers => ({
-  onStatusChange: vi.fn(),
-  onPriorityChange: vi.fn(),
-  onLabelsChange: vi.fn(),
-  onChangeDraft: vi.fn(),
-});
-
-/**
  * 任意の React 要素をレンダリングするヘルパー
  * @param node - レンダリング対象
  */
@@ -67,14 +56,16 @@ function render(node: ReactNode) {
 }
 
 test("draft タスクの詳細では「下書き」バッジと「下書きを解除」ボタンが表示される", () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask({ draft: true }),
+    columns: testColumns,
+  });
   render(
-    <DetailFields
-      task={createTask({ draft: true })}
-      columns={testColumns}
-      handlers={createHandlers()}
-    >
-      <DetailFields.Draft />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Draft />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(
     container?.querySelector('[data-testid="detail-draft-badge"]')?.textContent,
@@ -85,30 +76,35 @@ test("draft タスクの詳細では「下書き」バッジと「下書きを�
 });
 
 test("通常タスクの詳細では draft フィールド自体が表示されない", () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask(),
+    columns: testColumns,
+  });
   render(
-    <DetailFields
-      task={createTask()}
-      columns={testColumns}
-      handlers={createHandlers()}
-    >
-      <DetailFields.Draft />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Draft />
+      </DetailFields>
+    </Wrapper>,
   );
   expect(
     container?.querySelector('[data-testid="detail-draft-field"]'),
   ).toBeNull();
 });
 
-test("「下書きを解除」クリックで onChangeDraft(false) が 1 回呼ばれる", () => {
-  const handlers = createHandlers();
+test("「下書きを解除」クリックで onTaskUpdate(task.id, { draft: false }) が 1 回呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  const Wrapper = createDetailWrapper({
+    task: createTask({ draft: true }),
+    columns: testColumns,
+    onTaskUpdate,
+  });
   render(
-    <DetailFields
-      task={createTask({ draft: true })}
-      columns={testColumns}
-      handlers={handlers}
-    >
-      <DetailFields.Draft />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Draft />
+      </DetailFields>
+    </Wrapper>,
   );
   const button = container?.querySelector(
     '[data-testid="detail-draft-clear"]',
@@ -116,6 +112,6 @@ test("「下書きを解除」クリックで onChangeDraft(false) が 1 回呼�
   act(() => {
     button.click();
   });
-  expect(handlers.onChangeDraft).toHaveBeenCalledTimes(1);
-  expect(handlers.onChangeDraft).toHaveBeenCalledWith(false);
+  expect(onTaskUpdate).toHaveBeenCalledTimes(1);
+  expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { draft: false });
 });

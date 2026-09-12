@@ -1,10 +1,12 @@
 // @jsdoc-rules-disable
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test";
 import { LabelDefinition } from "@/domains/label-definition";
+import { withDetailProvider } from "@/features/detail/providers/DetailProvider/storybook/decorator";
 import {
-  detailChildInfo,
+  detailAllTasks,
   detailColumns,
-  detailHandlers,
+  detailProjections,
   detailTask,
   makeDetailTask,
   noopAddLink,
@@ -12,62 +14,60 @@ import {
 } from "../storybook/fixtures";
 import { DetailFields } from ".";
 
+const labelSuggestions = LabelDefinition.listFromWire([
+  { name: "bug", color: "red" },
+  { name: "feature", color: "blue" },
+  { name: "docs" },
+]);
+
 const meta: Meta<typeof DetailFields> = {
   component: DetailFields,
-  args: {
-    task: detailTask,
-    columns: detailColumns,
-    handlers: detailHandlers,
-    labelSuggestions: LabelDefinition.listFromWire([
-      { name: "bug", color: "red" },
-      { name: "feature", color: "blue" },
-      { name: "docs" },
-    ]),
-    children: null,
-  },
+  decorators: [
+    withDetailProvider({
+      task: detailTask,
+      columns: detailColumns,
+      allTasks: detailAllTasks,
+      projections: detailProjections,
+      labelSuggestions,
+      onAddSubIssue: fn(),
+      onAddLink: noopAddLink,
+      onRemoveLink: noopRemoveLink,
+    }),
+  ],
+  args: { children: null },
 };
 export default meta;
 type Story = StoryObj<typeof DetailFields>;
 
 export const Default: Story = {
-  render: (args) => (
-    <DetailFields {...args}>
+  render: () => (
+    <DetailFields>
       <DetailFields.StatusPriority />
       <DetailFields.Labels />
     </DetailFields>
   ),
 };
 export const AllProps: Story = {
-  render: (args) => (
-    <DetailFields {...args}>
+  render: () => (
+    <DetailFields>
       <DetailFields.StatusPriority />
       <DetailFields.Labels />
       <DetailFields.Draft />
-      <DetailFields.SubIssue
-        childInfo={detailChildInfo}
-        brokenChildPaths={new Set()}
-        onAddSubIssue={() => {}}
-      />
-      <DetailFields.Links
-        allTasks={[detailTask, ...detailChildInfo.childTasks]}
-        parentFilePath={null}
-        childrenFilePaths={detailChildInfo.childTasks.map(
-          (task) => task.filePath,
-        )}
-        brokenLinkPaths={new Set()}
-        brokenReverseLinkPaths={new Set()}
-        onAddLink={noopAddLink}
-        onRemoveLink={noopRemoveLink}
-      />
+      <DetailFields.SubIssue />
+      <DetailFields.Links />
     </DetailFields>
   ),
 };
 export const EdgeCases: Story = {
-  args: {
-    task: makeDetailTask({ draft: true, labels: [], priority: undefined }),
-  },
-  render: (args) => (
-    <DetailFields {...args}>
+  decorators: [
+    withDetailProvider({
+      task: makeDetailTask({ draft: true, labels: [], priority: undefined }),
+      columns: detailColumns,
+      labelSuggestions,
+    }),
+  ],
+  render: () => (
+    <DetailFields>
       <DetailFields.StatusPriority />
       <DetailFields.Labels />
       <DetailFields.Draft />

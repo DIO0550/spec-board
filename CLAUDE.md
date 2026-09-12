@@ -27,6 +27,7 @@ src/                    — React フロントエンド
     <feature-name>/
       components/       — feature固有のコンポーネント
       hooks/            — feature固有のカスタムフック
+      providers/        — feature固有の Context Provider（index.tsx + wrapper.tsx + storybook/decorator.tsx + __tests__/）
       types/            — feature固有の型定義
       lib/              — feature固有のライブラリ（API クライアント、ドメインロジック等）
       index.ts          — 公開API（re-export）

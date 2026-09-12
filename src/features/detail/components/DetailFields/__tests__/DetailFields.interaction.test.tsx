@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { LabelDefinition } from "@/domains/label-definition";
-import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
+import { createDetailWrapper } from "@/features/detail/providers/DetailProvider/wrapper";
 import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
 import { DetailFields } from "..";
@@ -31,7 +31,7 @@ beforeEach(() => {
   getLabelsMock.mockReset();
 });
 
-/** ラベル候補は App の唯一の取得点（useLabels）由来のため、テストでは prop で供給する。 */
+/** ラベル候補は App の唯一の取得点（useLabels）由来のため、テストでは Provider に供給する。 */
 const LABEL_SUGGESTIONS = LabelDefinition.listFromWire([
   { name: "bug" },
   { name: "feat" },
@@ -67,21 +67,6 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
 }
 
 /**
- * テスト用の編集ハンドラ群を生成する。
- * @param overrides - 上書きするハンドラ
- * @returns DetailFieldHandlers
- */
-const createHandlers = (
-  overrides: Partial<DetailFieldHandlers> = {},
-): DetailFieldHandlers => ({
-  onStatusChange: vi.fn(),
-  onPriorityChange: vi.fn(),
-  onLabelsChange: vi.fn(),
-  onChangeDraft: vi.fn(),
-  ...overrides,
-});
-
-/**
  * 任意の React 要素をレンダリングするヘルパー
  * @param node - レンダリング対象
  */
@@ -106,69 +91,79 @@ const clickTestId = (testId: string) => {
   });
 };
 
-test("StatusPriority の変更で onStatusChange / onPriorityChange が呼ばれる", () => {
-  const onStatusChange = vi.fn();
-  const onPriorityChange = vi.fn();
+test("StatusPriority の変更で onTaskUpdate が status / priority で呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  const Wrapper = createDetailWrapper({
+    task: createTask(),
+    columns: testColumns,
+    onTaskUpdate,
+  });
   render(
-    <DetailFields
-      task={createTask()}
-      columns={testColumns}
-      handlers={createHandlers({ onStatusChange, onPriorityChange })}
-    >
-      <DetailFields.StatusPriority />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.StatusPriority />
+      </DetailFields>
+    </Wrapper>,
   );
   clickTestId("status-field");
   clickTestId("status-field-option-Done");
-  expect(onStatusChange).toHaveBeenCalledWith("Done");
+  expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { status: "Done" });
   clickTestId("priority-field");
   clickTestId("priority-field-option-High");
-  expect(onPriorityChange).toHaveBeenCalledWith("High");
+  expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { priority: "High" });
 });
 
-test("Labels の候補トグルで onLabelsChange が呼ばれる", () => {
-  const onLabelsChange = vi.fn();
+test("Labels の候補トグルで onTaskUpdate が labels で呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  const Wrapper = createDetailWrapper({
+    task: createTask({ labels: [] }),
+    columns: testColumns,
+    onTaskUpdate,
+    labelSuggestions: LABEL_SUGGESTIONS,
+  });
   render(
-    <DetailFields
-      task={createTask({ labels: [] })}
-      columns={testColumns}
-      handlers={createHandlers({ onLabelsChange })}
-      labelSuggestions={LABEL_SUGGESTIONS}
-    >
-      <DetailFields.Labels />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Labels />
+      </DetailFields>
+    </Wrapper>,
   );
   clickTestId("detail-labels");
   clickTestId("detail-labels-option-bug");
-  expect(onLabelsChange).toHaveBeenCalledWith(["bug"]);
+  expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { labels: ["bug"] });
 });
 
-test("Labels の選択済みトグル解除で onLabelsChange が除外後配列で呼ばれる", () => {
-  const onLabelsChange = vi.fn();
+test("Labels の選択済みトグル解除で onTaskUpdate が除外後配列で呼ばれる", () => {
+  const onTaskUpdate = vi.fn();
+  const Wrapper = createDetailWrapper({
+    task: createTask({ labels: ["bug"] }),
+    columns: testColumns,
+    onTaskUpdate,
+    labelSuggestions: LABEL_SUGGESTIONS,
+  });
   render(
-    <DetailFields
-      task={createTask({ labels: ["bug"] })}
-      columns={testColumns}
-      handlers={createHandlers({ onLabelsChange })}
-      labelSuggestions={LABEL_SUGGESTIONS}
-    >
-      <DetailFields.Labels />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Labels />
+      </DetailFields>
+    </Wrapper>,
   );
   clickTestId("detail-labels");
   clickTestId("detail-labels-option-bug");
-  expect(onLabelsChange).toHaveBeenCalledWith([]);
+  expect(onTaskUpdate).toHaveBeenCalledWith("task-1", { labels: [] });
 });
 
 test("labelSuggestions 未指定でもラベル欄が描画され候補は 0 件になる", () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask({ labels: [] }),
+    columns: testColumns,
+  });
   render(
-    <DetailFields
-      task={createTask({ labels: [] })}
-      columns={testColumns}
-      handlers={createHandlers()}
-    >
-      <DetailFields.Labels />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Labels />
+      </DetailFields>
+    </Wrapper>,
   );
   clickTestId("detail-labels");
   expect(
@@ -177,15 +172,17 @@ test("labelSuggestions 未指定でもラベル欄が描画され候補は 0 件
 });
 
 test("DetailFields はラベル候補を自前で取得しない（getLabels を呼ばない）", async () => {
+  const Wrapper = createDetailWrapper({
+    task: createTask({ labels: [] }),
+    columns: testColumns,
+    labelSuggestions: LABEL_SUGGESTIONS,
+  });
   render(
-    <DetailFields
-      task={createTask({ labels: [] })}
-      columns={testColumns}
-      handlers={createHandlers()}
-      labelSuggestions={LABEL_SUGGESTIONS}
-    >
-      <DetailFields.Labels />
-    </DetailFields>,
+    <Wrapper>
+      <DetailFields>
+        <DetailFields.Labels />
+      </DetailFields>
+    </Wrapper>,
   );
   await act(async () => {
     await Promise.resolve();
@@ -193,8 +190,10 @@ test("DetailFields はラベル候補を自前で取得しない（getLabels を
   expect(getLabelsMock).not.toHaveBeenCalled();
 });
 
-test("Root の外で部品を使うと例外を投げる（誤用検知）", () => {
+test("DetailProvider の外で部品を使うと例外を投げる（誤用検知）", () => {
+  const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   expect(() => {
     render(<DetailFields.Labels />);
-  }).toThrow();
+  }).toThrow(/DetailProvider/);
+  consoleSpy.mockRestore();
 });

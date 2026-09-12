@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { Priority } from "@/domains/priority";
 import type { Task, TaskId } from "@/types/task";
 
@@ -34,12 +34,22 @@ export type DetailFieldHandlers = {
    * @param draft - 新しい下書きフラグ
    */
   onChangeDraft: (draft: boolean) => void;
+  /**
+   * タイトル確定ハンドラ。
+   * @param title - 確定したタイトル
+   */
+  onTitleChange: (title: string) => void;
+  /**
+   * 本文確定ハンドラ。
+   * @param body - 確定した本文
+   */
+  onBodyChange: (body: string) => void;
 };
 
 /**
  * 詳細フィールド編集ハンドラを束ねる共有 hook。
- * `onTaskUpdate` を status/priority/labels/draft の細粒度ハンドラへ変換し、DetailScreen で
- * 共有する。ラベルは popover が選択集合を丸ごと通知するため、配列をそのまま更新に渡す。
+ * `onTaskUpdate` を status/priority/labels/draft/title/body の細粒度ハンドラへ変換し、
+ * DetailProvider で共有する。ラベルは popover が選択集合を丸ごと通知するため、配列をそのまま更新に渡す。
  *
  * @param task - 対象タスク
  * @param onTaskUpdate - タスク更新コールバック
@@ -77,10 +87,38 @@ export const useDetailFieldHandlers = (
     [task.id, onTaskUpdate],
   );
 
-  return {
-    onStatusChange,
-    onPriorityChange,
-    onLabelsChange,
-    onChangeDraft,
-  };
+  const onTitleChange = useCallback(
+    (title: string) => {
+      onTaskUpdate(task.id, { title });
+    },
+    [task.id, onTaskUpdate],
+  );
+
+  const onBodyChange = useCallback(
+    (body: string) => {
+      onTaskUpdate(task.id, { body });
+    },
+    [task.id, onTaskUpdate],
+  );
+
+  // 戻り値オブジェクトを useMemo で安定化する。DetailProvider の api useMemo が
+  // handlers の参照変化で miss しないようにするため（従来は毎レンダー新規オブジェクトだった）。
+  return useMemo(
+    () => ({
+      onStatusChange,
+      onPriorityChange,
+      onLabelsChange,
+      onChangeDraft,
+      onTitleChange,
+      onBodyChange,
+    }),
+    [
+      onStatusChange,
+      onPriorityChange,
+      onLabelsChange,
+      onChangeDraft,
+      onTitleChange,
+      onBodyChange,
+    ],
+  );
 };

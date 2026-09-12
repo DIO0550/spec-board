@@ -85,5 +85,10 @@ export const useChildTasks = (args: UseChildTasksArgs): UseChildTasksResult => {
     [projections],
   );
 
-  return { childTasks, subIssueCounts, isDone };
+  // 戻り値オブジェクトを useMemo で安定化する。DetailProvider の api useMemo が
+  // childInfo の参照変化で miss しないようにするため。
+  return useMemo(
+    () => ({ childTasks, subIssueCounts, isDone }),
+    [childTasks, subIssueCounts, isDone],
+  );
 };

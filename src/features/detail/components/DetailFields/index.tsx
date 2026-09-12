@@ -1,13 +1,10 @@
-import { createContext, type ReactNode, useContext } from "react";
+import type { ReactNode } from "react";
 import { DueBadge } from "@/components/DueBadge";
 import { LabelsField } from "@/components/fields/LabelsField";
 import { PriorityField } from "@/components/fields/PriorityField";
 import { StatusField } from "@/components/fields/StatusField";
-import type { LabelDefinition } from "@/domains/label-definition";
-import type { UseChildTasksResult } from "@/features/detail/hooks/useChildTasks";
-import type { DetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
-import type { Column } from "@/types/column";
-import type { Task, TaskFilePath, TaskId } from "@/types/task";
+import { useDetail } from "@/features/detail/providers/DetailProvider";
+import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { Result as ResultDomain } from "@/utils/result";
 import { LinksSection } from "../LinksSection";
@@ -23,93 +20,27 @@ import { SubIssueSection } from "../SubIssueSection";
 const noopRemoveLink = async (): Promise<Result<Task, unknown>> =>
   ResultDomain.err(undefined);
 
-/**
- * 詳細フィールド群が共有する横断データ。表示対象タスク・カラム一覧・
- * 編集ハンドラ（status/priority/label）の3つに限定する（意味的に一貫した塊）。
- * フィールド固有のデータ（SubIssue / Links）は各サブ部品の props で受ける。
- */
-type DetailFieldsContextValue = {
-  /** 表示するタスク */
-  task: Task;
-  /** 選択肢となるカラム一覧 */
-  columns: Column[];
-  /** ステータス/優先度/ラベルの編集ハンドラ */
-  handlers: DetailFieldHandlers;
-  /**
-   * ラベル入力のサジェスト候補。App の唯一の取得点（useLabels）から
-   * PropertiesSidebar 経由で配られる。空配列は候補なし（新規作成のみ可能）。
-   */
-  labelSuggestions: LabelDefinition[];
-};
-
-const DetailFieldsContext = createContext<DetailFieldsContextValue | null>(
-  null,
-);
-
-/**
- * DetailFields の context を取得する。Root（{@link DetailFields}）の外で
- * サブ部品を使うと null になるため、その場合は例外で誤用を知らせる。
- * @returns context 値
- * @throws Root の外で呼ばれた場合
- */
-const useDetailFieldsContext = (): DetailFieldsContextValue => {
-  const ctx = useContext(DetailFieldsContext);
-  if (ctx === null) {
-    throw new Error(
-      "DetailFields.* は <DetailFields> の子としてのみ使用できます",
-    );
-  }
-  return ctx;
-};
-
 /** DetailFields（Root）の Props */
 export type DetailFieldsProps = {
-  /** 表示するタスク */
-  task: Task;
-  /** 選択肢となるカラム一覧 */
-  columns: Column[];
-  /** ステータス/優先度/ラベルの編集ハンドラ */
-  handlers: DetailFieldHandlers;
-  /** ラベル入力のサジェスト候補。未指定は候補なし */
-  labelSuggestions?: LabelDefinition[];
   /** 並べるフィールドのサブ部品（DetailFields.StatusPriority 等） */
   children: ReactNode;
 };
 
 /**
  * 詳細フィールド群のコンテナ（Compound パターンの Root）。
- * 横断データ（task / columns / handlers）を context で供給し、配置は呼び出し側が
- * サブ部品（{@link DetailFieldsStatusPriority} / {@link DetailFieldsLabels} /
- * {@link DetailFieldsSubIssue} / {@link DetailFieldsLinks}）を並べて決める。
- * 余計な wrapper は作らず Fragment で子を並べる（DOM 並びを呼び出し側に委ねる）。
+ * 横断データは {@link useDetail} から各サブ部品が直接読むため、Root は配置を
+ * 呼び出し側に委ねる Fragment コンテナとしてのみ振る舞う。
  * @param props - {@link DetailFieldsProps}
  * @returns フィールド群コンテナ
  */
-const DetailFieldsRoot = ({
-  task,
-  columns,
-  handlers,
-  labelSuggestions = [],
-  children,
-}: DetailFieldsProps) => {
-  // context value は毎レンダー新規オブジェクトになるが、DetailFields のサブ部品は
-  // いずれも memo 化されておらず親の再レンダーで必ず再実行されるため、
-  // ここでの useMemo は再レンダー回数を減らさない（既存実装の方針を踏襲する）。
-  return (
-    <DetailFieldsContext.Provider
-      value={{ task, columns, handlers, labelSuggestions }}
-    >
-      {children}
-    </DetailFieldsContext.Provider>
-  );
-};
+const DetailFieldsRoot = ({ children }: DetailFieldsProps) => <>{children}</>;
 
 /**
- * ステータス + 優先度フィールド。横断 context から task / columns / handlers を読む。
+ * ステータス + 優先度フィールド。
  * @returns Status/Priority 行
  */
 const DetailFieldsStatusPriority = () => {
-  const { task, columns, handlers } = useDetailFieldsContext();
+  const { task, columns, handlers } = useDetail();
   return (
     <section className="grid grid-cols-1 gap-3 border-b border-border px-[18px] py-4">
       <StatusField
@@ -127,13 +58,12 @@ const DetailFieldsStatusPriority = () => {
 };
 
 /**
- * ラベルフィールド。横断 context から task / handlers / labelSuggestions を読む。
- * 候補は App の唯一の取得点（useLabels）由来で、このフィールド自体は取得を行わない。
- * 候補が空配列のときは popover 内での新規作成のみ可能となる。
+ * ラベルフィールド。候補は App の唯一の取得点（useLabels）由来で、このフィールド自体は
+ * 取得を行わない。候補が空配列のときは popover 内での新規作成のみ可能となる。
  * @returns ラベル選択フィールド
  */
 const DetailFieldsLabels = () => {
-  const { task, handlers, labelSuggestions } = useDetailFieldsContext();
+  const { task, handlers, labelSuggestions } = useDetail();
   return (
     <div className="border-b border-border px-[18px] py-4">
       <LabelsField
@@ -147,53 +77,13 @@ const DetailFieldsLabels = () => {
   );
 };
 
-/** SubIssue フィールドの Props（サブIssue 固有データのみ） */
-export type DetailFieldsSubIssueProps = {
-  /** 子タスク解決結果（useChildTasks の戻り値） */
-  childInfo: UseChildTasksResult;
-  /** リンク切れと判定された子タスクの path 集合 */
-  brokenChildPaths: ReadonlySet<string>;
-  /**
-   * サブIssue 追加ハンドラ。
-   * @param parentFilePath - 親タスクのファイルパス
-   */
-  onAddSubIssue: (parentFilePath: TaskFilePath) => void;
-  /**
-   * 子タスククリック時のハンドラ。
-   * @param taskId - クリックされた子タスクの id
-   */
-  onChildClick?: (taskId: TaskId) => void;
-};
-
-/**
- * サブIssue 進捗フィールド。親タスクは横断 context から読み、
- * サブIssue 固有のデータ（子タスク・ハンドラ）は props で受ける。
- * @param props - {@link DetailFieldsSubIssueProps}
- * @returns サブIssue セクション
- */
-const DetailFieldsSubIssue = (props: DetailFieldsSubIssueProps) => {
-  const { task } = useDetailFieldsContext();
-  const { childInfo, brokenChildPaths, onAddSubIssue, onChildClick } = props;
-  return (
-    <SubIssueSection
-      parentTask={task}
-      childTasks={childInfo.childTasks}
-      subIssueCounts={childInfo.subIssueCounts}
-      isDone={childInfo.isDone}
-      onAddSubIssue={onAddSubIssue}
-      onChildClick={onChildClick}
-      brokenChildPaths={brokenChildPaths}
-    />
-  );
-};
-
 /**
  * 下書きフィールド。draft タスクのときのみ「下書き」バッジと「下書きを解除」ボタンを
  * 表示し、クリックで `handlers.onChangeDraft(false)` を呼ぶ。非 draft 時は何も描画しない。
  * @returns 下書き表示・解除 UI（非 draft 時は null）
  */
 const DetailFieldsDraft = () => {
-  const { task, handlers } = useDetailFieldsContext();
+  const { task, handlers } = useDetail();
   if (!task.draft) {
     return null;
   }
@@ -220,76 +110,67 @@ const DetailFieldsDraft = () => {
   );
 };
 
-/** Links フィールドの Props（リンク固有データのみ） */
-export type DetailFieldsLinksProps = {
-  /** 全タスク一覧（リンク先解決に利用） */
-  allTasks: Task[];
-  /** 親タスクの filePath（無ければ null） */
-  parentFilePath: string | null;
-  /** 子タスクの filePath 一覧 */
-  childrenFilePaths: TaskFilePath[];
-  /** リンク切れと判定された links の path 集合 */
-  brokenLinkPaths: ReadonlySet<string>;
-  /** リンク切れと判定された reverseLinks の path 集合 */
-  brokenReverseLinkPaths: ReadonlySet<string>;
-  /**
-   * リンク追加ハンドラ。
-   * @param sourceFilePath - リンク元 filePath
-   * @param targetFilePath - リンク先 filePath
-   * @returns invoke 結果
-   */
-  onAddLink: (
-    sourceFilePath: TaskFilePath,
-    targetFilePath: TaskFilePath,
-  ) => Promise<Result<Task, unknown>>;
-  /**
-   * リンク削除ハンドラ。
-   * @param sourceFilePath - リンク元 filePath
-   * @param targetFilePath - リンク先 filePath
-   * @returns invoke 結果
-   */
-  onRemoveLink?: (
-    sourceFilePath: TaskFilePath,
-    targetFilePath: string,
-  ) => Promise<Result<Task, unknown>>;
-  /**
-   * リンククリック時のハンドラ。
-   * @param taskId - クリックされたタスクの id
-   */
-  onLinkClick?: (taskId: TaskId) => void;
+/**
+ * サブIssue 進捗フィールド。`onAddSubIssue` と `allTasks` の両方が揃っているときだけ描画する
+ * （従来 PropertiesSidebar にあった表示条件をここに移した）。
+ * @returns サブIssue セクション（描画条件を満たさなければ null）
+ */
+const DetailFieldsSubIssue = () => {
+  const {
+    task,
+    allTasks,
+    childInfo,
+    brokenLinks,
+    onAddSubIssue,
+    onSelectTask,
+  } = useDetail();
+  if (onAddSubIssue === undefined || allTasks === undefined) {
+    return null;
+  }
+  return (
+    <SubIssueSection
+      parentTask={task}
+      childTasks={childInfo.childTasks}
+      subIssueCounts={childInfo.subIssueCounts}
+      isDone={childInfo.isDone}
+      onAddSubIssue={onAddSubIssue}
+      onChildClick={onSelectTask}
+      brokenChildPaths={brokenLinks.children}
+    />
+  );
 };
 
 /**
- * リンクフィールド。表示対象タスクは横断 context から読み、
- * リンク固有のデータ（全タスク・path・ハンドラ）は props で受ける。
+ * リンクフィールド。`onAddLink` と `allTasks` の両方が揃っているときだけ描画する。
  * `key={links-${task.id}}` で task 切替時に内部 state をリセットする。
- * @param props - {@link DetailFieldsLinksProps}
- * @returns リンクセクション
+ * @returns リンクセクション（描画条件を満たさなければ null）
  */
-const DetailFieldsLinks = (props: DetailFieldsLinksProps) => {
-  const { task } = useDetailFieldsContext();
+const DetailFieldsLinks = () => {
   const {
+    task,
     allTasks,
-    parentFilePath,
-    childrenFilePaths,
-    brokenLinkPaths,
-    brokenReverseLinkPaths,
+    parentTask,
+    childInfo,
+    brokenLinks,
     onAddLink,
     onRemoveLink,
-    onLinkClick,
-  } = props;
+    onSelectTask,
+  } = useDetail();
+  if (onAddLink === undefined || allTasks === undefined) {
+    return null;
+  }
   return (
     <LinksSection
       key={`links-${task.id}`}
       task={task}
       allTasks={allTasks}
-      parentFilePath={parentFilePath}
-      childrenFilePaths={childrenFilePaths}
+      parentFilePath={parentTask?.filePath ?? null}
+      childrenFilePaths={childInfo.childTasks.map((t) => t.filePath)}
       onAddLink={onAddLink}
       onRemoveLink={onRemoveLink ?? noopRemoveLink}
-      onLinkClick={onLinkClick}
-      brokenLinkPaths={brokenLinkPaths}
-      brokenReverseLinkPaths={brokenReverseLinkPaths}
+      onLinkClick={onSelectTask}
+      brokenLinkPaths={brokenLinks.links}
+      brokenReverseLinkPaths={brokenLinks.reverseLinks}
     />
   );
 };
@@ -304,9 +185,9 @@ type DetailFieldsComponent = ((props: DetailFieldsProps) => ReactNode) & {
 };
 
 /**
- * 詳細フィールド群（Compound コンポーネント）。
- * `<DetailFields task columns handlers>` の子として
- * `DetailFields.StatusPriority` / `.Labels` / `.SubIssue` / `.Links` を並べて使う。
+ * 詳細フィールド群（Compound コンポーネント）。`<DetailProvider>` の配下で
+ * `<DetailFields>` の子として `DetailFields.StatusPriority` / `.Labels` / `.Draft` /
+ * `.SubIssue` / `.Links` を並べて使う。
  */
 export const DetailFields: DetailFieldsComponent = Object.assign(
   DetailFieldsRoot,

@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrokenLinkSet } from "@/domains/broken-link";
+import { useEffect, useRef } from "react";
 import type { LabelDefinition } from "@/domains/label-definition";
 import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
-import { useChildTasks } from "@/features/detail/hooks/useChildTasks";
-import { useDeleteFlow } from "@/features/detail/hooks/useDeleteFlow";
-import { useDetailFieldHandlers } from "@/features/detail/hooks/useDetailFieldHandlers";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
-import { useParentTask } from "@/features/detail/hooks/useParentTask";
-import type { OrphanStrategy } from "@/lib/tauri";
+import {
+  DeleteFlowProvider,
+  type DeleteTaskHandler,
+  useDeleteFlowContext,
+} from "@/features/detail/providers/DeleteFlowProvider";
+import {
+  type AddLinkHandler,
+  DetailProvider,
+  type RemoveLinkHandler,
+  useDetail,
+} from "@/features/detail/providers/DetailProvider";
 import type { Column } from "@/types/column";
 import type { Task, TaskFilePath, TaskId } from "@/types/task";
-import type { Result } from "@/utils/result";
 import { DetailBody } from "../DetailBody";
 import { PropertiesSidebar } from "../PropertiesSidebar";
 
@@ -41,10 +45,7 @@ export type DetailScreenProps = {
    * @param id - 削除するタスクの ID
    * @param orphanStrategy - 子タスクの扱い方
    */
-  onDelete: (
-    id: TaskId,
-    orphanStrategy?: OrphanStrategy,
-  ) => void | Promise<void>;
+  onDelete: DeleteTaskHandler;
   /**
    * アーカイブ確定時のコールバック。未指定ならアーカイブボタンを表示しない。
    * @param task - アーカイブ対象タスク
@@ -52,67 +53,39 @@ export type DetailScreenProps = {
   onArchive?: (task: Task) => void | Promise<void>;
   onAddSubIssue?: (parentFilePath: TaskFilePath) => void;
   onSelectTask?: (taskId: TaskId) => void;
-  onAddLink?: (
-    sourceFilePath: TaskFilePath,
-    targetFilePath: TaskFilePath,
-  ) => Promise<Result<Task, unknown>>;
-  onRemoveLink?: (
-    sourceFilePath: TaskFilePath,
-    targetFilePath: string,
-  ) => Promise<Result<Task, unknown>>;
+  onAddLink?: AddLinkHandler;
+  onRemoveLink?: RemoveLinkHandler;
+};
+
+/** DetailScreenContent の Props（context に載せない画面制御系だけ） */
+type DetailScreenContentProps = {
+  /** 一覧へ戻るcallback */
+  onBack: () => void;
+  /**
+   * アーカイブ確定時のコールバック。未指定ならアーカイブボタンを表示しない。
+   * @param task - アーカイブ対象タスク
+   */
+  onArchive?: (task: Task) => void | Promise<void>;
+  /** 上位モーダルが開いているか（Esc 抑止用） */
+  isUpperModalOpen: boolean;
 };
 
 /**
- * 48px app chrome直下で、44px subbarと本文/propertiesの2ペインを提供する詳細画面。
- * 既存の更新・リンク・削除フローは各hookへ委譲し、ここでは画面構成だけを担う。
- * @param props - {@link DetailScreenProps}
+ * 詳細画面の本体。Provider の内側で context を読み、subbar / 本文 / プロパティの 2 ペインを描く。
+ * `useEscToClose` の抑止判定に削除ダイアログの開閉が要るため、Provider を返す
+ * {@link DetailScreen} とは別コンポーネントにして context を読めるようにしている。
+ * @param props - {@link DetailScreenContentProps}
  * @returns 全画面詳細ビュー要素
  */
-export const DetailScreen = (props: DetailScreenProps) => {
-  const {
-    task,
-    columns,
-    allTasks,
-    projections,
-    tasksByNormalizedPath,
-    labelSuggestions,
-    onBack,
-    onTaskUpdate,
-    onDelete,
-    onArchive,
-    onAddSubIssue,
-    onSelectTask,
-    onAddLink,
-    onRemoveLink,
-    isUpperModalOpen = false,
-  } = props;
+const DetailScreenContent = ({
+  onBack,
+  onArchive,
+  isUpperModalOpen,
+}: DetailScreenContentProps) => {
+  const { task, allTasks, onSelectTask, childInfo, handlers } = useDetail();
+  const { isOpen: isDeleteDialogOpen } = useDeleteFlowContext();
 
-  const childInfo = useChildTasks({
-    parentFilePath: task.filePath,
-    allTasks,
-    projections,
-  });
-  const { parentTask } = useParentTask({ task, allTasks });
-  const fieldHandlers = useDetailFieldHandlers(task, onTaskUpdate);
-  const brokenLinks = useMemo(
-    () => BrokenLinkSet.from(task, tasksByNormalizedPath),
-    [task, tasksByNormalizedPath],
-  );
-
-  const [orphanStrategy, setOrphanStrategy] = useState<OrphanStrategy>("clear");
-  const handleDelete = useCallback(() => {
-    if (task.hierarchy.childFilePaths.length > 0) {
-      return onDelete(task.id, orphanStrategy);
-    }
-    return onDelete(task.id);
-  }, [task.id, task.hierarchy.childFilePaths.length, orphanStrategy, onDelete]);
-  const deleteFlow = useDeleteFlow({ onDelete: handleDelete });
-  const requestDelete = useCallback(() => {
-    setOrphanStrategy("clear");
-    deleteFlow.requestDelete();
-  }, [deleteFlow.requestDelete]);
-
-  const escSuspended = deleteFlow.isOpen || isUpperModalOpen;
+  const escSuspended = isDeleteDialogOpen || isUpperModalOpen;
   const sectionRef = useRef<HTMLElement>(null);
   useEffect(() => sectionRef.current?.focus(), []);
   useEscToClose({ disabled: escSuspended, onEscape: onBack });
@@ -209,32 +182,68 @@ export const DetailScreen = (props: DetailScreenProps) => {
             <DetailBody
               task={task}
               subIssueCounts={childInfo.subIssueCounts}
-              onTitleConfirm={(title) => onTaskUpdate(task.id, { title })}
-              onBodyConfirm={(body) => onTaskUpdate(task.id, { body })}
+              onTitleConfirm={handlers.onTitleChange}
+              onBodyConfirm={handlers.onBodyChange}
             />
           </div>
         </main>
         <div className="min-h-0 overflow-y-auto border-t border-border bg-surface md:border-l md:border-t-0">
           <PropertiesSidebar
-            task={task}
-            columns={columns}
-            allTasks={allTasks}
-            childInfo={childInfo}
-            parentTask={parentTask}
-            brokenLinks={brokenLinks}
-            handlers={fieldHandlers}
-            labelSuggestions={labelSuggestions}
-            onAddSubIssue={onAddSubIssue}
-            onSelectTask={onSelectTask}
-            onAddLink={onAddLink}
-            onRemoveLink={onRemoveLink}
-            deleteFlow={{ ...deleteFlow, requestDelete }}
             onArchive={onArchive ? () => onArchive(task) : undefined}
-            orphanStrategy={orphanStrategy}
-            onOrphanStrategyChange={setOrphanStrategy}
           />
         </div>
       </div>
     </section>
+  );
+};
+
+/**
+ * 48px app chrome直下で、44px subbarと本文/propertiesの2ペインを提供する詳細画面。
+ * props を {@link DetailProvider} / {@link DeleteFlowProvider} に振り分け、描画は
+ * {@link DetailScreenContent} に委ねる。
+ * @param props - {@link DetailScreenProps}
+ * @returns 全画面詳細ビュー要素
+ */
+export const DetailScreen = (props: DetailScreenProps) => {
+  const {
+    task,
+    columns,
+    allTasks,
+    projections,
+    tasksByNormalizedPath,
+    labelSuggestions,
+    onBack,
+    onTaskUpdate,
+    onDelete,
+    onArchive,
+    onAddSubIssue,
+    onSelectTask,
+    onAddLink,
+    onRemoveLink,
+    isUpperModalOpen = false,
+  } = props;
+
+  return (
+    <DetailProvider
+      task={task}
+      columns={columns}
+      allTasks={allTasks}
+      projections={projections}
+      tasksByNormalizedPath={tasksByNormalizedPath}
+      labelSuggestions={labelSuggestions}
+      onTaskUpdate={onTaskUpdate}
+      onAddSubIssue={onAddSubIssue}
+      onSelectTask={onSelectTask}
+      onAddLink={onAddLink}
+      onRemoveLink={onRemoveLink}
+    >
+      <DeleteFlowProvider task={task} onDelete={onDelete}>
+        <DetailScreenContent
+          onBack={onBack}
+          onArchive={onArchive}
+          isUpperModalOpen={isUpperModalOpen}
+        />
+      </DeleteFlowProvider>
+    </DetailProvider>
   );
 };

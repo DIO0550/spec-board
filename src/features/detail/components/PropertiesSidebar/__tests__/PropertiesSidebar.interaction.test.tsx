@@ -1,13 +1,10 @@
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { BrokenLinkSet } from "@/domains/broken-link";
-import type { UseDeleteFlowResult } from "@/features/detail/hooks/useDeleteFlow";
+import { createDeleteFlowWrapper } from "@/features/detail/providers/DeleteFlowProvider/wrapper";
+import { createDetailWrapper } from "@/features/detail/providers/DetailProvider/wrapper";
 import { Task, type TaskPayload } from "@/types/task";
 import { PropertiesSidebar } from "..";
-
-/** リンク切れなしの BrokenLinkSet */
-const noBrokenLinks = BrokenLinkSet.empty;
 
 let container: HTMLDivElement | null = null;
 let root: ReturnType<typeof createRoot> | null = null;
@@ -47,66 +44,36 @@ function createTask(overrides: Partial<TaskPayload> = {}): Task {
   });
 }
 
-/**
- * 削除フロー（DetailScreen が所有する state）のスタブを生成する。
- * @param overrides - 上書きするフィールド
- * @returns UseDeleteFlowResult スタブ
- */
-function buildDeleteFlow(
-  overrides: Partial<UseDeleteFlowResult> = {},
-): UseDeleteFlowResult {
-  return {
-    isOpen: false,
-    isBusy: false,
-    requestDelete: vi.fn(),
-    cancelDelete: vi.fn(),
-    confirmDelete: vi.fn(),
-    ...overrides,
-  };
-}
+/** render に渡す引数（両 Provider の上書きと PropertiesSidebar の props） */
+type RenderArgs = {
+  detail?: Parameters<typeof createDetailWrapper>[0];
+  deleteFlow?: Parameters<typeof createDeleteFlowWrapper>[0];
+  onArchive?: () => void;
+};
 
 /**
- * PropertiesSidebar の必須 props にデフォルトを与えるヘルパー。
- * @param overrides - 上書きする props
- * @returns PropertiesSidebar の props
+ * 両 Provider 配下に PropertiesSidebar を mount する。task は両 Provider に同じものを渡す。
+ * @param args - detail / deleteFlow の wrapper 引数と onArchive
  */
-function buildProps(
-  overrides: Partial<Parameters<typeof PropertiesSidebar>[0]> = {},
-): Parameters<typeof PropertiesSidebar>[0] {
-  const task = overrides.task ?? createTask();
-  return {
+function render(args: RenderArgs = {}) {
+  const task = args.detail?.task ?? createTask();
+  const Detail = createDetailWrapper({
     task,
     columns: testColumns,
-    childInfo: {
-      childTasks: [],
-      subIssueCounts: { done: 0, total: 0 },
-      isDone: () => false,
-    },
-    parentTask: null,
-    brokenLinks: noBrokenLinks,
-    handlers: {
-      onStatusChange: vi.fn(),
-      onPriorityChange: vi.fn(),
-      onLabelsChange: vi.fn(),
-      onChangeDraft: vi.fn(),
-    },
-    deleteFlow: buildDeleteFlow(),
-    orphanStrategy: "clear",
-    onOrphanStrategyChange: vi.fn(),
-    ...overrides,
-  };
-}
-
-/**
- * PropertiesSidebar をレンダリングするヘルパー
- * @param props - PropertiesSidebar に渡す props
- */
-function render(props: Parameters<typeof PropertiesSidebar>[0]) {
+    ...args.detail,
+  });
+  const DeleteFlow = createDeleteFlowWrapper({ task, ...args.deleteFlow });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(createElement(PropertiesSidebar, props));
+    root?.render(
+      <Detail>
+        <DeleteFlow>
+          <PropertiesSidebar onArchive={args.onArchive} />
+        </DeleteFlow>
+      </Detail>,
+    );
   });
 }
 
@@ -122,66 +89,63 @@ const click = (testId: string): void => {
   });
 };
 
-test("削除ボタン押下で deleteFlow.requestDelete が呼ばれる", () => {
-  const requestDelete = vi.fn();
-  render(buildProps({ deleteFlow: buildDeleteFlow({ requestDelete }) }));
-  click("detail-delete-button");
-  expect(requestDelete).toHaveBeenCalledTimes(1);
-});
+/**
+ * 指定 testid のラジオ input を返す。
+ * @param testId - data-testid
+ * @returns ラジオ input 要素
+ */
+const radio = (testId: string): HTMLInputElement =>
+  document.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement;
 
-test("deleteFlow.isOpen が false の間は ConfirmDialog を描画しない", () => {
-  render(buildProps({ deleteFlow: buildDeleteFlow({ isOpen: false }) }));
+test("初期状態では ConfirmDialog を描画しない", () => {
+  render();
   expect(document.querySelector('[data-testid="confirm-dialog"]')).toBeNull();
 });
 
-test("deleteFlow.isOpen が true なら ConfirmDialog を描画する", () => {
-  render(buildProps({ deleteFlow: buildDeleteFlow({ isOpen: true }) }));
+test("削除ボタン押下で ConfirmDialog が開く", () => {
+  render();
+  click("detail-delete-button");
   expect(document.querySelector('[data-testid="confirm-dialog"]')).toBeTruthy();
 });
 
-test("確定ボタン押下で deleteFlow.confirmDelete が呼ばれる", () => {
-  const confirmDelete = vi.fn();
-  render(
-    buildProps({
-      deleteFlow: buildDeleteFlow({ isOpen: true, confirmDelete }),
-    }),
-  );
+test("確定ボタン押下で onDelete が呼ばれる", () => {
+  const onDelete = vi.fn();
+  render({ deleteFlow: { onDelete } });
+  click("detail-delete-button");
   click("confirm-confirm-button");
-  expect(confirmDelete).toHaveBeenCalledTimes(1);
+  expect(onDelete).toHaveBeenCalledTimes(1);
 });
 
-test("キャンセルボタン押下で deleteFlow.cancelDelete が呼ばれる", () => {
-  const cancelDelete = vi.fn();
-  render(
-    buildProps({ deleteFlow: buildDeleteFlow({ isOpen: true, cancelDelete }) }),
-  );
+test("キャンセルボタン押下でダイアログが閉じる", () => {
+  render();
+  click("detail-delete-button");
   click("confirm-cancel-button");
-  expect(cancelDelete).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-testid="confirm-dialog"]')).toBeNull();
 });
 
-test("子あり: abort ラジオ選択で onOrphanStrategyChange('abort') が呼ばれる", () => {
-  const onOrphanStrategyChange = vi.fn();
-  render(
-    buildProps({
-      task: createTask({ children: ["a.md"] }),
-      deleteFlow: buildDeleteFlow({ isOpen: true }),
-      onOrphanStrategyChange,
-    }),
-  );
+test("子あり: abort ラジオ選択後の確定で onDelete(id, 'abort') が呼ばれる", () => {
+  const onDelete = vi.fn();
+  const task = createTask({ children: ["a.md"] });
+  render({ detail: { task }, deleteFlow: { onDelete } });
+  click("detail-delete-button");
   click("delete-orphan-strategy-abort");
-  expect(onOrphanStrategyChange).toHaveBeenCalledWith("abort");
+  click("confirm-confirm-button");
+  expect(onDelete.mock.calls[0]).toEqual(["task-1", "abort"]);
 });
 
-test("子あり: orphanStrategy='abort' なら abort ラジオが checked", () => {
-  render(
-    buildProps({
-      task: createTask({ children: ["a.md"] }),
-      deleteFlow: buildDeleteFlow({ isOpen: true }),
-      orphanStrategy: "abort",
-    }),
-  );
-  const abort = document.querySelector(
-    '[data-testid="delete-orphan-strategy-abort"]',
-  ) as HTMLInputElement;
-  expect(abort.checked).toBe(true);
+test("子あり: abort ラジオ選択で checked が切り替わる", () => {
+  render({ detail: { task: createTask({ children: ["a.md"] }) } });
+  click("detail-delete-button");
+  click("delete-orphan-strategy-abort");
+  expect(radio("delete-orphan-strategy-abort").checked).toBe(true);
+  expect(radio("delete-orphan-strategy-clear").checked).toBe(false);
+});
+
+test("子あり: 再度削除ボタンを押すと clear に戻る", () => {
+  render({ detail: { task: createTask({ children: ["a.md"] }) } });
+  click("detail-delete-button");
+  click("delete-orphan-strategy-abort");
+  click("confirm-cancel-button");
+  click("detail-delete-button");
+  expect(radio("delete-orphan-strategy-clear").checked).toBe(true);
 });
