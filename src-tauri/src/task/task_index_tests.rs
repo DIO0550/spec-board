@@ -455,7 +455,7 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::conf
     for (column, paths) in card_order {
         order.set_column(column, paths);
     }
-    Config::new(
+    Config::try_new(
         columns
             .iter()
             .enumerate()
@@ -469,6 +469,7 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> crate::conf
         order,
         None,
     )
+    .expect("valid config")
 }
 
 fn task_with_status(path: &str, status: &str) -> Task {

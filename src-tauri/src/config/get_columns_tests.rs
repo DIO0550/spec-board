@@ -13,7 +13,7 @@ fn column(name: &str, order: u32) -> Column {
 }
 
 fn make_config(columns: Vec<Column>, done_column: Option<ColumnName>) -> Config {
-    Config::new(columns, CardOrder::new(), done_column)
+    Config::try_new(columns, CardOrder::new(), done_column).expect("valid config")
 }
 
 #[test]
@@ -87,17 +87,4 @@ fn state_lock_poisoned_display_matches_contract() {
 fn from_app_state_error_maps_to_state_lock_poisoned() {
     let err: GetColumnsError = AppStateError::LockPoisoned.into();
     assert_eq!(err, GetColumnsError::StateLockPoisoned);
-}
-
-#[test]
-#[should_panic(expected = "config invariant violation: columns must be non-empty")]
-fn panics_when_columns_empty_even_if_done_column_is_some() {
-    let state = AppState::new();
-    // columns: [] かつ done_column: Some(_) では `resolved_done_column()` が
-    // `Some` を返してしまうため、空 columns チェックは `assert!` で独立に行う
-    // 必要がある。本テストはその不変条件防御の回帰を防ぐ。
-    let cfg = make_config(vec![], Some(ColumnName::from("Done")));
-    state.test_replace_config(Some(cfg)).expect("writable");
-
-    let _ = get_columns_impl(&state);
 }

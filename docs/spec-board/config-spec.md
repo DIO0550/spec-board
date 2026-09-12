@@ -59,7 +59,7 @@ project-root/
 | フィールド | 型 | 必須 | デフォルト | 説明 |
 |:----------|:---|:-----|:----------|:-----|
 | version | `number` | はい | `1` | 設定ファイルのスキーマバージョン。wire / disk では従来どおり数値であり、将来のマイグレーションに使用 |
-| columns | `Column[]` | はい | `[Todo, In Progress, Done]`（`Config::default` baseline） | カラム（ステータス）定義の配列。**最低 1 つのカラムが必須**であり、`columns: []` は load 時に `EmptyColumns` エラーで拒否される（[エラーハンドリング](#エラーハンドリング) 参照） |
+| columns | `Column[]` | はい | `[Todo, In Progress, Done]`（`Config::default` baseline） | カラム（ステータス）定義の配列。**最低 1 つのカラムが必須**であり、`columns: []` は `Config::try_new` が構築時に拒否し、load 時は `EmptyColumns` エラーとして表面化する（[エラーハンドリング](#エラーハンドリング) 参照） |
 | columns[].name | `string` | はい | - | カラム名。タスクのフロントマター `status` と対応 |
 | columns[].order | `number` | はい | - | カラムの表示順序（0始まり、昇順）。u32 の有限な非負整数として扱い、新規追加時に最大値へ到達している場合は追加を適用しない |
 | columns[].color | `string` | いいえ | なし（フォールバックパレット） | カラムヘッダー上端アクセント帯の `#RRGGBB` 色。不正形式・型不一致・欠落・`null` は lenient に「色なし」へ倒す（後述）。`None` 時は serialize で `color` キーごと省略され、既定値の適用は FE 表示層の責務 |
@@ -468,24 +468,23 @@ flowchart TD
     style Y fill:#fdd
 ```
 
-### 既存タスクからのカラム自動生成（純粋関数 `build_config_from_statuses`）
+### 既存タスクからのカラム自動生成（`Config::from_statuses`）
 
-上記フローチャートの `H[status フィールドからカラムを自動生成]` ノードは、バックエンドの純粋関数 `build_config_from_statuses` が担当する。本関数の責務と入出力規約を以下に明文化する。
+上記フローチャートの `H[status フィールドからカラムを自動生成]` ノードは、バックエンドの純粋関数 `Config::from_statuses`（旧 `build_config_from_statuses`）が担当する。本関数の責務と入出力規約を以下に明文化する。
 
 #### 責務 / 入出力
 
 - **入力**: `(file_path, status)` の列（既存タスクの md フロントマター由来）。
 - **出力**: `Config` 値。**保存は行わない**（保存・走査・パースは別レイヤの責務）。
-- **入力 0 件のときの戻り値**: `columns: []` の `Config`。これは**内部純粋関数の戻り値**であり、保存対象 `config.json` ではない。
-- 「タスクなし時はデフォルト 3 カラム（Todo / In Progress / Done）を保存する」分岐は**上位フロー側**の責務であり、その層で `Config::default()` を採用する。
-- 「`columns` は最低 1 つ必要」のルール（上記「columns」節）は**保存される `config.json`** に対する制約であり、純粋関数の戻り値とは独立。
+- **入力 0 件のときの戻り値**: 既定 3 カラム（`Config::default()` と同値。Todo / In Progress / Done、`doneColumn = "Done"`）。空 `columns` の `Config` は型として存在しないため、「タスクなし時はデフォルト 3 カラム」への収束は上位フローではなく本関数自身が行う。
+- 「`columns` は最低 1 つ必要」のルール（上記「columns」節）は `Config::try_new` が全構築経路で強制するため、本関数の戻り値も常に満たす。
 
 #### カラム順序と `doneColumn` の採用規則
 
 - カラム名は `(path, status)` 列を **path 昇順**でソートしてから、各 status の **first-occurrence wins**（初出順、重複は除去）で並ぶ。
 - ソートは `PathBuf::Ord`（OS の `OsStr` 表現順序）に従い、project-root からの相対パスでの比較が前提。
 - `status` フィールドが欠落しているタスク（`None`）は、先頭デフォルトカラム名（`"Todo"`）にフォールバックする。
-- `doneColumn` は生成された columns の**末尾カラム名**を採用する（`columns` が空なら `None`）。
+- `doneColumn` は生成された columns の**末尾カラム名**を採用する。
 
 #### 入力 status の正規化責務
 
@@ -502,7 +501,7 @@ flowchart TD
 - **追加順の決定論が及ぶ範囲**: 「path 昇順の初出順」（「カラム順序と `doneColumn` の採用規則」節と同じ走査規則）は、**1 回の走査でまとめて評価した status 集合の中でのみ**成立する。オープンと全量再スキャンは全タスクを 1 度に評価するのでこの規則どおりになるが、**ファイル監視は 1 件ずつ評価するため、複数の未知 status が別々のイベントで届いた場合の追加順はイベント到着順になる**。どちらの経路でも「未知 status は必ず末尾に追加される」ことは変わらない。
 - **`order` の飽和**: `order` が `u32` の上限に達している異常な config では採番が飽和し、新カラムが既存カラムと同じ `order` を持つ。この場合の表示順は `order` 昇順の**安定ソート**に従い、`columns` 配列で後ろにある新カラムが末尾に残る。
 - **既存カラムの不変性**: 既存カラムの `name` / `order` / `color` と `cardOrder` は一切変更しない。新カラムは `cardOrder` にエントリを持たないため、そのカラムのタスクは canonical `filePath`（= wire `id`）昇順で並ぶ。
-- **`doneColumn`**: 既存値を維持する（`columns` に存在しない値が設定されていても**修復しない**。reconcile の責務は未知 status のカラム追加であって不正な config の是正ではなく、勝手に直すとユーザーが後から追加するつもりのカラム名を奪う）。ただし `doneColumn` 未設定（省略）の config にカラムを追加するときは、追加**前**の解決結果（`order` 最大のカラム名）を `doneColumn` として明示的に確定させる。未設定時の解決規則が末尾カラムを指すため、確定させないと追加した新カラムが完了カラムに化けてしまう。`columns` が空の config では確定させる値が無いため未設定のままとする。
+- **`doneColumn`**: 既存値を維持する（`columns` に存在しない値が設定されていても**修復しない**。reconcile の責務は未知 status のカラム追加であって不正な config の是正ではなく、勝手に直すとユーザーが後から追加するつもりのカラム名を奪う）。ただし `doneColumn` 未設定（省略）の config にカラムを追加するときは、追加**前**の解決結果（`order` 最大のカラム名）を `doneColumn` として明示的に確定させる。未設定時の解決規則が末尾カラムを指すため、確定させないと追加した新カラムが完了カラムに化けてしまう。
 - **status の正規化**: 行わない（「入力 status の正規化責務」節と同じ規約）。空文字 `""` / 空白のみ `" "` / 前後空白付き `"  Todo  "` はそのままカラム名になり、大文字小文字違いは別カラムとして追加される。
 - **差分が無ければ `config.json` を書かない**。同じ入力に対する再オープンは冪等で、同じ `columns` / `order` / `doneColumn` を返す。
 - **config.json が不在の場合**は reconcile ではなく「既存タスクからのカラム自動生成」が走る。**読み込みに失敗した場合**はどちらも行わず、既存ファイルを上書きしない。**ファイル監視経路も同じ規約に従い、カラム追加が必要になった時点で `config.json` を読み直し、不在または読み込み失敗なら何もしない**（アプリ起動後にファイルを消したり壊したりしても、勝手に作り直さない）。
@@ -523,19 +522,21 @@ flowchart TD
 
 これらは **`load_or_default` の戻り値**としての契約を述べる。アプリ起動時のユーザー体験（デフォルト + トースト）はこれを受け取った**呼び出し層（Tauri コマンド / アプリシェル）の責務**であり、後述「[エラーハンドリング](#エラーハンドリング)」のテーブルにフォールバック挙動を集約する。
 
-- 現行サポートversionは `SchemaVersion::CURRENT = 1` とする。`SchemaVersion` はprivateな `u32` を持つVOで、正規化済み `Config` はこの現行値だけを保持する。`Config::new(columns, cardOrder, doneColumn)` も常に現行値を設定し、callerが任意のversionを注入する経路は公開しない。
+- 現行サポートversionは `SchemaVersion::CURRENT = 1` とする。`SchemaVersion` はprivateな `u32` を持つVOで、正規化済み `Config` はこの現行値だけを保持する。`Config::try_new(columns, cardOrder, doneColumn)` が唯一の構築境界で、columns 非空・完全一致重複なしを検証し、常に現行 version を設定する。callerが任意のversionを注入する経路は公開しない。
+- `Config` は `columns` を非公開で保持し、検証を通過した構築経路（`try_new` / deserialize）からのみ生成する（`LabelRegistry` と同方式）。読み取りは `columns()` accessor 経由。
 - JSON上の `version` は引き続き数値としてserializeするため、wire / disk形状は `"version": 1` のまま変わらない。
 - load境界はまずprivateなraw adapter `VersionOnly { version: u32 }` で値を先読みする。legacy / futureのraw数値を扱えるのはこのadapterとmigration境界だけであり、読み込んだ `version` が `SchemaVersion::CURRENT` を超える場合は `UnknownFutureVersion` エラーを `Err` として返す。
-- 現行versionのJSONはraw文字列から `Config` へ直接deserializeし、元のline / columnを持つ `Parse` 分類を維持する。`Config` / `SchemaVersion` の直接deserializeは現行値だけを受理し、legacy / future値によるnormalized aggregateの構築を拒否する。
+- 現行versionのJSONはraw文字列から直接deserializeし、元のline / columnを持つ `Parse` 分類を維持する。`Config` / `SchemaVersion` の直接deserializeは現行値だけを受理し、legacy / future値によるnormalized aggregateの構築を拒否する。load 境界は検証前の raw 型を経由して `Config::try_new` を通し、不変条件違反を `EmptyColumns` / `DuplicateColumnName` の専用 variant として返す（`Config` を直接 deserialize した場合は `Parse` 相当の serde エラーになる）。
 - `load_or_default` は冒頭で `<root>/.spec-board/config.json.bak.tmp.*` の orphan を best-effort で削除する（クラッシュ等で `open(tmp)` と `rename(tmp, dst)` の間で中断された残骸を後続 load で清掃する）。安全条件として: (1) `.spec-board/` 自体が symlink の場合は走査自体を skip して外部ディレクトリの巻き込み削除を防ぐ、(2) tmp 名末尾の `{nanos}` を読み、現在時刻との差が **1 時間以上** の orphan のみを削除対象とし、同一 / 別プロセスで進行中の concurrent load が作った直近の live tmp は温存する。
 - 古い `version` を読み込んだ場合は `<root>/.spec-board/config.json.bak` をマイグレーション**前**の生コンテンツで作成（既存 `.bak` は警告なく上書き、履歴は残さない）した上でマイグレーションを実行する。**書き出し戦略**: ① 呼び出しごとに unique な tmp パス（`config.json.bak.tmp.{pid}.{nanos}.{counter}`、`counter` は process-local AtomicU64）を組み立て（同一プロセス内・粗い時計分解能環境でも collision を防ぎつつ並行 load 干渉を回避）、② その tmp パスを `unlink`（symlink / hard link のリンク先や inode は破壊せずディレクトリエントリだけ除去）してから `O_CREAT | O_EXCL` 相当（`OpenOptions::create_new(true)`）で完全に新しい inode を atomic に作成し、③ その fresh inode に raw コンテンツを書き込み、④ atomic `rename(<tmp>, config.json.bak)` でディレクトリエントリだけを差し替える。これにより tmp が事前に外部ファイルへ **symlink / hard link** されていても、`.bak` が外部ファイルへ hard link されていても、いずれの inode も truncate されずプロジェクト外のファイル上書きを防げる。書き出し前に追加で `<root>/.spec-board/` ディレクトリと `config.json.bak` の leaf の双方が symlink でないことを確認し、いずれかが symlink の場合は `BackupFailed` を返して書き出しを拒否する（多重防御）。いずれもベストエフォート防御であり、`<root>` 自身およびそれ以上の ancestor の symlink / hard link、本チェックと write / rename の間に発生する TOCTOU race、ロックレスでの並行 load 完全制御は **本Issue 範囲外**（lockfile / project-root 内制限の導入は別Issue で扱う）。
 - マイグレーションはraw `u32` を受け、JSON Valueの `version` を `SchemaVersion::CURRENT` の数値へ書き換えてから `Config` にdeserializeする。呼び出し側に返る `Config::version()` は常に `SchemaVersion::CURRENT` となる。本Issue（骨格段階）では `config.json` への永続化は行わないため、古い `version` のファイルが残っている限り、毎回の load で backup + migrate 経路を通る。
 - `version` フィールドの欠落 / 型不一致（文字列など）/ `u32` 範囲外は通常の JSON パースエラー（`Parse`）として扱う。
 
-#### カラム名重複の検証
+#### `Config::try_new` による不変条件検証（columns 非空・カラム名重複）
 
-- `columns` 内のカラム名は load 時に完全一致で重複検査される。重複が見つかれば `DuplicateColumnName` を `Err` として返す（呼び出し層のフォールバック挙動は[エラーハンドリング](#エラーハンドリング)を参照）。
-- 大文字小文字違い（例: `"Todo"` vs `"todo"`）は別カラム扱い（`build_config_from_statuses` と同規約）。
+- `Config` の不変条件は「`columns` が 1 件以上」「`columns[].name` が完全一致で一意」の 2 つで、`Config::try_new` が構築時に検証する。load / `update_columns` / 既存タスクからの自動生成 / reconcile / deserialize の全経路がこの constructor を通るため、検証ロジックは 1 箇所にしかない。
+- load 時は違反を `EmptyColumns` / `DuplicateColumnName` の `Err` として返す（呼び出し層のフォールバック挙動は[エラーハンドリング](#エラーハンドリング)を参照）。
+- 大文字小文字違い（例: `"Todo"` vs `"todo"`）は別カラム扱い（`Config::from_statuses` と同規約）。
 - カラム名は値そのものを完全一致比較する。空文字 `""` / 空白のみ `" "` / 前後空白付き `"  Todo  "` も**未正規化のまま**受理し、distinct であれば許容する（`trim` 等の正規化責務は呼び出し層）。空文字 / 空白を別エラーとして拒否する仕様は本Issue 範囲外。
 - `ColumnName` は serde 境界では `Lenient` として raw 文字列を受ける。現行 version と migration の両経路で、columns 非空・完全一致重複検査が成功した後、`columns[].name` / `doneColumn` / `cardOrder` key の非空値を `Validated` へ分類する。`doneColumn` や `cardOrder` key が `columns` に存在しない場合も load 時には削除・拒否せず、非空なら同様に分類する。
 - strict 判定は `value.is_empty()` のみであり、`""` だけは互換性のため `Lenient` fallback として保持する。`" "` と `"  Todo  "` は raw bytes を変えず `Validated` になる。default、既存タスクからの自動生成、reconcile、`update_columns` で採用した Config も同じ分類規則を使う。一方、frontmatter / IPC 境界から得る `Task.status` は `Lenient` のまま保持する。

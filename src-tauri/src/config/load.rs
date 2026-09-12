@@ -6,14 +6,16 @@
 //!
 //! - 軽量スキーマ [`VersionOnly`] を `serde_json::from_str` で適用して `version` を
 //!   line/col 付きで取り出す
-//! - 現行 version の場合は `serde_json::from_str::<Config>` で **直接** デシリアライズ
+//! - 現行 version の場合は `serde_json::from_str::<RawConfig>` で **直接** デシリアライズ
 //!   し schema mismatch のエラーも line/col を保持する
 //! - 古い version の場合のみ `serde_json::Value` を materialize し、`config.json.bak`
 //!   へのバックアップ → [`crate::config::migration::migrate_config`] →
-//!   `serde_json::from_value::<Config>` の経路で legacy フォーマットを取り込む
+//!   `serde_json::from_value::<RawConfig>` の経路で legacy フォーマットを取り込む
 //! - 未来 version は [`LoadConfigError::UnknownFutureVersion`] で停止
 //! - 不在時の `Default` フォールバック
-//! - load 時のカラム名重複検証と空 columns 拒否
+//! - 不変条件（columns 非空・カラム名一意）は constructor `Config::try_from`
+//!   （= [`Config::try_new`]）に委ね、違反を [`LoadConfigError::EmptyColumns`] /
+//!   [`LoadConfigError::DuplicateColumnName`] へ詰め替える
 //!
 //! また、`update_columns` などが `config.json` を atomic write するための
 //! [`ConfigWriter`] ポートと本番実装 [`FsConfigWriter`]、共通の
@@ -26,7 +28,7 @@ use serde::Deserialize;
 use spec_board_fs::config::config_io::{self, ConfigIoError};
 use thiserror::Error;
 
-use crate::config::core::{validate_unique_column_names, Config};
+use crate::config::core::{Config, ConfigInvariantError, RawConfig};
 use crate::config::migration::{migrate_config, MigrationError};
 use crate::config::schema_version::SchemaVersion;
 
@@ -384,8 +386,9 @@ struct VersionOnly {
 /// 4. `version` が [`SchemaVersion::CURRENT`] を超える場合は [`LoadConfigError::UnknownFutureVersion`]
 /// 5. `version` が古い場合は `<root>/.spec-board/config.json.bak` を作成し
 ///    [`crate::config::migration::migrate_config`] を適用する
-/// 6. 現行 version は `from_str::<Config>`、古い version は `from_value::<Config>` で本パース
-/// 7. `columns` が空でないこと / [`validate_unique_column_names`] でカラム名重複検証
+/// 6. 現行 version は `from_str::<RawConfig>`、古い version は `from_value::<RawConfig>` で本パース
+/// 7. `Config::try_from(raw)`（= [`Config::try_new`]）で不変条件（columns 非空・
+///    カラム名一意）を検証し、違反を [`LoadConfigError`] の専用 variant に詰め替える
 ///
 /// # `None` を返す条件
 ///
@@ -406,8 +409,8 @@ struct VersionOnly {
 /// - `config.json` のパースに失敗 → [`LoadConfigError::Parse`]
 /// - `version` がサポート範囲を超える → [`LoadConfigError::UnknownFutureVersion`]
 /// - `config.json.bak` の書き込みに失敗 → [`LoadConfigError::BackupFailed`]
-/// - `columns` が空 → [`LoadConfigError::EmptyColumns`]
-/// - カラム名重複 → [`LoadConfigError::DuplicateColumnName`]
+/// - `columns` が空（[`Config::try_new`] が拒否）→ [`LoadConfigError::EmptyColumns`]
+/// - カラム名重複（同上）→ [`LoadConfigError::DuplicateColumnName`]
 ///
 /// [`LoadConfigError::MigrationFailed`] は **現状では本関数から返されない**
 /// （`from_version > SchemaVersion::CURRENT` は事前に
@@ -446,13 +449,17 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
         });
     }
 
-    // 現行 version の場合は `from_str::<Config>` で直接デシリアライズし、
+    // 現行 version の場合は `from_str::<RawConfig>` で直接デシリアライズし、
     // schema mismatch 時に元の line/col 情報を保持する（`from_value` 経由だと位置情報が失われ、
     // hand-edited config.json の修正がしづらくなるため）。
     // 古い version の場合は `migrate_config` が `Value` を書き換える必要があるため
     // やむを得ず `from_value` を経由する（line/col 情報は失われるが、migrate 経路では
     // ユーザーが直接編集する想定が薄いため許容）。
-    let config: Config = if from_version == current_version {
+    //
+    // 検証前の生の形で受け、不変条件は `Config::try_from`（= `try_new`）に委ねる。
+    // `Config` を直接 deserialize すると検証エラーが `serde::de::Error::custom` に
+    // 包まれて `Parse` に潰れるため、variant を保つ目的で 2 段階にしている。
+    let raw: RawConfig = if from_version == current_version {
         serde_json::from_str(&content).map_err(|source| LoadConfigError::Parse {
             path: path.clone(),
             source,
@@ -476,13 +483,13 @@ pub fn load_persisted(project_root: &Path) -> Result<Option<Config>, LoadConfigE
         })?
     };
 
-    if config.columns.is_empty() {
-        return Err(LoadConfigError::EmptyColumns { path: path.clone() });
-    }
-    validate_unique_column_names(&config.columns).map_err(|name| {
-        LoadConfigError::DuplicateColumnName {
-            path: path.clone(),
-            name,
+    let config = Config::try_from(raw).map_err(|error| match error {
+        ConfigInvariantError::EmptyColumns => LoadConfigError::EmptyColumns { path: path.clone() },
+        ConfigInvariantError::DuplicateColumnName { name } => {
+            LoadConfigError::DuplicateColumnName {
+                path: path.clone(),
+                name,
+            }
         }
     })?;
 

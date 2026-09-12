@@ -25,12 +25,125 @@ fn config_deserialize_rejects_legacy_and_future_versions_without_adapter() {
 }
 
 #[test]
-fn config_new_always_constructs_the_current_schema_version() {
-    let config = Config::new(Vec::new(), CardOrder::new(), None);
+fn config_try_new_always_constructs_the_current_schema_version() {
+    let config =
+        Config::try_new(vec![col("Todo", 0)], CardOrder::new(), None).expect("valid config");
 
     assert_eq!(config.version(), SchemaVersion::CURRENT);
 }
 use crate::config::column_name::ColumnName;
+
+// ───────── try_new ─────────
+
+#[test]
+fn try_new_returns_ok_for_distinct_non_empty_columns() {
+    let config = Config::try_new(
+        vec![col("Todo", 0), col("Done", 1)],
+        CardOrder::new(),
+        Some("Done".into()),
+    )
+    .expect("distinct non-empty columns are valid");
+
+    assert_eq!(config.columns(), &[col("Todo", 0), col("Done", 1)]);
+    assert_eq!(config.version(), SchemaVersion::CURRENT);
+    assert_eq!(config.done_column.as_deref(), Some("Done"));
+}
+
+#[test]
+fn try_new_returns_ok_for_single_column() {
+    let config = Config::try_new(vec![col("Todo", 0)], CardOrder::new(), None)
+        .expect("a single column is valid");
+
+    assert_eq!(config.columns(), &[col("Todo", 0)]);
+}
+
+#[test]
+fn try_new_rejects_empty_columns() {
+    let result = Config::try_new(Vec::new(), CardOrder::new(), None);
+
+    assert_eq!(result, Err(ConfigInvariantError::EmptyColumns));
+}
+
+#[test]
+fn try_new_rejects_duplicate_column_name_and_reports_first_duplicate() {
+    let columns = vec![
+        col("Todo", 0),
+        col("Doing", 1),
+        col("Todo", 2),
+        col("Doing", 3),
+    ];
+
+    let result = Config::try_new(columns, CardOrder::new(), None);
+
+    assert_eq!(
+        result,
+        Err(ConfigInvariantError::DuplicateColumnName {
+            name: "Todo".to_string()
+        })
+    );
+}
+
+#[test]
+fn try_new_treats_case_and_whitespace_variants_as_distinct() {
+    let columns = vec![col("Todo", 0), col("todo", 1), col(" Todo", 2)];
+
+    let result = Config::try_new(columns, CardOrder::new(), None);
+
+    assert!(
+        result.is_ok(),
+        "case / whitespace variants are distinct names"
+    );
+}
+
+#[test]
+fn config_invariant_error_display_messages() {
+    let cases = vec![
+        (
+            ConfigInvariantError::EmptyColumns,
+            "config must contain at least one column, but `columns` is empty",
+        ),
+        (
+            ConfigInvariantError::DuplicateColumnName {
+                name: "Todo".to_string(),
+            },
+            "duplicate column name: `Todo`",
+        ),
+    ];
+
+    for (error, expected) in cases {
+        assert_eq!(error.to_string(), expected, "{error:?}");
+    }
+}
+
+#[test]
+fn update_columns_error_from_config_invariant_error_maps_variants_one_to_one() {
+    use crate::config::update_columns::UpdateColumnsError;
+
+    assert!(matches!(
+        UpdateColumnsError::from(ConfigInvariantError::EmptyColumns),
+        UpdateColumnsError::EmptyColumns
+    ));
+    match UpdateColumnsError::from(ConfigInvariantError::DuplicateColumnName {
+        name: "Todo".into(),
+    }) {
+        UpdateColumnsError::DuplicateColumnName { name } => assert_eq!(name, "Todo"),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn config_deserialize_rejects_empty_columns() {
+    let raw = r#"{"version":1,"columns":[],"cardOrder":{}}"#;
+
+    assert!(serde_json::from_str::<Config>(raw).is_err());
+}
+
+#[test]
+fn config_deserialize_rejects_duplicate_column_names() {
+    let raw = r#"{"version":1,"columns":[{"name":"Todo","order":0},{"name":"Todo","order":1}],"cardOrder":{}}"#;
+
+    assert!(serde_json::from_str::<Config>(raw).is_err());
+}
 
 // ───────── Default ─────────
 
@@ -39,8 +152,8 @@ fn default_returns_spec_baseline_columns_and_done_column() {
     let c = Config::default();
     assert_eq!(c.version(), SchemaVersion::CURRENT);
     assert_eq!(
-        c.columns,
-        vec![
+        c.columns(),
+        &[
             Column {
                 name: "Todo".into(),
                 order: 0,
@@ -70,7 +183,7 @@ fn default_classifies_all_non_empty_config_names_as_validated() {
     let config = Config::default();
 
     assert!(config
-        .columns
+        .columns()
         .iter()
         .all(|column| column.name.is_validated()));
     assert!(config
@@ -81,7 +194,7 @@ fn default_classifies_all_non_empty_config_names_as_validated() {
 
 #[test]
 fn columns_in_display_order_sorts_by_order_not_by_array_position() {
-    let config = Config::new(
+    let config = Config::try_new(
         vec![
             Column {
                 name: "Done".into(),
@@ -104,7 +217,8 @@ fn columns_in_display_order_sorts_by_order_not_by_array_position() {
         ],
         CardOrder::default(),
         None,
-    );
+    )
+    .expect("valid config");
 
     let ordered = config.columns_in_display_order();
 
@@ -142,9 +256,9 @@ fn roundtrip_spec_example_json() {
     assert_eq!(parsed, reparsed);
 
     assert_eq!(parsed.version(), SchemaVersion::CURRENT);
-    assert_eq!(parsed.columns.len(), 3);
+    assert_eq!(parsed.columns().len(), 3);
     assert_eq!(
-        parsed.columns[0],
+        parsed.columns()[0],
         Column {
             name: "Todo".into(),
             order: 0,
@@ -215,7 +329,8 @@ fn parses_with_done_column_null() {
 #[test]
 fn serialize_omits_done_column_when_none() {
     let default = Config::default();
-    let c = Config::new(default.columns, default.card_order, None);
+    let c = Config::try_new(default.columns().to_vec(), default.card_order, None)
+        .expect("valid config");
     let v = serde_json::to_value(&c).unwrap();
     let obj = v.as_object().unwrap();
     assert!(
@@ -232,7 +347,7 @@ fn serialize_omits_done_column_when_none() {
 
 #[test]
 fn field_names_are_camel_case_in_json() {
-    let c = Config::new(
+    let c = Config::try_new(
         vec![Column {
             name: "Todo".into(),
             order: 0,
@@ -241,7 +356,8 @@ fn field_names_are_camel_case_in_json() {
         }],
         card_order_of(vec![("Todo", vec!["tasks/a.md"])]),
         Some("Todo".into()),
-    );
+    )
+    .expect("valid config");
     let v = serde_json::to_value(&c).unwrap();
     let obj = v.as_object().unwrap();
     assert!(obj.contains_key("version"));
@@ -261,7 +377,7 @@ fn card_order_keys_are_serialized_in_sorted_order() {
         ("Todo", vec!["tasks/a.md"]),
         ("In Progress", vec!["tasks/b.md"]),
     ]);
-    let c = Config::new(vec![], card_order, None);
+    let c = Config::try_new(vec![col("Backlog", 0)], card_order, None).expect("valid config");
 
     let json = serde_json::to_string(&c).unwrap();
     let done_pos = json.find("\"Done\"").unwrap();
@@ -279,13 +395,13 @@ fn card_order_keys_are_serialized_in_sorted_order() {
 fn unknown_fields_are_ignored() {
     let json_in = r#"{
         "version": 1,
-        "columns": [],
+        "columns": [{"name": "Todo", "order": 0}],
         "cardOrder": {},
         "futureFlag": "ignored"
     }"#;
     let parsed: Config = serde_json::from_str(json_in).unwrap();
     assert_eq!(parsed.version(), SchemaVersion::CURRENT);
-    assert!(parsed.columns.is_empty());
+    assert_eq!(parsed.columns(), &[col("Todo", 0)]);
     assert!(parsed.card_order.is_empty());
     assert_eq!(parsed.done_column, None);
 }
@@ -350,12 +466,6 @@ fn resolved_done_column_parametrized() {
             expected: Some("Done"),
         },
         Case {
-            label: "None + 空 columns → None",
-            done_column: None,
-            columns: vec![],
-            expected: None,
-        },
-        Case {
             label: "None + 単一 columns → そのカラム名",
             done_column: None,
             columns: vec![col("Todo", 0)],
@@ -388,11 +498,12 @@ fn resolved_done_column_parametrized() {
     ];
 
     for case in cases {
-        let cfg = Config::new(
+        let cfg = Config::try_new(
             case.columns,
             CardOrder::new(),
             case.done_column.map(Into::into),
-        );
+        )
+        .expect("valid config");
         assert_eq!(
             cfg.resolved_done_column().map(|c| c.as_str()),
             case.expected,
@@ -507,11 +618,12 @@ fn generate_guide_markdown_has_stable_section_order_and_trailing_newline() {
 #[test]
 fn write_guide_markdown_best_effort_writes_config_guide_markdown() {
     let tmp = TempDir::new().unwrap();
-    let config = Config::new(
+    let config = Config::try_new(
         vec![col("Review", 1), col("Backlog", 0)],
         CardOrder::new(),
         Some("Review".into()),
-    );
+    )
+    .expect("valid config");
 
     write_guide_markdown_best_effort(tmp.path(), &config);
 
@@ -528,7 +640,8 @@ fn write_guide_markdown_best_effort_overwrites_existing_guide() {
     std::fs::create_dir(&dir).unwrap();
     let guide_path = dir.join("GUIDE.md");
     std::fs::write(&guide_path, "old").unwrap();
-    let config = Config::new(vec![], CardOrder::new(), None);
+    let config =
+        Config::try_new(vec![col("Todo", 0)], CardOrder::new(), None).expect("valid config");
 
     write_guide_markdown_best_effort(tmp.path(), &config);
 
@@ -652,7 +765,7 @@ fn load_or_default_parses_existing_config_json() {
 
     let cfg = load_or_default(tmp.path()).unwrap();
     assert_eq!(cfg.version(), SchemaVersion::CURRENT);
-    assert_eq!(cfg.columns.len(), 2);
+    assert_eq!(cfg.columns().len(), 2);
     assert_eq!(cfg.done_column, None);
     // done_column が無くても resolved_done_column は末尾カラムを返す
     assert_eq!(cfg.resolved_done_column().map(|c| c.as_str()), Some("Done"));
@@ -720,7 +833,7 @@ fn load_persisted_returns_saved_config() {
 
     let config = load_persisted(tmp.path()).unwrap().expect("config");
 
-    let names: Vec<&str> = config.columns.iter().map(|c| c.name.as_str()).collect();
+    let names: Vec<&str> = config.columns().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["Doing", "Shipped"]);
     assert_eq!(config.done_column.as_deref(), Some("Shipped"));
 }
@@ -749,7 +862,7 @@ fn load_persisted_classifies_names_without_changing_wire_values() {
 
     assert_eq!(
         first
-            .columns
+            .columns()
             .iter()
             .map(|column| (column.name.as_str(), column.name.is_validated()))
             .collect::<Vec<_>>(),
@@ -780,7 +893,7 @@ fn load_persisted_classifies_names_without_changing_wire_values() {
     assert_eq!(reopened, first);
     assert_eq!(
         reopened
-            .columns
+            .columns()
             .iter()
             .map(|column| column.name.is_validated())
             .collect::<Vec<_>>(),
@@ -843,7 +956,7 @@ fn load_persisted_classifies_names_after_migration() {
     assert_eq!(config.version(), SchemaVersion::CURRENT);
     assert_eq!(
         config
-            .columns
+            .columns()
             .iter()
             .map(|column| column.name.is_validated())
             .collect::<Vec<_>>(),
@@ -882,7 +995,7 @@ fn load_or_default_still_returns_default_when_absent() {
     assert_eq!(config, Config::default());
 }
 
-// ───────── build_config_from_statuses ─────────
+// ───────── Config::from_statuses ─────────
 
 fn col(name: &str, order: u32) -> Column {
     Column {
@@ -920,7 +1033,12 @@ fn pb(s: &str) -> PathBuf {
 }
 
 #[test]
-fn build_config_from_statuses_parametrized() {
+fn from_statuses_returns_default_for_empty_inputs() {
+    assert_eq!(Config::from_statuses(&[]), Config::default());
+}
+
+#[test]
+fn from_statuses_parametrized() {
     struct Case {
         label: &'static str,
         inputs: Vec<(PathBuf, Option<String>)>,
@@ -930,10 +1048,10 @@ fn build_config_from_statuses_parametrized() {
 
     let cases: Vec<Case> = vec![
         Case {
-            label: "0 件 -> 空 Config",
+            label: "0 件 -> 既定 3 カラム",
             inputs: vec![],
-            expected_columns: vec![],
-            expected_done: None,
+            expected_columns: Config::default().columns().to_vec(),
+            expected_done: Some("Done"),
         },
         Case {
             label: "全 None -> Todo 1 件",
@@ -1019,14 +1137,14 @@ fn build_config_from_statuses_parametrized() {
     ];
 
     for case in cases {
-        let cfg = build_config_from_statuses(&case.inputs);
+        let cfg = Config::from_statuses(&case.inputs);
         assert_eq!(
             cfg.version(),
             SchemaVersion::CURRENT,
             "case: {}",
             case.label
         );
-        assert_eq!(cfg.columns, case.expected_columns, "case: {}", case.label);
+        assert_eq!(cfg.columns(), case.expected_columns, "case: {}", case.label);
         assert_eq!(
             cfg.done_column.as_deref(),
             case.expected_done,
@@ -1042,7 +1160,7 @@ fn build_config_from_statuses_parametrized() {
 }
 
 #[test]
-fn build_config_from_statuses_defensive_sort_normalizes_input_order() {
+fn from_statuses_defensive_sort_normalizes_input_order() {
     let asc = vec![
         (pb("a.md"), Some("X".into())),
         (pb("b.md"), Some("Y".into())),
@@ -1051,19 +1169,19 @@ fn build_config_from_statuses_defensive_sort_normalizes_input_order() {
         (pb("b.md"), Some("Y".into())),
         (pb("a.md"), Some("X".into())),
     ];
-    let cfg_asc = build_config_from_statuses(&asc);
-    let cfg_desc = build_config_from_statuses(&desc);
+    let cfg_asc = Config::from_statuses(&asc);
+    let cfg_desc = Config::from_statuses(&desc);
     assert_eq!(cfg_asc, cfg_desc);
     assert_eq!(
-        cfg_asc.columns,
-        vec![col("X", 0), col("Y", 1)],
+        cfg_asc.columns(),
+        &[col("X", 0), col("Y", 1)],
         "path 昇順で X が先になる"
     );
 }
 
 #[test]
-fn build_config_from_statuses_classifies_adopted_names() {
-    let config = build_config_from_statuses(&[
+fn from_statuses_classifies_adopted_names() {
+    let config = Config::from_statuses(&[
         (pb("a.md"), Some("".into())),
         (pb("b.md"), Some(" ".into())),
         (pb("c.md"), Some("  Todo  ".into())),
@@ -1071,7 +1189,7 @@ fn build_config_from_statuses_classifies_adopted_names() {
 
     assert_eq!(
         config
-            .columns
+            .columns()
             .iter()
             .map(|column| (column.name.as_str(), column.name.is_validated()))
             .collect::<Vec<_>>(),
@@ -1304,11 +1422,12 @@ fn validate_unique_column_names_treats_whitespace_variants_as_distinct() {
 
 #[test]
 fn has_column_returns_true_when_column_exists() {
-    let config = Config::new(
+    let config = Config::try_new(
         vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
         CardOrder::new(),
         None,
-    );
+    )
+    .expect("valid config");
     assert!(config.has_column("Todo"));
     assert!(config.has_column("In Progress"));
     assert!(config.has_column("Done"));
@@ -1316,14 +1435,16 @@ fn has_column_returns_true_when_column_exists() {
 
 #[test]
 fn has_column_returns_false_when_column_missing() {
-    let config = Config::new(vec![col("Todo", 0), col("Done", 1)], CardOrder::new(), None);
+    let config = Config::try_new(vec![col("Todo", 0), col("Done", 1)], CardOrder::new(), None)
+        .expect("valid config");
     assert!(!config.has_column("Doing"));
     assert!(!config.has_column(""));
 }
 
 #[test]
 fn has_column_returns_false_when_case_differs() {
-    let config = Config::new(vec![col("Todo", 0)], CardOrder::new(), None);
+    let config =
+        Config::try_new(vec![col("Todo", 0)], CardOrder::new(), None).expect("valid config");
     assert!(!config.has_column("todo"));
     assert!(!config.has_column("TODO"));
     assert!(config.has_column("Todo"));
@@ -1485,6 +1606,52 @@ fn load_or_default_returns_duplicate_column_name_error() {
     );
 
     let err = load_or_default(tmp.path()).unwrap_err();
+    match err {
+        LoadConfigError::DuplicateColumnName { path, name } => {
+            assert_eq!(name, "Todo");
+            assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
+        }
+        other => panic!("expected DuplicateColumnName, got {other:?}"),
+    }
+}
+
+#[test]
+fn load_persisted_returns_empty_columns_error_after_migration() {
+    let tmp = TempDir::new().unwrap();
+    write_config(
+        &tmp,
+        r#"{
+            "version": 0,
+            "columns": [],
+            "cardOrder": {}
+        }"#,
+    );
+
+    let err = load_persisted(tmp.path()).unwrap_err();
+    match err {
+        LoadConfigError::EmptyColumns { path } => {
+            assert_eq!(path, tmp.path().join(".spec-board").join("config.json"));
+        }
+        other => panic!("expected EmptyColumns, got {other:?}"),
+    }
+}
+
+#[test]
+fn load_persisted_returns_duplicate_column_name_error_after_migration() {
+    let tmp = TempDir::new().unwrap();
+    write_config(
+        &tmp,
+        r#"{
+            "version": 0,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Todo", "order": 1 }
+            ],
+            "cardOrder": {}
+        }"#,
+    );
+
+    let err = load_persisted(tmp.path()).unwrap_err();
     match err {
         LoadConfigError::DuplicateColumnName { path, name } => {
             assert_eq!(name, "Todo");
@@ -2049,11 +2216,12 @@ fn rename_preserves_column_color() {
 // ───────── Config::plan_update_card_order ─────────
 
 fn card_order_base_config() -> Config {
-    Config::new(
+    Config::try_new(
         vec![col("Todo", 0), col("In Progress", 1), col("Done", 2)],
         CardOrder::new(),
         Some("Done".into()),
     )
+    .expect("valid config")
 }
 
 #[test]
@@ -2105,7 +2273,10 @@ fn plan_update_card_order_classifies_all_names_in_the_adopted_config() {
         )
         .expect("known column should succeed");
 
-    assert!(next.columns.iter().all(|column| column.name.is_validated()));
+    assert!(next
+        .columns()
+        .iter()
+        .all(|column| column.name.is_validated()));
     assert!(next
         .done_column
         .as_ref()
@@ -2260,9 +2431,9 @@ fn normalize_card_order_parametrized() {
             expect_changed: true,
         },
         Case {
-            label: "columns が空 → cardOrder のキーはそのまま保持",
+            label: "columns に無いキーもそのまま保持",
             card_order: vec![("Todo", vec!["a.md"])],
-            columns: vec![],
+            columns: vec![col("Done", 0)],
             expected: vec![("Todo", vec!["a.md"])],
             expect_changed: false,
         },
@@ -2324,11 +2495,12 @@ fn normalize_card_order_parametrized() {
     ];
 
     for case in cases {
-        let config = Config::new(
+        let config = Config::try_new(
             case.columns,
             card_order_of(case.card_order),
             Config::default().done_column,
-        );
+        )
+        .expect("valid config");
         let (normalized, changed) = config.normalize_card_order();
         assert_eq!(
             normalized.card_order,
@@ -2379,11 +2551,12 @@ fn normalize_card_order_idempotent() {
     ];
 
     for case in cases {
-        let config = Config::new(
+        let config = Config::try_new(
             case.columns,
             card_order_of(case.card_order),
             Config::default().done_column,
-        );
+        )
+        .expect("valid config");
         let (first, _) = config.normalize_card_order();
         let (second, changed_again) = first.normalize_card_order();
         assert_eq!(
@@ -2442,11 +2615,12 @@ fn normalize_card_order_large_entry() {
         "同一列内重複は CardOrder の構築時に解消される"
     );
 
-    let config = Config::new(
+    let config = Config::try_new(
         vec![col("Todo", 0)],
         card_order,
         Config::default().done_column,
-    );
+    )
+    .expect("valid config");
     let (normalized, changed) = config.normalize_card_order();
     assert!(!changed, "列跨ぎ重複が無ければ normalize は何も変えない");
     assert_eq!(normalized.card_order.get("Todo").unwrap().len(), 100);
@@ -2456,11 +2630,12 @@ fn normalize_card_order_large_entry() {
 
 /// reconcile テストの基準 config（`Todo(0)` / `Doing(1)` / `Done(2)`、`doneColumn = "Done"`）。
 fn reconcile_base_config() -> Config {
-    Config::new(
+    Config::try_new(
         vec![col("Todo", 0), col("Doing", 1), col("Done", 2)],
         CardOrder::new(),
         Some("Done".into()),
     )
+    .expect("valid config")
 }
 
 /// `(path, status)` の組を `plan_reconcile_columns` の入力形へ詰める。
@@ -2474,7 +2649,7 @@ fn status_inputs(entries: Vec<(&str, Option<&str>)>) -> Vec<(PathBuf, Option<Str
 /// `columns` の名前を宣言順のまま取り出す。
 fn column_names(config: &Config) -> Vec<&str> {
     config
-        .columns
+        .columns()
         .iter()
         .map(|column| column.name.as_str())
         .collect()
@@ -2504,8 +2679,8 @@ fn plan_reconcile_columns_appends_unknown_status_to_the_tail() {
         vec!["Review"]
     );
     assert_eq!(
-        plan.new_config.columns,
-        vec![
+        plan.new_config.columns(),
+        &[
             col("Todo", 0),
             col("Doing", 1),
             col("Done", 2),
@@ -2563,8 +2738,8 @@ fn plan_reconcile_columns_orders_a_single_batch_by_path_ascending_first_occurren
         column_names(&plan.new_config),
         vec!["Todo", "Doing", "Done", "Blocked", "Review"]
     );
-    assert_eq!(plan.new_config.columns[3].order, 3);
-    assert_eq!(plan.new_config.columns[4].order, 4);
+    assert_eq!(plan.new_config.columns()[3].order, 3);
+    assert_eq!(plan.new_config.columns()[4].order, 4);
 }
 
 #[test]
@@ -2602,7 +2777,7 @@ fn plan_reconcile_columns_adds_a_repeated_unknown_status_only_once() {
 
 #[test]
 fn plan_reconcile_columns_keeps_existing_columns_and_card_order_untouched() {
-    let config = Config::new(
+    let config = Config::try_new(
         vec![
             Column {
                 name: "Todo".into(),
@@ -2614,11 +2789,12 @@ fn plan_reconcile_columns_keeps_existing_columns_and_card_order_untouched() {
         ],
         card_order_of(vec![("Todo", vec!["a.md"])]),
         Some("Done".into()),
-    );
+    )
+    .expect("valid config");
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("b.md", Some("Review"))]));
 
-    assert_eq!(plan.new_config.columns[..2], config.columns[..]);
+    assert_eq!(plan.new_config.columns()[..2], config.columns()[..]);
     assert_eq!(plan.new_config.card_order, config.card_order);
     assert_eq!(plan.new_config.done_column.as_deref(), Some("Done"));
     assert!(
@@ -2646,15 +2822,10 @@ fn plan_reconcile_columns_freezes_the_resolved_done_column_when_unset() {
             columns: vec![col("A", 5), col("B", 5), col("C", 5)],
             expected_done: Some("C"),
         },
-        Case {
-            label: "columns 空では凍結する値が無い",
-            columns: Vec::new(),
-            expected_done: None,
-        },
     ];
 
     for case in cases {
-        let config = Config::new(case.columns, CardOrder::new(), None);
+        let config = Config::try_new(case.columns, CardOrder::new(), None).expect("valid config");
         let before = config.resolved_done_column().cloned();
 
         let plan = config.plan_reconcile_columns(&status_inputs(vec![("z.md", Some("Review"))]));
@@ -2679,7 +2850,8 @@ fn plan_reconcile_columns_freezes_the_resolved_done_column_when_unset() {
 #[test]
 fn plan_reconcile_columns_leaves_done_column_none_on_noop() {
     let base = reconcile_base_config();
-    let config = Config::new(base.columns, base.card_order, None);
+    let config =
+        Config::try_new(base.columns().to_vec(), base.card_order, None).expect("valid config");
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Todo"))]));
 
@@ -2690,7 +2862,12 @@ fn plan_reconcile_columns_leaves_done_column_none_on_noop() {
 #[test]
 fn plan_reconcile_columns_does_not_repair_a_done_column_outside_columns() {
     let base = reconcile_base_config();
-    let config = Config::new(base.columns, base.card_order, Some("Ghost".into()));
+    let config = Config::try_new(
+        base.columns().to_vec(),
+        base.card_order,
+        Some("Ghost".into()),
+    )
+    .expect("valid config");
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
 
@@ -2699,18 +2876,19 @@ fn plan_reconcile_columns_does_not_repair_a_done_column_outside_columns() {
 
 #[test]
 fn plan_reconcile_columns_numbers_new_orders_from_the_existing_maximum() {
-    let config = Config::new(
+    let config = Config::try_new(
         vec![col("A", 0), col("B", 5), col("C", 9)],
         CardOrder::new(),
         Some("C".into()),
-    );
+    )
+    .expect("valid config");
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![
         ("a.md", Some("Review")),
         ("b.md", Some("Blocked")),
     ]));
 
-    let orders: Vec<u32> = plan.new_config.columns[3..]
+    let orders: Vec<u32> = plan.new_config.columns()[3..]
         .iter()
         .map(|column| column.order)
         .collect();
@@ -2719,15 +2897,16 @@ fn plan_reconcile_columns_numbers_new_orders_from_the_existing_maximum() {
 
 #[test]
 fn plan_reconcile_columns_saturates_the_order_without_panicking() {
-    let config = Config::new(
+    let config = Config::try_new(
         vec![col("A", 0), col("B", u32::MAX)],
         CardOrder::new(),
         Some("B".into()),
-    );
+    )
+    .expect("valid config");
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
 
-    assert_eq!(plan.new_config.columns[2].order, u32::MAX);
+    assert_eq!(plan.new_config.columns()[2].order, u32::MAX);
     assert_eq!(
         display_order_names(&plan.new_config)
             .last()
@@ -2739,11 +2918,12 @@ fn plan_reconcile_columns_saturates_the_order_without_panicking() {
 
 #[test]
 fn plan_reconcile_columns_keeps_the_default_status_even_when_orders_saturate() {
-    let config = Config::new(
+    let config = Config::try_new(
         vec![col("A", u32::MAX), col("B", u32::MAX)],
         CardOrder::new(),
         Some("B".into()),
-    );
+    )
+    .expect("valid config");
     let before = crate::task::parse::default_status_for(&config);
 
     let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some("Review"))]));
@@ -2790,7 +2970,7 @@ fn plan_reconcile_columns_keeps_status_strings_unnormalized() {
         let plan = config.plan_reconcile_columns(&status_inputs(vec![("a.md", Some(case.status))]));
 
         assert!(!plan.is_noop, "case: {}", case.label);
-        let appended = plan.new_config.columns.last().expect("appended column");
+        let appended = plan.new_config.columns().last().expect("appended column");
         assert_eq!(
             appended.name.as_str().as_bytes(),
             case.status.as_bytes(),
@@ -2816,35 +2996,12 @@ fn plan_reconcile_columns_classifies_the_adopted_config_names() {
             .collect::<Vec<_>>(),
         vec![("", false), (" ", true), ("  Todo  ", true)]
     );
-    assert!(plan.new_config.columns[0].name.is_validated());
+    assert!(plan.new_config.columns()[0].name.is_validated());
     assert!(plan
         .new_config
         .done_column
         .as_ref()
         .is_some_and(ColumnName::is_validated));
-}
-
-#[test]
-fn plan_reconcile_columns_numbers_from_zero_for_an_empty_config() {
-    let config = Config::new(Vec::new(), CardOrder::new(), None);
-
-    let plan = config.plan_reconcile_columns(&status_inputs(vec![
-        ("a.md", Some("Review")),
-        ("b.md", Some("Blocked")),
-    ]));
-
-    assert_eq!(column_names(&plan.new_config), vec!["Review", "Blocked"]);
-    let orders: Vec<u32> = plan
-        .new_config
-        .columns
-        .iter()
-        .map(|column| column.order)
-        .collect();
-    assert_eq!(orders, vec![0, 1]);
-    assert_eq!(
-        plan.new_config.done_column, None,
-        "追加前の解決結果が None なので凍結する値が無い"
-    );
 }
 
 #[test]
@@ -2892,12 +3049,14 @@ fn plan_reconcile_columns_preserves_config_invariants_for_valid_inputs() {
             label: "doneColumn 未設定",
             config: {
                 let base = reconcile_base_config();
-                Config::new(base.columns, base.card_order, None)
+                Config::try_new(base.columns().to_vec(), base.card_order, None)
+                    .expect("valid config")
             },
         },
         Case {
             label: "order 飛び番",
-            config: Config::new(vec![col("A", 3), col("B", 7)], CardOrder::new(), None),
+            config: Config::try_new(vec![col("A", 3), col("B", 7)], CardOrder::new(), None)
+                .expect("valid config"),
         },
     ];
 
@@ -2908,9 +3067,9 @@ fn plan_reconcile_columns_preserves_config_invariants_for_valid_inputs() {
         ]));
         let new_config = &plan.new_config;
 
-        assert!(!new_config.columns.is_empty(), "case: {}", case.label);
+        assert!(!new_config.columns().is_empty(), "case: {}", case.label);
         assert_eq!(
-            validate_unique_column_names(&new_config.columns),
+            validate_unique_column_names(new_config.columns()),
             Ok(()),
             "case: {}",
             case.label
