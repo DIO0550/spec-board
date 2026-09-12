@@ -2,7 +2,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { LabelDefinition } from "@/domains/label-definition";
-import { withDetailProvider } from "../DetailProvider/storybook/decorator";
+import { withDetailProvider } from "@/features/detail/providers/DetailProvider/storybook/decorator";
 import {
   detailAllTasks,
   detailColumns,

@@ -10,6 +10,15 @@
 
 board feature は同じ問題を `BoardCardProvider`（`index.tsx` + `wrapper.tsx` + `storybook/decorator.tsx` + `__tests__/`）で解決済みなので、その規約を detail feature にも適用した。
 
+## Provider の置き場所
+
+2 つの Provider は `src/features/detail/providers/` に置いた（`components/` ではない）。理由は次の 2 点。
+
+- **`src/providers/` には置けない**: `src/providers/` は App ルートで 1 回だけマウントするアプリ横断の状態（toast / project / view）の置き場で、いずれも `@/features/...` を import していない。`DetailProvider` は detail feature の hook（`useChildTasks` 等）を呼ぶため、ここに置くと「共通層 → feature 内部」の依存が生まれる。マウント位置も `DetailScreen` の内側で task ごとに被せるものなので、性質が違う
+- **`components/` とも分ける**: Provider は UI を描画せず context を配るだけで、コンポーネントとは責務が異なる。feature 内に `providers/` サブフォルダを切って「この feature の Provider はここ」と一意に決める
+
+board feature の `BoardCardProvider` / `BoardColumnProvider` / `BoardProviders` は `components/` 配下のままなので、揃えるなら別 Issue で `features/board/providers/` へ移す。
+
 ## なぜ Provider を 2 本に分けたか
 
 `DetailProvider`（表示対象データ・派生値・編集ハンドラの配信）と `DeleteFlowProvider`（削除確認 state + `orphanStrategy` の所有）の 2 本にした。

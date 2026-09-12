@@ -3,10 +3,10 @@ import { DueBadge } from "@/components/DueBadge";
 import { LabelsField } from "@/components/fields/LabelsField";
 import { PriorityField } from "@/components/fields/PriorityField";
 import { StatusField } from "@/components/fields/StatusField";
+import { useDetail } from "@/features/detail/providers/DetailProvider";
 import type { Task } from "@/types/task";
 import type { Result } from "@/utils/result";
 import { Result as ResultDomain } from "@/utils/result";
-import { useDetail } from "../DetailProvider";
 import { LinksSection } from "../LinksSection";
 import { SubIssueSection } from "../SubIssueSection";
 

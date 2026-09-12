@@ -1,8 +1,8 @@
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useDeleteFlowContext } from "@/features/detail/providers/DeleteFlowProvider";
+import { useDetail } from "@/features/detail/providers/DetailProvider";
 import { BrokenParentRow } from "../BrokenParentRow";
-import { useDeleteFlowContext } from "../DeleteFlowProvider";
 import { DetailFields } from "../DetailFields";
-import { useDetail } from "../DetailProvider";
 import { ParentLink } from "../ParentLink";
 
 /** プロパティペインの Props */

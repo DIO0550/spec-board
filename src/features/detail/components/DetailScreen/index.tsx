@@ -3,20 +3,20 @@ import type { LabelDefinition } from "@/domains/label-definition";
 import type { TaskPathLookup } from "@/domains/task-path-lookup";
 import type { TaskProjectionMap } from "@/domains/task-projection";
 import { useEscToClose } from "@/features/detail/hooks/useEscToClose";
-import type { Column } from "@/types/column";
-import type { Task, TaskFilePath, TaskId } from "@/types/task";
 import {
   DeleteFlowProvider,
   type DeleteTaskHandler,
   useDeleteFlowContext,
-} from "../DeleteFlowProvider";
-import { DetailBody } from "../DetailBody";
+} from "@/features/detail/providers/DeleteFlowProvider";
 import {
   type AddLinkHandler,
   DetailProvider,
   type RemoveLinkHandler,
   useDetail,
-} from "../DetailProvider";
+} from "@/features/detail/providers/DetailProvider";
+import type { Column } from "@/types/column";
+import type { Task, TaskFilePath, TaskId } from "@/types/task";
+import { DetailBody } from "../DetailBody";
 import { PropertiesSidebar } from "../PropertiesSidebar";
 
 /** 全画面2ペイン詳細ビューの Props */

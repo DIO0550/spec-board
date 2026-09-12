@@ -1,7 +1,10 @@
 import type { Decorator } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { TaskProjection } from "@/domains/task-projection";
-import { detailColumns, detailTask } from "../../storybook/fixtures";
+import {
+  detailColumns,
+  detailTask,
+} from "@/features/detail/components/storybook/fixtures";
 import { DetailProvider, type DetailProviderProps } from "../index";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */

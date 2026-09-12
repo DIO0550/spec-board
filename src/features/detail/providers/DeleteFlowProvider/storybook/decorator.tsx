@@ -1,6 +1,6 @@
 import type { Decorator } from "@storybook/react-vite";
 import { fn } from "storybook/test";
-import { detailTask } from "../../storybook/fixtures";
+import { detailTask } from "@/features/detail/components/storybook/fixtures";
 import { DeleteFlowProvider, type DeleteFlowProviderProps } from "../index";
 
 /** decorator に渡せる Partial の props（children は Story が当てる） */

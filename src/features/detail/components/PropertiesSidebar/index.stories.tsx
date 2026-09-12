@@ -2,8 +2,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fireEvent, fn, within } from "storybook/test";
 import { TaskPathLookup } from "@/domains/task-path-lookup";
-import { withDeleteFlowProvider } from "../DeleteFlowProvider/storybook/decorator";
-import { withDetailProvider } from "../DetailProvider/storybook/decorator";
+import { withDeleteFlowProvider } from "@/features/detail/providers/DeleteFlowProvider/storybook/decorator";
+import { withDetailProvider } from "@/features/detail/providers/DetailProvider/storybook/decorator";
 import {
   detailAllTasks,
   detailColumns,

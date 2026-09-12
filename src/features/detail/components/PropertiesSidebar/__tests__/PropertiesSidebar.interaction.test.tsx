@@ -1,9 +1,9 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { createDeleteFlowWrapper } from "@/features/detail/providers/DeleteFlowProvider/wrapper";
+import { createDetailWrapper } from "@/features/detail/providers/DetailProvider/wrapper";
 import { Task, type TaskPayload } from "@/types/task";
-import { createDeleteFlowWrapper } from "../../DeleteFlowProvider/wrapper";
-import { createDetailWrapper } from "../../DetailProvider/wrapper";
 import { PropertiesSidebar } from "..";
 
 let container: HTMLDivElement | null = null;

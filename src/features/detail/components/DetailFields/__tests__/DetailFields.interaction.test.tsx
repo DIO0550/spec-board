@@ -2,9 +2,9 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { LabelDefinition } from "@/domains/label-definition";
+import { createDetailWrapper } from "@/features/detail/providers/DetailProvider/wrapper";
 import { getLabels } from "@/lib/tauri";
 import { Task, type TaskPayload } from "@/types/task";
-import { createDetailWrapper } from "../../DetailProvider/wrapper";
 import { DetailFields } from "..";
 
 vi.mock("@/lib/tauri", async () => {

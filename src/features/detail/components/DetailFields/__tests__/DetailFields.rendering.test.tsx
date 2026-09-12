@@ -1,9 +1,9 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { createDetailWrapper } from "@/features/detail/providers/DetailProvider/wrapper";
 import { Task, type TaskPayload } from "@/types/task";
 import { Result } from "@/utils/result";
-import { createDetailWrapper } from "../../DetailProvider/wrapper";
 import { DetailFields } from "..";
 
 let container: HTMLDivElement | null = null;
