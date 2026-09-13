@@ -15,7 +15,7 @@ use super::handler::handle_batch;
 use super::watcher_test_support::{removed_batch, rename_batch, upsert_batch};
 use super::{AdapterContext, EmitFn};
 use crate::config::{ConfigWriter, FsConfigWriter};
-use crate::project::open_test_support::open_from_disk;
+use crate::project::open_test_support::{assert_matches_reopen, open_from_disk};
 use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
 
@@ -82,32 +82,6 @@ fn emitted_events(log: &EmitLog) -> Vec<String> {
         .iter()
         .map(|(event, _)| event.clone())
         .collect()
-}
-
-/// resident state と「新しい `AppState` で開き直した結果」を全フィールド比較する。
-///
-/// 比較対象は reactivation の収束判定と同じ 5 つ。tasks は `HashMap` 同士の比較なので、
-/// children / reverse_links / warnings の並びまで含めて一致していなければ落ちる。
-fn assert_matches_reopen(state: &Arc<AppState>, root: &Path) {
-    let resident = state
-        .require_session_snapshot()
-        .expect("project must be open");
-    let fresh_state = Arc::new(AppState::new());
-    let reopened = open_from_disk(&fresh_state, root);
-
-    assert_eq!(resident.config(), reopened.config(), "config が一致する");
-    assert_eq!(resident.labels(), reopened.labels(), "labels が一致する");
-    assert_eq!(
-        resident.milestones(),
-        reopened.milestones(),
-        "milestones が一致する"
-    );
-    assert_eq!(resident.tasks(), reopened.tasks(), "tasks が一致する");
-    assert_eq!(
-        resident.load_warnings(),
-        reopened.load_warnings(),
-        "load_warnings が一致する"
-    );
 }
 
 #[test]
