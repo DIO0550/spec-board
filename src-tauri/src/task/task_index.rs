@@ -1001,7 +1001,7 @@ impl TaskIndex {
     /// canonical `file_path`（= wire `id`）昇順で並ぶ。`columns` のいずれにも一致しない
     /// `status` のタスクは全カラムの後ろへ回す。
     pub fn sorted_by_board_order(self, config: &Config) -> Vec<Task> {
-        let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
+        let mut sorted_columns: Vec<&Column> = config.columns().iter().collect();
         sorted_columns.sort_by_key(|column| column.order);
         let column_rank: HashMap<&str, usize> = sorted_columns
             .iter()

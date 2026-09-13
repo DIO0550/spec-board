@@ -98,7 +98,7 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> Config {
     for (column, paths) in card_order {
         order.set_column(column, paths);
     }
-    Config::new(
+    Config::try_new(
         columns
             .iter()
             .enumerate()
@@ -112,6 +112,7 @@ fn board_config(columns: &[&str], card_order: &[(&str, &[&str])]) -> Config {
         order,
         None,
     )
+    .expect("valid config")
 }
 
 /// command 層と同じ手順（board 順に整列してから `TaskIndex` を組み直す）で forest を作る。

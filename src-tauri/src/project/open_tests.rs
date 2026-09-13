@@ -512,7 +512,7 @@ fn empty_directory_returns_default_columns_and_no_tasks() {
 
     assert!(payload.tasks.is_empty());
     let default_columns: Vec<String> = Config::default()
-        .columns
+        .columns()
         .iter()
         .map(|c| c.name.as_str().to_string())
         .collect();
@@ -680,7 +680,7 @@ fn bootstrap_generates_columns_from_task_statuses() {
         payload.columns
     );
     let saved = read_saved_config(dir.path());
-    let saved_columns: Vec<&str> = saved.columns.iter().map(|c| c.name.as_str()).collect();
+    let saved_columns: Vec<&str> = saved.columns().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(vec!["Doing", "Todo", "Done"], saved_columns);
     assert_eq!(saved.done_column.as_deref(), Some("Done"));
 }
@@ -758,7 +758,7 @@ fn bootstrap_writes_default_config_for_empty_directory() {
     let payload = open_with_noop(Arc::clone(&state), &raw).expect("should succeed");
 
     let default_columns: Vec<String> = Config::default()
-        .columns
+        .columns()
         .iter()
         .map(|c| c.name.as_str().to_string())
         .collect();
@@ -807,7 +807,7 @@ fn config_write_failure_falls_back_to_default_columns_with_warning() {
         .expect("config write failure must not fail the open");
 
     let default_columns: Vec<String> = Config::default()
-        .columns
+        .columns()
         .iter()
         .map(|c| c.name.as_str().to_string())
         .collect();
@@ -837,7 +837,7 @@ fn broken_config_is_not_replaced_by_bootstrap() {
     let payload = open_with_noop(Arc::clone(&state), &raw).expect("should fall back and succeed");
 
     let default_columns: Vec<String> = Config::default()
-        .columns
+        .columns()
         .iter()
         .map(|c| c.name.as_str().to_string())
         .collect();
@@ -940,7 +940,7 @@ fn updates_app_state_fields_on_success() {
     );
     // config 不在なので、置いた 1 件の status から生成された config が state に入る。
     let cfg = state.test_config().expect("readable").expect("config set");
-    let column_names: Vec<&str> = cfg.columns.iter().map(|c| c.name.as_str()).collect();
+    let column_names: Vec<&str> = cfg.columns().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(vec!["Todo"], column_names);
     let snapshot = state.test_tasks_snapshot().expect("readable");
     assert_eq!(1, snapshot.len());
@@ -962,7 +962,7 @@ fn config_load_failure_for_invalid_json_falls_back_with_warning() {
     let payload = open_with_noop(Arc::clone(&state), &raw)
         .expect("invalid config should fall back to the default config");
 
-    assert_eq!(Config::default().columns.len(), payload.columns.len());
+    assert_eq!(Config::default().columns().len(), payload.columns.len());
     assert_eq!(1, payload.load_warnings.len());
     assert_eq!(
         crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback,
@@ -990,8 +990,8 @@ fn config_load_failure_for_empty_columns_falls_back_with_warning() {
         .expect("invalid config validation should fall back to defaults");
 
     assert_eq!(
-        Config::default().columns,
-        state.test_config().expect("readable").unwrap().columns
+        Config::default().columns(),
+        state.test_config().expect("readable").unwrap().columns()
     );
     assert!(payload.load_warnings.iter().any(|warning| {
         warning.code == crate::project::load_warning::ProjectLoadWarningCode::ConfigFallback
@@ -1441,18 +1441,8 @@ fn payload_serialization_uses_camel_case() {
 }
 
 #[test]
-fn build_payload_returns_empty_columns_for_config_with_no_columns() {
-    let cfg = Config::new(Vec::new(), CardOrder::default(), None);
-
-    let payload = super::build_payload_from_parts(Vec::new(), &cfg, zero_session());
-
-    assert!(payload.tasks.is_empty());
-    assert!(payload.columns.is_empty());
-}
-
-#[test]
 fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
-    let cfg = Config::new(
+    let cfg = Config::try_new(
         vec![
             Column {
                 name: "Z".into(),
@@ -1475,7 +1465,8 @@ fn build_payload_sorts_tasks_by_id_and_columns_by_order() {
         ],
         CardOrder::default(),
         None,
-    );
+    )
+    .expect("valid config");
     let task_b = crate::task::task_index::ParsedTaskBuilder::new("b.md")
         .title("B")
         .status("A")
@@ -1991,7 +1982,7 @@ fn open_payload_projections_match_get_tasks_projections() {
 /// task projection は filePath key の内容だけを持ち、入力順に依存しない。
 #[test]
 fn task_projection_semantics_do_not_depend_on_input_order() {
-    let cfg = Config::new(
+    let cfg = Config::try_new(
         vec![Column {
             name: "Todo".into(),
             order: 0,
@@ -2003,7 +1994,8 @@ fn task_projection_semantics_do_not_depend_on_input_order() {
             vec!["tasks/c.md".to_string()],
         )])),
         None,
-    );
+    )
+    .expect("valid config");
     let parent = sample_task_with_parent("tasks/p.md", None);
     let child = sample_task_with_parent("tasks/c.md", Some("tasks/p.md"));
 
@@ -3103,9 +3095,9 @@ fn reconcile_appends_unknown_status_column_to_payload_and_disk() {
         vec!["Todo", "Doing", "Done", "Review"]
     );
     let saved = read_saved_config(dir.path());
-    let saved_names: Vec<&str> = saved.columns.iter().map(|c| c.name.as_str()).collect();
+    let saved_names: Vec<&str> = saved.columns().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(saved_names, vec!["Todo", "Doing", "Done", "Review"]);
-    assert_eq!(saved.columns[3].order, 3);
+    assert_eq!(saved.columns()[3].order, 3);
     assert_eq!(saved.done_column.as_deref(), Some("Done"));
 }
 
@@ -3133,7 +3125,7 @@ fn reconcile_keeps_user_column_order_and_card_order() {
 
     let saved = read_saved_config(dir.path());
     assert_eq!(
-        saved.columns[..3].to_vec(),
+        saved.columns()[..3].to_vec(),
         vec![
             Column {
                 name: "Alpha".into(),
@@ -3155,8 +3147,8 @@ fn reconcile_keeps_user_column_order_and_card_order() {
             },
         ]
     );
-    assert_eq!(saved.columns[3].name.as_str(), "Review");
-    assert_eq!(saved.columns[3].order, 3);
+    assert_eq!(saved.columns()[3].name.as_str(), "Review");
+    assert_eq!(saved.columns()[3].order, 3);
     assert_eq!(
         saved.card_order.get("Beta").map(|paths| paths
             .iter()
@@ -3251,7 +3243,7 @@ fn reconcile_does_not_repair_a_done_column_outside_columns() {
 
     let saved = read_saved_config(dir.path());
     assert_eq!(saved.done_column.as_deref(), Some("Ghost"));
-    let names: Vec<&str> = saved.columns.iter().map(|c| c.name.as_str()).collect();
+    let names: Vec<&str> = saved.columns().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["Todo", "Review"]);
 }
 
@@ -3454,7 +3446,7 @@ fn reconcile_persists_an_empty_status_column_verbatim() {
 
     assert_eq!(column_names_of(&first), vec!["Todo", "Doing", "Done", ""]);
     let saved = read_saved_config(dir.path());
-    assert_eq!(saved.columns[3].name.as_str(), "");
+    assert_eq!(saved.columns()[3].name.as_str(), "");
     assert_eq!(column_names_of(&second), column_names_of(&first));
     assert_eq!(calls_after_first, writer.calls(), "reopen で書き直さない");
 }

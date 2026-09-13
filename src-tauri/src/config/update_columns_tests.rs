@@ -31,11 +31,12 @@ fn col(name: &str, order: u32) -> Column {
 }
 
 fn config_with(columns: Vec<Column>, done: Option<&str>) -> Config {
-    Config::new(
+    Config::try_new(
         columns,
         CardOrder::new(),
         done.map(ColumnName::from_lenient),
     )
+    .expect("valid config")
 }
 
 fn config_with_card_order(
@@ -43,11 +44,12 @@ fn config_with_card_order(
     done: Option<&str>,
     card_order: BTreeMap<String, Vec<String>>,
 ) -> Config {
-    Config::new(
+    Config::try_new(
         columns,
         CardOrder::from_raw_map(card_order),
         done.map(ColumnName::from_lenient),
     )
+    .expect("valid config")
 }
 
 /// 指定カラムの並びを `&str` の Vec として取り出す。キーが無ければ空 Vec。
@@ -331,7 +333,7 @@ fn plan_columns_only_reorder_returns_new_config_with_same_names() {
 
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
     assert!(!plan.is_noop);
-    assert_eq!(plan.new_config.columns, new_cols);
+    assert_eq!(plan.new_config.columns(), new_cols);
     assert!(plan.rename_targets.is_empty());
 }
 
@@ -344,7 +346,7 @@ fn plan_columns_only_add_appends_new_column() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert_eq!(plan.new_config.columns, new_cols);
+    assert_eq!(plan.new_config.columns(), new_cols);
 }
 
 #[test]
@@ -364,7 +366,7 @@ fn plan_columns_only_remove_drops_column_and_cleans_card_order() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert_eq!(plan.new_config.columns, new_cols);
+    assert_eq!(plan.new_config.columns(), new_cols);
     assert!(plan.new_config.card_order.get("Todo").is_some());
     assert!(plan.new_config.card_order.get("Done").is_some());
     assert!(plan.new_config.card_order.get("Doing").is_none());
@@ -410,7 +412,7 @@ fn plan_renames_only_swaps_card_order_keys() {
     assert!(plan.new_config.card_order.get("Doing").is_none());
     assert!(plan
         .new_config
-        .columns
+        .columns()
         .iter()
         .any(|c| c.name.as_str() == "In Progress"));
     assert_eq!(
@@ -429,7 +431,7 @@ fn plan_renames_with_columns_uses_columns_as_final_shape() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert_eq!(plan.new_config.columns, final_cols);
+    assert_eq!(plan.new_config.columns(), final_cols);
 }
 
 #[test]
@@ -454,7 +456,7 @@ fn plan_rename_from_equals_to_is_skipped_idempotently() {
         ..Default::default()
     };
     let plan = config.plan_update_columns(&args, &[]).expect("ok");
-    assert_eq!(plan.new_config.columns, config.columns);
+    assert_eq!(plan.new_config.columns(), config.columns());
     assert!(plan.rename_targets.is_empty());
 }
 
@@ -630,7 +632,7 @@ fn plan_update_columns_classifies_all_adopted_config_names() {
 
     assert_eq!(
         plan.new_config
-            .columns
+            .columns()
             .iter()
             .map(|column| (column.name.as_str(), column.name.is_validated()))
             .collect::<Vec<_>>(),
@@ -943,9 +945,9 @@ fn e2e_columns_reorder_writes_config_json_and_guide_md() {
     .expect("ok");
 
     let on_disk = read_config_json(dir.path());
-    assert_eq!(on_disk.columns, new_cols);
+    assert_eq!(on_disk.columns(), new_cols);
     let state_cfg = state.test_config().unwrap().unwrap();
-    assert_eq!(state_cfg.columns, new_cols);
+    assert_eq!(state_cfg.columns(), new_cols);
 
     let guide = fs::read_to_string(dir.path().join(".spec-board/GUIDE.md")).unwrap();
     assert!(guide.contains("- Done"));
@@ -1049,8 +1051,8 @@ fn e2e_renames_updates_md_status_and_tasks_cache() {
     assert_eq!(a.status().as_str(), "To Do");
 
     let on_disk = read_config_json(dir.path());
-    assert!(on_disk.columns.iter().any(|c| c.name.as_str() == "To Do"));
-    assert!(!on_disk.columns.iter().any(|c| c.name.as_str() == "Todo"));
+    assert!(on_disk.columns().iter().any(|c| c.name.as_str() == "To Do"));
+    assert!(!on_disk.columns().iter().any(|c| c.name.as_str() == "Todo"));
 }
 
 #[test]
@@ -1896,7 +1898,7 @@ fn e2e_combined_columns_renames_done_column_applied_in_order() {
     .expect("ok");
 
     let on_disk = read_config_json(dir.path());
-    assert_eq!(on_disk.columns, final_cols);
+    assert_eq!(on_disk.columns(), final_cols);
     assert_eq!(read_status(dir.path(), "tasks/a.md"), "To Do");
 }
 

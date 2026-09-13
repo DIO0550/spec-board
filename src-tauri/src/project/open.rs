@@ -85,7 +85,7 @@ use std::sync::Arc;
 
 use crate::config::column_name::ColumnName;
 use crate::config::{
-    build_config_from_statuses, label_registry_store, load_persisted, milestone_registry_store,
+    label_registry_store, load_persisted, milestone_registry_store,
     write_guide_markdown_best_effort, Column, Config, ConfigWriter, FsConfigWriter, LabelRegistry,
     LabelRegistryStore, LoadLabelsError, LoadMilestonesError, MilestoneRegistry,
     MilestoneRegistryStore,
@@ -566,23 +566,19 @@ fn bootstrap_config(
 
 /// スキャン済みタスクの status から config を組み立てる。
 ///
-/// タスクが 0 件のとき `build_config_from_statuses` は `columns: []` を返すが、
-/// カラムのないボードは開けないため、この層で既定 3 カラムに倒す
-/// （純粋関数側ではなく上位フローの責務という仕様上の切り分けに従う）。
+/// タスクが 0 件のときは [`Config::from_statuses`] 自身が既定 3 カラム
+/// （[`Config::default`]）へ収束させるため、この層に分岐は持たない
+/// （`Config::try_new` を唯一の構築境界にするための切り分け）。
 ///
 /// `Task.status` は非 `Option` で、frontmatter に status が無いタスクはパース時に
 /// `default_status`（config 不在時は `"Todo"`）へ補完済み。この値は
-/// `build_config_from_statuses` が `None` に対して使うフォールバックと同じなので、
+/// `Config::from_statuses` が `None` に対して使うフォールバックと同じなので、
 /// ここで `None` へ戻す必要はない。
 fn bootstrap_config_from_tasks(tasks: &HashMap<CanonicalTaskPath, Task>) -> Config {
-    if tasks.is_empty() {
-        return Config::default();
-    }
-
-    build_config_from_statuses(&status_inputs_from_tasks(tasks))
+    Config::from_statuses(&status_inputs_from_tasks(tasks))
 }
 
-/// スキャン済みタスクを [`build_config_from_statuses`] /
+/// スキャン済みタスクを [`Config::from_statuses`] /
 /// [`Config::plan_reconcile_columns`] が共有する `(path, status)` 列へ詰め替える。
 ///
 /// `Task.status` は非 `Option` で、frontmatter に status が無いタスクはパース時に
@@ -966,7 +962,7 @@ fn build_payload_from_parts_with_warnings(
     // （`get_tasks` も同じ関数を通す。ここに手順をコピーしないこと）。
     let view = TaskIndex::project_board_view(tasks, config);
 
-    let mut sorted_columns: Vec<&Column> = config.columns.iter().collect();
+    let mut sorted_columns: Vec<&Column> = config.columns().iter().collect();
     sorted_columns.sort_by_key(|column| column.order);
     let columns = sorted_columns
         .into_iter()

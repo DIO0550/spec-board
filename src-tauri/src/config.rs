@@ -6,7 +6,8 @@
 //!
 //! # 子モジュールの責務
 //! - [`core`] — `Config` / `Column` / `ColumnColor` などコアスキーマ型と、
-//!   GUIDE.md 生成・`update_columns` 純粋計算・`build_config_from_statuses` 等のドメインロジック
+//!   GUIDE.md 生成・`update_columns` 純粋計算・`Config` smart constructor
+//!   （`try_new` / `from_statuses`）等のドメインロジック
 //! - [`card_order`] — `cardOrder` の newtype `CardOrder`（canonical パス + 同一カラム内一意）
 //! - [`migration`] — `config.json` の `version` マイグレーションフック
 //! - [`schema_version`] — 正規化済み設定が保持する現行スキーマバージョン VO
@@ -42,8 +43,8 @@ pub use clock::{Clock, SystemClock};
 
 pub use card_order::CardOrder;
 pub use core::{
-    build_config_from_statuses, generate_guide_markdown, generate_guide_markdown_for_columns,
-    validate_unique_column_names, write_guide_markdown_best_effort, Column, ColumnColor, Config,
+    generate_guide_markdown, generate_guide_markdown_for_columns, validate_unique_column_names,
+    write_guide_markdown_best_effort, Column, ColumnColor, Config, ConfigInvariantError,
     ReconcileColumnsPlan, RenameTarget, UpdateCardOrderPlanError, UpdateColumnsPlan, WipLimit,
 };
 pub use load::{load_or_default, load_persisted, ConfigWriter, FsConfigWriter, LoadConfigError};

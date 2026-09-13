@@ -100,10 +100,11 @@ pub(crate) fn normalized_task_file_path(path: &Path) -> TaskFilePath {
     }
 }
 
-/// `Config::columns` の `order` 昇順先頭の `name` を default status として返す。
+/// `Config::columns()` の `order` 昇順先頭の `name` を default status として返す。
+/// columns 非空は `Config::try_new` が保証するため、末尾のフォールバックには実質到達しない。
 pub(crate) fn default_status_for(config: &Config) -> ColumnName {
     config
-        .columns
+        .columns()
         .iter()
         .min_by_key(|column| column.order)
         .map(|column| ColumnName::from_lenient(column.name.as_str()))

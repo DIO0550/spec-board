@@ -797,7 +797,7 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
     // spawn 時点の既定は "Todo"。カラム更新で先頭が "Backlog" に変わった状況を作る。
     commit_config(
         &state,
-        crate::config::Config::new(
+        crate::config::Config::try_new(
             vec![crate::config::Column {
                 name: "Backlog".into(),
                 order: 0,
@@ -806,7 +806,8 @@ fn rescan_resolves_the_default_status_from_the_current_config() {
             }],
             Default::default(),
             None,
-        ),
+        )
+        .expect("valid config"),
     );
     write_md(
         dir.path(),
@@ -853,7 +854,7 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
     let (state, ctx, _log) = build_installed_ctx(dir.path());
     commit_config(
         &state,
-        crate::config::Config::new(
+        crate::config::Config::try_new(
             vec![crate::config::Column {
                 name: "Backlog".into(),
                 order: 0,
@@ -862,7 +863,8 @@ fn upsert_resolves_the_default_status_from_the_current_config() {
             }],
             Default::default(),
             None,
-        ),
+        )
+        .expect("valid config"),
     );
     let abs = write_md(
         dir.path(),
@@ -948,7 +950,7 @@ impl TaskIo for ConfigSwappingIo {
             *swapped = true;
             commit_config(
                 &self.state,
-                crate::config::Config::new(
+                crate::config::Config::try_new(
                     vec![crate::config::Column {
                         name: "Backlog".into(),
                         order: 0,
@@ -957,7 +959,8 @@ impl TaskIo for ConfigSwappingIo {
                     }],
                     Default::default(),
                     None,
-                ),
+                )
+                .expect("valid config"),
             );
         }
         self.inner.read(path)
@@ -1128,7 +1131,7 @@ fn seed_config_json(state: &AppState, root: &Path, json: &str) {
 
 fn column_names_of(config: &crate::config::Config) -> Vec<&str> {
     config
-        .columns
+        .columns()
         .iter()
         .map(|column| column.name.as_str())
         .collect()

@@ -20,7 +20,7 @@ use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn sample_config() -> Config {
-    Config::new(
+    Config::try_new(
         vec![Column {
             name: "Todo".into(),
             order: 0,
@@ -30,6 +30,7 @@ fn sample_config() -> Config {
         CardOrder::default(),
         None,
     )
+    .expect("valid config")
 }
 
 fn sample_labels() -> LabelRegistry {

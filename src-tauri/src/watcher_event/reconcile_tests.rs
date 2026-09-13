@@ -212,7 +212,7 @@ fn an_unknown_status_adds_a_column_and_still_converges() {
     assert!(
         resident
             .config()
-            .columns
+            .columns()
             .iter()
             .any(|column| column.name.as_str() == "Backlog"),
         "未知 status のカラムが追加される"

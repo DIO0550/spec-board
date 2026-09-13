@@ -77,7 +77,7 @@ DDD の Aggregate は「不変条件を一緒に守るべきオブジェクト�
 |:--|:--|:--|
 | `Task` | 1 タスクの不変条件（canonical file_path を唯一の identity とし、warnings は parse / graph 由来） | `src/task/task_index.rs` |
 | `TaskIndex` | タスク集合の整合性（parent 存在、循環検出、children / reverse_links 派生） | `src/task/task_index.rs` |
-| `Config` | 現行schema version、カラム集合と done_column の整合性、card_order の clean | `src/config/core.rs` |
+| `Config` | 現行schema version、columns 非空・カラム名一意（`try_new` が構築時に強制）、card_order の clean | `src/config/core.rs` |
 | `LabelRegistry` | ラベル定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/label_registry.rs` |
 | `MilestoneRegistry` | マイルストーン定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/milestone_registry.rs` |
 | `AppState` | 全 Mutex の lock 取得順序契約 | `src/state.rs` |
@@ -106,7 +106,12 @@ Aggregate 境界の引き方の指針:
      store は raw DTO の構文エラーを `Parse`、構築時の不変条件違反を既存の
      `Validation` に分類する。これにより serde derive や struct literal から
      aggregate invariant を迂回できず、同時に YAML / IPC の外部形状を維持する。
-   - `Config.version` はprivateな `SchemaVersion` VOで、`Config::new` と
+   - `Config` も同方式。`columns` を private にし、`Config::try_new` が
+     「columns 非空・カラム名一意」を検証する唯一の構築境界になる。`Deserialize` は
+     `pub(crate)` の `RawConfig` を受けてから `try_new` を通し、`load.rs` は
+     `RawConfig` を直接読んで `LoadConfigError` の variant を保つ。詳細は
+     [`config-smart-constructor.md`](./config-smart-constructor.md)。
+   - `Config.version` はprivateな `SchemaVersion` VOで、`Config::try_new` と
      `Config::default` は常に `SchemaVersion::CURRENT` を設定する。legacy / futureの
      raw `u32` はload adapterとmigrationだけが扱い、normalized `Config` の
      `Deserialize` はCURRENT以外を拒否する。
