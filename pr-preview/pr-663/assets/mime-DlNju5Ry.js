@@ -1,0 +1,1 @@
+import{n as e}from"./chunk-BneVvdWh.js";var t,n,r=e((()=>{t=`application/x-spec-board-task`,n=`application/x-spec-board-column`}));export{t as n,r,n as t};
