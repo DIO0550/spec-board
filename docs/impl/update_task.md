@@ -58,6 +58,13 @@ parent変更時のstrict hierarchy検証はI/O前のvalidationとして残すが
 scalar / labels / body / title / status / priorityだけの更新でも省略しない。これによりコマンド直後と
 同じdisk状態で再openした結果を一致させる。
 
+> **#454 以降の読み替え**: 上記 1〜5 は `snapshot.tasks().apply(TaskChange::Upserted(updated_task))`
+> に集約された。`ResolvedTaskSet` は `TaskCatalog`（`src/task/task_catalog.rs`）に昇格し、
+> 手順 4 の一括置換は `session.replace_tasks(change_set.into_catalog())`、手順 5 の取り直しは
+> `change_set.task(&cache_key)` になる。`ResolvedTaskSet::validate_strict` は free function
+> `validate_strict_candidates`（`task_index.rs`）に改名されたが、責務は同じ。詳細は
+> [`task-catalog.md`](./task-catalog.md)。
+
 ### `validate_with_new_task` ではなく `ResolvedTaskSet::validate_strict` を使う理由
 
 `validate_with_new_task` は新規追加用 API。既存 task を `push` する前提なので、
