@@ -1,7 +1,6 @@
 //! `add_link` Tauri command と effect 層実装。
 
 use std::io::ErrorKind;
-use std::path::Path;
 use std::sync::Arc;
 
 use tauri::State;
@@ -15,8 +14,8 @@ use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_catalog::TaskCatalog;
-use crate::task::task_index::{AddLinkOutcome, ExternalTaskChange, ParsedTask, Task};
+use crate::task::task_catalog::TaskChange;
+use crate::task::task_index::{AddLinkOutcome, Task};
 
 /// `add_link` Tauri command 薄層。
 #[tauri::command]
@@ -86,12 +85,26 @@ pub(crate) fn add_link_impl(
             } => (updated_task, file_content, target_normalized),
         };
 
-        let (next_tasks, returned) = apply_add_link_to_cache(
-            snapshot.tasks(),
-            &source_rel,
-            &target_normalized,
-            &updated_task,
-        )?;
+        if !snapshot
+            .tasks()
+            .contains(&CanonicalTaskPath::new(&target_normalized))
+        {
+            return Err(AddLinkError::TargetVanished {
+                path: target_normalized,
+            }
+            .into());
+        }
+        let source_key = CanonicalTaskPath::from_path(&source_rel);
+        let change_set = snapshot
+            .tasks()
+            .apply(TaskChange::Upserted(Box::new(updated_task)))?;
+        let returned = change_set
+            .task(&source_key)
+            .cloned()
+            .ok_or_else(|| AddLinkError::SourceVanished {
+                path: source_key.as_str().to_string(),
+            })
+            .map_err(AddLinkCommandError::from)?;
         let registered_paths = vec![source_abs.clone()];
         resources.write_ignore().register(&source_abs)?;
         if let Err(error) = io.write_existing(&source_abs, file_content.as_bytes()) {
@@ -108,45 +121,11 @@ pub(crate) fn add_link_impl(
             ResyncSource::Tasks { task_io: io },
             "add_link",
             move |session| {
-                session.replace_tasks(next_tasks);
+                session.replace_tasks(change_set.into_catalog());
                 returned
             },
         )
     })
-}
-
-/// planned link追加をresident catalogへ適用する。
-fn apply_add_link_to_cache(
-    cache: &TaskCatalog,
-    source_rel: &Path,
-    target_normalized: &str,
-    updated_task: &ParsedTask,
-) -> Result<(TaskCatalog, Task), AddLinkCommandError> {
-    let source_key = CanonicalTaskPath::from_path(source_rel);
-    if !cache.contains(&source_key) {
-        return Err(AddLinkError::SourceVanished {
-            path: source_key.as_str().to_string(),
-        }
-        .into());
-    }
-    if !cache.contains(&CanonicalTaskPath::new(target_normalized)) {
-        return Err(AddLinkError::TargetVanished {
-            path: target_normalized.to_string(),
-        }
-        .into());
-    }
-    let resolved = cache
-        .to_index()
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(updated_task.clone())))?
-        .tasks;
-    let returned = resolved
-        .get(&source_key)
-        .cloned()
-        .ok_or_else(|| AddLinkError::SourceVanished {
-            path: source_key.as_str().to_string(),
-        })
-        .map_err(AddLinkCommandError::from)?;
-    Ok((resolved, returned))
 }
 
 #[cfg(test)]

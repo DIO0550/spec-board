@@ -6,8 +6,9 @@
 
 use std::path::PathBuf;
 
-use super::{ExternalTaskChange, Task, TaskIndex};
+use super::{Task, TaskIndex};
 use crate::task::parse::{task_from_markdown, TaskParseContext};
+use crate::task::task_catalog::TaskChange;
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::warning::TaskWarningCode;
 
@@ -44,12 +45,12 @@ fn task_by_path<'a>(tasks: &'a [Task], file_path: &str) -> &'a Task {
         .unwrap_or_else(|| panic!("{file_path} must be present"))
 }
 
-fn removed(file_path: &str) -> ExternalTaskChange {
-    ExternalTaskChange::Removed(TaskFilePath::from(file_path.to_string()))
+fn removed(file_path: &str) -> TaskChange {
+    TaskChange::Removed(TaskFilePath::from(file_path.to_string()))
 }
 
-fn upserted(task: Task) -> ExternalTaskChange {
-    ExternalTaskChange::Upserted(Box::new(task.to_parsed_task()))
+fn upserted(task: Task) -> TaskChange {
+    TaskChange::Upserted(Box::new(task.to_parsed_task()))
 }
 
 fn has_warning(task: &Task, code: TaskWarningCode) -> bool {
@@ -102,7 +103,7 @@ fn body_only_upsert_leaves_the_other_tasks_untouched() {
     edited.body = "更新後の本文".to_string();
 
     let outcome = index
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(edited)))
+        .rebuild_with_external_change(TaskChange::Upserted(Box::new(edited)))
         .expect("body edit must not fail");
 
     assert_eq!(

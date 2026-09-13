@@ -35,7 +35,7 @@ use crate::task::projection::{
 };
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
-use crate::task::task_catalog::TaskCatalog;
+use crate::task::task_catalog::{TaskCatalog, TaskChange};
 use crate::task::task_content::TaskContent;
 use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
@@ -506,19 +506,6 @@ pub enum ParentValidationFailure {
         parent: String,
         reason: ParentHierarchyErrorReason,
     },
-}
-
-/// watcher取込とmutation commandがcanonical resolverへ渡すcandidate変更1件。
-///
-/// watcherのrenameはfs層で`removed(from)` + `upserted(to)`へ分解され、mutationも
-/// 書き込み前planを同じupsert/removeで表すため、rename専用variantは持たない。
-/// `ParsedTask` は `TaskFilePath` より大きいため、variant 間の差を抑える目的で
-/// `Upserted` だけ box に載せる。
-pub(crate) enum ExternalTaskChange {
-    /// 作成または更新。parse-only candidateで同一 path のslotを差し替える。
-    Upserted(Box<ParsedTask>),
-    /// 削除。この cache key のタスクを取り除く。
-    Removed(TaskFilePath),
 }
 
 /// watcher / mutationのcandidate変更を適用し、派生値を作り直した結果。
@@ -1162,7 +1149,7 @@ impl TaskIndex {
     /// `children` / `reverse_links` だけ。
     pub(crate) fn rebuild_with_external_change(
         self,
-        change: ExternalTaskChange,
+        change: TaskChange,
     ) -> Result<ExternalChangeOutcome, TaskParseError> {
         let before = self.tasks.clone();
         let mut candidates: Vec<ParsedTask> = self
@@ -1171,14 +1158,12 @@ impl TaskIndex {
             .map(|task| task.to_parsed_task())
             .collect();
         let target = match &change {
-            ExternalTaskChange::Upserted(task) => {
-                normalize_task_path_for_lookup(task.file_path.as_str())
-            }
-            ExternalTaskChange::Removed(path) => normalize_task_path_for_lookup(path.as_str()),
+            TaskChange::Upserted(task) => normalize_task_path_for_lookup(task.file_path.as_str()),
+            TaskChange::Removed(path) => normalize_task_path_for_lookup(path.as_str()),
         };
 
         match change {
-            ExternalTaskChange::Upserted(task) => {
+            TaskChange::Upserted(task) => {
                 match candidates
                     .iter_mut()
                     .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
@@ -1187,7 +1172,7 @@ impl TaskIndex {
                     None => candidates.push(*task),
                 }
             }
-            ExternalTaskChange::Removed(_) => {
+            TaskChange::Removed(_) => {
                 candidates
                     .retain(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != target);
             }

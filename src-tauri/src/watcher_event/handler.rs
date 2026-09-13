@@ -20,8 +20,9 @@ use crate::task::parse::{
     default_status_for, normalized_task_file_path, task_from_markdown, TaskParseContext,
 };
 use crate::task::rebuild::rebuild_tasks_from_disk_with_report;
+use crate::task::task_catalog::TaskChange;
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::{ExternalChangeOutcome, ExternalTaskChange};
+use crate::task::task_index::ExternalChangeOutcome;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
@@ -321,7 +322,7 @@ fn handle_upsert(
     let reconciled = match snapshot
         .tasks()
         .to_index()
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task)))
+        .rebuild_with_external_change(TaskChange::Upserted(Box::new(task)))
     {
         Ok(outcome) => outcome,
         Err(err) => {
@@ -578,7 +579,7 @@ fn handle_delete(
     let reconciled = match snapshot
         .tasks()
         .to_index()
-        .rebuild_with_external_change(ExternalTaskChange::Removed(rel_path.clone()))
+        .rebuild_with_external_change(TaskChange::Removed(rel_path.clone()))
     {
         Ok(outcome) => outcome,
         Err(err) => {

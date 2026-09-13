@@ -1,7 +1,6 @@
 //! `update_task` Tauri command と effect 層実装。
 
 use std::io::ErrorKind;
-use std::path::Path;
 use std::sync::Arc;
 
 use tauri::State;
@@ -13,8 +12,8 @@ use crate::task::document::{Patch, TaskDocument};
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_catalog::TaskCatalog;
-use crate::task::task_index::{ExternalTaskChange, Task, UpdateTaskOutcome};
+use crate::task::task_catalog::TaskChange;
+use crate::task::task_index::Task;
 use crate::task::update::args::UpdateTaskArgs;
 use crate::task::update::error::{UpdateTaskCommandError, UpdateTaskError};
 
@@ -72,7 +71,18 @@ pub(crate) fn update_task_impl(
             .plan_update(project_root.as_path(), intent, &existing_task, parsed)
             .map_err(UpdateTaskCommandError::Validation)?;
 
-        let (next_tasks, returned) = apply_update_to_cache(snapshot.tasks(), &rel_path, &outcome)?;
+        let cache_key = CanonicalTaskPath::from_path(&rel_path);
+        let change_set = snapshot
+            .tasks()
+            .apply(TaskChange::Upserted(Box::new(outcome.updated_task)))
+            .map_err(UpdateTaskError::from)?;
+        let returned =
+            change_set
+                .task(&cache_key)
+                .cloned()
+                .ok_or(UpdateTaskCommandError::Validation(
+                    UpdateTaskError::FileNotFound(cache_key.as_path_buf()),
+                ))?;
         let registered_paths = vec![abs.clone()];
         resources.write_ignore().register(&abs)?;
         if let Err(error) = io.write_existing(&abs, outcome.file_content.as_bytes()) {
@@ -89,32 +99,11 @@ pub(crate) fn update_task_impl(
             ResyncSource::Tasks { task_io: io },
             "update_task",
             move |session| {
-                session.replace_tasks(next_tasks);
+                session.replace_tasks(change_set.into_catalog());
                 returned
             },
         )
     })
-}
-
-/// planned updateをresident catalogへ適用し、commit後の戻り値を作る。
-fn apply_update_to_cache(
-    cache: &TaskCatalog,
-    rel_path: &Path,
-    outcome: &UpdateTaskOutcome,
-) -> Result<(TaskCatalog, Task), UpdateTaskCommandError> {
-    let cache_key = CanonicalTaskPath::from_path(rel_path);
-    let resolved = cache
-        .to_index()
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(
-            outcome.updated_task.clone(),
-        )))
-        .map_err(UpdateTaskError::from)?;
-    let returned = resolved.tasks.get(&cache_key).cloned();
-
-    let returned = returned.ok_or(UpdateTaskCommandError::Validation(
-        UpdateTaskError::FileNotFound(cache_key.as_path_buf()),
-    ))?;
-    Ok((resolved.tasks, returned))
 }
 
 #[cfg(test)]

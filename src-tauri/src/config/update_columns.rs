@@ -27,7 +27,7 @@ use crate::task::document::{Patch, TaskDocument, TaskDocumentError, TaskPatch};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::parse::TaskParseError;
-use crate::task::task_catalog::TaskCatalog;
+use crate::task::task_catalog::TaskChange;
 use spec_board_fs::config::config_io;
 use spec_board_fs::watcher::write_ignore::{WriteIgnoreError, WriteIgnoreRegistry};
 
@@ -214,29 +214,22 @@ pub(crate) fn update_columns_impl_with_loader(
         }
 
         let project_root = snapshot.project_root().as_path().to_path_buf();
-        let renamed_statuses: HashMap<CanonicalTaskPath, &str> = plan
+        // rename 対象だけを status 差し替えの candidate にし、派生値は 1 回の
+        // rebuild で作り直す。`rename_targets` は snapshot の task から plan した
+        // ものなので、`get` が `None` になる identity は無い（防御的に読み飛ばす）。
+        let changes: Vec<TaskChange> = plan
             .rename_targets
             .iter()
-            .map(|target| {
-                (
-                    CanonicalTaskPath::new(target.rel_path.as_str()),
-                    target.new_status.as_str(),
-                )
+            .filter_map(|target| {
+                let identity = CanonicalTaskPath::new(target.rel_path.as_str());
+                snapshot.tasks().get(&identity).map(|task| {
+                    TaskChange::Upserted(Box::new(
+                        task.with_status_candidate(target.new_status.as_str()),
+                    ))
+                })
             })
             .collect();
-        let candidates = snapshot
-            .tasks()
-            .iter()
-            .map(|task| {
-                let path = CanonicalTaskPath::from_file_path(task.file_path());
-                renamed_statuses.get(&path).map_or_else(
-                    || task.to_parsed_task(),
-                    |status| task.with_status_candidate(status),
-                )
-            })
-            .collect();
-        // resident 由来の candidate なので identity は一意。duplicates は常に空。
-        let next_tasks = TaskCatalog::resolve(candidates)?.catalog;
+        let next_tasks = snapshot.tasks().apply_all(changes)?.into_catalog();
 
         // resident plan完成後、disk read/marker/writeより先にrevisionをpreflightする。
         let resources = state.preflight_session_write(snapshot)?;
