@@ -1,6 +1,5 @@
 //! `add_link` Tauri command と effect 層実装。
 
-use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
@@ -16,7 +15,8 @@ use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::{AddLinkOutcome, ParsedTask, ResolvedTaskSet, Task, TaskIndex};
+use crate::task::task_catalog::TaskCatalog;
+use crate::task::task_index::{AddLinkOutcome, ExternalTaskChange, ParsedTask, Task};
 
 /// `add_link` Tauri command 薄層。
 #[tauri::command]
@@ -39,7 +39,7 @@ pub(crate) fn add_link_impl(
             .map_err(AddLinkCommandError::Validation)?;
         let source_rel = intent.source.clone();
         let source_abs = project_root.as_path().join(&source_rel);
-        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let index = snapshot.tasks().to_index();
         let existing_source = index
             .find_by_path(source_rel.as_path())
             .cloned()
@@ -115,30 +115,29 @@ pub(crate) fn add_link_impl(
     })
 }
 
-/// planned link追加をcloned task mapへ適用する。
+/// planned link追加をresident catalogへ適用する。
 fn apply_add_link_to_cache(
-    cache: &HashMap<CanonicalTaskPath, Task>,
+    cache: &TaskCatalog,
     source_rel: &Path,
     target_normalized: &str,
     updated_task: &ParsedTask,
-) -> Result<(ResolvedTaskSet, Task), AddLinkCommandError> {
+) -> Result<(TaskCatalog, Task), AddLinkCommandError> {
     let source_key = CanonicalTaskPath::from_path(source_rel);
-    if !cache.contains_key(&source_key) {
+    if !cache.contains(&source_key) {
         return Err(AddLinkError::SourceVanished {
             path: source_key.as_str().to_string(),
         }
         .into());
     }
-    if !cache.contains_key(&CanonicalTaskPath::new(target_normalized)) {
+    if !cache.contains(&CanonicalTaskPath::new(target_normalized)) {
         return Err(AddLinkError::TargetVanished {
             path: target_normalized.to_string(),
         }
         .into());
     }
-    let resolved = TaskIndex::new(cache.values().cloned().collect())
-        .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
-            Box::new(updated_task.clone()),
-        ))?
+    let resolved = cache
+        .to_index()
+        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(updated_task.clone())))?
         .tasks;
     let returned = resolved
         .get(&source_key)

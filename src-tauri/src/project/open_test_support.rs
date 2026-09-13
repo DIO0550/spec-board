@@ -31,3 +31,29 @@ pub(crate) fn open_from_disk(state: &Arc<AppState>, root: &Path) -> ProjectSessi
         .require_session_snapshot()
         .expect("session is installed")
 }
+
+/// resident state と「新しい `AppState` で開き直した結果」を全フィールド比較する。
+///
+/// 比較対象は reactivation の収束判定と同じ 5 つ。tasks は `TaskCatalog` 同士の比較なので、
+/// children / reverse_links / warnings の並びまで含めて一致していなければ落ちる。
+pub(crate) fn assert_matches_reopen(state: &Arc<AppState>, root: &Path) {
+    let resident = state
+        .require_session_snapshot()
+        .expect("project must be open");
+    let fresh_state = Arc::new(AppState::new());
+    let reopened = open_from_disk(&fresh_state, root);
+
+    assert_eq!(resident.config(), reopened.config(), "config が一致する");
+    assert_eq!(resident.labels(), reopened.labels(), "labels が一致する");
+    assert_eq!(
+        resident.milestones(),
+        reopened.milestones(),
+        "milestones が一致する"
+    );
+    assert_eq!(resident.tasks(), reopened.tasks(), "tasks が一致する");
+    assert_eq!(
+        resident.load_warnings(),
+        reopened.load_warnings(),
+        "load_warnings が一致する"
+    );
+}

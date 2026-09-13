@@ -12,6 +12,8 @@ pub enum ProjectLoadWarningCode {
     InvalidPath,
     TaskReadFailed,
     FrontmatterParseFailed,
+    /// 同じ canonical identity に正規化される md が複数あり、file_path 昇順の先頭以外を skip した。
+    DuplicateTaskIdentity,
     ConfigFallback,
     Unknown,
 }

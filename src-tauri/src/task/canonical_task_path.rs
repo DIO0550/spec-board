@@ -1,6 +1,6 @@
-//! resident task cache のキーに使う canonical な相対 path の Value Object。
+//! resident task catalog の identity に使う canonical な相対 path の Value Object。
 //!
-//! cache は `HashMap<CanonicalTaskPath, Task>` として保持し、キーは必ず本 VO の
+//! `TaskCatalog` は canonical identity → task の index を本 VO をキーに保持し、キーは必ず本 VO の
 //! コンストラクタを通す。`\` → `/` 変換、空要素と `.` の除去、Windows drive
 //! prefix の除去を通した表記だけが値として存在しうる。
 //!

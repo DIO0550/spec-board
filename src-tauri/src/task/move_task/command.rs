@@ -38,7 +38,7 @@ use crate::task::parse::default_status_for;
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::{MoveTaskIntent, MoveTaskOutcome, Task, TaskIndex};
+use crate::task::task_index::{ExternalTaskChange, MoveTaskIntent, MoveTaskOutcome, Task};
 
 /// `move_task` Tauri command 薄層。
 #[tauri::command]
@@ -77,7 +77,7 @@ pub(crate) fn move_task_impl_with_config_io(
 
         let rel_path = intent.file_path.clone();
         let abs = project_root.as_path().join(&rel_path);
-        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let index = snapshot.tasks().to_index();
         let existing = index
             .find_by_path(rel_path.as_path())
             .cloned()
@@ -255,16 +255,16 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
     let config_content = serde_json::to_string_pretty(&next_config)?;
 
     let moved_key = CanonicalTaskPath::from_path(&intent.file_path);
-    if !snapshot.tasks().contains_key(&moved_key) {
+    if !snapshot.tasks().contains(&moved_key) {
         return Err(crate::task::move_task::error::MoveTaskError::TaskVanished {
             path: moved_key.as_str().to_string(),
         }
         .into());
     }
-    let next_tasks = TaskIndex::new(snapshot.tasks().values().cloned().collect())
-        .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
-            Box::new(updated_task),
-        ))?
+    let next_tasks = snapshot
+        .tasks()
+        .to_index()
+        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(updated_task)))?
         .tasks;
     let returned =
         next_tasks

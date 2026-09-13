@@ -52,8 +52,12 @@ pub fn scan_md_files_with_warnings(root: &Path) -> Result<ScanOutcome, ScanError
         source,
     })?;
 
+    // ディレクトリごとにファイル名順で走査し、OS のディレクトリ順に依存しない
+    // 決定的な `items` 順を返す（同じ identity に正規化される複数ファイルの
+    // 先勝ち判定を走査順に委ねる `TaskCatalog::resolve` が前提にする）。
     let walker = walkdir::WalkDir::new(root)
         .follow_links(false)
+        .sort_by_file_name()
         .into_iter()
         .filter_entry(should_descend);
     let mut items = Vec::new();

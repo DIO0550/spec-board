@@ -257,7 +257,7 @@ fn changed_task_file_commits_once_and_emits_resync_required() {
     );
     assert!(current
         .tasks()
-        .values()
+        .iter()
         .any(|task| task.title().as_str() == "New title"));
 }
 
@@ -401,7 +401,7 @@ fn same_session_conflict_retries_then_commits() {
         .require_session_snapshot()
         .expect("session stays open")
         .tasks()
-        .values()
+        .iter()
         .any(|task| task.title().as_str() == "New title"));
 }
 

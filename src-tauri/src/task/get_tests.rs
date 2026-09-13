@@ -462,7 +462,7 @@ fn payload_session_revision_refers_to_the_returned_tasks() {
             let mut candidates: Vec<_> = session
                 .snapshot()
                 .tasks()
-                .values()
+                .iter()
                 .map(crate::task::task_index::Task::to_parsed_task)
                 .collect();
             candidates.push(
@@ -471,8 +471,9 @@ fn payload_session_revision_refers_to_the_returned_tasks() {
                     .build(),
             );
             session.replace_tasks(
-                crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)
-                    .expect("fixture candidates resolve"),
+                crate::task::task_catalog::TaskCatalog::resolve(candidates)
+                    .expect("fixture candidates resolve")
+                    .catalog,
             );
         })
         .expect("writable");

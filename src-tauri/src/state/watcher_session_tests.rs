@@ -46,7 +46,7 @@ fn coherent_snapshot_converts_to_existing_wire_shape() {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        crate::task::task_index::ResolvedTaskSet::default(),
+        crate::task::task_catalog::TaskCatalog::default(),
     )
     .into_session(SessionId::from_raw(9))
     .snapshot();

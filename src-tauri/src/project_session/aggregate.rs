@@ -1,14 +1,11 @@
 //! ProjectSession aggregateとcoherent snapshot。
 
-use std::collections::HashMap;
-
 use thiserror::Error;
 
 use crate::config::{Config, LabelRegistry, MilestoneRegistry};
 use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
-use crate::task::canonical_task_path::CanonicalTaskPath;
-use crate::task::task_index::{ResolvedTaskSet, Task};
+use crate::task::task_catalog::TaskCatalog;
 
 use super::{RevisionExhausted, SessionId, SessionRevision};
 
@@ -137,7 +134,7 @@ pub struct PreparedProjectSession {
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<CanonicalTaskPath, Task>,
+    tasks: TaskCatalog,
     load_warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -149,7 +146,7 @@ impl PreparedProjectSession {
         config: Config,
         labels: LabelRegistry,
         milestones: MilestoneRegistry,
-        tasks: ResolvedTaskSet,
+        tasks: TaskCatalog,
     ) -> Self {
         Self::new_with_warnings(root, config, labels, milestones, tasks, Vec::new())
     }
@@ -160,7 +157,7 @@ impl PreparedProjectSession {
         config: Config,
         labels: LabelRegistry,
         milestones: MilestoneRegistry,
-        tasks: ResolvedTaskSet,
+        tasks: TaskCatalog,
         load_warnings: Vec<ProjectLoadWarning>,
     ) -> Self {
         Self {
@@ -168,7 +165,7 @@ impl PreparedProjectSession {
             config,
             labels,
             milestones,
-            tasks: tasks.into_map(),
+            tasks,
             load_warnings,
         }
     }
@@ -198,7 +195,7 @@ pub struct ProjectSession {
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<CanonicalTaskPath, Task>,
+    tasks: TaskCatalog,
     load_warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -256,18 +253,20 @@ impl ProjectSession {
         self.milestones = milestones;
     }
 
-    /// 互換adapterまたはcommit closureがtask mapを差し替える。
-    pub(crate) fn replace_tasks(&mut self, tasks: ResolvedTaskSet) {
-        self.tasks = tasks.into_map();
+    /// 互換adapterまたはcommit closureが、検証済み catalog でセッションを差し替える。
+    ///
+    /// `TaskCatalog` は `resolve` / `apply` からしか作れないため、ここに raw な集合は届かない。
+    pub(crate) fn replace_tasks(&mut self, tasks: TaskCatalog) {
+        self.tasks = tasks;
     }
 
-    /// task map と load warnings を同じ session commit で置き換える。
+    /// task catalog と load warnings を同じ session commit で置き換える。
     pub(crate) fn replace_tasks_and_load_warnings(
         &mut self,
-        tasks: ResolvedTaskSet,
+        tasks: TaskCatalog,
         load_warnings: Vec<ProjectLoadWarning>,
     ) {
-        self.tasks = tasks.into_map();
+        self.tasks = tasks;
         self.load_warnings = load_warnings;
     }
 
@@ -293,8 +292,7 @@ impl ProjectSession {
             self.config,
             self.labels,
             self.milestones,
-            ResolvedTaskSet::reresolve(self.tasks.into_values())
-                .expect("cached session tasks were resolved before storage"),
+            self.tasks,
             self.load_warnings,
         )
     }
@@ -325,7 +323,7 @@ pub struct ProjectSessionSnapshot {
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<CanonicalTaskPath, Task>,
+    tasks: TaskCatalog,
     load_warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -356,8 +354,8 @@ impl ProjectSessionSnapshot {
         &self.milestones
     }
 
-    /// snapshotのtask mapを返す。
-    pub fn tasks(&self) -> &HashMap<CanonicalTaskPath, Task> {
+    /// snapshotのtask catalogを返す。
+    pub(crate) fn tasks(&self) -> &TaskCatalog {
         &self.tasks
     }
 

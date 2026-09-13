@@ -30,7 +30,6 @@ use crate::config::{
 use crate::project_session::conflict_recovery::{resync_if_same_project_under_lease, ResyncSource};
 use crate::project_session::SessionIdentity;
 use crate::state::{AppState, AppStateError, SessionWriteError};
-use crate::task::task_index::TaskIndex;
 
 /// `delete_label` コマンドの引数。
 #[derive(Debug, Clone, Deserialize)]
@@ -117,7 +116,9 @@ pub(crate) fn delete_label_impl_with_store(
     args: DeleteLabelArgs,
 ) -> Result<DeleteLabelPayload, DeleteLabelError> {
     state.with_project_writer_lease_for(target, |snapshot| {
-        let usage_count = TaskIndex::new(snapshot.tasks().values().cloned().collect())
+        let usage_count = snapshot
+            .tasks()
+            .to_index()
             .label_usage_counts()
             .get(&args.name)
             .copied()

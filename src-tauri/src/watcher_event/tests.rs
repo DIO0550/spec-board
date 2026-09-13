@@ -35,7 +35,7 @@ fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
         Default::default(),
         Default::default(),
         Default::default(),
-        crate::task::task_index::ResolvedTaskSet::default(),
+        crate::task::task_catalog::TaskCatalog::default(),
     )
     .into_session(session_id);
     let identity = candidate.identity();
@@ -59,8 +59,9 @@ fn active_resources(state: &AppState) -> SessionResourceAccess {
 }
 
 fn replace_parsed_tasks(state: &AppState, tasks: Vec<crate::task::task_index::ParsedTask>) {
-    let tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(tasks)
-        .expect("fixture candidates should resolve");
+    let tasks = crate::task::task_catalog::TaskCatalog::resolve(tasks)
+        .expect("fixture candidates should resolve")
+        .catalog;
     let snapshot = state.require_session_snapshot().expect("active session");
     state
         .commit_session_write(&snapshot.identity(), move |session| {

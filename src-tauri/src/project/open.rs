@@ -72,7 +72,6 @@
 //! 追加すること。現状はこれら 2 variant は `UNKNOWN` 扱いとなる前提で
 //! BE 側エラー Display を生成している。
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -112,6 +111,7 @@ use crate::task::parse::{default_status_for, TaskParseError};
 use crate::task::payload::TaskPayload;
 use crate::task::projection::{MilestoneProjectionMap, TaskForest, TaskProjectionMap};
 use crate::task::rebuild::{rebuild_tasks_from_disk_with_report, RebuildTasksError};
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_index::{Task, TaskIndex};
 use spec_board_fs::config::config_io;
 use spec_board_fs::task::file_scanner::ScanError;
@@ -506,8 +506,7 @@ fn load_cold_prepared_session(
             loaded.config,
             loaded.labels,
             loaded.milestones,
-            crate::task::task_index::ResolvedTaskSet::reresolve(loaded.tasks.into_values())
-                .expect("loaded project tasks passed the canonical resolver"),
+            loaded.tasks,
             loaded.load_warnings,
         ),
         origin,
@@ -543,7 +542,7 @@ fn bootstrap_config(
             // 無駄な全量再読込を避ける。
             let affects_tasks = loaded
                 .tasks
-                .values()
+                .iter()
                 .any(|task| task.status() == &scanned_default);
             loaded.config = generated;
             if generated_default != scanned_default && affects_tasks {
@@ -574,7 +573,7 @@ fn bootstrap_config(
 /// `default_status`（config 不在時は `"Todo"`）へ補完済み。この値は
 /// `Config::from_statuses` が `None` に対して使うフォールバックと同じなので、
 /// ここで `None` へ戻す必要はない。
-fn bootstrap_config_from_tasks(tasks: &HashMap<CanonicalTaskPath, Task>) -> Config {
+fn bootstrap_config_from_tasks(tasks: &TaskCatalog) -> Config {
     Config::from_statuses(&status_inputs_from_tasks(tasks))
 }
 
@@ -584,14 +583,17 @@ fn bootstrap_config_from_tasks(tasks: &HashMap<CanonicalTaskPath, Task>) -> Conf
 /// `Task.status` は非 `Option` で、frontmatter に status が無いタスクはパース時に
 /// 既定 status へ補完済みなので、ここで `None` へ戻す必要はない。
 ///
-/// watcher の full rescan も同じ `HashMap<CanonicalTaskPath, Task>` を持つため `pub(crate)` で
+/// watcher の full rescan も同じ `TaskCatalog` を持つため `pub(crate)` で
 /// 共有する（同型の helper を watcher 側に重複定義しないため）。
-pub(crate) fn status_inputs_from_tasks(
-    tasks: &HashMap<CanonicalTaskPath, Task>,
-) -> Vec<(PathBuf, Option<String>)> {
+pub(crate) fn status_inputs_from_tasks(tasks: &TaskCatalog) -> Vec<(PathBuf, Option<String>)> {
     tasks
         .iter()
-        .map(|(path, task)| (path.as_path_buf(), Some(task.status().as_str().to_owned())))
+        .map(|task| {
+            (
+                CanonicalTaskPath::from_file_path(task.file_path()).as_path_buf(),
+                Some(task.status().as_str().to_owned()),
+            )
+        })
         .collect()
 }
 
@@ -619,7 +621,7 @@ pub(crate) enum ReconcileOutcome {
 fn reconcile_config(
     root: &Path,
     config: &Config,
-    tasks: &HashMap<CanonicalTaskPath, Task>,
+    tasks: &TaskCatalog,
     writer: &dyn ConfigWriter,
 ) -> ReconcileOutcome {
     let plan = config.plan_reconcile_columns(&status_inputs_from_tasks(tasks));
@@ -690,7 +692,7 @@ pub(crate) struct LoadedProjectData {
     pub(crate) config: Config,
     pub(crate) labels: LabelRegistry,
     pub(crate) milestones: MilestoneRegistry,
-    pub(crate) tasks: HashMap<CanonicalTaskPath, Task>,
+    pub(crate) tasks: TaskCatalog,
     pub(crate) load_warnings: Vec<ProjectLoadWarning>,
     /// config をどこから得たか。コールドオープンの bootstrap 判定と GUIDE.md の
     /// 書き出し判定、本ローダ内の reconcile 判定がこれを見る。
@@ -742,11 +744,7 @@ pub(crate) fn load_project_data(
     let default_status = default_status_for(&config);
     let report = rebuild_tasks_from_disk_with_report(root, &default_status, io)?;
     load_warnings.extend(report.warnings);
-    let tasks: HashMap<CanonicalTaskPath, Task> = report
-        .tasks
-        .into_iter()
-        .map(|task| (CanonicalTaskPath::from_file_path(task.file_path()), task))
-        .collect();
+    let tasks = report.tasks;
 
     if matches!(config_origin, ConfigOrigin::Persisted) {
         match reconcile_config(root, &config, &tasks, config_writer) {
@@ -938,7 +936,7 @@ fn map_hierarchy_error(err: TaskParseError) -> OpenProjectError {
 /// 「記載されていないタスクは末尾に追加」ルール）。
 /// `columns` のいずれにも一致しない `status` のタスクは全カラムの後ろへ回す。
 fn build_payload(snapshot: ProjectSessionSnapshot, session: WatcherSession) -> OpenProjectPayload {
-    let tasks = snapshot.tasks().values().cloned().collect();
+    let tasks = snapshot.tasks().as_slice().to_vec();
     let load_warnings = snapshot.load_warnings().to_vec();
     build_payload_from_parts_with_warnings(tasks, snapshot.config(), load_warnings, session)
 }

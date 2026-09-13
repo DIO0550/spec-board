@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::config::column_name::ColumnName;
@@ -8,7 +7,9 @@ use crate::project::load_warning::ProjectLoadWarning;
 use crate::project::project_root::ProjectRoot;
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::parse::{task_from_markdown, TaskParseContext};
-use crate::task::task_index::Task;
+use crate::task::task_catalog::TaskCatalog;
+use crate::task::task_file_path::TaskFilePath;
+use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 use super::{
     PreparedProjectSession, ProjectSessionCommitError, ProjectSessionStateError, ProjectState,
@@ -40,15 +41,14 @@ fn loaded_state_returns_all_domain_values_from_one_snapshot() {
         )
         .expect("valid task"),
     );
-    let tasks = HashMap::from([(CanonicalTaskPath::new("tasks/aggregate.md"), task)]);
+    let tasks = crate::task::task_catalog::TaskCatalog::from_tasks_for_test([task]);
     let state = ProjectState::Loaded(
         PreparedProjectSession::new(
             root.clone(),
             config.clone(),
             labels.clone(),
             milestones.clone(),
-            crate::task::task_index::ResolvedTaskSet::reresolve(tasks.clone().into_values())
-                .expect("fixture tasks resolve"),
+            tasks.clone(),
         )
         .into_session(SessionId::from_raw(41)),
     );
@@ -213,8 +213,7 @@ fn into_prepared_keeps_domain_data_and_restarts_revision_from_initial() {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        crate::task::task_index::ResolvedTaskSet::reresolve([sample_task()])
-            .expect("fixture tasks resolve"),
+        crate::task::task_catalog::TaskCatalog::from_tasks_for_test([sample_task()]),
         vec![ProjectLoadWarning::config_fallback(
             "broken config".to_string(),
         )],
@@ -240,6 +239,69 @@ fn into_prepared_keeps_domain_data_and_restarts_revision_from_initial() {
     assert_eq!(before.load_warnings(), after.load_warnings());
     assert_eq!(202, after.version().session_id.as_u64());
     assert_eq!(SessionRevision::INITIAL, after.version().revision);
+}
+
+#[test]
+fn replace_tasks_swaps_the_resident_catalog_for_the_committed_one() {
+    let mut session = prepared_session(301);
+    let identity = session.identity();
+    let next = TaskCatalog::resolve(vec![
+        ParsedTaskBuilder::new("tasks/parent.md").build(),
+        ParsedTaskBuilder::new("tasks/child.md")
+            .parent(Some(TaskFilePath::from("tasks/parent.md")))
+            .build(),
+    ])
+    .expect("fixture candidates resolve")
+    .catalog;
+    assert!(session.snapshot().tasks().is_empty());
+
+    session
+        .commit(&identity, |session| session.replace_tasks(next.clone()))
+        .expect("commit succeeds");
+
+    let snapshot = session.snapshot();
+    assert_eq!(&next, snapshot.tasks());
+    assert_eq!(
+        snapshot
+            .tasks()
+            .get(&CanonicalTaskPath::new("tasks/parent.md"))
+            .expect("parent is resident")
+            .children(),
+        &[TaskFilePath::from("tasks/child.md")]
+    );
+}
+
+#[test]
+fn into_prepared_moves_the_catalog_without_re_resolving_it() {
+    let catalog = TaskCatalog::resolve(vec![
+        ParsedTaskBuilder::new("tasks/b.md")
+            .parent(Some(TaskFilePath::from("tasks/a.md")))
+            .build(),
+        ParsedTaskBuilder::new("tasks/a.md").build(),
+    ])
+    .expect("fixture candidates resolve")
+    .catalog;
+    let session = PreparedProjectSession::new(
+        ProjectRoot::try_from_str("/tmp/spec-board/project-a").expect("valid root"),
+        Config::default(),
+        LabelRegistry::default(),
+        MilestoneRegistry::default(),
+        catalog.clone(),
+    )
+    .into_session(SessionId::from_raw(401));
+
+    let reactivated = session
+        .into_prepared()
+        .into_session(SessionId::from_raw(402))
+        .snapshot();
+
+    assert_eq!(&catalog, reactivated.tasks());
+    let paths: Vec<_> = reactivated
+        .tasks()
+        .iter()
+        .map(|task| task.file_path().as_str())
+        .collect();
+    assert_eq!(paths, vec!["tasks/a.md", "tasks/b.md"]);
 }
 
 fn sample_task() -> Task {
@@ -282,7 +344,7 @@ fn prepared_session(session_id: u64) -> super::ProjectSession {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        crate::task::task_index::ResolvedTaskSet::default(),
+        crate::task::task_catalog::TaskCatalog::default(),
     )
     .into_session(SessionId::from_raw(session_id))
 }

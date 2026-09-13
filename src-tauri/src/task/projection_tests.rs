@@ -49,7 +49,7 @@ fn done(name: &str) -> ColumnName {
 }
 
 fn project(tasks: Vec<Task>, done_column: Option<&ColumnName>) -> TaskProjectionMap {
-    TaskIndex::new(tasks).project_all(done_column)
+    TaskIndex::from_tasks_for_test(tasks).project_all(done_column)
 }
 
 fn progress_of(map: &TaskProjectionMap, file_path: &str) -> SubIssueProgress {
@@ -476,7 +476,7 @@ fn repeated_calls_produce_identical_maps_including_key_order() {
         task("tasks/c1.md", "Done", Some("tasks/p.md")),
         task("tasks/c2.md", "Todo", Some("tasks/p.md")),
     ];
-    let index = TaskIndex::new(tasks);
+    let index = TaskIndex::from_tasks_for_test(tasks);
 
     let first = index.project_all(Some(&done_column));
     let second = index.project_all(Some(&done_column));

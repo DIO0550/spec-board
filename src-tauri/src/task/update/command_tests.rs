@@ -913,10 +913,11 @@ fn update_task_canonical_resolver_keeps_canonical_keys() {
         .require_session_snapshot()
         .expect("resident snapshot after rebuild");
     assert_eq!(2, snapshot.tasks().len());
-    for (cache_key, task) in snapshot.tasks() {
-        assert_eq!(
-            &CanonicalTaskPath::from_file_path(task.file_path()),
-            cache_key
+    for task in snapshot.tasks().iter() {
+        let cache_key = CanonicalTaskPath::from_file_path(task.file_path());
+        assert!(
+            snapshot.tasks().contains(&cache_key),
+            "{cache_key} は canonical identity で引ける"
         );
     }
 }

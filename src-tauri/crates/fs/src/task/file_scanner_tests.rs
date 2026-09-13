@@ -67,6 +67,19 @@ fn scan_md_files_descends_into_subdirectories() {
     );
 }
 
+#[test]
+fn scan_md_files_yields_entries_in_file_name_order_regardless_of_creation_order() {
+    let dir = TempDir::new().unwrap();
+    make_files(dir.path(), &["c.md", "sub/b.md", "a.md"]);
+
+    let result = scan_md_files(dir.path()).unwrap();
+    let relative: Vec<String> = result
+        .iter()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .collect();
+    assert_eq!(relative, vec!["a.md", "c.md", "sub/b.md"]);
+}
+
 // ── 拡張子フィルタ ────────────────────────────────────────────
 
 #[test]

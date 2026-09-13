@@ -4,14 +4,12 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{
-    ParentHierarchyErrorReason, ParsedTaskBuilder, ResolvedTaskSet, Task, TaskIndex,
-    UpdateTaskIntent,
-};
+use super::{ParentHierarchyErrorReason, ParsedTaskBuilder, Task, TaskIndex, UpdateTaskIntent};
 use crate::task::create::error::ContentRejectReason;
 use crate::task::document::Patch;
 use crate::task::frontmatter::{parse as parse_frontmatter, Parsed, Priority};
 use crate::task::parse::{task_from_parsed, TaskParseContext, TaskParseError};
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_content::TaskContentError;
 use crate::task::task_file_path::TaskFilePath;
 use crate::task::task_index::ParentValidationFailure;
@@ -26,9 +24,7 @@ fn make_task(file_path: &str, parent: Option<&str>) -> Task {
 }
 
 fn resolve_tasks(tasks: Vec<Task>) -> Vec<Task> {
-    ResolvedTaskSet::reresolve(tasks)
-        .expect("fixture candidates resolve")
-        .into_tasks()
+    TaskCatalog::from_tasks_for_test(tasks).into_tasks()
 }
 
 fn parsed_from_md(md: &str) -> Parsed {
@@ -770,7 +766,7 @@ fn plan_update_parent_clear_with_raw_invalid_parent_triggers_hierarchy_validatio
             default_status: "Todo".into(),
         },
     );
-    let tasks = ResolvedTaskSet::resolve_lenient(vec![
+    let tasks = TaskCatalog::resolve(vec![
         candidate,
         ParsedTaskBuilder::new("tasks/x.md")
             .parent(Some(TaskFilePath::from_lenient("tasks/y.md")))
@@ -780,6 +776,7 @@ fn plan_update_parent_clear_with_raw_invalid_parent_triggers_hierarchy_validatio
             .build(),
     ])
     .expect("lenient fixture resolution preserves the independent cycle")
+    .catalog
     .into_tasks();
     let task = tasks
         .iter()

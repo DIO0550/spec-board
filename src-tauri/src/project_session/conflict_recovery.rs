@@ -8,13 +8,16 @@ use crate::config::{
     Config, LabelRegistry, LabelRegistryStore, LoadConfigError, LoadLabelsError,
     LoadMilestonesError, MilestoneRegistry, MilestoneRegistryStore,
 };
-use crate::project::load_warning::{deduplicate_and_sort, ProjectLoadWarningStage};
+use crate::project::load_warning::{
+    deduplicate_and_sort, ProjectLoadWarning, ProjectLoadWarningStage,
+};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{ProjectSession, ProjectSessionSnapshot, SessionConflict};
 use crate::state::{AppState, AppStateError, SessionWriteError};
 use crate::task::io::TaskIo;
 use crate::task::parse::default_status_for;
 use crate::task::rebuild::RebuildTasksError;
+use crate::task::task_catalog::TaskCatalog;
 
 /// same-session resyncが完了しなかった理由。
 #[derive(Debug, Error)]
@@ -62,13 +65,13 @@ pub(crate) enum ResyncSource<'a> {
 /// I/O完了後に1回のaggregate commitで反映する復旧値。
 enum RecoveredAggregate {
     Tasks {
-        tasks: crate::task::task_index::ResolvedTaskSet,
-        load_warnings: Vec<crate::project::load_warning::ProjectLoadWarning>,
+        tasks: TaskCatalog,
+        load_warnings: Vec<ProjectLoadWarning>,
     },
     ConfigAndTasks {
         config: Config,
-        tasks: crate::task::task_index::ResolvedTaskSet,
-        load_warnings: Vec<crate::project::load_warning::ProjectLoadWarning>,
+        tasks: TaskCatalog,
+        load_warnings: Vec<ProjectLoadWarning>,
     },
     Labels(LabelRegistry),
     Milestones(MilestoneRegistry),
@@ -98,8 +101,8 @@ impl RecoveredAggregate {
 
 fn merge_task_load_warnings(
     snapshot: &ProjectSessionSnapshot,
-    warnings: Vec<crate::project::load_warning::ProjectLoadWarning>,
-) -> Vec<crate::project::load_warning::ProjectLoadWarning> {
+    warnings: Vec<ProjectLoadWarning>,
+) -> Vec<ProjectLoadWarning> {
     let mut merged = snapshot
         .load_warnings()
         .iter()
@@ -165,8 +168,7 @@ fn load_recovered_aggregate(
                 task_io,
             )?;
             Ok(RecoveredAggregate::Tasks {
-                tasks: crate::task::task_index::ResolvedTaskSet::reresolve(report.tasks)
-                    .expect("task rebuild report passed the canonical resolver"),
+                tasks: report.tasks,
                 load_warnings: merge_task_load_warnings(snapshot, report.warnings),
             })
         }
@@ -183,8 +185,7 @@ fn load_recovered_aggregate(
             )?;
             Ok(RecoveredAggregate::ConfigAndTasks {
                 config,
-                tasks: crate::task::task_index::ResolvedTaskSet::reresolve(report.tasks)
-                    .expect("task rebuild report passed the canonical resolver"),
+                tasks: report.tasks,
                 load_warnings: deduplicate_and_sort(report.warnings),
             })
         }

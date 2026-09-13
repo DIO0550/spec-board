@@ -5,7 +5,6 @@ use tauri::State;
 use thiserror::Error;
 
 use crate::state::{AppState, AppStateError};
-use crate::task::task_index::TaskIndex;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,8 +52,7 @@ pub(crate) fn preview_task_filename_impl(
     };
 
     let project_root = snapshot.project_root().as_path();
-    let tasks = snapshot.tasks().values().cloned().collect();
-    let index = TaskIndex::new(tasks);
+    let index = snapshot.tasks().to_index();
     let outcome = index.plan_preview_filename(project_root, &args);
 
     Ok(outcome.into_payload(project_root))

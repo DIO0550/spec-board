@@ -80,7 +80,8 @@ mod tests {
     use super::TaskPayload;
     use crate::task::canonical_task_path::CanonicalTaskPath;
     use crate::task::parse::{task_from_markdown, TaskParseContext};
-    use crate::task::task_index::{ParsedTaskBuilder, ResolvedTaskSet};
+    use crate::task::task_catalog::TaskCatalog;
+    use crate::task::task_index::ParsedTaskBuilder;
     use crate::task::warning::TaskWarningCode;
 
     #[test]
@@ -94,8 +95,9 @@ mod tests {
             &context,
         )
         .expect("fixture markdown parses");
-        let tasks = ResolvedTaskSet::resolve_lenient(vec![candidate])
-            .expect("missing parent is a recoverable graph warning");
+        let tasks = TaskCatalog::resolve(vec![candidate])
+            .expect("missing parent is a recoverable graph warning")
+            .catalog;
         let task = tasks
             .get(&CanonicalTaskPath::new("tasks/a.md"))
             .expect("resolved task")

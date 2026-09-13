@@ -73,13 +73,15 @@ fn reparenting_moves_the_child_between_the_two_parents() {
         .expect("reparenting must not fail");
 
     assert!(
-        task_by_path(&outcome.tasks, "tasks/b.md")
+        task_by_path(outcome.tasks.as_slice(), "tasks/b.md")
             .children()
             .is_empty(),
         "旧親の children から子が消える"
     );
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/c.md").children().len(),
+        task_by_path(outcome.tasks.as_slice(), "tasks/c.md")
+            .children()
+            .len(),
         1,
         "新親の children に子が入る"
     );
@@ -129,7 +131,7 @@ fn adding_a_link_grows_the_reverse_links_of_the_target() {
         .expect("adding a link must not fail");
 
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/d.md").reverse_links(),
+        task_by_path(outcome.tasks.as_slice(), "tasks/d.md").reverse_links(),
         vec![TaskFilePath::from("tasks/a.md")],
     );
     assert!(outcome.other_tasks_changed);
@@ -148,7 +150,7 @@ fn removing_a_link_shrinks_the_reverse_links_of_the_target() {
         .rebuild_with_external_change(upserted(task_with("tasks/a.md", None, &[])))
         .expect("removing a link must not fail");
 
-    assert!(task_by_path(&outcome.tasks, "tasks/d.md")
+    assert!(task_by_path(outcome.tasks.as_slice(), "tasks/d.md")
         .reverse_links()
         .is_empty());
     assert!(outcome.other_tasks_changed);
@@ -164,7 +166,7 @@ fn upserting_an_unknown_path_adds_the_task() {
 
     assert_eq!(outcome.tasks.len(), 2);
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/b.md").children(),
+        task_by_path(outcome.tasks.as_slice(), "tasks/b.md").children(),
         vec![TaskFilePath::from("tasks/a.md")],
     );
 }
@@ -182,8 +184,8 @@ fn removing_a_referenced_task_shrinks_the_derived_values_of_the_referrer() {
         .rebuild_with_external_change(removed("tasks/a.md"))
         .expect("removal must not fail");
 
-    assert_eq!(paths_of(&outcome.tasks), vec!["tasks/b.md"]);
-    assert!(task_by_path(&outcome.tasks, "tasks/b.md")
+    assert_eq!(paths_of(outcome.tasks.as_slice()), vec!["tasks/b.md"]);
+    assert!(task_by_path(outcome.tasks.as_slice(), "tasks/b.md")
         .children()
         .is_empty());
     assert!(
@@ -248,12 +250,12 @@ fn the_rebuilt_tasks_are_sorted_by_file_path() {
         .expect("upsert must not fail");
 
     assert_eq!(
-        paths_of(&outcome.tasks),
+        paths_of(outcome.tasks.as_slice()),
         vec!["tasks/a.md", "tasks/b.md", "tasks/c.md"],
         "入力 Vec の順ではなく file_path 昇順で返す"
     );
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/b.md").children(),
+        task_by_path(outcome.tasks.as_slice(), "tasks/b.md").children(),
         vec![
             TaskFilePath::from("tasks/a.md"),
             TaskFilePath::from("tasks/c.md"),
@@ -261,7 +263,7 @@ fn the_rebuilt_tasks_are_sorted_by_file_path() {
         "children の並びも入力順に依存しない"
     );
     assert_eq!(
-        task_by_path(&outcome.tasks, "tasks/b.md").reverse_links(),
+        task_by_path(outcome.tasks.as_slice(), "tasks/b.md").reverse_links(),
         vec![
             TaskFilePath::from("tasks/a.md"),
             TaskFilePath::from("tasks/c.md"),
@@ -284,7 +286,7 @@ fn creating_a_cycle_yields_warnings_instead_of_an_error() {
         .expect("外部編集で循環ができてもイベント処理は止まらない");
 
     for path in ["tasks/a.md", "tasks/b.md"] {
-        let task = task_by_path(&outcome.tasks, path);
+        let task = task_by_path(outcome.tasks.as_slice(), path);
         assert!(task.parent().is_none(), "{path} の parent は None 化される");
         assert!(
             has_warning(task, TaskWarningCode::ParentCycle),
@@ -309,7 +311,7 @@ fn breaking_a_cycle_clears_the_warnings() {
     for path in ["tasks/a.md", "tasks/b.md"] {
         assert!(
             !has_warning(
-                task_by_path(&outcome.tasks, path),
+                task_by_path(outcome.tasks.as_slice(), path),
                 TaskWarningCode::ParentCycle
             ),
             "{path} の parentCycle warning は消える"
@@ -336,7 +338,7 @@ fn creating_the_missing_parent_clears_the_stale_warning() {
 
     assert!(
         !has_warning(
-            task_by_path(&outcome.tasks, "tasks/a.md"),
+            task_by_path(outcome.tasks.as_slice(), "tasks/a.md"),
             TaskWarningCode::ParentNotFound
         ),
         "親が作られたら parentNotFound warning は消える"
@@ -359,7 +361,7 @@ fn a_missing_parent_keeps_the_raw_value_and_adds_a_warning() {
         )))
         .expect("a missing parent must not fail");
 
-    let task = task_by_path(&outcome.tasks, "tasks/a.md");
+    let task = task_by_path(outcome.tasks.as_slice(), "tasks/a.md");
     assert_eq!(
         task.parent().map(TaskFilePath::as_str),
         Some("tasks/missing.md"),
@@ -381,7 +383,7 @@ fn links_to_a_removed_task_are_kept_as_raw_values() {
         .rebuild_with_external_change(removed("tasks/d.md"))
         .expect("removal must not fail");
 
-    let referrer = task_by_path(&outcome.tasks, "tasks/a.md");
+    let referrer = task_by_path(outcome.tasks.as_slice(), "tasks/a.md");
     assert_eq!(
         referrer.links,
         vec![TaskFilePath::from("tasks/d.md")],

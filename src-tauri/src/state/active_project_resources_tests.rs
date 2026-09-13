@@ -23,7 +23,7 @@ fn session_identity(session_id: u64) -> SessionIdentity {
         Config::default(),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        crate::task::task_index::ResolvedTaskSet::default(),
+        crate::task::task_catalog::TaskCatalog::default(),
     )
     .into_session(SessionId::from_raw(session_id))
     .identity()
