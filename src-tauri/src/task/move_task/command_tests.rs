@@ -18,6 +18,7 @@ use tempfile::TempDir;
 use super::{move_task_impl, move_task_impl_with_config_io};
 use crate::config::{load_or_default, CardOrder, Config, ConfigWriter};
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::{SessionIdentity, SessionRevision};
@@ -1898,4 +1899,42 @@ fn parent_dir_segment_in_expected_order_rejects_before_matching() {
         matches!(error, MoveTaskCommandError::InvalidPath(_)),
         "unexpected error: {error:?}"
     );
+}
+
+#[test]
+fn cross_column_move_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\nbody\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nparent: tasks/parent.md\n---\nbody\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Done\n---\nbody\n",
+    );
+    seed_default_config(dir.path());
+    let state = Arc::new(AppState::new());
+    open_with_noop(&state, dir.path());
+
+    move_task_impl(
+        &state,
+        &FsTaskIo,
+        make_args(
+            &state,
+            "tasks/a.md",
+            "Todo",
+            "Done",
+            &["tasks/a.md", "tasks/b.md"],
+        ),
+    )
+    .expect("move should succeed");
+
+    assert_matches_reopen(&state, dir.path());
 }

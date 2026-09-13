@@ -10,6 +10,7 @@ use super::super::error::{
 };
 use super::{archive_task_impl, get_archived_tasks_impl, unarchive_task_impl, ArchivedTaskPayload};
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::state::AppState;
@@ -413,4 +414,26 @@ fn unarchive_without_project_returns_no_project_open() {
         result,
         Err(UnarchiveTaskCommandError::NoProjectOpen)
     ));
+}
+
+#[test]
+fn archive_referenced_task_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    fs::create_dir_all(dir.path().join("tasks")).expect("mkdir tasks");
+    fs::write(
+        dir.path().join("tasks/target.md"),
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    )
+    .expect("write target");
+    fs::write(
+        dir.path().join("tasks/source.md"),
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    )
+    .expect("write source");
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    archive_task_impl(&state, &FsTaskIo, archive_args("tasks/target.md")).expect("archive target");
+
+    assert_matches_reopen(&state, dir.path());
 }

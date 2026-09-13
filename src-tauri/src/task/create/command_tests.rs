@@ -8,6 +8,7 @@ use super::super::args::CreateTaskArgs;
 use super::super::error::{ContentRejectReason, CreateTaskCommandError, CreateTaskError};
 use super::create_task_impl;
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
@@ -631,4 +632,23 @@ fn create_task_revision_exhausted_performs_zero_task_io() {
         session_revision(&state).as_u64(),
         "rejected writer must not change revision"
     );
+}
+
+#[test]
+fn create_task_under_parent_with_links_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    let state = Arc::new(AppState::new());
+    let parent_abs = dir.path().join("issues/82/parent.md");
+    fs::create_dir_all(parent_abs.parent().unwrap()).unwrap();
+    fs::write(&parent_abs, "---\ntitle: Parent\nstatus: Todo\n---\n").unwrap();
+    let linked_abs = dir.path().join("issues/82/linked.md");
+    fs::write(&linked_abs, "---\ntitle: Linked\nstatus: Todo\n---\n").unwrap();
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_with_title("Child Task");
+    args.parent = Some("issues/82/parent.md".into());
+    args.links = vec!["issues/82/linked.md".into()];
+    create_task_impl(&state, &FsTaskIo, args).expect("create succeeds");
+
+    assert_matches_reopen(&state, dir.path());
 }

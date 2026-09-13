@@ -12,6 +12,7 @@ use crate::config::{
     CardOrder, Column, Config, FsConfigWriter, LabelRegistry, MilestoneRegistry, SchemaVersion,
 };
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
@@ -2065,4 +2066,64 @@ fn fault_rewrite_fails_with_watcher_installed_clears_write_ignore_registry() {
     for t in &snap {
         assert_eq!(t.status().as_str(), "Todo");
     }
+}
+
+#[test]
+fn e2e_rename_of_many_tasks_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    write_initial_config(
+        dir.path(),
+        r#"{
+            "version": 1,
+            "columns": [
+                { "name": "Todo", "order": 0 },
+                { "name": "Doing", "order": 1 },
+                { "name": "Done", "order": 2 }
+            ],
+            "cardOrder": {},
+            "doneColumn": "Done"
+        }"#,
+    );
+    write_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\nbody\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\nparent: tasks/parent.md\n---\nbody\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\nlinks:\n  - tasks/a.md\n---\nbody\n",
+    );
+    write_md(
+        dir.path(),
+        "tasks/c.md",
+        "---\ntitle: C\nstatus: Doing\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    update_columns_impl(
+        &state,
+        &FsTaskIo,
+        &FsConfigWriter,
+        UpdateColumnsArgs {
+            renames: Some(vec![rename("Todo", "To Do")]),
+            ..Default::default()
+        },
+    )
+    .expect("rename succeeds");
+
+    let renamed = state
+        .test_tasks_snapshot()
+        .expect("snapshot")
+        .iter()
+        .filter(|task| task.status().as_str() == "To Do")
+        .count();
+    assert_eq!(3, renamed);
+    assert_matches_reopen(&state, dir.path());
 }
