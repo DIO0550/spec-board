@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
+use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::io::{FsTaskIo, InMemoryTaskIo};
+use crate::task::task_file_path::TaskFilePath;
 
 fn todo() -> ColumnName {
     "Todo".into()
@@ -213,7 +215,10 @@ fn report_contains_frontmatter_parse_warning_and_keeps_valid_tasks() {
     let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &FsTaskIo)
         .expect("rebuild report should succeed");
 
-    assert_eq!(vec!["tasks/ok.md".to_string()], sorted_paths(&report.tasks));
+    assert_eq!(
+        vec!["tasks/ok.md".to_string()],
+        sorted_paths(report.tasks.as_slice())
+    );
     assert!(report.warnings.iter().any(|warning| {
         warning.code == ProjectLoadWarningCode::FrontmatterParseFailed
             && warning.stage == ProjectLoadWarningStage::Parse
@@ -235,7 +240,10 @@ fn report_contains_task_read_warning_from_io_port() {
     let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &io)
         .expect("rebuild report should succeed");
 
-    assert_eq!(vec!["tasks/ok.md".to_string()], sorted_paths(&report.tasks));
+    assert_eq!(
+        vec!["tasks/ok.md".to_string()],
+        sorted_paths(report.tasks.as_slice())
+    );
     assert!(report.warnings.iter().any(|warning| {
         warning.code == ProjectLoadWarningCode::TaskReadFailed
             && warning.stage == ProjectLoadWarningStage::Read
@@ -258,7 +266,10 @@ fn report_maps_scan_warnings_and_keeps_normal_tasks() {
     let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &FsTaskIo)
         .expect("rebuild report should succeed");
 
-    assert_eq!(vec!["tasks/ok.md".to_string()], sorted_paths(&report.tasks));
+    assert_eq!(
+        vec!["tasks/ok.md".to_string()],
+        sorted_paths(report.tasks.as_slice())
+    );
     assert!(report.warnings.iter().any(|warning| {
         warning.code == ProjectLoadWarningCode::BinaryFile
             && warning.stage == ProjectLoadWarningStage::Scan
@@ -287,4 +298,63 @@ fn report_keeps_hierarchy_failure_fatal() {
         .expect_err("hierarchy depth must remain fatal");
 
     assert!(matches!(error, RebuildTasksError::Hierarchy(_)));
+}
+
+#[test]
+fn duplicate_identity_projects_to_a_parse_stage_warning_on_the_rejected_path() {
+    let projected = project_warning_from_duplicate(&DuplicateTaskIdentity {
+        identity: CanonicalTaskPath::new("tasks/a.md"),
+        kept: TaskFilePath::from("./tasks/a.md"),
+        rejected: TaskFilePath::from("tasks/a.md"),
+    });
+
+    assert_eq!(
+        projected.code,
+        ProjectLoadWarningCode::DuplicateTaskIdentity
+    );
+    assert_eq!(projected.stage, ProjectLoadWarningStage::Parse);
+    assert_eq!(projected.path.as_deref(), Some("tasks/a.md"));
+    assert!(projected.recoverable);
+    assert!(
+        projected.message.contains("tasks/a.md") && projected.message.contains("./tasks/a.md"),
+        "message には kept と rejected の両方が入る: {}",
+        projected.message
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn report_keeps_the_first_of_duplicate_identities_and_warns_about_the_rest() {
+    let dir = TempDir::new().expect("tempdir");
+    write_md(dir.path(), "tasks/a.md", &task_md("Slash"));
+    // Unix ではバックスラッシュを含むファイル名が作れるため、`tasks\a.md` は
+    // `tasks/a.md` と同じ canonical identity に正規化される別ファイルになる。
+    write_md(dir.path(), "tasks\\a.md", &task_md("Backslash"));
+
+    let report = rebuild_tasks_from_disk_with_report(dir.path(), &todo(), &FsTaskIo)
+        .expect("duplicate identity must not be fatal");
+
+    assert_eq!(report.tasks.len(), 1);
+    let kept = report
+        .tasks
+        .get(&CanonicalTaskPath::new("tasks/a.md"))
+        .expect("one task is kept under the canonical identity");
+    assert_eq!(
+        kept.file_path().as_str(),
+        "tasks/a.md",
+        "file_path 昇順で先頭が残る"
+    );
+    let duplicates: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|warning| warning.code == ProjectLoadWarningCode::DuplicateTaskIdentity)
+        .collect();
+    assert_eq!(duplicates.len(), 1);
+    // parse 段階で file_path が `/` 区切りへ正規化されるため、warning の path も正規化済み表記になる。
+    assert_eq!(duplicates[0].path.as_deref(), Some("tasks/a.md"));
+    assert!(
+        duplicates[0].message.contains("tasks/a.md"),
+        "message には identity が入る: {}",
+        duplicates[0].message
+    );
 }

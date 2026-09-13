@@ -10,10 +10,12 @@ use tempfile::tempdir;
 
 use crate::config::column_name::ColumnName;
 use crate::config::{
-    CardOrder, Column, Config, LabelDefinition, LabelRegistry, LabelRegistryStore, LoadLabelsError,
-    LoadMilestonesError, MilestoneDefinition, MilestoneRegistry, MilestoneRegistryStore,
-    SaveLabelsError, SaveMilestonesError,
+    load_or_default, CardOrder, Column, Config, FsConfigWriter, LabelDefinition, LabelRegistry,
+    LabelRegistryStore, LoadLabelsError, LoadMilestonesError, MilestoneDefinition,
+    MilestoneRegistry, MilestoneRegistryStore, SaveLabelsError, SaveMilestonesError,
 };
+use crate::project::open::persist_config;
+use crate::project::open_test_support::{assert_matches_reopen, open_from_disk};
 use crate::project::project_root::ProjectRoot;
 use crate::project_session::{
     PreparedProjectSession, ProjectSessionCommitError, ProjectSessionSnapshot, SessionConflict,
@@ -155,8 +157,7 @@ fn open_session(
     tasks: HashMap<CanonicalTaskPath, Task>,
 ) -> ProjectSessionSnapshot {
     let session_id = state.reserve_session_id().expect("reserve session ID");
-    let tasks = crate::task::task_index::ResolvedTaskSet::reresolve(tasks.into_values())
-        .expect("fixture tasks resolve");
+    let tasks = crate::task::task_catalog::TaskCatalog::from_tasks_for_test(tasks.into_values());
     let candidate = PreparedProjectSession::new(root, config, labels, milestones, tasks)
         .into_session(session_id);
     let staged = staged_for(candidate.identity());
@@ -240,7 +241,10 @@ fn task_resync_keeps_session_id_and_commits_all_rebuilt_tasks_once() {
     assert_eq!(1, recovered.tasks().len());
     assert_eq!(
         "Fresh from disk",
-        recovered.tasks()[&CanonicalTaskPath::new("fresh.md")]
+        recovered
+            .tasks()
+            .get(&CanonicalTaskPath::new("fresh.md"))
+            .expect("fresh.md is recovered")
             .title()
             .as_str()
     );
@@ -286,7 +290,11 @@ fn config_and_tasks_resync_uses_reloaded_config_for_missing_task_status() {
     assert_eq!(recovered_config, *recovered.config());
     assert_eq!(
         ColumnName::from_lenient("Review"),
-        *recovered.tasks()[&CanonicalTaskPath::new("fresh.md")].status()
+        *recovered
+            .tasks()
+            .get(&CanonicalTaskPath::new("fresh.md"))
+            .expect("fresh.md is recovered")
+            .status()
     );
     assert_eq!(2, recovered.version().revision.as_u64());
 }
@@ -557,4 +565,125 @@ fn config_and_task_scan_failure_leaves_every_current_aggregate_field_unchanged()
         &before,
         &state.require_session_snapshot().expect("snapshot"),
     );
+}
+
+fn seed_md(root: &Path, rel: &str, body: &str) {
+    let absolute = root.join(rel);
+    if let Some(parent) = absolute.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dir");
+    }
+    std::fs::write(absolute, body).expect("write md");
+}
+
+#[test]
+fn task_resync_after_a_stale_commit_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir().expect("temp dir");
+    seed_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\nbody\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    let initial = open_from_disk(&state, dir.path());
+    let root = initial.project_root().clone();
+    // resident が知らない間に disk が進む（別 writer の書き込み相当）。
+    seed_md(
+        dir.path(),
+        "tasks/new.md",
+        "---\ntitle: New\nstatus: Todo\nparent: tasks/parent.md\nlinks:\n  - tasks/child.md\n---\nbody\n",
+    );
+    let conflict = stale_revision_conflict(&state, &initial.identity());
+
+    state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::Tasks { task_io: &FsTaskIo },
+            )
+        })
+        .expect("write lease")
+        .expect("same-session task resync");
+
+    let recovered = state.require_session_snapshot().expect("snapshot");
+    assert_eq!(3, recovered.tasks().len());
+    assert_matches_reopen(&state, dir.path());
+}
+
+#[test]
+fn config_and_tasks_resync_after_a_stale_commit_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir().expect("temp dir");
+    seed_md(
+        dir.path(),
+        "tasks/parent.md",
+        "---\ntitle: Parent\nstatus: Todo\n---\nbody\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/parent.md\n---\nbody\n",
+    );
+    let state = Arc::new(AppState::new());
+    let initial = open_from_disk(&state, dir.path());
+    let root = initial.project_root().clone();
+    // 別 writer が md と config.json を同時に進めた状況（move_task 相当）。
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Doing\nparent: tasks/parent.md\n---\nbody\n",
+    );
+    let next_config = Config::try_new(
+        vec![
+            Column {
+                name: ColumnName::from_lenient("Todo"),
+                order: 0,
+                color: None,
+                wip_limit: None,
+            },
+            Column {
+                name: ColumnName::from_lenient("Doing"),
+                order: 1,
+                color: None,
+                wip_limit: None,
+            },
+        ],
+        CardOrder::default(),
+        None,
+    )
+    .expect("valid config");
+    persist_config(dir.path(), &next_config, &FsConfigWriter).expect("write config.json");
+    let conflict = stale_revision_conflict(&state, &initial.identity());
+
+    state
+        .with_project_root_writer_lease(&root, || {
+            resync_if_same_project_under_lease(
+                &state,
+                &root,
+                &conflict,
+                ResyncSource::ConfigAndTasks {
+                    task_io: &FsTaskIo,
+                    load_config: &load_or_default,
+                },
+            )
+        })
+        .expect("write lease")
+        .expect("same-session config and task resync");
+
+    let recovered = state.require_session_snapshot().expect("snapshot");
+    assert_eq!(next_config, *recovered.config());
+    assert_eq!(
+        ColumnName::from_lenient("Doing"),
+        *recovered
+            .tasks()
+            .get(&CanonicalTaskPath::new("tasks/child.md"))
+            .expect("child stays resident")
+            .status()
+    );
+    assert_matches_reopen(&state, dir.path());
 }

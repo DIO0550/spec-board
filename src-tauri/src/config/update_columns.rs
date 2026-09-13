@@ -2,7 +2,7 @@
 //!
 //! カラムの追加・削除・並び替え・名前変更・完了カラム変更を 1 コマンドで処理する。
 //! コア計算は `Config::plan_update_columns` aggregate method に集約し、
-//! effect層`update_columns_impl`でI/O前に全Task candidateをresolveして`ResolvedTaskSet`を
+//! effect層`update_columns_impl`でI/O前に全Task candidateをresolveして`TaskCatalog`を
 //! 確定し、md一括書き換え（トランザクション的ロールバック付き）→`config.json` atomic
 //! write→resolved session commit（競合時resync）→GUIDE.md再生成、の順で適用する。
 
@@ -27,6 +27,7 @@ use crate::task::document::{Patch, TaskDocument, TaskDocumentError, TaskPatch};
 use crate::task::frontmatter::FrontmatterError;
 use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::parse::TaskParseError;
+use crate::task::task_catalog::TaskCatalog;
 use spec_board_fs::config::config_io;
 use spec_board_fs::watcher::write_ignore::{WriteIgnoreError, WriteIgnoreRegistry};
 
@@ -205,10 +206,9 @@ pub(crate) fn update_columns_impl_with_loader(
     args: UpdateColumnsArgs,
 ) -> Result<(), UpdateColumnsError> {
     state.with_project_writer_lease(|target, snapshot| {
-        let tasks_snapshot: Vec<_> = snapshot.tasks().values().cloned().collect();
         let plan = snapshot
             .config()
-            .plan_update_columns(&args, &tasks_snapshot)?;
+            .plan_update_columns(&args, snapshot.tasks().as_slice())?;
         if plan.is_noop {
             return Ok(());
         }
@@ -227,14 +227,16 @@ pub(crate) fn update_columns_impl_with_loader(
         let candidates = snapshot
             .tasks()
             .iter()
-            .map(|(path, task)| {
-                renamed_statuses.get(path).map_or_else(
+            .map(|task| {
+                let path = CanonicalTaskPath::from_file_path(task.file_path());
+                renamed_statuses.get(&path).map_or_else(
                     || task.to_parsed_task(),
                     |status| task.with_status_candidate(status),
                 )
             })
             .collect();
-        let next_tasks = crate::task::task_index::ResolvedTaskSet::resolve_lenient(candidates)?;
+        // resident 由来の candidate なので identity は一意。duplicates は常に空。
+        let next_tasks = TaskCatalog::resolve(candidates)?.catalog;
 
         // resident plan完成後、disk read/marker/writeより先にrevisionをpreflightする。
         let resources = state.preflight_session_write(snapshot)?;

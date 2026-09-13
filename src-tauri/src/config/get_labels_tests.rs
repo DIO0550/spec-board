@@ -1,11 +1,10 @@
 //! `get_labels_impl` のユニットテスト。
 
-use crate::task::canonical_task_path::CanonicalTaskPath;
-
 use super::{get_labels_impl, GetLabelsError, GetLabelsPayload};
 use crate::config::{LabelColor, LabelDefinition, LabelGroup, LabelRegistry};
 use crate::state::{AppState, AppStateError};
 use crate::task::label::Label;
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn label(name: &str, color: Option<&str>) -> LabelDefinition {
@@ -30,12 +29,9 @@ fn task_with_labels(id: &str, labels: &[&str]) -> Task {
 }
 
 fn set_tasks(state: &AppState, tasks: Vec<Task>) {
-    let cache = tasks
-        .into_iter()
-        .enumerate()
-        .map(|(i, t)| (CanonicalTaskPath::new(&format!("{i}.md")), t))
-        .collect();
-    state.test_replace_tasks(cache).expect("writable");
+    state
+        .test_replace_tasks(TaskCatalog::from_tasks_for_test(tasks))
+        .expect("writable");
 }
 
 #[test]

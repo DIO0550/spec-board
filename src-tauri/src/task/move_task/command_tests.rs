@@ -27,7 +27,7 @@ use crate::task::io::{FsTaskIo, TaskIo, TaskIoError};
 use crate::task::move_task::args::MoveTaskArgs;
 use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
 use crate::task::parse::TaskParseError;
-use crate::task::task_index::{ParentHierarchyErrorReason, TaskIndex};
+use crate::task::task_index::ParentHierarchyErrorReason;
 use crate::task::warning::TaskWarningCode;
 use crate::task::writer_test_support::{
     session_revision, session_write_ignore_len, CountingTaskIo,
@@ -144,7 +144,7 @@ fn current_board_order(state: &AppState, column: &str) -> Vec<String> {
     let Some(snapshot) = snapshot else {
         return Vec::new();
     };
-    let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+    let index = snapshot.tasks().to_index();
     index.board_order_of_column(snapshot.config(), column)
 }
 
@@ -1592,7 +1592,11 @@ fn move_task_revision_exhausted_performs_zero_task_config_and_loader_io() {
         .expect("resident snapshot after rejection");
     assert_eq!(
         status_before,
-        *resident_after.tasks()[&CanonicalTaskPath::new("tasks/a.md")].status()
+        *resident_after
+            .tasks()
+            .get(&CanonicalTaskPath::new("tasks/a.md"))
+            .expect("tasks/a.md stays resident")
+            .status()
     );
     assert_eq!(card_order_before, resident_after.config().card_order);
 }

@@ -27,7 +27,7 @@ pub enum UpdateTaskError {
     #[error("parse failed: {0}")]
     ParseFailed(String),
     /// 指定された parent が cache に見つからない。
-    /// `ResolvedTaskSet::validate_strict`内部のhierarchy検証は不在をwarningにするだけのため、
+    /// `validate_strict_candidates`内部のhierarchy検証は不在をwarningにするだけのため、
     /// plan_update内で明示的に検出してこのvariantを返す。
     #[error("parent not found: {path}")]
     ParentNotFound { path: String },

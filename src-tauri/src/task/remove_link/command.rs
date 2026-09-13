@@ -1,6 +1,5 @@
 //! `remove_link` Tauri command と effect 層実装。
 
-use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
@@ -16,7 +15,8 @@ use crate::task::payload::TaskPayload;
 use crate::task::remove_link::args::RemoveLinkArgs;
 use crate::task::remove_link::error::{RemoveLinkCommandError, RemoveLinkError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::{ParsedTask, RemoveLinkOutcome, ResolvedTaskSet, Task, TaskIndex};
+use crate::task::task_catalog::TaskCatalog;
+use crate::task::task_index::{ExternalTaskChange, ParsedTask, RemoveLinkOutcome, Task};
 
 /// `remove_link` Tauri command 薄層。
 #[tauri::command]
@@ -42,7 +42,7 @@ pub(crate) fn remove_link_impl(
             .map_err(RemoveLinkCommandError::Validation)?;
         let source_rel = intent.source.clone();
         let source_abs = project_root.as_path().join(&source_rel);
-        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let index = snapshot.tasks().to_index();
         let existing_source = index
             .find_by_path(source_rel.as_path())
             .cloned()
@@ -101,23 +101,22 @@ pub(crate) fn remove_link_impl(
     })
 }
 
-/// planned link削除をcloned task mapへ適用する。
+/// planned link削除をresident catalogへ適用する。
 fn apply_remove_link_to_cache(
-    cache: &HashMap<CanonicalTaskPath, Task>,
+    cache: &TaskCatalog,
     source_rel: &Path,
     updated_task: &ParsedTask,
-) -> Result<(ResolvedTaskSet, Task), RemoveLinkCommandError> {
+) -> Result<(TaskCatalog, Task), RemoveLinkCommandError> {
     let source_key = CanonicalTaskPath::from_path(source_rel);
-    if !cache.contains_key(&source_key) {
+    if !cache.contains(&source_key) {
         return Err(RemoveLinkError::SourceVanished {
             path: source_key.as_str().to_string(),
         }
         .into());
     }
-    let resolved = TaskIndex::new(cache.values().cloned().collect())
-        .rebuild_with_external_change(crate::task::task_index::ExternalTaskChange::Upserted(
-            Box::new(updated_task.clone()),
-        ))?
+    let resolved = cache
+        .to_index()
+        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(updated_task.clone())))?
         .tasks;
     let returned = resolved
         .get(&source_key)

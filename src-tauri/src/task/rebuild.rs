@@ -5,7 +5,7 @@
 //! 恒久的に一致することを保証する。片側だけ条件が変わると「初回 scan で読まれない
 //! ファイルが watcher 経由で現れる」ような非対称なバグになる。
 //!
-//! 派生値の構築は [`TaskIndex::rebuild_derived_with_warnings`] に委譲する。
+//! 派生値の構築と重複 identity の検出は [`TaskCatalog::resolve`] に委譲する。
 //! 本モジュールは「走査して parse する」までを担い、集約の不変条件は aggregate
 //! 側に置いたままにする。
 //!
@@ -29,7 +29,8 @@ use crate::project::load_warning::{
 };
 use crate::task::io::TaskIo;
 use crate::task::parse::{task_from_markdown, TaskParseContext, TaskParseError};
-use crate::task::task_index::{ParsedTask, ResolvedTaskSet, Task};
+use crate::task::task_catalog::{DuplicateTaskIdentity, TaskCatalog};
+use crate::task::task_index::{ParsedTask, Task};
 
 /// [`rebuild_tasks_from_disk`] の失敗理由。
 #[derive(Debug, thiserror::Error)]
@@ -43,7 +44,7 @@ pub enum RebuildTasksError {
 /// disk 上の md から再構築した task と recoverable warning の組。
 #[derive(Debug, PartialEq)]
 pub struct TaskRebuildReport {
-    pub tasks: Vec<Task>,
+    pub(crate) tasks: TaskCatalog,
     pub warnings: Vec<ProjectLoadWarning>,
 }
 
@@ -53,7 +54,11 @@ pub fn rebuild_tasks_from_disk(
     default_status: &ColumnName,
     io: &dyn TaskIo,
 ) -> Result<Vec<Task>, RebuildTasksError> {
-    Ok(rebuild_tasks_from_disk_with_report(root, default_status, io)?.tasks)
+    Ok(
+        rebuild_tasks_from_disk_with_report(root, default_status, io)?
+            .tasks
+            .into_tasks(),
+    )
 }
 
 /// root 配下を再走査して task と、走査・read・parse の warning を再構築する。
@@ -72,14 +77,44 @@ pub fn rebuild_tasks_from_disk_with_report(
         .into_iter()
         .map(project_warning_from_scan)
         .collect();
-    let (tasks, task_warnings) = collect_tasks(root, &scan.items, default_status, io);
+    let (candidates, task_warnings) = collect_tasks(root, &scan.items, default_status, io);
     warnings.extend(task_warnings);
-    let tasks = ResolvedTaskSet::resolve_lenient(tasks)?.into_tasks();
+    let resolution = TaskCatalog::resolve(candidates)?;
+    warnings.extend(
+        resolution
+            .duplicates
+            .iter()
+            .map(project_warning_from_duplicate),
+    );
 
     Ok(TaskRebuildReport {
-        tasks,
+        tasks: resolution.catalog,
         warnings: deduplicate_and_sort(warnings),
     })
+}
+
+/// 同じ canonical identity に正規化された md のうち、採用されなかった側を warning にする。
+///
+/// parse 段階で `file_path` は forward slash へ正規化済みなので、disk 上の表記揺れ
+/// （`tasks\a.md` と `tasks/a.md` 等）は kept / rejected が同じ文字列になりうる。
+/// その場合は identity だけを示す文面にする。
+fn project_warning_from_duplicate(duplicate: &DuplicateTaskIdentity) -> ProjectLoadWarning {
+    let rejected = duplicate.rejected.as_str();
+    let kept = duplicate.kept.as_str();
+    let message = if rejected == kept {
+        format!(
+            "multiple files resolve to the task identity `{}`; only the first is kept",
+            duplicate.identity.as_str()
+        )
+    } else {
+        format!("`{rejected}` resolves to the same task identity as `{kept}`; the latter is kept")
+    };
+    ProjectLoadWarning::new(
+        ProjectLoadWarningCode::DuplicateTaskIdentity,
+        ProjectLoadWarningStage::Parse,
+        Some(rejected.to_owned()),
+        message,
+    )
 }
 
 fn project_warning_from_scan(warning: ScanWarning) -> ProjectLoadWarning {

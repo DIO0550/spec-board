@@ -1,12 +1,12 @@
 //! `get_milestones_impl` のテスト。一覧 + usageCounts / 未割当・未定義値 /
 //! プロジェクト未オープン / lock 破損（From 変換）を検証する。
 
-use crate::task::canonical_task_path::CanonicalTaskPath;
 use std::path::Path;
 
 use super::{get_milestones_impl, GetMilestonesError, GetMilestonesPayload};
 use crate::config::{MilestoneDefinition, MilestoneRegistry, MilestoneState};
 use crate::state::{AppState, AppStateError};
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_index::{ParsedTaskBuilder, Task};
 
 fn definition(name: &str) -> MilestoneDefinition {
@@ -40,12 +40,9 @@ fn opened_state(root: &Path, registry: MilestoneRegistry, tasks: Vec<Task>) -> A
     state
         .test_replace_milestones(Some(registry))
         .expect("writable");
-    let cache = tasks
-        .into_iter()
-        .enumerate()
-        .map(|(i, t)| (CanonicalTaskPath::new(&format!("{i}.md")), t))
-        .collect();
-    state.test_replace_tasks(cache).expect("writable");
+    state
+        .test_replace_tasks(TaskCatalog::from_tasks_for_test(tasks))
+        .expect("writable");
     state
 }
 

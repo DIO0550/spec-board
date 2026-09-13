@@ -24,6 +24,7 @@ pub(crate) mod relocate;
 pub mod remove_link;
 pub mod reverse_links;
 pub(crate) mod session_write;
+pub mod task_catalog;
 pub mod task_content;
 pub mod task_file_name;
 pub mod task_file_path;

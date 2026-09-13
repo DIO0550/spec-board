@@ -7,7 +7,6 @@
 //! reopen 後の adapter は write-ignore、resident state、eventSeq、emit のどれにも
 //! 触れない。
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvError};
 
@@ -22,7 +21,7 @@ use crate::task::parse::{
 };
 use crate::task::rebuild::rebuild_tasks_from_disk_with_report;
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::{ExternalChangeOutcome, ExternalTaskChange, Task, TaskIndex};
+use crate::task::task_index::{ExternalChangeOutcome, ExternalTaskChange};
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
@@ -195,7 +194,7 @@ fn rescan_if_cached(
 ) -> Result<(), HandleError> {
     if !snapshot
         .tasks()
-        .contains_key(&CanonicalTaskPath::from_file_path(rel_path))
+        .contains(&CanonicalTaskPath::from_file_path(rel_path))
     {
         return Ok(());
     }
@@ -310,7 +309,7 @@ fn handle_upsert(
     };
 
     let cache_key = CanonicalTaskPath::from_file_path(&task.file_path);
-    let event_name = if snapshot.tasks().contains_key(&cache_key) {
+    let event_name = if snapshot.tasks().contains(&cache_key) {
         EVENT_TASK_UPDATED
     } else {
         EVENT_TASK_CREATED
@@ -319,8 +318,9 @@ fn handle_upsert(
     // 派生値（children / reverse_links / parentCycle・parentNotFound warning）は
     // 変更 1 件では閉じないので、全件を作り直す。open / full rescan と同じ入口を
     // 通すことで「watcher 適用後 == 再 open」を構造的に保証する。
-    let resident: Vec<Task> = snapshot.tasks().values().cloned().collect();
-    let reconciled = match TaskIndex::new(resident)
+    let reconciled = match snapshot
+        .tasks()
+        .to_index()
         .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task)))
     {
         Ok(outcome) => outcome,
@@ -562,7 +562,7 @@ fn handle_delete(
     }
 
     let cache_key = CanonicalTaskPath::from_file_path(&rel_path);
-    if !snapshot.tasks().contains_key(&cache_key) {
+    if !snapshot.tasks().contains(&cache_key) {
         log::trace!(
             "watcher_event: delete for path not in the task cache: {}",
             abs_path.display()
@@ -575,8 +575,9 @@ fn handle_delete(
         return Ok(());
     }
     // upsert と同じく、消えた task を参照していた側の派生値も作り直す。
-    let resident: Vec<Task> = snapshot.tasks().values().cloned().collect();
-    let reconciled = match TaskIndex::new(resident)
+    let reconciled = match snapshot
+        .tasks()
+        .to_index()
         .rebuild_with_external_change(ExternalTaskChange::Removed(rel_path.clone()))
     {
         Ok(outcome) => outcome,
@@ -682,15 +683,8 @@ fn handle_rescan(
             .collect::<Vec<_>>();
         load_warnings.extend(report.warnings);
         let load_warnings = deduplicate_and_sort(load_warnings);
-        let cache: HashMap<CanonicalTaskPath, Task> = report
-            .tasks
-            .into_iter()
-            .map(|task| (CanonicalTaskPath::from_file_path(task.file_path()), task))
-            .collect();
-        let resolved_tasks =
-            crate::task::task_index::ResolvedTaskSet::reresolve(cache.values().cloned())
-                .expect("full rescan report passed the canonical resolver");
-        // cache は open 側と同じ `HashMap<CanonicalTaskPath, Task>` なので、詰め替えは
+        let catalog = report.tasks;
+        // catalog は open 側と同じ `TaskCatalog` なので、詰め替えは
         // `status_inputs_from_tasks` をそのまま使う（同型の helper を watcher 側に
         // 作らない）。
         //
@@ -699,14 +693,15 @@ fn handle_rescan(
         // たり、その間に別 writer が足したカラムを古い Config で上書きしたりする。
         // 二重書き込みの抑止と resident の追従は、どちらも helper 内部の読み直しから
         // 自然に出るので、周をまたぐ状態は持たない。
-        let outcome = reconcile_config_for_event(ctx, &snapshot, &status_inputs_from_tasks(&cache));
+        let outcome =
+            reconcile_config_for_event(ctx, &snapshot, &status_inputs_from_tasks(&catalog));
         let next_config = outcome.into_config();
         let expected = snapshot.identity();
         let commit = match ctx.state.commit_session_write(&expected, move |session| {
             if let Some(config) = next_config {
                 session.replace_config(config);
             }
-            session.replace_tasks_and_load_warnings(resolved_tasks, load_warnings);
+            session.replace_tasks_and_load_warnings(catalog, load_warnings);
         }) {
             Ok(committed) => RescanCommit::Committed(committed.identity().clone()),
             Err(SessionWriteError::Conflict(conflict)) => {

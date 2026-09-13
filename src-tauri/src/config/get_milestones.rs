@@ -27,7 +27,6 @@ use thiserror::Error;
 
 use crate::config::MilestoneDefinition;
 use crate::state::{AppState, AppStateError};
-use crate::task::task_index::TaskIndex;
 
 /// `get_milestones` コマンドが FE へ返す payload。
 ///
@@ -74,9 +73,8 @@ pub(crate) fn get_milestones_impl(
     let snapshot = state
         .session_snapshot()?
         .ok_or(GetMilestonesError::NoProjectOpen)?;
-    let tasks = snapshot.tasks().values().cloned().collect();
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
-    let usage_counts = TaskIndex::new(tasks).milestone_usage_counts();
+    let usage_counts = snapshot.tasks().to_index().milestone_usage_counts();
     Ok(GetMilestonesPayload {
         milestones: snapshot.milestones().definitions().to_vec(),
         usage_counts,

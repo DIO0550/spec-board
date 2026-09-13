@@ -28,7 +28,6 @@ use thiserror::Error;
 
 use crate::config::LabelDefinition;
 use crate::state::{AppState, AppStateError};
-use crate::task::task_index::TaskIndex;
 
 /// `get_labels` コマンドが FE へ返す payload。
 ///
@@ -85,9 +84,8 @@ pub(crate) fn get_labels_impl(state: &AppState) -> Result<GetLabelsPayload, GetL
     let snapshot = state
         .session_snapshot()?
         .ok_or(GetLabelsError::NoProjectOpen)?;
-    let tasks = snapshot.tasks().values().cloned().collect();
     // 集計は task 集約 TaskIndex のメソッドへ委譲（free function を config 側に作らない）。
-    let usage_counts = TaskIndex::new(tasks).label_usage_counts();
+    let usage_counts = snapshot.tasks().to_index().label_usage_counts();
     Ok(GetLabelsPayload {
         labels: snapshot.labels().definitions().to_vec(),
         usage_counts,

@@ -4,7 +4,6 @@
 //! 担当し、純粋計算は aggregate `TaskIndex::plan_create` に委譲する。
 //! 標準 fs API への直接呼び出しは持たず、すべての I/O は `TaskIo` ポート経由で行う。
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -20,8 +19,9 @@ use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_content::TaskContent;
-use crate::task::task_index::{CreateTaskIntent, ResolvedTaskSet, Task, TaskIndex};
+use crate::task::task_index::{CreateTaskIntent, ExternalTaskChange, Task};
 
 /// `create_task` Tauri command 薄層。
 ///
@@ -47,7 +47,7 @@ pub(crate) fn create_task_impl(
 ) -> Result<Task, CreateTaskCommandError> {
     state.with_project_writer_lease(|target, snapshot| -> Result<Task, CreateTaskCommandError> {
         let intent = CreateTaskIntent::from(args);
-        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let index = snapshot.tasks().to_index();
         let outcome = index.plan_create(snapshot.project_root().as_path(), &intent)?;
         let (next_tasks, created_task) = plan_cache_insert(
             snapshot.tasks(),
@@ -87,11 +87,11 @@ pub(crate) fn create_task_impl(
 
 /// generated contentをcandidateへ変換し、全件resolver済みのcommit planを返す。
 fn plan_cache_insert(
-    tasks: &HashMap<CanonicalTaskPath, Task>,
+    tasks: &TaskCatalog,
     content: &TaskContent,
     rel_path: &Path,
     status: ColumnName,
-) -> Result<(ResolvedTaskSet, Task), CreateTaskCommandError> {
+) -> Result<(TaskCatalog, Task), CreateTaskCommandError> {
     let document = TaskDocument::parse(content.as_bytes())?;
     let context = crate::task::parse::TaskParseContext {
         file_path: rel_path.to_path_buf(),
@@ -99,18 +99,15 @@ fn plan_cache_insert(
     };
     let task = document.to_parsed_task(&context);
     let created_path = CanonicalTaskPath::from_file_path(&task.file_path);
-    let candidates = tasks
-        .values()
-        .map(Task::to_parsed_task)
-        .chain(std::iter::once(task))
-        .collect();
-    let resolved = ResolvedTaskSet::resolve_lenient(candidates)?;
-    let created_task = resolved.get(&created_path).cloned().ok_or_else(|| {
+    let outcome = tasks
+        .to_index()
+        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task)))?;
+    let created_task = outcome.tasks.get(&created_path).cloned().ok_or_else(|| {
         CreateTaskCommandError::CreatedTaskVanished {
             path: created_path.as_str().to_string(),
         }
     })?;
-    Ok((resolved, created_task))
+    Ok((outcome.tasks, created_task))
 }
 
 #[cfg(test)]

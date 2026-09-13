@@ -35,6 +35,7 @@ use crate::task::projection::{
 };
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_content::TaskContent;
 use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
@@ -50,7 +51,7 @@ use crate::task::warning::{ensure_parent_cycle_warning, TaskWarning, TaskWarning
 /// 異常に深いネストの検証コストを抑えるための値。引き上げると 1 タスクあたり
 /// の親チェーン検証で辿るノード数が増えるため、深い階層を許容したい場合は
 /// 検証コストへの影響を確認してから変更すること。
-const MAX_PARENT_DEPTH: usize = 20;
+pub(crate) const MAX_PARENT_DEPTH: usize = 20;
 
 /// `TaskIndex::cycle_members` の 3 色法で使う走査状態。
 ///
@@ -203,7 +204,7 @@ impl From<Task> for crate::task::payload::TaskPayload {
 
 /// Markdown/frontmatter の parse だけが完了した task candidate。
 ///
-/// IPC serialize と resident session への格納はできず、必ず [`ResolvedTaskSet`] の
+/// IPC serialize と resident session への格納はできず、必ず [`TaskCatalog`] の
 /// resolver を通して [`Task`] へ変換する。
 ///
 /// ```compile_fail,E0603
@@ -248,80 +249,40 @@ impl ParsedTask {
     }
 }
 
-/// canonical resolver を通過した task 集合。
+/// parse-only candidate を lenient resolver に通し、file_path 昇順で派生済みの `Task` を返す。
 ///
-/// field を公開せず、session/cache の replace 境界が parse-only candidate を受理しない
-/// ことを型で保証する。
-#[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct ResolvedTaskSet {
-    tasks: Vec<Task>,
+/// `TaskCatalog` だけが呼ぶ resolver 入口。identity の一意性は呼び出し側で保証する。
+///
+/// # Errors
+/// 親チェーンが深すぎるときだけ `TaskParseError` を返す。
+pub(crate) fn resolve_lenient_candidates(
+    candidates: Vec<ParsedTask>,
+) -> Result<Vec<Task>, TaskParseError> {
+    let tasks = candidates
+        .into_iter()
+        .map(ParsedTask::into_unresolved_task)
+        .collect();
+    Ok(TaskIndex::new(tasks)
+        .rebuild_derived_with_warnings()?
+        .into_tasks())
 }
 
-impl ResolvedTaskSet {
-    pub(crate) fn resolve_lenient(tasks: Vec<ParsedTask>) -> Result<Self, TaskParseError> {
-        let tasks = tasks
+/// create / update の strict 検証。candidate 全体の親階層が成立しなければ `Err`。
+fn validate_strict_candidates(candidates: Vec<ParsedTask>) -> Result<(), TaskParseError> {
+    TaskIndex::new(
+        candidates
             .into_iter()
             .map(ParsedTask::into_unresolved_task)
-            .collect();
-        let tasks = TaskIndex::new(tasks)
-            .rebuild_derived_with_warnings()?
-            .into_tasks();
-        Ok(Self { tasks })
-    }
-
-    fn validate_strict(tasks: Vec<ParsedTask>) -> Result<(), TaskParseError> {
-        TaskIndex::new(
-            tasks
-                .into_iter()
-                .map(ParsedTask::into_unresolved_task)
-                .collect(),
-        )
-        .validate_parent_hierarchy()
-        .map(|_| ())
-    }
-
-    pub(crate) fn into_tasks(self) -> Vec<Task> {
-        self.tasks
-    }
-
-    pub(crate) fn into_map(self) -> HashMap<CanonicalTaskPath, Task> {
-        self.tasks
-            .into_iter()
-            .map(|task| (CanonicalTaskPath::from_file_path(&task.file_path), task))
-            .collect()
-    }
-
-    pub(crate) fn get(&self, path: &CanonicalTaskPath) -> Option<&Task> {
-        self.tasks
-            .iter()
-            .find(|task| CanonicalTaskPath::from_file_path(task.file_path()) == *path)
-    }
-
-    /// resident taskをdisk由来candidateへ戻し、canonical resolverを再実行する。
-    pub(crate) fn reresolve(tasks: impl IntoIterator<Item = Task>) -> Result<Self, TaskParseError> {
-        Self::resolve_lenient(
-            tasks
-                .into_iter()
-                .map(|task| task.to_parsed_task())
-                .collect(),
-        )
-    }
-}
-
-#[cfg(test)]
-impl std::ops::Deref for ResolvedTaskSet {
-    type Target = [Task];
-
-    fn deref(&self) -> &Self::Target {
-        &self.tasks
-    }
+            .collect(),
+    )
+    .validate_parent_hierarchy()
+    .map(|_| ())
 }
 
 #[cfg(test)]
 pub(crate) fn resolve_parsed_for_test(task: ParsedTask) -> Task {
-    ResolvedTaskSet::resolve_lenient(vec![task])
+    resolve_lenient_candidates(vec![task])
         .expect("fixture candidate should resolve")
-        .into_tasks()
         .into_iter()
         .next()
         .expect("single fixture candidate should remain")
@@ -377,6 +338,11 @@ impl ParsedTaskBuilder {
 
     pub(crate) fn parent(mut self, parent: Option<TaskFilePath>) -> Self {
         self.task.parent = parent;
+        self
+    }
+
+    pub(crate) fn links(mut self, links: Vec<TaskFilePath>) -> Self {
+        self.task.links = links;
         self
     }
 
@@ -558,7 +524,7 @@ pub(crate) enum ExternalTaskChange {
 /// watcher / mutationのcandidate変更を適用し、派生値を作り直した結果。
 pub(crate) struct ExternalChangeOutcome {
     /// 派生再構築後の全タスク。cache をこれで丸ごと置き換える。
-    pub(crate) tasks: ResolvedTaskSet,
+    pub(crate) tasks: TaskCatalog,
     /// 変更対象のタスク自身（`Upserted` のときだけ `Some`）。
     /// emit する payload には parse 直後ではなくこちらを載せる。
     pub(crate) changed_task: Option<Task>,
@@ -575,8 +541,21 @@ pub struct TaskIndex {
 }
 
 impl TaskIndex {
-    pub(crate) fn new(tasks: Vec<Task>) -> Self {
+    /// resolver 内部と `from_catalog` だけが使う。外部は `TaskCatalog::to_index()` を通す。
+    fn new(tasks: Vec<Task>) -> Self {
         Self { tasks }
+    }
+
+    /// resident catalog の全件 view を作る。
+    pub(crate) fn from_catalog(catalog: &TaskCatalog) -> Self {
+        Self::new(catalog.as_slice().to_vec())
+    }
+
+    /// resolver を通さず任意の `Task` 列から view を作る（projection 等、上流の不変条件に
+    /// 寄りかからない計算を単体で検証する fixture 専用）。
+    #[cfg(test)]
+    pub(crate) fn from_tasks_for_test(tasks: Vec<Task>) -> Self {
+        Self::new(tasks)
     }
 
     pub(crate) fn into_tasks(self) -> Vec<Task> {
@@ -1214,13 +1193,10 @@ impl TaskIndex {
             }
         }
 
-        let tasks = ResolvedTaskSet::resolve_lenient(candidates)?;
-        let changed_task = tasks
-            .tasks
-            .iter()
-            .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
-            .cloned();
-        let other_tasks_changed = other_tasks_differ(&before, &tasks.tasks, &target);
+        // slot 差し替え済みの candidate は identity 一意なので duplicates は常に空。
+        let tasks = TaskCatalog::resolve(candidates)?.catalog;
+        let changed_task = tasks.get(&CanonicalTaskPath::new(&target)).cloned();
+        let other_tasks_changed = other_tasks_differ(&before, tasks.as_slice(), &target);
 
         Ok(ExternalChangeOutcome {
             tasks,
@@ -1272,7 +1248,7 @@ impl TaskIndex {
     ) -> Result<(), ParentValidationFailure> {
         let mut augmented: Vec<ParsedTask> = self.tasks.iter().map(Task::to_parsed_task).collect();
         augmented.push(new_task.clone());
-        match ResolvedTaskSet::validate_strict(augmented) {
+        match validate_strict_candidates(augmented) {
             Ok(()) => Ok(()),
             Err(TaskParseError::CycleOrTooDeep { reason, .. }) => {
                 Err(ParentValidationFailure::ChainInvalid {
@@ -1413,7 +1389,7 @@ impl TaskIndex {
     /// 検証順序:
     ///
     /// 1. parent 存在チェック（cache key 探索）→ なければ `ParentNotFound`
-    /// 2. parent置換後の`Vec<ParsedTask>`に対して`ResolvedTaskSet::validate_strict`
+    /// 2. parent置換後の`Vec<ParsedTask>`に対して`validate_strict_candidates`
     /// 3. patch 適用 + `TaskDocument::render` で `String` を構築
     /// 4. `TaskContent::try_new(String)` で eligibility 検証
     /// 5. `TaskDocument::to_parsed_task`でupdated candidateを再構築しwarningを再生成
@@ -1493,7 +1469,7 @@ impl TaskIndex {
             } else {
                 values.push(preliminary_task);
             }
-            ResolvedTaskSet::validate_strict(values).map_err(UpdateTaskError::from)?;
+            validate_strict_candidates(values).map_err(UpdateTaskError::from)?;
         }
 
         let serialized = document

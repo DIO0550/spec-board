@@ -29,7 +29,7 @@ use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::parse::extract_string_extra;
 use crate::task::relocate::{move_md_file, RelocateError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::{ExternalTaskChange, TaskIndex};
+use crate::task::task_index::ExternalTaskChange;
 
 /// `.spec-board/` 配下のアーカイブ置き場ディレクトリ名。
 const ARCHIVE_DIR_NAME: &str = "archive";
@@ -87,7 +87,7 @@ pub(crate) fn archive_task_impl(
         let project_root = snapshot.project_root();
         let rel_path = resolve_input_file_path(&args.file_path, project_root.as_path())?;
         let abs = project_root.as_path().join(&rel_path);
-        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let index = snapshot.tasks().to_index();
         let archived_file_path = index
             .find_by_path(&rel_path)
             .map(|task| task.file_path().clone())

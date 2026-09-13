@@ -52,7 +52,7 @@ fn install_active_session(state: &AppState, root: &Path) -> SessionIdentity {
         Default::default(),
         Default::default(),
         Default::default(),
-        crate::task::task_index::ResolvedTaskSet::default(),
+        crate::task::task_catalog::TaskCatalog::default(),
     )
     .into_session(session_id);
     let identity = candidate.identity();

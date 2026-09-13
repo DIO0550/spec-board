@@ -320,7 +320,7 @@ impl WatcherFactory for IdentityMismatchFactory {
             Config::default(),
             crate::config::LabelRegistry::default(),
             crate::config::MilestoneRegistry::default(),
-            crate::task::task_index::ResolvedTaskSet::default(),
+            crate::task::task_catalog::TaskCatalog::default(),
         )
         .into_session(wrong_id)
         .identity();

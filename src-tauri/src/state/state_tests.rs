@@ -68,8 +68,7 @@ fn candidate_for(
         sample_config(),
         sample_labels(),
         sample_milestones(),
-        crate::task::task_index::ResolvedTaskSet::reresolve(tasks.into_values())
-            .expect("fixture tasks resolve"),
+        crate::task::task_catalog::TaskCatalog::from_tasks_for_test(tasks.into_values()),
     )
     .into_session(session_id)
 }
@@ -185,12 +184,13 @@ fn session_commit_updates_domain_and_resource_revision_together() {
     let committed = state
         .commit_session(&expected, |session| {
             session.replace_tasks(
-                crate::task::task_index::ResolvedTaskSet::resolve_lenient(vec![
-                    ParsedTaskBuilder::new("tasks/a.md")
-                        .title("title-a")
-                        .build(),
-                ])
-                .expect("fixture candidates resolve"),
+                crate::task::task_catalog::TaskCatalog::resolve(vec![ParsedTaskBuilder::new(
+                    "tasks/a.md",
+                )
+                .title("title-a")
+                .build()])
+                .expect("fixture candidates resolve")
+                .catalog,
             );
         })
         .expect("matching commit succeeds");
@@ -234,7 +234,7 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
                             let mut candidates: Vec<_> = session
                                 .snapshot()
                                 .tasks()
-                                .values()
+                                .iter()
                                 .map(Task::to_parsed_task)
                                 .collect();
                             candidates.push(
@@ -243,10 +243,9 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
                                     .build(),
                             );
                             session.replace_tasks(
-                                crate::task::task_index::ResolvedTaskSet::resolve_lenient(
-                                    candidates,
-                                )
-                                .expect("fixture candidates resolve"),
+                                crate::task::task_catalog::TaskCatalog::resolve(candidates)
+                                    .expect("fixture candidates resolve")
+                                    .catalog,
                             );
                         })?;
                         Ok::<_, super::SessionWriteError>(())
@@ -265,10 +264,10 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
     assert_eq!(2, snapshot.tasks().len());
     assert!(snapshot
         .tasks()
-        .contains_key(&CanonicalTaskPath::new("tasks/a.md")));
+        .contains(&CanonicalTaskPath::new("tasks/a.md")));
     assert!(snapshot
         .tasks()
-        .contains_key(&CanonicalTaskPath::new("tasks/b.md")));
+        .contains(&CanonicalTaskPath::new("tasks/b.md")));
     assert_eq!(2, snapshot.version().revision.as_u64());
 }
 

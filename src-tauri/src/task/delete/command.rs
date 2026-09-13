@@ -9,7 +9,7 @@ use crate::state::AppState;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::relocate::{move_md_file, RelocateError};
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_index::{ExternalTaskChange, TaskIndex};
+use crate::task::task_index::ExternalTaskChange;
 use crate::task::trash::command::trash_destination;
 
 /// `delete_task` Tauri command 薄層。
@@ -35,7 +35,7 @@ pub(crate) fn delete_task_impl(
         let intent = args.into_intent(project_root.as_path())?;
         let rel_path = intent.file_path;
         let abs = project_root.as_path().join(&rel_path);
-        let index = TaskIndex::new(snapshot.tasks().values().cloned().collect());
+        let index = snapshot.tasks().to_index();
         let deleted_file_path = index
             .find_by_path(&rel_path)
             .map(|task| task.file_path().clone())

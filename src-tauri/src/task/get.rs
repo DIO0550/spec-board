@@ -124,7 +124,7 @@ pub(crate) fn get_tasks_impl(state: &AppState) -> Result<GetTasksPayload, GetTas
             session: WatcherSession::idle(),
         });
     };
-    let tasks = snapshot.tasks().values().cloned().collect();
+    let tasks = snapshot.tasks().as_slice().to_vec();
     let config = snapshot.config();
     let view = TaskIndex::project_board_view(tasks, config);
     Ok(GetTasksPayload {
