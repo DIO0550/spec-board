@@ -59,13 +59,6 @@ pub(crate) enum AppliedTaskChange {
     AbsentOnRemove(CanonicalTaskPath),
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "watcher の envelope 種別判定（#454 PR③）で本番コードから使う"
-    )
-)]
 impl AppliedTaskChange {
     pub(crate) fn identity(&self) -> &CanonicalTaskPath {
         match self {
@@ -79,13 +72,6 @@ impl AppliedTaskChange {
 
 /// `apply` / `apply_all` の決定的な結果。次状態の catalog を所有する。
 #[derive(Debug)]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "applied / affected / removed は watcher の resync 判定（#454 PR③）で本番コードから読む"
-    )
-)]
 pub(crate) struct TaskChangeSet {
     next: TaskCatalog,
     /// 入力 change と同じ順。
@@ -96,26 +82,51 @@ pub(crate) struct TaskChangeSet {
     removed: Vec<CanonicalTaskPath>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "outcome_of / touches_other_than 等は watcher の apply 移行（#454 PR③）で本番コードから使う"
-    )
-)]
 impl TaskChangeSet {
+    /// change ごとの結末（入力順）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "IPC patch（#400）が change 列から差分 payload を組み立てる際に読む"
+        )
+    )]
     pub(crate) fn applied(&self) -> &[AppliedTaskChange] {
         &self.applied
     }
 
+    /// 変更前と内容が異なる task（file_path 昇順）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "IPC patch（#400）が affected task を payload に載せる際に読む"
+        )
+    )]
     pub(crate) fn affected(&self) -> &[Task] {
         &self.affected
     }
 
+    /// 変更前にあって次状態に無い identity（昇順）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "IPC patch（#400）が removed identity を payload に載せる際に読む"
+        )
+    )]
     pub(crate) fn removed(&self) -> &[CanonicalTaskPath] {
         &self.removed
     }
 
+    /// 次状態の catalog を借用で覗く。所有権ごと取り出すなら `into_catalog`。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "テストの不変条件検証で使う。本番は `into_catalog` で commit する"
+        )
+    )]
     pub(crate) fn next(&self) -> &TaskCatalog {
         &self.next
     }
