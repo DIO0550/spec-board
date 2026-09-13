@@ -1,11 +1,13 @@
-//! Task aggregate ドメイン。
+//! Task entity と、その集合に対する resolver / query / plan。
 //!
-//! `Task` entityと`TaskIndex` aggregate rootを同居させる。resident `Task`は必ず
-//! canonical resolverを通過し、effective parent / children / reverse links / graph warningが
-//! 同じ全件snapshotから導出済みである。dangling parentとcycleはraw参照を保持したまま
-//! warningへ倒し、cycle memberのeffective parentだけを`None`にする。create/updateの
-//! I/O前strict validationはcycle/TooDeepを拒否する別境界であり、これらの検証・導出を
-//! aggregate rootの責務としてこのファイルに集約する。
+//! `Task` entity と `TaskIndex`（query / plan 用の一時 view 兼 resolver の作業台）を
+//! 同居させる。resident の aggregate root は `task_catalog::TaskCatalog` で、
+//! `TaskIndex` は `TaskCatalog::to_index()` からしか作れない。resident `Task` は必ず
+//! canonical resolver を通過し、effective parent / children / reverse links / graph warning が
+//! 同じ全件 snapshot から導出済みである。dangling parent と cycle は raw 参照を保持したまま
+//! warning へ倒し、cycle member の effective parent だけを `None` にする。create/update の
+//! I/O 前 strict validation は cycle/TooDeep を拒否する別境界であり、これらの検証・導出を
+//! このファイルに集約する。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -14,7 +16,6 @@ use std::path::{Path, PathBuf};
 use crate::config::column_name::ColumnName;
 use crate::config::{Column, Config};
 use crate::task::add_link::error::AddLinkError;
-use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::children::build_children;
 use crate::task::create::error::CreateTaskError;
 use crate::task::delete::error::DeleteTaskError;
@@ -35,7 +36,7 @@ use crate::task::projection::{
 };
 use crate::task::remove_link::error::RemoveLinkError;
 use crate::task::reverse_links::build_reverse_links;
-use crate::task::task_catalog::{TaskCatalog, TaskChange};
+use crate::task::task_catalog::TaskCatalog;
 use crate::task::task_content::TaskContent;
 use crate::task::task_file_name::{TaskFileName, TaskFileNameError};
 use crate::task::task_file_path::TaskFilePath;
@@ -506,18 +507,6 @@ pub enum ParentValidationFailure {
         parent: String,
         reason: ParentHierarchyErrorReason,
     },
-}
-
-/// watcher / mutationのcandidate変更を適用し、派生値を作り直した結果。
-pub(crate) struct ExternalChangeOutcome {
-    /// 派生再構築後の全タスク。cache をこれで丸ごと置き換える。
-    pub(crate) tasks: TaskCatalog,
-    /// 変更対象のタスク自身（`Upserted` のときだけ `Some`）。
-    /// emit する payload には parse 直後ではなくこちらを載せる。
-    pub(crate) changed_task: Option<Task>,
-    /// 変更対象以外に、内容が変わったタスクが 1 件以上あるか。
-    /// true のとき呼び出し側は単体 envelope ではなく resync を要求する。
-    pub(crate) other_tasks_changed: bool,
 }
 
 /// Task集合のstrict parent検証と、dangling/cycleをwarningへ倒すlenient resolution、
@@ -1134,60 +1123,6 @@ impl TaskIndex {
             .sort_by(|a, b| a.file_path.as_str().cmp(b.file_path.as_str()));
         self.build_children_with_warnings()
             .map(Self::build_reverse_links)
-    }
-
-    /// 1 件の変更を適用し、全タスクの派生値を作り直す。
-    ///
-    /// 「watcher 適用後の state == 同じ disk 状態で開き直した state」を成立させる
-    /// ため、create / update / delete / archive / move / link mutation / watcher が
-    /// `open_project` / full rescan と同じ [`Self::rebuild_derived_with_warnings`] を通す。
-    /// lenient resolver では循環を warning に倒し、`Err` になるのは階層が深すぎる
-    /// 場合だけ。create / update の strict validation はこの処理より前に行う。
-    ///
-    /// frontmatter 由来の `parent` / `links` は書き換えない。消えたタスクへの参照は
-    /// 値を保持したまま warning / 壊れたリンク表示に委ねる。消えるのは派生値である
-    /// `children` / `reverse_links` だけ。
-    pub(crate) fn rebuild_with_external_change(
-        self,
-        change: TaskChange,
-    ) -> Result<ExternalChangeOutcome, TaskParseError> {
-        let before = self.tasks.clone();
-        let mut candidates: Vec<ParsedTask> = self
-            .tasks
-            .into_iter()
-            .map(|task| task.to_parsed_task())
-            .collect();
-        let target = match &change {
-            TaskChange::Upserted(task) => normalize_task_path_for_lookup(task.file_path.as_str()),
-            TaskChange::Removed(path) => normalize_task_path_for_lookup(path.as_str()),
-        };
-
-        match change {
-            TaskChange::Upserted(task) => {
-                match candidates
-                    .iter_mut()
-                    .find(|t| normalize_task_path_for_lookup(t.file_path.as_str()) == target)
-                {
-                    Some(slot) => *slot = *task,
-                    None => candidates.push(*task),
-                }
-            }
-            TaskChange::Removed(_) => {
-                candidates
-                    .retain(|t| normalize_task_path_for_lookup(t.file_path.as_str()) != target);
-            }
-        }
-
-        // slot 差し替え済みの candidate は identity 一意なので duplicates は常に空。
-        let tasks = TaskCatalog::resolve(candidates)?.catalog;
-        let changed_task = tasks.get(&CanonicalTaskPath::new(&target)).cloned();
-        let other_tasks_changed = other_tasks_differ(&before, tasks.as_slice(), &target);
-
-        Ok(ExternalChangeOutcome {
-            tasks,
-            changed_task,
-            other_tasks_changed,
-        })
     }
 
     /// 新規 task が指す parent 文字列を既存 task 集合に対して解決する。
@@ -2165,35 +2100,6 @@ fn join_rel_path(target_dir: &Path, filename: &TaskFileName) -> PathBuf {
     }
 }
 
-/// 変更対象を除いたタスク集合が before / after で異なるかを判定する。
-///
-/// 件数の増減も差分として扱う（削除で参照元だけが残るケースを取りこぼさない）。
-/// 比較キーは `normalize_task_path_for_lookup` で、slot 引き当てと同じ基準にする。
-fn other_tasks_differ(before: &[Task], after: &[Task], target: &str) -> bool {
-    let before_map = index_excluding_target(before, target);
-    let after_map = index_excluding_target(after, target);
-    if before_map.len() != after_map.len() {
-        return true;
-    }
-    before_map
-        .iter()
-        .any(|(key, task)| after_map.get(key) != Some(task))
-}
-
-/// 変更対象を除いた task を正規化 path で引ける map にする。
-fn index_excluding_target<'a>(tasks: &'a [Task], target: &str) -> HashMap<String, &'a Task> {
-    tasks
-        .iter()
-        .map(|task| {
-            (
-                normalize_task_path_for_lookup(task.file_path.as_str()),
-                task,
-            )
-        })
-        .filter(|(key, _)| key != target)
-        .collect()
-}
-
 /// task が完了カラムに居るか。`done_column` 未解決時は常に false。
 fn is_in_done_column(task: &Task, done_column: Option<&ColumnName>) -> bool {
     done_column.is_some_and(|column| &task.status == column)
@@ -2487,10 +2393,6 @@ mod task_index_tests;
 #[cfg(test)]
 #[path = "task_index_parent_chain_tests.rs"]
 mod task_index_parent_chain_tests;
-
-#[cfg(test)]
-#[path = "task_index_external_change_tests.rs"]
-mod task_index_external_change_tests;
 
 #[cfg(test)]
 #[path = "task_index_forest_tests.rs"]

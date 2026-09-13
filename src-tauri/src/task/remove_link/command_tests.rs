@@ -303,7 +303,7 @@ fn self_link_removal_returns_updated_reverse_links() {
     // 自身を links に持つ状態を作る。remove_link 実行後、disk / cache の
     // a.md は links が空になり、reverse_links からも自分自身が除去される。
     // 戻り値のTaskがcacheと一致することを検証する（canonical resolverで
-    // 全件再導出したResolvedTaskSetをsessionへcommitする設計の回帰テスト）。
+    // 全件再導出したTaskCatalogをsessionへcommitする設計の回帰テスト）。
     let dir = tempdir();
     seed_md(
         dir.path(),
