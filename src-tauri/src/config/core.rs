@@ -739,7 +739,7 @@ impl Config {
     /// - 入力が空のときは [`Config::default`]（既定 3 カラム）。「カラムのないボードは
     ///   開けない」ため空 `columns` の `Config` は作らず、既定カラムへ明示的に収束させる
     /// - それ以外:
-    ///   - `version` = 1
+    ///   - `version` = [`SchemaVersion::CURRENT`]（[`Config::try_new`] が固定設定する）
     ///   - `columns`: status を first-occurrence wins で uniq し、`order = 0..N` を採番した
     ///     [`Column`] 列
     ///   - `card_order`: 空 `{}`（"未記載タスクはカラム末尾扱い" 規則に依拠した安全側のデフォルト）
