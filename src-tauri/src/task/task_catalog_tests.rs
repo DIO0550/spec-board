@@ -60,6 +60,27 @@ fn parent_chain_with_edge_count(edge_count: usize) -> Vec<ParsedTask> {
 }
 
 #[test]
+fn resolve_keeps_the_first_in_input_order_when_file_paths_are_identical() {
+    let first = ParsedTaskBuilder::new("tasks/a.md").title("first").build();
+    let second = ParsedTaskBuilder::new("tasks/a.md").title("second").build();
+
+    let resolution = TaskCatalog::resolve(vec![first, second]).expect("resolve");
+
+    assert_eq!(resolution.catalog.len(), 1);
+    assert_eq!(
+        resolution
+            .catalog
+            .get(&CanonicalTaskPath::new("tasks/a.md"))
+            .expect("kept")
+            .title()
+            .as_str(),
+        "first",
+        "同じ file_path 文字列は stable sort で入力順を保ち、先頭を採る"
+    );
+    assert_eq!(resolution.duplicates.len(), 1);
+}
+
+#[test]
 fn get_resolves_notation_variants_to_the_same_task() {
     let resolution = TaskCatalog::resolve(vec![candidate("tasks/a.md", None)]).expect("resolve");
     let catalog = resolution.catalog;

@@ -46,7 +46,9 @@ impl TaskCatalog {
     /// parse-only candidate 集合から catalog を作る。
     ///
     /// candidate を raw file_path 昇順に整列してから canonical identity で先勝ち dedupe し、
-    /// 残りを lenient resolver に通す。
+    /// 残りを lenient resolver に通す。file_path が同じ文字列の candidate（parse 段階で
+    /// 正規化された表記揺れ）は stable sort により**入力順**を保ち、先に来たものを採る。
+    /// disk 由来の入力順は scanner がファイル名順で走査するため決定的。
     ///
     /// # Errors
     /// 親チェーンが深すぎるときだけ `TaskParseError` を返す（循環は warning に倒す）。
