@@ -97,13 +97,14 @@ pub fn rebuild_tasks_from_disk_with_report(
 ///
 /// parse 段階で `file_path` は forward slash へ正規化済みなので、disk 上の表記揺れ
 /// （`tasks\a.md` と `tasks/a.md` 等）は kept / rejected が同じ文字列になりうる。
-/// その場合は identity だけを示す文面にする。
+/// その場合は identity だけを示す文面にする（どちらが残ったかは利用者から観測
+/// できないため、順序を示唆しない）。
 fn project_warning_from_duplicate(duplicate: &DuplicateTaskIdentity) -> ProjectLoadWarning {
     let rejected = duplicate.rejected.as_str();
     let kept = duplicate.kept.as_str();
     let message = if rejected == kept {
         format!(
-            "multiple files resolve to the task identity `{}`; only the first is kept",
+            "multiple files normalize to the task identity `{}`; only one of them is loaded",
             duplicate.identity.as_str()
         )
     } else {
