@@ -274,6 +274,38 @@ fn watcher_mutation_acquires_the_exact_root_writer_gate_before_touching_state() 
 }
 
 #[test]
+fn upsert_of_an_unknown_path_is_reported_as_task_created() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("task-created", entries[0].0);
+    assert_eq!(1, state.test_tasks_snapshot().expect("snapshot").len());
+}
+
+#[test]
+fn upsert_of_a_known_path_is_reported_as_task_updated() {
+    let dir = TempDir::new().expect("tempdir");
+    let (state, ctx, log) = build_installed_ctx(dir.path());
+    let abs = write_md(dir.path(), "tasks/a.md", &task_md("A"));
+    handle_change(&TaskFileChange::Upserted(abs.clone()), &ctx).expect("seed create");
+    drain(&log);
+
+    write_md(dir.path(), "tasks/a.md", &task_md("A2"));
+    handle_change(&TaskFileChange::Upserted(abs), &ctx).expect("handler ok");
+
+    let entries = drain(&log);
+    assert_eq!(1, entries.len());
+    assert_eq!("task-updated", entries[0].0);
+    assert_eq!("A2", entries[0].1["payload"]["task"]["title"]);
+    assert_eq!(1, state.test_tasks_snapshot().expect("snapshot").len());
+}
+
+#[test]
 fn consecutive_upserts_advance_both_revision_and_event_seq() {
     let dir = TempDir::new().expect("tempdir");
     let (_state, ctx, log) = build_installed_ctx(dir.path());
