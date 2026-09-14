@@ -1,5 +1,5 @@
 {
-  "reportVersion": "835da1b722ba62f0653ae2cb3ece868fb3dea457",
+  "reportVersion": "3fde133114076a944118a87921ecb58f8bcf940a",
   "maxDiffRatio": 0.002,
   "changed": 0,
   "new": 0,
@@ -26,12 +26,12 @@
       "title": "App",
       "name": "Command Palette Keyboard",
       "status": "passed",
-      "reason": "within-threshold",
-      "diffPixels": 16,
+      "reason": "match",
+      "diffPixels": 0,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": true
+      "hasDiff": false
     },
     {
       "story": "app--default",
@@ -273,12 +273,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--comfortable",
@@ -286,12 +286,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Comfortable",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--compact",
@@ -299,12 +299,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Compact",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--dark",
@@ -312,12 +312,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Dark",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--default",
@@ -325,12 +325,12 @@
       "title": "components/CommonComponentsGallery",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 1,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "components-commoncomponentsgallery--edge-cases",
@@ -1716,12 +1716,12 @@
       "title": "features/board/components/ActiveBoardView",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 588,
+      "diffRatio": 0.0006,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-activeboardview--default",
@@ -2730,12 +2730,12 @@
       "title": "features/board/components/ListView",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
-      "diffRatio": 0,
+      "reason": "within-threshold",
+      "diffPixels": 934,
+      "diffRatio": 0.001,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-listview--default",
@@ -3445,12 +3445,12 @@
       "title": "features/board/components/TaskCard/TaskCardHeader",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 31,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-board-components-taskcard-taskcardheader--default",
@@ -4043,12 +4043,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 30,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailfields--default",
@@ -4056,12 +4056,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 30,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailfields--edge-cases",
@@ -4069,12 +4069,12 @@
       "title": "features/detail/components/DetailFields",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 30,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailscreen--all-props",
@@ -4082,12 +4082,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailscreen--broken-and-warnings",
@@ -4095,12 +4095,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "Broken And Warnings",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailscreen--default",
@@ -4108,12 +4108,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailscreen--draft",
@@ -4121,12 +4121,12 @@
       "title": "features/detail/components/DetailScreen",
       "name": "Draft",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-detailscreen--edge-cases",
@@ -4459,12 +4459,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "All Props",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-propertiessidebar--default",
@@ -4472,12 +4472,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Default",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-propertiessidebar--delete-confirmation",
@@ -4485,12 +4485,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Delete Confirmation",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 24,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-propertiessidebar--edge-cases",
@@ -4498,12 +4498,12 @@
       "title": "features/detail/components/PropertiesSidebar",
       "name": "Edge Cases",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 28,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-detail-components-subissuesection--all-props",
@@ -6786,12 +6786,12 @@
       "title": "features/task-form/components/TaskCreateScreen",
       "name": "Labels Popover Open",
       "status": "passed",
-      "reason": "match",
-      "diffPixels": 0,
+      "reason": "within-threshold",
+      "diffPixels": 16,
       "diffRatio": 0,
       "hasExpected": true,
       "hasActual": true,
-      "hasDiff": false
+      "hasDiff": true
     },
     {
       "story": "features-task-form-components-taskcreatescreen--parent-popover-open",
