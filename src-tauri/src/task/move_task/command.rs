@@ -37,8 +37,9 @@ use crate::task::move_task::error::{MoveTaskCommandError, MoveTaskError};
 use crate::task::parse::default_status_for;
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
+use crate::task::task_catalog::TaskChange;
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::{ExternalTaskChange, MoveTaskIntent, MoveTaskOutcome, Task};
+use crate::task::task_index::{MoveTaskIntent, MoveTaskOutcome, Task};
 
 /// `move_task` Tauri command 薄層。
 #[tauri::command]
@@ -261,14 +262,12 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
         }
         .into());
     }
-    let next_tasks = snapshot
+    let change_set = snapshot
         .tasks()
-        .to_index()
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(updated_task)))?
-        .tasks;
+        .apply(TaskChange::Upserted(Box::new(updated_task)))?;
     let returned =
-        next_tasks
-            .get(&moved_key)
+        change_set
+            .task(&moved_key)
             .cloned()
             .ok_or_else(|| MoveTaskError::TaskVanished {
                 path: moved_key.as_str().to_string(),
@@ -300,7 +299,7 @@ fn commit_cross_column_move(args: CrossColumnMove<'_>) -> Result<Task, MoveTaskC
         "move_task",
         move |session| {
             session.replace_config(next_config);
-            session.replace_tasks(next_tasks);
+            session.replace_tasks(change_set.into_catalog());
             returned
         },
     )

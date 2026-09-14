@@ -19,9 +19,9 @@ use crate::task::document::TaskDocument;
 use crate::task::io::{FsTaskIo, TaskIo};
 use crate::task::payload::TaskPayload;
 use crate::task::session_write::{cleanup_registered_write_ignores, commit_or_resync_under_lease};
-use crate::task::task_catalog::TaskCatalog;
+use crate::task::task_catalog::{TaskCatalog, TaskChange, TaskChangeSet};
 use crate::task::task_content::TaskContent;
-use crate::task::task_index::{CreateTaskIntent, ExternalTaskChange, Task};
+use crate::task::task_index::{CreateTaskIntent, Task};
 
 /// `create_task` Tauri command 薄層。
 ///
@@ -49,7 +49,7 @@ pub(crate) fn create_task_impl(
         let intent = CreateTaskIntent::from(args);
         let index = snapshot.tasks().to_index();
         let outcome = index.plan_create(snapshot.project_root().as_path(), &intent)?;
-        let (next_tasks, created_task) = plan_cache_insert(
+        let (change_set, created_task) = plan_cache_insert(
             snapshot.tasks(),
             &outcome.content,
             &outcome.rel_path,
@@ -78,20 +78,20 @@ pub(crate) fn create_task_impl(
             ResyncSource::Tasks { task_io: io },
             "create_task",
             move |session| {
-                session.replace_tasks(next_tasks);
+                session.replace_tasks(change_set.into_catalog());
                 created_task
             },
         )
     })
 }
 
-/// generated contentをcandidateへ変換し、全件resolver済みのcommit planを返す。
+/// generated contentをcandidateへ変換し、catalogへ適用したchange setと作成taskを返す。
 fn plan_cache_insert(
     tasks: &TaskCatalog,
     content: &TaskContent,
     rel_path: &Path,
     status: ColumnName,
-) -> Result<(TaskCatalog, Task), CreateTaskCommandError> {
+) -> Result<(TaskChangeSet, Task), CreateTaskCommandError> {
     let document = TaskDocument::parse(content.as_bytes())?;
     let context = crate::task::parse::TaskParseContext {
         file_path: rel_path.to_path_buf(),
@@ -99,15 +99,13 @@ fn plan_cache_insert(
     };
     let task = document.to_parsed_task(&context);
     let created_path = CanonicalTaskPath::from_file_path(&task.file_path);
-    let outcome = tasks
-        .to_index()
-        .rebuild_with_external_change(ExternalTaskChange::Upserted(Box::new(task)))?;
-    let created_task = outcome.tasks.get(&created_path).cloned().ok_or_else(|| {
+    let change_set = tasks.apply(TaskChange::Upserted(Box::new(task)))?;
+    let created_task = change_set.task(&created_path).cloned().ok_or_else(|| {
         CreateTaskCommandError::CreatedTaskVanished {
             path: created_path.as_str().to_string(),
         }
     })?;
-    Ok((outcome.tasks, created_task))
+    Ok((change_set, created_task))
 }
 
 #[cfg(test)]

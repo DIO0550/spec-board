@@ -8,6 +8,7 @@ use super::super::args::DeleteTaskArgs;
 use super::super::error::{DeleteTaskCommandError, DeleteTaskError};
 use super::delete_task_impl;
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
@@ -295,4 +296,30 @@ fn delete_task_revision_exhausted_performs_zero_task_io() {
     assert!(abs.exists(), "rejected writer must not remove the task");
     assert_eq!(0, session_write_ignore_len(&state));
     assert_eq!(u64::MAX, session_revision(&state).as_u64());
+}
+
+#[test]
+fn delete_referenced_task_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/target.md",
+        "---\ntitle: Target\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/source.md",
+        "---\ntitle: Source\nstatus: Todo\nlinks:\n  - tasks/target.md\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/source.md\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    delete_task_impl(&state, &FsTaskIo, delete_args("tasks/target.md")).expect("delete target");
+
+    assert_matches_reopen(&state, dir.path());
 }

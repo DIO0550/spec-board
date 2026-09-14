@@ -156,7 +156,7 @@ Tauriバックエンド（Rust）におけるmdファイルの読み書き・パ
 
 | フィールド | 型 | 説明 |
 |:----------|:---|:-----|
-| `code` | `scanEntryError` / `metadataError` / `unreadableFile` / `fileTooLarge` / `binaryFile` / `invalidPath` / `taskReadFailed` / `frontmatterParseFailed` / `configFallback` / `unknown` | 失敗分類。未知値は FE で `unknown` として安全に表示する |
+| `code` | `scanEntryError` / `metadataError` / `unreadableFile` / `fileTooLarge` / `binaryFile` / `invalidPath` / `taskReadFailed` / `frontmatterParseFailed` / `duplicateTaskIdentity` / `configFallback` / `unknown` | 失敗分類。未知値は FE で `unknown` として安全に表示する |
 | `stage` | `scan` / `read` / `parse` / `config` / `unknown` | 発生段階 |
 | `path` | `string` または `null` | project root からの相対 path。相対化できない場合は `null`。config fallback は `.spec-board/config.json` |
 | `message` | `string` | 原因の補足。UI は raw message をそのまま HTML として解釈しない |
@@ -261,7 +261,7 @@ watcher の `eventSeq` gap または full rescan 通知から復旧する場合�
 
 ### ProjectSession と並行性契約
 
-`AppState` の resident domain は `Idle | Loaded(ProjectSession)` を単一 Mutex で保持する。`ProjectSession` は exact raw `ProjectRoot`、process 内で一意な `SessionId`、session-local `SessionRevision`、config、labels、milestones、tasks を一体として所有する。watcher handle と `WriteIgnoreRegistry` は cache 対象になり得る domain から分離し、同じ `SessionVersion { SessionId, SessionRevision }` を持つ active resources として最大 1 組だけ保持する。
+`AppState` の resident domain は `Idle | Loaded(ProjectSession)` を単一 Mutex で保持する。`ProjectSession` は exact raw `ProjectRoot`、process 内で一意な `SessionId`、session-local `SessionRevision`、config、labels、milestones、tasks を一体として所有する。tasks は `TaskCatalog` aggregate として保持し、「canonical identity（`filePath` の正規化値）が一意」「`filePath` 昇順」「`children` / `reverseLinks` / graph warning が全 task の frontmatter と整合」の不変条件を構築時と全 mutation 後に満たす。`TaskCatalog` の生成経路は disk 由来の `resolve` と mutation の `apply` / `apply_all` に限られ、raw な map / Vec からは構築できない。watcher handle と `WriteIgnoreRegistry` は cache 対象になり得る domain から分離し、同じ `SessionVersion { SessionId, SessionRevision }` を持つ active resources として最大 1 組だけ保持する。
 
 raw domain/resources/background Mutex は private な lock owner module だけが所有する。domain lock を取得した `DomainGuard` を消費しなければ resources lock を取得できず、resident pair の取得順序は domain → resources に型で固定される。resources の単独参照は identity 検証と `Arc<WriteIgnoreRegistry>` clone を lock owner 内で完結させる値 API、background cache は take/stash の値 API だけを公開し、いずれも raw guard を caller へ返さない。
 
@@ -271,7 +271,7 @@ mutation と watcher event は次の protocol を使う。
 2. exact raw `ProjectRoot` ごとの writer gate を closure-scoped API で取得する。同一 root は直列化し、別 root は異なる thread で互いに待たない。raw gate/guard は caller へ公開しない。同一 thread が lease 内から writer lease を再取得した場合は、同じ root／別 root のどちらも待機せず `WriterLeaseReentrant` typed error を返す。thread-local marker は RAII で管理し、operation error、early return、panic unwind のいずれでも解除する。
 3. gate 取得後に fresh snapshot を読み、root + SessionId を再検証する。待機中の正常な revision 進行は許可するが、project switch と same-path reopen は disk I/O 前に typed conflict として拒否する。
 4. resident validation と target 解決を副作用なしで行い、revision の checked increment と active resource identity を preflight する。`u64::MAX` なら disk/store read・write-ignore 登録・disk write を行わない。
-5. 必要な disk I/O を行った後、snapshot の full SessionId + Revision で resident mutation を CAS commit する。成功 commit だけが revision を 1 増やす。
+5. 必要な disk I/O を行った後、snapshot の full SessionId + Revision で resident mutation を CAS commit する。成功 commit だけが revision を 1 増やす。task を変える mutation は snapshot の `TaskCatalog` に `apply(TaskChange)` / `apply_all(Vec<TaskChange>)` を適用した `TaskChangeSet`（次状態の catalog、change ごとの結末 `Created` / `Updated` / `Removed` / `AbsentOnRemove`、`filePath` 昇順の affected task、昇順の removed identity）を disk I/O 前に確定し、commit closure では次状態の catalog を丸ごと差し替える。CAS が snapshot と session の同一 revision を保証するため、snapshot に対する `apply` は session 上の mutation と等価になる。
 
 disk write 後に revision conflict が起きた場合は current session を上書きせず、同じ gate lease を保持したまま operation 別の disk source から same-project resync を 1 回行う。resync 成否にかかわらず caller へは元の typed conflict を返す。task/config 書き込みの write-ignore marker は resync 成功時だけ watcher の 1 回 consume 用に残し、resync 失敗またはその他の post-disk error では cleanup する。
 
@@ -324,10 +324,10 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
    - `labels` は空配列なら省略
    - `parent` は解決済み Task の `file_path` 文字列をそのまま書き出す
 6. **I/O前resolution plan + 書き込み + commit**:
-   - 新規parse-only candidateと既存全taskをcanonical resolverへ通し、`children` / `reverseLinks` / graph warningを全件再計算した`ResolvedTaskSet`と戻り値をdisk I/O前に確定する
+   - 新規parse-only candidateを`TaskCatalog::apply(Upserted)`で既存全taskと一緒にcanonical resolverへ通し、`children` / `reverseLinks` / graph warningを全件再計算した`TaskChangeSet`と戻り値をdisk I/O前に確定する
    - 既存cache内でdangling parent / linksが新規Taskを参照していた場合も、このresolution planで`parentNotFound` warningの除去と新規Task側の`children` / `reverseLinks`への反映を同時に行う
    - directory確保後、watcher起動状態にかかわらず`write_ignore`へ自前write pathを登録し、`create_new`で書き込む
-   - 書き込み成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+   - 書き込み成功後は事前計算済み`TaskChangeSet`の次状態catalogをsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
 7. **戻り値**: 挿入後の Task（`children` / `reverseLinks` 解決済み）
 
 ### preview_task_filename IPC
@@ -367,14 +367,14 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 **振る舞い**:
 1. exact project rootのwriter lease内でsnapshotを確定し、session identity / active resourcesをpreflightする
 2. 対象ファイルを読み込み、`TaskDocument`としてパースする
-3. 渡されたフィールドだけを`TaskPatch`で更新する（未指定フィールドは変更しない）。`parent`変更時は`Vec<ParsedTask>`に対象candidateを反映し、`ResolvedTaskSet::validate_strict`で循環/深さを検証する
-4. documentをrenderして更新candidateを作り、resident全taskとcanonical resolverへ通す。`ResolvedTaskSet`、戻り値、書き込み内容を変更I/O前に確定する
+3. 渡されたフィールドだけを`TaskPatch`で更新する（未指定フィールドは変更しない）。`parent`変更時は`Vec<ParsedTask>`に対象candidateを反映し、strict検証（`validate_strict_candidates`）で循環/深さを検証する
+4. documentをrenderして更新candidateを作り、`TaskCatalog::apply(Upserted)`でresident全taskとcanonical resolverへ通す。`TaskChangeSet`、戻り値、書き込み内容を変更I/O前に確定する
 5. watcher起動状態にかかわらず`write_ignore`へ対象pathを登録し、ファイルを書き込む
-6. 書き込み成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+6. 書き込み成功後は事前計算済み`TaskChangeSet`の次状態catalogをsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
 7. **`title` を変更してもファイル名はリネームしない**（`parent` や `links` での参照が壊れるため）
 
 > Implementation notes (2026-05-16): `update_task`は部分マージ更新で、`parent`変更時だけ
-> `ResolvedTaskSet::validate_strict`によるI/O前strict検証を追加する。strict検証の有無とは別に、
+> strict検証（`validate_strict_candidates`）によるI/O前検証を追加する。strict検証の有無とは別に、
 > 全更新でwrite前にcanonical resolverを実行し、resolved resident planを完成させる。
 
 ---
@@ -394,10 +394,10 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 1. `filePath` を `InputTaskPath` で正規化し、空文字・非 `.md`・`..` を含むパスは `InvalidPath` エラーを返す
 2. cache（`TaskIndex`）上で対象タスクの存在を確認し、見つからなければ `FileNotFound` エラーを返す
 3. 子タスクが存在する場合、`HasChildren` エラーを返却し削除を中止する（abort strategy）
-4. 対象を除いた全taskをcanonical resolverへ通し、消えたtask由来の`children` / `reverseLinks`を除去した`ResolvedTaskSet`をdisk変更前に確定する。frontmatterのraw `parent` / `links`は変更しない
+4. `TaskCatalog::apply(Removed)`で対象を除いた全taskをcanonical resolverへ通し、消えたtask由来の`children` / `reverseLinks`を除去した`TaskChangeSet`をdisk変更前に確定する。frontmatterのraw `parent` / `links`は変更しない
 5. watcher起動状態にかかわらず`WriteIgnoreRegistry`へ削除対象pathを登録する
 6. 対象mdを`.spec-board/trash/`の同じ相対pathへ移動する（ソフトデリート）。移動失敗時はmarkerを解除し、既存error分類を維持する
-7. 移動成功後は事前計算済み`ResolvedTaskSet`をsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
+7. 移動成功後は事前計算済み`TaskChangeSet`の次状態catalogをsessionへcommitする。identity競合時はdiskからresyncし、局所cache更新は行わない
 8. `Ok(())` を返却する
 
 **エラー**:
@@ -429,7 +429,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 1. 両ファイルの存在を確認
 2. リンク元タスクのフロントマター `links` に `targetFilePath` を追加
 3. 既にリンクが存在する場合は何もしない
-4. 追加した場合は全 task を canonical resolver に通し、target を含む `reverseLinks` を全件再計算して resident cache を一括置換
+4. 追加した場合は `TaskCatalog::apply(Upserted)` で全 task を canonical resolver に通し、target を含む `reverseLinks` を全件再計算した次状態 catalog で resident state を一括置換
 
 ---
 
@@ -446,7 +446,7 @@ reader は `get_tasks` / `preview_task_filename` / `get_columns` / `get_labels` 
 
 **振る舞い**:
 1. リンク元タスクのフロントマター `links` から `targetFilePath` を削除
-2. 削除した場合は全 task を canonical resolver に通し、target を含む `reverseLinks` を全件再計算して resident cache を一括置換
+2. 削除した場合は `TaskCatalog::apply(Upserted)` で全 task を canonical resolver に通し、target を含む `reverseLinks` を全件再計算した次状態 catalog で resident state を一括置換
 
 ---
 
@@ -590,6 +590,8 @@ flowchart TD
     F -->|No| H[エラーログ出力]
 ```
 
+upsert / delete の反映は `TaskCatalog::apply(Upserted | Removed)` を通す。emit する event 種別は `TaskChangeSet` の結末で決め、`Created` なら `task-created`、それ以外（`Updated`）は `task-updated`。変更対象以外の task が affected / removed に含まれる（`touches_other_than`）場合は単体 event ではなく `watcher-resync-required` を出す。`apply` が失敗（親チェーンの深さ超過）した場合は resident を変えず `rescanFailed` の diagnostic を出す。
+
 ### Rename イベントの処理
 
 リネームは fs 層のデバウンスで `removed(from)` と `upserted(to)` の 2 エントリに分解される。「これは rename の宛先だ」という情報は本体クレートまで運ばれない。
@@ -653,6 +655,7 @@ spec-board 自身がmdファイルを書き込んだ直後に、ファイル監�
 | 走査中の個別 I/O エラー | `.md` 候補の entry / metadata 取得失敗 | `loadWarnings` に `scanEntryError` / `metadataError` を追加し、その項目を skip。ほかのファイルの走査を継続 | WARN |
 | ファイル読み込み失敗 | 個別 md の権限不足、ファイルロック中など | `loadWarnings` に `unreadableFile`/`taskReadFailed` を追加し、そのファイルだけ skip。残りのタスクで成功 | WARN |
 | フロントマターパース失敗 | YAML構文エラー、Task生成中の読み取り/解析失敗 | `loadWarnings` に `frontmatterParseFailed` を追加し、そのファイルだけ skip。残りのタスクで成功 | WARN |
+| task identity の重複 | 表記揺れ（`./a.md` と `a.md`、Unix 上の `tasks\a.md` と `tasks/a.md` 等）で同じ canonical path に正規化される md が複数ある | `filePath` 昇順で先頭の 1 件だけを採用し、残りは `loadWarnings` に `duplicateTaskIdentity`（stage `parse`、`path` = 採用されなかった側の正規化済み filePath）を追加して skip。parse 段階で filePath が正規化されるため、同じ文字列になる候補は scanner のファイル名順（走査順）で先に来たものを採る | WARN |
 | ファイル書き込み失敗 | ディスク容量不足、権限不足 | エラーをフロントエンドに返却 | ERROR |
 | 監視の初期化失敗 | OS制限（inotify上限等） | `Watcher::start` 内部で recommended → poll の自動フォールバックを試み、両方失敗した場合のみ `open_project` から従来互換の `message` と backend 別 `watcherInit` 診断を返す。AppState は **一切変更せず**、フロントエンドは旧プロジェクトを表示したまま動作を継続する | ERROR |
 | 監視稼働中の backend 障害 | 監視対象の消失 / 資源枯渇 / 権限剥奪 / I/O エラー | batch の `errors`（`WatcherFailure`）を `watcher-diagnostic`（`cacheMutating: false`）として FE へ配信し、error トーストで可視化する。`tasks_cache` と `revision` は変更しない | WARN |
@@ -903,6 +906,7 @@ recommended / poll の両方を `WatcherError::Init` に保持するため、cal
 
 | バージョン | 日付 | 変更内容 | 変更者 |
 |:-----------|:-----|:---------|:-------|
+| 1.17 | 2026-09-13 | Issue #454: resident task state を `TaskCatalog` aggregate（identity 一意・filePath 昇順・派生値整合）に置き換え、mutation / watcher が `apply` → `TaskChangeSet` で次状態を確定する契約、表記揺れの重複 identity を `duplicateTaskIdentity` warning で先勝ち採用する部分失敗を追加 | - |
 | 1.16 | 2026-08-24 | Issue #619: watcher task payloadの外枠素通しを維持しつつ、entity identity `task.id` / reducer照合キー`task.filePath`のstring検証と不正eventのno-dispatch契約を明記 | - |
 | 1.15 | 2026-08-24 | Issue #610: WatcherHandleのconsuming stop、二重停止の型禁止、通常Dropと同じ同期停止順序、swap後のlock/lease外停止、runtime/wire互換を明記 | - |
 | 1.14 | 2026-08-24 | Issue #609: recoverableなscan warningのrelative PathBuf / std::io::ErrorKind内部契約、非UTF-8 pathのwire null化、io kind非公開と既存5-field warning互換を明記 | - |

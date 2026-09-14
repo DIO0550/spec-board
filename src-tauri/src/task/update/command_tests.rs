@@ -8,6 +8,7 @@ use super::super::args::UpdateTaskArgs;
 use super::super::error::{UpdateTaskCommandError, UpdateTaskError};
 use super::update_task_impl;
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
@@ -920,4 +921,32 @@ fn update_task_canonical_resolver_keeps_canonical_keys() {
             "{cache_key} は canonical identity で引ける"
         );
     }
+}
+
+#[test]
+fn update_parent_change_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/old-parent.md",
+        "---\ntitle: Old\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/new-parent.md",
+        "---\ntitle: New\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/child.md",
+        "---\ntitle: Child\nstatus: Todo\nparent: tasks/old-parent.md\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    let mut args = args_for("tasks/child.md");
+    args.parent = Some("tasks/new-parent.md".to_string());
+    update_task_impl(&state, &FsTaskIo, args).expect("update succeeds");
+
+    assert_matches_reopen(&state, dir.path());
 }

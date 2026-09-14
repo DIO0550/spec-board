@@ -5,10 +5,11 @@
 //! 2. `tasks` は file_path 昇順で整列済み
 //! 3. 派生値（children / reverse_links / graph warning）が全 task の frontmatter と整合
 //!
-//! 生成経路は [`TaskCatalog::resolve`]（disk 由来）だけで、raw `Vec<Task>` / `HashMap`
-//! からは構築できない。
+//! 生成経路は [`TaskCatalog::resolve`]（disk 由来）と [`TaskCatalog::apply`] /
+//! [`TaskCatalog::apply_all`]（mutation）だけで、raw `Vec<Task>` / `HashMap` からは
+//! 構築できない。
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::task::canonical_task_path::CanonicalTaskPath;
 use crate::task::parse::TaskParseError;
@@ -32,6 +33,131 @@ pub(crate) struct DuplicateTaskIdentity {
     pub(crate) kept: TaskFilePath,
     /// 採用しなかった候補の raw file_path。
     pub(crate) rejected: TaskFilePath,
+}
+
+/// mutation command / watcher が catalog へ渡す candidate 変更 1 件。
+///
+/// watcher の rename は fs 層で `removed(from)` + `upserted(to)` へ分解され、mutation も
+/// 書き込み前 plan を同じ upsert / remove で表すため、rename 専用 variant は持たない。
+/// `ParsedTask` は `TaskFilePath` より大きいため、variant 間の差を抑える目的で
+/// `Upserted` だけ box に載せる。
+#[derive(Debug)]
+pub(crate) enum TaskChange {
+    /// 作成または更新。parse-only candidate で同一 identity の slot を差し替える。
+    Upserted(Box<ParsedTask>),
+    /// 削除。この identity の task を取り除く。
+    Removed(TaskFilePath),
+}
+
+/// change 1 件を適用した結末。watcher の envelope 種別決定に使う。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AppliedTaskChange {
+    Created(CanonicalTaskPath),
+    Updated(CanonicalTaskPath),
+    Removed(CanonicalTaskPath),
+    /// `Removed` の対象が catalog に無かった（no-op）。
+    AbsentOnRemove(CanonicalTaskPath),
+}
+
+impl AppliedTaskChange {
+    pub(crate) fn identity(&self) -> &CanonicalTaskPath {
+        match self {
+            Self::Created(identity)
+            | Self::Updated(identity)
+            | Self::Removed(identity)
+            | Self::AbsentOnRemove(identity) => identity,
+        }
+    }
+}
+
+/// `apply` / `apply_all` の決定的な結果。次状態の catalog を所有する。
+#[derive(Debug)]
+pub(crate) struct TaskChangeSet {
+    next: TaskCatalog,
+    /// 入力 change と同じ順。
+    applied: Vec<AppliedTaskChange>,
+    /// 変更前と内容が異なる task（追加・更新・派生値変化）。file_path 昇順。
+    affected: Vec<Task>,
+    /// 変更前にあって次状態に無い identity。昇順。
+    removed: Vec<CanonicalTaskPath>,
+}
+
+impl TaskChangeSet {
+    /// change ごとの結末（入力順）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "IPC patch（#400）が change 列から差分 payload を組み立てる際に読む"
+        )
+    )]
+    pub(crate) fn applied(&self) -> &[AppliedTaskChange] {
+        &self.applied
+    }
+
+    /// 変更前と内容が異なる task（file_path 昇順）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "IPC patch（#400）が affected task を payload に載せる際に読む"
+        )
+    )]
+    pub(crate) fn affected(&self) -> &[Task] {
+        &self.affected
+    }
+
+    /// 変更前にあって次状態に無い identity（昇順）。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "IPC patch（#400）が removed identity を payload に載せる際に読む"
+        )
+    )]
+    pub(crate) fn removed(&self) -> &[CanonicalTaskPath] {
+        &self.removed
+    }
+
+    /// 次状態の catalog を借用で覗く。所有権ごと取り出すなら `into_catalog`。
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "テストの不変条件検証で使う。本番は `into_catalog` で commit する"
+        )
+    )]
+    pub(crate) fn next(&self) -> &TaskCatalog {
+        &self.next
+    }
+
+    /// 次状態でのその identity の task。削除済みなら `None`。
+    pub(crate) fn task(&self, identity: &CanonicalTaskPath) -> Option<&Task> {
+        self.next.get(identity)
+    }
+
+    /// その identity に対する最後の結末。
+    pub(crate) fn outcome_of(&self, identity: &CanonicalTaskPath) -> Option<&AppliedTaskChange> {
+        self.applied
+            .iter()
+            .rev()
+            .find(|applied| applied.identity() == identity)
+    }
+
+    /// `targets` 以外の task が affected / removed に含まれるか。
+    ///
+    /// true のとき呼び出し側は単体 envelope ではなく resync を要求する。
+    pub(crate) fn touches_other_than(&self, targets: &[CanonicalTaskPath]) -> bool {
+        let is_other = |identity: &CanonicalTaskPath| !targets.contains(identity);
+        self.affected
+            .iter()
+            .any(|task| is_other(&CanonicalTaskPath::from_file_path(task.file_path())))
+            || self.removed.iter().any(is_other)
+    }
+
+    pub(crate) fn into_catalog(self) -> TaskCatalog {
+        self.next
+    }
 }
 
 /// [`TaskCatalog::resolve`] の結果。重複は catalog に入れず、呼び出し側が warning に変換する。
@@ -77,6 +203,79 @@ impl TaskCatalog {
         Ok(TaskCatalogResolution {
             catalog,
             duplicates,
+        })
+    }
+
+    /// change 1 件を適用した次状態を計算する。`self` は変更しない。
+    ///
+    /// # Errors
+    /// 親チェーンが深すぎるときだけ `TaskParseError`。
+    pub(crate) fn apply(&self, change: TaskChange) -> Result<TaskChangeSet, TaskParseError> {
+        self.apply_all(vec![change])
+    }
+
+    /// 複数 change を入力順に適用し、派生値を 1 回だけ作り直す。
+    ///
+    /// 同一 identity への複数 upsert は後勝ち、`Removed` 後の `Upserted` は再作成になる。
+    /// 作業台を `BTreeMap` にするのは、resolver へ渡す candidate 順を identity 順で
+    /// 決定的にするため（`HashMap` だと iteration 順が揺れる）。
+    ///
+    /// # Errors
+    /// 親チェーンが深すぎるときだけ `TaskParseError`。
+    pub(crate) fn apply_all(
+        &self,
+        changes: Vec<TaskChange>,
+    ) -> Result<TaskChangeSet, TaskParseError> {
+        let mut working: BTreeMap<CanonicalTaskPath, ParsedTask> = self
+            .tasks
+            .iter()
+            .map(|task| {
+                (
+                    CanonicalTaskPath::from_file_path(task.file_path()),
+                    task.to_parsed_task(),
+                )
+            })
+            .collect();
+        let mut applied = Vec::with_capacity(changes.len());
+        for change in changes {
+            applied.push(match change {
+                TaskChange::Upserted(candidate) => {
+                    let identity = CanonicalTaskPath::from_file_path(&candidate.file_path);
+                    match working.insert(identity.clone(), *candidate) {
+                        Some(_) => AppliedTaskChange::Updated(identity),
+                        None => AppliedTaskChange::Created(identity),
+                    }
+                }
+                TaskChange::Removed(path) => {
+                    let identity = CanonicalTaskPath::from_file_path(&path);
+                    match working.remove(&identity) {
+                        Some(_) => AppliedTaskChange::Removed(identity),
+                        None => AppliedTaskChange::AbsentOnRemove(identity),
+                    }
+                }
+            });
+        }
+        let next = Self::from_unique_candidates(working.into_values().collect())?;
+        let affected = next
+            .tasks
+            .iter()
+            .filter(|task| {
+                self.get(&CanonicalTaskPath::from_file_path(task.file_path())) != Some(task)
+            })
+            .cloned()
+            .collect();
+        let mut removed: Vec<CanonicalTaskPath> = self
+            .index
+            .keys()
+            .filter(|identity| !next.contains(identity))
+            .cloned()
+            .collect();
+        removed.sort();
+        Ok(TaskChangeSet {
+            next,
+            applied,
+            affected,
+            removed,
         })
     }
 

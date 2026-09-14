@@ -12,6 +12,7 @@ use super::super::args::AddLinkArgs;
 use super::super::error::{AddLinkCommandError, AddLinkError};
 use super::add_link_impl;
 use crate::project::open::open_project_impl;
+use crate::project::open_test_support::assert_matches_reopen;
 use crate::project::watcher_factory::NoopWatcherFactory;
 use crate::project::OpenProjectIntent;
 use crate::project_session::SessionRevision;
@@ -368,4 +369,26 @@ fn add_link_revision_exhausted_performs_zero_task_io() {
     assert_eq!(u64::MAX, session_revision(&state).as_u64());
     let content = fs::read_to_string(dir.path().join("tasks/a.md")).expect("read unchanged source");
     assert!(!content.contains("links:"));
+}
+
+#[test]
+fn add_link_leaves_resident_state_equal_to_reopen() {
+    let dir = tempdir();
+    seed_md(
+        dir.path(),
+        "tasks/a.md",
+        "---\ntitle: A\nstatus: Todo\n---\n",
+    );
+    seed_md(
+        dir.path(),
+        "tasks/b.md",
+        "---\ntitle: B\nstatus: Todo\n---\n",
+    );
+    let state = Arc::new(AppState::new());
+    open_with_noop(Arc::clone(&state), dir.path());
+
+    add_link_impl(&state, &FsTaskIo, args_for("tasks/a.md", "tasks/b.md"))
+        .expect("add_link succeeds");
+
+    assert_matches_reopen(&state, dir.path());
 }
