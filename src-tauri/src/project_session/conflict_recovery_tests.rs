@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -154,10 +153,10 @@ fn open_session(
     config: Config,
     labels: LabelRegistry,
     milestones: MilestoneRegistry,
-    tasks: HashMap<CanonicalTaskPath, Task>,
+    tasks: Vec<Task>,
 ) -> ProjectSessionSnapshot {
     let session_id = state.reserve_session_id().expect("reserve session ID");
-    let tasks = crate::task::task_catalog::TaskCatalog::from_tasks_for_test(tasks.into_values());
+    let tasks = crate::task::task_catalog::TaskCatalog::from_tasks_for_test(tasks);
     let candidate = PreparedProjectSession::new(root, config, labels, milestones, tasks)
         .into_session(session_id);
     let staged = staged_for(candidate.identity());
@@ -215,10 +214,7 @@ fn task_resync_keeps_session_id_and_commits_all_rebuilt_tasks_once() {
         config_with_default_status("Todo"),
         labels("resident-label"),
         milestones("resident-milestone"),
-        HashMap::from([(
-            CanonicalTaskPath::new("stale.md"),
-            sample_task("stale.md", "Stale resident"),
-        )]),
+        vec![sample_task("stale.md", "Stale resident")],
     );
     let conflict = stale_revision_conflict(&state, &initial.identity());
     state
@@ -266,7 +262,7 @@ fn config_and_tasks_resync_uses_reloaded_config_for_missing_task_status() {
         config_with_default_status("Todo"),
         LabelRegistry::default(),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let conflict = stale_revision_conflict(&state, &initial.identity());
     let recovered_config = config_with_default_status("Review");
@@ -310,7 +306,7 @@ fn registry_resync_variants_replace_only_the_requested_registry() {
         config_with_default_status("Todo"),
         labels("old-label"),
         milestones("old-milestone"),
-        HashMap::new(),
+        Vec::new(),
     );
     let first_conflict = stale_revision_conflict(&state, &initial.identity());
     let labels_store = StubLabelStore::new(labels("disk-label"));
@@ -358,7 +354,7 @@ fn same_path_reopen_is_rejected_before_disk_load_and_keeps_current() {
         config_with_default_status("Todo"),
         labels("first"),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let second = open_session(
         &state,
@@ -366,7 +362,7 @@ fn same_path_reopen_is_rejected_before_disk_load_and_keeps_current() {
         config_with_default_status("Todo"),
         labels("second"),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let conflict = conflict_after_switch(&state, &first.identity());
     let store = StubLabelStore::new(labels("must-not-load"));
@@ -408,7 +404,7 @@ fn cross_project_conflict_is_rejected_before_disk_load_and_keeps_current() {
         config_with_default_status("Todo"),
         labels("first"),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let second = open_session(
         &state,
@@ -416,7 +412,7 @@ fn cross_project_conflict_is_rejected_before_disk_load_and_keeps_current() {
         config_with_default_status("Todo"),
         labels("second"),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let conflict = conflict_after_switch(&state, &first.identity());
     let store = StubLabelStore::new(labels("must-not-load"));
@@ -457,7 +453,7 @@ fn raw_path_alias_is_rejected_as_a_different_exact_root_before_disk_load() {
         config_with_default_status("Todo"),
         labels("resident"),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let conflict = stale_revision_conflict(&state, &initial.identity());
     let before = state.require_session_snapshot().expect("snapshot");
@@ -493,7 +489,7 @@ fn revision_progress_during_disk_load_wins_and_recovered_value_is_not_applied() 
         config_with_default_status("Todo"),
         labels("initial"),
         MilestoneRegistry::default(),
-        HashMap::new(),
+        Vec::new(),
     );
     let conflict = stale_revision_conflict(&state, &initial.identity());
     let recovery_target = state.require_session_snapshot().expect("snapshot");
@@ -536,10 +532,7 @@ fn config_and_task_scan_failure_leaves_every_current_aggregate_field_unchanged()
         config_with_default_status("Todo"),
         labels("resident-label"),
         milestones("resident-milestone"),
-        HashMap::from([(
-            CanonicalTaskPath::new("resident.md"),
-            sample_task("resident.md", "Resident"),
-        )]),
+        vec![sample_task("resident.md", "Resident")],
     );
     let conflict = stale_revision_conflict(&state, &initial.identity());
     let before = state.require_session_snapshot().expect("snapshot");

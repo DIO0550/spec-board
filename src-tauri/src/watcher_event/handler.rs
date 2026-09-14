@@ -20,9 +20,8 @@ use crate::task::parse::{
     default_status_for, normalized_task_file_path, task_from_markdown, TaskParseContext,
 };
 use crate::task::rebuild::rebuild_tasks_from_disk_with_report;
-use crate::task::task_catalog::TaskChange;
+use crate::task::task_catalog::{AppliedTaskChange, TaskChange, TaskChangeSet};
 use crate::task::task_file_path::TaskFilePath;
-use crate::task::task_index::ExternalChangeOutcome;
 use spec_board_fs::task::file_scanner::task_md_relative_path;
 use spec_board_fs::watcher::core::{WatcherFailure, WatcherFailureKind};
 use spec_board_fs::watcher::file_change_batch::FileChangeBatch;
@@ -310,21 +309,12 @@ fn handle_upsert(
     };
 
     let cache_key = CanonicalTaskPath::from_file_path(&task.file_path);
-    let event_name = if snapshot.tasks().contains(&cache_key) {
-        EVENT_TASK_UPDATED
-    } else {
-        EVENT_TASK_CREATED
-    };
 
     // 派生値（children / reverse_links / parentCycle・parentNotFound warning）は
     // 変更 1 件では閉じないので、全件を作り直す。open / full rescan と同じ入口を
     // 通すことで「watcher 適用後 == 再 open」を構造的に保証する。
-    let reconciled = match snapshot
-        .tasks()
-        .to_index()
-        .rebuild_with_external_change(TaskChange::Upserted(Box::new(task)))
-    {
-        Ok(outcome) => outcome,
+    let change_set = match snapshot.tasks().apply(TaskChange::Upserted(Box::new(task))) {
+        Ok(change_set) => change_set,
         Err(err) => {
             log::warn!(
                 "watcher_event: failed to rebuild derived state after `{}`: {err}",
@@ -354,7 +344,7 @@ fn handle_upsert(
         &snapshot,
         &[(
             rel_path.as_path_buf(),
-            reconciled_status(&reconciled, &cache_key),
+            reconciled_status(&change_set, &cache_key),
         )],
     );
     // `EventConfigOutcome` は `Config` を含むので `Copy` ではない。`matches!` を
@@ -363,17 +353,20 @@ fn handle_upsert(
     let next_config = outcome.into_config();
     let config_replaced = next_config.is_some();
 
-    let ExternalChangeOutcome {
-        tasks,
-        changed_task,
-        other_tasks_changed,
-    } = reconciled;
+    // event 名は「catalog にその identity が既にあったか」を aggregate の結末で決める。
+    // raw path の表記揺れがあっても identity 単位で Updated になる。
+    let event_name = match change_set.outcome_of(&cache_key) {
+        Some(AppliedTaskChange::Created(_)) => EVENT_TASK_CREATED,
+        _ => EVENT_TASK_UPDATED,
+    };
+    let other_tasks_changed = change_set.touches_other_than(std::slice::from_ref(&cache_key));
+    let changed_task = change_set.task(&cache_key).cloned();
     let expected = snapshot.identity();
     let committed = match ctx.state.commit_session_write(&expected, move |session| {
         if let Some(config) = next_config {
             session.replace_config(config);
         }
-        session.replace_tasks(tasks);
+        session.replace_tasks(change_set.into_catalog());
     }) {
         Ok(committed) => committed,
         Err(
@@ -422,11 +415,8 @@ fn handle_upsert(
 /// None に置き換わるように、派生再構築が値を変えうるため。`Upserted` は必ず slot を
 /// 持つので対象が消えることは無い。`None` を返すと reconcile は status なしとして
 /// その入力を無視するので、万一消えていてもカラムは増えない。
-fn reconciled_status(
-    outcome: &ExternalChangeOutcome,
-    cache_key: &CanonicalTaskPath,
-) -> Option<String> {
-    let Some(task) = outcome.changed_task.as_ref() else {
+fn reconciled_status(change_set: &TaskChangeSet, cache_key: &CanonicalTaskPath) -> Option<String> {
+    let Some(task) = change_set.task(cache_key) else {
         log::warn!("watcher_event: reconciled task missing for {cache_key}");
         return None;
     };
@@ -576,12 +566,11 @@ fn handle_delete(
         return Ok(());
     }
     // upsert と同じく、消えた task を参照していた側の派生値も作り直す。
-    let reconciled = match snapshot
+    let change_set = match snapshot
         .tasks()
-        .to_index()
-        .rebuild_with_external_change(TaskChange::Removed(rel_path.clone()))
+        .apply(TaskChange::Removed(rel_path.clone()))
     {
-        Ok(outcome) => outcome,
+        Ok(change_set) => change_set,
         Err(err) => {
             log::warn!(
                 "watcher_event: failed to rebuild derived state after deleting `{}`: {err}",
@@ -597,12 +586,11 @@ fn handle_delete(
             );
         }
     };
-    let other_tasks_changed = reconciled.other_tasks_changed;
-    let next_tasks = reconciled.tasks;
+    let other_tasks_changed = change_set.touches_other_than(std::slice::from_ref(&cache_key));
 
     let expected = snapshot.identity();
     let committed = match ctx.state.commit_session_write(&expected, move |session| {
-        session.replace_tasks(next_tasks);
+        session.replace_tasks(change_set.into_catalog());
     }) {
         Ok(committed) => committed,
         Err(

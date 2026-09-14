@@ -3,7 +3,6 @@ use super::active_project_resources::{
 };
 use super::{AppState, AppStateError, BoxedWatcherHandle, OpenSwapError, ResourceAccessError};
 
-use std::collections::HashMap;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
@@ -57,18 +56,14 @@ fn sample_milestones() -> MilestoneRegistry {
     .expect("valid registry")
 }
 
-fn candidate_for(
-    state: &AppState,
-    root: &str,
-    tasks: HashMap<CanonicalTaskPath, Task>,
-) -> ProjectSession {
+fn candidate_for(state: &AppState, root: &str, tasks: Vec<Task>) -> ProjectSession {
     let session_id = state.reserve_session_id().expect("reserve test session ID");
     PreparedProjectSession::new(
         ProjectRoot::try_from_str(root).expect("valid test root"),
         sample_config(),
         sample_labels(),
         sample_milestones(),
-        crate::task::task_catalog::TaskCatalog::from_tasks_for_test(tasks.into_values()),
+        crate::task::task_catalog::TaskCatalog::from_tasks_for_test(tasks),
     )
     .into_session(session_id)
 }
@@ -82,11 +77,7 @@ fn staged_for(identity: SessionIdentity) -> StagedProjectResources {
     )
 }
 
-fn swap_session(
-    state: &AppState,
-    root: &str,
-    tasks: HashMap<CanonicalTaskPath, Task>,
-) -> super::OpenSwap {
+fn swap_session(state: &AppState, root: &str, tasks: Vec<Task>) -> super::OpenSwap {
     let candidate = candidate_for(state, root, tasks);
     let staged = staged_for(candidate.identity());
     state
@@ -127,11 +118,11 @@ fn new_initializes_all_fields_to_empty() {
 #[test]
 fn open_swap_replaces_at_most_one_active_resource_set() {
     let state = AppState::new();
-    let first = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let first = swap_session(&state, "/tmp/project-a", Vec::new());
     let first_version = first.snapshot.version();
     assert!(first.displaced_resources.is_none());
 
-    let second = swap_session(&state, "/tmp/project-b", HashMap::new());
+    let second = swap_session(&state, "/tmp/project-b", Vec::new());
     let displaced = second
         .displaced_resources
         .expect("second swap displaces the first resources");
@@ -152,12 +143,12 @@ fn open_swap_replaces_at_most_one_active_resource_set() {
 #[test]
 fn stale_resource_access_is_rejected_and_old_arc_cannot_touch_new_registry() {
     let state = AppState::new();
-    let first = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let first = swap_session(&state, "/tmp/project-a", Vec::new());
     let old_access = state
         .resources_for(first.snapshot.version())
         .expect("first resources");
 
-    let second = swap_session(&state, "/tmp/project-b", HashMap::new());
+    let second = swap_session(&state, "/tmp/project-b", Vec::new());
     let error = state
         .resources_for(first.snapshot.version())
         .expect_err("stale version must be rejected");
@@ -178,7 +169,7 @@ fn stale_resource_access_is_rejected_and_old_arc_cannot_touch_new_registry() {
 #[test]
 fn session_commit_updates_domain_and_resource_revision_together() {
     let state = AppState::new();
-    let opened = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let opened = swap_session(&state, "/tmp/project-a", Vec::new());
     let expected = opened.snapshot.identity();
 
     let committed = state
@@ -217,7 +208,7 @@ fn session_commit_updates_domain_and_resource_revision_together() {
 #[test]
 fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_updates() {
     let state = Arc::new(AppState::new());
-    swap_session(&state, "/tmp/project-a", HashMap::new());
+    swap_session(&state, "/tmp/project-a", Vec::new());
     let start = Arc::new(Barrier::new(3));
 
     let handles: Vec<_> = [("a", "tasks/a.md"), ("b", "tasks/b.md")]
@@ -274,7 +265,7 @@ fn same_project_writers_read_fresh_snapshots_under_one_gate_and_keep_both_update
 #[test]
 fn target_lookup_before_same_path_reopen_is_rejected_before_side_effects() {
     let state = Arc::new(AppState::new());
-    swap_session(&state, "/tmp/project-a", HashMap::new());
+    swap_session(&state, "/tmp/project-a", Vec::new());
     let target_ready = Arc::new(Barrier::new(2));
     let reopened = Arc::new(Barrier::new(2));
     let writer_state = Arc::clone(&state);
@@ -292,7 +283,7 @@ fn target_lookup_before_same_path_reopen_is_rejected_before_side_effects() {
     });
 
     target_ready.wait();
-    swap_session(&state, "/tmp/project-a", HashMap::new());
+    swap_session(&state, "/tmp/project-a", Vec::new());
     reopened.wait();
 
     let conflict = writer
@@ -413,7 +404,7 @@ fn writer_lease_marker_is_released_after_operation_error() {
 #[test]
 fn poisoned_resource_lock_is_reported_without_returning_partial_access() {
     let state = Arc::new(AppState::new());
-    let opened = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let opened = swap_session(&state, "/tmp/project-a", Vec::new());
     poison_mutex(Arc::clone(&state), AppState::poison_resources_for_test);
 
     assert_eq!(
@@ -427,7 +418,7 @@ fn poisoned_resource_lock_is_reported_without_returning_partial_access() {
 #[test]
 fn stale_identity_does_not_consume_event_sequence_after_switch() {
     let state = AppState::new();
-    let first = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let first = swap_session(&state, "/tmp/project-a", Vec::new());
     assert_eq!(
         1,
         state
@@ -437,7 +428,7 @@ fn stale_identity_does_not_consume_event_sequence_after_switch() {
             .as_u64()
     );
 
-    let second = swap_session(&state, "/tmp/project-b", HashMap::new());
+    let second = swap_session(&state, "/tmp/project-b", Vec::new());
     assert_eq!(
         None,
         state
@@ -458,7 +449,7 @@ fn stale_identity_does_not_consume_event_sequence_after_switch() {
 fn swap_from_idle_returns_no_displaced_session() {
     let state = AppState::new();
 
-    let swap = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let swap = swap_session(&state, "/tmp/project-a", Vec::new());
 
     assert!(swap.displaced_session.is_none());
 }
@@ -466,9 +457,9 @@ fn swap_from_idle_returns_no_displaced_session() {
 #[test]
 fn same_root_swap_does_not_displace_a_session_into_the_cache() {
     let state = AppState::new();
-    swap_session(&state, "/tmp/project-a", HashMap::new());
+    swap_session(&state, "/tmp/project-a", Vec::new());
 
-    let reopened = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let reopened = swap_session(&state, "/tmp/project-a", Vec::new());
 
     assert!(
         reopened.displaced_session.is_none(),
@@ -479,8 +470,8 @@ fn same_root_swap_does_not_displace_a_session_into_the_cache() {
 #[test]
 fn take_discards_a_cache_entry_older_than_the_resident_session() {
     let state = AppState::new();
-    let stale = candidate_for(&state, "/tmp/project-a", HashMap::new());
-    swap_session(&state, "/tmp/project-a", HashMap::new());
+    let stale = candidate_for(&state, "/tmp/project-a", Vec::new());
+    swap_session(&state, "/tmp/project-a", Vec::new());
     state
         .stash_background_session(stale)
         .expect("a concurrent open can stash after the root became resident again");
@@ -498,9 +489,9 @@ fn take_discards_a_cache_entry_older_than_the_resident_session() {
 #[test]
 fn swap_over_loaded_project_returns_the_displaced_session() {
     let state = AppState::new();
-    let first = swap_session(&state, "/tmp/project-a", HashMap::new());
+    let first = swap_session(&state, "/tmp/project-a", Vec::new());
 
-    let second = swap_session(&state, "/tmp/project-b", HashMap::new());
+    let second = swap_session(&state, "/tmp/project-b", Vec::new());
 
     let displaced = second
         .displaced_session
@@ -513,7 +504,7 @@ fn take_background_session_removes_the_entry() {
     let state = AppState::new();
     let root = ProjectRoot::try_from_str("/tmp/project-a").expect("valid test root");
     state
-        .stash_background_session(candidate_for(&state, "/tmp/project-a", HashMap::new()))
+        .stash_background_session(candidate_for(&state, "/tmp/project-a", Vec::new()))
         .expect("stash succeeds");
 
     let taken = state
@@ -541,8 +532,8 @@ fn take_background_session_misses_for_unknown_root() {
 #[test]
 fn stash_replaces_an_older_session_for_the_same_root() {
     let state = AppState::new();
-    let older = candidate_for(&state, "/tmp/project-a", HashMap::new());
-    let newer = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    let older = candidate_for(&state, "/tmp/project-a", Vec::new());
+    let newer = candidate_for(&state, "/tmp/project-a", Vec::new());
     let newer_id = newer.version().session_id;
     state.stash_background_session(older).expect("stash older");
 
@@ -558,8 +549,8 @@ fn stash_replaces_an_older_session_for_the_same_root() {
 #[test]
 fn stash_keeps_the_session_with_the_newer_session_id() {
     let state = AppState::new();
-    let older = candidate_for(&state, "/tmp/project-a", HashMap::new());
-    let newer = candidate_for(&state, "/tmp/project-a", HashMap::new());
+    let older = candidate_for(&state, "/tmp/project-a", Vec::new());
+    let newer = candidate_for(&state, "/tmp/project-a", Vec::new());
     let newer_id = newer.version().session_id;
     state.stash_background_session(newer).expect("stash newer");
 
@@ -577,8 +568,8 @@ fn stash_keeps_the_session_with_the_newer_session_id() {
 #[test]
 fn identity_mismatch_rejects_open_swap_before_replacing_domain() {
     let state = AppState::new();
-    let candidate = candidate_for(&state, "/tmp/project-a", HashMap::new());
-    let other = candidate_for(&state, "/tmp/project-b", HashMap::new());
+    let candidate = candidate_for(&state, "/tmp/project-a", Vec::new());
+    let other = candidate_for(&state, "/tmp/project-b", Vec::new());
     let staged = staged_for(other.identity());
 
     let error = match state.swap_open(candidate, staged) {

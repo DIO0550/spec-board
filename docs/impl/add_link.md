@@ -89,3 +89,10 @@ sourceだけを書き換える部分更新を防ぎつつ、targetの`reverse_li
 sourceの`links`をsource of truthとして全件再計算できる。disk write成功後は
 `commit_or_resync_under_lease`がidentityを再検証し、`ResolvedTaskSet`でsession cacheを
 一括置換する。競合時は同じdiskからresyncし、局所field保持やin-place mutateは行わない。
+
+> **#454 以降の読み替え**: `ResolvedTaskSet` は `TaskCatalog`（`src/task/task_catalog.rs`）に
+> 昇格した。上記の「snapshot の全 Task を candidate へ戻して canonical full resolver へ渡す」
+> 処理は `snapshot.tasks().apply(TaskChange::Upserted(updated_task))` が担い、その結果
+> `TaskChangeSet` から `task(&source_key)` で返却用 Task を取り、commit closure で
+> `session.replace_tasks(change_set.into_catalog())` を呼ぶ。command 側の
+> `apply_*_to_cache` helper は削除済み。詳細は [`task-catalog.md`](./task-catalog.md)。

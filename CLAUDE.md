@@ -73,7 +73,7 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
       get.rs            — `get_tasks` Tauri command 実装
       get_tests.rs      — `task::get` のテスト
       warning.rs        — `TaskWarning` / `TaskWarningCode`
-      task_index.rs     — `Task` entity + `TaskIndex` aggregate + parent チェーン不変条件の検証ロジック（`ParentHierarchyErrorReason` / `ParentValidationFailure` 含む。DDD 原則に従い validation は aggregate に同居させる）
+      task_index.rs     — `Task` entity + `TaskIndex`（`TaskCatalog::to_index()` から作る query / plan 用 view 兼 resolver 本体）+ parent チェーン不変条件の検証ロジック（`ParentHierarchyErrorReason` / `ParentValidationFailure` 含む。DDD 原則に従い validation は aggregate に同居させる）
       task_index_tests.rs — `task::task_index` の aggregate / entity 関連テスト
       task_index_parent_chain_tests.rs — `task::task_index` の親チェーン検証テスト
       parse.rs          — `task_from_markdown` / `TaskParseContext` / `TaskParseError`
@@ -83,6 +83,8 @@ src-tauri/              — Tauri (Rust) バックエンド (Cargo workspace ル
       reverse_links.rs  — `build_reverse_links` + 関連 helper
       reverse_links_tests.rs — `task::reverse_links` のテスト
       path_lookup.rs    — task path 引き当て用 helper（`pub(super)` で task ドメイン内に閉じる）
+      task_catalog.rs   — `TaskCatalog` aggregate root（resident task 集合の不変条件）+ `TaskChange` / `TaskChangeSet` / `apply` / `apply_all`
+      task_catalog_tests.rs — `task::task_catalog` のテスト（resolve / apply / 決定性 / 不変条件）
       task_content.rs   — `TaskContent` VO（scanner eligible を constructor で強制）
       task_content_tests.rs — `task::task_content` の境界テスト
     project.rs          — project ドメイン親（`pub mod open;`）

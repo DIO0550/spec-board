@@ -76,11 +76,13 @@ DDD の Aggregate は「不変条件を一緒に守るべきオブジェクト�
 | Aggregate Root | 責務 | 場所 |
 |:--|:--|:--|
 | `Task` | 1 タスクの不変条件（canonical file_path を唯一の identity とし、warnings は parse / graph 由来） | `src/task/task_index.rs` |
-| `TaskIndex` | タスク集合の整合性（parent 存在、循環検出、children / reverse_links 派生） | `src/task/task_index.rs` |
+| `TaskCatalog` | resident task 集合の不変条件（canonical identity 一意・file_path 昇順・派生値整合）と mutation（`apply` / `apply_all` → `TaskChangeSet`）。生成経路は `resolve` / `apply` / `apply_all` だけ | `src/task/task_catalog.rs` |
+| `TaskIndex` | `TaskCatalog::to_index()` から作る query / plan 用の一時 view（`plan_*` / projection / usage count）と resolver 本体（`rebuild_derived_with_warnings`）。`TaskIndex::new` は private | `src/task/task_index.rs` |
+| `ProjectSession` | 開いている project の coherent な domain state（`Config` / `LabelRegistry` / `MilestoneRegistry` / `TaskCatalog` / load warnings）と session-local revision。commit は `SessionIdentity` の CAS で直列化 | `src/project_session/aggregate.rs` |
 | `Config` | 現行schema version、columns 非空・カラム名一意（`try_new` が構築時に強制）、card_order の clean | `src/config/core.rs` |
 | `LabelRegistry` | ラベル定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/label_registry.rs` |
 | `MilestoneRegistry` | マイルストーン定義集合の整合性（空名拒否、完全一致一意、定義順保持） | `src/config/milestone_registry.rs` |
-| `AppState` | 全 Mutex の lock 取得順序契約 | `src/state.rs` |
+| `AppState` | domain（`ProjectState`）/ resources / background の lock 取得順序契約と writer gate | `src/state.rs` |
 
 `Task::id()` は保存フィールドではなく canonical `file_path` の参照を返す computed
 alias である。出力専用 `TaskPayload` へ変換するときだけ、従来の wire 契約を守るため
@@ -116,13 +118,13 @@ Aggregate 境界の引き方の指針:
      raw `u32` はload adapterとmigrationだけが扱い、normalized `Config` の
      `Deserialize` はCURRENT以外を拒否する。
 3. **Aggregate を跨ぐ参照は VO の値で行う**
-   - 例として、Aggregate `AppState` から `Task` を引くキーには将来的に VO
-     `TaskFilePath` を使う形が望ましい。`Task` 自身を `AppState` の中に持つ
-     わけではなく、別 Aggregate である `Task` 集合へのキーとして VO を保有
-     する形になる。
-   - 注: 現状の `src-tauri/src/state.rs` 実装では `AppState.tasks_cache` /
-     `AppState.project_path` のキー型は `PathBuf` のまま据え置いている
-     （本リファクタのスコープ外。詳細は §8 を参照）。
+   - `ProjectSession` は `TaskCatalog` を所有し、catalog 内の identity lookup は VO
+     `CanonicalTaskPath`（`TaskFilePath` を正規化した値）で行う。`Task` 自身を
+     `ProjectSession` が直接 map に持つのではなく、集合の不変条件は `TaskCatalog`
+     に閉じ、外からは `get(&CanonicalTaskPath)` / `contains` / `to_index()` だけを使う。
+   - `TaskCatalog` の生成経路は `resolve`（disk 由来の `Vec<ParsedTask>`）と
+     `apply` / `apply_all`（mutation）に限られ、raw `Vec<Task>` / `HashMap` からは
+     構築できない。詳細は [`task-catalog.md`](./task-catalog.md)。
 
 ---
 
@@ -156,32 +158,40 @@ Aggregate 境界の引き方の指針:
 │           │                                                                   │
 │           ▼                                                                   │
 │  ┌──────────────────────────────────┐    ┌──────────────────────────────┐    │
-│  │  Aggregate: TaskIndex            │    │  Aggregate: AppState          │    │
+│  │  Aggregate: TaskCatalog (AR)     │    │  Aggregate: ProjectSession    │    │
 │  │  ┌────────────────────────────┐  │    │  ┌────────────────────────┐   │    │
-│  │  │ tasks: Vec<Task>           │  │    │  │ project_path : Mutex<   │   │    │
-│  │  └────────────────────────────┘  │    │  │   Option<PathBuf>>* ※   │   │    │
-│  │   - validate_parent_existence    │    │  │ config       : Mutex<   │   │    │
-│  │   - validate_parent_hierarchy    │    │  │   Option<Config>>       │   │    │
-│  │   - build_children               │    │  │ tasks_cache  : Mutex<   │   │    │
-│  │   - build_reverse_links          │    │  │   HashMap<PathBuf,* ※   │   │    │
-│  │   - resolve_parent_for_new_task  │    │  │             Task>>      │   │    │
-│  │   - validate_chain_from_parent   │    │  │ watcher_handle: Mutex...│   │    │
-│  └──────────────────────────────────┘    │  │ write_ignore: WriteIgn..│   │    │
-│                                          │  └────────────────────────┘   │    │
-│   ※ tasks_cache キー / project_path 値 / CardOrder のキー・値は本リファクタ  │
-│   では String / PathBuf 据置（TaskFilePath / ColumnName / ProjectRoot への    │
-│   置換は将来 PR の対象。詳細は §8 参照）                                      │
-│                                                                              │
-│  ┌──────────────────────────────────┐    │   - lock 順序: project_path   │    │
-│  │  Value Objects                    │    │     → config → tasks_cache    │    │
-│  │   - TaskFilePath  (newtype String)│    │     → watcher_handle          │    │
-│  │   - TaskTitle     (newtype String)│    │     → write_ignore            │    │
-│  │   - TaskFileName  (newtype String)│    └──────────────────────────────┘    │
+│  │  │ tasks: Vec<Task> (昇順)    │  │    │  │ id / revision           │   │    │
+│  │  │ index: HashMap<            │  │    │  │ root     : ProjectRoot  │   │    │
+│  │  │   CanonicalTaskPath, usize>│  │    │  │ config   : Config       │   │    │
+│  │  └────────────────────────────┘  │    │  │ labels   : LabelRegistry│   │    │
+│  │   - resolve(Vec<ParsedTask>)     │    │  │ milestones: Milestone.. │   │    │
+│  │   - apply / apply_all            │    │  │ tasks    : TaskCatalog  │   │    │
+│  │       → TaskChangeSet            │    │  │ load_warnings           │   │    │
+│  │   - get / contains / to_index    │    │  └────────────────────────┘   │    │
+│  └────────┬─────────────────────────┘    │   - snapshot()                │    │
+│           │ to_index()                    │   - commit(identity, closure) │    │
+│           ▼                               │   - replace_tasks(TaskCatalog)│    │
+│  ┌──────────────────────────────────┐    └──────────────────────────────┘    │
+│  │  TaskIndex（一時 view / resolver）│                                        │
+│  │   - rebuild_derived_with_warnings│    ┌──────────────────────────────┐    │
+│  │   - validate_parent_hierarchy    │    │  AppState                     │    │
+│  │   - plan_create / plan_update /  │    │   - domain: Mutex<ProjectState>│   │
+│  │     plan_delete / plan_move ...  │    │   - resources: Mutex<...>     │    │
+│  │   - project_board_view           │    │   - lock 順序: domain →       │    │
+│  │   - label / milestone usage      │    │     resources（型で固定）      │    │
+│  └──────────────────────────────────┘    │   - writer gate（root 単位）   │    │
+│                                          └──────────────────────────────┘    │
+│  ┌──────────────────────────────────┐    ┌──────────────────────────────┐    │
+│  │  Value Objects                    │    │  ProjectRoot (VO)             │    │
+│  │   - TaskFilePath  (newtype String)│    │   - newtype PathBuf           │    │
+│  │   - CanonicalTaskPath (正規化 String)│  └──────────────────────────────┘    │
+│  │   - TaskTitle     (newtype String)│                                        │
+│  │   - TaskFileName  (newtype String)│                                        │
 │  │   - Label         (newtype String)│                                        │
-│  │   - ColumnName    (newtype String)│    ┌──────────────────────────────┐    │
-│  │   - SchemaVersion (private u32)    │    │  ProjectRoot (VO)             │    │
-│  │   - ProjectRoot   (newtype PathBuf)│    │   - newtype PathBuf           │    │
-│  └──────────────────────────────────┘    └──────────────────────────────┘    │
+│  │   - ColumnName    (newtype String)│                                        │
+│  │   - SchemaVersion (private u32)    │                                        │
+│  │   - ProjectRoot   (newtype PathBuf)│                                        │
+│  └──────────────────────────────────┘                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ 依存方向 (本体 → sub-crate)
@@ -252,11 +262,13 @@ open_project_impl(state, root: &ProjectRoot)
            file_path: rel,
            default_status: ColumnName,
        })
-   - TaskIndex::new(tasks).build_children()?.build_reverse_links().into_tasks()
+   - TaskCatalog::resolve(candidates)?  → TaskCatalogResolution { catalog, duplicates }
+       （raw file_path 昇順に整列 → canonical identity で先勝ち dedupe →
+        resolve_lenient_candidates で children / reverse_links / graph warning を派生。
+        duplicates は `duplicateTaskIdentity` の ProjectLoadWarning に変換）
    ↓
-HashMap<PathBuf, Task> を AppState.tasks_cache に commit
-   （tasks_cache のキーは本リファクタでは PathBuf 据置 — §8 参照。
-    Task 内では canonical `file_path` だけを TaskFilePath VO として保持し、
+PreparedProjectSession { tasks: TaskCatalog, .. } を ProjectSession へ swap
+   （Task 内では canonical `file_path` だけを TaskFilePath VO として保持し、
     payload projection が互換用 `id` / `filePath` を同じ値から生成する）
    ↓
 OpenProjectPayload { tasks: Vec<Task>, columns: Vec<ColumnName> }
@@ -278,17 +290,17 @@ VO 構築は **3 つの境界**でのみ起きる:
 
 ## 6. lock 取得順序契約（AppState）
 
-`AppState` の `Mutex` は **同時に複数 lock を取る場合に必ず以下の順で取る**。
-逆順で取ると別経路と組み合わせてデッドロックになる可能性がある。
+`AppState` は domain（`ProjectState` = `ProjectSession` 1 本）と active project
+resources（watcher handle / write_ignore）を別々の `Mutex` で持ち、raw mutex は
+private な `state::locks` だけが所有する。**同時に取るときは必ず domain → resources
+の順**で、この順序は `DomainGuard::lock_resources(self)` の型で固定されている
+（逆順の API が存在しない）。
 
-```
-project_path → config → tasks_cache → watcher_handle → write_ignore
-```
-
-`open_project_impl` の COMMITTING フェーズはこの順で全 lock を取得し、
-`commit_app_state` の中で `project_path = Some(root)` を最初に書く。
-失敗時は `Mutex` への書き込みを行わないため、`AppState` は IDLE / 旧 LOADED
-のまま不変が保たれる。
+mutation は `ProjectSessionSnapshot` に対して plan → disk write → `commit`
+（`SessionIdentity` の CAS）の順で進み、commit closure は検証済みの
+`TaskCatalog` を `replace_tasks` で丸ごと差し替える。失敗時は closure が走らないため
+`ProjectSession` は旧 revision のまま不変が保たれる（詳細は
+[`task-catalog.md`](./task-catalog.md) §3）。
 
 ---
 
@@ -321,8 +333,8 @@ sub-crateの`file_scanner`が同じ定数を直接importすることで、手動
 
 本リファクタでは以下を **スコープ外**としている:
 
-- `AppState.project_path: Mutex<Option<PathBuf>>` の `ProjectRoot` 化
-- `AppState.tasks_cache: Mutex<HashMap<PathBuf, Task>>` のキーの `TaskFilePath` 化
+- ~~`AppState.project_path: Mutex<Option<PathBuf>>` の `ProjectRoot` 化~~（`ProjectSession.root: ProjectRoot` で解消済み）
+- ~~`AppState.tasks_cache: Mutex<HashMap<PathBuf, Task>>` のキーの `TaskFilePath` 化~~（#454 で resident state を `TaskCatalog` に置き換え、identity は `CanonicalTaskPath` で解消済み）
 - `Config.card_order: BTreeMap<String, Vec<String>>` の VO 化
   （`BTreeMap<ColumnName, Vec<TaskFilePath>>` への置換）
 - `priority` の VO 化（CreateTaskArgs の lenient 受け付けに影響するため）
@@ -383,17 +395,21 @@ src-tauri/src/
         既存 VO群 / config / frontmatter
               │
               ▼
-       warning  →  task_index (Task entity + TaskIndex aggregate
+       warning  →  task_index (Task entity + TaskIndex view / resolver
                                 + 親チェーン不変条件の検証)
-                       │
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
+                       │              ▲
+            ┌──────────┼──────────┐   │ resolve_lenient_candidates / from_catalog
+            ▼          ▼          ▼   │
           parse   path_lookup   children / reverse_links
+                                      │
+                             task_catalog (TaskCatalog aggregate root
+                                          + TaskChange / TaskChangeSet)
 ```
 
 `children` / `reverse_links` / `path_lookup` の自由関数は `pub(super)` に統一し、
-task ドメイン外（state / project / watcher_event）からは `TaskIndex` aggregate
-のメソッド経由でのみアクセスする。親チェーンの検証ロジックは独立ファイルにせず、
+task ドメイン外（state / project / watcher_event）からは `TaskCatalog`（resident
+aggregate）と、そこから `to_index()` で作る `TaskIndex` のメソッド経由でのみ
+アクセスする。親チェーンの検証ロジックは独立ファイルにせず、
 `task_index.rs` 内に aggregate と同居させる（DDD 原則: validation は専用ファイル
 ではなくドメインオブジェクトに紐づける。`create/validate.rs` を廃止して `TaskIndex`
 に統合したのと同じ方針）。
